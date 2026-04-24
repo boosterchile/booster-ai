@@ -83,12 +83,15 @@ resource "google_service_account" "github_deployer" {
 
 locals {
   github_deployer_roles = [
-    "roles/run.admin",                        # Deploy a Cloud Run
-    "roles/cloudbuild.builds.editor",         # Trigger Cloud Build
-    "roles/artifactregistry.writer",          # Push Docker images
-    "roles/iam.serviceAccountUser",           # Impersonate cloud_run_runtime al deploy
-    "roles/storage.objectViewer",             # Leer artifacts previos
-    "roles/container.developer",              # Deploy a GKE (telemetry gateway)
+    "roles/run.admin",                           # Deploy a Cloud Run
+    "roles/cloudbuild.builds.editor",            # Trigger Cloud Build
+    "roles/artifactregistry.writer",             # Push Docker images
+    "roles/iam.serviceAccountUser",              # Impersonate cloud_run_runtime al deploy
+    "roles/storage.objectAdmin",                 # Subir source al bucket _cloudbuild (gcloud builds submit)
+    "roles/serviceusage.serviceUsageConsumer",   # Attribution de quota al usar APIs durante el build
+    "roles/container.developer",                 # Deploy a GKE (telemetry gateway)
+    "roles/logging.viewer",                      # Leer logs de Cloud Build para que gcloud builds submit los streamee
+    "roles/logging.logWriter",                   # Escribir logs del build a Cloud Logging (cuando es el build SA)
   ]
 }
 

@@ -17,10 +17,10 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
+      - --no-cache
       - --file=apps/api/Dockerfile
       - --tag=${_REGISTRY}/api:${_COMMIT_SHA}
       - --tag=${_REGISTRY}/api:latest
-      - --cache-from=${_REGISTRY}/api:latest
       - .
     waitFor: ['-']
 
@@ -28,10 +28,10 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
+      - --no-cache
       - --file=apps/whatsapp-bot/Dockerfile
       - --tag=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
       - --tag=${_REGISTRY}/whatsapp-bot:latest
-      - --cache-from=${_REGISTRY}/whatsapp-bot:latest
       - .
     waitFor: ['-']
 
@@ -122,6 +122,11 @@ images:
   - ${_REGISTRY}/api:latest
   - ${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
   - ${_REGISTRY}/whatsapp-bot:latest
+
+# Usar el SA github-deployer en lugar del compute default.
+# Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute
+# SA, por lo que este explicit assignment es requerido.
+serviceAccount: projects/booster-ai-494222/serviceAccounts/github-deployer@booster-ai-494222.iam.gserviceaccount.com
 
 options:
   logging: CLOUD_LOGGING_ONLY
