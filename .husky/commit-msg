@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Booster AI — commit-msg: Conventional Commits enforcement
+npx --no-install commitlint --edit "$1"

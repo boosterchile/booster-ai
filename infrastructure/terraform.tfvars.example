@@ -1,0 +1,62 @@
+# Booster AI — variables de Terraform
+# Copia este archivo a terraform.tfvars (gitignored) y completa los valores.
+# NO committear terraform.tfvars al repo.
+
+# =============================================================================
+# IDENTIDAD DEL PROYECTO
+# =============================================================================
+
+project_id  = "booster-ai-494222"
+region      = "southamerica-west1" # Santiago
+zone        = "southamerica-west1-a"
+environment = "prod" # o "staging" / "dev"
+domain      = "boosterchile.com"
+
+# =============================================================================
+# BILLING — obtener de: gcloud billing accounts list
+# =============================================================================
+
+billing_account = "XXXXXX-XXXXXX-XXXXXX"
+
+# Si el proyecto está bajo organization — opcional. Obtener de:
+#   gcloud organizations list
+# Si no estás bajo org, dejar null.
+organization_id = null
+
+# =============================================================================
+# IDENTIDAD HUMANA
+# =============================================================================
+
+# Cuentas Google con rol Owner del proyecto.
+# ADR-010 Booster 2.0: IAM humana en IaC para auditabilidad TRL 10.
+human_owners = [
+  "user:dev@boosterchile.com",
+]
+
+# =============================================================================
+# GITHUB — para Workload Identity Federation
+# =============================================================================
+
+github_repository = "boosterchile/booster-ai"
+
+# =============================================================================
+# RECURSOS MANAGED — sizing
+# =============================================================================
+
+# Cloud SQL machine tier. Sizing común:
+#   db-custom-1-3840  = 1 vCPU,  3.75 GB (mini dev)
+#   db-custom-2-7680  = 2 vCPU,  7.5  GB (inicial comercial)
+#   db-custom-4-15360 = 4 vCPU, 15    GB (prod medium)
+cloudsql_tier                  = "db-custom-2-7680"
+cloudsql_backup_retention_days = 30
+
+# Memorystore Redis
+redis_tier      = "STANDARD_HA" # o "BASIC" para dev
+redis_memory_gb = 1
+
+# =============================================================================
+# ALERTAS + BILLING
+# =============================================================================
+
+monthly_budget_usd = 500
+alert_email        = "dev@boosterchile.com"

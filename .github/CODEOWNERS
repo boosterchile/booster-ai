@@ -1,0 +1,66 @@
+# Code ownership — sin GitHub Teams.
+# Formato: <path pattern> <@user1> [@user2 ...]
+#
+# Owner único actual: Felipe Vicencio (dev@boosterchile.com).
+# IMPORTANTE: reemplazar `@boosterchile` abajo con tu username real de GitHub
+#   si es distinto (ej. @felipevicencio, @fvicencio, etc.).
+#   Puedes verificar con: gh api user -q '.login' desde tu terminal.
+#
+# Cuando se sumen más devs humanos:
+#   - Agregar su @usuario a las líneas relevantes
+#   - Considerar migrar a Teams si llegan a ser ≥3 personas (reduce edición manual)
+#
+# Referencia: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# -----------------------------------------------------------------------------
+# Default — cualquier cambio requiere aprobación del owner
+# -----------------------------------------------------------------------------
+*                                       @boosterchile
+
+# -----------------------------------------------------------------------------
+# ADRs y docs arquitectónicos — inmutables salvo supersede
+# -----------------------------------------------------------------------------
+/docs/adr/**                            @boosterchile
+
+# -----------------------------------------------------------------------------
+# Infraestructura IaC — cambios con impacto directo en producción GCP
+# -----------------------------------------------------------------------------
+/infrastructure/**                      @boosterchile
+/cloudbuild.*.yaml                      @boosterchile
+
+# -----------------------------------------------------------------------------
+# Workflows CI/CD y quality gates — nunca modificar sin revisión
+# -----------------------------------------------------------------------------
+/.github/workflows/**                   @boosterchile
+/.github/dependabot.yml                 @boosterchile
+/.github/CODEOWNERS                     @boosterchile
+
+# -----------------------------------------------------------------------------
+# Contratos con el agente (CLAUDE.md + framework de skills)
+# -----------------------------------------------------------------------------
+/CLAUDE.md                              @boosterchile
+/AGENTS.md                              @boosterchile
+/skills/**                              @boosterchile
+/.claude/**                             @boosterchile
+/agents/**                              @boosterchile
+/hooks/**                               @boosterchile
+
+# -----------------------------------------------------------------------------
+# Packages compartidos — cambios afectan a todas las apps
+# -----------------------------------------------------------------------------
+/packages/shared-schemas/**             @boosterchile
+/packages/logger/**                     @boosterchile
+/packages/config/**                     @boosterchile
+
+# -----------------------------------------------------------------------------
+# Cualquier Dockerfile — superficie de seguridad productiva
+# -----------------------------------------------------------------------------
+**/Dockerfile                           @boosterchile
+
+# -----------------------------------------------------------------------------
+# Secretos, compliance y security
+# -----------------------------------------------------------------------------
+**/.env.example                         @boosterchile
+/.gitignore                             @boosterchile
+/biome.json                             @boosterchile
+/tsconfig.base.json                     @boosterchile

@@ -1,0 +1,173 @@
+{
+  "id": "55785b69-bfdd-4e86-bfd2-5046f3486d45",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.whatsapp_intake_drafts": {
+      "name": "whatsapp_intake_drafts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tracking_code": {
+          "name": "tracking_code",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shipper_whatsapp": {
+          "name": "shipper_whatsapp",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin_address_raw": {
+          "name": "origin_address_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destination_address_raw": {
+          "name": "destination_address_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cargo_type": {
+          "name": "cargo_type",
+          "type": "cargo_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pickup_date_raw": {
+          "name": "pickup_date_raw",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "whatsapp_intake_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'captured'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_whatsapp_intake_shipper": {
+          "name": "idx_whatsapp_intake_shipper",
+          "columns": [
+            {
+              "expression": "shipper_whatsapp",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_whatsapp_intake_status": {
+          "name": "idx_whatsapp_intake_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_whatsapp_intake_created": {
+          "name": "idx_whatsapp_intake_created",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "whatsapp_intake_drafts_tracking_code_unique": {
+          "name": "whatsapp_intake_drafts_tracking_code_unique",
+          "nullsNotDistinct": false,
+          "columns": ["tracking_code"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.cargo_type": {
+      "name": "cargo_type",
+      "schema": "public",
+      "values": [
+        "dry_goods",
+        "perishable",
+        "refrigerated",
+        "frozen",
+        "fragile",
+        "dangerous",
+        "liquid",
+        "construction",
+        "agricultural",
+        "livestock",
+        "other"
+      ]
+    },
+    "public.whatsapp_intake_status": {
+      "name": "whatsapp_intake_status",
+      "schema": "public",
+      "values": ["in_progress", "captured", "converted", "abandoned", "cancelled"]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

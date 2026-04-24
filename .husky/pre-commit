@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Booster AI — pre-commit: escaneo de secretos + lint-staged
+set -e
+
+echo "[pre-commit] Escaneando secretos con gitleaks..."
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --verbose --redact --no-banner || {
+    echo ""
+    echo "[ERROR] gitleaks detecto posibles secretos en archivos staged."
+    echo "        Revisa. Si es falso positivo, usa 'git commit --no-verify' con justificacion."
+    exit 1
+  }
+else
+  echo "[pre-commit] WARN: gitleaks no instalado. Instalar: brew install gitleaks"
+fi
+
+echo "[pre-commit] Ejecutando lint-staged (Biome)..."
+npx lint-staged
+
+echo "[pre-commit] OK"

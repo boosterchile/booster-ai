@@ -1,0 +1,153 @@
+name: Security
+
+# Escaneos de seguridad: secretos (gitleaks), vulnerabilidades de dependencias (npm audit),
+# análisis estático (CodeQL). Ver references/security-checklist.md.
+# Gates bloqueantes para evitar regresiones como SEC-2026-04-01 (Booster 2.0).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scheduled scan — Lunes 03:00 UTC (00:00 Chile)
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write  # Para subir SARIF a Security tab
+  pull-requests: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitleaks — escaneo de secretos en código + historial completo
+  # ---------------------------------------------------------------------------
+  gitleaks:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Historial completo para scan profundo
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Config custom opcional en .gitleaks.toml
+
+  # ---------------------------------------------------------------------------
+  # npm audit — vulnerabilidades de dependencias
+  # ---------------------------------------------------------------------------
+  npm-audit:
+    name: npm audit (HIGH+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit (HIGH+)
+        run: |
+          # Falla si hay vulnerabilidades HIGH o CRITICAL
+          pnpm audit --audit-level=high --prod || {
+            echo "::error::High/Critical vulnerabilities detected. Run 'pnpm audit' locally for details."
+            echo "::notice::If unfixable, document en PR + issue con tracking."
+            exit 1
+          }
+
+  # ---------------------------------------------------------------------------
+  # CodeQL — análisis estático de JS/TS
+  # ---------------------------------------------------------------------------
+  codeql:
+    name: CodeQL (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  # ---------------------------------------------------------------------------
+  # Trivy — escaneo de Dockerfiles (filesystem + config misconfigurations)
+  # ---------------------------------------------------------------------------
+  trivy:
+    name: Trivy filesystem + config scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+      - name: Trivy config scan (Dockerfiles + Terraform)
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '0'  # No bloquea, reporta
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .
+
+  # ---------------------------------------------------------------------------
+  # SBOM generation — Software Bill of Materials para auditoría
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate CycloneDX SBOM
+        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.cyclonedx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          retention-days: 90

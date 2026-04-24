@@ -1,0 +1,118 @@
+version: 2
+
+# Actualizaciones automáticas de dependencias.
+# Estrategia:
+#   - patch + minor: auto-PR semanal
+#   - major: PR separado con review obligatorio
+#   - security: inmediato (GitHub Advanced Security lo maneja aparte)
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    open-pull-requests-limit: 10
+    groups:
+      typescript-ecosystem:
+        patterns:
+          - 'typescript'
+          - '@types/*'
+          - 'ts-*'
+          - 'tsup'
+          - 'tsx'
+      testing:
+        patterns:
+          - 'vitest*'
+          - '@vitest/*'
+          - '@playwright/*'
+          - 'playwright*'
+          - '@testing-library/*'
+      hono:
+        patterns:
+          - 'hono*'
+          - '@hono/*'
+      drizzle:
+        patterns:
+          - 'drizzle-*'
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react*'
+          - '@tanstack/*'
+      biome:
+        patterns:
+          - '@biomejs/*'
+      opentelemetry:
+        patterns:
+          - '@opentelemetry/*'
+    ignore:
+      # Major upgrades — PR separado para revisión
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+    labels:
+      - dependencies
+      - automated
+    commit-message:
+      prefix: 'chore(deps)'
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: 'chore(ci)'
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/matching-engine
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/telemetry-tcp-gateway
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/telemetry-processor
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/notification-service
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/whatsapp-bot
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /apps/document-service
+    schedule:
+      interval: weekly
+      day: monday

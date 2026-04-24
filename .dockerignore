@@ -1,0 +1,42 @@
+# Evitar contaminar el build context con archivos innecesarios.
+# Acelera la copia + mantiene las imágenes chicas + evita fugas de secretos.
+
+# Dependencias instaladas localmente (se reinstalan en el container)
+**/node_modules
+**/.pnpm-store
+
+# Artifacts de build locales
+**/dist
+**/.turbo
+**/.next
+**/.vite
+**/coverage
+
+# Git + CI
+.git
+.github
+
+# Local envs y secretos
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDE / editor
+.vscode
+.idea
+**/.DS_Store
+
+# Terraform (no va en imágenes)
+infrastructure/.terraform
+infrastructure/*.tfstate*
+infrastructure/tfplan*
+
+# Docs (no son necesarios en runtime)
+docs
+README.md
+*.md
+!apps/*/README.md
+
+# Logs locales
+*.log
+logs/

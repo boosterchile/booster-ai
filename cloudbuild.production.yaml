@@ -1,0 +1,130 @@
+# Cloud Build pipeline — production
+#
+# Triggered desde GitHub Actions release.yml tras manual approval en el environment
+# `production`. Sin canary/split traffic por ahora (post-staging environment real,
+# task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
+#
+# Scope del thin slice (Fase 6):
+#   - Build + deploy de apps/api y apps/whatsapp-bot
+#   - apps/web, apps/marketing y demás services Cloud Run quedan con su
+#     imagen placeholder hasta que tengan código real (slice siguiente)
+
+steps:
+  # =========================================================================
+  # Build images en paralelo
+  # =========================================================================
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=apps/api/Dockerfile
+      - --tag=${_REGISTRY}/api:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/api:latest
+      - --cache-from=${_REGISTRY}/api:latest
+      - .
+    waitFor: ['-']
+
+  - id: build-whatsapp-bot
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=apps/whatsapp-bot/Dockerfile
+      - --tag=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/whatsapp-bot:latest
+      - --cache-from=${_REGISTRY}/whatsapp-bot:latest
+      - .
+    waitFor: ['-']
+
+  # =========================================================================
+  # Push a Artifact Registry
+  # =========================================================================
+  - id: push-api
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/api']
+    waitFor: [build-api]
+
+  - id: push-whatsapp-bot
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/whatsapp-bot']
+    waitFor: [build-whatsapp-bot]
+
+  # =========================================================================
+  # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
+  # =========================================================================
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - booster-ai-api
+      - --image=${_REGISTRY}/api:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --labels=env=production,commit=${_COMMIT_SHA}
+    waitFor: [push-api]
+
+  - id: deploy-whatsapp-bot
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - booster-ai-whatsapp-bot
+      - --image=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --labels=env=production,commit=${_COMMIT_SHA}
+    waitFor: [push-whatsapp-bot]
+
+  # =========================================================================
+  # Smoke test — ping /health vía Global HTTPS LB
+  # =========================================================================
+  - id: smoke-api-health
+    name: gcr.io/cloud-builders/curl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -eu
+        check_endpoint() {
+          local url=$1
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 "$url" > /dev/null; then
+              echo "$url ✓"
+              return 0
+            fi
+            echo "$url failed, retry $i/5 in 30s..."
+            sleep 30
+          done
+          echo "$url FAILED after 5 attempts"
+          return 1
+        }
+        check_endpoint "https://api.boosterchile.com/health"
+        # El webhook GET con wrong token debe devolver 403 (no 500) — eso ya confirma
+        # que el bot está serving y leyó el env var VERIFY_TOKEN correctamente.
+        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+          "https://api.boosterchile.com/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=test")
+        if [ "$status" != "403" ]; then
+          echo "whatsapp webhook smoke failed: expected 403, got $status"
+          exit 1
+        fi
+        echo "whatsapp webhook ✓ (returns 403 on wrong token as expected)"
+    waitFor: [deploy-api, deploy-whatsapp-bot]
+
+substitutions:
+  _REGION: southamerica-west1
+  _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
+  _COMMIT_SHA: manual
+
+images:
+  - ${_REGISTRY}/api:${_COMMIT_SHA}
+  - ${_REGISTRY}/api:latest
+  - ${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
+  - ${_REGISTRY}/whatsapp-bot:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 2400s

@@ -1,0 +1,187 @@
+name: CI
+
+# Ejecutado en cada push a cualquier branch y en cada PR hacia main.
+# Gates bloqueantes: lint (Biome), typecheck (tsc), tests (Vitest) con coverage ≥80%, build.
+# Ver docs/adr/001-stack-selection.md y CLAUDE.md principio 1 (zero tech debt).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9.15.4'
+  # Coverage mínimo bloqueante. Subir conforme el repo madure.
+  COVERAGE_MIN_LINES: 80
+  COVERAGE_MIN_BRANCHES: 75
+  COVERAGE_MIN_FUNCTIONS: 80
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Setup — instala deps una vez, reusa en jobs subsiguientes via cache
+  # ---------------------------------------------------------------------------
+  setup:
+    name: Install dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+  # ---------------------------------------------------------------------------
+  # Lint — Biome (strict, bloqueante)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (Biome)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - name: Format check
+        run: pnpm format:check
+
+  # ---------------------------------------------------------------------------
+  # Typecheck — tsc --noEmit por workspace (Turborepo paraleliza)
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: Typecheck (tsc)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  # ---------------------------------------------------------------------------
+  # Test + Coverage Gate (≥80% bloqueante)
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test + Coverage (≥${{ env.COVERAGE_MIN_LINES }}%)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+      - name: Check coverage thresholds
+        run: |
+          # Busca todos los coverage-summary.json y valida umbrales.
+          # Vitest emite uno por workspace en coverage/coverage-summary.json.
+          fail=0
+          for f in $(find . -name coverage-summary.json -not -path './node_modules/*'); do
+            echo "Checking $f"
+            node -e "
+              const r = require('./$f').total;
+              const min = { lines: ${{ env.COVERAGE_MIN_LINES }}, branches: ${{ env.COVERAGE_MIN_BRANCHES }}, functions: ${{ env.COVERAGE_MIN_FUNCTIONS }} };
+              let ok = true;
+              for (const key of Object.keys(min)) {
+                const pct = r[key]?.pct ?? 0;
+                const status = pct >= min[key] ? '✓' : '✗';
+                console.log(\`  \${status} \${key}: \${pct}% (min \${min[key]}%)\`);
+                if (pct < min[key]) ok = false;
+              }
+              process.exit(ok ? 0 : 1);
+            " || fail=1
+          done
+          if [ $fail -eq 1 ]; then
+            echo ""
+            echo "::error::Coverage thresholds not met. Add tests or justify in PR."
+            exit 1
+          fi
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: '**/coverage/**'
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Build — cada app y package compila a producción
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            apps/*/dist/**
+            packages/*/dist/**
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Final gate — todos los jobs previos deben pasar
+  # ---------------------------------------------------------------------------
+  ci-success:
+    name: CI Success
+    needs: [lint, typecheck, test, build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.typecheck.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::One or more CI jobs failed"
+            exit 1
+          fi
+          echo "✓ All CI jobs passed"
