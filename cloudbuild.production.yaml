@@ -50,18 +50,26 @@ steps:
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
+  #
+  # Usamos `services update --image` (no `run deploy`) porque Terraform es
+  # el owner único de la config Cloud Run: env vars, secrets, service
+  # account, scaling, VPC connector, etc. `gcloud run deploy` sin flags
+  # pisa TODA la config y deja el service sin secrets → el bot revienta
+  # validando WHATSAPP_ACCESS_TOKEN/APP_SECRET/PHONE_NUMBER_ID.
+  # `services update --image` sólo cambia la imagen y preserva el resto.
   # =========================================================================
   - id: deploy-api
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
       - run
-      - deploy
+      - services
+      - update
       - booster-ai-api
       - --image=${_REGISTRY}/api:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --labels=env=production,commit=${_COMMIT_SHA}
+      - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-api]
 
   - id: deploy-whatsapp-bot
@@ -69,12 +77,13 @@ steps:
     entrypoint: gcloud
     args:
       - run
-      - deploy
+      - services
+      - update
       - booster-ai-whatsapp-bot
       - --image=${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --labels=env=production,commit=${_COMMIT_SHA}
+      - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-whatsapp-bot]
 
   # =========================================================================
