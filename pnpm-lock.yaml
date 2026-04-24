@@ -48,8 +48,8 @@ importers:
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.14)
       '@hono/zod-validator':
-        specifier: ^0.4.1
-        version: 0.4.3(hono@4.12.14)(zod@3.25.76)
+        specifier: ^0.7.6
+        version: 0.7.6(hono@4.12.14)(zod@3.25.76)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -2166,11 +2166,11 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@hono/zod-validator@0.4.3':
-    resolution: {integrity: sha512-xIgMYXDyJ4Hj6ekm9T9Y27s080Nl9NXHcJkOvkXPhubOLj8hZkOL8pDnnXfvCf5xEE8Q4oMFenQUZZREUY2gqQ==}
+  '@hono/zod-validator@0.7.6':
+    resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
     peerDependencies:
       hono: '>=3.9.0'
-      zod: ^3.19.1
+      zod: ^3.25.0 || ^4.0.0
 
   '@hookform/resolvers@3.10.0':
     resolution: {integrity: sha512-79Dv+3mDF7i+2ajj7SkypSKHhl1cbln1OGavqrsF7p6mbUv11xpqpacPsGDCTRvCSjEEIez2ef1NveSVL3b0Ag==}
@@ -7862,7 +7862,7 @@ snapshots:
     dependencies:
       hono: 4.12.14
 
-  '@hono/zod-validator@0.4.3(hono@4.12.14)(zod@3.25.76)':
+  '@hono/zod-validator@0.7.6(hono@4.12.14)(zod@3.25.76)':
     dependencies:
       hono: 4.12.14
       zod: 3.25.76

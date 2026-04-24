@@ -16,7 +16,7 @@
     "@booster-ai/logger": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@hono/node-server": "^1.13.7",
-    "@hono/zod-validator": "^0.4.1",
+    "@hono/zod-validator": "^0.7.6",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.53.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
