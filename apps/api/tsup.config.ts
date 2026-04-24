@@ -21,11 +21,6 @@ export default defineConfig({
   noExternal: [/^@booster-ai\//],
   // Dependencias runtime que SÍ deben quedar como externals (existen en
   // node_modules del container porque están en package.json de la app).
-  //
-  // pino y pino-http se bundlean inline para evitar ERR_MODULE_NOT_FOUND
-  // (pnpm workspaces no exponen esos paquetes en /app/node_modules como
-  // carpetas directas, solo como symlinks en /app/node_modules/.pnpm/...).
-  // Son JS puro y bundlean limpiamente.
   external: [
     'pg',
     'hono',
@@ -33,6 +28,8 @@ export default defineConfig({
     '@hono/zod-validator',
     'drizzle-orm',
     'ioredis',
+    'pino',
+    'pino-http',
     'firebase-admin',
     'zod',
     '@opentelemetry/api',

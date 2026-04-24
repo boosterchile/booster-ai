@@ -1,4 +1,9 @@
 # Booster AI API — multi-stage Docker build
+#
+# Estrategia pnpm-deploy (ver apps/whatsapp-bot/Dockerfile para rationale):
+# `pnpm deploy --prod` produce un árbol auto-contenido en /prod/api con
+# flat node_modules — evita el ERR_MODULE_NOT_FOUND cuando pnpm deja
+# paquetes sólo bajo node_modules/.pnpm/<pkg>/...
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
@@ -17,15 +22,20 @@ FROM deps AS build
 COPY . .
 RUN pnpm --filter @booster-ai/api build
 
+# --- deploy stage: árbol auto-contenido production-only ---
+FROM build AS deploy
+RUN pnpm --filter=@booster-ai/api --prod deploy /prod/api
+
 # --- runtime stage ---
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S booster && adduser -S booster -G booster
+# /prod/api incluye package.json + flat node_modules (sin .pnpm symlinks).
+COPY --from=deploy --chown=booster:booster /prod/api ./
+# dist/ está en .gitignore → pnpm deploy no lo copia. Lo traemos desde build.
 COPY --from=build --chown=booster:booster /app/apps/api/dist ./dist
-COPY --from=build --chown=booster:booster /app/apps/api/package.json ./
-COPY --from=build --chown=booster:booster /app/node_modules ./node_modules
-# Migraciones Drizzle — aplicadas al startup por src/db/migrator.ts
+# Migraciones Drizzle — aplicadas al startup por src/db/migrator.ts.
 COPY --from=build --chown=booster:booster /app/apps/api/drizzle ./drizzle
 USER booster
 EXPOSE 8080
