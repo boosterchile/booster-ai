@@ -8,7 +8,7 @@
 #     cualquier paquete que pnpm normalmente deja sólo en
 #     /app/node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>.
 #   - stage `runtime` solo copia /prod/bot → imagen minimal.
-FROM node:22-alpine AS base
+FROM node:25-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -32,7 +32,7 @@ FROM build AS deploy
 RUN pnpm --filter=@booster-ai/whatsapp-bot --prod deploy /prod/bot
 
 # --- runtime stage ---
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S booster && adduser -S booster -G booster
