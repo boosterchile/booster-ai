@@ -21,7 +21,9 @@ async function main(): Promise<void> {
 
   // Correr migraciones antes de aceptar tráfico. Si falla, abortamos startup.
   // Cloud Run startup probe no ruteará hasta que el server esté listening.
-  await runMigrations(db, logger);
+  // Pasamos el pool (no el db wrapper) porque el migrator necesita un cliente
+  // dedicado para advisory lock — ver db/migrator.ts.
+  await runMigrations(pool, logger);
 
   const app = createServer({ db, logger });
 
