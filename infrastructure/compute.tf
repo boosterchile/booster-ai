@@ -12,9 +12,12 @@ locals {
     GOOGLE_CLOUD_PROJECT = var.project_id
     SERVICE_VERSION      = "0.0.0"
     # Memorystore Redis — compartido entre services para conversation store +
-    # caching de OIDC tokens + rate limiting. Privado por VPC, sin password.
-    REDIS_HOST = google_redis_instance.main.host
-    REDIS_PORT = tostring(google_redis_instance.main.port)
+    # caching de OIDC tokens + rate limiting. Privado por VPC con AUTH +
+    # transit encryption (SERVER_AUTHENTICATION) requeridos.
+    REDIS_HOST     = google_redis_instance.main.host
+    REDIS_PORT     = tostring(google_redis_instance.main.port)
+    REDIS_PASSWORD = google_redis_instance.main.auth_string
+    REDIS_TLS      = "true"
   }
 
   common_secrets = {
@@ -254,6 +257,10 @@ module "service_whatsapp_bot" {
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
     GEMINI_API_KEY     = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
   }
+
+  # Necesario para llegar a Redis (172.25.0.4) que vive en VPC privado.
+  # Sin esto, las conexiones a Memorystore Redis fallan con ETIMEDOUT.
+  vpc_connector = google_vpc_access_connector.serverless.id
 
   public = true # webhook público — Twilio postea sin IAM; el bot valida X-Twilio-Signature
 

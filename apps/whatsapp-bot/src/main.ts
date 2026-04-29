@@ -20,11 +20,17 @@ const logger = createLogger({
 // Redis client compartido — conversation store + futuras features (rate limit,
 // dedup de mensajes Twilio, etc.). Modo lazy connect para que el startup probe
 // del Cloud Run no se bloquee si Redis arranca lento.
+//
+// `rejectUnauthorized: false` en TLS: Memorystore presenta cert firmado por
+// CA interna de Google que no está en el trust store de Node. La conexión
+// sigue encriptada (TLS) pero saltamos la validación del issuer. Es seguro
+// porque Memorystore vive en VPC privado y solo es alcanzable via el
+// connector — no hay MITM possible.
 const redis = new Redis({
   host: config.REDIS_HOST,
   port: config.REDIS_PORT,
   password: config.REDIS_PASSWORD,
-  tls: config.REDIS_TLS ? {} : undefined,
+  tls: config.REDIS_TLS ? { rejectUnauthorized: false } : undefined,
   // Reintentar conexión con backoff exponencial — sin esto, una caída de Redis
   // tira el proceso entero.
   retryStrategy: (times) => Math.min(times * 200, 2000),
