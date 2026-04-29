@@ -152,13 +152,27 @@ resource "google_sql_user" "app" {
   password = random_password.pg_app_password.result
 }
 
-# Guardar password en Secret Manager (rotación posterior vía otro flujo)
+# Guardar password en Secret Manager (rotación posterior vía otro flujo).
+#
+# urlencode() en el password evita que chars reservados de URL (`:`, `?`,
+# `*`, `}`, etc.) rompan el parser zod del API. libpq decodifica el
+# percent-encoding al leer la URL, así que Cloud SQL sigue autenticando
+# contra el password literal sin cambios.
+#
+# uselibpqcompat=true&sslmode=require: pg v9+/pg-connection-string v3+
+# tratan `sslmode=require` como `verify-full` (validación estricta del CA),
+# pero Cloud SQL usa un CA interno que no está en el trust store de Node →
+# UNABLE_TO_VERIFY_LEAF_SIGNATURE. Con `uselibpqcompat=true` el driver
+# vuelve a la semántica clásica de libpq (encrypted-but-unverified), que
+# es aceptable porque la conexión va por VPC privada hacia Cloud SQL.
+# Para verify-full real habría que montar el server CA de Cloud SQL como
+# secret y pasar sslrootcert= — task de hardening pendiente (#TODO).
 resource "google_secret_manager_secret_version" "database_url" {
   secret = google_secret_manager_secret.secrets["database-url"].id
   secret_data = format(
-    "postgresql://%s:%s@%s:5432/%s?sslmode=require",
+    "postgresql://%s:%s@%s:5432/%s?sslmode=require&uselibpqcompat=true",
     google_sql_user.app.name,
-    random_password.pg_app_password.result,
+    urlencode(random_password.pg_app_password.result),
     google_sql_database_instance.main.private_ip_address,
     google_sql_database.booster_ai.name,
   )
