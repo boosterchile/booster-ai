@@ -106,35 +106,35 @@ steps:
       - -c
       - |
         set -eu
-        # Resolver dinámicamente la URL del Cloud Run service. La gcloud CLI
-        # no está en este image, así que usamos la metadata: la URL sigue
-        # patrón https://<service>-<project_number>.<region>.run.app.
+        # Cloud Build interpreta $VAR como substitution; usamos $$ para emitir
+        # un $ literal y que bash lo reciba como variable.
         API_URL="https://booster-ai-api-469283083998.southamerica-west1.run.app"
         BOT_URL="https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app"
 
         check_endpoint() {
-          local url=$1
+          local url=$$1
           for i in 1 2 3 4 5; do
-            if curl -fsS --max-time 10 "$url" > /dev/null; then
-              echo "$url ✓"
+            if curl -fsS --max-time 10 "$$url" > /dev/null; then
+              echo "$$url OK"
               return 0
             fi
-            echo "$url failed, retry $i/5 in 30s..."
+            echo "$$url failed, retry $$i/5 in 30s..."
             sleep 30
           done
-          echo "$url FAILED after 5 attempts"
+          echo "$$url FAILED after 5 attempts"
           return 1
         }
-        check_endpoint "$API_URL/health"
-        # El webhook GET con wrong token debe devolver 403 (no 500) — eso ya confirma
-        # que el bot está serving y leyó el env var VERIFY_TOKEN correctamente.
-        status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-          "$BOT_URL/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=test")
-        if [ "$status" != "403" ]; then
-          echo "whatsapp webhook smoke failed: expected 403, got $status"
+        check_endpoint "$$API_URL/health"
+        # Twilio webhook con firma inválida debe devolver 403. Probamos sin
+        # X-Twilio-Signature → el bot rechaza con 403, lo cual confirma que
+        # está serving y validando firmas (pero no podemos autenticar de afuera).
+        status=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
+          "$$BOT_URL/webhooks/whatsapp" -d "Body=test")
+        if [ "$$status" != "403" ]; then
+          echo "twilio webhook smoke failed: expected 403, got $$status"
           exit 1
         fi
-        echo "whatsapp webhook ✓ (returns 403 on wrong token as expected)"
+        echo "twilio webhook OK (returns 403 without signature as expected)"
     waitFor: [deploy-api, deploy-whatsapp-bot]
 
 substitutions:
