@@ -1,24 +1,30 @@
 /**
  * @booster-ai/whatsapp-client
  *
- * Cliente mínimo para Meta WhatsApp Business Cloud API v20.0.
+ * Clientes para los dos BSPs que soportamos:
+ *  - Meta WhatsApp Cloud API (verifyMetaSignature + WhatsAppClient)
+ *  - Twilio Programmable Messaging WhatsApp (verifyTwilioSignature + TwilioWhatsAppClient)
  *
- * Thin slice scope (Fase 6):
- *  - verifyMetaSignature: HMAC-SHA256 del body raw con X-Hub-Signature-256
- *  - WhatsAppClient.sendText: enviar mensajes de texto outbound
- *
- * Expansión prevista en slices siguientes:
- *  - Mensajes interactivos (botones, listas) para reemplazar menús numerados
- *  - Templates para mensajes fuera de ventana 24h (notificaciones push-like)
- *  - Media (imágenes, documentos) para compartir guías de despacho PDF
- *  - Webhooks de status (delivered, read) para tracking de notificaciones
+ * El bot apps/whatsapp-bot decide en runtime cuál usar según env vars
+ * (presencia de TWILIO_ACCOUNT_SID lo selecciona como Twilio).
  */
 
+// Meta Cloud API path
 export { verifyMetaSignature } from './signature.js';
 export {
   WhatsAppClient,
   WhatsAppApiError,
   type WhatsAppClientOptions,
-  type SendTextParams,
-  type SendTextResponse,
+  type SendTextParams as MetaSendTextParams,
+  type SendTextResponse as MetaSendTextResponse,
 } from './client.js';
+
+// Twilio path
+export { verifyTwilioSignature } from './twilio-signature.js';
+export {
+  TwilioWhatsAppClient,
+  TwilioApiError,
+  type TwilioClientOptions,
+  type SendTextParams as TwilioSendTextParams,
+  type SendTextResponse as TwilioSendTextResponse,
+} from './twilio-client.js';

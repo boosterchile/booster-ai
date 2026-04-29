@@ -1,5 +1,5 @@
 import { createLogger } from '@booster-ai/logger';
-import { WhatsAppClient } from '@booster-ai/whatsapp-client';
+import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
@@ -16,9 +16,10 @@ const logger = createLogger({
   pretty: config.NODE_ENV === 'development',
 });
 
-const whatsAppClient = new WhatsAppClient({
-  phoneNumberId: config.WHATSAPP_PHONE_NUMBER_ID,
-  accessToken: config.WHATSAPP_ACCESS_TOKEN,
+const whatsAppClient = new TwilioWhatsAppClient({
+  accountSid: config.TWILIO_ACCOUNT_SID,
+  authToken: config.TWILIO_AUTH_TOKEN,
+  fromNumber: config.TWILIO_FROM_NUMBER,
   logger,
 });
 
@@ -56,8 +57,8 @@ app.route(
     store,
     whatsAppClient,
     apiClient,
-    appSecret: config.WHATSAPP_APP_SECRET,
-    verifyToken: config.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+    authToken: config.TWILIO_AUTH_TOKEN,
+    webhookUrl: config.TWILIO_WEBHOOK_URL,
     logger,
   }),
 );

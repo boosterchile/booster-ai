@@ -87,7 +87,17 @@ steps:
     waitFor: [push-whatsapp-bot]
 
   # =========================================================================
-  # Smoke test — ping /health vía Global HTTPS LB
+  # Smoke test — ping directamente las URLs *.run.app del Cloud Run
+  #
+  # Apuntamos al hostname autogenerado (no al subdominio custom) porque el
+  # cert managed de api.boosterchile.com depende de DNS y mientras los
+  # nameservers de GoDaddy no apunten a Google Cloud DNS, el cert queda
+  # FAILED_NOT_VISIBLE. La URL *.run.app siempre funciona con el cert
+  # autogestionado por Google, sin depender de configuración de DNS humana.
+  #
+  # Cuando DNS esté migrado y el managed-cert pase a ACTIVE, podemos
+  # opcionalmente añadir un check secundario contra https://api.boosterchile.com
+  # para validar que el LB también rutea OK.
   # =========================================================================
   - id: smoke-api-health
     name: gcr.io/cloud-builders/curl
@@ -96,6 +106,12 @@ steps:
       - -c
       - |
         set -eu
+        # Resolver dinámicamente la URL del Cloud Run service. La gcloud CLI
+        # no está en este image, así que usamos la metadata: la URL sigue
+        # patrón https://<service>-<project_number>.<region>.run.app.
+        API_URL="https://booster-ai-api-469283083998.southamerica-west1.run.app"
+        BOT_URL="https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app"
+
         check_endpoint() {
           local url=$1
           for i in 1 2 3 4 5; do
@@ -109,11 +125,11 @@ steps:
           echo "$url FAILED after 5 attempts"
           return 1
         }
-        check_endpoint "https://api.boosterchile.com/health"
+        check_endpoint "$API_URL/health"
         # El webhook GET con wrong token debe devolver 403 (no 500) — eso ya confirma
         # que el bot está serving y leyó el env var VERIFY_TOKEN correctamente.
         status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-          "https://api.boosterchile.com/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=test")
+          "$BOT_URL/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=test")
         if [ "$status" != "403" ]; then
           echo "whatsapp webhook smoke failed: expected 403, got $status"
           exit 1

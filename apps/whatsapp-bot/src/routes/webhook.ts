@@ -1,99 +1,96 @@
 import type { Logger } from '@booster-ai/logger';
-import {
-  type CargoType,
-  WhatsAppWebhookPayload,
-  chileanPhoneSchema,
-  isTextMessage,
-} from '@booster-ai/shared-schemas';
-import { type WhatsAppClient, verifyMetaSignature } from '@booster-ai/whatsapp-client';
+import { type CargoType, chileanPhoneSchema } from '@booster-ai/shared-schemas';
+import { type TwilioWhatsAppClient, verifyTwilioSignature } from '@booster-ai/whatsapp-client';
 import { Hono } from 'hono';
 import { PROMPTS } from '../conversation/prompts.js';
 import type { ConversationStore } from '../conversation/store.js';
 import type { ApiClient } from '../services/api-client.js';
 
 /**
- * Routes del webhook Meta:
- *   GET  /webhook — verificación inicial (hub.challenge)
- *   POST /webhook — recepción de mensajes inbound firmados HMAC
+ * Routes del webhook Twilio:
+ *   POST /webhooks/whatsapp — recepción de mensajes inbound firmados HMAC-SHA1
+ *
+ * Twilio NO usa un GET handshake como Meta — cada POST es directo y el bot
+ * valida via X-Twilio-Signature.
+ *
+ * Body de Twilio es application/x-www-form-urlencoded con campos como:
+ *   From=whatsapp:+56957790379
+ *   To=whatsapp:+19383365293
+ *   Body=hola
+ *   MessageSid=SMxxx
+ *   AccountSid=ACxxx
+ *   ProfileName=John
+ *   WaId=56957790379
+ *   ...
  */
 export function createWebhookRoutes(opts: {
   store: ConversationStore;
-  whatsAppClient: WhatsAppClient;
+  whatsAppClient: TwilioWhatsAppClient;
   apiClient: ApiClient;
-  appSecret: string;
-  verifyToken: string;
+  authToken: string;
+  webhookUrl: string;
   logger: Logger;
 }) {
-  const { store, whatsAppClient, apiClient, appSecret, verifyToken, logger } = opts;
+  const { store, whatsAppClient, apiClient, authToken, webhookUrl, logger } = opts;
   const app = new Hono();
 
-  // --- Meta webhook verification handshake ---
-  app.get('/webhooks/whatsapp', (c) => {
-    const mode = c.req.query('hub.mode');
-    const token = c.req.query('hub.verify_token');
-    const challenge = c.req.query('hub.challenge');
+  // Twilio no usa GET handshake. Si pinguean GET, devolvemos 200 vacío para health-check
+  // de la consola Twilio (Twilio a veces pinguea GET para validar TLS).
+  app.get('/webhooks/whatsapp', (c) => c.text('OK', 200));
 
-    if (mode === 'subscribe' && token === verifyToken && challenge) {
-      logger.info('Webhook verification succeeded');
-      return c.text(challenge, 200);
+  // --- Twilio webhook message handler ---
+  app.post('/webhooks/whatsapp', async (c) => {
+    const rawBody = await c.req.text();
+    const signatureHeader = c.req.header('x-twilio-signature');
+
+    // Body de Twilio viene form-encoded (no JSON).
+    const params: Record<string, string> = {};
+    const searchParams = new URLSearchParams(rawBody);
+    for (const [key, value] of searchParams.entries()) {
+      params[key] = value;
     }
 
-    logger.warn({ mode }, 'Webhook verification failed');
-    return c.text('Forbidden', 403);
-  });
-
-  // --- Meta webhook message handler ---
-  app.post('/webhooks/whatsapp', async (c) => {
-    // Crítico: leer body raw ANTES de parse para verificación HMAC.
-    const rawBody = await c.req.text();
-    const signatureHeader = c.req.header('x-hub-signature-256');
-
-    if (!verifyMetaSignature(rawBody, signatureHeader, appSecret)) {
-      logger.warn('Webhook signature invalid');
+    if (!verifyTwilioSignature(authToken, signatureHeader, webhookUrl, params)) {
+      logger.warn(
+        { signatureProvided: !!signatureHeader, signatureLen: signatureHeader?.length },
+        'Twilio webhook signature invalid',
+      );
       return c.text('Forbidden', 403);
     }
 
-    // Parse + validar con Zod.
-    let payload: unknown;
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
+    const from = params.From; // "whatsapp:+56957790379"
+    const body = params.Body ?? '';
+    const messageSid = params.MessageSid ?? '';
+
+    if (!from || !from.startsWith('whatsapp:')) {
+      logger.warn({ from }, 'Webhook payload missing/invalid From');
       return c.text('Bad request', 400);
     }
 
-    const parsed = WhatsAppWebhookPayload.safeParse(payload);
-    if (!parsed.success) {
-      logger.warn({ issues: parsed.error.issues }, 'Webhook payload shape invalid');
-      return c.text('Bad request', 400);
+    // Strip "whatsapp:" prefix → +E164
+    const phoneE164 = from.slice('whatsapp:'.length);
+
+    // Twilio puede mandar status callbacks (delivered, read) y otros eventos
+    // que no son mensajes de texto del user. Detectamos por la presencia de Body.
+    if (!body) {
+      logger.debug({ messageSid, params }, 'ignoring non-text webhook event');
+      return c.text('EVENT_RECEIVED', 200);
     }
 
-    // Meta manda at-least-once → responder 200 rápido y procesar asíncronamente.
-    // En el thin slice lo hacemos sincrónicamente por simplicidad (<5s p99).
+    // Procesar de forma síncrona en el thin slice (Twilio retry policy es
+    // razonable y el procesamiento total es <5s p99).
     try {
-      for (const entry of parsed.data.entry) {
-        for (const change of entry.changes) {
-          const messages = change.value.messages ?? [];
-          for (const message of messages) {
-            if (!isTextMessage(message)) {
-              logger.debug({ type: message.type }, 'ignoring non-text message');
-              continue;
-            }
-            await handleTextMessage({
-              waId: message.from,
-              messageId: message.id,
-              text: message.text.body,
-              store,
-              whatsAppClient,
-              apiClient,
-              logger,
-            });
-          }
-        }
-      }
+      await handleTextMessage({
+        phoneE164,
+        text: body,
+        store,
+        whatsAppClient,
+        apiClient,
+        logger,
+      });
     } catch (err) {
-      logger.error({ err }, 'Error processing webhook — returning 200 anyway');
-      // Responder 200 igual: si devolvemos 5xx, Meta va a retry indefinidamente.
-      // Los errores quedan en Cloud Logging + eventual DLQ.
+      logger.error({ err, messageSid }, 'Error processing webhook — returning 200 anyway');
+      // Responder 200 igual: si devolvemos 5xx, Twilio retry. Errores quedan en logs.
     }
 
     return c.text('EVENT_RECEIVED', 200);
@@ -104,28 +101,24 @@ export function createWebhookRoutes(opts: {
 
 /**
  * Procesa un mensaje de texto inbound:
- * 1. Carga/crea sesión del shipper (por wa_id).
+ * 1. Carga/crea sesión del shipper (por número E.164).
  * 2. Envía evento USER_MESSAGE al state machine.
  * 3. Lee el estado resultante y manda el prompt correspondiente.
  * 4. Si llegamos al estado 'submitted' → llama al api y limpia la sesión.
  */
 async function handleTextMessage(args: {
-  waId: string;
-  messageId: string;
+  phoneE164: string;
   text: string;
   store: ConversationStore;
-  whatsAppClient: WhatsAppClient;
+  whatsAppClient: TwilioWhatsAppClient;
   apiClient: ApiClient;
   logger: Logger;
 }): Promise<void> {
-  const { waId, text, store, whatsAppClient, apiClient, logger } = args;
+  const { phoneE164, text, store, whatsAppClient, apiClient, logger } = args;
 
-  // Meta manda wa_id sin "+". Normalizamos a E.164 chileno +56...
-  const phoneE164 = `+${waId}`;
   const phoneCheck = chileanPhoneSchema.safeParse(phoneE164);
   if (!phoneCheck.success) {
-    // Número fuera de Chile o formato no soportado — responder cortésmente.
-    logger.info({ waId }, 'non-Chilean phone, ignoring');
+    logger.info({ phoneE164 }, 'non-Chilean phone, ignoring');
     return;
   }
 
@@ -137,13 +130,11 @@ async function handleTextMessage(args: {
 
   logger.debug({ stateBefore, stateAfter }, 'conversation transition');
 
-  // Mapear estado → prompt a enviar.
   const reply = resolvePrompt(stateAfter);
   if (reply) {
-    await whatsAppClient.sendText({ to: waId, body: reply });
+    await whatsAppClient.sendText({ to: phoneE164, body: reply });
   }
 
-  // Estado final: submit o cancel.
   if (snapshot.status === 'done') {
     if (stateAfter === 'submitted') {
       await submitIntake({
@@ -151,7 +142,6 @@ async function handleTextMessage(args: {
         phoneE164,
         apiClient,
         whatsAppClient,
-        waId,
         logger,
       });
     }
@@ -163,18 +153,16 @@ async function submitIntake(args: {
   session: ReturnType<ConversationStore['getOrCreate']>;
   phoneE164: string;
   apiClient: ApiClient;
-  whatsAppClient: WhatsAppClient;
-  waId: string;
+  whatsAppClient: TwilioWhatsAppClient;
   logger: Logger;
 }): Promise<void> {
-  const { session, phoneE164, apiClient, whatsAppClient, waId, logger } = args;
+  const { session, phoneE164, apiClient, whatsAppClient, logger } = args;
   const ctx = session.actor.getSnapshot().context;
 
   if (!ctx.originAddressRaw || !ctx.destinationAddressRaw || !ctx.cargoType || !ctx.pickupDateRaw) {
-    // No debería pasar si el state machine está bien definido, pero defendemos.
     logger.error({ ctx }, 'Incomplete context at submit time');
     await whatsAppClient.sendText({
-      to: waId,
+      to: phoneE164,
       body: 'Ups, algo salió mal con tu solicitud. Escribe "hola" para empezar de nuevo.',
     });
     return;
@@ -190,22 +178,20 @@ async function submitIntake(args: {
     });
 
     await whatsAppClient.sendText({
-      to: waId,
+      to: phoneE164,
       body: PROMPTS.confirmed(result.tracking_code),
     });
     logger.info({ trackingCode: result.tracking_code }, 'intake submitted');
   } catch (err) {
     logger.error({ err }, 'Failed to create trip request via api');
     await whatsAppClient.sendText({
-      to: waId,
+      to: phoneE164,
       body: 'Ups, no pudimos registrar tu solicitud ahora. Intenta de nuevo en unos minutos escribiendo "hola".',
     });
   }
 }
 
 function resolvePrompt(state: unknown): string | null {
-  // state puede ser string simple ("greeting") o objeto nested — en esta
-  // máquina todos los estados son simples strings de primer nivel.
   if (typeof state !== 'string') {
     return null;
   }
@@ -230,7 +216,6 @@ function resolvePrompt(state: unknown): string | null {
     case 'cancelled':
       return PROMPTS.cancelled;
     case 'submitted':
-      // El mensaje de confirmación lo manda submitIntake() con el tracking code.
       return null;
     default:
       return null;

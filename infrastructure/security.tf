@@ -101,6 +101,12 @@ locals {
     # Thin slice Fase 6 — verify token custom para handshake inicial de Meta webhook
     # Generar con: openssl rand -hex 32 | gcloud secrets versions add whatsapp-webhook-verify-token --data-file=-
     "whatsapp-webhook-verify-token",
+
+    # Twilio WhatsApp BSP (Fase 6.4) — el número físico está en Twilio, así que
+    # el bot usa Twilio API en lugar de Meta Cloud API directo. Auth Token se
+    # usa tanto para Basic auth en el envío como para HMAC del webhook.
+    "twilio-account-sid",
+    "twilio-auth-token",
   ]
 }
 

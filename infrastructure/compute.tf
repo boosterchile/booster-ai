@@ -208,23 +208,28 @@ module "service_whatsapp_bot" {
   min_instances = 1 # webhook Meta requiere respuesta rápida
   max_instances = 20
 
-  # Thin slice (Fase 6) — además de los secrets, el bot necesita env vars
-  # que apuntan al apps/api y al audience del OIDC token.
+  # Fase 6.4 — bot migró a Twilio API (el número +1 938-336-5293 está en Twilio).
+  # TWILIO_ACCOUNT_SID y TWILIO_FROM_NUMBER son env vars; TWILIO_AUTH_TOKEN
+  # va por Secret Manager.
+  #
+  # TWILIO_WEBHOOK_URL debe coincidir EXACTAMENTE con la URL configurada en
+  # Twilio console (porque Twilio firma con la URL). Apuntamos al Cloud Run
+  # *.run.app directo mientras DNS api.boosterchile.com no esté migrado.
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME      = "booster-ai-whatsapp-bot"
-    API_URL           = "https://api.boosterchile.com"
-    API_OIDC_AUDIENCE = "https://api.boosterchile.com"
+    SERVICE_NAME        = "booster-ai-whatsapp-bot"
+    API_URL             = "https://api.boosterchile.com"
+    API_OIDC_AUDIENCE   = "https://api.boosterchile.com"
+    TWILIO_FROM_NUMBER  = "+19383365293"
+    TWILIO_WEBHOOK_URL  = "https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app/webhooks/whatsapp"
   })
 
   secrets = {
-    WHATSAPP_APP_SECRET           = google_secret_manager_secret.secrets["whatsapp-app-secret"].secret_id
-    WHATSAPP_ACCESS_TOKEN         = google_secret_manager_secret.secrets["whatsapp-access-token"].secret_id
-    WHATSAPP_PHONE_NUMBER_ID      = google_secret_manager_secret.secrets["whatsapp-phone-number-id"].secret_id
-    WHATSAPP_WEBHOOK_VERIFY_TOKEN = google_secret_manager_secret.secrets["whatsapp-webhook-verify-token"].secret_id
-    GEMINI_API_KEY                = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
+    TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
+    TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+    GEMINI_API_KEY     = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
   }
 
-  public = false # tráfico público entra via Global HTTPS LB (networking.tf); Cloud Run no acepta allUsers por org policy # webhook requiere invocación desde Meta
+  public = true # webhook público — Twilio postea sin IAM; el bot valida X-Twilio-Signature
 
   secret_versions_ready = local.all_secret_versions_ready
 
