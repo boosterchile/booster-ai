@@ -3,6 +3,7 @@ import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
+import Redis from 'ioredis';
 import { config } from './config.js';
 import { ConversationStore } from './conversation/store.js';
 import { healthRouter } from './routes/health.js';
@@ -15,6 +16,30 @@ const logger = createLogger({
   level: config.LOG_LEVEL,
   pretty: config.NODE_ENV === 'development',
 });
+
+// Redis client compartido — conversation store + futuras features (rate limit,
+// dedup de mensajes Twilio, etc.). Modo lazy connect para que el startup probe
+// del Cloud Run no se bloquee si Redis arranca lento.
+const redis = new Redis({
+  host: config.REDIS_HOST,
+  port: config.REDIS_PORT,
+  password: config.REDIS_PASSWORD,
+  tls: config.REDIS_TLS ? {} : undefined,
+  // Reintentar conexión con backoff exponencial — sin esto, una caída de Redis
+  // tira el proceso entero.
+  retryStrategy: (times) => Math.min(times * 200, 2000),
+  maxRetriesPerRequest: 3,
+  lazyConnect: false,
+});
+
+redis.on('error', (err) => {
+  // Loggear pero no crashear — los handlers del bot manejan errores de Redis
+  // localmente. Si Redis se cae, las conversaciones nuevas fallan pero el bot
+  // sigue serving (puede responder con mensaje de error gracioso).
+  logger.error({ err }, 'redis connection error');
+});
+
+redis.on('connect', () => logger.info('redis connected'));
 
 const whatsAppClient = new TwilioWhatsAppClient({
   accountSid: config.TWILIO_ACCOUNT_SID,
@@ -29,7 +54,7 @@ const apiClient = new ApiClient({
   logger,
 });
 
-const store = new ConversationStore(config.CONVERSATION_TTL_MS);
+const store = new ConversationStore(redis, config.CONVERSATION_TTL_MS, logger);
 
 const app = new Hono();
 
@@ -57,6 +82,7 @@ app.route(
     store,
     whatsAppClient,
     apiClient,
+    redis,
     authToken: config.TWILIO_AUTH_TOKEN,
     webhookUrl: config.TWILIO_WEBHOOK_URL,
     logger,
@@ -82,7 +108,10 @@ const server = serve(
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    logger.info({ signal, activeSessions: store.size() }, 'shutdown signal received');
-    server.close(() => process.exit(0));
+    logger.info({ signal }, 'shutdown signal received');
+    server.close(() => {
+      // Cerrar Redis después del HTTP server para drenar requests in-flight.
+      redis.quit().finally(() => process.exit(0));
+    });
   });
 }

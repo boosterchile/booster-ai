@@ -7,10 +7,14 @@
 
 locals {
   common_env_vars = {
-    NODE_ENV            = var.environment == "prod" ? "production" : "staging"
-    LOG_LEVEL           = "info"
+    NODE_ENV             = var.environment == "prod" ? "production" : "staging"
+    LOG_LEVEL            = "info"
     GOOGLE_CLOUD_PROJECT = var.project_id
-    SERVICE_VERSION     = "0.0.0"
+    SERVICE_VERSION      = "0.0.0"
+    # Memorystore Redis — compartido entre services para conversation store +
+    # caching de OIDC tokens + rate limiting. Privado por VPC, sin password.
+    REDIS_HOST = google_redis_instance.main.host
+    REDIS_PORT = tostring(google_redis_instance.main.port)
   }
 
   common_secrets = {
@@ -25,6 +29,16 @@ locals {
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
   )
+
+  # URLs *.run.app de los Cloud Run services. Cloud Run nombra cada service como
+  # https://<service-name>-<project-number>.<region>.run.app. Calculamos las
+  # URLs aquí para usar como audience del OIDC token + URL pública del webhook
+  # mientras DNS api.boosterchile.com no esté migrado a Cloud DNS.
+  #
+  # Cuando DNS esté listo y los certs en ACTIVE, podemos cambiar estas locals
+  # por las URLs custom (https://api.boosterchile.com) sin tocar las refs.
+  cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
+  cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
 }
 
 # --- apps/api ---
@@ -42,14 +56,16 @@ module "service_api" {
   memory        = "1Gi"
 
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME         = "booster-ai-api"
-    REDIS_HOST           = google_redis_instance.main.host
-    REDIS_PORT           = tostring(google_redis_instance.main.port)
-    FIREBASE_PROJECT_ID  = var.project_id
-    # Thin slice (Fase 6)
-    API_AUDIENCE         = "https://api.boosterchile.com"
+    SERVICE_NAME        = "booster-ai-api"
+    FIREBASE_PROJECT_ID = var.project_id
+    # API_AUDIENCE valida los OIDC tokens entrantes. Debe coincidir con la URL
+    # exacta que el caller usa (que viene del audience del token). Mientras
+    # los callers (bot, otros services internos) usan la URL *.run.app, el
+    # audience también es esa URL. Cuando DNS migre, agregar api.boosterchile.com
+    # como segundo audience permitido o cambiar acá.
+    API_AUDIENCE         = local.cloud_run_api_url
     ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
-    CORS_ALLOWED_ORIGINS = "https://api.boosterchile.com,https://boosterchile.com,https://marketing.boosterchile.com"
+    CORS_ALLOWED_ORIGINS = "https://api.boosterchile.com,https://boosterchile.com,https://marketing.boosterchile.com,${local.cloud_run_api_url}"
   })
   secrets = local.common_secrets
 
@@ -216,11 +232,21 @@ module "service_whatsapp_bot" {
   # Twilio console (porque Twilio firma con la URL). Apuntamos al Cloud Run
   # *.run.app directo mientras DNS api.boosterchile.com no esté migrado.
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME        = "booster-ai-whatsapp-bot"
-    API_URL             = "https://api.boosterchile.com"
-    API_OIDC_AUDIENCE   = "https://api.boosterchile.com"
-    TWILIO_FROM_NUMBER  = "+19383365293"
-    TWILIO_WEBHOOK_URL  = "https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app/webhooks/whatsapp"
+    SERVICE_NAME      = "booster-ai-whatsapp-bot"
+    # Apuntamos al *.run.app del api directamente. Cuando DNS migre, cambiar
+    # la local cloud_run_api_url. El bot inyecta este valor como audience del
+    # OIDC token outbound y como URL del POST.
+    API_URL           = local.cloud_run_api_url
+    API_OIDC_AUDIENCE = local.cloud_run_api_url
+    # TWILIO_FROM_NUMBER: variable porque cambia entre sandbox y producción.
+    # Sandbox compartido (+14155238886) hasta que +19383365293 esté
+    # registrado como WhatsApp Sender via Meta business verification (runbook
+    # docs/runbooks/twilio-sender-registration.md).
+    TWILIO_FROM_NUMBER = var.twilio_from_number
+    # TWILIO_WEBHOOK_URL debe matchear la URL configurada en Twilio sandbox
+    # settings exactamente — la firma X-Twilio-Signature se computa sobre
+    # esta URL + sorted body params.
+    TWILIO_WEBHOOK_URL = "${local.cloud_run_bot_url}/webhooks/whatsapp"
   })
 
   secrets = {

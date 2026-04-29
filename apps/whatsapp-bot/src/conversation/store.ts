@@ -1,78 +1,90 @@
-import { type Actor, createActor } from 'xstate';
+import type { Logger } from '@booster-ai/logger';
+import type Redis from 'ioredis';
+import { type Actor, type Snapshot, createActor } from 'xstate';
 import { conversationMachine } from './machine.js';
 
 /**
- * Store in-memory de sesiones de conversación activas.
+ * Conversation store backed by Redis.
  *
- * Scope del thin slice: una Map simple con TTL. Esto funciona mientras haya
- * UNA sola instancia de whatsapp-bot (min_instances=1, max_instances=20 en
- * Terraform).
+ * Cada sesión se serializa a JSON via XState `getPersistedSnapshot()` y se
+ * guarda en una key `bot:session:<phoneE164>` con TTL. Cuando llega un mensaje
+ * inbound, deserializamos y rehidratamos el actor — eso permite que cualquier
+ * instancia del bot procese cualquier mensaje sin afinidad por user.
  *
- * Con múltiples instancias, el webhook de Meta puede rutearse a instancias
- * distintas entre mensajes del mismo user → estado perdido. Si sucede:
- *   - Slice 2: migrar a Firestore (realtime sync entre instancias).
- *   - Alternativa: sticky routing por phone_number_id en el LB (menos flexible).
+ * Operaciones:
+ *   - load:    GET → JSON parse → createActor({ snapshot }). Si no existe, crea fresh.
+ *   - save:    actor.getPersistedSnapshot() → JSON → SET con EX ttlMs/1000.
+ *   - remove:  DEL del key (al terminar el flow).
  *
- * Por ahora (thin slice) esto es aceptable porque hay poco tráfico de prueba.
+ * Concurrencia: si dos webhooks del mismo user llegan simultáneamente (Twilio
+ * raramente hace eso pero puede), se podría procesar el segundo con un
+ * snapshot obsoleto. Aceptable en thin slice — el state machine es lineal y
+ * mensajes duplicados no rompen invariantes. Iteración 2: Redis Lua script
+ * con WATCH/MULTI o lock distribuido SET NX EX.
  */
 export class ConversationStore {
-  private sessions = new Map<string, Session>();
+  constructor(
+    private readonly redis: Redis,
+    private readonly ttlMs: number,
+    private readonly logger: Logger,
+  ) {}
 
-  constructor(private readonly ttlMs: number) {
-    // Cleanup periódico — borra sesiones expiradas cada minuto.
-    setInterval(() => this.reap(), 60_000).unref();
+  /**
+   * Carga la sesión del shipper o crea una nueva si no existe.
+   * Devuelve el actor ya `start()`-eado y listo para recibir eventos.
+   */
+  async load(shipperWhatsapp: string): Promise<Session> {
+    const key = this.key(shipperWhatsapp);
+    const raw = await this.redis.get(key);
+
+    let actor: Actor<typeof conversationMachine>;
+    if (raw) {
+      try {
+        const snapshot = JSON.parse(raw) as Snapshot<unknown>;
+        actor = createActor(conversationMachine, { snapshot });
+        actor.start();
+        // Loggear el value REAL del snapshot rehidratado (no el JSON crudo).
+        this.logger.debug(
+          { shipperWhatsapp, state: actor.getSnapshot().value },
+          'session restored from redis',
+        );
+        return { shipperWhatsapp, actor };
+      } catch (err) {
+        // Snapshot corrupto — empezar de cero. Loggear y seguir, no propagar.
+        this.logger.warn({ err, shipperWhatsapp }, 'failed to restore snapshot, starting fresh');
+        actor = createActor(conversationMachine);
+      }
+    } else {
+      actor = createActor(conversationMachine);
+    }
+    actor.start();
+    return { shipperWhatsapp, actor };
   }
 
   /**
-   * Obtiene la sesión del shipper o crea una nueva si no existe / expiró.
+   * Persiste el snapshot del actor en Redis con TTL.
+   * Llamar después de cada `actor.send()`.
    */
-  getOrCreate(shipperWhatsapp: string): Session {
-    const now = Date.now();
-    const existing = this.sessions.get(shipperWhatsapp);
-    if (existing && existing.expiresAt > now) {
-      existing.expiresAt = now + this.ttlMs;
-      return existing;
-    }
-
-    const actor = createActor(conversationMachine);
-    actor.start();
-    const session: Session = {
-      shipperWhatsapp,
-      actor,
-      expiresAt: now + this.ttlMs,
-    };
-    this.sessions.set(shipperWhatsapp, session);
-    return session;
+  async save(session: Session): Promise<void> {
+    const snapshot = session.actor.getPersistedSnapshot();
+    const key = this.key(session.shipperWhatsapp);
+    const ttlSec = Math.max(1, Math.ceil(this.ttlMs / 1000));
+    await this.redis.set(key, JSON.stringify(snapshot), 'EX', ttlSec);
   }
 
   /**
    * Borra la sesión — se llama cuando el state machine llegó a un final state.
    */
-  remove(shipperWhatsapp: string): void {
-    const session = this.sessions.get(shipperWhatsapp);
-    if (session) {
-      session.actor.stop();
-      this.sessions.delete(shipperWhatsapp);
-    }
+  async remove(shipperWhatsapp: string): Promise<void> {
+    await this.redis.del(this.key(shipperWhatsapp));
   }
 
-  private reap(): void {
-    const now = Date.now();
-    for (const [phone, session] of this.sessions) {
-      if (session.expiresAt <= now) {
-        session.actor.stop();
-        this.sessions.delete(phone);
-      }
-    }
-  }
-
-  size(): number {
-    return this.sessions.size;
+  private key(shipperWhatsapp: string): string {
+    return `bot:session:${shipperWhatsapp}`;
   }
 }
 
 export interface Session {
   shipperWhatsapp: string;
   actor: Actor<typeof conversationMachine>;
-  expiresAt: number;
 }

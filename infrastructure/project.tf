@@ -81,6 +81,9 @@ locals {
     # Billing
     "cloudbilling.googleapis.com",
     "billingbudgets.googleapis.com",
+
+    # Org Policy (para overrides a nivel proyecto, ver org-policies.tf)
+    "orgpolicy.googleapis.com",
   ]
 }
 

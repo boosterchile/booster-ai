@@ -14,6 +14,18 @@ resource "google_project_iam_member" "human_owners" {
   depends_on = [google_project_service.apis]
 }
 
+# NOTA: roles/orgpolicy.policyAdmin NO se puede grantear a nivel proyecto
+# (Google API limitation). Para que dev@ maneje overrides de org policy
+# desde Terraform, contacto@ (org admin) debe otorgarlo a nivel
+# organización con:
+#
+#   gcloud organizations add-iam-policy-binding 435506363892 \
+#     --member="user:dev@boosterchile.com" \
+#     --role="roles/orgpolicy.policyAdmin"
+#
+# Esto es one-time setup. Una vez hecho, terraform apply de dev@ puede
+# gestionar google_org_policy_policy en este proyecto.
+
 # =============================================================================
 # SERVICE ACCOUNTS — runtime + deployer
 # =============================================================================

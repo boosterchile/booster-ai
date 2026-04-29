@@ -11,5 +11,13 @@ export default defineConfig({
   sourcemap: true,
   target: 'node22',
   noExternal: [/^@booster-ai\//],
-  external: ['hono', '@hono/node-server', 'google-auth-library', 'xstate', 'pino', 'zod'],
+  external: [
+    'hono',
+    '@hono/node-server',
+    'google-auth-library',
+    'ioredis',
+    'xstate',
+    'pino',
+    'zod',
+  ],
 });

@@ -2,9 +2,13 @@ import type { Logger } from '@booster-ai/logger';
 import { type CargoType, chileanPhoneSchema } from '@booster-ai/shared-schemas';
 import { type TwilioWhatsAppClient, verifyTwilioSignature } from '@booster-ai/whatsapp-client';
 import { Hono } from 'hono';
+import type Redis from 'ioredis';
 import { PROMPTS } from '../conversation/prompts.js';
 import type { ConversationStore } from '../conversation/store.js';
 import type { ApiClient } from '../services/api-client.js';
+
+/** TTL del dedup key — match con la ventana razonable de retries de Twilio. */
+const DEDUP_TTL_SECONDS = 60 * 60; // 1h
 
 /**
  * Routes del webhook Twilio:
@@ -27,11 +31,12 @@ export function createWebhookRoutes(opts: {
   store: ConversationStore;
   whatsAppClient: TwilioWhatsAppClient;
   apiClient: ApiClient;
+  redis: Redis;
   authToken: string;
   webhookUrl: string;
   logger: Logger;
 }) {
-  const { store, whatsAppClient, apiClient, authToken, webhookUrl, logger } = opts;
+  const { store, whatsAppClient, apiClient, redis, authToken, webhookUrl, logger } = opts;
   const app = new Hono();
 
   // Twilio no usa GET handshake. Si pinguean GET, devolvemos 200 vacío para health-check
@@ -77,6 +82,24 @@ export function createWebhookRoutes(opts: {
       return c.text('EVENT_RECEIVED', 200);
     }
 
+    // Idempotencia: Twilio retry-ea webhooks que devuelven 5xx (y a veces
+    // por timeout en su side aunque hayamos respondido OK). SET NX en Redis
+    // garantiza que cada MessageSid se procesa exactamente una vez dentro
+    // de la ventana TTL. Si Redis está caído, fail-open: procesamos igual
+    // (mejor reprocessar 1 mensaje que dejarlo sin atender).
+    if (messageSid) {
+      try {
+        const dedupKey = `bot:dedup:${messageSid}`;
+        const result = await redis.set(dedupKey, '1', 'EX', DEDUP_TTL_SECONDS, 'NX');
+        if (result !== 'OK') {
+          logger.info({ messageSid }, 'duplicate webhook (already processed) — ack-200 noop');
+          return c.text('EVENT_RECEIVED', 200);
+        }
+      } catch (err) {
+        logger.warn({ err, messageSid }, 'redis dedup failed, processing anyway');
+      }
+    }
+
     // Procesar de forma síncrona en el thin slice (Twilio retry policy es
     // razonable y el procesamiento total es <5s p99).
     try {
@@ -94,6 +117,70 @@ export function createWebhookRoutes(opts: {
     }
 
     return c.text('EVENT_RECEIVED', 200);
+  });
+
+  // --- Twilio status callback handler ---
+  // Twilio postea acá cuando un mensaje cambia de status (queued, sent,
+  // delivered, read, failed, undelivered). Lo configuramos en Twilio
+  // sandbox/sender settings → "Status callback URL".
+  //
+  // Body típico (form-encoded):
+  //   MessageSid=SMxxx
+  //   MessageStatus=delivered
+  //   To=whatsapp:+56957790379
+  //   From=whatsapp:+14155238886
+  //   ChannelInstallSid=...
+  //   ApiVersion=2010-04-01
+  //   ErrorCode=63016 (solo si failed)
+  //   ErrorMessage=... (solo si failed)
+  //
+  // Por ahora persistimos via structured logs en Cloud Logging — desde ahí
+  // pueden sinkearse a BigQuery para analytics. Iteración futura: tabla
+  // dedicated `whatsapp_message_log` para queries low-latency.
+  app.post('/webhooks/twilio-status', async (c) => {
+    const rawBody = await c.req.text();
+    const signatureHeader = c.req.header('x-twilio-signature');
+
+    const params: Record<string, string> = {};
+    for (const [key, value] of new URLSearchParams(rawBody).entries()) {
+      params[key] = value;
+    }
+
+    // Twilio firma con la URL configurada en Twilio console — necesita ser la
+    // URL del status callback, no la del inbound webhook. Aceptamos ambas
+    // para flexibilidad (si admin configura status callback en una URL
+    // distinta, debe setear STATUS_WEBHOOK_URL env var; default = webhookUrl
+    // con path /twilio-status).
+    const statusWebhookUrl = `${webhookUrl.replace(/\/webhooks\/whatsapp$/, '')}/webhooks/twilio-status`;
+
+    if (!verifyTwilioSignature(authToken, signatureHeader, statusWebhookUrl, params)) {
+      logger.warn(
+        { signatureProvided: !!signatureHeader },
+        'Twilio status callback signature invalid',
+      );
+      return c.text('Forbidden', 403);
+    }
+
+    const status = params.MessageStatus;
+    const isFailed = status === 'failed' || status === 'undelivered';
+
+    // Loggeamos con severity proporcional. Cloud Logging permite filtrar por
+    // severity para alerts en delivery failures.
+    const logFn = isFailed ? logger.error : logger.info;
+    logFn.call(
+      logger,
+      {
+        messageSid: params.MessageSid,
+        messageStatus: status,
+        to: params.To,
+        from: params.From,
+        errorCode: params.ErrorCode,
+        errorMessage: params.ErrorMessage,
+      },
+      `twilio status: ${status}`,
+    );
+
+    return c.text('OK', 200);
   });
 
   return app;
@@ -122,7 +209,7 @@ async function handleTextMessage(args: {
     return;
   }
 
-  const session = store.getOrCreate(phoneE164);
+  const session = await store.load(phoneE164);
   const stateBefore = session.actor.getSnapshot().value;
   session.actor.send({ type: 'USER_MESSAGE', text });
   const snapshot = session.actor.getSnapshot();
@@ -145,12 +232,16 @@ async function handleTextMessage(args: {
         logger,
       });
     }
-    store.remove(phoneE164);
+    await store.remove(phoneE164);
+  } else {
+    // Persistir el snapshot actualizado para que el próximo mensaje del mismo
+    // shipper retome desde acá (incluso si lo procesa otra instancia del bot).
+    await store.save(session);
   }
 }
 
 async function submitIntake(args: {
-  session: ReturnType<ConversationStore['getOrCreate']>;
+  session: Awaited<ReturnType<ConversationStore['load']>>;
   phoneE164: string;
   apiClient: ApiClient;
   whatsAppClient: TwilioWhatsAppClient;

@@ -78,7 +78,10 @@ locals {
     "backend-legacy-maps-key",
     "frontend-maps-key",
 
-    # WhatsApp Business (ADR-006)
+    # WhatsApp Business — Meta Cloud API directo (DEPRECATED en Fase 6.4).
+    # Conservados para opción de revertir a Meta directo si se decide cancelar
+    # Twilio. NO se montan en ningún Cloud Run service. Ver ADR-006 amendment
+    # para historial. Si en 6 meses no se vuelven a usar, removerlos.
     "whatsapp-app-secret",
     "whatsapp-access-token",
     "whatsapp-phone-number-id",
@@ -98,8 +101,7 @@ locals {
     # Observability
     "sentry-dsn", # opcional
 
-    # Thin slice Fase 6 — verify token custom para handshake inicial de Meta webhook
-    # Generar con: openssl rand -hex 32 | gcloud secrets versions add whatsapp-webhook-verify-token --data-file=-
+    # Verify token Meta webhook handshake (DEPRECATED en Fase 6.4 junto al resto).
     "whatsapp-webhook-verify-token",
 
     # Twilio WhatsApp BSP (Fase 6.4) — el número físico está en Twilio, así que

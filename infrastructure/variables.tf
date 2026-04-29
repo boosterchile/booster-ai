@@ -112,3 +112,21 @@ variable "alert_email" {
   type        = string
   default     = "dev@boosterchile.com"
 }
+
+# -----------------------------------------------------------------------------
+# WhatsApp / Twilio
+# -----------------------------------------------------------------------------
+variable "twilio_from_number" {
+  description = <<-EOT
+    Twilio WhatsApp From number (E.164 con +). Default es el sandbox compartido
+    (+14155238886). Cambiar a +19383365293 (o el número que sea) cuando esté
+    registrado como Twilio WhatsApp Sender — proceso ~días con Meta business
+    verification (ver docs/runbooks/twilio-sender-registration.md).
+  EOT
+  type        = string
+  default     = "+14155238886"
+  validation {
+    condition     = can(regex("^\\+\\d+$", var.twilio_from_number))
+    error_message = "twilio_from_number debe estar en formato E.164 con +."
+  }
+}
