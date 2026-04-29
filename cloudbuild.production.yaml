@@ -106,35 +106,25 @@ steps:
       - -c
       - |
         set -eu
-        # Bash vars escaped with double-dollar so Cloud Build emits a literal
-        # dollar instead of treating them as substitutions.
-        API_URL="https://booster-ai-api-469283083998.southamerica-west1.run.app"
+        # Solo verificamos el bot (entrada pública). El api es privado (IAM)
+        # y solo se invoca desde el bot via OIDC token; testearlo requiere
+        # auth y no aporta extra al smoke. Bash vars escapadas con dollar-dollar.
         BOT_URL="https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app"
 
-        check_endpoint() {
-          local url=$$1
-          for i in 1 2 3 4 5; do
-            if curl -fsS --max-time 10 "$$url" > /dev/null; then
-              echo "$$url OK"
-              return 0
-            fi
-            echo "$$url failed, retry $$i/5 in 30s..."
-            sleep 30
-          done
-          echo "$$url FAILED after 5 attempts"
-          return 1
-        }
-        check_endpoint "$$API_URL/health"
-        # Twilio webhook con firma inválida debe devolver 403. Probamos sin
-        # X-Twilio-Signature → el bot rechaza con 403, lo cual confirma que
-        # está serving y validando firmas (pero no podemos autenticar de afuera).
-        status=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
-          "$$BOT_URL/webhooks/whatsapp" -d "Body=test")
-        if [ "$$status" != "403" ]; then
-          echo "twilio webhook smoke failed: expected 403, got $$status"
-          exit 1
-        fi
-        echo "twilio webhook OK (returns 403 without signature as expected)"
+        # Twilio webhook con POST sin firma debe devolver 403. Eso confirma
+        # que el bot está serving y validando firmas Twilio.
+        for i in 1 2 3 4 5; do
+          status=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
+            "$$BOT_URL/webhooks/whatsapp" -d "Body=test" || echo "000")
+          if [ "$$status" = "403" ]; then
+            echo "twilio webhook OK (returns 403 without signature as expected)"
+            exit 0
+          fi
+          echo "smoke retry $$i/5: expected 403, got $$status"
+          sleep 15
+        done
+        echo "smoke test FAILED after 5 attempts (last status: $$status)"
+        exit 1
     waitFor: [deploy-api, deploy-whatsapp-bot]
 
 substitutions:
