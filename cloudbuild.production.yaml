@@ -106,8 +106,8 @@ steps:
       - -c
       - |
         set -eu
-        # Cloud Build interpreta $VAR como substitution; usamos $$ para emitir
-        # un $ literal y que bash lo reciba como variable.
+        # Bash vars escaped with double-dollar so Cloud Build emits a literal
+        # dollar instead of treating them as substitutions.
         API_URL="https://booster-ai-api-469283083998.southamerica-west1.run.app"
         BOT_URL="https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app"
 
