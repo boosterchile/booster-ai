@@ -176,6 +176,31 @@ resource "google_compute_security_policy" "waf" {
     description = "rate limit 1000 req/min por IP, ban 10 min"
   }
 
+  # Allow webhooks externos (Twilio, etc.) — prioridad MÁS ALTA que OWASP.
+  # En Cloud Armor evalúa de menor priority a mayor; 400 < 500, así que esta
+  # regla ALLOW corre antes que el OWASP deny.
+  #
+  # Por qué se necesita: el rule `scannerdetection-v33-stable` falsea positivo
+  # con cuerpos de webhook Twilio (form-encoded con MessageSid hex, números E.164,
+  # AccountSid). Resultado observado: Twilio recibe 403 del WAF antes de que el
+  # bot pueda validar la firma X-Twilio-Signature.
+  #
+  # Defensa restante: la firma HMAC del webhook (verifyTwilioSignature en
+  # apps/whatsapp-bot/src/routes/webhook.ts) valida que el request realmente
+  # vino de Twilio + el body no fue alterado. Si la firma falla → 403 desde el
+  # bot. Sin firma válida ningún caller puede inyectar tráfico pretendiendo ser
+  # Twilio.
+  rule {
+    action   = "allow"
+    priority = "400"
+    match {
+      expr {
+        expression = "request.path.startsWith('/webhooks/')"
+      }
+    }
+    description = "Allow /webhooks/* — bypass OWASP scanner detection (Twilio etc.)"
+  }
+
   # OWASP preset — XSS, SQLi, RCE, LFI, scanner detection
   rule {
     action   = "deny(403)"
@@ -302,13 +327,19 @@ resource "google_compute_url_map" "main" {
     path_matcher = "marketing"
   }
 
-  # WhatsApp webhook path — puede ir en el api.* o subdominio dedicado si se prefiere
-  # Por ahora via api.boosterchile.com/webhooks/whatsapp
+  # Webhook paths del bot (Twilio inbound + status callback) — todos los
+  # paths /webhooks/* se rutean al backend del whatsapp-bot, no al api default.
+  # El api se accede directo via *.run.app desde el bot (no por LB).
   path_matcher {
     name            = "api"
     default_service = google_compute_backend_service.api.id
     path_rule {
-      paths   = ["/webhooks/whatsapp", "/webhooks/whatsapp/*"]
+      paths = [
+        "/webhooks/whatsapp",
+        "/webhooks/whatsapp/*",
+        "/webhooks/twilio-status",
+        "/webhooks/twilio-status/*",
+      ]
       service = google_compute_backend_service.whatsapp_bot.id
     }
   }
