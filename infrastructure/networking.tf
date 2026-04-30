@@ -48,18 +48,36 @@ resource "google_compute_global_address" "lb_ipv4" {
 # MANAGED SSL CERTIFICATE — Google-managed para todos los dominios del producto
 # =============================================================================
 
+# Cert managed con nombre dinámico para soportar rotación de dominios sin
+# downtime. Cambiar `domains` regenera `random_id.cert_suffix` (gracias al
+# `keepers`), lo que produce un nombre nuevo de cert. Combinado con
+# `create_before_destroy`, terraform crea el cert nuevo, repunta el
+# `target_https_proxy.main`, y solo después destruye el viejo. Sin esto, el
+# destroy del cert falla con `resourceInUseByAnotherResource`.
+resource "random_id" "cert_suffix" {
+  byte_length = 4
+  keepers = {
+    domains = "api.${var.domain}"
+  }
+}
+
 resource "google_compute_managed_ssl_certificate" "main" {
   provider = google-beta
   project  = google_project.booster_ai.project_id
-  name     = "booster-ai-managed-cert"
+  name     = "booster-ai-cert-${random_id.cert_suffix.hex}"
 
   managed {
+    # Solo los dominios que apuntan al LB de Booster AI.
+    # apex/www/app/demo viven en Booster 2.0 (AWS GA, ghs, Firebase) y no
+    # se sirven desde este LB → no incluir aquí o el cert managed queda en
+    # FAILED_NOT_VISIBLE para esos dominios.
     domains = [
-      var.domain,
-      "www.${var.domain}",
-      "app.${var.domain}",
       "api.${var.domain}",
     ]
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   depends_on = [google_project_service.apis]
@@ -356,36 +374,71 @@ resource "google_compute_global_forwarding_rule" "http_redirect" {
 }
 
 # =============================================================================
-# DNS RECORDS — apuntan a la IP global del LB
+# DNS RECORDS
 # =============================================================================
+#
+# `boosterchile.com` es zona compartida entre Booster 2.0 (legacy) y Booster AI.
+# Decisión post-migración (runbook docs/runbooks/dns-migration-godaddy-to-cloud-dns.md):
+#
+#   apex / www / app / demo  → Booster 2.0 (preservar destinos actuales).
+#   api / telemetry          → Booster AI (LB global + telemetry gateway).
+#   marketing (futuro)        → Booster AI (cuando exista el sitio).
+#   MX, SPF, DKIM, DMARC, verifications → email Workspace.
+#
+# TTL bajo (300s) durante la ventana de corte. Subir a 3600s en T+7d (Fase 7
+# del runbook) cuando el DNS sea estable.
+#
+# DKIM (`google._domainkey`) está PENDIENTE de confirmación. El selector
+# "google" actual no devuelve nada en GoDaddy → o bien DKIM no está
+# configurado en Workspace, o el selector tiene otro nombre. Ver runbook
+# Fase 1/5: confirmar en admin.google.com → Apps → Gmail → Authenticate
+# email antes del corte de NS.
 
+# === Booster 2.0 — preservar destinos legacy ===
+# Apex apunta a las IPs de AWS Global Accelerator (Booster 2.0 landing).
 resource "google_dns_record_set" "apex" {
   name         = "${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"
   ttl          = 300
-  rrdatas      = [google_compute_global_address.lb_ipv4.address]
+  rrdatas = [
+    "13.248.243.5",
+    "76.223.105.230",
+  ]
 }
 
+# www → Google Sites (Booster 2.0)
 resource "google_dns_record_set" "www" {
   name         = "www.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
-  type         = "A"
+  type         = "CNAME"
   ttl          = 300
-  rrdatas      = [google_compute_global_address.lb_ipv4.address]
+  rrdatas      = ["ghs.googlehosted.com."]
 }
 
+# app → Firebase Hosting (Booster 2.0 webapp legacy)
 resource "google_dns_record_set" "app" {
   name         = "app.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
-  type         = "A"
+  type         = "CNAME"
   ttl          = 300
-  rrdatas      = [google_compute_global_address.lb_ipv4.address]
+  rrdatas      = ["big-cabinet-482101-s3.web.app."]
 }
 
+# demo → Google Sites (Booster 2.0 demo site)
+resource "google_dns_record_set" "demo" {
+  name         = "demo.${var.domain}."
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = ["ghs.googlehosted.com."]
+}
+
+# === Booster AI ===
 resource "google_dns_record_set" "api" {
   name         = "api.${var.domain}."
   project      = google_project.booster_ai.project_id
@@ -405,15 +458,59 @@ resource "google_dns_record_set" "telemetry" {
   rrdatas      = [google_compute_address.telemetry_lb.address]
 }
 
-# SPF record para email outbound
-resource "google_dns_record_set" "spf" {
+# === Email — Google Workspace ===
+# MX records — prioridades exactas de Workspace.
+resource "google_dns_record_set" "mx" {
+  name         = "${var.domain}."
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  type         = "MX"
+  ttl          = 3600
+  rrdatas = [
+    "1 aspmx.l.google.com.",
+    "5 alt1.aspmx.l.google.com.",
+    "5 alt2.aspmx.l.google.com.",
+    "10 alt3.aspmx.l.google.com.",
+    "10 alt4.aspmx.l.google.com.",
+  ]
+}
+
+# Apex TXT — Cloud DNS no permite múltiples TXT records con el mismo name;
+# hay que agruparlos en un único record con varias strings. Combina:
+#   - SPF (autorización de envío saliente para email Workspace).
+#   - google-site-verification (ownership de Search Console / Workspace).
+#   - google-gws-recovery (recovery del dominio en caso de pérdida de admin).
+resource "google_dns_record_set" "apex_txt" {
   name         = "${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "TXT"
   ttl          = 3600
-  rrdatas      = ["\"v=spf1 include:_spf.google.com ~all\""]
+  rrdatas = [
+    "\"v=spf1 include:_spf.google.com ~all\"",
+    "\"google-site-verification=Aljua0U_VGag3O-odYXPN-PXlASoPNFAHOb8EHgCvec\"",
+    "\"google-gws-recovery-domain-verification=65980720\"",
+  ]
 }
+
+# DMARC — política actual del dominio (heredada de GoDaddy).
+resource "google_dns_record_set" "dmarc" {
+  name         = "_dmarc.${var.domain}."
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  type         = "TXT"
+  ttl          = 3600
+  rrdatas      = ["\"v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;\""]
+}
+
+# DKIM (`google._domainkey`) — PENDIENTE.
+# Bloqueante antes de Fase 5 (cambio NS). Action items:
+#   1. admin.google.com → Apps → Google Workspace → Gmail → Authenticate email.
+#   2. Verificar selector real (puede ser "google", "default", "20240101", etc.)
+#      y copiar el TXT record completo que provee Workspace.
+#   3. Agregar acá un `google_dns_record_set "dkim_<selector>"` con el valor.
+#   4. Si DKIM nunca fue configurado, generarlo desde el panel de Workspace
+#      ANTES del corte (sino los emails post-migración irán a spam).
 
 # =============================================================================
 # PERMITIR QUE EL LB INVOQUE LOS CLOUD RUN (replacement de "allUsers")
