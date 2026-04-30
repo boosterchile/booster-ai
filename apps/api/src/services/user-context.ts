@@ -59,7 +59,11 @@ export class EmpresaNotInMembershipsError extends Error {
 export async function resolveUserContext(opts: {
   db: Db;
   firebaseUid: string;
-  requestedEmpresaId?: string;
+  /**
+   * `string | undefined` (no opt prop) para que `exactOptionalPropertyTypes`
+   * no obligue al caller a destructurar antes de pasar.
+   */
+  requestedEmpresaId: string | undefined;
 }): Promise<UserContext> {
   const { db, firebaseUid, requestedEmpresaId } = opts;
 
