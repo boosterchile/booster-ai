@@ -70,7 +70,7 @@ const validBody = {
   },
   empresa: {
     legal_name: 'Booster Chile SpA',
-    rut: '76.123.456-K',
+    rut: '76.123.456-0',
     contact_email: 'contacto@booster.cl',
     contact_phone: '+56912345678',
     address: {
@@ -195,7 +195,7 @@ describe('POST /empresas/onboarding', () => {
       empresa: {
         id: 'e1',
         legalName: 'Booster Chile SpA',
-        rut: '76.123.456-K',
+        rut: '76.123.456-0',
         contactEmail: 'contacto@booster.cl',
         contactPhone: '+56912345678',
         addressStreet: 'Av. Apoquindo 5550',
@@ -242,7 +242,7 @@ describe('POST /empresas/onboarding', () => {
       membership: { role: string; status: string };
     };
     expect(body.user.email).toBe('felipe@boosterchile.com');
-    expect(body.empresa.rut).toBe('76.123.456-K');
+    expect(body.empresa.rut).toBe('76.123.456-0');
     expect(body.empresa.is_carrier).toBe(true);
     expect(body.membership.role).toBe('owner');
     expect(body.membership.status).toBe('active');
@@ -273,7 +273,7 @@ describe('POST /empresas/onboarding', () => {
   it('mapea EmpresaRutDuplicateError a 409', async () => {
     const onboarding = await import('../../src/services/onboarding.js');
     vi.mocked(onboarding.onboardEmpresa).mockRejectedValueOnce(
-      new onboarding.EmpresaRutDuplicateError('76.123.456-K'),
+      new onboarding.EmpresaRutDuplicateError('76.123.456-0'),
     );
 
     const app = await buildApp();
