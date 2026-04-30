@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { OAuth2Client } from 'google-auth-library';
 import type { MiddlewareHandler } from 'hono';
 
 /**
@@ -8,22 +9,19 @@ import type { MiddlewareHandler } from 'hono';
  * firmado por Google con el email de su SA como `email` claim, y lo manda
  * en `Authorization: Bearer <jwt>`.
  *
- * Verificación (simplificada para el thin slice):
- * 1. Decodificar el JWT.
- * 2. Verificar la firma contra Google public keys (JWKS en oauth2.googleapis.com).
- * 3. Verificar `aud` == API_AUDIENCE (URL del service api).
- * 4. Verificar `email` == ALLOWED_CALLER_SA.
- * 5. Verificar `exp` > now.
+ * Verificación:
+ * 1. Firma criptográfica contra Google JWKS (vía OAuth2Client.verifyIdToken
+ *    de `google-auth-library` — caché de keys + verificación RS256/ES256).
+ * 2. `aud` ∈ apiAudience (lista de URLs aceptadas — soporta interno *.run.app
+ *    y público api.boosterchile.com como diseño permanente).
+ * 3. `email` == allowedCallerSa (whitelist de un único SA caller en thin slice).
+ * 4. `exp` > now (verifyIdToken ya lo valida; chequeo redundante por defensa
+ *    en profundidad).
  *
- * Para slices siguientes: usar `google-auth-library` OAuth2Client.verifyIdToken()
- * que hace todo lo anterior correctamente. Aquí lo hacemos manual para no agregar
- * otra dep pesada en el thin slice.
- *
- * LIMITACIÓN DEL THIN SLICE: esta implementación NO verifica la firma
- * criptográfica del JWT todavía. Es seguro porque:
- *   a) Cloud Run solo deja invocar este service a los SAs con roles/run.invoker.
- *   b) El Global HTTPS LB (networking.tf) hace el filtrado de origen.
- * Pero el chequeo de firma va en el slice 2. Tracking: #AUTH-HARDEN-001.
+ * Cierra la deuda activa #AUTH-HARDEN-001: la versión previa decodificaba el
+ * JWT sin verificar firma — la única defensa real era Cloud Run RBAC + LB
+ * filtrando origen. Si esos eslabones fallaran, cualquiera podía falsificar
+ * tokens. Ahora la firma es obligatoria.
  */
 export function createAuthMiddleware(opts: {
   /**
@@ -34,9 +32,22 @@ export function createAuthMiddleware(opts: {
    * firmen el OIDC con la URL pública).
    */
   apiAudience: readonly string[];
+  /**
+   * Email del SA único que está autorizado a invocar endpoints protegidos.
+   * En el thin slice: el SA del whatsapp-bot. Slice 2: lista de SAs por rol.
+   */
   allowedCallerSa: string;
   logger: Logger;
+  /**
+   * OAuth2Client inyectable para tests (permite stubbear verifyIdToken sin
+   * pegarle a la red). En producción se crea una sola instancia compartida
+   * en server.ts.
+   */
+  oauthClient?: OAuth2Client;
 }): MiddlewareHandler {
+  const oauthClient = opts.oauthClient ?? new OAuth2Client();
+  const apiAudienceMutable = [...opts.apiAudience]; // verifyIdToken espera array mutable
+
   return async (c, next) => {
     const authHeader = c.req.header('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -45,60 +56,57 @@ export function createAuthMiddleware(opts: {
     }
 
     const token = authHeader.slice('Bearer '.length).trim();
-    const claims = decodeJwtUnsafe(token);
 
-    if (!claims) {
-      return c.json({ error: 'Malformed token' }, 401);
+    let payload: ReturnType<Awaited<ReturnType<OAuth2Client['verifyIdToken']>>['getPayload']>;
+    try {
+      // verifyIdToken hace todo el heavy lifting:
+      //   - parsea JWT, valida estructura
+      //   - obtiene Google JWKS (cacheadas por el cliente)
+      //   - verifica firma RS256/ES256
+      //   - valida iss = accounts.google.com (o https://...)
+      //   - valida exp > now
+      //   - valida aud ∈ apiAudienceMutable
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: token,
+        audience: apiAudienceMutable,
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      opts.logger.warn(
+        { err: err instanceof Error ? err.message : String(err), path: c.req.path },
+        'JWT verification failed',
+      );
+      return c.json({ error: 'Invalid token' }, 401);
     }
 
-    if (typeof claims.aud !== 'string' || !opts.apiAudience.includes(claims.aud)) {
-      opts.logger.warn({ aud: claims.aud, accepted: opts.apiAudience }, 'Token audience mismatch');
-      return c.json({ error: 'Invalid audience' }, 403);
+    if (!payload) {
+      opts.logger.warn({ path: c.req.path }, 'JWT payload empty after verification');
+      return c.json({ error: 'Invalid token' }, 401);
     }
 
-    if (claims.email !== opts.allowedCallerSa) {
-      opts.logger.warn({ email: claims.email }, 'Caller SA not allowed');
-      return c.json({ error: 'Caller not allowed' }, 403);
-    }
-
+    // Defense in depth: verifyIdToken ya validó exp, pero re-chequeamos por
+    // si la implementación cambia o el `clockSkew` interno permitiera margen.
     const nowSeconds = Math.floor(Date.now() / 1000);
-    if (typeof claims.exp !== 'number' || claims.exp < nowSeconds) {
+    if (typeof payload.exp !== 'number' || payload.exp < nowSeconds) {
       return c.json({ error: 'Token expired' }, 401);
     }
 
+    // Whitelist explícita del caller SA. Aunque la firma sea válida y el aud
+    // esté en la lista, si el `email` claim no es nuestro caller permitido,
+    // se rechaza. Esto protege contra cualquier SA de Google que pueda
+    // generar tokens válidamente firmados pero no autorizados.
+    if (payload.email !== opts.allowedCallerSa) {
+      opts.logger.warn(
+        { email: payload.email, expected: opts.allowedCallerSa, path: c.req.path },
+        'Caller SA not allowed',
+      );
+      return c.json({ error: 'Caller not allowed' }, 403);
+    }
+
     // Propagar identity al contexto — útil para logs en handlers.
-    c.set('callerSa', claims.email);
+    c.set('callerSa', payload.email);
 
     await next();
     return;
   };
-}
-
-interface JwtClaims {
-  aud?: string;
-  email?: string;
-  exp?: number;
-  iat?: number;
-  iss?: string;
-}
-
-/**
- * Decodifica el JWT sin verificar firma. NO confiar en los claims hasta validar
- * con Google JWKS — ver nota de limitación del thin slice arriba.
- */
-function decodeJwtUnsafe(token: string): JwtClaims | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    return null;
-  }
-  const payloadB64 = parts[1];
-  if (!payloadB64) {
-    return null;
-  }
-  try {
-    const json = Buffer.from(payloadB64, 'base64url').toString('utf-8');
-    return JSON.parse(json) as JwtClaims;
-  } catch {
-    return null;
-  }
 }
