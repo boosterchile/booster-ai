@@ -18,11 +18,30 @@ const apiEnvSchema = commonEnvSchema
     FIREBASE_PROJECT_ID: z.string().min(1),
 
     /**
-     * Audience esperada en el OIDC token de Cloud Run SA-to-SA.
-     * Debe coincidir exactamente con la URL del service api (https://...).
+     * Audiences aceptadas en el OIDC token de Cloud Run SA-to-SA.
+     *
+     * Acepta CSV ("https://api.boosterchile.com,https://booster-ai-api-...run.app")
+     * para soportar migración entre URLs públicas y *.run.app sin downtime —
+     * mientras el bot caller está en transición de una a otra. Después de la
+     * migración estable, dejar solo la URL canónica.
+     *
+     * Cada entrada debe ser una URL completa (https://...). El middleware de
+     * auth chequea `claims.aud ∈ API_AUDIENCE`.
+     *
      * Ver: https://cloud.google.com/run/docs/authenticating/service-to-service
      */
-    API_AUDIENCE: z.string().url(),
+    API_AUDIENCE: z
+      .string()
+      .transform((s) =>
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      )
+      .refine(
+        (arr) => arr.length > 0 && arr.every((u) => /^https?:\/\//.test(u)),
+        'API_AUDIENCE debe ser CSV de URLs (al menos una)',
+      ),
 
     /**
      * Email del SA que está autorizado a invocar endpoints protegidos.

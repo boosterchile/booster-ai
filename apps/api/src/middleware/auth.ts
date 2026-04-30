@@ -26,7 +26,14 @@ import type { MiddlewareHandler } from 'hono';
  * Pero el chequeo de firma va en el slice 2. Tracking: #AUTH-HARDEN-001.
  */
 export function createAuthMiddleware(opts: {
-  apiAudience: string;
+  /**
+   * Lista de audiences aceptadas. El claim `aud` del token tiene que matchear
+   * alguna de ellas. Soportamos múltiples para migración entre URL pública
+   * (https://api.boosterchile.com) y URL interna *.run.app sin downtime — el
+   * bot durante el rollout puede tener cualquiera de las dos como audience.
+   * Una vez la migración esté estable, dejar solo la URL canónica.
+   */
+  apiAudience: readonly string[];
   allowedCallerSa: string;
   logger: Logger;
 }): MiddlewareHandler {
@@ -44,8 +51,8 @@ export function createAuthMiddleware(opts: {
       return c.json({ error: 'Malformed token' }, 401);
     }
 
-    if (claims.aud !== opts.apiAudience) {
-      opts.logger.warn({ aud: claims.aud }, 'Token audience mismatch');
+    if (typeof claims.aud !== 'string' || !opts.apiAudience.includes(claims.aud)) {
+      opts.logger.warn({ aud: claims.aud, accepted: opts.apiAudience }, 'Token audience mismatch');
       return c.json({ error: 'Invalid audience' }, 403);
     }
 

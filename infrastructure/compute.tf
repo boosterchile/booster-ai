@@ -33,15 +33,19 @@ locals {
     [google_secret_manager_secret_version.database_url.id],
   )
 
-  # URLs *.run.app de los Cloud Run services. Cloud Run nombra cada service como
-  # https://<service-name>-<project-number>.<region>.run.app. Calculamos las
-  # URLs aquí para usar como audience del OIDC token + URL pública del webhook
-  # mientras DNS api.boosterchile.com no esté migrado a Cloud DNS.
-  #
-  # Cuando DNS esté listo y los certs en ACTIVE, podemos cambiar estas locals
-  # por las URLs custom (https://api.boosterchile.com) sin tocar las refs.
+  # URLs *.run.app de los Cloud Run services — usadas como audiences legacy
+  # mientras la migración a URL pública (https://api.boosterchile.com) se
+  # estabiliza. Cloud Run nombra cada service como
+  # https://<service-name>-<project-number>.<region>.run.app.
   cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
   cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
+
+  # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
+  # Usada como audience primaria del OIDC token desde el bot, y como webhook
+  # URL configurada en Twilio Sender. El LB global rutea api.boosterchile.com
+  # al backend del api (y /webhooks/whatsapp* al backend del bot — ver
+  # url_map en networking.tf).
+  public_api_url = "https://api.${var.domain}"
 }
 
 # --- apps/api ---
@@ -61,14 +65,14 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
-    # API_AUDIENCE valida los OIDC tokens entrantes. Debe coincidir con la URL
-    # exacta que el caller usa (que viene del audience del token). Mientras
-    # los callers (bot, otros services internos) usan la URL *.run.app, el
-    # audience también es esa URL. Cuando DNS migre, agregar api.boosterchile.com
-    # como segundo audience permitido o cambiar acá.
-    API_AUDIENCE         = local.cloud_run_api_url
+    # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas:
+    # incluye tanto la URL pública (api.boosterchile.com — la canónica
+    # post-migración DNS) como la legacy *.run.app — para soportar callers
+    # en transición sin downtime. Después de validar estabilidad, simplificar
+    # a solo la URL pública (cleanup en T+7d del runbook DNS).
+    API_AUDIENCE         = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
-    CORS_ALLOWED_ORIGINS = "https://api.boosterchile.com,https://boosterchile.com,https://marketing.boosterchile.com,${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},${local.cloud_run_api_url}"
   })
   secrets = local.common_secrets
 
@@ -232,24 +236,28 @@ module "service_whatsapp_bot" {
   # va por Secret Manager.
   #
   # TWILIO_WEBHOOK_URL debe coincidir EXACTAMENTE con la URL configurada en
-  # Twilio console (porque Twilio firma con la URL). Apuntamos al Cloud Run
-  # *.run.app directo mientras DNS api.boosterchile.com no esté migrado.
+  # Twilio console (porque Twilio firma con la URL). Post-migración DNS, la
+  # URL canónica es https://api.boosterchile.com/webhooks/whatsapp — el LB
+  # global rutea ese path al bot (ver url_map.path_matcher "api" en
+  # networking.tf).
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME      = "booster-ai-whatsapp-bot"
-    # Apuntamos al *.run.app del api directamente. Cuando DNS migre, cambiar
-    # la local cloud_run_api_url. El bot inyecta este valor como audience del
-    # OIDC token outbound y como URL del POST.
-    API_URL           = local.cloud_run_api_url
-    API_OIDC_AUDIENCE = local.cloud_run_api_url
+    # api.boosterchile.com (LB) — la URL canónica del api. El api acepta este
+    # audience junto con la legacy *.run.app durante la transición (ver
+    # API_AUDIENCE arriba en service_api).
+    API_URL           = local.public_api_url
+    API_OIDC_AUDIENCE = local.public_api_url
     # TWILIO_FROM_NUMBER: variable porque cambia entre sandbox y producción.
     # Sandbox compartido (+14155238886) hasta que +19383365293 esté
     # registrado como WhatsApp Sender via Meta business verification (runbook
     # docs/runbooks/twilio-sender-registration.md).
     TWILIO_FROM_NUMBER = var.twilio_from_number
-    # TWILIO_WEBHOOK_URL debe matchear la URL configurada en Twilio sandbox
-    # settings exactamente — la firma X-Twilio-Signature se computa sobre
-    # esta URL + sorted body params.
-    TWILIO_WEBHOOK_URL = "${local.cloud_run_bot_url}/webhooks/whatsapp"
+    # TWILIO_WEBHOOK_URL debe matchear EXACTAMENTE la URL configurada en
+    # Twilio Sender (Inbound URL) porque la firma X-Twilio-Signature se
+    # computa sobre esta URL + sorted body params. Si no coincide → 403.
+    # Post-migración: api.boosterchile.com (LB rutea /webhooks/whatsapp* al
+    # backend del bot via url_map.path_matcher en networking.tf).
+    TWILIO_WEBHOOK_URL = "${local.public_api_url}/webhooks/whatsapp"
   })
 
   secrets = {

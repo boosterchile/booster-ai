@@ -87,17 +87,20 @@ steps:
     waitFor: [push-whatsapp-bot]
 
   # =========================================================================
-  # Smoke test — ping directamente las URLs *.run.app del Cloud Run
+  # Smoke test — ping al webhook Twilio via la URL pública canonical.
   #
-  # Apuntamos al hostname autogenerado (no al subdominio custom) porque el
-  # cert managed de api.boosterchile.com depende de DNS y mientras los
-  # nameservers de GoDaddy no apunten a Google Cloud DNS, el cert queda
-  # FAILED_NOT_VISIBLE. La URL *.run.app siempre funciona con el cert
-  # autogestionado por Google, sin depender de configuración de DNS humana.
+  # Apuntamos a https://api.boosterchile.com/webhooks/whatsapp porque eso
+  # ejercita simultáneamente:
+  #   - Cloud DNS resolviendo api.boosterchile.com
+  #   - Cert managed (booster-ai-cert-*) ACTIVE
+  #   - Global HTTPS LB con la url_map ruteando /webhooks/whatsapp* al
+  #     backend del whatsapp-bot
+  #   - Cloud Run del bot serving y validando firmas Twilio (devuelve 403
+  #     porque no firmamos el request)
   #
-  # Cuando DNS esté migrado y el managed-cert pase a ACTIVE, podemos
-  # opcionalmente añadir un check secundario contra https://api.boosterchile.com
-  # para validar que el LB también rutea OK.
+  # Si cualquiera de esos eslabones se cae, el smoke falla y el deploy se
+  # marca como inválido. Más útil que ping al *.run.app porque ese skip-ea
+  # toda la cadena LB/cert/DNS.
   # =========================================================================
   - id: smoke-api-health
     name: gcr.io/cloud-builders/curl
@@ -106,18 +109,18 @@ steps:
       - -c
       - |
         set -eu
-        # Solo verificamos el bot (entrada pública). El api es privado (IAM)
-        # y solo se invoca desde el bot via OIDC token; testearlo requiere
-        # auth y no aporta extra al smoke. Bash vars escapadas con dollar-dollar.
-        BOT_URL="https://booster-ai-whatsapp-bot-469283083998.southamerica-west1.run.app"
+        # api.boosterchile.com — URL pública canónica post-DNS-migration.
+        # Bash vars escapadas con dollar-dollar (Cloud Build interpreta $X como
+        # substitution).
+        WEBHOOK_URL="https://api.boosterchile.com/webhooks/whatsapp"
 
-        # Twilio webhook con POST sin firma debe devolver 403. Eso confirma
-        # que el bot está serving y validando firmas Twilio.
+        # POST sin firma debe devolver 403. Eso confirma que el bot está
+        # serving y validando firmas Twilio + el LB ruteando + el cert ok.
         for i in 1 2 3 4 5; do
           status=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
-            "$$BOT_URL/webhooks/whatsapp" -d "Body=test" || echo "000")
+            "$$WEBHOOK_URL" -d "Body=test" || echo "000")
           if [ "$$status" = "403" ]; then
-            echo "twilio webhook OK (returns 403 without signature as expected)"
+            echo "smoke OK: webhook returns 403 (expected — no signature)"
             exit 0
           fi
           echo "smoke retry $$i/5: expected 403, got $$status"
