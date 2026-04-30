@@ -16,6 +16,7 @@ export const cargoTypeSchema = z.enum([
   'livestock',
   'other',
 ]);
+export type CargoType = z.infer<typeof cargoTypeSchema>;
 
 export const cargoRequestStatusSchema = z.enum([
   'draft',
