@@ -70,12 +70,17 @@ async function request<T>(
   const url = `${env.VITE_API_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = await buildHeaders(init?.headers);
 
-  const res = await fetch(url, {
+  // Construido como variable separada para que `body` solo se incluya
+  // cuando hay payload — exactOptionalPropertyTypes no acepta `body:
+  // undefined` explícito en RequestInit.
+  const fetchInit: RequestInit = {
     ...init,
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  };
+
+  const res = await fetch(url, fetchInit);
 
   // 204 / 205 — sin body
   if (res.status === 204 || res.status === 205) {
