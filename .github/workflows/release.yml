@@ -80,7 +80,7 @@ jobs:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
       - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
       - name: Trigger Cloud Build (production)
         # _COMMIT_SHA es la única substitution que pasamos — _REGION/_REGISTRY
         # tienen defaults en cloudbuild.production.yaml, y _ENV no se usa.
