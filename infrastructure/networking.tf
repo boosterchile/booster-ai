@@ -503,14 +503,31 @@ resource "google_dns_record_set" "dmarc" {
   rrdatas      = ["\"v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;\""]
 }
 
-# DKIM (`google._domainkey`) — PENDIENTE.
-# Bloqueante antes de Fase 5 (cambio NS). Action items:
-#   1. admin.google.com → Apps → Google Workspace → Gmail → Authenticate email.
-#   2. Verificar selector real (puede ser "google", "default", "20240101", etc.)
-#      y copiar el TXT record completo que provee Workspace.
-#   3. Agregar acá un `google_dns_record_set "dkim_<selector>"` con el valor.
-#   4. Si DKIM nunca fue configurado, generarlo desde el panel de Workspace
-#      ANTES del corte (sino los emails post-migración irán a spam).
+# DKIM `google._domainkey` — public key de Workspace para firma DKIM saliente.
+#
+# Generado por Workspace (admin.google.com → Apps → Gmail → Authenticate
+# email) con selector "google", 2048-bit RSA. NO es secret — DKIM es
+# públicamente legible por diseño (los receptores lo leen vía DNS para
+# validar firmas en mails entrantes desde @boosterchile.com).
+#
+# El valor de 410 chars excede el límite de 255 char-string del protocolo
+# DNS para TXT records. Se split en 2 chunks de "..." dentro del rrdata —
+# Cloud DNS y los resolvers concatenan automáticamente al servir.
+#
+# IMPORTANTE: este record también debe estar publicado en GoDaddy ANTES
+# del corte de NS (para que Workspace pueda verificar y activar el firmado
+# DKIM contra el authoritative actual). Después del corte, Cloud DNS sirve
+# el mismo record sin interrupción del firmado.
+resource "google_dns_record_set" "dkim_google" {
+  name         = "google._domainkey.${var.domain}."
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  type         = "TXT"
+  ttl          = 3600
+  rrdatas = [
+    "\"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmy6sJ27VCnUj9VTQq9ESBGtCGWQ2egzNYJngC1Mnk8lAeZCmGLfmyNBx2auiQliHfpKa5ZTnjtjP11hRkCCzGhgVoae9LiZ+PKNNNijsSirUJI199f8Zrue3wV3m85lGJtKrICpkEAZxBaDGkj114CEn6GvYkABGdYyXfilSZsz9ULSuidTWtEzrTACGd23EC\" \"CdInOrQ6Gwxk10Z58TDfcs3I43a6B2EMWGnSsPyShDlT85OOOnzcIQuN4BFP0qzZ+4VrM0zl+GsBv3OykPQ0YSVcMRbR/WwPhBLepMh5VZ7gac55BruaxYQFxRIDOyhrPbVJN3ZN7jqRKlwkmDLIQIDAQAB\"",
+  ]
+}
 
 # =============================================================================
 # PERMITIR QUE EL LB INVOQUE LOS CLOUD RUN (replacement de "allUsers")
