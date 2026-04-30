@@ -82,9 +82,13 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
       - name: Trigger Cloud Build (production)
+        # _COMMIT_SHA es la única substitution que pasamos — _REGION/_REGISTRY
+        # tienen defaults en cloudbuild.production.yaml, y _ENV no se usa.
+        # gcloud builds submit rechaza substitutions no declaradas (era el bug
+        # `_ENV no matched in template`).
         run: |
           gcloud builds submit --config=cloudbuild.production.yaml \
-            --substitutions=_COMMIT_SHA=${{ github.sha }},_ENV=production
+            --substitutions=_COMMIT_SHA=${{ github.sha }}
 
       # Post-deploy: smoke tests + notificación
       - name: Smoke test — API health

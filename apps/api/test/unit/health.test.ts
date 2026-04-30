@@ -1,3 +1,4 @@
+import type pg from 'pg';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/db/client.js';
 
@@ -20,13 +21,29 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'test-sa@test.iam.gserviceaccount.com';
 });
 
-// Stub del Db — los tests de health no tocan la DB.
+// Stub del Db — los tests de health no tocan la DB drizzle directamente.
 const stubDb = {} as Db;
+
+// Stub del pg.Pool — /ready hace pool.connect() + client.query('SELECT 1').
+// Permite simular tanto OK (200) como fallo (503) sin pegarle a Postgres real.
+function makeStubPool(opts: { fail?: boolean } = {}): pg.Pool {
+  return {
+    connect: async () => {
+      if (opts.fail) {
+        throw new Error('connection refused');
+      }
+      return {
+        query: async () => ({ rows: [{ '?column?': 1 }] }),
+        release: () => {},
+      };
+    },
+  } as unknown as pg.Pool;
+}
 
 describe('health endpoints', () => {
   it('GET /health returns 200 with status ok', async () => {
     const { createServer } = await import('../../src/server.js');
-    const app = createServer({ db: stubDb });
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
     const res = await app.request('/health');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string; service: string };
@@ -34,16 +51,29 @@ describe('health endpoints', () => {
     expect(body.service).toBe('booster-ai-api');
   });
 
-  it('GET /ready returns 200', async () => {
+  it('GET /ready returns 200 when DB is reachable', async () => {
     const { createServer } = await import('../../src/server.js');
-    const app = createServer({ db: stubDb });
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
     const res = await app.request('/ready');
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; checks: { database: string } };
+    expect(body.status).toBe('ready');
+    expect(body.checks.database).toBe('ok');
+  });
+
+  it('GET /ready returns 503 when DB connect fails', async () => {
+    const { createServer } = await import('../../src/server.js');
+    const app = createServer({ db: stubDb, pool: makeStubPool({ fail: true }) });
+    const res = await app.request('/ready');
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { status: string; checks: { database: string } };
+    expect(body.status).toBe('not_ready');
+    expect(body.checks.database).toBe('fail');
   });
 
   it('GET /unknown returns 404 with not_found error', async () => {
     const { createServer } = await import('../../src/server.js');
-    const app = createServer({ db: stubDb });
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
     const res = await app.request('/does-not-exist');
     expect(res.status).toBe(404);
   });

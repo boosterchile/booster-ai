@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   // dedicado para advisory lock — ver db/migrator.ts.
   await runMigrations(pool, logger);
 
-  const app = createServer({ db, logger });
+  const app = createServer({ db, pool, logger });
 
   const server = serve(
     {

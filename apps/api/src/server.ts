@@ -2,14 +2,16 @@ import { type Logger, createLogger } from '@booster-ai/logger';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
+import type pg from 'pg';
 import { config } from './config.js';
 import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
-import { healthRouter } from './routes/health.js';
+import { createHealthRouter } from './routes/health.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 
 export interface CreateServerOptions {
   db: Db;
+  pool: pg.Pool;
   logger?: Logger;
 }
 
@@ -51,8 +53,8 @@ export function createServer(opts: CreateServerOptions): Hono {
 
   app.use('*', secureHeaders());
 
-  // Public routes (no auth)
-  app.route('/', healthRouter);
+  // Public routes (no auth) — /health (liveness) + /ready (DB ping).
+  app.route('/', createHealthRouter({ pool: opts.pool, logger }));
 
   // Protected routes — OIDC token from allowed Cloud Run SA required
   const authMiddleware = createAuthMiddleware({
