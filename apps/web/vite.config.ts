@@ -1,12 +1,17 @@
 import path from 'node:path';
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// NOTA: TanStackRouterVite (file-based routing codegen) deshabilitado en B.3.b.
+// Usamos rutas programáticas en src/router.tsx para evitar el step de
+// codegen (routeTree.gen.ts) y que typecheck/CI no dependan de un build
+// previo. Si después conviene volver a file-based, descomentar el plugin
+// + agregar routeTree.gen.ts al gitignore + correr `tsr generate` en
+// pre-build.
+
 export default defineConfig({
   plugins: [
-    TanStackRouterVite(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -42,7 +47,7 @@ export default defineConfig({
         name: 'Booster AI',
         short_name: 'Booster',
         description: 'Plataforma de logística sostenible',
-        theme_color: '#0d9488',
+        theme_color: '#1FA058',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',

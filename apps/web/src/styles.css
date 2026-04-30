@@ -1,9 +1,92 @@
 @import "tailwindcss";
 
+/**
+ * Tema de Booster AI — Tailwind 4 CSS-first config.
+ *
+ * Espejo de los tokens en @booster-ai/ui-tokens. Si modificás algo aquí,
+ * reflejalo en packages/ui-tokens/src/ y viceversa. En slice posterior
+ * podemos generar este bloque automáticamente desde los tokens TS via
+ * build script (tailwind-merge-tokens). Por ahora source-of-truth manual
+ * para minimizar build complexity pre-launch.
+ */
+@theme {
+  /* Color — primary (verde Booster) */
+  --color-primary-50: #ECFAF1;
+  --color-primary-100: #D1F2DD;
+  --color-primary-200: #A5E3BA;
+  --color-primary-300: #73D094;
+  --color-primary-400: #42BB72;
+  --color-primary-500: #1FA058;
+  --color-primary-600: #168047;
+  --color-primary-700: #10653A;
+  --color-primary-800: #0C4D2D;
+  --color-primary-900: #083823;
+  --color-primary-950: #04231A;
+
+  /* Color — neutrals cálidos */
+  --color-neutral-0: #FFFFFF;
+  --color-neutral-50: #FAF9F7;
+  --color-neutral-100: #F4F2EE;
+  --color-neutral-200: #E7E4DD;
+  --color-neutral-300: #D5D1C7;
+  --color-neutral-400: #A6A199;
+  --color-neutral-500: #73706A;
+  --color-neutral-600: #56544F;
+  --color-neutral-700: #3F3D39;
+  --color-neutral-800: #2A2926;
+  --color-neutral-900: #1A1917;
+  --color-neutral-1000: #0A0A09;
+
+  /* Color — accent (urgencia) */
+  --color-accent-50: #FFF7EB;
+  --color-accent-100: #FFEAC9;
+  --color-accent-200: #FFD489;
+  --color-accent-300: #FFB94A;
+  --color-accent-400: #FFA21F;
+  --color-accent-500: #F58A00;
+  --color-accent-600: #CC6F00;
+  --color-accent-700: #A05500;
+
+  /* Color — semantic */
+  --color-success-50: #ECFAF1;
+  --color-success-500: #1FA058;
+  --color-success-700: #10653A;
+  --color-warning-50: #FFF7EB;
+  --color-warning-500: #F58A00;
+  --color-warning-700: #A05500;
+  --color-danger-50: #FEF2F2;
+  --color-danger-500: #DC2626;
+  --color-danger-700: #991B1B;
+  --color-info-50: #EFF6FF;
+  --color-info-500: #2563EB;
+  --color-info-700: #1E40AF;
+
+  /* Tipografía */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Monaco, "Menlo", Consolas, monospace;
+
+  /* Radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadow */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 0.10), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.20);
+}
+
+/* Defaults globales */
 :root {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color: var(--color-neutral-900);
+  background: var(--color-neutral-50);
 }
 
 html,
@@ -11,4 +94,19 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+/* Focus ring accesible — Booster brand */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(31 160 88 / 0.35);
+  border-radius: var(--radius-sm);
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
 }

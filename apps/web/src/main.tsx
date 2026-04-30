@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { App } from './App.js';
+import { router } from './router.js';
 import './styles.css';
 
 const queryClient = new QueryClient({
@@ -9,6 +10,7 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       refetchOnWindowFocus: false,
+      retry: (failureCount) => failureCount < 3,
     },
   },
 });
@@ -21,7 +23,7 @@ if (!rootElement) {
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </React.StrictMode>,
 );
