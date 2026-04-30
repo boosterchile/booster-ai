@@ -89,6 +89,9 @@ Thumbs.db
 .terraform.lock.hcl
 crash.log
 crash.*.log
+# Plan binarios — efímeros, no committear (regenerar con terraform plan)
+tfplan
+*.tfplan
 
 # -------- Docker --------
 docker-compose.override.yml

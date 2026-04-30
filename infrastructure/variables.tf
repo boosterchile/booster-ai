@@ -15,9 +15,13 @@ variable "billing_account" {
 }
 
 variable "organization_id" {
-  description = "GCP Organization ID (opcional, si el proyecto está bajo organization)"
+  description = <<-EOT
+    GCP Organization ID. El proyecto booster-ai-494222 está bajo la organization
+    de boosterchile.com (435506363892). Mantener seteado para evitar que
+    terraform intente desvincular el proyecto del org en cada plan (drift).
+  EOT
   type        = string
-  default     = null
+  default     = "435506363892"
 }
 
 variable "region" {
@@ -118,13 +122,14 @@ variable "alert_email" {
 # -----------------------------------------------------------------------------
 variable "twilio_from_number" {
   description = <<-EOT
-    Twilio WhatsApp From number (E.164 con +). Default es el sandbox compartido
-    (+14155238886). Cambiar a +19383365293 (o el número que sea) cuando esté
-    registrado como Twilio WhatsApp Sender — proceso ~días con Meta business
-    verification (ver docs/runbooks/twilio-sender-registration.md).
+    Twilio WhatsApp From number (E.164 con +). Producción usa +19383365293
+    (Booster AI sender registrado 2026-04-29 via Embedded Sign-Up con WABA
+    874993441667738, Meta Business 7158708094223068). El sandbox compartido
+    +14155238886 queda como fallback documental — cambiar acá si hay que
+    rollbackear el sender real (ver docs/runbooks/twilio-sender-registration.md).
   EOT
   type        = string
-  default     = "+14155238886"
+  default     = "+19383365293"
   validation {
     condition     = can(regex("^\\+\\d+$", var.twilio_from_number))
     error_message = "twilio_from_number debe estar en formato E.164 con +."
