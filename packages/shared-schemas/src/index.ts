@@ -10,7 +10,17 @@ export * from './primitives/ids.js';
 export * from './primitives/chile.js';
 export * from './primitives/geo.js';
 
-// Dominio
+// Dominio — multi-tenant + ops (slice B pre-launch)
+export * from './domain/empresa.js';
+export * from './domain/plan.js';
+export * from './domain/membership.js';
+export * from './domain/zone.js';
+export * from './domain/offer.js';
+export * from './domain/assignment.js';
+export * from './domain/trip-event.js';
+
+// Dominio — entidades del MVP shared (algunas precedentes a multi-tenant,
+// se irán armonizando en commits siguientes para apuntar a empresa_id)
 export * from './domain/user.js';
 export * from './domain/carrier.js';
 export * from './domain/driver.js';
