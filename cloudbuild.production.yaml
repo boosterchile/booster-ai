@@ -110,8 +110,8 @@ steps:
       - |
         set -eu
         # api.boosterchile.com — URL pública canónica post-DNS-migration.
-        # Bash vars escapadas con dollar-dollar (Cloud Build interpreta $X como
-        # substitution).
+        # Bash vars escapadas con dollar-dollar — Cloud Build interpreta una
+        # variable bash sin escapar como substitution y rechaza el build.
         WEBHOOK_URL="https://api.boosterchile.com/webhooks/whatsapp"
 
         # POST sin firma debe devolver 403. Eso confirma que el bot está
