@@ -1,38 +1,34 @@
-import { Navigate } from '@tanstack/react-router';
 import { LogOut, User as UserIcon } from 'lucide-react';
-import { signOutUser, useAuth } from '../hooks/use-auth.js';
-import { useMe } from '../hooks/use-me.js';
+import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { signOutUser } from '../hooks/use-auth.js';
+import type { MeResponse } from '../hooks/use-me.js';
+
+type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
  * /app — dashboard post-login.
  *
- * Slice B.3.b: layout mínimo con header + main column placeholder. Las
+ * Slice B.3.b/c: layout mínimo con header + main column placeholder. Las
  * vistas reales (lista de ofertas para carrier, lista de cargas para
  * shipper, dashboard admin) se construyen en B.5+.
  *
- * Routing protection: si no hay user → /login. Si user pero
- * needs_onboarding → /onboarding.
+ * ProtectedRoute con `require-onboarded`: si no hay user → /login,
+ * si needs_onboarding → /onboarding, sino render con `me` ya tipado.
  */
 export function AppRoute() {
-  const { user, loading: authLoading } = useAuth();
-  const { data: me, isLoading: meLoading, error: meError } = useMe({ enabled: !!user });
+  return (
+    <ProtectedRoute meRequirement="require-onboarded">
+      {(ctx) => {
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
+        return <AppDashboard me={ctx.me} />;
+      }}
+    </ProtectedRoute>
+  );
+}
 
-  if (authLoading || meLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <div className="font-medium text-neutral-500 text-sm">Cargando…</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-
-  if (meError || !me || me.needs_onboarding) {
-    return <Navigate to="/onboarding" />;
-  }
-
+function AppDashboard({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
 
   async function handleSignOut() {

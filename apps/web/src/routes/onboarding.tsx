@@ -1,34 +1,31 @@
-import { Navigate } from '@tanstack/react-router';
-import { useAuth } from '../hooks/use-auth.js';
-import { useMe } from '../hooks/use-me.js';
+import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import type { MeResponse } from '../hooks/use-me.js';
+
+type MeNeedsOnboarding = Extract<MeResponse, { needs_onboarding: true }>;
 
 /**
  * /onboarding — flow de creación de empresa para users que se acaban de
  * registrar en Firebase pero no existen todavía en la DB de Booster.
  *
- * Slice B.3.b: solo placeholder (redirect a /app si ya está onboardeado).
- * El form completo viene en B.4 (4 pasos: empresa → tipo de operación →
- * plan → confirmación).
+ * Slice B.3.b/c: solo placeholder con email a soporte. El form completo
+ * de 4 pasos (empresa → tipo de operación → plan → confirmación) viene
+ * en B.4 junto con el endpoint POST /empresas/onboarding.
  */
 export function OnboardingRoute() {
-  const { user, loading: authLoading } = useAuth();
-  const { data: me, isLoading: meLoading } = useMe({ enabled: !!user });
+  return (
+    <ProtectedRoute meRequirement="allow-pre-onboarding">
+      {(ctx) => {
+        if (ctx.kind !== 'pre-onboarding') {
+          return null;
+        }
+        return <OnboardingPlaceholder me={ctx.me} />;
+      }}
+    </ProtectedRoute>
+  );
+}
 
-  if (authLoading || meLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <div className="font-medium text-neutral-500 text-sm">Cargando…</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-
-  if (me && me.needs_onboarding === false) {
-    return <Navigate to="/app" />;
-  }
+function OnboardingPlaceholder({ me }: { me: MeNeedsOnboarding }) {
+  const firstName = me.firebase.name?.split(' ')[0];
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
@@ -45,9 +42,8 @@ export function OnboardingRoute() {
             Creá tu empresa en Booster
           </h1>
           <p className="mt-3 text-neutral-600 text-sm">
-            Hola
-            {me?.needs_onboarding && me.firebase.name ? `, ${me.firebase.name.split(' ')[0]}` : ''}.
-            Completá los datos de tu empresa para empezar a operar. Tomamos 2 minutos.
+            Hola{firstName ? `, ${firstName}` : ''}. Completá los datos de tu empresa para empezar a
+            operar. Tomamos 2 minutos.
           </p>
 
           <div className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
