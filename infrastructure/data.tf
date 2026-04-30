@@ -141,8 +141,17 @@ resource "google_sql_database" "booster_ai" {
 }
 
 resource "random_password" "pg_app_password" {
-  length  = 32
-  special = true
+  # 32 chars, ~190 bits entropía con este alfabeto (62 alphanum + 4 safe).
+  # `override_special` restringe los specials a chars URL-safe (RFC 3986
+  # unreserved + algunos sub-delims sin riesgo) — evita que `urlencode()`
+  # del DATABASE_URL produzca `%XX` que algunos drivers Postgres (notablemente
+  # `pg` de Node) NO decodifican antes de pasar el password a Postgres,
+  # causando `password authentication failed`. Excluidos a propósito:
+  #   : / ? # @ & = % + " ' \ space  → rompen URL parser
+  #   $ ^ * ( ) [ ] { } < > , ;       → ambiguos según driver
+  length           = 32
+  special          = true
+  override_special = "!-_.~"
 }
 
 resource "google_sql_user" "app" {
