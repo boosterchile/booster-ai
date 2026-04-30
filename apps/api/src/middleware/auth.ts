@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import type { MiddlewareHandler } from 'hono';
 
 /**
@@ -57,7 +57,7 @@ export function createAuthMiddleware(opts: {
 
     const token = authHeader.slice('Bearer '.length).trim();
 
-    let payload: ReturnType<Awaited<ReturnType<OAuth2Client['verifyIdToken']>>['getPayload']>;
+    let payload: TokenPayload | undefined;
     try {
       // verifyIdToken hace todo el heavy lifting:
       //   - parsea JWT, valida estructura
