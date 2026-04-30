@@ -178,16 +178,24 @@ Durante las primeras 24h:
 7. Booster 2.0: `curl https://app.boosterchile.com` debe seguir
    resolviendo a Firebase (200 si la app está up).
 
-### Fase 7 — Cleanup post-confirmación (T+7 días)
+### Fase 7 — Cleanup post-confirmación
 
-1. TTL → 3600s (1h). Editar `infrastructure/networking.tf` y `terraform apply`.
-2. Smoke test del cloudbuild apuntando ya a `api.boosterchile.com` en
-   lugar de `*.run.app`:
-   - Editar `cloudbuild.production.yaml` para usar la URL pública.
-   - Cambiar `infrastructure/compute.tf` `local.cloud_run_api_url` →
-     `"https://api.boosterchile.com"` (o agregar como audience secundario
-     antes de switchear).
-3. Cancelar cualquier alerta de "DNS resolution failed" si las hubiera.
+Ejecutado 2026-04-30 (adelantado de T+7d porque el E2E ya validó
+estabilidad: BOO-M6LO3H + email entrante post-corte ok):
+
+1. **TTL bump 300→3600s.** Aplicado en commit (ver git log de
+   `infrastructure/networking.tf`). 6 records movidos: apex, www, app, demo,
+   api, telemetry. MX/TXT/DKIM ya estaban en 3600.
+2. **Smoke test del cloudbuild migrado a URL pública.** Ya hecho en commit
+   `8ed82f2`: `cloudbuild.production.yaml` apunta a
+   `https://api.boosterchile.com/webhooks/whatsapp` para validar
+   DNS+cert+LB+WAF+app en una sola request.
+3. **API_AUDIENCE.** No simplificado a sólo URL pública: se mantuvo el CSV
+   `public,*.run.app` como diseño defensivo permanente. *.run.app es la
+   audience canónica para tráfico interno Cloud Run-to-Cloud Run; la
+   pública queda aceptada por si un caller futuro entra por LB. Costo 0.
+4. **Meta secrets deprecated.** Conservados como shells en `security.tf`
+   (no montados en ningún service). Review programado: 2026-10-30.
 
 ## Rollback
 

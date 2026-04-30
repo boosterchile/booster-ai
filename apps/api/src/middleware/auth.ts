@@ -28,10 +28,10 @@ import type { MiddlewareHandler } from 'hono';
 export function createAuthMiddleware(opts: {
   /**
    * Lista de audiences aceptadas. El claim `aud` del token tiene que matchear
-   * alguna de ellas. Soportamos múltiples para migración entre URL pública
-   * (https://api.boosterchile.com) y URL interna *.run.app sin downtime — el
-   * bot durante el rollout puede tener cualquiera de las dos como audience.
-   * Una vez la migración esté estable, dejar solo la URL canónica.
+   * alguna de ellas. Soportamos múltiples por diseño: la URL interna
+   * *.run.app (canónica para Cloud Run-to-Cloud Run) y la URL pública
+   * https://api.boosterchile.com (cubre callers que entren por el LB y
+   * firmen el OIDC con la URL pública).
    */
   apiAudience: readonly string[];
   allowedCallerSa: string;

@@ -79,9 +79,11 @@ locals {
     "frontend-maps-key",
 
     # WhatsApp Business — Meta Cloud API directo (DEPRECATED en Fase 6.4).
-    # Conservados para opción de revertir a Meta directo si se decide cancelar
-    # Twilio. NO se montan en ningún Cloud Run service. Ver ADR-006 amendment
-    # para historial. Si en 6 meses no se vuelven a usar, removerlos.
+    # Conservados como opción de fallback si se decide cancelar Twilio. NO se
+    # montan en ningún Cloud Run service (notification-service tampoco — los
+    # mounts se removieron post-migración Twilio). Ver ADR-006 amendment.
+    # REVIEW: 2026-10-30 — si para esa fecha siguen sin uso, remover de este
+    # local + del placeholder version + correr terraform apply para destruir.
     "whatsapp-app-secret",
     "whatsapp-access-token",
     "whatsapp-phone-number-id",
@@ -101,7 +103,8 @@ locals {
     # Observability
     "sentry-dsn", # opcional
 
-    # Verify token Meta webhook handshake (DEPRECATED en Fase 6.4 junto al resto).
+    # Verify token Meta webhook handshake (DEPRECATED en Fase 6.4 junto al
+    # resto). REVIEW: 2026-10-30 (mismo gate que los otros 4 secrets Meta).
     "whatsapp-webhook-verify-token",
 
     # Twilio WhatsApp BSP (Fase 6.4) — el número físico está en Twilio, así que

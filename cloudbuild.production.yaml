@@ -55,7 +55,7 @@ steps:
   # el owner único de la config Cloud Run: env vars, secrets, service
   # account, scaling, VPC connector, etc. `gcloud run deploy` sin flags
   # pisa TODA la config y deja el service sin secrets → el bot revienta
-  # validando WHATSAPP_ACCESS_TOKEN/APP_SECRET/PHONE_NUMBER_ID.
+  # validando TWILIO_AUTH_TOKEN al startup (env validation con zod).
   # `services update --image` sólo cambia la imagen y preserva el resto.
   # =========================================================================
   - id: deploy-api

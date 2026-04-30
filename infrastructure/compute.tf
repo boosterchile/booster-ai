@@ -33,9 +33,10 @@ locals {
     [google_secret_manager_secret_version.database_url.id],
   )
 
-  # URLs *.run.app de los Cloud Run services — usadas como audiences legacy
-  # mientras la migración a URL pública (https://api.boosterchile.com) se
-  # estabiliza. Cloud Run nombra cada service como
+  # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
+  # interno Cloud Run-to-Cloud Run (el caller arma un OIDC token con audience
+  # = la URL del service que va a invocar, y Google la valida contra esta
+  # config). Cloud Run nombra cada service como
   # https://<service-name>-<project-number>.<region>.run.app.
   cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
   cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
@@ -65,11 +66,16 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
-    # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas:
-    # incluye tanto la URL pública (api.boosterchile.com — la canónica
-    # post-migración DNS) como la legacy *.run.app — para soportar callers
-    # en transición sin downtime. Después de validar estabilidad, simplificar
-    # a solo la URL pública (cleanup en T+7d del runbook DNS).
+    # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
+    # como diseño permanente:
+    #   - cloud_run_api_url (*.run.app): tráfico interno Cloud Run-to-Cloud Run
+    #     (bot → api). Es el camino canónico — bypass del LB, sin Cloud Armor.
+    #   - public_api_url (api.boosterchile.com): por si un caller futuro entra
+    #     vía LB y necesita autenticarse con OIDC contra el api (ej. backend
+    #     externo que solo conoce la URL pública).
+    # Hoy en producción solo el bot llama, y va por *.run.app. La pública
+    # queda aceptada defensivamente — su costo es 0 y abre la opción sin
+    # tener que modificar el middleware después.
     API_AUDIENCE         = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
     CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},${local.cloud_run_api_url}"
@@ -204,13 +210,13 @@ module "service_notification" {
   min_instances = 0
   max_instances = 20
 
+  # Notification-service es stub hasta que tenga implementación. NO monta
+  # secrets de Meta WhatsApp Cloud API (deprecated post-Fase 6.4 — el envío
+  # de mensajes WA va via Twilio en el bot). Cuando se implemente, montar los
+  # secrets que realmente use (probablemente Twilio + email/SMS providers).
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME = "booster-ai-notification-service"
   })
-  secrets = {
-    WHATSAPP_ACCESS_TOKEN = google_secret_manager_secret.secrets["whatsapp-access-token"].secret_id
-    WHATSAPP_APP_SECRET   = google_secret_manager_secret.secrets["whatsapp-app-secret"].secret_id
-  }
 
   public = false
 

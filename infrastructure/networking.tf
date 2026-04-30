@@ -416,8 +416,11 @@ resource "google_compute_global_forwarding_rule" "http_redirect" {
 #   marketing (futuro)        → Booster AI (cuando exista el sitio).
 #   MX, SPF, DKIM, DMARC, verifications → email Workspace.
 #
-# TTL bajo (300s) durante la ventana de corte. Subir a 3600s en T+7d (Fase 7
-# del runbook) cuando el DNS sea estable.
+# TTL en 3600s (1h) — valor de producción. Durante la migración (Fase 5 del
+# runbook) estuvo en 300s para permitir rollback rápido; tras validar E2E
+# (BOO-M6LO3H + email entrante post-corte ok) se subió al valor estable.
+# Si una emergencia exige cambio rápido, bajar a 300s vía Terraform apply +
+# esperar TTL viejo + cambiar destino + re-subir a 3600.
 #
 # DKIM (`google._domainkey`) está PENDIENTE de confirmación. El selector
 # "google" actual no devuelve nada en GoDaddy → o bien DKIM no está
@@ -432,7 +435,7 @@ resource "google_dns_record_set" "apex" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"
-  ttl          = 300
+  ttl          = 3600
   rrdatas = [
     "13.248.243.5",
     "76.223.105.230",
@@ -445,7 +448,7 @@ resource "google_dns_record_set" "www" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "CNAME"
-  ttl          = 300
+  ttl          = 3600
   rrdatas      = ["ghs.googlehosted.com."]
 }
 
@@ -455,7 +458,7 @@ resource "google_dns_record_set" "app" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "CNAME"
-  ttl          = 300
+  ttl          = 3600
   rrdatas      = ["big-cabinet-482101-s3.web.app."]
 }
 
@@ -465,7 +468,7 @@ resource "google_dns_record_set" "demo" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "CNAME"
-  ttl          = 300
+  ttl          = 3600
   rrdatas      = ["ghs.googlehosted.com."]
 }
 
@@ -475,7 +478,7 @@ resource "google_dns_record_set" "api" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"
-  ttl          = 300
+  ttl          = 3600
   rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
@@ -485,7 +488,7 @@ resource "google_dns_record_set" "telemetry" {
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"
-  ttl          = 300
+  ttl          = 3600
   rrdatas      = [google_compute_address.telemetry_lb.address]
 }
 

@@ -20,10 +20,11 @@ const apiEnvSchema = commonEnvSchema
     /**
      * Audiences aceptadas en el OIDC token de Cloud Run SA-to-SA.
      *
-     * Acepta CSV ("https://api.boosterchile.com,https://booster-ai-api-...run.app")
-     * para soportar migración entre URLs públicas y *.run.app sin downtime —
-     * mientras el bot caller está en transición de una a otra. Después de la
-     * migración estable, dejar solo la URL canónica.
+     * CSV ("https://api.boosterchile.com,https://booster-ai-api-...run.app")
+     * por diseño: el api acepta ambas URLs como audience válida.
+     *   - *.run.app cubre tráfico interno Cloud Run-to-Cloud Run (canónico).
+     *   - api.boosterchile.com cubre callers futuros que entren por el LB
+     *     público y firmen el OIDC con la URL pública como audience.
      *
      * Cada entrada debe ser una URL completa (https://...). El middleware de
      * auth chequea `claims.aud ∈ API_AUDIENCE`.
