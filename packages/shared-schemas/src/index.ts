@@ -38,3 +38,6 @@ export * from './events/telemetry-events.js';
 export * from './common.js';
 export * from './trip-request.js';
 export * from './whatsapp.js';
+
+// Onboarding (Slice B.4)
+export * from './onboarding.js';

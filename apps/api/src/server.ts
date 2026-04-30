@@ -8,6 +8,7 @@ import { config } from './config.js';
 import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
+import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
@@ -84,9 +85,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     });
     app.use('/me', firebaseAuthMiddleware);
     app.route('/me', createMeRoutes({ db: opts.db, logger }));
+
+    // Empresas — POST /empresas/onboarding crea user+empresa+membership.
+    // Solo firebaseAuth (no userContext) porque el user todavía no existe
+    // en la DB cuando llama acá.
+    app.use('/empresas/*', firebaseAuthMiddleware);
+    app.route('/empresas', createEmpresaRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
-      'firebaseAuth instance not provided — /me route disabled. Esto solo es OK en tests que no necesitan auth de usuario.',
+      'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',
     );
   }
 
