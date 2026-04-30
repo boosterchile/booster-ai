@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { createDb } from './db/client.js';
 import { runMigrations } from './db/migrator.js';
 import { createServer } from './server.js';
+import { getFirebaseAuth } from './services/firebase.js';
 
 const logger = createLogger({
   service: config.SERVICE_NAME,
@@ -25,7 +26,13 @@ async function main(): Promise<void> {
   // dedicado para advisory lock — ver db/migrator.ts.
   await runMigrations(pool, logger);
 
-  const app = createServer({ db, pool, logger });
+  // Firebase Auth singleton — usado por el middleware /me y los demás
+  // endpoints user-facing. Lazy-init: la primera llamada a verifyIdToken
+  // descarga JWKS de Firebase. ADC en Cloud Run, GOOGLE_APPLICATION_CREDENTIALS
+  // en dev local.
+  const firebaseAuth = getFirebaseAuth({ projectId: config.FIREBASE_PROJECT_ID });
+
+  const app = createServer({ db, pool, firebaseAuth, logger });
 
   const server = serve(
     {
