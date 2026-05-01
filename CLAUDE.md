@@ -216,4 +216,21 @@ No "adivino" ni "asumo lo razonable" en decisiones que no son claramente determi
 
 ---
 
+## Reglas de naming bilingüe (Booster AI)
+
+- **TypeScript code**: identifiers en inglés camelCase. `users`, `trips`, `OfferRow`, `acceptOffer`.
+- **SQL DDL**: tablas y columnas en español snake_case sin tildes. `usuarios`, `viajes`, `nombre_completo`, `creado_en`.
+- **Enum values**: español snake_case sin tildes. Excepto siglas internacionales (`GLEC_V3`, `GHG_PROTOCOL`, `ISO_14064`, `GRI`, `SASB`, `CDP`).
+- **UI labels**: español natural con tildes. Mapping en presentación (componentes web).
+- **Drizzle pattern**: `export const users = pgTable('usuarios', { fullName: varchar('nombre_completo', ...) })`.
+
+## Reglas de arquitectura (no negociables)
+
+- **Domain canónico vive en `packages/shared-schemas/src/domain/`**. Toda tabla Drizzle debe coincidir con un schema del domain.
+- **Algoritmos viven en `packages/`**. `apps/api/src/services/` orquesta DB/transacciones; las funciones puras (scoring, formatters, builders) viven en el package correspondiente. Prohibido escribir lógica de matching o cálculo de carbono inline en services.
+- **Carrier/Shipper deprecated**. Usar `Transportista`/`GeneradorCarga` en código y SQL. `transportistaIdSchema` reemplaza `carrierIdSchema`; este último queda como alias deprecated mientras schemas legacy se migran.
+- **Stakeholder se mantiene como término** (anglicismo aceptado en español de negocios).
+
+---
+
 **Estado de adopción**: este contrato entra en vigor desde el primer commit del repo. Cualquier excepción debe documentarse.

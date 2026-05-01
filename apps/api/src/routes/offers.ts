@@ -4,7 +4,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { offers, tripRequests } from '../db/schema.js';
+import { offers, trips } from '../db/schema.js';
 import {
   OfferExpiredError,
   OfferNotFoundError,
@@ -15,37 +15,25 @@ import {
 } from '../services/offer-actions.js';
 
 /**
- * Endpoints para que carriers vean y respondan ofertas.
+ * Endpoints para que transportistas vean y respondan ofertas.
  *
  *   - GET    /offers/mine         → lista offers del activeMembership.empresa
- *   - POST   /offers/:id/accept   → acepta, crea assignment, supersede otras
+ *   - POST   /offers/:id/accept   → acepta, crea assignment, reemplaza otras
  *   - POST   /offers/:id/reject   → rechaza con razón opcional
- *
- * Todos requieren firebaseAuth + userContext middlewares en el chain.
- *
- * GET /offers/mine soporta filter por status (default: pending). Devuelve
- * data joined con trip_request para que el cliente arme cards sin hacer
- * un fetch adicional por offer.
  */
 
 const acceptBodySchema = z.object({
-  /**
-   * Si carrier quiere usar otro vehículo distinto al sugerido, pasarlo acá.
-   * Slice futuro: validar que es propio + capacidad suficiente. MVP solo
-   * acepta el suggested_vehicle_id que ya viene en la offer.
-   */
   override_vehicle_id: z.string().uuid().optional(),
 });
 
 const rejectBodySchema = z.object({
-  /** Razón opcional. Útil para analytics — entender por qué se rechazan. */
   reason: z.string().min(1).max(500).optional(),
 });
 
 export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // GET /offers/mine?status=pending
+  // GET /offers/mine?status=pendiente
   app.get('/mine', async (c) => {
     const userContext = c.get('userContext');
     if (!userContext) {
@@ -56,24 +44,28 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
     if (!active) {
       return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
     }
-    if (!active.empresa.isCarrier) {
+    if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
 
     const statusParam = c.req.query('status');
-    const allowedStatus = ['pending', 'accepted', 'rejected', 'expired', 'superseded'] as const;
+    const allowedStatus = [
+      'pendiente',
+      'aceptada',
+      'rechazada',
+      'expirada',
+      'reemplazada',
+    ] as const;
     type OfferStatus = (typeof allowedStatus)[number];
     const status: OfferStatus =
       statusParam && (allowedStatus as readonly string[]).includes(statusParam)
         ? (statusParam as OfferStatus)
-        : 'pending';
+        : 'pendiente';
 
-    // Join offers + trip_requests para que el cliente reciba todo en una
-    // sola query. Filter por empresa = activeMembership.
     const rows = await opts.db
-      .select({ offer: offers, trip: tripRequests })
+      .select({ offer: offers, trip: trips })
       .from(offers)
-      .innerJoin(tripRequests, eq(offers.tripRequestId, tripRequests.id))
+      .innerJoin(trips, eq(offers.tripId, trips.id))
       .where(and(eq(offers.empresaId, active.empresa.id), eq(offers.status, status)))
       .orderBy(desc(offers.sentAt));
 
@@ -81,7 +73,7 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
       offers: rows.map((r) => ({
         id: r.offer.id,
         status: r.offer.status,
-        score: r.offer.score / 1000, // de-normalizar el entero ×1000
+        score: r.offer.score / 1000,
         proposed_price_clp: r.offer.proposedPriceClp,
         suggested_vehicle_id: r.offer.suggestedVehicleId,
         sent_at: r.offer.sentAt,
@@ -115,7 +107,7 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
     if (!active) {
       return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
     }
-    if (!active.empresa.isCarrier) {
+    if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
 
@@ -138,7 +130,7 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
           },
           assignment: {
             id: result.assignment.id,
-            trip_request_id: result.assignment.tripRequestId,
+            trip_request_id: result.assignment.tripId,
             status: result.assignment.status,
             agreed_price_clp: result.assignment.agreedPriceClp,
             accepted_at: result.assignment.acceptedAt,
@@ -163,9 +155,6 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
       if (err instanceof OfferExpiredError) {
         return c.json({ error: 'offer_expired', code: 'offer_expired' }, 409);
       }
-      // UNIQUE constraint en assignment.trip_request_id si dos carriers
-      // aceptan al mismo tiempo: el segundo throw error de DB. Drizzle lo
-      // expone como Error con cause. Slice posterior puede mapear más fino.
       const errMsg = err instanceof Error ? err.message : String(err);
       if (errMsg.toLowerCase().includes('unique') || errMsg.toLowerCase().includes('duplicate')) {
         opts.logger.warn({ err, offerId }, 'race condition: trip already assigned');
@@ -186,7 +175,7 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
     if (!active) {
       return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
     }
-    if (!active.empresa.isCarrier) {
+    if (!active.empresa.isTransportista) {
       return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
     }
 

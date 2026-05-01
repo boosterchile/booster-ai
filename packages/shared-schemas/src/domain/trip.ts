@@ -1,15 +1,17 @@
 import { z } from 'zod';
 import {
   cargoRequestIdSchema,
-  carrierIdSchema,
   driverIdSchema,
-  shipperIdSchema,
+  generadorCargaIdSchema,
+  transportistaIdSchema,
   tripIdSchema,
   vehicleIdSchema,
 } from '../primitives/ids.js';
 
 /**
- * Estados del Trip lifecycle. Ver ADR-004 "Trip lifecycle como máquina de estados".
+ * Estados del Trip lifecycle. Ver ADR-004 "Trip lifecycle como máquina de
+ * estados". Las métricas ESG (huella, distancia, combustible) NO viven
+ * acá — viven en `trip-metrics.ts` (1:1 con trip).
  */
 export const tripStateSchema = z.enum([
   'requested',
@@ -37,8 +39,8 @@ export type TripState = z.infer<typeof tripStateSchema>;
 export const tripSchema = z.object({
   id: tripIdSchema,
   cargo_request_id: cargoRequestIdSchema,
-  shipper_id: shipperIdSchema,
-  carrier_id: carrierIdSchema.nullable(),
+  generador_carga_id: generadorCargaIdSchema,
+  transportista_id: transportistaIdSchema.nullable(),
   driver_id: driverIdSchema.nullable(),
   vehicle_id: vehicleIdSchema.nullable(),
   state: tripStateSchema,
@@ -52,11 +54,6 @@ export const tripSchema = z.object({
   delivered_at: z.string().datetime().nullable(),
   confirmed_at: z.string().datetime().nullable(),
   completed_at: z.string().datetime().nullable(),
-  // Métricas ESG
-  carbon_emissions_kgco2e: z.number().nonnegative().nullable(),
-  distance_km: z.number().nonnegative().nullable(),
-  fuel_consumed_l: z.number().nonnegative().nullable(),
-  precision_method: z.enum(['EXACT_CANBUS', 'MODELED', 'DEFAULT']).nullable(),
   // Ratings
   shipper_rating_for_carrier: z.number().int().min(1).max(5).nullable(),
   carrier_rating_for_shipper: z.number().int().min(1).max(5).nullable(),

@@ -11,11 +11,12 @@ import type { Db } from '../db/client.js';
 import { whatsAppIntakeDrafts } from '../db/schema.js';
 
 /**
- * Endpoints de trip requests — consumidos SOLO por apps/whatsapp-bot en el thin
- * slice. Ambos endpoints van protegidos por auth middleware aplicado en server.ts.
+ * Endpoints de trip requests legacy — consumidos SOLO por
+ * apps/whatsapp-bot. La URL `/trip-requests` se mantiene por compat
+ * mientras el bot no migre a una llamada empresa-aware.
  *
- * POST /trip-requests      — crea un draft desde el intake del bot
- * GET  /trip-requests/:code — lookup por tracking code (para follow-up queries)
+ * POST /trip-requests       — crea un draft desde el intake del bot
+ * GET  /trip-requests/:code — lookup por tracking code
  */
 export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
   const { db, logger } = opts;
@@ -24,8 +25,6 @@ export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
   app.post('/', zValidator('json', whatsAppIntakeCreateInputSchema), async (c) => {
     const input = c.req.valid('json');
 
-    // Retry loop para tracking code en caso de colisión UNIQUE (paradoja del
-    // cumpleaños a ~47K TRs). Max 5 intentos antes de rendirnos.
     const MAX_RETRIES = 5;
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
@@ -35,17 +34,16 @@ export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
           .insert(whatsAppIntakeDrafts)
           .values({
             trackingCode,
-            shipperWhatsapp: input.shipper_whatsapp,
+            generadorCargaWhatsapp: input.shipper_whatsapp,
             originAddressRaw: input.origin_address_raw,
             destinationAddressRaw: input.destination_address_raw,
             cargoType: input.cargo_type,
             pickupDateRaw: input.pickup_date_raw,
-            status: 'captured',
+            status: 'capturado',
           })
           .returning();
 
         if (!row) {
-          // Imposible con Drizzle + returning(), pero TypeScript no lo sabe.
           throw new Error('Insert returned no rows');
         }
 
@@ -53,7 +51,6 @@ export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
           {
             trackingCode: row.trackingCode,
             cargoType: row.cargoType,
-            // shipperWhatsapp NO se logea (redacted por logger.redactionPaths)
           },
           'WhatsApp intake draft created',
         );
@@ -69,8 +66,6 @@ export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
         );
       } catch (err) {
         lastError = err;
-        // Unique violation de Postgres → retry con nuevo code.
-        // Cualquier otro error → abortar.
         if (!isUniqueViolation(err)) {
           logger.error({ err }, 'Failed to create intake draft');
           return c.json({ error: 'internal_server_error' }, 500);
@@ -117,7 +112,6 @@ export function createTripRequestsRoutes(opts: { db: Db; logger: Logger }) {
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  // pg error code 23505: unique_violation
   return (
     typeof err === 'object' &&
     err !== null &&

@@ -1,32 +1,34 @@
 import { z } from 'zod';
-import { carrierIdSchema, vehicleIdSchema } from '../primitives/ids.js';
+import { transportistaIdSchema, vehicleIdSchema } from '../primitives/ids.js';
 
 export const vehicleTypeSchema = z.enum([
-  'pickup',
-  'van_small', // 1/4 camión
-  'van_medium', // 3/4 camión
-  'truck_small',
-  'truck_medium',
-  'truck_heavy',
-  'semi_trailer',
-  'refrigerated',
-  'tanker',
+  'camioneta',
+  'furgon_pequeno',
+  'furgon_mediano',
+  'camion_pequeno',
+  'camion_mediano',
+  'camion_pesado',
+  'semi_remolque',
+  'refrigerado',
+  'tanque',
 ]);
 
 export const fuelTypeSchema = z.enum([
   'diesel',
-  'gasoline',
-  'gas_lpg',
-  'gas_cng',
-  'electric',
-  'hybrid_diesel',
-  'hybrid_gasoline',
-  'hydrogen',
+  'gasolina',
+  'gas_glp',
+  'gas_gnc',
+  'electrico',
+  'hibrido_diesel',
+  'hibrido_gasolina',
+  'hidrogeno',
 ]);
+
+export const vehicleStatusSchema = z.enum(['activo', 'mantenimiento', 'retirado']);
 
 export const vehicleSchema = z.object({
   id: vehicleIdSchema,
-  carrier_id: carrierIdSchema,
+  transportista_id: transportistaIdSchema,
   plate: z
     .string()
     .regex(/^[A-Z]{2}[-·]?[A-Z]{2}[-·]?\d{2}$|^[A-Z]{4}[-·]?\d{2}$/, 'Patente Chile inválida'),
@@ -37,10 +39,21 @@ export const vehicleSchema = z.object({
   year: z.number().int().min(1990).max(2100),
   brand: z.string().min(1),
   model: z.string().min(1),
+  /**
+   * Peso en vacío (curb weight) del vehículo en kg. Insumo del
+   * carbon-calculator para estimar consumo bajo carga vs base.
+   */
+  curb_weight_kg: z.number().int().positive(),
+  /**
+   * Consumo base en litros cada 100 km a carga normal. Base para los
+   * cálculos GLEC v3.0 cuando no hay telemetría real (CANbus). Null si
+   * el carrier todavía no lo declaró.
+   */
+  consumption_l_per_100km_baseline: z.number().positive().nullable(),
   teltonika_imei: z.string().optional(),
   last_inspection_at: z.string().datetime().optional(),
   inspection_expires_at: z.string().datetime().optional(),
-  status: z.enum(['active', 'maintenance', 'retired']),
+  status: vehicleStatusSchema,
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -48,3 +61,4 @@ export const vehicleSchema = z.object({
 export type Vehicle = z.infer<typeof vehicleSchema>;
 export type VehicleType = z.infer<typeof vehicleTypeSchema>;
 export type FuelType = z.infer<typeof fuelTypeSchema>;
+export type VehicleStatus = z.infer<typeof vehicleStatusSchema>;

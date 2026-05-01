@@ -81,16 +81,16 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
           {activeEmpresa ? (
             <p className="mt-2 text-neutral-600">
               Empresa activa: <span className="font-medium">{activeEmpresa.legal_name}</span>
-              {activeEmpresa.is_carrier && ' · Carrier'}
-              {activeEmpresa.is_shipper && ' · Shipper'}
+              {activeEmpresa.is_transportista && ' · Transportista'}
+              {activeEmpresa.is_generador_carga && ' · Generador de carga'}
             </p>
           ) : (
             <p className="mt-2 text-neutral-600">Sin empresa activa.</p>
           )}
 
-          {activeEmpresa?.is_carrier && (
+          {activeEmpresa?.is_transportista && (
             <section className="mt-10">
-              <h2 className="font-semibold text-neutral-900 text-xl">Como carrier</h2>
+              <h2 className="font-semibold text-neutral-900 text-xl">Como transportista</h2>
               <Link
                 to="/app/ofertas"
                 className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
@@ -114,20 +114,21 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             </section>
           )}
 
-          {!activeEmpresa?.is_carrier && !activeEmpresa?.is_shipper && (
+          {!activeEmpresa?.is_transportista && !activeEmpresa?.is_generador_carga && (
             <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
               <h2 className="font-semibold text-neutral-900 text-xl">
                 Tu empresa todavía no opera
               </h2>
               <p className="mt-2 text-neutral-700 text-sm">
-                Configurá si vas a operar como shipper, carrier o ambos desde el perfil de empresa.
+                Configurá si vas a operar como generador de carga, transportista o ambos desde el
+                perfil de empresa.
               </p>
             </section>
           )}
 
-          {activeEmpresa?.is_shipper && (
+          {activeEmpresa?.is_generador_carga && (
             <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-              <h2 className="font-semibold text-neutral-900 text-xl">Como shipper</h2>
+              <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
               <p className="mt-2 text-neutral-700 text-sm">
                 Form web para crear cargas en construcción (slice B.7). Mientras tanto podés crear
                 cargas escribiendo "hola" al WhatsApp del bot Booster.

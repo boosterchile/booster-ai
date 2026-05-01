@@ -14,13 +14,12 @@ export interface MembershipWithEmpresa {
 
 export interface UserContext {
   user: UserRow;
-  /** Todas las memberships activas del user (status = 'active'). */
+  /** Todas las memberships activas del user (estado = 'activa'). */
   memberships: MembershipWithEmpresa[];
   /**
-   * Membership "activa" para esta request. El cliente la elige vía header
-   * `X-Empresa-Id`. Si solo tiene 1 membership, esa es la default. Si tiene
-   * 0 memberships, este valor es null (el user puede seguir operando como
-   * platform admin si lo es, o ir a onboarding de empresa).
+   * Membership "activa" para esta request. El cliente la elige vía
+   * header `X-Empresa-Id`. Si solo tiene 1 membership, esa es la
+   * default. Si tiene 0 memberships, este valor es null.
    */
   activeMembership: MembershipWithEmpresa | null;
 }
@@ -42,27 +41,9 @@ export class EmpresaNotInMembershipsError extends Error {
   }
 }
 
-/**
- * Resuelve el contexto del user dado su firebase_uid.
- *
- * Lógica de activeMembership:
- *   - Si `requestedEmpresaId` está presente: tiene que matchear una
- *     membership activa del user, sino EmpresaNotInMembershipsError.
- *   - Si no está presente y el user tiene 1+ memberships activas: default
- *     a la primera (orden de joined_at ASC, primera empresa a la que se
- *     unió).
- *   - Si no tiene memberships activas: activeMembership = null.
- *
- * @throws UserNotFoundError si no existe user con ese firebase_uid
- * @throws EmpresaNotInMembershipsError si requestedEmpresaId no matchea
- */
 export async function resolveUserContext(opts: {
   db: Db;
   firebaseUid: string;
-  /**
-   * `string | undefined` (no opt prop) para que `exactOptionalPropertyTypes`
-   * no obligue al caller a destructurar antes de pasar.
-   */
   requestedEmpresaId: string | undefined;
 }): Promise<UserContext> {
   const { db, firebaseUid, requestedEmpresaId } = opts;
@@ -73,13 +54,11 @@ export async function resolveUserContext(opts: {
     throw new UserNotFoundError(firebaseUid);
   }
 
-  // Cargar memberships activas + empresa join. Drizzle no infiere el join
-  // como objeto anidado por default, así que iteramos el resultado plano.
   const rows = await db
     .select({ membership: memberships, empresa: empresas })
     .from(memberships)
     .innerJoin(empresas, eq(memberships.empresaId, empresas.id))
-    .where(and(eq(memberships.userId, user.id), eq(memberships.status, 'active')));
+    .where(and(eq(memberships.userId, user.id), eq(memberships.status, 'activa')));
 
   const memberships_: MembershipWithEmpresa[] = rows.map((r) => ({
     membership: r.membership,
@@ -94,9 +73,6 @@ export async function resolveUserContext(opts: {
     }
     activeMembership = match;
   } else if (memberships_.length > 0) {
-    // Default: primera membership (la lista llega en orden indefinido del DB,
-    // pero para B.2 cualquier orden estable es suficiente; B.x posterior
-    // puede agregar orden por last_used_at).
     activeMembership = memberships_[0] ?? null;
   }
 

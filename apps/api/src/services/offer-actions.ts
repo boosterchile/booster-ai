@@ -7,7 +7,7 @@ import {
   assignments,
   offers,
   tripEvents,
-  tripRequests,
+  trips,
 } from '../db/schema.js';
 
 /**
@@ -35,7 +35,7 @@ export class OfferNotPendingError extends Error {
     public readonly offerId: string,
     public readonly status: string,
   ) {
-    super(`Offer ${offerId} is in status ${status}, not pending`);
+    super(`Offer ${offerId} is in status ${status}, not pendiente`);
     this.name = 'OfferNotPendingError';
   }
 }
@@ -55,17 +55,15 @@ export interface AcceptOfferResult {
 
 /**
  * Aceptar oferta — atómico:
- *   1. Verifica que la offer existe, pertenece a la empresa caller, está
- *      pending y no expirada.
- *   2. Actualiza offer.status = 'accepted', responded_at = now,
- *      response_channel = 'web'.
- *   3. Crea Assignment (status='assigned'). UNIQUE (trip_request_id) en DB
- *      previene race condition: si dos carriers aceptan al mismo tiempo,
- *      el segundo rompe con error de constraint y el route layer lo
- *      mapea a 409 already_assigned.
- *   4. Las demás offers del mismo trip_request pasan a 'superseded'.
- *   5. trip_request.status = 'assigned'.
- *   6. Insert trip_events: assignment_created + offer_accepted.
+ *   1. Verifica offer existe, pertenece a la empresa, está pendiente y no expirada.
+ *   2. Update offer.estado='aceptada', respondido_en=now, canal_respuesta='web'.
+ *   3. Crea Assignment (estado='asignado'). UNIQUE (viaje_id) en DB previene
+ *      race condition: si dos transportistas aceptan al mismo tiempo, el
+ *      segundo rompe con error de constraint y el route layer lo mapea a
+ *      409 already_assigned.
+ *   4. Las demás offers del mismo viaje pasan a 'reemplazada'.
+ *   5. trip.estado = 'asignado'.
+ *   6. Insert eventos_viaje: asignacion_creada + oferta_aceptada.
  */
 export async function acceptOffer(opts: {
   db: Db;
@@ -86,7 +84,7 @@ export async function acceptOffer(opts: {
     if (offer.empresaId !== empresaId) {
       throw new OfferNotOwnedError(offerId, empresaId);
     }
-    if (offer.status !== 'pending') {
+    if (offer.status !== 'pendiente') {
       throw new OfferNotPendingError(offerId, offer.status);
     }
     if (offer.expiresAt.getTime() < Date.now()) {
@@ -99,7 +97,7 @@ export async function acceptOffer(opts: {
     const [acceptedOffer] = await tx
       .update(offers)
       .set({
-        status: 'accepted',
+        status: 'aceptada',
         respondedAt: now,
         responseChannel: 'web',
         updatedAt: now,
@@ -110,15 +108,15 @@ export async function acceptOffer(opts: {
       throw new Error('Update offer returned no row');
     }
 
-    // 3. Crear assignment. UNIQUE (trip_request_id) protege contra race.
+    // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
     const [assignment] = await tx
       .insert(assignments)
       .values({
-        tripRequestId: offer.tripRequestId,
+        tripId: offer.tripId,
         offerId: offer.id,
         empresaId: offer.empresaId,
         vehicleId: offer.suggestedVehicleId ?? '',
-        status: 'assigned',
+        status: 'asignado',
         agreedPriceClp: offer.proposedPriceClp,
         acceptedAt: now,
       })
@@ -127,31 +125,31 @@ export async function acceptOffer(opts: {
       throw new Error('Insert assignment returned no row');
     }
 
-    // 4. Otras offers del mismo trip pasan a superseded.
+    // 4. Otras offers del mismo trip pasan a reemplazada.
     const supersededRows = await tx
       .update(offers)
-      .set({ status: 'superseded', updatedAt: now })
+      .set({ status: 'reemplazada', updatedAt: now })
       .where(
         and(
-          eq(offers.tripRequestId, offer.tripRequestId),
+          eq(offers.tripId, offer.tripId),
           ne(offers.id, offer.id),
-          eq(offers.status, 'pending'),
+          eq(offers.status, 'pendiente'),
         ),
       )
       .returning({ id: offers.id });
 
-    // 5. trip_request → assigned.
+    // 5. trip → asignado.
     await tx
-      .update(tripRequests)
-      .set({ status: 'assigned', updatedAt: now })
-      .where(eq(tripRequests.id, offer.tripRequestId));
+      .update(trips)
+      .set({ status: 'asignado', updatedAt: now })
+      .where(eq(trips.id, offer.tripId));
 
     // 6. Audit events.
     await tx.insert(tripEvents).values([
       {
-        tripRequestId: offer.tripRequestId,
+        tripId: offer.tripId,
         assignmentId: assignment.id,
-        eventType: 'offer_accepted',
+        eventType: 'oferta_aceptada',
         payload: {
           offer_id: offer.id,
           empresa_id: empresaId,
@@ -161,9 +159,9 @@ export async function acceptOffer(opts: {
         recordedByUserId: userId,
       },
       {
-        tripRequestId: offer.tripRequestId,
+        tripId: offer.tripId,
         assignmentId: assignment.id,
-        eventType: 'assignment_created',
+        eventType: 'asignacion_creada',
         payload: {
           assignment_id: assignment.id,
           empresa_id: empresaId,
@@ -179,7 +177,7 @@ export async function acceptOffer(opts: {
       {
         offerId: offer.id,
         assignmentId: assignment.id,
-        tripRequestId: offer.tripRequestId,
+        tripId: offer.tripId,
         empresaId,
         userId,
         supersededCount: supersededRows.length,
@@ -197,13 +195,13 @@ export async function acceptOffer(opts: {
 
 /**
  * Rechazar oferta — atómico, mucho más simple:
- *   1. Validar offer existe, pertenece, está pending.
- *   2. Marcar status='rejected' con razón opcional.
+ *   1. Validar offer existe, pertenece, está pendiente.
+ *   2. Marcar estado='rechazada' con razón opcional.
  *   3. Audit trip_event.
  *
- * NO cambiamos trip_request.status — otros carriers pueden todavía aceptar.
- * Si todas las offers terminan en rejected/expired sin assignment, un job
- * posterior (slice futuro) marca el trip_request como `expired`.
+ * NO cambiamos trip.estado — otros transportistas pueden todavía aceptar.
+ * Si todas las offers terminan en rechazada/expirada sin assignment, un
+ * job posterior marca el trip como `expirado`.
  */
 export async function rejectOffer(opts: {
   db: Db;
@@ -224,7 +222,7 @@ export async function rejectOffer(opts: {
     if (offer.empresaId !== empresaId) {
       throw new OfferNotOwnedError(offerId, empresaId);
     }
-    if (offer.status !== 'pending') {
+    if (offer.status !== 'pendiente') {
       throw new OfferNotPendingError(offerId, offer.status);
     }
 
@@ -232,7 +230,7 @@ export async function rejectOffer(opts: {
     const [rejected] = await tx
       .update(offers)
       .set({
-        status: 'rejected',
+        status: 'rechazada',
         respondedAt: now,
         responseChannel: 'web',
         ...(reason ? { rejectionReason: reason } : {}),
@@ -245,8 +243,8 @@ export async function rejectOffer(opts: {
     }
 
     await tx.insert(tripEvents).values({
-      tripRequestId: offer.tripRequestId,
-      eventType: 'offer_rejected',
+      tripId: offer.tripId,
+      eventType: 'oferta_rechazada',
       payload: {
         offer_id: offer.id,
         empresa_id: empresaId,
@@ -259,7 +257,7 @@ export async function rejectOffer(opts: {
     logger.info(
       {
         offerId: offer.id,
-        tripRequestId: offer.tripRequestId,
+        tripId: offer.tripId,
         empresaId,
         userId,
         reason,

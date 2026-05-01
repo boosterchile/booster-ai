@@ -4,14 +4,14 @@ import { planIdSchema } from '../primitives/ids.js';
 /**
  * Plan de suscripción.
  *
- * Para el lunes piloto se cargan 3 planes pre-definidos sin billing
- * automático: free, standard, pro. La asignación a empresa se hace
- * manualmente desde admin.
+ * Slugs en español + `enterprise` (mantiene en inglés por convención B2B).
+ * Para piloto se cargan los 4 planes pre-definidos sin billing automático;
+ * la asignación a empresa se hace manualmente desde admin.
  *
  * Slice 2: integrar Flow.cl (Chile) o Stripe para subscription billing
  * real con webhooks de pago + downgrade automático en impago.
  */
-export const planSlugSchema = z.enum(['free', 'standard', 'pro', 'enterprise']);
+export const planSlugSchema = z.enum(['gratis', 'estandar', 'pro', 'enterprise']);
 export type PlanSlug = z.infer<typeof planSlugSchema>;
 
 /**
@@ -22,7 +22,7 @@ export const planFeaturesSchema = z.object({
   max_active_trips: z.number().int().positive().nullable(),
   /** Máximo de vehículos registrables (null = ilimitado). */
   max_vehicles: z.number().int().positive().nullable(),
-  /** Cuántas offers paralelas puede recibir un carrier para una misma carga. */
+  /** Cuántas offers paralelas puede recibir un transportista para una misma carga. */
   max_concurrent_offers: z.number().int().positive(),
   /** Acceso a dashboard analítico avanzado (heatmaps, scoring detallado). */
   advanced_analytics: z.boolean(),

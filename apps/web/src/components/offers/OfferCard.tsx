@@ -8,17 +8,17 @@ import {
 import { ApiError } from '../../lib/api-client.js';
 
 const CARGO_LABELS: Record<string, string> = {
-  dry_goods: 'Carga seca',
-  perishable: 'Perecible',
-  refrigerated: 'Refrigerada',
-  frozen: 'Congelada',
-  fragile: 'Frágil',
-  dangerous: 'Peligrosa',
-  liquid: 'Líquida',
-  construction: 'Construcción',
-  agricultural: 'Agrícola',
-  livestock: 'Ganado',
-  other: 'Otra',
+  carga_seca: 'Carga seca',
+  perecible: 'Perecible',
+  refrigerada: 'Refrigerada',
+  congelada: 'Congelada',
+  fragil: 'Frágil',
+  peligrosa: 'Peligrosa',
+  liquida: 'Líquida',
+  construccion: 'Construcción',
+  agricola: 'Agrícola',
+  ganado: 'Ganado',
+  otra: 'Otra',
 };
 
 const REGION_LABELS: Record<string, string> = {

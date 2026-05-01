@@ -19,16 +19,22 @@ export interface MeNeedsOnboarding {
 
 export interface MembershipPayload {
   id: string;
-  role: 'owner' | 'admin' | 'dispatcher' | 'driver' | 'viewer';
-  status: 'pending_invitation' | 'active' | 'suspended' | 'removed';
+  role:
+    | 'dueno'
+    | 'admin'
+    | 'despachador'
+    | 'conductor'
+    | 'visualizador'
+    | 'stakeholder_sostenibilidad';
+  status: 'pendiente_invitacion' | 'activa' | 'suspendida' | 'removida';
   joined_at: string | null;
   empresa: {
     id: string;
     legal_name: string;
     rut: string;
-    is_shipper: boolean;
-    is_carrier: boolean;
-    status: 'pending_verification' | 'active' | 'suspended';
+    is_generador_carga: boolean;
+    is_transportista: boolean;
+    status: 'pendiente_verificacion' | 'activa' | 'suspendida';
   };
 }
 
@@ -40,7 +46,7 @@ export interface MeUser {
   whatsapp_e164: string | null;
   rut: string | null;
   is_platform_admin: boolean;
-  status: 'pending_verification' | 'active' | 'suspended' | 'deleted';
+  status: 'pendiente_verificacion' | 'activo' | 'suspendido' | 'eliminado';
 }
 
 export interface MeRegistered {
@@ -52,13 +58,6 @@ export interface MeRegistered {
 
 export type MeResponse = MeNeedsOnboarding | MeRegistered;
 
-/**
- * Hook que carga /me — el contexto del user autenticado. Solo enabled si
- * `userIsLoggedIn` es true (después de useAuth().user resuelto a User).
- *
- * staleTime=30s — el contexto rara vez cambia entre interacciones; el
- * refetch ocurre cuando el user cambia de empresa activa o re-loguea.
- */
 export function useMe(opts: { enabled: boolean }) {
   return useQuery<MeResponse>({
     queryKey: ['me'],
@@ -66,7 +65,6 @@ export function useMe(opts: { enabled: boolean }) {
     enabled: opts.enabled,
     staleTime: 30_000,
     retry: (failureCount, error) => {
-      // No reintentar 401 (token bad), 404 (user no registrado).
       if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
         return false;
       }

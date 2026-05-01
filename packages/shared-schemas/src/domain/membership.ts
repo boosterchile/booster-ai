@@ -9,25 +9,33 @@ import { empresaIdSchema, membershipIdSchema, userIdSchema } from '../primitives
  * institucional). El cliente web pide al user que elija qué empresa
  * usar al hacer login si tiene múltiples memberships activas.
  *
- * Roles dentro de una empresa:
- *   - owner: dueño legal (1 por empresa, no se puede eliminar)
+ * Roles dentro de una empresa (naming canónico en español):
+ *   - dueno: dueño legal (1 por empresa, no se puede eliminar)
  *   - admin: gestiona usuarios, planes, vehículos, ve todo
- *   - dispatcher: opera matching, ve ofertas, asigna cargas (carrier-side)
- *     o crea cargas y ve historial (shipper-side)
- *   - driver: conductor, ve sus asignaciones, reporta status (solo carrier)
- *   - viewer: read-only, dashboards y reportes
+ *   - despachador: opera matching, ve ofertas (transportista) o crea
+ *     cargas (generador de carga)
+ *   - conductor: ve sus asignaciones, reporta status (solo transportista)
+ *   - visualizador: read-only, dashboards y reportes
+ *   - stakeholder_sostenibilidad: acceso ESG con consent grants
  *
  * No confundir con `User.is_platform_admin` — ese es admin de Booster
  * (staff interno), no de una empresa cliente.
  */
-export const membershipRoleSchema = z.enum(['owner', 'admin', 'dispatcher', 'driver', 'viewer']);
+export const membershipRoleSchema = z.enum([
+  'dueno',
+  'admin',
+  'despachador',
+  'conductor',
+  'visualizador',
+  'stakeholder_sostenibilidad',
+]);
 export type MembershipRole = z.infer<typeof membershipRoleSchema>;
 
 export const membershipStatusSchema = z.enum([
-  'pending_invitation', // Invitado pero aún no aceptó
-  'active', // Pertenece y puede operar
-  'suspended', // Empresa o admin lo suspendió
-  'removed', // Salió de la empresa (preservamos historial)
+  'pendiente_invitacion',
+  'activa',
+  'suspendida',
+  'removida',
 ]);
 export type MembershipStatus = z.infer<typeof membershipStatusSchema>;
 

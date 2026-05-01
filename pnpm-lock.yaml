@@ -41,6 +41,12 @@ importers:
       '@booster-ai/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@booster-ai/matching-algorithm':
+        specifier: workspace:*
+        version: link:../../packages/matching-algorithm
+      '@booster-ai/notification-fan-out':
+        specifier: workspace:*
+        version: link:../../packages/notification-fan-out
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
@@ -507,6 +513,9 @@ importers:
 
   packages/matching-algorithm:
     devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.17
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -516,6 +525,9 @@ importers:
 
   packages/notification-fan-out:
     devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.17
       typescript:
         specifier: ^5.8.2
         version: 5.9.3

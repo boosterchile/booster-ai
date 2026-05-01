@@ -19,9 +19,11 @@ export interface OfferTripRequestPayload {
   pickup_window_end: string | null;
 }
 
+export type OfferStatus = 'pendiente' | 'aceptada' | 'rechazada' | 'expirada' | 'reemplazada';
+
 export interface OfferPayload {
   id: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'expired' | 'superseded';
+  status: OfferStatus;
   /** Score 0-1 (de-normalizado del entero ×1000 que guarda el DB). */
   score: number;
   proposed_price_clp: number;
@@ -58,20 +60,13 @@ interface RejectResponse {
   };
 }
 
-/**
- * Hook que carga ofertas del carrier activo. Refetch cada 30s para que
- * ofertas nuevas aparezcan sin recargar la página.
- *
- * staleTime=15s — entre refetch automáticos, evita re-fetches innecesarios
- * en navegación rápida.
- */
 export function useOffersMine(
   opts: {
-    status?: 'pending' | 'accepted' | 'rejected' | 'expired' | 'superseded';
+    status?: OfferStatus;
     enabled?: boolean;
   } = {},
 ) {
-  const status = opts.status ?? 'pending';
+  const status = opts.status ?? 'pendiente';
   return useQuery<OffersListResponse>({
     queryKey: ['offers', 'mine', status],
     queryFn: () => api.get<OffersListResponse>(`/offers/mine?status=${status}`),
@@ -87,10 +82,6 @@ export function useOffersMine(
   });
 }
 
-/**
- * Acepta una oferta. Tras éxito invalida `['offers', 'mine']` para que la
- * lista se actualice (la oferta accepted desaparece de pending).
- */
 export function useAcceptOfferMutation() {
   const queryClient = useQueryClient();
   return useMutation<AcceptResponse, ApiError, { offerId: string }>({
@@ -101,9 +92,6 @@ export function useAcceptOfferMutation() {
   });
 }
 
-/**
- * Rechaza una oferta con razón opcional. Mismo invalidate.
- */
 export function useRejectOfferMutation() {
   const queryClient = useQueryClient();
   return useMutation<RejectResponse, ApiError, { offerId: string; reason?: string }>({
