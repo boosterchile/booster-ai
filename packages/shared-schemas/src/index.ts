@@ -44,3 +44,6 @@ export * from './onboarding.js';
 
 // Trip request creation (Slice B.5)
 export * from './trip-request-create.js';
+
+// Profile update (Slice B.8)
+export * from './profile.js';

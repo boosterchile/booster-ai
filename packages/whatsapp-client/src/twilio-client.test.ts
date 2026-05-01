@@ -136,3 +136,121 @@ describe('TwilioWhatsAppClient.sendText', () => {
     await expect(client.sendText({ to: '+56957790379', body: 'x' })).rejects.toThrow();
   });
 });
+
+describe('TwilioWhatsAppClient.sendContent', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function makeClient() {
+    return new TwilioWhatsAppClient({
+      accountSid: ACCOUNT_SID,
+      authToken: AUTH_TOKEN,
+      fromNumber: FROM_NUMBER,
+      logger: noopLogger,
+      timeoutMs: 1000,
+    });
+  }
+
+  const CONTENT_SID = 'HX1234567890abcdef1234567890abcd';
+
+  it('POSTs ContentSid + ContentVariables form-encoded', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sid: 'SM_test_456',
+          status: 'queued',
+          to: 'whatsapp:+56957790379',
+          from: `whatsapp:${FROM_NUMBER}`,
+          body: 'Hola, llegó una nueva oferta...',
+          date_created: '2026-05-01T10:00:00Z',
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const client = makeClient();
+    const result = await client.sendContent({
+      to: '+56957790379',
+      contentSid: CONTENT_SID,
+      contentVariables: {
+        '1': 'BOO-1234',
+        '2': 'Santiago RM → Concepción Biobío',
+        '3': '$ 850.000 CLP',
+        '4': 'https://app.boosterchile.com/app/ofertas',
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`);
+    expect(init?.method).toBe('POST');
+    expect((init?.headers as Record<string, string>)['content-type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+
+    const body = init?.body as string;
+    const params = new URLSearchParams(body);
+    expect(params.get('From')).toBe(`whatsapp:${FROM_NUMBER}`);
+    expect(params.get('To')).toBe('whatsapp:+56957790379');
+    expect(params.get('ContentSid')).toBe(CONTENT_SID);
+    expect(params.get('Body')).toBeNull(); // no Body cuando es Content
+    const vars = JSON.parse(params.get('ContentVariables') ?? '{}');
+    expect(vars).toEqual({
+      '1': 'BOO-1234',
+      '2': 'Santiago RM → Concepción Biobío',
+      '3': '$ 850.000 CLP',
+      '4': 'https://app.boosterchile.com/app/ofertas',
+    });
+
+    expect(result.sid).toBe('SM_test_456');
+  });
+
+  it('omits ContentVariables when empty', async () => {
+    fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
+    const client = makeClient();
+    await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID });
+    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const params = new URLSearchParams(body);
+    expect(params.get('ContentSid')).toBe(CONTENT_SID);
+    expect(params.get('ContentVariables')).toBeNull();
+  });
+
+  it('also omits ContentVariables when explicitly empty object', async () => {
+    fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
+    const client = makeClient();
+    await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID, contentVariables: {} });
+    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const params = new URLSearchParams(body);
+    expect(params.get('ContentVariables')).toBeNull();
+  });
+
+  it('adds whatsapp: prefix if missing on To', async () => {
+    fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
+    const client = makeClient();
+    await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID });
+    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const params = new URLSearchParams(body);
+    expect(params.get('To')).toBe('whatsapp:+56957790379');
+  });
+
+  it('throws TwilioApiError on 4xx (e.g. template not approved)', async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: 63016, message: 'Template not approved or unknown ContentSid' }),
+        { status: 400 },
+      ),
+    );
+    const client = makeClient();
+    await expect(
+      client.sendContent({ to: '+56957790379', contentSid: 'HXinvalid' }),
+    ).rejects.toBeInstanceOf(TwilioApiError);
+  });
+});

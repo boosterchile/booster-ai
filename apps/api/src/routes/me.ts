@@ -1,4 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
+import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
+import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
@@ -107,12 +109,102 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         email: user.email,
         full_name: user.fullName,
         phone: user.phone,
+        whatsapp_e164: user.whatsappE164,
         rut: user.rut,
         is_platform_admin: user.isPlatformAdmin,
         status: user.status,
       },
       memberships: membershipsPayload,
       active_membership: active,
+    });
+  });
+
+  /**
+   * PATCH /me/profile
+   *
+   * Actualización parcial del perfil del usuario logueado. Solo se
+   * actualizan los campos presentes en el body. El user tiene que existir
+   * en la DB (no es válido para usuarios pre-onboarding — esos completan
+   * via /empresas/onboarding).
+   *
+   * `rut` solo se acepta si todavía es null en la DB; cambiar un RUT
+   * declarado requiere flow admin (no alcance B.8).
+   */
+  app.patch('/profile', zValidator('json', profileUpdateInputSchema), async (c) => {
+    const claims = c.get('firebaseClaims') as FirebaseClaims | undefined;
+    if (!claims) {
+      opts.logger.error({ path: c.req.path }, '/me/profile hit without firebaseClaims');
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
+
+    const userRows = await opts.db
+      .select()
+      .from(users)
+      .where(eq(users.firebaseUid, claims.uid))
+      .limit(1);
+    const user = userRows[0];
+    if (!user) {
+      return c.json(
+        {
+          error: 'user_not_found',
+          message: 'El usuario no existe en la DB. Completa onboarding primero.',
+        },
+        404,
+      );
+    }
+
+    const input = c.req.valid('json');
+
+    // RUT inmutable: si el usuario ya tiene RUT, rechazamos cambios.
+    if (input.rut !== undefined && user.rut !== null) {
+      return c.json(
+        {
+          error: 'rut_immutable',
+          message: 'El RUT ya está declarado. Para cambiarlo, contacta soporte.',
+        },
+        409,
+      );
+    }
+
+    // Construir patch solo con campos presentes — Drizzle interpreta
+    // undefined como "no tocar" pero ser explícitos evita sorpresas.
+    const patch: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
+    if (input.full_name !== undefined) {
+      patch.fullName = input.full_name;
+    }
+    if (input.phone !== undefined) {
+      patch.phone = input.phone;
+    }
+    if (input.whatsapp_e164 !== undefined) {
+      patch.whatsappE164 = input.whatsapp_e164;
+    }
+    if (input.rut !== undefined) {
+      patch.rut = input.rut;
+    }
+
+    const updatedRows = await opts.db
+      .update(users)
+      .set(patch)
+      .where(eq(users.id, user.id))
+      .returning();
+    const updated = updatedRows[0];
+    if (!updated) {
+      // Defensivo: el UPDATE debería siempre devolver el row si el WHERE coincidió.
+      opts.logger.error({ userId: user.id }, '/me/profile UPDATE returning empty');
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
+
+    return c.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        full_name: updated.fullName,
+        phone: updated.phone,
+        whatsapp_e164: updated.whatsappE164,
+        rut: updated.rut,
+        is_platform_admin: updated.isPlatformAdmin,
+        status: updated.status,
+      },
     });
   });
 

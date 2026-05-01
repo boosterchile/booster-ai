@@ -226,6 +226,13 @@ export const users = pgTable(
     email: varchar('email', { length: 255 }).notNull().unique(),
     fullName: varchar('full_name', { length: 200 }).notNull(),
     phone: varchar('phone', { length: 20 }),
+    /**
+     * Número WhatsApp del usuario en formato E.164 (ej. +56912345678).
+     * Nullable para usuarios legacy y para no bloquear el onboarding —
+     * se puede declarar después desde el perfil. Cuando está presente,
+     * el dispatcher de notificaciones (B.8) le envía el ping de oferta.
+     */
+    whatsappE164: varchar('whatsapp_e164', { length: 20 }),
     rut: varchar('rut', { length: 20 }),
     status: userStatusEnum('status').notNull().default('pending_verification'),
     isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
@@ -405,6 +412,13 @@ export const offers = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     respondedAt: timestamp('responded_at', { withTimezone: true }),
+    /**
+     * Marca de tiempo del envío exitoso del WhatsApp template al carrier.
+     * Null = aún no notificado (o el envío falló silenciosamente). El
+     * dispatcher consulta este campo para no re-disparar notificaciones
+     * en reintentos (B.8.c).
+     */
+    notifiedAt: timestamp('notified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

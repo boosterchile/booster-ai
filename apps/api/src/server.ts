@@ -87,6 +87,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       logger,
     });
     app.use('/me', firebaseAuthMiddleware);
+    app.use('/me/*', firebaseAuthMiddleware);
     app.route('/me', createMeRoutes({ db: opts.db, logger }));
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
