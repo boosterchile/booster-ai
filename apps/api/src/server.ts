@@ -8,9 +8,11 @@ import { config } from './config.js';
 import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
+import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
+import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 
 export interface CreateServerOptions {
@@ -91,6 +93,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     // en la DB cuando llama acá.
     app.use('/empresas/*', firebaseAuthMiddleware);
     app.route('/empresas', createEmpresaRoutes({ db: opts.db, logger }));
+
+    // Trip requests v2 (canonical) — Firebase auth + userContext porque
+    // el shipper ya tiene empresa onboardeada. activeMembership.empresa
+    // se usa como shipper_empresa_id.
+    const userContextMiddleware = createUserContextMiddleware({ db: opts.db, logger });
+    app.use('/trip-requests-v2/*', firebaseAuthMiddleware);
+    app.use('/trip-requests-v2/*', userContextMiddleware);
+    app.route('/trip-requests-v2', createTripRequestsV2Routes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

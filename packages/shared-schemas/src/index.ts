@@ -41,3 +41,6 @@ export * from './whatsapp.js';
 
 // Onboarding (Slice B.4)
 export * from './onboarding.js';
+
+// Trip request creation (Slice B.5)
+export * from './trip-request-create.js';
