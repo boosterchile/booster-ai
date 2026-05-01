@@ -10,6 +10,7 @@ import {
   vehicles,
   zones,
 } from '../db/schema.js';
+import { type NotifyOfferDeps, notifyOfferToCarrier } from './notify-offer.js';
 
 /**
  * Configuración del matching MVP. Valores conservadores para piloto;
@@ -80,196 +81,238 @@ export class TripRequestNotMatchableError extends Error {
  *   - Pricing engine: precio dinámico vs proposed_price_clp.
  *   - Notification fan-out: WhatsApp/email/push tras crear offers.
  */
-export async function runMatching(opts: {
+export interface RunMatchingOptions {
   db: Db;
   logger: Logger;
   tripRequestId: string;
-}): Promise<MatchingResult> {
-  const { db, logger, tripRequestId } = opts;
+  /**
+   * Deps del dispatcher de notificaciones. Si se omiten, runMatching
+   * crea las offers pero no dispara WhatsApp (útil en tests). En
+   * producción se inyectan desde main.ts con el TwilioWhatsAppClient
+   * singleton.
+   */
+  notify?: NotifyOfferDeps;
+}
 
-  return await db.transaction(async (tx) => {
-    // 1. Cargar trip_request.
-    const tripRows = await tx
-      .select()
-      .from(tripRequests)
-      .where(eq(tripRequests.id, tripRequestId))
-      .limit(1);
-    const trip = tripRows[0];
-    if (!trip) {
-      throw new TripRequestNotFoundError(tripRequestId);
-    }
-    if (trip.status !== 'pending_match') {
-      throw new TripRequestNotMatchableError(tripRequestId, trip.status);
-    }
-    if (!trip.originRegionCode) {
-      // Sin región origen no podemos hacer match. En piloto siempre viene
-      // del form web; el bot WhatsApp legacy podría no tenerla todavía.
-      throw new TripRequestNotMatchableError(tripRequestId, 'missing_origin_region');
-    }
+export async function runMatching(opts: RunMatchingOptions): Promise<MatchingResult> {
+  const { db, logger, tripRequestId, notify } = opts;
 
-    // Cambiar status a 'matching' antes de empezar (defensa contra
-    // concurrentes — UNIQUE constraint en assignment.trip_request_id evita
-    // race condition real, pero esto es claridad operacional).
-    await tx
-      .update(tripRequests)
-      .set({ status: 'matching', updatedAt: new Date() })
-      .where(eq(tripRequests.id, tripRequestId));
-
-    // Audit: matching empezó.
-    await tx.insert(tripEvents).values({
-      tripRequestId: trip.id,
-      eventType: 'matching_started',
-      payload: {
-        origin_region: trip.originRegionCode,
-        cargo_type: trip.cargoType,
-        cargo_weight_kg: trip.cargoWeightKg,
-      },
-      source: 'system',
-    });
-
-    // 2. Buscar carriers candidatos.
-    // Sub-query: empresas con zona pickup compatible.
-    const candidateZones = await tx
-      .select({ empresaId: zones.empresaId })
-      .from(zones)
-      .where(
-        and(
-          eq(zones.regionCode, trip.originRegionCode),
-          inArray(zones.zoneType, ['pickup', 'both']),
-          eq(zones.isActive, true),
-        ),
-      );
-    const candidateEmpresaIds = [...new Set(candidateZones.map((z) => z.empresaId))];
-    if (candidateEmpresaIds.length === 0) {
-      logger.info({ tripRequestId, reason: 'no_zones' }, 'matching produced 0 candidates');
-      return await finalizeNoCandidates(tx, trip.id, 'no_carrier_in_origin_region');
-    }
-
-    // Filtrar empresas que efectivamente son carriers activos.
-    const candidateEmpresas = await tx
-      .select()
-      .from(empresas)
-      .where(
-        and(
-          inArray(empresas.id, candidateEmpresaIds),
-          eq(empresas.isCarrier, true),
-          eq(empresas.status, 'active'),
-        ),
-      );
-    if (candidateEmpresas.length === 0) {
-      logger.info(
-        { tripRequestId, reason: 'no_active_carriers' },
-        'matching produced 0 candidates',
-      );
-      return await finalizeNoCandidates(tx, trip.id, 'no_active_carriers');
-    }
-
-    // 3. Por cada candidato, elegir mejor vehículo (capacidad mínima que
-    // sirve). Si no tiene ninguno, descartar.
-    const cargoWeight = trip.cargoWeightKg ?? 0;
-    type Candidate = {
-      empresaId: string;
-      vehicleId: string;
-      vehicleCapacityKg: number;
-      score: number;
-    };
-    const candidates: Candidate[] = [];
-
-    for (const emp of candidateEmpresas) {
-      const vehs = await tx
+  return await db
+    .transaction(async (tx) => {
+      // 1. Cargar trip_request.
+      const tripRows = await tx
         .select()
-        .from(vehicles)
-        .where(
-          and(
-            eq(vehicles.empresaId, emp.id),
-            eq(vehicles.isActive, true),
-            gte(vehicles.capacityKg, cargoWeight),
-          ),
-        )
-        .orderBy(vehicles.capacityKg) // capacidad mínima primero (menos slack)
+        .from(tripRequests)
+        .where(eq(tripRequests.id, tripRequestId))
         .limit(1);
-      const veh = vehs[0];
-      if (!veh) {
-        continue;
+      const trip = tripRows[0];
+      if (!trip) {
+        throw new TripRequestNotFoundError(tripRequestId);
+      }
+      if (trip.status !== 'pending_match') {
+        throw new TripRequestNotMatchableError(tripRequestId, trip.status);
+      }
+      if (!trip.originRegionCode) {
+        // Sin región origen no podemos hacer match. En piloto siempre viene
+        // del form web; el bot WhatsApp legacy podría no tenerla todavía.
+        throw new TripRequestNotMatchableError(tripRequestId, 'missing_origin_region');
       }
 
-      // Score base 1.0; penalizar slack proporcional. slack = (cap - peso) / cap.
-      const slackRatio = cargoWeight > 0 ? (veh.capacityKg - cargoWeight) / veh.capacityKg : 0;
-      const score = Math.max(0, 1 - slackRatio * MATCHING_CONFIG.CAPACITY_SLACK_PENALTY);
+      // Cambiar status a 'matching' antes de empezar (defensa contra
+      // concurrentes — UNIQUE constraint en assignment.trip_request_id evita
+      // race condition real, pero esto es claridad operacional).
+      await tx
+        .update(tripRequests)
+        .set({ status: 'matching', updatedAt: new Date() })
+        .where(eq(tripRequests.id, tripRequestId));
 
-      candidates.push({
-        empresaId: emp.id,
-        vehicleId: veh.id,
-        vehicleCapacityKg: veh.capacityKg,
-        score,
+      // Audit: matching empezó.
+      await tx.insert(tripEvents).values({
+        tripRequestId: trip.id,
+        eventType: 'matching_started',
+        payload: {
+          origin_region: trip.originRegionCode,
+          cargo_type: trip.cargoType,
+          cargo_weight_kg: trip.cargoWeightKg,
+        },
+        source: 'system',
       });
-    }
 
-    if (candidates.length === 0) {
+      // 2. Buscar carriers candidatos.
+      // Sub-query: empresas con zona pickup compatible.
+      const candidateZones = await tx
+        .select({ empresaId: zones.empresaId })
+        .from(zones)
+        .where(
+          and(
+            eq(zones.regionCode, trip.originRegionCode),
+            inArray(zones.zoneType, ['pickup', 'both']),
+            eq(zones.isActive, true),
+          ),
+        );
+      const candidateEmpresaIds = [...new Set(candidateZones.map((z) => z.empresaId))];
+      if (candidateEmpresaIds.length === 0) {
+        logger.info({ tripRequestId, reason: 'no_zones' }, 'matching produced 0 candidates');
+        return await finalizeNoCandidates(tx, trip.id, 'no_carrier_in_origin_region');
+      }
+
+      // Filtrar empresas que efectivamente son carriers activos.
+      const candidateEmpresas = await tx
+        .select()
+        .from(empresas)
+        .where(
+          and(
+            inArray(empresas.id, candidateEmpresaIds),
+            eq(empresas.isCarrier, true),
+            eq(empresas.status, 'active'),
+          ),
+        );
+      if (candidateEmpresas.length === 0) {
+        logger.info(
+          { tripRequestId, reason: 'no_active_carriers' },
+          'matching produced 0 candidates',
+        );
+        return await finalizeNoCandidates(tx, trip.id, 'no_active_carriers');
+      }
+
+      // 3. Por cada candidato, elegir mejor vehículo (capacidad mínima que
+      // sirve). Si no tiene ninguno, descartar.
+      const cargoWeight = trip.cargoWeightKg ?? 0;
+      type Candidate = {
+        empresaId: string;
+        vehicleId: string;
+        vehicleCapacityKg: number;
+        score: number;
+      };
+      const candidates: Candidate[] = [];
+
+      for (const emp of candidateEmpresas) {
+        const vehs = await tx
+          .select()
+          .from(vehicles)
+          .where(
+            and(
+              eq(vehicles.empresaId, emp.id),
+              eq(vehicles.isActive, true),
+              gte(vehicles.capacityKg, cargoWeight),
+            ),
+          )
+          .orderBy(vehicles.capacityKg) // capacidad mínima primero (menos slack)
+          .limit(1);
+        const veh = vehs[0];
+        if (!veh) {
+          continue;
+        }
+
+        // Score base 1.0; penalizar slack proporcional. slack = (cap - peso) / cap.
+        const slackRatio = cargoWeight > 0 ? (veh.capacityKg - cargoWeight) / veh.capacityKg : 0;
+        const score = Math.max(0, 1 - slackRatio * MATCHING_CONFIG.CAPACITY_SLACK_PENALTY);
+
+        candidates.push({
+          empresaId: emp.id,
+          vehicleId: veh.id,
+          vehicleCapacityKg: veh.capacityKg,
+          score,
+        });
+      }
+
+      if (candidates.length === 0) {
+        logger.info(
+          { tripRequestId, reason: 'no_vehicle_with_capacity' },
+          'matching produced 0 candidates',
+        );
+        return await finalizeNoCandidates(tx, trip.id, 'no_vehicle_with_capacity');
+      }
+
+      // 4. Top N por score.
+      candidates.sort((a, b) => b.score - a.score);
+      const topN = candidates.slice(0, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST);
+
+      // 5. Crear offers.
+      const expiresAt = new Date(Date.now() + MATCHING_CONFIG.OFFER_TTL_MINUTES * 60_000);
+      const proposedPrice = trip.proposedPriceClp ?? 0;
+
+      const created = await tx
+        .insert(offers)
+        .values(
+          topN.map((c) => ({
+            tripRequestId: trip.id,
+            empresaId: c.empresaId,
+            suggestedVehicleId: c.vehicleId,
+            score: Math.round(c.score * 1000), // entero para evitar floats en DB
+            status: 'pending' as const,
+            proposedPriceClp: proposedPrice,
+            expiresAt,
+          })),
+        )
+        .returning();
+
+      // 6. Cambiar trip_request a offers_sent.
+      await tx
+        .update(tripRequests)
+        .set({ status: 'offers_sent', updatedAt: new Date() })
+        .where(eq(tripRequests.id, trip.id));
+
+      // 7. Audit: offers enviadas.
+      await tx.insert(tripEvents).values({
+        tripRequestId: trip.id,
+        eventType: 'offers_sent',
+        payload: {
+          offer_ids: created.map((o) => o.id),
+          empresa_ids: created.map((o) => o.empresaId),
+          candidates_evaluated: candidates.length,
+        },
+        source: 'system',
+      });
+
       logger.info(
-        { tripRequestId, reason: 'no_vehicle_with_capacity' },
-        'matching produced 0 candidates',
+        {
+          tripRequestId,
+          candidatesEvaluated: candidates.length,
+          offersCreated: created.length,
+        },
+        'matching complete',
       );
-      return await finalizeNoCandidates(tx, trip.id, 'no_vehicle_with_capacity');
-    }
 
-    // 4. Top N por score.
-    candidates.sort((a, b) => b.score - a.score);
-    const topN = candidates.slice(0, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST);
-
-    // 5. Crear offers.
-    const expiresAt = new Date(Date.now() + MATCHING_CONFIG.OFFER_TTL_MINUTES * 60_000);
-    const proposedPrice = trip.proposedPriceClp ?? 0;
-
-    const created = await tx
-      .insert(offers)
-      .values(
-        topN.map((c) => ({
-          tripRequestId: trip.id,
-          empresaId: c.empresaId,
-          suggestedVehicleId: c.vehicleId,
-          score: Math.round(c.score * 1000), // entero para evitar floats en DB
-          status: 'pending' as const,
-          proposedPriceClp: proposedPrice,
-          expiresAt,
-        })),
-      )
-      .returning();
-
-    // 6. Cambiar trip_request a offers_sent.
-    await tx
-      .update(tripRequests)
-      .set({ status: 'offers_sent', updatedAt: new Date() })
-      .where(eq(tripRequests.id, trip.id));
-
-    // 7. Audit: offers enviadas.
-    await tx.insert(tripEvents).values({
-      tripRequestId: trip.id,
-      eventType: 'offers_sent',
-      payload: {
-        offer_ids: created.map((o) => o.id),
-        empresa_ids: created.map((o) => o.empresaId),
-        candidates_evaluated: candidates.length,
-      },
-      source: 'system',
-    });
-
-    logger.info(
-      {
+      return {
         tripRequestId,
         candidatesEvaluated: candidates.length,
         offersCreated: created.length,
-      },
-      'matching complete',
-    );
-
-    return {
-      tripRequestId,
-      candidatesEvaluated: candidates.length,
-      offersCreated: created.length,
-      offers: created,
-    };
-  });
+        offers: created,
+      };
+    })
+    .then(async (result) => {
+      // Fire-and-forget de las notificaciones — DESPUÉS de cerrar la
+      // transacción para no inflar su latencia, pero esperando con
+      // allSettled para que el caller (route handler) pueda saber si
+      // todo salió bien antes de responder.
+      //
+      // Importante: un fallo de notificación NO debe corromper el
+      // resultado del matching. Las offers ya están en DB y el carrier
+      // puede verlas haciendo poll del dashboard. La notificación es
+      // un nice-to-have que reduce time-to-response, no un requirement
+      // duro del lifecycle.
+      if (notify && result.offers.length > 0) {
+        const settled = await Promise.allSettled(
+          result.offers.map((offer) => notifyOfferToCarrier(notify, { offerId: offer.id })),
+        );
+        const failed = settled.filter((s) => s.status === 'rejected');
+        if (failed.length > 0) {
+          logger.error(
+            {
+              tripRequestId,
+              offersCreated: result.offers.length,
+              notificationsFailed: failed.length,
+              errors: failed
+                .map((f) => (f.status === 'rejected' ? String(f.reason) : null))
+                .filter(Boolean),
+            },
+            'matching: una o más notificaciones fallaron (offers ya en DB)',
+          );
+        }
+      }
+      return result;
+    });
 }
 
 /**

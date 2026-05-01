@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { tripRequests } from '../db/schema.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
+import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
 /**
  * Endpoint canónico para que un shipper autenticado cree un trip_request
@@ -35,7 +36,15 @@ function generateTrackingCode(): string {
   return `BOO-${suffix}`;
 }
 
-export function createTripRequestsV2Routes(opts: { db: Db; logger: Logger }) {
+export function createTripRequestsV2Routes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * Deps del dispatcher de notificaciones. Si está null/undefined, runMatching
+   * crea offers pero no manda WhatsApp. Inyectado desde server.ts.
+   */
+  notify?: NotifyOfferDeps;
+}) {
   const app = new Hono();
 
   app.post('/', zValidator('json', tripRequestCreateInputSchema), async (c) => {
@@ -113,6 +122,7 @@ export function createTripRequestsV2Routes(opts: { db: Db; logger: Logger }) {
         db: opts.db,
         logger: opts.logger,
         tripRequestId: trip.id,
+        ...(opts.notify ? { notify: opts.notify } : {}),
       });
     } catch (err) {
       if (err instanceof TripRequestNotFoundError) {

@@ -15,6 +15,7 @@ import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
+import type { NotifyOfferDeps } from './services/notify-offer.js';
 
 export interface CreateServerOptions {
   db: Db;
@@ -25,6 +26,12 @@ export interface CreateServerOptions {
    */
   firebaseAuth?: Auth;
   logger?: Logger;
+  /**
+   * Deps del dispatcher de notificaciones. Inyectado desde main.ts en
+   * producción; opcional en tests donde se omite si no se quieren
+   * notificaciones reales.
+   */
+  notify?: NotifyOfferDeps;
 }
 
 export function createServer(opts: CreateServerOptions): Hono {
@@ -102,7 +109,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     const userContextMiddleware = createUserContextMiddleware({ db: opts.db, logger });
     app.use('/trip-requests-v2/*', firebaseAuthMiddleware);
     app.use('/trip-requests-v2/*', userContextMiddleware);
-    app.route('/trip-requests-v2', createTripRequestsV2Routes({ db: opts.db, logger }));
+    app.route(
+      '/trip-requests-v2',
+      createTripRequestsV2Routes({
+        db: opts.db,
+        logger,
+        ...(opts.notify ? { notify: opts.notify } : {}),
+      }),
+    );
 
     // Offers — endpoints carrier-side: GET mine + POST accept/reject.
     // Mismo chain firebaseAuth + userContext.

@@ -1,10 +1,12 @@
 import { createLogger } from '@booster-ai/logger';
+import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { createDb } from './db/client.js';
 import { runMigrations } from './db/migrator.js';
 import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
+import type { NotifyOfferDeps } from './services/notify-offer.js';
 
 const logger = createLogger({
   service: config.SERVICE_NAME,
@@ -32,7 +34,39 @@ async function main(): Promise<void> {
   // en dev local.
   const firebaseAuth = getFirebaseAuth({ projectId: config.FIREBASE_PROJECT_ID });
 
-  const app = createServer({ db, pool, firebaseAuth, logger });
+  // Cliente Twilio para el dispatcher de notificaciones (B.8). Solo se
+  // arma si las 3 env vars están seteadas — en dev es común que no estén,
+  // y el dispatcher se vuelve no-op (loguea warn por cada offer pendiente).
+  const twilioClient =
+    config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.TWILIO_FROM_NUMBER
+      ? new TwilioWhatsAppClient({
+          accountSid: config.TWILIO_ACCOUNT_SID,
+          authToken: config.TWILIO_AUTH_TOKEN,
+          fromNumber: config.TWILIO_FROM_NUMBER,
+          logger,
+        })
+      : null;
+
+  if (!twilioClient) {
+    logger.warn(
+      'TwilioWhatsAppClient no inicializado — TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER incompletos. Las notificaciones de oferta serán no-op.',
+    );
+  }
+  if (!config.CONTENT_SID_OFFER_NEW) {
+    logger.warn(
+      'CONTENT_SID_OFFER_NEW no seteado — el template de oferta nueva no está aprobado todavía. Notificaciones serán no-op aunque Twilio esté configurado.',
+    );
+  }
+
+  const notify: NotifyOfferDeps = {
+    db,
+    logger,
+    twilioClient,
+    contentSidOfferNew: config.CONTENT_SID_OFFER_NEW ?? null,
+    webAppUrl: config.WEB_APP_URL,
+  };
+
+  const app = createServer({ db, pool, firebaseAuth, logger, notify });
 
   const server = serve(
     {

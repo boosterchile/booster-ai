@@ -51,6 +51,53 @@ const apiEnvSchema = commonEnvSchema
     ALLOWED_CALLER_SA: z
       .string()
       .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido'),
+
+    /**
+     * Credenciales Twilio para enviar templates al carrier (B.8).
+     *
+     * El api comparte el mismo Sender (+19383365293) que apps/whatsapp-bot —
+     * ambos servicios pueden mandar mensajes desde el mismo número porque
+     * Twilio identifica el sender por From + auth, no por servicio.
+     *
+     * TWILIO_AUTH_TOKEN viene de Secret Manager (mismo secreto que el bot).
+     * Si las 3 vars no están seteadas, el dispatcher de notificaciones
+     * loggea warn y skipea el envío — útil en dev y entornos donde aún
+     * no se aprobaron templates.
+     */
+    TWILIO_ACCOUNT_SID: z
+      .string()
+      .regex(/^AC[a-fA-F0-9]+$/, 'Account SID debe empezar con AC')
+      .optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(16).optional(),
+    TWILIO_FROM_NUMBER: z
+      .string()
+      .regex(/^\+\d+$/, 'Formato E.164 con +')
+      .optional(),
+
+    /**
+     * Content SID del template aprobado para notificar al carrier que
+     * llegó una nueva oferta. Viene de Twilio Content Editor tras
+     * aprobación de Meta (24-48h tras submit).
+     *
+     * Variables esperadas (1-based):
+     *   {{1}} → tracking_code
+     *   {{2}} → "Origen → Destino"
+     *   {{3}} → precio CLP formateado
+     *   {{4}} → URL al dashboard del carrier
+     *
+     * Optional para permitir merge antes de la aprobación. Si está vacío,
+     * el dispatcher loguea warn y skipea.
+     */
+    CONTENT_SID_OFFER_NEW: z
+      .string()
+      .regex(/^HX[a-fA-F0-9]+$/)
+      .optional(),
+
+    /**
+     * URL pública del frontend, usada para construir el deep-link al
+     * dashboard del carrier en el template.
+     */
+    WEB_APP_URL: z.string().url().default('https://app.boosterchile.com'),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
