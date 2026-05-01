@@ -12,6 +12,7 @@ import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
+import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 
@@ -101,6 +102,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/trip-requests-v2/*', firebaseAuthMiddleware);
     app.use('/trip-requests-v2/*', userContextMiddleware);
     app.route('/trip-requests-v2', createTripRequestsV2Routes({ db: opts.db, logger }));
+
+    // Offers — endpoints carrier-side: GET mine + POST accept/reject.
+    // Mismo chain firebaseAuth + userContext.
+    app.use('/offers/*', firebaseAuthMiddleware);
+    app.use('/offers/*', userContextMiddleware);
+    app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',
