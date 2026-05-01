@@ -7,7 +7,6 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "outDir": "./dist",
-    "rootDir": ".",
     "types": ["vite/client", "vite-plugin-pwa/client"]
   },
   "include": ["src/**/*", "test/**/*", "vite.config.ts"],

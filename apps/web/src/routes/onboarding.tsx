@@ -1,4 +1,5 @@
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { OnboardingForm } from '../components/onboarding/OnboardingForm.js';
 import type { MeResponse } from '../hooks/use-me.js';
 
 type MeNeedsOnboarding = Extract<MeResponse, { needs_onboarding: true }>;
@@ -7,9 +8,10 @@ type MeNeedsOnboarding = Extract<MeResponse, { needs_onboarding: true }>;
  * /onboarding — flow de creación de empresa para users que se acaban de
  * registrar en Firebase pero no existen todavía en la DB de Booster.
  *
- * Slice B.3.b/c: solo placeholder con email a soporte. El form completo
- * de 4 pasos (empresa → tipo de operación → plan → confirmación) viene
- * en B.4 junto con el endpoint POST /empresas/onboarding.
+ * Form de 4 pasos: tus datos → empresa + dirección → tipo de operación
+ * (shipper/carrier) → plan + confirmación. Submit POST /empresas/onboarding,
+ * que crea user+empresa+membership en transacción y deja al user listo
+ * para operar. Redirige a /app tras éxito.
  */
 export function OnboardingRoute() {
   return (
@@ -18,13 +20,13 @@ export function OnboardingRoute() {
         if (ctx.kind !== 'pre-onboarding') {
           return null;
         }
-        return <OnboardingPlaceholder me={ctx.me} />;
+        return <OnboardingPage me={ctx.me} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function OnboardingPlaceholder({ me }: { me: MeNeedsOnboarding }) {
+function OnboardingPage({ me }: { me: MeNeedsOnboarding }) {
   const firstName = me.firebase.name?.split(' ')[0];
 
   return (
@@ -36,28 +38,18 @@ function OnboardingPlaceholder({ me }: { me: MeNeedsOnboarding }) {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-16">
-        <div className="w-full max-w-md text-center">
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-            Creá tu empresa en Booster
-          </h1>
-          <p className="mt-3 text-neutral-600 text-sm">
-            Hola{firstName ? `, ${firstName}` : ''}. Completá los datos de tu empresa para empezar a
-            operar. Tomamos 2 minutos.
-          </p>
-
-          <div className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-            <p className="text-neutral-700 text-sm">
-              Form de onboarding en construcción (slice B.4). Por ahora, contactá a soporte para
-              registrar tu empresa manualmente:{' '}
-              <a
-                href="mailto:soporte@boosterchile.com"
-                className="font-medium text-primary-600 underline"
-              >
-                soporte@boosterchile.com
-              </a>
+      <main className="flex flex-1 items-start justify-center px-6 py-10">
+        <div className="w-full max-w-2xl">
+          <div className="mb-6 text-center">
+            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
+              Bienvenido{firstName ? `, ${firstName}` : ''}
+            </h1>
+            <p className="mt-2 text-neutral-600 text-sm">
+              En 2 minutos creamos tu empresa y empezás a operar.
             </p>
           </div>
+
+          <OnboardingForm firebaseEmail={me.firebase.email ?? ''} firebaseName={me.firebase.name} />
         </div>
       </main>
     </div>
