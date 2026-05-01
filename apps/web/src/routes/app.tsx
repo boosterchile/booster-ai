@@ -1,4 +1,5 @@
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, LogOut, Truck, User as UserIcon } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -83,13 +84,52 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <p className="mt-2 text-neutral-600">Sin empresa activa.</p>
           )}
 
-          <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-            <h2 className="font-semibold text-neutral-900 text-xl">Dashboard en construcción</h2>
-            <p className="mt-2 text-neutral-700 text-sm">
-              Las vistas reales (ofertas activas para carrier, lista de cargas para shipper, panel
-              admin) se entregan en los próximos slices del pre-launch (B.5+).
-            </p>
-          </section>
+          {activeEmpresa?.is_carrier && (
+            <section className="mt-10">
+              <h2 className="font-semibold text-neutral-900 text-xl">Como carrier</h2>
+              <Link
+                to="/app/ofertas"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Truck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Ofertas activas</div>
+                    <div className="text-neutral-600 text-sm">
+                      Cargas disponibles para tu empresa. Aceptá o rechazá rápido.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+            </section>
+          )}
+
+          {!activeEmpresa?.is_carrier && !activeEmpresa?.is_shipper && (
+            <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+              <h2 className="font-semibold text-neutral-900 text-xl">
+                Tu empresa todavía no opera
+              </h2>
+              <p className="mt-2 text-neutral-700 text-sm">
+                Configurá si vas a operar como shipper, carrier o ambos desde el perfil de empresa.
+              </p>
+            </section>
+          )}
+
+          {activeEmpresa?.is_shipper && (
+            <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+              <h2 className="font-semibold text-neutral-900 text-xl">Como shipper</h2>
+              <p className="mt-2 text-neutral-700 text-sm">
+                Form web para crear cargas en construcción (slice B.7). Mientras tanto podés crear
+                cargas escribiendo "hola" al WhatsApp del bot Booster.
+              </p>
+            </section>
+          )}
         </div>
       </main>
     </div>

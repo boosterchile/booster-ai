@@ -3,6 +3,7 @@ import { RootComponent } from './routes/__root.js';
 import { AppRoute } from './routes/app.js';
 import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
+import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 
 /**
@@ -41,7 +42,19 @@ const appRoute = createRoute({
   component: AppRoute,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, loginRoute, onboardingRoute, appRoute]);
+const ofertasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/ofertas',
+  component: OfertasRoute,
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  loginRoute,
+  onboardingRoute,
+  appRoute,
+  ofertasRoute,
+]);
 
 export const router = createRouter({
   routeTree,
