@@ -120,6 +120,7 @@ export async function onboardEmpresa(opts: {
         email: firebaseEmail,
         fullName: input.user.full_name,
         phone: input.user.phone,
+        whatsappE164: input.user.whatsapp_e164,
         ...(input.user.rut ? { rut: input.user.rut } : {}),
         status: 'active',
         isPlatformAdmin: false,

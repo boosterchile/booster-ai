@@ -32,17 +32,20 @@ export interface MembershipPayload {
   };
 }
 
+export interface MeUser {
+  id: string;
+  email: string;
+  full_name: string;
+  phone: string | null;
+  whatsapp_e164: string | null;
+  rut: string | null;
+  is_platform_admin: boolean;
+  status: 'pending_verification' | 'active' | 'suspended' | 'deleted';
+}
+
 export interface MeRegistered {
   needs_onboarding: false;
-  user: {
-    id: string;
-    email: string;
-    full_name: string;
-    phone: string | null;
-    rut: string | null;
-    is_platform_admin: boolean;
-    status: 'pending_verification' | 'active' | 'suspended' | 'deleted';
-  };
+  user: MeUser;
   memberships: MembershipPayload[];
   active_membership: MembershipPayload | null;
 }

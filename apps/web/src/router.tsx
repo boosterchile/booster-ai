@@ -5,6 +5,7 @@ import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
+import { PerfilRoute } from './routes/perfil.js';
 
 /**
  * Router programático de TanStack Router. Cada ruta se declara con
@@ -48,12 +49,19 @@ const ofertasRoute = createRoute({
   component: OfertasRoute,
 });
 
+const perfilRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/perfil',
+  component: PerfilRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   onboardingRoute,
   appRoute,
   ofertasRoute,
+  perfilRoute,
 ]);
 
 export const router = createRouter({

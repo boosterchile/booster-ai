@@ -18,11 +18,18 @@ import { addressSchema } from './primitives/geo.js';
  */
 export const empresaOnboardingInputSchema = z
   .object({
-    /** Datos del user owner. Firebase ya tiene email + uid; acá completa
-     * full_name + phone (RUT opcional, lo pueden agregar después). */
+    /**
+     * Datos del user owner. Firebase ya tiene email + uid; aquí completa
+     * full_name + phone + whatsapp_e164 (RUT opcional, lo pueden agregar
+     * después). El número de WhatsApp es obligatorio porque el dispatcher
+     * de notificaciones (B.8) lo usa para enviar el ping de oferta al
+     * carrier — sin esto, el carrier no se entera que llegó algo y el
+     * piloto pierde su valor.
+     */
     user: z.object({
       full_name: z.string().min(1).max(200),
       phone: chileanPhoneSchema,
+      whatsapp_e164: chileanPhoneSchema,
       rut: rutSchema.optional(),
     }),
     /** Datos legales de la empresa. */

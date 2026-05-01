@@ -36,6 +36,7 @@ function buildDefaults(opts: {
     user: {
       full_name: opts.firebaseName ?? '',
       phone: '+569' as unknown as EmpresaOnboardingInput['user']['phone'],
+      whatsapp_e164: '+569' as unknown as EmpresaOnboardingInput['user']['whatsapp_e164'],
     },
     empresa: {
       legal_name: '',
@@ -145,7 +146,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
     const fieldsToValidate: ReadonlyArray<Parameters<typeof trigger>[0]> = (() => {
       switch (step) {
         case 1:
-          return [['user.full_name', 'user.phone', 'user.rut']];
+          return [['user.full_name', 'user.phone', 'user.whatsapp_e164', 'user.rut']];
         case 2:
           return [
             [
@@ -229,6 +230,21 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                   inputMode="tel"
                   placeholder="+56912345678"
                   className={inputClass(!!errors.user?.phone)}
+                />
+              )}
+            />
+            <Field
+              label="WhatsApp"
+              hint="Te enviaremos cada nueva oferta a este WhatsApp. Debe ser un celular chileno (+56 9...). Si es el mismo que tu teléfono móvil, cópialo igual."
+              error={errors.user?.whatsapp_e164?.message}
+              render={(id) => (
+                <input
+                  id={id}
+                  {...register('user.whatsapp_e164')}
+                  autoComplete="tel"
+                  inputMode="tel"
+                  placeholder="+56912345678"
+                  className={inputClass(!!errors.user?.whatsapp_e164)}
                 />
               )}
             />

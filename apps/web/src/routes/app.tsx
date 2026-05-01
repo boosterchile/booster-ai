@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, LogOut, Truck, User as UserIcon } from 'lucide-react';
+import { ArrowRight, LogOut, Settings, Truck, User as UserIcon } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -51,10 +51,14 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm">
+            <Link
+              to="/app/perfil"
+              className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
+            >
               <UserIcon className="h-4 w-4" aria-hidden />
               <span>{me.user.full_name}</span>
-            </div>
+              <Settings className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+            </Link>
             <button
               type="button"
               onClick={handleSignOut}

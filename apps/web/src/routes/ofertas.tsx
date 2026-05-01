@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Inbox, LogOut, RefreshCw, User as UserIcon } from 'lucide-react';
+import { Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -54,10 +54,14 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm">
+            <Link
+              to="/app/perfil"
+              className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
+            >
               <UserIcon className="h-4 w-4" aria-hidden />
               <span>{me.user.full_name}</span>
-            </div>
+              <Settings className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
+            </Link>
             <button
               type="button"
               onClick={handleSignOut}

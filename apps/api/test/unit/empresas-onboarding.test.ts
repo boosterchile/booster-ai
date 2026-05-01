@@ -67,6 +67,7 @@ const validBody = {
   user: {
     full_name: 'Felipe Vicencio',
     phone: '+56912345678',
+    whatsapp_e164: '+56912345678',
   },
   empresa: {
     legal_name: 'Booster Chile SpA',
@@ -132,6 +133,47 @@ describe('POST /empresas/onboarding', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rechaza body sin user.whatsapp_e164 con 400', async () => {
+    const app = await buildApp();
+    const body = {
+      ...validBody,
+      user: {
+        full_name: validBody.user.full_name,
+        phone: validBody.user.phone,
+        // whatsapp_e164 ausente intencionalmente
+      },
+    };
+    const res = await app.request('/empresas/onboarding', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-claims': JSON.stringify({ uid: 'fb-1', email: 'felipe@boosterchile.com' }),
+      },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza user.whatsapp_e164 con formato no chileno con 400', async () => {
+    const app = await buildApp();
+    const body = {
+      ...validBody,
+      user: {
+        ...validBody.user,
+        whatsapp_e164: '+1555111222',
+      },
+    };
+    const res = await app.request('/empresas/onboarding', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-claims': JSON.stringify({ uid: 'fb-1', email: 'felipe@boosterchile.com' }),
+      },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it('rechaza empresa sin is_shipper ni is_carrier (refine)', async () => {
     const app = await buildApp();
     const body = {
@@ -185,6 +227,7 @@ describe('POST /empresas/onboarding', () => {
         email: 'felipe@boosterchile.com',
         fullName: 'Felipe Vicencio',
         phone: '+56912345678',
+        whatsappE164: '+56912345678',
         rut: null,
         status: 'active',
         isPlatformAdmin: false,
