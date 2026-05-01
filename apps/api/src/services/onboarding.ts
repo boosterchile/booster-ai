@@ -58,12 +58,10 @@ export class EmailAlreadyInUseError extends Error {
  *   - No existe user con `firebaseUid` (sino UserAlreadyExistsError 409).
  *   - No existe user con `email` (sino EmailAlreadyInUseError 409).
  *   - No existe empresa con `input.empresa.rut` (sino EmpresaRutDuplicateError 409).
- *   - El plan slug existe en `plans` y está activo (sino PlanNotFoundError 400).
+ *   - El plan slug existe en `planes` y está activo (sino PlanNotFoundError 400).
  *
- * En éxito: user.status='active', empresa.status='pending_verification',
- * membership.status='active' role='owner'. La empresa queda en
- * pending_verification para que ops valide RUT antes de habilitar
- * matching/billing real.
+ * En éxito: user.estado='activo', empresa.estado='pendiente_verificacion',
+ * membership.estado='activa' rol='dueno'.
  */
 export async function onboardEmpresa(opts: {
   db: Db;
@@ -122,7 +120,7 @@ export async function onboardEmpresa(opts: {
         phone: input.user.phone,
         whatsappE164: input.user.whatsapp_e164,
         ...(input.user.rut ? { rut: input.user.rut } : {}),
-        status: 'active',
+        status: 'activo',
         isPlatformAdmin: false,
       })
       .returning();
@@ -147,10 +145,10 @@ export async function onboardEmpresa(opts: {
         ...(input.empresa.address.postalCode
           ? { addressPostalCode: input.empresa.address.postalCode }
           : {}),
-        isShipper: input.empresa.is_shipper,
-        isCarrier: input.empresa.is_carrier,
+        isGeneradorCarga: input.empresa.is_generador_carga,
+        isTransportista: input.empresa.is_transportista,
         planId: plan.id,
-        status: 'pending_verification',
+        status: 'pendiente_verificacion',
         timezone: 'America/Santiago',
       })
       .returning();
@@ -159,14 +157,14 @@ export async function onboardEmpresa(opts: {
       throw new Error('Insert empresa returned no row');
     }
 
-    // 7. Crear membership owner active.
+    // 7. Crear membership dueno activa.
     const membershipInsert = await tx
       .insert(memberships)
       .values({
         userId: user.id,
         empresaId: empresa.id,
-        role: 'owner',
-        status: 'active',
+        role: 'dueno',
+        status: 'activa',
         invitedByUserId: null,
         joinedAt: new Date(),
       })
@@ -182,8 +180,8 @@ export async function onboardEmpresa(opts: {
         empresaId: empresa.id,
         rut: empresa.rut,
         planSlug: plan.slug,
-        isShipper: empresa.isShipper,
-        isCarrier: empresa.isCarrier,
+        isGeneradorCarga: empresa.isGeneradorCarga,
+        isTransportista: empresa.isTransportista,
       },
       'empresa onboarded',
     );

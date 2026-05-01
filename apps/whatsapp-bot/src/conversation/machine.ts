@@ -210,17 +210,17 @@ export const conversationMachine = setup({
 // ---- helpers ----
 
 const CARGO_MENU_TO_ENUM: Record<string, CargoType> = {
-  '1': 'dry_goods',
-  '2': 'perishable',
-  '3': 'refrigerated',
-  '4': 'frozen',
-  '5': 'fragile',
-  '6': 'dangerous',
-  '7': 'liquid',
-  '8': 'construction',
-  '9': 'agricultural',
-  '10': 'livestock',
-  '0': 'other',
+  '1': 'carga_seca',
+  '2': 'perecible',
+  '3': 'refrigerada',
+  '4': 'congelada',
+  '5': 'fragil',
+  '6': 'peligrosa',
+  '7': 'liquida',
+  '8': 'construccion',
+  '9': 'agricola',
+  '10': 'ganado',
+  '0': 'otra',
 };
 
 export function isValidCargoMenuOption(text: string): boolean {

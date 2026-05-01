@@ -29,7 +29,7 @@ describe('conversationMachine', () => {
       { type: 'USER_MESSAGE', text: '1' },
       { type: 'USER_MESSAGE', text: 'Av. Los Leones 1234, Providencia' },
       { type: 'USER_MESSAGE', text: 'Puerto de Valparaíso' },
-      { type: 'USER_MESSAGE', text: '3' }, // refrigerated
+      { type: 'USER_MESSAGE', text: '3' }, // refrigerada
       { type: 'USER_MESSAGE', text: 'mañana a las 9am' },
     ]);
     const snap = actor.getSnapshot();
@@ -38,7 +38,7 @@ describe('conversationMachine', () => {
     expect(snap.context).toMatchObject({
       originAddressRaw: 'Av. Los Leones 1234, Providencia',
       destinationAddressRaw: 'Puerto de Valparaíso',
-      cargoType: 'refrigerated',
+      cargoType: 'refrigerada',
       pickupDateRaw: 'mañana a las 9am',
     });
   });

@@ -10,21 +10,21 @@ import { addressSchema } from './primitives/geo.js';
  * Firebase Auth. Crea en una transacción atómica:
  *   1. User (con firebase_uid del Bearer token verificado)
  *   2. Empresa (con datos legales)
- *   3. Membership (role='owner', status='active') ligando ambos
+ *   3. Membership (role='dueno', status='activa') ligando ambos
  *   4. Asigna el Plan correspondiente al slug elegido
  *
- * Operación = al menos una de las dos: is_shipper o is_carrier debe ser
- * true. Una empresa que no es ni shipper ni carrier no tiene sentido.
+ * Operación = al menos una de las dos: is_generador_carga o is_transportista
+ * debe ser true. Una empresa que no es ni una ni la otra no tiene sentido.
  */
 export const empresaOnboardingInputSchema = z
   .object({
     /**
-     * Datos del user owner. Firebase ya tiene email + uid; aquí completa
+     * Datos del user dueño. Firebase ya tiene email + uid; aquí completa
      * full_name + phone + whatsapp_e164 (RUT opcional, lo pueden agregar
      * después). El número de WhatsApp es obligatorio porque el dispatcher
      * de notificaciones (B.8) lo usa para enviar el ping de oferta al
-     * carrier — sin esto, el carrier no se entera que llegó algo y el
-     * piloto pierde su valor.
+     * transportista — sin esto, el transportista no se entera que llegó
+     * algo y el piloto pierde su valor.
      */
     user: z.object({
       full_name: z.string().min(1).max(200),
@@ -39,15 +39,15 @@ export const empresaOnboardingInputSchema = z
       contact_email: z.string().email(),
       contact_phone: chileanPhoneSchema,
       address: addressSchema,
-      is_shipper: z.boolean(),
-      is_carrier: z.boolean(),
+      is_generador_carga: z.boolean(),
+      is_transportista: z.boolean(),
     }),
-    /** Plan inicial. Para piloto sin billing, default 'free' aceptado. */
+    /** Plan inicial. Para piloto sin billing, default 'gratis' aceptado. */
     plan_slug: planSlugSchema,
   })
-  .refine((data) => data.empresa.is_shipper || data.empresa.is_carrier, {
-    message: 'La empresa debe operar al menos como shipper o como carrier',
-    path: ['empresa', 'is_shipper'],
+  .refine((data) => data.empresa.is_generador_carga || data.empresa.is_transportista, {
+    message: 'La empresa debe operar al menos como generador de carga o como transportista',
+    path: ['empresa', 'is_generador_carga'],
   });
 
 export type EmpresaOnboardingInput = z.infer<typeof empresaOnboardingInputSchema>;

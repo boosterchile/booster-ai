@@ -24,10 +24,6 @@ const STEPS: ReadonlyArray<{
   { step: 4, title: 'Plan', shortTitle: 'Plan', Icon: Layers },
 ];
 
-/**
- * Defaults razonables. El email del paso 2 lo prefilleamos con el de
- * Firebase pasado por props (es lo que el user usó para loguearse).
- */
 function buildDefaults(opts: {
   firebaseEmail: string;
   firebaseName: string | undefined;
@@ -50,10 +46,10 @@ function buildDefaults(opts: {
         region: 'XIII',
         country: 'CL',
       },
-      is_shipper: false,
-      is_carrier: false,
+      is_generador_carga: false,
+      is_transportista: false,
     },
-    plan_slug: 'free',
+    plan_slug: 'gratis',
   };
 }
 
@@ -77,7 +73,7 @@ const REGIONS_CHILE: ReadonlyArray<{ code: string; name: string }> = [
 ];
 
 const PLANS: ReadonlyArray<{
-  slug: 'free' | 'standard' | 'pro' | 'enterprise';
+  slug: 'gratis' | 'estandar' | 'pro' | 'enterprise';
   name: string;
   priceLabel: string;
   description: string;
@@ -85,15 +81,15 @@ const PLANS: ReadonlyArray<{
   recommended?: boolean;
 }> = [
   {
-    slug: 'free',
-    name: 'Free',
+    slug: 'gratis',
+    name: 'Gratis',
     priceLabel: 'Gratis',
     description: 'Para arrancar. Hasta 5 cargas activas y 3 vehículos.',
     features: ['5 cargas activas', '3 vehículos', 'Soporte por email'],
   },
   {
-    slug: 'standard',
-    name: 'Standard',
+    slug: 'estandar',
+    name: 'Estándar',
     priceLabel: '$ 49.000 / mes',
     description: 'Operación regular con flota mediana.',
     features: [
@@ -138,10 +134,6 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
     watch,
   } = methods;
 
-  /**
-   * Valida solo los campos del paso actual antes de avanzar. Trigger es
-   * la API de react-hook-form para validar paths puntuales sin submit.
-   */
   async function nextStep() {
     const fieldsToValidate: ReadonlyArray<Parameters<typeof trigger>[0]> = (() => {
       switch (step) {
@@ -161,7 +153,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             ],
           ];
         case 3:
-          return [['empresa.is_shipper', 'empresa.is_carrier']];
+          return [['empresa.is_generador_carga', 'empresa.is_transportista']];
         default:
           return [];
       }
@@ -388,16 +380,16 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
           <section className="mt-8 space-y-4">
             <h2 className="font-semibold text-neutral-900 text-xl">¿Cómo opera tu empresa?</h2>
             <p className="text-neutral-600 text-sm">
-              Podés ser shipper (publicás cargas), carrier (transportás cargas) o ambos. Activá los
-              que apliquen.
+              Podés ser generador de carga (publicás cargas), transportista (transportás cargas) o
+              ambos. Activá los que apliquen.
             </p>
             <Controller
               control={control}
-              name="empresa.is_shipper"
+              name="empresa.is_generador_carga"
               render={({ field }) => (
                 <OperationToggle
-                  title="Shipper — genero carga"
-                  description="Mi empresa publica cargas para que carriers las muevan. Típico de retail, distribución, manufactura, agro."
+                  title="Generador de carga"
+                  description="Mi empresa publica cargas para que transportistas las muevan. Típico de retail, distribución, manufactura, agro."
                   checked={field.value}
                   onChange={field.onChange}
                 />
@@ -405,18 +397,18 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             />
             <Controller
               control={control}
-              name="empresa.is_carrier"
+              name="empresa.is_transportista"
               render={({ field }) => (
                 <OperationToggle
-                  title="Carrier — transporto carga"
+                  title="Transportista"
                   description="Mi empresa tiene flota propia (camiones, conductores) y mueve cargas. Empresa de transporte, courier, dueño-operador."
                   checked={field.value}
                   onChange={field.onChange}
                 />
               )}
             />
-            {errors.empresa?.is_shipper && (
-              <p className="text-danger-700 text-sm">{errors.empresa.is_shipper.message}</p>
+            {errors.empresa?.is_generador_carga && (
+              <p className="text-danger-700 text-sm">{errors.empresa.is_generador_carga.message}</p>
             )}
           </section>
         )}
@@ -425,7 +417,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
           <section className="mt-8 space-y-4">
             <h2 className="font-semibold text-neutral-900 text-xl">Plan</h2>
             <p className="text-neutral-600 text-sm">
-              Empezá con Free y subí cuando lo necesites. Sin tarjeta de crédito para Free.
+              Empezá con Gratis y subí cuando lo necesites. Sin tarjeta de crédito para Gratis.
             </p>
             <Controller
               control={control}
@@ -545,7 +537,6 @@ function Field(props: {
   label: string;
   hint?: string;
   error?: string | undefined;
-  /** Render prop: recibe el id auto-generado para asociar label↔input. */
   render: (inputId: string) => ReactNode;
 }) {
   const id = useId();
@@ -662,7 +653,10 @@ function SummaryReview({ values }: { values: EmpresaOnboardingInput }) {
         <div>
           <dt className="text-neutral-500">Operación</dt>
           <dd className="text-neutral-900">
-            {[values.empresa.is_shipper && 'Shipper', values.empresa.is_carrier && 'Carrier']
+            {[
+              values.empresa.is_generador_carga && 'Generador de carga',
+              values.empresa.is_transportista && 'Transportista',
+            ]
               .filter(Boolean)
               .join(' + ') || 'Ninguna'}
           </dd>
@@ -676,9 +670,6 @@ function SummaryReview({ values }: { values: EmpresaOnboardingInput }) {
   );
 }
 
-/**
- * Mapea ApiError.code a mensajes de UI en español.
- */
 function translateApiError(err: ApiError): string {
   switch (err.code) {
     case 'user_already_registered':

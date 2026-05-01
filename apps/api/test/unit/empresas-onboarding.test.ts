@@ -16,9 +16,6 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
-// Mock del service de onboarding — testeamos solo el route layer (mapping
-// de errores → HTTP status, shape de response). La lógica de la
-// transacción DB queda cubierta por integration tests post-piloto.
 vi.mock('../../src/services/onboarding.js', () => {
   return {
     onboardEmpresa: vi.fn(),
@@ -81,18 +78,16 @@ const validBody = {
       region: 'XIII',
       country: 'CL',
     },
-    is_shipper: false,
-    is_carrier: true,
+    is_generador_carga: false,
+    is_transportista: true,
   },
-  plan_slug: 'free',
+  plan_slug: 'gratis',
 };
 
 async function buildApp() {
   const { createEmpresaRoutes } = await import('../../src/routes/empresas.js');
   const app = new Hono();
   app.use('/empresas/*', async (c, next) => {
-    // Simular firebaseAuth middleware: setea claims del header X-Test-Claims
-    // (sólo para tests). El header viene como JSON con { uid, email, ... }.
     const claimsHeader = c.req.header('x-test-claims');
     if (claimsHeader) {
       const parsed = JSON.parse(claimsHeader) as {
@@ -140,7 +135,6 @@ describe('POST /empresas/onboarding', () => {
       user: {
         full_name: validBody.user.full_name,
         phone: validBody.user.phone,
-        // whatsapp_e164 ausente intencionalmente
       },
     };
     const res = await app.request('/empresas/onboarding', {
@@ -174,11 +168,11 @@ describe('POST /empresas/onboarding', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rechaza empresa sin is_shipper ni is_carrier (refine)', async () => {
+  it('rechaza empresa sin is_generador_carga ni is_transportista (refine)', async () => {
     const app = await buildApp();
     const body = {
       ...validBody,
-      empresa: { ...validBody.empresa, is_shipper: false, is_carrier: false },
+      empresa: { ...validBody.empresa, is_generador_carga: false, is_transportista: false },
     };
     const res = await app.request('/empresas/onboarding', {
       method: 'POST',
@@ -197,7 +191,7 @@ describe('POST /empresas/onboarding', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-test-claims': JSON.stringify({ uid: 'fb-1' }), // sin email
+        'x-test-claims': JSON.stringify({ uid: 'fb-1' }),
       },
       body: JSON.stringify(validBody),
     });
@@ -212,7 +206,7 @@ describe('POST /empresas/onboarding', () => {
     const app = await buildApp();
     const res = await app.request('/empresas/onboarding', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' }, // sin x-test-claims
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
     });
     expect(res.status).toBe(500);
@@ -229,7 +223,7 @@ describe('POST /empresas/onboarding', () => {
         phone: '+56912345678',
         whatsappE164: '+56912345678',
         rut: null,
-        status: 'active',
+        status: 'activo',
         isPlatformAdmin: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -245,12 +239,16 @@ describe('POST /empresas/onboarding', () => {
         addressCity: 'Santiago',
         addressRegion: 'XIII',
         addressPostalCode: null,
-        isShipper: false,
-        isCarrier: true,
-        planId: 'plan-free',
-        status: 'pending_verification',
+        isGeneradorCarga: false,
+        isTransportista: true,
+        planId: 'plan-gratis',
+        status: 'pendiente_verificacion',
         timezone: 'America/Santiago',
         maxConcurrentOffersOverride: null,
+        carbonReductionTargetPct: null,
+        carbonReductionTargetYear: null,
+        priorCertifications: [],
+        requiredReportingStandards: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -258,8 +256,8 @@ describe('POST /empresas/onboarding', () => {
         id: 'm1',
         userId: 'u1',
         empresaId: 'e1',
-        role: 'owner',
-        status: 'active',
+        role: 'dueno',
+        status: 'activa',
         invitedByUserId: null,
         invitedAt: new Date(),
         joinedAt: new Date(),
@@ -281,14 +279,14 @@ describe('POST /empresas/onboarding', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
       user: { id: string; email: string };
-      empresa: { id: string; rut: string; is_carrier: boolean };
+      empresa: { id: string; rut: string; is_transportista: boolean };
       membership: { role: string; status: string };
     };
     expect(body.user.email).toBe('felipe@boosterchile.com');
     expect(body.empresa.rut).toBe('76.123.456-0');
-    expect(body.empresa.is_carrier).toBe(true);
-    expect(body.membership.role).toBe('owner');
-    expect(body.membership.status).toBe('active');
+    expect(body.empresa.is_transportista).toBe(true);
+    expect(body.membership.role).toBe('dueno');
+    expect(body.membership.status).toBe('activa');
   });
 
   it('mapea UserAlreadyExistsError a 409', async () => {
@@ -357,7 +355,7 @@ describe('POST /empresas/onboarding', () => {
   it('mapea PlanNotFoundError a 400', async () => {
     const onboarding = await import('../../src/services/onboarding.js');
     vi.mocked(onboarding.onboardEmpresa).mockRejectedValueOnce(
-      new onboarding.PlanNotFoundError('free'),
+      new onboarding.PlanNotFoundError('gratis'),
     );
 
     const app = await buildApp();

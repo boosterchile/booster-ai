@@ -17,22 +17,21 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
-// Mock del service de matching — testeamos solo el route layer.
 vi.mock('../../src/services/matching.js', () => {
   return {
     runMatching: vi.fn(),
     TripRequestNotFoundError: class TripRequestNotFoundError extends Error {
-      constructor(public readonly tripRequestId: string) {
-        super(`TripRequest ${tripRequestId} not found`);
+      constructor(public readonly tripId: string) {
+        super(`Trip ${tripId} not found`);
         this.name = 'TripRequestNotFoundError';
       }
     },
     TripRequestNotMatchableError: class TripRequestNotMatchableError extends Error {
       constructor(
-        public readonly tripRequestId: string,
+        public readonly tripId: string,
         public readonly status: string,
       ) {
-        super(`TripRequest ${tripRequestId} in status ${status}`);
+        super(`Trip ${tripId} in status ${status}`);
         this.name = 'TripRequestNotMatchableError';
       }
     },
@@ -51,11 +50,6 @@ const noopLogger = {
   typeof import('../../src/routes/trip-requests-v2.js').createTripRequestsV2Routes
 >[0]['logger'];
 
-/**
- * Stub del DB con un .insert(...).values(...).returning() chain que devuelve
- * el row pre-armado. El router no hace select, solo insert + delegate al
- * matching service mockeado.
- */
 function makeStubDb(insertedRow: Record<string, unknown>): Db {
   return {
     insert: vi.fn(() => ({
@@ -76,7 +70,7 @@ const validBody = {
     region_code: 'VIII',
   },
   cargo: {
-    cargo_type: 'dry_goods',
+    cargo_type: 'carga_seca',
     weight_kg: 1500,
   },
   pickup_window: {
@@ -89,8 +83,8 @@ const validBody = {
 interface UserContextOpts {
   userId?: string;
   empresaId?: string;
-  isShipper?: boolean;
-  empresaStatus?: 'pending_verification' | 'active' | 'suspended';
+  isGeneradorCarga?: boolean;
+  empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
 }
 
@@ -98,19 +92,19 @@ function buildUserContext(opts: UserContextOpts = {}): {
   user: Pick<UserRow, 'id'>;
   memberships: Array<{
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isShipper' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
   }>;
   activeMembership: {
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isShipper' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
   } | null;
 } {
   const empresa = {
     id: opts.empresaId ?? 'emp-1',
-    isShipper: opts.isShipper ?? true,
-    status: opts.empresaStatus ?? 'active',
+    isGeneradorCarga: opts.isGeneradorCarga ?? true,
+    status: opts.empresaStatus ?? 'activa',
   };
-  const membership = { role: 'owner' as const };
+  const membership = { role: 'dueno' as const };
   return {
     user: { id: opts.userId ?? 'user-1' },
     memberships: [{ membership, empresa }],
@@ -124,7 +118,6 @@ async function buildAppWith(opts: {
 }) {
   const { createTripRequestsV2Routes } = await import('../../src/routes/trip-requests-v2.js');
   const app = new Hono();
-  // Simular middleware: setea userContext desde el closure de test.
   app.use('/trip-requests-v2/*', async (c, next) => {
     if (opts.userContext) {
       c.set('userContext', opts.userContext as unknown as Parameters<typeof c.set>[1]);
@@ -140,7 +133,7 @@ describe('POST /trip-requests-v2', () => {
     vi.clearAllMocks();
   });
 
-  it('rechaza si no hay userContext con 500 (orden middlewares mal)', async () => {
+  it('rechaza si no hay userContext con 500', async () => {
     const app = await buildAppWith({ db: makeStubDb({}), userContext: null });
     const res = await app.request('/trip-requests-v2', {
       method: 'POST',
@@ -167,10 +160,10 @@ describe('POST /trip-requests-v2', () => {
     });
   });
 
-  it('rechaza si la empresa no es shipper con 403 not_a_shipper', async () => {
+  it('rechaza si la empresa no es generador de carga con 403 not_a_shipper', async () => {
     const app = await buildAppWith({
       db: makeStubDb({}),
-      userContext: buildUserContext({ isShipper: false }),
+      userContext: buildUserContext({ isGeneradorCarga: false }),
     });
     const res = await app.request('/trip-requests-v2', {
       method: 'POST',
@@ -184,7 +177,7 @@ describe('POST /trip-requests-v2', () => {
   it('rechaza si la empresa no está activa con 403 empresa_not_active', async () => {
     const app = await buildAppWith({
       db: makeStubDb({}),
-      userContext: buildUserContext({ empresaStatus: 'pending_verification' }),
+      userContext: buildUserContext({ empresaStatus: 'pendiente_verificacion' }),
     });
     const res = await app.request('/trip-requests-v2', {
       method: 'POST',
@@ -211,10 +204,10 @@ describe('POST /trip-requests-v2', () => {
     expect(res.status).toBe(400);
   });
 
-  it('happy path: crea trip_request, dispara matching, devuelve 201', async () => {
+  it('happy path: crea trip, dispara matching, devuelve 201', async () => {
     const matching = await import('../../src/services/matching.js');
     vi.mocked(matching.runMatching).mockResolvedValueOnce({
-      tripRequestId: 'trip-1',
+      tripId: 'trip-1',
       candidatesEvaluated: 3,
       offersCreated: 2,
       offers: [
@@ -230,8 +223,8 @@ describe('POST /trip-requests-v2', () => {
     const insertedTrip = {
       id: 'trip-1',
       trackingCode: 'BOO-ABC123',
-      shipperEmpresaId: 'emp-1',
-      cargoType: 'dry_goods',
+      generadorCargaEmpresaId: 'emp-1',
+      cargoType: 'carga_seca',
       originRegionCode: 'XIII',
     };
     const app = await buildAppWith({
@@ -249,15 +242,15 @@ describe('POST /trip-requests-v2', () => {
       matching: { offers_created: number; offer_ids: string[] };
     };
     expect(body.trip_request.id).toBe('trip-1');
-    expect(body.trip_request.status).toBe('offers_sent');
+    expect(body.trip_request.status).toBe('ofertas_enviadas');
     expect(body.matching.offers_created).toBe(2);
     expect(body.matching.offer_ids).toEqual(['offer-1', 'offer-2']);
   });
 
-  it('matching sin candidatos: 201 con status=expired y matching=null offers', async () => {
+  it('matching sin candidatos: 201 con status=expirado y matching offers vacío', async () => {
     const matching = await import('../../src/services/matching.js');
     vi.mocked(matching.runMatching).mockResolvedValueOnce({
-      tripRequestId: 'trip-2',
+      tripId: 'trip-2',
       candidatesEvaluated: 0,
       offersCreated: 0,
       offers: [],
@@ -277,11 +270,11 @@ describe('POST /trip-requests-v2', () => {
       trip_request: { status: string };
       matching: { offers_created: number };
     };
-    expect(body.trip_request.status).toBe('expired');
+    expect(body.trip_request.status).toBe('expirado');
     expect(body.matching.offers_created).toBe(0);
   });
 
-  it('matching throws: 201 con status=pending_match y matching=null', async () => {
+  it('matching throws: 201 con status=esperando_match y matching=null', async () => {
     const matching = await import('../../src/services/matching.js');
     vi.mocked(matching.runMatching).mockRejectedValueOnce(new Error('boom'));
 
@@ -296,7 +289,7 @@ describe('POST /trip-requests-v2', () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { trip_request: { status: string }; matching: null };
-    expect(body.trip_request.status).toBe('pending_match');
+    expect(body.trip_request.status).toBe('esperando_match');
     expect(body.matching).toBeNull();
   });
 });

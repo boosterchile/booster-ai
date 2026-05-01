@@ -1,9 +1,12 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  char,
+  check,
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -16,463 +19,535 @@ import {
 /**
  * Drizzle schema — Booster AI multi-tenant.
  *
- * Layout:
- *   - billing/auth: plans, empresas, users, memberships
- *   - carrier capabilities: vehicles, zones
- *   - operations: trip_requests, offers, assignments, trip_events
- *   - legacy intake (pre-empresa anonymous): whatsapp_intake_drafts
+ * Naming bilingüe (ver CLAUDE.md):
+ *   - Tablas y columnas en SQL: español snake_case sin tildes
+ *   - Exports y campos TS: camelCase inglés
+ *   - Enum values: español snake_case sin tildes (excepto siglas)
  *
- * Cambios de schema: usar drizzle-kit generate + incluir en drizzle/ y
- * aplicar automáticamente al startup (ver db/migrator.ts con advisory lock).
+ * Layout:
+ *   - billing/auth: planes, empresas, usuarios, membresias
+ *   - capacidades transportista: vehiculos, zonas
+ *   - operaciones: viajes, ofertas, asignaciones, eventos_viaje, metricas_viaje
+ *   - sostenibilidad: stakeholders, consentimientos
+ *   - intake legacy: borradores_whatsapp
  */
 
 // =============================================================================
 // ENUMS
 // =============================================================================
 
-export const planSlugEnum = pgEnum('plan_slug', ['free', 'standard', 'pro', 'enterprise']);
+export const planSlugEnum = pgEnum('plan_slug', ['gratis', 'estandar', 'pro', 'enterprise']);
 
-export const empresaStatusEnum = pgEnum('empresa_status', [
-  'pending_verification',
-  'active',
-  'suspended',
+export const empresaStatusEnum = pgEnum('estado_empresa', [
+  'pendiente_verificacion',
+  'activa',
+  'suspendida',
 ]);
 
-export const userStatusEnum = pgEnum('user_status', [
-  'pending_verification',
-  'active',
-  'suspended',
-  'deleted',
+export const userStatusEnum = pgEnum('estado_usuario', [
+  'pendiente_verificacion',
+  'activo',
+  'suspendido',
+  'eliminado',
 ]);
 
-export const membershipRoleEnum = pgEnum('membership_role', [
-  'owner',
+export const membershipRoleEnum = pgEnum('rol_membresia', [
+  'dueno',
   'admin',
-  'dispatcher',
-  'driver',
-  'viewer',
+  'despachador',
+  'conductor',
+  'visualizador',
+  'stakeholder_sostenibilidad',
 ]);
 
-export const membershipStatusEnum = pgEnum('membership_status', [
-  'pending_invitation',
-  'active',
-  'suspended',
-  'removed',
+export const membershipStatusEnum = pgEnum('estado_membresia', [
+  'pendiente_invitacion',
+  'activa',
+  'suspendida',
+  'removida',
 ]);
 
-export const vehicleTypeEnum = pgEnum('vehicle_type', [
-  'pickup', // camioneta
-  'truck_3_4', // camión 3/4
-  'truck_dry', // camión seco
-  'truck_reefer', // camión refrigerado
-  'semi_trailer', // semi-remolque
-  'flatbed', // batea
-  'tank', // estanque
-  'container', // portacontenedor
-  'other',
+export const vehicleTypeEnum = pgEnum('tipo_vehiculo', [
+  'camioneta',
+  'furgon_pequeno',
+  'furgon_mediano',
+  'camion_pequeno',
+  'camion_mediano',
+  'camion_pesado',
+  'semi_remolque',
+  'refrigerado',
+  'tanque',
 ]);
 
-export const zoneTypeEnum = pgEnum('zone_type', ['pickup', 'delivery', 'both']);
-
-export const cargoTypeEnum = pgEnum('cargo_type', [
-  'dry_goods',
-  'perishable',
-  'refrigerated',
-  'frozen',
-  'fragile',
-  'dangerous',
-  'liquid',
-  'construction',
-  'agricultural',
-  'livestock',
-  'other',
+export const fuelTypeEnum = pgEnum('tipo_combustible', [
+  'diesel',
+  'gasolina',
+  'gas_glp',
+  'gas_gnc',
+  'electrico',
+  'hibrido_diesel',
+  'hibrido_gasolina',
+  'hidrogeno',
 ]);
 
-export const tripRequestStatusEnum = pgEnum('trip_request_status', [
-  'draft', // intake incompleto
-  'pending_match', // listo, esperando matching engine
-  'matching', // matching corriendo
-  'offers_sent', // offers enviadas, esperando respuesta carrier
-  'assigned', // un carrier aceptó (Assignment creada)
-  'in_progress', // pickup confirmado
-  'delivered', // entrega confirmada
-  'cancelled', // shipper, carrier o admin canceló
-  'expired', // sin matches después de TTL global
+export const vehicleStatusEnum = pgEnum('estado_vehiculo', ['activo', 'mantenimiento', 'retirado']);
+
+export const zoneTypeEnum = pgEnum('tipo_zona', ['recogida', 'entrega', 'ambos']);
+
+export const cargoTypeEnum = pgEnum('tipo_carga', [
+  'carga_seca',
+  'perecible',
+  'refrigerada',
+  'congelada',
+  'fragil',
+  'peligrosa',
+  'liquida',
+  'construccion',
+  'agricola',
+  'ganado',
+  'otra',
 ]);
 
-export const offerStatusEnum = pgEnum('offer_status', [
-  'pending',
-  'accepted',
-  'rejected',
-  'expired',
-  'superseded',
+export const tripStatusEnum = pgEnum('estado_viaje', [
+  'borrador',
+  'esperando_match',
+  'emparejando',
+  'ofertas_enviadas',
+  'asignado',
+  'en_proceso',
+  'entregado',
+  'cancelado',
+  'expirado',
 ]);
 
-export const offerResponseChannelEnum = pgEnum('offer_response_channel', [
+export const offerStatusEnum = pgEnum('estado_oferta', [
+  'pendiente',
+  'aceptada',
+  'rechazada',
+  'expirada',
+  'reemplazada',
+]);
+
+export const offerResponseChannelEnum = pgEnum('canal_respuesta_oferta', [
   'web',
   'whatsapp',
   'api',
 ]);
 
-export const assignmentStatusEnum = pgEnum('assignment_status', [
-  'assigned',
-  'picked_up',
-  'delivered',
-  'cancelled',
+export const assignmentStatusEnum = pgEnum('estado_asignacion', [
+  'asignado',
+  'recogido',
+  'entregado',
+  'cancelado',
 ]);
 
-export const cancellationActorEnum = pgEnum('cancellation_actor', [
-  'carrier',
-  'shipper',
-  'platform_admin',
+export const cancellationActorEnum = pgEnum('actor_cancelacion', [
+  'transportista',
+  'generador_carga',
+  'admin_plataforma',
 ]);
 
-export const tripEventTypeEnum = pgEnum('trip_event_type', [
-  'intake_started',
-  'intake_captured',
-  'matching_started',
-  'offers_sent',
-  'offer_accepted',
-  'offer_rejected',
-  'offer_expired',
-  'assignment_created',
-  'pickup_confirmed',
-  'delivery_confirmed',
-  'cancelled',
+export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
+  'intake_iniciado',
+  'intake_capturado',
+  'matching_iniciado',
+  'ofertas_enviadas',
+  'oferta_aceptada',
+  'oferta_rechazada',
+  'oferta_expirada',
+  'asignacion_creada',
+  'recogida_confirmada',
+  'entrega_confirmada',
+  'cancelado',
+  'carbono_calculado',
+  'certificado_emitido',
+  'telemetria_primera_recibida',
+  'telemetria_perdida',
+  'ruta_desviada',
+  'disputa_abierta',
 ]);
 
-export const tripEventSourceEnum = pgEnum('trip_event_source', [
+export const tripEventSourceEnum = pgEnum('origen_evento_viaje', [
   'web',
   'whatsapp',
   'api',
-  'system',
+  'sistema',
 ]);
 
-export const whatsAppIntakeStatusEnum = pgEnum('whatsapp_intake_status', [
-  'in_progress',
-  'captured',
-  'converted',
-  'abandoned',
-  'cancelled',
+export const whatsAppIntakeStatusEnum = pgEnum('estado_intake_whatsapp', [
+  'en_progreso',
+  'capturado',
+  'convertido',
+  'abandonado',
+  'cancelado',
+]);
+
+export const precisionMethodEnum = pgEnum('metodo_precision', [
+  'exacto_canbus',
+  'modelado',
+  'por_defecto',
+]);
+
+export const reportingStandardEnum = pgEnum('estandar_reporte', [
+  'GLEC_V3',
+  'GHG_PROTOCOL',
+  'ISO_14064',
+  'GRI',
+  'SASB',
+  'CDP',
+]);
+
+export const stakeholderTypeEnum = pgEnum('tipo_stakeholder', [
+  'mandante_corporativo',
+  'sostenibilidad_interna',
+  'auditor',
+  'regulador',
+  'inversor',
+]);
+
+export const reportCadenceEnum = pgEnum('cadencia_reporte', [
+  'mensual',
+  'trimestral',
+  'anual',
+  'bajo_demanda',
+]);
+
+export const consentScopeTypeEnum = pgEnum('tipo_alcance_consentimiento', [
+  'generador_carga',
+  'transportista',
+  'portafolio_viajes',
+  'organizacion',
+]);
+
+export const consentDataCategoryEnum = pgEnum('categoria_dato_consentimiento', [
+  'emisiones_carbono',
+  'rutas',
+  'distancias',
+  'combustibles',
+  'certificados',
+  'perfiles_vehiculos',
 ]);
 
 // =============================================================================
 // BILLING / AUTH
 // =============================================================================
 
-/**
- * Planes de suscripción. Cargados con seeds (free / standard / pro / enterprise).
- * `features` es un JSONB con los flags definidos en
- * @booster-ai/shared-schemas → planFeaturesSchema.
- */
-export const plans = pgTable('plans', {
+export const plans = pgTable('planes', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: planSlugEnum('slug').notNull().unique(),
-  name: varchar('name', { length: 100 }).notNull(),
-  description: text('description').notNull(),
-  monthlyPriceClp: integer('monthly_price_clp').notNull(),
-  features: jsonb('features').notNull(),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  name: varchar('nombre', { length: 100 }).notNull(),
+  description: text('descripcion').notNull(),
+  monthlyPriceClp: integer('precio_mensual_clp').notNull(),
+  features: jsonb('caracteristicas').notNull(),
+  isActive: boolean('es_activo').notNull().default(true),
+  createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
- * Empresa = tenant raíz. Una empresa puede ser shipper, carrier, o ambos.
+ * Empresa = tenant raíz. Una empresa puede ser generador de carga,
+ * transportista, o ambos. Incluye perfil ESG (meta de reducción de
+ * carbono, certificaciones previas, estándares de reporte requeridos).
  */
 export const empresas = pgTable(
   'empresas',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    legalName: varchar('legal_name', { length: 200 }).notNull(),
+    legalName: varchar('razon_social', { length: 200 }).notNull(),
     rut: varchar('rut', { length: 20 }).notNull().unique(),
-    contactEmail: varchar('contact_email', { length: 255 }).notNull(),
-    contactPhone: varchar('contact_phone', { length: 20 }).notNull(),
-    addressStreet: varchar('address_street', { length: 200 }).notNull(),
-    addressCity: varchar('address_city', { length: 100 }).notNull(),
-    addressRegion: varchar('address_region', { length: 4 }).notNull(),
-    addressPostalCode: varchar('address_postal_code', { length: 20 }),
-    isShipper: boolean('is_shipper').notNull().default(false),
-    isCarrier: boolean('is_carrier').notNull().default(false),
+    contactEmail: varchar('email_contacto', { length: 255 }).notNull(),
+    contactPhone: varchar('telefono_contacto', { length: 20 }).notNull(),
+    addressStreet: varchar('direccion_calle', { length: 200 }).notNull(),
+    addressCity: varchar('direccion_ciudad', { length: 100 }).notNull(),
+    addressRegion: varchar('direccion_region', { length: 4 }).notNull(),
+    addressPostalCode: varchar('direccion_codigo_postal', { length: 20 }),
+    isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
+    isTransportista: boolean('es_transportista').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
-    status: empresaStatusEnum('status').notNull().default('pending_verification'),
-    timezone: varchar('timezone', { length: 50 }).notNull().default('America/Santiago'),
-    maxConcurrentOffersOverride: integer('max_concurrent_offers_override'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    status: empresaStatusEnum('estado').notNull().default('pendiente_verificacion'),
+    timezone: varchar('zona_horaria', { length: 50 }).notNull().default('America/Santiago'),
+    maxConcurrentOffersOverride: integer('max_ofertas_concurrentes_override'),
+    /** Meta declarada de reducción de huella de carbono (% vs baseline). */
+    carbonReductionTargetPct: numeric('meta_reduccion_carbono_pct', { precision: 5, scale: 2 }),
+    /** Año objetivo de la meta. */
+    carbonReductionTargetYear: integer('meta_reduccion_carbono_anio'),
+    /** Lista libre de certificaciones declaradas (ISO 14001, B Corp, etc.). */
+    priorCertifications: jsonb('certificaciones_previas').notNull().default(sql`'[]'::jsonb`),
+    /** Estándares de reporte requeridos por la empresa. */
+    requiredReportingStandards: reportingStandardEnum('estandares_reporte_requeridos')
+      .array()
+      .notNull()
+      .default(sql`'{}'::estandar_reporte[]`),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     planIdx: index('idx_empresas_plan').on(table.planId),
-    statusIdx: index('idx_empresas_status').on(table.status),
-    isShipperIdx: index('idx_empresas_is_shipper').on(table.isShipper),
-    isCarrierIdx: index('idx_empresas_is_carrier').on(table.isCarrier),
+    statusIdx: index('idx_empresas_estado').on(table.status),
+    isGeneradorCargaIdx: index('idx_empresas_es_generador_carga').on(table.isGeneradorCarga),
+    isTransportistaIdx: index('idx_empresas_es_transportista').on(table.isTransportista),
   }),
 );
 
 /**
  * Usuarios. Auth via Firebase (firebase_uid). Pertenecen a empresas vía
  * memberships.
- *
- * `is_platform_admin` indica staff de Booster (no empresa cliente). Da
- * acceso al admin console y bypass de empresa-scoping en ciertos endpoints.
  */
 export const users = pgTable(
-  'users',
+  'usuarios',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     firebaseUid: varchar('firebase_uid', { length: 128 }).notNull().unique(),
     email: varchar('email', { length: 255 }).notNull().unique(),
-    fullName: varchar('full_name', { length: 200 }).notNull(),
-    phone: varchar('phone', { length: 20 }),
-    /**
-     * Número WhatsApp del usuario en formato E.164 (ej. +56912345678).
-     * Nullable para usuarios legacy y para no bloquear el onboarding —
-     * se puede declarar después desde el perfil. Cuando está presente,
-     * el dispatcher de notificaciones (B.8) le envía el ping de oferta.
-     */
+    fullName: varchar('nombre_completo', { length: 200 }).notNull(),
+    phone: varchar('telefono', { length: 20 }),
+    /** Número WhatsApp del usuario en formato E.164. */
     whatsappE164: varchar('whatsapp_e164', { length: 20 }),
     rut: varchar('rut', { length: 20 }),
-    status: userStatusEnum('status').notNull().default('pending_verification'),
-    isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+    status: userStatusEnum('estado').notNull().default('pendiente_verificacion'),
+    isPlatformAdmin: boolean('es_admin_plataforma').notNull().default(false),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp('ultimo_login_en', { withTimezone: true }),
   },
   (table) => ({
-    firebaseUidIdx: index('idx_users_firebase_uid').on(table.firebaseUid),
-    emailIdx: index('idx_users_email').on(table.email),
-    statusIdx: index('idx_users_status').on(table.status),
+    firebaseUidIdx: index('idx_usuarios_firebase_uid').on(table.firebaseUid),
+    emailIdx: index('idx_usuarios_email').on(table.email),
+    statusIdx: index('idx_usuarios_estado').on(table.status),
   }),
 );
 
 /**
  * Membership = User pertenece a Empresa con un role. Composite UNIQUE
- * (user_id, empresa_id) — un user no puede tener dos memberships en la
- * misma empresa.
+ * (user_id, empresa_id).
  */
 export const memberships = pgTable(
-  'memberships',
+  'membresias',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
+    userId: uuid('usuario_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    role: membershipRoleEnum('role').notNull(),
-    status: membershipStatusEnum('status').notNull().default('pending_invitation'),
-    invitedByUserId: uuid('invited_by_user_id').references(() => users.id),
-    invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
-    joinedAt: timestamp('joined_at', { withTimezone: true }),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    role: membershipRoleEnum('rol').notNull(),
+    status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
+    invitedByUserId: uuid('invitado_por_id').references(() => users.id),
+    invitedAt: timestamp('invitado_en', { withTimezone: true }).notNull().defaultNow(),
+    joinedAt: timestamp('unido_en', { withTimezone: true }),
+    removedAt: timestamp('removido_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    userEmpresaUnique: unique('uq_memberships_user_empresa').on(table.userId, table.empresaId),
-    userIdx: index('idx_memberships_user').on(table.userId),
-    empresaIdx: index('idx_memberships_empresa').on(table.empresaId),
-    roleIdx: index('idx_memberships_role').on(table.role),
-    statusIdx: index('idx_memberships_status').on(table.status),
+    userEmpresaUnique: unique('uq_membresias_usuario_empresa').on(table.userId, table.empresaId),
+    userIdx: index('idx_membresias_usuario').on(table.userId),
+    empresaIdx: index('idx_membresias_empresa').on(table.empresaId),
+    roleIdx: index('idx_membresias_rol').on(table.role),
+    statusIdx: index('idx_membresias_estado').on(table.status),
   }),
 );
 
 // =============================================================================
-// CARRIER CAPABILITIES
+// CAPACIDADES TRANSPORTISTA
 // =============================================================================
 
 /**
- * Vehículos de un carrier. Cada vehículo pertenece a una empresa carrier.
+ * Vehículos de un transportista. Cada vehículo pertenece a una empresa.
+ * Incluye perfil energético (tipo combustible, peso vacío, consumo
+ * baseline) — insumo del carbon-calculator.
  */
 export const vehicles = pgTable(
-  'vehicles',
+  'vehiculos',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    plate: varchar('plate', { length: 12 }).notNull().unique(),
-    vehicleType: vehicleTypeEnum('vehicle_type').notNull(),
-    capacityKg: integer('capacity_kg').notNull(),
-    /** Volumen máximo en m³ (null si el vehículo no aplica — ej. tanker). */
-    capacityM3: integer('capacity_m3'),
-    /** Año del vehículo (para cálculo de huella de carbono base). */
-    yearManufactured: integer('year_manufactured'),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    plate: varchar('patente', { length: 12 }).notNull().unique(),
+    vehicleType: vehicleTypeEnum('tipo_vehiculo').notNull(),
+    capacityKg: integer('capacidad_kg').notNull(),
+    capacityM3: integer('capacidad_m3'),
+    year: integer('anio'),
+    brand: varchar('marca', { length: 50 }),
+    model: varchar('modelo', { length: 100 }),
+    fuelType: fuelTypeEnum('tipo_combustible'),
+    /** Peso en vacío del vehículo, kg. Insumo carbon-calculator. */
+    curbWeightKg: integer('peso_vacio_kg'),
+    /** Consumo base L/100km a carga normal. Null = no declarado. */
+    consumptionLPer100kmBaseline: numeric('consumo_l_por_100km_base', { precision: 5, scale: 2 }),
+    teltonikaImei: varchar('teltonika_imei', { length: 20 }).unique(),
+    lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
+    inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
+    vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_vehicles_empresa').on(table.empresaId),
-    typeIdx: index('idx_vehicles_type').on(table.vehicleType),
-    activeIdx: index('idx_vehicles_active').on(table.isActive),
+    empresaIdx: index('idx_vehiculos_empresa').on(table.empresaId),
+    typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
+    statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
+    teltonikaImeiIdx: index('idx_vehiculos_teltonika_imei').on(table.teltonikaImei),
   }),
 );
 
 /**
- * Zonas operativas de un carrier. Cada empresa carrier define dónde
- * puede operar (regiones de Chile, opcionalmente por comunas).
+ * Zonas operativas de un transportista. Define dónde puede operar.
  */
 export const zones = pgTable(
-  'zones',
+  'zonas',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    regionCode: varchar('region_code', { length: 4 }).notNull(),
-    /** Array de codigos comuna DPA INE Chile. NULL = toda la región. */
-    comunaCodes: text('comuna_codes').array(),
-    zoneType: zoneTypeEnum('zone_type').notNull(),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    regionCode: varchar('codigo_region', { length: 4 }).notNull(),
+    /** Códigos comuna DPA INE Chile. NULL = toda la región. */
+    comunaCodes: text('codigos_comuna').array(),
+    zoneType: zoneTypeEnum('tipo_zona').notNull(),
+    isActive: boolean('es_activa').notNull().default(true),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_zones_empresa').on(table.empresaId),
-    regionIdx: index('idx_zones_region').on(table.regionCode),
-    typeIdx: index('idx_zones_type').on(table.zoneType),
+    empresaIdx: index('idx_zonas_empresa').on(table.empresaId),
+    regionIdx: index('idx_zonas_region').on(table.regionCode),
+    typeIdx: index('idx_zonas_tipo').on(table.zoneType),
   }),
 );
 
 // =============================================================================
-// OPERATIONS
+// OPERACIONES
 // =============================================================================
 
 /**
- * Trip request canónico. Reemplaza whatsapp_intake_drafts como entidad
- * principal — los drafts WhatsApp se promueven a trip_requests cuando el
- * shipper queda identificado con una empresa.
+ * Trip request canónico (`viajes` en SQL). Las métricas ESG NO viven acá
+ * — tabla aparte `metricas_viaje` (1:1).
  */
-export const tripRequests = pgTable(
-  'trip_requests',
+export const trips = pgTable(
+  'viajes',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    trackingCode: varchar('tracking_code', { length: 12 }).notNull().unique(),
-    /** Empresa shipper. Null si todavía es draft anónimo (WhatsApp pre-binding). */
-    shipperEmpresaId: uuid('shipper_empresa_id').references(() => empresas.id),
-    /** Para trazabilidad cuando el shipper viene por WhatsApp anónimo. */
-    shipperWhatsapp: varchar('shipper_whatsapp', { length: 20 }),
-    /** User que creó el request (member dispatcher del shipper o anónimo WA). */
-    createdByUserId: uuid('created_by_user_id').references(() => users.id),
-    originAddressRaw: text('origin_address_raw').notNull(),
-    originRegionCode: varchar('origin_region_code', { length: 4 }),
-    originComunaCode: varchar('origin_comuna_code', { length: 10 }),
-    destinationAddressRaw: text('destination_address_raw').notNull(),
-    destinationRegionCode: varchar('destination_region_code', { length: 4 }),
-    destinationComunaCode: varchar('destination_comuna_code', { length: 10 }),
-    cargoType: cargoTypeEnum('cargo_type').notNull(),
-    cargoWeightKg: integer('cargo_weight_kg'),
-    cargoVolumeM3: integer('cargo_volume_m3'),
-    cargoDescription: text('cargo_description'),
-    pickupDateRaw: varchar('pickup_date_raw', { length: 200 }).notNull(),
-    pickupWindowStart: timestamp('pickup_window_start', { withTimezone: true }),
-    pickupWindowEnd: timestamp('pickup_window_end', { withTimezone: true }),
-    /** Precio sugerido por shipper o admin. Null si pricing-engine sugerirá. */
-    proposedPriceClp: integer('proposed_price_clp'),
-    status: tripRequestStatusEnum('status').notNull().default('pending_match'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    trackingCode: varchar('codigo_seguimiento', { length: 12 }).notNull().unique(),
+    /** Empresa generador de carga. Null si todavía es draft anónimo (WhatsApp pre-binding). */
+    generadorCargaEmpresaId: uuid('generador_carga_empresa_id').references(() => empresas.id),
+    /** Para trazabilidad cuando viene por WhatsApp anónimo. */
+    generadorCargaWhatsapp: varchar('generador_carga_whatsapp', { length: 20 }),
+    createdByUserId: uuid('creado_por_id').references(() => users.id),
+    originAddressRaw: text('origen_direccion_raw').notNull(),
+    originRegionCode: varchar('origen_codigo_region', { length: 4 }),
+    originComunaCode: varchar('origen_codigo_comuna', { length: 10 }),
+    destinationAddressRaw: text('destino_direccion_raw').notNull(),
+    destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
+    destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),
+    cargoType: cargoTypeEnum('tipo_carga').notNull(),
+    cargoWeightKg: integer('carga_peso_kg'),
+    cargoVolumeM3: integer('carga_volumen_m3'),
+    cargoDescription: text('carga_descripcion'),
+    pickupDateRaw: varchar('recogida_fecha_raw', { length: 200 }).notNull(),
+    pickupWindowStart: timestamp('recogida_ventana_inicio', { withTimezone: true }),
+    pickupWindowEnd: timestamp('recogida_ventana_fin', { withTimezone: true }),
+    /** Precio sugerido por generador de carga o admin. Null si pricing-engine sugerirá. */
+    proposedPriceClp: integer('precio_propuesto_clp'),
+    status: tripStatusEnum('estado').notNull().default('esperando_match'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    shipperEmpresaIdx: index('idx_trip_requests_shipper_empresa').on(table.shipperEmpresaId),
-    shipperWaIdx: index('idx_trip_requests_shipper_wa').on(table.shipperWhatsapp),
-    statusIdx: index('idx_trip_requests_status').on(table.status),
-    originRegionIdx: index('idx_trip_requests_origin_region').on(table.originRegionCode),
-    createdIdx: index('idx_trip_requests_created').on(table.createdAt),
+    generadorCargaEmpresaIdx: index('idx_viajes_generador_carga_empresa').on(
+      table.generadorCargaEmpresaId,
+    ),
+    generadorCargaWhatsappIdx: index('idx_viajes_generador_carga_whatsapp').on(
+      table.generadorCargaWhatsapp,
+    ),
+    statusIdx: index('idx_viajes_estado').on(table.status),
+    originRegionIdx: index('idx_viajes_origen_region').on(table.originRegionCode),
+    createdIdx: index('idx_viajes_creado').on(table.createdAt),
   }),
 );
 
 /**
- * Offer = matching engine output, enviada al carrier.
+ * Offer = matching engine output, enviada al transportista.
  *
- * UNIQUE (trip_request_id, empresa_id): un mismo carrier no puede recibir
- * dos ofertas para la misma carga.
+ * UNIQUE (viaje_id, empresa_id): un mismo transportista no recibe dos
+ * ofertas para la misma carga.
  */
 export const offers = pgTable(
-  'offers',
+  'ofertas',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tripRequestId: uuid('trip_request_id')
+    tripId: uuid('viaje_id')
       .notNull()
-      .references(() => tripRequests.id, { onDelete: 'restrict' }),
+      .references(() => trips.id, { onDelete: 'restrict' }),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    suggestedVehicleId: uuid('suggested_vehicle_id').references(() => vehicles.id),
-    /** Score 0-1 calculado por matching engine. Audit, no se muestra al carrier. */
-    score: integer('score').notNull(), // multiplicado por 1000 para evitar floats
-    status: offerStatusEnum('status').notNull().default('pending'),
-    responseChannel: offerResponseChannelEnum('response_channel'),
-    rejectionReason: text('rejection_reason'),
-    proposedPriceClp: integer('proposed_price_clp').notNull(),
-    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    respondedAt: timestamp('responded_at', { withTimezone: true }),
-    /**
-     * Marca de tiempo del envío exitoso del WhatsApp template al carrier.
-     * Null = aún no notificado (o el envío falló silenciosamente). El
-     * dispatcher consulta este campo para no re-disparar notificaciones
-     * en reintentos (B.8.c).
-     */
-    notifiedAt: timestamp('notified_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    suggestedVehicleId: uuid('vehiculo_sugerido_id').references(() => vehicles.id),
+    /** Score 0-1 multiplicado por 1000 (entero) para evitar floats. */
+    score: integer('puntaje').notNull(),
+    status: offerStatusEnum('estado').notNull().default('pendiente'),
+    responseChannel: offerResponseChannelEnum('canal_respuesta'),
+    rejectionReason: text('razon_rechazo'),
+    proposedPriceClp: integer('precio_propuesto_clp').notNull(),
+    sentAt: timestamp('enviado_en', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expira_en', { withTimezone: true }).notNull(),
+    respondedAt: timestamp('respondido_en', { withTimezone: true }),
+    /** Timestamp del envío exitoso del template WhatsApp al transportista. */
+    notifiedAt: timestamp('notificado_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tripRequestEmpresaUnique: unique('uq_offers_trip_empresa').on(
-      table.tripRequestId,
-      table.empresaId,
-    ),
-    tripRequestIdx: index('idx_offers_trip_request').on(table.tripRequestId),
-    empresaIdx: index('idx_offers_empresa').on(table.empresaId),
-    statusIdx: index('idx_offers_status').on(table.status),
-    expiresIdx: index('idx_offers_expires').on(table.expiresAt),
+    tripEmpresaUnique: unique('uq_ofertas_viaje_empresa').on(table.tripId, table.empresaId),
+    tripIdx: index('idx_ofertas_viaje').on(table.tripId),
+    empresaIdx: index('idx_ofertas_empresa').on(table.empresaId),
+    statusIdx: index('idx_ofertas_estado').on(table.status),
+    expiresIdx: index('idx_ofertas_expira').on(table.expiresAt),
   }),
 );
 
 /**
- * Assignment = offer aceptada. Una sola por trip_request (UNIQUE).
+ * Assignment = offer aceptada. Una sola por viaje (UNIQUE).
  */
 export const assignments = pgTable(
-  'assignments',
+  'asignaciones',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tripRequestId: uuid('trip_request_id')
+    tripId: uuid('viaje_id')
       .notNull()
       .unique()
-      .references(() => tripRequests.id, { onDelete: 'restrict' }),
-    offerId: uuid('offer_id')
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    offerId: uuid('oferta_id')
       .notNull()
       .unique()
       .references(() => offers.id, { onDelete: 'restrict' }),
     empresaId: uuid('empresa_id')
       .notNull()
       .references(() => empresas.id, { onDelete: 'restrict' }),
-    vehicleId: uuid('vehicle_id')
+    vehicleId: uuid('vehiculo_id')
       .notNull()
       .references(() => vehicles.id, { onDelete: 'restrict' }),
-    driverUserId: uuid('driver_user_id').references(() => users.id),
-    status: assignmentStatusEnum('status').notNull().default('assigned'),
-    agreedPriceClp: integer('agreed_price_clp').notNull(),
-    pickupEvidenceUrl: text('pickup_evidence_url'),
-    deliveryEvidenceUrl: text('delivery_evidence_url'),
-    cancelledByActor: cancellationActorEnum('cancelled_by_actor'),
-    cancellationReason: text('cancellation_reason'),
-    acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
-    pickedUpAt: timestamp('picked_up_at', { withTimezone: true }),
-    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
-    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    driverUserId: uuid('conductor_id').references(() => users.id),
+    status: assignmentStatusEnum('estado').notNull().default('asignado'),
+    agreedPriceClp: integer('precio_acordado_clp').notNull(),
+    pickupEvidenceUrl: text('evidencia_recogida_url'),
+    deliveryEvidenceUrl: text('evidencia_entrega_url'),
+    cancelledByActor: cancellationActorEnum('cancelado_por_actor'),
+    cancellationReason: text('razon_cancelacion'),
+    acceptedAt: timestamp('aceptado_en', { withTimezone: true }).notNull().defaultNow(),
+    pickedUpAt: timestamp('recogido_en', { withTimezone: true }),
+    deliveredAt: timestamp('entregado_en', { withTimezone: true }),
+    cancelledAt: timestamp('cancelado_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_assignments_empresa').on(table.empresaId),
-    statusIdx: index('idx_assignments_status').on(table.status),
-    driverIdx: index('idx_assignments_driver').on(table.driverUserId),
+    empresaIdx: index('idx_asignaciones_empresa').on(table.empresaId),
+    statusIdx: index('idx_asignaciones_estado').on(table.status),
+    driverIdx: index('idx_asignaciones_conductor').on(table.driverUserId),
   }),
 );
 
@@ -480,64 +555,166 @@ export const assignments = pgTable(
  * TripEvent = log inmutable del lifecycle. Append-only.
  */
 export const tripEvents = pgTable(
-  'trip_events',
+  'eventos_viaje',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tripRequestId: uuid('trip_request_id')
+    tripId: uuid('viaje_id')
       .notNull()
-      .references(() => tripRequests.id, { onDelete: 'restrict' }),
-    assignmentId: uuid('assignment_id').references(() => assignments.id),
-    eventType: tripEventTypeEnum('event_type').notNull(),
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    assignmentId: uuid('asignacion_id').references(() => assignments.id),
+    eventType: tripEventTypeEnum('tipo_evento').notNull(),
     payload: jsonb('payload').notNull().default(sql`'{}'::jsonb`),
-    source: tripEventSourceEnum('source').notNull(),
-    recordedByUserId: uuid('recorded_by_user_id').references(() => users.id),
-    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+    source: tripEventSourceEnum('origen').notNull(),
+    recordedByUserId: uuid('registrado_por_id').references(() => users.id),
+    recordedAt: timestamp('registrado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tripRequestIdx: index('idx_trip_events_trip_request').on(table.tripRequestId),
-    assignmentIdx: index('idx_trip_events_assignment').on(table.assignmentId),
-    typeIdx: index('idx_trip_events_type').on(table.eventType),
-    recordedIdx: index('idx_trip_events_recorded').on(table.recordedAt),
+    tripIdx: index('idx_eventos_viaje_viaje').on(table.tripId),
+    assignmentIdx: index('idx_eventos_viaje_asignacion').on(table.assignmentId),
+    typeIdx: index('idx_eventos_viaje_tipo').on(table.eventType),
+    recordedIdx: index('idx_eventos_viaje_registrado').on(table.recordedAt),
+  }),
+);
+
+/**
+ * TripMetrics = métricas ESG por viaje (1:1 con trips). Moat ESG.
+ *
+ * Estimadas: al confirmar pickup, basadas en perfil del vehículo +
+ * distancia planificada.
+ *
+ * Reales: actualizadas al confirmar entrega con telemetría/datos reales.
+ */
+export const tripMetrics = pgTable(
+  'metricas_viaje',
+  {
+    tripId: uuid('viaje_id')
+      .primaryKey()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    distanceKmEstimated: numeric('distancia_km_estimada', { precision: 10, scale: 2 }),
+    distanceKmActual: numeric('distancia_km_real', { precision: 10, scale: 2 }),
+    carbonEmissionsKgco2eEstimated: numeric('emisiones_kgco2e_estimadas', {
+      precision: 10,
+      scale: 3,
+    }),
+    carbonEmissionsKgco2eActual: numeric('emisiones_kgco2e_reales', { precision: 10, scale: 3 }),
+    fuelConsumedLEstimated: numeric('combustible_consumido_l_estimado', {
+      precision: 10,
+      scale: 2,
+    }),
+    fuelConsumedLActual: numeric('combustible_consumido_l_real', { precision: 10, scale: 2 }),
+    precisionMethod: precisionMethodEnum('metodo_precision'),
+    glecVersion: varchar('version_glec', { length: 10 }),
+    emissionFactorUsed: numeric('factor_emision_usado', { precision: 8, scale: 5 }),
+    source: varchar('fuente_datos', { length: 20 }),
+    calculatedAt: timestamp('calculado_en', { withTimezone: true }),
+    certificatePdfUrl: text('certificado_pdf_url'),
+    certificateSha256: char('certificado_sha256', { length: 64 }),
+    certificateKmsKeyVersion: varchar('certificado_kms_version', { length: 50 }),
+    certificateIssuedAt: timestamp('certificado_emitido_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    precisionIdx: index('idx_metricas_viaje_metodo_precision').on(table.precisionMethod),
+    calculatedIdx: index('idx_metricas_viaje_calculado').on(table.calculatedAt),
   }),
 );
 
 // =============================================================================
-// LEGACY INTAKE (pre-empresa anonymous WhatsApp)
+// SOSTENIBILIDAD (Stakeholders + consentimientos)
 // =============================================================================
 
 /**
- * Intake draft pre-empresa — viene del bot WhatsApp anónimo. Cuando el
- * shipper queda identificado con una empresa, se promueve a trip_request.
- *
- * Mantenido como tabla separada para no contaminar trip_requests con
- * drafts incompletos. Ver decisión original en task #45 (slice WhatsApp
- * Fase 6).
+ * Sustainability Stakeholder = mandante / sostenibilidad interna /
+ * auditor / regulador / inversor que necesita ver datos ESG agregados o
+ * por viaje. Se le otorga acceso vía consentimientos por scope.
  */
-export const whatsAppIntakeDrafts = pgTable(
-  'whatsapp_intake_drafts',
+export const stakeholders = pgTable(
+  'stakeholders',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    trackingCode: varchar('tracking_code', { length: 10 }).notNull().unique(),
-    shipperWhatsapp: varchar('shipper_whatsapp', { length: 20 }).notNull(),
-    originAddressRaw: text('origin_address_raw').notNull(),
-    destinationAddressRaw: text('destination_address_raw').notNull(),
-    cargoType: cargoTypeEnum('cargo_type').notNull(),
-    pickupDateRaw: varchar('pickup_date_raw', { length: 200 }).notNull(),
-    status: whatsAppIntakeStatusEnum('status').notNull().default('captured'),
-    /** Si el draft fue promovido a trip_request, este FK queda lleno. */
-    promotedToTripRequestId: uuid('promoted_to_trip_request_id').references(() => tripRequests.id),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    userId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id),
+    organizationName: varchar('organizacion_nombre', { length: 200 }).notNull(),
+    organizationRut: varchar('organizacion_rut', { length: 20 }),
+    stakeholderType: stakeholderTypeEnum('tipo_stakeholder').notNull(),
+    reportingStandards: reportingStandardEnum('estandares_reporte')
+      .array()
+      .notNull()
+      .default(sql`'{}'::estandar_reporte[]`),
+    reportCadence: reportCadenceEnum('cadencia_reporte').notNull().default('bajo_demanda'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    shipperIdx: index('idx_whatsapp_intake_shipper').on(table.shipperWhatsapp),
-    statusIdx: index('idx_whatsapp_intake_status').on(table.status),
-    createdIdx: index('idx_whatsapp_intake_created').on(table.createdAt),
+    userIdx: index('idx_stakeholders_usuario').on(table.userId),
+    typeIdx: index('idx_stakeholders_tipo').on(table.stakeholderType),
+  }),
+);
+
+export const consents = pgTable(
+  'consentimientos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    grantedByUserId: uuid('otorgado_por_id')
+      .notNull()
+      .references(() => users.id),
+    stakeholderId: uuid('stakeholder_id')
+      .notNull()
+      .references(() => stakeholders.id),
+    scopeType: consentScopeTypeEnum('tipo_alcance').notNull(),
+    scopeId: uuid('alcance_id').notNull(),
+    dataCategories: consentDataCategoryEnum('categorias_datos').array().notNull(),
+    grantedAt: timestamp('otorgado_en', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expira_en', { withTimezone: true }),
+    revokedAt: timestamp('revocado_en', { withTimezone: true }),
+    consentDocumentUrl: text('documento_consentimiento_url').notNull(),
+  },
+  (table) => ({
+    stakeholderIdx: index('idx_consentimientos_stakeholder').on(table.stakeholderId),
+    grantedByIdx: index('idx_consentimientos_otorgado_por').on(table.grantedByUserId),
+    dataCategoriesCheck: check(
+      'consentimientos_categorias_datos_check',
+      sql`array_length(${table.dataCategories}, 1) >= 1`,
+    ),
   }),
 );
 
 // =============================================================================
-// TYPE EXPORTS — para usar en handlers y queries
+// INTAKE LEGACY (pre-empresa anonymous WhatsApp)
+// =============================================================================
+
+/**
+ * Intake draft pre-empresa — viene del bot WhatsApp anónimo. Al binding
+ * del generador de carga con una empresa se promueve a `viajes`.
+ */
+export const whatsAppIntakeDrafts = pgTable(
+  'borradores_whatsapp',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    trackingCode: varchar('codigo_seguimiento', { length: 10 }).notNull().unique(),
+    generadorCargaWhatsapp: varchar('generador_carga_whatsapp', { length: 20 }).notNull(),
+    originAddressRaw: text('origen_direccion_raw').notNull(),
+    destinationAddressRaw: text('destino_direccion_raw').notNull(),
+    cargoType: cargoTypeEnum('tipo_carga').notNull(),
+    pickupDateRaw: varchar('recogida_fecha_raw', { length: 200 }).notNull(),
+    status: whatsAppIntakeStatusEnum('estado').notNull().default('capturado'),
+    promotedToTripId: uuid('promovido_a_viaje_id').references(() => trips.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    generadorCargaIdx: index('idx_borradores_whatsapp_generador_carga').on(
+      table.generadorCargaWhatsapp,
+    ),
+    statusIdx: index('idx_borradores_whatsapp_estado').on(table.status),
+    createdIdx: index('idx_borradores_whatsapp_creado').on(table.createdAt),
+  }),
+);
+
+// =============================================================================
+// TYPE EXPORTS
 // =============================================================================
 
 export type PlanRow = typeof plans.$inferSelect;
@@ -552,13 +729,19 @@ export type VehicleRow = typeof vehicles.$inferSelect;
 export type NewVehicleRow = typeof vehicles.$inferInsert;
 export type ZoneRow = typeof zones.$inferSelect;
 export type NewZoneRow = typeof zones.$inferInsert;
-export type TripRequestRow = typeof tripRequests.$inferSelect;
-export type NewTripRequestRow = typeof tripRequests.$inferInsert;
+export type TripRow = typeof trips.$inferSelect;
+export type NewTripRow = typeof trips.$inferInsert;
 export type OfferRow = typeof offers.$inferSelect;
 export type NewOfferRow = typeof offers.$inferInsert;
 export type AssignmentRow = typeof assignments.$inferSelect;
 export type NewAssignmentRow = typeof assignments.$inferInsert;
 export type TripEventRow = typeof tripEvents.$inferSelect;
 export type NewTripEventRow = typeof tripEvents.$inferInsert;
+export type TripMetricsRow = typeof tripMetrics.$inferSelect;
+export type NewTripMetricsRow = typeof tripMetrics.$inferInsert;
+export type StakeholderRow = typeof stakeholders.$inferSelect;
+export type NewStakeholderRow = typeof stakeholders.$inferInsert;
+export type ConsentRow = typeof consents.$inferSelect;
+export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;
 export type NewWhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferInsert;

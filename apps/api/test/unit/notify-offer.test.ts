@@ -33,7 +33,7 @@ const OWNER_USER_ID = '00000000-0000-0000-0000-000000000004';
 interface OfferJoin {
   offer: {
     id: string;
-    tripRequestId: string;
+    tripId: string;
     empresaId: string;
     proposedPriceClp: number;
     notifiedAt: Date | null;
@@ -108,7 +108,7 @@ function baseOfferJoin(notifiedAt: Date | null = null): OfferJoin {
   return {
     offer: {
       id: OFFER_ID,
-      tripRequestId: TRIP_ID,
+      tripId: TRIP_ID,
       empresaId: EMPRESA_ID,
       proposedPriceClp: 850000,
       notifiedAt,

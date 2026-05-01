@@ -86,7 +86,7 @@ const baseUserRow = {
   phone: '+56912345678',
   whatsappE164: null,
   rut: null,
-  status: 'active',
+  status: 'activo',
   isPlatformAdmin: false,
   createdAt: new Date('2026-04-01T00:00:00Z'),
   updatedAt: new Date('2026-04-01T00:00:00Z'),

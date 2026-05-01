@@ -30,7 +30,7 @@ export function OfertasRoute() {
 
 function OfertasPage({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
-  const isCarrier = activeEmpresa?.is_carrier ?? false;
+  const isCarrier = activeEmpresa?.is_transportista ?? false;
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
 

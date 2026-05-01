@@ -29,8 +29,6 @@ export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
       return c.json({ error: 'internal_server_error' }, 500);
     }
     if (!claims.email) {
-      // Firebase users pueden tener email null en edge cases (anónimos, custom
-      // tokens) — pero el web client siempre los crea con email. Defensa.
       return c.json({ error: 'firebase_email_missing', code: 'firebase_email_missing' }, 400);
     }
 
@@ -60,8 +58,8 @@ export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
             id: result.empresa.id,
             legal_name: result.empresa.legalName,
             rut: result.empresa.rut,
-            is_shipper: result.empresa.isShipper,
-            is_carrier: result.empresa.isCarrier,
+            is_generador_carga: result.empresa.isGeneradorCarga,
+            is_transportista: result.empresa.isTransportista,
             status: result.empresa.status,
           },
           membership: {

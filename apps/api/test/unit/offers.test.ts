@@ -67,39 +67,41 @@ const noopLogger = {
 >[0]['logger'];
 
 interface UserContextOpts {
-  isCarrier?: boolean;
+  isTransportista?: boolean;
   empresaId?: string;
   withActiveMembership?: boolean;
 }
 function buildUserContext(opts: UserContextOpts = {}) {
   const empresa = {
     id: opts.empresaId ?? 'emp-carrier-1',
-    isCarrier: opts.isCarrier ?? true,
-    isShipper: false,
-    status: 'active',
+    isTransportista: opts.isTransportista ?? true,
+    isGeneradorCarga: false,
+    status: 'activa',
   };
   return {
     user: { id: 'user-1' } as Pick<UserRow, 'id'>,
     memberships: [
       {
-        membership: { role: 'owner' } as Pick<MembershipRow, 'role'>,
-        empresa: empresa as Pick<EmpresaRow, 'id' | 'isCarrier' | 'isShipper' | 'status'>,
+        membership: { role: 'dueno' } as Pick<MembershipRow, 'role'>,
+        empresa: empresa as Pick<
+          EmpresaRow,
+          'id' | 'isTransportista' | 'isGeneradorCarga' | 'status'
+        >,
       },
     ],
     activeMembership:
       opts.withActiveMembership === false
         ? null
         : {
-            membership: { role: 'owner' } as Pick<MembershipRow, 'role'>,
-            empresa: empresa as Pick<EmpresaRow, 'id' | 'isCarrier' | 'isShipper' | 'status'>,
+            membership: { role: 'dueno' } as Pick<MembershipRow, 'role'>,
+            empresa: empresa as Pick<
+              EmpresaRow,
+              'id' | 'isTransportista' | 'isGeneradorCarga' | 'status'
+            >,
           },
   };
 }
 
-/**
- * Stub mínimo de Db.select() chain para GET /offers/mine. La query real es
- * select.from.innerJoin.where.orderBy → array. Devolvemos el array directo.
- */
 function makeStubDbForList(rows: unknown[]): Db {
   return {
     select: vi.fn(() => ({
@@ -154,10 +156,10 @@ describe('GET /offers/mine', () => {
     });
   });
 
-  it('403 si la empresa no es carrier', async () => {
+  it('403 si la empresa no es transportista', async () => {
     const app = await buildAppWith({
       db: makeStubDbForList([]),
-      userContext: buildUserContext({ isCarrier: false }),
+      userContext: buildUserContext({ isTransportista: false }),
     });
     const res = await app.request('/offers/mine');
     expect(res.status).toBe(403);
@@ -179,8 +181,8 @@ describe('GET /offers/mine', () => {
       {
         offer: {
           id: 'off-1',
-          status: 'pending',
-          score: 850, // entero ×1000
+          status: 'pendiente',
+          score: 850,
           proposedPriceClp: 100000,
           suggestedVehicleId: 'veh-1',
           sentAt: new Date('2026-04-30T12:00:00Z'),
@@ -191,12 +193,12 @@ describe('GET /offers/mine', () => {
         trip: {
           id: 'trip-1',
           trackingCode: 'BOO-AAA111',
-          status: 'offers_sent',
+          status: 'ofertas_enviadas',
           originAddressRaw: 'Apoquindo 5550',
           originRegionCode: 'XIII',
           destinationAddressRaw: 'Concepción centro',
           destinationRegionCode: 'VIII',
-          cargoType: 'dry_goods',
+          cargoType: 'carga_seca',
           cargoWeightKg: 1500,
           pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
           pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
@@ -229,13 +231,13 @@ describe('POST /offers/:id/accept', () => {
     vi.mocked(actions.acceptOffer).mockResolvedValueOnce({
       offer: {
         id: 'off-1',
-        status: 'accepted',
+        status: 'aceptada',
         respondedAt: new Date('2026-04-30T12:30:00Z'),
       } as Awaited<ReturnType<typeof actions.acceptOffer>>['offer'],
       assignment: {
         id: 'asg-1',
-        tripRequestId: 'trip-1',
-        status: 'assigned',
+        tripId: 'trip-1',
+        status: 'asignado',
         agreedPriceClp: 100000,
         acceptedAt: new Date('2026-04-30T12:30:00Z'),
         vehicleId: 'veh-1',
@@ -258,7 +260,7 @@ describe('POST /offers/:id/accept', () => {
       assignment: { id: string; status: string };
       superseded_offer_ids: string[];
     };
-    expect(body.offer.status).toBe('accepted');
+    expect(body.offer.status).toBe('aceptada');
     expect(body.assignment.id).toBe('asg-1');
     expect(body.superseded_offer_ids).toEqual(['off-2', 'off-3']);
   });
@@ -298,7 +300,7 @@ describe('POST /offers/:id/accept', () => {
   it('409 OfferNotPendingError', async () => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.acceptOffer).mockRejectedValueOnce(
-      new actions.OfferNotPendingError('off-z', 'rejected'),
+      new actions.OfferNotPendingError('off-z', 'rechazada'),
     );
     const app = await buildAppWith({
       db: makeStubDbForList([]),
@@ -358,7 +360,7 @@ describe('POST /offers/:id/reject', () => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.rejectOffer).mockResolvedValueOnce({
       id: 'off-1',
-      status: 'rejected',
+      status: 'rechazada',
       respondedAt: new Date(),
       rejectionReason: 'Sin chofer disponible',
     } as Awaited<ReturnType<typeof actions.rejectOffer>>);
@@ -376,7 +378,7 @@ describe('POST /offers/:id/reject', () => {
     const body = (await res.json()) as {
       offer: { status: string; rejection_reason: string | null };
     };
-    expect(body.offer.status).toBe('rejected');
+    expect(body.offer.status).toBe('rechazada');
     expect(body.offer.rejection_reason).toBe('Sin chofer disponible');
   });
 
@@ -384,7 +386,7 @@ describe('POST /offers/:id/reject', () => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.rejectOffer).mockResolvedValueOnce({
       id: 'off-2',
-      status: 'rejected',
+      status: 'rechazada',
       respondedAt: new Date(),
       rejectionReason: null,
     } as Awaited<ReturnType<typeof actions.rejectOffer>>);
@@ -404,7 +406,7 @@ describe('POST /offers/:id/reject', () => {
   it('409 OfferNotPendingError', async () => {
     const actions = await import('../../src/services/offer-actions.js');
     vi.mocked(actions.rejectOffer).mockRejectedValueOnce(
-      new actions.OfferNotPendingError('off-x', 'accepted'),
+      new actions.OfferNotPendingError('off-x', 'aceptada'),
     );
     const app = await buildAppWith({
       db: makeStubDbForList([]),

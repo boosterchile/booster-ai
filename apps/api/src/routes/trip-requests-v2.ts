@@ -3,31 +3,23 @@ import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
-import { tripRequests } from '../db/schema.js';
+import { trips } from '../db/schema.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
 /**
- * Endpoint canónico para que un shipper autenticado cree un trip_request
- * y dispare matching automático.
+ * Endpoint canónico para que un generador de carga autenticado cree un
+ * viaje y dispare matching automático.
  *
- * NOTA: Este es el flow web/api oficial (post B.5). El bot WhatsApp legacy
- * sigue usando `whatsapp_intake_drafts` + `/trip-requests` (legacy
- * router montado en `routes/trip-requests.ts`). Cuando migremos el bot
- * para que use empresa-aware schemas, podremos consolidar.
- *
- * Por eso este file se llama `trip-requests-v2.ts` y se monta en
- * `/trip-requests-v2` para no chocar con el legacy. Slice posterior puede
- * promover este a `/trip-requests` y mover el legacy a deprecated.
+ * URL `/trip-requests-v2` se mantiene por compat con el cliente web
+ * actual; internamente la tabla es `viajes`.
  *
  * Requisitos:
  *   - firebaseAuth + userContext middlewares (activeMembership presente).
- *   - activeMembership.empresa.is_shipper=true (sino 403 not_a_shipper).
- *   - empresa.status='active' (sino 403 empresa_not_active).
+ *   - activeMembership.empresa.es_generador_carga=true (sino 403).
+ *   - empresa.estado='activa' (sino 403).
  */
 function generateTrackingCode(): string {
-  // Boo + 6 chars alphanumeric uppercase. Match con el patrón legacy del
-  // bot (BOO-M6LO3H formato). Slice futuro: usar nanoid o ULID + checksum.
   const alphabet = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789';
   let suffix = '';
   for (let i = 0; i < 6; i += 1) {
@@ -39,10 +31,6 @@ function generateTrackingCode(): string {
 export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
-  /**
-   * Deps del dispatcher de notificaciones. Si está null/undefined, runMatching
-   * crea offers pero no manda WhatsApp. Inyectado desde server.ts.
-   */
   notify?: NotifyOfferDeps;
 }) {
   const app = new Hono();
@@ -58,23 +46,20 @@ export function createTripRequestsV2Routes(opts: {
     if (!active) {
       return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
     }
-    if (!active.empresa.isShipper) {
+    if (!active.empresa.isGeneradorCarga) {
       return c.json({ error: 'not_a_shipper', code: 'not_a_shipper' }, 403);
     }
-    if (active.empresa.status !== 'active') {
+    if (active.empresa.status !== 'activa') {
       return c.json({ error: 'empresa_not_active', code: 'empresa_not_active' }, 403);
     }
 
     const input = c.req.valid('json');
 
-    // Crear trip_request en transacción separada del matching para que el
-    // POST devuelva rápido aunque matching tarde un poco. Slice futuro:
-    // matching en un job/queue async.
     const [trip] = await opts.db
-      .insert(tripRequests)
+      .insert(trips)
       .values({
         trackingCode: generateTrackingCode(),
-        shipperEmpresaId: active.empresa.id,
+        generadorCargaEmpresaId: active.empresa.id,
         createdByUserId: userContext.user.id,
         originAddressRaw: input.origin.address_raw,
         originRegionCode: input.origin.region_code,
@@ -94,43 +79,39 @@ export function createTripRequestsV2Routes(opts: {
         ...(input.proposed_price_clp !== null
           ? { proposedPriceClp: input.proposed_price_clp }
           : {}),
-        status: 'pending_match',
+        status: 'esperando_match',
       })
       .returning();
 
     if (!trip) {
-      opts.logger.error('insert trip_request returned no row');
+      opts.logger.error('insert trip returned no row');
       return c.json({ error: 'internal_server_error' }, 500);
     }
 
     opts.logger.info(
       {
-        tripRequestId: trip.id,
+        tripId: trip.id,
         trackingCode: trip.trackingCode,
-        shipperEmpresaId: trip.shipperEmpresaId,
+        generadorCargaEmpresaId: trip.generadorCargaEmpresaId,
         cargoType: trip.cargoType,
         originRegion: trip.originRegionCode,
       },
-      'trip_request created',
+      'trip created',
     );
 
-    // Disparar matching inline. Errors no bloquean la respuesta — el trip
-    // queda en `pending_match` y un job posterior puede reintentar.
     let matchingResult: Awaited<ReturnType<typeof runMatching>> | null = null;
     try {
       matchingResult = await runMatching({
         db: opts.db,
         logger: opts.logger,
-        tripRequestId: trip.id,
+        tripId: trip.id,
         ...(opts.notify ? { notify: opts.notify } : {}),
       });
     } catch (err) {
       if (err instanceof TripRequestNotFoundError) {
-        // No debería ocurrir — acabamos de crear el trip. Race condition
-        // teórica si alguien borra antes del matching. Ignorar.
-        opts.logger.warn({ err, tripRequestId: trip.id }, 'matching: trip vanished');
+        opts.logger.warn({ err, tripId: trip.id }, 'matching: trip vanished');
       } else {
-        opts.logger.error({ err, tripRequestId: trip.id }, 'matching threw, leaving trip pending');
+        opts.logger.error({ err, tripId: trip.id }, 'matching threw, leaving trip pending');
       }
     }
 
@@ -141,9 +122,9 @@ export function createTripRequestsV2Routes(opts: {
           tracking_code: trip.trackingCode,
           status: matchingResult
             ? matchingResult.offersCreated > 0
-              ? 'offers_sent'
-              : 'expired'
-            : 'pending_match',
+              ? 'ofertas_enviadas'
+              : 'expirado'
+            : 'esperando_match',
         },
         matching: matchingResult
           ? {

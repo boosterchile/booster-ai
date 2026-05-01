@@ -8,33 +8,11 @@ import { empresas, memberships, users } from '../db/schema.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 
 /**
- * GET /me
+ * GET /me — endpoint que el cliente web llama post-login con Firebase.
+ * No usa userContext middleware porque el user puede no existir todavía.
  *
- * Endpoint que el cliente web llama inmediatamente después del login con
- * Firebase. A diferencia de los demás endpoints protegidos, este NO usa el
- * userContextMiddleware — porque el user puede no existir en la DB todavía
- * (acaba de registrarse en Firebase pero aún no completó el onboarding de
- * empresa). En ese caso devolvemos `needs_onboarding=true` para que el
- * cliente sepa que tiene que redirigir al flow.
- *
- * Cuerpo de respuesta:
- *
- *   - User registrado:
- *     {
- *       needs_onboarding: false,
- *       user: { id, email, fullName, ... },
- *       memberships: [ { id, role, empresa: { id, legalName, ... } } ],
- *       activeMembership: { ... | null }
- *     }
- *
- *   - User en Firebase pero no en nuestra DB:
- *     {
- *       needs_onboarding: true,
- *       firebase: { uid, email, name, picture }
- *     }
- *
- * Solo aplica el firebaseAuth middleware (no el userContext) al montarlo
- * desde server.ts.
+ * PATCH /me/profile — actualización parcial. RUT inmutable si ya está
+ * declarado.
  */
 export function createMeRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -54,8 +32,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     const user = userRows[0];
 
     if (!user) {
-      // User en Firebase pero no en DB — el cliente debe llevarlo a
-      // onboarding para crear empresa + user en una sola transacción.
       return c.json({
         needs_onboarding: true,
         firebase: {
@@ -68,14 +44,12 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       });
     }
 
-    // Cargar memberships activas con join a empresas.
     const rows = await opts.db
       .select({ membership: memberships, empresa: empresas })
       .from(memberships)
       .innerJoin(empresas, eq(memberships.empresaId, empresas.id))
       .where(eq(memberships.userId, user.id));
 
-    // Mapear a forma que el cliente entiende (camelCase, sin internals DB).
     const membershipsPayload = rows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
@@ -85,16 +59,14 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         id: r.empresa.id,
         legal_name: r.empresa.legalName,
         rut: r.empresa.rut,
-        is_shipper: r.empresa.isShipper,
-        is_carrier: r.empresa.isCarrier,
+        is_generador_carga: r.empresa.isGeneradorCarga,
+        is_transportista: r.empresa.isTransportista,
         status: r.empresa.status,
       },
     }));
 
-    // X-Empresa-Id resuelve cuál es la activa. Si no viene, default a la
-    // primera membership activa (si existe).
     const requestedEmpresaId = c.req.header('x-empresa-id');
-    const activeMembershipsList = membershipsPayload.filter((m) => m.status === 'active');
+    const activeMembershipsList = membershipsPayload.filter((m) => m.status === 'activa');
     let active: (typeof membershipsPayload)[number] | null = null;
     if (requestedEmpresaId) {
       active = activeMembershipsList.find((m) => m.empresa.id === requestedEmpresaId) ?? null;
@@ -119,17 +91,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     });
   });
 
-  /**
-   * PATCH /me/profile
-   *
-   * Actualización parcial del perfil del usuario logueado. Solo se
-   * actualizan los campos presentes en el body. El user tiene que existir
-   * en la DB (no es válido para usuarios pre-onboarding — esos completan
-   * via /empresas/onboarding).
-   *
-   * `rut` solo se acepta si todavía es null en la DB; cambiar un RUT
-   * declarado requiere flow admin (no alcance B.8).
-   */
   app.patch('/profile', zValidator('json', profileUpdateInputSchema), async (c) => {
     const claims = c.get('firebaseClaims') as FirebaseClaims | undefined;
     if (!claims) {
@@ -155,7 +116,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
 
     const input = c.req.valid('json');
 
-    // RUT inmutable: si el usuario ya tiene RUT, rechazamos cambios.
     if (input.rut !== undefined && user.rut !== null) {
       return c.json(
         {
@@ -166,8 +126,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       );
     }
 
-    // Construir patch solo con campos presentes — Drizzle interpreta
-    // undefined como "no tocar" pero ser explícitos evita sorpresas.
     const patch: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
     if (input.full_name !== undefined) {
       patch.fullName = input.full_name;
@@ -189,7 +147,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       .returning();
     const updated = updatedRows[0];
     if (!updated) {
-      // Defensivo: el UPDATE debería siempre devolver el row si el WHERE coincidió.
       opts.logger.error({ userId: user.id }, '/me/profile UPDATE returning empty');
       return c.json({ error: 'internal_server_error' }, 500);
     }
