@@ -79,8 +79,31 @@ module "service_api" {
     API_AUDIENCE         = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
     CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},${local.cloud_run_api_url}"
+
+    # B.8 — dispatcher de notificaciones WhatsApp post-matching.
+    # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
+    # identifica el sender por From + auth, así que ambos servicios pueden
+    # mandar mensajes desde el mismo número. TWILIO_AUTH_TOKEN va por
+    # Secret Manager (mismo secret `twilio-auth-token` que el bot).
+    TWILIO_FROM_NUMBER    = var.twilio_from_number
+    # CONTENT_SID_OFFER_NEW: vacío hasta que Meta apruebe el template
+    # `offer_new_v1` (24-48h tras submit en Twilio Console). Mientras esté
+    # vacío, el dispatcher loguea warn y skipea — las offers siguen
+    # creándose en DB y aparecen en /app/ofertas via poll cada 30s.
+    # Setear con `terraform apply -var content_sid_offer_new=HX...` una
+    # vez aprobado.
+    CONTENT_SID_OFFER_NEW = var.content_sid_offer_new
+    # WEB_APP_URL usa el dominio público del frontend para construir el
+    # deep-link al dashboard en el template de WhatsApp.
+    WEB_APP_URL           = "https://app.${var.domain}"
   })
-  secrets = local.common_secrets
+  secrets = merge(local.common_secrets, {
+    # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
+    # El SA del Cloud Run del api tiene secretAccessor sobre todo el set
+    # vía security.tf, así que no hace falta IAM extra.
+    TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
+    TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+  })
 
   vpc_connector = google_vpc_access_connector.serverless.id
 

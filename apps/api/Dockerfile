@@ -15,6 +15,8 @@ COPY apps/api/package.json ./apps/api/
 COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
 COPY packages/shared-schemas/package.json ./packages/shared-schemas/
+# B.8.c — el api ahora depende del cliente Twilio para mandar templates.
+COPY packages/whatsapp-client/package.json ./packages/whatsapp-client/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---

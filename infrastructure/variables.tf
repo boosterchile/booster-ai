@@ -135,3 +135,32 @@ variable "twilio_from_number" {
     error_message = "twilio_from_number debe estar en formato E.164 con +."
   }
 }
+
+variable "content_sid_offer_new" {
+  description = <<-EOT
+    Twilio Content SID del template aprobado para notificar al carrier que
+    llegó una nueva oferta (B.8). Formato: HX seguido de 32 hex chars.
+    El template se crea en Twilio Console > Content Editor con el friendly
+    name `offer_new_v1` y categoria Utility, y queda aprobado por Meta en
+    24-48h tras submit.
+
+    Variables esperadas (1-based):
+      {{1}} → tracking_code, ej. BOO-ABC123
+      {{2}} → ruta "Origen → Destino", ej. "Metropolitana → Biobío"
+      {{3}} → precio CLP formateado, ej. "$ 850.000 CLP"
+      {{4}} → URL al dashboard del carrier (https://app.boosterchile.com/app/ofertas)
+
+    Default vacío para no bloquear el primer apply tras agregar la var. Mientras
+    esté vacío, el dispatcher de notificaciones del api loguea warn y skipea
+    sin enviar mensaje (las offers se siguen creando en DB y aparecen en el
+    dashboard via poll). Setear con un override:
+      content_sid_offer_new = "HX1234567890abcdef1234567890abcd"
+    una vez que Meta aprueba el template.
+  EOT
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.content_sid_offer_new == "" || can(regex("^HX[a-fA-F0-9]+$", var.content_sid_offer_new))
+    error_message = "content_sid_offer_new debe ser vacío o empezar con HX seguido de hex chars."
+  }
+}
