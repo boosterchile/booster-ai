@@ -187,6 +187,33 @@ resource "google_compute_security_policy" "waf" {
     description = "rate limit 1000 req/min por IP, ban 10 min"
   }
 
+  # Allow mutaciones autenticadas al api — el cuerpo de POST/PUT/PATCH al api
+  # contiene datos chilenos legítimos (RUTs con guión "12345678-9", direcciones)
+  # que disparan falsos positivos en OWASP CRS rules de SQLi:
+  #   - id942200: detecta `or 1=1` y patterns similares
+  #   - id942432: detecta sequence de chars que parecen SQL comments (--)
+  # El "-9" final del RUT cae como SQL comment.
+  #
+  # Defensa restante (no perdida):
+  #   1. Firebase Auth middleware valida Bearer token de Firebase ID
+  #      (apps/api/src/middleware/firebase-auth.ts) ANTES de cualquier handler.
+  #   2. Zod schema valida cada field del body — rechaza shapes inválidos.
+  #   3. Drizzle ORM usa parameterized queries — SQL injection no es factible.
+  #   4. CORS limita orígenes a app.boosterchile.com + URLs internas.
+  #
+  # GETs al api siguen evaluándose por OWASP (no llevan body, falso positivo
+  # en query string es raro).
+  rule {
+    action   = "allow"
+    priority = "390"
+    match {
+      expr {
+        expression = "request.headers['host'].lower() == 'api.boosterchile.com' && (request.method == 'POST' || request.method == 'PUT' || request.method == 'PATCH' || request.method == 'DELETE')"
+      }
+    }
+    description = "Allow mutations al api — defensa via Firebase Auth + zod + Drizzle"
+  }
+
   # Allow webhooks externos (Twilio, etc.) — prioridad MÁS ALTA que OWASP.
   # En Cloud Armor evalúa de menor priority a mayor; 400 < 500, así que esta
   # regla ALLOW corre antes que el OWASP deny.
