@@ -141,14 +141,29 @@ else
   export PGPASSWORD="$PGPASS"
 fi
 
-# psql parsea conninfo solo si es UNA sola string. Los keyword=value sueltos
-# en argv se ignoran con warnings y el proceso cae al default (puerto 5432).
-CONNINFO="host=127.0.0.1 port=$LOCAL_PORT dbname=$DB_NAME user=$PGUSER sslmode=disable"
+# Pasar conn info via env vars — más confiable que keywords en argv y no
+# expone el password en la cmdline.
+export PGHOST="127.0.0.1"
+export PGPORT="$LOCAL_PORT"
+export PGDATABASE="$DB_NAME"
+export PGUSER="$PGUSER"
+export PGSSLMODE="disable" # el TLS lo hace el proxy hacia Cloud SQL
 
-if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
-  echo "→ ejecutando archivo: $2"
-  psql "$CONNINFO" -f "$2"
-else
-  echo "→ abriendo psql interactivo. Salí con \\q o Ctrl+D."
-  psql "$CONNINFO"
+run_psql() {
+  if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
+    echo "→ ejecutando archivo: $2"
+    psql -f "$2"
+  else
+    echo "→ abriendo psql interactivo. Salí con \\q o Ctrl+D."
+    psql
+  fi
+}
+
+if ! run_psql "$@"; then
+  echo
+  echo "✗ psql falló. Log del cloud-sql-proxy:"
+  echo "─────────────────────────────────────────"
+  cat "$PROXY_LOG"
+  echo "─────────────────────────────────────────"
+  exit 1
 fi
