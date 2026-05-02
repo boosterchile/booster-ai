@@ -48,16 +48,26 @@ resource "google_compute_global_address" "lb_ipv4" {
 # MANAGED SSL CERTIFICATE — Google-managed para todos los dominios del producto
 # =============================================================================
 
+# Single source of truth de los dominios del cert. Si cambia, el
+# `random_id.cert_suffix` se regenera (vía keepers) y se crea un cert
+# nuevo con nombre distinto, evitando colisión con el viejo.
+locals {
+  cert_domains = [
+    "api.${var.domain}",
+    "app.${var.domain}",
+  ]
+}
+
 # Cert managed con nombre dinámico para soportar rotación de dominios sin
-# downtime. Cambiar `domains` regenera `random_id.cert_suffix` (gracias al
-# `keepers`), lo que produce un nombre nuevo de cert. Combinado con
-# `create_before_destroy`, terraform crea el cert nuevo, repunta el
+# downtime. Cambiar `local.cert_domains` regenera `random_id.cert_suffix`
+# (gracias al `keepers`), lo que produce un nombre nuevo de cert. Combinado
+# con `create_before_destroy`, terraform crea el cert nuevo, repunta el
 # `target_https_proxy.main`, y solo después destruye el viejo. Sin esto, el
 # destroy del cert falla con `resourceInUseByAnotherResource`.
 resource "random_id" "cert_suffix" {
   byte_length = 4
   keepers = {
-    domains = "api.${var.domain}"
+    domains = join(",", local.cert_domains)
   }
 }
 
@@ -69,15 +79,12 @@ resource "google_compute_managed_ssl_certificate" "main" {
   managed {
     # Dominios que apuntan al LB de Booster AI. Cada nuevo dominio que se
     # agregue tiene que tener el A record en Cloud DNS apuntando al LB
-    # ANTES de incluirlo acá, sino el cert queda en FAILED_NOT_VISIBLE
-    # (lección de task #34).
+    # ANTES de incluirlo acá (en local.cert_domains arriba), sino el cert
+    # queda en FAILED_NOT_VISIBLE (lección de task #34).
     #
     # apex/www/demo siguen en Booster 2.0 (AWS GA, Firebase) y no se sirven
     # desde este LB.
-    domains = [
-      "api.${var.domain}",
-      "app.${var.domain}",
-    ]
+    domains = local.cert_domains
   }
 
   lifecycle {
