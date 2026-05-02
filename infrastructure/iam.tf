@@ -123,6 +123,20 @@ resource "google_service_account_iam_member" "github_can_impersonate_runtime" {
 }
 
 # =============================================================================
+# GKE Autopilot Default Compute SA — necesita pull de Artifact Registry
+# =============================================================================
+# El kubelet de GKE Autopilot corre con el Compute Engine default SA
+# (<project_number>-compute@developer.gserviceaccount.com) salvo que se
+# configure un node SA custom. En projects nuevos (post-mayo 2024) este SA
+# NO tiene roles default, así que sin esto los pods quedan en
+# ImagePullBackOff al intentar pullear imágenes desde Artifact Registry.
+resource "google_project_iam_member" "compute_default_sa_artifact_reader" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_project.booster_ai.number}-compute@developer.gserviceaccount.com"
+}
+
+# =============================================================================
 # WORKLOAD IDENTITY FEDERATION — GitHub → GCP sin SA keys
 # Lección de SEC-2026-04-01: nunca más descargar keys JSON.
 # =============================================================================

@@ -112,6 +112,26 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member "serviceAccount:booster-ai-494222.svc.id.goog[telemetry/telemetry-gateway-sa]" \
   --project=booster-ai-494222 || true
 
+# Default Compute SA (kubelet de GKE Autopilot) necesita pull de Artifact
+# Registry. En projects post-mayo 2024 no viene con roles default, así que
+# sin esto los pods quedan en ImagePullBackOff. Idempotente.
+PROJECT_NUMBER=$(gcloud projects describe booster-ai-494222 \
+  --format="value(projectNumber)")
+echo "→ asegurando artifactregistry.reader en compute default SA…"
+gcloud projects add-iam-policy-binding booster-ai-494222 \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.reader" \
+  --condition=None \
+  --quiet >/dev/null
+
+# Si hay pods en ImagePullBackOff de un deploy previo, los borramos para
+# que se recreen con la SA ya autorizada (sino quedan en backoff exponencial
+# y el rollout puede tardar minutos).
+echo "→ limpiando pods en ImagePullBackOff (si los hay)…"
+kubectl delete pods -n telemetry \
+  --field-selector=status.phase=Pending \
+  --grace-period=0 --force 2>/dev/null || true
+
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Step 4/5: gcloud builds submit"
