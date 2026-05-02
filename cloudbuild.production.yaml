@@ -4,10 +4,14 @@
 # `production`. Sin canary/split traffic por ahora (post-staging environment real,
 # task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
 #
-# Scope del thin slice (Fase 6):
-#   - Build + deploy de apps/api y apps/whatsapp-bot
-#   - apps/web, apps/marketing y demás services Cloud Run quedan con su
-#     imagen placeholder hasta que tengan código real (slice siguiente)
+# Scope:
+#   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA)
+#   - apps/marketing y demás services Cloud Run quedan con su imagen
+#     placeholder hasta que tengan código real
+#
+# apps/web requiere VITE_* substitutions (las claves Firebase web son
+# públicas por diseño — viajan en el bundle al cliente). Setear via
+# --substitutions en gcloud builds submit, o defaults aquí abajo.
 
 steps:
   # =========================================================================
@@ -35,6 +39,27 @@ steps:
       - .
     waitFor: ['-']
 
+  # apps/web — PWA Vite. Las VITE_* env vars se inyectan a build-time
+  # como --build-arg porque Vite las reemplaza textualmente en el bundle.
+  - id: build-web
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/web/Dockerfile
+      - --build-arg=VITE_API_URL=${_VITE_API_URL}
+      - --build-arg=VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY}
+      - --build-arg=VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}
+      - --build-arg=VITE_FIREBASE_PROJECT_ID=${_VITE_FIREBASE_PROJECT_ID}
+      - --build-arg=VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}
+      - --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}
+      - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
+      - --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY}
+      - --tag=${_REGISTRY}/web:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/web:latest
+      - .
+    waitFor: ['-']
+
   # =========================================================================
   # Push a Artifact Registry
   # =========================================================================
@@ -47,6 +72,11 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, '--all-tags', '${_REGISTRY}/whatsapp-bot']
     waitFor: [build-whatsapp-bot]
+
+  - id: push-web
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/web']
+    waitFor: [build-web]
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
@@ -85,6 +115,20 @@ steps:
       - --platform=managed
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-whatsapp-bot]
+
+  - id: deploy-web
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-web
+      - --image=${_REGISTRY}/web:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-web]
 
   # =========================================================================
   # Smoke test — ping al webhook Twilio via la URL pública canonical.
@@ -135,11 +179,26 @@ substitutions:
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
 
+  # apps/web build-time vars — Firebase web config (públicas por diseño,
+  # ver apps/web/Dockerfile para rationale). Defaults vacíos: si no se
+  # pasan al gcloud builds submit, el bundle queda sin auth funcional.
+  # Setear via --substitutions=_VITE_FIREBASE_API_KEY=...,_VITE_...=...
+  _VITE_API_URL: https://api.boosterchile.com
+  _VITE_FIREBASE_API_KEY: ''
+  _VITE_FIREBASE_AUTH_DOMAIN: ''
+  _VITE_FIREBASE_PROJECT_ID: ''
+  _VITE_FIREBASE_STORAGE_BUCKET: ''
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: ''
+  _VITE_FIREBASE_APP_ID: ''
+  _VITE_GOOGLE_MAPS_API_KEY: ''
+
 images:
   - ${_REGISTRY}/api:${_COMMIT_SHA}
   - ${_REGISTRY}/api:latest
   - ${_REGISTRY}/whatsapp-bot:${_COMMIT_SHA}
   - ${_REGISTRY}/whatsapp-bot:latest
+  - ${_REGISTRY}/web:${_COMMIT_SHA}
+  - ${_REGISTRY}/web:latest
 
 # Usar el SA github-deployer en lugar del compute default.
 # Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute

@@ -1,0 +1,55 @@
+# Booster AI Web — config nginx para Cloud Run.
+# Usa template porque Cloud Run inyecta $PORT al startup; nginx-alpine
+# tiene envsubst integrado para /etc/nginx/templates/*.template.
+#
+# SPA fallback (try_files ... /index.html) para que TanStack Router
+# maneje todas las rutas client-side. Todo lo que no sea un asset físico
+# devuelve index.html con 200 para que React monte y resuelva la ruta.
+
+server {
+    listen ${PORT};
+    listen [::]:${PORT};
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Compresión para texto/JS/CSS — reduce ~70% el bundle por cable.
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript application/xml+rss application/atom+xml image/svg+xml;
+    gzip_min_length 1024;
+
+    # Assets fingerprinted por Vite (.js, .css con hash) — cache largo.
+    location ~* \.(js|css|woff2|svg|png|jpg|jpeg|gif|ico)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Service worker — NO cachear, debe revalidarse cada vez para que
+    # autoUpdate de vite-plugin-pwa funcione.
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        expires 0;
+    }
+
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+        expires 0;
+    }
+
+    # SPA fallback — index.html nunca se cachea (debe verse en cada deploy).
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Endpoint mínimo para health checks externos. Cloud Run liveness probe
+    # pega a / por defecto, pero exponemos /healthz por consistencia.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 "ok\n";
+    }
+}
