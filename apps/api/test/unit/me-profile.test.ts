@@ -218,19 +218,29 @@ describe('PATCH /me/profile', () => {
   // actualizar el firebase_uid del user existente y devolverlo.
   // ---------------------------------------------------------------------
   it('account linking: matchea por email si emailVerified=true', async () => {
-    // Sequence:
-    //   1. SELECT users WHERE firebase_uid = 'fb-google-NEW' → []
-    //   2. SELECT users WHERE email = 'felipe@boosterchile.com' → [existing]
-    //   3. UPDATE users SET firebase_uid = 'fb-google-NEW' WHERE id = ... → [linked]
-    //   4. SELECT memberships WHERE user_id = ... → [...] (vacío en este test)
+    // Sequence de SELECTS:
+    //   1. SELECT users WHERE firebase_uid='fb-google-NEW' .limit(1) → []
+    //   2. SELECT users WHERE email='felipe@boosterchile.com' .limit(1) → [existing]
+    //   3. SELECT memberships JOIN empresas WHERE user_id=u1 (sin .limit, await directo) → []
+    // Plus 1 UPDATE entre (2) y (3).
+    //
+    // El where mock devuelve un objeto que es thenable Y tiene .limit() para
+    // soportar ambos patterns: con limit() y await directo.
     let selectCallCount = 0;
-    const limitFn = vi.fn(() => {
+    const whereFnSelect = vi.fn(() => {
       selectCallCount += 1;
-      if (selectCallCount === 1) return Promise.resolve([]); // por uid: no existe
-      if (selectCallCount === 2) return Promise.resolve([baseUserRow]); // por email: existe
-      return Promise.resolve([]);
+      const rows =
+        selectCallCount === 1
+          ? [] // por uid: no existe
+          : selectCallCount === 2
+            ? [baseUserRow] // por email: existe
+            : []; // memberships: ninguna
+      return {
+        limit: vi.fn().mockResolvedValue(rows),
+        then: <T,>(onFulfilled: (v: typeof rows) => T) =>
+          Promise.resolve(rows).then(onFulfilled),
+      };
     });
-    const whereFnSelect = vi.fn(() => ({ limit: limitFn }));
     const innerJoinFn = vi.fn(() => ({ where: whereFnSelect }));
     const fromFn = vi.fn(() => ({ where: whereFnSelect, innerJoin: innerJoinFn }));
     const selectFn = vi.fn(() => ({ from: fromFn }));
