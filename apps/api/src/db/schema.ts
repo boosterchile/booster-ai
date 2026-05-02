@@ -1,20 +1,35 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigserial,
   boolean,
   char,
   check,
+  customType,
   index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+
+/**
+ * `inet` no es export del core Drizzle PG (lo agregaron en versiones
+ * recientes; usamos customType para soportar versiones existentes).
+ * Stored as text en TS — Postgres mantiene el tipo nativo INET para
+ * indexing/validación.
+ */
+const inet = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'inet';
+  },
+});
 
 /**
  * Drizzle schema — Booster AI multi-tenant.
@@ -226,6 +241,17 @@ export const consentDataCategoryEnum = pgEnum('categoria_dato_consentimiento', [
   'combustibles',
   'certificados',
   'perfiles_vehiculos',
+]);
+
+/**
+ * Estado del flujo de aprobación de un dispositivo Teltonika que conectó
+ * al gateway pero todavía no está asociado a un vehículo.
+ */
+export const pendingDeviceStatusEnum = pgEnum('estado_dispositivo_pendiente', [
+  'pendiente',
+  'aprobado',
+  'rechazado',
+  'reemplazado',
 ]);
 
 // =============================================================================
@@ -714,6 +740,96 @@ export const whatsAppIntakeDrafts = pgTable(
 );
 
 // =============================================================================
+// TELEMETRÍA TELTONIKA (Phase 2)
+// =============================================================================
+
+/**
+ * Buffer entre "device se conecta al gateway por primera vez" y "admin
+ * lo asocia a un vehículo". El gateway hace upsert por IMEI cuando un
+ * device conecta sin asociación previa; cantidad_conexiones es proxy
+ * de actividad para que el admin priorize.
+ */
+export const pendingDevices = pgTable(
+  'dispositivos_pendientes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    imei: varchar('imei', { length: 20 }).notNull().unique(),
+    firstConnectionAt: timestamp('primera_conexion_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastConnectionAt: timestamp('ultima_conexion_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSourceIp: inet('ultima_ip_origen'),
+    connectionCount: integer('cantidad_conexiones').notNull().default(1),
+    detectedModel: varchar('modelo_detectado', { length: 50 }),
+    status: pendingDeviceStatusEnum('estado').notNull().default('pendiente'),
+    assignedToVehicleId: uuid('asignado_a_vehiculo_id').references(() => vehicles.id),
+    assignedAt: timestamp('asignado_en', { withTimezone: true }),
+    assignedByUserId: uuid('asignado_por_id').references(() => users.id),
+    notes: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusIdx: index('idx_dispositivos_pendientes_estado').on(table.status),
+    lastConnectionIdx: index('idx_dispositivos_pendientes_ultima_conexion').on(
+      table.lastConnectionAt,
+    ),
+  }),
+);
+
+/**
+ * Un row por record AVL recibido (un punto GPS del Teltonika). Volumen
+ * estimado piloto: 1 record/min/device × 50 devices × 30 días ≈ 2.16M
+ * rows/mes. Postgres es OK hasta ~10M rows con buenos indexes; migrar
+ * a BigQuery si la flota crece >500 devices.
+ *
+ * io_data jsonb: el codec8-parser entrega {id: value} para todos los
+ * IO entries (catalog-agnostic). El catálogo semántico (id 239 =
+ * ignición, id 16 = total odometer, etc.) vive en código y se aplica
+ * en lectura, no en escritura. Esto permite que devices configurados
+ * con IDs distintos se persistan sin loss y el catalog evolucione sin
+ * migration de datos.
+ */
+export const telemetryPoints = pgTable(
+  'telemetria_puntos',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    imei: varchar('imei', { length: 20 }).notNull(),
+    timestampDevice: timestamp('timestamp_device', { withTimezone: true }).notNull(),
+    timestampReceivedAt: timestamp('timestamp_recibido_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    priority: smallint('prioridad').notNull(),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }),
+    latitude: numeric('latitud', { precision: 10, scale: 7 }),
+    altitudeM: smallint('altitud_m'),
+    angleDeg: smallint('rumbo_deg'),
+    satellites: smallint('satelites'),
+    speedKmh: smallint('velocidad_kmh'),
+    eventIoId: integer('event_io_id'),
+    ioData: jsonb('io_data').notNull().default(sql`'{}'::jsonb`),
+  },
+  (table) => ({
+    imeiTsUnique: unique('uq_telemetria_imei_ts').on(table.imei, table.timestampDevice),
+    vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(
+      table.vehicleId,
+      table.timestampDevice,
+    ),
+    imeiTsIdx: index('idx_telemetria_imei_ts').on(table.imei, table.timestampDevice),
+    vehicleReceivedIdx: index('idx_telemetria_vehiculo_recibido').on(
+      table.vehicleId,
+      table.timestampReceivedAt,
+    ),
+    priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -745,3 +861,7 @@ export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;
 export type NewWhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferInsert;
+export type PendingDeviceRow = typeof pendingDevices.$inferSelect;
+export type NewPendingDeviceRow = typeof pendingDevices.$inferInsert;
+export type TelemetryPointRow = typeof telemetryPoints.$inferSelect;
+export type NewTelemetryPointRow = typeof telemetryPoints.$inferInsert;

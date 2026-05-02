@@ -11,12 +11,19 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@booster-ai/codec8-parser": "workspace:*",
     "@booster-ai/config": "workspace:*",
     "@booster-ai/logger": "workspace:*",
-    "@booster-ai/shared-schemas": "workspace:*"
+    "@booster-ai/shared-schemas": "workspace:*",
+    "@google-cloud/pubsub": "^4.10.0",
+    "drizzle-orm": "^0.38.3",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.11.10",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.8.2",

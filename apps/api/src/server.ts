@@ -9,12 +9,14 @@ import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
+import { createVehiculosRoutes } from './routes/vehiculos.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 
 export interface CreateServerOptions {
@@ -123,6 +125,21 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware);
     app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
+
+    // Admin: gestión de dispositivos Teltonika pendientes (open enrollment).
+    app.use('/admin/dispositivos-pendientes/*', firebaseAuthMiddleware);
+    app.use('/admin/dispositivos-pendientes/*', userContextMiddleware);
+    app.route(
+      '/admin/dispositivos-pendientes',
+      createAdminDispositivosRoutes({ db: opts.db, logger }),
+    );
+
+    // Vehículos de la empresa activa.
+    app.use('/vehiculos/*', firebaseAuthMiddleware);
+    app.use('/vehiculos/*', userContextMiddleware);
+    app.use('/vehiculos', firebaseAuthMiddleware);
+    app.use('/vehiculos', userContextMiddleware);
+    app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

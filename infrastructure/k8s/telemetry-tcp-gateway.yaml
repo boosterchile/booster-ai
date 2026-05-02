@@ -1,0 +1,151 @@
+# Booster AI — telemetry-tcp-gateway (GKE Autopilot)
+#
+# Long-lived TCP server para devices Teltonika. Service type=LoadBalancer
+# expone TCP externo (Cloud Run no soporta TCP persistente — por eso GKE).
+#
+# Workload Identity: el ServiceAccount K8s "telemetry-gateway-sa" se
+# vincula al GCP SA "booster-cloudrun-sa" via annotation, dándole acceso
+# a Postgres (via Secret Manager DATABASE_URL) y Pub/Sub publish.
+#
+# Apply via Cloud Build step:
+#   gcloud container clusters get-credentials booster-ai-telemetry --region=southamerica-west1
+#   kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telemetry
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telemetry-gateway-sa
+  namespace: telemetry
+  annotations:
+    # Workload Identity: K8s SA → GCP SA (mismo SA que Cloud Run runtime
+    # — ya tiene los roles necesarios: Pub/Sub publisher, Secret Manager
+    # accessor, Cloud SQL client).
+    iam.gke.io/gcp-service-account: booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+  labels:
+    app: telemetry-tcp-gateway
+spec:
+  replicas: 2 # HA — al menos 2 para rolling updates sin caída
+  selector:
+    matchLabels:
+      app: telemetry-tcp-gateway
+  template:
+    metadata:
+      labels:
+        app: telemetry-tcp-gateway
+    spec:
+      serviceAccountName: telemetry-gateway-sa
+      containers:
+        - name: gateway
+          # IMAGEN actualizada por Cloud Build con kubectl set image:
+          #   kubectl set image deployment/telemetry-tcp-gateway \
+          #     gateway=southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:$_COMMIT_SHA \
+          #     -n telemetry
+          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: teltonika-tcp
+              containerPort: 5027
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "5027"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "booster-ai-494222"
+            - name: PUBSUB_TOPIC_TELEMETRY
+              value: "telemetry-events"
+            - name: IDLE_TIMEOUT_SEC
+              value: "300"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: NODE_ENV
+              value: "production"
+            # DATABASE_URL viene de Secret Manager via External Secrets (futuro)
+            # o por ahora se inyecta como Secret K8s manual (kubectl create secret).
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemetry-gateway-secrets
+                  key: database-url
+          resources:
+            # GKE Autopilot solo permite ratios CPU:RAM específicos.
+            # 0.5 CPU + 1Gi RAM es válido y suficiente para piloto.
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          # Liveness/readiness probes via TCP socket: si el puerto no
+          # responde, K8s reinicia el pod. No hay HTTP /health dedicado
+          # (el gateway es TCP-only) pero si el server escucha, está vivo.
+          readinessProbe:
+            tcpSocket:
+              port: teltonika-tcp
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: teltonika-tcp
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          # Graceful shutdown: SIGTERM → main.ts cierra server +
+          # flush pubsub + close pool en ≤30s. preStop sleep para que
+          # K8s saque el pod del Service antes de cortar conexiones
+          # nuevas.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+  annotations:
+    # Network LB regional TCP (no es HTTPS LB global; ese es para Cloud
+    # Run/web). Más eficiente para conexiones long-lived TCP.
+    cloud.google.com/l4-rbs: "enabled"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local # preserva client IP para logs
+  selector:
+    app: telemetry-tcp-gateway
+  ports:
+    - name: teltonika-tcp
+      protocol: TCP
+      port: 5027
+      targetPort: teltonika-tcp
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: telemetry-tcp-gateway
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

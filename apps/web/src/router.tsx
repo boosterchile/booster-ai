@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import { RootComponent } from './routes/__root.js';
+import { AdminDispositivosRoute } from './routes/admin-dispositivos.js';
 import { AppRoute } from './routes/app.js';
 import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
@@ -55,6 +56,12 @@ const perfilRoute = createRoute({
   component: PerfilRoute,
 });
 
+const adminDispositivosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/admin/dispositivos',
+  component: AdminDispositivosRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -62,6 +69,7 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   ofertasRoute,
   perfilRoute,
+  adminDispositivosRoute,
 ]);
 
 export const router = createRouter({

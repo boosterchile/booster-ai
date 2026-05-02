@@ -60,6 +60,31 @@ steps:
       - .
     waitFor: ['-']
 
+  # apps/telemetry-tcp-gateway — TCP server para devices Teltonika.
+  # Va a GKE Autopilot (no Cloud Run; el deploy es kubectl set image).
+  - id: build-telemetry-tcp-gateway
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/telemetry-tcp-gateway/Dockerfile
+      - --tag=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/telemetry-tcp-gateway:latest
+      - .
+    waitFor: ['-']
+
+  # apps/telemetry-processor — consumer Pub/Sub. Cloud Run.
+  - id: build-telemetry-processor
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/telemetry-processor/Dockerfile
+      - --tag=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/telemetry-processor:latest
+      - .
+    waitFor: ['-']
+
   # =========================================================================
   # Push a Artifact Registry
   # =========================================================================
@@ -77,6 +102,16 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, '--all-tags', '${_REGISTRY}/web']
     waitFor: [build-web]
+
+  - id: push-telemetry-tcp-gateway
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/telemetry-tcp-gateway']
+    waitFor: [build-telemetry-tcp-gateway]
+
+  - id: push-telemetry-processor
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/telemetry-processor']
+    waitFor: [build-telemetry-processor]
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
@@ -129,6 +164,48 @@ steps:
       - --platform=managed
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-web]
+
+  # apps/telemetry-processor — Cloud Run consumer Pub/Sub.
+  - id: deploy-telemetry-processor
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-telemetry-processor
+      - --image=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-telemetry-processor]
+
+  # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
+  # Update via kubectl set image al deployment del cluster.
+  - id: deploy-telemetry-tcp-gateway
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -eu
+        gcloud container clusters get-credentials booster-ai-telemetry \
+          --region=${_REGION} \
+          --project=${PROJECT_ID}
+
+        # Si la primera vez, apply manifests; sino, set image del deployment.
+        if ! kubectl get deployment telemetry-tcp-gateway -n telemetry > /dev/null 2>&1; then
+          echo "Primer deploy — apply manifests completos"
+          kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway.yaml
+        fi
+
+        kubectl set image deployment/telemetry-tcp-gateway \
+          gateway=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA} \
+          -n telemetry
+
+        kubectl rollout status deployment/telemetry-tcp-gateway \
+          -n telemetry --timeout=5m
+    waitFor: [push-telemetry-tcp-gateway]
 
   # =========================================================================
   # Smoke test — ping al webhook Twilio via la URL pública canonical.
@@ -199,6 +276,10 @@ images:
   - ${_REGISTRY}/whatsapp-bot:latest
   - ${_REGISTRY}/web:${_COMMIT_SHA}
   - ${_REGISTRY}/web:latest
+  - ${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}
+  - ${_REGISTRY}/telemetry-tcp-gateway:latest
+  - ${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
+  - ${_REGISTRY}/telemetry-processor:latest
 
 # Usar el SA github-deployer en lugar del compute default.
 # Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute
