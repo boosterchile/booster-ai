@@ -131,7 +131,12 @@ module "service_web" {
     NODE_ENV = "production"
   }
 
-  public = false # tráfico público entra via Global HTTPS LB (networking.tf); Cloud Run no acepta allUsers por org policy
+  # PWA estática servida con nginx — debe ser pública para que cualquier
+  # browser anónimo pueda cargar el bundle. La auth la maneja Firebase a
+  # nivel cliente (las VITE_FIREBASE_* viajan en el bundle por diseño).
+  # El override de org policy en org-policies.tf permite allUsers a nivel
+  # proyecto, así que la binding está autorizada.
+  public = true
 
   secret_versions_ready = local.all_secret_versions_ready
 
