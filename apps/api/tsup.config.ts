@@ -13,7 +13,7 @@ import { defineConfig } from 'tsup';
  * autocontenido. Elegimos bundling por simplicidad del Dockerfile.
  */
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: ['src/main.ts', 'src/jobs/merge-duplicate-users.ts'],
   format: ['esm'],
   clean: true,
   sourcemap: true,
