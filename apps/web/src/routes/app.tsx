@@ -226,7 +226,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             </section>
           )}
 
-          {isAdmin && (
+          {isAdmin && activeEmpresa?.is_transportista && (
             <section className="mt-10">
               <h2 className="font-semibold text-neutral-900 text-xl">Administración</h2>
               <Link
