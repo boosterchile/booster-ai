@@ -29,7 +29,51 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       .from(users)
       .where(eq(users.firebaseUid, claims.uid))
       .limit(1);
-    const user = userRows[0];
+    let user = userRows[0];
+
+    // ---------------------------------------------------------------------
+    // Account linking automático: si no hay match por firebase_uid PERO
+    // hay match por email Y el provider verificó el email (Google, etc),
+    // actualizamos el firebase_uid del user existente al nuevo y lo usamos.
+    //
+    // Por qué es seguro: el provider OAuth (Google, Apple, etc) ya
+    // demostró control del email. Si Felipe se registró con email/password
+    // el martes y hoy se loguea con Google del mismo email verificado,
+    // confiamos en el provider y linkeamos.
+    //
+    // Riesgo NO mitigado: email/password con email_verified=false. Por eso
+    // restringimos a email_verified=true (Google y otros OAuth lo dan
+    // siempre; email/password requiere flow explícito de verificación).
+    //
+    // Nota: si en el futuro permitimos email/password sin verificación,
+    // habría que NO linkear desde provider verificado a email/password no
+    // verificado para prevenir hijack.
+    // ---------------------------------------------------------------------
+    if (!user && claims.email && claims.emailVerified) {
+      const byEmail = await opts.db
+        .select()
+        .from(users)
+        .where(eq(users.email, claims.email))
+        .limit(1);
+      const existing = byEmail[0];
+      if (existing) {
+        opts.logger.info(
+          {
+            userId: existing.id,
+            email: claims.email,
+            oldFirebaseUid: existing.firebaseUid,
+            newFirebaseUid: claims.uid,
+          },
+          'account linking: actualizando firebase_uid del user existente',
+        );
+        const linkedRows = await opts.db
+          .update(users)
+          .set({ firebaseUid: claims.uid, updatedAt: new Date() })
+          .where(eq(users.id, existing.id))
+          .returning();
+        user = linkedRows[0] ?? existing;
+      }
+    }
 
     if (!user) {
       return c.json({

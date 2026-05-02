@@ -60,11 +60,15 @@ async function buildApp(
   app.use('/me/*', async (c, next) => {
     const claimsHeader = c.req.header('x-test-claims');
     if (claimsHeader) {
-      const parsed = JSON.parse(claimsHeader) as { uid: string; email?: string };
+      const parsed = JSON.parse(claimsHeader) as {
+        uid: string;
+        email?: string;
+        emailVerified?: boolean;
+      };
       c.set('firebaseClaims', {
         uid: parsed.uid,
         email: parsed.email,
-        emailVerified: false,
+        emailVerified: parsed.emailVerified ?? false,
         name: undefined,
         picture: undefined,
         custom: {},
@@ -206,6 +210,86 @@ describe('PATCH /me/profile', () => {
     expect(res.status).toBe(200);
     const patchArg = spies.setFn.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(patchArg.rut).toBe('76.123.456-0');
+  });
+
+  // ---------------------------------------------------------------------
+  // Account linking — cuando llega un firebase_uid nuevo y el email del
+  // claim matchea un user existente Y emailVerified=true, /me debe
+  // actualizar el firebase_uid del user existente y devolverlo.
+  // ---------------------------------------------------------------------
+  it('account linking: matchea por email si emailVerified=true', async () => {
+    // Sequence:
+    //   1. SELECT users WHERE firebase_uid = 'fb-google-NEW' → []
+    //   2. SELECT users WHERE email = 'felipe@boosterchile.com' → [existing]
+    //   3. UPDATE users SET firebase_uid = 'fb-google-NEW' WHERE id = ... → [linked]
+    //   4. SELECT memberships WHERE user_id = ... → [...] (vacío en este test)
+    let selectCallCount = 0;
+    const limitFn = vi.fn(() => {
+      selectCallCount += 1;
+      if (selectCallCount === 1) return Promise.resolve([]); // por uid: no existe
+      if (selectCallCount === 2) return Promise.resolve([baseUserRow]); // por email: existe
+      return Promise.resolve([]);
+    });
+    const whereFnSelect = vi.fn(() => ({ limit: limitFn }));
+    const innerJoinFn = vi.fn(() => ({ where: whereFnSelect }));
+    const fromFn = vi.fn(() => ({ where: whereFnSelect, innerJoin: innerJoinFn }));
+    const selectFn = vi.fn(() => ({ from: fromFn }));
+
+    const linkedRow = { ...baseUserRow, firebaseUid: 'fb-google-NEW' };
+    const returningFn = vi.fn().mockResolvedValue([linkedRow]);
+    const whereFnUpdate = vi.fn(() => ({ returning: returningFn }));
+    const setFn = vi.fn(() => ({ where: whereFnUpdate }));
+    const updateFn = vi.fn(() => ({ set: setFn }));
+
+    const db = { select: selectFn, update: updateFn } as unknown as Parameters<
+      typeof import('../../src/routes/me.js').createMeRoutes
+    >[0]['db'];
+    const app = await buildApp(db);
+    const claims = JSON.stringify({
+      uid: 'fb-google-NEW',
+      email: 'felipe@boosterchile.com',
+      emailVerified: true,
+    });
+    const res = await app.request('/me', { headers: { 'x-test-claims': claims } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { needs_onboarding: boolean; user: { email: string } };
+    expect(body.needs_onboarding).toBe(false);
+    expect(body.user.email).toBe('felipe@boosterchile.com');
+    // Confirma que se llamó al UPDATE con el nuevo firebase_uid
+    expect(setFn).toHaveBeenCalledTimes(1);
+    const setArg = setFn.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setArg.firebaseUid).toBe('fb-google-NEW');
+  });
+
+  it('NO linkea si emailVerified=false (devuelve needs_onboarding)', async () => {
+    let selectCallCount = 0;
+    const limitFn = vi.fn(() => {
+      selectCallCount += 1;
+      return Promise.resolve([]); // ambos selects vacíos
+    });
+    const whereFnSelect = vi.fn(() => ({ limit: limitFn }));
+    const fromFn = vi.fn(() => ({ where: whereFnSelect }));
+    const selectFn = vi.fn(() => ({ from: fromFn }));
+    const updateFn = vi.fn();
+
+    const db = { select: selectFn, update: updateFn } as unknown as Parameters<
+      typeof import('../../src/routes/me.js').createMeRoutes
+    >[0]['db'];
+    const app = await buildApp(db);
+    const claims = JSON.stringify({
+      uid: 'fb-emailpw-NEW',
+      email: 'nuevo@test.com',
+      emailVerified: false,
+    });
+    const res = await app.request('/me', { headers: { 'x-test-claims': claims } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { needs_onboarding: boolean };
+    expect(body.needs_onboarding).toBe(true);
+    // No update porque no se encontró el user
+    expect(updateFn).not.toHaveBeenCalled();
+    // Solo un SELECT (por uid). El segundo (por email) NO ocurre porque
+    // emailVerified=false aborta el linking.
+    expect(selectCallCount).toBe(1);
   });
 
   it('actualiza múltiples campos en un solo PATCH', async () => {
