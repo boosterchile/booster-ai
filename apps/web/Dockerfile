@@ -50,11 +50,28 @@ RUN pnpm --filter @booster-ai/web build
 FROM nginx:1.27-alpine AS runtime
 
 # Cloud Run inyecta PORT (por defecto 8080); nginx tiene que escuchar ahí.
-# Usamos un template y substituimos PORT al startup.
 ENV PORT=8080
 
+# Borrar el default.conf que viene con nginx-alpine para evitar conflicto:
+# escucha en :80 (no permitido en Cloud Run) y puede competir con nuestra
+# config si el envsubst del entrypoint no procesa el template a tiempo.
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+# Copiar nuestro template — el entrypoint de nginx-alpine ejecuta envsubst
+# sobre /etc/nginx/templates/*.template y deposita el resultado procesado
+# (con $PORT resuelto) en /etc/nginx/conf.d/.
 COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+
+# Asegurar que /usr/share/nginx/html arranca limpio (sin index.html default
+# del image) y después poblar con el dist de Vite.
+RUN rm -rf /usr/share/nginx/html/* /usr/share/nginx/html/.[!.]*
+COPY --from=build /app/apps/web/dist/ /usr/share/nginx/html/
+
+# Sanity check al build: listar lo que quedó (sale en logs de Cloud Build).
+RUN echo '--- /usr/share/nginx/html ---' && ls -la /usr/share/nginx/html/ && \
+    echo '--- head index.html ---' && head -5 /usr/share/nginx/html/index.html && \
+    echo '--- /etc/nginx/conf.d ---' && ls -la /etc/nginx/conf.d/ && \
+    echo '--- /etc/nginx/templates ---' && ls -la /etc/nginx/templates/
 
 # Cloud Run health check: la propia request del LB pega a / esperando 200.
 # nginx sirve index.html (200) por SPA fallback. Suficiente para liveness.
