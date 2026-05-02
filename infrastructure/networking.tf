@@ -452,14 +452,28 @@ resource "google_dns_record_set" "www" {
   rrdatas      = ["ghs.googlehosted.com."]
 }
 
-# app → Firebase Hosting (Booster 2.0 webapp legacy)
+# app → Cloud Run booster-ai-web vía Global HTTPS LB.
+#
+# La PWA Booster AI nueva (apps/web, Vite + React + Firebase Auth) se sirve
+# desde acá. El LB rutea host=app.boosterchile.com → backend_service.web →
+# Cloud Run booster-ai-web (ver url_map "main" + path_matcher "app").
+#
+# Histórico: hasta 2026-05-02 este record era CNAME → big-cabinet-482101-s3
+# .web.app (Firebase Hosting de Booster 2.0). Migrado al LB cuando la PWA
+# nueva quedó deployada. Booster 2.0 sigue accesible directamente en
+# https://big-cabinet-482101-s3.web.app si se necesita rescatar algo.
+#
+# IMPORTANTE: agregar app.${var.domain} a domains del cert managed
+# (google_compute_managed_ssl_certificate.main) en un APPLY POSTERIOR,
+# después de que este record propague (~5 min). Si se hace en el mismo
+# apply, el cert puede quedar FAILED_NOT_VISIBLE (lección de task #34).
 resource "google_dns_record_set" "app" {
   name         = "app.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
-  type         = "CNAME"
+  type         = "A"
   ttl          = 3600
-  rrdatas      = ["big-cabinet-482101-s3.web.app."]
+  rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
 # demo → Google Sites (Booster 2.0 demo site)
