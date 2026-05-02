@@ -137,6 +137,37 @@ resource "google_project_iam_member" "compute_default_sa_artifact_reader" {
 }
 
 # =============================================================================
+# IAP BASTION SA — Capa 1 del ADR-013
+# =============================================================================
+# SA dedicada para el bastion VM. cloud-sql-proxy en el bastion la usa para
+# autenticarse contra la Admin API de Cloud SQL (cloudsql.client) y
+# establecer el túnel TLS hacia la instancia privada. La auth IAM-database
+# del operador al rol Postgres se hace per-laptop con su propio access
+# token — el bastion SA NO conoce esa identidad.
+resource "google_service_account" "db_bastion" {
+  account_id   = "db-bastion-sa"
+  display_name = "Booster AI DB Bastion (IAP)"
+  description  = "Identidad del bastion VM que sirve cloud-sql-proxy a operadores via IAP TCP."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+locals {
+  db_bastion_roles = [
+    "roles/cloudsql.client",       # Cloud SQL Admin API + establecer tunel TLS
+    "roles/logging.logWriter",     # journalctl → Cloud Logging
+    "roles/monitoring.metricWriter", # métricas de la VM
+  ]
+}
+
+resource "google_project_iam_member" "db_bastion_bindings" {
+  for_each = toset(local.db_bastion_roles)
+  project  = google_project.booster_ai.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.db_bastion.email}"
+}
+
+# =============================================================================
 # WORKLOAD IDENTITY FEDERATION — GitHub → GCP sin SA keys
 # Lección de SEC-2026-04-01: nunca más descargar keys JSON.
 # =============================================================================

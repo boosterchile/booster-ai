@@ -1,21 +1,76 @@
 # IAP Bastion — Capa 1 del ADR-013 (acceso humano a Cloud SQL privada).
 #
-# Patrón:
+# Patron:
 #   laptop ──► gcloud compute start-iap-tunnel ──► Google IAP frontend
 #                                                          │
 #                                                          ▼
 #                                                    bastion VM (private IP)
-#                                                          │  forwardea TCP
+#                                                          │
+#                                                          ▼  cloud-sql-proxy
+#                                                          │  (systemd service)
 #                                                          ▼
 #                                                    Cloud SQL private IP
 #
-# El bastion NO tiene IP pública. Tampoco corre cloud-sql-proxy ni nada que
-# toque la DB — actúa como puente TCP. La auth a Cloud SQL la hace el
-# cloud-sql-proxy en la laptop del operador, con el OAuth token de gcloud
-# auth login (ver `cloudsql.iam_authentication = on` en data.tf).
-#
-# Para usar: instanciar este módulo en data.tf una vez Felipe apruebe el costo
-# (~USD 5/mes e2-micro) y ejecutar `bash scripts/db/connect.sh` actualizado.
+# El bastion corre cloud-sql-proxy como systemd service. El proxy NO usa
+# --auto-iam-authn — solo termina TLS hacia Cloud SQL. La autenticacion del
+# operador al rol Postgres la hace cada laptop pasando su access token como
+# password (libpq IAM auth manual). Eso preserva audit per-usuario en
+# pg_audit, sin que el proxy unifique sesiones bajo el SA del bastion.
+
+locals {
+  # Startup script: instala cloud-sql-proxy v2 + systemd service.
+  # Se ejecuta en cada boot — idempotente (chequea binario, recrea unit
+  # solo si cambia).
+  startup_script = <<-EOT
+    #!/bin/bash
+    set -euxo pipefail
+
+    PROXY_VERSION="v2.13.0"
+    PROXY_BIN=/usr/local/bin/cloud-sql-proxy
+
+    # Detectar arquitectura
+    ARCH=$(uname -m)
+    case "$ARCH" in
+      x86_64) PROXY_ARCH=amd64 ;;
+      aarch64) PROXY_ARCH=arm64 ;;
+      *) echo "unsupported arch: $ARCH"; exit 1 ;;
+    esac
+
+    # Instalar/actualizar binario
+    if [ ! -x "$PROXY_BIN" ] || ! "$PROXY_BIN" --version 2>/dev/null | grep -q "$PROXY_VERSION"; then
+      curl -sSLo "$PROXY_BIN" \
+        "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/$PROXY_VERSION/cloud-sql-proxy.linux.$PROXY_ARCH"
+      chmod +x "$PROXY_BIN"
+    fi
+
+    # Usuario unprivileged
+    id cloud-sql-proxy >/dev/null 2>&1 || useradd -r -s /sbin/nologin cloud-sql-proxy
+
+    # Systemd unit
+    cat <<UNIT > /etc/systemd/system/cloud-sql-proxy.service
+    [Unit]
+    Description=Cloud SQL Auth Proxy
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    User=cloud-sql-proxy
+    ExecStart=$PROXY_BIN --address=0.0.0.0 --port=5432 --private-ip ${var.cloudsql_instance_connection_name}
+    Restart=always
+    RestartSec=5
+    StandardOutput=journal
+    StandardError=journal
+
+    [Install]
+    WantedBy=multi-user.target
+    UNIT
+
+    systemctl daemon-reload
+    systemctl enable cloud-sql-proxy.service
+    systemctl restart cloud-sql-proxy.service
+  EOT
+}
 
 resource "google_compute_instance" "bastion" {
   name         = var.name
@@ -23,7 +78,7 @@ resource "google_compute_instance" "bastion" {
   zone         = var.zone
   machine_type = var.machine_type
 
-  # Sin IP pública. Acceso solo via IAP TCP forwarding.
+  # Sin IP publica. Acceso solo via IAP TCP forwarding.
   network_interface {
     network    = var.network
     subnetwork = var.subnet
@@ -42,6 +97,8 @@ resource "google_compute_instance" "bastion" {
   metadata = {
     enable-oslogin = "TRUE"
   }
+
+  metadata_startup_script = local.startup_script
 
   service_account {
     email  = var.service_account_email
@@ -62,9 +119,15 @@ resource "google_compute_instance" "bastion" {
     var.labels,
   )
 
-  # IAP requires the bastion to have IAP-allowed firewall rule (puerto 22 desde
-  # 35.235.240.0/20 que es el rango oficial de IAP frontends). Se crea abajo.
   tags = ["iap-bastion"]
+
+  lifecycle {
+    # Re-aplicar startup script (vía recreate) solo si la version del proxy
+    # o el connection name cambian. Otros cambios cosmeticos son ignorados.
+    ignore_changes = [
+      metadata["ssh-keys"],
+    ]
+  }
 }
 
 # Firewall: permite SSH solo desde el rango oficial de IAP frontends.
@@ -86,23 +149,27 @@ resource "google_compute_firewall" "iap_ssh" {
   }
 }
 
-# Permite que el bastion forwardée TCP hacia Cloud SQL en la VPC privada.
-# Cloud SQL escucha en su IP privada por el puerto 5432.
-resource "google_compute_firewall" "bastion_to_cloudsql" {
-  name    = "${var.name}-to-cloudsql"
+# Firewall: permite que IAP forwardée también el puerto 5432 (proxy) hacia
+# el bastion. Sin esto, el tunnel a port 5432 muere antes de llegar.
+resource "google_compute_firewall" "iap_postgres" {
+  name    = "${var.name}-iap-postgres"
   project = var.project_id
   network = var.network
 
-  direction          = "EGRESS"
-  destination_ranges = ["10.0.0.0/8"] # rango privado donde vive Cloud SQL via VPC peering
-
-  target_tags = ["iap-bastion"]
+  direction     = "INGRESS"
+  source_ranges = ["35.235.240.0/20"]
+  target_tags   = ["iap-bastion"]
 
   allow {
     protocol = "tcp"
     ports    = ["5432"]
   }
 }
+
+# Egress to Cloud SQL: GCP VPC default allow-all egress es suficiente, pero
+# documentamos la dependencia explicita aca para que sea visible que el
+# bastion necesita ver Cloud SQL en su rango de VPC peering.
+# (No se crea regla — la default cubre.)
 
 # IAM: cada operador puede tunelar via IAP a este bastion.
 resource "google_iap_tunnel_instance_iam_member" "operators" {
@@ -116,7 +183,7 @@ resource "google_iap_tunnel_instance_iam_member" "operators" {
   member = "user:${each.value}"
 }
 
-# OS Login: cada operador puede iniciar sesión SSH (necesario aunque solo
+# OS Login: cada operador puede iniciar sesion SSH (necesario aunque solo
 # tunelemos TCP — IAP usa el canal SSH como transporte).
 resource "google_project_iam_member" "os_login_users" {
   for_each = toset(var.iap_users)

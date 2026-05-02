@@ -350,3 +350,30 @@ resource "google_bigquery_dataset" "audit" {
     managed_by = "terraform"
   }
 }
+
+# =============================================================================
+# IAP BASTION — Capa 1 del ADR-013 (acceso humano a Cloud SQL privada)
+# =============================================================================
+# VM e2-micro sin IP pública en booster-ai-private. Corre cloud-sql-proxy
+# como systemd service. Operadores hacen `gcloud compute start-iap-tunnel`
+# desde su laptop al puerto 5432 del bastion → proxy termina TLS hacia la
+# instancia privada. Auth IAM-database al rol Postgres pasa el token del
+# operador como password (per-laptop, audit per-usuario en pg_audit).
+module "db_bastion" {
+  source = "./modules/iap-bastion"
+
+  project_id            = google_project.booster_ai.project_id
+  region                = var.region
+  zone                  = "${var.region}-a"
+  network               = google_compute_network.vpc.self_link
+  subnet                = google_compute_subnetwork.private.self_link
+  service_account_email = google_service_account.db_bastion.email
+
+  cloudsql_instance_connection_name = google_sql_database_instance.main.connection_name
+
+  iap_users = local.db_iam_operators
+
+  labels = {
+    env = var.environment
+  }
+}

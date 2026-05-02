@@ -36,10 +36,24 @@ variable "machine_type" {
 variable "service_account_email" {
   type        = string
   description = <<-EOT
-    SA del bastion. Solo necesita logging.logWriter y monitoring.metricWriter.
-    NO debe tener cloudsql.client ni nada que toque DB — el bastion es solo
-    forwarder de paquetes. La auth a Cloud SQL la hace el cloud-sql-proxy en
-    la laptop del operador con su token IAM.
+    SA del bastion. Necesita roles/cloudsql.client (para que cloud-sql-proxy
+    en la VM pueda llamar a la Admin API y establecer el tunel TLS) +
+    logging.logWriter + monitoring.metricWriter.
+
+    NO necesita cloudsql.instanceUser — la auth de IAM database al rol
+    Postgres la hace cada operador en su laptop, pasando su access token
+    como password en el connection string al proxy. El proxy solo
+    establece el canal TLS, no autentica al usuario.
+  EOT
+}
+
+variable "cloudsql_instance_connection_name" {
+  type        = string
+  description = <<-EOT
+    Connection name de la instancia Cloud SQL en el formato
+    "<project>:<region>:<instance>". El startup script del bastion lanza
+    cloud-sql-proxy apuntando a este connection name, listening en :5432
+    de la red interna del VPC.
   EOT
 }
 

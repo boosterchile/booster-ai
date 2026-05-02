@@ -1,169 +1,151 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Booster AI — conexión a Cloud SQL desde Mac de operadores
+# Booster AI — conexión a Cloud SQL desde laptop de operadores
 # =============================================================================
+# Implementación de la Capa 1 del ADR-013: bastion VM + IAP TCP forwarding +
+# cloud-sql-proxy (en bastion) + IAM database authentication (en laptop).
+#
+# Sin VPN, sin IPs públicas, sin password humanos. Cada operador conecta como
+# su email IAM, autenticando con su access token de gcloud.
+#
 # Uso:
-#   bash scripts/db/connect.sh           → abre psql interactivo
-#   bash scripts/db/connect.sh -f x.sql  → ejecuta x.sql y sale
+#   bash scripts/db/connect.sh                     → psql interactivo (IAM auth)
+#   bash scripts/db/connect.sh -f scripts/sql/x    → ejecuta x.sql y sale
+#   bash scripts/db/connect.sh -c "SELECT 1"       → ejecuta query y sale
+#
+#   AUTH_MODE=password bash scripts/db/connect.sh  → conecta como booster_app
+#                                                    (para DDL/migrations/GRANTs)
 #
 # Qué hace:
-#   1. Verifica que cloud-sql-proxy esté instalado (sino: brew install).
-#   2. Verifica gcloud auth login activo.
-#   3. Lanza el proxy en background apuntando a la instancia productiva.
-#      Usa --auto-iam-authn si la DB tiene IAM auth habilitada (TF apply
-#      del flag database_flags.cloudsql.iam_authentication=on); sino
-#      cae al modo password con booster_app + secret de Secret Manager.
-#   4. Abre psql al puerto local 5433.
-#   5. Cleanup del proxy al exit.
+#   1. Verifica gcloud auth y permisos IAP.
+#   2. Levanta `gcloud compute start-iap-tunnel` hacia el bastion en background.
+#   3. Conecta psql al puerto local del túnel.
+#      - IAM mode: user = email gcloud, password = access token efímero.
+#      - Password mode: user = booster_app, password = Secret Manager.
+#   4. Cleanup del túnel al exit.
 #
-# Configuración:
+# Configuración (env vars):
 #   PROJECT_ID        proyecto GCP (default: booster-ai-494222)
-#   INSTANCE_NAME     nombre de la instancia (default: booster-ai-pg-07d9e939)
-#   REGION            región (default: southamerica-west1)
-#   LOCAL_PORT        puerto local del proxy (default: 5433)
-#   DB_NAME           DB a conectar (default: booster_ai)
-#   AUTH_MODE         "iam" (default si IAM enabled) | "password"
+#   ZONE              zona del bastion (default: southamerica-west1-a)
+#   BASTION_NAME      VM bastion (default: db-bastion)
+#   LOCAL_PORT        puerto local del túnel (default: 5433)
+#   DB_NAME           database (default: booster_ai)
+#   AUTH_MODE         "iam" (default) | "password"
 
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-booster-ai-494222}"
-INSTANCE_NAME="${INSTANCE_NAME:-booster-ai-pg-07d9e939}"
-REGION="${REGION:-southamerica-west1}"
+ZONE="${ZONE:-southamerica-west1-a}"
+BASTION_NAME="${BASTION_NAME:-db-bastion}"
 LOCAL_PORT="${LOCAL_PORT:-5433}"
 DB_NAME="${DB_NAME:-booster_ai}"
-AUTH_MODE="${AUTH_MODE:-auto}"
-
-CONN_STR="${PROJECT_ID}:${REGION}:${INSTANCE_NAME}"
+AUTH_MODE="${AUTH_MODE:-iam}"
 
 # ------------------------------------------------------------------------------
 # Pre-reqs
 # ------------------------------------------------------------------------------
-if ! command -v cloud-sql-proxy >/dev/null 2>&1; then
-  echo "→ cloud-sql-proxy no encontrado, instalando con brew…"
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "✗ Homebrew no instalado. Instalalo desde https://brew.sh/ primero."
-    exit 1
-  fi
-  brew install cloud-sql-proxy
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "✗ gcloud no instalado." >&2
+  exit 1
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
   echo "→ psql no encontrado, instalando con brew…"
-  brew install libpq
-  brew link --force libpq
-fi
-
-if ! command -v gcloud >/dev/null 2>&1; then
-  echo "✗ gcloud no instalado."
-  exit 1
+  brew install libpq && brew link --force libpq
 fi
 
 ACTIVE_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "")
 if [[ -z "$ACTIVE_ACCOUNT" ]]; then
-  echo "✗ No hay gcloud auth activa. Corré: gcloud auth login"
+  echo "✗ No hay gcloud auth activa. Corré: gcloud auth login" >&2
   exit 1
 fi
 
-# ------------------------------------------------------------------------------
-# Detectar modo de auth
-# ------------------------------------------------------------------------------
-if [[ "$AUTH_MODE" == "auto" ]]; then
-  IAM_FLAG=$(gcloud sql instances describe "$INSTANCE_NAME" \
-    --project="$PROJECT_ID" \
-    --format="value(settings.databaseFlags[?name=cloudsql.iam_authentication].value)" 2>/dev/null || echo "")
-  if [[ "$IAM_FLAG" == "on" ]]; then
-    AUTH_MODE="iam"
-  else
-    AUTH_MODE="password"
-  fi
-fi
-
-echo "→ instancia : $CONN_STR"
-echo "→ db        : $DB_NAME"
-echo "→ usuario   : $ACTIVE_ACCOUNT"
-echo "→ auth mode : $AUTH_MODE"
-echo "→ proxy port: $LOCAL_PORT"
+echo "→ proyecto    : $PROJECT_ID"
+echo "→ bastion     : $BASTION_NAME ($ZONE)"
+echo "→ db          : $DB_NAME"
+echo "→ auth mode   : $AUTH_MODE"
+echo "→ local port  : $LOCAL_PORT"
 
 # ------------------------------------------------------------------------------
-# Lanzar proxy en background
+# IAP tunnel en background
 # ------------------------------------------------------------------------------
-PROXY_PID=""
+TUNNEL_LOG=$(mktemp)
+TUNNEL_PID=""
 cleanup() {
-  if [[ -n "$PROXY_PID" ]] && kill -0 "$PROXY_PID" 2>/dev/null; then
-    kill "$PROXY_PID" 2>/dev/null || true
-    wait "$PROXY_PID" 2>/dev/null || true
+  if [[ -n "$TUNNEL_PID" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    kill "$TUNNEL_PID" 2>/dev/null || true
+    wait "$TUNNEL_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT INT TERM
 
-PROXY_LOG=$(mktemp)
-if [[ "$AUTH_MODE" == "iam" ]]; then
-  cloud-sql-proxy "$CONN_STR" --port "$LOCAL_PORT" --auto-iam-authn >"$PROXY_LOG" 2>&1 &
-else
-  cloud-sql-proxy "$CONN_STR" --port "$LOCAL_PORT" >"$PROXY_LOG" 2>&1 &
-fi
-PROXY_PID=$!
+gcloud compute start-iap-tunnel "$BASTION_NAME" 5432 \
+  --local-host-port="127.0.0.1:${LOCAL_PORT}" \
+  --zone="$ZONE" \
+  --project="$PROJECT_ID" \
+  >"$TUNNEL_LOG" 2>&1 &
+TUNNEL_PID=$!
 
-# Esperar al proxy
-echo "→ esperando proxy (max 15s)…"
-for i in {1..15}; do
-  if grep -q "ready for new connections" "$PROXY_LOG" 2>/dev/null; then
-    echo "  proxy listo"
+# Esperar al túnel — TCP probe contra el puerto local (más confiable que
+# parsear el output de gcloud, que no emite un mensaje de "ready" estable).
+echo "→ levantando IAP tunnel…"
+TUNNEL_READY=0
+for _ in $(seq 1 30); do
+  if (echo > /dev/tcp/127.0.0.1/"$LOCAL_PORT") 2>/dev/null; then
+    echo "  túnel listo"
+    TUNNEL_READY=1
     break
   fi
-  if ! kill -0 "$PROXY_PID" 2>/dev/null; then
-    echo "✗ proxy murió. Log:"
-    cat "$PROXY_LOG"
+  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    echo "✗ tunnel murió. Log:" >&2
+    cat "$TUNNEL_LOG" >&2
     exit 1
   fi
   sleep 1
 done
-
-# ------------------------------------------------------------------------------
-# Conectar
-# ------------------------------------------------------------------------------
-if [[ "$AUTH_MODE" == "iam" ]]; then
-  # Cloud SQL trunca emails en >63 chars; el role coincide con el email completo
-  # mientras quepa. Para dev@boosterchile.com cabe sin problema.
-  PGUSER="$ACTIVE_ACCOUNT"
-  # En IAM auth no se manda password (el proxy lo gestiona via OAuth token).
-else
-  # Modo password: leer DATABASE_URL de Secret Manager y extraer user/password.
-  echo "→ obteniendo credenciales password de Secret Manager…"
-  DB_URL=$(gcloud secrets versions access latest --secret=database-url --project="$PROJECT_ID")
-  # postgresql://user:password@host:port/dbname?...
-  # Parseo simple sin dependencias externas.
-  PGUSER=$(echo "$DB_URL" | sed -E 's|postgresql://([^:]+):.*|\1|')
-  PGPASS_RAW=$(echo "$DB_URL" | sed -E 's|postgresql://[^:]+:([^@]+)@.*|\1|')
-  # Decodificar URL-encoding (libpq decodifica solo si pasa la URL como string,
-  # acá pasamos campos sueltos).
-  PGPASS=$(printf '%b' "${PGPASS_RAW//%/\\x}")
-  export PGPASSWORD="$PGPASS"
+if [[ "$TUNNEL_READY" -eq 0 ]]; then
+  echo "✗ tunnel no quedó listening tras 30s. Log:" >&2
+  cat "$TUNNEL_LOG" >&2
+  exit 1
 fi
 
-# Pasar conn info via env vars — más confiable que keywords en argv y no
-# expone el password en la cmdline.
-export PGHOST="127.0.0.1"
-export PGPORT="$LOCAL_PORT"
-export PGDATABASE="$DB_NAME"
-export PGUSER="$PGUSER"
-export PGSSLMODE="disable" # el TLS lo hace el proxy hacia Cloud SQL
+# ------------------------------------------------------------------------------
+# Construir credenciales según modo
+# ------------------------------------------------------------------------------
+if [[ "$AUTH_MODE" == "iam" ]]; then
+  PGUSER="$ACTIVE_ACCOUNT"
+  PGPASSWORD="$(gcloud auth print-access-token)"
+  export PGPASSWORD
+else
+  echo "→ obteniendo credenciales password de Secret Manager…"
+  DB_URL=$(gcloud secrets versions access latest --secret=database-url --project="$PROJECT_ID")
+  # libpq decodifica %XX cuando se le pasa una conn URL — usamos eso. El proxy
+  # ya termina TLS hacia Cloud SQL, así que sslmode=disable en la conexión
+  # local (sin esto libpq pide TLS contra el túnel TCP plano).
+  PGUSER="booster_app"
+  CONN_URL=$(python3 -c "
+import sys, urllib.parse as u
+p = u.urlparse(sys.stdin.read().strip())
+new = p._replace(netloc=f'{p.username}:{u.quote(u.unquote(p.password), safe=\"\")}@127.0.0.1:${LOCAL_PORT}', query='sslmode=disable')
+print(u.urlunparse(new))
+" <<<"$DB_URL")
+fi
 
-run_psql() {
-  if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
-    echo "→ ejecutando archivo: $2"
-    psql -f "$2"
+# ------------------------------------------------------------------------------
+# Ejecutar psql
+# ------------------------------------------------------------------------------
+if [[ "$AUTH_MODE" == "iam" ]]; then
+  if [[ $# -gt 0 ]]; then
+    psql -h 127.0.0.1 -p "$LOCAL_PORT" -U "$PGUSER" -d "$DB_NAME" "$@"
   else
-    echo "→ abriendo psql interactivo. Salí con \\q o Ctrl+D."
-    psql
+    echo "→ psql interactivo. Salí con \\q o Ctrl+D."
+    psql -h 127.0.0.1 -p "$LOCAL_PORT" -U "$PGUSER" -d "$DB_NAME"
   fi
-}
-
-if ! run_psql "$@"; then
-  echo
-  echo "✗ psql falló. Log del cloud-sql-proxy:"
-  echo "─────────────────────────────────────────"
-  cat "$PROXY_LOG"
-  echo "─────────────────────────────────────────"
-  exit 1
+else
+  if [[ $# -gt 0 ]]; then
+    psql "$CONN_URL" "$@"
+  else
+    echo "→ psql interactivo (booster_app). Salí con \\q o Ctrl+D."
+    psql "$CONN_URL"
+  fi
 fi

@@ -77,6 +77,8 @@ locals {
     "servicenetworking.googleapis.com",   # VPC peering Cloud SQL
     "vpcaccess.googleapis.com",           # Serverless VPC Access
     "dns.googleapis.com",                 # Cloud DNS
+    "iap.googleapis.com",                 # IAP TCP forwarding (ADR-013 bastion)
+    "oslogin.googleapis.com",             # OS Login (auth SSH del bastion via IAM)
 
     # Billing
     "cloudbilling.googleapis.com",
