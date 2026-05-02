@@ -3,8 +3,8 @@
 /**
  * Tema de Booster AI — Tailwind 4 CSS-first config.
  *
- * Espejo de los tokens en @booster-ai/ui-tokens. Si modificás algo aquí,
- * reflejalo en packages/ui-tokens/src/ y viceversa. En slice posterior
+ * Espejo de los tokens en @booster-ai/ui-tokens. Si modificas algo aquí,
+ * refléjalo en packages/ui-tokens/src/ y viceversa. En slice posterior
  * podemos generar este bloque automáticamente desde los tokens TS via
  * build script (tailwind-merge-tokens). Por ahora source-of-truth manual
  * para minimizar build complexity pre-launch.

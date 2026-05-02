@@ -417,7 +417,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
           <section className="mt-8 space-y-4">
             <h2 className="font-semibold text-neutral-900 text-xl">Plan</h2>
             <p className="text-neutral-600 text-sm">
-              Empezá con Gratis y subí cuando lo necesites. Sin tarjeta de crédito para Gratis.
+              Empieza con Gratis y mejora cuando lo necesites. Sin tarjeta de crédito para Gratis.
             </p>
             <Controller
               control={control}
@@ -436,7 +436,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
               )}
             />
             <p className="mt-2 text-neutral-500 text-xs">
-              Para Enterprise, contactá a{' '}
+              Para Enterprise, contacta a{' '}
               <a
                 href="mailto:ventas@boosterchile.com"
                 className="font-medium text-primary-600 underline"
@@ -673,19 +673,19 @@ function SummaryReview({ values }: { values: EmpresaOnboardingInput }) {
 function translateApiError(err: ApiError): string {
   switch (err.code) {
     case 'user_already_registered':
-      return 'Ya tenés una empresa registrada con este email. Iniciá sesión y elegí tu empresa activa.';
+      return 'Ya tienes una empresa registrada con este email. Inicia sesión y selecciona tu empresa activa.';
     case 'email_in_use':
-      return 'Este email ya está registrado en Booster con otra cuenta. Probá con otro email o recuperá tu acceso desde login.';
+      return 'Este email ya está registrado en Booster con otra cuenta. Intenta con otro email o recupera tu acceso desde login.';
     case 'rut_already_registered':
-      return 'Este RUT empresa ya está registrado. Si trabajás en esta empresa, pediles a sus admins que te inviten.';
+      return 'Este RUT empresa ya está registrado. Si trabajas en esta empresa, pide a sus admins que te inviten.';
     case 'invalid_plan':
-      return 'El plan seleccionado no está disponible. Probá con otro.';
+      return 'El plan seleccionado no está disponible. Intenta con otro.';
     case 'firebase_email_missing':
-      return 'Tu sesión no tiene email asociado. Volvé a iniciar sesión con email y contraseña o con Google.';
+      return 'Tu sesión no tiene email asociado. Vuelve a iniciar sesión con email y contraseña o con Google.';
     default:
       if (err.status >= 500) {
-        return 'Hubo un error en nuestro lado. Probá de nuevo en unos minutos o contactá soporte@boosterchile.com.';
+        return 'Hubo un error en nuestro lado. Intenta de nuevo en unos minutos o contacta a soporte@boosterchile.com.';
       }
-      return err.message || 'No pudimos completar el registro. Probá de nuevo.';
+      return err.message || 'No pudimos completar el registro. Intenta de nuevo.';
   }
 }

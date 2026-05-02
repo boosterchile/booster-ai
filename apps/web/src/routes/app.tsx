@@ -105,7 +105,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                   <div>
                     <div className="font-medium text-neutral-900">Ofertas activas</div>
                     <div className="text-neutral-600 text-sm">
-                      Cargas disponibles para tu empresa. Aceptá o rechazá rápido.
+                      Cargas disponibles para tu empresa. Acepta o rechaza rápido.
                     </div>
                   </div>
                 </div>
@@ -120,7 +120,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 Tu empresa todavía no opera
               </h2>
               <p className="mt-2 text-neutral-700 text-sm">
-                Configurá si vas a operar como generador de carga, transportista o ambos desde el
+                Configura si vas a operar como generador de carga, transportista o ambos desde el
                 perfil de empresa.
               </p>
             </section>
@@ -130,7 +130,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
               <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
               <p className="mt-2 text-neutral-700 text-sm">
-                Form web para crear cargas en construcción (slice B.7). Mientras tanto podés crear
+                Form web para crear cargas en construcción (slice B.7). Mientras tanto puedes crear
                 cargas escribiendo "hola" al WhatsApp del bot Booster.
               </p>
             </section>

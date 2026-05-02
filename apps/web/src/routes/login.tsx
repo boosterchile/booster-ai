@@ -98,16 +98,16 @@ export function LoginRoute() {
         <div className="w-full max-w-sm">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
             {mode === 'sign-up'
-              ? 'Creá tu cuenta'
+              ? 'Crea tu cuenta'
               : mode === 'reset'
                 ? 'Recuperar acceso'
-                : 'Iniciá sesión'}
+                : 'Inicia sesión'}
           </h1>
           <p className="mt-2 text-neutral-600 text-sm">
             {mode === 'sign-up'
-              ? 'Después vas a poder crear tu empresa o unirte a una existente.'
+              ? 'Después podrás crear tu empresa o unirte a una existente.'
               : mode === 'reset'
-                ? 'Te mandamos un email con el link para crear una nueva contraseña.'
+                ? 'Te enviamos un email con el link para crear una nueva contraseña.'
                 : 'Plataforma de logística sostenible para empresas y transportistas en Chile.'}
           </p>
 
@@ -232,7 +232,7 @@ export function LoginRoute() {
                     }}
                     className="font-medium text-primary-600 hover:underline"
                   >
-                    Creá una
+                    Crea una
                   </button>
                 </p>
                 <p>
@@ -251,7 +251,7 @@ export function LoginRoute() {
             )}
             {mode === 'sign-up' && (
               <p>
-                ¿Ya tenés cuenta?{' '}
+                ¿Ya tienes cuenta?{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -260,7 +260,7 @@ export function LoginRoute() {
                   }}
                   className="font-medium text-primary-600 hover:underline"
                 >
-                  Iniciá sesión
+                  Inicia sesión
                 </button>
               </p>
             )}
@@ -281,7 +281,7 @@ export function LoginRoute() {
           </div>
 
           <p className="mt-6 text-center text-neutral-500 text-xs">
-            Al continuar aceptás los términos del servicio y la política de privacidad de Booster
+            Al continuar aceptas los términos del servicio y la política de privacidad de Booster
             AI.
           </p>
         </div>
@@ -305,17 +305,17 @@ function translateAuthError(code: string | undefined): string | null {
     case 'auth/wrong-password':
       return 'Contraseña incorrecta.';
     case 'auth/user-disabled':
-      return 'Esta cuenta está deshabilitada. Contactá a soporte@boosterchile.com.';
+      return 'Esta cuenta está deshabilitada. Contacta a soporte@boosterchile.com.';
     case 'auth/email-already-in-use':
-      return 'Ya existe una cuenta con ese email. Iniciá sesión.';
+      return 'Ya existe una cuenta con ese email. Inicia sesión.';
     case 'auth/weak-password':
-      return 'La contraseña es muy débil. Usá al menos 6 caracteres.';
+      return 'La contraseña es muy débil. Usa al menos 6 caracteres.';
     case 'auth/invalid-email':
       return 'El email no es válido.';
     case 'auth/too-many-requests':
-      return 'Demasiados intentos fallidos. Esperá unos minutos y volvé a probar.';
+      return 'Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.';
     case 'auth/network-request-failed':
-      return 'Sin conexión a internet. Probá de nuevo.';
+      return 'Sin conexión a internet. Intenta de nuevo.';
     default:
       return null;
   }

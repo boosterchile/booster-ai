@@ -102,7 +102,7 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
           {!isCarrier && (
             <output className="mt-6 block rounded-md border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-700">
               Tu empresa <strong>{activeEmpresa?.legal_name}</strong> no opera como carrier. Esta
-              vista es solo para empresas transportistas. Si querés activar este modo, contactá a{' '}
+              vista es solo para empresas transportistas. Si quieres activar este modo, contacta a{' '}
               <a
                 href="mailto:soporte@boosterchile.com"
                 className="font-medium text-warning-700 underline"

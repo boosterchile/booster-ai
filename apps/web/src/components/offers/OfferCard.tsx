@@ -260,11 +260,11 @@ function translate(err: unknown): string {
       case 'offer_not_found':
         return 'Esta oferta ya no existe.';
       case 'offer_forbidden':
-        return 'No tenés permiso para responder a esta oferta.';
+        return 'No tienes permiso para responder a esta oferta.';
       case 'offer_not_pending':
         return 'Esta oferta ya fue respondida o expiró.';
       case 'offer_expired':
-        return 'La oferta expiró. Refrescá para ver las activas.';
+        return 'La oferta expiró. Refresca para ver las activas.';
       case 'trip_already_assigned':
         return 'Otro carrier aceptó primero. La oferta ya no está disponible.';
       case 'no_active_empresa':
@@ -273,10 +273,10 @@ function translate(err: unknown): string {
         return 'Tu empresa no opera como carrier.';
       default:
         if (err.status >= 500) {
-          return 'Error del servidor. Probá de nuevo en unos minutos.';
+          return 'Error del servidor. Intenta de nuevo en unos minutos.';
         }
         return err.message || 'No pudimos completar la operación.';
     }
   }
-  return 'Error inesperado. Refrescá y volvé a probar.';
+  return 'Error inesperado. Refresca e intenta de nuevo.';
 }

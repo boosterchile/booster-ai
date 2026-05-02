@@ -45,7 +45,7 @@ function OnboardingPage({ me }: { me: MeNeedsOnboarding }) {
               Bienvenido{firstName ? `, ${firstName}` : ''}
             </h1>
             <p className="mt-2 text-neutral-600 text-sm">
-              En 2 minutos creamos tu empresa y empezás a operar.
+              En 2 minutos creamos tu empresa y empiezas a operar.
             </p>
           </div>
 
