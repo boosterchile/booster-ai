@@ -8,7 +8,8 @@
     "build": "tsup",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "smoke-test": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
     "@booster-ai/codec8-parser": "workspace:*",
