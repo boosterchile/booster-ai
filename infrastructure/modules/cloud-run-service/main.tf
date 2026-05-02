@@ -110,6 +110,12 @@ resource "google_cloud_run_v2_service" "service" {
       template[0].labels,
       template[0].annotations,
       template[0].execution_environment,
+      # Cloud Run v2 expone un block `scaling` top-level (manual scaling mode)
+      # separado del `template.scaling` que SÍ usamos. La API lo echo-ea de
+      # vuelta con explicit-zeros; cada apply lo intenta remover y reaparece
+      # en el siguiente plan. Loop sin fin de drift cosmético — el módulo
+      # nunca lo declara, así que nadie lo está modificando intencionalmente.
+      scaling,
       client,
       client_version,
     ]
