@@ -1,11 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { vehicles } from '../db/schema.js';
+import { telemetryPoints, vehicles } from '../db/schema.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -313,6 +313,74 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
 
     opts.logger.info({ vehicleId: id, plate: updated.plate, empresaId }, 'vehículo retirado');
     return c.json({ vehicle: serializeVehicle(updated) });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/telemetria — últimos puntos de telemetría del vehículo.
+  //
+  // Limit default 50, max 500. Sirve para confirmar que el processor
+  // está poblando telemetria_puntos (post asociación a Teltonika) +
+  // pantalla de "actividad reciente" en /app/vehiculos/:id.
+  // ---------------------------------------------------------------------
+  app.get('/:id/telemetria', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth.response;
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const limitParam = Number.parseInt(c.req.query('limit') ?? '50', 10);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 50;
+
+    // Verificar ownership del vehículo antes de exponer telemetría.
+    const [vehicle] = await opts.db
+      .select({ id: vehicles.id, plate: vehicles.plate, teltonikaImei: vehicles.teltonikaImei })
+      .from(vehicles)
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+      .limit(1);
+    if (!vehicle) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    const rows = await opts.db
+      .select({
+        id: telemetryPoints.id,
+        imei: telemetryPoints.imei,
+        timestamp_device: telemetryPoints.timestampDevice,
+        timestamp_received_at: telemetryPoints.timestampReceivedAt,
+        priority: telemetryPoints.priority,
+        longitude: telemetryPoints.longitude,
+        latitude: telemetryPoints.latitude,
+        altitude_m: telemetryPoints.altitudeM,
+        angle_deg: telemetryPoints.angleDeg,
+        satellites: telemetryPoints.satellites,
+        speed_kmh: telemetryPoints.speedKmh,
+        event_io_id: telemetryPoints.eventIoId,
+      })
+      .from(telemetryPoints)
+      .where(eq(telemetryPoints.vehicleId, id))
+      .orderBy(desc(telemetryPoints.timestampDevice))
+      .limit(limit);
+
+    return c.json({
+      vehicle_id: id,
+      plate: vehicle.plate,
+      teltonika_imei: vehicle.teltonikaImei,
+      count: rows.length,
+      points: rows.map((r) => ({
+        id: r.id.toString(), // bigint → string para JSON
+        imei: r.imei,
+        timestamp_device: r.timestamp_device,
+        timestamp_received_at: r.timestamp_received_at,
+        priority: r.priority,
+        longitude: r.longitude,
+        latitude: r.latitude,
+        altitude_m: r.altitude_m,
+        angle_deg: r.angle_deg,
+        satellites: r.satellites,
+        speed_kmh: r.speed_kmh,
+        event_io_id: r.event_io_id,
+      })),
+    });
   });
 
   return app;

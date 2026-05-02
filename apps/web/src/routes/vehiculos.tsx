@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
   ArrowLeft,
+  ExternalLink,
   LogOut,
+  MapPin,
   Pencil,
   Plus,
   Settings,
@@ -421,6 +423,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             error={error}
             disabled={!canWrite}
           />
+
+          {vehicleQ.data.teltonika_imei && (
+            <TelemetriaSection vehicleId={vehicleQ.data.id} />
+          )}
         </>
       )}
     </Layout>
@@ -800,6 +806,131 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function Td({ className = '', children }: { className?: string; children: React.ReactNode }) {
   return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
+}
+
+// =============================================================================
+// Telemetría reciente — sección dentro de /app/vehiculos/:id
+// =============================================================================
+
+interface TelemetryPoint {
+  id: string;
+  imei: string;
+  timestamp_device: string;
+  timestamp_received_at: string;
+  priority: number;
+  longitude: string | null;
+  latitude: string | null;
+  altitude_m: number | null;
+  angle_deg: number | null;
+  satellites: number | null;
+  speed_kmh: number | null;
+  event_io_id: number | null;
+}
+
+function TelemetriaSection({ vehicleId }: { vehicleId: string }) {
+  const telemetriaQ = useQuery({
+    queryKey: ['vehiculos', vehicleId, 'telemetria'],
+    queryFn: async () => {
+      const res = await api.get<{
+        plate: string;
+        teltonika_imei: string | null;
+        count: number;
+        points: TelemetryPoint[];
+      }>(`/vehiculos/${vehicleId}/telemetria?limit=50`);
+      return res;
+    },
+    refetchInterval: 30_000,
+  });
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-neutral-900 text-xl">Telemetría reciente</h2>
+          <p className="text-neutral-600 text-sm">
+            Últimos 50 puntos GPS recibidos del Teltonika asociado. Polling cada 30s.
+          </p>
+        </div>
+        {telemetriaQ.data && (
+          <span className="rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">
+            {telemetriaQ.data.count} puntos
+          </span>
+        )}
+      </div>
+
+      {telemetriaQ.isLoading && <p className="mt-4 text-neutral-500">Cargando…</p>}
+      {telemetriaQ.error && (
+        <p className="mt-4 text-danger-700">Error al cargar telemetría.</p>
+      )}
+      {telemetriaQ.data && telemetriaQ.data.points.length === 0 && (
+        <div className="mt-4 rounded-md border border-neutral-200 border-dashed bg-white p-6 text-center text-neutral-600 text-sm">
+          Aún no se han recibido puntos GPS de este dispositivo. Si recién lo asociaste, los
+          primeros packets pueden tardar unos segundos en aparecer.
+        </div>
+      )}
+      {telemetriaQ.data && telemetriaQ.data.points.length > 0 && (
+        <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-neutral-200">
+            <thead className="bg-neutral-50">
+              <tr>
+                <Th>Hora device</Th>
+                <Th>Posición</Th>
+                <Th>Velocidad</Th>
+                <Th>Altitud</Th>
+                <Th>Sat</Th>
+                <Th>Prioridad</Th>
+                <Th>{''}</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 bg-white">
+              {telemetriaQ.data.points.map((p) => (
+                <tr key={p.id} className="hover:bg-neutral-50">
+                  <Td className="font-mono text-xs">
+                    {new Date(p.timestamp_device).toLocaleString('es-CL')}
+                  </Td>
+                  <Td className="font-mono text-xs">
+                    {p.latitude && p.longitude
+                      ? `${Number.parseFloat(p.latitude).toFixed(5)}, ${Number.parseFloat(p.longitude).toFixed(5)}`
+                      : '—'}
+                  </Td>
+                  <Td>{p.speed_kmh != null ? `${p.speed_kmh} km/h` : '—'}</Td>
+                  <Td>{p.altitude_m != null ? `${p.altitude_m} m` : '—'}</Td>
+                  <Td>{p.satellites ?? '—'}</Td>
+                  <Td>
+                    <span
+                      className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${
+                        p.priority === 2
+                          ? 'bg-danger-50 text-danger-700'
+                          : p.priority === 1
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-neutral-100 text-neutral-600'
+                      }`}
+                    >
+                      {p.priority === 2 ? 'Pánico' : p.priority === 1 ? 'Alta' : 'Baja'}
+                    </span>
+                  </Td>
+                  <Td>
+                    {p.latitude && p.longitude && (
+                      <a
+                        href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-primary-600 text-xs hover:underline"
+                      >
+                        <MapPin className="h-3.5 w-3.5" aria-hidden />
+                        Ver
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                      </a>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 const inputClass =

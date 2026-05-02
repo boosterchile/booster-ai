@@ -251,4 +251,55 @@ describe('vehiculos routes', () => {
     const res = await app.request(`/vehiculos/${VEHICLE_ID}`, { method: 'DELETE' });
     expect(res.status).toBe(404);
   });
+
+  it('GET /:id/telemetria devuelve puntos del vehículo', async () => {
+    // Stub más complejo: 2 calls a select consecutivos. Primero devuelve el
+    // vehículo (ownership check), después devuelve los puntos.
+    let selectCallCount = 0;
+    const limitFn = vi.fn(() => {
+      selectCallCount += 1;
+      if (selectCallCount === 1) {
+        return Promise.resolve([
+          { id: VEHICLE_ID, plate: 'AB-CD-12', teltonikaImei: '999000000000875' },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const orderByLimitFn = vi.fn().mockResolvedValue([
+      {
+        id: 1n,
+        imei: '999000000000875',
+        timestamp_device: new Date('2026-05-02T16:00:00Z'),
+        timestamp_received_at: new Date('2026-05-02T16:00:01Z'),
+        priority: 1,
+        longitude: '-70.6693',
+        latitude: '-33.4489',
+        altitude_m: 560,
+        angle_deg: 180,
+        satellites: 12,
+        speed_kmh: 45,
+        event_io_id: 0,
+      },
+    ]);
+    const orderByFn = vi.fn(() => ({ limit: orderByLimitFn }));
+    const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+    const fromFn = vi.fn(() => ({ where: whereFn }));
+    const selectFn = vi.fn(() => ({ from: fromFn }));
+    const db = { select: selectFn } as unknown as Parameters<
+      typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+    >[0]['db'];
+    const app = await buildApp(db);
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}/telemetria`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { count: number; points: unknown[] };
+    expect(body.count).toBe(1);
+    expect(body.points).toHaveLength(1);
+  });
+
+  it('GET /:id/telemetria 404 si vehículo no existe', async () => {
+    const stub = makeDbStub({ selectRows: [] });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/vehiculos/${VEHICLE_ID}/telemetria`);
+    expect(res.status).toBe(404);
+  });
 });
