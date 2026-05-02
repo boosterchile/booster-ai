@@ -1,7 +1,39 @@
 /**
  * @booster-ai/codec8-parser
  *
- * TODO: implementar según ADRs relacionados.
- * Este archivo es un placeholder para que el monorepo compile.
+ * Parser puro del protocolo Teltonika Codec 8 / Codec 8 Extended (8E).
+ * Spec oficial: https://wiki.teltonika-gps.com/view/Codec
+ *
+ * API pública:
+ *
+ *   import {
+ *     parseImeiHandshake, encodeImeiAck,
+ *     parseAvlPacket,    encodeAvlAck,
+ *   } from '@booster-ai/codec8-parser';
+ *
+ *   // 1. Cliente abre TCP, manda IMEI handshake.
+ *   const { imei } = parseImeiHandshake(firstPacket);
+ *   socket.write(encodeImeiAck(true));
+ *
+ *   // 2. Cliente manda AVL packets repetidamente.
+ *   const packet = parseAvlPacket(avlBuffer);
+ *   socket.write(encodeAvlAck(packet.recordCount));
+ *
+ * Responsabilidad del package: BYTES → OBJETOS (y viceversa para acks).
+ * Toda otra lógica (auth, dedup, persist, mapping IO IDs a semántica)
+ * vive en otros paquetes del monorepo.
  */
-export const PACKAGE_NAME = '@booster-ai/codec8-parser' as const;
+
+export { parseImeiHandshake, encodeImeiAck } from './handshake.js';
+export { parseAvlPacket, encodeAvlAck } from './avl-packet.js';
+export { crc16Ibm } from './crc16.js';
+export { BufferReader } from './buffer-reader.js';
+export type {
+  AvlPacket,
+  AvlRecord,
+  GpsElement,
+  IoSection,
+  IoEntry,
+  ImeiHandshake,
+} from './tipos.js';
+export { CodecParseError, CodecCrcError } from './tipos.js';
