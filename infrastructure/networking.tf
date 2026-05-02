@@ -208,7 +208,10 @@ resource "google_compute_security_policy" "waf" {
     priority = "390"
     match {
       expr {
-        expression = "request.headers['host'].lower() == 'api.boosterchile.com' && (request.method == 'POST' || request.method == 'PUT' || request.method == 'PATCH' || request.method == 'DELETE')"
+        # Cloud Armor matcher language tiene máximo 5 sub-expresiones por
+        # rule. Negar los métodos sin body en lugar de listar los con body
+        # nos deja en 3 (host + 2 negations).
+        expression = "request.headers['host'].lower() == 'api.boosterchile.com' && request.method != 'GET' && request.method != 'OPTIONS'"
       }
     }
     description = "Allow mutations al api — defensa via Firebase Auth + zod + Drizzle"
