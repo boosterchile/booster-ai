@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Bus,
   LogOut,
+  Package,
+  PackagePlus,
   Radio,
   Settings,
   Truck,
@@ -149,8 +151,8 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
               <h2 className="font-semibold text-neutral-900 text-xl">Aún no tienes empresa</h2>
               <p className="mt-2 text-neutral-700 text-sm">
-                Para usar Booster necesitas crear una empresa o unirte a una existente. Si recién
-                te registraste, hace falta completar el onboarding (RUT, datos legales, plan).
+                Para usar Booster necesitas crear una empresa o unirte a una existente. Si recién te
+                registraste, hace falta completar el onboarding (RUT, datos legales, plan).
               </p>
               <Link
                 to="/onboarding"
@@ -177,12 +179,50 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             )}
 
           {activeEmpresa?.is_generador_carga && (
-            <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+            <section className="mt-10">
               <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
-              <p className="mt-2 text-neutral-700 text-sm">
-                Form web para crear cargas en construcción (slice B.7). Mientras tanto puedes crear
-                cargas escribiendo "hola" al WhatsApp del bot Booster.
-              </p>
+              <Link
+                to="/app/cargas/nueva"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <PackagePlus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Crear carga</div>
+                    <div className="text-neutral-600 text-sm">
+                      Origen, destino, tipo de carga y ventana de pickup. Matching automático con
+                      transportistas.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/cargas"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Package className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Mis cargas</div>
+                    <div className="text-neutral-600 text-sm">
+                      Estado del matching, asignaciones, certificados de huella de carbono.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
             </section>
           )}
 

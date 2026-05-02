@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 import { RootComponent } from './routes/__root.js';
 import { AdminDispositivosRoute } from './routes/admin-dispositivos.js';
 import { AppRoute } from './routes/app.js';
+import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
 import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
@@ -85,6 +86,24 @@ const vehiculosDetalleRoute = createRoute({
   component: VehiculosDetalleRoute,
 });
 
+const cargasListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas',
+  component: CargasListRoute,
+});
+
+const cargasNuevaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas/nueva',
+  component: CargasNuevoRoute,
+});
+
+const cargasDetalleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas/$id',
+  component: CargasDetalleRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -96,6 +115,9 @@ const routeTree = rootRoute.addChildren([
   vehiculosListRoute,
   vehiculosNuevoRoute,
   vehiculosDetalleRoute,
+  cargasListRoute,
+  cargasNuevaRoute,
+  cargasDetalleRoute,
 ]);
 
 export const router = createRouter({

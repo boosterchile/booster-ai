@@ -1,23 +1,36 @@
 import type { Logger } from '@booster-ai/logger';
 import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { trips } from '../db/schema.js';
+import {
+  assignments,
+  empresas as empresasTable,
+  tripEvents,
+  tripMetrics,
+  trips,
+  users as usersTable,
+  vehicles,
+} from '../db/schema.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
 /**
- * Endpoint canónico para que un generador de carga autenticado cree un
- * viaje y dispare matching automático.
+ * Endpoint canónico para que un generador de carga autenticado:
+ *   - cree un viaje (POST /) y dispare matching automático
+ *   - liste sus viajes (GET /)
+ *   - vea el detalle de uno (GET /:id) con eventos, asignación y métricas
+ *   - cancele uno pre-asignación (PATCH /:id/cancelar)
  *
- * URL `/trip-requests-v2` se mantiene por compat con el cliente web
- * actual; internamente la tabla es `viajes`.
+ * URL `/trip-requests-v2` se mantiene por compat con el cliente web actual;
+ * internamente la tabla es `viajes`.
  *
- * Requisitos:
- *   - firebaseAuth + userContext middlewares (activeMembership presente).
- *   - activeMembership.empresa.es_generador_carga=true (sino 403).
- *   - empresa.estado='activa' (sino 403).
+ * Multi-tenant: todos los reads y writes filtran por
+ * `activeMembership.empresa.id` contra `generadorCargaEmpresaId`. Un shipper
+ * jamás ve cargas de otra empresa.
  */
 function generateTrackingCode(): string {
   const alphabet = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789';
@@ -28,6 +41,20 @@ function generateTrackingCode(): string {
   return `BOO-${suffix}`;
 }
 
+// Status pre-asignación: el shipper aún puede cancelar sin involucrar al
+// transportista. Una vez `asignado` o posterior, el shipper debería
+// coordinar con el transportista (fuera del scope de este endpoint).
+const CANCELLABLE_STATUSES = new Set([
+  'borrador',
+  'esperando_match',
+  'emparejando',
+  'ofertas_enviadas',
+]);
+
+const cancelBodySchema = z.object({
+  reason: z.string().min(1).max(500).optional(),
+});
+
 export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
@@ -35,22 +62,42 @@ export function createTripRequestsV2Routes(opts: {
 }) {
   const app = new Hono();
 
-  app.post('/', zValidator('json', tripRequestCreateInputSchema), async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
+  function requireShipperAuth(c: Context<any, any, any>) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/trip-requests-v2 without userContext');
-      return c.json({ error: 'internal_server_error' }, 500);
+      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
     }
-
     const active = userContext.activeMembership;
     if (!active) {
-      return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
+      return {
+        ok: false as const,
+        response: c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403),
+      };
     }
     if (!active.empresa.isGeneradorCarga) {
-      return c.json({ error: 'not_a_shipper', code: 'not_a_shipper' }, 403);
+      return {
+        ok: false as const,
+        response: c.json({ error: 'not_a_shipper', code: 'not_a_shipper' }, 403),
+      };
     }
     if (active.empresa.status !== 'activa') {
-      return c.json({ error: 'empresa_not_active', code: 'empresa_not_active' }, 403);
+      return {
+        ok: false as const,
+        response: c.json({ error: 'empresa_not_active', code: 'empresa_not_active' }, 403),
+      };
+    }
+    return { ok: true as const, userContext, activeMembership: active };
+  }
+
+  // ---------------------------------------------------------------------
+  // POST / — crear viaje + dispatch matching.
+  // ---------------------------------------------------------------------
+  app.post('/', zValidator('json', tripRequestCreateInputSchema), async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const input = c.req.valid('json');
@@ -59,8 +106,8 @@ export function createTripRequestsV2Routes(opts: {
       .insert(trips)
       .values({
         trackingCode: generateTrackingCode(),
-        generadorCargaEmpresaId: active.empresa.id,
-        createdByUserId: userContext.user.id,
+        generadorCargaEmpresaId: auth.activeMembership.empresa.id,
+        createdByUserId: auth.userContext.user.id,
         originAddressRaw: input.origin.address_raw,
         originRegionCode: input.origin.region_code,
         ...(input.origin.comuna_code ? { originComunaCode: input.origin.comuna_code } : {}),
@@ -138,5 +185,225 @@ export function createTripRequestsV2Routes(opts: {
     );
   });
 
+  // ---------------------------------------------------------------------
+  // GET / — lista de viajes de la empresa shipper activa.
+  // ---------------------------------------------------------------------
+  app.get('/', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const rows = await opts.db
+      .select({
+        id: trips.id,
+        tracking_code: trips.trackingCode,
+        status: trips.status,
+        origin_address_raw: trips.originAddressRaw,
+        origin_region_code: trips.originRegionCode,
+        destination_address_raw: trips.destinationAddressRaw,
+        destination_region_code: trips.destinationRegionCode,
+        cargo_type: trips.cargoType,
+        cargo_weight_kg: trips.cargoWeightKg,
+        cargo_volume_m3: trips.cargoVolumeM3,
+        pickup_window_start: trips.pickupWindowStart,
+        pickup_window_end: trips.pickupWindowEnd,
+        proposed_price_clp: trips.proposedPriceClp,
+        created_at: trips.createdAt,
+      })
+      .from(trips)
+      .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
+      .orderBy(desc(trips.createdAt));
+
+    return c.json({ trip_requests: rows });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id — detalle (incluye eventos, asignación, métricas si existen).
+  // ---------------------------------------------------------------------
+  app.get('/:id', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const [trip] = await opts.db
+      .select()
+      .from(trips)
+      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+      .limit(1);
+
+    if (!trip) {
+      return c.json({ error: 'trip_not_found' }, 404);
+    }
+
+    const events = await opts.db
+      .select({
+        id: tripEvents.id,
+        event_type: tripEvents.eventType,
+        source: tripEvents.source,
+        payload: tripEvents.payload,
+        recorded_at: tripEvents.recordedAt,
+      })
+      .from(tripEvents)
+      .where(eq(tripEvents.tripId, id))
+      .orderBy(asc(tripEvents.recordedAt));
+
+    const [assignmentRow] = await opts.db
+      .select({
+        id: assignments.id,
+        status: assignments.status,
+        agreed_price_clp: assignments.agreedPriceClp,
+        accepted_at: assignments.acceptedAt,
+        picked_up_at: assignments.pickedUpAt,
+        delivered_at: assignments.deliveredAt,
+        cancelled_at: assignments.cancelledAt,
+        cancelled_by_actor: assignments.cancelledByActor,
+        empresa_id: assignments.empresaId,
+        empresa_legal_name: empresasTable.legalName,
+        vehicle_id: assignments.vehicleId,
+        vehicle_plate: vehicles.plate,
+        vehicle_type: vehicles.vehicleType,
+        driver_user_id: assignments.driverUserId,
+        driver_name: usersTable.fullName,
+      })
+      .from(assignments)
+      .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
+      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .where(eq(assignments.tripId, id))
+      .limit(1);
+
+    const [metricsRow] = await opts.db
+      .select()
+      .from(tripMetrics)
+      .where(eq(tripMetrics.tripId, id))
+      .limit(1);
+
+    return c.json({
+      trip_request: serializeTripDetail(trip),
+      events,
+      assignment: assignmentRow ?? null,
+      metrics: metricsRow
+        ? {
+            distance_km_estimated: metricsRow.distanceKmEstimated,
+            distance_km_actual: metricsRow.distanceKmActual,
+            carbon_emissions_kgco2e_estimated: metricsRow.carbonEmissionsKgco2eEstimated,
+            carbon_emissions_kgco2e_actual: metricsRow.carbonEmissionsKgco2eActual,
+            precision_method: metricsRow.precisionMethod,
+            glec_version: metricsRow.glecVersion,
+            certificate_pdf_url: metricsRow.certificatePdfUrl,
+            certificate_issued_at: metricsRow.certificateIssuedAt,
+          }
+        : null,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/cancelar — cancel pre-asignación.
+  //
+  // Solo permite cancelar si status ∈ CANCELLABLE_STATUSES. Una vez
+  // `asignado` o posterior, el shipper debe coordinar la cancelación con
+  // el transportista (fuera del scope de este endpoint).
+  // ---------------------------------------------------------------------
+  app.patch('/:id/cancelar', zValidator('json', cancelBodySchema), async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+    const userId = auth.userContext.user.id;
+
+    // Verificar ownership + leer status actual.
+    const [trip] = await opts.db
+      .select({ id: trips.id, status: trips.status, trackingCode: trips.trackingCode })
+      .from(trips)
+      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+      .limit(1);
+
+    if (!trip) {
+      return c.json({ error: 'trip_not_found' }, 404);
+    }
+
+    if (!CANCELLABLE_STATUSES.has(trip.status)) {
+      return c.json(
+        {
+          error: 'trip_not_cancellable',
+          code: 'trip_not_cancellable',
+          current_status: trip.status,
+        },
+        409,
+      );
+    }
+
+    const [updated] = await opts.db
+      .update(trips)
+      .set({ status: 'cancelado', updatedAt: new Date() })
+      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+      .returning();
+
+    if (!updated) {
+      return c.json({ error: 'trip_not_found' }, 404);
+    }
+
+    await opts.db.insert(tripEvents).values({
+      tripId: id,
+      eventType: 'cancelado',
+      source: 'web',
+      recordedByUserId: userId,
+      payload: {
+        actor: 'generador_carga',
+        previous_status: trip.status,
+        ...(body.reason ? { reason: body.reason } : {}),
+      },
+    });
+
+    opts.logger.info(
+      {
+        tripId: id,
+        trackingCode: trip.trackingCode,
+        previousStatus: trip.status,
+        empresaId,
+        userId,
+      },
+      'trip cancelled by shipper',
+    );
+
+    return c.json({
+      trip_request: {
+        id: updated.id,
+        tracking_code: updated.trackingCode,
+        status: updated.status,
+      },
+    });
+  });
+
   return app;
+}
+
+function serializeTripDetail(row: typeof trips.$inferSelect) {
+  return {
+    id: row.id,
+    tracking_code: row.trackingCode,
+    status: row.status,
+    origin_address_raw: row.originAddressRaw,
+    origin_region_code: row.originRegionCode,
+    origin_comuna_code: row.originComunaCode,
+    destination_address_raw: row.destinationAddressRaw,
+    destination_region_code: row.destinationRegionCode,
+    destination_comuna_code: row.destinationComunaCode,
+    cargo_type: row.cargoType,
+    cargo_weight_kg: row.cargoWeightKg,
+    cargo_volume_m3: row.cargoVolumeM3,
+    cargo_description: row.cargoDescription,
+    pickup_window_start: row.pickupWindowStart,
+    pickup_window_end: row.pickupWindowEnd,
+    proposed_price_clp: row.proposedPriceClp,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
 }

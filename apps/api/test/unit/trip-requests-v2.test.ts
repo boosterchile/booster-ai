@@ -38,13 +38,14 @@ vi.mock('../../src/services/matching.js', () => {
   };
 });
 
+const noop = (): undefined => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<
   typeof import('../../src/routes/trip-requests-v2.js').createTripRequestsV2Routes
@@ -133,14 +134,14 @@ describe('POST /trip-requests-v2', () => {
     vi.clearAllMocks();
   });
 
-  it('rechaza si no hay userContext con 500', async () => {
+  it('rechaza si no hay userContext con 401', async () => {
     const app = await buildAppWith({ db: makeStubDb({}), userContext: null });
     const res = await app.request('/trip-requests-v2', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(validBody),
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(401);
   });
 
   it('rechaza si activeMembership es null con 403 no_active_empresa', async () => {
@@ -291,5 +292,274 @@ describe('POST /trip-requests-v2', () => {
     const body = (await res.json()) as { trip_request: { status: string }; matching: null };
     expect(body.trip_request.status).toBe('esperando_match');
     expect(body.matching).toBeNull();
+  });
+});
+
+// =============================================================================
+// GET /trip-requests-v2 (list)
+// =============================================================================
+
+/**
+ * Stub para el flow de SELECT/INSERT/UPDATE.
+ * GET / chain: db.select().from().where().orderBy()
+ * GET /:id chain: db.select().from().where().limit() (multiples joins)
+ * PATCH cancelar: db.select().from().where().limit() + db.update().set().where().returning() + db.insert().values()
+ */
+function makeQueryDb(opts: {
+  // Orden de respuestas a `orderBy()` en GET / o GET /:id (events list)
+  orderByRows?: Array<Record<string, unknown>[]>;
+  // Orden de respuestas a `limit()` (varios reads en GET /:id, PATCH cancel)
+  limitRows?: Array<Record<string, unknown>[]>;
+  // Respuesta de `update().set().where().returning()`
+  updateRows?: Record<string, unknown>[];
+  // Spy del .insert
+  insertSpy?: ReturnType<typeof vi.fn>;
+}): Db {
+  let orderByCallCount = 0;
+  let limitCallCount = 0;
+
+  const orderByFn = vi.fn(() => {
+    const idx = orderByCallCount;
+    orderByCallCount += 1;
+    return Promise.resolve(opts.orderByRows?.[idx] ?? []);
+  });
+  const limitFn = vi.fn(() => {
+    const idx = limitCallCount;
+    limitCallCount += 1;
+    return Promise.resolve(opts.limitRows?.[idx] ?? []);
+  });
+  const leftJoinFn = vi.fn(() => ({
+    leftJoin: leftJoinFn,
+    where: vi.fn(() => ({ limit: limitFn, orderBy: orderByFn })),
+  }));
+  const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+  const fromFn = vi.fn(() => ({
+    where: whereFn,
+    leftJoin: leftJoinFn,
+  }));
+  const selectFn = vi.fn(() => ({ from: fromFn }));
+
+  const updateReturning = vi.fn().mockResolvedValue(opts.updateRows ?? []);
+  const updateWhere = vi.fn(() => ({ returning: updateReturning }));
+  const updateSet = vi.fn(() => ({ where: updateWhere }));
+  const updateFn = vi.fn(() => ({ set: updateSet }));
+
+  const insertFn = opts.insertSpy ?? vi.fn(() => ({ values: vi.fn().mockResolvedValue([]) }));
+
+  return {
+    select: selectFn,
+    update: updateFn,
+    insert: insertFn,
+  } as unknown as Db;
+}
+
+describe('GET /trip-requests-v2', () => {
+  it('sin userContext → 401', async () => {
+    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(401);
+  });
+
+  it('sin activeMembership → 403', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({}),
+      userContext: buildUserContext({ withActiveMembership: false }),
+    });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(403);
+  });
+
+  it('empresa no es generador de carga → 403', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({}),
+      userContext: buildUserContext({ isGeneradorCarga: false }),
+    });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(403);
+  });
+
+  it('200 con array de trips de la empresa activa', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        orderByRows: [
+          [
+            {
+              id: 'trip-1',
+              tracking_code: 'BOO-AAA111',
+              status: 'esperando_match',
+              origin_address_raw: 'Av. Apoquindo 5550',
+              origin_region_code: 'XIII',
+              destination_address_raw: 'Concepción centro',
+              destination_region_code: 'VIII',
+              cargo_type: 'carga_seca',
+              cargo_weight_kg: 1500,
+              cargo_volume_m3: null,
+              pickup_window_start: new Date('2026-05-05T08:00:00Z'),
+              pickup_window_end: new Date('2026-05-05T18:00:00Z'),
+              proposed_price_clp: 250_000,
+              created_at: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+        ],
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_requests: Array<{ id: string; status: string }> };
+    expect(body.trip_requests).toHaveLength(1);
+    expect(body.trip_requests[0]?.id).toBe('trip-1');
+    expect(body.trip_requests[0]?.status).toBe('esperando_match');
+  });
+});
+
+// =============================================================================
+// GET /trip-requests-v2/:id (detail)
+// =============================================================================
+
+describe('GET /trip-requests-v2/:id', () => {
+  it('sin userContext → 401', async () => {
+    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(401);
+  });
+
+  it('trip no encontrado o de otra empresa → 404', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({ limitRows: [[]] }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(404);
+  });
+
+  it('200 con trip + events + assignment + metrics', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        // limitRows orden: trip lookup, assignment, metrics
+        limitRows: [
+          [
+            {
+              id: 'trip-1',
+              trackingCode: 'BOO-AAA111',
+              status: 'asignado',
+              originAddressRaw: 'origen',
+              originRegionCode: 'XIII',
+              originComunaCode: null,
+              destinationAddressRaw: 'destino',
+              destinationRegionCode: 'VIII',
+              destinationComunaCode: null,
+              cargoType: 'carga_seca',
+              cargoWeightKg: 1500,
+              cargoVolumeM3: null,
+              cargoDescription: null,
+              pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
+              pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
+              proposedPriceClp: 250_000,
+              createdAt: new Date('2026-05-02T15:00:00Z'),
+              updatedAt: new Date('2026-05-02T15:00:00Z'),
+            },
+          ],
+          [
+            {
+              id: 'asg-1',
+              status: 'asignado',
+              agreed_price_clp: 240_000,
+              empresa_id: 'carrier-1',
+              empresa_legal_name: 'Transportes Acme',
+              vehicle_id: 'veh-1',
+              vehicle_plate: 'AB-CD-12',
+              vehicle_type: 'camion_pequeno',
+              driver_user_id: null,
+              driver_name: null,
+            },
+          ],
+          [], // no metrics
+        ],
+        orderByRows: [[]], // events list empty
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      trip_request: { id: string; status: string };
+      events: unknown[];
+      assignment: { vehicle_plate: string; empresa_legal_name: string } | null;
+      metrics: unknown | null;
+    };
+    expect(body.trip_request.id).toBe('trip-1');
+    expect(body.assignment?.vehicle_plate).toBe('AB-CD-12');
+    expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
+    expect(body.metrics).toBeNull();
+  });
+});
+
+// =============================================================================
+// PATCH /trip-requests-v2/:id/cancelar
+// =============================================================================
+
+describe('PATCH /trip-requests-v2/:id/cancelar', () => {
+  it('sin userContext → 401', async () => {
+    const app = await buildAppWith({ db: makeQueryDb({}), userContext: null });
+    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('trip no encontrado → 404', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({ limitRows: [[]] }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('trip ya asignado → 409 trip_not_cancellable', async () => {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [[{ id: 'trip-1', status: 'asignado', trackingCode: 'BOO-XXX' }]],
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; current_status: string };
+    expect(body.code).toBe('trip_not_cancellable');
+    expect(body.current_status).toBe('asignado');
+  });
+
+  it('200 cancela en estado esperando_match + registra evento', async () => {
+    const insertValues = vi.fn().mockResolvedValue([]);
+    const insertSpy = vi.fn(() => ({ values: insertValues }));
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [[{ id: 'trip-1', status: 'esperando_match', trackingCode: 'BOO-YYY' }]],
+        updateRows: [{ id: 'trip-1', trackingCode: 'BOO-YYY', status: 'cancelado' }],
+        insertSpy,
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'cambio de planes' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { status: string } };
+    expect(body.trip_request.status).toBe('cancelado');
+    expect(insertSpy).toHaveBeenCalled();
   });
 });
