@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, LogOut, User as UserIcon } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { AuthProvidersSection } from '../components/profile/AuthProvidersSection.js';
 import { ProfileForm } from '../components/profile/ProfileForm.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -90,6 +91,8 @@ function PerfilPage({ me }: { me: MeOnboarded }) {
               }}
             />
           </div>
+
+          <AuthProvidersSection />
         </div>
       </main>
     </div>

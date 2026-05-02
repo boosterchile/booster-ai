@@ -114,7 +114,18 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     let active: (typeof membershipsPayload)[number] | null = null;
     if (requestedEmpresaId) {
       active = activeMembershipsList.find((m) => m.empresa.id === requestedEmpresaId) ?? null;
-    } else if (activeMembershipsList.length > 0) {
+    }
+    // Fallback al primer activeMembership si:
+    //   - no hay requestedEmpresaId (no header), o
+    //   - el header tiene un UUID que NO matchea ninguna membership del user
+    //     (caso típico: localStorage stale del browser después de cambiar de
+    //     cuenta, ej. user A logueado deja activeEmpresaId=X, después
+    //     user B se loguea y X no es suya → null sin fallback dejaba la
+    //     PWA en "Sin empresa activa" cuando el user SÍ tiene empresa).
+    // El fallback no es silencioso para el frontend: el frontend debería
+    // detectar que active.empresa.id !== requestedEmpresaId y actualizar
+    // localStorage. Pero la PWA no se rompe mientras tanto.
+    if (!active && activeMembershipsList.length > 0) {
       active = activeMembershipsList[0] ?? null;
     }
 

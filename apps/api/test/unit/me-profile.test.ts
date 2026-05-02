@@ -302,6 +302,68 @@ describe('PATCH /me/profile', () => {
     expect(selectCallCount).toBe(1);
   });
 
+  it('GET /me con X-Empresa-Id stale → fallback a primer activeMembership', async () => {
+    // Sequence: SELECT user (limit) + SELECT memberships (innerJoin where).
+    let selectCallCount = 0;
+    const limitFn = vi.fn(() => {
+      selectCallCount += 1;
+      if (selectCallCount === 1) return Promise.resolve([baseUserRow]);
+      return Promise.resolve([]);
+    });
+    const whereFnSelect = vi.fn(() => {
+      // Si es la 2da query (memberships), devolver array directo (await).
+      // Si es la 1ra (user), pasar a .limit().
+      return {
+        limit: limitFn,
+        then: <T,>(onFulfilled: (v: unknown[]) => T) => {
+          // Memberships: 1 row activa con empresaId 'real-empresa-id'
+          const rows = [
+            {
+              membership: {
+                id: 'm1',
+                role: 'dueno',
+                status: 'activa',
+                joinedAt: new Date('2026-04-01T00:00:00Z'),
+                empresaId: 'real-empresa-id',
+              },
+              empresa: {
+                id: 'real-empresa-id',
+                legalName: 'Mi Empresa',
+                rut: '11.111.111-1',
+                isGeneradorCarga: true,
+                isTransportista: false,
+                status: 'activa',
+              },
+            },
+          ];
+          return Promise.resolve(rows).then(onFulfilled);
+        },
+      };
+    });
+    const innerJoinFn = vi.fn(() => ({ where: whereFnSelect }));
+    const fromFn = vi.fn(() => ({ where: whereFnSelect, innerJoin: innerJoinFn }));
+    const selectFn = vi.fn(() => ({ from: fromFn }));
+    const db = { select: selectFn } as unknown as Parameters<
+      typeof import('../../src/routes/me.js').createMeRoutes
+    >[0]['db'];
+    const app = await buildApp(db);
+
+    // Mandamos X-Empresa-Id que NO matchea ('stale-empresa-id').
+    // Esperamos que /me haga fallback al único activeMembership.
+    const res = await app.request('/me', {
+      headers: {
+        'x-test-claims': validClaimsHeader,
+        'x-empresa-id': 'stale-empresa-id',
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      active_membership: { empresa: { id: string } } | null;
+    };
+    expect(body.active_membership).not.toBeNull();
+    expect(body.active_membership?.empresa.id).toBe('real-empresa-id');
+  });
+
   it('actualiza múltiples campos en un solo PATCH', async () => {
     const { db, spies } = makeDbStub({
       userRow: baseUserRow,

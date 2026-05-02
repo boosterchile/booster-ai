@@ -1,14 +1,21 @@
 import {
+  EmailAuthProvider,
   type User,
   createUserWithEmailAndPassword,
+  linkWithCredential,
+  linkWithPopup,
   onAuthStateChanged,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  unlink,
   updateProfile,
 } from 'firebase/auth';
 import { useEffect, useState } from 'react';
+import { setActiveEmpresaId } from '../lib/api-client.js';
 import { firebaseAuth, googleProvider } from '../lib/firebase.js';
 
 export interface AuthState {
@@ -96,7 +103,87 @@ export async function requestPasswordReset(email: string): Promise<void> {
 /**
  * Logout. Borra el token y dispara onAuthStateChanged → useAuth pasa a
  * `user=null`. El consumer típicamente redirige a /login.
+ *
+ * Limpia también `activeEmpresaId` de localStorage. Sin esto, si user A
+ * deja una empresa activa X y user B se loguea después, B mandaría el
+ * X-Empresa-Id de A al backend → /me devolvería null o (con fallback
+ * activado) la primera empresa de B con un mismatch silencioso.
  */
 export async function signOutUser(): Promise<void> {
+  setActiveEmpresaId(null);
   await signOut(firebaseAuth);
+}
+
+// =============================================================================
+// Account linking — agregar/quitar providers de auth de la cuenta actual
+// =============================================================================
+
+export type ProviderId = 'google.com' | 'password';
+
+export function getLinkedProviders(user: User): ProviderId[] {
+  return user.providerData
+    .map((p) => p.providerId)
+    .filter((id): id is ProviderId => id === 'google.com' || id === 'password');
+}
+
+/**
+ * Vincula la cuenta Google al user actual. Abre popup de selección de
+ * cuenta. Lanza:
+ *   - 'auth/credential-already-in-use': la cuenta Google ya pertenece a
+ *     otro user de Firebase (NO es nuestro user). El caller debe ofrecer
+ *     opciones (logout y loguearse con esa Google, o cancelar).
+ *   - 'auth/provider-already-linked': el user ya tiene Google linkeado.
+ *   - 'auth/popup-closed-by-user': user canceló.
+ */
+export async function linkGoogleProvider(user: User): Promise<User> {
+  const result = await linkWithPopup(user, googleProvider);
+  return result.user;
+}
+
+/**
+ * Vincula email+password al user actual. El email debe ser distinto al
+ * que ya tiene (sino password override sin sentido). Recomendación UX:
+ * pre-llenar email = user.email para que sea trivial.
+ *
+ * Lanza:
+ *   - 'auth/email-already-in-use': otro user ya tiene email/password con ese email.
+ *   - 'auth/provider-already-linked': el user ya tiene password linkeado.
+ *   - 'auth/weak-password': < 6 chars.
+ *   - 'auth/requires-recent-login': el user necesita re-autenticarse antes
+ *     (Firebase exige que la auth original sea reciente, < 5 min, para
+ *     operaciones sensibles). El caller debe llamar a `reauthCurrent()`.
+ */
+export async function linkPasswordProvider(
+  user: User,
+  email: string,
+  password: string,
+): Promise<User> {
+  const credential = EmailAuthProvider.credential(email, password);
+  const result = await linkWithCredential(user, credential);
+  return result.user;
+}
+
+/**
+ * Desvincula un provider del user. Solo permitido si quedará al menos
+ * 1 provider después (Firebase rechaza si vas a quedar sin auth).
+ */
+export async function unlinkProvider(user: User, providerId: ProviderId): Promise<User> {
+  return unlink(user, providerId);
+}
+
+/**
+ * Re-autenticar al user actual. Necesario antes de operaciones
+ * sensibles si la sesión es vieja. El caller pasa qué método usar según
+ * los providers que el user tiene.
+ */
+export async function reauthCurrent(
+  user: User,
+  method: { type: 'google' } | { type: 'password'; email: string; password: string },
+): Promise<void> {
+  if (method.type === 'google') {
+    await reauthenticateWithPopup(user, googleProvider);
+  } else {
+    const credential = EmailAuthProvider.credential(method.email, method.password);
+    await reauthenticateWithCredential(user, credential);
+  }
 }
