@@ -103,6 +103,13 @@ resource "google_cloud_run_v2_service" "service" {
     ignore_changes = [
       # Dejar que Cloud Build gestione las revisions/traffic después del primer apply
       template[0].containers[0].image,
+      # GCP/gcloud auto-injectan labels (commit, goog-terraform-provisioned) y
+      # annotations (operation-id, run.googleapis.com/*) durante deploys que TF
+      # no controla. Sin ignore_changes acá, cada `terraform plan` mostraba
+      # diff de los 8 services Cloud Run. Decisión documentada en ADR-013.
+      template[0].labels,
+      template[0].annotations,
+      template[0].execution_environment,
       client,
       client_version,
     ]
