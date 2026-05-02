@@ -127,7 +127,6 @@ if [[ "$AUTH_MODE" == "iam" ]]; then
   # mientras quepa. Para dev@boosterchile.com cabe sin problema.
   PGUSER="$ACTIVE_ACCOUNT"
   # En IAM auth no se manda password (el proxy lo gestiona via OAuth token).
-  PSQL_CMD=(psql "host=127.0.0.1" "port=$LOCAL_PORT" "dbname=$DB_NAME" "user=$PGUSER" "sslmode=disable")
 else
   # Modo password: leer DATABASE_URL de Secret Manager y extraer user/password.
   echo "→ obteniendo credenciales password de Secret Manager…"
@@ -140,13 +139,16 @@ else
   # acá pasamos campos sueltos).
   PGPASS=$(printf '%b' "${PGPASS_RAW//%/\\x}")
   export PGPASSWORD="$PGPASS"
-  PSQL_CMD=(psql "host=127.0.0.1" "port=$LOCAL_PORT" "dbname=$DB_NAME" "user=$PGUSER" "sslmode=disable")
 fi
+
+# psql parsea conninfo solo si es UNA sola string. Los keyword=value sueltos
+# en argv se ignoran con warnings y el proceso cae al default (puerto 5432).
+CONNINFO="host=127.0.0.1 port=$LOCAL_PORT dbname=$DB_NAME user=$PGUSER sslmode=disable"
 
 if [[ "${1:-}" == "-f" && -n "${2:-}" ]]; then
   echo "→ ejecutando archivo: $2"
-  "${PSQL_CMD[@]}" -f "$2"
+  psql "$CONNINFO" -f "$2"
 else
   echo "→ abriendo psql interactivo. Salí con \\q o Ctrl+D."
-  "${PSQL_CMD[@]}"
+  psql "$CONNINFO"
 fi
