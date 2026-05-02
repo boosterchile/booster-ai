@@ -20,6 +20,14 @@ export default defineConfig({
       injectRegister: 'auto',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // skipWaiting + clientsClaim → cuando se deploya una version nueva,
+        // el nuevo SW se activa inmediatamente (no espera a que se cierren
+        // todas las pestañas) y toma control de los clients existentes en
+        // el siguiente fetch. Sin esto los usuarios pueden quedar pegados
+        // con un index.html viejo apuntando a un bundle JS que ya no
+        // existe (404) o que no tiene rutas nuevas.
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
