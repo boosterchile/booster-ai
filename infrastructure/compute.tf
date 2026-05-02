@@ -379,9 +379,19 @@ resource "google_container_cluster" "telemetry" {
   }
 
   master_authorized_networks_config {
+    # Subnet privada para nodos GKE (acceso interno).
     cidr_blocks {
       cidr_block   = "10.10.0.0/20"
       display_name = "booster-ai-private-subnet"
+    }
+    # Cualquier IP — necesario para que Cloud Build (deploy via kubectl) y
+    # operadores (kubectl local) puedan alcanzar el control plane. La
+    # protección real está en IAM + RBAC, no en la red. Aceptable para el
+    # piloto. Post-piloto: tightear a Cloud Build private pool + IPs de
+    # operadores conocidos.
+    cidr_blocks {
+      cidr_block   = "0.0.0.0/0"
+      display_name = "any-authenticated"
     }
   }
 

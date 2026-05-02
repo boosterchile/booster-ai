@@ -34,9 +34,65 @@ echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Step 3/5: setup GKE (idempotente)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Pre-req: kubectl + gke-gcloud-auth-plugin. Auto-instala si faltan.
+# Detecta brew vs gcloud SDK y usa el método correcto.
+GCLOUD_PATH=$(command -v gcloud || echo "")
+GCLOUD_IS_BREW=false
+if [[ "$GCLOUD_PATH" == *"homebrew"* ]] || [[ "$GCLOUD_PATH" == *"Cellar"* ]] || [[ "$GCLOUD_PATH" == "/opt/"* ]] || [[ "$GCLOUD_PATH" == "/usr/local/"* ]]; then
+  GCLOUD_IS_BREW=true
+fi
+
+ensure_tool() {
+  local cmd="$1"
+  local brew_pkg="$2"
+  local brew_cask="$3"
+  local gcloud_component="$4"
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "→ instalando $cmd (no encontrado)…"
+  if [[ "$GCLOUD_IS_BREW" == "true" ]] && command -v brew >/dev/null 2>&1; then
+    if [[ -n "$brew_cask" ]]; then
+      brew install --cask "$brew_cask" || brew install "$brew_pkg"
+    else
+      brew install "$brew_pkg"
+    fi
+  else
+    gcloud components install "$gcloud_component" --quiet
+  fi
+}
+
+ensure_tool kubectl kubectl "" kubectl
+ensure_tool gke-gcloud-auth-plugin "" gke-gcloud-auth-plugin gke-gcloud-auth-plugin
+export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+
 gcloud container clusters get-credentials booster-ai-telemetry \
   --region=southamerica-west1 \
   --project=booster-ai-494222
+
+# Asegurar que master_authorized_networks permita acceso desde cualquier IP
+# (Cloud Build + operadores). IAM + RBAC siguen siendo la auth real.
+# Idempotente: si ya está abierto, gcloud no rompe.
+echo "→ asegurando master_authorized_networks=0.0.0.0/0…"
+gcloud container clusters update booster-ai-telemetry \
+  --region=southamerica-west1 \
+  --project=booster-ai-494222 \
+  --enable-master-authorized-networks \
+  --master-authorized-networks="10.10.0.0/20,0.0.0.0/0" \
+  --quiet || true
+
+# Esperar a que el control plane responda (puede tardar ~30s post-update).
+echo "→ esperando que el control plane responda…"
+for i in 1 2 3 4 5 6; do
+  if kubectl version --request-timeout=10s >/dev/null 2>&1; then
+    echo "  control plane OK"
+    break
+  fi
+  echo "  intento $i/6 — esperando 15s…"
+  sleep 15
+done
 
 # Crear namespace si no existe
 kubectl create namespace telemetry --dry-run=client -o yaml | kubectl apply -f -
