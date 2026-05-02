@@ -87,11 +87,21 @@ const apiEnvSchema = commonEnvSchema
      *
      * Optional para permitir merge antes de la aprobación. Si está vacío,
      * el dispatcher loguea warn y skipea.
+     *
+     * IMPORTANTE: el preprocess trata string vacío como undefined. Cloud
+     * Run / Terraform a veces pasan la env var como "" (no como ausente),
+     * y `.optional()` solo cubre `undefined` — sin el preprocess, "" cae
+     * al regex y mata el startup con FATAL. Lección de incidente
+     * 2026-05-02 cuando un terraform apply sin -var dejó la var en "" y
+     * el api revienta en boot.
      */
-    CONTENT_SID_OFFER_NEW: z
-      .string()
-      .regex(/^HX[a-fA-F0-9]+$/)
-      .optional(),
+    CONTENT_SID_OFFER_NEW: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
 
     /**
      * URL pública del frontend, usada para construir el deep-link al
