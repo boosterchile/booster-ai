@@ -208,13 +208,28 @@ resource "google_compute_security_policy" "waf" {
     priority = "390"
     match {
       expr {
-        # Cloud Armor matcher language tiene máximo 5 sub-expresiones por
-        # rule. Negar los métodos sin body en lugar de listar los con body
-        # nos deja en 3 (host + 2 negations).
-        expression = "request.headers['host'].lower() == 'api.boosterchile.com' && request.method != 'GET' && request.method != 'OPTIONS'"
+        # Cloud Armor matcher language NO soporta .lower() — la expression
+        # anterior silenciosamente nunca matcheó (rule existía pero false
+        # siempre). Browsers mandan Host header en lowercase, y curl también,
+        # entonces comparación exacta funciona en práctica.
+        #
+        # Bypass TOTAL para hostname api (todos los métodos). La defensa
+        # real la hace el api a nivel app:
+        #   1. Firebase Auth middleware valida Bearer token Firebase ID
+        #      ANTES de cualquier handler.
+        #   2. Zod schema valida cada field del body — rechaza shapes
+        #      inválidos.
+        #   3. Drizzle ORM usa parameterized queries — SQL injection no
+        #      es factible.
+        #   4. CORS limita orígenes a app.boosterchile.com + URLs internas.
+        #
+        # Trade-off: GETs al api también bypass WAF. Aceptable porque la
+        # superficie de ataque GET sin auth es prácticamente nula
+        # (middleware Firebase Auth rebota antes).
+        expression = "request.headers['host'] == 'api.boosterchile.com'"
       }
     }
-    description = "Allow mutations al api — defensa via Firebase Auth + zod + Drizzle"
+    description = "Allow api host — defensa via Firebase Auth + zod + Drizzle"
   }
 
   # Allow webhooks externos (Twilio, etc.) — prioridad MÁS ALTA que OWASP.
