@@ -67,12 +67,16 @@ resource "google_compute_managed_ssl_certificate" "main" {
   name     = "booster-ai-cert-${random_id.cert_suffix.hex}"
 
   managed {
-    # Solo los dominios que apuntan al LB de Booster AI.
-    # apex/www/app/demo viven en Booster 2.0 (AWS GA, ghs, Firebase) y no
-    # se sirven desde este LB → no incluir aquí o el cert managed queda en
-    # FAILED_NOT_VISIBLE para esos dominios.
+    # Dominios que apuntan al LB de Booster AI. Cada nuevo dominio que se
+    # agregue tiene que tener el A record en Cloud DNS apuntando al LB
+    # ANTES de incluirlo acá, sino el cert queda en FAILED_NOT_VISIBLE
+    # (lección de task #34).
+    #
+    # apex/www/demo siguen en Booster 2.0 (AWS GA, Firebase) y no se sirven
+    # desde este LB.
     domains = [
       "api.${var.domain}",
+      "app.${var.domain}",
     ]
   }
 
