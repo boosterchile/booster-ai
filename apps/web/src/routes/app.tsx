@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, LogOut, Settings, Truck, User as UserIcon } from 'lucide-react';
+import { ArrowRight, LogOut, Radio, Settings, Truck, User as UserIcon } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -31,6 +31,8 @@ export function AppRoute() {
 
 function AppDashboard({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
+  const myRole = me.active_membership?.role;
+  const isAdmin = myRole === 'dueno' || myRole === 'admin';
 
   async function handleSignOut() {
     await signOutUser();
@@ -133,6 +135,32 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 Form web para crear cargas en construcción (slice B.7). Mientras tanto puedes crear
                 cargas escribiendo "hola" al WhatsApp del bot Booster.
               </p>
+            </section>
+          )}
+
+          {isAdmin && (
+            <section className="mt-10">
+              <h2 className="font-semibold text-neutral-900 text-xl">Administración</h2>
+              <Link
+                to="/app/admin/dispositivos"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Radio className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Dispositivos pendientes</div>
+                    <div className="text-neutral-600 text-sm">
+                      Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
             </section>
           )}
         </div>
