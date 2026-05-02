@@ -22,6 +22,12 @@ ALTER TABLE "offers" ADD COLUMN IF NOT EXISTS "notified_at" timestamp with time 
 
 -- Índice parcial para queries del dispatcher de retries:
 -- "ofertas pending sin notificación todavía".
+--
+-- El cast explícito ::offer_status es obligatorio: si comparamos el enum
+-- contra el literal 'pending' sin cast, Postgres usa enum_in (STABLE) para
+-- resolver text→enum, y los predicates de índice exigen funciones
+-- IMMUTABLE. Castear hardcoded saltea ese path y se queda con enum_eq
+-- (IMMUTABLE), que sí es válido en predicate.
 CREATE INDEX IF NOT EXISTS "idx_offers_notified_at"
   ON "offers" ("notified_at")
-  WHERE "notified_at" IS NULL AND "status" = 'pending';
+  WHERE "notified_at" IS NULL AND "status" = 'pending'::offer_status;

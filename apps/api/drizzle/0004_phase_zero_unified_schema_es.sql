@@ -237,8 +237,11 @@ CREATE INDEX "idx_ofertas_viaje" ON "ofertas"("viaje_id");
 CREATE INDEX "idx_ofertas_empresa" ON "ofertas"("empresa_id");
 CREATE INDEX "idx_ofertas_estado" ON "ofertas"("estado");
 CREATE INDEX "idx_ofertas_expira" ON "ofertas"("expira_en");
+-- Cast explícito ::estado_oferta — sin él, Postgres usa enum_in (STABLE)
+-- para resolver text→enum en el predicate y rechaza con
+-- "functions in index predicate must be marked IMMUTABLE".
 CREATE INDEX "idx_ofertas_notificado" ON "ofertas"("notificado_en")
-  WHERE "notificado_en" IS NULL AND "estado" = 'pendiente';
+  WHERE "notificado_en" IS NULL AND "estado" = 'pendiente'::estado_oferta;
 
 -- 12. Tabla asignaciones
 CREATE TABLE "asignaciones" (
@@ -336,8 +339,14 @@ CREATE TABLE "consentimientos" (
 );
 CREATE INDEX "idx_consentimientos_stakeholder" ON "consentimientos"("stakeholder_id");
 CREATE INDEX "idx_consentimientos_otorgado_por" ON "consentimientos"("otorgado_por_id");
+-- NO se puede meter now() en el predicate de un índice — es STABLE, no
+-- IMMUTABLE. El index parcial filtra solamente "consentimiento NO revocado";
+-- la cláusula de expiración se evalúa a query-time:
+--   WHERE revocado_en IS NULL
+--     AND (expira_en IS NULL OR expira_en > now())
+-- Postgres usa el index para el primer predicate y refina con el segundo.
 CREATE INDEX "idx_consentimientos_activo" ON "consentimientos"("stakeholder_id","tipo_alcance","alcance_id")
-  WHERE "revocado_en" IS NULL AND ("expira_en" IS NULL OR "expira_en" > now());
+  WHERE "revocado_en" IS NULL;
 
 -- 17. Tabla borradores_whatsapp (legacy intake del bot)
 CREATE TABLE "borradores_whatsapp" (
