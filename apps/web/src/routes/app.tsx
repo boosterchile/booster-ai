@@ -1,5 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, LogOut, Radio, Settings, Truck, User as UserIcon } from 'lucide-react';
+import {
+  ArrowRight,
+  Bus,
+  LogOut,
+  Radio,
+  Settings,
+  Truck,
+  User as UserIcon,
+} from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -108,6 +116,27 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Ofertas activas</div>
                     <div className="text-neutral-600 text-sm">
                       Cargas disponibles para tu empresa. Acepta o rechaza rápido.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/vehiculos"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Bus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Vehículos</div>
+                    <div className="text-neutral-600 text-sm">
+                      Tu flota: agregar, editar, asociar dispositivos Teltonika.
                     </div>
                   </div>
                 </div>

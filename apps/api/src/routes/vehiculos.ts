@@ -1,27 +1,136 @@
 import type { Logger } from '@booster-ai/logger';
-import { eq } from 'drizzle-orm';
+import { zValidator } from '@hono/zod-validator';
+import { and, asc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { vehicles } from '../db/schema.js';
 
 /**
- * Endpoints de vehículos (lectura por ahora; CRUD completo viene después
- * con UI dedicada).
+ * Endpoints de vehículos. CRUD completo:
  *
- *   GET /vehiculos → lista los vehículos de la empresa activa
+ *   GET    /vehiculos          → lista de la empresa activa (todos los users)
+ *   POST   /vehiculos          → crear (dueno/admin/despachador)
+ *   GET    /vehiculos/:id      → detalle (todos los users)
+ *   PATCH  /vehiculos/:id      → actualizar (dueno/admin/despachador)
+ *   DELETE /vehiculos/:id      → soft delete = vehicleStatus 'retirado'
+ *                                (dueno/admin)
+ *
+ * Reglas multi-tenant:
+ *   - Todos los reads y writes filtran por activeMembership.empresa.id.
+ *   - Patente única en el sistema (constraint DB). Si choca → 409.
+ *   - teltonika_imei se asigna desde /admin/dispositivos-pendientes
+ *     (asociar). Acá NO se permite setearlo directamente para no abrir un
+ *     flujo paralelo al de open enrollment — devolvemos 400 si vienen.
  */
+
+const vehicleTypes = [
+  'camioneta',
+  'furgon_pequeno',
+  'furgon_mediano',
+  'camion_pequeno',
+  'camion_mediano',
+  'camion_pesado',
+  'semi_remolque',
+  'refrigerado',
+  'tanque',
+] as const;
+
+const fuelTypes = [
+  'diesel',
+  'gasolina',
+  'gas_glp',
+  'gas_gnc',
+  'electrico',
+  'hibrido_diesel',
+  'hibrido_gasolina',
+  'hidrogeno',
+] as const;
+
+const vehicleStatuses = ['activo', 'mantenimiento', 'retirado'] as const;
+
+// Patente Chile: AA-BB-CC, AAAA-BB, AA·BB·CC, etc. Validamos formato laxo
+// (alfanumérico + guiones/puntos) y limpiamos a uppercase trimmed.
+const plateSchema = z
+  .string()
+  .min(4)
+  .max(12)
+  .regex(/^[A-Z0-9·\-.\s]+$/i, 'patente con caracteres inválidos')
+  .transform((s) => s.toUpperCase().replace(/\s+/g, '').replace(/·/g, '').replace(/\./g, '-'));
+
+const createBodySchema = z.object({
+  plate: plateSchema,
+  vehicle_type: z.enum(vehicleTypes),
+  capacity_kg: z.number().int().positive().max(100_000),
+  capacity_m3: z.number().int().positive().max(500).nullable().optional(),
+  year: z.number().int().min(1980).max(2100).nullable().optional(),
+  brand: z.string().min(1).max(50).nullable().optional(),
+  model: z.string().min(1).max(100).nullable().optional(),
+  fuel_type: z.enum(fuelTypes).nullable().optional(),
+  curb_weight_kg: z.number().int().positive().max(50_000).nullable().optional(),
+  consumption_l_per_100km_baseline: z.number().positive().max(99.99).nullable().optional(),
+});
+
+const updateBodySchema = createBodySchema
+  .partial()
+  .extend({
+    vehicle_status: z.enum(vehicleStatuses).optional(),
+  });
+
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  app.get('/', async (c) => {
+  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
+  function requireAuth(c: Context<any, any, any>) {
     const userContext = c.get('userContext');
     if (!userContext) {
-      return c.json({ error: 'unauthorized' }, 401);
+      return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
     }
     const active = userContext.activeMembership;
     if (!active) {
-      return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
+      return {
+        ok: false as const,
+        response: c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403),
+      };
     }
+    return { ok: true as const, userContext, activeMembership: active };
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
+  function requireWriteRole(c: Context<any, any, any>) {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth;
+    const role = auth.activeMembership.membership.role;
+    if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
+      return {
+        ok: false as const,
+        response: c.json({ error: 'forbidden', code: 'write_role_required' }, 403),
+      };
+    }
+    return auth;
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
+  function requireDeleteRole(c: Context<any, any, any>) {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth;
+    const role = auth.activeMembership.membership.role;
+    if (role !== 'dueno' && role !== 'admin') {
+      return {
+        ok: false as const,
+        response: c.json({ error: 'forbidden', code: 'admin_required' }, 403),
+      };
+    }
+    return auth;
+  }
+
+  // ---------------------------------------------------------------------
+  // GET / — lista de vehículos de la empresa activa.
+  // ---------------------------------------------------------------------
+  app.get('/', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth.response;
 
     const rows = await opts.db
       .select({
@@ -29,18 +138,202 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         plate: vehicles.plate,
         type: vehicles.vehicleType,
         capacity_kg: vehicles.capacityKg,
+        capacity_m3: vehicles.capacityM3,
         year: vehicles.year,
         brand: vehicles.brand,
         model: vehicles.model,
         fuel_type: vehicles.fuelType,
+        curb_weight_kg: vehicles.curbWeightKg,
+        consumption_l_per_100km_baseline: vehicles.consumptionLPer100kmBaseline,
         teltonika_imei: vehicles.teltonikaImei,
         status: vehicles.vehicleStatus,
+        created_at: vehicles.createdAt,
+        updated_at: vehicles.updatedAt,
       })
       .from(vehicles)
-      .where(eq(vehicles.empresaId, active.empresa.id));
+      .where(eq(vehicles.empresaId, auth.activeMembership.empresa.id))
+      .orderBy(asc(vehicles.plate));
 
     return c.json({ vehicles: rows });
   });
 
+  // ---------------------------------------------------------------------
+  // POST / — crear vehículo.
+  // ---------------------------------------------------------------------
+  app.post('/', zValidator('json', createBodySchema), async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) return auth.response;
+    const body = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    try {
+      const [created] = await opts.db
+        .insert(vehicles)
+        .values({
+          empresaId,
+          plate: body.plate,
+          vehicleType: body.vehicle_type,
+          capacityKg: body.capacity_kg,
+          capacityM3: body.capacity_m3 ?? null,
+          year: body.year ?? null,
+          brand: body.brand ?? null,
+          model: body.model ?? null,
+          fuelType: body.fuel_type ?? null,
+          curbWeightKg: body.curb_weight_kg ?? null,
+          consumptionLPer100kmBaseline:
+            body.consumption_l_per_100km_baseline != null
+              ? body.consumption_l_per_100km_baseline.toString()
+              : null,
+        })
+        .returning();
+
+      if (!created) {
+        opts.logger.error({ empresaId, body }, 'insert vehiculo no devolvió row');
+        return c.json({ error: 'insert_failed' }, 500);
+      }
+      opts.logger.info(
+        { vehicleId: created.id, plate: created.plate, empresaId },
+        'vehículo creado',
+      );
+      return c.json({ vehicle: serializeVehicle(created) }, 201);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === '23505') {
+        // unique_violation — patente o IMEI duplicado.
+        return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
+      }
+      throw err;
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id — detalle.
+  // ---------------------------------------------------------------------
+  app.get('/:id', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth.response;
+    const id = c.req.param('id');
+
+    const [row] = await opts.db
+      .select()
+      .from(vehicles)
+      .where(
+        and(eq(vehicles.id, id), eq(vehicles.empresaId, auth.activeMembership.empresa.id)),
+      )
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+    return c.json({ vehicle: serializeVehicle(row) });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id — actualizar campos parciales.
+  // ---------------------------------------------------------------------
+  app.patch('/:id', zValidator('json', updateBodySchema), async (c) => {
+    const auth = requireWriteRole(c);
+    if (!auth.ok) return auth.response;
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    // Verificar ownership antes del update.
+    const [existing] = await opts.db
+      .select({ id: vehicles.id })
+      .from(vehicles)
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+      .limit(1);
+    if (!existing) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.plate !== undefined) updates.plate = body.plate;
+    if (body.vehicle_type !== undefined) updates.vehicleType = body.vehicle_type;
+    if (body.capacity_kg !== undefined) updates.capacityKg = body.capacity_kg;
+    if (body.capacity_m3 !== undefined) updates.capacityM3 = body.capacity_m3;
+    if (body.year !== undefined) updates.year = body.year;
+    if (body.brand !== undefined) updates.brand = body.brand;
+    if (body.model !== undefined) updates.model = body.model;
+    if (body.fuel_type !== undefined) updates.fuelType = body.fuel_type;
+    if (body.curb_weight_kg !== undefined) updates.curbWeightKg = body.curb_weight_kg;
+    if (body.consumption_l_per_100km_baseline !== undefined) {
+      updates.consumptionLPer100kmBaseline =
+        body.consumption_l_per_100km_baseline != null
+          ? body.consumption_l_per_100km_baseline.toString()
+          : null;
+    }
+    if (body.vehicle_status !== undefined) updates.vehicleStatus = body.vehicle_status;
+
+    try {
+      const [updated] = await opts.db
+        .update(vehicles)
+        .set(updates)
+        .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+        .returning();
+
+      if (!updated) {
+        return c.json({ error: 'vehicle_not_found' }, 404);
+      }
+      opts.logger.info(
+        { vehicleId: id, plate: updated.plate, empresaId, fields: Object.keys(updates) },
+        'vehículo actualizado',
+      );
+      return c.json({ vehicle: serializeVehicle(updated) });
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === '23505') {
+        return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
+      }
+      throw err;
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // DELETE /:id — soft delete (vehicleStatus = 'retirado').
+  // No hard-delete porque vehicles está referenciado por trip_assignments,
+  // telemetria_puntos, etc. Borrar rompería integridad.
+  // ---------------------------------------------------------------------
+  app.delete('/:id', async (c) => {
+    const auth = requireDeleteRole(c);
+    if (!auth.ok) return auth.response;
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const [updated] = await opts.db
+      .update(vehicles)
+      .set({ vehicleStatus: 'retirado', updatedAt: new Date() })
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+      .returning();
+
+    if (!updated) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    opts.logger.info({ vehicleId: id, plate: updated.plate, empresaId }, 'vehículo retirado');
+    return c.json({ vehicle: serializeVehicle(updated) });
+  });
+
   return app;
+}
+
+function serializeVehicle(row: typeof vehicles.$inferSelect) {
+  return {
+    id: row.id,
+    plate: row.plate,
+    type: row.vehicleType,
+    capacity_kg: row.capacityKg,
+    capacity_m3: row.capacityM3,
+    year: row.year,
+    brand: row.brand,
+    model: row.model,
+    fuel_type: row.fuelType,
+    curb_weight_kg: row.curbWeightKg,
+    consumption_l_per_100km_baseline: row.consumptionLPer100kmBaseline,
+    teltonika_imei: row.teltonikaImei,
+    status: row.vehicleStatus,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
 }
