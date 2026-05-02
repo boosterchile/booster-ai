@@ -78,7 +78,10 @@ module "service_api" {
     # tener que modificar el middleware después.
     API_AUDIENCE         = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},${local.cloud_run_api_url}"
+    # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
+    # — sin esto el browser bloquea preflight OPTIONS y todas las requests
+    # cross-origin desde el frontend fallan con "Failed to fetch".
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},https://app.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
