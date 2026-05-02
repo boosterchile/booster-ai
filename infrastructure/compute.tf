@@ -110,7 +110,13 @@ module "service_api" {
 
   vpc_connector = google_vpc_access_connector.serverless.id
 
-  public = false # tráfico público entra via Global HTTPS LB (networking.tf); Cloud Run no acepta allUsers por org policy
+  # Público para que el browser pueda hacer preflight OPTIONS desde la PWA
+  # (los CORS preflight no llevan Authorization header — Cloud Run sin
+  # allUsers los rechaza con 403 antes de que el middleware CORS responda).
+  # La auth real la hace el middleware Firebase Auth a nivel app, no Cloud
+  # Run. Mismo patrón que el bot para webhooks Twilio. El override de org
+  # policy en org-policies.tf permite allUsers a nivel proyecto.
+  public = true
 
   secret_versions_ready = local.all_secret_versions_ready
 
