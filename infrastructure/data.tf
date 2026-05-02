@@ -107,6 +107,17 @@ resource "google_sql_database_instance" "main" {
       value = "ddl" # audit de schema changes
     }
 
+    # Habilita IAM database authentication. Permite que users / SAs IAM
+    # se conecten via cloud-sql-proxy --auto-iam-authn sin password,
+    # autenticando con OAuth tokens. Reemplaza el modelo password-based
+    # para operadores humanos (devs ops, db admins). El password-based
+    # `booster_app` se mantiene para que los Cloud Run services usen
+    # DATABASE_URL clásico via Secret Manager.
+    database_flags {
+      name  = "cloudsql.iam_authentication"
+      value = "on"
+    }
+
     insights_config {
       query_insights_enabled  = true
       query_string_length     = 1024
@@ -159,6 +170,40 @@ resource "google_sql_user" "app" {
   instance = google_sql_database_instance.main.name
   project  = google_project.booster_ai.project_id
   password = random_password.pg_app_password.result
+}
+
+# IAM users con acceso a la DB. Cada operador agregar su email acá.
+# Conexión via cloud-sql-proxy --auto-iam-authn (sin password).
+# El postgres role que se crea tiene el mismo nombre que el email truncado
+# (ver Cloud SQL docs). Por defecto solo CONNECT a la DB; permisos extra
+# se asignan via GRANT directo en SQL una vez creado.
+locals {
+  db_iam_operators = [
+    "dev@boosterchile.com",
+  ]
+}
+
+resource "google_sql_user" "iam_operators" {
+  for_each = toset(local.db_iam_operators)
+  name     = each.value
+  type     = "CLOUD_IAM_USER"
+  instance = google_sql_database_instance.main.name
+  project  = google_project.booster_ai.project_id
+  # Sin password: autenticación via IAM token.
+}
+
+resource "google_project_iam_member" "db_iam_operators_client" {
+  for_each = toset(local.db_iam_operators)
+  project  = google_project.booster_ai.project_id
+  role     = "roles/cloudsql.client"
+  member   = "user:${each.value}"
+}
+
+resource "google_project_iam_member" "db_iam_operators_instanceuser" {
+  for_each = toset(local.db_iam_operators)
+  project  = google_project.booster_ai.project_id
+  role     = "roles/cloudsql.instanceUser"
+  member   = "user:${each.value}"
 }
 
 # Guardar password en Secret Manager (rotación posterior vía otro flujo).
