@@ -113,3 +113,10 @@ temp/
 venv/
 __pycache__/
 *.pyc
+
+# macOS/Finder/iCloud duplicados accidentales
+* 2.*
+* 3.*
+
+# Claude Code local settings
+.claude/

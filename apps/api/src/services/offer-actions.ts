@@ -9,6 +9,7 @@ import {
   tripEvents,
   trips,
 } from '../db/schema.js';
+import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
 
 /**
  * Errores tipados para mapear a HTTP status en el route layer.
@@ -190,6 +191,34 @@ export async function acceptOffer(opts: {
       assignment,
       supersededOfferIds: supersededRows.map((r) => r.id),
     };
+  }).then(async (result) => {
+    // Cálculo de métricas de carbono — fire-and-forget post-commit. Si
+    // falla, queda assignment sin métricas (recalculable después por cron
+    // o admin); no bloquea el accept response al carrier.
+    try {
+      const metricas = await calcularMetricasEstimadas({
+        db,
+        logger,
+        tripId: result.assignment.tripId,
+        vehicleId: result.assignment.vehicleId || null,
+      });
+      logger.info(
+        {
+          tripId: result.assignment.tripId,
+          assignmentId: result.assignment.id,
+          metodoPrecision: metricas.emisiones.metodoPrecision,
+          emisionesKgco2eWtw: metricas.emisiones.emisionesKgco2eWtw,
+          intensidadGco2ePorTonKm: metricas.emisiones.intensidadGco2ePorTonKm,
+        },
+        'metricas estimadas calculadas tras accept',
+      );
+    } catch (err) {
+      logger.error(
+        { err, tripId: result.assignment.tripId, assignmentId: result.assignment.id },
+        'fallo calcular metricas estimadas tras accept (asignacion creada igual; recalcular despues)',
+      );
+    }
+    return result;
   });
 }
 

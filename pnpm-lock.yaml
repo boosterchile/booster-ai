@@ -35,6 +35,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@booster-ai/carbon-calculator':
+        specifier: workspace:*
+        version: link:../../packages/carbon-calculator
       '@booster-ai/config':
         specifier: workspace:*
         version: link:../../packages/config
