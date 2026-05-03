@@ -20,7 +20,11 @@ export { emitirCertificado } from './emitir-certificado.js';
 export { generarPdfBase } from './generar-pdf-base.js';
 export { firmarPades } from './firmar-pades.js';
 export { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
-export { subirArtefactosCertificado } from './storage.js';
+export {
+  subirArtefactosCertificado,
+  generarSignedUrlPdf,
+  descargarSidecar,
+} from './storage.js';
 
 export type {
   DatosViajeCertificado,

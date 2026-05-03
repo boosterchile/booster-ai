@@ -11,6 +11,7 @@ import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
+import { createCertificatesRoutes } from './routes/certificates.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
@@ -150,6 +151,32 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/assignments/*', firebaseAuthMiddleware);
     app.use('/assignments/*', userContextMiddleware);
     app.route('/assignments', createAssignmentsRoutes({ db: opts.db, logger, certConfig }));
+
+    // Certificates — listado privado (auth shipper) + verify público.
+    //
+    // GET /certificates                       → auth shipper requerido
+    // GET /certificates/:tracking_code/verify → PÚBLICO (sin auth)
+    //
+    // Hono no permite mezclar middlewares por método/path nativamente,
+    // así que envolvemos firebaseAuth + userContext en wrappers que
+    // hacen short-circuit al `next()` si la URL matchea verify. El cost
+    // del check es 1 regex por request (despreciable) y mantiene la URL
+    // elegante /certificates/:tracking/verify (en vez de algo como
+    // /public/verify-cert/:tracking).
+    const skipAuthForVerify = /\/certificates\/[^/]+\/verify$/;
+    app.use('/certificates/*', async (c, next) => {
+      if (c.req.method === 'GET' && skipAuthForVerify.test(c.req.path)) {
+        return next();
+      }
+      return firebaseAuthMiddleware(c, next);
+    });
+    app.use('/certificates/*', async (c, next) => {
+      if (c.req.method === 'GET' && skipAuthForVerify.test(c.req.path)) {
+        return next();
+      }
+      return userContextMiddleware(c, next);
+    });
+    app.route('/certificates', createCertificatesRoutes({ db: opts.db, logger, certConfig }));
 
     // Admin: gestión de dispositivos Teltonika pendientes (open enrollment).
     app.use('/admin/dispositivos-pendientes/*', firebaseAuthMiddleware);

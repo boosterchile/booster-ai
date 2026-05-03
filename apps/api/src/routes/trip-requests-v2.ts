@@ -16,6 +16,7 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
@@ -351,6 +352,83 @@ export function createTripRequestsV2Routes(opts: {
             certificate_issued_at: metricsRow.certificateIssuedAt,
           }
         : null,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/certificate/download — devuelve signed URL al PDF firmado.
+  //
+  // Auth: shipper owner del trip. Validamos que el cert ya haya sido
+  // emitido (certificateIssuedAt notNull); si no, 404 con código
+  // 'certificate_not_issued' para que el frontend muestre "pendiente"
+  // en vez de un error confuso.
+  //
+  // Devolvemos una signed URL en lugar de proxiar el PDF para evitar:
+  //   - Timeouts del Cloud Run (los PDFs pueden ser >100KB y la conexión
+  //     tarda) — descarga directa desde GCS es más rápida y no consume
+  //     CPU del api.
+  //   - Memoria: streamear desde GCS via api significa cargar todo el
+  //     PDF en memoria (Hono no tiene streaming nativo simple).
+  //
+  // TTL 5 min — suficiente para que el browser inicie la descarga, no
+  // tan largo que la URL leakeada sea peligrosa.
+  // ---------------------------------------------------------------------
+  app.get('/:id/certificate/download', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    if (!opts.certConfig?.certificatesBucket) {
+      // Sin bucket no hay nada que firmar.
+      return c.json(
+        { error: 'certificates_disabled', code: 'certificates_disabled' },
+        503,
+      );
+    }
+
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    // Validar ownership + que el cert exista.
+    const rows = await opts.db
+      .select({
+        tripId: trips.id,
+        trackingCode: trips.trackingCode,
+        certificateIssuedAt: tripMetrics.certificateIssuedAt,
+        certificatePdfUrl: tripMetrics.certificatePdfUrl,
+      })
+      .from(trips)
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return c.json({ error: 'trip_not_found', code: 'trip_not_found' }, 404);
+    }
+    if (!row.certificateIssuedAt || !row.certificatePdfUrl) {
+      return c.json(
+        {
+          error: 'certificate_not_issued',
+          code: 'certificate_not_issued',
+          // Útil para el frontend mostrar "pendiente" vs "no aplica".
+          message:
+            'El certificado todavía no fue emitido. Si el viaje está entregado, esperá unos segundos y reintentá.',
+        },
+        404,
+      );
+    }
+
+    const downloadUrl = await generarSignedUrlPdf({
+      bucket: opts.certConfig.certificatesBucket,
+      empresaId,
+      trackingCode: row.trackingCode,
+      ttlSeconds: 300,
+    });
+
+    return c.json({
+      download_url: downloadUrl,
+      expires_in_seconds: 300,
+      tracking_code: row.trackingCode,
     });
   });
 
