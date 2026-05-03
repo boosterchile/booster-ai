@@ -5,7 +5,8 @@
  *   - GET /assignments/:id/messages — listar (cursor pagination)
  *   - POST /assignments/:id/messages — enviar (3 tipos: texto, foto, ubicacion)
  *   - PATCH /assignments/:id/messages/read — mark as read
- *   - POST /assignments/:id/messages/photo-upload-url — signed URL GCS
+ *   - POST /assignments/:id/messages/photo-upload-url — signed URL GCS PUT
+ *   - POST /assignments/:id/messages/:msgId/photo-url — signed URL GCS GET
  *
  * El SSE realtime tiene su propio hook (use-chat-stream.ts) porque
  * EventSource no encaja bien con fetch.
@@ -43,8 +44,12 @@ export async function fetchChatMessages(opts: {
   limit?: number;
 }): Promise<ChatMessagesResponse> {
   const params = new URLSearchParams();
-  if (opts.cursor) params.set('cursor', opts.cursor);
-  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.cursor) {
+    params.set('cursor', opts.cursor);
+  }
+  if (opts.limit) {
+    params.set('limit', String(opts.limit));
+  }
   const qs = params.toString();
   return await api.get<ChatMessagesResponse>(
     `/assignments/${opts.assignmentId}/messages${qs ? `?${qs}` : ''}`,
@@ -105,11 +110,7 @@ export async function uploadChatPhoto(opts: {
   file: File;
 }): Promise<{ gcsUri: string }> {
   const contentType = opts.file.type;
-  if (
-    contentType !== 'image/jpeg' &&
-    contentType !== 'image/png' &&
-    contentType !== 'image/webp'
-  ) {
+  if (contentType !== 'image/jpeg' && contentType !== 'image/png' && contentType !== 'image/webp') {
     throw new Error(`Tipo de imagen no soportado: ${contentType}`);
   }
 
@@ -131,6 +132,27 @@ export async function uploadChatPhoto(opts: {
 }
 
 /**
+ * Pide signed URL READ para descargar/visualizar una foto privada del chat.
+ * El backend valida que el caller pertenezca al chat y que el mensaje
+ * sea efectivamente una foto. TTL 5 min — el caller decide si cachea o
+ * pide otra (la UI usa useQuery con staleTime ~4min para evitar refetch).
+ */
+export interface PhotoDownloadUrlResponse {
+  download_url: string;
+  expires_in_seconds: number;
+}
+
+export async function fetchPhotoDownloadUrl(opts: {
+  assignmentId: string;
+  messageId: string;
+}): Promise<PhotoDownloadUrlResponse> {
+  return await api.post<PhotoDownloadUrlResponse>(
+    `/assignments/${opts.assignmentId}/messages/${opts.messageId}/photo-url`,
+    {},
+  );
+}
+
+/**
  * Wrapper para mandar mensaje 'foto' con upload directo en 1 sola llamada
  * desde la UI. Hace upload + POST mensaje.
  */
@@ -148,9 +170,7 @@ export async function sendPhotoMessage(opts: {
 /**
  * Wrapper que pide la ubicación del browser y manda el mensaje.
  */
-export async function sendLocationMessage(
-  assignmentId: string,
-): Promise<SendMessageResponse> {
+export async function sendLocationMessage(assignmentId: string): Promise<SendMessageResponse> {
   if (!('geolocation' in navigator)) {
     throw new Error('Geolocalización no soportada en este browser');
   }

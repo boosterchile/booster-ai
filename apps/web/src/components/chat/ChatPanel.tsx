@@ -25,24 +25,18 @@
  *   - readOnly: si true, oculta el input footer (chat de viaje cerrado).
  */
 
-import { useMutation } from '@tanstack/react-query';
-import {
-  Camera,
-  Loader2,
-  MapPin,
-  RefreshCw,
-  Send,
-  X,
-} from 'lucide-react';
-import { type FormEvent, useRef, useState } from 'react';
-import { VehicleMap } from '../map/VehicleMap.js';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Camera, Loader2, MapPin, RefreshCw, Send, X } from 'lucide-react';
+import { type ChangeEvent, type FormEvent, useRef, useState } from 'react';
+import { useChatMessages } from '../../hooks/use-chat-messages.js';
 import {
   type ChatMessage,
+  fetchPhotoDownloadUrl,
   sendChatMessage,
   sendLocationMessage,
   sendPhotoMessage,
 } from '../../lib/chat-api.js';
-import { useChatMessages } from '../../hooks/use-chat-messages.js';
+import { VehicleMap } from '../map/VehicleMap.js';
 
 interface ChatPanelProps {
   assignmentId: string;
@@ -60,16 +54,8 @@ export function ChatPanel({
   onClose,
   readOnly = false,
 }: ChatPanelProps) {
-  const {
-    messages,
-    viewerRole,
-    isLoading,
-    error,
-    hasMore,
-    loadMore,
-    isLive,
-    isLoadingMore,
-  } = useChatMessages(assignmentId);
+  const { messages, viewerRole, isLoading, error, hasMore, loadMore, isLive, isLoadingMore } =
+    useChatMessages(assignmentId);
 
   // Mensajes vienen DESC del server. Para chat estilo WhatsApp queremos
   // ASC visual con scroll desde abajo. Reverse la lista local.
@@ -92,9 +78,7 @@ export function ChatPanel({
           )}
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-semibold text-neutral-900">{title}</h2>
-            {subtitle && (
-              <p className="truncate text-neutral-500 text-xs">{subtitle}</p>
-            )}
+            {subtitle && <p className="truncate text-neutral-500 text-xs">{subtitle}</p>}
           </div>
           <span
             className={`flex items-center gap-1 text-xs ${
@@ -103,9 +87,7 @@ export function ChatPanel({
             aria-live="polite"
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                isLive ? 'bg-emerald-500' : 'bg-neutral-400'
-              }`}
+              className={`h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-neutral-400'}`}
               aria-hidden
             />
             {isLive ? 'En vivo' : 'Reconectando…'}
@@ -115,21 +97,15 @@ export function ChatPanel({
 
       {/* Messages list */}
       <div className="flex-1 overflow-y-auto" id="chat-messages-scroll">
-        {isLoading && (
-          <p className="p-6 text-center text-neutral-500">Cargando mensajes…</p>
-        )}
+        {isLoading && <p className="p-6 text-center text-neutral-500">Cargando mensajes…</p>}
         {error ? (
-          <p className="p-6 text-center text-danger-700">
-            No pudimos cargar los mensajes.
-          </p>
+          <p className="p-6 text-center text-danger-700">No pudimos cargar los mensajes.</p>
         ) : null}
         {!isLoading && !error && messagesAsc.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center p-8 text-center">
             <p className="font-medium text-neutral-900">Sin mensajes todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
-              {readOnly
-                ? 'Este chat ya está cerrado.'
-                : 'Empezá la conversación con el otro lado.'}
+              {readOnly ? 'Este chat ya está cerrado.' : 'Empezá la conversación con el otro lado.'}
             </p>
           </div>
         )}
@@ -156,6 +132,7 @@ export function ChatPanel({
                 key={msg.id}
                 message={msg}
                 isMine={viewerRole === msg.sender_role}
+                assignmentId={assignmentId}
               />
             ))}
           </div>
@@ -175,11 +152,10 @@ export function ChatPanel({
 function MessageBubble({
   message,
   isMine,
-}: { message: ChatMessage; isMine: boolean }) {
+  assignmentId,
+}: { message: ChatMessage; isMine: boolean; assignmentId: string }) {
   return (
-    <div
-      className={`flex flex-col gap-1 ${isMine ? 'items-end' : 'items-start'}`}
-    >
+    <div className={`flex flex-col gap-1 ${isMine ? 'items-end' : 'items-start'}`}>
       {!isMine && message.sender_name && (
         <span className="px-2 text-neutral-500 text-xs">{message.sender_name}</span>
       )}
@@ -190,7 +166,7 @@ function MessageBubble({
             : 'rounded-bl-sm bg-white text-neutral-900 shadow-sm'
         }`}
       >
-        <MessageContent message={message} isMine={isMine} />
+        <MessageContent message={message} isMine={isMine} assignmentId={assignmentId} />
       </div>
       <span className="px-2 text-[10px] text-neutral-400">
         {formatTime(message.created_at)}
@@ -203,24 +179,13 @@ function MessageBubble({
 function MessageContent({
   message,
   isMine,
-}: { message: ChatMessage; isMine: boolean }) {
+  assignmentId,
+}: { message: ChatMessage; isMine: boolean; assignmentId: string }) {
   if (message.type === 'texto' && message.text) {
     return <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>;
   }
   if (message.type === 'foto' && message.photo_gcs_uri) {
-    // Las fotos son privadas en GCS. Necesitaríamos un endpoint backend
-    // que firme una URL de read y la devuelva. Por simplicidad de v1,
-    // mostramos un placeholder con el path. En P3.f deploy + smoke
-    // agregamos el endpoint /chat/photo-download-url.
-    // TODO: agregar endpoint POST /assignments/:id/messages/:msgId/photo-url
-    return (
-      <div
-        className={`flex items-center gap-2 text-xs ${isMine ? 'text-white' : 'text-neutral-700'}`}
-      >
-        <Camera className="h-4 w-4" aria-hidden />
-        <span>Foto adjunta (vista previa pendiente — P3.f)</span>
-      </div>
-    );
+    return <PhotoMessage assignmentId={assignmentId} messageId={message.id} isMine={isMine} />;
   }
   if (
     message.type === 'ubicacion' &&
@@ -259,6 +224,67 @@ function MessageContent({
 }
 
 // =============================================================================
+// PhotoMessage — fetch signed URL + render <img>
+// =============================================================================
+//
+// Las fotos del chat son privadas en GCS (uniform bucket-level access). Para
+// renderizar el <img>, pedimos un signed URL READ al backend. El TTL es 5
+// min, así que cacheamos con staleTime 4 min y refetch al expirar (la UI
+// se mantiene viva si el user deja el chat abierto mucho rato).
+//
+// Click en la imagen abre la versión grande en una pestaña nueva. No
+// hacemos lightbox v1 — agregar después si UX lo pide.
+function PhotoMessage({
+  assignmentId,
+  messageId,
+  isMine,
+}: { assignmentId: string; messageId: string; isMine: boolean }) {
+  const photoQ = useQuery({
+    queryKey: ['chat-photo-url', assignmentId, messageId],
+    queryFn: () => fetchPhotoDownloadUrl({ assignmentId, messageId }),
+    staleTime: 4 * 60 * 1000, // 4 min — un minuto antes del TTL backend
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  if (photoQ.isLoading) {
+    return (
+      <div
+        className={`flex items-center gap-2 text-xs ${isMine ? 'text-white' : 'text-neutral-700'}`}
+      >
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        <span>Cargando foto…</span>
+      </div>
+    );
+  }
+  if (photoQ.error || !photoQ.data) {
+    return (
+      <div
+        className={`flex items-center gap-2 text-xs ${isMine ? 'text-white' : 'text-neutral-700'}`}
+      >
+        <Camera className="h-4 w-4" aria-hidden />
+        <span>No se pudo cargar la foto</span>
+      </div>
+    );
+  }
+  return (
+    <a
+      href={photoQ.data.download_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block overflow-hidden rounded-md"
+    >
+      <img
+        src={photoQ.data.download_url}
+        alt="Foto adjunta del chat"
+        className="max-h-64 w-full max-w-xs object-cover"
+        loading="lazy"
+      />
+    </a>
+  );
+}
+
+// =============================================================================
 // ChatComposer — input footer
 // =============================================================================
 
@@ -291,29 +317,30 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
     onError: (err) => {
       // eslint-disable-next-line no-console
       console.error('sendLocationMessage error', err);
-      window.alert(
-        'No pudimos obtener tu ubicación. Verificá los permisos del navegador.',
-      );
+      window.alert('No pudimos obtener tu ubicación. Verificá los permisos del navegador.');
     },
   });
 
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || sendTextM.isPending) return;
+    if (!trimmed || sendTextM.isPending) {
+      return;
+    }
     sendTextM.mutate(trimmed);
   };
 
-  const onPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      return;
+    }
     sendPhotoM.mutate(file);
     // Reset input para permitir seleccionar la misma foto otra vez si falló.
     e.target.value = '';
   };
 
-  const isSending =
-    sendTextM.isPending || sendPhotoM.isPending || sendLocationM.isPending;
+  const isSending = sendTextM.isPending || sendPhotoM.isPending || sendLocationM.isPending;
 
   return (
     <form
@@ -352,7 +379,9 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             const form = e.currentTarget.form;
-            if (form) form.requestSubmit();
+            if (form) {
+              form.requestSubmit();
+            }
           }
         }}
         placeholder="Escribí un mensaje…"

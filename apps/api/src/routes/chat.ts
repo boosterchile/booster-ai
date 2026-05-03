@@ -2,10 +2,11 @@
  * Chat shipper↔transportista por assignment (P3.a — endpoints REST).
  *
  * Endpoints:
- *   - POST   /assignments/:id/messages              — enviar mensaje
- *   - GET    /assignments/:id/messages              — listar (cursor pagination)
- *   - PATCH  /assignments/:id/messages/read         — marcar como leído
- *   - POST   /assignments/:id/messages/photo-upload-url — signed URL GCS PUT
+ *   - POST   /assignments/:id/messages                       — enviar mensaje
+ *   - GET    /assignments/:id/messages                       — listar (cursor pagination)
+ *   - PATCH  /assignments/:id/messages/read                  — marcar como leído
+ *   - POST   /assignments/:id/messages/photo-upload-url      — signed URL GCS PUT
+ *   - POST   /assignments/:id/messages/:msgId/photo-url      — signed URL GCS GET (privadas)
  *
  * Permisos:
  *   - SHIPPER: el user pertenece a la empresa que es generador_carga del trip
@@ -33,16 +34,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import {
-  assignments,
-  chatMessages,
-  trips,
-  users as usersTable,
-} from '../db/schema.js';
-import {
-  createEphemeralChatSubscription,
-  publishChatMessage,
-} from '../services/chat-pubsub.js';
+import { assignments, chatMessages, trips, users as usersTable } from '../db/schema.js';
+import { createEphemeralChatSubscription, publishChatMessage } from '../services/chat-pubsub.js';
 import { notifyChatMessageViaPush } from '../services/web-push.js';
 
 let cachedStorage: Storage | null = null;
@@ -180,10 +173,7 @@ export function createChatRoutes(opts: {
     if (!role) {
       return {
         ok: false,
-        response: c.json(
-          { error: 'forbidden_not_party', code: 'forbidden_not_party' },
-          403,
-        ),
+        response: c.json({ error: 'forbidden_not_party', code: 'forbidden_not_party' }, 403),
       };
     }
 
@@ -202,7 +192,9 @@ export function createChatRoutes(opts: {
   app.post('/:id/messages', zValidator('json', sendMessageBodySchema), async (c) => {
     const assignmentId = c.req.param('id');
     const access = await resolveChatAccess(c, assignmentId);
-    if (!access.ok) return access.response;
+    if (!access.ok) {
+      return access.response;
+    }
 
     // Solo se puede escribir mientras el assignment esté activo. Una vez
     // entregado/cancelado el chat queda read-only.
@@ -223,17 +215,11 @@ export function createChatRoutes(opts: {
     // assignment correcto (defensa-en-profundidad sobre el regex zod).
     if (body.type === 'foto') {
       if (!opts.attachmentsBucket) {
-        return c.json(
-          { error: 'attachments_disabled', code: 'attachments_disabled' },
-          503,
-        );
+        return c.json({ error: 'attachments_disabled', code: 'attachments_disabled' }, 503);
       }
       const expectedPrefix = `gs://${opts.attachmentsBucket}/chat/${assignmentId}/`;
       if (!body.photo_gcs_uri.startsWith(expectedPrefix)) {
-        return c.json(
-          { error: 'photo_uri_mismatch', code: 'photo_uri_mismatch' },
-          400,
-        );
+        return c.json({ error: 'photo_uri_mismatch', code: 'photo_uri_mismatch' }, 400);
       }
     }
 
@@ -309,7 +295,9 @@ export function createChatRoutes(opts: {
   app.get('/:id/messages', zValidator('query', listQuerySchema), async (c) => {
     const assignmentId = c.req.param('id');
     const access = await resolveChatAccess(c, assignmentId);
-    if (!access.ok) return access.response;
+    if (!access.ok) {
+      return access.response;
+    }
 
     const { cursor, limit } = c.req.valid('query');
     const effectiveLimit = limit ?? 50;
@@ -361,7 +349,7 @@ export function createChatRoutes(opts: {
     // Detectar si hay más allá del límite.
     const hasMore = rows.length > effectiveLimit;
     const messages = hasMore ? rows.slice(0, effectiveLimit) : rows;
-    const nextCursor = hasMore ? messages[messages.length - 1]?.id ?? null : null;
+    const nextCursor = hasMore ? (messages[messages.length - 1]?.id ?? null) : null;
 
     return c.json({
       messages: messages.map(serializeMessageWithSender),
@@ -378,7 +366,9 @@ export function createChatRoutes(opts: {
   app.patch('/:id/messages/read', async (c) => {
     const assignmentId = c.req.param('id');
     const access = await resolveChatAccess(c, assignmentId);
-    if (!access.ok) return access.response;
+    if (!access.ok) {
+      return access.response;
+    }
 
     // Marca como leídos todos los mensajes del OTRO rol que aún están unread.
     // No tocamos read_at de los propios (sería trivial — uno mismo no se
@@ -419,13 +409,12 @@ export function createChatRoutes(opts: {
   app.get('/:id/messages/stream', async (c) => {
     const assignmentId = c.req.param('id');
     const access = await resolveChatAccess(c, assignmentId);
-    if (!access.ok) return access.response;
+    if (!access.ok) {
+      return access.response;
+    }
 
     if (!opts.pubsubTopic) {
-      return c.json(
-        { error: 'realtime_disabled', code: 'realtime_disabled' },
-        503,
-      );
+      return c.json({ error: 'realtime_disabled', code: 'realtime_disabled' }, 503);
     }
 
     const { subscription, cleanup } = await createEphemeralChatSubscription({
@@ -519,13 +508,12 @@ export function createChatRoutes(opts: {
     async (c) => {
       const assignmentId = c.req.param('id');
       const access = await resolveChatAccess(c, assignmentId);
-      if (!access.ok) return access.response;
+      if (!access.ok) {
+        return access.response;
+      }
 
       if (!opts.attachmentsBucket) {
-        return c.json(
-          { error: 'attachments_disabled', code: 'attachments_disabled' },
-          503,
-        );
+        return c.json({ error: 'attachments_disabled', code: 'attachments_disabled' }, 503);
       }
 
       // Solo permitir mientras el chat esté activo (consistente con POST /messages).
@@ -541,7 +529,8 @@ export function createChatRoutes(opts: {
       }
 
       const { content_type } = c.req.valid('json');
-      const ext = content_type === 'image/jpeg' ? 'jpg' : content_type === 'image/png' ? 'png' : 'webp';
+      const ext =
+        content_type === 'image/jpeg' ? 'jpg' : content_type === 'image/png' ? 'png' : 'webp';
 
       // El cliente todavía no tiene messageId (lo emite la DB al insertar
       // el mensaje), así que generamos un UUID para el filename. El cliente
@@ -570,6 +559,81 @@ export function createChatRoutes(opts: {
       });
     },
   );
+
+  // -------------------------------------------------------------------------
+  // POST /:id/messages/:msgId/photo-url — signed URL GCS GET (download)
+  // -------------------------------------------------------------------------
+  // Las fotos del chat son privadas en GCS (uniform bucket-level access,
+  // sin allUsers). Este endpoint resuelve el gs:// → URL firmada read-only
+  // que el browser puede meter en <img src=...>.
+  //
+  // POST en vez de GET porque:
+  //   - Crear una signed URL es un side-effect cobrable (RSA sign con la
+  //     SA key) y muchos browsers/proxies cachean GET agresivamente, lo
+  //     cual generaría URLs reusadas con TTL caducado.
+  //   - Mantenemos consistencia con photo-upload-url (ambos POST).
+  //
+  // Auth: resolveChatAccess valida que el caller pertenece al chat. Después
+  // verificamos que el mensaje sea (a) de este assignment, (b) tipo foto,
+  // y (c) tenga photoGcsUri seteado. Si falta cualquiera → 404.
+  //
+  // TTL 5 min — suficiente para cargar la imagen en el browser, no tan
+  // largo que el leak de la URL sea peligroso.
+  app.post('/:id/messages/:msgId/photo-url', async (c) => {
+    const assignmentId = c.req.param('id');
+    const msgId = c.req.param('msgId');
+    const access = await resolveChatAccess(c, assignmentId);
+    if (!access.ok) {
+      return access.response;
+    }
+
+    if (!opts.attachmentsBucket) {
+      return c.json({ error: 'attachments_disabled', code: 'attachments_disabled' }, 503);
+    }
+
+    // Validar que el mensaje exista, sea de este assignment y sea foto.
+    const [msg] = await opts.db
+      .select({
+        id: chatMessages.id,
+        assignmentId: chatMessages.assignmentId,
+        messageType: chatMessages.messageType,
+        photoGcsUri: chatMessages.photoGcsUri,
+      })
+      .from(chatMessages)
+      .where(eq(chatMessages.id, msgId))
+      .limit(1);
+
+    if (!msg || msg.assignmentId !== assignmentId) {
+      return c.json({ error: 'message_not_found', code: 'message_not_found' }, 404);
+    }
+    if (msg.messageType !== 'foto' || !msg.photoGcsUri) {
+      return c.json({ error: 'not_a_photo', code: 'not_a_photo' }, 400);
+    }
+
+    // Defensa-en-profundidad: el URI debe estar en el bucket configurado
+    // (el INSERT también lo valida, pero no confiamos en datos viejos).
+    const expectedPrefix = `gs://${opts.attachmentsBucket}/`;
+    if (!msg.photoGcsUri.startsWith(expectedPrefix)) {
+      opts.logger.warn(
+        { msgId, photoGcsUri: msg.photoGcsUri, bucket: opts.attachmentsBucket },
+        'photo URI mismatch with configured bucket',
+      );
+      return c.json({ error: 'photo_uri_mismatch', code: 'photo_uri_mismatch' }, 400);
+    }
+    const gcsPath = msg.photoGcsUri.slice(expectedPrefix.length);
+
+    const file = getStorage().bucket(opts.attachmentsBucket).file(gcsPath);
+    const [downloadUrl] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 5 * 60 * 1000, // TTL 5 min
+    });
+
+    return c.json({
+      download_url: downloadUrl,
+      expires_in_seconds: 300,
+    });
+  });
 
   return app;
 }

@@ -27,21 +27,28 @@ interface AssignmentDetail {
     id: string;
     tracking_code: string;
     status: string;
-    origin: { address_raw: string };
-    destination: { address_raw: string };
+    origin: { address_raw: string; region_code: string };
+    destination: { address_raw: string; region_code: string };
+    cargo_type: string;
+    cargo_weight_kg: number;
   };
   assignment: {
     id: string;
     status: string;
     empresa_legal_name: string | null;
-  } | null;
+    vehicle_plate: string | null;
+    vehicle_type: string | null;
+    driver_name: string | null;
+  };
 }
 
 export function AsignacionDetalleRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         const isCarrier = ctx.me.active_membership?.empresa.is_transportista ?? false;
         if (!isCarrier) {
           return (
@@ -67,38 +74,22 @@ export function AsignacionDetalleRoute() {
 function AsignacionDetallePage() {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
 
-  // El detalle del assignment vive en GET /trip-requests-v2/:tripId, pero
-  // acá tenemos el assignment_id. Necesitamos un endpoint que mapee
-  // assignment → trip o pasarle el tripId. Por v1 usamos un fetch
-  // intermedio: GET /assignments/:id/messages devuelve viewer_role +
-  // confirma que el assignment existe (con permisos), y el chat ya
-  // funciona standalone.
-  //
-  // Para mostrar header con tracking_code + ruta necesitaríamos un
-  // endpoint nuevo GET /assignments/:id que devuelva el detail. Por v1
-  // mostramos el assignmentId truncado y dejamos el header simple. El
-  // shipper-side (cargas.tsx) ya tiene el detalle completo.
-  const tripQ = useQuery<AssignmentDetail | null>({
+  // GET /assignments/:id devuelve trip + assignment metadata.
+  // Auth carrier owner se valida server-side (403 si la membership activa
+  // no es dueña de este assignment).
+  const tripQ = useQuery<AssignmentDetail>({
     queryKey: ['assignment-detail', assignmentId],
-    queryFn: async () => {
-      // Endpoint placeholder — si no existe, devuelve null y mostramos
-      // header simple. P3.f puede agregar un GET /assignments/:id real.
-      try {
-        return await api.get<AssignmentDetail>(`/assignments/${assignmentId}`);
-      } catch {
-        return null;
-      }
-    },
-    retry: false,
+    queryFn: () => api.get<AssignmentDetail>(`/assignments/${assignmentId}`),
   });
 
-  const tripCode = tripQ.data?.trip_request.tracking_code ?? assignmentId.slice(0, 8);
-  const subtitle = tripQ.data
-    ? `${tripQ.data.trip_request.origin.address_raw} → ${tripQ.data.trip_request.destination.address_raw}`
+  const trip = tripQ.data?.trip_request;
+  const assignment = tripQ.data?.assignment;
+  const tripCode = trip?.tracking_code ?? assignmentId.slice(0, 8);
+  const subtitle = trip
+    ? `${trip.origin.address_raw} → ${trip.destination.address_raw}`
     : undefined;
-  const isClosed =
-    tripQ.data?.trip_request.status === 'entregado' ||
-    tripQ.data?.trip_request.status === 'cancelado';
+  const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
+  const otroLado = assignment?.empresa_legal_name ?? 'generador de carga';
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
@@ -124,7 +115,7 @@ function AsignacionDetallePage() {
       <div className="flex-1 overflow-hidden">
         <ChatPanel
           assignmentId={assignmentId}
-          title={`Chat con generador de carga`}
+          title={`Chat con ${otroLado}`}
           {...(subtitle ? { subtitle } : {})}
           readOnly={isClosed}
         />

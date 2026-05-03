@@ -1,19 +1,32 @@
 /**
- * Endpoints carrier-side sobre assignments. Hoy solo:
+ * Endpoints carrier-side sobre assignments:
  *
- *   - PATCH /:id/confirmar-entrega — POD del transportista (fallback al
+ *   - GET   /:id                       — detalle assignment + trip (P3.f bonus)
+ *   - PATCH /:id/confirmar-entrega     — POD del transportista (fallback al
  *     flujo canónico del shipper PATCH /trip-requests-v2/:id/confirmar-recepcion).
  *
- * El servicio confirmarEntregaViaje() centraliza la lógica; este file
- * es un wrapper thin para validar carrier-auth.
+ * El servicio confirmarEntregaViaje() centraliza la lógica del POD;
+ * este file es un wrapper thin para validar carrier-auth + exponer detalle.
+ *
+ * Auth: ambas rutas requieren membership transportista activa que sea dueña
+ * del assignment (assignment.empresa_id === activeMembership.empresa.id).
+ * El shipper tiene su propio surface en /trip-requests-v2/:tripId — desde
+ * ahí ve el assignment como sub-objeto.
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
-import { assignments } from '../db/schema.js';
+import {
+  assignments,
+  empresas as empresasTable,
+  telemetryPoints,
+  trips,
+  users as usersTable,
+  vehicles,
+} from '../db/schema.js';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 
@@ -54,6 +67,148 @@ export function createAssignmentsRoutes(opts: {
   }
 
   // ---------------------------------------------------------------------
+  // GET /:id — detalle del assignment + trip para el carrier.
+  //
+  // El carrier entra a /app/asignaciones/:id después de aceptar una oferta
+  // y necesita header con tracking_code, ruta origen→destino, status, y
+  // datos del vehículo/driver asignado. El shipper tiene su propio surface
+  // (/app/cargas/:id) que ya devuelve esto desde GET /trip-requests-v2/:id.
+  //
+  // Forma de respuesta espejo (parcial) de GET /trip-requests-v2/:id, pero:
+  //   - origin/destination como objetos {address_raw, region_code} para
+  //     que el frontend no tenga que aplanar dos shapes distintos.
+  //   - assignment.ubicacion_actual incluida (último punto del vehículo)
+  //     porque el carrier surface también muestra "tu vehículo está en X"
+  //     como confirmación de que el GPS llega al backend.
+  // ---------------------------------------------------------------------
+  app.get('/:id', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    // Una sola query: assignment + trip + carrier empresa + vehicle + driver.
+    // No hacemos chequeo previo de ownership porque si el WHERE no matchea
+    // devuelve [], y respondemos 404 como cualquier otro recurso ajeno.
+    const [row] = await opts.db
+      .select({
+        // assignment
+        assignmentId: assignments.id,
+        assignmentStatus: assignments.status,
+        agreedPriceClp: assignments.agreedPriceClp,
+        acceptedAt: assignments.acceptedAt,
+        pickedUpAt: assignments.pickedUpAt,
+        deliveredAt: assignments.deliveredAt,
+        cancelledAt: assignments.cancelledAt,
+        empresaIdAssign: assignments.empresaId,
+        empresaLegalName: empresasTable.legalName,
+        vehicleId: assignments.vehicleId,
+        vehiclePlate: vehicles.plate,
+        vehicleType: vehicles.vehicleType,
+        driverUserId: assignments.driverUserId,
+        driverName: usersTable.fullName,
+        // trip
+        tripId: trips.id,
+        trackingCode: trips.trackingCode,
+        tripStatus: trips.status,
+        originAddressRaw: trips.originAddressRaw,
+        originRegionCode: trips.originRegionCode,
+        destinationAddressRaw: trips.destinationAddressRaw,
+        destinationRegionCode: trips.destinationRegionCode,
+        cargoType: trips.cargoType,
+        cargoWeightKg: trips.cargoWeightKg,
+        cargoVolumeM3: trips.cargoVolumeM3,
+        pickupWindowStart: trips.pickupWindowStart,
+        pickupWindowEnd: trips.pickupWindowEnd,
+        proposedPriceClp: trips.proposedPriceClp,
+      })
+      .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
+      .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
+      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (row.empresaIdAssign !== empresaId) {
+      return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
+    }
+
+    // Última ubicación del vehículo asignado (si tiene Teltonika emitiendo).
+    let ubicacionActual: {
+      timestamp_device: string;
+      latitude: number | null;
+      longitude: number | null;
+      speed_kmh: number | null;
+      angle_deg: number | null;
+    } | null = null;
+    if (row.vehicleId) {
+      const [last] = await opts.db
+        .select({
+          timestampDevice: telemetryPoints.timestampDevice,
+          latitude: telemetryPoints.latitude,
+          longitude: telemetryPoints.longitude,
+          speedKmh: telemetryPoints.speedKmh,
+          angleDeg: telemetryPoints.angleDeg,
+        })
+        .from(telemetryPoints)
+        .where(eq(telemetryPoints.vehicleId, row.vehicleId))
+        .orderBy(desc(telemetryPoints.timestampDevice))
+        .limit(1);
+      if (last) {
+        ubicacionActual = {
+          timestamp_device: last.timestampDevice.toISOString(),
+          latitude: last.latitude != null ? Number.parseFloat(last.latitude) : null,
+          longitude: last.longitude != null ? Number.parseFloat(last.longitude) : null,
+          speed_kmh: last.speedKmh,
+          angle_deg: last.angleDeg,
+        };
+      }
+    }
+
+    return c.json({
+      trip_request: {
+        id: row.tripId,
+        tracking_code: row.trackingCode,
+        status: row.tripStatus,
+        origin: {
+          address_raw: row.originAddressRaw,
+          region_code: row.originRegionCode,
+        },
+        destination: {
+          address_raw: row.destinationAddressRaw,
+          region_code: row.destinationRegionCode,
+        },
+        cargo_type: row.cargoType,
+        cargo_weight_kg: row.cargoWeightKg,
+        cargo_volume_m3: row.cargoVolumeM3,
+        pickup_window_start: row.pickupWindowStart?.toISOString() ?? null,
+        pickup_window_end: row.pickupWindowEnd?.toISOString() ?? null,
+        proposed_price_clp: row.proposedPriceClp,
+      },
+      assignment: {
+        id: row.assignmentId,
+        status: row.assignmentStatus,
+        agreed_price_clp: row.agreedPriceClp,
+        accepted_at: row.acceptedAt?.toISOString() ?? null,
+        picked_up_at: row.pickedUpAt?.toISOString() ?? null,
+        delivered_at: row.deliveredAt?.toISOString() ?? null,
+        cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        empresa_legal_name: row.empresaLegalName,
+        vehicle_plate: row.vehiclePlate,
+        vehicle_type: row.vehicleType,
+        driver_name: row.driverName,
+        ubicacion_actual: ubicacionActual,
+      },
+    });
+  });
+
+  // ---------------------------------------------------------------------
   // PATCH /:id/confirmar-entrega — carrier marca la carga como entregada.
   //
   // Es el flujo POD (Proof of Delivery) del transportista. Sirve como
@@ -86,10 +241,7 @@ export function createAssignmentsRoutes(opts: {
     // Doble check de ownership (defensa en profundidad — el servicio
     // también valida).
     if (row.empresaId !== auth.activeMembership.empresa.id) {
-      return c.json(
-        { error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' },
-        403,
-      );
+      return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
     }
 
     const result = await confirmarEntregaViaje({
