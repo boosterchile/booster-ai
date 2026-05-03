@@ -79,6 +79,7 @@ locals {
     "dns.googleapis.com",                 # Cloud DNS
     "iap.googleapis.com",                 # IAP TCP forwarding (ADR-013 bastion)
     "oslogin.googleapis.com",             # OS Login (auth SSH del bastion via IAM)
+    "cloudscheduler.googleapis.com",      # Cloud Scheduler (P3.d chat-whatsapp-fallback cron)
 
     # Billing
     "cloudbilling.googleapis.com",

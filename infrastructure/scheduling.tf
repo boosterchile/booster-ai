@@ -51,9 +51,16 @@ resource "google_cloud_scheduler_job" "chat_whatsapp_fallback" {
   name        = "chat-whatsapp-fallback"
   description = "Cada 1 min: manda WhatsApp template a destinatarios de mensajes de chat no leídos > 5 min."
   project     = google_project.booster_ai.project_id
-  region      = var.region
-  schedule    = "* * * * *"
-  time_zone   = "America/Santiago"
+
+  # Cloud Scheduler NO soporta southamerica-west1 (Santiago). La opción
+  # LATAM más cercana es southamerica-east1 (São Paulo). Latencia esperada
+  # entre regiones: ~30ms via fibra Google. Aceptable para un cron de
+  # frecuencia 1 min — el job dispara una request HTTP al api en
+  # southamerica-west1, cualquier overhead de cross-region es trivial
+  # comparado con el procesamiento del job (query DB + sends Twilio).
+  region    = "southamerica-east1"
+  schedule  = "* * * * *"
+  time_zone = "America/Santiago"
 
   retry_config {
     retry_count          = 3
