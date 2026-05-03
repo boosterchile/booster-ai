@@ -4,7 +4,7 @@
 # `pnpm deploy --prod` produce un árbol auto-contenido en /prod/api con
 # flat node_modules — evita el ERR_MODULE_NOT_FOUND cuando pnpm deja
 # paquetes sólo bajo node_modules/.pnpm/<pkg>/...
-FROM node:22-alpine AS base
+FROM node:25-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -36,7 +36,7 @@ FROM build AS deploy
 RUN pnpm --filter=@booster-ai/api --prod deploy /prod/api
 
 # --- runtime stage ---
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S booster && adduser -S booster -G booster
