@@ -120,5 +120,17 @@ export const api = {
   patch: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>('PATCH', path, body, init),
   put: <T>(path: string, body?: unknown, init?: RequestInit) => request<T>('PUT', path, body, init),
-  delete: <T>(path: string, init?: RequestInit) => request<T>('DELETE', path, undefined, init),
+  delete: <T>(path: string, bodyOrInit?: unknown, init?: RequestInit) => {
+    // DELETE puede llevar body (RFC 7231 lo permite). Detectamos si el
+    // primer arg es un RequestInit (tiene `headers` o `signal`) o un body.
+    if (
+      bodyOrInit &&
+      typeof bodyOrInit === 'object' &&
+      ('headers' in bodyOrInit || 'signal' in bodyOrInit) &&
+      !('endpoint' in bodyOrInit)
+    ) {
+      return request<T>('DELETE', path, undefined, bodyOrInit as RequestInit);
+    }
+    return request<T>('DELETE', path, bodyOrInit, init);
+  },
 } as const;

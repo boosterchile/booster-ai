@@ -16,42 +16,17 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      // injectManifest mode (P3.c): tomamos control del SW para agregar
+      // handlers custom de push + notificationclick (ver src/sw.ts).
+      // Workbox sigue precaching los assets via injectManifest() que
+      // llamamos desde sw.ts.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // skipWaiting + clientsClaim → cuando se deploya una version nueva,
-        // el nuevo SW se activa inmediatamente (no espera a que se cierren
-        // todas las pestañas) y toma control de los clients existentes en
-        // el siguiente fetch. Sin esto los usuarios pueden quedar pegados
-        // con un index.html viejo apuntando a un bundle JS que ya no
-        // existe (404) o que no tiene rutas nuevas.
-        skipWaiting: true,
-        clientsClaim: true,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-stylesheets',
-              expiration: {
-                maxEntries: 4,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-webfonts',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-        ],
       },
       manifest: {
         name: 'Booster AI',

@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { Building2, User as UserIcon } from 'lucide-react';
+import { Building2, MessageCircle, User as UserIcon, X } from 'lucide-react';
+import { useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { ChatPanel } from '../components/chat/ChatPanel.js';
+import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { api } from '../lib/api-client.js';
 
@@ -52,6 +55,7 @@ export function CargaTrackRoute() {
 
 function CargaTrackPage() {
   const { id } = useParams({ strict: false }) as { id: string };
+  const [chatOpen, setChatOpen] = useState(false);
 
   const tripQ = useQuery({
     queryKey: ['trip-requests-v2', id, 'track'],
@@ -64,8 +68,10 @@ function CargaTrackPage() {
   const trip = tripQ.data?.trip_request;
   const assignment = tripQ.data?.assignment;
   const ubicacion = assignment?.ubicacion_actual;
+  const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
 
   return (
+    <>
     <LiveTrackingScreen
       title={
         assignment?.vehicle_plate
@@ -117,5 +123,55 @@ function CargaTrackPage() {
         ) : null
       }
     />
+    {/* FAB chat — solo si hay assignment activo. */}
+    {assignment && !chatOpen && (
+      <button
+        type="button"
+        onClick={() => setChatOpen(true)}
+        className="fixed right-6 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-white shadow-lg transition hover:bg-primary-700"
+        aria-label="Abrir chat con transportista"
+      >
+        <MessageCircle className="h-6 w-6" aria-hidden />
+      </button>
+    )}
+    {/* Drawer chat. Overlay sobre el mapa, full height en mobile, sidebar en desktop. */}
+    {assignment && chatOpen && (
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setChatOpen(false)}>
+        <div
+          className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <PushSubscribeBanner />
+          <div className="flex items-center justify-between border-neutral-200 border-b px-4 py-3">
+            <div className="min-w-0">
+              <h3 className="truncate font-semibold text-neutral-900">
+                Chat con {assignment.empresa_legal_name ?? 'transportista'}
+              </h3>
+              {trip && (
+                <p className="truncate text-neutral-500 text-xs">
+                  Carga {trip.id.slice(0, 8)}…
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setChatOpen(false)}
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-100"
+              aria-label="Cerrar chat"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <ChatPanel
+              assignmentId={assignment.id}
+              title=""
+              readOnly={isClosed}
+            />
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

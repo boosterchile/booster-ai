@@ -42,13 +42,30 @@ export function createFirebaseAuthMiddleware(opts: {
   logger: Logger;
 }): MiddlewareHandler {
   return async (c, next) => {
+    // Path normal: token en header Authorization. Cubre 99% de los casos.
     const authHeader = c.req.header('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
+    let token: string | null = null;
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice('Bearer '.length).trim();
+    } else if (
+      // Fallback: token en query param `?auth=...`. Solo para endpoints
+      // SSE (EventSource del browser no soporta headers custom). Estricto:
+      // solo aceptamos query auth en paths que terminan en `/stream` y
+      // método GET. Cualquier otro endpoint con `?auth=` lo ignoramos —
+      // si no hay header, devolvemos 401.
+      c.req.method === 'GET' &&
+      c.req.path.endsWith('/stream')
+    ) {
+      const queryAuth = c.req.query('auth');
+      if (queryAuth) {
+        token = queryAuth;
+      }
+    }
+
+    if (!token) {
       opts.logger.warn({ path: c.req.path }, 'Missing Firebase Bearer token');
       return c.json({ error: 'Unauthorized' }, 401);
     }
-
-    const token = authHeader.slice('Bearer '.length).trim();
 
     let decoded: DecodedIdToken;
     try {
