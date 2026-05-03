@@ -118,5 +118,9 @@ __pycache__/
 * 2.*
 * 3.*
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (settings.json es shared y se trackea)
+.claude/settings.local.json
+.claude/.credentials.json
+
+# Playwright MCP outputs (sessions, traces, screenshots, video)
+.playwright-mcp/
