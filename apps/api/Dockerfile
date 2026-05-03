@@ -17,6 +17,13 @@ COPY packages/logger/package.json ./packages/logger/
 COPY packages/shared-schemas/package.json ./packages/shared-schemas/
 # B.8.c — el api ahora depende del cliente Twilio para mandar templates.
 COPY packages/whatsapp-client/package.json ./packages/whatsapp-client/
+# P2 — apps/api importa @booster-ai/certificate-generator (lifecycle de
+#       entrega → emitirCertificadoViaje). El paquete tiene deps externas
+#       (@signpdf/*, @google-cloud/kms, @google-cloud/storage, node-forge,
+#       pdf-lib) que tsup debe resolver al bundlearlo dentro de dist/main.js
+#       (noExternal: /^@booster-ai\//). Sin este COPY, pnpm install no
+#       sabe de las deps y esbuild revienta con "Could not resolve".
+COPY packages/certificate-generator/package.json ./packages/certificate-generator/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---
