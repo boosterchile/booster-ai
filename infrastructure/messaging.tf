@@ -4,13 +4,13 @@
 locals {
   # Cada topic se acompaña de su DLQ para mensajes que fallan al procesarse.
   pubsub_topics = [
-    "telemetry-events",         # Teltonika + PWA driver → processor
-    "trip-events",              # trip lifecycle state changes
-    "whatsapp-inbound-events",  # mensajes Meta WhatsApp
-    "notification-events",      # fan-out notificaciones
+    "telemetry-events",            # Teltonika + PWA driver → processor
+    "trip-events",                 # trip lifecycle state changes
+    "whatsapp-inbound-events",     # mensajes Meta WhatsApp
+    "notification-events",         # fan-out notificaciones
     "vehicle-availability-events", # vehículos disponibles para matching
-    "traffic-condition-events", # congestión detectada → eco-routing
-    "document-events",          # emisiones DTE, OCR requests
+    "traffic-condition-events",    # congestión detectada → eco-routing
+    "document-events",             # emisiones DTE, OCR requests
   ]
 }
 
@@ -84,6 +84,28 @@ resource "google_pubsub_topic" "document_events" {
     managed_by = "terraform"
   }
   depends_on = [google_project_service.apis]
+}
+
+# Chat shipper↔transportista (P3.b). Cada vez que se inserta un mensaje
+# en la tabla mensajes_chat, el api publica acá con atributo
+# `assignment_id`. Los SSE consumers (HTTP long-poll en GET
+# /assignments/:id/messages/stream) crean una subscription efímera con
+# filtro `attributes.assignment_id = "..."` y cuando el cliente
+# desconecta, la subscription se elimina.
+#
+# Retention corto (1h): si nadie está suscrito en ese momento (ningún tab
+# abierto), el mensaje se pierde — el cliente igual se va a enterar al
+# próximo GET listado (que va al DB, no al topic). El topic es solo el
+# canal de "push instantáneo a tabs vivos".
+resource "google_pubsub_topic" "chat_messages" {
+  name    = "chat-messages"
+  project = google_project.booster_ai.project_id
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+  }
+  message_retention_duration = "3600s" # 1h
+  depends_on                 = [google_project_service.apis]
 }
 
 # Dead-letter topics (uno global, DLQ separada por subscription)

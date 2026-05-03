@@ -74,6 +74,7 @@ output "pubsub_topics" {
     notification_events      = google_pubsub_topic.notification_events.name
     vehicle_availability     = google_pubsub_topic.vehicle_availability.name
     traffic_condition_events = google_pubsub_topic.traffic_condition.name
+    chat_messages            = google_pubsub_topic.chat_messages.name
   }
 }
 

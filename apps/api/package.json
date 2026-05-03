@@ -21,6 +21,7 @@
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/whatsapp-client": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
+    "@google-cloud/pubsub": "^4.10.0",
     "@google-cloud/storage": "^7.13.0",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.4.1",

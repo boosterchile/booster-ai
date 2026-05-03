@@ -83,6 +83,37 @@ resource "google_project_iam_member" "cloud_run_runtime_bindings" {
   member   = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
 
+# Custom role mínimo para que el SA Cloud Run pueda crear/borrar
+# subscriptions efímeras del chat SSE (P3.b). Los roles standard
+# pubsub.publisher/pubsub.subscriber NO incluyen subscriptions.create
+# (que es un permiso project-level — Pub/Sub modela subscriptions como
+# recursos del proyecto, no del topic).
+#
+# No usamos roles/pubsub.editor porque incluye topics.delete /
+# topics.update — peligroso aunque sea sobre 1 topic; el blast radius
+# de un bug podría borrar el topic chat-messages y romper el realtime
+# para todos. Custom role limitado a subscriptions es estrictamente
+# lo necesario.
+resource "google_project_iam_custom_role" "chat_subscription_manager" {
+  role_id     = "chatSubscriptionManager"
+  title       = "Chat SSE Subscription Manager"
+  description = "Permite create/delete/consume de subscriptions Pub/Sub efímeras (P3.b chat SSE). Sin permisos sobre topics."
+  project     = google_project.booster_ai.project_id
+  permissions = [
+    "pubsub.subscriptions.create",
+    "pubsub.subscriptions.delete",
+    "pubsub.subscriptions.get",
+    "pubsub.subscriptions.consume",
+  ]
+  stage = "GA"
+}
+
+resource "google_project_iam_member" "cloud_run_chat_subscription_manager" {
+  project = google_project.booster_ai.project_id
+  role    = google_project_iam_custom_role.chat_subscription_manager.id
+  member  = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # SA para deploys desde GitHub Actions via WIF.
 # NO Owner — solo permisos para deploy. Mínimo privilegio.
 resource "google_service_account" "github_deployer" {
@@ -95,15 +126,15 @@ resource "google_service_account" "github_deployer" {
 
 locals {
   github_deployer_roles = [
-    "roles/run.admin",                           # Deploy a Cloud Run
-    "roles/cloudbuild.builds.editor",            # Trigger Cloud Build
-    "roles/artifactregistry.writer",             # Push Docker images
-    "roles/iam.serviceAccountUser",              # Impersonate cloud_run_runtime al deploy
-    "roles/storage.objectAdmin",                 # Subir source al bucket _cloudbuild (gcloud builds submit)
-    "roles/serviceusage.serviceUsageConsumer",   # Attribution de quota al usar APIs durante el build
-    "roles/container.developer",                 # Deploy a GKE (telemetry gateway)
-    "roles/logging.viewer",                      # Leer logs de Cloud Build para que gcloud builds submit los streamee
-    "roles/logging.logWriter",                   # Escribir logs del build a Cloud Logging (cuando es el build SA)
+    "roles/run.admin",                         # Deploy a Cloud Run
+    "roles/cloudbuild.builds.editor",          # Trigger Cloud Build
+    "roles/artifactregistry.writer",           # Push Docker images
+    "roles/iam.serviceAccountUser",            # Impersonate cloud_run_runtime al deploy
+    "roles/storage.objectAdmin",               # Subir source al bucket _cloudbuild (gcloud builds submit)
+    "roles/serviceusage.serviceUsageConsumer", # Attribution de quota al usar APIs durante el build
+    "roles/container.developer",               # Deploy a GKE (telemetry gateway)
+    "roles/logging.viewer",                    # Leer logs de Cloud Build para que gcloud builds submit los streamee
+    "roles/logging.logWriter",                 # Escribir logs del build a Cloud Logging (cuando es el build SA)
   ]
 }
 
@@ -154,8 +185,8 @@ resource "google_service_account" "db_bastion" {
 
 locals {
   db_bastion_roles = [
-    "roles/cloudsql.client",       # Cloud SQL Admin API + establecer tunel TLS
-    "roles/logging.logWriter",     # journalctl → Cloud Logging
+    "roles/cloudsql.client",         # Cloud SQL Admin API + establecer tunel TLS
+    "roles/logging.logWriter",       # journalctl → Cloud Logging
     "roles/monitoring.metricWriter", # métricas de la VM
   ]
 }

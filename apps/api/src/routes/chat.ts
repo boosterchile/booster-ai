@@ -25,11 +25,12 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { zValidator } from '@hono/zod-validator';
 import { Storage } from '@google-cloud/storage';
+import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, isNull, lt, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
@@ -38,6 +39,10 @@ import {
   trips,
   users as usersTable,
 } from '../db/schema.js';
+import {
+  createEphemeralChatSubscription,
+  publishChatMessage,
+} from '../services/chat-pubsub.js';
 
 let cachedStorage: Storage | null = null;
 
@@ -97,6 +102,12 @@ export function createChatRoutes(opts: {
   db: Db;
   logger: Logger;
   attachmentsBucket?: string;
+  /**
+   * Pub/Sub topic para realtime (P3.b). Si está ausente, POST igual
+   * inserta en DB pero no publica al topic; GET /stream devuelve 503.
+   * En dev sin Pub/Sub, la UI cae a polling como fallback.
+   */
+  pubsubTopic?: string;
 }) {
   const app = new Hono();
 
@@ -253,7 +264,18 @@ export function createChatRoutes(opts: {
       'chat message sent',
     );
 
-    // P3.b — wire Pub/Sub publish iría acá (fire-and-forget). Por ahora no-op.
+    // P3.b — fire-and-forget publish al topic Pub/Sub para que los SSE
+    // viewers de este assignment reciban el mensaje en realtime. Si
+    // falla, el mensaje ya está en DB; los viewers se enteran al próximo
+    // refetch o cuando otro mensaje publique OK.
+    if (opts.pubsubTopic) {
+      void publishChatMessage({
+        topicName: opts.pubsubTopic,
+        logger: opts.logger,
+        assignmentId,
+        messageId: inserted.id,
+      });
+    }
     // P3.c — wire Web Push también acá.
 
     return c.json(
@@ -358,6 +380,105 @@ export function createChatRoutes(opts: {
 
     return c.json({
       marked_read: result.length,
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /:id/messages/stream — SSE realtime (P3.b)
+  // -------------------------------------------------------------------------
+  // El cliente abre EventSource a este endpoint. El servidor:
+  //   1. Crea una subscription efímera al topic chat-messages con filter
+  //      por assignment_id.
+  //   2. Envía un evento `connected` con el subscription name (debug).
+  //   3. Cada vez que llega un mensaje al topic, lo serializa y envía
+  //      como evento SSE 'message' con el payload {message_id, assignment_id}.
+  //      El cliente usa eso para invalidar el cache de useQuery o pedir
+  //      el GET /messages individual del nuevo id.
+  //   4. Heartbeat cada 25s para mantener la conexión viva a través de
+  //      proxies (Cloud Armor cierra conexiones idle a ~60s).
+  //   5. Cuando el cliente desconecta (window unload, tab close), borra
+  //      la subscription y cierra el stream.
+  // -------------------------------------------------------------------------
+  app.get('/:id/messages/stream', async (c) => {
+    const assignmentId = c.req.param('id');
+    const access = await resolveChatAccess(c, assignmentId);
+    if (!access.ok) return access.response;
+
+    if (!opts.pubsubTopic) {
+      return c.json(
+        { error: 'realtime_disabled', code: 'realtime_disabled' },
+        503,
+      );
+    }
+
+    const { subscription, cleanup } = await createEphemeralChatSubscription({
+      topicName: opts.pubsubTopic,
+      logger: opts.logger,
+      assignmentId,
+    });
+
+    return streamSSE(c, async (stream) => {
+      // Evento inicial — útil para debug client-side y para confirmar al
+      // cliente que la conexión está viva (antes del primer mensaje).
+      await stream.writeSSE({
+        event: 'connected',
+        data: JSON.stringify({ assignment_id: assignmentId }),
+      });
+
+      // Forward de cada mensaje del topic al cliente SSE.
+      const onMessage = async (msg: { data: Buffer; ack: () => void; nack: () => void }) => {
+        try {
+          const payload = JSON.parse(msg.data.toString('utf-8'));
+          await stream.writeSSE({
+            event: 'message',
+            data: JSON.stringify(payload),
+          });
+          msg.ack();
+        } catch (err) {
+          opts.logger.warn(
+            { err, assignmentId },
+            'SSE forward de mensaje Pub/Sub falló (nack para reintento)',
+          );
+          msg.nack();
+        }
+      };
+
+      const onSubError = (err: Error) => {
+        opts.logger.error({ err, assignmentId }, 'subscription Pub/Sub error');
+      };
+
+      subscription.on('message', onMessage);
+      subscription.on('error', onSubError);
+
+      // Heartbeat para evitar que proxies cierren la conexión idle.
+      // 25s es seguro para Cloud Run + Cloud Armor (cierran ~60s default).
+      const heartbeat = setInterval(() => {
+        // No await — si el stream está cerrándose, write puede throw.
+        // El catch en el bloque externo lo captura.
+        stream
+          .writeSSE({
+            event: 'heartbeat',
+            data: new Date().toISOString(),
+          })
+          .catch(() => {
+            // Cliente probablemente desconectó.
+          });
+      }, 25_000);
+
+      // Esperar a que el cliente desconecte. onAbort se dispara cuando el
+      // browser cierra la conexión (tab close, navegación, network drop).
+      await new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          opts.logger.info({ assignmentId }, 'SSE client disconnected');
+          resolve();
+        });
+      });
+
+      // Cleanup ordenado.
+      clearInterval(heartbeat);
+      subscription.removeListener('message', onMessage);
+      subscription.removeListener('error', onSubError);
+      await cleanup();
     });
   });
 

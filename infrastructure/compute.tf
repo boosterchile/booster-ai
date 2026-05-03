@@ -106,6 +106,11 @@ module "service_api" {
     # del PDF firmado: gs://${documents_bucket}/certificates/.
     CERTIFICATE_SIGNING_KEY_ID = google_kms_crypto_key.certificate_carbono_signing.id
     CERTIFICATES_BUCKET        = google_storage_bucket.documents.name
+
+    # P3.b — chat SSE realtime. El api publica al topic post-INSERT de
+    # mensaje, y los GET /:id/messages/stream crean subscriptions
+    # efímeras filtradas por assignment_id.
+    CHAT_PUBSUB_TOPIC = google_pubsub_topic.chat_messages.name
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.

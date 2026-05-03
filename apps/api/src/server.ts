@@ -168,6 +168,9 @@ export function createServer(opts: CreateServerOptions): Hono {
       ...(config.CHAT_ATTACHMENTS_BUCKET
         ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
         : {}),
+      ...(config.CHAT_PUBSUB_TOPIC
+        ? { pubsubTopic: config.CHAT_PUBSUB_TOPIC }
+        : {}),
     });
     assignmentsRouter.route('/', chatRouter);
     app.route('/assignments', assignmentsRouter);

@@ -143,6 +143,19 @@ const apiEnvSchema = commonEnvSchema
      * Mensajes texto + ubicación funcionan sin esta env var.
      */
     CHAT_ATTACHMENTS_BUCKET: z.string().min(1).optional(),
+
+    /**
+     * Pub/Sub topic name para el realtime del chat (P3.b). Cada mensaje
+     * insertado se publica con atributo `assignment_id`; los GET
+     * /:id/messages/stream crean una subscription efímera filtrada por
+     * ese atributo y consumen via SSE.
+     *
+     * Optional: si está ausente, POST /messages igual escribe a la DB
+     * pero no publica al topic, y GET /stream devuelve 503. La UI cae
+     * a polling 5s como fallback (sin perder funcionalidad, solo
+     * latencia).
+     */
+    CHAT_PUBSUB_TOPIC: z.string().min(1).optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
