@@ -1,4 +1,4 @@
-# IAP Bastion — Capa 1 del ADR-013 (acceso humano a Cloud SQL privada).
+# IAP Bastion — Capa 1 del ADR-013, evolucionada por ADR-014.
 #
 # Patron:
 #   laptop ──► gcloud compute start-iap-tunnel ──► Google IAP frontend
@@ -6,16 +6,25 @@
 #                                                          ▼
 #                                                    bastion VM (private IP)
 #                                                          │
-#                                                          ▼  cloud-sql-proxy
+#                                                          ▼  cloud-sql-proxy --auto-iam-authn
 #                                                          │  (systemd service)
 #                                                          ▼
 #                                                    Cloud SQL private IP
 #
-# El bastion corre cloud-sql-proxy como systemd service. El proxy NO usa
-# --auto-iam-authn — solo termina TLS hacia Cloud SQL. La autenticacion del
-# operador al rol Postgres la hace cada laptop pasando su access token como
-# password (libpq IAM auth manual). Eso preserva audit per-usuario en
-# pg_audit, sin que el proxy unifique sesiones bajo el SA del bastion.
+# El bastion corre cloud-sql-proxy como systemd service con --auto-iam-authn.
+# El proxy obtiene el access token del SA `db-bastion-sa` y lo usa como
+# password al backend Postgres. Por lo tanto:
+#
+#   - Todas las conexiones via tunel se autentican contra Postgres como el
+#     rol IAM `db-bastion-sa@booster-ai-494222.iam` (NO como el email del
+#     operador). pg_audit registra la SA, no al humano.
+#   - La trazabilidad per-humano se preserva en Cloud Audit Logs de IAP
+#     (quien abrio el tunel, cuando, desde que IP). Para queries de auditoria
+#     cruzada ver runbook docs/runbooks/audit-bastion-queries.md.
+#
+# Trade-off aceptado en ADR-014: ergonomia (connection string estable
+# `127.0.0.1:5432` para MCP postgres + tooling local) por granularidad de
+# pg_audit. La trazabilidad humana queda en otro plano (IAP logs).
 
 locals {
   # Startup script: instala cloud-sql-proxy v2 + systemd service.
@@ -56,7 +65,7 @@ locals {
     [Service]
     Type=simple
     User=cloud-sql-proxy
-    ExecStart=$PROXY_BIN --address=0.0.0.0 --port=5432 --private-ip ${var.cloudsql_instance_connection_name}
+    ExecStart=$PROXY_BIN --address=0.0.0.0 --port=5432 --private-ip --auto-iam-authn ${var.cloudsql_instance_connection_name}
     Restart=always
     RestartSec=5
     StandardOutput=journal

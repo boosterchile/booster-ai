@@ -184,17 +184,20 @@ resource "google_project_iam_member" "compute_default_sa_artifact_reader" {
 }
 
 # =============================================================================
-# IAP BASTION SA — Capa 1 del ADR-013
+# IAP BASTION SA — Capa 1 del ADR-013, evolucionada por ADR-014
 # =============================================================================
-# SA dedicada para el bastion VM. cloud-sql-proxy en el bastion la usa para
-# autenticarse contra la Admin API de Cloud SQL (cloudsql.client) y
-# establecer el túnel TLS hacia la instancia privada. La auth IAM-database
-# del operador al rol Postgres se hace per-laptop con su propio access
-# token — el bastion SA NO conoce esa identidad.
+# SA dedicada para el bastion VM. Tras ADR-014, cloud-sql-proxy corre con
+# --auto-iam-authn y autentica contra Postgres como esta SA (NO como el
+# operador humano). Por eso necesita ambos roles: cloudsql.client (Admin
+# API + tunel TLS) y cloudsql.instanceUser (login IAM al rol Postgres).
+# Tambien hay un google_sql_user tipo CLOUD_IAM_SERVICE_ACCOUNT en data.tf
+# que crea el rol Postgres correspondiente, y un grant SQL en
+# scripts/sql/2026-05-03-grant-bastion-sa.sql que le da los privilegios
+# necesarios sobre booster_ai DB.
 resource "google_service_account" "db_bastion" {
   account_id   = "db-bastion-sa"
   display_name = "Booster AI DB Bastion (IAP)"
-  description  = "Identidad del bastion VM que sirve cloud-sql-proxy a operadores via IAP TCP."
+  description  = "Identidad del bastion VM. Sirve cloud-sql-proxy --auto-iam-authn a operadores via IAP TCP (ADR-014)."
   project      = google_project.booster_ai.project_id
   depends_on   = [google_project_service.apis]
 }
@@ -202,6 +205,7 @@ resource "google_service_account" "db_bastion" {
 locals {
   db_bastion_roles = [
     "roles/cloudsql.client",         # Cloud SQL Admin API + establecer tunel TLS
+    "roles/cloudsql.instanceUser",   # login IAM al rol Postgres (--auto-iam-authn)
     "roles/logging.logWriter",       # journalctl → Cloud Logging
     "roles/monitoring.metricWriter", # métricas de la VM
   ]

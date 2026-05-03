@@ -231,6 +231,19 @@ No "adivino" ni "asumo lo razonable" en decisiones que no son claramente determi
 - **Carrier/Shipper deprecated**. Usar `Transportista`/`GeneradorCarga` en código y SQL. `transportistaIdSchema` reemplaza `carrierIdSchema`; este último queda como alias deprecated mientras schemas legacy se migran.
 - **Stakeholder se mantiene como término** (anglicismo aceptado en español de negocios).
 
+## DB Access Patterns (ADR-013 + ADR-014)
+
+| Caso | Mecanismo | Comando |
+|------|-----------|---------|
+| **Cloud Run services** | VPC connector + `booster_app` password (Secret Manager `database-url`) | automático |
+| **Dev local recurrente** (psql, MCP postgres, DBeaver, drizzle-kit) | LaunchAgent IAP tunnel persistente → bastion proxy `--auto-iam-authn`. Connection string fijo: `postgresql://db-bastion-sa%40booster-ai-494222.iam:dummy@127.0.0.1:5432/booster_ai?sslmode=disable` | `bash scripts/db/connect-local.sh psql` |
+| **DDL / migrations / GRANTs / hotfix admin** | `connect.sh AUTH_MODE=password` ad-hoc → bastion proxy → `booster_app` | `AUTH_MODE=password bash scripts/db/connect.sh -f scripts/sql/X.sql` |
+| **Cloud Run Jobs (one-off ops)** | VPC connector + SA del Cloud Run Job | `gcloud run jobs execute <name>` |
+
+**Setup inicial (una sola vez por laptop)**: ver `scripts/db/README.md` § Quick start dev local. Incluye instalar LaunchAgent (`scripts/db/iap-tunnel.plist.template`), aplicar GRANTs (`scripts/sql/2026-05-03-grant-bastion-sa.sql`), y `claude mcp add postgres --scope user`.
+
+**Audit**: queries via dev local quedan atribuidas a la SA del bastion en `pg_audit`. La trazabilidad per-humano vive en Cloud Audit Logs de IAP (quién abrió el túnel). Trade-off aceptado en ADR-014.
+
 ---
 
 **Estado de adopción**: este contrato entra en vigor desde el primer commit del repo. Cualquier excepción debe documentarse.

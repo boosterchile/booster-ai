@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Booster AI — LaunchAgent de macOS para mantener el IAP tunnel persistente.
+  ADR-014 — `cloud-sql-proxy --auto-iam-authn` corre en el bastion; este
+  LaunchAgent solo levanta el tunel IAP en la laptop para que 127.0.0.1:5432
+  apunte al proxy del bastion en todo momento.
+
+  Instalacion (una sola vez):
+    1. Reemplazar TODOS los placeholders __ABSOLUTE_PATH__ con el path real
+       del clone (ej. /Users/fvicencio/dev/booster-ai). NO usar ~ — launchd
+       no lo expande.
+    2. Reemplazar __GCLOUD_BIN__ con el resultado de `which gcloud`
+       (tipicamente /opt/homebrew/bin/gcloud o /usr/local/bin/gcloud).
+    3. Copiar a ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+    4. launchctl load -w ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+    5. Verificar:
+         launchctl list | grep com.booster.db-iap-tunnel
+         bash scripts/db/connect-local.sh status
+
+  Reload tras cambio de plist:
+    launchctl unload ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+    launchctl load -w ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+    rm ~/Library/LaunchAgents/com.booster.db-iap-tunnel.plist
+
+  Logs:
+    tail -f /tmp/booster-iap-tunnel.stdout.log
+    tail -f /tmp/booster-iap-tunnel.stderr.log
+
+  Por que NO se hace `cloud-sql-proxy local`:
+    Cloud SQL es private-IP only sin PSC. El proxy local no tiene ruta al
+    backend. ADR-014 mueve el proxy al bastion (con --auto-iam-authn) y la
+    laptop solo necesita el tunel IAP. El connection string queda fijo:
+      postgresql://db-bastion-sa%40booster-ai-494222.iam:dummy@127.0.0.1:5432/booster_ai?sslmode=disable
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.booster.db-iap-tunnel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__GCLOUD_BIN__</string>
+        <string>compute</string>
+        <string>start-iap-tunnel</string>
+        <string>db-bastion</string>
+        <string>5432</string>
+        <string>--local-host-port=127.0.0.1:5432</string>
+        <string>--zone=southamerica-west1-a</string>
+        <string>--project=booster-ai-494222</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/booster-iap-tunnel.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/booster-iap-tunnel.stderr.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>__ABSOLUTE_PATH__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>CLOUDSDK_PYTHON</key>
+        <string>/usr/bin/python3</string>
+    </dict>
+</dict>
+</plist>

@@ -192,6 +192,25 @@ resource "google_sql_user" "iam_operators" {
   # Sin password: autenticación via IAM token.
 }
 
+# IAM SERVICE ACCOUNT user en Postgres para el bastion (ADR-014).
+# Cuando cloud-sql-proxy en bastion corre con --auto-iam-authn, autentica
+# como esta SA contra Postgres. Sin este google_sql_user, las conexiones
+# fallan con "FATAL: pg_hba.conf rejects connection".
+#
+# Naming: el `name` debe ser el email del SA SIN el sufijo
+# `.gserviceaccount.com` — convención Cloud SQL para CLOUD_IAM_SERVICE_ACCOUNT.
+# Ver https://cloud.google.com/sql/docs/postgres/add-manage-iam-users#add-service-account
+resource "google_sql_user" "bastion_sa" {
+  name     = trimsuffix(google_service_account.db_bastion.email, ".gserviceaccount.com")
+  type     = "CLOUD_IAM_SERVICE_ACCOUNT"
+  instance = google_sql_database_instance.main.name
+  project  = google_project.booster_ai.project_id
+  # Sin password: autenticación via IAM token (refresh automático del proxy).
+  # Los grants SQL al rol creado se aplican post-apply via:
+  #   bash scripts/db/connect.sh AUTH_MODE=password \
+  #     -f scripts/sql/2026-05-03-grant-bastion-sa.sql
+}
+
 resource "google_project_iam_member" "db_iam_operators_client" {
   for_each = toset(local.db_iam_operators)
   project  = google_project.booster_ai.project_id
