@@ -318,15 +318,26 @@ function makeQueryDb(opts: {
   let orderByCallCount = 0;
   let limitCallCount = 0;
 
-  const orderByFn = vi.fn(() => {
-    const idx = orderByCallCount;
-    orderByCallCount += 1;
-    return Promise.resolve(opts.orderByRows?.[idx] ?? []);
-  });
   const limitFn = vi.fn(() => {
     const idx = limitCallCount;
     limitCallCount += 1;
     return Promise.resolve(opts.limitRows?.[idx] ?? []);
+  });
+  // orderBy es thenable + chainable: soporta tanto `await db…orderBy(...)`
+  // (devuelve los rows orderByRows[idx]) como `await db…orderBy(...).limit(N)`
+  // (encadena a limitFn que consume limitRows[idx]).
+  const orderByFn = vi.fn(() => {
+    const idx = orderByCallCount;
+    orderByCallCount += 1;
+    const rows = opts.orderByRows?.[idx] ?? [];
+    return {
+      // biome-ignore lint/suspicious/noThenProperty: thenable es necesario para emular Drizzle query builder en tests
+      then: (
+        resolve: (v: Record<string, unknown>[]) => unknown,
+        reject?: (err: unknown) => unknown,
+      ) => Promise.resolve(rows).then(resolve, reject),
+      limit: limitFn,
+    };
   });
   const leftJoinFn = vi.fn(() => ({
     leftJoin: leftJoinFn,
@@ -475,6 +486,9 @@ describe('GET /trip-requests-v2/:id', () => {
             },
           ],
           [], // no metrics
+          // 4to limit: telemetry last point (where + orderBy + limit). Vacío
+          // → ubicacion_actual será null en la respuesta.
+          [],
         ],
         orderByRows: [[]], // events list empty
       }),
