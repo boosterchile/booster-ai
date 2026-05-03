@@ -29,12 +29,13 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { assertAssignmentTransition, assertTripTransition } from '@booster-ai/trip-state-machine';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
 import {
-  emitirCertificadoViaje,
   type EmitirCertificadoConfig,
+  emitirCertificadoViaje,
 } from './emitir-certificado-viaje.js';
 
 /**
@@ -51,11 +52,7 @@ export type ConfirmarEntregaResult =
   | { ok: true; alreadyDelivered: true; deliveredAt: Date }
   | {
       ok: false;
-      code:
-        | 'trip_not_found'
-        | 'no_assignment'
-        | 'forbidden_owner_mismatch'
-        | 'invalid_status';
+      code: 'trip_not_found' | 'no_assignment' | 'forbidden_owner_mismatch' | 'invalid_status';
       currentStatus?: string;
     };
 
@@ -95,6 +92,7 @@ export async function confirmarEntregaViaje(opts: {
       .select({
         id: assignments.id,
         empresaId: assignments.empresaId,
+        status: assignments.status,
         deliveredAt: assignments.deliveredAt,
       })
       .from(assignments)
@@ -148,7 +146,13 @@ export async function confirmarEntregaViaje(opts: {
       return { ok: false as const, code: 'no_assignment' as const };
     }
 
-    // (7) UPDATEs en el orden esperado por el lifecycle.
+    // (7) UPDATEs en el orden esperado por el lifecycle. Validamos ambas
+    // SMs (trip y assignment) — cada una tiene su evento DELIVERY_CONFIRMED.
+    // El status pre-update se lee del row trip/assignment del query previo.
+    assertTripTransition(trip.status, { type: 'DELIVERY_CONFIRMED' });
+    assertAssignmentTransition(assignment.status, {
+      type: 'DELIVERY_CONFIRMED',
+    });
     const now = new Date();
     await tx.update(trips).set({ status: 'entregado' }).where(eq(trips.id, tripId));
     await tx

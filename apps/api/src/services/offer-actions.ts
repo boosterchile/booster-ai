@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { assertTripTransition } from '@booster-ai/trip-state-machine';
 import { and, eq, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
@@ -75,151 +76,157 @@ export async function acceptOffer(opts: {
 }): Promise<AcceptOfferResult> {
   const { db, logger, offerId, empresaId, userId } = opts;
 
-  return await db.transaction(async (tx) => {
-    // 1. Cargar y validar offer.
-    const offerRows = await tx.select().from(offers).where(eq(offers.id, offerId)).limit(1);
-    const offer = offerRows[0];
-    if (!offer) {
-      throw new OfferNotFoundError(offerId);
-    }
-    if (offer.empresaId !== empresaId) {
-      throw new OfferNotOwnedError(offerId, empresaId);
-    }
-    if (offer.status !== 'pendiente') {
-      throw new OfferNotPendingError(offerId, offer.status);
-    }
-    if (offer.expiresAt.getTime() < Date.now()) {
-      throw new OfferExpiredError(offerId);
-    }
+  return await db
+    .transaction(async (tx) => {
+      // 1. Cargar y validar offer.
+      const offerRows = await tx.select().from(offers).where(eq(offers.id, offerId)).limit(1);
+      const offer = offerRows[0];
+      if (!offer) {
+        throw new OfferNotFoundError(offerId);
+      }
+      if (offer.empresaId !== empresaId) {
+        throw new OfferNotOwnedError(offerId, empresaId);
+      }
+      if (offer.status !== 'pendiente') {
+        throw new OfferNotPendingError(offerId, offer.status);
+      }
+      if (offer.expiresAt.getTime() < Date.now()) {
+        throw new OfferExpiredError(offerId);
+      }
 
-    const now = new Date();
+      const now = new Date();
 
-    // 2. Marcar offer aceptada.
-    const [acceptedOffer] = await tx
-      .update(offers)
-      .set({
-        status: 'aceptada',
-        respondedAt: now,
-        responseChannel: 'web',
-        updatedAt: now,
-      })
-      .where(eq(offers.id, offerId))
-      .returning();
-    if (!acceptedOffer) {
-      throw new Error('Update offer returned no row');
-    }
+      // 2. Marcar offer aceptada.
+      const [acceptedOffer] = await tx
+        .update(offers)
+        .set({
+          status: 'aceptada',
+          respondedAt: now,
+          responseChannel: 'web',
+          updatedAt: now,
+        })
+        .where(eq(offers.id, offerId))
+        .returning();
+      if (!acceptedOffer) {
+        throw new Error('Update offer returned no row');
+      }
 
-    // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
-    const [assignment] = await tx
-      .insert(assignments)
-      .values({
-        tripId: offer.tripId,
-        offerId: offer.id,
-        empresaId: offer.empresaId,
-        vehicleId: offer.suggestedVehicleId ?? '',
-        status: 'asignado',
-        agreedPriceClp: offer.proposedPriceClp,
-        acceptedAt: now,
-      })
-      .returning();
-    if (!assignment) {
-      throw new Error('Insert assignment returned no row');
-    }
+      // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
+      const [assignment] = await tx
+        .insert(assignments)
+        .values({
+          tripId: offer.tripId,
+          offerId: offer.id,
+          empresaId: offer.empresaId,
+          vehicleId: offer.suggestedVehicleId ?? '',
+          status: 'asignado',
+          agreedPriceClp: offer.proposedPriceClp,
+          acceptedAt: now,
+        })
+        .returning();
+      if (!assignment) {
+        throw new Error('Insert assignment returned no row');
+      }
 
-    // 4. Otras offers del mismo trip pasan a reemplazada.
-    const supersededRows = await tx
-      .update(offers)
-      .set({ status: 'reemplazada', updatedAt: now })
-      .where(
-        and(
-          eq(offers.tripId, offer.tripId),
-          ne(offers.id, offer.id),
-          eq(offers.status, 'pendiente'),
-        ),
-      )
-      .returning({ id: offers.id });
+      // 4. Otras offers del mismo trip pasan a reemplazada.
+      const supersededRows = await tx
+        .update(offers)
+        .set({ status: 'reemplazada', updatedAt: now })
+        .where(
+          and(
+            eq(offers.tripId, offer.tripId),
+            ne(offers.id, offer.id),
+            eq(offers.status, 'pendiente'),
+          ),
+        )
+        .returning({ id: offers.id });
 
-    // 5. trip → asignado.
-    await tx
-      .update(trips)
-      .set({ status: 'asignado', updatedAt: now })
-      .where(eq(trips.id, offer.tripId));
+      // 5. trip → asignado. La SM canónica acepta OFFER_ACCEPTED solo desde
+      // 'ofertas_enviadas'. El callsite invoca offer-actions tras validar
+      // offer.status === 'pendiente', que solo existe cuando el trip está
+      // en 'ofertas_enviadas'. El assert es defensa adicional.
+      assertTripTransition('ofertas_enviadas', { type: 'OFFER_ACCEPTED' });
+      await tx
+        .update(trips)
+        .set({ status: 'asignado', updatedAt: now })
+        .where(eq(trips.id, offer.tripId));
 
-    // 6. Audit events.
-    await tx.insert(tripEvents).values([
-      {
-        tripId: offer.tripId,
-        assignmentId: assignment.id,
-        eventType: 'oferta_aceptada',
-        payload: {
-          offer_id: offer.id,
-          empresa_id: empresaId,
-          superseded_count: supersededRows.length,
+      // 6. Audit events.
+      await tx.insert(tripEvents).values([
+        {
+          tripId: offer.tripId,
+          assignmentId: assignment.id,
+          eventType: 'oferta_aceptada',
+          payload: {
+            offer_id: offer.id,
+            empresa_id: empresaId,
+            superseded_count: supersededRows.length,
+          },
+          source: 'web',
+          recordedByUserId: userId,
         },
-        source: 'web',
-        recordedByUserId: userId,
-      },
-      {
-        tripId: offer.tripId,
-        assignmentId: assignment.id,
-        eventType: 'asignacion_creada',
-        payload: {
-          assignment_id: assignment.id,
-          empresa_id: empresaId,
-          vehicle_id: assignment.vehicleId,
-          agreed_price_clp: assignment.agreedPriceClp,
+        {
+          tripId: offer.tripId,
+          assignmentId: assignment.id,
+          eventType: 'asignacion_creada',
+          payload: {
+            assignment_id: assignment.id,
+            empresa_id: empresaId,
+            vehicle_id: assignment.vehicleId,
+            agreed_price_clp: assignment.agreedPriceClp,
+          },
+          source: 'web',
+          recordedByUserId: userId,
         },
-        source: 'web',
-        recordedByUserId: userId,
-      },
-    ]);
+      ]);
 
-    logger.info(
-      {
-        offerId: offer.id,
-        assignmentId: assignment.id,
-        tripId: offer.tripId,
-        empresaId,
-        userId,
-        supersededCount: supersededRows.length,
-      },
-      'offer accepted',
-    );
-
-    return {
-      offer: acceptedOffer,
-      assignment,
-      supersededOfferIds: supersededRows.map((r) => r.id),
-    };
-  }).then(async (result) => {
-    // Cálculo de métricas de carbono — fire-and-forget post-commit. Si
-    // falla, queda assignment sin métricas (recalculable después por cron
-    // o admin); no bloquea el accept response al carrier.
-    try {
-      const metricas = await calcularMetricasEstimadas({
-        db,
-        logger,
-        tripId: result.assignment.tripId,
-        vehicleId: result.assignment.vehicleId || null,
-      });
       logger.info(
         {
-          tripId: result.assignment.tripId,
-          assignmentId: result.assignment.id,
-          metodoPrecision: metricas.emisiones.metodoPrecision,
-          emisionesKgco2eWtw: metricas.emisiones.emisionesKgco2eWtw,
-          intensidadGco2ePorTonKm: metricas.emisiones.intensidadGco2ePorTonKm,
+          offerId: offer.id,
+          assignmentId: assignment.id,
+          tripId: offer.tripId,
+          empresaId,
+          userId,
+          supersededCount: supersededRows.length,
         },
-        'metricas estimadas calculadas tras accept',
+        'offer accepted',
       );
-    } catch (err) {
-      logger.error(
-        { err, tripId: result.assignment.tripId, assignmentId: result.assignment.id },
-        'fallo calcular metricas estimadas tras accept (asignacion creada igual; recalcular despues)',
-      );
-    }
-    return result;
-  });
+
+      return {
+        offer: acceptedOffer,
+        assignment,
+        supersededOfferIds: supersededRows.map((r) => r.id),
+      };
+    })
+    .then(async (result) => {
+      // Cálculo de métricas de carbono — fire-and-forget post-commit. Si
+      // falla, queda assignment sin métricas (recalculable después por cron
+      // o admin); no bloquea el accept response al carrier.
+      try {
+        const metricas = await calcularMetricasEstimadas({
+          db,
+          logger,
+          tripId: result.assignment.tripId,
+          vehicleId: result.assignment.vehicleId || null,
+        });
+        logger.info(
+          {
+            tripId: result.assignment.tripId,
+            assignmentId: result.assignment.id,
+            metodoPrecision: metricas.emisiones.metodoPrecision,
+            emisionesKgco2eWtw: metricas.emisiones.emisionesKgco2eWtw,
+            intensidadGco2ePorTonKm: metricas.emisiones.intensidadGco2ePorTonKm,
+          },
+          'metricas estimadas calculadas tras accept',
+        );
+      } catch (err) {
+        logger.error(
+          { err, tripId: result.assignment.tripId, assignmentId: result.assignment.id },
+          'fallo calcular metricas estimadas tras accept (asignacion creada igual; recalcular despues)',
+        );
+      }
+      return result;
+    });
 }
 
 /**

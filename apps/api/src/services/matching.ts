@@ -7,6 +7,7 @@ import {
   scoreToInt,
   selectTopNCandidates,
 } from '@booster-ai/matching-algorithm';
+import { assertTripTransition } from '@booster-ai/trip-state-machine';
 import { and, eq, gte, inArray } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
@@ -93,7 +94,13 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
         throw new TripRequestNotMatchableError(tripId, 'missing_origin_region');
       }
 
-      // Cambiar status a 'emparejando' antes de empezar.
+      // Cambiar status a 'emparejando' antes de empezar. La validación de
+      // legalidad de la transición la hace la SM canónica
+      // (@booster-ai/trip-state-machine, ADR-004 + PR #24). El `if`
+      // explícito de arriba (línea 89) cubre el caso de UX (mensaje de
+      // dominio TripRequestNotMatchableError); el assert acá es defensa
+      // en profundidad por si algún caller futuro evade ese chequeo.
+      assertTripTransition(trip.status, { type: 'START_MATCHING' });
       await tx
         .update(trips)
         .set({ status: 'emparejando', updatedAt: new Date() })
@@ -210,7 +217,9 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
         )
         .returning();
 
-      // 6. Cambiar trip a ofertas_enviadas.
+      // 6. Cambiar trip a ofertas_enviadas. La SM canónica garantiza que
+      // solo se llega acá desde 'emparejando' (set en step 1 de este flow).
+      assertTripTransition('emparejando', { type: 'OFFERS_SENT' });
       await tx
         .update(trips)
         .set({ status: 'ofertas_enviadas', updatedAt: new Date() })
@@ -279,6 +288,11 @@ async function finalizeNoCandidates(
   tripId: string,
   reason: NoCandidatesReason,
 ): Promise<MatchingResult> {
+  // matching no encontró candidatos viables (sin carriers en zona, sin
+  // capacidad, etc.). La SM modela esta transición como NO_CANDIDATES
+  // (emparejando → expirado), distinta a ALL_OFFERS_EXPIRED (que viene
+  // post-envío de ofertas) y NO_MATCH (que regresa a esperando_match).
+  assertTripTransition('emparejando', { type: 'NO_CANDIDATES' });
   await tx
     .update(trips)
     .set({ status: 'expirado', updatedAt: new Date() })

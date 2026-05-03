@@ -56,6 +56,9 @@ importers:
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
+      '@booster-ai/trip-state-machine':
+        specifier: workspace:*
+        version: link:../../packages/trip-state-machine
       '@booster-ai/whatsapp-client':
         specifier: workspace:*
         version: link:../../packages/whatsapp-client

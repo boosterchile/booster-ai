@@ -19,6 +19,7 @@
     "@booster-ai/matching-algorithm": "workspace:*",
     "@booster-ai/notification-fan-out": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
+    "@booster-ai/trip-state-machine": "workspace:*",
     "@booster-ai/whatsapp-client": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
     "@google-cloud/pubsub": "^4.10.0",

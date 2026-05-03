@@ -63,6 +63,7 @@ export type TripEvent =
   | { type: 'START_MATCHING' }
   | { type: 'OFFERS_SENT' }
   | { type: 'NO_MATCH' }
+  | { type: 'NO_CANDIDATES' }
   | { type: 'OFFER_ACCEPTED' }
   | { type: 'ALL_OFFERS_EXPIRED' }
   | { type: 'PICKUP_CONFIRMED' }
@@ -99,6 +100,11 @@ export const tripMachine = createMachine({
       on: {
         OFFERS_SENT: 'ofertas_enviadas',
         NO_MATCH: 'esperando_match',
+        // matching encontró 0 candidatos viables (no hay carriers en zona +
+        // mismo cargo type + capacidad). Distinto a NO_MATCH (retry) y
+        // ALL_OFFERS_EXPIRED (vencieron las ya enviadas). Reflejado por el
+        // service apps/api/src/services/matching.ts:finalizeNoCandidates.
+        NO_CANDIDATES: 'expirado',
         CANCEL: 'cancelado',
       },
     },

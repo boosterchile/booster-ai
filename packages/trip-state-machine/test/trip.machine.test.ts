@@ -54,6 +54,14 @@ describe('tripMachine — caminos alternativos', () => {
   it('expirado → esperando_match (RETRY)', () => {
     expect(getNextTripStatus('expirado', { type: 'RETRY' })).toBe('esperando_match');
   });
+
+  it('emparejando → expirado (NO_CANDIDATES — matching no halla carriers)', () => {
+    expect(getNextTripStatus('emparejando', { type: 'NO_CANDIDATES' })).toBe('expirado');
+  });
+
+  it('ofertas_enviadas NO acepta NO_CANDIDATES (mal evento para ese estado)', () => {
+    expect(canTripTransition('ofertas_enviadas', { type: 'NO_CANDIDATES' })).toBe(false);
+  });
 });
 
 describe('tripMachine — cancelación desde estados activos', () => {
@@ -82,6 +90,7 @@ describe('tripMachine — terminales bloquean transiciones', () => {
     { type: 'START_MATCHING' },
     { type: 'OFFERS_SENT' },
     { type: 'NO_MATCH' },
+    { type: 'NO_CANDIDATES' },
     { type: 'OFFER_ACCEPTED' },
     { type: 'ALL_OFFERS_EXPIRED' },
     { type: 'PICKUP_CONFIRMED' },
