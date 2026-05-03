@@ -167,3 +167,62 @@ resource "google_storage_bucket" "public_assets" {
 #   role   = "roles/storage.objectViewer"
 #   member = "allUsers"
 # }
+
+# =============================================================================
+# CHAT ATTACHMENTS — fotos del chat shipper↔transportista (P3)
+# =============================================================================
+# Bucket privado para fotos enviadas por mensajes de chat. El api emite
+# signed URLs de 5 min para upload (PUT) y download (READ) — el bucket
+# nunca se expone público. Lifecycle de 90 días: las fotos del chat son
+# operacionales (confirmaciones de entrega, reportes de problema), no
+# evidencia legal — TTL corto controla costo y aplica privacidad por
+# default (los datos se borran solos pasada la operación del viaje).
+resource "google_storage_bucket" "chat_attachments" {
+  name          = "${var.project_id}-chat-attachments-${var.environment}"
+  project       = google_project.booster_ai.project_id
+  location      = var.region
+  storage_class = "STANDARD"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+
+  # Lifecycle: borrar objetos a los 90 días. Mensajes texto/ubicacion en
+  # DB se preservan; las fotos en GCS son las únicas que expiran.
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  # CORS: el upload es PUT directo desde browser via signed URL. El
+  # response del PUT no necesita ser leído por la PWA, pero los headers
+  # CORS del bucket tienen que aceptar el origin del PWA + métodos PUT
+  # y GET (por las dudas a futuro). Sin esto el browser rechaza el PUT
+  # con net::ERR_FAILED por preflight failure.
+  cors {
+    origin          = ["https://app.boosterchile.com", "http://localhost:5173"]
+    method          = ["PUT", "GET", "HEAD"]
+    response_header = ["Content-Type", "Content-MD5", "x-goog-content-length-range"]
+    max_age_seconds = 3600
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    purpose    = "chat-attachments"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Cloud Run runtime SA necesita read+write para emitir signed URLs y
+# leer las fotos al servir el download. roles/storage.objectAdmin sobre
+# este bucket específico (no project-wide).
+resource "google_storage_bucket_iam_member" "chat_attachments_runtime" {
+  bucket = google_storage_bucket.chat_attachments.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}

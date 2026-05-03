@@ -116,6 +116,12 @@ module "service_api" {
     # efímeras filtradas por assignment_id.
     CHAT_PUBSUB_TOPIC = google_pubsub_topic.chat_messages.name
 
+    # P3.f — bucket privado para fotos del chat. Sin esto, el endpoint
+    # POST /assignments/:id/messages/photo-upload-url responde 503
+    # attachments_disabled. Lifecycle 90 días en el bucket borra fotos
+    # automáticamente.
+    CHAT_ATTACHMENTS_BUCKET = google_storage_bucket.chat_attachments.name
+
     # P3.d — Cloud Scheduler invoca /admin/jobs/* con OIDC firmado por
     # este SA. El middleware createAuthMiddleware valida claims.email
     # contra esto. Sin esta env var los endpoints /admin/jobs/* responden
