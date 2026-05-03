@@ -19,7 +19,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -331,7 +331,18 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
       </div>
 
       {tripsQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {tripsQ.error && <p className="mt-6 text-danger-700">Error al cargar cargas.</p>}
+      {tripsQ.error &&
+        (tripsQ.error instanceof ApiError && tripsQ.error.code === 'empresa_not_active' ? (
+          <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-6 text-amber-900">
+            <p className="font-medium">Tu empresa todavía está en verificación</p>
+            <p className="mt-1 text-amber-800 text-sm">
+              Vas a poder crear cargas en cuanto el equipo de Booster apruebe tu empresa. Te
+              avisamos por email cuando esté lista.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-6 text-danger-700">Error al cargar cargas.</p>
+        ))}
 
       {tripsQ.data && tripsQ.data.length === 0 && (
         <div className="mt-6 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">

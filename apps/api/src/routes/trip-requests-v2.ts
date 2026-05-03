@@ -64,7 +64,7 @@ export function createTripRequestsV2Routes(opts: {
   const app = new Hono();
 
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireShipperAuth(c: Context<any, any, any>) {
+  function requireShipperAuth(c: Context<any, any, any>, opts2?: { requireActive?: boolean }) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/trip-requests-v2 without userContext');
@@ -83,7 +83,11 @@ export function createTripRequestsV2Routes(opts: {
         response: c.json({ error: 'not_a_shipper', code: 'not_a_shipper' }, 403),
       };
     }
-    if (active.empresa.status !== 'activa') {
+    // status='activa' solo se exige para writes (POST, PATCH cancelar). Para
+    // reads (GET listado, GET detalle) permitimos pendiente_verificacion: el
+    // shipper puede ver su listado vacío sin chocar con un 403 confuso. Si
+    // intenta crear una carga, el guard write-mode lo bloquea.
+    if (opts2?.requireActive && active.empresa.status !== 'activa') {
       return {
         ok: false as const,
         response: c.json({ error: 'empresa_not_active', code: 'empresa_not_active' }, 403),
@@ -96,7 +100,7 @@ export function createTripRequestsV2Routes(opts: {
   // POST / — crear viaje + dispatch matching.
   // ---------------------------------------------------------------------
   app.post('/', zValidator('json', tripRequestCreateInputSchema), async (c) => {
-    const auth = requireShipperAuth(c);
+    const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
     }
@@ -347,7 +351,7 @@ export function createTripRequestsV2Routes(opts: {
   // el transportista (fuera del scope de este endpoint).
   // ---------------------------------------------------------------------
   app.patch('/:id/cancelar', zValidator('json', cancelBodySchema), async (c) => {
-    const auth = requireShipperAuth(c);
+    const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
     }

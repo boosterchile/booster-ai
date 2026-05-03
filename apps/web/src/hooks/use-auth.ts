@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   EmailAuthProvider,
   type User,
@@ -14,7 +15,7 @@ import {
   unlink,
   updateProfile,
 } from 'firebase/auth';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { setActiveEmpresaId } from '../lib/api-client.js';
 import { firebaseAuth, googleProvider } from '../lib/firebase.js';
 
@@ -35,18 +36,41 @@ export interface AuthState {
  * con `getIdToken()` en cada request.
  */
 export function useAuth(): AuthState {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  // Track del uid previo para detectar cambios de user (incluyendo logout).
+  // Inicializado en `undefined` distinto al primer onAuthStateChanged que
+  // siempre dispara con el estado actual — la primera resolución NO debe
+  // invalidar (no hay user anterior real, solo es el bootstrap).
+  const previousUidRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (next) => {
+      const previousUid = previousUidRef.current;
+      const newUid = next?.uid ?? null;
+      // Si el uid cambió (logout, login con otro user, account linking que
+      // emite uid distinto), invalidar TODO el cache de TanStack Query.
+      // Sin esto, el nuevo user ve data del anterior (useMe, useVehicles,
+      // useOffers, etc.) hasta que cada query refetchee — riesgo de
+      // confidencialidad cross-tenant.
+      //
+      // Casos cubiertos:
+      //   - logout (newUid = null)
+      //   - login con otro user después de logout
+      //   - cambio de uid por account linking (firebase_uid se actualiza)
+      // Excluido: bootstrap inicial (previousUid === undefined → no clear).
+      if (previousUid !== undefined && previousUid !== newUid) {
+        queryClient.clear();
+      }
+      previousUidRef.current = newUid;
       setUser(next);
       setLoading(false);
     });
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   return { user, loading };
 }
