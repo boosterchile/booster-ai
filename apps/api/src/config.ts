@@ -128,6 +128,21 @@ const apiEnvSchema = commonEnvSchema
      */
     CERTIFICATE_SIGNING_KEY_ID: z.string().min(1).optional(),
     CERTIFICATES_BUCKET: z.string().min(1).optional(),
+
+    /**
+     * Bucket GCS para adjuntos del chat shipper↔transportista (P3.a):
+     * fotos subidas por los participantes durante la conversación.
+     *
+     * Path layout: gs://{bucket}/chat/{assignment_id}/{message_id}.jpg
+     * Lifecycle: 90 días (los chats viejos no necesitan conservar fotos
+     * pesadas). Sin retention lock — son adjuntos operativos, no
+     * documentos legales.
+     *
+     * Optional para que el endpoint POST /messages funcione en dev sin
+     * GCS — los mensajes tipo 'foto' devuelven 503 si el bucket no está.
+     * Mensajes texto + ubicación funcionan sin esta env var.
+     */
+    CHAT_ATTACHMENTS_BUCKET: z.string().min(1).optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

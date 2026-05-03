@@ -12,6 +12,7 @@ import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
+import { createChatRoutes } from './routes/chat.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
@@ -146,11 +147,30 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/offers/*', userContextMiddleware);
     app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
 
-    // Assignments — endpoints carrier-side sobre assignment lifecycle.
-    // Hoy solo PATCH /:id/confirmar-entrega (POD del transportista).
+    // Assignments — endpoints sobre assignment lifecycle + chat.
+    //   - PATCH /:id/confirmar-entrega → createAssignmentsRoutes (carrier POD)
+    //   - {POST,GET,PATCH} /:id/messages* → createChatRoutes (chat shipper↔carrier)
+    //
+    // Composición: el assignmentsRouter monta el chatRouter como sub-route
+    // (sin prefix adicional) para que ambos compartan /assignments. Las
+    // rutas no chocan porque los paths internos son distintos
+    // (/:id/confirmar-entrega vs /:id/messages*).
     app.use('/assignments/*', firebaseAuthMiddleware);
     app.use('/assignments/*', userContextMiddleware);
-    app.route('/assignments', createAssignmentsRoutes({ db: opts.db, logger, certConfig }));
+    const assignmentsRouter = createAssignmentsRoutes({
+      db: opts.db,
+      logger,
+      certConfig,
+    });
+    const chatRouter = createChatRoutes({
+      db: opts.db,
+      logger,
+      ...(config.CHAT_ATTACHMENTS_BUCKET
+        ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
+        : {}),
+    });
+    assignmentsRouter.route('/', chatRouter);
+    app.route('/assignments', assignmentsRouter);
 
     // Certificates — listado privado (auth shipper) + verify público.
     //

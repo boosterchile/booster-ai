@@ -43,6 +43,13 @@
       "when": 1777996800002,
       "tag": "0005_dispositivos_telemetria",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777996800003,
+      "tag": "0006_chat_messages",
+      "breakpoints": true
     }
   ]
 }

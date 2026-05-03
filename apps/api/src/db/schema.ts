@@ -254,6 +254,31 @@ export const pendingDeviceStatusEnum = pgEnum('estado_dispositivo_pendiente', [
   'reemplazado',
 ]);
 
+/**
+ * Tipo de mensaje en el chat shipper↔transportista (P3).
+ *   - texto: contenido en `texto`.
+ *   - foto: URI GCS en `foto_gcs_uri`.
+ *   - ubicacion: lat+lng en `ubicacion_lat`+`ubicacion_lng`.
+ *
+ * El backend valida que solo el campo correspondiente al tipo esté
+ * poblado (CHECK constraint en la tabla).
+ */
+export const chatMessageTypeEnum = pgEnum('tipo_mensaje_chat', [
+  'texto',
+  'foto',
+  'ubicacion',
+]);
+
+/**
+ * Rol del remitente en el chat. Sigue el patrón de `actor_cancelacion`.
+ * Sirve para que el cliente sepa de qué lado renderizar la burbuja sin
+ * tener que consultar la membership del sender_user_id.
+ */
+export const chatSenderRoleEnum = pgEnum('rol_remitente_chat', [
+  'transportista',
+  'generador_carga',
+]);
+
 // =============================================================================
 // BILLING / AUTH
 // =============================================================================
@@ -830,6 +855,117 @@ export const telemetryPoints = pgTable(
 );
 
 // =============================================================================
+// CHAT (P3) — comunicación shipper↔transportista por assignment
+// =============================================================================
+
+/**
+ * Mensajes de chat dentro del contexto de un assignment.
+ *
+ * Diseño:
+ *   - 1 chat = 1 assignment. Cuando el assignment cierra (status='entregado'
+ *     o 'cancelado'), el chat queda read-only (la lógica de write está en
+ *     el endpoint POST, que valida el status del assignment antes de aceptar).
+ *   - Cada mensaje tiene 1 sender (empresa + user) + 1 tipo (texto / foto /
+ *     ubicación). El campo correspondiente al tipo es notNull; los otros
+ *     son null. CHECK constraint enforza esto a nivel DB.
+ *   - `read_at` se setea cuando el OTRO lado del chat marca el mensaje
+ *     como leído. Permite contar no-leídos por (assignment, role) con un
+ *     simple count(*) WHERE read_at IS NULL AND sender_role <> :role.
+ *   - `whatsapp_notif_sent_at` lo usa el cron de fallback (P3.d) para
+ *     evitar mandar el WhatsApp dos veces si el cron corre múltiples veces.
+ *
+ * Audit: no agregamos updated_at — los mensajes son inmutables una vez
+ * enviados (no edit, no soft-delete). Si en el futuro queremos "borrar
+ * para mí" o "borrar para todos", agregar `deleted_at` notNull a default
+ * '1970-01-01' o algo así, con un nuevo enum.
+ */
+export const chatMessages = pgTable(
+  'mensajes_chat',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    assignmentId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id, { onDelete: 'restrict' }),
+    senderEmpresaId: uuid('remitente_empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    senderUserId: uuid('remitente_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    senderRole: chatSenderRoleEnum('rol_remitente').notNull(),
+    messageType: chatMessageTypeEnum('tipo_mensaje').notNull(),
+    /** Solo poblado si messageType='texto'. Hasta 4000 chars (límite generoso). */
+    textContent: text('texto'),
+    /**
+     * Solo poblado si messageType='foto'. URI gs:// (o https:// si en el
+     * futuro servimos via signed URL pre-cacheada). El cliente pide signed
+     * URL al endpoint para mostrar la imagen.
+     */
+    photoGcsUri: text('foto_gcs_uri'),
+    /** Solo poblado si messageType='ubicacion'. WGS84 decimal degrees. */
+    locationLat: numeric('ubicacion_lat', { precision: 9, scale: 6 }),
+    locationLng: numeric('ubicacion_lng', { precision: 9, scale: 6 }),
+    /**
+     * Timestamp en que el OTRO lado del chat marcó este mensaje como leído.
+     * Null = no leído todavía. El propio sender NO marca sus mensajes (eso
+     * sería trivialmente leído por uno mismo).
+     */
+    readAt: timestamp('leido_en', { withTimezone: true }),
+    /**
+     * Timestamp en que el cron de fallback (P3.d) mandó la notificación
+     * WhatsApp por este mensaje no leído. Null = no se mandó (todavía no
+     * pasaron 5 min, o el destinatario lo leyó antes, o el push notif
+     * cubrió). Sirve para idempotencia del cron.
+     */
+    whatsappNotifSentAt: timestamp('whatsapp_notif_enviado_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    // Index principal: traer mensajes de un chat ordenados desc para paginación.
+    assignmentCreatedIdx: index('idx_mensajes_chat_asignacion_creado').on(
+      table.assignmentId,
+      table.createdAt,
+    ),
+    // Index para el query del cron de fallback WhatsApp (P3.d).
+    unreadOldIdx: index('idx_mensajes_chat_no_leidos_viejos').on(
+      table.readAt,
+      table.whatsappNotifSentAt,
+      table.createdAt,
+    ),
+    // CHECK: el campo correspondiente al tipo debe estar notNull, los otros
+    // null. Defensa-en-profundidad — el endpoint POST también valida.
+    typeContentCheck: check(
+      'tipo_contenido_check',
+      sql`(
+        (${table.messageType} = 'texto' AND ${table.textContent} IS NOT NULL
+          AND ${table.photoGcsUri} IS NULL
+          AND ${table.locationLat} IS NULL AND ${table.locationLng} IS NULL)
+        OR
+        (${table.messageType} = 'foto' AND ${table.photoGcsUri} IS NOT NULL
+          AND ${table.textContent} IS NULL
+          AND ${table.locationLat} IS NULL AND ${table.locationLng} IS NULL)
+        OR
+        (${table.messageType} = 'ubicacion'
+          AND ${table.locationLat} IS NOT NULL AND ${table.locationLng} IS NOT NULL
+          AND ${table.textContent} IS NULL
+          AND ${table.photoGcsUri} IS NULL)
+      )`,
+    ),
+    // CHECK: texto entre 1 y 4000 chars cuando aplica.
+    textLengthCheck: check(
+      'texto_length_check',
+      sql`${table.textContent} IS NULL OR (length(${table.textContent}) BETWEEN 1 AND 4000)`,
+    ),
+    // CHECK: lat/lng en rangos WGS84 válidos cuando aplica.
+    locationRangeCheck: check(
+      'ubicacion_rango_check',
+      sql`(${table.locationLat} IS NULL AND ${table.locationLng} IS NULL)
+        OR (${table.locationLat} BETWEEN -90 AND 90 AND ${table.locationLng} BETWEEN -180 AND 180)`,
+    ),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -865,3 +1001,5 @@ export type PendingDeviceRow = typeof pendingDevices.$inferSelect;
 export type NewPendingDeviceRow = typeof pendingDevices.$inferInsert;
 export type TelemetryPointRow = typeof telemetryPoints.$inferSelect;
 export type NewTelemetryPointRow = typeof telemetryPoints.$inferInsert;
+export type ChatMessageRow = typeof chatMessages.$inferSelect;
+export type NewChatMessageRow = typeof chatMessages.$inferInsert;
