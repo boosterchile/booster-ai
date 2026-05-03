@@ -1,0 +1,9 @@
+# Gitleaks ignore list — false positives documentados
+#
+# Formato: <commit-sha>:<path>:<rule-id>:<line>
+# Cada entrada debe tener un comentario justificando por qué es FP.
+
+# FP: línea es un comando `gcloud run services logs tail` en docs operativos,
+# no contiene credenciales. La heurística `generic-api-key` falsea sobre el
+# nombre de región o flag de gcloud.
+5f95341e481c1b291a21f4a63a60d0080dc785b9:docs/CLAUDE-CODE-WORKFLOW.md:generic-api-key:558

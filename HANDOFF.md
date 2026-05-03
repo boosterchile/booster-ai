@@ -140,5 +140,7 @@ Detectadas leyendo commits + estructura. Si alguna se mantiene en producción, *
 | ADRs 015-019 | Documentar KMS, Web Push, SSE, Pub/Sub chat, Workbox | Cualquier agente |
 | `apps/marketing` | Next.js standalone, e-commerce pricing, SEO | Por priorizar |
 | Observatorio | BigQuery aggregations + gemelos digitales | Backlog post-launch |
+| **Vulnerabilidades npm audit** | 1 CRITICAL + 2 HIGH detectadas en CI (PR #19): `crypto-js <4.2.0` (PBKDF2 weak, GHSA-xwcq-pm8m-c4vf), `serialize-javascript <=7.0.2` (RCE, GHSA-5c6j-r48x-rmvq), `drizzle-orm <0.45.2` (SQL injection, GHSA-gpj5-g38j-94v9). Bumpear deps en sprint próximo (PR dedicado, scope security). | Cualquier agente |
+| **Trivy + SBOM en CI** | Failing en `main`. Investigar logs autenticados (no son introducidos por PR de solo-docs). | Felipe |
 
 Actualizar esta tabla cuando se abra/cierre algo no trivial.
