@@ -98,3 +98,47 @@ resource "google_pubsub_topic" "dlq" {
   message_retention_duration = "2592000s" # 30 días
   depends_on                 = [google_project_service.apis]
 }
+
+# =============================================================================
+# SUBSCRIPTIONS — pull-based (Cloud Run consumers)
+# =============================================================================
+# Cada Cloud Run service que consume Pub/Sub define su propia subscription.
+# Sin esto el cliente recibe StatusError "Resource not found" al startup y se
+# queda en backoff sin procesar ningún mensaje. Caso real: 2026-05-03
+# telemetry-processor consumiendo telemetry-events sin subscription creada
+# → 0 escrituras a telemetria_puntos por ~10h.
+
+resource "google_pubsub_subscription" "telemetry_events_processor" {
+  name    = "telemetry-events-processor-sub"
+  topic   = google_pubsub_topic.telemetry_events.name
+  project = google_project.booster_ai.project_id
+
+  # 60s permite procesar 1 packet (parse + insert) con margen.
+  ack_deadline_seconds = 60
+
+  # 7 días de retención en el broker para tolerar downtime del processor.
+  message_retention_duration = "604800s"
+
+  # Subscription perpetua — el processor no debería borrarse sin update aquí.
+  expiration_policy {
+    ttl = ""
+  }
+
+  # DLQ: tras 5 nack/timeout, el packet va a pubsub-dead-letter.
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 5
+  }
+
+  # Retry exponencial entre 10s y 600s.
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "telemetry-processor"
+  }
+}
