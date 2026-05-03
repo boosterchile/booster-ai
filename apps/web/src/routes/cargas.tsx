@@ -19,7 +19,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
-import { ApiError, api } from '../lib/api-client.js';
+import { api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -331,104 +331,134 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
       </div>
 
       {tripsQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {tripsQ.error &&
-        (tripsQ.error instanceof ApiError && tripsQ.error.code === 'empresa_not_active' ? (
-          <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-6 text-amber-900">
-            <p className="font-medium">Tu empresa todavía está en verificación</p>
-            <p className="mt-1 text-amber-800 text-sm">
-              Vas a poder crear cargas en cuanto el equipo de Booster apruebe tu empresa. Te
-              avisamos por email cuando esté lista.
-            </p>
-          </div>
-        ) : (
-          <p className="mt-6 text-danger-700">Error al cargar cargas.</p>
-        ))}
+      {tripsQ.error && <p className="mt-6 text-danger-700">Error al cargar cargas.</p>}
 
-      {tripsQ.data && tripsQ.data.length === 0 && (
-        <div className="mt-6 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
-          <Package className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-          <p className="mt-3 font-medium text-neutral-900">Aún no tienes cargas</p>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Crea tu primera carga para que el matching engine te conecte con transportistas
-            disponibles.
-          </p>
-          <Link
-            to="/app/cargas/nueva"
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Crear carga
-          </Link>
-        </div>
-      )}
+      {tripsQ.data && (() => {
+        // Split por estado: lo que sigue activo (shipper espera/seguimiento) vs
+        // historial (terminado, cancelado, sin match). Sin esto, el listado
+        // mezcla cargas vivas con basura vieja y se vuelve ruidoso a las
+        // pocas semanas de uso.
+        const ACTIVE_STATUSES = new Set<TripStatus>([
+          'borrador',
+          'esperando_match',
+          'emparejando',
+          'ofertas_enviadas',
+          'asignado',
+          'en_proceso',
+        ]);
+        const activas = tripsQ.data.filter((t) => ACTIVE_STATUSES.has(t.status));
+        const historial = tripsQ.data.filter((t) => !ACTIVE_STATUSES.has(t.status));
 
-      {tripsQ.data && tripsQ.data.length > 0 && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-neutral-200">
-            <thead className="bg-neutral-50">
-              <tr>
-                <Th>Código</Th>
-                <Th>Origen → Destino</Th>
-                <Th>Carga</Th>
-                <Th>Pickup</Th>
-                <Th>Estado</Th>
-                <Th>{''}</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100 bg-white">
-              {tripsQ.data.map((t) => (
-                <tr key={t.id} className="hover:bg-neutral-50">
-                  <Td className="font-mono font-semibold text-neutral-900">{t.tracking_code}</Td>
-                  <Td>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm">{t.origin_address_raw}</span>
-                      <span className="text-neutral-500 text-xs">
-                        {regionLabel(t.origin_region_code)}
-                      </span>
-                      <span className="mt-1 text-sm">→ {t.destination_address_raw}</span>
-                      <span className="text-neutral-500 text-xs">
-                        {regionLabel(t.destination_region_code)}
-                      </span>
-                    </div>
-                  </Td>
-                  <Td>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm">{CARGO_TYPE_LABELS[t.cargo_type]}</span>
-                      <span className="text-neutral-500 text-xs">
-                        {t.cargo_weight_kg
-                          ? `${t.cargo_weight_kg.toLocaleString('es-CL')} kg`
-                          : '—'}
-                        {t.cargo_volume_m3 ? ` · ${t.cargo_volume_m3} m³` : ''}
-                      </span>
-                    </div>
-                  </Td>
-                  <Td>
-                    <span className="text-xs">{formatDateTime(t.pickup_window_start)}</span>
-                  </Td>
-                  <Td>
-                    <span
-                      className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[t.status]}`}
-                    >
-                      {STATUS_LABELS[t.status]}
-                    </span>
-                  </Td>
-                  <Td>
-                    <Link
-                      to="/app/cargas/$id"
-                      params={{ id: t.id }}
-                      className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                    >
-                      Ver
-                      <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                    </Link>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        return (
+          <>
+            <section className="mt-6">
+              <h2 className="font-semibold text-neutral-900 text-lg">Cargas activas</h2>
+              <p className="mt-1 text-neutral-500 text-xs">
+                En proceso de match, asignadas o en ruta.
+              </p>
+              {activas.length === 0 ? (
+                <div className="mt-3 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
+                  <Package className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
+                  <p className="mt-3 font-medium text-neutral-900">No tienes cargas activas</p>
+                  <p className="mt-1 text-neutral-600 text-sm">
+                    Crea una carga para que el matching engine te conecte con transportistas
+                    disponibles.
+                  </p>
+                  <Link
+                    to="/app/cargas/nueva"
+                    className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden />
+                    Crear carga
+                  </Link>
+                </div>
+              ) : (
+                <CargasTable trips={activas} />
+              )}
+            </section>
+
+            {historial.length > 0 && (
+              <section className="mt-10">
+                <h2 className="font-semibold text-neutral-900 text-lg">Historial</h2>
+                <p className="mt-1 text-neutral-500 text-xs">
+                  Cargas entregadas, canceladas o sin match.
+                </p>
+                <div className="mt-3">
+                  <CargasTable trips={historial} />
+                </div>
+              </section>
+            )}
+          </>
+        );
+      })()}
     </Layout>
+  );
+}
+
+function CargasTable({ trips }: { trips: TripSummary[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+      <table className="min-w-full divide-y divide-neutral-200">
+        <thead className="bg-neutral-50">
+          <tr>
+            <Th>Código</Th>
+            <Th>Origen → Destino</Th>
+            <Th>Carga</Th>
+            <Th>Pickup</Th>
+            <Th>Estado</Th>
+            <Th>{''}</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-100 bg-white">
+          {trips.map((t) => (
+            <tr key={t.id} className="hover:bg-neutral-50">
+              <Td className="font-mono font-semibold text-neutral-900">{t.tracking_code}</Td>
+              <Td>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm">{t.origin_address_raw}</span>
+                  <span className="text-neutral-500 text-xs">
+                    {regionLabel(t.origin_region_code)}
+                  </span>
+                  <span className="mt-1 text-sm">→ {t.destination_address_raw}</span>
+                  <span className="text-neutral-500 text-xs">
+                    {regionLabel(t.destination_region_code)}
+                  </span>
+                </div>
+              </Td>
+              <Td>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm">{CARGO_TYPE_LABELS[t.cargo_type]}</span>
+                  <span className="text-neutral-500 text-xs">
+                    {t.cargo_weight_kg ? `${t.cargo_weight_kg.toLocaleString('es-CL')} kg` : '—'}
+                    {t.cargo_volume_m3 ? ` · ${t.cargo_volume_m3} m³` : ''}
+                  </span>
+                </div>
+              </Td>
+              <Td>
+                <span className="text-xs">{formatDateTime(t.pickup_window_start)}</span>
+              </Td>
+              <Td>
+                <span
+                  className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[t.status]}`}
+                >
+                  {STATUS_LABELS[t.status]}
+                </span>
+              </Td>
+              <Td>
+                <Link
+                  to="/app/cargas/$id"
+                  params={{ id: t.id }}
+                  className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
+                >
+                  Ver
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
