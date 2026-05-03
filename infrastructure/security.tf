@@ -46,6 +46,59 @@ resource "google_kms_crypto_key" "document_signing" {
   }
 }
 
+# Key dedicada para firmar certificados de huella de carbono (GLEC v3.0).
+# Separada de `document_signing` por audit trail limpio: cada propósito su
+# key. Si en el futuro un auditor pide rotar o investigar firmas de
+# carbono, no se mezcla con las firmas de actas de entrega o DTEs.
+#
+# Algoritmo: RSA_SIGN_PKCS1_4096_SHA256.
+#   - 4096 bits para horizonte 10 años (consistente con `document_signing`).
+#   - PKCS#1 v1.5 padding (no PSS) por interoperabilidad universal: Adobe
+#     Reader, OpenSSL, Java JCE, node-forge — todos lo manejan sin
+#     parámetros ASN.1 explícitos. PSS exige hashAlgorithm + MGF +
+#     saltLength en el AlgorithmIdentifier del cert X.509 y del SignerInfo
+#     PKCS7, lo que rompe validadores PAdES viejos que no soportan
+#     id-RSASSA-PSS.
+#   - PKCS#1 v1.5 está OK para signing en NIST SP 800-131A (la debilidad
+#     de Bleichenbacher es solo en encryption, no signing).
+#   - Determinístico (misma firma para mismo input) → reproducible para
+#     auditores.
+# La public key se expone en el endpoint público GET /certificates/:tracking/verify
+# para que cualquier auditor externo valide las firmas con OpenSSL.
+resource "google_kms_crypto_key" "certificate_carbono_signing" {
+  name     = "certificate-carbono-signing"
+  key_ring = google_kms_key_ring.main.id
+  purpose  = "ASYMMETRIC_SIGN"
+
+  version_template {
+    algorithm        = "RSA_SIGN_PKCS1_4096_SHA256"
+    protection_level = "SOFTWARE"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# IAM least-privilege para la key de carbono — el binding global ya da
+# encrypter/decrypter para CMEK (suficiente para el bucket documents) pero
+# NO da signer. Lo agregamos solo a esta key específica para no abrir
+# signing sobre todas las keys del keyring.
+resource "google_kms_crypto_key_iam_member" "cloud_run_certificate_signer" {
+  crypto_key_id = google_kms_crypto_key.certificate_carbono_signing.id
+  role          = "roles/cloudkms.signerVerifier"
+  member        = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
+# publicKeyViewer adicional para que el endpoint /verify pueda exponer la
+# public key sin caching local (la lee de KMS en cada request o cachea en
+# memoria 5 min).
+resource "google_kms_crypto_key_iam_member" "cloud_run_certificate_viewer" {
+  crypto_key_id = google_kms_crypto_key.certificate_carbono_signing.id
+  role          = "roles/cloudkms.publicKeyViewer"
+  member        = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # Permitir a Cloud Storage usar la key para CMEK
 data "google_storage_project_service_account" "gcs" {
   project = google_project.booster_ai.project_id

@@ -76,8 +76,8 @@ module "service_api" {
     # Hoy en producción solo el bot llama, y va por *.run.app. La pública
     # queda aceptada defensivamente — su costo es 0 y abre la opción sin
     # tener que modificar el middleware después.
-    API_AUDIENCE         = "${local.public_api_url},${local.cloud_run_api_url}"
-    ALLOWED_CALLER_SA    = google_service_account.cloud_run_runtime.email
+    API_AUDIENCE      = "${local.public_api_url},${local.cloud_run_api_url}"
+    ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
@@ -88,7 +88,7 @@ module "service_api" {
     # identifica el sender por From + auth, así que ambos servicios pueden
     # mandar mensajes desde el mismo número. TWILIO_AUTH_TOKEN va por
     # Secret Manager (mismo secret `twilio-auth-token` que el bot).
-    TWILIO_FROM_NUMBER    = var.twilio_from_number
+    TWILIO_FROM_NUMBER = var.twilio_from_number
     # CONTENT_SID_OFFER_NEW: vacío hasta que Meta apruebe el template
     # `offer_new_v1` (24-48h tras submit en Twilio Console). Mientras esté
     # vacío, el dispatcher loguea warn y skipea — las offers siguen
@@ -98,7 +98,14 @@ module "service_api" {
     CONTENT_SID_OFFER_NEW = var.content_sid_offer_new
     # WEB_APP_URL usa el dominio público del frontend para construir el
     # deep-link al dashboard en el template de WhatsApp.
-    WEB_APP_URL           = "https://app.${var.domain}"
+    WEB_APP_URL = "https://app.${var.domain}"
+
+    # KMS key para firmar certificados de huella de carbono (RSA-PSS 4096
+    # SHA256). El servicio emitirCertificadoViaje hace asymmetricSign con
+    # esta key cuando un viaje pasa a entregado. Bucket de almacenamiento
+    # del PDF firmado: gs://${documents_bucket}/certificates/.
+    CERTIFICATE_SIGNING_KEY_ID = google_kms_crypto_key.certificate_carbono_signing.id
+    CERTIFICATES_BUCKET        = google_storage_bucket.documents.name
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
@@ -284,7 +291,7 @@ module "service_whatsapp_bot" {
   # global rutea ese path al bot (ver url_map.path_matcher "api" en
   # networking.tf).
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME      = "booster-ai-whatsapp-bot"
+    SERVICE_NAME = "booster-ai-whatsapp-bot"
     # Tráfico interno bot → api: usar *.run.app directo (NO el LB público).
     # Razones:
     #   1. El LB tiene Cloud Armor con scannerdetection-v33-stable que falsea
@@ -340,14 +347,14 @@ module "service_document" {
   memory        = "1Gi" # OCR puede requerir más RAM
 
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME      = "booster-ai-document-service"
-    DOCUMENTS_BUCKET  = google_storage_bucket.documents.name
-    UPLOADS_BUCKET    = google_storage_bucket.uploads_raw.name
-    SIGNING_KEY_NAME  = google_kms_crypto_key.document_signing.id
+    SERVICE_NAME     = "booster-ai-document-service"
+    DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
+    SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
   })
   secrets = merge(local.common_secrets, {
-    DTE_PROVIDER_API_KEY        = google_secret_manager_secret.secrets["dte-provider-api-key"].secret_id
-    DTE_PROVIDER_CLIENT_SECRET  = google_secret_manager_secret.secrets["dte-provider-client-secret"].secret_id
+    DTE_PROVIDER_API_KEY       = google_secret_manager_secret.secrets["dte-provider-api-key"].secret_id
+    DTE_PROVIDER_CLIENT_SECRET = google_secret_manager_secret.secrets["dte-provider-client-secret"].secret_id
   })
 
   public = false

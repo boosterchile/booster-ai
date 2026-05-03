@@ -54,6 +54,14 @@ output "documents_bucket" {
   value = google_storage_bucket.documents.name
 }
 
+# KMS key id para firmas de certificados de huella de carbono. Se inyecta
+# en apps/api como CERTIFICATE_SIGNING_KEY_ID para que el servicio
+# emitirCertificadoViaje sepa qué key usar al firmar.
+output "certificate_signing_key_id" {
+  description = "Resource ID de la KMS key (sin :versions) para firmar certificados de carbono"
+  value       = google_kms_crypto_key.certificate_carbono_signing.id
+}
+
 output "telemetry_dataset" {
   value = google_bigquery_dataset.telemetry.dataset_id
 }

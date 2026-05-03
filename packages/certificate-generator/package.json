@@ -1,0 +1,29 @@
+{
+  "name": "@booster-ai/certificate-generator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@google-cloud/kms": "^4.5.0",
+    "@google-cloud/storage": "^7.13.0",
+    "@signpdf/placeholder-plain": "^3.2.4",
+    "@signpdf/signpdf": "^3.2.4",
+    "@signpdf/utils": "^3.2.4",
+    "node-forge": "^1.3.1",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/node-forge": "^1.3.11",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
+  }
+}
