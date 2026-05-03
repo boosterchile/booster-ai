@@ -38,5 +38,20 @@ export default defineConfig({
     '@opentelemetry/resources',
     '@opentelemetry/sdk-node',
     '@opentelemetry/semantic-conventions',
+    // P2 — deps transitivas de @booster-ai/certificate-generator.
+    // Bundlear el paquete workspace está OK (es nuestro código, lo
+    // necesitamos inline por la regex `noExternal: /^@booster-ai\//`),
+    // pero sus deps externas usan `require()` síncrono de Node built-ins
+    // (stream, crypto, etc.) que rompe en ESM bundle con
+    // "Dynamic require of X is not supported".
+    // Dejarlas external = Node las carga vía el flat node_modules que
+    // `pnpm deploy --prod` produce en el runtime stage del Dockerfile.
+    '@google-cloud/kms',
+    '@google-cloud/storage',
+    '@signpdf/signpdf',
+    '@signpdf/placeholder-plain',
+    '@signpdf/utils',
+    'node-forge',
+    'pdf-lib',
   ],
 });
