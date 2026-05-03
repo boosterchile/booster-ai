@@ -113,6 +113,7 @@ export function VehiculosListRoute() {
 }
 
 function VehiculosListPage({ me }: { me: MeOnboarded }) {
+  const navigate = useNavigate();
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
 
@@ -185,7 +186,11 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
             </thead>
             <tbody className="divide-y divide-neutral-100 bg-white">
               {vehiclesQ.data.map((v) => (
-                <tr key={v.id} className="hover:bg-neutral-50">
+                <tr
+                  key={v.id}
+                  className="cursor-pointer hover:bg-neutral-50"
+                  onClick={() => void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })}
+                >
                   <Td className="font-mono font-semibold text-neutral-900">{v.plate}</Td>
                   <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
                   <Td>
