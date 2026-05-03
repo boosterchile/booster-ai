@@ -10,6 +10,7 @@ import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
+import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
@@ -190,6 +191,33 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware);
     app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
+
+    // Admin jobs — endpoints internos disparados por Cloud Scheduler
+    // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
+    // scheduler (INTERNAL_CRON_CALLER_SA). Si la env var no está,
+    // skippeamos el wire (ningún caller pasa el middleware).
+    if (config.INTERNAL_CRON_CALLER_SA) {
+      const cronAuthMiddleware = createAuthMiddleware({
+        apiAudience: config.API_AUDIENCE,
+        allowedCallerSa: config.INTERNAL_CRON_CALLER_SA,
+        logger,
+      });
+      app.use('/admin/jobs/*', cronAuthMiddleware);
+      app.route(
+        '/admin/jobs',
+        createAdminJobsRoutes({
+          db: opts.db,
+          logger,
+          twilioClient: opts.notify?.twilioClient ?? null,
+          contentSidChatUnread: config.CONTENT_SID_CHAT_UNREAD ?? null,
+          webAppUrl: config.WEB_APP_URL,
+        }),
+      );
+    } else {
+      logger.warn(
+        'INTERNAL_CRON_CALLER_SA ausente — endpoints /admin/jobs/* deshabilitados',
+      );
+    }
 
     // Assignments — endpoints sobre assignment lifecycle + chat.
     //   - PATCH /:id/confirmar-entrega → createAssignmentsRoutes (carrier POD)

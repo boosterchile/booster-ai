@@ -164,3 +164,27 @@ variable "content_sid_offer_new" {
     error_message = "content_sid_offer_new debe ser vacío o empezar con HX seguido de hex chars."
   }
 }
+
+variable "content_sid_chat_unread" {
+  description = <<-EOT
+    Twilio Content SID del template aprobado para el fallback WhatsApp del
+    chat (P3.d). Formato HX + hex. Submit en Twilio Console > Content Editor
+    con friendly name `chat_unread_v1`, categoría Utility.
+
+    Variables esperadas (1-based):
+      {{1}} → tracking_code, ej. BOO-ABC123
+      {{2}} → sender_name, ej. "Juan Pérez (Transportes Andino)"
+      {{3}} → message_preview, hasta ~80 chars o "📷 Foto adjunta"/"📍 Ubicación compartida"
+      {{4}} → URL deep-link al chat, ej. "https://app.boosterchile.com/app/chat/UUID"
+
+    Default vacío para no bloquear apply previo a aprobación Meta. Mientras
+    esté vacío el cron loggea warn y skipea — los push notifs (P3.c) y SSE
+    (P3.b) cubren el caso real-time. Setear con override una vez aprobado.
+  EOT
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.content_sid_chat_unread == "" || can(regex("^HX[a-fA-F0-9]+$", var.content_sid_chat_unread))
+    error_message = "content_sid_chat_unread debe ser vacío o empezar con HX seguido de hex chars."
+  }
+}

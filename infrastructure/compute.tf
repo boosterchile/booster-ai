@@ -96,6 +96,10 @@ module "service_api" {
     # Setear con `terraform apply -var content_sid_offer_new=HX...` una
     # vez aprobado.
     CONTENT_SID_OFFER_NEW = var.content_sid_offer_new
+    # P3.d — template para fallback WhatsApp del chat. Mismo patrón que
+    # CONTENT_SID_OFFER_NEW (vacío hasta aprobación Meta, override con
+    # `terraform apply -var content_sid_chat_unread=HX...`).
+    CONTENT_SID_CHAT_UNREAD = var.content_sid_chat_unread
     # WEB_APP_URL usa el dominio público del frontend para construir el
     # deep-link al dashboard en el template de WhatsApp.
     WEB_APP_URL = "https://app.${var.domain}"
@@ -111,6 +115,12 @@ module "service_api" {
     # mensaje, y los GET /:id/messages/stream crean subscriptions
     # efímeras filtradas por assignment_id.
     CHAT_PUBSUB_TOPIC = google_pubsub_topic.chat_messages.name
+
+    # P3.d — Cloud Scheduler invoca /admin/jobs/* con OIDC firmado por
+    # este SA. El middleware createAuthMiddleware valida claims.email
+    # contra esto. Sin esta env var los endpoints /admin/jobs/* responden
+    # 401 (configurable en server.ts).
+    INTERNAL_CRON_CALLER_SA = google_service_account.internal_cron_invoker.email
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.

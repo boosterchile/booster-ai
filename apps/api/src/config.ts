@@ -176,6 +176,40 @@ const apiEnvSchema = commonEnvSchema
      * esto para contactar al sender si hay abuso. Default vendor-neutral.
      */
     WEBPUSH_VAPID_SUBJECT: z.string().default('mailto:soporte@boosterchile.com'),
+
+    /**
+     * Content SID del template Twilio `chat_unread_v1` para el fallback
+     * WhatsApp del chat (P3.d). Variables (1-based):
+     *   {{1}} → tracking_code
+     *   {{2}} → sender_name (display name del que escribió)
+     *   {{3}} → message_preview (primeros ~80 chars o "📷 foto"/"📍 ubicación")
+     *   {{4}} → URL al chat (deep-link al PWA)
+     *
+     * Optional para no romper startup mientras Meta aprueba el template
+     * (24-48h post-submit). Mientras esté vacío, el cron de fallback
+     * loggea warn y skipea — los push notifs (P3.c) y SSE (P3.b) cubren
+     * el caso real-time; el WhatsApp es solo para users sin push.
+     */
+    CONTENT_SID_CHAT_UNREAD: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
+     * SA email autorizado a invocar /admin/jobs/* (P3.d Cloud Scheduler
+     * cron de fallback WhatsApp). Cloud Scheduler firma OIDC con este SA;
+     * el middleware valida claims.email === este valor.
+     *
+     * Optional para no requerirlo en dev. Si está ausente, los endpoints
+     * /admin/jobs/* devuelven 503 disabled.
+     */
+    INTERNAL_CRON_CALLER_SA: z
+      .string()
+      .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido')
+      .optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
