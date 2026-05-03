@@ -16,6 +16,8 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
+import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
@@ -60,6 +62,13 @@ export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
   notify?: NotifyOfferDeps;
+  /**
+   * Config para emisión de certificados de carbono al confirmar
+   * recepción. Si está parcial/ausente, el endpoint igual marca el trip
+   * como entregado pero el certificado se queda pendiente (skip con
+   * warn en el wire fire-and-forget). Útil para dev sin KMS.
+   */
+  certConfig?: Partial<EmitirCertificadoConfig>;
 }) {
   const app = new Hono();
 
@@ -337,9 +346,74 @@ export function createTripRequestsV2Routes(opts: {
             precision_method: metricsRow.precisionMethod,
             glec_version: metricsRow.glecVersion,
             certificate_pdf_url: metricsRow.certificatePdfUrl,
+            certificate_sha256: metricsRow.certificateSha256,
+            certificate_kms_key_version: metricsRow.certificateKmsKeyVersion,
             certificate_issued_at: metricsRow.certificateIssuedAt,
           }
         : null,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/confirmar-recepcion — shipper marca la carga como recibida.
+  //
+  // Flujo canónico de confirmación de entrega: el generador de carga (el
+  // que recibe físicamente la carga en destino) aprieta este endpoint
+  // cuando llega. Dispara:
+  //   1. trips.status = 'entregado'
+  //   2. assignments.delivered_at = now()
+  //   3. trip_event 'entrega_confirmada' (source='shipper').
+  //   4. Fire-and-forget: emisión de certificado de huella de carbono.
+  //
+  // Idempotente: si el trip ya está entregado, devuelve 200 con el
+  // delivered_at actual sin re-disparar nada.
+  //
+  // Para el flujo POD del transportista ver:
+  //   PATCH /assignments/:id/confirmar-entrega (en routes/assignments.ts).
+  // Primer click gana entre los dos.
+  // ---------------------------------------------------------------------
+  app.patch('/:id/confirmar-recepcion', async (c) => {
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+
+    const result = await confirmarEntregaViaje({
+      db: opts.db,
+      logger: opts.logger,
+      tripId: id,
+      source: 'shipper',
+      actor: {
+        empresaId: auth.activeMembership.empresa.id,
+        userId: auth.userContext.user.id,
+      },
+      config: opts.certConfig ?? {},
+    });
+
+    if (!result.ok) {
+      const statusCode =
+        result.code === 'trip_not_found'
+          ? 404
+          : result.code === 'forbidden_owner_mismatch'
+            ? 403
+            : 409;
+      return c.json(
+        {
+          error: result.code,
+          code: result.code,
+          ...(result.code === 'invalid_status' && result.currentStatus
+            ? { current_status: result.currentStatus }
+            : {}),
+        },
+        statusCode,
+      );
+    }
+
+    return c.json({
+      ok: true,
+      already_delivered: result.alreadyDelivered,
+      delivered_at: result.deliveredAt.toISOString(),
     });
   });
 

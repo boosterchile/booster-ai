@@ -108,6 +108,26 @@ const apiEnvSchema = commonEnvSchema
      * dashboard del carrier en el template.
      */
     WEB_APP_URL: z.string().url().default('https://app.boosterchile.com'),
+
+    /**
+     * Configuración para emisión de certificados de huella de carbono
+     * (P2 — packages/certificate-generator).
+     *
+     * CERTIFICATE_SIGNING_KEY_ID: resource ID de la KMS asymmetric key
+     *   (sin :versions). Inyectado por Terraform desde
+     *   google_kms_crypto_key.certificate_carbono_signing.id. Si está
+     *   ausente, el wire de fire-and-forget en confirmar-entrega-viaje
+     *   skipea el certificado y loggea warn (útil en dev sin KMS).
+     *
+     * CERTIFICATES_BUCKET: nombre del bucket GCS donde subir el PDF
+     *   firmado, sidecar y cert X.509 cacheado. Reusa el bucket
+     *   `documents` existente (CMEK + retention 6y).
+     *
+     * Ambos optional para no bloquear startup en dev. El servicio
+     * emitirCertificadoViaje chequea presencia y skipea si falta.
+     */
+    CERTIFICATE_SIGNING_KEY_ID: z.string().min(1).optional(),
+    CERTIFICATES_BUCKET: z.string().min(1).optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

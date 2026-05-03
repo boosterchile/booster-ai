@@ -10,6 +10,7 @@ import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
+import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeRoutes } from './routes/me.js';
@@ -109,6 +110,23 @@ export function createServer(opts: CreateServerOptions): Hono {
     // el shipper ya tiene empresa onboardeada. activeMembership.empresa
     // se usa como shipper_empresa_id.
     const userContextMiddleware = createUserContextMiddleware({ db: opts.db, logger });
+    // Config para emisión de certificados de huella de carbono. Se usa
+    // como fire-and-forget cuando un viaje pasa a 'entregado' (desde
+    // /trip-requests-v2/:id/confirmar-recepcion o /assignments/:id/confirmar-entrega).
+    // Si las env vars no están seteadas, el wire skipea el cert con warn
+    // (útil en dev sin KMS); en prod Terraform las inyecta siempre.
+    // verifyBaseUrl es la primera entrada de API_AUDIENCE (URL pública,
+    // ej. https://api.boosterchile.com).
+    const certConfig = {
+      ...(config.CERTIFICATE_SIGNING_KEY_ID
+        ? { kmsKeyId: config.CERTIFICATE_SIGNING_KEY_ID }
+        : {}),
+      ...(config.CERTIFICATES_BUCKET
+        ? { certificatesBucket: config.CERTIFICATES_BUCKET }
+        : {}),
+      verifyBaseUrl: config.API_AUDIENCE[0] ?? 'https://api.boosterchile.com',
+    };
+
     app.use('/trip-requests-v2/*', firebaseAuthMiddleware);
     app.use('/trip-requests-v2/*', userContextMiddleware);
     app.route(
@@ -116,6 +134,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       createTripRequestsV2Routes({
         db: opts.db,
         logger,
+        certConfig,
         ...(opts.notify ? { notify: opts.notify } : {}),
       }),
     );
@@ -125,6 +144,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware);
     app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
+
+    // Assignments — endpoints carrier-side sobre assignment lifecycle.
+    // Hoy solo PATCH /:id/confirmar-entrega (POD del transportista).
+    app.use('/assignments/*', firebaseAuthMiddleware);
+    app.use('/assignments/*', userContextMiddleware);
+    app.route('/assignments', createAssignmentsRoutes({ db: opts.db, logger, certConfig }));
 
     // Admin: gestión de dispositivos Teltonika pendientes (open enrollment).
     app.use('/admin/dispositivos-pendientes/*', firebaseAuthMiddleware);

@@ -38,6 +38,9 @@ importers:
       '@booster-ai/carbon-calculator':
         specifier: workspace:*
         version: link:../../packages/carbon-calculator
+      '@booster-ai/certificate-generator':
+        specifier: workspace:*
+        version: link:../../packages/certificate-generator
       '@booster-ai/config':
         specifier: workspace:*
         version: link:../../packages/config
