@@ -118,5 +118,10 @@ __pycache__/
 * 2.*
 * 3.*
 
-# Claude Code local settings
-.claude/
+# Claude Code — versionar commands + settings.json del proyecto, ignorar el resto local
+.claude/*
+!.claude/commands/
+!.claude/settings.json
+.claude/settings.local.json
+.claude/cache/
+.claude/state/

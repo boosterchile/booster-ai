@@ -3,6 +3,7 @@
 Este documento es el **contrato de trabajo** entre Felipe Vicencio (Product Owner) y Claude (agente de desarrollo principal). Fija cómo trabaja el agente en este repo, qué decisiones puede tomar solo, cuándo pregunta, cómo documenta y cómo se valida su trabajo.
 
 **Fecha de adopción**: 2026-04-23
+**Última revisión**: 2026-05-03 — handoff Claude.ai → Claude Code en terminal. Ver [`HANDOFF.md`](./HANDOFF.md) (estado vivo) y [`docs/CLAUDE-CODE-WORKFLOW.md`](./docs/CLAUDE-CODE-WORKFLOW.md) (guía operativa).
 **Marco de referencia**: [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) — Production-grade engineering skills for AI coding agents.
 
 ---
