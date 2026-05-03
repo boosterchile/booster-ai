@@ -156,6 +156,26 @@ const apiEnvSchema = commonEnvSchema
      * latencia).
      */
     CHAT_PUBSUB_TOPIC: z.string().min(1).optional(),
+
+    /**
+     * VAPID keys para Web Push (P3.c). Generadas con
+     * `npx web-push generate-vapid-keys` post-deploy y subidas a Secret
+     * Manager. La pública se sirve via GET /webpush/vapid-public-key
+     * (público, sin auth) para que el cliente subscribe; la privada
+     * SOLO la usa el api para firmar el JWT Authorization que va al push
+     * service del browser.
+     *
+     * Optional: sin estas, POST /me/push-subscription devuelve 503 y los
+     * mensajes nuevos NO disparan push notif (los mensajes igual se
+     * insertan en DB y los SSE viewers los reciben).
+     */
+    WEBPUSH_VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+    WEBPUSH_VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+    /**
+     * Subject del JWT VAPID (mailto: o https://). El push service usa
+     * esto para contactar al sender si hay abuso. Default vendor-neutral.
+     */
+    WEBPUSH_VAPID_SUBJECT: z.string().default('mailto:soporte@boosterchile.com'),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

@@ -20,7 +20,12 @@ import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
+import {
+  createMePushSubscriptionRoutes,
+  createWebpushPublicRoutes,
+} from './routes/webpush.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
+import { configureWebPush } from './services/web-push.js';
 
 export interface CreateServerOptions {
   db: Db;
@@ -77,8 +82,34 @@ export function createServer(opts: CreateServerOptions): Hono {
 
   app.use('*', secureHeaders());
 
+  // P3.c — VAPID config global (idempotente). Si las env vars están
+  // ausentes, configureWebPush no hace nada y el wire post-INSERT
+  // skipea con warn. Esto permite dev sin VAPID.
+  if (config.WEBPUSH_VAPID_PUBLIC_KEY && config.WEBPUSH_VAPID_PRIVATE_KEY) {
+    configureWebPush({
+      publicKey: config.WEBPUSH_VAPID_PUBLIC_KEY,
+      privateKey: config.WEBPUSH_VAPID_PRIVATE_KEY,
+      subject: config.WEBPUSH_VAPID_SUBJECT,
+    });
+  } else {
+    logger.warn(
+      'VAPID keys ausentes — Web Push deshabilitado. POST /me/push-subscription igual responde 200 pero los mensajes no disparan notif.',
+    );
+  }
+
   // Public routes (no auth) — /health (liveness) + /ready (DB ping).
   app.route('/', createHealthRouter({ pool: opts.pool, logger }));
+
+  // Public route — /webpush/vapid-public-key (necesario para que el browser
+  // pueda subscribe; no es secreto, es la identidad del sender).
+  app.route(
+    '/webpush',
+    createWebpushPublicRoutes({
+      ...(config.WEBPUSH_VAPID_PUBLIC_KEY
+        ? { vapidPublicKey: config.WEBPUSH_VAPID_PUBLIC_KEY }
+        : {}),
+    }),
+  );
 
   // Protected routes — OIDC token from allowed Cloud Run SA required
   const authMiddleware = createAuthMiddleware({
@@ -100,7 +131,20 @@ export function createServer(opts: CreateServerOptions): Hono {
     });
     app.use('/me', firebaseAuthMiddleware);
     app.use('/me/*', firebaseAuthMiddleware);
-    app.route('/me', createMeRoutes({ db: opts.db, logger }));
+    // userContext requerido para /me/push-subscription (necesita user.id).
+    // /me raíz queda con solo firebase auth (acepta users pre-onboarding).
+    const userContextMiddlewareForMe = createUserContextMiddleware({
+      db: opts.db,
+      logger,
+    });
+    app.use('/me/push-subscription', userContextMiddlewareForMe);
+    app.use('/me/push-subscription/*', userContextMiddlewareForMe);
+    const meRouter = createMeRoutes({ db: opts.db, logger });
+    meRouter.route(
+      '/push-subscription',
+      createMePushSubscriptionRoutes({ db: opts.db, logger }),
+    );
+    app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
     // Solo firebaseAuth (no userContext) porque el user todavía no existe
@@ -165,6 +209,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     const chatRouter = createChatRoutes({
       db: opts.db,
       logger,
+      webAppUrl: config.WEB_APP_URL,
       ...(config.CHAT_ATTACHMENTS_BUCKET
         ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
         : {}),

@@ -43,6 +43,7 @@ import {
   createEphemeralChatSubscription,
   publishChatMessage,
 } from '../services/chat-pubsub.js';
+import { notifyChatMessageViaPush } from '../services/web-push.js';
 
 let cachedStorage: Storage | null = null;
 
@@ -108,6 +109,11 @@ export function createChatRoutes(opts: {
    * En dev sin Pub/Sub, la UI cae a polling como fallback.
    */
   pubsubTopic?: string;
+  /**
+   * URL base del web app. Usado para construir el deep-link en el
+   * payload de Web Push (P3.c). Sin esto, no se manda push.
+   */
+  webAppUrl?: string;
 }) {
   const app = new Hono();
 
@@ -276,7 +282,18 @@ export function createChatRoutes(opts: {
         messageId: inserted.id,
       });
     }
-    // P3.c — wire Web Push también acá.
+    // P3.c — fire-and-forget Web Push al lado contrario del chat. Cubre
+    // el caso de que el destinatario tenga el tab cerrado o esté en otra
+    // app. Si push está deshabilitado (sin VAPID config) o el user no
+    // tiene subscriptions, es no-op.
+    if (opts.webAppUrl) {
+      void notifyChatMessageViaPush({
+        db: opts.db,
+        logger: opts.logger,
+        messageId: inserted.id,
+        webAppUrl: opts.webAppUrl,
+      });
+    }
 
     return c.json(
       {

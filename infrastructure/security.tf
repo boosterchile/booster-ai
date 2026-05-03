@@ -165,6 +165,13 @@ locals {
     # usa tanto para Basic auth en el envío como para HMAC del webhook.
     "twilio-account-sid",
     "twilio-auth-token",
+
+    # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
+    # post-deploy y subidas con `gcloud secrets versions add`. La pública se
+    # inyecta tanto al api (para mandar push) como al web (para subscribe del
+    # browser); la privada SOLO al api.
+    "webpush-vapid-public-key",
+    "webpush-vapid-private-key",
   ]
 }
 

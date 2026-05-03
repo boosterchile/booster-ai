@@ -279,6 +279,18 @@ export const chatSenderRoleEnum = pgEnum('rol_remitente_chat', [
   'generador_carga',
 ]);
 
+/**
+ * Estado de una subscription Web Push (P3.c). Usado para soft-disable
+ * cuando el push service devuelve 410 Gone (subscription expirada o
+ * revocada por el browser); en vez de borrar el row, lo marcamos
+ * 'inactive' para conservar audit trail. Si el user re-suscribe, se
+ * reactiva con un UPSERT por endpoint.
+ */
+export const pushSubscriptionStatusEnum = pgEnum('estado_push_subscription', [
+  'activa',
+  'inactiva',
+]);
+
 // =============================================================================
 // BILLING / AUTH
 // =============================================================================
@@ -965,6 +977,74 @@ export const chatMessages = pgTable(
   }),
 );
 
+/**
+ * Subscriptions Web Push (P3.c) — una row por user × device.
+ *
+ * El browser registra una "subscription" con su push service (FCM Web,
+ * Mozilla autopush, etc.) y nos da:
+ *   - endpoint: URL del push service donde POSTear la notificación.
+ *   - p256dh: ECDH public key del browser (para encriptar el payload).
+ *   - auth: secret compartido (para validar la integridad).
+ *
+ * El api mantiene esto en DB y al insertar un mensaje de chat, hace
+ * lookup de las subscriptions del destinatario (el OTRO lado del chat)
+ * y manda push a cada endpoint via la lib `web-push` con VAPID JWT.
+ *
+ * Múltiples devices: un mismo user puede tener varias subscriptions
+ * (PWA en celular + browser desktop). Cada una se identifica por su
+ * endpoint único; UPSERT por (user_id, endpoint) evita duplicados al
+ * re-suscribirse.
+ *
+ * Cleanup: si el push service devuelve 410 Gone, marcamos como
+ * 'inactive' (el browser revocó). El user puede re-suscribir y
+ * volvemos a 'activa'.
+ */
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * URL del push service (provider-specific). Ej. para Chrome:
+     * https://fcm.googleapis.com/wp/[id]. Es el campo "natural key" de
+     * la subscription — usamos UNIQUE para que UPSERT por endpoint sea
+     * atómico.
+     */
+    endpoint: text('endpoint').notNull(),
+    /**
+     * Public key ECDH del browser, base64url-encoded. La librería
+     * web-push la usa para derivar el shared secret y encriptar el
+     * payload.
+     */
+    p256dhKey: text('p256dh_key').notNull(),
+    /**
+     * Auth secret del browser, base64url-encoded. Usado por web-push
+     * en el HMAC del payload encriptado.
+     */
+    authKey: text('auth_key').notNull(),
+    /**
+     * User-agent del browser al momento de subscribir. Útil para que el
+     * user pueda identificar "esta es mi laptop" vs "este es mi
+     * teléfono" en /perfil al ofrecer disable.
+     */
+    userAgent: text('user_agent'),
+    status: pushSubscriptionStatusEnum('estado').notNull().default('activa'),
+    /** Timestamp del último 410 Gone recibido (para auditoría). */
+    lastFailedAt: timestamp('ultimo_fallo_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    endpointUnique: unique('uq_push_subscriptions_endpoint').on(table.endpoint),
+    userActiveIdx: index('idx_push_subscriptions_user_activa').on(
+      table.userId,
+      table.status,
+    ),
+  }),
+);
+
 // =============================================================================
 // TYPE EXPORTS
 // =============================================================================
@@ -1003,3 +1083,5 @@ export type TelemetryPointRow = typeof telemetryPoints.$inferSelect;
 export type NewTelemetryPointRow = typeof telemetryPoints.$inferInsert;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
 export type NewChatMessageRow = typeof chatMessages.$inferInsert;
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscriptionRow = typeof pushSubscriptions.$inferInsert;

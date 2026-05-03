@@ -118,6 +118,14 @@ module "service_api" {
     # vía security.tf, así que no hace falta IAM extra.
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+
+    # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
+    # Authorization header al push service del browser). La pública se
+    # incluye en cada push como Crypto-Key header y también la consume
+    # el frontend al subscribe. Generadas post-deploy con
+    # `npx web-push generate-vapid-keys`.
+    WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
+    WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id

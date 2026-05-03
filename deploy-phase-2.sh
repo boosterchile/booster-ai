@@ -81,16 +81,16 @@ gcloud container clusters get-credentials booster-ai-telemetry \
   --region=southamerica-west1 \
   --project=booster-ai-494222
 
-# Asegurar que master_authorized_networks permita acceso desde cualquier IP
-# (Cloud Build + operadores). IAM + RBAC siguen siendo la auth real.
-# Idempotente: si ya está abierto, gcloud no rompe.
-echo "→ asegurando master_authorized_networks=0.0.0.0/0…"
-gcloud container clusters update booster-ai-telemetry \
-  --region=southamerica-west1 \
-  --project=booster-ai-494222 \
-  --enable-master-authorized-networks \
-  --master-authorized-networks="10.10.0.0/20,0.0.0.0/0" \
-  --quiet || true
+# master_authorized_networks ahora se gestiona EXCLUSIVAMENTE en Terraform
+# (infrastructure/compute.tf:google_container_cluster.telemetry, bloque
+# master_authorized_networks_config con display_names para "0.0.0.0/0" y
+# "10.10.0.0/20"). Antes este script tenía un `gcloud container clusters
+# update --master-authorized-networks=...` que regeneraba drift cosmético
+# en cada deploy: gcloud no soporta display_name como argumento, por lo
+# que cada corrida sobreescribía la config de TF y el siguiente
+# `terraform plan` mostraba diff de 4 líneas en cidr_blocks. Cerrado
+# 2026-05-03 — apply targetado de TF aplica los display_names; cambios
+# futuros van por TF, no por gcloud.
 
 # Esperar a que el control plane responda (puede tardar ~30s post-update).
 echo "→ esperando que el control plane responda…"
