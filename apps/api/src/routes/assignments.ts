@@ -16,6 +16,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { desc, eq } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
@@ -89,9 +90,18 @@ export function createAssignmentsRoutes(opts: {
     const assignmentId = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
-    // Una sola query: assignment + trip + carrier empresa + vehicle + driver.
+    // Una sola query: assignment + trip + carrier empresa + shipper empresa
+    // (alias) + vehicle + driver.
     // No hacemos chequeo previo de ownership porque si el WHERE no matchea
     // devuelve [], y respondemos 404 como cualquier otro recurso ajeno.
+    // Joineamos `empresas` 2 veces:
+    //   - empresasTable (sin alias) := carrier de assignment.empresaId,
+    //     usado para el title que ya estaba (assignment.empresa_legal_name).
+    //   - empresaShipper (alias)    := generador de carga del trip,
+    //     necesario para el title del ChatPanel del lado carrier (mostrar
+    //     "Chat con [shipper]" en vez de la propia empresa carrier).
+    const empresaShipper = alias(empresasTable, 'empresa_shipper');
+
     const [row] = await opts.db
       .select({
         // assignment
@@ -123,10 +133,12 @@ export function createAssignmentsRoutes(opts: {
         pickupWindowStart: trips.pickupWindowStart,
         pickupWindowEnd: trips.pickupWindowEnd,
         proposedPriceClp: trips.proposedPriceClp,
+        shipperLegalName: empresaShipper.legalName,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
+      .leftJoin(empresaShipper, eq(empresaShipper.id, trips.generadorCargaEmpresaId))
       .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
       .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
       .where(eq(assignments.id, assignmentId))
@@ -190,6 +202,7 @@ export function createAssignmentsRoutes(opts: {
         pickup_window_start: row.pickupWindowStart?.toISOString() ?? null,
         pickup_window_end: row.pickupWindowEnd?.toISOString() ?? null,
         proposed_price_clp: row.proposedPriceClp,
+        shipper_legal_name: row.shipperLegalName,
       },
       assignment: {
         id: row.assignmentId,

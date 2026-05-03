@@ -31,6 +31,7 @@ interface AssignmentDetail {
     destination: { address_raw: string; region_code: string };
     cargo_type: string;
     cargo_weight_kg: number;
+    shipper_legal_name: string | null;
   };
   assignment: {
     id: string;
@@ -83,13 +84,12 @@ function AsignacionDetallePage() {
   });
 
   const trip = tripQ.data?.trip_request;
-  const assignment = tripQ.data?.assignment;
   const tripCode = trip?.tracking_code ?? assignmentId.slice(0, 8);
   const subtitle = trip
     ? `${trip.origin.address_raw} → ${trip.destination.address_raw}`
     : undefined;
   const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
-  const otroLado = assignment?.empresa_legal_name ?? 'generador de carga';
+  const otroLado = trip?.shipper_legal_name ?? 'generador de carga';
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
