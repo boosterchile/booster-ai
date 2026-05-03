@@ -901,6 +901,37 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
 
       {tripQ.data && trip && (
         <div className="space-y-6">
+          {/* HERO: ubicación del vehículo si hay assignment con Teltonika.
+              Aparece arriba de todo para que el shipper vea inmediatamente
+              dónde va su carga sin scrollear. */}
+          {tripQ.data.assignment?.vehicle_plate && (
+            <DataCard title="Ubicación del vehículo">
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <p className="text-neutral-600 text-sm">
+                  Última posición GPS reportada. Polling cada 30s.
+                </p>
+                <Link
+                  to="/app/cargas/$id/track"
+                  params={{ id: trip.id }}
+                  className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
+                >
+                  <Navigation className="h-4 w-4" aria-hidden />
+                  Ver en vivo
+                </Link>
+              </div>
+              <VehicleMap
+                plate={tripQ.data.assignment.vehicle_plate}
+                latitude={tripQ.data.assignment.ubicacion_actual?.latitude ?? null}
+                longitude={tripQ.data.assignment.ubicacion_actual?.longitude ?? null}
+                speedKmh={tripQ.data.assignment.ubicacion_actual?.speed_kmh ?? null}
+                timestampDevice={
+                  tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null
+                }
+                height={480}
+              />
+            </DataCard>
+          )}
+
           <DataCard title="Origen y destino">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <DataRow icon={<MapPin className="h-4 w-4" aria-hidden />} label="Origen">
@@ -975,40 +1006,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 )}
               </div>
 
-              {tripQ.data.assignment.vehicle_plate && (
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <h4 className="font-medium text-neutral-900 text-sm">
-                        Ubicación del vehículo
-                      </h4>
-                      <p className="mt-0.5 text-neutral-600 text-xs">
-                        Última posición GPS reportada por el Teltonika del transportista.
-                        Polling cada 30s.
-                      </p>
-                    </div>
-                    <Link
-                      to="/app/cargas/$id/track"
-                      params={{ id: tripQ.data.trip_request.id }}
-                      className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
-                    >
-                      <Navigation className="h-4 w-4" aria-hidden />
-                      Ver en vivo
-                    </Link>
-                  </div>
-                  <div className="mt-3">
-                    <VehicleMap
-                      plate={tripQ.data.assignment.vehicle_plate}
-                      latitude={tripQ.data.assignment.ubicacion_actual?.latitude ?? null}
-                      longitude={tripQ.data.assignment.ubicacion_actual?.longitude ?? null}
-                      speedKmh={tripQ.data.assignment.ubicacion_actual?.speed_kmh ?? null}
-                      timestampDevice={
-                        tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null
-                      }
-                    />
-                  </div>
-                </div>
-              )}
+              {/* Mapa movido arriba como hero — ver bloque inicial del detail. */}
             </DataCard>
           )}
 

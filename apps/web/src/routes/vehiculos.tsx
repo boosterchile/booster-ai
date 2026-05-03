@@ -412,8 +412,9 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
       {vehicleQ.data && (
         <>
+          {/* Banner Teltonika + CTA "Ver en vivo" */}
           {vehicleQ.data.teltonika_imei && (
-            <div className="mb-6 flex items-center justify-between gap-4 rounded-md border border-primary-100 bg-primary-50 p-3">
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-primary-100 bg-primary-50 p-3">
               <div className="text-primary-900 text-sm">
                 <strong>Teltonika asociado:</strong>{' '}
                 <span className="font-mono">{vehicleQ.data.teltonika_imei}</span>
@@ -428,24 +429,42 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
               </Link>
             </div>
           )}
-          <VehicleForm
-            mode="edit"
-            initial={vehicleToFormValues(vehicleQ.data)}
-            onSubmit={(values) => {
-              setError(null);
-              updateM.mutate(values);
-            }}
-            submitting={updateM.isPending}
-            submitLabel="Guardar cambios"
-            error={error}
-            disabled={!canWrite}
-          />
 
+          {/* HERO: ubicación actual del vehículo (prioritario, no secundario) */}
           {vehicleQ.data.teltonika_imei && (
-            <>
-              <UbicacionSection vehicleId={vehicleQ.data.id} plate={vehicleQ.data.plate} />
-              <TelemetriaSection vehicleId={vehicleQ.data.id} />
-            </>
+            <UbicacionSection
+              vehicleId={vehicleQ.data.id}
+              plate={vehicleQ.data.plate}
+              height={480}
+              hero
+            />
+          )}
+
+          {/* Edición del vehículo (después del mapa, no antes) */}
+          <div className="mt-8">
+            <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
+            <p className="mt-1 text-neutral-600 text-sm">
+              Capacidad, combustible, asociación a Teltonika.
+            </p>
+            <div className="mt-4">
+              <VehicleForm
+                mode="edit"
+                initial={vehicleToFormValues(vehicleQ.data)}
+                onSubmit={(values) => {
+                  setError(null);
+                  updateM.mutate(values);
+                }}
+                submitting={updateM.isPending}
+                submitLabel="Guardar cambios"
+                error={error}
+                disabled={!canWrite}
+              />
+            </div>
+          </div>
+
+          {/* Histórico de telemetría — al final */}
+          {vehicleQ.data.teltonika_imei && (
+            <TelemetriaSection vehicleId={vehicleQ.data.id} />
           )}
         </>
       )}
@@ -848,7 +867,17 @@ interface UbicacionResponse {
   };
 }
 
-function UbicacionSection({ vehicleId, plate }: { vehicleId: string; plate: string }) {
+function UbicacionSection({
+  vehicleId,
+  plate,
+  height = 320,
+  hero = false,
+}: {
+  vehicleId: string;
+  plate: string;
+  height?: number;
+  hero?: boolean;
+}) {
   const ubicacionQ = useQuery({
     queryKey: ['vehiculos', vehicleId, 'ubicacion'],
     queryFn: async () => {
@@ -864,22 +893,25 @@ function UbicacionSection({ vehicleId, plate }: { vehicleId: string; plate: stri
   });
 
   return (
-    <section className="mt-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold text-neutral-900 text-xl">Ubicación actual</h2>
-          <p className="text-neutral-600 text-sm">
-            Última posición GPS recibida del Teltonika. Polling cada 30s.
-          </p>
+    <section className={hero ? 'mt-2' : 'mt-10'}>
+      {!hero && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-neutral-900 text-xl">Ubicación actual</h2>
+            <p className="text-neutral-600 text-sm">
+              Última posición GPS recibida del Teltonika. Polling cada 30s.
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="mt-4">
+      )}
+      <div className={hero ? '' : 'mt-4'}>
         <VehicleMap
           plate={plate}
           latitude={ubicacionQ.data?.ubicacion.latitude ?? null}
           longitude={ubicacionQ.data?.ubicacion.longitude ?? null}
           speedKmh={ubicacionQ.data?.ubicacion.speed_kmh ?? null}
           timestampDevice={ubicacionQ.data?.ubicacion.timestamp_device ?? null}
+          height={height}
         />
       </div>
     </section>
