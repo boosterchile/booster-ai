@@ -8,6 +8,7 @@ import {
   Clock,
   LogOut,
   MapPin,
+  Navigation,
   Package,
   Plus,
   Settings,
@@ -976,13 +977,25 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
 
               {tripQ.data.assignment.vehicle_plate && (
                 <div className="mt-6">
-                  <h4 className="font-medium text-neutral-900 text-sm">
-                    Ubicación del vehículo
-                  </h4>
-                  <p className="mt-0.5 text-neutral-600 text-xs">
-                    Última posición GPS reportada por el Teltonika del transportista. Polling
-                    cada 30s.
-                  </p>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h4 className="font-medium text-neutral-900 text-sm">
+                        Ubicación del vehículo
+                      </h4>
+                      <p className="mt-0.5 text-neutral-600 text-xs">
+                        Última posición GPS reportada por el Teltonika del transportista.
+                        Polling cada 30s.
+                      </p>
+                    </div>
+                    <Link
+                      to="/app/cargas/$id/track"
+                      params={{ id: tripQ.data.trip_request.id }}
+                      className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
+                    >
+                      <Navigation className="h-4 w-4" aria-hidden />
+                      Ver en vivo
+                    </Link>
+                  </div>
                   <div className="mt-3">
                     <VehicleMap
                       plate={tripQ.data.assignment.vehicle_plate}

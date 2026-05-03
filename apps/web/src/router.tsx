@@ -6,8 +6,10 @@ import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/
 import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
+import { CargaTrackRoute } from './routes/carga-track.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
+import { VehiculoLiveRoute } from './routes/vehiculo-live.js';
 import {
   VehiculosDetalleRoute,
   VehiculosListRoute,
@@ -104,6 +106,18 @@ const cargasDetalleRoute = createRoute({
   component: CargasDetalleRoute,
 });
 
+const vehiculoLiveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/vehiculos/$id/live',
+  component: VehiculoLiveRoute,
+});
+
+const cargaTrackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cargas/$id/track',
+  component: CargaTrackRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -115,9 +129,11 @@ const routeTree = rootRoute.addChildren([
   vehiculosListRoute,
   vehiculosNuevoRoute,
   vehiculosDetalleRoute,
+  vehiculoLiveRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
+  cargaTrackRoute,
 ]);
 
 export const router = createRouter({

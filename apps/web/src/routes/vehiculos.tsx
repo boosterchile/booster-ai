@@ -5,6 +5,7 @@ import {
   ExternalLink,
   LogOut,
   MapPin,
+  Navigation,
   Pencil,
   Plus,
   Settings,
@@ -412,9 +413,19 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
       {vehicleQ.data && (
         <>
           {vehicleQ.data.teltonika_imei && (
-            <div className="mb-6 rounded-md border border-primary-100 bg-primary-50 p-3 text-primary-900 text-sm">
-              <strong>Teltonika asociado:</strong>{' '}
-              <span className="font-mono">{vehicleQ.data.teltonika_imei}</span>
+            <div className="mb-6 flex items-center justify-between gap-4 rounded-md border border-primary-100 bg-primary-50 p-3">
+              <div className="text-primary-900 text-sm">
+                <strong>Teltonika asociado:</strong>{' '}
+                <span className="font-mono">{vehicleQ.data.teltonika_imei}</span>
+              </div>
+              <Link
+                to="/app/vehiculos/$id/live"
+                params={{ id: vehicleQ.data.id }}
+                className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
+              >
+                <Navigation className="h-4 w-4" aria-hidden />
+                Ver en vivo
+              </Link>
             </div>
           )}
           <VehicleForm
