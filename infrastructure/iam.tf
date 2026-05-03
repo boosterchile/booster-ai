@@ -83,6 +83,22 @@ resource "google_project_iam_member" "cloud_run_runtime_bindings" {
   member   = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
 
+# Permitir que el cloud_run runtime SA emita signed URLs v4 firmando con
+# su propia identidad vía IAM signBlob API. Sin esto, @google-cloud/storage
+# `bucket.file().getSignedUrl({version:'v4'})` falla con:
+#   Permission 'iam.serviceAccounts.signBlob' denied
+# Self-binding (NO project-wide) — la SA solo puede signBlob para sí
+# misma, no impersonar otras SA. Mínimo privilegio.
+# P3.f: necesario para POST /assignments/:id/messages/photo-upload-url
+# (PUT signed URL) y POST /assignments/:id/messages/:msgId/photo-url
+# (READ signed URL). Detectado durante smoke E2E con Felipe — endpoint
+# devolvía 500 unhandled error en runtime.
+resource "google_service_account_iam_member" "cloudrun_self_signer" {
+  service_account_id = google_service_account.cloud_run_runtime.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # Custom role mínimo para que el SA Cloud Run pueda crear/borrar
 # subscriptions efímeras del chat SSE (P3.b). Los roles standard
 # pubsub.publisher/pubsub.subscriber NO incluyen subscriptions.create
