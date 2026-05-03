@@ -4,8 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Ban,
-  CheckCircle2,
   Clock,
+  Download,
   LogOut,
   MapPin,
   Navigation,
@@ -20,6 +20,11 @@ import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import {
+  CertDisabledError,
+  CertNotIssuedError,
+  descargarCertificadoDeViaje,
+} from '../lib/cert-download.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -84,6 +89,8 @@ interface TripSummary {
   pickup_window_end: string | null;
   proposed_price_clp: number | null;
   created_at: string;
+  /** ISO string si el certificado de carbono ya fue emitido, sino null. */
+  certificate_issued_at: string | null;
 }
 
 interface TripDetail extends TripSummary {
@@ -138,6 +145,8 @@ interface TripMetrics {
   precision_method: string | null;
   glec_version: string | null;
   certificate_pdf_url: string | null;
+  certificate_sha256: string | null;
+  certificate_kms_key_version: string | null;
   certificate_issued_at: string | null;
 }
 
@@ -384,7 +393,7 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
                   Cargas entregadas, canceladas o sin match.
                 </p>
                 <div className="mt-3">
-                  <CargasTable trips={historial} />
+                  <CargasTable trips={historial} showCertificateColumn />
                 </div>
               </section>
             )}
@@ -395,7 +404,10 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
   );
 }
 
-function CargasTable({ trips }: { trips: TripSummary[] }) {
+function CargasTable({
+  trips,
+  showCertificateColumn = false,
+}: { trips: TripSummary[]; showCertificateColumn?: boolean }) {
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
       <table className="min-w-full divide-y divide-neutral-200">
@@ -406,6 +418,7 @@ function CargasTable({ trips }: { trips: TripSummary[] }) {
             <Th>Carga</Th>
             <Th>Pickup</Th>
             <Th>Estado</Th>
+            {showCertificateColumn && <Th>Certificado</Th>}
             <Th>{''}</Th>
           </tr>
         </thead>
@@ -444,6 +457,17 @@ function CargasTable({ trips }: { trips: TripSummary[] }) {
                   {STATUS_LABELS[t.status]}
                 </span>
               </Td>
+              {showCertificateColumn && (
+                <Td>
+                  {t.certificate_issued_at ? (
+                    <DescargarCertificadoButton tripId={t.id} compact />
+                  ) : t.status === 'entregado' ? (
+                    <span className="text-amber-700 text-xs">Generando…</span>
+                  ) : (
+                    <span className="text-neutral-400 text-xs">—</span>
+                  )}
+                </Td>
+              )}
               <Td>
                 <Link
                   to="/app/cargas/$id"
@@ -459,6 +483,59 @@ function CargasTable({ trips }: { trips: TripSummary[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Botón para descargar el PDF del certificado. Pide la signed URL al api
+ * y la abre en una pestaña nueva.
+ *
+ * Variante `compact`: ícono + texto chico para usar en celdas de tabla.
+ * Variante normal: botón con borde para usar en cards de detalle.
+ */
+function DescargarCertificadoButton({
+  tripId,
+  compact = false,
+}: { tripId: string; compact?: boolean }) {
+  const downloadM = useMutation({
+    mutationFn: descargarCertificadoDeViaje,
+    onError: (err) => {
+      if (err instanceof CertNotIssuedError) {
+        window.alert(
+          'El certificado todavía está generándose. Esperá unos segundos y reintentá.',
+        );
+      } else if (err instanceof CertDisabledError) {
+        window.alert('Los certificados están deshabilitados en este entorno.');
+      } else {
+        window.alert('No se pudo descargar el certificado. Reintentá en un momento.');
+      }
+    },
+  });
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={() => downloadM.mutate(tripId)}
+        disabled={downloadM.isPending}
+        className="inline-flex items-center gap-1 text-primary-600 text-xs hover:underline disabled:opacity-60"
+      >
+        <Download className="h-3.5 w-3.5" aria-hidden />
+        {downloadM.isPending ? 'Abriendo…' : 'Descargar'}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => downloadM.mutate(tripId)}
+      disabled={downloadM.isPending}
+      className="inline-flex items-center gap-2 rounded-md border border-primary-200 bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100 disabled:opacity-60"
+    >
+      <Download className="h-4 w-4" aria-hidden />
+      {downloadM.isPending ? 'Abriendo…' : 'Descargar certificado de huella de carbono'}
+    </button>
   );
 }
 
@@ -1074,19 +1151,22 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     ? `${tripQ.data.metrics.carbon_emissions_kgco2e_actual} kg CO₂e`
                     : '—'}
                 </DataRow>
-                {tripQ.data.metrics.certificate_pdf_url && (
+                {tripQ.data.metrics.certificate_issued_at && (
                   <div className="sm:col-span-2">
-                    <a
-                      href={tripQ.data.metrics.certificate_pdf_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                    >
-                      <CheckCircle2 className="h-4 w-4" aria-hidden />
-                      Ver certificado PDF
-                    </a>
+                    <DescargarCertificadoButton tripId={tripQ.data.trip_request.id} />
+                    {tripQ.data.metrics.certificate_sha256 && (
+                      <p className="mt-2 break-all font-mono text-neutral-400 text-xs">
+                        SHA-256: {tripQ.data.metrics.certificate_sha256}
+                      </p>
+                    )}
                   </div>
                 )}
+                {!tripQ.data.metrics.certificate_issued_at &&
+                  tripQ.data.trip_request.status === 'entregado' && (
+                    <div className="sm:col-span-2 rounded-md bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+                      Generando certificado de huella de carbono. Recargá en unos segundos.
+                    </div>
+                  )}
               </div>
             </DataCard>
           )}

@@ -209,6 +209,10 @@ export function createTripRequestsV2Routes(opts: {
       return auth.response;
     }
 
+    // LEFT JOIN tripMetrics para exponer certificate_issued_at en cada
+    // item del listado — el frontend lo usa para mostrar el ícono
+    // "descargar certificado" en la columna Historial sin tener que
+    // hacer un GET /:id por fila.
     const rows = await opts.db
       .select({
         id: trips.id,
@@ -225,8 +229,10 @@ export function createTripRequestsV2Routes(opts: {
         pickup_window_end: trips.pickupWindowEnd,
         proposed_price_clp: trips.proposedPriceClp,
         created_at: trips.createdAt,
+        certificate_issued_at: tripMetrics.certificateIssuedAt,
       })
       .from(trips)
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
       .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
       .orderBy(desc(trips.createdAt));
 

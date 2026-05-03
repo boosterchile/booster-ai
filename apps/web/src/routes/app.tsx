@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import {
   ArrowRight,
   Bus,
+  Leaf,
   LogOut,
   Package,
   PackagePlus,
@@ -217,7 +218,31 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                   <div>
                     <div className="font-medium text-neutral-900">Mis cargas</div>
                     <div className="text-neutral-600 text-sm">
-                      Estado del matching, asignaciones, certificados de huella de carbono.
+                      Estado del matching, asignaciones, seguimiento en vivo.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/certificados"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-emerald-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"
+                    aria-hidden
+                  >
+                    <Leaf className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">
+                      Certificados de huella de carbono
+                    </div>
+                    <div className="text-neutral-600 text-sm">
+                      Descargá los certificados firmados (GLEC v3.0 + SEC Chile 2024) de tus
+                      viajes entregados.
                     </div>
                   </div>
                 </div>

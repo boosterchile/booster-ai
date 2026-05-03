@@ -3,6 +3,7 @@ import { RootComponent } from './routes/__root.js';
 import { AdminDispositivosRoute } from './routes/admin-dispositivos.js';
 import { AppRoute } from './routes/app.js';
 import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
+import { CertificadosRoute } from './routes/certificados.js';
 import { IndexRoute } from './routes/index.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
@@ -118,6 +119,12 @@ const cargaTrackRoute = createRoute({
   component: CargaTrackRoute,
 });
 
+const certificadosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/certificados',
+  component: CertificadosRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -134,6 +141,7 @@ const routeTree = rootRoute.addChildren([
   cargasNuevaRoute,
   cargasDetalleRoute,
   cargaTrackRoute,
+  certificadosRoute,
 ]);
 
 export const router = createRouter({
