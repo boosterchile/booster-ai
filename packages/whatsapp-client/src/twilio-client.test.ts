@@ -8,7 +8,7 @@ const noopLogger = {
   warn: () => {},
   error: () => {},
   fatal: () => {},
-} as unknown as Parameters<typeof TwilioWhatsAppClient>[0]['logger'];
+} as unknown as ConstructorParameters<typeof TwilioWhatsAppClient>[0]['logger'];
 
 const ACCOUNT_SID = 'AC1234567890abcdef';
 const AUTH_TOKEN = 'test_auth_token';
