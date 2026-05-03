@@ -691,6 +691,10 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.3))
 
   packages/trip-state-machine:
+    dependencies:
+      xstate:
+        specifier: ^5.31.0
+        version: 5.31.0
     devDependencies:
       typescript:
         specifier: ^5.8.2
@@ -6736,6 +6740,9 @@ packages:
 
   xstate@5.30.0:
     resolution: {integrity: sha512-mIzIuMjtYVkqXq9dUzYQoag7b/dF1CBS/yhliuPLfR0FwKPC18HiUivb/crcqY2gknhR8gJEhnppLg6ubQ0gGw==}
+
+  xstate@5.31.0:
+    resolution: {integrity: sha512-5B+0DqC0uNUrcLUEY3pn3iNy+swvK2E0ZpYp5gnV3oxMX5y87vzXkU5YXv9CAtyG5c5FOJ1SzvTWHrwE8fMZNQ==}
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -13396,6 +13403,8 @@ snapshots:
   xmlchars@2.2.0: {}
 
   xstate@5.30.0: {}
+
+  xstate@5.31.0: {}
 
   xtend@4.0.2: {}
 
