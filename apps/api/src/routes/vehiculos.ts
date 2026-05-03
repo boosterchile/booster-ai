@@ -383,6 +383,76 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     });
   });
 
+  // ---------------------------------------------------------------------
+  // GET /:id/ubicacion — último punto GPS del vehículo (para mapas).
+  //
+  // Versión liviana de /:id/telemetria optimizada para "dónde está ahora".
+  // Devuelve solo el último point (no array). 404 si vehículo no tiene
+  // teltonika asociado o no se han recibido packets.
+  // ---------------------------------------------------------------------
+  app.get('/:id/ubicacion', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) return auth.response;
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const [vehicle] = await opts.db
+      .select({ id: vehicles.id, plate: vehicles.plate, teltonikaImei: vehicles.teltonikaImei })
+      .from(vehicles)
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+      .limit(1);
+    if (!vehicle) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+    if (!vehicle.teltonikaImei) {
+      return c.json(
+        { error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate },
+        404,
+      );
+    }
+
+    const [last] = await opts.db
+      .select({
+        timestamp_device: telemetryPoints.timestampDevice,
+        timestamp_received_at: telemetryPoints.timestampReceivedAt,
+        longitude: telemetryPoints.longitude,
+        latitude: telemetryPoints.latitude,
+        altitude_m: telemetryPoints.altitudeM,
+        angle_deg: telemetryPoints.angleDeg,
+        satellites: telemetryPoints.satellites,
+        speed_kmh: telemetryPoints.speedKmh,
+        priority: telemetryPoints.priority,
+      })
+      .from(telemetryPoints)
+      .where(eq(telemetryPoints.vehicleId, id))
+      .orderBy(desc(telemetryPoints.timestampDevice))
+      .limit(1);
+
+    if (!last) {
+      return c.json(
+        { error: 'no_points_yet', code: 'no_points_yet', plate: vehicle.plate, imei: vehicle.teltonikaImei },
+        404,
+      );
+    }
+
+    return c.json({
+      vehicle_id: id,
+      plate: vehicle.plate,
+      teltonika_imei: vehicle.teltonikaImei,
+      ubicacion: {
+        timestamp_device: last.timestamp_device,
+        timestamp_received_at: last.timestamp_received_at,
+        latitude: last.latitude != null ? Number.parseFloat(last.latitude) : null,
+        longitude: last.longitude != null ? Number.parseFloat(last.longitude) : null,
+        altitude_m: last.altitude_m,
+        angle_deg: last.angle_deg,
+        satellites: last.satellites,
+        speed_kmh: last.speed_kmh,
+        priority: last.priority,
+      },
+    });
+  });
+
   return app;
 }
 

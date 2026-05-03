@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -425,7 +426,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
           />
 
           {vehicleQ.data.teltonika_imei && (
-            <TelemetriaSection vehicleId={vehicleQ.data.id} />
+            <>
+              <UbicacionSection vehicleId={vehicleQ.data.id} plate={vehicleQ.data.plate} />
+              <TelemetriaSection vehicleId={vehicleQ.data.id} />
+            </>
           )}
         </>
       )}
@@ -806,6 +810,64 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function Td({ className = '', children }: { className?: string; children: React.ReactNode }) {
   return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
+}
+
+// =============================================================================
+// Ubicación en mapa — sección dentro de /app/vehiculos/:id
+// =============================================================================
+
+interface UbicacionResponse {
+  vehicle_id: string;
+  plate: string;
+  teltonika_imei: string | null;
+  ubicacion: {
+    timestamp_device: string;
+    latitude: number | null;
+    longitude: number | null;
+    altitude_m: number | null;
+    angle_deg: number | null;
+    satellites: number | null;
+    speed_kmh: number | null;
+    priority: number;
+  };
+}
+
+function UbicacionSection({ vehicleId, plate }: { vehicleId: string; plate: string }) {
+  const ubicacionQ = useQuery({
+    queryKey: ['vehiculos', vehicleId, 'ubicacion'],
+    queryFn: async () => {
+      try {
+        return await api.get<UbicacionResponse>(`/vehiculos/${vehicleId}/ubicacion`);
+      } catch {
+        // 404 si no hay puntos aún — devolvemos null y el componente
+        // muestra el placeholder amigable.
+        return null;
+      }
+    },
+    refetchInterval: 30_000,
+  });
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-neutral-900 text-xl">Ubicación actual</h2>
+          <p className="text-neutral-600 text-sm">
+            Última posición GPS recibida del Teltonika. Polling cada 30s.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4">
+        <VehicleMap
+          plate={plate}
+          latitude={ubicacionQ.data?.ubicacion.latitude ?? null}
+          longitude={ubicacionQ.data?.ubicacion.longitude ?? null}
+          speedKmh={ubicacionQ.data?.ubicacion.speed_kmh ?? null}
+          timestampDevice={ubicacionQ.data?.ubicacion.timestamp_device ?? null}
+        />
+      </div>
+    </section>
+  );
 }
 
 // =============================================================================

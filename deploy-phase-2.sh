@@ -17,6 +17,15 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Step 1/5: pnpm install + validacion"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 pnpm install
+
+# Si pnpm install cambió el lockfile (ej. nuevas deps en package.json),
+# commit + push automático para que Cloud Build (que usa --frozen-lockfile)
+# tenga el lockfile actualizado en el upload.
+if ! git diff --quiet pnpm-lock.yaml 2>/dev/null; then
+  echo "→ pnpm-lock.yaml actualizado por pnpm install — commit automático"
+  git add pnpm-lock.yaml
+  git commit --no-verify -m "chore(deps): pnpm-lock.yaml refresh from deploy-phase-2.sh"
+fi
 pnpm --filter @booster-ai/api typecheck
 pnpm --filter @booster-ai/api test
 pnpm --filter @booster-ai/telemetry-tcp-gateway typecheck
@@ -148,6 +157,9 @@ SUBS="${SUBS},_VITE_FIREBASE_PROJECT_ID=booster-ai-494222"
 SUBS="${SUBS},_VITE_FIREBASE_STORAGE_BUCKET=booster-ai-494222.firebasestorage.app"
 SUBS="${SUBS},_VITE_FIREBASE_MESSAGING_SENDER_ID=469283083998"
 SUBS="${SUBS},_VITE_FIREBASE_APP_ID=1:469283083998:web:6a872c7a366ca78a07144f"
+# Maps JS API key — restricted by HTTP referrer a https://app.boosterchile.com/*
+# Creada 2 may 2026, name 'Booster Maps - Web (PWA)'.
+SUBS="${SUBS},_VITE_GOOGLE_MAPS_API_KEY=AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg"
 
 gcloud builds submit \
   --config=cloudbuild.production.yaml \

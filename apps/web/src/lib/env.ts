@@ -23,6 +23,13 @@ const envSchema = z.object({
     .string()
     .url('VITE_API_URL must be a full URL')
     .refine((url) => !url.endsWith('/'), 'VITE_API_URL must not end with slash'),
+
+  /**
+   * Google Maps JS API key para mostrar mapas en /vehiculos/:id y
+   * /cargas/:id. Optional para que dev sin key arranque (los mapas
+   * caen al fallback "no configurado").
+   */
+  VITE_GOOGLE_MAPS_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

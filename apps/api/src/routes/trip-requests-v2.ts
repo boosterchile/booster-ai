@@ -9,6 +9,7 @@ import type { Db } from '../db/client.js';
 import {
   assignments,
   empresas as empresasTable,
+  telemetryPoints,
   tripEvents,
   tripMetrics,
   trips,
@@ -282,10 +283,47 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripMetrics.tripId, id))
       .limit(1);
 
+    // Si hay asignación con vehículo, traer última ubicación del vehículo.
+    // Permite al shipper saber en tiempo real dónde va su carga sin
+    // exponer otros datos del transportista. Si el vehículo no tiene
+    // Teltonika asociado o no recibió packets aún, ubicacion_actual es null.
+    let ubicacionActual: {
+      timestamp_device: Date;
+      latitude: number | null;
+      longitude: number | null;
+      speed_kmh: number | null;
+      angle_deg: number | null;
+    } | null = null;
+    if (assignmentRow?.vehicle_id) {
+      const [last] = await opts.db
+        .select({
+          timestamp_device: telemetryPoints.timestampDevice,
+          longitude: telemetryPoints.longitude,
+          latitude: telemetryPoints.latitude,
+          speed_kmh: telemetryPoints.speedKmh,
+          angle_deg: telemetryPoints.angleDeg,
+        })
+        .from(telemetryPoints)
+        .where(eq(telemetryPoints.vehicleId, assignmentRow.vehicle_id))
+        .orderBy(desc(telemetryPoints.timestampDevice))
+        .limit(1);
+      if (last) {
+        ubicacionActual = {
+          timestamp_device: last.timestamp_device,
+          latitude: last.latitude != null ? Number.parseFloat(last.latitude) : null,
+          longitude: last.longitude != null ? Number.parseFloat(last.longitude) : null,
+          speed_kmh: last.speed_kmh,
+          angle_deg: last.angle_deg,
+        };
+      }
+    }
+
     return c.json({
       trip_request: serializeTripDetail(trip),
       events,
-      assignment: assignmentRow ?? null,
+      assignment: assignmentRow
+        ? { ...assignmentRow, ubicacion_actual: ubicacionActual }
+        : null,
       metrics: metricsRow
         ? {
             distance_km_estimated: metricsRow.distanceKmEstimated,

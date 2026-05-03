@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -114,6 +115,18 @@ interface TripAssignment {
   vehicle_type: string | null;
   driver_user_id: string | null;
   driver_name: string | null;
+  /**
+   * Última posición GPS del vehículo asignado (si tiene Teltonika y ya
+   * reportó al menos un packet). Null si el vehículo no tiene Teltonika
+   * o todavía no se recibió ningún punto.
+   */
+  ubicacion_actual: {
+    timestamp_device: string;
+    latitude: number | null;
+    longitude: number | null;
+    speed_kmh: number | null;
+    angle_deg: number | null;
+  } | null;
 }
 
 interface TripMetrics {
@@ -960,6 +973,29 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                   <DataRow label="Conductor">{tripQ.data.assignment.driver_name}</DataRow>
                 )}
               </div>
+
+              {tripQ.data.assignment.vehicle_plate && (
+                <div className="mt-6">
+                  <h4 className="font-medium text-neutral-900 text-sm">
+                    Ubicación del vehículo
+                  </h4>
+                  <p className="mt-0.5 text-neutral-600 text-xs">
+                    Última posición GPS reportada por el Teltonika del transportista. Polling
+                    cada 30s.
+                  </p>
+                  <div className="mt-3">
+                    <VehicleMap
+                      plate={tripQ.data.assignment.vehicle_plate}
+                      latitude={tripQ.data.assignment.ubicacion_actual?.latitude ?? null}
+                      longitude={tripQ.data.assignment.ubicacion_actual?.longitude ?? null}
+                      speedKmh={tripQ.data.assignment.ubicacion_actual?.speed_kmh ?? null}
+                      timestampDevice={
+                        tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null
+                      }
+                    />
+                  </div>
+                </div>
+              )}
             </DataCard>
           )}
 
