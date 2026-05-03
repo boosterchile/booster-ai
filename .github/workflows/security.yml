@@ -144,7 +144,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Generate CycloneDX SBOM
-        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.cyclonedx.json
+        # cdxgen soporta nativamente pnpm-lock.yaml + workspaces. La
+        # alternativa @cyclonedx/cyclonedx-npm asume package-lock.json
+        # y falla con exit 254 en repos pnpm.
+        run: npx --yes @cyclonedx/cdxgen@^11 -t pnpm -o sbom.cyclonedx.json --no-install-deps
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:

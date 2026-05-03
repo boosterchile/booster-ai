@@ -36,7 +36,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
         run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium webkit
+      - name: Check for E2E specs
+        id: check_specs
+        # Si no hay specs en apps/web/e2e/, skip el step de Run E2E sin
+        # marcar el job como failure. Útil mientras el directorio e2e/
+        # está vacío (workflow se dispara por cualquier cambio en
+        # apps/api/** o apps/web/** aunque no haya tests todavía).
+        run: |
+          if find apps/web/e2e -type f \( -name "*.spec.ts" -o -name "*.spec.tsx" \) 2>/dev/null | grep -q .; then
+            echo "has_specs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_specs=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Playwright specs found in apps/web/e2e/ — skipping E2E run."
+          fi
       - name: Run E2E
+        if: steps.check_specs.outputs.has_specs == 'true'
         env:
           BASE_URL: ${{ github.event_name == 'pull_request' && vars.STAGING_URL || vars.PRODUCTION_URL }}
         run: pnpm --filter @booster-ai/web test:e2e
