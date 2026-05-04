@@ -1,3 +1,4 @@
+import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -342,64 +343,65 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
       {tripsQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
       {tripsQ.error && <p className="mt-6 text-danger-700">Error al cargar cargas.</p>}
 
-      {tripsQ.data && (() => {
-        // Split por estado: lo que sigue activo (shipper espera/seguimiento) vs
-        // historial (terminado, cancelado, sin match). Sin esto, el listado
-        // mezcla cargas vivas con basura vieja y se vuelve ruidoso a las
-        // pocas semanas de uso.
-        const ACTIVE_STATUSES = new Set<TripStatus>([
-          'borrador',
-          'esperando_match',
-          'emparejando',
-          'ofertas_enviadas',
-          'asignado',
-          'en_proceso',
-        ]);
-        const activas = tripsQ.data.filter((t) => ACTIVE_STATUSES.has(t.status));
-        const historial = tripsQ.data.filter((t) => !ACTIVE_STATUSES.has(t.status));
+      {tripsQ.data &&
+        (() => {
+          // Split por estado: lo que sigue activo (shipper espera/seguimiento) vs
+          // historial (terminado, cancelado, sin match). Sin esto, el listado
+          // mezcla cargas vivas con basura vieja y se vuelve ruidoso a las
+          // pocas semanas de uso.
+          const ACTIVE_STATUSES = new Set<TripStatus>([
+            'borrador',
+            'esperando_match',
+            'emparejando',
+            'ofertas_enviadas',
+            'asignado',
+            'en_proceso',
+          ]);
+          const activas = tripsQ.data.filter((t) => ACTIVE_STATUSES.has(t.status));
+          const historial = tripsQ.data.filter((t) => !ACTIVE_STATUSES.has(t.status));
 
-        return (
-          <>
-            <section className="mt-6">
-              <h2 className="font-semibold text-neutral-900 text-lg">Cargas activas</h2>
-              <p className="mt-1 text-neutral-500 text-xs">
-                En proceso de match, asignadas o en ruta.
-              </p>
-              {activas.length === 0 ? (
-                <div className="mt-3 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
-                  <Package className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-                  <p className="mt-3 font-medium text-neutral-900">No tienes cargas activas</p>
-                  <p className="mt-1 text-neutral-600 text-sm">
-                    Crea una carga para que el matching engine te conecte con transportistas
-                    disponibles.
-                  </p>
-                  <Link
-                    to="/app/cargas/nueva"
-                    className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-                  >
-                    <Plus className="h-4 w-4" aria-hidden />
-                    Crear carga
-                  </Link>
-                </div>
-              ) : (
-                <CargasTable trips={activas} />
-              )}
-            </section>
-
-            {historial.length > 0 && (
-              <section className="mt-10">
-                <h2 className="font-semibold text-neutral-900 text-lg">Historial</h2>
+          return (
+            <>
+              <section className="mt-6">
+                <h2 className="font-semibold text-lg text-neutral-900">Cargas activas</h2>
                 <p className="mt-1 text-neutral-500 text-xs">
-                  Cargas entregadas, canceladas o sin match.
+                  En proceso de match, asignadas o en ruta.
                 </p>
-                <div className="mt-3">
-                  <CargasTable trips={historial} showCertificateColumn />
-                </div>
+                {activas.length === 0 ? (
+                  <div className="mt-3 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
+                    <Package className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
+                    <p className="mt-3 font-medium text-neutral-900">No tienes cargas activas</p>
+                    <p className="mt-1 text-neutral-600 text-sm">
+                      Crea una carga para que el matching engine te conecte con transportistas
+                      disponibles.
+                    </p>
+                    <Link
+                      to="/app/cargas/nueva"
+                      className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden />
+                      Crear carga
+                    </Link>
+                  </div>
+                ) : (
+                  <CargasTable trips={activas} />
+                )}
               </section>
-            )}
-          </>
-        );
-      })()}
+
+              {historial.length > 0 && (
+                <section className="mt-10">
+                  <h2 className="font-semibold text-lg text-neutral-900">Historial</h2>
+                  <p className="mt-1 text-neutral-500 text-xs">
+                    Cargas entregadas, canceladas o sin match.
+                  </p>
+                  <div className="mt-3">
+                    <CargasTable trips={historial} showCertificateColumn />
+                  </div>
+                </section>
+              )}
+            </>
+          );
+        })()}
     </Layout>
   );
 }
@@ -501,9 +503,7 @@ function DescargarCertificadoButton({
     mutationFn: descargarCertificadoDeViaje,
     onError: (err) => {
       if (err instanceof CertNotIssuedError) {
-        window.alert(
-          'El certificado todavía está generándose. Esperá unos segundos y reintentá.',
-        );
+        window.alert('El certificado todavía está generándose. Esperá unos segundos y reintentá.');
       } else if (err instanceof CertDisabledError) {
         window.alert('Los certificados están deshabilitados en este entorno.');
       } else {
@@ -610,14 +610,76 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
     },
     pickup_window: {
       // datetime-local devuelve "YYYY-MM-DDTHH:MM" sin TZ. Lo convertimos a
-      // ISO 8601 UTC vía Date (asume hora local del browser).
-      start_at: new Date(v.pickup_start_local).toISOString(),
-      end_at: new Date(v.pickup_end_local).toISOString(),
+      // ISO 8601 UTC vía Date (asume hora local del browser). Si el campo
+      // está vacío, `new Date('').toISOString()` lanza — el caller debe
+      // chequear antes de invocar este helper o catchear.
+      start_at: v.pickup_start_local ? new Date(v.pickup_start_local).toISOString() : '',
+      end_at: v.pickup_end_local ? new Date(v.pickup_end_local).toISOString() : '',
     },
     proposed_price_clp: v.proposed_price_clp.trim()
       ? Number.parseInt(v.proposed_price_clp, 10)
       : null,
   };
+}
+
+/**
+ * Mapeo entre el path de error que devuelve Zod y el `name` del field en el
+ * form. El schema usa estructura anidada (`origin.address_raw`) pero el form
+ * usa nombres planos (`origin_address_raw`) para simplificar el state.
+ */
+const SCHEMA_PATH_TO_FIELD: Record<string, keyof TripFormValues> = {
+  'origin.address_raw': 'origin_address_raw',
+  'origin.region_code': 'origin_region_code',
+  'destination.address_raw': 'destination_address_raw',
+  'destination.region_code': 'destination_region_code',
+  'cargo.cargo_type': 'cargo_type',
+  'cargo.weight_kg': 'cargo_weight_kg',
+  'cargo.volume_m3': 'cargo_volume_m3',
+  'cargo.description': 'cargo_description',
+  'pickup_window.start_at': 'pickup_start_local',
+  'pickup_window.end_at': 'pickup_end_local',
+  proposed_price_clp: 'proposed_price_clp',
+};
+
+type TripFieldErrors = Partial<Record<keyof TripFormValues, string>>;
+
+/**
+ * Valida el form contra el schema canónico y devuelve errores mapeados al
+ * `name` plano del form. Devuelve `null` si todo OK.
+ *
+ * Esto es defensa en profundidad: el servidor también valida el mismo
+ * schema. Pero la validación cliente da feedback inmediato y evita
+ * disparar el matching engine con datos basura.
+ */
+function validateTripForm(v: TripFormValues): TripFieldErrors | null {
+  // Si las fechas locales están vacías, marcamos error explícito antes de
+  // intentar parsearlas (un `new Date('')` da Invalid Date).
+  const earlyErrors: TripFieldErrors = {};
+  if (!v.pickup_start_local) {
+    earlyErrors.pickup_start_local = 'Selecciona una fecha y hora';
+  }
+  if (!v.pickup_end_local) {
+    earlyErrors.pickup_end_local = 'Selecciona una fecha y hora';
+  }
+  if (Object.keys(earlyErrors).length > 0) {
+    return earlyErrors;
+  }
+
+  const body = tripFormToBody(v);
+  const result = tripRequestCreateInputSchema.safeParse(body);
+  if (result.success) {
+    return null;
+  }
+
+  const errors: TripFieldErrors = {};
+  for (const issue of result.error.issues) {
+    const path = issue.path.join('.');
+    const field = SCHEMA_PATH_TO_FIELD[path];
+    if (field && !errors[field]) {
+      errors[field] = issue.message;
+    }
+  }
+  return errors;
 }
 
 function CargaNuevaPage({ me }: { me: MeOnboarded }) {
@@ -670,13 +732,30 @@ function TripForm({
   error: string | null;
 }) {
   const [values, setValues] = useState<TripFormValues>(EMPTY_FORM);
+  const [fieldErrors, setFieldErrors] = useState<TripFieldErrors>({});
 
   function update<K extends keyof TripFormValues>(key: K, val: TripFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: val }));
+    // Limpia el error del field al editarlo — feedback positivo sin
+    // re-validar todo el form en cada keystroke.
+    setFieldErrors((prev) => {
+      if (!prev[key]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    const errors = validateTripForm(values);
+    if (errors) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     onSubmit(values);
   }
 
@@ -688,7 +767,11 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Origen</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Dirección de recogida *" htmlFor="origin_address_raw">
+          <Field
+            label="Dirección de recogida *"
+            htmlFor="origin_address_raw"
+            error={fieldErrors.origin_address_raw}
+          >
             <input
               id="origin_address_raw"
               type="text"
@@ -698,15 +781,21 @@ function TripForm({
               className={inputClass}
               placeholder="Av. Apoquindo 5550, Las Condes"
               maxLength={500}
+              aria-invalid={fieldErrors.origin_address_raw ? true : undefined}
             />
           </Field>
-          <Field label="Región *" htmlFor="origin_region_code">
+          <Field
+            label="Región *"
+            htmlFor="origin_region_code"
+            error={fieldErrors.origin_region_code}
+          >
             <select
               id="origin_region_code"
               required
               value={values.origin_region_code}
               onChange={(e) => update('origin_region_code', e.target.value as RegionCode | '')}
               className={inputClass}
+              aria-invalid={fieldErrors.origin_region_code ? true : undefined}
             >
               <option value="">— Seleccionar —</option>
               {REGION_OPTIONS.map((r) => (
@@ -722,7 +811,11 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Destino</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Dirección de entrega *" htmlFor="destination_address_raw">
+          <Field
+            label="Dirección de entrega *"
+            htmlFor="destination_address_raw"
+            error={fieldErrors.destination_address_raw}
+          >
             <input
               id="destination_address_raw"
               type="text"
@@ -732,15 +825,21 @@ function TripForm({
               className={inputClass}
               placeholder="Concepción centro"
               maxLength={500}
+              aria-invalid={fieldErrors.destination_address_raw ? true : undefined}
             />
           </Field>
-          <Field label="Región *" htmlFor="destination_region_code">
+          <Field
+            label="Región *"
+            htmlFor="destination_region_code"
+            error={fieldErrors.destination_region_code}
+          >
             <select
               id="destination_region_code"
               required
               value={values.destination_region_code}
               onChange={(e) => update('destination_region_code', e.target.value as RegionCode | '')}
               className={inputClass}
+              aria-invalid={fieldErrors.destination_region_code ? true : undefined}
             >
               <option value="">— Seleccionar —</option>
               {REGION_OPTIONS.map((r) => (
@@ -756,13 +855,14 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Carga</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Tipo de carga *" htmlFor="cargo_type">
+          <Field label="Tipo de carga *" htmlFor="cargo_type" error={fieldErrors.cargo_type}>
             <select
               id="cargo_type"
               required
               value={values.cargo_type}
               onChange={(e) => update('cargo_type', e.target.value as CargoType)}
               className={inputClass}
+              aria-invalid={fieldErrors.cargo_type ? true : undefined}
             >
               {(Object.keys(CARGO_TYPE_LABELS) as CargoType[]).map((t) => (
                 <option key={t} value={t}>
@@ -771,7 +871,7 @@ function TripForm({
               ))}
             </select>
           </Field>
-          <Field label="Peso (kg) *" htmlFor="cargo_weight_kg">
+          <Field label="Peso (kg) *" htmlFor="cargo_weight_kg" error={fieldErrors.cargo_weight_kg}>
             <input
               id="cargo_weight_kg"
               type="number"
@@ -781,9 +881,10 @@ function TripForm({
               value={values.cargo_weight_kg}
               onChange={(e) => update('cargo_weight_kg', e.target.value)}
               className={inputClass}
+              aria-invalid={fieldErrors.cargo_weight_kg ? true : undefined}
             />
           </Field>
-          <Field label="Volumen (m³)" htmlFor="cargo_volume_m3">
+          <Field label="Volumen (m³)" htmlFor="cargo_volume_m3" error={fieldErrors.cargo_volume_m3}>
             <input
               id="cargo_volume_m3"
               type="number"
@@ -792,10 +893,15 @@ function TripForm({
               value={values.cargo_volume_m3}
               onChange={(e) => update('cargo_volume_m3', e.target.value)}
               className={inputClass}
+              aria-invalid={fieldErrors.cargo_volume_m3 ? true : undefined}
             />
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Descripción" htmlFor="cargo_description">
+            <Field
+              label="Descripción"
+              htmlFor="cargo_description"
+              error={fieldErrors.cargo_description}
+            >
               <textarea
                 id="cargo_description"
                 rows={2}
@@ -804,6 +910,7 @@ function TripForm({
                 className={inputClass}
                 maxLength={1000}
                 placeholder="Detalles relevantes para el transportista (opcional)"
+                aria-invalid={fieldErrors.cargo_description ? true : undefined}
               />
             </Field>
           </div>
@@ -813,7 +920,11 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Ventana de pickup</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Desde *" htmlFor="pickup_start_local">
+          <Field
+            label="Desde *"
+            htmlFor="pickup_start_local"
+            error={fieldErrors.pickup_start_local}
+          >
             <input
               id="pickup_start_local"
               type="datetime-local"
@@ -821,9 +932,10 @@ function TripForm({
               value={values.pickup_start_local}
               onChange={(e) => update('pickup_start_local', e.target.value)}
               className={inputClass}
+              aria-invalid={fieldErrors.pickup_start_local ? true : undefined}
             />
           </Field>
-          <Field label="Hasta *" htmlFor="pickup_end_local">
+          <Field label="Hasta *" htmlFor="pickup_end_local" error={fieldErrors.pickup_end_local}>
             <input
               id="pickup_end_local"
               type="datetime-local"
@@ -831,6 +943,7 @@ function TripForm({
               value={values.pickup_end_local}
               onChange={(e) => update('pickup_end_local', e.target.value)}
               className={inputClass}
+              aria-invalid={fieldErrors.pickup_end_local ? true : undefined}
             />
           </Field>
         </div>
@@ -839,7 +952,11 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Precio</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Precio sugerido (CLP)" htmlFor="proposed_price_clp">
+          <Field
+            label="Precio sugerido (CLP)"
+            htmlFor="proposed_price_clp"
+            error={fieldErrors.proposed_price_clp}
+          >
             <input
               id="proposed_price_clp"
               type="number"
@@ -848,6 +965,7 @@ function TripForm({
               onChange={(e) => update('proposed_price_clp', e.target.value)}
               className={inputClass}
               placeholder="Dejar vacío si querés que pricing-engine sugiera"
+              aria-invalid={fieldErrors.proposed_price_clp ? true : undefined}
             />
           </Field>
         </div>
@@ -1042,9 +1160,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 latitude={tripQ.data.assignment.ubicacion_actual?.latitude ?? null}
                 longitude={tripQ.data.assignment.ubicacion_actual?.longitude ?? null}
                 speedKmh={tripQ.data.assignment.ubicacion_actual?.speed_kmh ?? null}
-                timestampDevice={
-                  tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null
-                }
+                timestampDevice={tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null}
                 height={480}
               />
             </DataCard>
@@ -1163,7 +1279,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 )}
                 {!tripQ.data.metrics.certificate_issued_at &&
                   tripQ.data.trip_request.status === 'entregado' && (
-                    <div className="sm:col-span-2 rounded-md bg-amber-50 px-3 py-2 text-amber-900 text-xs">
+                    <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-900 text-xs sm:col-span-2">
                       Generando certificado de huella de carbono. Recargá en unos segundos.
                     </div>
                   )}
@@ -1275,18 +1391,26 @@ function NoShipperPermission() {
 function Field({
   label,
   htmlFor,
+  error,
   children,
 }: {
   label: string;
   htmlFor: string;
+  error?: string | undefined;
   children: ReactNode;
 }) {
+  const errorId = error ? `${htmlFor}-error` : undefined;
   return (
     <div>
       <label htmlFor={htmlFor} className="block font-medium text-neutral-700 text-sm">
         {label}
       </label>
       <div className="mt-1">{children}</div>
+      {error && (
+        <p id={errorId} role="alert" className="mt-1 text-danger-600 text-sm">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
