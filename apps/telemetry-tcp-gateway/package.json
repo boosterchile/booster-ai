@@ -17,7 +17,7 @@
     "@booster-ai/logger": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@google-cloud/pubsub": "^4.10.0",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "zod": "^3.25.76"
