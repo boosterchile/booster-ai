@@ -12,8 +12,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
+    "react": "^19.0.0",
+    "zod": "^3.25.76"
+  },
   "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
