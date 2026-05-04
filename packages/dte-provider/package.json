@@ -12,8 +12,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@booster-ai/shared-schemas": "workspace:*",
+    "zod": "^3.25.76"
+  },
   "devDependencies": {
+    "@types/node": "^22.14.0",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
