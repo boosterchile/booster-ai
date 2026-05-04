@@ -263,11 +263,7 @@ export const pendingDeviceStatusEnum = pgEnum('estado_dispositivo_pendiente', [
  * El backend valida que solo el campo correspondiente al tipo esté
  * poblado (CHECK constraint en la tabla).
  */
-export const chatMessageTypeEnum = pgEnum('tipo_mensaje_chat', [
-  'texto',
-  'foto',
-  'ubicacion',
-]);
+export const chatMessageTypeEnum = pgEnum('tipo_mensaje_chat', ['texto', 'foto', 'ubicacion']);
 
 /**
  * Rol del remitente en el chat. Sigue el patrón de `actor_cancelacion`.
@@ -289,6 +285,27 @@ export const chatSenderRoleEnum = pgEnum('rol_remitente_chat', [
 export const pushSubscriptionStatusEnum = pgEnum('estado_push_subscription', [
   'activa',
   'inactiva',
+]);
+
+/**
+ * Tipos de documento que el indexer persiste. Ver ADR-007 + domain
+ * `document.ts`. Mantener en orden con `documentTypeSchema` del shared
+ * (TS) — el typecheck no lo fuerza, los tests del package sí.
+ */
+export const documentTypeEnum = pgEnum('tipo_documento', [
+  'dte_guia_despacho',
+  'dte_factura',
+  'dte_factura_exenta',
+  'carta_porte',
+  'acta_entrega',
+  'certificado_esg',
+  'foto_pickup',
+  'foto_delivery',
+  'firma_receptor',
+  'checklist_vehiculo',
+  'factura_externa',
+  'comprobante_pago',
+  'otro',
 ]);
 
 // =============================================================================
@@ -853,10 +870,7 @@ export const telemetryPoints = pgTable(
   },
   (table) => ({
     imeiTsUnique: unique('uq_telemetria_imei_ts').on(table.imei, table.timestampDevice),
-    vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(
-      table.vehicleId,
-      table.timestampDevice,
-    ),
+    vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     imeiTsIdx: index('idx_telemetria_imei_ts').on(table.imei, table.timestampDevice),
     vehicleReceivedIdx: index('idx_telemetria_vehiculo_recibido').on(
       table.vehicleId,
@@ -1038,10 +1052,71 @@ export const pushSubscriptions = pgTable(
   },
   (table) => ({
     endpointUnique: unique('uq_push_subscriptions_endpoint').on(table.endpoint),
-    userActiveIdx: index('idx_push_subscriptions_user_activa').on(
-      table.userId,
-      table.status,
-    ),
+    userActiveIdx: index('idx_push_subscriptions_user_activa').on(table.userId, table.status),
+  }),
+);
+
+/**
+ * Índice de documentos. Ver ADR-007 "Gestión Documental Obligatoria Chile".
+ *
+ * Esta tabla NO almacena el contenido (eso vive en GCS) — sólo el
+ * metadata indexable. El bucket es config-driven y único por ambiente
+ * (`booster-ai-documents-{env}`); aquí guardamos sólo el `gcs_path`
+ * relativo.
+ *
+ * `retention_until` es null para tipos sin obligación legal (ej. fotos
+ * operacionales). Para los `dte_*`, `carta_porte` y `acta_entrega` el
+ * indexer setea `emitido_en + 6 años`; el bucket aplica Object Retention
+ * Lock con esa misma ventana.
+ *
+ * `folio_sii` y `rut_emisor` solo aplican a DTEs. Indexados juntos para
+ * lookup rápido por (rut_emisor, folio_sii) que es el "natural key" de
+ * un DTE en el sistema del SII.
+ */
+export const documents = pgTable(
+  'documentos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    tripId: uuid('viaje_id').references(() => trips.id, { onDelete: 'set null' }),
+    type: documentTypeEnum('tipo').notNull(),
+    /** Path relativo al bucket. Bucket viene del config (`DOCUMENTS_BUCKET`). */
+    gcsPath: text('gcs_path').notNull(),
+    /** SHA-256 hex (64 chars). Verificación de integridad post-download. */
+    sha256: char('sha256', { length: 64 }).notNull(),
+    mimeType: varchar('mime_type', { length: 127 }).notNull(),
+    sizeBytes: integer('tamano_bytes').notNull(),
+    /** Folio asignado por el SII; sólo para DTEs. */
+    folioSii: varchar('folio_sii', { length: 40 }),
+    /** RUT del emisor del DTE (en formato SII: NNNNNNNN-D). */
+    rutEmisor: varchar('rut_emisor', { length: 12 }),
+    emittedByUserId: uuid('emitido_por_usuario_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    emittedAt: timestamp('emitido_en', { withTimezone: true }).notNull().defaultNow(),
+    /** NULL = sin retención legal. Set automáticamente por el indexer. */
+    retentionUntil: timestamp('retencion_hasta', { withTimezone: true }),
+    /** Si existe una versión PII-redacted lista para compartir externamente. */
+    piiRedactedCopy: boolean('copia_pii_redactada').notNull().default(false),
+    metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    /**
+     * UNIQUE de DTEs por (rut_emisor, folio_sii). Postgres considera
+     * NULLs distintos por default, asi que docs no-DTE (folio NULL)
+     * conviven sin colisión.
+     */
+    folioUnique: unique('uq_documentos_rut_folio').on(table.rutEmisor, table.folioSii),
+    empresaIdx: index('idx_documentos_empresa').on(table.empresaId),
+    tripIdx: index('idx_documentos_viaje').on(table.tripId),
+    typeIdx: index('idx_documentos_tipo').on(table.type),
+    emittedIdx: index('idx_documentos_emitido_en').on(table.emittedAt),
+    retentionIdx: index('idx_documentos_retencion').on(table.retentionUntil),
+    sha256Chk: check('chk_documentos_sha256_hex', sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
   }),
 );
 
@@ -1085,3 +1160,5 @@ export type ChatMessageRow = typeof chatMessages.$inferSelect;
 export type NewChatMessageRow = typeof chatMessages.$inferInsert;
 export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscriptionRow = typeof pushSubscriptions.$inferInsert;
+export type DocumentRow = typeof documents.$inferSelect;
+export type NewDocumentRow = typeof documents.$inferInsert;

@@ -20,6 +20,7 @@ export * from './domain/offer.js';
 export * from './domain/assignment.js';
 export * from './domain/trip-event.js';
 export * from './domain/trip-metrics.js';
+export * from './domain/document.js';
 
 // Dominio — entidades del MVP shared (algunas precedentes a multi-tenant,
 // se irán armonizando en commits siguientes para apuntar a empresa_id)

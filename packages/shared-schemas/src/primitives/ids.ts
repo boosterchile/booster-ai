@@ -27,6 +27,7 @@ export const assignmentIdSchema = uuidSchema.brand<'AssignmentId'>();
 export const tripEventIdSchema = uuidSchema.brand<'TripEventId'>();
 export const stakeholderIdSchema = uuidSchema.brand<'StakeholderId'>();
 export const consentIdSchema = uuidSchema.brand<'ConsentId'>();
+export const documentIdSchema = uuidSchema.brand<'DocumentId'>();
 
 /** @deprecated Usar `transportistaIdSchema`. Sólo en schemas legacy (driver.ts). */
 export const carrierIdSchema = transportistaIdSchema;
@@ -50,6 +51,7 @@ export type AssignmentId = z.infer<typeof assignmentIdSchema>;
 export type TripEventId = z.infer<typeof tripEventIdSchema>;
 export type StakeholderId = z.infer<typeof stakeholderIdSchema>;
 export type ConsentId = z.infer<typeof consentIdSchema>;
+export type DocumentId = z.infer<typeof documentIdSchema>;
 /** @deprecated Usar `TransportistaId`. */
 export type CarrierId = TransportistaId;
 /** @deprecated Usar `GeneradorCargaId`. */
