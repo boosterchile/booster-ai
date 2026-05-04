@@ -1,288 +1,268 @@
 # Booster AI — Auditoría Exhaustiva
 
-**Fecha**: 2026-05-01  
-**Estado del repositorio**: Greenfield 23 días post-kick-off (2026-04-23)  
-**Alcance**: Análisis completo de packages, apps, schema, ADRs, deuda técnica y orden de ataque.
+**Fecha**: 2026-05-04
+**Estado del repositorio**: Greenfield 11 días post-kick-off (2026-04-23)
+**Auditoría previa**: 2026-05-01 (3 días). Esta versión refleja el progreso del sprint Slice C (telemetría Codec8 end-to-end, certificados de huella, chat shipper↔transportista, UI shipper completa, ADR-013/014).
+**Alcance**: Snapshot completo de packages, apps, schema, ADRs, deuda técnica y orden de ataque.
+
+> **Resumen ejecutivo del delta vs auditoría 2026-05-01**:
+> - 3 packages clave salieron de placeholder y se integraron (`carbon-calculator`, `codec8-parser`, `whatsapp-client`). 1 package nuevo (`certificate-generator` con KMS RSA-PKCS1-4096-SHA256).
+> - Telemetría Codec8 viva end-to-end: `telemetry-tcp-gateway` (GKE Autopilot) + `telemetry-processor` operativos con smoke E2E pasado.
+> - Tabla `stakeholders` + `consents` creadas en Drizzle (cierra omisión crítica de la auditoría anterior).
+> - Trip schema con campos ESG (`carbon_emissions_kgco2e`, `precision_method`, `distance_km`) y campos de certificación (`certificado_pdf_url`, `certificado_sha256`, `certificado_kms_version`).
+> - Chat shipper↔transportista (P3) end-to-end: REST + Pub/Sub realtime SSE + Web Push (VAPID) + WhatsApp fallback + UI integrada en 2 surfaces.
+> - UI shipper end-to-end: `cargas` (lista activa/historial + crear + detalle + cancel + tracking estilo Uber).
+> - Vehículos: CRUD completo + telemetría reciente + live tracking en mapa.
+> - 2 ADRs nuevos: ADR-013 (acceso DB en 3 capas) y ADR-014 (Google Maps API key).
+> - Bastion IAP + Cloud SQL Auth Proxy operativos para acceso DB controlado.
 
 ---
 
 ## 1. Estado de Packages (`packages/*`)
 
-Síntesis: **2 implementados parcialmente, 14 placeholders** (vacíos). La mayoría de la lógica de dominio está pendiente.
+Síntesis: **6 implementados (incluye 1 nuevo), 11 placeholders**. Salto fuerte vs auditoría 2026-05-01 (eran 2 implementados).
 
-### 1.1 `shared-schemas`
-- **Propósito** (README + ADR-001): Zod schemas compartidos entre backend/frontend. Fuente única de verdad para la forma de los datos.
-- **Estado**: Parcialmente implementado ✅✅🟡
-- **Qué tiene**:
-  - Domain schemas canónicos completos: trip.ts, vehicle.ts, membership.ts, stakeholder.ts, offer.ts, assignment.ts, driver.ts, carrier.ts, empresa.ts, plan.ts, user.ts, zone.ts, telemetry.ts, trip-event.ts, cargo-request.ts.
-  - Primitivos y helpers: ids.ts, chile.ts (RUT validator), geo.ts.
-  - Event schemas: telemetry-events.ts, trip-events.ts.
-  - Form schemas: trip-request-create.ts, trip-request.ts, onboarding.ts, profile.ts, whatsapp.ts.
-- **Qué falta**:
-  - No hay schemas para eco-routing (ADR-012).
-  - No hay schemas para consent grants del stakeholder (sí están en el domain, falta exportarlos del index).
-  - Documentación de cómo los backends consumen estos schemas (ej. de los trip_events.ts al payload JSONB).
-- **Estructura coherente**: SÍ. Bien organizada. Sigue patrón domain/ + events/ + forms/.
+### 1.1 `shared-schemas` ✅ Implementado
+- **Propósito**: Zod schemas compartidos backend↔frontend. Fuente única de verdad.
+- **Estado**: Completo y consistente con Drizzle.
+- **Domain canónico** (`src/domain/`): `trip`, `vehicle`, `membership`, `stakeholder`, `offer`, `assignment`, `driver`, `transportista` (renombrado desde carrier), `empresa`, `plan`, `user`, `zone`, `telemetry`, `trip-event`, `cargo-request`, `trip-metrics`.
+- **Eventos**: `telemetry-events.ts`, `trip-events.ts`.
+- **Forms**: `trip-request-create`, `trip-request`, `onboarding`, `profile`, `whatsapp`.
+- **Primitivos**: `ids`, `chile` (RUT), `geo`.
+- **Pendiente menor**: schemas de eco-routing (ADR-012, módulo aún no construido); export de consent grants desde root index.
 
-### 1.2 `config`
-- **Propósito**: Parsing centralizado de env vars y constantes. ADR-001 exige fail-fast.
-- **Estado**: Implementado ✅
-- **Qué tiene**: Código en src/index.ts que parsea variables con Zod, exporta objetos tipados.
-- **Qué falta**: Nada crítico. Funcional.
+### 1.2 `config` ✅ Implementado
+- Parsing centralizado fail-fast con Zod. Schemas separados por área (`common`, `database`, `firebase`, `gcp`, `redis`).
 
-### 1.3 `logger`
-- **Propósito** (ADR-001): Wrapper tipado sobre Pino con redaction automática de PII.
-- **Estado**: Implementado parcialmente ✅🟡
-- **Qué tiene**: Logger con soporte de correlationId, integración OpenTelemetry, redaction setup.
-- **Qué falta**: Tests (coverage bloqueante en CI).
+### 1.3 `logger` ✅ Implementado parcial 🟡
+- Wrapper Pino con `correlationId`, integración OpenTelemetry, redaction PII.
+- **Pendiente**: cobertura de tests (bloqueante en CI cuando se mida globalmente).
 
-### 1.4 `ai-provider`
-- **Propósito**: Abstracción sobre Gemini/Claude para NLU, generación de documentos.
-- **Estado**: Placeholder vacío ❌
-- **Dependencias**: Necesario para ADR-006 (WhatsApp NLU), pero apps/whatsapp-bot.ts no lo usa todavía.
+### 1.4 `ai-provider` ❌ Placeholder vacío
+- Crítico para ADR-006 (NLU Gemini en WhatsApp). Sigue sin uso real (bot opera con FSM determinístico).
 
-### 1.5 `codec8-parser`
-- **Propósito** (ADR-005): Parser binario de protocolo Teltonika Codec8 para telemetría IoT.
-- **Estado**: Placeholder vacío ❌
-- **Criticidad**: ALTA. Telemetry-tcp-gateway depende de este. Sin él, no hay telemetría desde dispositivos.
+### 1.5 `codec8-parser` ✅ Implementado (NUEVO desde auditoría anterior)
+- Parser binario Teltonika Codec 8 / 8E completo: `avl-packet`, `buffer-reader`, `crc16`, `handshake`, `tipos`.
+- Consumido por `apps/telemetry-tcp-gateway` con smoke test E2E pasado.
 
-### 1.6 `trip-state-machine`
-- **Propósito** (ADR-004): XState machines para lifecycle del trip (18 estados).
-- **Estado**: Placeholder vacío ❌
-- **Observación**: El trip_requests.ts del domain define los estados manualmente en un enum. La máquina de estados nunca se construyó.
+### 1.6 `trip-state-machine` ❌ Placeholder vacío
+- XState aún no construido. Lifecycle del trip permanece como enum string en Drizzle. **Sigue siendo deuda estructural**.
 
-### 1.7 `matching-algorithm`
-- **Propósito** (ADR-004): Scoring multifactor para matching push real-time.
-- **Estado**: Placeholder vacío ❌
-- **Observación crítica**: apps/api/src/services/matching.ts implementó el algoritmo MVP inline (zona + capacidad + slack penalty). El código pertenece aquí, no en services/. **Duplicación y violación de principio CLAUDE.md "zero tech debt"**.
+### 1.7 `matching-algorithm` ❌ Placeholder
+- Sigue como `index.ts` único. La lógica vive en `apps/api/src/services/matching.ts` (zona + capacidad + slack penalty).
+- **Deuda estructural pendiente**: mover a package antes de que matching-engine satélite la necesite.
 
-### 1.8 `pricing-engine`
-- **Propósito**: Cálculo determinístico de precios según distancia, cargo, horario, etc.
-- **Estado**: Placeholder vacío ❌
-- **Observación**: En el sprint Slice B.5, el precio viene del shipper vía proposed_price_clp. Sin pricing-engine, no hay sugerencia algorítmica; la economía es "shipper fija precio, matching es solo de capacidad + zona".
+### 1.8 `pricing-engine` ❌ Placeholder
+- Sin uso. Precio sigue siendo `proposed_price_clp` manual del shipper.
 
-### 1.9 `carbon-calculator`
-- **Propósito** (ADR-004): Medición GLEC v3.0 + GHG Protocol puro.
-- **Estado**: Placeholder vacío ❌
-- **Criticidad**: Diferenciador defensible (ADR-009). Sin él, Booster no tiene HSE. Los campos carbon_emissions_kgco2e, distance_km, fuel_consumed_l, precision_method en el trip schema canónico esperan este package. Nunca se llama.
+### 1.9 `carbon-calculator` ✅ Implementado (NUEVO desde auditoría anterior)
+- GLEC v3.0 puro con factores SEC Chile 2024 + factores default por tipo vehículo.
+- 3 modos de precisión: `por-defecto`, `modelado`, `exacto-canbus`.
+- `factor-carga` ajustado por payload.
+- Wireado en `accept-offer` (escribe `carbon_emissions_kgco2e`, `distance_km`, `precision_method` en trip).
+- Diferenciador defensible (ADR-009) ya activo.
 
-### 1.10 `whatsapp-client`
-- **Propósito** (ADR-006): Clients tipados para Meta Cloud API + Twilio (fallback).
-- **Estado**: Implementado parcialmente ✅🟡
-- **Qué tiene**: Stubs para verifyMetaSignature, WhatsAppClient, TwilioWhatsAppClient.
-- **Qué falta**: Implementación real de sending (apps/whatsapp-bot usa Twilio de facto).
-- **Observación**: El bot elige en runtime, pero solo Twilio está integrado (TWILIO_ACCOUNT_SID env var).
+### 1.10 `whatsapp-client` ✅ Implementado
+- Twilio: `twilio-client`, `twilio-signature` con verificación HMAC-SHA1 + tests.
+- Cliente Meta tipado en stub (no integrado en runtime; bot usa Twilio).
+- **Pendiente**: implementación Meta Cloud API directa (ADR-006).
 
-### 1.11 `dte-provider`
-- **Propósito** (ADR-007): Abstracción sobre DTE provider (Bsale o Paperless).
-- **Estado**: Placeholder vacío ❌
-- **Criticidad**: ALTA. Obligatorio para go-live en Chile. Sin DTE, no hay Guía de Despacho ni Factura electrónica legales.
+### 1.11 `dte-provider` ❌ Placeholder
+- DTE Guía de Despacho SII sin abstracción. **Bloqueante para go-live legal Chile**.
 
-### 1.12 `carta-porte-generator`
-- **Propósito** (ADR-007): PDF de Carta de Porte según Ley 18.290.
-- **Estado**: Placeholder vacío ❌
-- **Criticidad**: ALTA. Obligatorio para transporte legal en Chile.
+### 1.12 `carta-porte-generator` ❌ Placeholder
+- Carta de Porte Ley 18.290 sin generador. **Bloqueante para go-live legal Chile**.
 
-### 1.13 `document-indexer`
-- **Propósito** (ADR-007): CRUD de documentos (indexación, búsqueda, retention 6 años).
-- **Estado**: Placeholder vacío ❌
-- **Criticidad**: ALTA. Sin esto, no hay auditoría, ni compliance, ni cumplimiento SII.
+### 1.13 `document-indexer` ❌ Placeholder
+- Sin CRUD documental ni retention 6 años. **Bloqueante compliance SII**.
 
-### 1.14 `notification-fan-out`
-- **Propósito** (ADR-006, ADR-004): Orquestador de canales (Web Push, FCM, WhatsApp, Email, SMS).
-- **Estado**: Placeholder vacío ❌
-- **Observación**: apps/api/src/services/notify-offer.ts implementó inline el envío vía WhatsApp. Es parcial y no cubre todos los canales. **Otro caso de lógica en services en lugar de en package reutilizable**.
+### 1.14 `notification-fan-out` ❌ Placeholder
+- La orquestación multicanal sigue split: `notify-offer` (Twilio), `web-push` (VAPID), `chat-whatsapp-fallback`. Funcional pero descentralizado.
 
-### 1.15 `ui-tokens`
-- **Propósito** (DESIGN.md): Design tokens únicos (colores, tipografía, spacing).
-- **Estado**: Implementado ✅
-- **Qué tiene**: Tokens completos en TypeScript/CSS, integrado con Tailwind de apps/web.
+### 1.15 `ui-tokens` ✅ Implementado
+- Tokens completos (colors, typography, spacing, radius, shadow, breakpoint, z-index, duration).
 
-### 1.16 `ui-components`
-- **Propósito**: shadcn/ui + componentes Booster personalizados.
-- **Estado**: Placeholder vacío ❌
-- **Observación**: apps/web/src/components/ tiene componentes ad-hoc (LoginForm, etc). Sin package consolidado, hay riesgo de duplicación.
+### 1.16 `ui-components` ❌ Placeholder
+- Componentes ad-hoc en `apps/web/src/components/`. Sin package consolidado.
+
+### 1.17 `certificate-generator` ✅ Implementado (PACKAGE NUEVO)
+- Emite certificados de huella de carbono firmados por viaje.
+- Firma KMS RSA-PKCS1-4096-SHA256 + PAdES.
+- CA self-signed para dev; PDF generator base; storage (GCS).
+- Wireado a `confirmar-entrega-viaje` + backfill job para viajes pendientes.
 
 ---
 
 ## 2. Estado de Apps (`apps/*`)
 
-Síntesis: **1 app con lógica real (api), 1 con scaffolding (web), 6 vacíos o mínimos**.
+Síntesis: **3 apps reales (api, web, whatsapp-bot), 2 con scaffolding integrado (telemetry-tcp-gateway, telemetry-processor), 3 vacíos**.
 
-### 2.1 `api`
-- **Propósito**: Backend principal Hono + Drizzle + Postgres. ADR-001.
-- **Estado**: Parcialmente implementado ✅✅🟡
-- **Qué tiene**:
-  - Rutas: GET /health, POST /trip-requests (legacy), POST /trip-requests-v2 (canónico), POST /me, GET /me, POST /empresas/onboarding, GET /empresas/:id, GET /empresas, POST /offers/{id}/accept, POST /offers/{id}/reject, GET /offers/mine.
-  - Servicios: matching.ts (MVP zona + capacidad), notify-offer.ts (Twilio WhatsApp), offer-actions.ts, firebase.ts, onboarding.ts, user-context.ts.
-  - Middleware: Firebase ID token validation, OIDC token validation, User context injection.
-  - DB: Drizzle client tipado, migrator con advisory lock.
-- **Qué falta**:
-  - Ninguna de las 8 apps satélite existe de verdad.
-  - Admin console sin endpoints.
-  - Driver app no existe (solo carrier dashboard).
-  - Shipper web UI no existe (solo WhatsApp).
-  - DTE / Carta de Porte no existe.
-  - Trip state machine ad-hoc (sin XState).
-  - Pricing engine sin llamadas.
-  - Carbon calculator sin llamadas.
-  - Telemetría real (Codec8) no integrada.
+### 2.1 `api` ✅✅ Implementado, en expansión activa
+- **Rutas** (13): `health`, `me`, `empresas`, `trip-requests` (legacy), `trip-requests-v2`, `offers`, `assignments`, `vehiculos`, `chat`, `certificates`, `webpush`, `admin-dispositivos`, `admin-jobs`.
+- **Servicios** (13): `matching`, `notify-offer`, `offer-actions`, `firebase`, `onboarding`, `user-context`, `calcular-metricas-viaje`, `confirmar-entrega-viaje`, `emitir-certificado-viaje`, `estimar-distancia`, `chat-pubsub`, `chat-whatsapp-fallback`, `web-push`.
+- **Jobs** (Cloud Run): `backfill-certificados`, `merge-duplicate-users` (Capa 3 de ADR-013).
+- **Middleware**: Firebase ID token + OIDC server-to-server + user context injection.
+- **DB**: Drizzle con migrator y advisory lock; acceso vía Cloud SQL Auth Proxy (ADR-013).
+- **Pendiente**: stakeholder endpoints (read-only consent-scoped), endpoints DTE/Carta de Porte, admin search/intervene, driver app endpoints.
 
-### 2.2 `web`
-- **Propósito**: PWA multi-rol (shipper, carrier, driver, admin). ADR-008.
-- **Estado**: Scaffolding 🟡
-- **Qué tiene**: Vite + React 18 + TanStack Router + Tailwind, Firebase Auth, RoleGuard, Layout, Rutas: /login, /onboarding, /app/ofertas, /app/perfil.
-- **Qué falta**: Shipper UI, Driver mobile, Admin console UI, Sustainability Stakeholder dashboards, Trip detail página, PWA completo.
+### 2.2 `web` 🟡 Scaffolding extendido (10+ rutas)
+- **Stack**: Vite + React 18 + TanStack Router + TanStack Query + Tailwind + Firebase Auth + service worker propio.
+- **Rutas**: `/login`, `/onboarding`, `/app/ofertas`, `/app/perfil`, `/cargas` (lista activa + historial), `/cargas/:id` (detalle), `/cargas/:id/track` (live tracking Uber-style), `/vehiculos` (lista), `/vehiculos/:id` (detalle + telemetría), `/vehiculos/:id/live` (live map), `/asignacion/:id`, `/certificados`, `/admin/dispositivos`.
+- **Integraciones**: Google Maps API (ADR-014), Web Push (VAPID), SSE realtime para chat.
+- **Pendiente**: Driver app (rol presente pero UI mínima), Admin console amplio, Stakeholder ESG dashboards, PWA manifest formal.
 
-### 2.3 `whatsapp-bot`
-- **Propósito** (ADR-006): Webhook Meta + NLU Gemini. Canal primario.
-- **Estado**: Parcialmente implementado 🟡
-- **Qué tiene**: Hono server, webhook Twilio, FSM conversation, Config.
-- **Qué falta**: Meta Cloud API directo, Integración Gemini NLU, Templates sin variables ESG, Escalado a humano, Persistence conversation state.
+### 2.3 `whatsapp-bot` 🟡 Implementado parcial
+- Hono server + webhook Twilio + FSM conversation persistente + routes/services organizados.
+- **Pendiente**: integración Meta Cloud API directa, NLU Gemini, escalado a humano, templates con variables ESG.
 
-### 2.4-2.8 `matching-engine`, `telemetry-tcp-gateway`, `telemetry-processor`, `notification-service`, `document-service`
-- **Estado**: Todos vacíos ❌
-- **Criticidad**: Alta (telemetría, documentos SII)
+### 2.4 `telemetry-tcp-gateway` ✅ Operativo (NUEVO desde auditoría anterior)
+- TCP server Codec8 sobre GKE Autopilot con `connection-handler`, `imei-auth`, `pubsub-publisher`.
+- Smoke E2E pasado (commit `2e5e4de`).
+
+### 2.5 `telemetry-processor` ✅ Operativo (NUEVO desde auditoría anterior)
+- Pub/Sub consumer con `persist` a Postgres (`telemetry_points`).
+- Suscripción `telemetry-events-processor-sub` definida en Terraform (cerró gap crítico, commit `2666384`).
+
+### 2.6-2.8 `matching-engine`, `notification-service`, `document-service` ❌ Vacíos
+- 1 archivo cada uno (placeholder). Funcionalidad cubierta inline en `apps/api`.
 
 ---
 
-## 3. Schemas: Domain Canónico vs Implementación Operacional
+## 3. Schemas: Domain Canónico vs Drizzle
 
-| Entidad | Domain Schema | Drizzle Table | Crítica |
-|---------|---------------|---------------|--------|
-| Trip | 18 estados, ESG fields | tripRequests con 9 estados, sin ESG | ❌ Falta carbon_emissions_kgco2e, distance_km, fuel_consumed_l, precision_method. Estados parciales. |
-| Vehicle | fuel_type, year, brand, model, teltonika_imei, inspection_expires_at | vehicles sin fuel_type, brand, model, teltonika_imei, curb_weight_kg | ❌ Falta fuel_type (necesario carbon-calculator). Falta curb_weight_kg. |
-| Membership | Roles: owner, admin, dispatcher, driver, viewer | Mismo enum | ✅ Completo. |
-| Offer | score 0-1, response_channel, eco-score | offers con score int/1000, sin eco-score | 🟡 Sin campos ESG. |
-| **Stakeholder** | 5 subtypes, consent_grants array | NO EXISTE EN DRIZZLE | ❌ **CRÍTICA OMISIÓN**. Rol canónico sin tabla BD. |
-| TripEvent | Domain define tipos adicionales | 9 tipos enum, falta carbon_calculated, certificate_issued | 🟡 Enum incompleto. |
+| Entidad | Domain | Drizzle | Estado |
+|---|---|---|---|
+| Trip | 18 estados, ESG fields, certs | `viajes` con estados + `carbon_emissions_kgco2e` + `distance_km` + `precision_method` + `certificado_*` | ✅ Sincronizado (ESG y certs incorporados) |
+| Vehicle | fuel_type, teltonika_imei, etc. | `vehiculos` con `tipo_combustible`, `teltonika_imei` (unique + indexed) | ✅ Sincronizado |
+| Membership | 5 roles | `membresias` mismo enum | ✅ |
+| Offer | score, response_channel, eco-score | `ofertas` con `score`, `canal_respuesta`, `enviado_en` | 🟡 sin eco-score aún |
+| **Stakeholder** | 5 subtypes + consent grants | `stakeholders` + `consentimientos` (NUEVO) | ✅ Cerrado |
+| TripEvent | tipos ESG (carbon_calculated, certificate_issued) | `tipo_evento_viaje` enum extendido | ✅ Sincronizado |
+| TripMetrics | métricas por viaje | `trip_metrics` (tabla separada) | ✅ |
+| TelemetryPoint | telemetría procesada | `telemetry_points` | ✅ NUEVO |
+| ChatMessage | mensajes shipper↔transportista | `chat_messages` + `tipo_mensaje_chat` enum | ✅ NUEVO |
+| PushSubscription | endpoints Web Push | `push_subscriptions` + `estado_push_subscription` enum | ✅ NUEVO |
+| PendingDevice | onboarding Teltonika | `pending_devices` + `estado_dispositivo_pendiente` enum | ✅ NUEVO |
+
+**Naming bilingüe respetado**: tablas/columnas en español snake_case sin tildes (`empresas`, `viajes`, `vehiculos`, `nombre_completo`, `creado_en`); enums en español (`estandar_reporte`, `metodo_precision`); siglas internacionales preservadas (`GLEC_V3`, `GHG_PROTOCOL`, `ISO_14064`).
 
 ---
 
 ## 4. ADRs vs Implementación
 
-### ADR-001: Stack ✅ Implementado
-### ADR-002: Skills Framework 🟡 Parcial (estructura existe, workflows vacíos)
-### ADR-004: Modelo Uber-like 🟡 Parcial (4 roles OK, Sustainability Stakeholder falta en BD, state machine no es XState)
-### ADR-005: Telemetría IoT ❌ No implementado (tcp-gateway, processor, codec8-parser vacíos)
-### ADR-006: WhatsApp 🟡 Parcial (Twilio OK, Meta directo no, NLU no)
-### ADR-007: Documentos SII ❌ No implementado (dte-provider, carta-porte-generator, document-indexer vacíos)
-### ADR-008: PWA Multi-rol 🟡 Partial (carrier dashboard OK, shipper/driver/admin/stakeholder faltan)
-### ADR-009: Diferenciadores ❌ Parcial (matching push OK, ESG/docs/observatorio faltan)
-### ADR-010: Marketing ❌ No existe (apps/marketing no existe, boosterchile.com heredada)
-### ADR-011: Admin Console ❌ No existe (sin endpoints, sin UI)
-### ADR-012: Observatorio Urbano ❌ No existe (sin eco-routing, sin observatorio, sin gemelos)
+| ADR | Estado |
+|---|---|
+| ADR-001: Stack | ✅ Implementado |
+| ADR-002: Skills Framework | 🟡 Estructura presente, workflows parcialmente poblados |
+| ADR-004: Modelo Uber-like | ✅ 5 roles definidos, Stakeholder en BD; state machine aún no XState |
+| ADR-005: Telemetría IoT | ✅ Pipeline Codec8 end-to-end operativo |
+| ADR-006: WhatsApp | 🟡 Twilio operativo + chat fallback; Meta directo y NLU Gemini pendientes |
+| ADR-007: Documentos SII | ❌ DTE/Carta de Porte/Document-indexer aún placeholders |
+| ADR-008: PWA Multi-rol | 🟡 Shipper + Transportista funcional; Driver/Admin/Stakeholder pendientes; PWA manifest formal pendiente |
+| ADR-009: Diferenciadores | 🟡 Carbon GLEC + certificados firmados KMS activos; observatorio/eco-routing pendientes |
+| ADR-010: Marketing | ❌ apps/marketing no existe |
+| ADR-011: Admin Console | 🟡 Endpoints `admin-dispositivos` + `admin-jobs` y UI `admin/dispositivos` mínima; resto pendiente |
+| ADR-012: Observatorio Urbano | ❌ Sin eco-routing ni gemelos digitales |
+| **ADR-013: Acceso DB 3 capas** | ✅ Implementado (NUEVO): Capa 1 directo desde apps; Capa 2 IAP bastion + Cloud SQL Auth Proxy; Capa 3 Cloud Run jobs operacionales |
+| **ADR-014: Google Maps API key** | ✅ Implementado (NUEVO): integrado en web PWA |
 
 ---
 
-## 5. Deuda Técnica del Sprint B
+## 5. Deuda Técnica activa
 
 ### Estructural (CLAUDE.md violations)
 
-1. Matching algorithm en services/ no en packages/matching-algorithm
-2. Notification logic en services/ no en packages/notification-fan-out
-3. Trip state machine nunca construido (ad-hoc enum strings, no XState)
-4. Schemas paralelos: domain vs Drizzle mismatch (Vehicle, Trip falta fields)
+1. **Matching algorithm sigue en `services/`** y no en `packages/matching-algorithm` (deuda heredada).
+2. **Notification orchestration descentralizada**: `notify-offer` + `web-push` + `chat-whatsapp-fallback` separados; `notification-fan-out` aún placeholder.
+3. **Trip state machine sigue como enum**, sin XState.
+4. **Trip request v1 vs v2 coexisten** (legacy WhatsApp + canónico). Consolidación pendiente.
+5. **`ui-components` sin consolidar** — componentes en `apps/web/src/components/` con riesgo de duplicación.
 
-### Omisiones de Funcionalidad
+### Funcionales pendientes
 
-5. carbon-calculator nunca llamado (emissions siempre NULL)
-6. pricing-engine nunca llamado (precios 100% manuales)
-7. Sustainability Stakeholder rol SIN tabla en Drizzle
-8. Telemetría real (Codec8) = 0 (codec8-parser, tcp-gateway, processor vacíos)
-9. DTE / Carta de Porte = 0 (dte-provider, carta-porte-generator, document-indexer vacíos)
-10. Trip request v1 (legacy WhatsApp) vs v2 (canónico) coexisten
-11. Offers sin eco-score (matching ignora ESG)
-12. WhatsApp template sin variables ESG
-13. membership_role enum sin sustainability_stakeholder
-14. Empresas table sin perfil ESG (target_carbon_reduction_pct, prior_certifications)
-15. trip_requests table sin campos ESG (carbon_emissions, distance_km, fuel_consumed_l, precision_method)
-16. trip_events enum sin tipos ESG (carbon_calculated, certificate_issued, dispute_opened)
-17. Offers notifiedAt sin intención clara (campo existe pero nunca se setea)
-18. Driver app no existe en apps/web
-19. Admin console no existe
-20. Shipper UI web no existe
-21. Pricing engine no llamado
-22. Trip state machine no implementado
+6. **DTE / Carta de Porte / Document-indexer** sin implementación. **Bloqueante go-live legal Chile**.
+7. **AI provider sin uso real** — NLU Gemini no integrado al bot WhatsApp.
+8. **Pricing engine sin uso** — precio 100% del shipper.
+9. **Stakeholder endpoints** consent-scoped no expuestos vía API.
+10. **Driver app** sin UI dedicada (uso vía web genérica).
+11. **Eco-routing y observatorio urbano** (ADR-012) sin scaffolding.
+12. **Offers sin eco-score** — matching ignora factor ESG en ranking.
+13. **Meta Cloud API directo** sin integración (Twilio sigue siendo único canal real).
 
----
+### Cerradas desde auditoría 2026-05-01
 
-## 6. Dependencias Técnicas y Orden de Ataque
-
-### Fundacional (prerequisitos)
-1. Sincronizar shared-schemas vs Drizzle (CRÍTICA)
-2. Crear tabla stakeholders + consent_grants
-3. Expandir trip_events enum + trip_requests ESG fields
-4. Expandir empresas table con perfil ESG
-
-### Fase 1: Packages Críticos
-5. codec8-parser (Codec8 binary parser)
-6. carbon-calculator (GLEC v3.0 puro)
-7. trip-state-machine (XState con 18 estados)
-8. pricing-engine (Cálculo de precios determinístico)
-9. matching-algorithm (Mover de services/)
-10. notification-fan-out (Orquestador multicanal)
-11. dte-provider (DTE Guía de Despacho)
-12. carta-porte-generator (PDF Carta de Porte)
-13. document-indexer (CRUD + retention)
-
-### Fase 2: Telemetría IoT
-14. telemetry-tcp-gateway (GKE Autopilot TCP server)
-15. telemetry-processor (Dedup + enrich + Firestore)
-16. eco-routing-service (Sugerencias ruta real-time)
-
-### Fase 3: API Refactor + Admin
-17. Refactor API para usar packages
-18. Admin endpoints (search, intervene, incidents)
-19. Sustainability Stakeholder endpoints
-
-### Fase 4: Web UI
-20. Admin console UI
-21. Shipper UI web
-22. Driver UI web
-23. Stakeholder ESG dashboards
-24. PWA manifest + service worker
-
-### Fase 5: Observatorio
-25. Observatorio urbano (BigQuery aggregations)
-26. Gemelos digitales (simulación)
-
-### Fase 6: Go-Live
-27. apps/marketing (Next.js landing)
-28. Consolidate trip-requests v1 vs v2
+- ✅ Tabla `stakeholders` + `consents` creadas.
+- ✅ Trip ESG fields (`carbon_emissions_kgco2e`, `distance_km`, `precision_method`).
+- ✅ `carbon-calculator` implementado y wireado a `accept-offer`.
+- ✅ `codec8-parser` + telemetría TCP gateway + processor end-to-end.
+- ✅ Vehicles `teltonika_imei` y `fuel_type`.
+- ✅ TripEvent enum con tipos ESG.
+- ✅ Certificación de huella firmada (`certificate-generator` + KMS).
+- ✅ Chat realtime shipper↔transportista (P3 completo).
+- ✅ UI shipper E2E (`/cargas` + tracking).
+- ✅ Vehicle CRUD + live tracking.
 
 ---
 
-## 7. Riesgos del Sprint Reciente (Abordar YA)
+## 6. Orden de ataque actualizado
 
-### Blocking (TRL 10 fail sin resolver)
+### Fase 1 (en curso): Compliance legal + UX shipper
+- 🟡 `dte-provider` + `carta-porte-generator` + `document-indexer` (Top-1 prioridad).
+- 🟡 Trip state machine XState (refactor).
+- 🟡 Mover matching a package + introducir eco-score.
+- 🟡 Driver app dedicada (mobile-first).
+- 🟡 Notification fan-out consolidado.
 
-1. Sustainability Stakeholder NO existe en BD → Crear tabla stakeholders + consent_grants (Fase 0)
-2. Carbon calculator nunca se llamó → Implementar + integrar (Fase 1)
-3. Documento SII nunca integrado → Implementar dte-provider + carta-porte-generator + document-indexer (Fase 1)
-4. Matching algorithm en services/ no en packages/ → Mover ANTES de que otras apps lo necesiten (Fase 1)
-5. Trip state machine nunca construido → Implementar XState (Fase 1)
+### Fase 2: Admin + Stakeholder
+- Admin console (search, intervene, disputes).
+- Stakeholder endpoints + ESG dashboards.
+- Consolidar trip-requests v1↔v2.
+
+### Fase 3: AI + Observatorio
+- AI provider con Gemini wireado al bot WhatsApp.
+- Meta Cloud API directo.
+- Eco-routing real-time.
+- Observatorio urbano (BigQuery aggregations).
+- Gemelos digitales.
+
+### Fase 4: Go-Live
+- `apps/marketing` (Next.js landing).
+- PWA manifest formal + offline-first.
+- E2E Playwright contra staging.
+- Audit CORFO + TRL 10.
+
+---
+
+## 7. Riesgos vigentes (próximas 2 semanas)
+
+### Bloqueantes go-live
+
+1. **DTE + Carta de Porte sin implementar** — sin esto no hay legalidad Chile.
+2. **Driver app inexistente** — afecta operación viajes en campo.
+3. **Trip state machine ad-hoc** — riesgo de inconsistencia con 18+ estados.
 
 ### Arquitectónicos
 
-6. Telemetría: codec8-parser + tcp-gateway = 0% → Iniciar Fase 2 paralelo (MÁXIMA CRITICIDAD)
-7. Admin console no existe → Iniciar Fase 3/4 paralelo (operación inmanejable sin él)
-8. Shipper web UI no existe → Iniciar Fase 4 cuando API esté lista
-9. Driver app no existe → Prototipo temprano (roadmap post-launch pero necesario saber cómo)
-10. Schemas paralelos (domain vs Drizzle) → Sincronización Fase 0 CRÍTICA
+4. **Matching y notification en `services/`** — bloquea `apps/matching-engine` satélite.
+5. **Trip-requests v1↔v2 coexistiendo** — superficie de bugs.
+6. **AI provider no usado** — diferencia vs competencia (NLU bot) no realizada.
+
+### Operacionales
+
+7. **Cobertura de tests sin enforcement global** — gate 80% pendiente de activar bloqueante en CI.
+8. **PWA sin manifest formal** — install prompt y offline aún no validados.
 
 ---
 
 ## 8. Conclusión
 
-| Área | % Implementado | Estado |
+| Área | % Implementado (2026-05-01 → 2026-05-04) | Estado |
 |------|---|---|
-| Packages | 15% | 2/16 implementados, 14 placeholders |
-| Apps | 20% | 1 API real, 1 web scaffolding, 6 vacíos |
-| ADRs | 25% | Mayoría parciales, 1 omitido (stakeholder) |
-| Deuda | ALTA | Mismatch schema, código en services, features no integradas |
+| Packages | 15% → ~35% | 6/17 implementados, 11 placeholders |
+| Apps | 20% → ~55% | 3 apps reales + 2 satélite operativas + 3 placeholders |
+| ADRs | 25% → ~55% | 5 implementados, 4 parciales, 4 pendientes |
+| Deuda | ALTA → MEDIA-ALTA | Schemas sincronizados; sigue deuda en packages compartidos y compliance SII |
 
-**No se puede go-live sin**: Sustainability Stakeholder BD, Carbon calculator integrado, DTE/Carta de Porte funcionales, Admin console, Telemetría real.
+**Bloqueantes go-live remanentes**: DTE/Carta de Porte/document-indexer, driver app, trip state machine XState, eco-score en offers.
 
-**Ruta crítica al TRL 10**: 8 semanas mínimo. Fases 0-4 + integración E2E + audit CORFO.
-
+**Ruta crítica al TRL 10**: estimación previa 8 semanas; sprint actual recortó ~2 semanas vía delivery paralelo (telemetría + certs + chat + UI shipper). Estimación revisada: **6 semanas** si se ataca compliance legal en próximo sprint.

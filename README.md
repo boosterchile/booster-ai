@@ -2,7 +2,7 @@
 
 > **Plataforma tipo Uber para transporte de carga sostenible en Chile**. Conecta generadores de carga con transportistas, optimiza retornos vacíos, y certifica huella de carbono bajo estándares internacionales (GLEC v3.0, GHG Protocol, ISO 14064-2). Opera sobre WhatsApp como canal primario y cumple gestión documental obligatoria SII.
 
-**Project status**: greenfield — kick-off 2026-04-23.
+**Project status** (2026-05-04, día 11 post kick-off): API + PWA shipper/transportista en producción staging; telemetría Codec8 end-to-end operativa (Teltonika TCP gateway en GKE Autopilot + processor); certificados de huella firmados con KMS; chat realtime shipper↔transportista (REST + Pub/Sub SSE + Web Push + WhatsApp fallback); 6/17 packages implementados; compliance SII (DTE/Carta de Porte) y driver app pendientes. Ver [`AUDIT.md`](./AUDIT.md) para snapshot detallado.
 **Successor of**: Booster 2.0 (proyecto archivado). Ver [`docs/adr/001-stack-selection.md`](./docs/adr/001-stack-selection.md) para contexto de la reescritura.
 
 ## Arquitectura de alto nivel
