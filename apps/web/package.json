@@ -30,7 +30,7 @@
     "idb": "^8.0.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
+    "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.49.1",
     "@tailwindcss/vite": "^4.0.0",
     "@tanstack/router-plugin": "^1.95.0",
