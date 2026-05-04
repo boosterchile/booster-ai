@@ -34,7 +34,9 @@ function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: VEHICLE_ID,
     empresaId: EMPRESA_ID,
-    plate: 'AB-CD-12',
+    // Canónico (sin separadores, mayúsculas) — así lo persiste la BD tras
+    // el transform de chileanPlateSchema.
+    plate: 'ABCD12',
     vehicleType: 'camion_pequeno',
     capacityKg: 3500,
     capacityM3: null,
@@ -129,7 +131,7 @@ describe('vehiculos routes', () => {
   });
 
   it('GET / lista vehiculos de la empresa activa', async () => {
-    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID, plate: 'AB-CD-12' }] });
+    const stub = makeDbStub({ selectRows: [{ id: VEHICLE_ID, plate: 'ABCD12' }] });
     const app = await buildApp(stub.db);
     const res = await app.request('/vehiculos');
     expect(res.status).toBe(200);
@@ -154,21 +156,67 @@ describe('vehiculos routes', () => {
     expect(body.code).toBe('write_role_required');
   });
 
-  it('POST / despachador puede crear', async () => {
+  it('POST / despachador puede crear (normaliza patente)', async () => {
     const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
     const app = await buildApp(stub.db, { role: 'despachador' });
     const res = await app.request('/vehiculos', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        plate: 'ab-cd-12',
+        // Input con minúsculas y separador. El servidor normaliza a canónico.
+        plate: 'ab·cd·12',
         vehicle_type: 'camion_pequeno',
         capacity_kg: 3500,
       }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { vehicle: { plate: string } };
-    expect(body.vehicle.plate).toBe('AB-CD-12'); // upper-cased por el plateSchema transform
+    expect(body.vehicle.plate).toBe('ABCD12');
+  });
+
+  // ---------------------------------------------------------------------
+  // BUG-002 — validación de formato chileno de patente.
+  // ---------------------------------------------------------------------
+  describe('validación de formato de patente', () => {
+    async function postPlate(plate: string) {
+      const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
+      const app = await buildApp(stub.db);
+      return app.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate,
+          vehicle_type: 'camion_pequeno',
+          capacity_kg: 3500,
+        }),
+      });
+    }
+
+    it.each([
+      ['cuatro puntos', '....'],
+      ['XXX-99 (3 letras)', 'XXX-99'],
+      ['1234 (solo dígitos)', '1234'],
+      ['TEST-99 (4 letras pero 2 dígitos sí, espera... también pasa, ver abajo)', 'BCDF1A'], // dígito final letra
+      ['emojis', '🚛🚛🚛🚛'],
+      ['cadena vacía con espacios', '    '],
+    ])('rechaza patente inválida (%s)', async (_label, plate) => {
+      const res = await postPlate(plate);
+      expect(res.status).toBe(400);
+    });
+
+    it('acepta patente nueva con guiones (BCDF-12 → BCDF12)', async () => {
+      const res = await postPlate('BCDF-12');
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { plate: string } };
+      expect(body.vehicle.plate).toBe('BCDF12');
+    });
+
+    it('acepta patente legacy AAAA·12 con punto medio', async () => {
+      const res = await postPlate('AAAA·12');
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { plate: string } };
+      expect(body.vehicle.plate).toBe('AAAA12');
+    });
   });
 
   it('POST / patente duplicada → 409', async () => {
