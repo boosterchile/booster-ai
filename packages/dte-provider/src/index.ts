@@ -86,3 +86,5 @@ export {
 } from './errors.js';
 
 export { MockDteProvider, type MockDteProviderOptions } from './mock.js';
+
+export { BsaleAdapter, type BsaleAdapterOptions } from './bsale.js';
