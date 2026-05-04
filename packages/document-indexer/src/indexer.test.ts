@@ -106,7 +106,7 @@ describe('DocumentIndexer.upload', () => {
     });
 
     expect(saved).toHaveLength(1);
-    expect(saved[0].mime).toBe('application/pdf');
+    expect(saved[0]?.mime).toBe('application/pdf');
     expect(result.gcsUri).toMatch(/^gs:\/\/booster-ai-documents-test\/carta-porte\/2026\/05\//);
     expect(result.document.retentionUntil).toBe('2032-05-04T10:00:00.000Z');
     expect(store.lastInsert?.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -184,30 +184,28 @@ describe('DocumentIndexer.softDelete', () => {
 
   it('rechaza tipos con retention legal', async () => {
     const indexer = new DocumentIndexer({ bucket: 'b', store });
-    await indexer.upload({
+    const { document } = await indexer.upload({
       empresaId: VALID_EMPRESA,
       tripId: VALID_TRIP,
       type: 'carta_porte',
       body: Buffer.from('x'),
       mimeType: 'application/pdf',
     });
-    const id = store.docs[0].id;
-    await expect(indexer.softDelete(id)).rejects.toBeInstanceOf(DocumentRetentionError);
+    await expect(indexer.softDelete(document.id)).rejects.toBeInstanceOf(DocumentRetentionError);
   });
 
   it('permite delete de tipos no retenidos', async () => {
     const indexer = new DocumentIndexer({ bucket: 'b', store });
     const spy = vi.spyOn(store, 'softDelete');
-    await indexer.upload({
+    const { document } = await indexer.upload({
       empresaId: VALID_EMPRESA,
       tripId: VALID_TRIP,
       type: 'foto_pickup',
       body: Buffer.from('x'),
       mimeType: 'image/jpeg',
     });
-    const id = store.docs[0].id;
-    await indexer.softDelete(id);
-    expect(spy).toHaveBeenCalledWith(id);
+    await indexer.softDelete(document.id);
+    expect(spy).toHaveBeenCalledWith(document.id);
   });
 
   it('throw si el documento no existe', async () => {

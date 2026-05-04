@@ -127,7 +127,7 @@ export async function generateSignedDownloadUrl(opts: {
   const file = bucket.file(opts.gcsPath);
   const ttl = (opts.ttlSeconds ?? 300) * 1000;
   const responseDisposition = opts.downloadAs
-    ? `attachment; filename="${opts.downloadAs.replace(/"/g, '\\"')}"`
+    ? `attachment; filename="${escapeQuotedFilename(opts.downloadAs)}"`
     : 'attachment';
   const [url] = await file.getSignedUrl({
     version: 'v4',
@@ -145,6 +145,22 @@ export async function downloadObject(opts: {
   const bucket = getStorage().bucket(opts.bucket);
   const [contents] = await bucket.file(opts.gcsPath).download();
   return contents;
+}
+
+/**
+ * Escape un nombre para uso dentro del Content-Disposition `filename="..."`
+ * de RFC 6266. Backslash debe escaparse PRIMERO para no doble-escapar las
+ * comillas ya re-escapadas. Caracteres de control y newlines se removen
+ * (no son válidos en el quoted-string token de RFC 7230).
+ */
+export function escapeQuotedFilename(name: string): string {
+  return (
+    name
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: strip CTL chars (U+0000..U+001F + U+007F) — RFC 7230 prohíbe en quoted-string
+      .replace(/[\u0000-\u001f\u007f]/g, '')
+  );
 }
 
 export function computeSha256(body: Uint8Array | Buffer): string {
