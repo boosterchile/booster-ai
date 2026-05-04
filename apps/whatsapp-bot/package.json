@@ -20,7 +20,7 @@
     "hono": "^4.6.14",
     "ioredis": "^5.4.2",
     "pino": "^9.5.0",
-    "xstate": "^5.19.2",
+    "xstate": "^5.31.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
