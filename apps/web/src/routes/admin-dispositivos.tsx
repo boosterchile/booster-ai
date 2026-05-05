@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import { ArrowLeft, Check, Cpu, X } from 'lucide-react';
 import { useState } from 'react';
+import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -96,9 +97,18 @@ function AdminDispositivosBody({ me }: { me: MeOnboarded }) {
       {devicesQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
       {devicesQ.error && <p className="mt-6 text-danger-700">Error al cargar dispositivos.</p>}
       {devicesQ.data && devicesQ.data.length === 0 && (
-        <p className="mt-6 rounded-md border border-neutral-200 bg-white p-4 text-neutral-600 text-sm">
-          No hay dispositivos pendientes.
-        </p>
+        <div className="mt-6">
+          <EmptyState
+            icon={<Cpu className="h-10 w-10" aria-hidden />}
+            title="Aún no hay dispositivos pendientes"
+            description="Cuando un dispositivo Teltonika se conecte por primera vez al gateway, aparecerá aquí esperando que lo asocies a un vehículo."
+            action={
+              <Link to="/app/vehiculos" className={emptyStateActionClass}>
+                Ver mis vehículos
+              </Link>
+            }
+          />
+        </div>
       )}
 
       <ul className="mt-6 space-y-3">

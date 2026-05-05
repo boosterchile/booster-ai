@@ -13,6 +13,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Award, Download, Leaf, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -123,19 +124,17 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
       )}
 
       {certsQ.data && certsQ.data.certificates.length === 0 && (
-        <div className="mt-8 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
-          <Award className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-          <p className="mt-3 font-medium text-neutral-900">Aún no tienes certificados emitidos</p>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Cuando un viaje entregado se confirme como recibido, el sistema genera el certificado
-            automáticamente. Te avisamos por email.
-          </p>
-          <Link
-            to="/app/cargas"
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-          >
-            Ver mis cargas
-          </Link>
+        <div className="mt-8">
+          <EmptyState
+            icon={<Award className="h-10 w-10" aria-hidden />}
+            title="Aún no tienes certificados emitidos"
+            description="Cuando un viaje entregado se confirme como recibido, el sistema genera el certificado automáticamente. Te avisaremos por email."
+            action={
+              <Link to="/app/cargas" className={emptyStateActionClass}>
+                Ver mis cargas
+              </Link>
+            }
+          />
         </div>
       )}
 
