@@ -17,7 +17,8 @@ describe('calcularExactoCanbus — telemetría real', () => {
     });
 
     expect(r.combustibleConsumido).toBe(105);
-    expect(r.emisionesKgco2eWtw).toBeCloseTo(105 * 3.77, 1);
+    // factorWtw diesel = 2.70 + 0.55 = 3.25 (GLEC v3.0 + IPCC AR6 GWP-100)
+    expect(r.emisionesKgco2eWtw).toBeCloseTo(105 * 3.25, 1);
     expect(r.metodoPrecision).toBe('exacto_canbus');
   });
 
@@ -34,9 +35,9 @@ describe('calcularExactoCanbus — telemetría real', () => {
         capacidadKg: 25000,
       },
     });
-    // emisiones: 30 × 3.77 = 113.1 kg
-    // intensidad: 113100 / (100 × 10) = 113.1 g/(t·km)
-    expect(r.intensidadGco2ePorTonKm).toBeCloseTo(113.1, 0);
+    // emisiones: 30 × 3.25 = 97.5 kg
+    // intensidad: 97500 / (100 × 10) = 97.5 g/(t·km)
+    expect(r.intensidadGco2ePorTonKm).toBeCloseTo(97.5, 0);
   });
 
   it('rechaza valores negativos', () => {
