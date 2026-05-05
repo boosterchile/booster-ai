@@ -61,25 +61,38 @@ function makeStubDb(insertedRow: Record<string, unknown>): Db {
   } as unknown as Db;
 }
 
-const validBody = {
-  origin: {
-    address_raw: 'Av. Apoquindo 5550',
-    region_code: 'XIII',
-  },
-  destination: {
-    address_raw: 'Concepción centro',
-    region_code: 'VIII',
-  },
-  cargo: {
-    cargo_type: 'carga_seca',
-    weight_kg: 1500,
-  },
-  pickup_window: {
-    start_at: '2026-05-05T08:00:00Z',
-    end_at: '2026-05-05T18:00:00Z',
-  },
-  proposed_price_clp: 250000,
-};
+/**
+ * Construye un body válido con fechas relativas a `now()` para que los
+ * tests no se invaliden con el paso del tiempo. La regla del schema exige
+ * `pickup_window.start_at >= now + 30min`; usamos `now + 24h` con holgura
+ * y `end_at = start_at + 10h` para una ventana razonable.
+ */
+function makeValidBody(overrides?: { startOffsetMs?: number; endOffsetMs?: number }) {
+  const now = Date.now();
+  const startMs = now + (overrides?.startOffsetMs ?? 24 * 60 * 60 * 1000);
+  const endMs = startMs + (overrides?.endOffsetMs ?? 10 * 60 * 60 * 1000);
+  return {
+    origin: {
+      address_raw: 'Av. Apoquindo 5550',
+      region_code: 'XIII',
+    },
+    destination: {
+      address_raw: 'Concepción centro',
+      region_code: 'VIII',
+    },
+    cargo: {
+      cargo_type: 'carga_seca',
+      weight_kg: 1500,
+    },
+    pickup_window: {
+      start_at: new Date(startMs).toISOString(),
+      end_at: new Date(endMs).toISOString(),
+    },
+    proposed_price_clp: 250000,
+  };
+}
+
+const validBody = makeValidBody();
 
 interface UserContextOpts {
   userId?: string;
@@ -203,6 +216,76 @@ describe('POST /trip-requests-v2', () => {
       body: JSON.stringify({ origin: 'incomplete' }),
     });
     expect(res.status).toBe(400);
+  });
+
+  // ---------------------------------------------------------------------
+  // BUG-001 — validación reforzada de pickup_window y direcciones.
+  // ---------------------------------------------------------------------
+  describe('validación de ventana de pickup y direcciones', () => {
+    async function postBody(body: unknown) {
+      const app = await buildAppWith({
+        db: makeStubDb({}),
+        userContext: buildUserContext(),
+      });
+      return app.request('/trip-requests-v2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('rechaza dirección de origen con menos de 5 caracteres', async () => {
+      const body = makeValidBody();
+      body.origin.address_raw = 'abc'; // 3 caracteres
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza dirección de destino con un solo carácter', async () => {
+      const body = makeValidBody();
+      body.destination.address_raw = '.';
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza pickup_window.start_at en el pasado', async () => {
+      const body = makeValidBody({ startOffsetMs: -24 * 60 * 60 * 1000 }); // ayer
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza pickup_window con start_at sin lead time mínimo (10 min en el futuro)', async () => {
+      const body = makeValidBody({ startOffsetMs: 10 * 60 * 1000 });
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza pickup_window con end_at == start_at (ventana de 0 segundos)', async () => {
+      const body = makeValidBody();
+      body.pickup_window.end_at = body.pickup_window.start_at;
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza pickup_window con end_at < start_at (ventana invertida)', async () => {
+      const now = Date.now();
+      const startMs = now + 24 * 60 * 60 * 1000; // mañana
+      const endMs = startMs - 4 * 60 * 60 * 1000; // 4h antes
+      const body = makeValidBody();
+      body.pickup_window.start_at = new Date(startMs).toISOString();
+      body.pickup_window.end_at = new Date(endMs).toISOString();
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza pickup_window con duración mayor a 30 días', async () => {
+      const body = makeValidBody({
+        startOffsetMs: 24 * 60 * 60 * 1000,
+        endOffsetMs: 31 * 24 * 60 * 60 * 1000, // 31 días después de start
+      });
+      const res = await postBody(body);
+      expect(res.status).toBe(400);
+    });
   });
 
   it('happy path: crea trip, dispara matching, devuelve 201', async () => {
