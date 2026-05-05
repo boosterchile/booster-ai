@@ -18,7 +18,7 @@ import {
  *   - Agregar email+password si no está linkeado (form embebido).
  *   - Quitar un provider (solo si quedaría al menos otro).
  *
- * Por qué esto importa: hoy si te registrás con Google solo, no podés
+ * Por qué esto importa: hoy si te registras con Google solo, no puedes
  * loguearte con email/password — Firebase considera providers separados
  * por el mismo email. Con este UI, el user puede vincular ambos a su
  * propia cuenta única (mismo firebase_uid, mismo row en `usuarios`).
@@ -30,7 +30,9 @@ import {
  */
 export function AuthProvidersSection() {
   const { user } = useAuth();
-  if (!user) return null;
+  if (!user) {
+    return null;
+  }
   return <AuthProvidersBody user={user} />;
 }
 
@@ -47,8 +49,8 @@ function AuthProvidersBody({ user }: { user: User }) {
     <section className="mt-10">
       <h2 className="font-semibold text-neutral-900 text-xl">Acceso a tu cuenta</h2>
       <p className="mt-1 text-neutral-600 text-sm">
-        Maneja cómo iniciás sesión. Podés tener Google y contraseña vinculados a la misma
-        cuenta — el dato es el email.
+        Maneja cómo inicias sesión. Puedes tener Google y contraseña vinculados a la misma cuenta —
+        el dato es el email.
       </p>
 
       <div className="mt-4 space-y-3" key={version}>
@@ -396,11 +398,11 @@ function translateAuthError(code: string | undefined): string | null {
     case 'auth/invalid-credential':
       return 'Email o contraseña incorrectos.';
     case 'auth/popup-blocked':
-      return 'El navegador bloqueó el popup. Permití popups para app.boosterchile.com.';
+      return 'El navegador bloqueó el popup. Permite popups para app.boosterchile.com.';
     case 'auth/no-such-provider':
-      return 'No podés quitar este proveedor porque es el único que tenés.';
+      return 'No puedes quitar este proveedor porque es el único que tienes.';
     case 'auth/network-request-failed':
-      return 'Sin conexión a internet. Intentá de nuevo.';
+      return 'Sin conexión a internet. Inténtalo de nuevo.';
     default:
       return null;
   }

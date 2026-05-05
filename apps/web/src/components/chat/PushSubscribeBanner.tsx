@@ -31,9 +31,15 @@ export function PushSubscribeBanner() {
   const [shouldShow, setShouldShow] = useState(false);
 
   useEffect(() => {
-    if (!isWebPushSupported()) return;
-    if (Notification.permission !== 'default') return;
-    if (sessionStorage.getItem(DISMISS_FLAG) === '1') return;
+    if (!isWebPushSupported()) {
+      return;
+    }
+    if (Notification.permission !== 'default') {
+      return;
+    }
+    if (sessionStorage.getItem(DISMISS_FLAG) === '1') {
+      return;
+    }
     setShouldShow(true);
   }, []);
 
@@ -56,7 +62,9 @@ export function PushSubscribeBanner() {
     },
   });
 
-  if (!shouldShow) return null;
+  if (!shouldShow) {
+    return null;
+  }
 
   const onDismiss = () => {
     sessionStorage.setItem(DISMISS_FLAG, '1');
@@ -67,8 +75,8 @@ export function PushSubscribeBanner() {
     <div className="flex items-center gap-3 border-amber-200 border-b bg-amber-50 px-4 py-2">
       <Bell className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
       <p className="flex-1 text-amber-900 text-sm">
-        Activá las notificaciones para enterarte cuando la otra parte te escriba,
-        incluso con la app cerrada.
+        Activa las notificaciones para enterarte cuando la otra parte te escriba, incluso con la app
+        cerrada.
       </p>
       <button
         type="button"

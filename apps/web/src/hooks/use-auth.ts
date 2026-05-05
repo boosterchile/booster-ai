@@ -117,7 +117,7 @@ export async function signUpWithEmail(opts: {
 }
 
 /**
- * Enviar email para resetear password. Firebase manda el link al inbox.
+ * Enviar email para resetear password. Firebase manda el enlace al inbox.
  * Lanza si el email no está registrado (auth/user-not-found) o inválido.
  */
 export async function requestPasswordReset(email: string): Promise<void> {

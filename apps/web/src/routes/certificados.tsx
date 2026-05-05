@@ -74,11 +74,13 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
     mutationFn: descargarCertificadoDeViaje,
     onError: (err) => {
       if (err instanceof CertNotIssuedError) {
-        window.alert('El certificado todavía está generándose. Esperá unos segundos y reintentá.');
+        window.alert(
+          'El certificado todavía está generándose. Espera unos segundos y reinténtalo.',
+        );
       } else if (err instanceof CertDisabledError) {
         window.alert('Los certificados están deshabilitados en este entorno.');
       } else {
-        window.alert('No se pudo descargar el certificado. Reintentá en un momento.');
+        window.alert('No se pudo descargar el certificado. Inténtalo en un momento.');
       }
     },
   });
@@ -116,14 +118,14 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
       {certsQ.isLoading && <p className="mt-8 text-neutral-500">Cargando certificados…</p>}
       {certsQ.error && (
         <p className="mt-8 text-danger-700">
-          No pudimos cargar los certificados. Reintentá en un momento.
+          No pudimos cargar los certificados. Inténtalo en un momento.
         </p>
       )}
 
       {certsQ.data && certsQ.data.certificates.length === 0 && (
         <div className="mt-8 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
           <Award className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-          <p className="mt-3 font-medium text-neutral-900">Aún no tenés certificados emitidos</p>
+          <p className="mt-3 font-medium text-neutral-900">Aún no tienes certificados emitidos</p>
           <p className="mt-1 text-neutral-600 text-sm">
             Cuando un viaje entregado se confirme como recibido, el sistema genera el certificado
             automáticamente. Te avisamos por email.
