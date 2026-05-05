@@ -1,0 +1,103 @@
+# =============================================================================
+# CI Booster AI — GitLab pipeline.
+#
+# Replica los gates bloqueantes del workflow original .github/workflows/ci.yml
+# tras la migración del repo de GitHub a GitLab. Cubre:
+#
+#   - lint:       biome check (incluye format check, regla nursery, etc).
+#   - typecheck:  tsc --noEmit por workspace (Turborepo paraleliza).
+#   - test:       vitest run en cada workspace (apps/* y packages/*).
+#   - build:      turbo run build (cada app/package compila a producción).
+#
+# NO se incluye todavía:
+#   - security (gitleaks, npm audit, CodeQL): trabajo aparte, requiere config
+#     de SAST de GitLab y secretos.
+#   - e2e contra staging: requiere BASE_URL + credenciales E2E_USER_EMAIL/
+#     E2E_USER_PASSWORD como CI vars del proyecto.
+#   - release / Cloud Build: pipeline de despliegue específico.
+#
+# Para correr tests con coverage gate (≥80%) hay que agregar `pnpm test:coverage`
+# como script al root y un step de validación. Por ahora vitest.config.ts ya
+# enforce los thresholds por workspace cuando se invoca con --coverage.
+# =============================================================================
+
+stages:
+  - quality
+  - build
+
+# Disparadores: solo MRs hacia main y pushes a main. Evita doble pipeline en
+# branches que tienen MR abierto.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+default:
+  image: node:22-bookworm-slim
+  # Cache de pnpm-store + node_modules. Key invalidate cuando cambia el
+  # lockfile. La cadena de dependencias en pnpm/turbo es determinista, así
+  # que mismo lockfile = mismo node_modules → reusable entre runs.
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store/
+      - node_modules/
+      - apps/*/node_modules/
+      - packages/*/node_modules/
+    policy: pull-push
+  before_script:
+    - corepack enable
+    - corepack prepare pnpm@9.15.4 --activate
+    - pnpm config set store-dir .pnpm-store
+    - pnpm install --frozen-lockfile
+
+lint:
+  stage: quality
+  script:
+    - pnpm lint
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+typecheck:
+  stage: quality
+  script:
+    - pnpm typecheck
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test:
+  stage: quality
+  script:
+    - pnpm test
+  artifacts:
+    name: "coverage-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - "**/coverage/"
+    expire_in: 14 days
+    when: always
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build:
+  stage: build
+  needs:
+    - lint
+    - typecheck
+    - test
+  script:
+    - pnpm build
+  artifacts:
+    name: "build-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - apps/*/dist/
+      - packages/*/dist/
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
