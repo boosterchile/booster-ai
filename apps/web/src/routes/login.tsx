@@ -107,7 +107,7 @@ export function LoginRoute() {
             {mode === 'sign-up'
               ? 'Después podrás crear tu empresa o unirte a una existente.'
               : mode === 'reset'
-                ? 'Te enviamos un email con el link para crear una nueva contraseña.'
+                ? 'Te enviamos un email con el enlace para crear una nueva contraseña.'
                 : 'Plataforma de logística sostenible para empresas y transportistas en Chile.'}
           </p>
 
@@ -122,7 +122,8 @@ export function LoginRoute() {
 
           {resetSent && (
             <output className="mt-6 block rounded-md border border-success-500/30 bg-success-50 p-3 text-sm text-success-700">
-              Listo. Si {email} existe, te llegó un email con el link para resetear tu contraseña.
+              Listo. Si {email} existe, te llegó un email con el enlace para restablecer tu
+              contraseña.
             </output>
           )}
 

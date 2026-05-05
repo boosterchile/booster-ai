@@ -380,8 +380,8 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
           <section className="mt-8 space-y-4">
             <h2 className="font-semibold text-neutral-900 text-xl">¿Cómo opera tu empresa?</h2>
             <p className="text-neutral-600 text-sm">
-              Podés ser generador de carga (publicás cargas), transportista (transportás cargas) o
-              ambos. Activá los que apliquen.
+              Puedes ser generador de carga (publicas cargas), transportista (transportas cargas) o
+              ambos. Activa los que apliquen.
             </p>
             <Controller
               control={control}

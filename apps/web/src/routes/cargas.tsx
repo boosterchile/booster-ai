@@ -363,15 +363,14 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
               <section className="mt-6">
                 <h2 className="font-semibold text-lg text-neutral-900">Cargas activas</h2>
                 <p className="mt-1 text-neutral-500 text-xs">
-                  En proceso de match, asignadas o en ruta.
+                  En búsqueda de transportista, asignadas o en ruta.
                 </p>
                 {activas.length === 0 ? (
                   <div className="mt-3 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
                     <Package className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
                     <p className="mt-3 font-medium text-neutral-900">No tienes cargas activas</p>
                     <p className="mt-1 text-neutral-600 text-sm">
-                      Crea una carga para que el matching engine te conecte con transportistas
-                      disponibles.
+                      Crea una carga para que el sistema te conecte con transportistas disponibles.
                     </p>
                     <Link
                       to="/app/cargas/nueva"
@@ -390,7 +389,7 @@ function CargasListPage({ me }: { me: MeOnboarded }) {
                 <section className="mt-10">
                   <h2 className="font-semibold text-lg text-neutral-900">Historial</h2>
                   <p className="mt-1 text-neutral-500 text-xs">
-                    Cargas entregadas, canceladas o sin match.
+                    Cargas entregadas, canceladas o sin asignación.
                   </p>
                   <div className="mt-3">
                     <CargasTable trips={historial} showCertificateColumn />
@@ -566,11 +565,13 @@ function DescargarCertificadoButton({
     mutationFn: descargarCertificadoDeViaje,
     onError: (err) => {
       if (err instanceof CertNotIssuedError) {
-        window.alert('El certificado todavía está generándose. Esperá unos segundos y reintentá.');
+        window.alert(
+          'El certificado todavía está generándose. Espera unos segundos y reinténtalo.',
+        );
       } else if (err instanceof CertDisabledError) {
         window.alert('Los certificados están deshabilitados en este entorno.');
       } else {
-        window.alert('No se pudo descargar el certificado. Reintentá en un momento.');
+        window.alert('No se pudo descargar el certificado. Inténtalo en un momento.');
       }
     },
   });
@@ -1027,7 +1028,7 @@ function TripForm({
               value={values.proposed_price_clp}
               onChange={(e) => update('proposed_price_clp', e.target.value)}
               className={inputClass}
-              placeholder="Dejar vacío si querés que pricing-engine sugiera"
+              placeholder="Déjalo vacío si quieres que el sistema sugiera un precio"
               aria-invalid={fieldErrors.proposed_price_clp ? true : undefined}
             />
           </Field>
@@ -1153,8 +1154,8 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
         <div className="mb-6 rounded-lg border border-danger-200 bg-danger-50 p-4">
           <h3 className="font-semibold text-danger-900 text-sm">¿Cancelar esta carga?</h3>
           <p className="mt-1 text-danger-800 text-sm">
-            Acción irreversible. El matching engine deja de buscar transportistas y la carga queda
-            en estado "Cancelado".
+            Acción irreversible. El sistema deja de buscar transportistas y la carga queda en estado
+            "Cancelado".
           </p>
           <div className="mt-3">
             <label htmlFor="cancel_reason" className="block font-medium text-danger-900 text-sm">

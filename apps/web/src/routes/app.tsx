@@ -241,8 +241,8 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                       Certificados de huella de carbono
                     </div>
                     <div className="text-neutral-600 text-sm">
-                      Descargá los certificados firmados (GLEC v3.0 + SEC Chile 2024) de tus
-                      viajes entregados.
+                      Descarga los certificados firmados (GLEC v3.0 + SEC Chile 2024) de tus viajes
+                      entregados.
                     </div>
                   </div>
                 </div>

@@ -308,7 +308,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
     onError: (err) => {
       // eslint-disable-next-line no-console
       console.error('sendPhotoMessage error', err);
-      window.alert('No se pudo enviar la foto. Reintentá.');
+      window.alert('No se pudo enviar la foto. Inténtalo de nuevo.');
     },
   });
 
@@ -317,7 +317,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
     onError: (err) => {
       // eslint-disable-next-line no-console
       console.error('sendLocationMessage error', err);
-      window.alert('No pudimos obtener tu ubicación. Verificá los permisos del navegador.');
+      window.alert('No pudimos obtener tu ubicación. Verifica los permisos del navegador.');
     },
   });
 
@@ -384,7 +384,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
             }
           }
         }}
-        placeholder="Escribí un mensaje…"
+        placeholder="Escribe un mensaje…"
         rows={1}
         maxLength={4000}
         className="max-h-32 min-h-[40px] flex-1 resize-none rounded-2xl border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
