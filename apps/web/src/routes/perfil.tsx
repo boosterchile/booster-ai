@@ -1,10 +1,12 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, LogOut, User as UserIcon } from 'lucide-react';
+import { CompanySwitcher } from '../components/CompanySwitcher.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { AuthProvidersSection } from '../components/profile/AuthProvidersSection.js';
 import { ProfileForm } from '../components/profile/ProfileForm.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { useSwitchCompany } from '../hooks/use-switch-company.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -28,7 +30,7 @@ export function PerfilRoute() {
 }
 
 function PerfilPage({ me }: { me: MeOnboarded }) {
-  const activeEmpresa = me.active_membership?.empresa;
+  const { switchTo, isPending } = useSwitchCompany();
 
   async function handleSignOut() {
     await signOutUser();
@@ -43,11 +45,14 @@ function PerfilPage({ me }: { me: MeOnboarded }) {
               <div className="h-6 w-6 rounded-md bg-primary-500" aria-hidden />
               <span className="font-semibold text-lg text-neutral-900">Booster AI</span>
             </Link>
-            {activeEmpresa && (
-              <span className="ml-3 rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">
-                {activeEmpresa.legal_name}
-              </span>
-            )}
+            <div className="ml-3">
+              <CompanySwitcher
+                memberships={me.memberships}
+                activeEmpresaId={me.active_membership?.empresa.id ?? null}
+                onSelect={(empresaId) => void switchTo(empresaId)}
+                disabled={isPending}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm">
