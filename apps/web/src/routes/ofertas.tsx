@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-react';
+import { EmptyState } from '../components/EmptyState.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -124,13 +125,12 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
           )}
 
           {isCarrier && offersQuery.data && offersQuery.data.offers.length === 0 && (
-            <div className="mt-10 rounded-lg border border-neutral-200 bg-white p-10 text-center">
-              <Inbox className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-              <p className="mt-4 font-medium text-neutral-900">No hay ofertas activas ahora</p>
-              <p className="mt-1 text-neutral-600 text-sm">
-                Cuando un shipper publique una carga compatible con tus zonas y vehículos, vas a
-                verla acá. Mantenemos esta vista actualizada cada 30 segundos.
-              </p>
+            <div className="mt-10">
+              <EmptyState
+                icon={<Inbox className="h-10 w-10" aria-hidden />}
+                title="No hay ofertas activas ahora"
+                description="Cuando un generador de carga publique una compatible con tus zonas y vehículos, la verás aquí. Mantenemos esta vista actualizada cada 30 segundos."
+              />
             </div>
           )}
 
