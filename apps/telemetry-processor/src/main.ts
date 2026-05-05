@@ -1,6 +1,6 @@
 import http from 'node:http';
-import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { createLogger } from '@booster-ai/logger';
+import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { loadConfig } from './config.js';

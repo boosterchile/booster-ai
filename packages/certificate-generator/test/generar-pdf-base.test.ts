@@ -6,7 +6,7 @@
  * reales en `pnpm --filter @booster-ai/certificate-generator test:int`.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { generarPdfBase } from '../src/generar-pdf-base.js';
 
 describe('generarPdfBase', () => {

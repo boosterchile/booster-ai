@@ -133,7 +133,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       noValidate
     >
       <div>
-        <h2 className="font-semibold text-neutral-900 text-lg">Mi perfil</h2>
+        <h2 className="font-semibold text-lg text-neutral-900">Mi perfil</h2>
         <p className="mt-1 text-neutral-600 text-sm">
           Actualiza tus datos personales. El email y la empresa se gestionan por separado.
         </p>
@@ -214,7 +214,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       )}
 
       {savedAt && !mutation.isPending && !submissionError && (
-        <output className="flex items-center gap-2 rounded-md border border-success-500/30 bg-success-50 p-3 text-success-700 text-sm">
+        <output className="flex items-center gap-2 rounded-md border border-success-500/30 bg-success-50 p-3 text-sm text-success-700">
           <Check className="h-4 w-4" aria-hidden />
           Cambios guardados.
         </output>

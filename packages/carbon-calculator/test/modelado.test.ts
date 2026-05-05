@@ -110,10 +110,7 @@ describe('calcularModelado — escenarios de referencia', () => {
         capacidadKg: 25000,
       },
     });
-    expect(r.emisionesKgco2eTtw + r.emisionesKgco2eWtt).toBeCloseTo(
-      r.emisionesKgco2eWtw,
-      1,
-    );
+    expect(r.emisionesKgco2eTtw + r.emisionesKgco2eWtt).toBeCloseTo(r.emisionesKgco2eWtw, 1);
   });
 
   it('preserva fuente y versión GLEC en el resultado', () => {

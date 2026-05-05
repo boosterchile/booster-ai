@@ -33,8 +33,8 @@ import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
 import {
-  emitirCertificadoViaje,
   type EmitirCertificadoConfig,
+  emitirCertificadoViaje,
 } from './emitir-certificado-viaje.js';
 
 /**
@@ -51,11 +51,7 @@ export type ConfirmarEntregaResult =
   | { ok: true; alreadyDelivered: true; deliveredAt: Date }
   | {
       ok: false;
-      code:
-        | 'trip_not_found'
-        | 'no_assignment'
-        | 'forbidden_owner_mismatch'
-        | 'invalid_status';
+      code: 'trip_not_found' | 'no_assignment' | 'forbidden_owner_mismatch' | 'invalid_status';
       currentStatus?: string;
     };
 

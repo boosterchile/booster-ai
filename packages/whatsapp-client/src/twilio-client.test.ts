@@ -55,6 +55,7 @@ describe('TwilioWhatsAppClient.sendText', () => {
     const result = await client.sendText({ to: '+56957790379', body: 'hola' });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
+    // biome-ignore lint/style/noNonNullAssertion: toHaveBeenCalledOnce ya garantiza que mock.calls[0] existe
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`);
     expect(init?.method).toBe('POST');
@@ -82,7 +83,7 @@ describe('TwilioWhatsAppClient.sendText', () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
     const client = makeClient();
     await client.sendText({ to: '+56957790379', body: 'test' });
-    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const body = fetchSpy.mock.calls[0]?.[1]?.body as string;
     const params = new URLSearchParams(body);
     expect(params.get('To')).toBe('whatsapp:+56957790379');
   });
@@ -91,7 +92,7 @@ describe('TwilioWhatsAppClient.sendText', () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
     const client = makeClient();
     await client.sendText({ to: 'whatsapp:+56957790379', body: 'test' });
-    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const body = fetchSpy.mock.calls[0]?.[1]?.body as string;
     const params = new URLSearchParams(body);
     expect(params.get('To')).toBe('whatsapp:+56957790379');
   });
@@ -189,6 +190,7 @@ describe('TwilioWhatsAppClient.sendContent', () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledOnce();
+    // biome-ignore lint/style/noNonNullAssertion: toHaveBeenCalledOnce ya garantiza que mock.calls[0] existe
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`);
     expect(init?.method).toBe('POST');
@@ -217,7 +219,7 @@ describe('TwilioWhatsAppClient.sendContent', () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
     const client = makeClient();
     await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID });
-    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const body = fetchSpy.mock.calls[0]?.[1]?.body as string;
     const params = new URLSearchParams(body);
     expect(params.get('ContentSid')).toBe(CONTENT_SID);
     expect(params.get('ContentVariables')).toBeNull();
@@ -227,7 +229,7 @@ describe('TwilioWhatsAppClient.sendContent', () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
     const client = makeClient();
     await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID, contentVariables: {} });
-    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const body = fetchSpy.mock.calls[0]?.[1]?.body as string;
     const params = new URLSearchParams(body);
     expect(params.get('ContentVariables')).toBeNull();
   });
@@ -236,7 +238,7 @@ describe('TwilioWhatsAppClient.sendContent', () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 201 }));
     const client = makeClient();
     await client.sendContent({ to: '+56957790379', contentSid: CONTENT_SID });
-    const body = fetchSpy.mock.calls[0]![1]?.body as string;
+    const body = fetchSpy.mock.calls[0]?.[1]?.body as string;
     const params = new URLSearchParams(body);
     expect(params.get('To')).toBe('whatsapp:+56957790379');
   });

@@ -48,7 +48,8 @@ export function calcularModelado(params: ParametrosModelado): ResultadoEmisiones
   const emisionesWtw = consumoTotal * factorWtw;
 
   const cargaTon = cargaKg / 1000;
-  const intensidad = cargaTon > 0 && distanciaKm > 0 ? (emisionesWtw * 1000) / (distanciaKm * cargaTon) : 0;
+  const intensidad =
+    cargaTon > 0 && distanciaKm > 0 ? (emisionesWtw * 1000) / (distanciaKm * cargaTon) : 0;
 
   return {
     emisionesKgco2eWtw: round3(emisionesWtw),

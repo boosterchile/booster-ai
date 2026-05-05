@@ -21,10 +21,7 @@ import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
-import {
-  createMePushSubscriptionRoutes,
-  createWebpushPublicRoutes,
-} from './routes/webpush.js';
+import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import { configureWebPush } from './services/web-push.js';
 
@@ -141,10 +138,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/me/push-subscription', userContextMiddlewareForMe);
     app.use('/me/push-subscription/*', userContextMiddlewareForMe);
     const meRouter = createMeRoutes({ db: opts.db, logger });
-    meRouter.route(
-      '/push-subscription',
-      createMePushSubscriptionRoutes({ db: opts.db, logger }),
-    );
+    meRouter.route('/push-subscription', createMePushSubscriptionRoutes({ db: opts.db, logger }));
     app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
@@ -165,12 +159,8 @@ export function createServer(opts: CreateServerOptions): Hono {
     // verifyBaseUrl es la primera entrada de API_AUDIENCE (URL pública,
     // ej. https://api.boosterchile.com).
     const certConfig = {
-      ...(config.CERTIFICATE_SIGNING_KEY_ID
-        ? { kmsKeyId: config.CERTIFICATE_SIGNING_KEY_ID }
-        : {}),
-      ...(config.CERTIFICATES_BUCKET
-        ? { certificatesBucket: config.CERTIFICATES_BUCKET }
-        : {}),
+      ...(config.CERTIFICATE_SIGNING_KEY_ID ? { kmsKeyId: config.CERTIFICATE_SIGNING_KEY_ID } : {}),
+      ...(config.CERTIFICATES_BUCKET ? { certificatesBucket: config.CERTIFICATES_BUCKET } : {}),
       verifyBaseUrl: config.API_AUDIENCE[0] ?? 'https://api.boosterchile.com',
     };
 
@@ -214,9 +204,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         }),
       );
     } else {
-      logger.warn(
-        'INTERNAL_CRON_CALLER_SA ausente — endpoints /admin/jobs/* deshabilitados',
-      );
+      logger.warn('INTERNAL_CRON_CALLER_SA ausente — endpoints /admin/jobs/* deshabilitados');
     }
 
     // Assignments — endpoints sobre assignment lifecycle + chat.
@@ -241,9 +229,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       ...(config.CHAT_ATTACHMENTS_BUCKET
         ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
         : {}),
-      ...(config.CHAT_PUBSUB_TOPIC
-        ? { pubsubTopic: config.CHAT_PUBSUB_TOPIC }
-        : {}),
+      ...(config.CHAT_PUBSUB_TOPIC ? { pubsubTopic: config.CHAT_PUBSUB_TOPIC } : {}),
     });
     assignmentsRouter.route('/', chatRouter);
     app.route('/assignments', assignmentsRouter);

@@ -263,11 +263,7 @@ export const pendingDeviceStatusEnum = pgEnum('estado_dispositivo_pendiente', [
  * El backend valida que solo el campo correspondiente al tipo esté
  * poblado (CHECK constraint en la tabla).
  */
-export const chatMessageTypeEnum = pgEnum('tipo_mensaje_chat', [
-  'texto',
-  'foto',
-  'ubicacion',
-]);
+export const chatMessageTypeEnum = pgEnum('tipo_mensaje_chat', ['texto', 'foto', 'ubicacion']);
 
 /**
  * Rol del remitente en el chat. Sigue el patrón de `actor_cancelacion`.
@@ -853,10 +849,7 @@ export const telemetryPoints = pgTable(
   },
   (table) => ({
     imeiTsUnique: unique('uq_telemetria_imei_ts').on(table.imei, table.timestampDevice),
-    vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(
-      table.vehicleId,
-      table.timestampDevice,
-    ),
+    vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     imeiTsIdx: index('idx_telemetria_imei_ts').on(table.imei, table.timestampDevice),
     vehicleReceivedIdx: index('idx_telemetria_vehiculo_recibido').on(
       table.vehicleId,
@@ -1038,10 +1031,7 @@ export const pushSubscriptions = pgTable(
   },
   (table) => ({
     endpointUnique: unique('uq_push_subscriptions_endpoint').on(table.endpoint),
-    userActiveIdx: index('idx_push_subscriptions_user_activa').on(
-      table.userId,
-      table.status,
-    ),
+    userActiveIdx: index('idx_push_subscriptions_user_activa').on(table.userId, table.status),
   }),
 );
 

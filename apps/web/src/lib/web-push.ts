@@ -120,8 +120,12 @@ export async function subscribeToWebPush(): Promise<{ endpoint: string }> {
   }
   if (Notification.permission !== 'granted') {
     const result = await Notification.requestPermission();
-    if (result === 'denied') throw new PushPermissionDeniedError();
-    if (result === 'default') throw new PushPermissionDefaultError();
+    if (result === 'denied') {
+      throw new PushPermissionDeniedError();
+    }
+    if (result === 'default') {
+      throw new PushPermissionDefaultError();
+    }
   }
 
   // 2. Service worker registration. Esperar a que esté lista (vite-plugin-pwa
@@ -167,10 +171,14 @@ export async function subscribeToWebPush(): Promise<{ endpoint: string }> {
  * backend.
  */
 export async function unsubscribeFromWebPush(): Promise<void> {
-  if (!isWebPushSupported()) return;
+  if (!isWebPushSupported()) {
+    return;
+  }
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.getSubscription();
-  if (!subscription) return;
+  if (!subscription) {
+    return;
+  }
 
   // Backend primero — si falla, mantenemos browser subscription sincronizada.
   try {
@@ -189,8 +197,12 @@ export async function unsubscribeFromWebPush(): Promise<void> {
  * Usado por la UI para mostrar el toggle "ON" o "OFF".
  */
 export async function hasActiveWebPushSubscription(): Promise<boolean> {
-  if (!isWebPushSupported()) return false;
-  if (Notification.permission !== 'granted') return false;
+  if (!isWebPushSupported()) {
+    return false;
+  }
+  if (Notification.permission !== 'granted') {
+    return false;
+  }
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.getSubscription();
   return subscription !== null;

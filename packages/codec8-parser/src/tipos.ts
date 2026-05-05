@@ -126,7 +126,9 @@ export class CodecCrcError extends CodecParseError {
     public readonly expected: number,
     public readonly actual: number,
   ) {
-    super(`CRC-16/IBM mismatch: expected 0x${expected.toString(16).padStart(4, '0')}, got 0x${actual.toString(16).padStart(4, '0')}`);
+    super(
+      `CRC-16/IBM mismatch: expected 0x${expected.toString(16).padStart(4, '0')}, got 0x${actual.toString(16).padStart(4, '0')}`,
+    );
     this.name = 'CodecCrcError';
   }
 }

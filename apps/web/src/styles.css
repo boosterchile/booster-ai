@@ -11,55 +11,55 @@
  */
 @theme {
   /* Color — primary (verde Booster) */
-  --color-primary-50: #ECFAF1;
-  --color-primary-100: #D1F2DD;
-  --color-primary-200: #A5E3BA;
-  --color-primary-300: #73D094;
-  --color-primary-400: #42BB72;
-  --color-primary-500: #1FA058;
+  --color-primary-50: #ecfaf1;
+  --color-primary-100: #d1f2dd;
+  --color-primary-200: #a5e3ba;
+  --color-primary-300: #73d094;
+  --color-primary-400: #42bb72;
+  --color-primary-500: #1fa058;
   --color-primary-600: #168047;
-  --color-primary-700: #10653A;
-  --color-primary-800: #0C4D2D;
+  --color-primary-700: #10653a;
+  --color-primary-800: #0c4d2d;
   --color-primary-900: #083823;
-  --color-primary-950: #04231A;
+  --color-primary-950: #04231a;
 
   /* Color — neutrals cálidos */
-  --color-neutral-0: #FFFFFF;
-  --color-neutral-50: #FAF9F7;
-  --color-neutral-100: #F4F2EE;
-  --color-neutral-200: #E7E4DD;
-  --color-neutral-300: #D5D1C7;
-  --color-neutral-400: #A6A199;
-  --color-neutral-500: #73706A;
-  --color-neutral-600: #56544F;
-  --color-neutral-700: #3F3D39;
-  --color-neutral-800: #2A2926;
-  --color-neutral-900: #1A1917;
-  --color-neutral-1000: #0A0A09;
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #faf9f7;
+  --color-neutral-100: #f4f2ee;
+  --color-neutral-200: #e7e4dd;
+  --color-neutral-300: #d5d1c7;
+  --color-neutral-400: #a6a199;
+  --color-neutral-500: #73706a;
+  --color-neutral-600: #56544f;
+  --color-neutral-700: #3f3d39;
+  --color-neutral-800: #2a2926;
+  --color-neutral-900: #1a1917;
+  --color-neutral-1000: #0a0a09;
 
   /* Color — accent (urgencia) */
-  --color-accent-50: #FFF7EB;
-  --color-accent-100: #FFEAC9;
-  --color-accent-200: #FFD489;
-  --color-accent-300: #FFB94A;
-  --color-accent-400: #FFA21F;
-  --color-accent-500: #F58A00;
-  --color-accent-600: #CC6F00;
-  --color-accent-700: #A05500;
+  --color-accent-50: #fff7eb;
+  --color-accent-100: #ffeac9;
+  --color-accent-200: #ffd489;
+  --color-accent-300: #ffb94a;
+  --color-accent-400: #ffa21f;
+  --color-accent-500: #f58a00;
+  --color-accent-600: #cc6f00;
+  --color-accent-700: #a05500;
 
   /* Color — semantic */
-  --color-success-50: #ECFAF1;
-  --color-success-500: #1FA058;
-  --color-success-700: #10653A;
-  --color-warning-50: #FFF7EB;
-  --color-warning-500: #F58A00;
-  --color-warning-700: #A05500;
-  --color-danger-50: #FEF2F2;
-  --color-danger-500: #DC2626;
-  --color-danger-700: #991B1B;
-  --color-info-50: #EFF6FF;
-  --color-info-500: #2563EB;
-  --color-info-700: #1E40AF;
+  --color-success-50: #ecfaf1;
+  --color-success-500: #1fa058;
+  --color-success-700: #10653a;
+  --color-warning-50: #fff7eb;
+  --color-warning-500: #f58a00;
+  --color-warning-700: #a05500;
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #dc2626;
+  --color-danger-700: #991b1b;
+  --color-info-50: #eff6ff;
+  --color-info-500: #2563eb;
+  --color-info-700: #1e40af;
 
   /* Tipografía */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -75,9 +75,9 @@
   /* Shadow */
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.06);
-  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 0.10), 0 4px 6px -2px rgb(0 0 0 / 0.05);
-  --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.20);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.2);
 }
 
 /* Defaults globales */

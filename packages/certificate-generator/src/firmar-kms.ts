@@ -8,8 +8,8 @@
  *     por firma RSA 4096).
  */
 
-import { KeyManagementServiceClient } from '@google-cloud/kms';
 import { createHash } from 'node:crypto';
+import { KeyManagementServiceClient } from '@google-cloud/kms';
 
 let cachedClient: KeyManagementServiceClient | null = null;
 
@@ -140,9 +140,7 @@ async function resolverVersionPrimaria(
   });
 
   if (!versions.length) {
-    throw new Error(
-      `KMS key ${kmsKeyId} no tiene ninguna version ENABLED — no se puede firmar`,
-    );
+    throw new Error(`KMS key ${kmsKeyId} no tiene ninguna version ENABLED — no se puede firmar`);
   }
 
   // Las versions vienen ordenadas por createTime asc; la más reciente

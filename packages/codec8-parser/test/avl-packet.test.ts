@@ -130,7 +130,9 @@ describe('parseAvlPacket — Codec 8 (round-trip)', () => {
     const packet = parseAvlPacket(ejemploPacket);
     const rec = packet.records[0];
     expect(rec).toBeDefined();
-    if (!rec) return;
+    if (!rec) {
+      return;
+    }
     expect(rec.timestampMs).toBe(1532597995000n);
     expect(rec.priority).toBe(1);
     expect(rec.gps.longitude).toBeCloseTo(-70.6483, 4);

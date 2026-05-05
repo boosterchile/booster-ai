@@ -70,9 +70,7 @@ export async function obtenerOEmitirCertSelfSigned(opts: {
   kmsKeyId: string;
   certificatesBucket: string;
 }): Promise<CertSelfSignedResultado> {
-  const { pem: publicKeyPem, keyVersion } = await obtenerPublicKeyPem(
-    opts.kmsKeyId,
-  );
+  const { pem: publicKeyPem, keyVersion } = await obtenerPublicKeyPem(opts.kmsKeyId);
 
   const cachedPath = `certs/kms-key-version-${keyVersion}.pem`;
   const bucket = getStorage().bucket(opts.certificatesBucket);
@@ -120,10 +118,7 @@ export async function obtenerOEmitirCertSelfSigned(opts: {
  * Construye el TBSCertificate, lo manda a firmar a KMS, y ensambla el
  * cert X.509 final en PEM.
  */
-async function emitirNuevoCert(
-  kmsKeyId: string,
-  publicKeyPem: string,
-): Promise<string> {
+async function emitirNuevoCert(kmsKeyId: string, publicKeyPem: string): Promise<string> {
   const cert = forge.pki.createCertificate();
 
   // Public key — la real de KMS, no una local.

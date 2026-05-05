@@ -18,12 +18,12 @@
  * Resultado: PDF con firma PAdES-B-B (basic) válida en Adobe Reader.
  */
 
+import { createHash } from 'node:crypto';
 import { SignPdf } from '@signpdf/signpdf';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
-import { createHash } from 'node:crypto';
 import forge from 'node-forge';
-import { firmarConKms } from './firmar-kms.js';
 import type { CertSelfSignedResultado } from './ca-self-signed.js';
+import { firmarConKms } from './firmar-kms.js';
 
 export interface ParametrosFirmaPades {
   /** PDF generado por `generar-pdf-base.ts` (con placeholder embebido). */
@@ -50,9 +50,7 @@ export interface ResultadoFirmaPades {
 /**
  * Firma el PDF con PAdES-B-B usando KMS.
  */
-export async function firmarPades(
-  params: ParametrosFirmaPades,
-): Promise<ResultadoFirmaPades> {
+export async function firmarPades(params: ParametrosFirmaPades): Promise<ResultadoFirmaPades> {
   const signingTime = new Date();
   let signatureRaw: Buffer | null = null;
 
@@ -149,9 +147,18 @@ async function construirPkcs7(
   // las constantes (contentType, data, messageDigest, etc.) son literales
   // hardcoded del propio node-forge — los `!` son seguros.
   const signedAttrsAsn1 = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [
-    crearAtributo(oids.contentType!, asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(oids.data!).getBytes())),
-    crearAtributo(oids.messageDigest!, asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, pdfDigest.toString('binary'))),
-    crearAtributo(oids.signingTime!, asn1.create(asn1.Class.UNIVERSAL, asn1.Type.UTCTIME, false, asn1.dateToUtcTime(signingTime))),
+    crearAtributo(
+      oids.contentType!,
+      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(oids.data!).getBytes()),
+    ),
+    crearAtributo(
+      oids.messageDigest!,
+      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, pdfDigest.toString('binary')),
+    ),
+    crearAtributo(
+      oids.signingTime!,
+      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.UTCTIME, false, asn1.dateToUtcTime(signingTime)),
+    ),
   ]);
 
   // KMS firma el DER-encoded SET (con tag SET, NO con tag implicit [0]).
@@ -161,10 +168,7 @@ async function construirPkcs7(
   const signedAttrsBuf = Buffer.from(signedAttrsDer, 'binary');
 
   // KMS hace sha256(signedAttrsBuf) internamente y firma con RSA.
-  const { signature: signatureRaw } = await firmarConKms(
-    kmsKeyId,
-    signedAttrsBuf,
-  );
+  const { signature: signatureRaw } = await firmarConKms(kmsKeyId, signedAttrsBuf);
 
   // Re-construir signedAttrs con tag IMPLICIT [0] para el SignerInfo.
   const signedAttrsImplicit = asn1.create(
@@ -181,17 +185,9 @@ async function construirPkcs7(
 
   // Serial number como INTEGER.
   const serialDer = forge.util.hexToBytes(cert.certForge.serialNumber);
-  const serialAsn1 = asn1.create(
-    asn1.Class.UNIVERSAL,
-    asn1.Type.INTEGER,
-    false,
-    serialDer,
-  );
+  const serialAsn1 = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, serialDer);
 
-  const sid = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    issuer,
-    serialAsn1,
-  ]);
+  const sid = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [issuer, serialAsn1]);
 
   // AlgorithmIdentifier helpers.
   const sha256AlgId = crearAlgoritmoId(oids.sha256!);
@@ -207,7 +203,12 @@ async function construirPkcs7(
     sha256AlgId,
     signedAttrsImplicit,
     sigAlgId,
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, signatureRaw.toString('binary')),
+    asn1.create(
+      asn1.Class.UNIVERSAL,
+      asn1.Type.OCTETSTRING,
+      false,
+      signatureRaw.toString('binary'),
+    ),
   ]);
 
   // Cert ASN.1.
@@ -228,7 +229,12 @@ async function construirPkcs7(
 
   // ContentInfo SEQUENCE — wrapper externo.
   const contentInfo = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(oids.signedData!).getBytes()),
+    asn1.create(
+      asn1.Class.UNIVERSAL,
+      asn1.Type.OID,
+      false,
+      asn1.oidToDer(oids.signedData!).getBytes(),
+    ),
     asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [signedData]),
   ]);
 
@@ -248,12 +254,7 @@ async function construirPkcs7(
 function crearAtributo(typeOid: string, value: forge.asn1.Asn1): forge.asn1.Asn1 {
   const asn1 = forge.asn1;
   return asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-    asn1.create(
-      asn1.Class.UNIVERSAL,
-      asn1.Type.OID,
-      false,
-      asn1.oidToDer(typeOid).getBytes(),
-    ),
+    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(typeOid).getBytes()),
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [value]),
   ]);
 }

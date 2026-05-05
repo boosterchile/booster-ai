@@ -30,14 +30,7 @@ import { emitirCertificado } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import {
-  assignments,
-  empresas,
-  tripEvents,
-  tripMetrics,
-  trips,
-  vehicles,
-} from '../db/schema.js';
+import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
 
 export interface EmitirCertificadoConfig {
   /** Resource ID de la KMS key (sin :versions). */
@@ -83,11 +76,7 @@ export async function emitirCertificadoViaje(opts: {
 
   // (1) Config — sin esto no podemos firmar. En dev con env vars vacías
   // skipeamos con warn; en prod Terraform las inyecta siempre.
-  if (
-    !config.kmsKeyId ||
-    !config.certificatesBucket ||
-    !config.verifyBaseUrl
-  ) {
+  if (!config.kmsKeyId || !config.certificatesBucket || !config.verifyBaseUrl) {
     logger.warn(
       { tripId, hasKey: !!config.kmsKeyId, hasBucket: !!config.certificatesBucket },
       'emitirCertificadoViaje skipped: config incompleto (KMS_KEY_ID o CERTIFICATES_BUCKET ausentes)',
@@ -317,7 +306,9 @@ export async function emitirCertificadoViaje(opts: {
  * Para los campos que sabemos chicos (kg CO2e, distancia), convertimos a Number.
  */
 function numOrNull(v: string | null): number | null {
-  if (v === null || v === undefined) return null;
+  if (v === null || v === undefined) {
+    return null;
+  }
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }

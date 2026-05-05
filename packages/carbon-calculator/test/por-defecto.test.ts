@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calcularPorDefecto } from '../src/modos/por-defecto.js';
 import { calcularModelado } from '../src/modos/modelado.js';
+import { calcularPorDefecto } from '../src/modos/por-defecto.js';
 
 describe('calcularPorDefecto — defaults por tipo de vehículo', () => {
   it('camion_pesado: usa default 35 L/100km diésel, capacidad 28 ton', () => {

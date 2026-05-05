@@ -21,11 +21,7 @@
  * scroll desde el fondo (chat estilo WhatsApp).
  */
 
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import {
   type ChatMessage,
@@ -106,9 +102,9 @@ export function useChatMessages(
       // Si el mensaje es del otro lado, marcar como leído inmediato.
       // Pero necesitamos saber el viewerRole — lo tomamos del primer
       // page actual.
-      const currentViewerRole = queryClient
-        .getQueryData<{ pages: ChatMessagesResponse[] }>(queryKey)
-        ?.pages[0]?.viewer_role;
+      const currentViewerRole = queryClient.getQueryData<{ pages: ChatMessagesResponse[] }>(
+        queryKey,
+      )?.pages[0]?.viewer_role;
       if (currentViewerRole) {
         // Llegó un mensaje nuevo — el server no nos dice el sender role
         // sin fetch. Si es del otro lado, mark-read; si es nuestro,
@@ -127,7 +123,9 @@ export function useChatMessages(
   // de sesiones anteriores quedarían colgados.
   const initialMarkRef = useRef(false);
   useEffect(() => {
-    if (!enabled || initialMarkRef.current) return;
+    if (!enabled || initialMarkRef.current) {
+      return;
+    }
     if (query.data && query.data.pages.length > 0) {
       initialMarkRef.current = true;
       markReadM.mutate();
