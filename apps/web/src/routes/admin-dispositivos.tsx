@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import { useState } from 'react';
+import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import { api } from '../lib/api-client.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -34,7 +35,9 @@ export function AdminDispositivosRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         const active = ctx.me.active_membership;
         if (!active || (active.role !== 'dueno' && active.role !== 'admin')) {
           return (
@@ -55,7 +58,7 @@ export function AdminDispositivosRoute() {
   );
 }
 
-function AdminDispositivosBody({ me: _me }: { me: MeOnboarded }) {
+function AdminDispositivosBody({ me }: { me: MeOnboarded }) {
   const queryClient = useQueryClient();
 
   const devicesQ = useQuery({
@@ -79,7 +82,7 @@ function AdminDispositivosBody({ me: _me }: { me: MeOnboarded }) {
   });
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
+    <Layout me={me} title="Dispositivos pendientes">
       <div className="mb-6 flex items-center gap-3">
         <Link to="/app" className="text-neutral-500 hover:text-neutral-900">
           <ArrowLeft className="h-5 w-5" />
@@ -87,13 +90,11 @@ function AdminDispositivosBody({ me: _me }: { me: MeOnboarded }) {
         <h1 className="font-bold text-3xl">Dispositivos pendientes</h1>
       </div>
       <p className="text-neutral-600 text-sm">
-        Devices Teltonika que conectaron al gateway y esperan asociación a un vehículo.
+        Dispositivos Teltonika que se conectaron al gateway y esperan asociación a un vehículo.
       </p>
 
       {devicesQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {devicesQ.error && (
-        <p className="mt-6 text-danger-700">Error al cargar dispositivos.</p>
-      )}
+      {devicesQ.error && <p className="mt-6 text-danger-700">Error al cargar dispositivos.</p>}
       {devicesQ.data && devicesQ.data.length === 0 && (
         <p className="mt-6 rounded-md border border-neutral-200 bg-white p-4 text-neutral-600 text-sm">
           No hay dispositivos pendientes.
@@ -115,7 +116,7 @@ function AdminDispositivosBody({ me: _me }: { me: MeOnboarded }) {
           />
         ))}
       </ul>
-    </div>
+    </Layout>
   );
 }
 

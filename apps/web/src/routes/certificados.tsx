@@ -12,6 +12,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Award, Download, Leaf, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -47,7 +49,9 @@ export function CertificadosRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         const isShipper = ctx.me.active_membership?.empresa.is_generador_carga ?? false;
         if (!isShipper) {
           return <NoShipperPermission me={ctx.me} />;
@@ -58,7 +62,7 @@ export function CertificadosRoute() {
   );
 }
 
-function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
+function CertificadosPage({ me }: { me: MeOnboarded }) {
   const certsQ = useQuery({
     queryKey: ['certificates'],
     queryFn: async () => {
@@ -70,9 +74,7 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
     mutationFn: descargarCertificadoDeViaje,
     onError: (err) => {
       if (err instanceof CertNotIssuedError) {
-        window.alert(
-          'El certificado todavía está generándose. Esperá unos segundos y reintentá.',
-        );
+        window.alert('El certificado todavía está generándose. Esperá unos segundos y reintentá.');
       } else if (err instanceof CertDisabledError) {
         window.alert('Los certificados están deshabilitados en este entorno.');
       } else {
@@ -82,7 +84,7 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <Layout me={me} title="Certificados">
       <div className="flex items-center gap-3">
         <Link
           to="/app"
@@ -103,9 +105,9 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
               Certificados de huella de carbono
             </h1>
             <p className="mt-1 text-neutral-600 text-sm">
-              Cada viaje entregado emite un certificado firmado digitalmente con la metodología
-              GLEC v3.0 y los factores de emisión SEC Chile 2024. Los certificados son
-              verificables públicamente.
+              Cada viaje entregado emite un certificado firmado digitalmente con la metodología GLEC
+              v3.0 y los factores de emisión SEC Chile 2024. Los certificados son verificables
+              públicamente.
             </p>
           </div>
         </div>
@@ -123,8 +125,8 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
           <Award className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
           <p className="mt-3 font-medium text-neutral-900">Aún no tenés certificados emitidos</p>
           <p className="mt-1 text-neutral-600 text-sm">
-            Cuando un viaje entregado se confirme como recibido, el sistema genera el
-            certificado automáticamente. Te avisamos por email.
+            Cuando un viaje entregado se confirme como recibido, el sistema genera el certificado
+            automáticamente. Te avisamos por email.
           </p>
           <Link
             to="/app/cargas"
@@ -170,9 +172,7 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
               <tbody className="divide-y divide-neutral-100 bg-white">
                 {certsQ.data.certificates.map((c) => (
                   <tr key={c.trip_id} className="hover:bg-neutral-50">
-                    <Td className="font-mono font-semibold text-neutral-900">
-                      {c.tracking_code}
-                    </Td>
+                    <Td className="font-mono font-semibold text-neutral-900">{c.tracking_code}</Td>
                     <Td>
                       <div className="flex flex-col gap-0.5 text-xs">
                         <span>{c.origin_address}</span>
@@ -183,7 +183,7 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
                     <Td className="text-right font-semibold text-emerald-700">
                       {c.kg_co2e ? `${formatKg(Number(c.kg_co2e))} kg` : '—'}
                     </Td>
-                    <Td className="text-xs text-neutral-600">
+                    <Td className="text-neutral-600 text-xs">
                       {c.certificate_issued_at ? formatDate(c.certificate_issued_at) : '—'}
                     </Td>
                     <Td className="text-right">
@@ -207,11 +207,15 @@ function CertificadosPage({ me: _me }: { me: MeOnboarded }) {
 
           <p className="mt-4 text-neutral-500 text-xs">
             Cada certificado se firma con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.
-            Verificá la firma de cualquier certificado en <code>api.boosterchile.com/certificates/{'{'}código{'}'}/verify</code>.
+            Verificá la firma de cualquier certificado en{' '}
+            <code>
+              api.boosterchile.com/certificates/{'{'}código{'}'}/verify
+            </code>
+            .
           </p>
         </>
       )}
-    </div>
+    </Layout>
   );
 }
 
@@ -237,10 +241,7 @@ function NoShipperPermission({ me }: { me: MeOnboarded }) {
 // Helpers de presentación
 // =============================================================================
 
-function Th({
-  children,
-  className = '',
-}: { children: React.ReactNode; className?: string }) {
+function Th({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <th
       className={`px-4 py-2 text-left font-medium text-neutral-500 text-xs uppercase tracking-wider ${className}`}
@@ -250,18 +251,13 @@ function Th({
   );
 }
 
-function Td({
-  children,
-  className = '',
-}: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 align-top text-neutral-800 text-sm ${className}`}>{children}</td>;
+function Td({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return (
+    <td className={`px-4 py-3 align-top text-neutral-800 text-sm ${className}`}>{children}</td>
+  );
 }
 
-function SummaryCard({
-  title,
-  value,
-  icon,
-}: { title: string; value: string; icon: React.ReactNode }) {
+function SummaryCard({ title, value, icon }: { title: string; value: string; icon: ReactNode }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
