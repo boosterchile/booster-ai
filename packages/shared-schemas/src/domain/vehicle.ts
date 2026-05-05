@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { chileanPlateSchema } from '../primitives/chile.js';
 import { transportistaIdSchema, vehicleIdSchema } from '../primitives/ids.js';
 
 export const vehicleTypeSchema = z.enum([
@@ -29,9 +30,7 @@ export const vehicleStatusSchema = z.enum(['activo', 'mantenimiento', 'retirado'
 export const vehicleSchema = z.object({
   id: vehicleIdSchema,
   transportista_id: transportistaIdSchema,
-  plate: z
-    .string()
-    .regex(/^[A-Z]{2}[-·]?[A-Z]{2}[-·]?\d{2}$|^[A-Z]{4}[-·]?\d{2}$/, 'Patente Chile inválida'),
+  plate: chileanPlateSchema,
   type: vehicleTypeSchema,
   capacity_kg: z.number().int().positive(),
   capacity_m3: z.number().positive(),

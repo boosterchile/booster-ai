@@ -56,3 +56,72 @@ export const regionCodeSchema = z.enum([
   'XV',
   'XVI',
 ]);
+
+// ----------------------------------------------------------------------------
+// Patente vehicular chilena
+// ----------------------------------------------------------------------------
+
+/**
+ * Formato canónico (sin separadores, mayúsculas) de una patente chilena válida.
+ *
+ * Acepta dos estructuras:
+ *   - **Nueva (post-2007)**: 4 letras seguidas de 2 dígitos. Ej: `BCDF12`,
+ *     mostrada como `BC·DF·12`.
+ *   - **Legacy**: 4 letras + 2 dígitos también, pero se origina de un patrón
+ *     histórico distinto (`AAAA-BB`). La estructura canónica resultante es
+ *     idéntica a la nueva — la diferencia visual es estética del display.
+ *
+ * Notas:
+ *   - El formato real chileno tiene patrones más complejos (ej. `BBBB·12` para
+ *     particulares antiguos vs `BC·DF·12` actual), pero a nivel de regex
+ *     ambos colapsan a `[A-Z]{4}\d{2}`. Esta validación cubre los dos.
+ *   - Patentes especiales (CD, PR, gobierno) no están soportadas; si aparecen
+ *     en producción, agregar una regex separada.
+ */
+const CANONICAL_PLATE_RE = /^[A-Z]{4}\d{2}$/;
+
+/**
+ * Quita separadores comunes (·, -, ., espacios) y normaliza a mayúsculas.
+ * No valida — solo convierte. La validación la hace `chileanPlateSchema`.
+ */
+export function normalizePlate(raw: string): string {
+  return raw.replace(/[\s\-·.]/g, '').toUpperCase();
+}
+
+/**
+ * `true` si `raw` (con o sin separadores, en cualquier capitalización) es una
+ * patente chilena con formato válido.
+ */
+export function isValidChileanPlate(raw: string): boolean {
+  return CANONICAL_PLATE_RE.test(normalizePlate(raw));
+}
+
+/**
+ * Formatea una patente canónica para display estético: `BCDF12` → `BC·DF·12`.
+ * Si el input no es una patente canónica, lo devuelve tal cual (defensivo —
+ * no queremos romper UI con datos legacy raros).
+ */
+export function formatPlateForDisplay(canonical: string): string {
+  if (!CANONICAL_PLATE_RE.test(canonical)) {
+    return canonical;
+  }
+  return `${canonical.slice(0, 2)}·${canonical.slice(2, 4)}·${canonical.slice(4)}`;
+}
+
+/**
+ * Schema Zod canónico para patentes chilenas. Acepta input con o sin
+ * separadores, lo normaliza a 6 caracteres `[A-Z0-9]` y rechaza si la
+ * estructura no matchea `[A-Z]{4}\d{2}`.
+ *
+ * Reemplaza el schema laxo previo que solo verificaba `min(4)` y caracteres
+ * alfanuméricos — y por eso aceptaba `....`, `XXX-99`, `1234`, etc.
+ */
+export const chileanPlateSchema = z
+  .string()
+  .min(1, 'Ingresa la patente')
+  .max(12, 'Patente demasiado larga')
+  .transform(normalizePlate)
+  .refine(
+    (canonical) => CANONICAL_PLATE_RE.test(canonical),
+    'Formato de patente inválido (ej: BCDF12 o AAAA12)',
+  );
