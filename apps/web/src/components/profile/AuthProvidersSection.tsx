@@ -8,8 +8,10 @@ import {
   linkPasswordProvider,
   reauthCurrent,
   unlinkProvider,
+  updatePasswordCurrent,
   useAuth,
 } from '../../hooks/use-auth.js';
+import { checkPasswordPolicy } from '../../lib/password.js';
 
 /**
  * Sección "Acceso a tu cuenta" en /perfil. Lista los providers de auth
@@ -73,18 +75,21 @@ function AuthProvidersBody({ user }: { user: User }) {
         />
 
         {hasPassword ? (
-          <ProviderRow
-            icon="password"
-            title="Email + contraseña"
-            description={`Vinculada con ${user.email}`}
-            status="linked"
-            canRemove={providers.length > 1}
-            onRemove={async () => {
-              await unlinkProvider(user, 'password');
-              await user.reload();
-              refresh();
-            }}
-          />
+          <>
+            <ProviderRow
+              icon="password"
+              title="Email + contraseña"
+              description={`Vinculada con ${user.email}`}
+              status="linked"
+              canRemove={providers.length > 1}
+              onRemove={async () => {
+                await unlinkProvider(user, 'password');
+                await user.reload();
+                refresh();
+              }}
+            />
+            <ChangePasswordForm user={user} />
+          </>
         ) : (
           <PasswordLinkForm
             user={user}
@@ -375,6 +380,237 @@ function PasswordLinkForm({
           )}
         </div>
       </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Form para cambiar la contraseña actual (solo si hasPassword=true)
+// ---------------------------------------------------------------------------
+
+function ChangePasswordForm({ user }: { user: User }) {
+  const [open, setOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+
+  function reset() {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setError(null);
+    setFieldErrors({});
+  }
+
+  function validate(): boolean {
+    const next: typeof fieldErrors = {};
+    if (!currentPassword) {
+      next.currentPassword = 'Ingresa tu contraseña actual.';
+    }
+    const policyError = checkPasswordPolicy(newPassword);
+    if (policyError) {
+      next.newPassword = policyError;
+    }
+    if (newPassword && confirmPassword !== newPassword) {
+      next.confirmPassword = 'No coincide con la nueva contraseña.';
+    }
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavedAt(null);
+    setError(null);
+    if (!validate()) {
+      return;
+    }
+    if (!user.email) {
+      setError('Tu cuenta no tiene un email asociado.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await reauthCurrent(user, {
+        type: 'password',
+        email: user.email,
+        password: currentPassword,
+      });
+      await updatePasswordCurrent(user, newPassword);
+      setSavedAt(new Date());
+      setOpen(false);
+      reset();
+    } catch (err) {
+      const code = (err as FirebaseError).code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setFieldErrors({ currentPassword: 'Contraseña actual incorrecta.' });
+      } else if (code === 'auth/weak-password') {
+        // Defensivo: la política Booster ya cubre esto, pero por si Firebase
+        // valida algo más estricto en el futuro.
+        setFieldErrors({ newPassword: 'Contraseña muy débil para Firebase.' });
+      } else {
+        setError(translateAuthError(code) ?? 'No pudimos cambiar la contraseña.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-neutral-100 text-neutral-600">
+              <KeyRound className="h-5 w-5" aria-hidden />
+            </div>
+            <div>
+              <div className="font-medium text-neutral-900">Cambiar contraseña</div>
+              <div className="mt-0.5 text-neutral-600 text-sm">
+                Vas a necesitar tu contraseña actual para confirmar.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100"
+          >
+            Cambiar
+          </button>
+        </div>
+        {savedAt && (
+          <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-2 text-sm text-success-700">
+            Contraseña actualizada.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-neutral-100 text-neutral-600">
+          <KeyRound className="h-5 w-5" aria-hidden />
+        </div>
+        <div>
+          <div className="font-medium text-neutral-900">Cambiar contraseña</div>
+          <div className="mt-0.5 text-neutral-600 text-sm">
+            Confirma tu contraseña actual y elige una nueva.
+          </div>
+        </div>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+        <PasswordField
+          id="cp-current"
+          label="Contraseña actual"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={setCurrentPassword}
+          error={fieldErrors.currentPassword}
+          disabled={busy}
+        />
+        <PasswordField
+          id="cp-new"
+          label="Nueva contraseña"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={setNewPassword}
+          error={fieldErrors.newPassword}
+          hint="Mínimo 8 caracteres, con mayúscula, minúscula y número."
+          disabled={busy}
+        />
+        <PasswordField
+          id="cp-confirm"
+          label="Confirmar nueva contraseña"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          error={fieldErrors.confirmPassword}
+          disabled={busy}
+        />
+        {error && (
+          <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm">
+            {error}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              reset();
+            }}
+            disabled={busy}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
+          >
+            {busy ? 'Cambiando…' : 'Cambiar contraseña'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  autoComplete,
+  error,
+  hint,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: 'current-password' | 'new-password';
+  error?: string | undefined;
+  hint?: string | undefined;
+  disabled?: boolean | undefined;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block font-medium text-neutral-700 text-sm">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        disabled={disabled}
+        className={`mt-1 block w-full rounded-md border px-3 py-2 text-neutral-900 text-sm shadow-xs focus:outline-none disabled:bg-neutral-50 ${
+          error
+            ? 'border-danger-500 focus:border-danger-500'
+            : 'border-neutral-300 focus:border-primary-500'
+        }`}
+      />
+      {hint && !error && <p className="mt-1 text-neutral-500 text-xs">{hint}</p>}
+      {error && (
+        <p className="mt-1 text-danger-700 text-xs" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

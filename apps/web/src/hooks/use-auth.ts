@@ -13,6 +13,7 @@ import {
   signInWithPopup,
   signOut,
   unlink,
+  updatePassword,
   updateProfile,
 } from 'firebase/auth';
 import { useEffect, useRef, useState } from 'react';
@@ -210,4 +211,20 @@ export async function reauthCurrent(
     const credential = EmailAuthProvider.credential(method.email, method.password);
     await reauthenticateWithCredential(user, credential);
   }
+}
+
+/**
+ * Cambia la contraseña del user actual. Requiere que el provider
+ * 'password' esté linkeado (Firebase rechaza con 'auth/no-such-provider'
+ * si solo está Google) y que la sesión sea reciente — el caller debe
+ * llamar a `reauthCurrent()` antes con la contraseña actual.
+ *
+ * Errores Firebase relevantes:
+ *   - 'auth/weak-password':           el caller validó mal antes (la
+ *                                     política Booster es 8+ chars).
+ *   - 'auth/requires-recent-login':   reauth fue hace > 5 min; reintentar
+ *                                     llamando a reauthCurrent primero.
+ */
+export async function updatePasswordCurrent(user: User, newPassword: string): Promise<void> {
+  await updatePassword(user, newPassword);
 }
