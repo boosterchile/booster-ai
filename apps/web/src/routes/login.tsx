@@ -1,7 +1,9 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import type { FirebaseError } from 'firebase/app';
 import { LogIn, Mail } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { FormField, inputClass } from '../components/FormField.js';
 import {
   requestPasswordReset,
   signInWithEmail,
@@ -11,6 +13,14 @@ import {
 } from '../hooks/use-auth.js';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
+
+interface LoginFormValues {
+  name: string;
+  email: string;
+  password: string;
+}
+
+const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
 
 /**
  * /login — pantalla de autenticación con tres flows:
@@ -25,25 +35,33 @@ export function LoginRoute() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('sign-in');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setError,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormValues>({
+    mode: 'onSubmit',
+    defaultValues: EMPTY_VALUES,
+  });
+
+  // Cambiar mode resetea el form y limpia mensajes en una sola operación.
+  // Más explícito que un useEffect con [mode] como deps.
+  function changeMode(next: Mode) {
+    setMode(next);
+    reset(EMPTY_VALUES);
+    setResetSent(false);
+  }
 
   if (user) {
     return <Navigate to="/app" />;
   }
 
-  function clearMsgs() {
-    setError(null);
-    setResetSent(false);
-  }
-
   async function handleGoogleSignIn() {
-    setBusy(true);
-    clearMsgs();
+    setResetSent(false);
     try {
       await signInWithGoogle();
       void navigate({ to: '/app' });
@@ -52,38 +70,61 @@ export function LoginRoute() {
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         return;
       }
-      setError(translateAuthError(code) ?? 'No pudimos iniciar sesión con Google.');
-    } finally {
-      setBusy(false);
+      setError('root', {
+        message: translateAuthError(code) ?? 'No pudimos iniciar sesión con Google.',
+      });
     }
   }
 
-  async function handleEmailSubmit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    clearMsgs();
+  /**
+   * Validación condicional según mode + ejecución del flow Firebase.
+   * Los 3 modos comparten email; sign-in/sign-up usan password adicional;
+   * sign-up usa también name. RHF default no tiene "schema condicional",
+   * validamos a mano antes de invocar Firebase.
+   */
+  async function submit(values: LoginFormValues) {
+    setResetSent(false);
+
+    const emailParsed = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email);
+    if (!emailParsed) {
+      setError('email', { type: 'manual', message: 'Email inválido.' });
+      return;
+    }
+
+    if (mode === 'sign-up' && !values.name.trim()) {
+      setError('name', { type: 'manual', message: 'Ingresa tu nombre.' });
+      return;
+    }
+
+    if (mode !== 'reset' && values.password.length < 6) {
+      setError('password', { type: 'manual', message: 'Mínimo 6 caracteres.' });
+      return;
+    }
+
     try {
       if (mode === 'sign-in') {
-        await signInWithEmail(email, password);
+        await signInWithEmail(values.email, values.password);
         void navigate({ to: '/app' });
       } else if (mode === 'sign-up') {
         await signUpWithEmail({
-          email,
-          password,
-          ...(name.trim() ? { displayName: name.trim() } : {}),
+          email: values.email,
+          password: values.password,
+          ...(values.name.trim() ? { displayName: values.name.trim() } : {}),
         });
         void navigate({ to: '/app' });
       } else {
-        await requestPasswordReset(email);
+        await requestPasswordReset(values.email);
         setResetSent(true);
       }
     } catch (err) {
       const code = (err as FirebaseError).code;
-      setError(translateAuthError(code) ?? 'No pudimos completar la operación.');
-    } finally {
-      setBusy(false);
+      setError('root', {
+        message: translateAuthError(code) ?? 'No pudimos completar la operación.',
+      });
     }
   }
+
+  const submittedEmail = resetSent ? document.getElementById('login-email') : null;
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
@@ -111,79 +152,79 @@ export function LoginRoute() {
                 : 'Plataforma de logística sostenible para empresas y transportistas en Chile.'}
           </p>
 
-          {error && (
+          {errors.root?.message && (
             <div
               role="alert"
               className="mt-6 rounded-md border border-danger-500/30 bg-danger-50 p-3 text-danger-700 text-sm"
             >
-              {error}
+              {errors.root.message}
             </div>
           )}
 
           {resetSent && (
             <output className="mt-6 block rounded-md border border-success-500/30 bg-success-50 p-3 text-sm text-success-700">
-              Listo. Si {email} existe, te llegó un email con el enlace para restablecer tu
-              contraseña.
+              Listo. Si {(submittedEmail as HTMLInputElement | null)?.value || 'el email'} existe,
+              te llegó un email con el enlace para restablecer tu contraseña.
             </output>
           )}
 
-          <form onSubmit={handleEmailSubmit} className="mt-6 space-y-4">
+          <form onSubmit={handleSubmit(submit)} className="mt-6 space-y-4" noValidate>
             {mode === 'sign-up' && (
-              <div>
-                <label htmlFor="name" className="block font-medium text-neutral-700 text-sm">
-                  Tu nombre
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  required
-                  className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none"
-                />
-              </div>
+              <FormField
+                label="Tu nombre"
+                required
+                error={errors.name?.message}
+                render={({ id, describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    autoComplete="name"
+                    {...register('name')}
+                    className={inputClass(!!errors.name)}
+                  />
+                )}
+              />
             )}
 
-            <div>
-              <label htmlFor="email" className="block font-medium text-neutral-700 text-sm">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-                className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none"
-              />
-            </div>
+            <FormField
+              label="Email"
+              required
+              error={errors.email?.message}
+              render={({ id, describedBy }) => (
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="email"
+                  autoComplete="email"
+                  {...register('email')}
+                  className={inputClass(!!errors.email)}
+                />
+              )}
+            />
 
             {mode !== 'reset' && (
-              <div>
-                <label htmlFor="password" className="block font-medium text-neutral-700 text-sm">
-                  Contraseña
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-                  required
-                  minLength={6}
-                  className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none"
-                />
-                {mode === 'sign-up' && (
-                  <p className="mt-1 text-neutral-500 text-xs">Mínimo 6 caracteres.</p>
+              <FormField
+                label="Contraseña"
+                required
+                hint={mode === 'sign-up' ? 'Mínimo 6 caracteres.' : undefined}
+                error={errors.password?.message}
+                render={({ id, describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="password"
+                    autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+                    {...register('password')}
+                    className={inputClass(!!errors.password)}
+                  />
                 )}
-              </div>
+              />
             )}
 
             <button
               type="submit"
-              disabled={busy || loading}
+              disabled={isSubmitting || loading}
               className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-500 px-4 py-3 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {mode === 'sign-up' ? (
@@ -196,7 +237,7 @@ export function LoginRoute() {
               ) : (
                 <>
                   <LogIn className="h-4 w-4" aria-hidden />
-                  {busy ? 'Conectando…' : 'Entrar'}
+                  {isSubmitting ? 'Conectando…' : 'Entrar'}
                 </>
               )}
             </button>
@@ -212,7 +253,7 @@ export function LoginRoute() {
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                disabled={busy || loading}
+                disabled={isSubmitting || loading}
                 className="flex w-full items-center justify-center gap-3 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-neutral-900 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Continuar con Google
@@ -227,10 +268,7 @@ export function LoginRoute() {
                   ¿Sin cuenta?{' '}
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode('sign-up');
-                      clearMsgs();
-                    }}
+                    onClick={() => changeMode('sign-up')}
                     className="font-medium text-primary-600 hover:underline"
                   >
                     Crea una
@@ -239,10 +277,7 @@ export function LoginRoute() {
                 <p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode('reset');
-                      clearMsgs();
-                    }}
+                    onClick={() => changeMode('reset')}
                     className="font-medium text-primary-600 hover:underline"
                   >
                     Olvidé mi contraseña
@@ -255,10 +290,7 @@ export function LoginRoute() {
                 ¿Ya tienes cuenta?{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('sign-in');
-                    clearMsgs();
-                  }}
+                  onClick={() => changeMode('sign-in')}
                   className="font-medium text-primary-600 hover:underline"
                 >
                   Inicia sesión
@@ -269,10 +301,7 @@ export function LoginRoute() {
               <p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('sign-in');
-                    clearMsgs();
-                  }}
+                  onClick={() => changeMode('sign-in')}
                   className="font-medium text-primary-600 hover:underline"
                 >
                   Volver al inicio de sesión

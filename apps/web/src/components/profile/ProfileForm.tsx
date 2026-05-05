@@ -1,9 +1,14 @@
 import { type ProfileUpdateInput, chileanPhoneSchema, rutSchema } from '@booster-ai/shared-schemas';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Save } from 'lucide-react';
-import { type FormEvent, type ReactNode, useId, useState } from 'react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { useProfileMutation } from '../../hooks/use-profile-mutation.js';
+import { useScrollToFirstError } from '../../hooks/use-scroll-to-first-error.js';
 import { ApiError } from '../../lib/api-client.js';
 import { formatRut } from '../../lib/rut.js';
+import { FormField, inputClass } from '../FormField.js';
 
 export interface ProfileFormProps {
   /** Datos actuales del usuario, vienen de useMe(). */
@@ -15,21 +20,50 @@ export interface ProfileFormProps {
   };
 }
 
-interface FieldErrors {
-  full_name?: string;
-  phone?: string;
-  whatsapp_e164?: string;
-  rut?: string;
-}
+/**
+ * Schema del FORM (no del API). El form maneja todos los campos como
+ * strings (incluso los opcionales del API que aquí pueden ser '' por
+ * default). Para enviar al API, en `onSubmit` se construye el patch
+ * parcial usando `dirtyFields` de RHF.
+ *
+ * Reglas:
+ *   - full_name: 1-200 chars (siempre presente).
+ *   - phone, whatsapp_e164: Chile-format si no vacíos. Vacío significa
+ *     "no enviar al API en el patch", lo cual está controlado por
+ *     dirtyFields y un guard en onSubmit.
+ *   - rut: igual al anterior, además solo se permite editar cuando
+ *     `initial.rut === null` (después es immutable).
+ */
+const profileFormSchema = z.object({
+  full_name: z
+    .string()
+    .min(1, 'El nombre debe tener entre 1 y 200 caracteres.')
+    .max(200, 'El nombre debe tener entre 1 y 200 caracteres.'),
+  phone: z
+    .string()
+    .refine(
+      (v) => v === '' || chileanPhoneSchema.safeParse(v).success,
+      'Número de teléfono Chile inválido',
+    ),
+  whatsapp_e164: z
+    .string()
+    .refine(
+      (v) => v === '' || chileanPhoneSchema.safeParse(v).success,
+      'Número de teléfono Chile inválido',
+    ),
+  rut: z.string().refine((v) => v === '' || rutSchema.safeParse(v).success, 'RUT inválido'),
+});
+
+type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 /**
  * Form de edición del perfil del usuario logueado.
  *
- * Validación manual (no zodResolver) porque los campos del schema son
- * opcionales y el form los maneja como strings; un resolver compartido
- * se complica con defaults vacíos. Cada campo se valida con su primitivo
- * de @booster-ai/shared-schemas (chileanPhoneSchema, rutSchema) y el
- * envío al api solo incluye los efectivamente cambiados.
+ * Implementación con react-hook-form + zodResolver, alineado al
+ * patrón establecido en `OnboardingForm`. El form valida cada campo
+ * con `mode: 'onBlur'` y, en submit, usa `dirtyFields` de RHF para
+ * construir un PATCH que solo incluya los campos efectivamente
+ * cambiados (la API rechaza updates "vacíos").
  *
  * El RUT se deshabilita si ya está declarado — la API lo trata como
  * inmutable. Si está null, dejamos que el usuario lo complete una vez.
@@ -38,80 +72,50 @@ export function ProfileForm({ initial }: ProfileFormProps) {
   const mutation = useProfileMutation();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
 
-  const [fullName, setFullName] = useState(initial.full_name);
-  const [phone, setPhone] = useState(initial.phone ?? '');
-  const [whatsappE164, setWhatsappE164] = useState(initial.whatsapp_e164 ?? '');
-  const [rut, setRut] = useState(initial.rut ?? '');
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, dirtyFields, isSubmitting, submitCount },
+  } = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileFormSchema),
+    mode: 'onBlur',
+    defaultValues: {
+      full_name: initial.full_name,
+      phone: initial.phone ?? '',
+      whatsapp_e164: initial.whatsapp_e164 ?? '',
+      rut: initial.rut ?? '',
+    },
+  });
 
-  const isDirty =
-    fullName !== initial.full_name ||
-    phone !== (initial.phone ?? '') ||
-    whatsappE164 !== (initial.whatsapp_e164 ?? '') ||
-    rut !== (initial.rut ?? '');
+  useScrollToFirstError(errors, submitCount);
 
-  function validateAndBuildPatch(): { patch: ProfileUpdateInput; errors: FieldErrors } {
-    const next: FieldErrors = {};
+  async function onSubmit(values: ProfileFormValues) {
+    setSavedAt(null);
     const patch: ProfileUpdateInput = {};
-
-    if (fullName !== initial.full_name) {
-      if (fullName.length < 1 || fullName.length > 200) {
-        next.full_name = 'El nombre debe tener entre 1 y 200 caracteres.';
-      } else {
-        patch.full_name = fullName;
+    if (dirtyFields.full_name) {
+      patch.full_name = values.full_name;
+    }
+    if (dirtyFields.phone && values.phone !== '') {
+      const parsed = chileanPhoneSchema.safeParse(values.phone);
+      if (parsed.success) {
+        patch.phone = parsed.data;
       }
     }
-
-    if (phone !== (initial.phone ?? '')) {
-      if (phone === '') {
-        next.phone = 'El teléfono no puede quedar vacío.';
-      } else {
-        const parsed = chileanPhoneSchema.safeParse(phone);
-        if (parsed.success) {
-          patch.phone = parsed.data;
-        } else {
-          next.phone = parsed.error.issues[0]?.message ?? 'Formato inválido';
-        }
+    if (dirtyFields.whatsapp_e164 && values.whatsapp_e164 !== '') {
+      const parsed = chileanPhoneSchema.safeParse(values.whatsapp_e164);
+      if (parsed.success) {
+        patch.whatsapp_e164 = parsed.data;
       }
     }
-
-    if (whatsappE164 !== (initial.whatsapp_e164 ?? '')) {
-      if (whatsappE164 === '') {
-        next.whatsapp_e164 = 'El WhatsApp no puede quedar vacío.';
-      } else {
-        const parsed = chileanPhoneSchema.safeParse(whatsappE164);
-        if (parsed.success) {
-          patch.whatsapp_e164 = parsed.data;
-        } else {
-          next.whatsapp_e164 = parsed.error.issues[0]?.message ?? 'Formato inválido';
-        }
-      }
-    }
-
-    if (rut !== (initial.rut ?? '') && initial.rut === null && rut !== '') {
-      const parsed = rutSchema.safeParse(rut);
+    if (dirtyFields.rut && values.rut !== '' && initial.rut === null) {
+      const parsed = rutSchema.safeParse(values.rut);
       if (parsed.success) {
         patch.rut = parsed.data;
-      } else {
-        next.rut = parsed.error.issues[0]?.message ?? 'RUT inválido';
       }
-    }
-
-    return { patch, errors: next };
-  }
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setSavedAt(null);
-    const { patch, errors: validationErrors } = validateAndBuildPatch();
-    setErrors(validationErrors);
-
-    if (Object.keys(validationErrors).length > 0) {
-      return;
     }
 
     if (Object.keys(patch).length === 0) {
-      // Nada que enviar (no-op visual).
+      // Nada que enviar (no-op visual, ej. usuario tipeó y revertió).
       setSavedAt(new Date());
       return;
     }
@@ -125,10 +129,11 @@ export function ProfileForm({ initial }: ProfileFormProps) {
   }
 
   const submissionError = mutation.error ? translateApiError(mutation.error) : null;
+  const rutDisabled = initial.rut !== null;
 
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit(onSubmit)}
       className="space-y-4 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
       noValidate
     >
@@ -139,28 +144,29 @@ export function ProfileForm({ initial }: ProfileFormProps) {
         </p>
       </div>
 
-      <Field
+      <FormField
         label="Nombre completo"
-        error={errors.full_name}
-        render={(id) => (
+        required
+        error={errors.full_name?.message}
+        render={({ id, describedBy }) => (
           <input
             id={id}
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
+            aria-describedby={describedBy}
+            {...register('full_name')}
             autoComplete="name"
             className={inputClass(!!errors.full_name)}
           />
         )}
       />
-      <Field
+      <FormField
         label="Teléfono móvil"
         hint="Formato +56 9 XXXX XXXX. Lo usamos para notificaciones críticas."
-        error={errors.phone}
-        render={(id) => (
+        error={errors.phone?.message}
+        render={({ id, describedBy }) => (
           <input
             id={id}
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            aria-describedby={describedBy}
+            {...register('phone')}
             type="tel"
             autoComplete="tel"
             inputMode="tel"
@@ -169,15 +175,15 @@ export function ProfileForm({ initial }: ProfileFormProps) {
           />
         )}
       />
-      <Field
+      <FormField
         label="WhatsApp"
         hint="Te enviaremos cada nueva oferta a este WhatsApp. Debe ser un celular chileno (+56 9...)."
-        error={errors.whatsapp_e164}
-        render={(id) => (
+        error={errors.whatsapp_e164?.message}
+        render={({ id, describedBy }) => (
           <input
             id={id}
-            value={whatsappE164}
-            onChange={(e) => setWhatsappE164(e.target.value)}
+            aria-describedby={describedBy}
+            {...register('whatsapp_e164')}
             type="tel"
             autoComplete="tel"
             inputMode="tel"
@@ -186,22 +192,25 @@ export function ProfileForm({ initial }: ProfileFormProps) {
           />
         )}
       />
-      <Field
+      <FormField
         label="RUT"
         hint={
-          initial.rut === null
-            ? 'Tu RUT personal. Una vez declarado no se puede modificar desde aquí.'
-            : 'Tu RUT no se puede modificar. Si necesitas cambiarlo, contacta a soporte.'
+          rutDisabled
+            ? 'Tu RUT no se puede modificar. Si necesitas cambiarlo, contacta a soporte.'
+            : 'Tu RUT personal. Una vez declarado no se puede modificar desde aquí.'
         }
-        error={errors.rut}
-        render={(id) => (
+        error={errors.rut?.message}
+        render={({ id, describedBy }) => (
           <input
             id={id}
-            value={initial.rut !== null ? formatRut(rut) : rut}
-            onChange={(e) => setRut(e.target.value)}
+            aria-describedby={describedBy}
+            {...register('rut')}
+            // Cuando está disabled mostramos el RUT formateado con puntos.
+            // Cuando está editable dejamos el valor crudo para no pelear con el cursor.
+            value={rutDisabled ? formatRut(initial.rut ?? '') : undefined}
             autoComplete="off"
             placeholder="12.345.678-9"
-            disabled={initial.rut !== null}
+            disabled={rutDisabled}
             className={`${inputClass(!!errors.rut)} disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500`}
           />
         )}
@@ -223,7 +232,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       <div className="flex items-center justify-end">
         <button
           type="submit"
-          disabled={mutation.isPending || !isDirty}
+          disabled={isSubmitting || mutation.isPending}
           className="flex items-center gap-2 rounded-md bg-primary-500 px-5 py-2.5 font-medium text-sm text-white shadow-xs transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save className="h-4 w-4" aria-hidden />
@@ -232,37 +241,6 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       </div>
     </form>
   );
-}
-
-function Field(props: {
-  label: string;
-  hint?: string;
-  error?: string | undefined;
-  render: (inputId: string) => ReactNode;
-}) {
-  const id = useId();
-  return (
-    <div>
-      <label htmlFor={id} className="block font-medium text-neutral-700 text-sm">
-        {props.label}
-      </label>
-      <div className="mt-1">{props.render(id)}</div>
-      {props.hint && !props.error && <p className="mt-1 text-neutral-500 text-xs">{props.hint}</p>}
-      {props.error && (
-        <p className="mt-1 text-danger-700 text-xs" role="alert">
-          {props.error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function inputClass(hasError: boolean) {
-  return `block w-full rounded-md border px-3 py-2 text-neutral-900 text-sm shadow-xs focus:outline-none ${
-    hasError
-      ? 'border-danger-500 focus:border-danger-500'
-      : 'border-neutral-300 focus:border-primary-500'
-  }`;
 }
 
 function translateApiError(err: ApiError): string {

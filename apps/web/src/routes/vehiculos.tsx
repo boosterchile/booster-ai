@@ -15,12 +15,15 @@ import {
   Trash2,
   Truck,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -641,155 +644,176 @@ function VehicleForm({
   error: string | null;
   disabled?: boolean;
 }) {
-  const [values, setValues] = useState<VehicleFormValues>(initial ?? EMPTY_FORM);
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof VehicleFormValues, string>>>(
-    {},
-  );
+  const {
+    register,
+    handleSubmit,
+    setError,
+    watch,
+    formState: { errors, submitCount },
+  } = useForm<VehicleFormValues>({
+    mode: 'onSubmit',
+    defaultValues: initial ?? EMPTY_FORM,
+  });
 
-  function update<K extends keyof VehicleFormValues>(key: K, val: VehicleFormValues[K]) {
-    setValues((prev) => ({ ...prev, [key]: val }));
-    // Limpia el error del field al editarlo — feedback positivo sin
-    // re-validar todo el form en cada keystroke.
-    setFieldErrors((prev) => {
-      if (!prev[key]) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  }
+  useScrollToFirstError(errors, submitCount);
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    // Validación cliente: la patente es la única regla compleja. Capacidad,
-    // tipo, etc. quedan cubiertos por los attributes HTML5 (`required`,
-    // `min`, `max`). Si el servidor encuentra otros issues vía Zod, los
-    // muestra el mutation handler de la mutación (`error` prop).
+  const vehicleStatus = watch('vehicle_status');
+
+  /**
+   * Validación cliente: la patente es la única regla compleja.
+   * Capacidad, tipo, etc. quedan cubiertos por los attributes HTML5
+   * (`required`, `min`, `max`). Si el servidor encuentra otros issues
+   * vía Zod, los muestra el mutation handler de la mutación (`error` prop).
+   */
+  function submit(values: VehicleFormValues) {
     const plateResult = chileanPlateSchema.safeParse(values.plate);
     if (!plateResult.success) {
       const message = plateResult.error.issues[0]?.message ?? 'Patente inválida';
-      setFieldErrors({ plate: message });
+      setError('plate', { type: 'manual', message });
       return;
     }
-    setFieldErrors({});
     onSubmit(values);
   }
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={handleSubmit(submit)}
       className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+      noValidate
     >
       <fieldset disabled={disabled} className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Patente *" htmlFor="plate" error={fieldErrors.plate}>
-            <input
-              id="plate"
-              type="text"
-              required
-              value={values.plate}
-              onChange={(e) => update('plate', e.target.value)}
-              className={inputClass}
-              placeholder="BC·DF·12 o BCDF12"
-              maxLength={12}
-              aria-invalid={fieldErrors.plate ? true : undefined}
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </Field>
+          <FormField
+            label="Patente"
+            required
+            error={errors.plate?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                {...register('plate')}
+                className={fieldInputClass(!!errors.plate)}
+                placeholder="BC·DF·12 o BCDF12"
+                maxLength={12}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            )}
+          />
 
-          <Field label="Tipo de vehículo *" htmlFor="vehicle_type">
-            <select
-              id="vehicle_type"
-              required
-              value={values.vehicle_type}
-              onChange={(e) => update('vehicle_type', e.target.value as VehicleType)}
-              className={inputClass}
-            >
-              {(Object.keys(VEHICLE_TYPE_LABELS) as VehicleType[]).map((t) => (
-                <option key={t} value={t}>
-                  {VEHICLE_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <FormField
+            label="Tipo de vehículo"
+            required
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('vehicle_type')}
+                className={fieldInputClass(!!errors.vehicle_type)}
+              >
+                {(Object.keys(VEHICLE_TYPE_LABELS) as VehicleType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {VEHICLE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
 
-          <Field label="Capacidad (kg) *" htmlFor="capacity_kg">
-            <input
-              id="capacity_kg"
-              type="number"
-              min={1}
-              max={100_000}
-              required
-              value={values.capacity_kg}
-              onChange={(e) => update('capacity_kg', e.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <FormField
+            label="Capacidad (kg)"
+            required
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={1}
+                max={100_000}
+                {...register('capacity_kg')}
+                className={fieldInputClass(!!errors.capacity_kg)}
+              />
+            )}
+          />
 
-          <Field label="Capacidad (m³)" htmlFor="capacity_m3">
-            <input
-              id="capacity_m3"
-              type="number"
-              min={1}
-              max={500}
-              value={values.capacity_m3}
-              onChange={(e) => update('capacity_m3', e.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <FormField
+            label="Capacidad (m³)"
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={1}
+                max={500}
+                {...register('capacity_m3')}
+                className={fieldInputClass(!!errors.capacity_m3)}
+              />
+            )}
+          />
 
-          <Field label="Año" htmlFor="year">
-            <input
-              id="year"
-              type="number"
-              min={1980}
-              max={2100}
-              value={values.year}
-              onChange={(e) => update('year', e.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <FormField
+            label="Año"
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={1980}
+                max={2100}
+                {...register('year')}
+                className={fieldInputClass(!!errors.year)}
+              />
+            )}
+          />
 
-          <Field label="Combustible" htmlFor="fuel_type">
-            <select
-              id="fuel_type"
-              value={values.fuel_type}
-              onChange={(e) => update('fuel_type', e.target.value as '' | FuelType)}
-              className={inputClass}
-            >
-              <option value="">— Sin especificar —</option>
-              {(Object.keys(FUEL_TYPE_LABELS) as FuelType[]).map((f) => (
-                <option key={f} value={f}>
-                  {FUEL_TYPE_LABELS[f]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <FormField
+            label="Combustible"
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('fuel_type')}
+                className={fieldInputClass(!!errors.fuel_type)}
+              >
+                <option value="">— Sin especificar —</option>
+                {(Object.keys(FUEL_TYPE_LABELS) as FuelType[]).map((f) => (
+                  <option key={f} value={f}>
+                    {FUEL_TYPE_LABELS[f]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
 
-          <Field label="Marca" htmlFor="brand">
-            <input
-              id="brand"
-              type="text"
-              value={values.brand}
-              onChange={(e) => update('brand', e.target.value)}
-              className={inputClass}
-              maxLength={50}
-            />
-          </Field>
+          <FormField
+            label="Marca"
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                {...register('brand')}
+                className={fieldInputClass(!!errors.brand)}
+                maxLength={50}
+              />
+            )}
+          />
 
-          <Field label="Modelo" htmlFor="model">
-            <input
-              id="model"
-              type="text"
-              value={values.model}
-              onChange={(e) => update('model', e.target.value)}
-              className={inputClass}
-              maxLength={100}
-            />
-          </Field>
+          <FormField
+            label="Modelo"
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                {...register('model')}
+                className={fieldInputClass(!!errors.model)}
+                maxLength={100}
+              />
+            )}
+          />
         </div>
 
         <details className="rounded-md border border-neutral-200 p-3">
@@ -797,47 +821,56 @@ function VehicleForm({
             Datos avanzados (huella de carbono)
           </summary>
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Peso vacío (kg)" htmlFor="curb_weight_kg">
-              <input
-                id="curb_weight_kg"
-                type="number"
-                min={1}
-                max={50_000}
-                value={values.curb_weight_kg}
-                onChange={(e) => update('curb_weight_kg', e.target.value)}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Consumo base (L / 100 km)" htmlFor="consumption_l_per_100km_baseline">
-              <input
-                id="consumption_l_per_100km_baseline"
-                type="number"
-                step="0.01"
-                min={0.1}
-                max={99.99}
-                value={values.consumption_l_per_100km_baseline}
-                onChange={(e) => update('consumption_l_per_100km_baseline', e.target.value)}
-                className={inputClass}
-              />
-            </Field>
+            <FormField
+              label="Peso vacío (kg)"
+              render={({ id, describedBy }) => (
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="number"
+                  min={1}
+                  max={50_000}
+                  {...register('curb_weight_kg')}
+                  className={fieldInputClass(!!errors.curb_weight_kg)}
+                />
+              )}
+            />
+            <FormField
+              label="Consumo base (L / 100 km)"
+              render={({ id, describedBy }) => (
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="number"
+                  step="0.01"
+                  min={0.1}
+                  max={99.99}
+                  {...register('consumption_l_per_100km_baseline')}
+                  className={fieldInputClass(!!errors.consumption_l_per_100km_baseline)}
+                />
+              )}
+            />
           </div>
         </details>
 
-        {mode === 'edit' && values.vehicle_status && (
-          <Field label="Estado" htmlFor="vehicle_status">
-            <select
-              id="vehicle_status"
-              value={values.vehicle_status}
-              onChange={(e) => update('vehicle_status', e.target.value as VehicleStatus)}
-              className={inputClass}
-            >
-              {(Object.keys(STATUS_LABELS) as VehicleStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </Field>
+        {mode === 'edit' && vehicleStatus && (
+          <FormField
+            label="Estado"
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('vehicle_status')}
+                className={fieldInputClass(!!errors.vehicle_status)}
+              >
+                {(Object.keys(STATUS_LABELS) as VehicleStatus[]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
         )}
 
         {error && (
@@ -883,33 +916,6 @@ function NoPermission() {
       <Link to="/app/vehiculos" className="mt-4 inline-block text-primary-600 underline">
         Volver a la lista
       </Link>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  error,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  children: ReactNode;
-}) {
-  const errorId = error ? `${htmlFor}-error` : undefined;
-  return (
-    <div>
-      <label htmlFor={htmlFor} className="block font-medium text-neutral-700 text-sm">
-        {label}
-      </label>
-      <div className="mt-1">{children}</div>
-      {error && (
-        <p id={errorId} role="alert" className="mt-1 text-danger-600 text-sm">
-          {error}
-        </p>
-      )}
     </div>
   );
 }
@@ -1125,6 +1131,3 @@ function TelemetriaSection({ vehicleId }: { vehicleId: string }) {
     </section>
   );
 }
-
-const inputClass =
-  'block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none';

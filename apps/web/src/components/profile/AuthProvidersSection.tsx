@@ -1,7 +1,10 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { FirebaseError } from 'firebase/app';
 import type { User } from 'firebase/auth';
 import { Check, KeyRound, Mail, Plus, Shield, Trash2 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import {
   getLinkedProviders,
   linkGoogleProvider,
@@ -11,7 +14,8 @@ import {
   updatePasswordCurrent,
   useAuth,
 } from '../../hooks/use-auth.js';
-import { checkPasswordPolicy } from '../../lib/password.js';
+import { passwordPolicySchema } from '../../lib/password.js';
+import { FormField, inputClass } from '../FormField.js';
 
 /**
  * Sección "Acceso a tu cuenta" en /perfil. Lista los providers de auth
@@ -207,6 +211,13 @@ function ProviderRow({
 // Form para linkear email+password (inline cuando no está linkeado)
 // ---------------------------------------------------------------------------
 
+const passwordLinkSchema = z.object({
+  email: z.string().email('Email inválido.'),
+  password: z.string().min(6, 'Mínimo 6 caracteres.'),
+});
+
+type PasswordLinkValues = z.infer<typeof passwordLinkSchema>;
+
 function PasswordLinkForm({
   user,
   defaultEmail,
@@ -217,54 +228,62 @@ function PasswordLinkForm({
   onLinked: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState(defaultEmail);
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [needsReauth, setNeedsReauth] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    setError,
+    getValues,
+    reset,
+  } = useForm<PasswordLinkValues>({
+    resolver: zodResolver(passwordLinkSchema),
+    mode: 'onBlur',
+    defaultValues: { email: defaultEmail, password: '' },
+  });
+
+  function closeAndReset() {
+    setOpen(false);
+    setNeedsReauth(false);
+    reset({ email: defaultEmail, password: '' });
+  }
+
+  async function onSubmit(values: PasswordLinkValues) {
     try {
-      await linkPasswordProvider(user, email, password);
+      await linkPasswordProvider(user, values.email, values.password);
       await user.reload();
       onLinked();
-      setOpen(false);
-      setPassword('');
+      closeAndReset();
     } catch (err) {
       const code = (err as FirebaseError).code;
       if (code === 'auth/requires-recent-login') {
         setNeedsReauth(true);
-        setError(
-          'Por seguridad necesitamos confirmar tu identidad. Hacé click en "Re-autenticar" para continuar.',
-        );
+        setError('root', {
+          message:
+            'Por seguridad necesitamos confirmar tu identidad. Hacé click en "Re-autenticar" para continuar.',
+        });
       } else {
-        setError(translateAuthError(code) ?? 'No pudimos vincular email + contraseña.');
+        setError('root', {
+          message: translateAuthError(code) ?? 'No pudimos vincular email + contraseña.',
+        });
       }
-    } finally {
-      setBusy(false);
     }
   }
 
   async function handleReauth() {
-    setBusy(true);
-    setError(null);
     try {
       await reauthCurrent(user, { type: 'google' });
       setNeedsReauth(false);
-      // Reintentar link
+      // Reintentar link con los valores actuales del form.
+      const { email, password } = getValues();
       await linkPasswordProvider(user, email, password);
       await user.reload();
       onLinked();
-      setOpen(false);
-      setPassword('');
+      closeAndReset();
     } catch (err) {
       const code = (err as FirebaseError).code;
-      setError(translateAuthError(code) ?? 'No pudimos re-autenticar.');
-    } finally {
-      setBusy(false);
+      setError('root', { message: translateAuthError(code) ?? 'No pudimos re-autenticar.' });
     }
   }
 
@@ -309,53 +328,50 @@ function PasswordLinkForm({
           </div>
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <label htmlFor="link-email" className="block font-medium text-neutral-700 text-sm">
-            Email
-          </label>
-          <input
-            id="link-email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={busy}
-            className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none disabled:bg-neutral-50"
-          />
-        </div>
-        <div>
-          <label htmlFor="link-password" className="block font-medium text-neutral-700 text-sm">
-            Contraseña nueva
-          </label>
-          <input
-            id="link-password"
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-            autoComplete="new-password"
-            className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-neutral-900 text-sm shadow-xs focus:border-primary-500 focus:outline-none disabled:bg-neutral-50"
-          />
-          <p className="mt-1 text-neutral-500 text-xs">Mínimo 6 caracteres.</p>
-        </div>
-        {error && (
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+        <FormField
+          label="Email"
+          required
+          error={errors.email?.message}
+          render={({ id, describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="email"
+              autoComplete="email"
+              disabled={isSubmitting}
+              {...register('email')}
+              className={`${inputClass(!!errors.email)} disabled:bg-neutral-50`}
+            />
+          )}
+        />
+        <FormField
+          label="Contraseña nueva"
+          required
+          hint="Mínimo 6 caracteres."
+          error={errors.password?.message}
+          render={({ id, describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="password"
+              autoComplete="new-password"
+              disabled={isSubmitting}
+              {...register('password')}
+              className={`${inputClass(!!errors.password)} disabled:bg-neutral-50`}
+            />
+          )}
+        />
+        {errors.root?.message && (
           <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm">
-            {error}
+            {errors.root.message}
           </div>
         )}
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => {
-              setOpen(false);
-              setError(null);
-              setPassword('');
-              setNeedsReauth(false);
-            }}
-            disabled={busy}
+            onClick={closeAndReset}
+            disabled={isSubmitting}
             className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:opacity-50"
           >
             Cancelar
@@ -364,7 +380,7 @@ function PasswordLinkForm({
             <button
               type="button"
               onClick={() => void handleReauth()}
-              disabled={busy}
+              disabled={isSubmitting}
               className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
             >
               Re-autenticar y vincular
@@ -372,10 +388,10 @@ function PasswordLinkForm({
           ) : (
             <button
               type="submit"
-              disabled={busy}
+              disabled={isSubmitting}
               className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
             >
-              {busy ? 'Vinculando…' : 'Vincular'}
+              {isSubmitting ? 'Vinculando…' : 'Vincular'}
             </button>
           )}
         </div>
@@ -388,79 +404,68 @@ function PasswordLinkForm({
 // Form para cambiar la contraseña actual (solo si hasPassword=true)
 // ---------------------------------------------------------------------------
 
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Ingresa tu contraseña actual.'),
+    newPassword: passwordPolicySchema,
+    confirmPassword: z.string(),
+  })
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'No coincide con la nueva contraseña.',
+  });
+
+type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
+
 function ChangePasswordForm({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{
-    currentPassword?: string;
-    newPassword?: string;
-    confirmPassword?: string;
-  }>({});
 
-  function reset() {
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setError(null);
-    setFieldErrors({});
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    setError,
+    reset,
+  } = useForm<ChangePasswordValues>({
+    resolver: zodResolver(changePasswordSchema),
+    mode: 'onBlur',
+    defaultValues: { currentPassword: '', newPassword: '', confirmPassword: '' },
+  });
+
+  function closeAndReset() {
+    setOpen(false);
+    reset({ currentPassword: '', newPassword: '', confirmPassword: '' });
   }
 
-  function validate(): boolean {
-    const next: typeof fieldErrors = {};
-    if (!currentPassword) {
-      next.currentPassword = 'Ingresa tu contraseña actual.';
-    }
-    const policyError = checkPasswordPolicy(newPassword);
-    if (policyError) {
-      next.newPassword = policyError;
-    }
-    if (newPassword && confirmPassword !== newPassword) {
-      next.confirmPassword = 'No coincide con la nueva contraseña.';
-    }
-    setFieldErrors(next);
-    return Object.keys(next).length === 0;
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function onSubmit(values: ChangePasswordValues) {
     setSavedAt(null);
-    setError(null);
-    if (!validate()) {
-      return;
-    }
     if (!user.email) {
-      setError('Tu cuenta no tiene un email asociado.');
+      setError('root', { message: 'Tu cuenta no tiene un email asociado.' });
       return;
     }
-    setBusy(true);
     try {
       await reauthCurrent(user, {
         type: 'password',
         email: user.email,
-        password: currentPassword,
+        password: values.currentPassword,
       });
-      await updatePasswordCurrent(user, newPassword);
+      await updatePasswordCurrent(user, values.newPassword);
       setSavedAt(new Date());
-      setOpen(false);
-      reset();
+      closeAndReset();
     } catch (err) {
       const code = (err as FirebaseError).code;
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        setFieldErrors({ currentPassword: 'Contraseña actual incorrecta.' });
+        setError('currentPassword', { message: 'Contraseña actual incorrecta.' });
       } else if (code === 'auth/weak-password') {
         // Defensivo: la política Booster ya cubre esto, pero por si Firebase
         // valida algo más estricto en el futuro.
-        setFieldErrors({ newPassword: 'Contraseña muy débil para Firebase.' });
+        setError('newPassword', { message: 'Contraseña muy débil para Firebase.' });
       } else {
-        setError(translateAuthError(code) ?? 'No pudimos cambiar la contraseña.');
+        setError('root', {
+          message: translateAuthError(code) ?? 'No pudimos cambiar la contraseña.',
+        });
       }
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -509,108 +514,79 @@ function ChangePasswordForm({ user }: { user: User }) {
           </div>
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-        <PasswordField
-          id="cp-current"
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
+        <FormField
           label="Contraseña actual"
-          autoComplete="current-password"
-          value={currentPassword}
-          onChange={setCurrentPassword}
-          error={fieldErrors.currentPassword}
-          disabled={busy}
+          required
+          error={errors.currentPassword?.message}
+          render={({ id, describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="password"
+              autoComplete="current-password"
+              disabled={isSubmitting}
+              {...register('currentPassword')}
+              className={`${inputClass(!!errors.currentPassword)} disabled:bg-neutral-50`}
+            />
+          )}
         />
-        <PasswordField
-          id="cp-new"
+        <FormField
           label="Nueva contraseña"
-          autoComplete="new-password"
-          value={newPassword}
-          onChange={setNewPassword}
-          error={fieldErrors.newPassword}
+          required
           hint="Mínimo 8 caracteres, con mayúscula, minúscula y número."
-          disabled={busy}
+          error={errors.newPassword?.message}
+          render={({ id, describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="password"
+              autoComplete="new-password"
+              disabled={isSubmitting}
+              {...register('newPassword')}
+              className={`${inputClass(!!errors.newPassword)} disabled:bg-neutral-50`}
+            />
+          )}
         />
-        <PasswordField
-          id="cp-confirm"
+        <FormField
           label="Confirmar nueva contraseña"
-          autoComplete="new-password"
-          value={confirmPassword}
-          onChange={setConfirmPassword}
-          error={fieldErrors.confirmPassword}
-          disabled={busy}
+          required
+          error={errors.confirmPassword?.message}
+          render={({ id, describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="password"
+              autoComplete="new-password"
+              disabled={isSubmitting}
+              {...register('confirmPassword')}
+              className={`${inputClass(!!errors.confirmPassword)} disabled:bg-neutral-50`}
+            />
+          )}
         />
-        {error && (
+        {errors.root?.message && (
           <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm">
-            {error}
+            {errors.root.message}
           </div>
         )}
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => {
-              setOpen(false);
-              reset();
-            }}
-            disabled={busy}
+            onClick={closeAndReset}
+            disabled={isSubmitting}
             className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-100 disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="submit"
-            disabled={busy}
+            disabled={isSubmitting}
             className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white transition hover:bg-primary-700 disabled:opacity-50"
           >
-            {busy ? 'Cambiando…' : 'Cambiar contraseña'}
+            {isSubmitting ? 'Cambiando…' : 'Cambiar contraseña'}
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function PasswordField({
-  id,
-  label,
-  value,
-  onChange,
-  autoComplete,
-  error,
-  hint,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete: 'current-password' | 'new-password';
-  error?: string | undefined;
-  hint?: string | undefined;
-  disabled?: boolean | undefined;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block font-medium text-neutral-700 text-sm">
-        {label}
-      </label>
-      <input
-        id={id}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        disabled={disabled}
-        className={`mt-1 block w-full rounded-md border px-3 py-2 text-neutral-900 text-sm shadow-xs focus:outline-none disabled:bg-neutral-50 ${
-          error
-            ? 'border-danger-500 focus:border-danger-500'
-            : 'border-neutral-300 focus:border-primary-500'
-        }`}
-      />
-      {hint && !error && <p className="mt-1 text-neutral-500 text-xs">{hint}</p>}
-      {error && (
-        <p className="mt-1 text-danger-700 text-xs" role="alert">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

@@ -12,12 +12,15 @@ import {
   Package,
   Plus,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
 import {
   CertDisabledError,
@@ -795,188 +798,198 @@ function TripForm({
   submitting: boolean;
   error: string | null;
 }) {
-  const [values, setValues] = useState<TripFormValues>(EMPTY_FORM);
-  const [fieldErrors, setFieldErrors] = useState<TripFieldErrors>({});
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, submitCount },
+  } = useForm<TripFormValues>({
+    mode: 'onSubmit',
+    defaultValues: EMPTY_FORM,
+  });
 
-  function update<K extends keyof TripFormValues>(key: K, val: TripFormValues[K]) {
-    setValues((prev) => ({ ...prev, [key]: val }));
-    // Limpia el error del field al editarlo — feedback positivo sin
-    // re-validar todo el form en cada keystroke.
-    setFieldErrors((prev) => {
-      if (!prev[key]) {
-        return prev;
+  useScrollToFirstError(errors, submitCount);
+
+  /**
+   * Validación pre-submit: usa el helper canónico `validateTripForm` que
+   * convierte el form a body API y valida contra `tripRequestCreateInputSchema`.
+   * Si hay errores, los inyecta a RHF vía `setError` para que cada FormField
+   * muestre el mensaje. No se usa zodResolver porque la validación canónica
+   * trabaja sobre la estructura ANIDADA del API y necesitaríamos un mapping
+   * complejo en superRefine — el helper actual ya hace ese mapping.
+   */
+  function submit(values: TripFormValues) {
+    const fieldErrors = validateTripForm(values);
+    if (fieldErrors) {
+      for (const [field, message] of Object.entries(fieldErrors)) {
+        if (message) {
+          setError(field as keyof TripFormValues, { type: 'manual', message });
+        }
       }
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  }
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const errors = validateTripForm(values);
-    if (errors) {
-      setFieldErrors(errors);
       return;
     }
-    setFieldErrors({});
     onSubmit(values);
   }
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={handleSubmit(submit)}
       className="space-y-8 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+      noValidate
     >
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Origen</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field
-            label="Dirección de recogida *"
-            htmlFor="origin_address_raw"
-            error={fieldErrors.origin_address_raw}
-          >
-            <input
-              id="origin_address_raw"
-              type="text"
-              required
-              value={values.origin_address_raw}
-              onChange={(e) => update('origin_address_raw', e.target.value)}
-              className={inputClass}
-              placeholder="Av. Apoquindo 5550, Las Condes"
-              maxLength={500}
-              aria-invalid={fieldErrors.origin_address_raw ? true : undefined}
-            />
-          </Field>
-          <Field
-            label="Región *"
-            htmlFor="origin_region_code"
-            error={fieldErrors.origin_region_code}
-          >
-            <select
-              id="origin_region_code"
-              required
-              value={values.origin_region_code}
-              onChange={(e) => update('origin_region_code', e.target.value as RegionCode | '')}
-              className={inputClass}
-              aria-invalid={fieldErrors.origin_region_code ? true : undefined}
-            >
-              <option value="">— Seleccionar —</option>
-              {REGION_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {REGION_LABELS[r]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <FormField
+            label="Dirección de recogida"
+            required
+            error={errors.origin_address_raw?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                {...register('origin_address_raw')}
+                className={fieldInputClass(!!errors.origin_address_raw)}
+                placeholder="Av. Apoquindo 5550, Las Condes"
+                maxLength={500}
+              />
+            )}
+          />
+          <FormField
+            label="Región"
+            required
+            error={errors.origin_region_code?.message}
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('origin_region_code')}
+                className={fieldInputClass(!!errors.origin_region_code)}
+              >
+                <option value="">— Seleccionar —</option>
+                {REGION_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {REGION_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
         </div>
       </section>
 
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Destino</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field
-            label="Dirección de entrega *"
-            htmlFor="destination_address_raw"
-            error={fieldErrors.destination_address_raw}
-          >
-            <input
-              id="destination_address_raw"
-              type="text"
-              required
-              value={values.destination_address_raw}
-              onChange={(e) => update('destination_address_raw', e.target.value)}
-              className={inputClass}
-              placeholder="Concepción centro"
-              maxLength={500}
-              aria-invalid={fieldErrors.destination_address_raw ? true : undefined}
-            />
-          </Field>
-          <Field
-            label="Región *"
-            htmlFor="destination_region_code"
-            error={fieldErrors.destination_region_code}
-          >
-            <select
-              id="destination_region_code"
-              required
-              value={values.destination_region_code}
-              onChange={(e) => update('destination_region_code', e.target.value as RegionCode | '')}
-              className={inputClass}
-              aria-invalid={fieldErrors.destination_region_code ? true : undefined}
-            >
-              <option value="">— Seleccionar —</option>
-              {REGION_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {REGION_LABELS[r]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <FormField
+            label="Dirección de entrega"
+            required
+            error={errors.destination_address_raw?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                {...register('destination_address_raw')}
+                className={fieldInputClass(!!errors.destination_address_raw)}
+                placeholder="Concepción centro"
+                maxLength={500}
+              />
+            )}
+          />
+          <FormField
+            label="Región"
+            required
+            error={errors.destination_region_code?.message}
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('destination_region_code')}
+                className={fieldInputClass(!!errors.destination_region_code)}
+              >
+                <option value="">— Seleccionar —</option>
+                {REGION_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {REGION_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
         </div>
       </section>
 
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Carga</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Tipo de carga *" htmlFor="cargo_type" error={fieldErrors.cargo_type}>
-            <select
-              id="cargo_type"
-              required
-              value={values.cargo_type}
-              onChange={(e) => update('cargo_type', e.target.value as CargoType)}
-              className={inputClass}
-              aria-invalid={fieldErrors.cargo_type ? true : undefined}
-            >
-              {(Object.keys(CARGO_TYPE_LABELS) as CargoType[]).map((t) => (
-                <option key={t} value={t}>
-                  {CARGO_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Peso (kg) *" htmlFor="cargo_weight_kg" error={fieldErrors.cargo_weight_kg}>
-            <input
-              id="cargo_weight_kg"
-              type="number"
-              min={1}
-              max={100_000}
-              required
-              value={values.cargo_weight_kg}
-              onChange={(e) => update('cargo_weight_kg', e.target.value)}
-              className={inputClass}
-              aria-invalid={fieldErrors.cargo_weight_kg ? true : undefined}
-            />
-          </Field>
-          <Field label="Volumen (m³)" htmlFor="cargo_volume_m3" error={fieldErrors.cargo_volume_m3}>
-            <input
-              id="cargo_volume_m3"
-              type="number"
-              min={1}
-              max={200}
-              value={values.cargo_volume_m3}
-              onChange={(e) => update('cargo_volume_m3', e.target.value)}
-              className={inputClass}
-              aria-invalid={fieldErrors.cargo_volume_m3 ? true : undefined}
-            />
-          </Field>
-          <div className="sm:col-span-2">
-            <Field
-              label="Descripción"
-              htmlFor="cargo_description"
-              error={fieldErrors.cargo_description}
-            >
-              <textarea
-                id="cargo_description"
-                rows={2}
-                value={values.cargo_description}
-                onChange={(e) => update('cargo_description', e.target.value)}
-                className={inputClass}
-                maxLength={1000}
-                placeholder="Detalles relevantes para el transportista (opcional)"
-                aria-invalid={fieldErrors.cargo_description ? true : undefined}
+          <FormField
+            label="Tipo de carga"
+            required
+            error={errors.cargo_type?.message}
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('cargo_type')}
+                className={fieldInputClass(!!errors.cargo_type)}
+              >
+                {(Object.keys(CARGO_TYPE_LABELS) as CargoType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {CARGO_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+          <FormField
+            label="Peso (kg)"
+            required
+            error={errors.cargo_weight_kg?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={1}
+                max={100_000}
+                {...register('cargo_weight_kg')}
+                className={fieldInputClass(!!errors.cargo_weight_kg)}
               />
-            </Field>
+            )}
+          />
+          <FormField
+            label="Volumen (m³)"
+            error={errors.cargo_volume_m3?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={1}
+                max={200}
+                {...register('cargo_volume_m3')}
+                className={fieldInputClass(!!errors.cargo_volume_m3)}
+              />
+            )}
+          />
+          <div className="sm:col-span-2">
+            <FormField
+              label="Descripción"
+              error={errors.cargo_description?.message}
+              render={({ id, describedBy }) => (
+                <textarea
+                  id={id}
+                  aria-describedby={describedBy}
+                  rows={2}
+                  {...register('cargo_description')}
+                  className={fieldInputClass(!!errors.cargo_description)}
+                  maxLength={1000}
+                  placeholder="Detalles relevantes para el transportista (opcional)"
+                />
+              )}
+            />
           </div>
         </div>
       </section>
@@ -984,54 +997,55 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Ventana de pickup</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field
-            label="Desde *"
-            htmlFor="pickup_start_local"
-            error={fieldErrors.pickup_start_local}
-          >
-            <input
-              id="pickup_start_local"
-              type="datetime-local"
-              required
-              value={values.pickup_start_local}
-              onChange={(e) => update('pickup_start_local', e.target.value)}
-              className={inputClass}
-              aria-invalid={fieldErrors.pickup_start_local ? true : undefined}
-            />
-          </Field>
-          <Field label="Hasta *" htmlFor="pickup_end_local" error={fieldErrors.pickup_end_local}>
-            <input
-              id="pickup_end_local"
-              type="datetime-local"
-              required
-              value={values.pickup_end_local}
-              onChange={(e) => update('pickup_end_local', e.target.value)}
-              className={inputClass}
-              aria-invalid={fieldErrors.pickup_end_local ? true : undefined}
-            />
-          </Field>
+          <FormField
+            label="Desde"
+            required
+            error={errors.pickup_start_local?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="datetime-local"
+                {...register('pickup_start_local')}
+                className={fieldInputClass(!!errors.pickup_start_local)}
+              />
+            )}
+          />
+          <FormField
+            label="Hasta"
+            required
+            error={errors.pickup_end_local?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="datetime-local"
+                {...register('pickup_end_local')}
+                className={fieldInputClass(!!errors.pickup_end_local)}
+              />
+            )}
+          />
         </div>
       </section>
 
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Precio</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field
+          <FormField
             label="Precio sugerido (CLP)"
-            htmlFor="proposed_price_clp"
-            error={fieldErrors.proposed_price_clp}
-          >
-            <input
-              id="proposed_price_clp"
-              type="number"
-              min={0}
-              value={values.proposed_price_clp}
-              onChange={(e) => update('proposed_price_clp', e.target.value)}
-              className={inputClass}
-              placeholder="Déjalo vacío si quieres que el sistema sugiera un precio"
-              aria-invalid={fieldErrors.proposed_price_clp ? true : undefined}
-            />
-          </Field>
+            error={errors.proposed_price_clp?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                min={0}
+                {...register('proposed_price_clp')}
+                className={fieldInputClass(!!errors.proposed_price_clp)}
+                placeholder="Déjalo vacío si quieres que el sistema sugiera un precio"
+              />
+            )}
+          />
         </div>
       </section>
 
@@ -1405,33 +1419,6 @@ function NoShipperPermission() {
       <Link to="/app" className="mt-4 inline-block text-primary-600 underline">
         Volver al inicio
       </Link>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  error,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  children: ReactNode;
-}) {
-  const errorId = error ? `${htmlFor}-error` : undefined;
-  return (
-    <div>
-      <label htmlFor={htmlFor} className="block font-medium text-neutral-700 text-sm">
-        {label}
-      </label>
-      <div className="mt-1">{children}</div>
-      {error && (
-        <p id={errorId} role="alert" className="mt-1 text-danger-600 text-sm">
-          {error}
-        </p>
-      )}
     </div>
   );
 }
