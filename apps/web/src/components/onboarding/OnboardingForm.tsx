@@ -5,10 +5,11 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, ArrowRight, Building2, Check, Layers, Truck, User } from 'lucide-react';
-import { type ReactNode, useId, useState } from 'react';
+import { useState } from 'react';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
 import { useOnboardingMutation } from '../../hooks/use-onboarding-mutation.js';
 import type { ApiError } from '../../lib/api-client.js';
+import { FormField, inputClass } from '../FormField.js';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -198,25 +199,27 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
               Vamos a usarlos para personalizar tu experiencia y verificar tu identidad si hace
               falta.
             </p>
-            <Field
+            <FormField
               label="Nombre completo"
               error={errors.user?.full_name?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('user.full_name')}
                   autoComplete="name"
                   className={inputClass(!!errors.user?.full_name)}
                 />
               )}
             />
-            <Field
+            <FormField
               label="Teléfono móvil"
               hint="Formato +56 9 XXXX XXXX. Lo usaremos para notificaciones críticas."
               error={errors.user?.phone?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('user.phone')}
                   autoComplete="tel"
                   inputMode="tel"
@@ -225,13 +228,14 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                 />
               )}
             />
-            <Field
+            <FormField
               label="WhatsApp"
               hint="Te enviaremos cada nueva oferta a este WhatsApp. Debe ser un celular chileno (+56 9...). Si es el mismo que tu teléfono móvil, cópialo igual."
               error={errors.user?.whatsapp_e164?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('user.whatsapp_e164')}
                   autoComplete="tel"
                   inputMode="tel"
@@ -240,13 +244,14 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                 />
               )}
             />
-            <Field
+            <FormField
               label="RUT (opcional)"
               hint="Tu RUT personal. No lo usamos para facturar — la facturación va al RUT empresa."
               error={errors.user?.rut?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('user.rut')}
                   autoComplete="off"
                   placeholder="12.345.678-9"
@@ -264,24 +269,26 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
               Datos legales de la empresa. Vamos a validar el RUT antes de habilitarte para operar
               cargas reales.
             </p>
-            <Field
+            <FormField
               label="Razón social"
               error={errors.empresa?.legal_name?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('empresa.legal_name')}
                   autoComplete="organization"
                   className={inputClass(!!errors.empresa?.legal_name)}
                 />
               )}
             />
-            <Field
+            <FormField
               label="RUT empresa"
               error={errors.empresa?.rut?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('empresa.rut')}
                   autoComplete="off"
                   placeholder="76.123.456-0"
@@ -290,12 +297,13 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
               )}
             />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field
+              <FormField
                 label="Email de contacto"
                 error={errors.empresa?.contact_email?.message}
-                render={(id) => (
+                render={({ id, describedBy }) => (
                   <input
                     id={id}
+                    aria-describedby={describedBy}
                     {...register('empresa.contact_email')}
                     type="email"
                     autoComplete="email"
@@ -303,12 +311,13 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                   />
                 )}
               />
-              <Field
+              <FormField
                 label="Teléfono de contacto"
                 error={errors.empresa?.contact_phone?.message}
-                render={(id) => (
+                render={({ id, describedBy }) => (
                   <input
                     id={id}
+                    aria-describedby={describedBy}
                     {...register('empresa.contact_phone')}
                     inputMode="tel"
                     placeholder="+56912345678"
@@ -317,13 +326,14 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                 )}
               />
             </div>
-            <Field
+            <FormField
               label="Dirección"
               hint="Calle y número. Ej: Av. Apoquindo 5550"
               error={errors.empresa?.address?.street?.message}
-              render={(id) => (
+              render={({ id, describedBy }) => (
                 <input
                   id={id}
+                  aria-describedby={describedBy}
                   {...register('empresa.address.street')}
                   autoComplete="street-address"
                   className={inputClass(!!errors.empresa?.address?.street)}
@@ -331,36 +341,39 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
               )}
             />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Field
+              <FormField
                 label="Comuna"
                 error={errors.empresa?.address?.commune?.message}
-                render={(id) => (
+                render={({ id, describedBy }) => (
                   <input
                     id={id}
+                    aria-describedby={describedBy}
                     {...register('empresa.address.commune')}
                     autoComplete="address-level3"
                     className={inputClass(!!errors.empresa?.address?.commune)}
                   />
                 )}
               />
-              <Field
+              <FormField
                 label="Ciudad"
                 error={errors.empresa?.address?.city?.message}
-                render={(id) => (
+                render={({ id, describedBy }) => (
                   <input
                     id={id}
+                    aria-describedby={describedBy}
                     {...register('empresa.address.city')}
                     autoComplete="address-level2"
                     className={inputClass(!!errors.empresa?.address?.city)}
                   />
                 )}
               />
-              <Field
+              <FormField
                 label="Región"
                 error={errors.empresa?.address?.region?.message}
-                render={(id) => (
+                render={({ id, describedBy }) => (
                   <select
                     id={id}
+                    aria-describedby={describedBy}
                     {...register('empresa.address.region')}
                     className={inputClass(!!errors.empresa?.address?.region)}
                   >
@@ -531,37 +544,6 @@ function ProgressIndicator({ step }: { step: Step }) {
       })}
     </div>
   );
-}
-
-function Field(props: {
-  label: string;
-  hint?: string;
-  error?: string | undefined;
-  render: (inputId: string) => ReactNode;
-}) {
-  const id = useId();
-  return (
-    <div>
-      <label htmlFor={id} className="block font-medium text-neutral-700 text-sm">
-        {props.label}
-      </label>
-      <div className="mt-1">{props.render(id)}</div>
-      {props.hint && !props.error && <p className="mt-1 text-neutral-500 text-xs">{props.hint}</p>}
-      {props.error && (
-        <p className="mt-1 text-danger-700 text-xs" role="alert">
-          {props.error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function inputClass(hasError: boolean) {
-  return `block w-full rounded-md border px-3 py-2 text-neutral-900 text-sm shadow-xs focus:outline-none ${
-    hasError
-      ? 'border-danger-500 focus:border-danger-500'
-      : 'border-neutral-300 focus:border-primary-500'
-  }`;
 }
 
 function OperationToggle(props: {
