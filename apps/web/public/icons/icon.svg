@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Booster AI">
+  <title>Booster AI</title>
+  <!--
+    Símbolo "boo / boo" en grilla 2 filas × 3 columnas.
+    Columna 1: dos "b" stilizadas como anillos con cola descendente.
+    Columnas 2 y 3: cuatro "o" como anillos circulares.
+    El "o" de la fila inferior, columna central, es el acento verde brillante.
+
+    Paleta:
+      Azul marino: #1F2D5C
+      Verde acento: #1FD75C
+
+    Fondo blanco a sangrado completo.
+  -->
+  <rect width="512" height="512" fill="#ffffff"/>
+
+  <!-- Grid: 6 anillos. Centro de cada anillo: x ∈ {128, 256, 384}, y ∈ {176, 336}.
+       Radio del anillo: 64. Ancho del trazo: 28. -->
+  <g fill="none" stroke="#1F2D5C" stroke-width="28">
+    <!-- Fila superior: b - o - o -->
+    <!-- "b": círculo con tail vertical en el lado izquierdo -->
+    <line x1="80"  y1="80"  x2="80"  y2="176"/>
+    <circle cx="128" cy="176" r="64"/>
+    <circle cx="256" cy="176" r="64"/>
+    <circle cx="384" cy="176" r="64"/>
+
+    <!-- Fila inferior: b - o(verde) - o -->
+    <line x1="80"  y1="240" x2="80"  y2="336"/>
+    <circle cx="128" cy="336" r="64"/>
+    <!-- "o" central inferior va aparte (verde) -->
+    <circle cx="384" cy="336" r="64"/>
+  </g>
+
+  <!-- "o" acento verde brillante (centro inferior) -->
+  <circle cx="256" cy="336" r="64" fill="none" stroke="#1FD75C" stroke-width="28"/>
+</svg>
