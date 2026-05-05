@@ -173,65 +173,126 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
       )}
 
       {vehiclesQ.data && vehiclesQ.data.length > 0 && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-neutral-200">
-            <thead className="bg-neutral-50">
-              <tr>
-                <Th>Patente</Th>
-                <Th>Tipo</Th>
-                <Th>Capacidad</Th>
-                <Th>Marca / Modelo</Th>
-                <Th>Combustible</Th>
-                <Th>IMEI</Th>
-                <Th>Estado</Th>
-                <Th>{''}</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100 bg-white">
-              {vehiclesQ.data.map((v) => (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: row es shortcut visual; el link "Ver" en la última columna es el control accesible primario.
-                <tr
-                  key={v.id}
-                  className="cursor-pointer hover:bg-neutral-50"
-                  onClick={() => void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })}
-                >
-                  <Td className="font-mono font-semibold text-neutral-900">
+        <>
+          {/* Desktop (md+): tabla densa con 8 columnas. Oculta en mobile
+              porque hace overflow horizontal a 375px (BUG-006). */}
+          <div className="mt-6 hidden overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm md:block">
+            <table className="min-w-full divide-y divide-neutral-200">
+              <thead className="bg-neutral-50">
+                <tr>
+                  <Th>Patente</Th>
+                  <Th>Tipo</Th>
+                  <Th>Capacidad</Th>
+                  <Th>Marca / Modelo</Th>
+                  <Th>Combustible</Th>
+                  <Th>IMEI</Th>
+                  <Th>Estado</Th>
+                  <Th>{''}</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 bg-white">
+                {vehiclesQ.data.map((v) => (
+                  // biome-ignore lint/a11y/useKeyWithClickEvents: row es shortcut visual; el link "Ver" en la última columna es el control accesible primario.
+                  <tr
+                    key={v.id}
+                    className="cursor-pointer hover:bg-neutral-50"
+                    onClick={() =>
+                      void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })
+                    }
+                  >
+                    <Td className="font-mono font-semibold text-neutral-900">
+                      {formatPlateForDisplay(v.plate)}
+                    </Td>
+                    <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
+                    <Td>
+                      {v.capacity_kg.toLocaleString('es-CL')} kg
+                      {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
+                    </Td>
+                    <Td>
+                      {v.brand || v.model
+                        ? `${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
+                        : '—'}
+                    </Td>
+                    <Td>{v.fuel_type ? FUEL_TYPE_LABELS[v.fuel_type] : '—'}</Td>
+                    <Td className="font-mono text-xs">{v.teltonika_imei ?? '—'}</Td>
+                    <Td>
+                      <span
+                        className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
+                      >
+                        {STATUS_LABELS[v.status]}
+                      </span>
+                    </Td>
+                    <Td>
+                      <Link
+                        to="/app/vehiculos/$id"
+                        params={{ id: v.id }}
+                        className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        {canWrite ? 'Editar' : 'Ver'}
+                      </Link>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile (<md): cards apiladas con la misma data. */}
+          <ul className="mt-6 space-y-3 md:hidden">
+            {vehiclesQ.data.map((v) => (
+              <li
+                key={v.id}
+                className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-mono font-semibold text-neutral-900">
                     {formatPlateForDisplay(v.plate)}
-                  </Td>
-                  <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
-                  <Td>
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
+                  >
+                    {STATUS_LABELS[v.status]}
+                  </span>
+                </div>
+                <div className="mt-2 text-neutral-700 text-sm">
+                  {VEHICLE_TYPE_LABELS[v.type]}
+                  {v.brand || v.model
+                    ? ` · ${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
+                    : ''}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-neutral-500 text-xs">
+                  <span>
                     {v.capacity_kg.toLocaleString('es-CL')} kg
                     {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
-                  </Td>
-                  <Td>
-                    {v.brand || v.model
-                      ? `${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
-                      : '—'}
-                  </Td>
-                  <Td>{v.fuel_type ? FUEL_TYPE_LABELS[v.fuel_type] : '—'}</Td>
-                  <Td className="font-mono text-xs">{v.teltonika_imei ?? '—'}</Td>
-                  <Td>
-                    <span
-                      className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
-                    >
-                      {STATUS_LABELS[v.status]}
-                    </span>
-                  </Td>
-                  <Td>
-                    <Link
-                      to="/app/vehiculos/$id"
-                      params={{ id: v.id }}
-                      className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                    >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden />
-                      {canWrite ? 'Editar' : 'Ver'}
-                    </Link>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </span>
+                  {v.fuel_type && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span>{FUEL_TYPE_LABELS[v.fuel_type]}</span>
+                    </>
+                  )}
+                  {v.teltonika_imei && (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span className="font-mono">IMEI {v.teltonika_imei}</span>
+                    </>
+                  )}
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Link
+                    to="/app/vehiculos/$id"
+                    params={{ id: v.id }}
+                    className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                    {canWrite ? 'Editar' : 'Ver detalle'}
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </Layout>
   );

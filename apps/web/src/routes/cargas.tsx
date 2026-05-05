@@ -408,80 +408,145 @@ function CargasTable({
   showCertificateColumn = false,
 }: { trips: TripSummary[]; showCertificateColumn?: boolean }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-      <table className="min-w-full divide-y divide-neutral-200">
-        <thead className="bg-neutral-50">
-          <tr>
-            <Th>Código</Th>
-            <Th>Origen → Destino</Th>
-            <Th>Carga</Th>
-            <Th>Pickup</Th>
-            <Th>Estado</Th>
-            {showCertificateColumn && <Th>Certificado</Th>}
-            <Th>{''}</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-neutral-100 bg-white">
-          {trips.map((t) => (
-            <tr key={t.id} className="hover:bg-neutral-50">
-              <Td className="font-mono font-semibold text-neutral-900">{t.tracking_code}</Td>
-              <Td>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm">{t.origin_address_raw}</span>
-                  <span className="text-neutral-500 text-xs">
-                    {regionLabel(t.origin_region_code)}
-                  </span>
-                  <span className="mt-1 text-sm">→ {t.destination_address_raw}</span>
-                  <span className="text-neutral-500 text-xs">
-                    {regionLabel(t.destination_region_code)}
-                  </span>
-                </div>
-              </Td>
-              <Td>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm">{CARGO_TYPE_LABELS[t.cargo_type]}</span>
-                  <span className="text-neutral-500 text-xs">
-                    {t.cargo_weight_kg ? `${t.cargo_weight_kg.toLocaleString('es-CL')} kg` : '—'}
-                    {t.cargo_volume_m3 ? ` · ${t.cargo_volume_m3} m³` : ''}
-                  </span>
-                </div>
-              </Td>
-              <Td>
-                <span className="text-xs">{formatDateTime(t.pickup_window_start)}</span>
-              </Td>
-              <Td>
-                <span
-                  className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[t.status]}`}
-                >
-                  {STATUS_LABELS[t.status]}
-                </span>
-              </Td>
-              {showCertificateColumn && (
-                <Td>
-                  {t.certificate_issued_at ? (
-                    <DescargarCertificadoButton tripId={t.id} compact />
-                  ) : t.status === 'entregado' ? (
-                    <span className="text-amber-700 text-xs">Generando…</span>
-                  ) : (
-                    <span className="text-neutral-400 text-xs">—</span>
-                  )}
-                </Td>
-              )}
-              <Td>
-                <Link
-                  to="/app/cargas/$id"
-                  params={{ id: t.id }}
-                  className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                >
-                  Ver
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                </Link>
-              </Td>
+    <>
+      {/* Desktop (md+): tabla densa. Oculta en mobile porque las 6 columnas
+          no entran a 375px y hacen overflow horizontal (BUG-006). */}
+      <div className="hidden overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm md:block">
+        <table className="min-w-full divide-y divide-neutral-200">
+          <thead className="bg-neutral-50">
+            <tr>
+              <Th>Código</Th>
+              <Th>Origen → Destino</Th>
+              <Th>Carga</Th>
+              <Th>Pickup</Th>
+              <Th>Estado</Th>
+              {showCertificateColumn && <Th>Certificado</Th>}
+              <Th>{''}</Th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-neutral-100 bg-white">
+            {trips.map((t) => (
+              <tr key={t.id} className="hover:bg-neutral-50">
+                <Td className="font-mono font-semibold text-neutral-900">{t.tracking_code}</Td>
+                <Td>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm">{t.origin_address_raw}</span>
+                    <span className="text-neutral-500 text-xs">
+                      {regionLabel(t.origin_region_code)}
+                    </span>
+                    <span className="mt-1 text-sm">→ {t.destination_address_raw}</span>
+                    <span className="text-neutral-500 text-xs">
+                      {regionLabel(t.destination_region_code)}
+                    </span>
+                  </div>
+                </Td>
+                <Td>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm">{CARGO_TYPE_LABELS[t.cargo_type]}</span>
+                    <span className="text-neutral-500 text-xs">
+                      {t.cargo_weight_kg ? `${t.cargo_weight_kg.toLocaleString('es-CL')} kg` : '—'}
+                      {t.cargo_volume_m3 ? ` · ${t.cargo_volume_m3} m³` : ''}
+                    </span>
+                  </div>
+                </Td>
+                <Td>
+                  <span className="text-xs">{formatDateTime(t.pickup_window_start)}</span>
+                </Td>
+                <Td>
+                  <span
+                    className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[t.status]}`}
+                  >
+                    {STATUS_LABELS[t.status]}
+                  </span>
+                </Td>
+                {showCertificateColumn && (
+                  <Td>
+                    {t.certificate_issued_at ? (
+                      <DescargarCertificadoButton tripId={t.id} compact />
+                    ) : t.status === 'entregado' ? (
+                      <span className="text-amber-700 text-xs">Generando…</span>
+                    ) : (
+                      <span className="text-neutral-400 text-xs">—</span>
+                    )}
+                  </Td>
+                )}
+                <Td>
+                  <Link
+                    to="/app/cargas/$id"
+                    params={{ id: t.id }}
+                    className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
+                  >
+                    Ver
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile (<md): cards apiladas. Mismo dato, layout vertical para
+          eliminar overflow horizontal y aprovechar el ancho del viewport.
+          NO envolvemos el card entero en <Link> porque el botón
+          "Descargar certificado" anidado generaría doble click handler. */}
+      <ul className="space-y-3 md:hidden">
+        {trips.map((t) => (
+          <li key={t.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-mono font-semibold text-neutral-900 text-sm">
+                {t.tracking_code}
+              </span>
+              <span
+                className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[t.status]}`}
+              >
+                {STATUS_LABELS[t.status]}
+              </span>
+            </div>
+            <div className="mt-3 space-y-1 text-sm">
+              <p className="text-neutral-800">{t.origin_address_raw}</p>
+              <p className="text-neutral-500 text-xs">{regionLabel(t.origin_region_code)}</p>
+              <p className="mt-1 text-neutral-800">→ {t.destination_address_raw}</p>
+              <p className="text-neutral-500 text-xs">{regionLabel(t.destination_region_code)}</p>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-neutral-500 text-xs">
+              <span>{CARGO_TYPE_LABELS[t.cargo_type]}</span>
+              {t.cargo_weight_kg != null && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{t.cargo_weight_kg.toLocaleString('es-CL')} kg</span>
+                </>
+              )}
+              {t.cargo_volume_m3 != null && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{t.cargo_volume_m3} m³</span>
+                </>
+              )}
+              <span aria-hidden>·</span>
+              <span>{formatDateTime(t.pickup_window_start)}</span>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              {showCertificateColumn && t.certificate_issued_at ? (
+                <DescargarCertificadoButton tripId={t.id} compact />
+              ) : showCertificateColumn && !t.certificate_issued_at && t.status === 'entregado' ? (
+                <span className="text-amber-700 text-xs">Certificado generándose…</span>
+              ) : (
+                <span />
+              )}
+              <Link
+                to="/app/cargas/$id"
+                params={{ id: t.id }}
+                className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100"
+              >
+                Ver detalle
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
