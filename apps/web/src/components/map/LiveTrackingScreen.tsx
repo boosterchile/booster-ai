@@ -1,8 +1,10 @@
-import { APIProvider, AdvancedMarker, Map, Pin } from '@vis.gl/react-google-maps';
 import { Link } from '@tanstack/react-router';
+// biome-ignore lint/suspicious/noShadowRestrictedNames: `Map` es el componente exportado por la lib de Google Maps; renombrarlo localmente confunde más que ayuda.
+import { APIProvider, AdvancedMarker, Map, Pin } from '@vis.gl/react-google-maps';
 import { ArrowLeft, Gauge, MapPin, Navigation, RefreshCw, Truck } from 'lucide-react';
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { env } from '../../lib/env.js';
+import { ageSeconds, formatAge } from '../../lib/freshness.js';
 
 /**
  * Pantalla de tracking en vivo estilo Uber.
@@ -55,16 +57,18 @@ export function LiveTrackingScreen({
   const hasMaps = Boolean(env.VITE_GOOGLE_MAPS_API_KEY);
   const hasPos = latitude != null && longitude != null;
 
-  // Cuánto hace del último update
-  const tsDate = timestampDevice ? new Date(timestampDevice) : null;
-  const ageSec = tsDate ? Math.max(0, Math.floor((Date.now() - tsDate.getTime()) / 1000)) : null;
+  // Cuánto hace del último update. Helpers compartidos en lib/freshness.
+  // El threshold de 2 min para `isStale` se mantiene porque /track es la
+  // vista realtime (más estricta que el detalle, donde hay 5 min).
+  const ageSec = ageSeconds(timestampDevice ?? null);
   const ageLabel = formatAge(ageSec);
-  const isStale = ageSec != null && ageSec > 120; // > 2min sin update = stale
+  const isStale = ageSec != null && ageSec > 120;
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-neutral-100">
       {/* Mapa fullscreen */}
       {hasMaps && hasPos && (
+        // biome-ignore lint/style/noNonNullAssertion: hasMaps garantiza que la key está definida.
         <APIProvider apiKey={env.VITE_GOOGLE_MAPS_API_KEY!}>
           <Map
             style={{ height: '100%', width: '100%' }}
@@ -77,10 +81,7 @@ export function LiveTrackingScreen({
             streetViewControl={false}
             mapId="booster-live-map"
           >
-            <AdvancedMarker
-              position={{ lat: latitude, lng: longitude }}
-              title={title}
-            >
+            <AdvancedMarker position={{ lat: latitude, lng: longitude }} title={title}>
               <Pin
                 background={isStale ? '#9CA3AF' : '#1FA058'}
                 borderColor={isStale ? '#6B7280' : '#0D6E3F'}
@@ -123,9 +124,7 @@ export function LiveTrackingScreen({
           </Link>
           <div className="flex-1 rounded-lg bg-white px-4 py-2 shadow-lg">
             <div className="font-semibold text-neutral-900 text-sm leading-tight">{title}</div>
-            {subtitle && (
-              <div className="text-neutral-600 text-xs leading-tight">{subtitle}</div>
-            )}
+            {subtitle && <div className="text-neutral-600 text-xs leading-tight">{subtitle}</div>}
           </div>
           {onRefresh && (
             <button
@@ -167,7 +166,9 @@ export function LiveTrackingScreen({
               tone={isStale ? 'amber' : 'neutral'}
             />
           </div>
-          {bottomExtra && <div className="mt-3 border-neutral-100 border-t pt-3">{bottomExtra}</div>}
+          {bottomExtra && (
+            <div className="mt-3 border-neutral-100 border-t pt-3">{bottomExtra}</div>
+          )}
         </div>
       </div>
     </div>
@@ -220,18 +221,4 @@ function Stat({
       <div className={`mt-0.5 font-semibold text-lg ${colorByTone}`}>{value}</div>
     </div>
   );
-}
-
-/**
- * "hace 5s", "hace 2 min", "hace 1 h 12 min", etc.
- */
-function formatAge(seconds: number | null): string | null {
-  if (seconds == null) return null;
-  if (seconds < 5) return 'ahora';
-  if (seconds < 60) return `hace ${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remMin = minutes % 60;
-  return remMin > 0 ? `hace ${hours} h ${remMin} min` : `hace ${hours} h`;
 }

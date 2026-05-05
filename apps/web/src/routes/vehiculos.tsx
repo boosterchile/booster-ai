@@ -18,6 +18,7 @@ import {
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { RelativeTime } from '../components/RelativeTime.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -977,8 +978,13 @@ function UbicacionSection({
           <div>
             <h2 className="font-semibold text-neutral-900 text-xl">Ubicación actual</h2>
             <p className="text-neutral-600 text-sm">
-              Última posición GPS recibida del Teltonika. Polling cada 30s.
+              Reportado por el Teltonika:{' '}
+              <RelativeTime
+                date={ubicacionQ.data?.ubicacion.timestamp_device ?? null}
+                fallback="sin posición todavía"
+              />
             </p>
+            <p className="text-neutral-400 text-xs">Esta vista se refresca cada 30 segundos.</p>
           </div>
         </div>
       )}
@@ -1036,8 +1042,9 @@ function TelemetriaSection({ vehicleId }: { vehicleId: string }) {
         <div>
           <h2 className="font-semibold text-neutral-900 text-xl">Telemetría reciente</h2>
           <p className="text-neutral-600 text-sm">
-            Últimos 50 puntos GPS recibidos del Teltonika asociado. Polling cada 30s.
+            Últimos 50 puntos GPS recibidos del Teltonika asociado.
           </p>
+          <p className="text-neutral-400 text-xs">Esta vista se refresca cada 30 segundos.</p>
         </div>
         {telemetriaQ.data && (
           <span className="rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">

@@ -15,6 +15,7 @@ import {
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { RelativeTime } from '../components/RelativeTime.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
@@ -1204,10 +1205,20 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
               dónde va su carga sin scrollear. */}
           {tripQ.data.assignment?.vehicle_plate && (
             <DataCard title="Ubicación del vehículo">
-              <div className="mb-3 flex items-center justify-between gap-4">
-                <p className="text-neutral-600 text-sm">
-                  Última posición GPS reportada. Polling cada 30s.
-                </p>
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="text-neutral-600 text-sm">
+                  <p>
+                    Reportado por el dispositivo:{' '}
+                    <RelativeTime
+                      date={tripQ.data.assignment.ubicacion_actual?.timestamp_device ?? null}
+                      fallback="sin posición todavía"
+                    />
+                  </p>
+                  <p className="mt-0.5 text-neutral-400 text-xs">
+                    Esta vista se refresca cada 30 segundos. La frecuencia de reporte del
+                    dispositivo depende del vehículo.
+                  </p>
+                </div>
                 <Link
                   to="/app/cargas/$id/track"
                   params={{ id: trip.id }}
