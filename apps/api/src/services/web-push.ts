@@ -27,13 +27,7 @@ import type { Logger } from '@booster-ai/logger';
 import { and, eq, ne } from 'drizzle-orm';
 import webpush from 'web-push';
 import type { Db } from '../db/client.js';
-import {
-  assignments,
-  chatMessages,
-  memberships,
-  pushSubscriptions,
-  trips,
-} from '../db/schema.js';
+import { assignments, chatMessages, memberships, pushSubscriptions, trips } from '../db/schema.js';
 
 let configured = false;
 
@@ -47,7 +41,9 @@ export function configureWebPush(opts: {
   privateKey: string;
   subject: string;
 }): void {
-  if (configured) return;
+  if (configured) {
+    return;
+  }
   webpush.setVapidDetails(opts.subject, opts.publicKey, opts.privateKey);
   configured = true;
 }
@@ -104,12 +100,7 @@ export async function sendPushToUser(opts: {
       authKey: pushSubscriptions.authKey,
     })
     .from(pushSubscriptions)
-    .where(
-      and(
-        eq(pushSubscriptions.userId, userId),
-        eq(pushSubscriptions.status, 'activa'),
-      ),
-    );
+    .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.status, 'activa')));
 
   if (subs.length === 0) {
     return { sent: 0, invalidated: 0, errored: 0 };
@@ -250,8 +241,7 @@ export async function notifyChatMessageViaPush(opts: {
 
   // Construir payload una vez, reusar para todos los users del lado.
   const preview = buildPreview(msg.messageType, msg.textContent);
-  const senderLabel =
-    msg.senderRole === 'transportista' ? 'Transportista' : 'Generador de carga';
+  const senderLabel = msg.senderRole === 'transportista' ? 'Transportista' : 'Generador de carga';
 
   const payload: ChatPushPayload = {
     title: `Nuevo mensaje · ${senderLabel}`,
@@ -294,14 +284,15 @@ export async function notifyChatMessageViaPush(opts: {
 /**
  * Genera el preview text de la notificación según el tipo de mensaje.
  */
-function buildPreview(
-  type: 'texto' | 'foto' | 'ubicacion',
-  textContent: string | null,
-): string {
+function buildPreview(type: 'texto' | 'foto' | 'ubicacion', textContent: string | null): string {
   if (type === 'texto' && textContent) {
     return textContent.length > 80 ? `${textContent.slice(0, 77)}…` : textContent;
   }
-  if (type === 'foto') return '📷 Te envió una foto';
-  if (type === 'ubicacion') return '📍 Te compartió una ubicación';
+  if (type === 'foto') {
+    return '📷 Te envió una foto';
+  }
+  if (type === 'ubicacion') {
+    return '📍 Te compartió una ubicación';
+  }
   return 'Mensaje nuevo';
 }

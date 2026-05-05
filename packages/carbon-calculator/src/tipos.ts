@@ -165,10 +165,7 @@ export interface ParametrosPorDefecto {
     | 'tanque';
 }
 
-export type ParametrosCalculo =
-  | ParametrosModelado
-  | ParametrosExactoCanbus
-  | ParametrosPorDefecto;
+export type ParametrosCalculo = ParametrosModelado | ParametrosExactoCanbus | ParametrosPorDefecto;
 
 /**
  * Resultado del cálculo. Contiene los KPIs principales + desglose

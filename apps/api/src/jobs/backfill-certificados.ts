@@ -47,8 +47,8 @@ import { config } from '../config.js';
 import { createDb } from '../db/client.js';
 import { tripMetrics, trips } from '../db/schema.js';
 import {
-  emitirCertificadoViaje,
   type EmitirCertificadoConfig,
+  emitirCertificadoViaje,
 } from '../services/emitir-certificado-viaje.js';
 
 interface CliOptions {
@@ -94,12 +94,8 @@ async function main(): Promise<void> {
   });
 
   const certConfig: Partial<EmitirCertificadoConfig> = {
-    ...(config.CERTIFICATE_SIGNING_KEY_ID
-      ? { kmsKeyId: config.CERTIFICATE_SIGNING_KEY_ID }
-      : {}),
-    ...(config.CERTIFICATES_BUCKET
-      ? { certificatesBucket: config.CERTIFICATES_BUCKET }
-      : {}),
+    ...(config.CERTIFICATE_SIGNING_KEY_ID ? { kmsKeyId: config.CERTIFICATE_SIGNING_KEY_ID } : {}),
+    ...(config.CERTIFICATES_BUCKET ? { certificatesBucket: config.CERTIFICATES_BUCKET } : {}),
     verifyBaseUrl:
       process.env.VERIFY_BASE_URL ?? config.API_AUDIENCE[0] ?? 'https://api.boosterchile.com',
   };
@@ -138,19 +134,12 @@ async function main(): Promise<void> {
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
-      .where(
-        and(eq(trips.status, 'entregado'), isNull(tripMetrics.certificateIssuedAt)),
-      )
+      .where(and(eq(trips.status, 'entregado'), isNull(tripMetrics.certificateIssuedAt)))
       .orderBy(trips.createdAt);
 
-    const candidates = cli.limit
-      ? await candidatesQuery.limit(cli.limit)
-      : await candidatesQuery;
+    const candidates = cli.limit ? await candidatesQuery.limit(cli.limit) : await candidatesQuery;
 
-    logger.info(
-      { count: candidates.length },
-      'trips candidatos a backfill encontrados',
-    );
+    logger.info({ count: candidates.length }, 'trips candidatos a backfill encontrados');
 
     if (candidates.length === 0) {
       logger.info('nada para hacer — todos los entregados ya tienen cert o no hay metrics');
@@ -199,7 +188,9 @@ async function main(): Promise<void> {
         processed += 1;
         const r = results[j];
         const c = batch[j];
-        if (!r || !c) continue; // ts-narrowing — nunca pasa, batch.length === results.length
+        if (!r || !c) {
+          continue; // ts-narrowing — nunca pasa, batch.length === results.length
+        }
 
         if (r.status === 'rejected') {
           errored += 1;
@@ -208,10 +199,7 @@ async function main(): Promise<void> {
         }
         if (r.value.skipped) {
           skipped += 1;
-          logger.warn(
-            { tripId: c.tripId, reason: r.value.reason },
-            'skipped',
-          );
+          logger.warn({ tripId: c.tripId, reason: r.value.reason }, 'skipped');
         } else {
           emitted += 1;
           logger.info(

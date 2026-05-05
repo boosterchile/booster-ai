@@ -124,7 +124,9 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = (event.notification.data as PushPayload['data'] | undefined)?.url;
-  if (!url) return;
+  if (!url) {
+    return;
+  }
 
   event.waitUntil(
     (async () => {
@@ -144,9 +146,7 @@ self.addEventListener('notificationclick', (event) => {
         await exactMatch.focus();
         return;
       }
-      const sameOrigin = allClients.find(
-        (c) => new URL(c.url).origin === target.origin,
-      );
+      const sameOrigin = allClients.find((c) => new URL(c.url).origin === target.origin);
       if (sameOrigin) {
         await sameOrigin.focus();
         if ('navigate' in sameOrigin) {

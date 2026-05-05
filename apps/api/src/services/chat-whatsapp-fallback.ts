@@ -37,13 +37,7 @@ import {
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import {
-  assignments,
-  chatMessages,
-  memberships,
-  trips,
-  users,
-} from '../db/schema.js';
+import { assignments, chatMessages, memberships, trips, users } from '../db/schema.js';
 
 void buildOfferTemplateVariables; // re-export silencioso para linter (no se usa acá pero comparte file de fan-out futura)
 
@@ -179,7 +173,8 @@ export async function procesarMensajesNoLeidos(opts: {
       await markNotifSent(db, c.messageId);
 
       const preview = buildPreview(c.messageType, c.textContent);
-      const senderLabel = c.senderName ?? (c.senderRole === 'transportista' ? 'Transportista' : 'Generador de carga');
+      const senderLabel =
+        c.senderName ?? (c.senderRole === 'transportista' ? 'Transportista' : 'Generador de carga');
       const chatUrl = `${webAppUrl.replace(/\/$/, '')}/app/chat/${c.assignmentId}`;
 
       await twilioClient.sendContent({
@@ -239,15 +234,16 @@ async function markNotifSent(db: Db, messageId: string): Promise<void> {
     .where(eq(chatMessages.id, messageId));
 }
 
-function buildPreview(
-  type: 'texto' | 'foto' | 'ubicacion',
-  textContent: string | null,
-): string {
+function buildPreview(type: 'texto' | 'foto' | 'ubicacion', textContent: string | null): string {
   if (type === 'texto' && textContent) {
     return textContent.length > 80 ? `${textContent.slice(0, 77)}…` : textContent;
   }
-  if (type === 'foto') return '📷 Foto adjunta';
-  if (type === 'ubicacion') return '📍 Ubicación compartida';
+  if (type === 'foto') {
+    return '📷 Foto adjunta';
+  }
+  if (type === 'ubicacion') {
+    return '📍 Ubicación compartida';
+  }
   return 'Mensaje nuevo';
 }
 

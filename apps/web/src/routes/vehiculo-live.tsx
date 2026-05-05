@@ -33,7 +33,9 @@ export function VehiculoLiveRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         return <VehiculoLivePage />;
       }}
     </ProtectedRoute>

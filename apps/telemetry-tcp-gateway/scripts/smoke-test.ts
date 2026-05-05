@@ -22,7 +22,7 @@
  */
 
 import { Socket } from 'node:net';
-import { encodeImeiAck, crc16Ibm } from '@booster-ai/codec8-parser';
+import { crc16Ibm, encodeImeiAck } from '@booster-ai/codec8-parser';
 
 // biome-ignore lint/suspicious/noConsole: smoke-test CLI script — console output es la UX.
 const log = console.log;
@@ -88,10 +88,10 @@ function buildAvlPacketSantiago(): Buffer {
 }
 
 async function smokeTest(): Promise<void> {
-  log(`╭─ Booster AI · Teltonika gateway smoke-test`);
+  log('╭─ Booster AI · Teltonika gateway smoke-test');
   log(`│  target  : ${HOST}:${PORT}`);
   log(`│  imei    : ${IMEI}`);
-  log(`╰─`);
+  log('╰─');
 
   const socket = new Socket();
   let phase: 'connecting' | 'handshake' | 'avl' | 'done' = 'connecting';
@@ -109,7 +109,7 @@ async function smokeTest(): Promise<void> {
     });
 
     socket.connect(PORT, HOST, () => {
-      log(`✓ TCP conectado`);
+      log('✓ TCP conectado');
       phase = 'handshake';
       socket.write(buildHandshake(IMEI));
       log(`→ handshake enviado (${IMEI.length} bytes IMEI + 2 byte length)`);
@@ -118,7 +118,7 @@ async function smokeTest(): Promise<void> {
     socket.on('data', (chunk: Buffer) => {
       if (phase === 'handshake') {
         if (chunk.length === 1 && chunk[0] === handshakeAck[0]) {
-          log(`← handshake ACK 0x01 (aceptado)`);
+          log('← handshake ACK 0x01 (aceptado)');
           phase = 'avl';
           const packet = buildAvlPacketSantiago();
           socket.write(packet);
@@ -160,18 +160,18 @@ async function smokeTest(): Promise<void> {
     });
   });
 
-  log(``);
-  log(`✓ Smoke-test OK`);
-  log(``);
-  log(`Próximos pasos:`);
-  log(`  1. Abrí https://app.boosterchile.com/app/admin/dispositivos`);
-  log(`  2. Esperá <30s (TanStack Query polling) — debería aparecer:`);
+  log('');
+  log('✓ Smoke-test OK');
+  log('');
+  log('Próximos pasos:');
+  log('  1. Abrí https://app.boosterchile.com/app/admin/dispositivos');
+  log('  2. Esperá <30s (TanStack Query polling) — debería aparecer:');
   log(`     IMEI ${IMEI}, 1 conexión, hace unos segundos.`);
-  log(`  3. Asocialo a cualquier vehículo de prueba (no rompe nada).`);
+  log('  3. Asocialo a cualquier vehículo de prueba (no rompe nada).');
 }
 
 smokeTest().catch((err: Error) => {
-  log(``);
+  log('');
   log(`✗ Smoke-test FALLÓ: ${err.message}`);
   process.exit(1);
 });

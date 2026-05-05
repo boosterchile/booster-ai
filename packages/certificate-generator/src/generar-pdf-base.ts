@@ -15,14 +15,14 @@
  * bytes del placeholder. El resto del PDF queda intacto.
  */
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type {
-  DatosViajeCertificado,
-  DatosMetricasCertificado,
   DatosEmpresaCertificado,
+  DatosMetricasCertificado,
   DatosTransportistaCertificado,
+  DatosViajeCertificado,
 } from './tipos.js';
 
 export interface ParametrosGenerarPdf {
@@ -49,9 +49,7 @@ const DEFAULT_PLACEHOLDER_BYTES = 16384;
 /**
  * Genera el PDF y devuelve los bytes con el placeholder embebido.
  */
-export async function generarPdfBase(
-  params: ParametrosGenerarPdf,
-): Promise<Uint8Array> {
+export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]); // A4
   const { width, height } = page.getSize();
@@ -210,10 +208,16 @@ export async function generarPdfBase(
     color: rgb(0.97, 0.99, 0.97),
   });
 
-  drawSectionTitle(page, 'Resultado de huella de carbono', 40, cursorY - 18, fontBold, colorPrimary);
+  drawSectionTitle(
+    page,
+    'Resultado de huella de carbono',
+    40,
+    cursorY - 18,
+    fontBold,
+    colorPrimary,
+  );
 
-  const kgWtw =
-    params.metricas.kgco2eWtwActual ?? params.metricas.kgco2eWtwEstimated ?? 0;
+  const kgWtw = params.metricas.kgco2eWtwActual ?? params.metricas.kgco2eWtwEstimated ?? 0;
 
   page.drawText(`${kgWtw.toFixed(2)} kg CO2e`, {
     x: 40,

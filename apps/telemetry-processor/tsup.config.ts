@@ -20,12 +20,5 @@ export default defineConfig({
   noExternal: [/^@booster-ai\//],
   // Dependencias runtime que SÍ deben quedar como externals (existen en
   // node_modules del container porque están en package.json de la app).
-  external: [
-    'pg',
-    'drizzle-orm',
-    'pino',
-    'pino-pretty',
-    'zod',
-    '@google-cloud/pubsub',
-  ],
+  external: ['pg', 'drizzle-orm', 'pino', 'pino-pretty', 'zod', '@google-cloud/pubsub'],
 });

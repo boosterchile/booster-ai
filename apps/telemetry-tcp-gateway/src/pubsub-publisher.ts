@@ -1,6 +1,6 @@
-import type { PubSub, Topic } from '@google-cloud/pubsub';
-import type { Logger } from '@booster-ai/logger';
 import type { AvlRecord } from '@booster-ai/codec8-parser';
+import type { Logger } from '@booster-ai/logger';
+import type { PubSub, Topic } from '@google-cloud/pubsub';
 
 /**
  * Publica AVL records al topic Pub/Sub `telemetry-events`. El processor

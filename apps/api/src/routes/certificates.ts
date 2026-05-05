@@ -155,10 +155,7 @@ export function createCertificatesRoutes(opts: {
     const trackingCode = c.req.param('tracking_code');
 
     if (!opts.certConfig?.certificatesBucket) {
-      return c.json(
-        { error: 'certificates_disabled', code: 'certificates_disabled' },
-        503,
-      );
+      return c.json({ error: 'certificates_disabled', code: 'certificates_disabled' }, 503);
     }
 
     // Lookup por tracking_code → trip + empresa_id (necesitamos el path
@@ -174,10 +171,7 @@ export function createCertificatesRoutes(opts: {
       .limit(1);
     const trip = tripRows[0];
     if (!trip) {
-      return c.json(
-        { error: 'tracking_code_not_found', code: 'tracking_code_not_found' },
-        404,
-      );
+      return c.json({ error: 'tracking_code_not_found', code: 'tracking_code_not_found' }, 404);
     }
     if (!trip.certificateIssuedAt) {
       return c.json(
@@ -191,10 +185,7 @@ export function createCertificatesRoutes(opts: {
     if (!trip.empresaId) {
       // Edge: trip sin shipper (anonymous WhatsApp). No debería tener
       // cert (el servicio skipea), pero defensivo.
-      return c.json(
-        { error: 'certificate_not_issued', code: 'certificate_not_issued' },
-        404,
-      );
+      return c.json({ error: 'certificate_not_issued', code: 'certificate_not_issued' }, 404);
     }
 
     // Descargar sidecar JSON desde GCS.

@@ -1,3 +1,4 @@
+import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
@@ -16,7 +17,6 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
-import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
@@ -341,9 +341,7 @@ export function createTripRequestsV2Routes(opts: {
     return c.json({
       trip_request: serializeTripDetail(trip),
       events,
-      assignment: assignmentRow
-        ? { ...assignmentRow, ubicacion_actual: ubicacionActual }
-        : null,
+      assignment: assignmentRow ? { ...assignmentRow, ubicacion_actual: ubicacionActual } : null,
       metrics: metricsRow
         ? {
             distance_km_estimated: metricsRow.distanceKmEstimated,
@@ -386,10 +384,7 @@ export function createTripRequestsV2Routes(opts: {
     }
     if (!opts.certConfig?.certificatesBucket) {
       // Sin bucket no hay nada que firmar.
-      return c.json(
-        { error: 'certificates_disabled', code: 'certificates_disabled' },
-        503,
-      );
+      return c.json({ error: 'certificates_disabled', code: 'certificates_disabled' }, 503);
     }
 
     const id = c.req.param('id');

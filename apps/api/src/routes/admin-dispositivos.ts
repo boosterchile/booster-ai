@@ -33,8 +33,7 @@ const rechazarBodySchema = z.object({
 export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context tiene generics
-  // complejos que cambian por route; usamos `any` para el helper compartido.
+  // biome-ignore lint/suspicious/noExplicitAny: hono Context tiene generics complejos que cambian por route; usamos `any` para el helper compartido.
   function requireAdmin(c: Context<any, any, any>) {
     const userContext = c.get('userContext');
     if (!userContext) {
@@ -60,7 +59,9 @@ export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) 
   // GET /admin/dispositivos-pendientes?estado=pendiente
   app.get('/', async (c) => {
     const auth = requireAdmin(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
 
     const estadoParam = c.req.query('estado') ?? 'pendiente';
     const validStates = ['pendiente', 'aprobado', 'rechazado', 'reemplazado'] as const;
@@ -96,7 +97,9 @@ export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) 
   // POST /admin/dispositivos-pendientes/:id/asociar
   app.post('/:id/asociar', zValidator('json', asociarBodySchema), async (c) => {
     const auth = requireAdmin(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const userContext = auth.userContext;
     const empresaActiva = auth.activeMembership.empresa;
 
@@ -131,10 +134,7 @@ export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) 
         .where(and(eq(vehicles.id, body.vehiculo_id), eq(vehicles.empresaId, empresaActiva.id)))
         .limit(1);
       if (!vehicle) {
-        return c.json(
-          { error: 'vehicle_not_found_or_not_owned', code: 'vehicle_forbidden' },
-          403,
-        );
+        return c.json({ error: 'vehicle_not_found_or_not_owned', code: 'vehicle_forbidden' }, 403);
       }
       if (vehicle.teltonikaImei && vehicle.teltonikaImei !== device.imei) {
         return c.json(
@@ -190,7 +190,9 @@ export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) 
   // POST /admin/dispositivos-pendientes/:id/rechazar
   app.post('/:id/rechazar', zValidator('json', rechazarBodySchema), async (c) => {
     const auth = requireAdmin(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
 
     const id = c.req.param('id');
     const body = c.req.valid('json');

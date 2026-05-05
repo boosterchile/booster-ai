@@ -1,4 +1,4 @@
-import { APIProvider, AdvancedMarker, Map, Pin } from '@vis.gl/react-google-maps';
+import { APIProvider, AdvancedMarker, Map as GoogleMap, Pin } from '@vis.gl/react-google-maps';
 import { MapPin } from 'lucide-react';
 import { env } from '../../lib/env.js';
 
@@ -36,7 +36,7 @@ export function VehicleMap({
   if (!env.VITE_GOOGLE_MAPS_API_KEY) {
     return (
       <div
-        className="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center"
+        className="flex flex-col items-center justify-center rounded-lg border border-neutral-300 border-dashed bg-neutral-50 p-6 text-center"
         style={{ height }}
       >
         <MapPin className="h-8 w-8 text-neutral-400" aria-hidden />
@@ -51,14 +51,14 @@ export function VehicleMap({
   if (latitude == null || longitude == null) {
     return (
       <div
-        className="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-6 text-center"
+        className="flex flex-col items-center justify-center rounded-lg border border-neutral-300 border-dashed bg-neutral-50 p-6 text-center"
         style={{ height }}
       >
         <MapPin className="h-8 w-8 text-neutral-400" aria-hidden />
         <p className="mt-2 font-medium text-neutral-700 text-sm">Sin posición GPS aún</p>
         <p className="mt-1 text-neutral-500 text-xs">
-          El dispositivo no ha reportado coordenadas. Si recién se asoció, los primeros
-          puntos pueden tardar unos segundos.
+          El dispositivo no ha reportado coordenadas. Si recién se asoció, los primeros puntos
+          pueden tardar unos segundos.
         </p>
       </div>
     );
@@ -73,7 +73,7 @@ export function VehicleMap({
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
       <APIProvider apiKey={env.VITE_GOOGLE_MAPS_API_KEY}>
-        <Map
+        <GoogleMap
           style={{ height }}
           defaultCenter={center}
           defaultZoom={zoom}
@@ -84,13 +84,9 @@ export function VehicleMap({
           mapId="booster-vehicle-map"
         >
           <AdvancedMarker position={center} title={`${plate} · ${speedLabel}`}>
-            <Pin
-              background="#1FA058"
-              borderColor="#0D6E3F"
-              glyphColor="#FFFFFF"
-            />
+            <Pin background="#1FA058" borderColor="#0D6E3F" glyphColor="#FFFFFF" />
           </AdvancedMarker>
-        </Map>
+        </GoogleMap>
       </APIProvider>
       <div className="flex items-center justify-between gap-4 border-neutral-100 border-t bg-white px-4 py-2 text-neutral-700 text-xs">
         <div className="flex items-center gap-2">

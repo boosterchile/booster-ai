@@ -1,6 +1,6 @@
 import { DEFAULTS_POR_TIPO } from '../factores/defaults-por-tipo.js';
-import { calcularModelado } from './modelado.js';
 import type { ParametrosPorDefecto, ResultadoEmisiones } from '../tipos.js';
+import { calcularModelado } from './modelado.js';
 
 /**
  * Modo `por_defecto`: vehículo SIN perfil energético declarado.

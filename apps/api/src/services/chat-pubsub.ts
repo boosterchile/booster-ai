@@ -30,8 +30,8 @@
  * borra explícitamente al fin del SSE.
  */
 
-import { PubSub, type Subscription } from '@google-cloud/pubsub';
 import type { Logger } from '@booster-ai/logger';
+import { PubSub, type Subscription } from '@google-cloud/pubsub';
 
 let cachedClient: PubSub | null = null;
 

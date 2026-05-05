@@ -55,7 +55,9 @@ export function createMePushSubscriptionRoutes(opts: { db: Db; logger: Logger })
   // -------------------------------------------------------------------------
   app.post('/', zValidator('json', subscribeBodySchema), async (c) => {
     const auth = requireUser(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
 
     const body = c.req.valid('json');
     const userAgent = c.req.header('user-agent') ?? null;
@@ -100,7 +102,9 @@ export function createMePushSubscriptionRoutes(opts: { db: Db; logger: Logger })
   // -------------------------------------------------------------------------
   app.delete('/', zValidator('json', unsubscribeBodySchema), async (c) => {
     const auth = requireUser(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const body = c.req.valid('json');
 
     // Hard-delete: el user pidió explícitamente. No es un soft-disable
@@ -139,10 +143,7 @@ export function createWebpushPublicRoutes(opts: { vapidPublicKey?: string }) {
 
   app.get('/vapid-public-key', (c) => {
     if (!opts.vapidPublicKey) {
-      return c.json(
-        { error: 'webpush_disabled', code: 'webpush_disabled' },
-        503,
-      );
+      return c.json({ error: 'webpush_disabled', code: 'webpush_disabled' }, 503);
     }
     // Devolver como JSON simple — el cliente lo consume con fetch y lo
     // pasa a `pushManager.subscribe({applicationServerKey: <key>})`.

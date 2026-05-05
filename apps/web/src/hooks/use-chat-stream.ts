@@ -24,8 +24,8 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { firebaseAuth } from '../lib/firebase.js';
 import { env } from '../lib/env.js';
+import { firebaseAuth } from '../lib/firebase.js';
 
 export interface ChatStreamMessage {
   message_id: string;
@@ -60,7 +60,9 @@ export function useChatStream(opts: UseChatStreamOptions): void {
   onDisconnectRef.current = opts.onDisconnect;
 
   useEffect(() => {
-    if (!enabled || !opts.assignmentId) return;
+    if (!enabled || !opts.assignmentId) {
+      return;
+    }
 
     let cancelled = false;
     let eventSource: EventSource | null = null;
@@ -68,7 +70,9 @@ export function useChatStream(opts: UseChatStreamOptions): void {
     let backoff = INITIAL_BACKOFF_MS;
 
     const connect = async () => {
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
       // Firebase token para auth — va como query param porque EventSource
       // no soporta headers.
@@ -81,21 +85,23 @@ export function useChatStream(opts: UseChatStreamOptions): void {
       }
       const token = await user.getIdToken();
 
-      const url = new URL(
-        `${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream`,
-      );
+      const url = new URL(`${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream`);
       url.searchParams.set('auth', token);
 
       eventSource = new EventSource(url.toString());
 
       eventSource.addEventListener('connected', () => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         backoff = INITIAL_BACKOFF_MS;
         onConnectRef.current?.();
       });
 
       eventSource.addEventListener('message', (ev) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         try {
           const data = JSON.parse(ev.data) as ChatStreamMessage;
           onMessageRef.current(data);
@@ -114,7 +120,9 @@ export function useChatStream(opts: UseChatStreamOptions): void {
         // EventSource intenta reconnect nativo, pero si el server cerró
         // (5xx / 401 expirado), preferimos cerrar y reconnect manual con
         // backoff exponencial + token fresco.
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         eventSource?.close();
         eventSource = null;
         onDisconnectRef.current?.();
@@ -127,7 +135,9 @@ export function useChatStream(opts: UseChatStreamOptions): void {
 
     return () => {
       cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
       eventSource?.close();
     };
   }, [enabled, opts.assignmentId]);

@@ -1,6 +1,6 @@
 import net from 'node:net';
-import { PubSub } from '@google-cloud/pubsub';
 import { createLogger } from '@booster-ai/logger';
+import { PubSub } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { loadConfig } from './config.js';
@@ -30,7 +30,11 @@ async function main(): Promise<void> {
   });
 
   logger.info(
-    { port: config.PORT, project: config.GOOGLE_CLOUD_PROJECT, topic: config.PUBSUB_TOPIC_TELEMETRY },
+    {
+      port: config.PORT,
+      project: config.GOOGLE_CLOUD_PROJECT,
+      topic: config.PUBSUB_TOPIC_TELEMETRY,
+    },
     'telemetry-tcp-gateway starting',
   );
 

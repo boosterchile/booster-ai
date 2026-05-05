@@ -14,8 +14,8 @@
  */
 
 import { Storage } from '@google-cloud/storage';
-import type { ResultadoFirmaPades } from './firmar-pades.js';
 import type { CertSelfSignedResultado } from './ca-self-signed.js';
+import type { ResultadoFirmaPades } from './firmar-pades.js';
 import type { SidecarFirma } from './tipos.js';
 
 let cachedStorage: Storage | null = null;
@@ -134,9 +134,7 @@ export async function descargarSidecar(opts: {
   trackingCode: string;
 }): Promise<SidecarFirma | null> {
   const bucket = getStorage().bucket(opts.bucket);
-  const file = bucket.file(
-    `certificates/${opts.empresaId}/${opts.trackingCode}.pdf.sig`,
-  );
+  const file = bucket.file(`certificates/${opts.empresaId}/${opts.trackingCode}.pdf.sig`);
   const [exists] = await file.exists();
   if (!exists) {
     return null;

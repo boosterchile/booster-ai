@@ -1,7 +1,7 @@
 import {
-  calcularEmisionesViaje,
   type ResultadoEmisiones,
   type TipoCombustible,
+  calcularEmisionesViaje,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
