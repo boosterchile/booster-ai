@@ -16,16 +16,17 @@ describe('calcularModelado — escenarios de referencia', () => {
       },
     });
 
-    // Carga 12000 / 25000 = 0.48 → casi carga normal, factor corrección ~0.998
+    // Carga 12000 / 25000 = 0.48 → α MDV default = 0.10
+    //   correccion = 1 + 0.10 × (0.48 − 0.5) = 0.998
     // Consumo total ≈ 28 × 0.998 × 3.5 ≈ 97.8 L
-    // Emisiones WTW ≈ 97.8 × 3.77 ≈ 369 kg CO2e
-    // Intensidad ≈ 369000 g / (350 km × 12 ton) ≈ 87.9 g/(t·km)
+    // Emisiones WTW ≈ 97.8 × 3.25 ≈ 318 kg CO2e (factor GLEC v3.0 + IPCC AR6)
+    // Intensidad ≈ 318000 g / (350 km × 12 ton) ≈ 75.7 g/(t·km)
     expect(r.combustibleConsumido).toBeGreaterThan(95);
     expect(r.combustibleConsumido).toBeLessThan(100);
-    expect(r.emisionesKgco2eWtw).toBeGreaterThan(360);
-    expect(r.emisionesKgco2eWtw).toBeLessThan(380);
-    expect(r.intensidadGco2ePorTonKm).toBeGreaterThan(80);
-    expect(r.intensidadGco2ePorTonKm).toBeLessThan(95);
+    expect(r.emisionesKgco2eWtw).toBeGreaterThan(310);
+    expect(r.emisionesKgco2eWtw).toBeLessThan(330);
+    expect(r.intensidadGco2ePorTonKm).toBeGreaterThan(70);
+    expect(r.intensidadGco2ePorTonKm).toBeLessThan(85);
     expect(r.metodoPrecision).toBe('modelado');
     expect(r.unidadCombustible).toBe('L');
   });
@@ -126,6 +127,9 @@ describe('calcularModelado — escenarios de referencia', () => {
       },
     });
     expect(r.versionGlec).toBe('v3.0');
-    expect(r.fuenteFactores).toContain('SEC Chile 2024');
+    // Tras audit FIX-013: la fuente cambia a "GLEC v3.0 (Smart Freight Centre 2023) + IPCC AR6 GWP-100"
+    // (antes citaba SEC Chile 2024 que tenía un error científico en TTW).
+    expect(r.fuenteFactores).toContain('GLEC v3.0');
+    expect(r.fuenteFactores).toContain('IPCC AR6');
   });
 });

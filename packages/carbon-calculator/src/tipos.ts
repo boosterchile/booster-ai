@@ -7,10 +7,12 @@
  *   - Quien orquesta la persistencia (servicio en apps/api) es responsable
  *     de mapear desde/hacia trip_metrics.
  *
- * Standard de referencia:
- *   - GLEC Framework v3.0 (Smart Freight Centre, 2023).
- *   - Factores de emisión Chile: SEC + MMA (2024).
- *   - Grid eléctrico: CEN (Coordinador Eléctrico Nacional) factor anual.
+ * Estándar de referencia (versión 2, 2026-05-05):
+ *   - **GLEC Framework v3.0** (Smart Freight Centre, 2023).
+ *   - **IPCC AR6 GWP-100** para CO₂e (CH₄ fósil = 29.8, N₂O = 273).
+ *   - **DEFRA UK 2024 GHG Conversion Factors** (cross-check WTW).
+ *   - **Decreto Supremo N°60/2010 Chile** (B5 mandatorio).
+ *   - **CEN — Coordinador Eléctrico Nacional** factor SEN anual.
  *
  * Importante: los valores TTW (Tank-to-Wheel, combustión real) son
  * estables (química). Los valores WTT (Well-to-Tank, upstream del
@@ -49,21 +51,22 @@ export type MetodoPrecision = 'exacto_canbus' | 'modelado' | 'por_defecto';
 
 /**
  * Factor de emisión completo Well-to-Wheel para un combustible en una
- * jurisdicción específica (Chile). Todos los valores son CO2-equivalente
- * (incluye CH4 + N2O convertidos vía GWP-100 IPCC AR6).
+ * jurisdicción específica (Chile). Todos los valores son CO₂e (incluye
+ * CH₄ + N₂O ponderados con IPCC AR6 GWP-100).
  */
 export interface FactorEmisionCombustible {
   /** Código del combustible — match del enum tipo_combustible. */
   combustible: TipoCombustible;
   /**
-   * Tank-to-Wheel: emisiones por COMBUSTIÓN del combustible en el motor.
-   * Estable; depende de química y blend del combustible.
+   * Tank-to-Wheel: emisiones por COMBUSTIÓN del combustible en el motor,
+   * incluyendo CO₂ + CH₄ + N₂O × GWP-100 AR6. NO incluye NOx, SOx, MP
+   * (esos son contaminantes locales, no GHG).
    *
    * Unidades:
-   *   - Diésel/Gasolina/GLP: kgCO2e por LITRO
-   *   - GNC: kgCO2e por m³ (a 0 °C, 1 atm — STD volume)
-   *   - Eléctrico: kgCO2e por kWh
-   *   - Hidrógeno: kgCO2e por kg
+   *   - Diésel/Gasolina/GLP: kg CO₂e por LITRO
+   *   - GNC: kg CO₂e por m³ (a 0 °C, 1 atm — STD volume)
+   *   - Eléctrico: kg CO₂e por kWh
+   *   - Hidrógeno: kg CO₂e por kg
    */
   ttwKgco2e: number;
   /**
@@ -79,9 +82,7 @@ export interface FactorEmisionCombustible {
    * value), GLEC v3.0 default.
    */
   energyMjPerUnit: number;
-  /**
-   * Unidad física del numerador (L, m3, kWh, kg). Para reporting.
-   */
+  /** Unidad física del numerador (L, m3, kWh, kg). Para reporting. */
   unidad: 'L' | 'm3' | 'kWh' | 'kg';
   /** Año de los valores. Para auditoría. */
   anioReferencia: number;
@@ -96,7 +97,7 @@ export interface FactorEmisionCombustible {
 export interface PerfilVehiculo {
   combustible: TipoCombustible;
   /**
-   * Consumo declarado del vehículo a CARGA NORMAL (no vacío, no full).
+   * Consumo declarado del vehículo a CARGA NORMAL (50% capacidad).
    * Unidades:
    *   - Diésel/Gasolina/GLP: L/100km
    *   - GNC: m³/100km
@@ -112,6 +113,33 @@ export interface PerfilVehiculo {
 }
 
 /**
+ * Empty backhaul allocation (GLEC v3.0 §6.4) — opcional.
+ *
+ * Permite atribuir al shipment las emisiones del leg vacío de retorno,
+ * descontando la fracción que el matching engine de Booster cubrió con
+ * carga de retorno.
+ *
+ * Si NO se pasa este objeto, el cálculo NO incluye empty backhaul (el
+ * shipment se reporta solo por su loaded leg, comportamiento legacy).
+ *
+ * Quien decide cuándo pasarlo: el servicio orquestador en apps/api,
+ * que tiene visibilidad del grafo de viajes consecutivos del carrier.
+ */
+export interface ParametrosBackhaul {
+  /** Distancia del retorno (km) — usualmente igual a distanciaKm del leg loaded. */
+  distanciaRetornoKm: number;
+  /**
+   * Fracción del retorno que el matching cubrió con carga, en [0, 1].
+   *   - 0   = sin matching (camión vuelve 100% vacío).
+   *   - 1   = matching perfecto (camión vuelve 100% loaded para otro shipment).
+   *
+   * Booster opera en el medio: el matching engine busca cargas de
+   * retorno y reporta el ratio real conseguido para este viaje.
+   */
+  factorMatching: number;
+}
+
+/**
  * Datos del viaje necesarios para el cálculo en modo `modelado`.
  */
 export interface ParametrosModelado {
@@ -122,6 +150,8 @@ export interface ParametrosModelado {
   cargaKg: number;
   /** Perfil del vehículo. */
   vehiculo: PerfilVehiculo;
+  /** Empty backhaul allocation opcional (GLEC §6.4). */
+  backhaul?: ParametrosBackhaul;
 }
 
 /**
@@ -138,6 +168,8 @@ export interface ParametrosExactoCanbus {
   cargaKg: number;
   /** Perfil del vehículo. */
   vehiculo: PerfilVehiculo;
+  /** Empty backhaul allocation opcional (GLEC §6.4). */
+  backhaul?: ParametrosBackhaul;
 }
 
 /**
@@ -163,6 +195,8 @@ export interface ParametrosPorDefecto {
     | 'semi_remolque'
     | 'refrigerado'
     | 'tanque';
+  /** Empty backhaul allocation opcional (GLEC §6.4). */
+  backhaul?: ParametrosBackhaul;
 }
 
 export type ParametrosCalculo = ParametrosModelado | ParametrosExactoCanbus | ParametrosPorDefecto;
@@ -173,7 +207,7 @@ export type ParametrosCalculo = ParametrosModelado | ParametrosExactoCanbus | Pa
  * que persiste en `metricas_viaje` mapea estos campos directo.
  */
 export interface ResultadoEmisiones {
-  /** Total Well-to-Wheel en kgCO2e. */
+  /** Total Well-to-Wheel en kg CO₂e (loaded leg, sin backhaul). */
   emisionesKgco2eWtw: number;
   /** Desglose: solo combustión (Tank-to-Wheel). */
   emisionesKgco2eTtw: number;
@@ -186,13 +220,31 @@ export interface ResultadoEmisiones {
   /** Distancia considerada en km. */
   distanciaKm: number;
   /**
-   * Intensidad de carbono en gCO2e por ton-km transportado. KPI estándar
-   * para reporting GLEC. Si carga es 0 (tara), retorna 0.
+   * Intensidad de carbono en g CO₂e por ton-km transportado, considerando
+   * SOLO el loaded leg. KPI estándar GLEC. Si carga es 0 (tara), retorna 0.
    */
   intensidadGco2ePorTonKm: number;
+  /**
+   * Empty backhaul allocation (GLEC §6.4) — solo presente si el caller
+   * pasó `backhaul` en los parámetros.
+   *
+   *   - `emisionesKgco2eWtw`: emisiones del leg vacío atribuibles al
+   *     shipment (kg CO₂e), descontando lo que el matching cubrió.
+   *   - `intensidadConBackhaulGco2ePorTonKm`: intensidad TOTAL incluyendo
+   *     loaded + empty backhaul, base para reporte ESG completo.
+   *   - `ahorroVsSinMatchingKgco2e`: cuánto ahorró el matching de Booster
+   *     vs el escenario "sin matching" (camión vuelve 100% vacío).
+   *     Storytelling comercial: lo que Booster aporta al shipper.
+   */
+  backhaul?: {
+    emisionesKgco2eWtw: number;
+    intensidadConBackhaulGco2ePorTonKm: number;
+    ahorroVsSinMatchingKgco2e: number;
+    factorMatchingAplicado: number;
+  };
   /** Método de precisión usado. */
   metodoPrecision: MetodoPrecision;
-  /** Factor de emisión específico aplicado (kgCO2e/unidad). */
+  /** Factor de emisión específico aplicado (kg CO₂e/unidad). */
   factorEmisionUsado: number;
   /** Versión del framework GLEC. */
   versionGlec: string;
