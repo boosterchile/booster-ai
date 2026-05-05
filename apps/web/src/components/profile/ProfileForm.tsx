@@ -3,6 +3,7 @@ import { Check, Save } from 'lucide-react';
 import { type FormEvent, type ReactNode, useId, useState } from 'react';
 import { useProfileMutation } from '../../hooks/use-profile-mutation.js';
 import { ApiError } from '../../lib/api-client.js';
+import { formatRut } from '../../lib/rut.js';
 
 export interface ProfileFormProps {
   /** Datos actuales del usuario, vienen de useMe(). */
@@ -160,6 +161,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
             id={id}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
+            type="tel"
             autoComplete="tel"
             inputMode="tel"
             placeholder="+56912345678"
@@ -176,6 +178,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
             id={id}
             value={whatsappE164}
             onChange={(e) => setWhatsappE164(e.target.value)}
+            type="tel"
             autoComplete="tel"
             inputMode="tel"
             placeholder="+56912345678"
@@ -194,7 +197,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
         render={(id) => (
           <input
             id={id}
-            value={rut}
+            value={initial.rut !== null ? formatRut(rut) : rut}
             onChange={(e) => setRut(e.target.value)}
             autoComplete="off"
             placeholder="12.345.678-9"
