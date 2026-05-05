@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { chileanPlateSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -50,17 +51,15 @@ const fuelTypes = [
 
 const vehicleStatuses = ['activo', 'mantenimiento', 'retirado'] as const;
 
-// Patente Chile: AA-BB-CC, AAAA-BB, AA·BB·CC, etc. Validamos formato laxo
-// (alfanumérico + guiones/puntos) y limpiamos a uppercase trimmed.
-const plateSchema = z
-  .string()
-  .min(4)
-  .max(12)
-  .regex(/^[A-Z0-9·\-.\s]+$/i, 'patente con caracteres inválidos')
-  .transform((s) => s.toUpperCase().replace(/\s+/g, '').replace(/·/g, '').replace(/\./g, '-'));
-
+// Patente chilena. Acepta input con o sin separadores (·, -, ., espacios) y
+// en cualquier capitalización; persiste en formato canónico de 6 chars
+// `[A-Z]{4}\d{2}` (ej: BCDF12). Schema centralizado en
+// @booster-ai/shared-schemas para que cliente y servidor compartan reglas.
+//
+// Reemplaza el schema laxo previo que aceptaba `....`, `XXX-99`, `1234`, etc.
+// porque solo validaba caracteres + min(4), no la estructura chilena.
 const createBodySchema = z.object({
-  plate: plateSchema,
+  plate: chileanPlateSchema,
   vehicle_type: z.enum(vehicleTypes),
   capacity_kg: z.number().int().positive().max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
@@ -72,11 +71,9 @@ const createBodySchema = z.object({
   consumption_l_per_100km_baseline: z.number().positive().max(99.99).nullable().optional(),
 });
 
-const updateBodySchema = createBodySchema
-  .partial()
-  .extend({
-    vehicle_status: z.enum(vehicleStatuses).optional(),
-  });
+const updateBodySchema = createBodySchema.partial().extend({
+  vehicle_status: z.enum(vehicleStatuses).optional(),
+});
 
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -100,7 +97,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
   function requireWriteRole(c: Context<any, any, any>) {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth;
+    if (!auth.ok) {
+      return auth;
+    }
     const role = auth.activeMembership.membership.role;
     if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
       return {
@@ -114,7 +113,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
   function requireDeleteRole(c: Context<any, any, any>) {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth;
+    if (!auth.ok) {
+      return auth;
+    }
     const role = auth.activeMembership.membership.role;
     if (role !== 'dueno' && role !== 'admin') {
       return {
@@ -130,7 +131,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.get('/', async (c) => {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
 
     const rows = await opts.db
       .select({
@@ -162,7 +165,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.post('/', zValidator('json', createBodySchema), async (c) => {
     const auth = requireWriteRole(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
@@ -211,15 +216,15 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.get('/:id', async (c) => {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const id = c.req.param('id');
 
     const [row] = await opts.db
       .select()
       .from(vehicles)
-      .where(
-        and(eq(vehicles.id, id), eq(vehicles.empresaId, auth.activeMembership.empresa.id)),
-      )
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, auth.activeMembership.empresa.id)))
       .limit(1);
 
     if (!row) {
@@ -233,7 +238,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.patch('/:id', zValidator('json', updateBodySchema), async (c) => {
     const auth = requireWriteRole(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const id = c.req.param('id');
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
@@ -249,22 +256,42 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.plate !== undefined) updates.plate = body.plate;
-    if (body.vehicle_type !== undefined) updates.vehicleType = body.vehicle_type;
-    if (body.capacity_kg !== undefined) updates.capacityKg = body.capacity_kg;
-    if (body.capacity_m3 !== undefined) updates.capacityM3 = body.capacity_m3;
-    if (body.year !== undefined) updates.year = body.year;
-    if (body.brand !== undefined) updates.brand = body.brand;
-    if (body.model !== undefined) updates.model = body.model;
-    if (body.fuel_type !== undefined) updates.fuelType = body.fuel_type;
-    if (body.curb_weight_kg !== undefined) updates.curbWeightKg = body.curb_weight_kg;
+    if (body.plate !== undefined) {
+      updates.plate = body.plate;
+    }
+    if (body.vehicle_type !== undefined) {
+      updates.vehicleType = body.vehicle_type;
+    }
+    if (body.capacity_kg !== undefined) {
+      updates.capacityKg = body.capacity_kg;
+    }
+    if (body.capacity_m3 !== undefined) {
+      updates.capacityM3 = body.capacity_m3;
+    }
+    if (body.year !== undefined) {
+      updates.year = body.year;
+    }
+    if (body.brand !== undefined) {
+      updates.brand = body.brand;
+    }
+    if (body.model !== undefined) {
+      updates.model = body.model;
+    }
+    if (body.fuel_type !== undefined) {
+      updates.fuelType = body.fuel_type;
+    }
+    if (body.curb_weight_kg !== undefined) {
+      updates.curbWeightKg = body.curb_weight_kg;
+    }
     if (body.consumption_l_per_100km_baseline !== undefined) {
       updates.consumptionLPer100kmBaseline =
         body.consumption_l_per_100km_baseline != null
           ? body.consumption_l_per_100km_baseline.toString()
           : null;
     }
-    if (body.vehicle_status !== undefined) updates.vehicleStatus = body.vehicle_status;
+    if (body.vehicle_status !== undefined) {
+      updates.vehicleStatus = body.vehicle_status;
+    }
 
     try {
       const [updated] = await opts.db
@@ -297,7 +324,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.delete('/:id', async (c) => {
     const auth = requireDeleteRole(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
@@ -324,7 +353,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.get('/:id/telemetria', async (c) => {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
@@ -392,7 +423,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   // ---------------------------------------------------------------------
   app.get('/:id/ubicacion', async (c) => {
     const auth = requireAuth(c);
-    if (!auth.ok) return auth.response;
+    if (!auth.ok) {
+      return auth.response;
+    }
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
@@ -405,10 +438,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       return c.json({ error: 'vehicle_not_found' }, 404);
     }
     if (!vehicle.teltonikaImei) {
-      return c.json(
-        { error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate },
-        404,
-      );
+      return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
     }
 
     const [last] = await opts.db
@@ -430,7 +460,12 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
 
     if (!last) {
       return c.json(
-        { error: 'no_points_yet', code: 'no_points_yet', plate: vehicle.plate, imei: vehicle.teltonikaImei },
+        {
+          error: 'no_points_yet',
+          code: 'no_points_yet',
+          plate: vehicle.plate,
+          imei: vehicle.teltonikaImei,
+        },
         404,
       );
     }

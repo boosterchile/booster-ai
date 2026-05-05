@@ -1,3 +1,8 @@
+import {
+  chileanPlateSchema,
+  formatPlateForDisplay,
+  normalizePlate,
+} from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -13,7 +18,7 @@ import {
   Truck,
   User as UserIcon,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -106,7 +111,9 @@ export function VehiculosListRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         return <VehiculosListPage me={ctx.me} />;
       }}
     </ProtectedRoute>
@@ -147,9 +154,7 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
       </div>
 
       {vehiclesQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {vehiclesQ.error && (
-        <p className="mt-6 text-danger-700">Error al cargar vehículos.</p>
-      )}
+      {vehiclesQ.error && <p className="mt-6 text-danger-700">Error al cargar vehículos.</p>}
       {vehiclesQ.data && vehiclesQ.data.length === 0 && (
         <div className="mt-6 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
           <Truck className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
@@ -187,12 +192,15 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
             </thead>
             <tbody className="divide-y divide-neutral-100 bg-white">
               {vehiclesQ.data.map((v) => (
+                // biome-ignore lint/a11y/useKeyWithClickEvents: row es shortcut visual; el link "Ver" en la última columna es el control accesible primario.
                 <tr
                   key={v.id}
                   className="cursor-pointer hover:bg-neutral-50"
                   onClick={() => void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })}
                 >
-                  <Td className="font-mono font-semibold text-neutral-900">{v.plate}</Td>
+                  <Td className="font-mono font-semibold text-neutral-900">
+                    {formatPlateForDisplay(v.plate)}
+                  </Td>
                   <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
                   <Td>
                     {v.capacity_kg.toLocaleString('es-CL')} kg
@@ -240,7 +248,9 @@ export function VehiculosNuevoRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         const role = ctx.me.active_membership?.role;
         if (role !== 'dueno' && role !== 'admin' && role !== 'despachador') {
           return (
@@ -307,7 +317,9 @@ export function VehiculosDetalleRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
-        if (ctx.kind !== 'onboarded') return null;
+        if (ctx.kind !== 'onboarded') {
+          return null;
+        }
         return <VehiculoDetallePage me={ctx.me} />;
       }}
     </ProtectedRoute>
@@ -369,7 +381,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-            {vehicleQ.data?.plate ?? 'Vehículo'}
+            {vehicleQ.data?.plate ? formatPlateForDisplay(vehicleQ.data.plate) : 'Vehículo'}
           </h1>
         </div>
         {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' && (
@@ -463,9 +475,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
           </div>
 
           {/* Histórico de telemetría — al final */}
-          {vehicleQ.data.teltonika_imei && (
-            <TelemetriaSection vehicleId={vehicleQ.data.id} />
-          )}
+          {vehicleQ.data.teltonika_imei && <TelemetriaSection vehicleId={vehicleQ.data.id} />}
         </>
       )}
     </Layout>
@@ -520,21 +530,38 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
 }
 
 function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
+  // El servidor también normaliza vía chileanPlateSchema, pero normalizar
+  // del lado del cliente nos da consistencia visual: si el usuario ingresa
+  // "bcdf12", el body que viaja es "BCDF12".
   const body: Record<string, unknown> = {
-    plate: v.plate.trim().toUpperCase(),
+    plate: normalizePlate(v.plate),
     vehicle_type: v.vehicle_type,
     capacity_kg: Number.parseInt(v.capacity_kg, 10),
   };
-  if (v.capacity_m3.trim()) body.capacity_m3 = Number.parseInt(v.capacity_m3, 10);
-  if (v.year.trim()) body.year = Number.parseInt(v.year, 10);
-  if (v.brand.trim()) body.brand = v.brand.trim();
-  if (v.model.trim()) body.model = v.model.trim();
-  if (v.fuel_type) body.fuel_type = v.fuel_type;
-  if (v.curb_weight_kg.trim()) body.curb_weight_kg = Number.parseInt(v.curb_weight_kg, 10);
+  if (v.capacity_m3.trim()) {
+    body.capacity_m3 = Number.parseInt(v.capacity_m3, 10);
+  }
+  if (v.year.trim()) {
+    body.year = Number.parseInt(v.year, 10);
+  }
+  if (v.brand.trim()) {
+    body.brand = v.brand.trim();
+  }
+  if (v.model.trim()) {
+    body.model = v.model.trim();
+  }
+  if (v.fuel_type) {
+    body.fuel_type = v.fuel_type;
+  }
+  if (v.curb_weight_kg.trim()) {
+    body.curb_weight_kg = Number.parseInt(v.curb_weight_kg, 10);
+  }
   if (v.consumption_l_per_100km_baseline.trim()) {
     body.consumption_l_per_100km_baseline = Number.parseFloat(v.consumption_l_per_100km_baseline);
   }
-  if (v.vehicle_status) body.vehicle_status = v.vehicle_status;
+  if (v.vehicle_status) {
+    body.vehicle_status = v.vehicle_status;
+  }
   return body;
 }
 
@@ -556,21 +583,48 @@ function VehicleForm({
   disabled?: boolean;
 }) {
   const [values, setValues] = useState<VehicleFormValues>(initial ?? EMPTY_FORM);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof VehicleFormValues, string>>>(
+    {},
+  );
 
   function update<K extends keyof VehicleFormValues>(key: K, val: VehicleFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: val }));
+    // Limpia el error del field al editarlo — feedback positivo sin
+    // re-validar todo el form en cada keystroke.
+    setFieldErrors((prev) => {
+      if (!prev[key]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    // Validación cliente: la patente es la única regla compleja. Capacidad,
+    // tipo, etc. quedan cubiertos por los attributes HTML5 (`required`,
+    // `min`, `max`). Si el servidor encuentra otros issues vía Zod, los
+    // muestra el mutation handler de la mutación (`error` prop).
+    const plateResult = chileanPlateSchema.safeParse(values.plate);
+    if (!plateResult.success) {
+      const message = plateResult.error.issues[0]?.message ?? 'Patente inválida';
+      setFieldErrors({ plate: message });
+      return;
+    }
+    setFieldErrors({});
     onSubmit(values);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+    >
       <fieldset disabled={disabled} className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Patente *" htmlFor="plate">
+          <Field label="Patente *" htmlFor="plate" error={fieldErrors.plate}>
             <input
               id="plate"
               type="text"
@@ -578,8 +632,12 @@ function VehicleForm({
               value={values.plate}
               onChange={(e) => update('plate', e.target.value)}
               className={inputClass}
-              placeholder="AA·BB·CC o AAAA-BB"
+              placeholder="BC·DF·12 o BCDF12"
               maxLength={12}
+              aria-invalid={fieldErrors.plate ? true : undefined}
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </Field>
 
@@ -755,7 +813,11 @@ function VehicleForm({
 // Layout compartido (header con back y user)
 // =============================================================================
 
-function Layout({ me, title: _title, children }: { me: MeOnboarded; title: string; children: React.ReactNode }) {
+function Layout({
+  me,
+  title: _title,
+  children,
+}: { me: MeOnboarded; title: string; children: ReactNode }) {
   const activeEmpresa = me.active_membership?.empresa;
   async function handleSignOut() {
     await signOutUser();
@@ -819,23 +881,31 @@ function NoPermission() {
 function Field({
   label,
   htmlFor,
+  error,
   children,
 }: {
   label: string;
   htmlFor: string;
-  children: React.ReactNode;
+  error?: string | undefined;
+  children: ReactNode;
 }) {
+  const errorId = error ? `${htmlFor}-error` : undefined;
   return (
     <div>
       <label htmlFor={htmlFor} className="block font-medium text-neutral-700 text-sm">
         {label}
       </label>
       <div className="mt-1">{children}</div>
+      {error && (
+        <p id={errorId} role="alert" className="mt-1 text-danger-600 text-sm">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children: ReactNode }) {
   return (
     <th className="px-4 py-3 text-left font-semibold text-neutral-600 text-xs uppercase tracking-wider">
       {children}
@@ -843,7 +913,7 @@ function Th({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Td({ className = '', children }: { className?: string; children: React.ReactNode }) {
+function Td({ className = '', children }: { className?: string; children: ReactNode }) {
   return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
 }
 
@@ -969,9 +1039,7 @@ function TelemetriaSection({ vehicleId }: { vehicleId: string }) {
       </div>
 
       {telemetriaQ.isLoading && <p className="mt-4 text-neutral-500">Cargando…</p>}
-      {telemetriaQ.error && (
-        <p className="mt-4 text-danger-700">Error al cargar telemetría.</p>
-      )}
+      {telemetriaQ.error && <p className="mt-4 text-danger-700">Error al cargar telemetría.</p>}
       {telemetriaQ.data && telemetriaQ.data.points.length === 0 && (
         <div className="mt-4 rounded-md border border-neutral-200 border-dashed bg-white p-6 text-center text-neutral-600 text-sm">
           Aún no se han recibido puntos GPS de este dispositivo. Si recién lo asociaste, los
