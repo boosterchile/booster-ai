@@ -25,19 +25,23 @@
 # una subnet adicional en var.dr_region.
 
 resource "google_compute_subnetwork" "dr_private" {
-  name          = "booster-ai-dr-private"
-  project       = google_project.booster_ai.project_id
-  region        = var.dr_region
-  network       = google_compute_network.vpc.id
-  ip_cidr_range = "10.20.0.0/20"
+  name    = "booster-ai-dr-private"
+  project = google_project.booster_ai.project_id
+  region  = var.dr_region
+  network = google_compute_network.vpc.id
+  # 10.20.0.0/20 colisionaba con la subnet primary booster-ai-private en
+  # southamerica-west1 (la VPC es global, los CIDRs no pueden repetirse
+  # entre subnets aunque vivan en regiones distintas).
+  # Movido a 10.30.0.0/20 + secondaries 10.31.0.0/16 y 10.32.0.0/20.
+  ip_cidr_range = "10.30.0.0/20"
 
   secondary_ip_range {
     range_name    = "gke-pods-dr"
-    ip_cidr_range = "10.21.0.0/16"
+    ip_cidr_range = "10.31.0.0/16"
   }
   secondary_ip_range {
     range_name    = "gke-services-dr"
-    ip_cidr_range = "10.22.0.0/20"
+    ip_cidr_range = "10.32.0.0/20"
   }
 
   private_ip_google_access = true
@@ -61,7 +65,7 @@ resource "google_container_cluster" "telemetry_dr" {
 
   master_authorized_networks_config {
     cidr_blocks {
-      cidr_block   = "10.20.0.0/20"
+      cidr_block   = "10.30.0.0/20"
       display_name = "booster-ai-dr-private-subnet"
     }
     cidr_blocks {

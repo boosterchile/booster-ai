@@ -292,10 +292,15 @@ resource "google_logging_metric" "crash_trace_persistence_failures" {
   EOT
 
   metric_descriptor {
-    metric_kind = "DELTA"
-    value_type  = "INT64"
-    unit        = "1"
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
     display_name = "Crash Trace persistence failures"
+    labels {
+      key         = "imei"
+      value_type  = "STRING"
+      description = "IMEI del device cuya persist falló"
+    }
   }
 
   label_extractors = {
