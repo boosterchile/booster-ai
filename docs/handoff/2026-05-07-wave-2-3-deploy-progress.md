@@ -6,13 +6,15 @@ retomar desde otra máquina (Macbook u otro).
 ## TL;DR
 
 - **Infra GCP de Wave 2/3 100% desplegada via Terraform**.
-- **API Cloud Run sano en rev 67+** con secrets desde Secret Manager.
-- **No hay devices Teltonika productivos llegando al gateway todavía** —
-  el sistema `booster-ai` nuevo está sin tráfico real (la telemetría
-  vive en sistema legacy o aún no se migró). No hay regresión, solo hay
-  preparación.
-- **2 cleanups tactical pendientes** + **DNS/LB IP mismatch a resolver
-  antes de conectar primer device**.
+- **API Cloud Run sano en rev 68** con secrets desde Secret Manager.
+  `__DEPLOY_TIMESTAMP` ya removido. Rev 65 fallida ya no existe (GC).
+- **Devices Wave 1 productivos SÍ reportando** al sistema `booster-ai`
+  (corrige observación inicial). El vehículo VFZH-68 (IMEI
+  `863238075489155`) llega al gateway desde `146.88.208.40` cada 5-6s
+  con records codec 142.
+- **DNS/LB IP mismatch RESUELTO** 2026-05-07 ~20:42 UTC. Service
+  `telemetry-tcp-gateway` tiene `loadBalancerIP: 34.176.238.106`
+  matching el A record. Persistido en repo via MR !39.
 
 ## Cómo retomar desde otra máquina
 
@@ -86,84 +88,42 @@ ver §4 abajo).
 - `cloud_run_runtime` SA → `roles/bigquery.dataEditor` en dataset `telemetry`.
 - `gcs-encrypter` SA → `roles/cloudkms.cryptoKeyEncrypterDecrypter` en KMS `crash-traces-cmek`.
 
-## Pendientes tactical (low priority)
+## Pendientes tactical
 
-### 1. Cleanup del `__DEPLOY_TIMESTAMP` del API
+(Nada pendiente — cleanups del recovery 2026-05-07 ya ejecutados:
+`__DEPLOY_TIMESTAMP` removido del API → rev 00068, rev 00065-mt7
+fallida GC'eada por Cloud Run.)
 
-Durante el debug del startup probe failure puse una env var `__DEPLOY_TIMESTAMP` para forzar revisión nueva. Ya cumplió su propósito pero queda como drift cosmético. Quitar:
+## DNS / Service IP mismatch — RESUELTO 2026-05-07 ~20:42 UTC
 
-```bash
-gcloud run services update booster-ai-api \
-  --remove-env-vars=__DEPLOY_TIMESTAMP \
-  --region=southamerica-west1 \
-  --project=booster-ai-494222
-```
+### Causa del outage
 
-### 2. Borrar la rev 65 fallida del API
+Terraform apply de Wave 2/3 dejó el A record `telemetry.boosterchile.com`
+apuntando a la IP estática reservada `34.176.238.106`, pero el K8s Service
+`telemetry-tcp-gateway` se creó con IP ephemeral (`34.176.126.66`). Los
+devices Wave 1 productivos no llegaban al gateway entre 13:25 UTC
+(terraform apply) y 20:42 UTC (fix aplicado).
 
-Esa fue la primera rev del API tras secret refactor que fallaba startup probe (placeholder `ROTATE_ME` en CONTENT_SID_CHAT_UNREAD). Como la rev 67+ ya sirve, podemos limpiar:
-
-```bash
-gcloud run revisions delete booster-ai-api-00065-mt7 \
-  --region=southamerica-west1 \
-  --project=booster-ai-494222 \
-  --quiet
-```
-
-## DNS / Service IP mismatch — IMPORTANTE antes de conectar primer device
-
-### Estado actual
-
-```
-DNS telemetry.boosterchile.com   →  34.176.238.106  (IP estática reservada `booster-telemetry-lb-ip`)
-K8s Service External IP           →  34.176.126.66   (IP ephemeral del LB)
-```
-
-Los dos no matchean. Si un device se conecta a `telemetry.boosterchile.com:5027` resuelve a `34.176.238.106` que **NO** está asignada al gateway K8s.
-
-### Fix: asignar IP estática al Service
+### Fix aplicado
 
 ```bash
-gcloud container clusters get-credentials booster-ai-telemetry \
-  --region=southamerica-west1 --project=booster-ai-494222
-
 kubectl patch service telemetry-tcp-gateway -n telemetry \
   --type=merge \
   -p '{"spec": {"loadBalancerIP": "34.176.238.106"}}'
-
-# Verificar 30-60s después:
-kubectl get svc -n telemetry telemetry-tcp-gateway
-# EXTERNAL-IP debería ser 34.176.238.106 (puede tardar hasta 5min en estabilizar)
 ```
 
-### Persistir el cambio en el repo
+GCP propagó el LB en ~90s. Vehículo VFZH-68 (IMEI 863238075489155)
+reconectó desde `146.88.208.40` y empezó a drenar buffer.
 
-Agregar `loadBalancerIP` al manifest K8s para que no se pierda en
-re-applies. Editar `infrastructure/k8s/telemetry-tcp-gateway.yaml`:
+Persistido en `infrastructure/k8s/telemetry-tcp-gateway.yaml` via MR !39
+(merged 2026-05-07 20:47 UTC).
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: telemetry-tcp-gateway
-spec:
-  type: LoadBalancer
-  loadBalancerIP: "34.176.238.106"   # ← agregar esta línea
-  externalTrafficPolicy: Local
-  ...
-```
+### Pendiente para Wave 3 (TLS dual-endpoint)
 
-Idem para `telemetry-tcp-gateway-tls.yaml` (si lo creás post-cert-manager,
-agregar `loadBalancerIP` con la IP correspondiente del Service TLS).
-
-Y para el DR cluster, `telemetry-tcp-gateway-dr.yaml`:
-
-```yaml
-spec:
-  loadBalancerIP: "136.116.208.86"
-```
-
-Commit + push + MR + merge + redeploy.
+Cuando se cree el Service `telemetry-tcp-gateway-tls` (puerto 5061)
+post-cert-manager, asignarle también una IP estática reservada y
+agregar `loadBalancerIP` al manifest. Idem para el DR cluster
+(`136.116.208.86`).
 
 ## Próximos pasos operacionales (en orden)
 
@@ -198,6 +158,8 @@ Sigue el runbook `docs/runbooks/wave-2-3-deploy.md` — secciones:
 | !35 | `refactor/content-sid-secrets` | Mover `content_sid_*` de variables Terraform a Secret Manager |
 | !36 | `fix/wave-2-3-apply-errors` | (cerrada — leak de tfvars.local accidental, reemplaza !37) |
 | !37 | `fix/wave-2-3-apply-errors-v2` | Hotfix 5 errores apply Wave 2/3 + cierra leak gitignore |
+| !38 | `docs/handoff-2026-05-07` | Handoff doc Wave 2/3 deploy progress |
+| !39 | `fix/k8s-loadbalancer-static-ip` | Persiste `loadBalancerIP: 34.176.238.106` en manifest K8s tras outage recovery |
 
 (Los MRs !24-!33 son los del Wave 2/3 y deploy runbook, ya mergeados antes.)
 
@@ -245,16 +207,23 @@ gcloud secrets versions access latest --secret=content-sid-chat-unread \
   --project=booster-ai-494222
 ```
 
-## Observación importante
+## Observación importante (corregida 2026-05-07 21:00 UTC)
 
-**No hay devices Teltonika productivos reportando al sistema `booster-ai`
-en los últimos 30 días** (verificado en logs Cloud Logging). Eso significa
-que toda la infra Wave 2/3 que desplegamos hoy es preparación para cuando
-se conecten los primeros devices vía la migración Wave 2.
+**Sí hay devices Wave 1 productivos reportando** al sistema `booster-ai`
+nuevo. La observación inicial ("no hay devices") fue incorrecta: estaba
+mirando una ventana donde el outage del IP mismatch enmascaraba el
+tráfico. Tras el fix del LoadBalancer, devices retomaron handshake
+inmediatamente:
 
-Esto cambia las prioridades: no hay urgencia de "rollback" ni "fix
-emergencia". El próximo paso es **smoke test con UN device de lab** antes
-de tocar nada productivo. Detalle en docs/runbooks/wave-2-3-deploy.md §6.
+- Vehículo VFZH-68, IMEI `863238075489155`, source `146.88.208.40`
+- Codec 142 (Codec 8 Extended), records cada 5-6s, processor
+  persistiendo en `telemetria_puntos`.
+
+**Implicación**: el deploy Wave 2/3 NO es greenfield para Wave 1 —
+los devices productivos viven aquí. Cualquier cambio al gateway o
+processor toca tráfico real. Para Wave 2/3 rollout (cfg nueva en
+device), seguir runbook `docs/runbooks/wave-2-3-deploy.md` §5 con
+canary 1 device → flota.
 
 ## Contacto / handoff
 
