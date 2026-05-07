@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router';
 // biome-ignore lint/suspicious/noShadowRestrictedNames: `Map` es el componente exportado por la lib de Google Maps; renombrarlo localmente confunde más que ayuda.
 import { APIProvider, AdvancedMarker, Map, Pin } from '@vis.gl/react-google-maps';
-import { ArrowLeft, Gauge, MapPin, Navigation, RefreshCw, Truck } from 'lucide-react';
+import { ArrowLeft, Gauge, LocateFixed, MapPin, Navigation, RefreshCw, Truck } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { env } from '../../lib/env.js';
 import { ageSeconds, formatAge } from '../../lib/freshness.js';
+import { FollowVehicle, useFollowVehicle } from './use-follow-vehicle.js';
 
 /**
  * Pantalla de tracking en vivo estilo Uber.
@@ -56,6 +57,7 @@ export function LiveTrackingScreen({
 }) {
   const hasMaps = Boolean(env.VITE_GOOGLE_MAPS_API_KEY);
   const hasPos = latitude != null && longitude != null;
+  const follow = useFollowVehicle();
 
   // Cuánto hace del último update. Helpers compartidos en lib/freshness.
   // El threshold de 2 min para `isStale` se mantiene porque /track es la
@@ -72,8 +74,8 @@ export function LiveTrackingScreen({
         <APIProvider apiKey={env.VITE_GOOGLE_MAPS_API_KEY!}>
           <Map
             style={{ height: '100%', width: '100%' }}
-            center={{ lat: latitude, lng: longitude }}
-            zoom={15}
+            defaultCenter={{ lat: latitude, lng: longitude }}
+            defaultZoom={15}
             gestureHandling="greedy"
             disableDefaultUI={false}
             mapTypeControl={false}
@@ -81,6 +83,12 @@ export function LiveTrackingScreen({
             streetViewControl={false}
             mapId="booster-live-map"
           >
+            <FollowVehicle
+              controller={follow}
+              latitude={latitude}
+              longitude={longitude}
+              zoom={15}
+            />
             <AdvancedMarker position={{ lat: latitude, lng: longitude }} title={title}>
               <Pin
                 background={isStale ? '#9CA3AF' : '#1FA058'}
@@ -90,6 +98,20 @@ export function LiveTrackingScreen({
             </AdvancedMarker>
           </Map>
         </APIProvider>
+      )}
+
+      {/* Botón Recentrar — solo visible cuando el usuario interactuó y se
+          pausó el follow. Posicionado encima del bottom card. */}
+      {hasMaps && hasPos && !follow.following && (
+        <button
+          type="button"
+          onClick={follow.resume}
+          className="absolute right-4 bottom-44 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-2xl ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+          aria-label="Recentrar mapa en el vehículo"
+          title="Recentrar"
+        >
+          <LocateFixed className="h-6 w-6 text-neutral-700" aria-hidden />
+        </button>
       )}
 
       {/* Empty states cubriendo el área del mapa */}
