@@ -247,6 +247,49 @@ importers:
         specifier: ^4.0.18
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.3))
 
+  apps/sms-fallback-gateway:
+    dependencies:
+      '@booster-ai/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@booster-ai/logger':
+        specifier: workspace:*
+        version: link:../../packages/logger
+      '@booster-ai/shared-schemas':
+        specifier: workspace:*
+        version: link:../../packages/shared-schemas
+      '@google-cloud/pubsub':
+        specifier: ^4.10.0
+        version: 4.11.0
+      '@hono/node-server':
+        specifier: ^1.13.7
+        version: 1.19.14(hono@4.12.14)
+      '@hono/zod-validator':
+        specifier: ^0.4.1
+        version: 0.4.3(hono@4.12.14)(zod@3.25.76)
+      hono:
+        specifier: ^4.6.14
+        version: 4.12.14
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.17
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.10)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.3))
+
   apps/telemetry-processor:
     dependencies:
       '@booster-ai/config':

@@ -136,6 +136,26 @@ variable "twilio_from_number" {
   }
 }
 
+variable "sms_fallback_webhook_url" {
+  description = <<-EOT
+    URL pública canónica del webhook del sms-fallback-gateway tal como
+    Twilio la conoce (Wave 2 B4). Necesario para validar la firma
+    HMAC-SHA1 del webhook (Twilio incluye la URL en el HMAC).
+
+    Ejemplos:
+      - dev: https://booster-ai-sms-fallback-gateway-<projno>.<region>.run.app/webhook
+      - prod: https://sms-fallback.boosterchile.com/webhook (si configuramos LB)
+
+    Default vacío deshabilita la validación de firma (NUNCA en prod).
+    Setear con override:
+      sms_fallback_webhook_url = "https://..."
+    Después de provisionar el número Twilio y configurar el webhook
+    en su Console.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "content_sid_offer_new" {
   description = <<-EOT
     Twilio Content SID del template aprobado para notificar al carrier que
