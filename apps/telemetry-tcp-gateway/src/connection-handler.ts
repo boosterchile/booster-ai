@@ -28,6 +28,8 @@ import type { TelemetryPublisher } from './pubsub-publisher.js';
  *   │  3. Loop: lee chunks, busca AVL packets completos       │
  *   │     (4B preamble + 4B length + N bytes data + 4B CRC),  │
  *   │     parsea, publica a Pub/Sub, ACK 4B BE record count.  │
+ *   │     Network Ping bytes (0xFF) entre packets se ignoran  │
+ *   │     silenciosamente — ver skipNetworkPings().           │
  *   │                                                          │
  *   │  4. Idle timeout o socket close → cleanup.              │
  *   │                                                          │
@@ -37,7 +39,29 @@ import type { TelemetryPublisher } from './pubsub-publisher.js';
  * en un solo `data` event. Acumulamos bytes en un buffer interno y
  * parseamos cuando hay suficiente. Si llega más de un packet en el
  * mismo chunk, los procesamos secuencialmente.
+ *
+ * Network Ping (Wave 2 device profile FMC150): el device manda un byte
+ * 0xFF cada N segundos (configurado en "Network Ping Timeout") para
+ * mantener NAT abierto. No es un AVL packet — el gateway debe
+ * descartarlo sin generar errores ni cerrar la conexión.
  */
+
+/**
+ * Descarta bytes 0xFF aislados al inicio del buffer (Network Ping del
+ * device para mantener NAT abierto). Wave 2 activa este comportamiento
+ * en los FMC150; sin este skip el gateway ve 0xFF como preamble inválido
+ * y mata la conexión, dejando al device sin telemetría.
+ *
+ * Pure function. Retorna un nuevo Buffer con prefix 0xFF removido. Si el
+ * buffer no empieza con 0xFF, lo retorna sin modificar.
+ */
+export function skipNetworkPings(buffer: Buffer): Buffer {
+  let offset = 0;
+  while (offset < buffer.length && buffer[offset] === 0xff) {
+    offset += 1;
+  }
+  return offset === 0 ? buffer : buffer.subarray(offset);
+}
 
 export interface ConnectionDeps {
   db: NodePgDatabase<Record<string, unknown>>;
@@ -149,7 +173,13 @@ async function processBuffer(opts: {
   }
 
   // Fase 2: AVL packets (puede haber 0..N en el buffer).
-  while (state.buffer.length >= 8) {
+  // skipNetworkPings se invoca en cada iteración para descartar 0xFF
+  // aislados que pueden llegar entre packets (Wave 2 Network Ping).
+  while (true) {
+    state.buffer = skipNetworkPings(state.buffer);
+    if (state.buffer.length < 8) {
+      return; // necesitamos al menos 8 bytes para preamble + length
+    }
     const preamble = state.buffer.readUInt32BE(0);
     if (preamble !== 0x00000000) {
       logger.warn(
