@@ -48,3 +48,6 @@ export * from './trip-request-create.js';
 
 // Profile update (Slice B.8)
 export * from './profile.js';
+
+// AVL IDs catálogo (Wave 2 — Track B1 + B2)
+export * from './avl-ids/index.js';
