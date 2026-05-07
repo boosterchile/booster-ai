@@ -92,3 +92,16 @@ export type NoCandidatesReason =
   | 'no_carrier_in_origin_region'
   | 'no_active_carriers'
   | 'no_vehicle_with_capacity';
+
+/**
+ * Factor de matching de retorno (input para empty backhaul allocation
+ * GLEC v3.0 §6.4). Función pura usada por
+ * `apps/api/src/services/calcular-metricas-viaje.ts`.
+ */
+export {
+  MATCHING_TIME_WINDOW_HORAS,
+  type ParametrosFactorMatching,
+  type PrecisionFactorMatching,
+  type ResultadoFactorMatching,
+  calcularFactorMatching,
+} from './factor-matching.js';
