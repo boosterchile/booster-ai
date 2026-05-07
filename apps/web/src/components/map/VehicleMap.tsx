@@ -1,6 +1,7 @@
 import { APIProvider, AdvancedMarker, Map as GoogleMap, Pin } from '@vis.gl/react-google-maps';
-import { MapPin } from 'lucide-react';
+import { LocateFixed, MapPin } from 'lucide-react';
 import { env } from '../../lib/env.js';
+import { FollowVehicle, useFollowVehicle } from './use-follow-vehicle.js';
 
 /**
  * Componente reusable para mostrar la ubicación actual de UN vehículo en
@@ -64,6 +65,40 @@ export function VehicleMap({
     );
   }
 
+  return (
+    <VehicleMapInner
+      latitude={latitude}
+      longitude={longitude}
+      plate={plate}
+      speedKmh={speedKmh}
+      timestampDevice={timestampDevice}
+      height={height}
+      zoom={zoom}
+      apiKey={env.VITE_GOOGLE_MAPS_API_KEY}
+    />
+  );
+}
+
+function VehicleMapInner({
+  latitude,
+  longitude,
+  plate,
+  speedKmh,
+  timestampDevice,
+  height,
+  zoom,
+  apiKey,
+}: {
+  latitude: number;
+  longitude: number;
+  plate: string;
+  speedKmh: number | null | undefined;
+  timestampDevice: Date | string | null | undefined;
+  height: number;
+  zoom: number;
+  apiKey: string;
+}) {
+  const follow = useFollowVehicle();
   const center = { lat: latitude, lng: longitude };
   const tsLabel = timestampDevice
     ? `Reportado ${new Date(timestampDevice).toLocaleString('es-CL')}`
@@ -72,22 +107,39 @@ export function VehicleMap({
 
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
-      <APIProvider apiKey={env.VITE_GOOGLE_MAPS_API_KEY}>
-        <GoogleMap
-          style={{ height }}
-          defaultCenter={center}
-          defaultZoom={zoom}
-          center={center}
-          zoom={zoom}
-          gestureHandling="cooperative"
-          disableDefaultUI={false}
-          mapId="booster-vehicle-map"
-        >
-          <AdvancedMarker position={center} title={`${plate} · ${speedLabel}`}>
-            <Pin background="#1FA058" borderColor="#0D6E3F" glyphColor="#FFFFFF" />
-          </AdvancedMarker>
-        </GoogleMap>
-      </APIProvider>
+      <div className="relative" style={{ height }}>
+        <APIProvider apiKey={apiKey}>
+          <GoogleMap
+            style={{ height: '100%', width: '100%' }}
+            defaultCenter={center}
+            defaultZoom={zoom}
+            gestureHandling="cooperative"
+            disableDefaultUI={false}
+            mapId="booster-vehicle-map"
+          >
+            <FollowVehicle
+              controller={follow}
+              latitude={latitude}
+              longitude={longitude}
+              zoom={zoom}
+            />
+            <AdvancedMarker position={center} title={`${plate} · ${speedLabel}`}>
+              <Pin background="#1FA058" borderColor="#0D6E3F" glyphColor="#FFFFFF" />
+            </AdvancedMarker>
+          </GoogleMap>
+        </APIProvider>
+        {!follow.following && (
+          <button
+            type="button"
+            onClick={follow.resume}
+            className="absolute right-3 bottom-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+            aria-label="Recentrar mapa en el vehículo"
+            title="Recentrar"
+          >
+            <LocateFixed className="h-5 w-5 text-neutral-700" aria-hidden />
+          </button>
+        )}
+      </div>
       <div className="flex items-center justify-between gap-4 border-neutral-100 border-t bg-white px-4 py-2 text-neutral-700 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-mono font-semibold text-neutral-900">{plate}</span>
