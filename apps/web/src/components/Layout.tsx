@@ -3,28 +3,35 @@ import { LogOut, Menu, Settings, User as UserIcon, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { useSwitchCompany } from '../hooks/use-switch-company.js';
+import { CompanySwitcher } from './CompanySwitcher.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
  * AppShell estándar para todas las páginas de `/app/*` autenticadas.
  *
- * Contiene el banner global con logo Booster AI, badge de empresa
- * activa, link a perfil del usuario y botón Salir. El children se
- * renderiza dentro de un `<main>` con max-width consistente.
+ * Contiene el banner global con logo Booster AI, switcher de empresa
+ * activa (multi-tenant), link a perfil del usuario y botón Salir. El
+ * children se renderiza dentro de un `<main>` con max-width consistente.
  *
  * Responsive (BUG-006):
- *   - Desktop (sm+): logo + badge empresa a la izquierda, perfil + Salir
- *     a la derecha en una sola fila.
+ *   - Desktop (sm+): logo + switcher empresa a la izquierda, perfil +
+ *     Salir a la derecha en una sola fila.
  *   - Mobile (<sm): logo a la izquierda, hamburguesa a la derecha. Al
- *     abrirla, panel desplegable con badge empresa, link a perfil y
- *     botón Salir. Esto evita que "Booster AI", el badge y "Salir" se
+ *     abrirla, panel desplegable con switcher empresa, link a perfil y
+ *     botón Salir. Esto evita que "Booster AI", el switcher y "Salir" se
  *     rompan en múltiples líneas a 375px de viewport.
+ *
+ * El switcher es global (FIX-013/§3.1): antes vivía solo en
+ * `/app/perfil`. Ahora cualquier ruta autenticada permite cambiar de
+ * empresa sin navegar al perfil — crítico para usuarios con membresías
+ * en múltiples empresas (despachadores cross-tenant, sostenibilidad).
  *
  * Siempre que crees una página nueva bajo `/app/*`, envolvé el cuerpo
  * en `<Layout me={me} title="...">` — sin Layout, el usuario pierde la
- * navegación principal y "Salir", lo que cuenta como una regresión de
- * UX bloqueante (ver BUG-003).
+ * navegación principal, el switcher y "Salir", lo que cuenta como una
+ * regresión de UX bloqueante (ver BUG-003).
  *
  * El prop `title` actualmente no se renderiza acá (cada página define
  * su propio `<h1>` para flexibilidad), pero queda reservado para
@@ -39,11 +46,17 @@ export function Layout({
   title: string;
   children: ReactNode;
 }) {
-  const activeEmpresa = me.active_membership?.empresa;
+  const activeEmpresaId = me.active_membership?.empresa.id ?? null;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { switchTo, isPending: switchPending } = useSwitchCompany();
 
   async function handleSignOut() {
     await signOutUser();
+  }
+
+  function handleSwitchEmpresa(empresaId: string) {
+    setMobileOpen(false);
+    void switchTo(empresaId);
   }
 
   return (
@@ -63,11 +76,14 @@ export function Layout({
             </span>
           </Link>
 
-          {activeEmpresa && (
-            <span className="ml-3 hidden whitespace-nowrap rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs sm:inline-flex">
-              {activeEmpresa.legal_name}
-            </span>
-          )}
+          <div className="ml-3 hidden sm:block">
+            <CompanySwitcher
+              memberships={me.memberships}
+              activeEmpresaId={activeEmpresaId}
+              onSelect={handleSwitchEmpresa}
+              disabled={switchPending}
+            />
+          </div>
 
           {/* Spacer para empujar el cluster derecho */}
           <div className="hidden flex-1 sm:block" />
@@ -115,13 +131,18 @@ export function Layout({
             id="mobile-menu"
             className="border-neutral-200 border-t bg-white px-4 py-3 sm:hidden"
           >
-            {activeEmpresa && (
+            {me.memberships.some((m) => m.status === 'activa') && (
               <div className="mb-3">
                 <div className="text-neutral-500 text-xs uppercase tracking-wider">
                   Empresa activa
                 </div>
-                <div className="mt-1 inline-flex rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">
-                  {activeEmpresa.legal_name}
+                <div className="mt-1">
+                  <CompanySwitcher
+                    memberships={me.memberships}
+                    activeEmpresaId={activeEmpresaId}
+                    onSelect={handleSwitchEmpresa}
+                    disabled={switchPending}
+                  />
                 </div>
               </div>
             )}
