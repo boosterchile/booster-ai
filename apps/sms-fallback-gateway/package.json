@@ -1,0 +1,30 @@
+{
+  "name": "@booster-ai/sms-fallback-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsup src/main.ts --format esm --clean",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@booster-ai/config": "workspace:*",
+    "@booster-ai/logger": "workspace:*",
+    "@booster-ai/shared-schemas": "workspace:*",
+    "@google-cloud/pubsub": "^4.10.0",
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.4.1",
+    "hono": "^4.6.14",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
+  }
+}

@@ -298,6 +298,49 @@ module "service_notification" {
   labels = { app = "notification-service", env = var.environment }
 }
 
+# --- apps/sms-fallback-gateway (Wave 2 Track B4) ---
+# Webhook receiver de Twilio para SMS fallback cuando el FMC150 no
+# tiene GPRS y manda evento Panic via SMS.
+module "service_sms_fallback_gateway" {
+  source = "./modules/cloud-run-service"
+
+  project_id            = google_project.booster_ai.project_id
+  region                = var.region
+  service_name          = "booster-ai-sms-fallback-gateway"
+  service_account_email = google_service_account.cloud_run_runtime.email
+
+  # Cold-start OK — los webhooks de Twilio toleran ~5s de latency.
+  # min_instances=0 reduce costo en periodos sin SMS (idealmente 99%
+  # del tiempo).
+  min_instances = 0
+  max_instances = 10
+  cpu           = "1"
+  memory        = "512Mi"
+
+  env_vars = merge(local.common_env_vars, {
+    SERVICE_NAME           = "booster-ai-sms-fallback-gateway"
+    PUBSUB_TOPIC_TELEMETRY = google_pubsub_topic.telemetry_events.name
+    # WEBHOOK_PUBLIC_URL: la URL canónica que Twilio tiene configurada
+    # en su Console. El validator HMAC la usa como string base.
+    # Cuando el LB enrute /webhooks/sms-fallback, cambiar a la URL
+    # pública. Por ahora queda como variable.
+    WEBHOOK_PUBLIC_URL = var.sms_fallback_webhook_url
+  })
+
+  secrets = merge(local.common_secrets, {
+    # Mismo Twilio account que usa el bot — un solo set de credenciales.
+    TWILIO_AUTH_TOKEN = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+  })
+
+  # public=true porque Twilio postea desde su infra al webhook. La
+  # firma HMAC es la barrera de seguridad (no IAM/OIDC).
+  public = true
+
+  secret_versions_ready = local.all_secret_versions_ready
+
+  labels = { app = "sms-fallback-gateway", env = var.environment, wave = "2" }
+}
+
 # --- apps/whatsapp-bot ---
 module "service_whatsapp_bot" {
   source = "./modules/cloud-run-service"
