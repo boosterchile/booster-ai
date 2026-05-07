@@ -157,6 +157,14 @@ metadata:
     cloud.google.com/l4-rbs: "enabled"
 spec:
   type: LoadBalancer
+  # IP estática reservada `booster-telemetry-lb-ip` (ver
+  # infrastructure/compute.tf). Sin esto el LB usa IP ephemeral que
+  # cambia en cada recreación del Service y el A record DNS
+  # `telemetry.boosterchile.com` (que apunta a la IP estática) deja de
+  # llegar al gateway. Causó outage productivo 2026-05-07 13:25–20:41 UTC
+  # cuando el terraform apply de Wave 2/3 alineó el DNS a la IP estática
+  # mientras el Service seguía con IP ephemeral.
+  loadBalancerIP: "34.176.238.106"
   externalTrafficPolicy: Local # preserva client IP para logs
   selector:
     app: telemetry-tcp-gateway
