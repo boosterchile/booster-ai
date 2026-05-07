@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
+import tls from 'node:tls';
 import { createLogger } from '@booster-ai/logger';
 import { PubSub } from '@google-cloud/pubsub';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -16,7 +18,13 @@ import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
  *   2. Loop de AVL packets → publish a Pub/Sub `telemetry-events`.
  *   3. ACK BE 4B record count para que el device libere su buffer.
  *
- * Graceful shutdown: SIGTERM → cerrar listening port + esperar
+ * Wave 3 (Track D3): listening dual en dos ports:
+ *   - 5027 plain TCP (existente, para devices Wave 1/2 sin TLS).
+ *   - 5061 TLS 1.2+ (Wave 3, devices migrados con cert pinned).
+ * Ambos sirven el mismo `handleConnection`. Cuando todos los devices
+ * estén en Wave 3 podemos apagar el plain port con un solo deploy.
+ *
+ * Graceful shutdown: SIGTERM → cerrar listening ports + esperar
  * conexiones existentes a que terminen (con timeout) + flush Pub/Sub.
  */
 
@@ -29,9 +37,12 @@ async function main(): Promise<void> {
     pretty: config.NODE_ENV === 'development',
   });
 
+  const tlsEnabled = Boolean(config.TLS_CERT_PATH && config.TLS_KEY_PATH);
+
   logger.info(
     {
-      port: config.PORT,
+      plainPort: config.PORT,
+      tlsPort: tlsEnabled ? config.TLS_PORT : null,
       project: config.GOOGLE_CLOUD_PROJECT,
       topic: config.PUBSUB_TOPIC_TELEMETRY,
     },
@@ -57,55 +68,132 @@ async function main(): Promise<void> {
     logger.warn('PUBSUB_TOPIC_CRASH_TRACES no configurado — Crash Trace publish DESHABILITADO');
   }
 
-  const server = net.createServer((socket) => {
-    handleConnection(socket, {
-      db,
-      publisher,
-      crashPublisher,
-      logger,
-      idleTimeoutSec: config.IDLE_TIMEOUT_SEC,
+  const connectionDeps = {
+    db,
+    publisher,
+    crashPublisher,
+    logger,
+    idleTimeoutSec: config.IDLE_TIMEOUT_SEC,
+  };
+
+  // -------------------------------------------------------------------------
+  // SERVIDOR 1: TCP plain port 5027 (existente)
+  // -------------------------------------------------------------------------
+
+  const plainServer = net.createServer((socket) => {
+    handleConnection(socket, connectionDeps);
+  });
+  plainServer.on('error', (err) => {
+    logger.error({ err, port: config.PORT }, 'plain server error');
+  });
+  plainServer.listen(config.PORT, () => {
+    logger.info({ port: config.PORT }, 'listening for Teltonika plain TCP connections');
+  });
+
+  // -------------------------------------------------------------------------
+  // SERVIDOR 2: TLS port 5061 (Wave 3, opcional vía cert paths)
+  // -------------------------------------------------------------------------
+
+  let tlsServer: tls.Server | null = null;
+  if (tlsEnabled) {
+    let cert: Buffer;
+    let key: Buffer;
+    try {
+      cert = readFileSync(config.TLS_CERT_PATH);
+      key = readFileSync(config.TLS_KEY_PATH);
+    } catch (err) {
+      logger.fatal(
+        { err, certPath: config.TLS_CERT_PATH, keyPath: config.TLS_KEY_PATH },
+        'no se pudo leer cert/key TLS — abortando',
+      );
+      process.exit(1);
+    }
+
+    const tlsContext = tls.createSecureContext({
+      cert,
+      key,
+      // Aceptamos TLS 1.2+. Devices Teltonika FMC150 soportan TLS 1.2;
+      // 1.3 también pero sin negociación si el firmware es antiguo.
+      minVersion: 'TLSv1.2',
     });
-  });
 
-  server.on('error', (err) => {
-    logger.error({ err }, 'server error');
-  });
+    tlsServer = tls.createServer(
+      {
+        SNICallback: (_servername, cb) => cb(null, tlsContext),
+        // Devices Teltonika no presentan client cert — solo verifican el
+        // server cert contra raíces públicas. requestCert: false explícito.
+        requestCert: false,
+      },
+      (socket) => {
+        // tls.TLSSocket extiende net.Socket — pasable directamente al
+        // handler que ya espera net.Socket.
+        handleConnection(socket, connectionDeps);
+      },
+    );
+    tlsServer.on('error', (err) => {
+      logger.error({ err, port: config.TLS_PORT }, 'tls server error');
+    });
+    tlsServer.on('tlsClientError', (err, socket) => {
+      logger.warn(
+        {
+          err,
+          remoteAddress: socket.remoteAddress,
+          remotePort: socket.remotePort,
+        },
+        'tls handshake error — cliente con cert chain inválido o protocolo viejo',
+      );
+    });
+    tlsServer.listen(config.TLS_PORT, () => {
+      logger.info({ port: config.TLS_PORT }, 'listening for Teltonika TLS connections');
+    });
+  } else {
+    logger.warn('TLS_CERT_PATH/TLS_KEY_PATH no configurados — listener TLS deshabilitado');
+  }
 
-  server.listen(config.PORT, () => {
-    logger.info({ port: config.PORT }, 'listening for Teltonika TCP connections');
-  });
+  // -------------------------------------------------------------------------
+  // Graceful shutdown
+  // -------------------------------------------------------------------------
 
-  // Graceful shutdown.
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'shutdown requested');
-    server.close(async (err) => {
-      if (err) {
-        logger.error({ err }, 'error closing server');
-      }
-      try {
-        await publisher.flush();
-        logger.info('publisher flushed');
-      } catch (e) {
-        logger.error({ err: e }, 'error flushing publisher');
-      }
-      try {
-        await pool.end();
-        logger.info('pg pool closed');
-      } catch (e) {
-        logger.error({ err: e }, 'error closing pg pool');
-      }
-      process.exit(0);
-    });
+    const closes = [
+      new Promise<void>((resolve) => plainServer.close(() => resolve())),
+      tlsServer
+        ? new Promise<void>((resolve) => tlsServer?.close(() => resolve()))
+        : Promise.resolve(),
+    ];
+    try {
+      await Promise.all(closes);
+      logger.info('servers closed');
+    } catch (err) {
+      logger.error({ err }, 'error closing servers');
+    }
+    try {
+      await publisher.flush();
+      logger.info('publisher flushed');
+    } catch (e) {
+      logger.error({ err: e }, 'error flushing publisher');
+    }
+    try {
+      await pool.end();
+      logger.info('pg pool closed');
+    } catch (e) {
+      logger.error({ err: e }, 'error closing pg pool');
+    }
+    process.exit(0);
+  };
 
-    // Hard kill después de 30s si las conexiones no cierran.
+  // Hard kill después de 30s si las conexiones no cierran.
+  const forceExit = (signal: string) => {
+    void shutdown(signal);
     setTimeout(() => {
       logger.warn('shutdown timeout, forcing exit');
       process.exit(1);
     }, 30_000).unref();
   };
 
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => forceExit('SIGTERM'));
+  process.on('SIGINT', () => forceExit('SIGINT'));
 }
 
 main().catch((err) => {
