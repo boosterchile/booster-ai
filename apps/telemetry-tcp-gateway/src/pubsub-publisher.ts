@@ -1,4 +1,4 @@
-import type { AvlRecord } from '@booster-ai/codec8-parser';
+import type { AvlPacket, AvlRecord } from '@booster-ai/codec8-parser';
 import type { Logger } from '@booster-ai/logger';
 import type { PubSub, Topic } from '@google-cloud/pubsub';
 
@@ -88,4 +88,88 @@ export class TelemetryPublisher {
   async flush(): Promise<void> {
     await this.topic.flush();
   }
+}
+
+/**
+ * Publica el AVL packet completo al topic `crash-traces` para que el
+ * processor lo persista a GCS + BigQuery (Wave 2 B3). Solo se invoca
+ * cuando `isCrashTracePacket(packet) === true`.
+ *
+ * Diseño:
+ *   - Mensaje con TODOS los records (típicamente ~1000 acelerómetro +
+ *     ~20 GNSS + ~20 IO) — el receptor reconstruye el packet completo.
+ *   - timestampMs como string, BigInt IO values como string,
+ *     Buffer (NX) como base64 — espejo de la serialización record-by-record.
+ *   - SIN batching (a diferencia de telemetry-events): los crash-traces
+ *     son raros, queremos publicarlos inmediatamente.
+ */
+export class CrashTracePublisher {
+  private readonly topic: Topic;
+
+  constructor(
+    pubsub: PubSub,
+    topicName: string,
+    private readonly logger: Logger,
+  ) {
+    // Sin batching: los crash-traces son eventos críticos y raros.
+    this.topic = pubsub.topic(topicName);
+  }
+
+  async publishCrashTrace(opts: {
+    imei: string;
+    vehicleId: string | null;
+    packet: AvlPacket;
+  }): Promise<string> {
+    const { imei, vehicleId, packet } = opts;
+    const body = {
+      imei,
+      vehicleId,
+      packet: {
+        codecId: packet.codecId,
+        recordCount: packet.recordCount,
+        records: packet.records.map(serializeRecord),
+      },
+    };
+    const messageId = await this.topic.publishMessage({
+      data: Buffer.from(JSON.stringify(body)),
+      attributes: {
+        imei,
+        vehicleId: vehicleId ?? 'pending',
+        crashTraceVersion: '1',
+      },
+    });
+    this.logger.info(
+      {
+        messageId,
+        imei,
+        vehicleId,
+        recordCount: packet.recordCount,
+      },
+      'crash-trace publicado a pubsub',
+    );
+    return messageId;
+  }
+}
+
+/** Helper: serialización canónica de un AVL record para JSON. */
+function serializeRecord(record: AvlRecord) {
+  return {
+    timestampMs: record.timestampMs.toString(),
+    priority: record.priority,
+    gps: record.gps,
+    io: {
+      eventIoId: record.io.eventIoId,
+      totalIo: record.io.totalIo,
+      entries: record.io.entries.map((e) => ({
+        id: e.id,
+        value:
+          typeof e.value === 'bigint'
+            ? e.value.toString()
+            : Buffer.isBuffer(e.value)
+              ? e.value.toString('base64')
+              : e.value,
+        byteSize: e.byteSize,
+      })),
+    },
+  };
 }

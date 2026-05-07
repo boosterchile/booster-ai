@@ -64,6 +64,11 @@ spec:
               value: "booster-ai-494222"
             - name: PUBSUB_TOPIC_TELEMETRY
               value: "telemetry-events"
+            # Wave 2 B3: topic donde el gateway publica el packet completo
+            # cuando detecta un Crash event (eventIoId=247 priority=panic).
+            # El processor consume y guarda el trace en GCS + BigQuery.
+            - name: PUBSUB_TOPIC_CRASH_TRACES
+              value: "crash-traces"
             - name: IDLE_TIMEOUT_SEC
               value: "300"
             - name: LOG_LEVEL
