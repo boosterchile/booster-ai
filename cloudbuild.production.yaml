@@ -5,9 +5,15 @@
 # task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
 #
 # Scope:
-#   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA)
-#   - apps/marketing y demás services Cloud Run quedan con su imagen
-#     placeholder hasta que tengan código real
+#   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
+#     apps/telemetry-tcp-gateway (GKE), apps/telemetry-processor,
+#     apps/sms-fallback-gateway.
+#   - apps/notification-service, apps/matching-engine,
+#     apps/document-service quedan en placeholder mientras sigan siendo
+#     skeletons (main.ts solo loguea "starting (skeleton)" y exit). Al
+#     implementarlos se agrega el Dockerfile + step build/push/deploy.
+#   - apps/marketing queda con imagen placeholder hasta que el directorio
+#     exista (no hay source).
 #
 # apps/web requiere VITE_* substitutions (las claves Firebase web son
 # públicas por diseño — viajan en el bundle al cliente). Setear via
@@ -85,6 +91,18 @@ steps:
       - .
     waitFor: ['-']
 
+  # apps/sms-fallback-gateway — Cloud Run webhook receiver para SMS Twilio.
+  - id: build-sms-fallback-gateway
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/sms-fallback-gateway/Dockerfile
+      - --tag=${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/sms-fallback-gateway:latest
+      - .
+    waitFor: ['-']
+
   # =========================================================================
   # Push a Artifact Registry
   # =========================================================================
@@ -112,6 +130,11 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, '--all-tags', '${_REGISTRY}/telemetry-processor']
     waitFor: [build-telemetry-processor]
+
+  - id: push-sms-fallback-gateway
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/sms-fallback-gateway']
+    waitFor: [build-sms-fallback-gateway]
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
@@ -179,6 +202,20 @@ steps:
       - --platform=managed
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-telemetry-processor]
+
+  - id: deploy-sms-fallback-gateway
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-sms-fallback-gateway
+      - --image=${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-sms-fallback-gateway]
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   # Update via kubectl set image al deployment del cluster.
@@ -280,6 +317,8 @@ images:
   - ${_REGISTRY}/telemetry-tcp-gateway:latest
   - ${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
   - ${_REGISTRY}/telemetry-processor:latest
+  - ${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
+  - ${_REGISTRY}/sms-fallback-gateway:latest
 
 # Usar el SA github-deployer en lugar del compute default.
 # Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute
