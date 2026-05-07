@@ -54,6 +54,34 @@ const envSchema = z.object({
     .transform((s) => Number.parseInt(s, 10))
     .pipe(z.number().int().min(30).max(3600)),
 
+  // -------------------------------------------------------------------------
+  // Wave 3 — TLS endpoint (Track D3)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Puerto TCP TLS-encrypted al que migraremos los devices en Wave 3.
+   * Listening dual durante la migración: 5027 plain (existente) + 5061
+   * TLS (nuevo). Cuando todos los devices estén en Wave 3, podemos
+   * apagar el plain port via deploy.
+   *
+   * Default 5061 = puerto Teltonika TLS estándar.
+   */
+  TLS_PORT: z
+    .string()
+    .default('5061')
+    .transform((s) => Number.parseInt(s, 10))
+    .pipe(z.number().int().min(1).max(65535)),
+
+  /**
+   * Path en disco al cert TLS. cert-manager renueva via Let's Encrypt
+   * cada 60-90 días y monta el resultado como Secret K8s en este path.
+   * Vacío deshabilita el listener TLS (envs sin cert configurado).
+   */
+  TLS_CERT_PATH: z.string().default(''),
+
+  /** Path en disco a la private key TLS (montada por cert-manager Secret). */
+  TLS_KEY_PATH: z.string().default(''),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
 });

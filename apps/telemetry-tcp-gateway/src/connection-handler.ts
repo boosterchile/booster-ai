@@ -216,8 +216,8 @@ async function processBuffer(opts: {
       state.recordsReceived += packet.recordCount;
 
       // Post-handshake state.imei está garantizado set (sino habríamos
-      // returneado en la rama de handshake). Lo leemos a una constante
-      // para que TS lo trate como string en vez de string | null.
+      // returneado en la rama de handshake). Lo aliasamos para evitar
+      // non-null assertion y para que TS lo trate como string.
       const imei = state.imei ?? '';
 
       // Detección Crash Trace (Wave 2 B3): si el packet contiene un
