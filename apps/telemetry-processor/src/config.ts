@@ -8,6 +8,26 @@ const envSchema = z.object({
   PUBSUB_SUBSCRIPTION_TELEMETRY: z.string().default('telemetry-events-processor-sub'),
 
   /**
+   * Subscription Pub/Sub del topic crash-traces (Wave 2 B3).
+   * El gateway publica el packet completo (~1000+ records) cuando detecta
+   * un Crash event; el processor lo persiste en GCS + BigQuery.
+   */
+  PUBSUB_SUBSCRIPTION_CRASH_TRACES: z.string().default('crash-traces-processor-sub'),
+
+  /**
+   * GCS bucket name para Crash Traces serializados. Dejarlo vacío
+   * deshabilita el consumer (útil para envs locales / staging sin
+   * crash-traces).
+   */
+  GCS_CRASH_TRACES_BUCKET: z.string().default(''),
+
+  /** Dataset BigQuery donde vive `crash_events` (ADR-005: telemetry). */
+  BIGQUERY_CRASH_DATASET: z.string().default('telemetry'),
+
+  /** Tabla BigQuery dentro del dataset. */
+  BIGQUERY_CRASH_TABLE: z.string().default('crash_events'),
+
+  /**
    * Mensajes a procesar en paralelo. Pub/Sub flow control. Más alto
    * = más throughput pero más memoria y carga DB. 50-100 es balance OK
    * para piloto.

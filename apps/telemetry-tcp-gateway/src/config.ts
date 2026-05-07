@@ -34,6 +34,16 @@ const envSchema = z.object({
   PUBSUB_TOPIC_TELEMETRY: z.string().default('telemetry-events'),
 
   /**
+   * Topic Pub/Sub donde publicamos el packet COMPLETO de un Crash Trace
+   * (Wave 2 B3) para forensics. Cuando el device manda eventIoId=247
+   * priority=panic, el gateway publica todo el packet (~1000 records)
+   * a este topic; el processor lo guarda en GCS + BigQuery.
+   *
+   * Default vacío deshabilita el publish (envs sin bucket configurado).
+   */
+  PUBSUB_TOPIC_CRASH_TRACES: z.string().default(''),
+
+  /**
    * Timeout (segundos) para conexiones idle. Si un device no manda
    * nada por este tiempo, lo desconectamos para liberar recursos.
    * El device reconecta automáticamente.

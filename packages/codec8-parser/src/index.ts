@@ -37,3 +37,17 @@ export type {
   ImeiHandshake,
 } from './tipos.js';
 export { CodecParseError, CodecCrcError } from './tipos.js';
+
+// Crash Trace forensics (Wave 2 Track B3)
+export {
+  CRASH_EVENT_AVL_ID,
+  ACCEL_AXIS_X_AVL_ID,
+  ACCEL_AXIS_Y_AVL_ID,
+  ACCEL_AXIS_Z_AVL_ID,
+  isCrashTracePacket,
+  extractCrashTrace,
+  type AccelSample,
+  type GnssSample,
+  type IoSnapshot,
+  type CrashTrace,
+} from './crash-trace.js';

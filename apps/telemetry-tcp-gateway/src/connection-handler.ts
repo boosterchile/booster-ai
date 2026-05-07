@@ -4,13 +4,14 @@ import {
   CodecParseError,
   encodeAvlAck,
   encodeImeiAck,
+  isCrashTracePacket,
   parseAvlPacket,
   parseImeiHandshake,
 } from '@booster-ai/codec8-parser';
 import type { Logger } from '@booster-ai/logger';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { resolveImei } from './imei-auth.js';
-import type { TelemetryPublisher } from './pubsub-publisher.js';
+import type { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 
 /**
  * Lifecycle de una conexión TCP de un device Teltonika:
@@ -66,6 +67,10 @@ export function skipNetworkPings(buffer: Buffer): Buffer {
 export interface ConnectionDeps {
   db: NodePgDatabase<Record<string, unknown>>;
   publisher: TelemetryPublisher;
+  /** Publisher al topic crash-traces (Wave 2 B3). Si null, los crash
+   *  traces no se publican como packet (env sin bucket configurado);
+   *  los records individuales siguen yendo al topic telemetry-events. */
+  crashPublisher: CrashTracePublisher | null;
   logger: Logger;
   idleTimeoutSec: number;
 }
@@ -81,7 +86,7 @@ interface ConnectionState {
 }
 
 export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
-  const { db, publisher, logger, idleTimeoutSec } = deps;
+  const { db, publisher, crashPublisher, logger, idleTimeoutSec } = deps;
   const sourceIp = socket.remoteAddress ?? null;
   const childLogger = logger.child({
     component: 'connection-handler',
@@ -120,12 +125,18 @@ export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
     state.buffer = state.buffer.length === 0 ? chunk : Buffer.concat([state.buffer, chunk]);
 
     // Mientras tengamos bytes para procesar, drain.
-    void processBuffer({ state, socket, db, publisher, logger: childLogger, sourceIp }).catch(
-      (err) => {
-        childLogger.error({ err }, 'error procesando buffer, cerrando conexión');
-        socket.destroy();
-      },
-    );
+    void processBuffer({
+      state,
+      socket,
+      db,
+      publisher,
+      crashPublisher,
+      logger: childLogger,
+      sourceIp,
+    }).catch((err) => {
+      childLogger.error({ err }, 'error procesando buffer, cerrando conexión');
+      socket.destroy();
+    });
   });
 }
 
@@ -134,10 +145,11 @@ async function processBuffer(opts: {
   socket: Socket;
   db: NodePgDatabase<Record<string, unknown>>;
   publisher: TelemetryPublisher;
+  crashPublisher: CrashTracePublisher | null;
   logger: Logger;
   sourceIp: string | null;
 }): Promise<void> {
-  const { state, socket, db, publisher, logger, sourceIp } = opts;
+  const { state, socket, db, publisher, crashPublisher, logger, sourceIp } = opts;
 
   // Fase 1: handshake IMEI.
   if (!state.receivedFirstHandshake) {
@@ -203,10 +215,38 @@ async function processBuffer(opts: {
       const packet = parseAvlPacket(packetBuf);
       state.recordsReceived += packet.recordCount;
 
+      // Post-handshake state.imei está garantizado set (sino habríamos
+      // returneado en la rama de handshake). Lo leemos a una constante
+      // para que TS lo trate como string en vez de string | null.
+      const imei = state.imei ?? '';
+
+      // Detección Crash Trace (Wave 2 B3): si el packet contiene un
+      // record con eventIoId=247 priority=panic, publicamos el packet
+      // ENTERO al topic crash-traces para forensics. Independiente del
+      // publish record-by-record (que sigue para que telemetria_puntos
+      // tenga las ubicaciones individuales).
+      if (crashPublisher && isCrashTracePacket(packet)) {
+        try {
+          await crashPublisher.publishCrashTrace({
+            imei,
+            vehicleId: state.vehicleId,
+            packet,
+          });
+        } catch (err) {
+          // El crash-trace fallido no debe bloquear el ACK al device:
+          // los records individuales todavía van a Pub/Sub y luego a DB.
+          // El log permite reproc manual desde el JSON capturado.
+          logger.error(
+            { err, imei, vehicleId: state.vehicleId },
+            'fallo publicar crash-trace, continuando con records individuales',
+          );
+        }
+      }
+
       // Publicamos cada record por separado.
       const publishes = packet.records.map((rec) =>
         publisher.publishRecord({
-          imei: state.imei!,
+          imei,
           vehicleId: state.vehicleId,
           record: rec,
         }),

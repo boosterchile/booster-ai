@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { loadConfig } from './config.js';
 import { handleConnection } from './connection-handler.js';
-import { TelemetryPublisher } from './pubsub-publisher.js';
+import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 
 /**
  * Entry point del telemetry-tcp-gateway.
@@ -49,11 +49,19 @@ async function main(): Promise<void> {
   // Pub/Sub client (singleton).
   const pubsub = new PubSub({ projectId: config.GOOGLE_CLOUD_PROJECT });
   const publisher = new TelemetryPublisher(pubsub, config.PUBSUB_TOPIC_TELEMETRY, logger);
+  const crashPublisher = config.PUBSUB_TOPIC_CRASH_TRACES
+    ? new CrashTracePublisher(pubsub, config.PUBSUB_TOPIC_CRASH_TRACES, logger)
+    : null;
+
+  if (!crashPublisher) {
+    logger.warn('PUBSUB_TOPIC_CRASH_TRACES no configurado — Crash Trace publish DESHABILITADO');
+  }
 
   const server = net.createServer((socket) => {
     handleConnection(socket, {
       db,
       publisher,
+      crashPublisher,
       logger,
       idleTimeoutSec: config.IDLE_TIMEOUT_SEC,
     });

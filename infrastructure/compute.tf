@@ -256,9 +256,14 @@ module "service_telemetry_processor" {
   concurrency   = 10 # control de rate a Firestore/BigQuery
 
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-telemetry-processor"
-    REDIS_HOST   = google_redis_instance.main.host
-    REDIS_PORT   = tostring(google_redis_instance.main.port)
+    SERVICE_NAME            = "booster-ai-telemetry-processor"
+    REDIS_HOST              = google_redis_instance.main.host
+    REDIS_PORT              = tostring(google_redis_instance.main.port)
+    # Wave 2 B3 — crash trace persistence
+    GCS_CRASH_TRACES_BUCKET = google_storage_bucket.crash_traces.name
+    BIGQUERY_CRASH_DATASET  = google_bigquery_dataset.telemetry.dataset_id
+    BIGQUERY_CRASH_TABLE    = google_bigquery_table.crash_events.table_id
+    PUBSUB_SUBSCRIPTION_CRASH_TRACES = google_pubsub_subscription.crash_traces_processor.name
   })
   secrets = local.common_secrets
 
