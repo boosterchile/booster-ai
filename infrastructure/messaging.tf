@@ -323,7 +323,8 @@ resource "google_pubsub_subscription" "telemetry_events_eco_score_matching" {
 
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.dlq.id
-    max_delivery_attempts = 3
+    # Pub/Sub mínimo 5 — incrementado de 3 tras API 400 al apply 2026-05-07.
+    max_delivery_attempts = 5
   }
 
   retry_policy {

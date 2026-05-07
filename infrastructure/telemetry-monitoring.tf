@@ -29,6 +29,11 @@ resource "google_logging_metric" "device_records_per_minute" {
     value_type   = "INT64"
     unit         = "1"
     display_name = "Telemetry records per minute"
+    labels {
+      key         = "imei"
+      value_type  = "STRING"
+      description = "IMEI del device Teltonika"
+    }
   }
 
   label_extractors = {
@@ -99,11 +104,21 @@ resource "google_logging_metric" "crash_events" {
     value_type   = "INT64"
     unit         = "1"
     display_name = "Crash events total"
+    labels {
+      key         = "imei"
+      value_type  = "STRING"
+      description = "IMEI del device origen del crash"
+    }
+    labels {
+      key         = "vehicle_id"
+      value_type  = "STRING"
+      description = "UUID del vehículo (puede ser empty si device pendiente)"
+    }
   }
 
   label_extractors = {
-    "imei"        = "EXTRACT(jsonPayload.imei)"
-    "vehicle_id"  = "EXTRACT(jsonPayload.vehicleId)"
+    "imei"       = "EXTRACT(jsonPayload.imei)"
+    "vehicle_id" = "EXTRACT(jsonPayload.vehicleId)"
   }
 }
 
