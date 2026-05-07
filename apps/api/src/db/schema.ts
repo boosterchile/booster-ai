@@ -670,6 +670,18 @@ export const tripMetrics = pgTable(
     certificateSha256: char('certificado_sha256', { length: 64 }),
     certificateKmsKeyVersion: varchar('certificado_kms_version', { length: 50 }),
     certificateIssuedAt: timestamp('certificado_emitido_en', { withTimezone: true }),
+    // Empty backhaul allocation (GLEC v3.0 §6.4) — alimentado por
+    // calcularEmptyBackhaul() del package @booster-ai/carbon-calculator.
+    // Nullable: pre-existing rows + viajes sin matching de retorno.
+    factorMatchingAplicado: numeric('factor_matching_aplicado', { precision: 3, scale: 2 }),
+    emisionesEmptyBackhaulKgco2eWtw: numeric('emisiones_empty_backhaul_kgco2e_wtw', {
+      precision: 10,
+      scale: 3,
+    }),
+    ahorroCo2eVsSinMatchingKgco2e: numeric('ahorro_co2e_vs_sin_matching_kgco2e', {
+      precision: 10,
+      scale: 3,
+    }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
