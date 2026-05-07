@@ -225,6 +225,28 @@ processor toca tráfico real. Para Wave 2/3 rollout (cfg nueva en
 device), seguir runbook `docs/runbooks/wave-2-3-deploy.md` §5 con
 canary 1 device → flota.
 
+### Tamaño real de Wave 1 productivo (post-cleanup 21:40 UTC)
+
+Audit de BD reveló que la tabla `vehiculos` tenía 2 IMEIs configurados,
+pero solo 1 corresponde a un device físico:
+
+| Patente | IMEI | Tipo |
+|---|---|---|
+| VFZH-68 | `863238075489155` | Device físico productivo (TAC `863238` = Teltonika FMC) |
+| AT9155 | `999000000000875` | **Placeholder de smoke test** — nunca tuvo device físico |
+
+El IMEI `999000000000875` se NULLeó vía `UPDATE` 21:40 UTC. Quedan 3
+records históricos en `telemetria_puntos` apuntando al `vehiculo_id` de
+AT9155 — son artefactos de smoke tests anteriores, se dejan como están.
+
+**Patrón a recordar**: IMEIs con prefijo `999...` huelen a fixture, no
+a device real. TACs reales de Teltonika en producción empiezan
+típicamente con `863...` (FMC). Cuando configuremos alertas de "device
+silente >24h" en Wave 2, validar contra prefijo TAC válido o whitelist
+al ingreso, no por presencia de IMEI en `vehiculos`.
+
+**Wave 1 fleet real**: 1/1 device reportando (VFZH-68). 100%.
+
 ## Contacto / handoff
 
 - Owner: Felipe Vicencio (`dev@boosterchile.com`)
