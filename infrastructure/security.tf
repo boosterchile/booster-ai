@@ -166,6 +166,16 @@ locals {
     "twilio-account-sid",
     "twilio-auth-token",
 
+    # Twilio Content SIDs (templates WhatsApp aprobados por Meta). Migrados
+    # desde variables Terraform a Secret Manager (refactor 2026-05-07) para
+    # evitar que un apply sin override en tfvars blanquee el live value.
+    # Cada template tiene formato HX + 32 hex chars y se carga con:
+    #   echo -n "HX..." | gcloud secrets versions add content-sid-offer-new --data-file=-
+    # offer-new es B.8 (notificación de oferta al carrier). chat-unread es P3.d
+    # (fallback WhatsApp para mensajes no leídos).
+    "content-sid-offer-new",
+    "content-sid-chat-unread",
+
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
     # post-deploy y subidas con `gcloud secrets versions add`. La pública se
     # inyecta tanto al api (para mandar push) como al web (para subscribe del
