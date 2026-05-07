@@ -172,55 +172,15 @@ variable "sms_fallback_webhook_url" {
   default     = ""
 }
 
-variable "content_sid_offer_new" {
-  description = <<-EOT
-    Twilio Content SID del template aprobado para notificar al carrier que
-    llegó una nueva oferta (B.8). Formato: HX seguido de 32 hex chars.
-    El template se crea en Twilio Console > Content Editor con el friendly
-    name `offer_new_v1` y categoria Utility, y queda aprobado por Meta en
-    24-48h tras submit.
-
-    Variables esperadas (1-based):
-      {{1}} → tracking_code, ej. BOO-ABC123
-      {{2}} → ruta "Origen → Destino", ej. "Metropolitana → Biobío"
-      {{3}} → precio CLP formateado, ej. "$ 850.000 CLP"
-      {{4}} → URL al dashboard del carrier (https://app.boosterchile.com/app/ofertas)
-
-    Default vacío para no bloquear el primer apply tras agregar la var. Mientras
-    esté vacío, el dispatcher de notificaciones del api loguea warn y skipea
-    sin enviar mensaje (las offers se siguen creando en DB y aparecen en el
-    dashboard via poll). Setear con un override:
-      content_sid_offer_new = "HX1234567890abcdef1234567890abcd"
-    una vez que Meta aprueba el template.
-  EOT
-  type        = string
-  default     = ""
-  validation {
-    condition     = var.content_sid_offer_new == "" || can(regex("^HX[a-fA-F0-9]+$", var.content_sid_offer_new))
-    error_message = "content_sid_offer_new debe ser vacío o empezar con HX seguido de hex chars."
-  }
-}
-
-variable "content_sid_chat_unread" {
-  description = <<-EOT
-    Twilio Content SID del template aprobado para el fallback WhatsApp del
-    chat (P3.d). Formato HX + hex. Submit en Twilio Console > Content Editor
-    con friendly name `chat_unread_v1`, categoría Utility.
-
-    Variables esperadas (1-based):
-      {{1}} → tracking_code, ej. BOO-ABC123
-      {{2}} → sender_name, ej. "Juan Pérez (Transportes Andino)"
-      {{3}} → message_preview, hasta ~80 chars o "📷 Foto adjunta"/"📍 Ubicación compartida"
-      {{4}} → URL deep-link al chat, ej. "https://app.boosterchile.com/app/chat/UUID"
-
-    Default vacío para no bloquear apply previo a aprobación Meta. Mientras
-    esté vacío el cron loggea warn y skipea — los push notifs (P3.c) y SSE
-    (P3.b) cubren el caso real-time. Setear con override una vez aprobado.
-  EOT
-  type        = string
-  default     = ""
-  validation {
-    condition     = var.content_sid_chat_unread == "" || can(regex("^HX[a-fA-F0-9]+$", var.content_sid_chat_unread))
-    error_message = "content_sid_chat_unread debe ser vacío o empezar con HX seguido de hex chars."
-  }
-}
+# NOTA: las variables `content_sid_offer_new` y `content_sid_chat_unread`
+# se eliminaron en el refactor 2026-05-07. Los Content SIDs de Twilio
+# ahora viven en Secret Manager (`content-sid-offer-new` y
+# `content-sid-chat-unread`) y se montan como secret env vars en
+# el Cloud Run del api (ver compute.tf > module.service_api > secrets).
+#
+# Razón: cuando vivían como variables Terraform con default vacío, un
+# apply sin override en tfvars.local blanqueaba el live value, rompiendo
+# el dispatcher WhatsApp. Con Secret Manager el valor persiste entre
+# applies independiente de tfvars.
+#
+# Para cargar/rotar los valores ver docs/runbooks/load-content-sids.md.

@@ -89,17 +89,13 @@ module "service_api" {
     # mandar mensajes desde el mismo número. TWILIO_AUTH_TOKEN va por
     # Secret Manager (mismo secret `twilio-auth-token` que el bot).
     TWILIO_FROM_NUMBER = var.twilio_from_number
-    # CONTENT_SID_OFFER_NEW: vacío hasta que Meta apruebe el template
-    # `offer_new_v1` (24-48h tras submit en Twilio Console). Mientras esté
-    # vacío, el dispatcher loguea warn y skipea — las offers siguen
-    # creándose en DB y aparecen en /app/ofertas via poll cada 30s.
-    # Setear con `terraform apply -var content_sid_offer_new=HX...` una
-    # vez aprobado.
-    CONTENT_SID_OFFER_NEW = var.content_sid_offer_new
-    # P3.d — template para fallback WhatsApp del chat. Mismo patrón que
-    # CONTENT_SID_OFFER_NEW (vacío hasta aprobación Meta, override con
-    # `terraform apply -var content_sid_chat_unread=HX...`).
-    CONTENT_SID_CHAT_UNREAD = var.content_sid_chat_unread
+    # CONTENT_SID_OFFER_NEW + CONTENT_SID_CHAT_UNREAD se mueven a Secret
+    # Manager (ver `secrets` block más abajo). Razón del refactor:
+    # mantenerlos como variable Terraform causaba drift cuando alguien
+    # los cargaba con `-var=...` y el siguiente apply sin override los
+    # blanqueaba (incidente 2026-05-07). Ahora viven en Secret Manager,
+    # se cargan con `gcloud secrets versions add` y persisten entre
+    # applies sin requerir tfvars locales.
     # WEB_APP_URL usa el dominio público del frontend para construir el
     # deep-link al dashboard en el template de WhatsApp.
     WEB_APP_URL = "https://app.${var.domain}"
@@ -134,6 +130,18 @@ module "service_api" {
     # vía security.tf, así que no hace falta IAM extra.
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+
+    # B.8 — Content SIDs de templates WhatsApp aprobados por Meta.
+    # Migrados a Secret Manager (refactor 2026-05-07) — antes vivían
+    # como variables Terraform y causaban drift en apply.
+    # Cargar con: gcloud secrets versions add content-sid-offer-new \
+    #   --data-file=<(echo -n "HX...")
+    # Si el secret tiene valor placeholder ROTATE_ME_..., el dispatcher
+    # del api loguea warn y skipea — las offers se crean en DB pero el
+    # carrier no recibe WhatsApp template hasta que se cargue el real.
+    # Ver docs/runbooks/load-content-sids.md.
+    CONTENT_SID_OFFER_NEW   = google_secret_manager_secret.secrets["content-sid-offer-new"].secret_id
+    CONTENT_SID_CHAT_UNREAD = google_secret_manager_secret.secrets["content-sid-chat-unread"].secret_id
 
     # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
     # Authorization header al push service del browser). La pública se
