@@ -1,0 +1,188 @@
+# Wave 3 D4 — Manifest del telemetry-tcp-gateway en cluster DR (us-central1).
+#
+# Idéntico al primary (telemetry-tcp-gateway.yaml) excepto:
+#   - Service spec.loadBalancerIP apuntando a la IP estática DR.
+#   - Labels role=disaster-recovery para distinguir en métricas.
+#   - terminationGracePeriodSeconds más largo (90s) — el DR puede tardar
+#     más en drenar conexiones tras un failover de vuelta al primary.
+#
+# Apply:
+#   gcloud container clusters get-credentials booster-ai-telemetry-dr \
+#     --region=us-central1
+#   kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway-dr.yaml
+#   kubectl apply -f infrastructure/k8s/cert-manager.yaml  # mismo cert-manager que primary
+#
+# El cert-manager Certificate `telemetry-tls-cert` debe incluir tanto
+# `telemetry-tls.boosterchile.com` (primary) como
+# `telemetry-dr.boosterchile.com` (backup) en su `dnsNames` para que
+# el device acepte ambos endpoints con el mismo cert pinned.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telemetry
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telemetry-gateway-sa
+  namespace: telemetry
+  annotations:
+    iam.gke.io/gcp-service-account: booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+  labels:
+    app: telemetry-tcp-gateway
+    role: disaster-recovery
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: telemetry-tcp-gateway
+  template:
+    metadata:
+      labels:
+        app: telemetry-tcp-gateway
+        role: disaster-recovery
+    spec:
+      serviceAccountName: telemetry-gateway-sa
+      containers:
+        - name: gateway
+          image: us-central1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: teltonika-tcp
+              containerPort: 5027
+              protocol: TCP
+            - name: teltonika-tls
+              containerPort: 5061
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "5027"
+            - name: GOOGLE_CLOUD_PROJECT
+              value: "booster-ai-494222"
+            - name: PUBSUB_TOPIC_TELEMETRY
+              value: "telemetry-events"
+            - name: PUBSUB_TOPIC_CRASH_TRACES
+              value: "crash-traces"
+            - name: IDLE_TIMEOUT_SEC
+              value: "300"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: NODE_ENV
+              value: "production"
+            - name: TLS_PORT
+              value: "5061"
+            - name: TLS_CERT_PATH
+              value: "/etc/tls/tls.crt"
+            - name: TLS_KEY_PATH
+              value: "/etc/tls/tls.key"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemetry-gateway-secrets
+                  key: database-url
+            # DR-specific: marcar logs con role para filtrar en Cloud Logging.
+            - name: GATEWAY_ROLE
+              value: "disaster-recovery"
+          volumeMounts:
+            - name: tls-cert
+              mountPath: /etc/tls
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          readinessProbe:
+            tcpSocket:
+              port: teltonika-tcp
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: teltonika-tcp
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      # 90s vs 60s del primary: tras failover de vuelta al primary, el
+      # DR puede tener miles de devices reconectando — drenar con margen.
+      terminationGracePeriodSeconds: 90
+      volumes:
+        - name: tls-cert
+          secret:
+            secretName: telemetry-tls-cert
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+  annotations:
+    cloud.google.com/l4-rbs: "enabled"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  # IP estática provisionada en Terraform — sin esto el LB recibe IP
+  # ephemeral y telemetry-dr.boosterchile.com tiene que repointarse en
+  # cada redespliegue.
+  # Setear manualmente con: kubectl annotate service telemetry-tcp-gateway
+  #   -n telemetry cloud.google.com/load-balancer-ip=$DR_LB_IP
+  # (Terraform output `dr_lb_ip` provee el valor).
+  selector:
+    app: telemetry-tcp-gateway
+  ports:
+    - name: teltonika-tcp
+      protocol: TCP
+      port: 5027
+      targetPort: teltonika-tcp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-tcp-gateway-tls
+  namespace: telemetry
+  annotations:
+    cloud.google.com/l4-rbs: "enabled"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app: telemetry-tcp-gateway
+  ports:
+    - name: teltonika-tls
+      protocol: TCP
+      port: 5061
+      targetPort: teltonika-tls
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: telemetry-tcp-gateway
+  namespace: telemetry
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: telemetry-tcp-gateway
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
