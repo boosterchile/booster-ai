@@ -39,6 +39,10 @@
     "*.{ts,tsx,js,jsx,json,md}": ["biome check --write --no-errors-on-unmatched"]
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"],
+    "overrides": {
+      "crypto-js@<4.2.0": ">=4.2.0",
+      "fast-xml-builder@<1.1.7": ">=1.1.7"
+    }
   }
 }

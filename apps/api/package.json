@@ -34,7 +34,7 @@
     "@signpdf/placeholder-plain": "^3.2.4",
     "@signpdf/signpdf": "^3.2.4",
     "@signpdf/utils": "^3.2.4",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "firebase-admin": "^13.7.0",
     "google-auth-library": "^10.6.2",
     "hono": "^4.6.14",
