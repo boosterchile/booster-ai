@@ -178,6 +178,13 @@ spec:
 # Service separado para que el TLS endpoint pueda tener su propia IP/DNS
 # (telemetry-tls.boosterchile.com) y para que devices Wave 1/2 puedan
 # seguir conectándose al endpoint plain mientras Wave 3 migra.
+#
+# loadBalancerIP: la IP estática `booster-telemetry-tls-lb-ip` se
+# provisiona en infrastructure/wave-3-tls.tf. Después de `terraform
+# apply`, usar `terraform output telemetry_tls_lb_ip` y reemplazar el
+# placeholder de abajo. Sin el loadBalancerIP, GKE asigna ephemeral y
+# el DNS A record queda apuntando a IP estática vacía (mismo bug que
+# causó el outage 2026-05-07 — ver MR !39).
 apiVersion: v1
 kind: Service
 metadata:
@@ -187,6 +194,7 @@ metadata:
     cloud.google.com/l4-rbs: "enabled"
 spec:
   type: LoadBalancer
+  loadBalancerIP: "34.176.1.94"
   externalTrafficPolicy: Local
   selector:
     app: telemetry-tcp-gateway
