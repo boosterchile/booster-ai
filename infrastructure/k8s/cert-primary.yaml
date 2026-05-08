@@ -1,0 +1,37 @@
+# Wave 3 D3 — Certificate Let's Encrypt para el TLS endpoint primary
+# (cluster booster-ai-telemetry, southamerica-west1).
+#
+# Apply: kubectl apply -f infrastructure/k8s/cert-primary.yaml
+# Pre-requisito: ClusterIssuer letsencrypt-prod ya aplicado (ver
+# cert-manager-issuers.yaml).
+#
+# El device Wave 3 pinea contra `telemetry-tls.boosterchile.com`. El cert
+# se almacena en el Secret `telemetry-tls-cert` del namespace telemetry,
+# montado read-only al pod del gateway en /etc/tls/{tls.crt, tls.key}.
+#
+# cert-manager renueva 30 días antes de expirar — sin intervención.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: telemetry-tls-cert
+  namespace: telemetry
+spec:
+  secretName: telemetry-tls-cert
+  # 90 días = max permitido por Let's Encrypt. cert-manager renueva
+  # cuando queden 30 días (default).
+  duration: 2160h # 90d
+  renewBefore: 720h # 30d
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: telemetry-tls.boosterchile.com
+  dnsNames:
+    - telemetry-tls.boosterchile.com
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment

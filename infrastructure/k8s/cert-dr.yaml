@@ -1,0 +1,33 @@
+# Wave 3 D4 — Certificate Let's Encrypt para el TLS endpoint DR
+# (cluster booster-ai-telemetry-dr, us-central1).
+#
+# Apply: kubectl apply -f infrastructure/k8s/cert-dr.yaml
+# Pre-requisito: ClusterIssuer letsencrypt-prod ya aplicado (ver
+# cert-manager-issuers.yaml).
+#
+# El device Wave 3 usa `telemetry-dr.boosterchile.com:5061` como Backup
+# Server. El cert tiene CN propio (no compartido con primary) — cada
+# cluster maneja su propia rotación independiente.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: telemetry-tls-cert
+  namespace: telemetry
+spec:
+  secretName: telemetry-tls-cert
+  duration: 2160h # 90d
+  renewBefore: 720h # 30d
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: telemetry-dr.boosterchile.com
+  dnsNames:
+    - telemetry-dr.boosterchile.com
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment

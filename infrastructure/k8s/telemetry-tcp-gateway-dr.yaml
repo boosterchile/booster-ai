@@ -52,7 +52,11 @@ spec:
       serviceAccountName: telemetry-gateway-sa
       containers:
         - name: gateway
-          image: us-central1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          # Imagen vive en Artifact Registry de southamerica-west1 — cross-region pull
+          # desde us-central1. Hay latencia inicial al primer pull (~2-3s) pero el
+          # caché del nodo lo evita en restarts subsiguientes. Crear repo separado en
+          # us-central1 + replicar imagen es overhead injustificado por ahora.
+          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
           imagePullPolicy: Always
           ports:
             - name: teltonika-tcp
@@ -125,30 +129,19 @@ spec:
             secretName: telemetry-tls-cert
             optional: true
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: telemetry-tcp-gateway
-  namespace: telemetry
-  annotations:
-    cloud.google.com/l4-rbs: "enabled"
-spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Local
-  # IP estática provisionada en Terraform — sin esto el LB recibe IP
-  # ephemeral y telemetry-dr.boosterchile.com tiene que repointarse en
-  # cada redespliegue.
-  # Setear manualmente con: kubectl annotate service telemetry-tcp-gateway
-  #   -n telemetry cloud.google.com/load-balancer-ip=$DR_LB_IP
-  # (Terraform output `dr_lb_ip` provee el valor).
-  selector:
-    app: telemetry-tcp-gateway
-  ports:
-    - name: teltonika-tcp
-      protocol: TCP
-      port: 5027
-      targetPort: teltonika-tcp
----
+# Service único en DR con dos puertos en la misma IP
+# `136.116.208.86` (Terraform output `dr_lb_ip`).
+#
+# A diferencia del primary que separa plain/TLS en dos IPs (Wave 2 sigue
+# necesitando 5027), en DR sólo se acepta TLS port 5061 — los devices
+# que llegan al backup son Wave 3 (TLS-only). Plain 5027 NO se ofrece
+# en DR. Si un device Wave 1/2 fallea al primary y no tiene backup
+# configurado, el comportamiento es buffering local hasta que primary
+# vuelva, lo cual es el flujo esperado de Wave 1/2.
+#
+# Sigue exponiendo containerPort 5027 en el deployment para que el
+# health check (TCP probe a teltonika-tcp) siga funcionando — es solo
+# un check de liveness interno al pod, no se expone al LB.
 apiVersion: v1
 kind: Service
 metadata:
@@ -158,6 +151,7 @@ metadata:
     cloud.google.com/l4-rbs: "enabled"
 spec:
   type: LoadBalancer
+  loadBalancerIP: "136.116.208.86"
   externalTrafficPolicy: Local
   selector:
     app: telemetry-tcp-gateway

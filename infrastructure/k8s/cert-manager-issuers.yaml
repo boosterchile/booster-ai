@@ -37,12 +37,12 @@ spec:
       - dns01:
           cloudDNS:
             project: booster-ai-494222
-            # cert-manager corre con SA dedicada con role
-            # roles/dns.admin sobre la zona. Configurada via
-            # Workload Identity en el namespace cert-manager.
-            serviceAccountSecretRef:
-              name: cert-manager-cloud-dns
-              key: key.json
+            # Workload Identity: el K8s SA `cert-manager` (anotado con
+            # iam.gke.io/gcp-service-account=cert-manager-cloud-dns@...)
+            # impersona al GCP SA `cert-manager-cloud-dns` que tiene
+            # roles/dns.admin sobre la zona. cert-manager pide
+            # credentials al metadata server del nodo, no necesita
+            # serviceAccountSecretRef. Setup en infrastructure/wave-3-tls.tf.
         selector:
           dnsZones:
             - boosterchile.com
@@ -65,42 +65,15 @@ spec:
       - dns01:
           cloudDNS:
             project: booster-ai-494222
-            serviceAccountSecretRef:
-              name: cert-manager-cloud-dns
-              key: key.json
+            # Mismo Workload Identity que letsencrypt-prod.
         selector:
           dnsZones:
             - boosterchile.com
 ---
-# Certificate del TLS endpoint del gateway. cert-manager lo renueva
-# 30 días antes de expirar (default). El Secret resultante
-# `telemetry-tls-cert` se monta en el pod del gateway via volume.
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: telemetry-tls-cert
-  namespace: telemetry
-spec:
-  secretName: telemetry-tls-cert
-  # 90 días = max permitido por Let's Encrypt. cert-manager renueva
-  # cuando queden 30 días (default).
-  duration: 2160h # 90d
-  renewBefore: 720h # 30d
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  # CN + SAN — el device pinea contra `telemetry-tls.boosterchile.com`.
-  # El alias `telemetry.boosterchile.com` se mantiene apuntando al LB
-  # plain durante la migración.
-  commonName: telemetry-tls.boosterchile.com
-  dnsNames:
-    - telemetry-tls.boosterchile.com
-  privateKey:
-    algorithm: RSA
-    size: 2048
-    rotationPolicy: Always
-  # Usage estándar para server cert. No client auth.
-  usages:
-    - server auth
-    - digital signature
-    - key encipherment
+# NOTA: Los Certificate por cluster se movieron a archivos separados
+# para que cada cluster aplique solo el suyo:
+#   - cert-primary.yaml → CN telemetry-tls.boosterchile.com (primary)
+#   - cert-dr.yaml      → CN telemetry-dr.boosterchile.com  (DR)
+# Este archivo contiene SOLO los ClusterIssuers — se aplica en ambos
+# clusters porque ClusterIssuer es un recurso cluster-scoped (no
+# namespaced) que cert-manager necesita resolver al issuer.
