@@ -10,17 +10,45 @@ Wave 3 (TLS dual + DR backup) se documenta en sección §6 de este
 archivo y se aplica después de cerrar G2.3.
 
 **Pre-requisitos del lado server**:
-- Gateway K8s con `loadBalancerIP: 34.176.238.106` (MR !39 ya mergeada).
+- Gateway K8s con `loadBalancerIP: 34.176.238.106` (MR !39 mergeada).
 - Pub/Sub topics fan-out `safety-p0`, `security-p1`, `eco-score`,
   `trip-transitions`, `crash-traces` (Wave 2/3 apply).
 - Twilio webhook configurado en `+19383365293` apuntando a
   `https://booster-ai-sms-fallback-gateway-...run.app/webhook`.
-- ⚠️ **Bloqueante para SMS Fallback**: el container del
-  `sms-fallback-gateway` está en placeholder. Hasta que se buildee y
-  deploye la imagen real, los SMS de fallback se reciben pero se
-  pierden silenciosamente downstream. La cfg del device se puede
-  cargar igual — solo evitar disparar Crash/Unplug/Jamming a propósito
-  para tests hasta resolver el deploy.
+- `sms-fallback-gateway` Cloud Run con imagen real deployada (MR !43
+  mergeada). Flujo SMS de panic operativo end-to-end.
+
+## Convención de nombres de archivo `.cfg`
+
+Estandarizada para que cualquier device de la flota use el mismo set:
+
+| Archivo | Contenido | Cuándo se usa |
+|---|---|---|
+| `FMC150_Booster_Wave1.cfg` | cfg Wave 1 (estado pre-migración) | backup de rollback antes de cargar Wave 2 |
+| `FMC150_Booster_Wave2.cfg` | cfg Wave 2 (este documento aplicado) | el archivo que se pushea a cada device productivo |
+| `FMC150_Booster_Wave3.cfg` | cfg Wave 3 (TLS dual + DR backup) | rollout post-G2.3 |
+
+El nombre **no incluye patente ni IMEI ni fecha** porque la misma cfg
+sirve para toda la flota — los datos por-device (IMEI, número Twilio
+Authorized) viven en el device, no en la cfg. Si necesitás versionar
+en el tiempo, usar Git para trackear el archivo, no el nombre.
+
+---
+
+## §0 — Backup obligatorio antes de cargar Wave 2
+
+Antes de tocar cualquier celda del Configurator:
+
+1. Conectar el device por USB / Bluetooth y dejar que el Configurator
+   lea su cfg actual.
+2. **Save to file** → guardar como `FMC150_Booster_Wave1.cfg`.
+3. Verificar que el archivo se creó y abrirlo para confirmar que es
+   legible (no un archivo vacío).
+
+Sin este paso no hay rollback rápido (§8). El backup es una sola vez
+para la flota — si ya tenés `FMC150_Booster_Wave1.cfg` de un device
+previo y la cfg Wave 1 es idéntica entre devices, podés reutilizar el
+mismo archivo.
 
 ---
 
@@ -293,9 +321,9 @@ Después de hacer push de la cfg al device:
 Si el device empieza a comportarse mal tras el push (ej. CPU 100% del
 device, no manda records, batería se drena):
 
-1. **Cargar cfg Wave 1 backup** desde Configurator (la que tenía
-   antes — guardarla siempre antes del Wave 2 push).
-2. Push.
+1. **Load from file** → seleccionar `FMC150_Booster_Wave1.cfg` (el
+   backup que se guardó antes del push Wave 2 — ver §0 abajo).
+2. **Save to device** (push).
 3. Verificar que records vuelven a llegar al gateway con la cfg vieja.
 
 Si el problema persiste: device tiene problema físico (no es la cfg).
