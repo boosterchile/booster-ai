@@ -405,6 +405,9 @@ module "db_bastion" {
   subnet                = google_compute_subnetwork.private.self_link
   service_account_email = google_service_account.db_bastion.email
 
+  # Trivy IaC AVD-GCP-0040: CMEK para boot disk del bastion.
+  disk_encryption_kms_key_self_link = google_kms_crypto_key.compute_disk.id
+
   cloudsql_instance_connection_name = google_sql_database_instance.main.connection_name
 
   iap_users = local.db_iam_operators
@@ -412,4 +415,6 @@ module "db_bastion" {
   labels = {
     env = var.environment
   }
+
+  depends_on = [google_kms_crypto_key_iam_member.gce_disk_encrypter]
 }

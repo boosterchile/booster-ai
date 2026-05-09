@@ -109,6 +109,11 @@ resource "google_storage_bucket" "uploads_raw" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
+  # Trivy IaC AVD-GCP-0066: CMEK con key operacional compartida.
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
   # Trivy IaC: versioning habilitado para recovery de delete accidental.
   # Lifecycle inmediato debajo limita costo extra de versiones archivadas.
   versioning {
@@ -150,6 +155,14 @@ resource "google_storage_bucket" "public_assets" {
   storage_class = "STANDARD"
 
   uniform_bucket_level_access = true
+
+  # Trivy IaC AVD-GCP-0066: CMEK con key operacional compartida.
+  # Aunque los assets son publicos (servidos al PWA), el cifrado en reposo
+  # con CMEK satisface compliance estandar y permite revocacion rapida via
+  # disable-key si se detecta exfiltracion.
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
 
   # Trivy IaC: versioning habilitado. Assets estáticos del sitio marketing
   # — versionado permite rollback rápido si subimos un asset roto.
@@ -222,6 +235,13 @@ resource "google_storage_bucket" "chat_attachments" {
 
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
+
+  # Trivy IaC AVD-GCP-0066: CMEK con key operacional compartida. Importante
+  # para chat attachments porque contiene PII (fotos del chat shipper-carrier).
+  # Disable-key en KMS revoca acceso instantaneo en caso de breach.
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
 
   # Trivy IaC: versioning habilitado para recovery de delete accidental
   # de fotos del chat. Versiones archivadas se purgan a los 7 días para

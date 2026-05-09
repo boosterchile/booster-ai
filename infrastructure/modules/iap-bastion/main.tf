@@ -91,6 +91,17 @@ resource "google_compute_instance" "bastion" {
       size  = 10
       type  = "pd-standard"
     }
+
+    # Trivy IaC AVD-GCP-0040: CMEK para boot disk si se pasa la key. Usar
+    # disk_encryption_key (Customer-Managed via KMS) en lugar de
+    # disk_encryption_key_raw (Customer-Supplied que requiere manejar la
+    # key material en el cliente — operacionalmente caro).
+    dynamic "disk_encryption_key" {
+      for_each = var.disk_encryption_kms_key_self_link != null ? [var.disk_encryption_kms_key_self_link] : []
+      content {
+        kms_key_self_link = disk_encryption_key.value
+      }
+    }
   }
 
   # OS Login para auth via IAM en lugar de SSH keys gestionadas en metadata.

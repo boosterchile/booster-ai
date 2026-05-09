@@ -110,6 +110,57 @@ resource "google_kms_crypto_key_iam_member" "gcs_encrypter" {
   member        = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"
 }
 
+# Trivy IaC AVD-GCP-0066: CMEK para los buckets operacionales (uploads_raw,
+# public_assets, chat_attachments) que NO son de retencion legal como
+# documents. Una sola key compartida porque el caso de uso es el mismo
+# (cifrado en reposo de blobs operacionales) y simplifica IAM.
+# Si en el futuro algun bucket necesita audit isolation, separar.
+resource "google_kms_crypto_key" "storage_operational" {
+  name            = "storage-operational-cmek"
+  key_ring        = google_kms_key_ring.main.id
+  rotation_period = "7776000s" # 90 dias
+
+  version_template {
+    algorithm        = "GOOGLE_SYMMETRIC_ENCRYPTION"
+    protection_level = "SOFTWARE"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_kms_crypto_key_iam_member" "gcs_encrypter_operational" {
+  crypto_key_id = google_kms_crypto_key.storage_operational.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"
+}
+
+# Trivy IaC AVD-GCP-0040: CMEK para boot disks de VMs (bastion). Compute
+# Engine usa el SA de servicio per-project para encryption.
+resource "google_kms_crypto_key" "compute_disk" {
+  name            = "compute-disk-cmek"
+  key_ring        = google_kms_key_ring.main.id
+  rotation_period = "7776000s" # 90 dias
+
+  version_template {
+    algorithm        = "GOOGLE_SYMMETRIC_ENCRYPTION"
+    protection_level = "SOFTWARE"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Compute Engine system SA — necesario para que GCE pueda cifrar/descifrar
+# boot disks con la key (cuando bastion arranca o re-encrypts post-rotation).
+resource "google_kms_crypto_key_iam_member" "gce_disk_encrypter" {
+  crypto_key_id = google_kms_crypto_key.compute_disk.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${google_project.booster_ai.number}@compute-system.iam.gserviceaccount.com"
+}
+
 # =============================================================================
 # SECRET MANAGER — shells vacíos. Los valores se setean con gcloud:
 #   echo -n "value" | gcloud secrets versions add <name> --data-file=-

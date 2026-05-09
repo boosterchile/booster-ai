@@ -33,6 +33,18 @@ variable "machine_type" {
   default     = "e2-micro"
 }
 
+variable "disk_encryption_kms_key_self_link" {
+  type        = string
+  description = <<-EOT
+    Self-link de la KMS crypto key para CMEK del boot disk del bastion.
+    Trivy IaC AVD-GCP-0040 ("VM disks should be encrypted with CMEK").
+    El SA de servicio de Compute Engine (service-PROJECT_NUMBER@compute-system.iam)
+    debe tener roles/cloudkms.cryptoKeyEncrypterDecrypter sobre esta key.
+    Pasar null para usar default Google-managed encryption.
+  EOT
+  default     = null
+}
+
 variable "service_account_email" {
   type        = string
   description = <<-EOT
