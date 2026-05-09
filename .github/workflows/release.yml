@@ -18,7 +18,7 @@ permissions:
   id-token: write         # OIDC para Workload Identity Federation con GCP
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
   PNPM_VERSION: '9.15.4'
   GCP_PROJECT_ID: booster-ai-494222
   GCP_REGION: southamerica-west1
