@@ -34,11 +34,15 @@ RUN pnpm --filter=@booster-ai/telemetry-tcp-gateway --prod deploy /prod/gateway
 # --- runtime stage ---
 FROM node:24-alpine AS runtime
 WORKDIR /app
-COPY --from=deploy /prod/gateway/dist ./dist
-COPY --from=deploy /prod/gateway/node_modules ./node_modules
-COPY --from=deploy /prod/gateway/package.json ./
+# Trivy IaC: ejecutar como non-root para mitigar container escape.
+# Port 5027 > 1024 -> non-root puede bindearlo sin CAP_NET_BIND_SERVICE.
+RUN addgroup -S booster && adduser -S booster -G booster
+COPY --from=deploy --chown=booster:booster /prod/gateway/dist ./dist
+COPY --from=deploy --chown=booster:booster /prod/gateway/node_modules ./node_modules
+COPY --from=deploy --chown=booster:booster /prod/gateway/package.json ./
 
 ENV NODE_ENV=production
+USER booster
 EXPOSE 5027
 
 CMD ["node", "dist/main.js"]

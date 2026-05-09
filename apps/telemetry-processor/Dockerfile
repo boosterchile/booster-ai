@@ -25,11 +25,14 @@ RUN pnpm --filter=@booster-ai/telemetry-processor --prod deploy /prod/processor
 
 FROM node:24-alpine AS runtime
 WORKDIR /app
-COPY --from=deploy /prod/processor/dist ./dist
-COPY --from=deploy /prod/processor/node_modules ./node_modules
-COPY --from=deploy /prod/processor/package.json ./
+# Trivy IaC: ejecutar como non-root para mitigar container escape.
+RUN addgroup -S booster && adduser -S booster -G booster
+COPY --from=deploy --chown=booster:booster /prod/processor/dist ./dist
+COPY --from=deploy --chown=booster:booster /prod/processor/node_modules ./node_modules
+COPY --from=deploy --chown=booster:booster /prod/processor/package.json ./
 
 ENV NODE_ENV=production
+USER booster
 EXPOSE 8080
 
 CMD ["node", "dist/main.js"]
