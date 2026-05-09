@@ -30,6 +30,15 @@ resource "google_compute_subnetwork" "private" {
     range_name    = "gke-services"
     ip_cidr_range = "10.24.0.0/20"
   }
+
+  # Trivy IaC: VPC Flow Logs habilitados para audit + investigacion de
+  # incidentes (#27). Sampling 0.5 + 10-min aggregation reduce costos
+  # ~10x vs full sampling — suficiente para anomaly detection.
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 
 # VPC peering range para Cloud SQL privada
