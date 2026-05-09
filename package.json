@@ -42,7 +42,8 @@
     "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"],
     "overrides": {
       "crypto-js@<4.2.0": ">=4.2.0",
-      "fast-xml-builder@<1.1.7": ">=1.1.7"
+      "fast-xml-builder@<1.1.7": ">=1.1.7",
+      "http-proxy-agent@<7.0.0": ">=7.0.0"
     }
   }
 }
