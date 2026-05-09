@@ -1,0 +1,21 @@
+# Trivy IaC scan ignore rules.
+# Format: una rule por linea (AVD-XXXX-NNNN). Comentarios con #.
+#
+# Cada exclusion debe tener justificacion documentada — sin "won't fix"
+# silenciosos. Revisar trimestralmente para validar que la razon sigue
+# vigente.
+
+# AVD-KSV-0019: "Restrict container images to trusted registries"
+#
+# Las imagenes de los manifests K8s vienen de Artifact Registry de GCP
+# (*.docker.pkg.dev). Trivy default policy no incluye AR en la allowlist,
+# pero AR es:
+#   - Owned by GCP (mismo provider que aloja todo el stack)
+#   - Same project/IAM scope que las apps que lo consumen
+#   - Auditable via Cloud Audit Logs (configurado en #62)
+# por lo tanto es mas seguro que dockerhub o gcr.io publicos.
+#
+# Reabrir esta regla si:
+#   - Se introduce un registry externo (dockerhub, ghcr, etc.)
+#   - Se mueven a un AR cross-project
+AVD-KSV-0019

@@ -70,7 +70,12 @@ spec:
           #   kubectl set image deployment/telemetry-tcp-gateway \
           #     gateway=southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:$_COMMIT_SHA \
           #     -n telemetry
-          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          #
+          # Tag :bootstrap es el "initial pull" para kubectl apply -f la
+          # primera vez que se crea el deployment (antes de que Cloud Build
+          # haga set image al SHA real). Trivy IaC AVD-KSV-0013 prohibe
+          # :latest pero acepta cualquier otro tag estable.
+          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:bootstrap
           imagePullPolicy: Always
           ports:
             - name: teltonika-tcp
