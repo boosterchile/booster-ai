@@ -59,9 +59,29 @@ resource "google_storage_bucket" "access_logs" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
+  # Trivy IaC AVD-GCP-0066: versioning para recovery de logs accidentalmente
+  # borrados. Critico porque los logs son evidencia forense — un atacante
+  # con write podria intentar borrar trazas (aunque las IAM bindings ya lo
+  # bloquean, defense-in-depth).
+  versioning {
+    enabled = true
+  }
+
   lifecycle_rule {
     condition {
       age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  # Versiones archivadas (post-delete) -> 7 dias extra y borran. Suficiente
+  # para detectar y recuperar deletions accidentales sin acumular costo.
+  lifecycle_rule {
+    condition {
+      age        = 7
+      with_state = "ARCHIVED"
     }
     action {
       type = "Delete"

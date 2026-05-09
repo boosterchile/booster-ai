@@ -73,6 +73,13 @@ resource "google_storage_bucket" "crash_traces" {
     default_kms_key_name = google_kms_crypto_key.crash_traces.id
   }
 
+  # Trivy IaC AVD-GCP-0002: access logs delivered al bucket dedicado.
+  # Critico para crash traces porque son evidencia legal (insurance claims).
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "crash-traces/"
+  }
+
   # Retention 7 años — requisito aseguradora + compliance forense.
   retention_policy {
     retention_period = 220752000 # 7 años en segundos = 7 * 365.25 * 24 * 3600

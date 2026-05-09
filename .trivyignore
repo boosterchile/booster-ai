@@ -5,7 +5,7 @@
 # silenciosos. Revisar trimestralmente para validar que la razon sigue
 # vigente.
 
-# AVD-KSV-0019: "Restrict container images to trusted registries"
+# KSV-0125: "Restrict container images to trusted registries"
 #
 # Las imagenes de los manifests K8s vienen de Artifact Registry de GCP
 # (*.docker.pkg.dev). Trivy default policy no incluye AR en la allowlist,
@@ -18,4 +18,4 @@
 # Reabrir esta regla si:
 #   - Se introduce un registry externo (dockerhub, ghcr, etc.)
 #   - Se mueven a un AR cross-project
-AVD-KSV-0019
+KSV-0125
