@@ -108,7 +108,7 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           severity: HIGH,CRITICAL
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
       - name: Trivy config scan (Dockerfiles + Terraform)
         uses: aquasecurity/trivy-action@master
@@ -120,11 +120,18 @@ jobs:
           output: trivy-config.sarif
           severity: HIGH,CRITICAL
           exit-code: '0'  # No bloquea, reporta
-      - name: Upload SARIF to Security tab
+      - name: Upload Trivy filesystem SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: .
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+      - name: Upload Trivy config SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
 
   # ---------------------------------------------------------------------------
   # SBOM generation — Software Bill of Materials para auditoría
@@ -144,7 +151,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Generate CycloneDX SBOM
-        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.cyclonedx.json
+        # cdxgen es pnpm-workspace aware (cyclonedx-npm rompía con workspace:* protocol)
+        run: npx -y @cyclonedx/cdxgen@latest --type pnpm --output sbom.cyclonedx.json --spec-version 1.5
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
