@@ -1,0 +1,29 @@
+# Gitleaks config para Booster AI.
+#
+# Hereda todas las reglas default de gitleaks (8.x) y añade allowlist para
+# las claves de Firebase web hardcodeadas en cloudbuild.production.yaml.
+#
+# Justificación: las Firebase Web API Keys NO son secretos. Viajan al cliente
+# en el bundle JavaScript por diseño — la seguridad la dan Firebase Security
+# Rules + el dominio autorizado en Firebase Auth Settings, no la confidencialidad
+# de la key. La doc oficial de Google lo dice explícitamente:
+# https://firebase.google.com/docs/projects/api-keys#api-keys-for-firebase-are-different
+#
+# El rationale completo del por qué se hardcodean también está documentado en
+# apps/web/Dockerfile y en el comentario de la sección `substitutions` de
+# cloudbuild.production.yaml.
+#
+# Sin este allowlist, gitleaks dispara la regla `gcp-api-key` (que matchea
+# `AIza[0-9A-Za-z_-]{35}` — formato estándar de cualquier Google API key) y
+# bloquea el merge. Los secretos reales del backend (service accounts, OAuth
+# client secrets, etc.) están en Secret Manager y nunca en este archivo, así
+# que excluir el archivo completo del scan es seguro.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Firebase web config públicas — no son secretos por diseño"
+paths = [
+  '''cloudbuild\.production\.yaml''',
+]
