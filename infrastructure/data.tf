@@ -244,20 +244,30 @@ resource "google_sql_user" "iam_operators" {
   instance = google_sql_database_instance.main.name
   project  = google_project.booster_ai.project_id
   # Sin password: autenticación via IAM token.
+  #
+  # Trivy AVD-GCP-0008: este resource crea Postgres roles individuales que
+  # mapean a la identidad del operador (cloud-sql-proxy --auto-iam-authn
+  # autentica con OAuth token del user). API GCP NO acepta grupos aqui —
+  # cada miembro del engineers_group que necesite acceso DB se agrega
+  # manualmente a local.db_iam_operators. .trivyignore documenta que esta
+  # regla en este archivo es false-positive (Cloud SQL IAM API limit).
 }
 
-resource "google_project_iam_member" "db_iam_operators_client" {
-  for_each = toset(local.db_iam_operators)
-  project  = google_project.booster_ai.project_id
-  role     = "roles/cloudsql.client"
-  member   = "user:${each.value}"
+# Trivy AVD-GCP-0008: bindings a nivel proyecto migrados a engineers_group.
+# El cloud-sql-proxy de cada operador autentica con su OAuth token; la
+# membresia del grupo determina si el token es aceptado. Onboarding =
+# agregar miembro al grupo + 1 entry en local.db_iam_operators (sin
+# terraform apply). Offboarding inverso.
+resource "google_project_iam_member" "engineers_cloudsql_client" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/cloudsql.client"
+  member  = "group:${var.engineers_group}"
 }
 
-resource "google_project_iam_member" "db_iam_operators_instanceuser" {
-  for_each = toset(local.db_iam_operators)
-  project  = google_project.booster_ai.project_id
-  role     = "roles/cloudsql.instanceUser"
-  member   = "user:${each.value}"
+resource "google_project_iam_member" "engineers_cloudsql_instanceuser" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "group:${var.engineers_group}"
 }
 
 # Guardar password en Secret Manager (rotación posterior vía otro flujo).
@@ -428,7 +438,9 @@ module "db_bastion" {
 
   cloudsql_instance_connection_name = google_sql_database_instance.main.connection_name
 
-  iap_users = local.db_iam_operators
+  # Trivy AVD-GCP-0008: bastion IAP + osLogin via grupo engineers@.
+  # Onboarding/offboarding sin terraform apply (se gestiona en Workspace).
+  iap_principals = ["group:${var.engineers_group}"]
 
   labels = {
     env = var.environment

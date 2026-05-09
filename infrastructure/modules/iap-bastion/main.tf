@@ -186,26 +186,29 @@ resource "google_compute_firewall" "iap_postgres" {
 # bastion necesita ver Cloud SQL en su rango de VPC peering.
 # (No se crea regla — la default cubre.)
 
-# IAM: cada operador puede tunelar via IAP a este bastion.
+# IAM: principals (users/groups) pueden tunelar via IAP a este bastion.
+# Trivy AVD-GCP-0008: var.iap_principals acepta full IAM members con
+# prefijo (user:..., group:..., serviceAccount:...) — caller en data.tf
+# pasa group:engineers@boosterchile.com en lugar de user emails sueltos.
 resource "google_iap_tunnel_instance_iam_member" "operators" {
-  for_each = toset(var.iap_users)
+  for_each = toset(var.iap_principals)
 
   project  = var.project_id
   zone     = var.zone
   instance = google_compute_instance.bastion.name
 
   role   = "roles/iap.tunnelResourceAccessor"
-  member = "user:${each.value}"
+  member = each.value
 }
 
-# OS Login: cada operador puede iniciar sesion SSH (necesario aunque solo
-# tunelemos TCP — IAP usa el canal SSH como transporte).
+# OS Login: principals (users/groups) pueden iniciar sesion SSH (necesario
+# aunque solo tunelemos TCP — IAP usa el canal SSH como transporte).
 resource "google_project_iam_member" "os_login_users" {
-  for_each = toset(var.iap_users)
+  for_each = toset(var.iap_principals)
 
   project = var.project_id
   role    = "roles/compute.osLogin"
-  member  = "user:${each.value}"
+  member  = each.value
 }
 
 output "name" {
