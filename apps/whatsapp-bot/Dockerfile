@@ -42,4 +42,8 @@ COPY --from=deploy --chown=booster:booster /prod/bot ./
 COPY --from=build --chown=booster:booster /app/apps/whatsapp-bot/dist ./dist
 USER booster
 EXPOSE 8080
+# Trivy IaC AVD-DS-0026: HEALTHCHECK requerido para detectar runtime issues.
+# Node http.get a /health — el container falla si el server no responde 200.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node", "dist/main.js"]
