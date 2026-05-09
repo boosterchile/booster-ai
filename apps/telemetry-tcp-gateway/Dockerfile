@@ -36,7 +36,9 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 # Trivy IaC: ejecutar como non-root para mitigar container escape.
 # Port 5027 > 1024 -> non-root puede bindearlo sin CAP_NET_BIND_SERVICE.
-RUN addgroup -S booster && adduser -S booster -G booster
+# UID/GID >= 10000 (AVD-KSV-0118) — coincide con runAsUser:10001 del K8s
+# pod-level securityContext y evita colisiones con UIDs reservados del SO.
+RUN addgroup -S -g 10001 booster && adduser -S -u 10001 -G booster booster
 COPY --from=deploy --chown=booster:booster /prod/gateway/dist ./dist
 COPY --from=deploy --chown=booster:booster /prod/gateway/node_modules ./node_modules
 COPY --from=deploy --chown=booster:booster /prod/gateway/package.json ./
