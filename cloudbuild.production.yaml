@@ -76,6 +76,10 @@ steps:
       - --file=apps/telemetry-tcp-gateway/Dockerfile
       - --tag=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}
       - --tag=${_REGISTRY}/telemetry-tcp-gateway:latest
+      # :bootstrap es el tag inicial en infrastructure/k8s/telemetry-tcp-gateway*.yaml
+      # para satisfacer Trivy AVD-KSV-0013 (no :latest). Cloud Build hace
+      # kubectl set image al SHA real post-deploy.
+      - --tag=${_REGISTRY}/telemetry-tcp-gateway:bootstrap
       - .
     waitFor: ['-']
 
@@ -325,6 +329,7 @@ images:
   - ${_REGISTRY}/web:latest
   - ${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}
   - ${_REGISTRY}/telemetry-tcp-gateway:latest
+  - ${_REGISTRY}/telemetry-tcp-gateway:bootstrap
   - ${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
   - ${_REGISTRY}/telemetry-processor:latest
   - ${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}

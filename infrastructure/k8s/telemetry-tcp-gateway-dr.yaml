@@ -74,7 +74,9 @@ spec:
           # desde us-central1. Hay latencia inicial al primer pull (~2-3s) pero el
           # caché del nodo lo evita en restarts subsiguientes. Crear repo separado en
           # us-central1 + replicar imagen es overhead injustificado por ahora.
-          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          # Tag :bootstrap usado en lugar de :latest (Trivy IaC AVD-KSV-0013).
+          # Cloud Build hace kubectl set image al SHA real post-deploy.
+          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:bootstrap
           imagePullPolicy: Always
           ports:
             - name: teltonika-tcp
