@@ -47,4 +47,11 @@ ENV NODE_ENV=production
 USER booster
 EXPOSE 5027
 
+# Trivy IaC AVD-DS-0026: HEALTHCHECK requerido. Gateway es TCP-only — usamos
+# net.connect a 127.0.0.1:5027 para validar que el server escucha. K8s
+# tcpSocket probe en el manifest hace lo mismo a nivel pod (Docker
+# HEALTHCHECK es cosmetic en GKE pero satisface Trivy + util en local).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('net').connect(5027,'127.0.0.1').on('connect',function(){this.end();process.exit(0)}).on('error',()=>process.exit(1))"
+
 CMD ["node", "dist/main.js"]
