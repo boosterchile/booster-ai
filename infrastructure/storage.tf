@@ -109,12 +109,30 @@ resource "google_storage_bucket" "uploads_raw" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
+  # Trivy IaC: versioning habilitado para recovery de delete accidental.
+  # Lifecycle inmediato debajo limita costo extra de versiones archivadas.
+  versioning {
+    enabled = true
+  }
+
   lifecycle_rule {
     condition {
       age = 90
     }
     action {
       type = "Delete" # raw uploads se procesan y mueven a bucket definitivo
+    }
+  }
+
+  # Versiones archivadas (post-delete) → expiran 7 días después.
+  # Suficiente para deshacer un delete accidental sin acumular costo.
+  lifecycle_rule {
+    condition {
+      age        = 7
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
     }
   }
 
@@ -132,6 +150,25 @@ resource "google_storage_bucket" "public_assets" {
   storage_class = "STANDARD"
 
   uniform_bucket_level_access = true
+
+  # Trivy IaC: versioning habilitado. Assets estáticos del sitio marketing
+  # — versionado permite rollback rápido si subimos un asset roto.
+  # Sin lifecycle de archivadas → quedan acumulándose; manualmente prunable.
+  versioning {
+    enabled = true
+  }
+
+  # Versiones archivadas viejas → expiran 30 días después para evitar
+  # crecimiento ilimitado. 30d permite rollback durante una semana o dos.
+  lifecycle_rule {
+    condition {
+      age        = 30
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
 
   website {
     main_page_suffix = "index.html"
@@ -185,6 +222,24 @@ resource "google_storage_bucket" "chat_attachments" {
 
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
+
+  # Trivy IaC: versioning habilitado para recovery de delete accidental
+  # de fotos del chat. Versiones archivadas se purgan a los 7 días para
+  # mantener el TTL de 90d alineado con privacy-by-default.
+  versioning {
+    enabled = true
+  }
+
+  # Versiones archivadas (post-delete o post-90d) → 7 días extra y borran.
+  lifecycle_rule {
+    condition {
+      age        = 7
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
 
   # Lifecycle: borrar objetos a los 90 días. Mensajes texto/ubicacion en
   # DB se preservan; las fotos en GCS son las únicas que expiran.
