@@ -51,10 +51,28 @@ resource "google_compute_global_address" "private_services" {
   network       = google_compute_network.vpc.id
 }
 
+# VPC peering range para Cloud Build private worker pool (Trivy IaC #17, #30).
+# /24 = 256 IPs, suficiente para builds concurrentes. Distinct de las otras
+# subnets del VPC (10.10.0.0/20 primary, 10.30.0.0/20 DR, etc.).
+resource "google_compute_global_address" "cloudbuild_pool_range" {
+  name          = "booster-cloudbuild-pool-range"
+  project       = google_project.booster_ai.project_id
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 24
+  network       = google_compute_network.vpc.id
+}
+
+# Una sola service networking connection — agregamos el range del pool
+# Cloud Build aqui (in-place update sin recrear la connection ni interrumpir
+# el peering de Cloud SQL).
 resource "google_service_networking_connection" "private_vpc" {
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_services.name]
+  network = google_compute_network.vpc.id
+  service = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [
+    google_compute_global_address.private_services.name,
+    google_compute_global_address.cloudbuild_pool_range.name,
+  ]
 }
 
 # Serverless VPC Access para que Cloud Run pueda llegar a Cloud SQL privada + Redis.

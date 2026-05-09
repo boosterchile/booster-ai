@@ -476,14 +476,33 @@ resource "google_container_cluster" "telemetry" {
       cidr_block   = "10.10.0.0/20"
       display_name = "booster-ai-private-subnet"
     }
-    # Cualquier IP — necesario para que Cloud Build (deploy via kubectl) y
-    # operadores (kubectl local) puedan alcanzar el control plane. La
-    # protección real está en IAM + RBAC, no en la red. Aceptable para el
-    # piloto. Post-piloto: tightear a Cloud Build private pool + IPs de
-    # operadores conocidos.
+
+    # Cloud Build private worker pool (Trivy IaC #17, AVD-GCP-0049).
+    # Workers viven en este peering range (/24) y pueden hacer kubectl
+    # set image al deploy del gateway desde cloudbuild.production.yaml.
     cidr_blocks {
-      cidr_block   = "0.0.0.0/0"
-      display_name = "any-authenticated"
+      cidr_block   = "${google_compute_global_address.cloudbuild_pool_range.address}/${google_compute_global_address.cloudbuild_pool_range.prefix_length}"
+      display_name = "cloudbuild-private-pool"
+    }
+
+    # IAP TCP forwarding range — operadores acceden via:
+    #   gcloud compute start-iap-tunnel ... && kubectl ...
+    # IAP CIDR 35.235.240.0/20 es publicado por Google y estable.
+    # Ref: https://cloud.google.com/iap/docs/using-tcp-forwarding
+    cidr_blocks {
+      cidr_block   = "35.235.240.0/20"
+      display_name = "iap-tcp-forwarding"
+    }
+
+    # IPs de operadores adicionales (laptops corp, oficina, VPN egress).
+    # Default empty — populate via terraform.tfvars:
+    #   gke_operator_authorized_cidrs = ["192.0.2.42/32", "203.0.113.0/24"]
+    dynamic "cidr_blocks" {
+      for_each = var.gke_operator_authorized_cidrs
+      content {
+        cidr_block   = cidr_blocks.value.cidr
+        display_name = cidr_blocks.value.name
+      }
     }
   }
 

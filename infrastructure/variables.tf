@@ -184,3 +184,28 @@ variable "sms_fallback_webhook_url" {
 # applies independiente de tfvars.
 #
 # Para cargar/rotar los valores ver docs/runbooks/load-content-sids.md.
+
+# ---------------------------------------------------------------------------
+# GKE master_authorized_networks operadores (Trivy IaC #17, #30)
+# ---------------------------------------------------------------------------
+# IPs adicionales de operadores que necesitan kubectl directo al control
+# plane GKE (sin pasar por IAP). Default empty — populate en tfvars.local
+# o tfvars.$ENV.
+#
+# Cloud Build private pool y IAP TCP CIDR ya estan whitelisted por default
+# en compute.tf y dr-region.tf. Esta variable es para excepciones puntuales
+# (ej. ingenieros con IP estatica que prefieren no usar IAP).
+#
+# Ejemplo terraform.tfvars:
+#   gke_operator_authorized_cidrs = [
+#     { cidr = "192.0.2.42/32",  name = "office-static" },
+#     { cidr = "203.0.113.0/24", name = "vpn-egress" },
+#   ]
+variable "gke_operator_authorized_cidrs" {
+  description = "CIDRs de operadores con kubectl directo al GKE master (sin IAP). Cada item: {cidr, name}."
+  type = list(object({
+    cidr = string
+    name = string
+  }))
+  default = []
+}

@@ -342,6 +342,18 @@ serviceAccount: projects/booster-ai-494222/serviceAccounts/github-deployer@boost
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: E2_HIGHCPU_8
+
+  # Trivy IaC #17, #30: workers viven en VPC peering interno con acceso
+  # autorizado al GKE master (master_authorized_networks). Reemplaza el
+  # default pool de IPs ephemeras de Google que requeria 0.0.0.0/0.
+  #
+  # Resource name: projects/PROJECT/locations/REGION/workerPools/POOL_NAME.
+  # Ver `terraform output cloudbuild_worker_pool_name` post-apply.
+  #
+  # machineType es ignorado cuando se usa pool.name — los workers del pool
+  # tienen su propio machine_type (e2-standard-2) configurado en
+  # infrastructure/cloudbuild.tf > google_cloudbuild_worker_pool.production.
+  pool:
+    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
 timeout: 2400s
