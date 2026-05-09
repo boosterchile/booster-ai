@@ -43,3 +43,67 @@ KSV-0125
 #   - Se migra a enable_private_endpoint=true
 #   - Se decide volver a 0.0.0.0/0 o ampliar significativamente los CIDRs
 AVD-GCP-0053
+
+# AVD-GCP-0040 / GCP-0040: "VM disks should be encrypted with Customer Supplied Encryption Keys"
+#
+# CSEK (Customer-Supplied Encryption Keys) requiere que el cliente provea
+# el key material raw y lo gestione end-to-end (rotation, backup, distribucion
+# de la key a operators). Operacionalmente caro y propenso a perdida.
+#
+# Decision: usamos CMEK (Customer-Managed Encryption Keys) via Cloud KMS,
+# documentado en infrastructure/security.tf. PR #61 agrego CMEK al boot disk
+# del bastion via google_kms_crypto_key.compute_disk + dynamic disk_encryption_key
+# block. CMEK satisface compliance estandar (NIST SP 800-57) y es
+# operacionalmente sostenible.
+#
+# Trivy regla AVD-GCP-0040 fue diseñada antes que CMEK estuviera disponible
+# en Compute Engine. Hoy CMEK es el standard recomendado por GCP y por la
+# mayoria de auditores (FedRAMP, SOC 2, ISO 27001) — CSEK queda relegado
+# a casos extremos de zero-trust donde ni siquiera GCP puede acceder a la key.
+#
+# Reabrir esta regla si:
+#   - Auditoria especifica pide CSEK (raro)
+#   - Migracion a HSM externo con key material gestionado off-cloud
+AVD-GCP-0040
+
+# AVD-KSV-0118 / GCP-0046: "Checks for service account defined for GKE nodes"
+#
+# Aplicado a clusters Autopilot (telemetry, telemetry_dr). En Autopilot,
+# Google gestiona los node pools internamente — el operador NO puede
+# customizar el node SA via google_container_cluster.node_config.service_account
+# (esa key es ignorada por el provider para Autopilot).
+#
+# Para satisfacer la regla de forma alternativa en Autopilot habria que setear
+# cluster_autoscaling.auto_provisioning_defaults.service_account, pero esto
+# tambien es ignorado en Autopilot (el provider expone la propiedad pero la
+# API la rechaza).
+#
+# La proteccion real en Autopilot la dan:
+#   - Workload Identity (configurado): pods autentican con SAs de GCP via
+#     K8s ServiceAccount mapping, no con el node SA.
+#   - SA del nodo es minimal por design (solo lectura de imagenes en AR +
+#     Cloud Logging/Monitoring writes). No tiene permisos de proyecto general.
+#
+# Reabrir esta regla si:
+#   - Migracion a GKE Standard (donde si se puede customizar node SA)
+#   - Trivy actualice la regla para detectar Autopilot y skipear
+AVD-KSV-0118
+GCP-0046
+
+# CVE en uuid 9.0.1 (transitive de @google-cloud/* via google-gax)
+#
+# La cadena es:
+#   @google-cloud/{kms,storage,pubsub} -> google-gax -> uuid 9.0.1
+#
+# uuid 9.x todavia esta en mantenimiento; el unico fix conocido upstream
+# es bumpear a uuid 11.x que es ESM-only y rompe google-gax (que usa CJS).
+# Override forzado a 11.x en pnpm.overrides causaria break en runtime de
+# google-gax — escenario peor que el riesgo aceptado del CVE.
+#
+# El CVE es OOB write de baja exploitability — uuid es usado por google-gax
+# para generar request IDs internos, no maneja input untrusted del usuario.
+#
+# Reabrir esta regla si:
+#   - google-gax bumpea a una version compatible con uuid 11.x
+#   - O se confirma exploitability practica en nuestro use case
+CVE-2024-25710

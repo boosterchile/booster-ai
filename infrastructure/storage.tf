@@ -59,10 +59,15 @@ resource "google_storage_bucket" "access_logs" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
-  # Trivy IaC AVD-GCP-0066: versioning para recovery de logs accidentalmente
-  # borrados. Critico porque los logs son evidencia forense — un atacante
-  # con write podria intentar borrar trazas (aunque las IAM bindings ya lo
-  # bloquean, defense-in-depth).
+  # Trivy IaC AVD-GCP-0066 (CMEK + versioning): cifrado en reposo con key
+  # operacional compartida + versioning para recovery de logs accidentalmente
+  # borrados. Logs son evidencia forense — un atacante con write podria
+  # intentar borrar trazas (defense-in-depth aunque IAM lo bloquee).
+  # Disable-key en KMS = kill-switch instantaneo en caso de exfiltracion.
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
   versioning {
     enabled = true
   }
