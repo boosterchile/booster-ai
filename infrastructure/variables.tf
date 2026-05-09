@@ -69,13 +69,60 @@ variable "domain" {
 }
 
 # -----------------------------------------------------------------------------
-# Identidad humana — owners del proyecto (ADR-010 Booster 2.0: IAM via IaC)
+# Identidad humana — Workspace groups (ADR-010 + Trivy IaC AVD-GCP-0008)
 # -----------------------------------------------------------------------------
+# Migracion 2026-05-09: bindings IAM a nivel proyecto se asignan a grupos
+# Workspace en lugar de users individuales. Beneficios:
+# - Trivy "IAM granted directly to user" cierra (best practice de scaling)
+# - Onboarding/offboarding de un dev = agregar/quitar miembro del grupo,
+#   sin terraform apply
+# - Audit trail de membresia centralizado en Workspace Admin
+#
+# CREATE-FIRST: los grupos deben existir en Workspace ANTES del terraform
+# apply (sino apply falla con "principalNotFound"). Crearlos con:
+#
+#   gcloud identity groups create admins@boosterchile.com \
+#     --organization=$ORG_ID \
+#     --display-name="Booster AI - Admins"
+#
+#   gcloud identity groups create engineers@boosterchile.com \
+#     --organization=$ORG_ID \
+#     --display-name="Booster AI - Engineers"
+#
+# Luego agregar miembros via Workspace Admin UI o:
+#   gcloud identity groups memberships add \
+#     --group-email=admins@boosterchile.com \
+#     --member-email=dev@boosterchile.com
+
+variable "admins_group" {
+  description = <<-EOT
+    Workspace group con rol Owner del proyecto.
+    Miembros tipicos: founders / org admins / business owners.
+    Default: admins@boosterchile.com (incluye dev@ + contacto@).
+  EOT
+  type        = string
+  default     = "admins@boosterchile.com"
+}
+
+variable "engineers_group" {
+  description = <<-EOT
+    Workspace group con acceso operacional: Cloud SQL (cloudsql.client +
+    instanceUser) y bastion IAP (iap.tunnelResourceAccessor + osLogin).
+    Miembros tipicos: developers, SREs, on-call.
+    Default: engineers@boosterchile.com (inicialmente solo dev@).
+  EOT
+  type        = string
+  default     = "engineers@boosterchile.com"
+}
+
+# Mantenido como variable por compatibilidad — pero el default ahora apunta
+# al grupo. Si se quiere bindings extra (ej. user:freelance@... temporal)
+# se puede agregar en tfvars.local sin tocar este default.
 variable "human_owners" {
-  description = "Cuentas humanas con rol Owner. Cambios requieren PR."
+  description = "IAM members con rol Owner. Default usa group:admins@... (Trivy AVD-GCP-0008)."
   type        = set(string)
   default = [
-    "user:dev@boosterchile.com",
+    "group:admins@boosterchile.com",
   ]
 }
 
