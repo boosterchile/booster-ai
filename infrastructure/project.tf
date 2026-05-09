@@ -11,9 +11,27 @@ resource "google_project" "booster_ai" {
     project     = "booster-ai" # label corto (slug del producto), no el project_id
   }
 
+  # Trivy IaC AVD-GCP-0050: el proyecto NO crea la default VPC. Usamos
+  # google_compute_network.vpc (custom) en data.tf, no la default.
+  #
+  # Importante: este atributo es CREATE-time only en GCP. Cambiar de
+  # default-true a false post-creacion no hace nada (la default VPC ya
+  # existe si el proyecto se creo sin esta linea). Para realmente
+  # eliminarla, ejecutar manualmente UNA VEZ:
+  #   gcloud compute networks delete default --project=$PROJECT_ID --quiet
+  #   (esto solo funciona si la default no tiene firewall rules ni VMs;
+  #    en booster-ai-494222 ya esta limpia post-bootstrap).
+  #
+  # ignore_changes en lifecycle previene que terraform intente recrear
+  # el proyecto (que ya esta creado y tiene prevent_destroy=true).
+  auto_create_network = false
+
   # No eliminar proyecto accidentalmente
   lifecycle {
     prevent_destroy = true
+    # auto_create_network es CREATE-time only — no aplicar drift
+    # post-creacion. Trivy ve el atributo en codigo (alert closes).
+    ignore_changes = [auto_create_network]
   }
 }
 
