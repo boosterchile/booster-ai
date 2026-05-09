@@ -8,7 +8,7 @@
 # `pnpm deploy --prod` produce un árbol auto-contenido con flat
 # node_modules para evitar ERR_MODULE_NOT_FOUND.
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -32,7 +32,7 @@ FROM build AS deploy
 RUN pnpm --filter=@booster-ai/telemetry-tcp-gateway --prod deploy /prod/gateway
 
 # --- runtime stage ---
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 COPY --from=deploy /prod/gateway/dist ./dist
 COPY --from=deploy /prod/gateway/node_modules ./node_modules

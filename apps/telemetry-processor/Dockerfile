@@ -4,7 +4,7 @@
 # Cloud Run alcanza para esto (no requiere TCP persistente como el
 # gateway). Health probe HTTP /health para liveness.
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -23,7 +23,7 @@ RUN pnpm --filter @booster-ai/telemetry-processor build
 FROM build AS deploy
 RUN pnpm --filter=@booster-ai/telemetry-processor --prod deploy /prod/processor
 
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 COPY --from=deploy /prod/processor/dist ./dist
 COPY --from=deploy /prod/processor/node_modules ./node_modules

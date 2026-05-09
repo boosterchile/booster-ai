@@ -11,7 +11,7 @@
 # por diseño. La seguridad la dan las Firebase Security Rules + el dominio
 # autorizado en Firebase Auth Settings.
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
