@@ -18,6 +18,36 @@ resource "google_project" "booster_ai" {
 }
 
 # ---------------------------------------------------------------------------
+# Audit Logs — Trivy IaC AVD-GCP-0029 ("IAM Audit Not Properly Configured")
+# ---------------------------------------------------------------------------
+# Habilitamos los 3 tipos de Data Access logs para allServices a nivel
+# proyecto. Esto da visibilidad completa de quien hace que con que recurso
+# (ADMIN_READ + DATA_READ + DATA_WRITE), critico para forensics + compliance.
+#
+# Costo: Cloud Logging cobra ~$0.50/GB ingest. Servicios de alto volumen
+# (Storage GETs, BigQuery reads) pueden inflar la factura. Si crece mucho,
+# considerar:
+#   - Exclusion filter en Logs Router para servicios specificos
+#   - Sink a BigQuery con TTL corto vs Cloud Logging retention default
+#   - Bajar a solo ADMIN_* + DATA_WRITE (skip DATA_READ, el mas verboso)
+#
+# Por ahora full enable porque el volumen del piloto es manejable.
+resource "google_project_iam_audit_config" "all_services" {
+  project = google_project.booster_ai.project_id
+  service = "allServices"
+
+  audit_log_config {
+    log_type = "ADMIN_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_WRITE"
+  }
+}
+
+# ---------------------------------------------------------------------------
 # APIs habilitadas — mínimo necesario para todo el stack
 # ---------------------------------------------------------------------------
 locals {
