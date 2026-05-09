@@ -94,8 +94,12 @@ resource "google_compute_instance" "bastion" {
   }
 
   # OS Login para auth via IAM en lugar de SSH keys gestionadas en metadata.
+  # Trivy IaC AVD-GCP-0030: bloquear project-wide SSH keys aplicadas a esta
+  # instancia (#63). El bastion solo acepta IAP tunnel + IAM-OAuth (OS Login),
+  # nunca SSH keys del proyecto. Defense-in-depth si alguien agrega project keys.
   metadata = {
-    enable-oslogin = "TRUE"
+    enable-oslogin         = "TRUE"
+    block-project-ssh-keys = "TRUE"
   }
 
   metadata_startup_script = local.startup_script

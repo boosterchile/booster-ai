@@ -34,4 +34,7 @@ COPY --from=deploy --chown=booster:booster /prod/svc ./
 COPY --from=build --chown=booster:booster /app/apps/sms-fallback-gateway/dist ./dist
 USER booster
 EXPOSE 8080
+# Trivy IaC AVD-DS-0026: HEALTHCHECK requerido (#8).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node", "dist/main.js"]
