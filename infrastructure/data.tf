@@ -118,6 +118,33 @@ resource "google_sql_database_instance" "main" {
       value = "on"
     }
 
+    # Trivy IaC: logging granular para audit + troubleshooting (#21-25).
+    # Estos flags impactan tamano de logs en Cloud Logging — costo modesto
+    # en piloto, pero visible. Si en produccion crece mucho, considerar
+    # desactivar log_temp_files (el mas verboso) o subir el threshold.
+    database_flags {
+      name  = "log_checkpoints"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_connections"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_disconnections"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_lock_waits"
+      value = "on"
+    }
+    database_flags {
+      # 0 = log todos los archivos temporales (consultas que spillan a disk).
+      # >0 = solo logs si tamano excede ese valor (en KB).
+      name  = "log_temp_files"
+      value = "0"
+    }
+
     insights_config {
       query_insights_enabled  = true
       query_string_length     = 1024
