@@ -50,8 +50,21 @@ spec:
         role: disaster-recovery
     spec:
       serviceAccountName: telemetry-gateway-sa
+      # Trivy IaC hardening: pod-level security defaults.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
+          # Trivy IaC hardening: container-level locked-down defaults.
+          # readOnlyRootFilesystem requiere emptyDir para /tmp (Node v8-cache).
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           # Imagen vive en Artifact Registry de southamerica-west1 — cross-region pull
           # desde us-central1. Hay latencia inicial al primer pull (~2-3s) pero el
           # caché del nodo lo evita en restarts subsiguientes. Crear repo separado en
@@ -98,6 +111,9 @@ spec:
             - name: tls-cert
               mountPath: /etc/tls
               readOnly: true
+            # /tmp writable para readOnlyRootFilesystem: true.
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: "500m"
@@ -128,6 +144,10 @@ spec:
           secret:
             secretName: telemetry-tls-cert
             optional: true
+        # /tmp writable (readOnlyRootFilesystem requiere mount aparte).
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 # Service único en DR con dos puertos en la misma IP
 # `136.116.208.86` (Terraform output `dr_lb_ip`).
