@@ -1,17 +1,18 @@
 # Gitleaks config para Booster AI.
 #
 # Hereda todas las reglas default de gitleaks (8.x) y añade allowlist para
-# las claves de Firebase web hardcodeadas en cloudbuild.production.yaml.
+# las claves "públicas por diseño" hardcodeadas en cloudbuild.production.yaml:
 #
-# Justificación: las Firebase Web API Keys NO son secretos. Viajan al cliente
-# en el bundle JavaScript por diseño — la seguridad la dan Firebase Security
-# Rules + el dominio autorizado en Firebase Auth Settings, no la confidencialidad
-# de la key. La doc oficial de Google lo dice explícitamente:
-# https://firebase.google.com/docs/projects/api-keys#api-keys-for-firebase-are-different
+#   - Firebase Web API Keys: protegidas por Firebase Security Rules + dominio
+#     autorizado en Firebase Auth Settings, no por confidencialidad de la key.
+#     https://firebase.google.com/docs/projects/api-keys#api-keys-for-firebase-are-different
+#   - Google Maps JS API Key: protegida por HTTP referrer restriction en GCP
+#     API Credentials (solo acepta requests desde app.boosterchile.com/*).
 #
-# El rationale completo del por qué se hardcodean también está documentado en
-# apps/web/Dockerfile y en el comentario de la sección `substitutions` de
-# cloudbuild.production.yaml.
+# Ambas viajan en el bundle JavaScript al cliente — son inevitablemente
+# públicas. El rationale completo del por qué se hardcodean también está
+# documentado en apps/web/Dockerfile y en los comentarios de la sección
+# `substitutions` de cloudbuild.production.yaml.
 #
 # Sin este allowlist, gitleaks dispara la regla `gcp-api-key` (que matchea
 # `AIza[0-9A-Za-z_-]{35}` — formato estándar de cualquier Google API key) y
@@ -23,7 +24,7 @@
 useDefault = true
 
 [allowlist]
-description = "Firebase web config públicas — no son secretos por diseño"
+description = "Firebase + Google Maps web keys — públicas por diseño"
 paths = [
   '''cloudbuild\.production\.yaml''',
 ]

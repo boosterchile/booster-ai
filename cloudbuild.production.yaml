@@ -306,10 +306,15 @@ substitutions:
   _VITE_FIREBASE_STORAGE_BUCKET: booster-ai-494222.firebasestorage.app
   _VITE_FIREBASE_MESSAGING_SENDER_ID: '469283083998'
   _VITE_FIREBASE_APP_ID: '1:469283083998:web:6a872c7a366ca78a07144f'
-  # VITE_GOOGLE_MAPS_API_KEY queda vacío: el schema lo marca opcional y
-  # los mapas en /vehiculos/:id y /cargas/:id caen al fallback "no
-  # configurado". Setear cuando se aprovisione la API key de Maps.
-  _VITE_GOOGLE_MAPS_API_KEY: ''
+  # Google Maps JS API key — pública por diseño (viaja en el bundle al
+  # cliente). La seguridad la da el HTTP referrer restriction configurado
+  # en GCP API Credentials: solo se acepta desde https://app.boosterchile.com/*.
+  # Si una key sin restringir se filtra puede generar billing abuse; ésta
+  # tiene la restricción aplicada (revisar en GCP > APIs > Credentials >
+  # "Booster Maps - Web (PWA)" antes de rotar).
+  # Sin esta substitution los mapas en /vehiculos/:id y /cargas/:id caen
+  # al fallback "Mapa no disponible" del componente VehicleMap.
+  _VITE_GOOGLE_MAPS_API_KEY: AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg
 
 images:
   - ${_REGISTRY}/api:${_COMMIT_SHA}
