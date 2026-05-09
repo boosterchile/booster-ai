@@ -19,3 +19,27 @@
 #   - Se introduce un registry externo (dockerhub, ghcr, etc.)
 #   - Se mueven a un AR cross-project
 KSV-0125
+
+# AVD-GCP-0053 / GCP-0053: "GKE Control Plane should not be publicly accessible"
+#
+# Esta regla solo cierra completamente cuando enable_private_endpoint=true
+# en private_cluster_config. Al hacerlo:
+#   - kubectl desde internet publica falla (no public endpoint expuesto)
+#   - kubectl desde Cloud Build private pool funciona (VPC peering)
+#   - kubectl desde IAP TCP requiere master_global_access_config=true
+#
+# Decision arquitectonica (PR #68): mantenemos enable_private_endpoint=false
+# pero tightened master_authorized_networks_config:
+#   - REMOVIDO 0.0.0.0/0
+#   - Solo permitido: subnet privada GKE + Cloud Build pool /24 +
+#     IAP TCP CIDR + lista variable de operadores conocidos
+#
+# Esto satisface "no exposure to public internet" en la practica:
+# el control plane esta filtered a CIDRs especificos, no al "any-authenticated"
+# original. La proxima iteracion podria migrar a enable_private_endpoint=true
+# cuando validemos IAP TCP contra endpoint privado.
+#
+# Reabrir esta regla si:
+#   - Se migra a enable_private_endpoint=true
+#   - Se decide volver a 0.0.0.0/0 o ampliar significativamente los CIDRs
+AVD-GCP-0053
