@@ -46,32 +46,43 @@ ENV VITE_API_URL=$VITE_API_URL \
 COPY . .
 RUN pnpm --filter @booster-ai/web build
 
-# --- runtime stage: nginx-alpine sirviendo el bundle ---
-FROM nginx:1.27-alpine AS runtime
+# --- runtime stage: nginx-unprivileged sirviendo el bundle ---
+# Trivy IaC: nginxinc/nginx-unprivileged corre como user `nginx` (UID 101)
+# por defecto y bindea 8080 sin CAP_NET_BIND_SERVICE — non-root nativo.
+# Mismos paths que nginx:1.27-alpine (templates, conf.d, html) — drop-in.
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 
-# Cloud Run inyecta PORT (por defecto 8080); nginx tiene que escuchar ahí.
+# Cloud Run inyecta PORT (por defecto 8080); nginx-unprivileged ya escucha
+# en 8080 nativo. Mantenemos la var para que envsubst la resuelva en
+# nginx.conf.template si está parametrizado.
 ENV PORT=8080
 
-# Borrar el default.conf que viene con nginx-alpine para evitar conflicto:
-# escucha en :80 (no permitido en Cloud Run) y puede competir con nuestra
-# config si el envsubst del entrypoint no procesa el template a tiempo.
+# Operaciones de setup requieren root (modificar /etc/nginx, /usr/share/nginx).
+# Volvemos a non-root antes del CMD.
+USER root
+
+# Borrar el default.conf que viene con la imagen para evitar conflicto con
+# nuestra config si el envsubst del entrypoint no procesa el template a tiempo.
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-# Copiar nuestro template — el entrypoint de nginx-alpine ejecuta envsubst
-# sobre /etc/nginx/templates/*.template y deposita el resultado procesado
+# Copiar nuestro template — el entrypoint ejecuta envsubst sobre
+# /etc/nginx/templates/*.template y deposita el resultado procesado
 # (con $PORT resuelto) en /etc/nginx/conf.d/.
 COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 # Asegurar que /usr/share/nginx/html arranca limpio (sin index.html default
 # del image) y después poblar con el dist de Vite.
 RUN rm -rf /usr/share/nginx/html/* /usr/share/nginx/html/.[!.]*
-COPY --from=build /app/apps/web/dist/ /usr/share/nginx/html/
+COPY --from=build --chown=nginx:nginx /app/apps/web/dist/ /usr/share/nginx/html/
 
 # Sanity check al build: listar lo que quedó (sale en logs de Cloud Build).
 RUN echo '--- /usr/share/nginx/html ---' && ls -la /usr/share/nginx/html/ && \
     echo '--- head index.html ---' && head -5 /usr/share/nginx/html/index.html && \
     echo '--- /etc/nginx/conf.d ---' && ls -la /etc/nginx/conf.d/ && \
     echo '--- /etc/nginx/templates ---' && ls -la /etc/nginx/templates/
+
+# Volver a non-root para runtime.
+USER nginx
 
 # Cloud Run health check: la propia request del LB pega a / esperando 200.
 # nginx sirve index.html (200) por SPA fallback. Suficiente para liveness.
