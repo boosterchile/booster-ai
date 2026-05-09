@@ -38,6 +38,54 @@ resource "google_artifact_registry_repository" "containers" {
 }
 
 # =============================================================================
+# ACCESS LOGS — Trivy IaC AVD-GCP-0002 ("Bucket Logging Not Enabled")
+# =============================================================================
+# Bucket dedicado para Cloud Storage access logs. Recibe logs de todos
+# los buckets via logging.log_bucket en cada fuente. Itself NO tiene logging
+# habilitado (avoid recursion + Trivy lo respeta para self-hosted log buckets).
+#
+# Storage class NEARLINE: logs son write-once / read-rare; NEARLINE es 50%
+# mas barato que STANDARD ($0.01/GB/mo vs $0.020/GB/mo en us regions) y
+# mantiene latency aceptable para auditoria.
+#
+# Lifecycle 90d: post-incident forensics necesita ~30-60d de logs. 90d da
+# margen sin crecer ilimitado.
+resource "google_storage_bucket" "access_logs" {
+  name          = "${var.project_id}-access-logs-${var.environment}"
+  project       = google_project.booster_ai.project_id
+  location      = var.region
+  storage_class = "NEARLINE"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    purpose    = "access-logs"
+  }
+}
+
+# IAM: cloud-storage-analytics@google.com es el SA bien-conocido que GCS
+# usa internamente para escribir logs de acceso. Necesita legacyBucketWriter
+# en el log bucket (no objectAdmin a nivel proyecto, que seria over-grant).
+# Ref: https://cloud.google.com/storage/docs/access-logs#delivery
+resource "google_storage_bucket_iam_member" "access_logs_writer" {
+  bucket = google_storage_bucket.access_logs.name
+  role   = "roles/storage.legacyBucketWriter"
+  member = "group:cloud-storage-analytics@google.com"
+}
+
+# =============================================================================
 # BUCKETS
 # =============================================================================
 
@@ -58,6 +106,12 @@ resource "google_storage_bucket" "documents" {
 
   encryption {
     default_kms_key_name = google_kms_crypto_key.documents.id
+  }
+
+  # Trivy IaC AVD-GCP-0002: access logs delivered al bucket dedicado.
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "documents/"
   }
 
   # Retention Lock 6 años (SII Chile)
@@ -114,6 +168,12 @@ resource "google_storage_bucket" "uploads_raw" {
     default_kms_key_name = google_kms_crypto_key.storage_operational.id
   }
 
+  # Trivy IaC AVD-GCP-0002: access logs.
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "uploads-raw/"
+  }
+
   # Trivy IaC: versioning habilitado para recovery de delete accidental.
   # Lifecycle inmediato debajo limita costo extra de versiones archivadas.
   versioning {
@@ -162,6 +222,12 @@ resource "google_storage_bucket" "public_assets" {
   # disable-key si se detecta exfiltracion.
   encryption {
     default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
+  # Trivy IaC AVD-GCP-0002: access logs.
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "public-assets/"
   }
 
   # Trivy IaC: versioning habilitado. Assets estáticos del sitio marketing
@@ -241,6 +307,13 @@ resource "google_storage_bucket" "chat_attachments" {
   # Disable-key en KMS revoca acceso instantaneo en caso de breach.
   encryption {
     default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
+  # Trivy IaC AVD-GCP-0002: access logs (importante por PII — auditoria
+  # de quien accede a fotos del chat).
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "chat-attachments/"
   }
 
   # Trivy IaC: versioning habilitado para recovery de delete accidental
