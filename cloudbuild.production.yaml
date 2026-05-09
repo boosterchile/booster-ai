@@ -294,16 +294,21 @@ substitutions:
   _COMMIT_SHA: manual
 
   # apps/web build-time vars — Firebase web config (públicas por diseño,
-  # ver apps/web/Dockerfile para rationale). Defaults vacíos: si no se
-  # pasan al gcloud builds submit, el bundle queda sin auth funcional.
-  # Setear via --substitutions=_VITE_FIREBASE_API_KEY=...,_VITE_...=...
+  # ver apps/web/Dockerfile para rationale). Estas claves viajan en el
+  # bundle al cliente; la seguridad la dan Firebase Security Rules + el
+  # dominio autorizado en Firebase Auth. Por eso se hardcodean acá en
+  # vez de pasarse via Secret Manager.
+  # Override puntual: --substitutions=_VITE_FIREBASE_API_KEY=...
   _VITE_API_URL: https://api.boosterchile.com
-  _VITE_FIREBASE_API_KEY: ''
-  _VITE_FIREBASE_AUTH_DOMAIN: ''
-  _VITE_FIREBASE_PROJECT_ID: ''
-  _VITE_FIREBASE_STORAGE_BUCKET: ''
-  _VITE_FIREBASE_MESSAGING_SENDER_ID: ''
-  _VITE_FIREBASE_APP_ID: ''
+  _VITE_FIREBASE_API_KEY: AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk
+  _VITE_FIREBASE_AUTH_DOMAIN: booster-ai-494222.firebaseapp.com
+  _VITE_FIREBASE_PROJECT_ID: booster-ai-494222
+  _VITE_FIREBASE_STORAGE_BUCKET: booster-ai-494222.firebasestorage.app
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: '469283083998'
+  _VITE_FIREBASE_APP_ID: '1:469283083998:web:6a872c7a366ca78a07144f'
+  # VITE_GOOGLE_MAPS_API_KEY queda vacío: el schema lo marca opcional y
+  # los mapas en /vehiculos/:id y /cargas/:id caen al fallback "no
+  # configurado". Setear cuando se aprovisione la API key de Maps.
   _VITE_GOOGLE_MAPS_API_KEY: ''
 
 images:
