@@ -46,8 +46,13 @@ spec:
     spec:
       serviceAccountName: telemetry-gateway-sa
       # Trivy IaC hardening: pod-level security defaults.
+      # UID/GID 10001 coincide con el booster user del Dockerfile (>= 10000
+      # satisface AVD-KSV-0118; evita colisiones con UIDs reservados del SO).
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
