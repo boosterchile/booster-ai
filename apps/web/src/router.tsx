@@ -11,6 +11,7 @@ import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
+import { PublicTrackingRoute } from './routes/public-tracking.js';
 import { VehiculoLiveRoute } from './routes/vehiculo-live.js';
 import {
   VehiculosDetalleRoute,
@@ -132,6 +133,16 @@ const asignacionDetalleRoute = createRoute({
   component: AsignacionDetalleRoute,
 });
 
+// Phase 5 PR-L4 — Surface pública del consignee/shipper con un link
+// opaco UUID v4. Sin auth, sin app shell — layout dedicado mobile-first.
+// Path raíz `/tracking/$token` (NO `/app/...`) para no quedar bajo el
+// guard de ProtectedRoute que aplica a todo `/app/*`.
+const publicTrackingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/tracking/$token',
+  component: PublicTrackingRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -150,6 +161,7 @@ const routeTree = rootRoute.addChildren([
   cargaTrackRoute,
   certificadosRoute,
   asignacionDetalleRoute,
+  publicTrackingRoute,
 ]);
 
 export const router = createRouter({
