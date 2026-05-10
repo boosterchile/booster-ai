@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
@@ -51,6 +52,7 @@
     "@types/node": "^22.14.0",
     "@types/pg": "^8.11.10",
     "@types/web-push": "^3.6.4",
+    "@vitest/coverage-v8": "^4.0.18",
     "drizzle-kit": "^0.31.10",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",

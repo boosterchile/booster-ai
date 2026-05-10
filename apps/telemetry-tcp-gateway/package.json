@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
     "smoke-test": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/pg": "^8.11.10",
+    "@vitest/coverage-v8": "^4.0.18",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.8.2",
