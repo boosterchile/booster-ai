@@ -238,7 +238,6 @@ describe('PATCH /me/profile', () => {
             : []; // memberships: ninguna
       return {
         limit: vi.fn().mockResolvedValue(rows),
-        // biome-ignore lint/suspicious/noThenProperty: drizzle mock intencional, el query builder es thenable
         then: <T>(onFulfilled: (v: typeof rows) => T) => Promise.resolve(rows).then(onFulfilled),
       };
     });
@@ -318,7 +317,6 @@ describe('PATCH /me/profile', () => {
       // Si es la 1ra (user), pasar a .limit().
       return {
         limit: limitFn,
-        // biome-ignore lint/suspicious/noThenProperty: drizzle mock intencional, el query builder es thenable
         then: <T>(onFulfilled: (v: unknown[]) => T) => {
           // Memberships: 1 row activa con empresaId 'real-empresa-id'
           const rows = [

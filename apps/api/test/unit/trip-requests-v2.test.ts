@@ -414,7 +414,6 @@ function makeQueryDb(opts: {
     orderByCallCount += 1;
     const rows = opts.orderByRows?.[idx] ?? [];
     return {
-      // biome-ignore lint/suspicious/noThenProperty: thenable es necesario para emular Drizzle query builder en tests
       then: (
         resolve: (v: Record<string, unknown>[]) => unknown,
         reject?: (err: unknown) => unknown,
