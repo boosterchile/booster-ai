@@ -91,3 +91,52 @@ resource "google_cloud_scheduler_job" "chat_whatsapp_fallback" {
     module.service_api,
   ]
 }
+
+# -----------------------------------------------------------------------------
+# ADR-029 v1 / ADR-032 — Cloud Scheduler para cobranza Cobra Hoy
+# -----------------------------------------------------------------------------
+# Tick diario a las 09:00 America/Santiago. El handler:
+#   - SELECT adelantos `desembolsado` con fecha_vencimiento ≤ now().
+#   - UPDATE → status='mora', mora_desde=now(), append notas_admin.
+#
+# Volumen esperado en steady state: <50 adelantos/día. Si crece, ajustar
+# frecuencia a 2×/día o pasar a un UPDATE bulk en el service.
+#
+# Si FACTORING_V1_ACTIVATED=false (entornos no-prod por default), el
+# handler responde 200 skipped:true sin tocar BD. Cloud Scheduler lo
+# considera success y no reintenta.
+resource "google_cloud_scheduler_job" "cobra_hoy_cobranza" {
+  name        = "cobra-hoy-cobranza"
+  description = "Tick diario 09:00 CLT: marca como `mora` los adelantos Cobra Hoy cuyo plazo del shipper venció y siguen `desembolsado`."
+  project     = google_project.booster_ai.project_id
+
+  region    = "southamerica-east1"
+  schedule  = "0 9 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/cobra-hoy-cobranza"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}
