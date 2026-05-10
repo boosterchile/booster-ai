@@ -226,6 +226,14 @@ locals {
     # (fallback WhatsApp para mensajes no leídos).
     "content-sid-offer-new",
     "content-sid-chat-unread",
+    # coaching es Phase 3 PR-J3 — template `coaching_post_entrega_v1`
+    # con 4 variables (tracking_code, score+nivel, mensaje, deep-link al
+    # detalle del trip). Se envía al dueño del transportista justo después
+    # de calcular score + generar coaching, fire-and-await en
+    # confirmar-entrega-viaje.ts. Ver runbook
+    # docs/runbooks/twilio-content-sid-coaching.md para los pasos de
+    # aprobación Meta + carga del SID al secret.
+    "content-sid-coaching",
 
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
     # post-deploy y subidas con `gcloud secrets versions add`. La pública se

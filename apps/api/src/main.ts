@@ -6,6 +6,7 @@ import { createDb } from './db/client.js';
 import { runMigrations } from './db/migrator.js';
 import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
+import type { NotifyCoachingDeps } from './services/notify-coaching.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 
 const logger = createLogger({
@@ -57,6 +58,11 @@ async function main(): Promise<void> {
       'CONTENT_SID_OFFER_NEW no seteado — el template de oferta nueva no está aprobado todavía. Notificaciones serán no-op aunque Twilio esté configurado.',
     );
   }
+  if (!config.CONTENT_SID_COACHING) {
+    logger.warn(
+      'CONTENT_SID_COACHING no seteado — el template de coaching post-entrega no está aprobado todavía. El coaching IA seguirá visible en la PWA pero no se enviará por WhatsApp.',
+    );
+  }
 
   const notify: NotifyOfferDeps = {
     db,
@@ -66,7 +72,19 @@ async function main(): Promise<void> {
     webAppUrl: config.WEB_APP_URL,
   };
 
-  const app = createServer({ db, pool, firebaseAuth, logger, notify });
+  // Phase 3 PR-J3 — wire del dispatcher de coaching post-entrega por
+  // WhatsApp. Reusa el mismo twilioClient que `notify` (un solo Twilio
+  // sender, varios templates aprobados). Si twilioClient es null, el
+  // dispatcher hace skip silencioso por reason='not_configured'.
+  const notifyCoaching: NotifyCoachingDeps = {
+    db,
+    logger,
+    twilioClient,
+    contentSidCoaching: config.CONTENT_SID_COACHING ?? null,
+    webAppUrl: config.WEB_APP_URL,
+  };
+
+  const app = createServer({ db, pool, firebaseAuth, logger, notify, notifyCoaching });
 
   const server = serve(
     {

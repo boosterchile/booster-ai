@@ -31,11 +31,18 @@ import {
 } from '../db/schema.js';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import type { NotifyCoachingDeps } from '../services/notify-coaching.js';
 
 export function createAssignmentsRoutes(opts: {
   db: Db;
   logger: Logger;
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Dispatch para WhatsApp coaching post-entrega (Phase 3 PR-J3). Si no se
+   * pasa, confirmar-entrega no intenta el envío y el coaching queda sólo
+   * en la PWA (BehaviorScoreCard).
+   */
+  notifyCoaching?: NotifyCoachingDeps;
 }) {
   const app = new Hono();
 
@@ -268,6 +275,7 @@ export function createAssignmentsRoutes(opts: {
         userId: auth.userContext.user.id,
       },
       config: opts.certConfig ?? {},
+      ...(opts.notifyCoaching ? { notifyCoaching: opts.notifyCoaching } : {}),
     });
 
     if (!result.ok) {

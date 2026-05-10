@@ -199,6 +199,29 @@ const apiEnvSchema = commonEnvSchema
     ),
 
     /**
+     * Content SID del template Twilio `coaching_post_entrega_v1` para el
+     * envío del coaching post-entrega al dueño del transportista
+     * (Phase 3 PR-J3). Variables (1-based):
+     *   {{1}} → tracking_code
+     *   {{2}} → score + nivel (e.g. "85/100 · Bueno")
+     *   {{3}} → mensaje de coaching (≤280 chars)
+     *   {{4}} → URL al detalle del trip (deep-link a la PWA)
+     *
+     * Optional. Mientras Meta aprueba el template, notify-coaching loggea
+     * warn y skipea sin afectar el resto del flow post-entrega (cert,
+     * score, coaching persistido). Una vez aprobado, cargar el SID al
+     * secret `content-sid-coaching` (TF security.tf) y esta env var queda
+     * montada vía secret env en compute.tf.
+     */
+    CONTENT_SID_COACHING: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
      * SA email autorizado a invocar /admin/jobs/* (P3.d Cloud Scheduler
      * cron de fallback WhatsApp). Cloud Scheduler firma OIDC con este SA;
      * el middleware valida claims.email === este valor.

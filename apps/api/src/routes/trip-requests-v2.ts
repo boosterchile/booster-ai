@@ -20,6 +20,7 @@ import {
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
+import type { NotifyCoachingDeps } from '../services/notify-coaching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
 /**
@@ -70,6 +71,12 @@ export function createTripRequestsV2Routes(opts: {
    * warn en el wire fire-and-forget). Útil para dev sin KMS.
    */
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Dispatch para WhatsApp coaching post-entrega (Phase 3 PR-J3). Si no
+   * se pasa, confirmar-entrega no intenta el envío y el coaching queda
+   * sólo en la PWA.
+   */
+  notifyCoaching?: NotifyCoachingDeps;
 }) {
   const app = new Hono();
 
@@ -468,6 +475,7 @@ export function createTripRequestsV2Routes(opts: {
         userId: auth.userContext.user.id,
       },
       config: opts.certConfig ?? {},
+      ...(opts.notifyCoaching ? { notifyCoaching: opts.notifyCoaching } : {}),
     });
 
     if (!result.ok) {

@@ -42,6 +42,7 @@ import {
   emitirCertificadoViaje,
 } from './emitir-certificado-viaje.js';
 import { generarCoachingViaje } from './generar-coaching-viaje.js';
+import { type NotifyCoachingDeps, notifyCoachingToCarrier } from './notify-coaching.js';
 
 /**
  * Status del trip en los que es válido confirmar entrega. Si está
@@ -72,8 +73,16 @@ export async function confirmarEntregaViaje(opts: {
     userId: string;
   };
   config: Partial<EmitirCertificadoConfig>;
+  /**
+   * Deps para despachar el coaching IA por WhatsApp tras la entrega
+   * (Phase 3 PR-J3). Optional — en dev local sin Twilio o sin Content SID
+   * aprobado, el dispatcher hace skip silencioso. Cuando undefined, ni
+   * siquiera se invoca (ahorra una entrada al servicio que igual loguearía
+   * skip).
+   */
+  notifyCoaching?: NotifyCoachingDeps;
 }): Promise<ConfirmarEntregaResult> {
-  const { db, logger, tripId, source, actor, config } = opts;
+  const { db, logger, tripId, source, actor, config, notifyCoaching } = opts;
 
   // Tx de escritura — todo o nada para mantener consistencia.
   const txResult = await db.transaction(async (tx) => {
@@ -236,6 +245,23 @@ export async function confirmarEntregaViaje(opts: {
         { err, tripId },
         'generarCoachingViaje fallo — sin coaching persistido para este trip',
       );
+    }
+
+    // Phase 3 PR-J3 — despachar coaching por WhatsApp al dueño del
+    // transportista. Depende de coachingMensaje persistido en
+    // metricas_viaje. Skip silencioso si notifyCoaching no fue inyectado
+    // (dev sin Twilio) o si la subfunción decide skip por any of the
+    // ~7 razones documentadas en notify-coaching.ts. NUNCA throw — el
+    // delivery del cert es independiente.
+    if (notifyCoaching) {
+      try {
+        await notifyCoachingToCarrier(notifyCoaching, { tripId });
+      } catch (err) {
+        logger.error(
+          { err, tripId },
+          'notifyCoachingToCarrier fallo — coaching persistido pero sin WhatsApp delivery',
+        );
+      }
     }
 
     emitirCertificadoViaje({ db, logger, tripId, config })

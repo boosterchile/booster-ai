@@ -7,6 +7,37 @@ WhatsApp aprobados por Meta. Los secrets viven en Secret Manager:
 |---|---|---|
 | `content-sid-offer-new` | Notificar carrier de nueva oferta (B.8) | `offer_new_v1` |
 | `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` |
+| `content-sid-coaching` | Coaching IA post-entrega al transportista (Phase 3 PR-J3) | `coaching_post_entrega_v1` |
+
+### Body recomendado del template `coaching_post_entrega_v1`
+
+Crear en Twilio Content Editor con este body (4 variables 1-indexed) — la
+copia pasa los criterios de Meta para Utility templates (informa sobre
+viaje recién finalizado, no es marketing):
+
+```
+🚛 Booster AI — Tu viaje terminó
+
+📦 Viaje {{1}}
+⭐ Score de conducción: {{2}}
+
+💡 {{3}}
+
+Ver detalles: {{4}}
+```
+
+Variable map:
+
+| Var | Significado | Ejemplo |
+|---|---|---|
+| {{1}} | tracking_code del viaje | `BOO-K7M2X9` |
+| {{2}} | score + nivel | `85/100 · Bueno` |
+| {{3}} | mensaje de coaching IA (≤280 chars) | `Buen viaje. Anticipa frenadas y mantén distancia para bajar 5-10% el consumo.` |
+| {{4}} | deep-link al detalle del trip | `https://app.boosterchile.com/app/viajes/{tripId}` |
+
+Categoría Meta: **Utility** (no Marketing — el mensaje informa post-acción
+del usuario, no promociona). Idioma: `es_CL` (caer a `es` si CL no
+aprueba). Tiempo de aprobación típico: 24-48h.
 
 ## Cuándo usar este runbook
 

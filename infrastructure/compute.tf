@@ -142,6 +142,12 @@ module "service_api" {
     # Ver docs/runbooks/load-content-sids.md.
     CONTENT_SID_OFFER_NEW   = google_secret_manager_secret.secrets["content-sid-offer-new"].secret_id
     CONTENT_SID_CHAT_UNREAD = google_secret_manager_secret.secrets["content-sid-chat-unread"].secret_id
+    # Phase 3 PR-J3 — Twilio template `coaching_post_entrega_v1` para
+    # despachar el coaching IA al dueño del transportista al confirmar
+    # entrega. Hasta que Meta apruebe el template, el secret mantiene
+    # placeholder y notify-coaching skipea con warn (el coaching sigue
+    # visible en la PWA). Ver docs/runbooks/twilio-content-sid-coaching.md.
+    CONTENT_SID_COACHING = google_secret_manager_secret.secrets["content-sid-coaching"].secret_id
 
     # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
     # Authorization header al push service del browser). La pública se
@@ -280,13 +286,13 @@ module "service_telemetry_processor" {
   concurrency   = 10 # control de rate a Firestore/BigQuery
 
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME            = "booster-ai-telemetry-processor"
-    REDIS_HOST              = google_redis_instance.main.host
-    REDIS_PORT              = tostring(google_redis_instance.main.port)
+    SERVICE_NAME = "booster-ai-telemetry-processor"
+    REDIS_HOST   = google_redis_instance.main.host
+    REDIS_PORT   = tostring(google_redis_instance.main.port)
     # Wave 2 B3 — crash trace persistence
-    GCS_CRASH_TRACES_BUCKET = google_storage_bucket.crash_traces.name
-    BIGQUERY_CRASH_DATASET  = google_bigquery_dataset.telemetry.dataset_id
-    BIGQUERY_CRASH_TABLE    = google_bigquery_table.crash_events.table_id
+    GCS_CRASH_TRACES_BUCKET          = google_storage_bucket.crash_traces.name
+    BIGQUERY_CRASH_DATASET           = google_bigquery_dataset.telemetry.dataset_id
+    BIGQUERY_CRASH_TABLE             = google_bigquery_table.crash_events.table_id
     PUBSUB_SUBSCRIPTION_CRASH_TRACES = google_pubsub_subscription.crash_traces_processor.name
   })
   secrets = local.common_secrets

@@ -795,6 +795,13 @@ export const tripMetrics = pgTable(
     coachingModelo: varchar('coaching_modelo', { length: 50 }),
     /** Timestamp de generación. Para SLO + cache invalidation. */
     coachingGeneradoEn: timestamp('coaching_generado_en', { withTimezone: true }),
+    /**
+     * Phase 3 PR-J3 — Timestamp del envío WhatsApp del template
+     * `coaching_post_entrega_v1` al dueño del transportista. NULL hasta que
+     * el dispatcher (notify-coaching.ts) haya despachado el mensaje.
+     * Usado como guard de idempotencia en el UPDATE post-send.
+     */
+    coachingWhatsappEnviadoEn: timestamp('coaching_whatsapp_enviado_en', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },

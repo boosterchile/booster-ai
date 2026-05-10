@@ -79,3 +79,90 @@ export interface NotifyOfferResult {
   reason?: 'already_notified' | 'not_configured' | 'no_whatsapp' | 'no_owner' | 'offer_not_found';
   twilioMessageSid?: string;
 }
+
+// ----------------------------------------------------------------------------
+// Coaching post-entrega — Phase 3 PR-J3
+// ----------------------------------------------------------------------------
+// Template Twilio `coaching_post_entrega_v1` con 4 variables:
+//   {{1}} tracking_code (e.g. "BST-00421")
+//   {{2}} score + nivel  (e.g. "85/100 · Bueno")
+//   {{3}} mensaje de coaching (≤320 chars, generado por
+//         @booster-ai/coaching-generator)
+//   {{4}} URL al detalle del trip en la PWA
+
+const NIVEL_LABEL: Record<string, string> = {
+  excelente: 'Excelente',
+  bueno: 'Bueno',
+  regular: 'Regular',
+  malo: 'Mejorar',
+};
+
+/** Trunca a `max` chars sin partir palabras a mitad. Usa "…" si trunca. */
+export function truncate(text: string, max: number): string {
+  if (text.length <= max) {
+    return text;
+  }
+  // Buscar último espacio antes del corte para no partir palabras.
+  const slice = text.slice(0, max - 1);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cut = lastSpace > Math.floor(max * 0.6) ? lastSpace : max - 1;
+  return `${slice.slice(0, cut)}…`;
+}
+
+/**
+ * Construye las variables del template Twilio `coaching_post_entrega_v1`.
+ *
+ * - El score se redondea a entero (Twilio variables son strings — el render
+ *   en Meta no soporta number formatting).
+ * - El nivel se mapea a label legible en español ("Bueno", "Mejorar"); si
+ *   viene un nivel desconocido (ej. enum nuevo no espejado acá), se usa
+ *   el slug crudo en title-case como fallback.
+ * - El mensaje se trunca defensivamente a 280 chars: aunque el package
+ *   coaching-generator garantiza ≤320, Twilio rechaza variables > 1024
+ *   pero algunos clientes WhatsApp viejos cortan a ~300. Trunc a 280 deja
+ *   margen para el resto del template.
+ * - La URL apunta al detalle del trip (`/app/viajes/{tripId}`), no al
+ *   listado, para landing directo al coaching card.
+ */
+export function buildCoachingTemplateVariables(input: {
+  trackingCode: string;
+  score: number;
+  nivel: string;
+  mensaje: string;
+  tripId: string;
+  webAppUrl: string;
+}): Record<string, string> {
+  const nivelLabel = NIVEL_LABEL[input.nivel] ?? toTitleCase(input.nivel);
+  return {
+    '1': input.trackingCode,
+    '2': `${Math.round(input.score)}/100 · ${nivelLabel}`,
+    '3': truncate(input.mensaje.trim(), 280),
+    '4': `${input.webAppUrl.replace(/\/$/, '')}/app/viajes/${input.tripId}`,
+  };
+}
+
+function toTitleCase(s: string): string {
+  if (s.length === 0) {
+    return s;
+  }
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+/**
+ * Resultado de un intento de envío de coaching post-entrega. Mismo shape
+ * que NotifyOfferResult con distintos códigos de skip aplicables al flujo
+ * coaching.
+ */
+export interface NotifyCoachingResult {
+  tripId: string;
+  skipped: boolean;
+  reason?:
+    | 'already_notified'
+    | 'not_configured'
+    | 'no_whatsapp'
+    | 'no_owner'
+    | 'no_assignment'
+    | 'no_coaching_persisted'
+    | 'trip_not_found';
+  twilioMessageSid?: string;
+}

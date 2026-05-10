@@ -23,6 +23,7 @@ import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
+import type { NotifyCoachingDeps } from './services/notify-coaching.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import { configureWebPush } from './services/web-push.js';
 
@@ -41,6 +42,12 @@ export interface CreateServerOptions {
    * notificaciones reales.
    */
   notify?: NotifyOfferDeps;
+  /**
+   * Deps del dispatcher de coaching IA por WhatsApp post-entrega
+   * (Phase 3 PR-J3). Comparte el twilioClient con `notify` pero usa otro
+   * Content SID. Inyectado desde main.ts; en tests se omite.
+   */
+  notifyCoaching?: NotifyCoachingDeps;
 }
 
 export function createServer(opts: CreateServerOptions): Hono {
@@ -177,6 +184,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         logger,
         certConfig,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        ...(opts.notifyCoaching ? { notifyCoaching: opts.notifyCoaching } : {}),
       }),
     );
 
@@ -225,6 +233,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       certConfig,
+      ...(opts.notifyCoaching ? { notifyCoaching: opts.notifyCoaching } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
