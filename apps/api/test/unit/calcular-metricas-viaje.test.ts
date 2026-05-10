@@ -2,7 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   TripNotFoundError,
   calcularMetricasEstimadas,
+  recalcularNivelPostEntrega,
 } from '../../src/services/calcular-metricas-viaje.js';
+
+vi.mock('../../src/services/routes-api.js', () => ({
+  computeRoutes: vi.fn(),
+}));
+vi.mock('../../src/services/calcular-cobertura-telemetria.js', () => ({
+  calcularCobertura: vi.fn(),
+}));
+
+const { computeRoutes } = await import('../../src/services/routes-api.js');
+const { calcularCobertura } = await import('../../src/services/calcular-cobertura-telemetria.js');
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -75,8 +86,12 @@ const VEH_ID = '22222222-2222-2222-2222-222222222222';
 const TRIP_BASE = {
   id: TRIP_ID,
   cargoWeightKg: 5000,
+  originAddressRaw: 'Av. Apoquindo 4500, Las Condes',
+  destinationAddressRaw: 'Plaza Sotomayor, Valparaíso',
   originRegionCode: 'RM',
   destinationRegionCode: 'V',
+  pickupWindowStart: new Date('2026-05-01T10:00:00Z'),
+  createdAt: new Date('2026-05-01T09:00:00Z'),
 };
 
 describe('calcularMetricasEstimadas', () => {
@@ -243,5 +258,332 @@ describe('calcularMetricasEstimadas', () => {
     });
 
     expect(result.emisiones.distanciaKm).toBe(500);
+  });
+});
+
+describe('calcularMetricasEstimadas — Routes API integration', () => {
+  it('routesApiKey + ruta válida → usa distancia de Routes API', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { distanceKm: 137.4, durationS: 6000, fuelL: 30, polylineEncoded: 'p' },
+    ]);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [
+          {
+            id: VEH_ID,
+            fuelType: 'diesel',
+            consumptionLPer100kmBaseline: '28.5',
+            curbWeightKg: 7000,
+            capacityKg: 12000,
+            vehicleType: 'camion_pequeno',
+          },
+        ],
+        [],
+      ],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: VEH_ID,
+      routesApiKey: 'test-key',
+    });
+
+    expect(result.emisiones.distanciaKm).toBe(137.4);
+    expect(computeRoutes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-key',
+        emissionType: 'DIESEL',
+      }),
+    );
+  });
+
+  it('routesApiKey pero Routes API throw → fallback a estimarDistanciaKm', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('quota'));
+    const db = makeDb({
+      selects: [[TRIP_BASE], []],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+      routesApiKey: 'test-key',
+    });
+
+    expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
+    expect(noopLogger.warn).toHaveBeenCalled();
+  });
+
+  it('Routes API devuelve [] → fallback', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    const db = makeDb({
+      selects: [[TRIP_BASE], []],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+      routesApiKey: 'test-key',
+    });
+
+    expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
+    expect(noopLogger.warn).toHaveBeenCalled();
+  });
+
+  it('Routes API devuelve route con distanceKm=0 → fallback', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { distanceKm: 0, durationS: 0, fuelL: null, polylineEncoded: '' },
+    ]);
+    const db = makeDb({
+      selects: [[TRIP_BASE], []],
+      inserts: [[]],
+    });
+
+    const result = await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: null,
+      routesApiKey: 'test-key',
+    });
+
+    expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
+  });
+
+  it('mapFuelToEmissionType: cubre branches gasolina/glp/electrico/hibrido', async () => {
+    const fuelCases = [
+      'gasolina',
+      'gas_glp',
+      'gas_gnc',
+      'electrico',
+      'hidrogeno',
+      'hibrido_diesel',
+      'hibrido_gasolina',
+    ];
+    for (const fuel of fuelCases) {
+      (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { distanceKm: 50, durationS: 3000, fuelL: 5, polylineEncoded: 'p' },
+      ]);
+      const db = makeDb({
+        selects: [
+          [TRIP_BASE],
+          [
+            {
+              id: VEH_ID,
+              fuelType: fuel,
+              consumptionLPer100kmBaseline: '20',
+              curbWeightKg: 5000,
+              capacityKg: 10000,
+              vehicleType: 'camion_pequeno',
+            },
+          ],
+          [],
+        ],
+        inserts: [[]],
+      });
+      await calcularMetricasEstimadas({
+        db: db as never,
+        logger: noopLogger,
+        tripId: TRIP_ID,
+        vehicleId: VEH_ID,
+        routesApiKey: 'test-key',
+      });
+    }
+    expect(computeRoutes).toHaveBeenCalledTimes(fuelCases.length);
+  });
+});
+
+describe('recalcularNivelPostEntrega', () => {
+  const ASSIGN_DELIVERED = new Date('2026-05-01T15:00:00Z');
+
+  beforeEach(() => {
+    (calcularCobertura as ReturnType<typeof vi.fn>).mockReset();
+  });
+
+  it('throw TripNotFoundError si trip no existe', async () => {
+    const db = makeDb({ selects: [[]] });
+    await expect(
+      recalcularNivelPostEntrega({
+        db: db as never,
+        logger: noopLogger,
+        tripId: TRIP_ID,
+      }),
+    ).rejects.toThrow(TripNotFoundError);
+  });
+
+  it('sin tripMetrics previos → log warn + recomputed:false', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE], // trip exists
+        [], // no metrics
+      ],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(false);
+    expect(noopLogger.warn).toHaveBeenCalled();
+  });
+
+  it('sin assignment con vehicleId+deliveredAt → recomputed:false', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [], // no assignment
+      ],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(false);
+  });
+
+  it('assignment sin vehicleId → recomputed:false', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ vehicleId: null, deliveredAt: ASSIGN_DELIVERED }],
+      ],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(false);
+  });
+
+  it('vehículo sin Teltonika → no recomputa, log info', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
+        [{ teltonikaImei: null }],
+      ],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(false);
+    expect(calcularCobertura).not.toHaveBeenCalled();
+  });
+
+  it('happy path con Teltonika → recomputa nivel + UPDATE', async () => {
+    (calcularCobertura as ReturnType<typeof vi.fn>).mockResolvedValueOnce(85);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [
+          {
+            tripId: TRIP_ID,
+            distanceKmEstimated: '100',
+            precisionMethod: 'modelado',
+          },
+        ],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
+        [{ teltonikaImei: '123456789012345' }],
+      ],
+      updates: [[]],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(true);
+    expect(result.coveragePct).toBe(85);
+    expect(result.certificationLevel).toBeDefined();
+    expect(calcularCobertura).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vehicleId: VEH_ID,
+        distanciaEstimadaKm: 100,
+      }),
+    );
+    expect(db.update).toHaveBeenCalled();
+  });
+
+  it('precisionMethod null en metrics → default por_defecto', async () => {
+    (calcularCobertura as ReturnType<typeof vi.fn>).mockResolvedValueOnce(50);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [
+          {
+            tripId: TRIP_ID,
+            distanceKmEstimated: '100',
+            precisionMethod: null,
+          },
+        ],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
+        [{ teltonikaImei: '999' }],
+      ],
+      updates: [[]],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(true);
+  });
+
+  it('distanceKmEstimated null → calcularCobertura recibe 0', async () => {
+    (calcularCobertura as ReturnType<typeof vi.fn>).mockResolvedValueOnce(0);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: null, precisionMethod: 'modelado' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
+        [{ teltonikaImei: '999' }],
+      ],
+      updates: [[]],
+    });
+    await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(calcularCobertura).toHaveBeenCalledWith(
+      expect.objectContaining({ distanciaEstimadaKm: 0 }),
+    );
+  });
+
+  it('trip sin pickupWindowStart → usa createdAt', async () => {
+    (calcularCobertura as ReturnType<typeof vi.fn>).mockResolvedValueOnce(70);
+    const db = makeDb({
+      selects: [
+        [{ ...TRIP_BASE, pickupWindowStart: null }],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
+        [{ teltonikaImei: '999' }],
+      ],
+      updates: [[]],
+    });
+    await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(calcularCobertura).toHaveBeenCalledWith(
+      expect.objectContaining({ pickupAt: TRIP_BASE.createdAt }),
+    );
   });
 });
