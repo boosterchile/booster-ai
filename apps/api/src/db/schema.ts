@@ -203,6 +203,34 @@ export const precisionMethodEnum = pgEnum('metodo_precision', [
   'por_defecto',
 ]);
 
+/**
+ * Origen del polyline real recorrido por el viaje (ADR-028 §1).
+ * Es la segunda dimensión ortogonal a `metodo_precision`. Junto con
+ * `coverage_pct` determina si el viaje califica para certificado primario.
+ *
+ *   - teltonika_gps: pings GPS del dispositivo Teltonika (única fuente
+ *     que califica para nivel primario verificable).
+ *   - maps_directions: ruta sintetizada por Google Routes API.
+ *   - manual_declared: declaración del cliente sin telemetría ni simulación.
+ */
+export const routeDataSourceEnum = pgEnum('fuente_dato_ruta', [
+  'teltonika_gps',
+  'maps_directions',
+  'manual_declared',
+]);
+
+/**
+ * Nivel de certificación derivado al cierre del trip (ADR-028 §2).
+ * NO es self-declared — lo computa `derivarNivelCertificacion()` del
+ * package @booster-ai/carbon-calculator. Selecciona el template del
+ * cert-generator (primario verificable vs secundario estimativo).
+ */
+export const certificationLevelEnum = pgEnum('nivel_certificacion', [
+  'primario_verificable',
+  'secundario_modeled',
+  'secundario_default',
+]);
+
 export const reportingStandardEnum = pgEnum('estandar_reporte', [
   'GLEC_V3',
   'GHG_PROTOCOL',
@@ -664,7 +692,35 @@ export const tripMetrics = pgTable(
     precisionMethod: precisionMethodEnum('metodo_precision'),
     glecVersion: varchar('version_glec', { length: 10 }),
     emissionFactorUsed: numeric('factor_emision_usado', { precision: 8, scale: 5 }),
+    /** @deprecated Reemplazado por `route_data_source` (ADR-028). Mantenido
+     *  por backwards-compat hasta que el backfill complete y se ejecute la
+     *  drop column en una migración posterior. */
     source: varchar('fuente_datos', { length: 20 }),
+    /**
+     * ADR-028 §1: origen del polyline real recorrido. Independiente de
+     * `precision_method` (que captura calidad de medición de combustible).
+     */
+    routeDataSource: routeDataSourceEnum('fuente_dato_ruta'),
+    /**
+     * ADR-028 §2: fracción del viaje cubierta por la fuente principal,
+     * en porcentaje [0..100]. Para trips sin telemetría se setea a 0.
+     * Junto con `precision_method` y `route_data_source` determina el
+     * nivel de certificación.
+     */
+    coveragePct: numeric('cobertura_pct', { precision: 5, scale: 2 }),
+    /**
+     * ADR-028 §2: nivel de certificación derivado al cierre del trip.
+     * Computed por carbon-calculator.derivarNivelCertificacion(); no debe
+     * setearse manualmente por el cliente (greenwashing prevention).
+     * Alimenta el selector de template en cert-generator.
+     */
+    certificationLevel: certificationLevelEnum('nivel_certificacion'),
+    /**
+     * ADR-028 §3: factor de incertidumbre publicado en el cert.
+     * Decimal en [0, 1]. Ej: 0.05 = ±5%. Calculado por
+     * carbon-calculator.calcularFactorIncertidumbre().
+     */
+    uncertaintyFactor: numeric('factor_incertidumbre', { precision: 4, scale: 3 }),
     calculatedAt: timestamp('calculado_en', { withTimezone: true }),
     certificatePdfUrl: text('certificado_pdf_url'),
     certificateSha256: char('certificado_sha256', { length: 64 }),
