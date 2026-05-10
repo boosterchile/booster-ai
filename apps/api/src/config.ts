@@ -288,6 +288,27 @@ const apiEnvSchema = commonEnvSchema
      * env revierte la activación en segundos sin tocar BD ni código.
      */
     PRICING_V2_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
+
+    /**
+     * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
+     * (ADR-029 + ADR-032). Default por entorno:
+     *   - production → `true`
+     *   - dev/test/staging → `false`
+     *
+     * Cuando es `false`:
+     *   - `cobraHoy()` retorna `skipped_flag_disabled`.
+     *   - Endpoints devuelven 503 con `feature_disabled`.
+     *   - UI no muestra botón "Cobra hoy".
+     *
+     * Cuando es `true`:
+     *   - Endpoints operan pero requieren que el shipper tenga
+     *     `shipper_credit_decisions.approved=true` vigente. Sin
+     *     decisión aprobada → 422 `shipper_no_aprobado`.
+     *   - El partner factoring real (Toctoc/Mafin/Increase/Cumplo)
+     *     queda diferido — adelantos quedan en `solicitado` hasta
+     *     integración del partner.
+     */
+    FACTORING_V1_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

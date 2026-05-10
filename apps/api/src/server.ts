@@ -14,6 +14,7 @@ import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
+import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -156,6 +157,9 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Stakeholder consent grants (ADR-028 §"Acciones derivadas §7"). Sólo
     // requiere firebaseAuth — el handler resuelve userId vía firebase_uid.
     meRouter.route('/consents', createMeConsentsRoutes({ db: opts.db, logger }));
+    // Cobra Hoy historial (requiere userContext para empresa activa).
+    app.use('/me/cobra-hoy/*', userContextMiddlewareForMe);
+    meRouter.route('/', createCobraHoyMeRoutes({ db: opts.db, logger }));
     app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
@@ -256,6 +260,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       ...(config.CHAT_PUBSUB_TOPIC ? { pubsubTopic: config.CHAT_PUBSUB_TOPIC } : {}),
     });
     assignmentsRouter.route('/', chatRouter);
+    // Cobra Hoy assignment-scoped (ADR-029 + ADR-032).
+    assignmentsRouter.route('/', createCobraHoyAssignmentsRoutes({ db: opts.db, logger }));
     app.route('/assignments', assignmentsRouter);
 
     // Certificates — listado privado (auth shipper) + verify público.
