@@ -12,6 +12,7 @@ import {
   createGcsCrashTraceUploader,
 } from './crash-trace-adapters.js';
 import { crashTraceMessageSchema, persistCrashTrace } from './persist-crash-trace.js';
+import { persistGreenDrivingFromRecord } from './persist-green-driving.js';
 import { persistRecord, recordMessageSchema } from './persist.js';
 
 /**
@@ -89,6 +90,34 @@ async function main(): Promise<void> {
       }
 
       const result = await persistRecord({ db, logger, msg: parsed.data });
+
+      // Phase 2 PR-I2 — extraer y persistir eventos green-driving del
+      // mismo record. Solo aplica si el record tiene IO 253 o IO 255
+      // (caso minoritario: 5-50 eventos por trip vs ~100 puntos por
+      // trip). El extractor es side-effect-free; persistencia falla
+      // silenciosa (loggea + sigue) para no bloquear el ack del punto
+      // principal — los eventos no son críticos para el lifecycle del
+      // viaje, son solo input al scoring.
+      let greenDrivingInserted = 0;
+      try {
+        const gdResult = await persistGreenDrivingFromRecord({
+          db,
+          logger,
+          msg: parsed.data,
+        });
+        greenDrivingInserted = gdResult.insertedCount;
+      } catch (err) {
+        logger.error(
+          {
+            err,
+            messageId: message.id,
+            imei: parsed.data.imei,
+            vehicleId: parsed.data.vehicleId,
+          },
+          'green-driving persist falló, ack del record igual (no bloquea)',
+        );
+      }
+
       message.ack();
 
       logger.info(
@@ -98,6 +127,7 @@ async function main(): Promise<void> {
           vehicleId: parsed.data.vehicleId,
           inserted: result.inserted,
           isFirstPointForVehicle: result.isFirstPointForVehicle,
+          greenDrivingInserted,
           latencyMs: Date.now() - start,
         },
         result.inserted ? 'record persistido' : 'record duplicado (skip)',
