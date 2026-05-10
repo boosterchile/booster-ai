@@ -230,9 +230,14 @@ steps:
       - -c
       - |
         set -eu
+        # --internal-ip: Cloud Build private pool sale por NAT egress (no por
+        # VPC peering). El master_authorized_networks_config whitelistea el
+        # peering range, no las IPs NAT de Google. Usar el endpoint interno
+        # del control plane (accesible via VPC peering) evita ese problema.
         gcloud container clusters get-credentials booster-ai-telemetry \
           --region=${_REGION} \
-          --project=${PROJECT_ID}
+          --project=${PROJECT_ID} \
+          --internal-ip
 
         # Si la primera vez, apply manifests; sino, set image del deployment.
         if ! kubectl get deployment telemetry-tcp-gateway -n telemetry > /dev/null 2>&1; then
