@@ -56,6 +56,9 @@ importers:
       '@booster-ai/driver-scoring':
         specifier: workspace:*
         version: link:../../packages/driver-scoring
+      '@booster-ai/factoring-engine':
+        specifier: workspace:*
+        version: link:../../packages/factoring-engine
       '@booster-ai/logger':
         specifier: workspace:*
         version: link:../../packages/logger
@@ -732,6 +735,15 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.18)(@vitest/coverage-v8@4.1.5)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.18)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.4))
 
   packages/dte-provider:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.18)(@vitest/coverage-v8@4.1.5)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.18)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.4))
+
+  packages/factoring-engine:
     devDependencies:
       typescript:
         specifier: ^5.8.2

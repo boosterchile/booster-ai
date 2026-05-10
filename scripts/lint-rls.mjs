@@ -51,6 +51,13 @@ const TENANT_FILTER_TOKENS = [
   'empresa_id',
   'generadorCargaEmpresaId',
   'generador_carga_empresa_id',
+  // ADR-029 v1: factoring usa columnas explícitas con rol del tenant
+  // (carrier|shipper) para soportar dos filtros distintos en queries
+  // cross-rol — siguen siendo filtros tenant válidos.
+  'empresaCarrierId',
+  'empresa_carrier_id',
+  'empresaShipperId',
+  'empresa_shipper_id',
 ];
 
 /** Comment que marca una query como allowlisted explícitamente. */

@@ -20,6 +20,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
+import { CobraHoyButton } from '../components/cobra-hoy/CobraHoyButton.js';
 import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
@@ -95,6 +96,11 @@ function AsignacionDetallePage() {
   // Phase 4 PR-K4 — confirmación de entrega via voz hands-free.
   // Surface visible mientras el trip está activo (asignado | en_proceso).
   const isConfirmable = trip?.status === 'asignado' || trip?.status === 'en_proceso';
+  // ADR-029 v1 / ADR-032 — "Cobra hoy" sólo aplica cuando el viaje ya
+  // fue entregado. El service backend valida liquidación + flag; si el
+  // flag está off, el modal muestra mensaje claro. Si no hay liquidación
+  // (todavía no se calculó), el modal explica que falta ese paso.
+  const isDelivered = trip?.status === 'entregado';
   const otroLado = trip?.shipper_legal_name ?? 'generador de carga';
 
   return (
@@ -135,6 +141,24 @@ function AsignacionDetallePage() {
           "no disponible" pero lo escondemos para no agregar ruido a
           la surface activa. */}
       {isClosed && <BehaviorScoreCard assignmentId={assignmentId} />}
+
+      {/* ADR-029 v1 / ADR-032 — Botón "Cobra hoy" para el carrier una
+          vez que el viaje fue entregado. El service backend valida
+          flag + liquidación + shipper credit; si el flag está off
+          (entornos no-prod por default), el modal lo comunica. */}
+      {isDelivered && (
+        <div className="border-neutral-200 border-b bg-white px-4 py-3">
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-neutral-700 text-sm">Pronto pago disponible</span>
+            <span className="text-neutral-500 text-xs">
+              Recibe el monto neto del viaje hoy mismo, descontando una tarifa transparente.
+            </span>
+            <div className="mt-2">
+              <CobraHoyButton asignacionId={assignmentId} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
       <div className="flex-1 overflow-hidden">

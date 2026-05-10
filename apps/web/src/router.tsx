@@ -6,7 +6,9 @@ import { AsignacionDetalleRoute } from './routes/asignacion-detalle.js';
 import { CargaTrackRoute } from './routes/carga-track.js';
 import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
 import { CertificadosRoute } from './routes/certificados.js';
+import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
 import { IndexRoute } from './routes/index.js';
+import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
 import { LegalTerminosRoute } from './routes/legal-terminos.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
@@ -150,6 +152,23 @@ const legalTerminosRoute = createRoute({
   component: LegalTerminosRoute,
 });
 
+// ADR-029 v1 / ADR-032 — Listado de adelantos solicitados por el
+// carrier ("Booster Cobra Hoy"). Surface dedicada bajo /app, requiere
+// auth + activeMembership de tipo transportista.
+const cobraHoyHistorialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cobra-hoy/historial',
+  component: CobraHoyHistorialRoute,
+});
+
+// Adendum de T&Cs específico para el producto "Cobra Hoy". Pública,
+// referenciable desde el modal de solicitud.
+const legalCobraHoyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/legal/cobra-hoy',
+  component: LegalCobraHoyRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -170,6 +189,8 @@ const routeTree = rootRoute.addChildren([
   asignacionDetalleRoute,
   publicTrackingRoute,
   legalTerminosRoute,
+  cobraHoyHistorialRoute,
+  legalCobraHoyRoute,
 ]);
 
 export const router = createRouter({

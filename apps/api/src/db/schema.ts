@@ -1457,6 +1457,97 @@ export const facturasBoosterClp = pgTable(
 );
 
 // =============================================================================
+// FACTORING V1 (ADR-029 + ADR-032)
+// =============================================================================
+
+/**
+ * Underwriting cacheado por shipper. Decisión vigente única por
+ * empresa (unique partial index aplicado en SQL). Decisiones expiradas
+ * quedan en BD para auditoría histórica.
+ */
+export const shipperCreditDecisions = pgTable(
+  'shipper_credit_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaShipperId: uuid('empresa_shipper_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    approved: boolean('approved').notNull(),
+    limitExposureClp: integer('limit_exposure_clp').notNull().default(0),
+    currentExposureClp: integer('current_exposure_clp').notNull().default(0),
+    equifaxScore: integer('equifax_score'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: text('decided_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    motivo: text('motivo'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    decidedByCheck: check(
+      'chk_shipper_credit_decisions_decided_by',
+      sql`${table.decidedBy} IN ('automatico','manual')`,
+    ),
+    expiresIdx: index('idx_shipper_credit_decisions_expires').on(table.expiresAt),
+  }),
+);
+
+/**
+ * Adelantos de pronto pago al carrier (Booster Cobra Hoy). 1:1 con
+ * assignment (UNIQUE constraint). Captura tarifa + monto adelantado +
+ * versión de metodología al momento del adelanto, INMUTABLE.
+ */
+export const adelantosCarrier = pgTable(
+  'adelantos_carrier',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    asignacionId: uuid('asignacion_id')
+      .notNull()
+      .unique()
+      .references(() => assignments.id, { onDelete: 'restrict' }),
+    liquidacionId: uuid('liquidacion_id').references(() => liquidaciones.id),
+    empresaCarrierId: uuid('empresa_carrier_id')
+      .notNull()
+      .references(() => empresas.id),
+    empresaShipperId: uuid('empresa_shipper_id')
+      .notNull()
+      .references(() => empresas.id),
+    montoNetoClp: integer('monto_neto_clp').notNull(),
+    plazoDiasShipper: integer('plazo_dias_shipper').notNull(),
+    tarifaPct: numeric('tarifa_pct', { precision: 4, scale: 2 }).notNull(),
+    tarifaClp: integer('tarifa_clp').notNull(),
+    montoAdelantadoClp: integer('monto_adelantado_clp').notNull(),
+    partnerSlug: text('partner_slug'),
+    partnerRequestId: text('partner_request_id'),
+    status: text('status').notNull(),
+    rechazoMotivo: text('rechazo_motivo'),
+    desembolsadoEn: timestamp('desembolsado_en', { withTimezone: true }),
+    cobradoAShipperEn: timestamp('cobrado_a_shipper_en', { withTimezone: true }),
+    moraDesde: timestamp('mora_desde', { withTimezone: true }),
+    factoringMethodologyVersion: text('factoring_methodology_version').notNull(),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'chk_adelantos_carrier_status',
+      sql`${table.status} IN ('solicitado','aprobado','desembolsado','cobrado_a_shipper','mora','cancelado','rechazado')`,
+    ),
+    empresaStatusIdx: index('idx_adelantos_carrier_empresa_status').on(
+      table.empresaCarrierId,
+      table.status,
+    ),
+    shipperStatusIdx: index('idx_adelantos_carrier_shipper_status').on(
+      table.empresaShipperId,
+      table.status,
+    ),
+    methodologyIdx: index('idx_adelantos_carrier_methodology').on(
+      table.factoringMethodologyVersion,
+    ),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -1505,3 +1596,8 @@ export type LiquidacionRow = typeof liquidaciones.$inferSelect;
 export type NewLiquidacionRow = typeof liquidaciones.$inferInsert;
 export type FacturaBoosterClpRow = typeof facturasBoosterClp.$inferSelect;
 export type NewFacturaBoosterClpRow = typeof facturasBoosterClp.$inferInsert;
+
+export type ShipperCreditDecisionRow = typeof shipperCreditDecisions.$inferSelect;
+export type NewShipperCreditDecisionRow = typeof shipperCreditDecisions.$inferInsert;
+export type AdelantoCarrierRow = typeof adelantosCarrier.$inferSelect;
+export type NewAdelantoCarrierRow = typeof adelantosCarrier.$inferInsert;

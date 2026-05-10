@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import {
   ArrowRight,
+  Banknote,
   Bus,
   Leaf,
   LogOut,
@@ -140,6 +141,27 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Vehículos</div>
                     <div className="text-neutral-600 text-sm">
                       Tu flota: agregar, editar, asociar dispositivos Teltonika.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/cobra-hoy/historial"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-success-700 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-success-50 text-success-700"
+                    aria-hidden
+                  >
+                    <Banknote className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Cobra hoy</div>
+                    <div className="text-neutral-600 text-sm">
+                      Solicita pronto pago de viajes entregados y revisa tu historial de adelantos.
                     </div>
                   </div>
                 </div>
