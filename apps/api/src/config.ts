@@ -263,6 +263,26 @@ const apiEnvSchema = commonEnvSchema
      * --data-file=<(echo -n "AIza...").
      */
     GEMINI_API_KEY: z.string().min(1).optional(),
+
+    /**
+     * Feature flag para activar pricing v2 (ADR-030). Default `false`.
+     *
+     * Cuando es `false`:
+     *   - `liquidarTrip()` retorna `{ status: 'skipped_flag_disabled' }`
+     *     y NO escribe en `liquidaciones` ni `facturas_booster_clp`.
+     *   - El cron mensual de cobro de membresías no factura.
+     *
+     * Cuando es `true`:
+     *   - El service evalúa carrier_memberships + consent T&Cs v2 antes
+     *     de emitir cualquier cobro. Sin consent firmado, las liquidaciones
+     *     quedan en estado `pending_consent`.
+     *   - Sovos integration debe estar configurada (ADR-024) para que el
+     *     job de emisión de DTE no acumule liquidaciones bloqueadas.
+     *
+     * Prender este flag en prod requiere cumplir los 6 criterios del
+     * ADR-030 §"Activación en producción".
+     */
+    PRICING_V2_ACTIVATED: z.coerce.boolean().default(false),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

@@ -1289,6 +1289,167 @@ export const pushSubscriptions = pgTable(
 );
 
 // =============================================================================
+// PRICING V2 (ADR-030)
+// =============================================================================
+
+/**
+ * Catálogo inmutable de tiers de membresía del transportista (ADR-026 §2).
+ * Las 4 filas se siembran via migration 0014_pricing_v2.sql. Cambios
+ * estructurales bumpean pricing_methodology_version y se hacen via
+ * migration nueva con tiers slug distintos.
+ */
+export const membershipTiers = pgTable('membership_tiers', {
+  slug: text('slug').primaryKey(),
+  displayName: text('display_name').notNull(),
+  feeMonthlyClp: integer('fee_monthly_clp').notNull(),
+  commissionPct: numeric('commission_pct', { precision: 4, scale: 2 }).notNull(),
+  matchingPriorityBoost: integer('matching_priority_boost').notNull().default(0),
+  trustScoreBoost: integer('trust_score_boost').notNull().default(0),
+  deviceTeltonikaIncluded: boolean('device_teltonika_included').notNull().default(false),
+  createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Membresía activa del carrier. Solo UNA `activa` por empresa
+ * (unique partial index aplicado en SQL). Upgrade/downgrade crea
+ * nueva fila + cancela la anterior.
+ *
+ * `consentTermsV2AceptadoEn` es prerequisito para que liquidaciones
+ * de esta empresa emitan DTE real (ADR-030 §1).
+ */
+export const carrierMemberships = pgTable(
+  'carrier_memberships',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    tierSlug: text('tier_slug')
+      .notNull()
+      .references(() => membershipTiers.slug),
+    status: text('status').notNull(),
+    consentTermsV2AceptadoEn: timestamp('consent_terms_v2_aceptado_en', { withTimezone: true }),
+    consentTermsV2Ip: text('consent_terms_v2_ip'),
+    consentTermsV2UserAgent: text('consent_terms_v2_user_agent'),
+    activadaEn: timestamp('activada_en', { withTimezone: true }).notNull().defaultNow(),
+    suspendidaEn: timestamp('suspendida_en', { withTimezone: true }),
+    suspendidaMotivo: text('suspendida_motivo'),
+    canceladaEn: timestamp('cancelada_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'chk_carrier_memberships_status',
+      sql`${table.status} IN ('activa','suspendida','cancelada')`,
+    ),
+    empresaStatusIdx: index('idx_carrier_memberships_empresa_status').on(
+      table.empresaId,
+      table.status,
+    ),
+  }),
+);
+
+/**
+ * Una liquidación por assignment "liquidable" (1:1 con UNIQUE
+ * constraint). Captura comision + IVA + neto + versión de
+ * metodología al momento del cierre. INMUTABLE después de creada.
+ */
+export const liquidaciones = pgTable(
+  'liquidaciones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    asignacionId: uuid('asignacion_id')
+      .notNull()
+      .unique()
+      .references(() => assignments.id, { onDelete: 'restrict' }),
+    empresaCarrierId: uuid('empresa_carrier_id')
+      .notNull()
+      .references(() => empresas.id),
+    tierSlugAplicado: text('tier_slug_aplicado')
+      .notNull()
+      .references(() => membershipTiers.slug),
+    montoBrutoClp: integer('monto_bruto_clp').notNull(),
+    comisionPct: numeric('comision_pct', { precision: 4, scale: 2 }).notNull(),
+    comisionClp: integer('comision_clp').notNull(),
+    montoNetoCarrierClp: integer('monto_neto_carrier_clp').notNull(),
+    ivaComisionClp: integer('iva_comision_clp').notNull(),
+    totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
+    pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
+    status: text('status').notNull(),
+    dteFacturaBoosterFolio: text('dte_factura_booster_folio'),
+    dteFacturaBoosterEmitidoEn: timestamp('dte_factura_booster_emitido_en', {
+      withTimezone: true,
+    }),
+    payoutCarrierMetodo: text('payout_carrier_metodo'),
+    payoutCarrierPagadoEn: timestamp('payout_carrier_pagado_en', { withTimezone: true }),
+    disputaAbiertaEn: timestamp('disputa_abierta_en', { withTimezone: true }),
+    disputaMotivo: text('disputa_motivo'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'chk_liquidaciones_status',
+      sql`${table.status} IN ('pending_consent','lista_para_dte','dte_emitido','pagada_al_carrier','disputa')`,
+    ),
+    empresaStatusIdx: index('idx_liquidaciones_empresa_status').on(
+      table.empresaCarrierId,
+      table.status,
+    ),
+    pricingVersionIdx: index('idx_liquidaciones_pricing_version').on(
+      table.pricingMethodologyVersion,
+    ),
+  }),
+);
+
+/**
+ * Facturas que Booster emite a empresas (dos tipos discriminados):
+ *   - 'comision_trip'      : derivada de una liquidación específica
+ *   - 'membership_mensual' : cuota mensual del tier (Free skip)
+ *
+ * Idempotencia mensual aplicada por unique partial index a nivel SQL
+ * (no representable en Drizzle puro hoy).
+ */
+export const facturasBoosterClp = pgTable(
+  'facturas_booster_clp',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaDestinoId: uuid('empresa_destino_id')
+      .notNull()
+      .references(() => empresas.id),
+    tipo: text('tipo').notNull(),
+    liquidacionId: uuid('liquidacion_id').references(() => liquidaciones.id),
+    periodoMes: text('periodo_mes'),
+    subtotalClp: integer('subtotal_clp').notNull(),
+    ivaClp: integer('iva_clp').notNull(),
+    totalClp: integer('total_clp').notNull(),
+    dteTipo: integer('dte_tipo').notNull().default(33),
+    dteFolio: text('dte_folio'),
+    dteEmitidaEn: timestamp('dte_emitida_en', { withTimezone: true }),
+    dtePdfGcsUri: text('dte_pdf_gcs_uri'),
+    status: text('status').notNull(),
+    venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
+    pagadaEn: timestamp('pagada_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tipoCheck: check(
+      'chk_facturas_tipo',
+      sql`${table.tipo} IN ('comision_trip','membership_mensual')`,
+    ),
+    statusCheck: check(
+      'chk_facturas_status',
+      sql`${table.status} IN ('pendiente','emitida','pagada','vencida','anulada')`,
+    ),
+    empresaStatusIdx: index('idx_facturas_empresa_status').on(table.empresaDestinoId, table.status),
+    statusVenceIdx: index('idx_facturas_status_vence').on(table.status, table.venceEn),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -1328,3 +1489,12 @@ export type ChatMessageRow = typeof chatMessages.$inferSelect;
 export type NewChatMessageRow = typeof chatMessages.$inferInsert;
 export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscriptionRow = typeof pushSubscriptions.$inferInsert;
+
+export type MembershipTierRow = typeof membershipTiers.$inferSelect;
+export type NewMembershipTierRow = typeof membershipTiers.$inferInsert;
+export type CarrierMembershipRow = typeof carrierMemberships.$inferSelect;
+export type NewCarrierMembershipRow = typeof carrierMemberships.$inferInsert;
+export type LiquidacionRow = typeof liquidaciones.$inferSelect;
+export type NewLiquidacionRow = typeof liquidaciones.$inferInsert;
+export type FacturaBoosterClpRow = typeof facturasBoosterClp.$inferSelect;
+export type NewFacturaBoosterClpRow = typeof facturasBoosterClp.$inferInsert;
