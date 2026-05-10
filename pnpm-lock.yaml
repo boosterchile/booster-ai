@@ -669,6 +669,12 @@ importers:
 
   packages/coaching-generator:
     devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.18
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
       typescript:
         specifier: ^5.8.2
         version: 5.9.3

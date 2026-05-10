@@ -49,3 +49,17 @@ export type {
   ResultadoCoaching,
 } from './tipos.js';
 export type { NivelScore } from './nivel-score-types.js';
+
+// Eval suite (Phase 3 PR-J4) — opt-in. Importar como
+// `import { ejecutarEvals } from '@booster-ai/coaching-generator/evals'`
+// si quisiéramos sub-path; por ahora re-exportamos del root para
+// mantener un solo export.
+export {
+  CASOS_GOLDEN,
+  type CasoGolden,
+  type PropiedadEval,
+  ejecutarEvals,
+  formatearReporte,
+  type ReporteEval,
+  type ResultadoCaso,
+} from './evals/index.js';
