@@ -26,6 +26,7 @@
 import { useEffect, useRef } from 'react';
 import { env } from '../lib/env.js';
 import { firebaseAuth } from '../lib/firebase.js';
+import { logger } from '../lib/logger.js';
 
 export interface ChatStreamMessage {
   message_id: string;
@@ -106,8 +107,7 @@ export function useChatStream(opts: UseChatStreamOptions): void {
           const data = JSON.parse(ev.data) as ChatStreamMessage;
           onMessageRef.current(data);
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('useChatStream: payload no parseable', err);
+          logger.warn({ err }, 'useChatStream: payload no parseable');
         }
       });
 

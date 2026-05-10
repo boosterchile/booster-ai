@@ -302,7 +302,10 @@ function deserializeAvlPacket(
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal startup error:', err);
+  const bootstrapLogger = createLogger({
+    service: '@booster-ai/telemetry-processor',
+    level: 'fatal',
+  });
+  bootstrapLogger.fatal({ err }, 'Fatal startup error');
   process.exit(1);
 });

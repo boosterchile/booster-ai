@@ -18,6 +18,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { Bell, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { logger } from '../../lib/logger.js';
 import {
   PushDisabledError,
   PushPermissionDeniedError,
@@ -56,8 +57,7 @@ export function PushSubscribeBanner() {
         sessionStorage.setItem(DISMISS_FLAG, '1');
         setShouldShow(false);
       } else {
-        // eslint-disable-next-line no-console
-        console.warn('subscribeToWebPush error', err);
+        logger.warn({ err }, 'subscribeToWebPush error');
       }
     },
   });

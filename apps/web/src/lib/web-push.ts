@@ -18,6 +18,7 @@
  */
 
 import { api } from './api-client.js';
+import { logger } from './logger.js';
 
 export class PushUnsupportedError extends Error {
   constructor() {
@@ -185,8 +186,7 @@ export async function unsubscribeFromWebPush(): Promise<void> {
     await api.delete('/me/push-subscription', { endpoint: subscription.endpoint });
   } catch (err) {
     // Loggeamos pero no abortamos — el unsubscribe browser-side procede.
-    // eslint-disable-next-line no-console
-    console.warn('DELETE /me/push-subscription falló:', err);
+    logger.warn({ err }, 'DELETE /me/push-subscription falló');
   }
 
   await subscription.unsubscribe();
