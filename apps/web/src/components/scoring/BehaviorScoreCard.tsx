@@ -7,6 +7,7 @@ import {
   useBehaviorScore,
   useCoaching,
 } from '../../hooks/use-behavior-score.js';
+import { CoachingVoicePlayer } from './CoachingVoicePlayer.js';
 
 /**
  * Card que muestra el behavior score del trip (Phase 2 PR-I5).
@@ -197,6 +198,11 @@ function CoachingMessage({
         <span className="font-semibold">{sourceLabel}</span>
       </header>
       <p className="text-neutral-800 text-sm leading-snug">{data.message}</p>
+      {/* Phase 3 PR-J3 — voice delivery hands-free. Botón único play/stop
+          + checkbox de auto-play persistido. Si el browser no soporta
+          speechSynthesis (rarísimo), el componente se oculta y queda
+          sólo el texto. */}
+      <CoachingVoicePlayer message={data.message} />
     </section>
   );
 }
