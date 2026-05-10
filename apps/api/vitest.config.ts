@@ -25,15 +25,16 @@ export default defineConfig({
       // añada código sin tests baja el % y rompe el gate, forzando
       // disciplina de testing en nuevo código.
       //
-      // Camino a 80%: pendiente cubrir matching.ts, offer-actions.ts,
-      // emitir-certificado-viaje.ts, web-push.ts, chat-whatsapp-fallback.ts,
-      // confirmar-entrega-viaje.ts (~1500 LOC sin cubrir hoy). Cada uno
-      // requiere mocks de DB transactions + GCP SDK (KMS/GCS/Pub/Sub).
+      // Camino a 80%: services + routes principales están a 73%+. Los
+      // gaps restantes son src/jobs/* (backfill jobs), src/services/firebase.ts
+      // (admin SDK init), y wiring completo de server.ts. Estos requieren
+      // setup de integración más complejo (jobs son CLI con env vars
+      // específicas).
       thresholds: {
-        lines: 39,
-        functions: 33,
-        branches: 35,
-        statements: 39,
+        lines: 72,
+        functions: 60,
+        branches: 68,
+        statements: 72,
       },
     },
   },
