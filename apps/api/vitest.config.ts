@@ -27,14 +27,13 @@ export default defineConfig({
       //
       // Camino a 80%: pendiente cubrir matching.ts, offer-actions.ts,
       // emitir-certificado-viaje.ts, web-push.ts, chat-whatsapp-fallback.ts,
-      // confirmar-entrega-viaje.ts, onboarding.ts, calcular-metricas-viaje.ts
-      // (~2000 LOC sin cubrir hoy). Cada uno requiere mocks de DB
-      // transactions + GCP SDK (KMS/GCS/Pub/Sub).
+      // confirmar-entrega-viaje.ts (~1500 LOC sin cubrir hoy). Cada uno
+      // requiere mocks de DB transactions + GCP SDK (KMS/GCS/Pub/Sub).
       thresholds: {
-        lines: 35,
-        functions: 29,
-        branches: 30,
-        statements: 35,
+        lines: 39,
+        functions: 33,
+        branches: 35,
+        statements: 39,
       },
     },
   },
