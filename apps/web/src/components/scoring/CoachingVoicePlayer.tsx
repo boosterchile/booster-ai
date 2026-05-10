@@ -7,6 +7,11 @@ import {
   loadAutoplayPreference,
   saveAutoplayPreference,
 } from '../../services/coaching-voice.js';
+import {
+  type StoppedDetector,
+  type StoppedState,
+  createStoppedDetector,
+} from '../../services/stopped-detector.js';
 
 /**
  * Botón único para reproducir el coaching IA por voz al conductor
@@ -44,9 +49,21 @@ export interface CoachingVoicePlayerProps {
    * por mount. Tests pueden pasar uno con synth stubeado.
    */
   controller?: CoachingVoiceController;
+  /**
+   * Inyectable para tests. Default: createStoppedDetector() basado en
+   * navigator.geolocation. Si auto-play está activo, gateamos el play
+   * inicial detrás de state='stopped' para no distraer al volante.
+   * Pasar `null` desactiva el guard (auto-play arranca al instante —
+   * útil para escenarios sin GPS o tests).
+   */
+  stoppedDetector?: StoppedDetector | null;
 }
 
-export function CoachingVoicePlayer({ message, controller }: CoachingVoicePlayerProps) {
+export function CoachingVoicePlayer({
+  message,
+  controller,
+  stoppedDetector,
+}: CoachingVoicePlayerProps) {
   // useMemo evita re-construir el controller en cada render. La función
   // factory crea su propia instancia de speechSynthesis singleton, así
   // que dos players en la misma página comparten la cola del browser
@@ -55,20 +72,60 @@ export function CoachingVoicePlayer({ message, controller }: CoachingVoicePlayer
   const [state, setState] = useState<VoiceState>(ctrl.getState());
   const [autoplayEnabled, setAutoplayEnabled] = useState(() => loadAutoplayPreference());
 
+  // Detector de vehículo parado (Phase 4 PR-K1). Solo se construye si
+  // auto-play está activo — sin auto-play no necesitamos saber el estado
+  // de movimiento, y evitamos pedir permisos GPS sin razón. Pasar
+  // explícitamente `null` desactiva el guard.
+  const det = useMemo<StoppedDetector | null>(() => {
+    if (stoppedDetector !== undefined) {
+      return stoppedDetector;
+    }
+    if (!autoplayEnabled) {
+      return null;
+    }
+    return createStoppedDetector();
+  }, [stoppedDetector, autoplayEnabled]);
+
+  const [stoppedState, setStoppedState] = useState<StoppedState>(
+    () => det?.getState() ?? 'unknown',
+  );
+
   useEffect(() => {
     return ctrl.subscribe(setState);
   }, [ctrl]);
 
-  // Auto-play opt-in: al montar con preferencia activa, hablar de inmediato.
-  // No re-disparamos en cada cambio de message — el conductor abrió el
-  // detalle del trip, escuchó una vez, listo. Si quiere repetir, click
-  // manual.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberadamente solo al mount
   useEffect(() => {
-    if (autoplayEnabled && state === 'idle' && message.trim().length > 0) {
-      ctrl.play(message);
+    if (!det) {
+      return;
     }
-  }, []);
+    const unsub = det.subscribe(setStoppedState);
+    return () => {
+      unsub();
+      det.stop();
+    };
+  }, [det]);
+
+  // Auto-play opt-in:
+  //   - Sin auto-play (default): no arranca solo. Click manual siempre.
+  //   - Con auto-play + det desactivado (null): arranca al montar.
+  //   - Con auto-play + det activo: arranca cuando state pasa a 'stopped'.
+  //     Si el usuario rechaza permisos GPS (state='denied'), también
+  //     arranca — sin GPS no podemos verificar pero respetamos opt-in
+  //     explícito (el conductor sabe lo que activa).
+  //
+  // Solo disparamos UNA vez: marcador `played` evita repetir si el
+  // detector flap entre stopped/moving/stopped en el mismo trip.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deliberadamente solo al cambio de stoppedState/state
+  useEffect(() => {
+    if (!autoplayEnabled || message.trim().length === 0 || state !== 'idle') {
+      return;
+    }
+    const guardOk = det === null || stoppedState === 'stopped' || stoppedState === 'denied';
+    if (!guardOk) {
+      return;
+    }
+    ctrl.play(message);
+  }, [autoplayEnabled, stoppedState, det]);
 
   if (state === 'unsupported') {
     // El navegador no soporta TTS. Ocultarse — el texto sigue visible
@@ -138,6 +195,15 @@ export function CoachingVoicePlayer({ message, controller }: CoachingVoicePlayer
       {isError && (
         <span className="text-amber-700 text-xs">
           No se pudo reproducir el audio. El texto está disponible arriba.
+        </span>
+      )}
+
+      {/* Phase 4 PR-K1 — feedback visual cuando el auto-play está
+          esperando que el vehículo se detenga. No bloquea el botón
+          manual; sólo informa por qué no arrancó solo. */}
+      {autoplayEnabled && stoppedState === 'moving' && state === 'idle' && (
+        <span className="text-neutral-500 text-xs" data-testid="autoplay-waiting-stopped">
+          Reproducción automática en pausa — esperando que el vehículo se detenga.
         </span>
       )}
     </div>
