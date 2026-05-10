@@ -755,12 +755,34 @@ export const tripMetrics = pgTable(
       precision: 10,
       scale: 3,
     }),
+    /**
+     * Phase 2 PR-I4 — Driver behavior score [0, 100]. Computed por
+     * @booster-ai/driver-scoring a partir de `eventos_conduccion_verde`
+     * filtrados por (vehículo, ventana del trip). Nullable: trips sin
+     * Teltonika (Basic tier) no tienen score; trips legacy pre-PR-I4
+     * tampoco hasta el primer recálculo.
+     */
+    behaviorScore: numeric('puntaje_conduccion', { precision: 5, scale: 2 }),
+    /**
+     * Bucket cualitativo del score: 'excelente' | 'bueno' | 'regular' | 'malo'.
+     * Persistido en vez de derivado en query para que la UI pueda hacer
+     * filtros tipo "transportistas con nivel bueno o mejor" sin recomputar.
+     */
+    behaviorScoreNivel: varchar('puntaje_conduccion_nivel', { length: 20 }),
+    /**
+     * Desglose completo del score (counts por tipo, penalizacionTotal,
+     * eventosPorHora) en JSONB. Permite drill-down en el dashboard sin
+     * re-cargar los eventos individuales. Shape espejo de
+     * ResultadoScore.desglose del package driver-scoring.
+     */
+    behaviorScoreBreakdown: jsonb('puntaje_conduccion_desglose'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     precisionIdx: index('idx_metricas_viaje_metodo_precision').on(table.precisionMethod),
     calculatedIdx: index('idx_metricas_viaje_calculado').on(table.calculatedAt),
+    behaviorScoreIdx: index('idx_metricas_viaje_puntaje_conduccion').on(table.behaviorScore),
   }),
 );
 
