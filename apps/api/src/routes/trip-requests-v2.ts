@@ -141,6 +141,11 @@ export function createTripRequestsV2Routes(opts: {
         ...(input.proposed_price_clp !== null
           ? { proposedPriceClp: input.proposed_price_clp }
           : {}),
+        // Phase 5 PR-L3b — datos consignee opt-in para tracking link directo.
+        ...(input.consignee?.name ? { consigneeName: input.consignee.name } : {}),
+        ...(input.consignee?.phone_e164
+          ? { consigneeWhatsappE164: input.consignee.phone_e164 }
+          : {}),
         status: 'esperando_match',
       })
       .returning();

@@ -124,4 +124,10 @@ export interface NotifyTrackingLinkResult {
     | 'no_token'
     | 'assignment_not_found';
   twilioMessageSid?: string;
+  /**
+   * Phase 5 PR-L3b — A quién se envió el link cuando skipped=false.
+   * 'consignee' = directo al destinatario (opt-in en form). 'shipper'
+   * = fallback al generador de carga (forwarding manual).
+   */
+  recipient?: 'consignee' | 'shipper';
 }
