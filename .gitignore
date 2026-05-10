@@ -123,3 +123,8 @@ __pycache__/
 
 # Claude Code local settings
 .claude/
+
+# Playwright screenshots (UI verification debug artifacts)
+*.png
+!apps/**/*.png
+!packages/**/*.png
