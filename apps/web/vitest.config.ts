@@ -26,10 +26,11 @@ export default defineConfig({
         'src/**/*.test.{ts,tsx}',
         'src/**/*.spec.{ts,tsx}',
         'src/main.tsx',
-        // 2FA helpers: integran con Firebase Phone Auth + reCAPTCHA. Se
-        // testean mejor con Playwright e2e contra Firebase real (no
+        // 2FA helpers + UI: integran con Firebase Phone Auth + reCAPTCHA.
+        // Se testean mejor con Playwright e2e contra Firebase real (no
         // mockeable significativamente). Ver ADR-028 §"Acciones derivadas §6".
         'src/lib/two-factor.ts',
+        'src/components/profile/TwoFactorSection.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
       // CLAUDE.md objetivo: 80%/75%/80%/80%. Los thresholds actuales son

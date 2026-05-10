@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { AuthProvidersSection } from '../components/profile/AuthProvidersSection.js';
 import { ProfileForm } from '../components/profile/ProfileForm.js';
+import { TwoFactorSection } from '../components/profile/TwoFactorSection.js';
 import type { MeResponse } from '../hooks/use-me.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -55,6 +56,8 @@ function PerfilPage({ me }: { me: MeOnboarded }) {
         </div>
 
         <AuthProvidersSection />
+
+        <TwoFactorSection initialPhoneE164={me.user.whatsapp_e164 ?? me.user.phone ?? null} />
       </div>
     </Layout>
   );
