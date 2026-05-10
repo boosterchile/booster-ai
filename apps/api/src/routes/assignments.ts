@@ -364,5 +364,65 @@ export function createAssignmentsRoutes(opts: {
     });
   });
 
+  // ---------------------------------------------------------------------
+  // GET /:id/coaching — Phase 3 PR-J2
+  //
+  // Devuelve el mensaje de coaching IA persistido en metricas_viaje
+  // del trip. Generado post-entrega por generar-coaching-viaje.ts a
+  // partir del behavior score breakdown (PR-I4) usando Gemini API o
+  // fallback de plantilla determinística.
+  // ---------------------------------------------------------------------
+  app.get('/:id/coaching', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const [row] = await opts.db
+      .select({
+        assignmentEmpresaId: assignments.empresaId,
+        tripId: assignments.tripId,
+        mensaje: tripMetrics.coachingMensaje,
+        foco: tripMetrics.coachingFoco,
+        fuente: tripMetrics.coachingFuente,
+        modelo: tripMetrics.coachingModelo,
+        generadoEn: tripMetrics.coachingGeneradoEn,
+      })
+      .from(assignments)
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, assignments.tripId))
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (row.assignmentEmpresaId !== empresaId) {
+      return c.json({ error: 'forbidden', code: 'assignment_forbidden' }, 403);
+    }
+
+    if (!row.mensaje) {
+      return c.json({
+        trip_id: row.tripId,
+        message: null,
+        focus: null,
+        source: null,
+        status: 'no_disponible',
+        reason: 'sin_score_o_no_entregado',
+      });
+    }
+
+    return c.json({
+      trip_id: row.tripId,
+      message: row.mensaje,
+      focus: row.foco,
+      source: row.fuente, // 'gemini' | 'plantilla'
+      model: row.modelo,
+      generated_at: row.generadoEn,
+      status: 'disponible',
+    });
+  });
+
   return app;
 }

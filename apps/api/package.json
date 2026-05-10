@@ -14,6 +14,7 @@
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
     "@booster-ai/certificate-generator": "workspace:*",
+    "@booster-ai/coaching-generator": "workspace:*",
     "@booster-ai/config": "workspace:*",
     "@booster-ai/driver-scoring": "workspace:*",
     "@booster-ai/logger": "workspace:*",

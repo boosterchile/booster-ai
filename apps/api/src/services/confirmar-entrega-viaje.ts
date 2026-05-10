@@ -30,6 +30,9 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { and, eq } from 'drizzle-orm';
+// `appConfig` (no `config`) para no chocar con el `config` de cert que
+// recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
@@ -38,6 +41,7 @@ import {
   type EmitirCertificadoConfig,
   emitirCertificadoViaje,
 } from './emitir-certificado-viaje.js';
+import { generarCoachingViaje } from './generar-coaching-viaje.js';
 
 /**
  * Status del trip en los que es válido confirmar entrega. Si está
@@ -213,6 +217,24 @@ export async function confirmarEntregaViaje(opts: {
       logger.error(
         { err, tripId },
         'calcularScoreConduccionViaje fallo — sin score persistido para este trip',
+      );
+    }
+
+    // Phase 3 PR-J2 — generar coaching IA después del score. Depende
+    // de que el behaviorScore + breakdown estén persistidos. Si falla,
+    // log + sigue: el coaching es información complementaria; el
+    // dashboard lo muestra como "no disponible" sin error visible.
+    try {
+      await generarCoachingViaje({
+        db,
+        logger,
+        tripId,
+        geminiApiKey: appConfig.GEMINI_API_KEY,
+      });
+    } catch (err) {
+      logger.error(
+        { err, tripId },
+        'generarCoachingViaje fallo — sin coaching persistido para este trip',
       );
     }
 

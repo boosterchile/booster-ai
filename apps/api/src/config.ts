@@ -225,6 +225,23 @@ const apiEnvSchema = commonEnvSchema
      * generan sugerencia de eco-route. Útil en dev sin quota Routes API.
      */
     GOOGLE_ROUTES_API_KEY: z.string().min(1).optional(),
+
+    /**
+     * API key para Google Gemini API (Phase 3 — coaching IA).
+     *
+     * Server-side: la usa apps/api en `generar-coaching-viaje.ts` para
+     * generar el mensaje de coaching personalizado post-entrega.
+     *
+     * Optional: si está ausente, el coaching cae al fallback de plantilla
+     * determinística de @booster-ai/coaching-generator. El carrier
+     * recibe igual feedback útil — la diferencia es solo personalización
+     * por contexto del trip.
+     *
+     * El secret `gemini-api-key` ya existe en Secret Manager (TF
+     * security.tf). Cargar con: gcloud secrets versions add gemini-api-key
+     * --data-file=<(echo -n "AIza...").
+     */
+    GEMINI_API_KEY: z.string().min(1).optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

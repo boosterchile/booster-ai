@@ -776,6 +776,25 @@ export const tripMetrics = pgTable(
      * ResultadoScore.desglose del package driver-scoring.
      */
     behaviorScoreBreakdown: jsonb('puntaje_conduccion_desglose'),
+    /**
+     * Phase 3 PR-J2 — Mensaje de coaching para el conductor, generado
+     * post-entrega. ≤320 chars (cabe en SMS/WhatsApp). Generado por
+     * @booster-ai/coaching-generator con Gemini API o fallback de
+     * plantilla determinística (ver coachingFuente).
+     */
+    coachingMensaje: text('coaching_mensaje'),
+    /**
+     * Foco principal del feedback: 'frenado' | 'aceleracion' | 'curvas' |
+     * 'velocidad' | 'felicitacion' | 'multiple'. Para tagging en analytics
+     * + filtros de UI ("trips con coaching de frenado este mes").
+     */
+    coachingFoco: varchar('coaching_foco', { length: 20 }),
+    /** 'gemini' | 'plantilla' — para distinguir cobertura AI vs fallback. */
+    coachingFuente: varchar('coaching_fuente', { length: 20 }),
+    /** Nombre del modelo Gemini (e.g. 'gemini-1.5-flash'). NULL si fuente='plantilla'. */
+    coachingModelo: varchar('coaching_modelo', { length: 50 }),
+    /** Timestamp de generación. Para SLO + cache invalidation. */
+    coachingGeneradoEn: timestamp('coaching_generado_en', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },

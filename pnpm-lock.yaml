@@ -47,6 +47,9 @@ importers:
       '@booster-ai/certificate-generator':
         specifier: workspace:*
         version: link:../../packages/certificate-generator
+      '@booster-ai/coaching-generator':
+        specifier: workspace:*
+        version: link:../../packages/coaching-generator
       '@booster-ai/config':
         specifier: workspace:*
         version: link:../../packages/config
