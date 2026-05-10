@@ -105,6 +105,12 @@ resource "google_container_cluster" "telemetry_dr" {
     enable_private_nodes    = true
     enable_private_endpoint = false
     master_ipv4_cidr_block  = "172.17.0.0/28"
+
+    # Master global access habilitado para que Cloud Build pool (en south-west)
+    # alcance el master DR cross-region via VPC peering.
+    master_global_access_config {
+      enabled = true
+    }
   }
 
   release_channel {

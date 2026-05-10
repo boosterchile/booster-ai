@@ -510,6 +510,14 @@ resource "google_container_cluster" "telemetry" {
     enable_private_nodes    = true
     enable_private_endpoint = false
     master_ipv4_cidr_block  = "172.16.0.0/28"
+
+    # Necesario para que Cloud Build private pool (peering distinto) y operadores
+    # via IAP TCP puedan alcanzar el master interno (172.16.0.2) cross-region.
+    # Sin esto, el VPC peering al master no propaga rutas a la peering del pool.
+    # Ver PR #73 + post-apply manual gcloud update 2026-05-09.
+    master_global_access_config {
+      enabled = true
+    }
   }
 
   release_channel {
