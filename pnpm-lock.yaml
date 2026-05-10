@@ -50,6 +50,9 @@ importers:
       '@booster-ai/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@booster-ai/driver-scoring':
+        specifier: workspace:*
+        version: link:../../packages/driver-scoring
       '@booster-ai/logger':
         specifier: workspace:*
         version: link:../../packages/logger
