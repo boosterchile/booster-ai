@@ -29,24 +29,14 @@ export default defineConfig({
         'src/router.tsx', // TanStack Router config con lazy imports — tested e2e
         'src/sw.ts', // Service Worker — runtime de browser, no jsdom
         'src/lib/firebase.ts', // initializeApp + setPersistence side-effects at-import
-        // 2FA helpers + UI: integran con Firebase Phone Auth + reCAPTCHA.
-        // Se testean mejor con Playwright e2e contra Firebase real (no
-        // mockeable significativamente). Ver ADR-028 §"Acciones derivadas §6".
-        'src/lib/two-factor.ts',
-        'src/components/profile/TwoFactorSection.tsx',
         // Páginas grandes con TanStack Router + lazy imports + form complejos +
         // mapas Google. Se testean mejor con Playwright e2e contra build real.
         'src/routes/**',
-        // Components UI complejos con Google Maps + SSE + form-hook + Firebase
-        // — testeables sólo con Playwright e2e contra build real.
-        'src/components/map/**',
-        'src/components/chat/ChatPanel.tsx',
-        'src/components/profile/AuthProvidersSection.tsx',
-        'src/components/onboarding/OnboardingForm.tsx',
-        'src/components/map/**',
-        // Hooks que sólo tienen sentido in-browser (SSE EventSource, telemetría).
-        'src/hooks/use-chat-stream.ts',
-        'src/hooks/use-chat-messages.ts',
+        // Componentes que dependen del SDK Google Maps en runtime — sólo
+        // se cubren con Playwright e2e contra build real. use-follow-vehicle
+        // es lógica pura y SI tiene tests unitarios.
+        'src/components/map/VehicleMap.tsx',
+        'src/components/map/LiveTrackingScreen.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
       // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable
