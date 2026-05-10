@@ -1,9 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CONTINUITY_GAP_S,
+  calcularCobertura,
   calcularCoberturaPura,
   haversineKm,
 } from '../../src/services/calcular-cobertura-telemetria.js';
+
+const noop = (): void => undefined;
+const noopLogger = {
+  trace: noop,
+  debug: noop,
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  fatal: noop,
+  child: () => noopLogger,
+} as never;
+
+function makeDb(pings: Array<{ ts: Date; lat: string | null; lng: string | null }>) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          orderBy: vi.fn(async () => pings),
+        })),
+      })),
+    })),
+  };
+}
 
 /**
  * Tests del cálculo puro de cobertura telemétrica (ADR-028 §5).
@@ -163,5 +187,104 @@ describe('calcularCoberturaPura — cap', () => {
     ];
     const cov = calcularCoberturaPura(pings, 50);
     expect(cov).toBe(100);
+  });
+});
+
+describe('calcularCobertura — wrapper con I/O', () => {
+  const VEH_ID = '11111111-1111-1111-1111-111111111111';
+  const PICKUP = new Date('2026-05-01T10:00:00Z');
+  const DELIVERED = new Date('2026-05-01T12:00:00Z');
+
+  it('distanciaEstimadaKm <= 0 → devuelve 0 sin tocar DB', async () => {
+    const db = makeDb([]);
+    const cov = await calcularCobertura({
+      db: db as never,
+      logger: noopLogger,
+      vehicleId: VEH_ID,
+      pickupAt: PICKUP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 0,
+    });
+    expect(cov).toBe(0);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('sin pings en la ventana → devuelve 0', async () => {
+    const db = makeDb([]);
+    const cov = await calcularCobertura({
+      db: db as never,
+      logger: noopLogger,
+      vehicleId: VEH_ID,
+      pickupAt: PICKUP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 100,
+    });
+    expect(cov).toBe(0);
+    expect(db.select).toHaveBeenCalled();
+  });
+
+  it('pings con lat/lng null → se filtran del cálculo', async () => {
+    const db = makeDb([
+      { ts: new Date(PICKUP.getTime()), lat: null, lng: null },
+      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6' },
+      { ts: new Date(PICKUP.getTime() + 60_000), lat: null, lng: '-70.6' },
+      { ts: new Date(PICKUP.getTime() + 90_000), lat: '-33.4', lng: '-70.6108' },
+    ]);
+    const cov = await calcularCobertura({
+      db: db as never,
+      logger: noopLogger,
+      vehicleId: VEH_ID,
+      pickupAt: PICKUP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 10,
+    });
+    // Solo 2 pings válidos (índices 1 y 3), gap = 60s exacto → no cuenta.
+    expect(cov).toBe(0);
+  });
+
+  it('happy path: pings válidos consecutivos → coverage > 0', async () => {
+    const db = makeDb([
+      { ts: new Date(PICKUP.getTime()), lat: '-33.4', lng: '-70.6' },
+      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6108' },
+      { ts: new Date(PICKUP.getTime() + 60_000), lat: '-33.4', lng: '-70.6216' },
+    ]);
+    const cov = await calcularCobertura({
+      db: db as never,
+      logger: noopLogger,
+      vehicleId: VEH_ID,
+      pickupAt: PICKUP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 10,
+    });
+    expect(cov).toBeGreaterThan(0);
+    expect(cov).toBeLessThanOrEqual(100);
+  });
+
+  it('logger.info se llama con métricas finales', async () => {
+    const infoSpy = vi.fn();
+    const customLogger = {
+      ...noopLogger,
+      info: infoSpy,
+    } as never;
+    const db = makeDb([
+      { ts: new Date(PICKUP.getTime()), lat: '-33.4', lng: '-70.6' },
+      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6108' },
+    ]);
+    await calcularCobertura({
+      db: db as never,
+      logger: customLogger,
+      vehicleId: VEH_ID,
+      pickupAt: PICKUP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 10,
+    });
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vehicleId: VEH_ID,
+        pingsTotal: 2,
+        pingsValidos: 2,
+      }),
+      expect.stringContaining('cobertura'),
+    );
   });
 });

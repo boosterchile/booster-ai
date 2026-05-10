@@ -54,22 +54,21 @@ const envSchema = z.object({
 
 export type Config = z.infer<typeof envSchema>;
 
+export class InvalidConfigError extends Error {
+  readonly issues: { path: string; message: string }[];
+  constructor(issues: { path: string; message: string }[]) {
+    super('Invalid environment configuration. Refusing to start.');
+    this.name = 'InvalidConfigError';
+    this.issues = issues;
+  }
+}
+
 export function loadConfig(): Config {
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
-    // eslint-disable-next-line no-console
-    console.error(
-      JSON.stringify(
-        {
-          level: 'fatal',
-          message: 'Invalid environment configuration. Refusing to start.',
-          errors: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
-        },
-        null,
-        2,
-      ),
+    throw new InvalidConfigError(
+      parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
     );
-    process.exit(1);
   }
   return parsed.data;
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { logger } from './logger.js';
 
 /**
  * Env vars del cliente web. Vite expone con prefijo VITE_ las que están en
@@ -37,7 +38,7 @@ export type Env = z.infer<typeof envSchema>;
 const result = envSchema.safeParse(import.meta.env);
 if (!result.success) {
   // En desarrollo Vite muestra esto en consola, en prod la build falla antes.
-  console.error('[env] Invalid environment configuration', result.error.flatten());
+  logger.error({ issues: result.error.flatten() }, '[env] Invalid environment configuration');
   throw new Error('Invalid env — check VITE_* vars in .env or .env.local');
 }
 

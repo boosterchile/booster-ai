@@ -15,13 +15,14 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<typeof import('../../src/routes/me.js').createMeRoutes>[0]['logger'];
 
@@ -237,7 +238,6 @@ describe('PATCH /me/profile', () => {
             : []; // memberships: ninguna
       return {
         limit: vi.fn().mockResolvedValue(rows),
-        // biome-ignore lint/suspicious/noThenProperty: drizzle mock intencional, el query builder es thenable
         then: <T>(onFulfilled: (v: typeof rows) => T) => Promise.resolve(rows).then(onFulfilled),
       };
     });
@@ -317,7 +317,6 @@ describe('PATCH /me/profile', () => {
       // Si es la 1ra (user), pasar a .limit().
       return {
         limit: limitFn,
-        // biome-ignore lint/suspicious/noThenProperty: drizzle mock intencional, el query builder es thenable
         then: <T>(onFulfilled: (v: unknown[]) => T) => {
           // Memberships: 1 row activa con empresaId 'real-empresa-id'
           const rows = [

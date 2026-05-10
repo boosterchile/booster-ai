@@ -36,6 +36,7 @@ import {
   sendLocationMessage,
   sendPhotoMessage,
 } from '../../lib/chat-api.js';
+import { logger } from '../../lib/logger.js';
 import { VehicleMap } from '../map/VehicleMap.js';
 
 interface ChatPanelProps {
@@ -306,8 +307,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
   const sendPhotoM = useMutation({
     mutationFn: (file: File) => sendPhotoMessage({ assignmentId, file }),
     onError: (err) => {
-      // eslint-disable-next-line no-console
-      console.error('sendPhotoMessage error', err);
+      logger.error({ err }, 'sendPhotoMessage error');
       window.alert('No se pudo enviar la foto. Inténtalo de nuevo.');
     },
   });
@@ -315,8 +315,7 @@ function ChatComposer({ assignmentId }: { assignmentId: string }) {
   const sendLocationM = useMutation({
     mutationFn: () => sendLocationMessage(assignmentId),
     onError: (err) => {
-      // eslint-disable-next-line no-console
-      console.error('sendLocationMessage error', err);
+      logger.error({ err }, 'sendLocationMessage error');
       window.alert('No pudimos obtener tu ubicación. Verifica los permisos del navegador.');
     },
   });

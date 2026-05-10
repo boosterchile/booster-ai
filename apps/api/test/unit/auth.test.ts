@@ -22,13 +22,14 @@ beforeAll(() => {
 const ALLOWED_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 const AUDIENCE = ['https://api.boosterchile.com', 'https://booster-ai-api.run.app'];
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<
   typeof import('../../src/middleware/auth.js').createAuthMiddleware

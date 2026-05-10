@@ -77,13 +77,31 @@ export function createFirebaseAuthMiddleware(opts: {
       //   - valida aud = projectId
       //   - valida exp > now
       //   - valida sub (= uid) presente
-      decoded = await opts.auth.verifyIdToken(token);
+      //
+      // Segundo argumento `checkRevoked = true` (ADR-028 §"Token revocation"):
+      // verifica que el token no haya sido emitido antes de
+      // `auth.revokeRefreshTokens(uid)`. Cuando un user es desactivado el
+      // service `desactivarUsuario()` llama esa API; cualquier ID token previo
+      // se rechaza dentro de ~1s. Costo: +1 round-trip Admin SDK al
+      // user-record (cacheado internamente por firebase-admin).
+      decoded = await opts.auth.verifyIdToken(token, true);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Firebase emite código `auth/id-token-revoked` cuando checkRevoked
+      // detecta que el token fue revocado por `revokeRefreshTokens`. Lo
+      // distinguimos del expirado para alerting y debugging.
+      const isRevoked =
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'auth/id-token-revoked';
       opts.logger.warn(
-        { err: err instanceof Error ? err.message : String(err), path: c.req.path },
-        'Firebase ID token verification failed',
+        { err: errMsg, path: c.req.path, revoked: isRevoked },
+        isRevoked
+          ? 'Firebase ID token revocado (user desactivado)'
+          : 'Firebase ID token verification failed',
       );
-      return c.json({ error: 'Invalid token' }, 401);
+      return c.json({ error: isRevoked ? 'Token revoked' : 'Invalid token' }, 401);
     }
 
     const claims: FirebaseClaims = {

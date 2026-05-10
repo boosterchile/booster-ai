@@ -1,4 +1,4 @@
-# ADR-015 — Estrategia CI/CD: GitLab.com shared runners + criterio de migración a self-hosted
+# ADR-020 — Estrategia CI/CD: GitLab.com shared runners + criterio de migración a self-hosted
 
 **Status**: Accepted
 **Date**: 2026-05-05

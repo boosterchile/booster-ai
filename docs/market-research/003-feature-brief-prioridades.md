@@ -84,7 +84,7 @@ Restricciones (no negociables, ver CLAUDE.md):
 
 - **Trigger competitivo**: Fleteretorno regala "1 árbol nativo por envío" como gimmick (no certificable); Carga Inteligente reporta "33 ton CO₂ reducido" sin metodología (no auditable). Frete.com dice "nunca rode vazio" sin metodología publicada. **Nadie convierte el matching de backhaul en evidencia auditable de Scope 3 evitado** — Gap #6 del 001.
 - **Outcome**: cuando el matching algorithm enlaza una carga con un transportista que retornaba vacío, se emite un **certificado adicional de "CO₂ evitado vía empty-return optimization"** firmado con KMS, con metodología publicada (delta entre escenario contrafactual `viaje vacío` y `viaje con carga`). Descargable por shipper.
-- **Dependencias**: ADR-005 (telemetría), ADR-016 (GLEC v3.0), `packages/matching-algorithm/`, `packages/carbon-calculator/`. Nuevo: `packages/avoided-emissions-calculator/` o módulo dentro de carbon-calculator.
+- **Dependencias**: ADR-005 (telemetría), ADR-021 (GLEC v3.0), `packages/matching-algorithm/`, `packages/carbon-calculator/`. Nuevo: `packages/avoided-emissions-calculator/` o módulo dentro de carbon-calculator.
 - **Anti-scope**: NO compensación nominal de carbono (no somos registry de offsets); NO emitimos CER ni REDD; sí emitimos métrica de *reducción* trazable a viaje real.
 - **ADR sugerido**: 017 — Metodología de cálculo de emisiones evitadas vía empty-return matching.
 
@@ -92,7 +92,7 @@ Restricciones (no negociables, ver CLAUDE.md):
 
 - **Trigger competitivo**: NCG 519 obliga IFRS S2 desde FY 2026. Ningún competidor entrega un reporte listo. Hoy el equipo Sustainability del shipper compila Excel a mano o paga consultoría USD 5-20k/año.
 - **Outcome**: dashboard "ESG Reporting" en el rol Stakeholder/Sustainability (ADR-004) que genera con un click: PDF firmado + CSV crudo + JSON + XBRL (formato ISSB) con todos los certificados PADES del período (mes/trimestre/año), agrupados por categoría Scope 3.4/3.9 (upstream/downstream transport).
-- **Dependencias**: ADR-004 (rol Stakeholder), ADR-008 (PWA), ADR-016 (GLEC), `packages/ai-provider` opcional para narrativa textual del reporte.
+- **Dependencias**: ADR-004 (rol Stakeholder), ADR-008 (PWA), ADR-021 (GLEC), `packages/ai-provider` opcional para narrativa textual del reporte.
 - **Anti-scope**: NO somos auditores; el reporte tiene los datos firmados pero la opinión la da el auditor del cliente (KPMG/EY/PwC/Deloitte). NO incluye Scope 1/2 del cliente — solo Scope 3 transporte.
 - **ADR sugerido**: 018 — Formato y disclaimers del reporte IFRS S2 generado por Booster.
 

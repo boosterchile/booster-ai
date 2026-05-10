@@ -165,9 +165,16 @@ async function emitirNuevoCert(kmsKeyId: string, publicKeyPem: string): Promise<
   // Algoritmo de firma — debe matchear lo que KMS va a producir.
   // sha256WithRSAEncryption (PKCS#1 v1.5) = OID 1.2.840.113549.1.1.11.
   // forge.pki.oids es Record<string,string> en types pero las constantes
-  // son literales hardcoded del propio node-forge — `!` es seguro.
-  cert.signatureOid = forge.pki.oids.sha256WithRSAEncryption!;
-  cert.siginfo.algorithmOid = forge.pki.oids.sha256WithRSAEncryption!;
+  // son literales hardcoded del propio node-forge — defensiva por si la
+  // versión cambia.
+  const sigOid = forge.pki.oids.sha256WithRSAEncryption;
+  if (sigOid === undefined) {
+    throw new Error(
+      'forge.pki.oids.sha256WithRSAEncryption no definido — versión incompatible de node-forge',
+    );
+  }
+  cert.signatureOid = sigOid;
+  cert.siginfo.algorithmOid = sigOid;
 
   // Construir el TBSCertificate (ASN.1) y DER-encodearlo. KMS firma esos
   // bytes; el resultado se inserta en cert.signature para producir el

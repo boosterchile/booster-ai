@@ -173,7 +173,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('Fatal startup error:', err);
+  const bootstrapLogger = createLogger({
+    service: '@booster-ai/sms-fallback-gateway',
+    level: 'fatal',
+  });
+  bootstrapLogger.fatal({ err }, 'Fatal startup error');
   process.exit(1);
 });

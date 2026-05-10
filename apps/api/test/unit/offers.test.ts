@@ -54,13 +54,14 @@ vi.mock('../../src/services/offer-actions.js', () => {
   };
 });
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<
   typeof import('../../src/routes/offers.js').createOfferRoutes

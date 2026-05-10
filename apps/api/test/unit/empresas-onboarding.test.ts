@@ -46,13 +46,14 @@ vi.mock('../../src/services/onboarding.js', () => {
   };
 });
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<
   typeof import('../../src/routes/empresas.js').createEmpresaRoutes

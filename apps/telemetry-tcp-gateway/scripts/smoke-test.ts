@@ -24,7 +24,7 @@
 import { Socket } from 'node:net';
 import { crc16Ibm, encodeImeiAck } from '@booster-ai/codec8-parser';
 
-// biome-ignore lint/suspicious/noConsole: smoke-test CLI script — console output es la UX.
+// smoke-test CLI script — console output es la UX (noConsole está off para scripts/).
 const log = console.log;
 
 const HOST = process.env.GATEWAY_HOST ?? '34.176.126.66';

@@ -1,4 +1,4 @@
-# ADR-016 — GLEC v3.0 compliance + empty backhaul como diferenciador comercial
+# ADR-021 — GLEC v3.0 compliance + empty backhaul como diferenciador comercial
 
 **Status**: Accepted
 **Date**: 2026-05-05

@@ -249,8 +249,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // Captura cualquier error no manejado (config faltante, DB unreachable, etc.).
-  // eslint-disable-next-line no-console
-  console.error('FATAL', err);
+  const bootstrapLogger = createLogger({
+    service: '@booster-ai/api/jobs/backfill-certificados',
+    level: 'fatal',
+  });
+  bootstrapLogger.fatal({ err }, 'Fatal job error');
   process.exit(1);
 });

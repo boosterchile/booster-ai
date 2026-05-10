@@ -31,11 +31,11 @@ git log --oneline -20   # ver el contexto reciente
 
 Lectura recomendada antes de tocar código:
 
-1. [docs/adr/016-glec-v3-compliance.md](../adr/016-glec-v3-compliance.md)
+1. [docs/adr/021-glec-v3-compliance.md](../adr/021-glec-v3-compliance.md)
    — decisión arquitectónica del calculator, plan de despliegue T+0..T+4.
 2. [docs/research/013-glec-audit.md](../research/013-glec-audit.md) —
    auditoría con citas a GLEC, IPCC, DEFRA, ICCT, ISO 14083.
-3. [docs/adr/015-ci-cd-strategy.md](../adr/015-ci-cd-strategy.md) — por
+3. [docs/adr/020-ci-cd-strategy.md](../adr/020-ci-cd-strategy.md) — por
    qué usamos GitLab.com shared runners y criterio de migración.
 4. [CLAUDE.md](../../CLAUDE.md) — contrato de trabajo del agente.
 
@@ -43,7 +43,7 @@ Lectura recomendada antes de tocar código:
 
 El módulo `calcularEmptyBackhaul()` está listo en código pero su valor
 solo llega al cliente cuando estos 5 pasos estén cerrados. Plan de
-despliegue T+0..T+4 semanas en ADR-016.
+despliegue T+0..T+4 semanas en ADR-021.
 
 ### 1.1 Schema migration `metricas_viaje` (BLOQUEANTE para los siguientes)
 
@@ -175,7 +175,7 @@ Una vez §1.1–§1.5 estén en producción:
 
 ## §2 — Pendientes de infra CI/CD
 
-Documentados como out-of-scope de ADR-015. Activarlos sube el rigor del
+Documentados como out-of-scope de ADR-020. Activarlos sube el rigor del
 quality gate.
 
 ### 2.1 E2E pipeline contra staging
@@ -390,7 +390,7 @@ producto evoluciona a "ESG dashboard completo":
 A los 30 días de mergeado el último MR:
 
 - **CI**: minutos consumidos / 400 disponibles. Si > 320 (80%), considerar
-  self-hosted runner según ADR-015.
+  self-hosted runner según ADR-020.
 - **Empty backhaul**: % de viajes con `factorMatching > 0`. Target ≥ 50%.
 - **Calidad del calculator**: comparar `metricas_viaje.intensidad_gco2e_por_ton_km`
   agregada con benchmarks GLEC para detectar desviaciones operativas.

@@ -5,7 +5,7 @@ import type { FactorEmisionCombustible, TipoCombustible } from '../tipos.js';
  *
  * **Versión 2 (2026-05-05)**: ajustados a GLEC Framework v3.0 + IPCC AR6
  * GWP-100 tras audit FIX-013 (ver `docs/research/013-glec-audit.md` y
- * `docs/adr/016-glec-v3-compliance.md`).
+ * `docs/adr/021-glec-v3-compliance.md`).
  *
  * Fuentes:
  *   - **GLEC Framework v3.0** (Smart Freight Centre, 2023). Annex A1/A2

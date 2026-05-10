@@ -5,7 +5,7 @@
  * (Smart Freight Centre 2023) + **IPCC AR6 GWP-100**, con factores de
  * emisión Chile (SEC + MMA + CEN) año 2024.
  *
- * Ver `docs/adr/016-glec-v3-compliance.md` para la decisión arquitectónica
+ * Ver `docs/adr/021-glec-v3-compliance.md` para la decisión arquitectónica
  * y `docs/research/013-glec-audit.md` para la auditoría que la motivó.
  *
  * 3 modos de precisión (espejo del enum `metodo_precision` del schema):

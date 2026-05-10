@@ -16,13 +16,14 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<
   typeof import('../../src/middleware/firebase-auth.js').createFirebaseAuthMiddleware
@@ -120,5 +121,29 @@ describe('firebase auth middleware', () => {
     expect(body.ok).toBe(true);
     expect(body.claims.uid).toBe('firebase-uid-abc');
     expect(body.claims.email).toBe('felipe@boosterchile.com');
+  });
+
+  it('rechaza con 401 + body { error: "Token revoked" } cuando Firebase emite auth/id-token-revoked', async () => {
+    const revokedError: Error & { code: string } = Object.assign(
+      new Error('Firebase ID token has been revoked.'),
+      { code: 'auth/id-token-revoked' },
+    );
+    const app = await buildAppWith(stubFirebaseAuth({ fail: revokedError }));
+    const res = await app.request('/protected/whoami', {
+      headers: { authorization: 'Bearer revoked.firebase.token' },
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Token revoked' });
+  });
+
+  it('llama verifyIdToken con checkRevoked = true (defensa post-desactivación)', async () => {
+    const auth = stubFirebaseAuth({
+      succeed: { uid: 'u', email_verified: true },
+    });
+    const app = await buildAppWith(auth);
+    await app.request('/protected/whoami', {
+      headers: { authorization: 'Bearer t' },
+    });
+    expect(auth.verifyIdToken).toHaveBeenCalledWith('t', true);
   });
 });
