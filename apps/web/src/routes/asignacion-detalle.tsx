@@ -22,6 +22,7 @@ import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
+import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
 import { api } from '../lib/api-client.js';
 
 interface AssignmentDetail {
@@ -121,6 +122,12 @@ function AsignacionDetallePage() {
           asignado o en_proceso. Doble confirmación dentro del componente
           previene falsos positivos. */}
       {isConfirmable && <DeliveryConfirmCard assignmentId={assignmentId} />}
+
+      {/* Phase 4 PR-K6b — reportar incidente operacional (accidente,
+          demora, falla mecánica, etc.). Voice command "marcar
+          incidente" abre panel de selección. Visible mientras el trip
+          esté activo (mismo predicate que delivery confirm). */}
+      {isConfirmable && <IncidentReportCard assignmentId={assignmentId} />}
 
       {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
           el trip está cerrado, porque el score se calcula post-entrega.
