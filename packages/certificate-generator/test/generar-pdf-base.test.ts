@@ -115,4 +115,87 @@ describe('generarPdfBase', () => {
     // string completo, pero los caracteres ASCII del nombre se preservan).
     expect(pdfStr.length).toBeGreaterThan(2000);
   });
+
+  // ============================================================================
+  // ADR-028 — Modo dual (smoke test del PDF; lógica testeada en helpers)
+  // ============================================================================
+
+  describe('ADR-028 — modo dual (smoke)', () => {
+    // El binary del PDF codifica el texto vía font streams (no ASCII directo)
+    // → assertions sobre `pdfStr` no son confiables. La lógica de copy/format
+    // se testea en `render-helpers.test.ts` directamente sobre los helpers
+    // puros. Acá solo verificamos que `generarPdfBase` no tira error en
+    // ambos modos y produce PDFs válidos.
+    it('cert primario verificable produce un PDF válido', async () => {
+      const bytes = await generarPdfBase({
+        viaje: viajeMinimo,
+        metricas: {
+          ...metricasMinimo,
+          precisionMethod: 'exacto_canbus',
+          routeDataSource: 'teltonika_gps',
+          coveragePct: 98.7,
+          certificationLevel: 'primario_verificable',
+          uncertaintyFactor: 0.05,
+        },
+        empresaShipper: empresaMinimo,
+        verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+      });
+      expect(bytes.length).toBeGreaterThan(2000);
+      expect(Buffer.from(bytes.slice(0, 8)).toString('utf-8').startsWith('%PDF-')).toBe(true);
+    });
+
+    it('cert secundario_modeled produce un PDF válido (con disclaimer block)', async () => {
+      const bytes = await generarPdfBase({
+        viaje: viajeMinimo,
+        metricas: {
+          ...metricasMinimo,
+          precisionMethod: 'por_defecto',
+          routeDataSource: 'maps_directions',
+          coveragePct: 0,
+          certificationLevel: 'secundario_modeled',
+          uncertaintyFactor: 0.18,
+        },
+        empresaShipper: empresaMinimo,
+        verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+      });
+      expect(bytes.length).toBeGreaterThan(2000);
+      expect(Buffer.from(bytes.slice(0, 8)).toString('utf-8').startsWith('%PDF-')).toBe(true);
+    });
+
+    it('cert sin campos ADR-028 (legacy) sigue produciendo PDF válido', async () => {
+      const bytes = await generarPdfBase({
+        viaje: viajeMinimo,
+        metricas: metricasMinimo,
+        empresaShipper: empresaMinimo,
+        verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+      });
+      expect(bytes.length).toBeGreaterThan(2000);
+      expect(Buffer.from(bytes.slice(0, 8)).toString('utf-8').startsWith('%PDF-')).toBe(true);
+    });
+
+    it('cert secundario es ligeramente más grande que primario (por el disclaimer block)', async () => {
+      const primario = await generarPdfBase({
+        viaje: viajeMinimo,
+        metricas: { ...metricasMinimo, certificationLevel: 'primario_verificable' },
+        empresaShipper: empresaMinimo,
+        verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+      });
+      const secundario = await generarPdfBase({
+        viaje: viajeMinimo,
+        metricas: {
+          ...metricasMinimo,
+          certificationLevel: 'secundario_modeled',
+          routeDataSource: 'maps_directions',
+          coveragePct: 0,
+          uncertaintyFactor: 0.18,
+        },
+        empresaShipper: empresaMinimo,
+        verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+      });
+      // Disclaimer block + bloque de Origen ruta + ± uncertainty agregan
+      // contenido extra en el PDF stream. Verificamos al menos un byte
+      // de diferencia (asegura que las ramas se ejercitan distinto).
+      expect(secundario.length).toBeGreaterThan(primario.length);
+    });
+  });
 });

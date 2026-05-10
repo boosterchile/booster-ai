@@ -18,6 +18,15 @@
 import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import {
+  DISCLAIMER_SECUNDARIO_LINEAS,
+  formatRouteDataSource,
+  formatearNumeroPrincipal,
+  muestraDisclaimerSecundario,
+  subtituloHeader,
+  tamanoTitulo,
+  tituloHeader,
+} from './render-helpers.js';
 import type {
   DatosEmpresaCertificado,
   DatosMetricasCertificado,
@@ -62,6 +71,14 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   const colorBorder = rgb(0.85, 0.85, 0.87);
   const colorEmphasis = rgb(0.05, 0.55, 0.32); // verde para kg CO2e
 
+  // ADR-028: el nivel de certificación determina el título del header
+  // y la presencia del disclaimer. Si el campo está ausente (legacy
+  // path pre-ADR-028), tratamos como primario para no romper certs
+  // viejos.
+  const nivelCert = params.metricas.certificationLevel ?? 'primario_verificable';
+  const esPrimario = nivelCert === 'primario_verificable';
+  const colorBackground = esPrimario ? colorPrimary : rgb(0.55, 0.4, 0.05); // ámbar para secundario
+
   // ============================================================
   // Header — banda superior con título
   // ============================================================
@@ -70,18 +87,18 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     y: height - 90,
     width,
     height: 90,
-    color: colorPrimary,
+    color: colorBackground,
   });
 
-  page.drawText('CERTIFICADO DE HUELLA DE CARBONO', {
+  page.drawText(tituloHeader(nivelCert), {
     x: 40,
     y: height - 45,
-    size: 18,
+    size: tamanoTitulo(nivelCert),
     font: fontBold,
     color: rgb(1, 1, 1),
   });
 
-  page.drawText('GLEC Framework v3.0  ·  SEC Chile 2024', {
+  page.drawText(subtituloHeader(nivelCert), {
     x: 40,
     y: height - 70,
     size: 10,
@@ -218,11 +235,17 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   );
 
   const kgWtw = params.metricas.kgco2eWtwActual ?? params.metricas.kgco2eWtwEstimated ?? 0;
+  // ADR-028 §3 — si hay factor de incertidumbre, imprimir "X ± Y kg CO2e".
+  // El ± se construye como kgWtw × uncertaintyFactor (intervalo simétrico
+  // estándar GLEC v3 Annex B). Por ejemplo, 318.7 con factor 0.05 → ±15.9.
+  const incertidumbre = params.metricas.uncertaintyFactor;
+  const numeroPrincipal = formatearNumeroPrincipal(kgWtw, incertidumbre);
+  const numeroPrincipalSize = incertidumbre !== undefined && incertidumbre > 0 ? 22 : 28;
 
-  page.drawText(`${kgWtw.toFixed(2)} kg CO2e`, {
+  page.drawText(numeroPrincipal, {
     x: 40,
     y: cursorY - 60,
-    size: 28,
+    size: numeroPrincipalSize,
     font: fontBold,
     color: colorEmphasis,
   });
@@ -333,6 +356,71 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     colorMuted,
   );
   cursorY -= 30;
+
+  // ADR-028 — Origen del polyline (segunda dimensión de calidad). Solo
+  // imprimimos si el campo está presente, para no inventar info en certs
+  // viejos pre-ADR-028.
+  if (params.metricas.routeDataSource) {
+    drawLabelValue(
+      page,
+      'Origen de la ruta',
+      formatRouteDataSource(params.metricas.routeDataSource),
+      40,
+      cursorY,
+      fontRegular,
+      fontBold,
+      colorMuted,
+    );
+    if (params.metricas.coveragePct !== undefined) {
+      drawLabelValue(
+        page,
+        'Cobertura telemétrica',
+        `${params.metricas.coveragePct.toFixed(1)}%`,
+        width / 2,
+        cursorY,
+        fontRegular,
+        fontBold,
+        colorMuted,
+      );
+    }
+    cursorY -= 30;
+  }
+
+  // ADR-028 — Disclaimer prominente solo en certs secundarios. Es el
+  // mecanismo de greenwashing-prevention: el cliente que recibe un cert
+  // secundario lee inmediatamente que NO es auditable bajo SBTi/CDP, y
+  // que existe path de upgrade vía Teltonika.
+  if (muestraDisclaimerSecundario(nivelCert)) {
+    cursorY -= 5;
+    page.drawRectangle({
+      x: 30,
+      y: cursorY - 60,
+      width: width - 60,
+      height: 60,
+      borderColor: rgb(0.85, 0.65, 0.1),
+      borderWidth: 1,
+      color: rgb(0.99, 0.96, 0.86),
+    });
+    page.drawText('IMPORTANTE — DATOS SECUNDARIOS MODELADOS', {
+      x: 40,
+      y: cursorY - 18,
+      size: 9,
+      font: fontBold,
+      color: rgb(0.55, 0.4, 0.05),
+    });
+    let ly = cursorY - 32;
+    for (const line of DISCLAIMER_SECUNDARIO_LINEAS) {
+      page.drawText(line, {
+        x: 40,
+        y: ly,
+        size: 8,
+        font: fontRegular,
+        color: rgb(0.3, 0.25, 0.1),
+      });
+      ly -= 12;
+    }
+    cursorY -= 70;
+  }
 
   cursorY -= 10;
 

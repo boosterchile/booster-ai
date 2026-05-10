@@ -49,6 +49,33 @@ export interface DatosMetricasCertificado {
   emissionFactorUsado: number;
   fuenteFactores: string;
   calculatedAt: Date;
+  /**
+   * ADR-028 — Origen del polyline real recorrido. Junto con
+   * `precisionMethod` y `coveragePct` determina `certificationLevel`. Si
+   * está ausente, el cert se renderiza con `precisionMethod` como única
+   * señal (legacy path, backwards-compatible).
+   */
+  routeDataSource?: 'teltonika_gps' | 'maps_directions' | 'manual_declared';
+  /**
+   * ADR-028 — Fracción del trip cubierta por la fuente principal,
+   * [0..100]. Si está ausente, no se imprime en el cert.
+   */
+  coveragePct?: number;
+  /**
+   * ADR-028 — Nivel de certificación derivado al cierre del trip. Si está
+   * ausente, asumimos `primario_verificable` (legacy path); el cert sale
+   * con header "CERTIFICADO". Cuando está presente:
+   *   - `primario_verificable` → header "CERTIFICADO DE HUELLA DE CARBONO"
+   *   - `secundario_modeled` o `secundario_default` → header "REPORTE
+   *     ESTIMATIVO DE HUELLA DE CARBONO" + disclaimer prominente.
+   */
+  certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
+  /**
+   * ADR-028 — Factor de incertidumbre publicado en el cert. Si está
+   * presente y > 0, se imprime "X.XX ± Y.YY kg CO2e" junto al número
+   * principal. Decimal en [0, 1].
+   */
+  uncertaintyFactor?: number;
 }
 
 /**
