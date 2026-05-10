@@ -6,6 +6,7 @@ import {
   type EmpresaRow,
   type MembershipRow,
   type UserRow,
+  carrierMemberships,
   empresas,
   memberships,
   plans,
@@ -172,6 +173,17 @@ export async function onboardEmpresa(opts: {
     const membership = membershipInsert[0];
     if (!membership) {
       throw new Error('Insert membership returned no row');
+    }
+
+    // 8. Si la empresa opera como transportista, crear automáticamente
+    // carrier_memberships tier 'free' activa (ADR-031 §3). El consent
+    // T&Cs v2 queda null hasta que el carrier acepte vía UI.
+    if (empresa.isTransportista) {
+      await tx.insert(carrierMemberships).values({
+        empresaId: empresa.id,
+        tierSlug: 'free',
+        status: 'activa',
+      });
     }
 
     logger.info(

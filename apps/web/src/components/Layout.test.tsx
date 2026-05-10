@@ -19,6 +19,10 @@ vi.mock('../hooks/use-auth.js', () => ({
   signOutUser: vi.fn(async () => undefined),
 }));
 
+vi.mock('./ConsentTermsBanner.js', () => ({
+  ConsentTermsBanner: () => null,
+}));
+
 import { signOutUser } from '../hooks/use-auth.js';
 import { Layout } from './Layout.js';
 

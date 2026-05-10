@@ -5,6 +5,7 @@ import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useSwitchCompany } from '../hooks/use-switch-company.js';
 import { CompanySwitcher } from './CompanySwitcher.js';
+import { ConsentTermsBanner } from './ConsentTermsBanner.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -166,6 +167,7 @@ export function Layout({
           </div>
         )}
       </header>
+      <ConsentTermsBanner />
       <main className="flex-1">
         <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">{children}</div>
       </main>

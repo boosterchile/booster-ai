@@ -1,10 +1,10 @@
 import type { Logger } from '@booster-ai/logger';
 import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
-import { empresas, memberships, users } from '../db/schema.js';
+import { carrierMemberships, empresas, memberships, users } from '../db/schema.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 
 /**
@@ -218,6 +218,174 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         status: updated.status,
       },
     });
+  });
+
+  /**
+   * POST /me/consent/terms-v2 — registra la aceptación de T&Cs v2
+   * por parte del carrier (ADR-031 §4).
+   *
+   * Resuelve la empresa activa del user vía el header `X-Empresa-Id`
+   * (mismo patrón que el resto de endpoints). Si esa empresa tiene una
+   * `carrier_memberships` activa, popula `consent_terms_v2_aceptado_en`
+   * con `now()` + IP + user-agent.
+   *
+   * Idempotente: si ya hay consent (no-null), retorna 200 con el
+   * timestamp original (no se sobrescribe — la fecha del primer
+   * consent es la legalmente vinculante).
+   */
+  app.post('/consent/terms-v2', async (c) => {
+    const claims = c.get('firebaseClaims') as FirebaseClaims | undefined;
+    if (!claims) {
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
+
+    const empresaIdHeader = c.req.header('x-empresa-id');
+    if (!empresaIdHeader) {
+      return c.json(
+        {
+          error: 'no_active_empresa',
+          message: 'Header X-Empresa-Id requerido',
+        },
+        400,
+      );
+    }
+
+    // Verificar que el user pertenece a esa empresa con membership
+    // activa (RLS aplicación-enforced).
+    const userRows = await opts.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.firebaseUid, claims.uid))
+      .limit(1);
+    const user = userRows[0];
+    if (!user) {
+      return c.json({ error: 'user_not_found' }, 404);
+    }
+
+    const memshipRows = await opts.db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, user.id),
+          eq(memberships.empresaId, empresaIdHeader),
+          eq(memberships.status, 'activa'),
+        ),
+      )
+      .limit(1);
+    if (!memshipRows[0]) {
+      return c.json(
+        {
+          error: 'forbidden_no_membership',
+          message: 'No tienes membership activa en esta empresa',
+        },
+        403,
+      );
+    }
+
+    // Lookup carrier_memberships activa de la empresa.
+    const carrierMemRows = await opts.db
+      .select({
+        id: carrierMemberships.id,
+        consentTermsV2AceptadoEn: carrierMemberships.consentTermsV2AceptadoEn,
+      })
+      .from(carrierMemberships)
+      .where(
+        and(
+          eq(carrierMemberships.empresaId, empresaIdHeader),
+          eq(carrierMemberships.status, 'activa'),
+        ),
+      )
+      .limit(1);
+    const carrierMem = carrierMemRows[0];
+    if (!carrierMem) {
+      return c.json(
+        {
+          error: 'no_carrier_membership',
+          message:
+            'Tu empresa no tiene una membresía de transportista activa. Esta funcionalidad es solo para transportistas.',
+        },
+        409,
+      );
+    }
+
+    // Idempotencia: si ya hay consent, no sobrescribir.
+    if (carrierMem.consentTermsV2AceptadoEn) {
+      return c.json({
+        ok: true,
+        accepted_at: carrierMem.consentTermsV2AceptadoEn.toISOString(),
+        already_accepted: true,
+      });
+    }
+
+    const now = new Date();
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
+    const userAgent = c.req.header('user-agent') ?? null;
+
+    await opts.db
+      .update(carrierMemberships)
+      .set({
+        consentTermsV2AceptadoEn: now,
+        consentTermsV2Ip: ip,
+        consentTermsV2UserAgent: userAgent,
+        updatedAt: now,
+      })
+      .where(eq(carrierMemberships.id, carrierMem.id));
+
+    opts.logger.info(
+      {
+        userId: user.id,
+        empresaId: empresaIdHeader,
+        carrierMembershipId: carrierMem.id,
+        ip,
+      },
+      'consent terms-v2 aceptado',
+    );
+
+    return c.json({
+      ok: true,
+      accepted_at: now.toISOString(),
+      already_accepted: false,
+    });
+  });
+
+  /**
+   * GET /me/consent/terms-v2 — consulta si el carrier ya aceptó.
+   * Útil para que el frontend decida mostrar el banner.
+   */
+  app.get('/consent/terms-v2', async (c) => {
+    const empresaIdHeader = c.req.header('x-empresa-id');
+    if (!empresaIdHeader) {
+      return c.json({ accepted: false, reason: 'no_active_empresa' });
+    }
+
+    const carrierMemRows = await opts.db
+      .select({
+        consentTermsV2AceptadoEn: carrierMemberships.consentTermsV2AceptadoEn,
+      })
+      .from(carrierMemberships)
+      .where(
+        and(
+          eq(carrierMemberships.empresaId, empresaIdHeader),
+          eq(carrierMemberships.status, 'activa'),
+        ),
+      )
+      .limit(1);
+    const carrierMem = carrierMemRows[0];
+    if (!carrierMem) {
+      // No es carrier → no aplica T&Cs v2; reportar accepted=true para
+      // que el frontend no muestre banner a empresas no-transportistas.
+      return c.json({ accepted: true, reason: 'not_a_carrier' });
+    }
+
+    if (carrierMem.consentTermsV2AceptadoEn) {
+      return c.json({
+        accepted: true,
+        accepted_at: carrierMem.consentTermsV2AceptadoEn.toISOString(),
+      });
+    }
+    return c.json({ accepted: false, reason: 'pending' });
   });
 
   return app;

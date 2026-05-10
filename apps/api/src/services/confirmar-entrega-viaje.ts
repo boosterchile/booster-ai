@@ -42,6 +42,7 @@ import {
   emitirCertificadoViaje,
 } from './emitir-certificado-viaje.js';
 import { generarCoachingViaje } from './generar-coaching-viaje.js';
+import { liquidarTrip } from './liquidar-trip.js';
 
 /**
  * Status del trip en los que es válido confirmar entrega. Si está
@@ -236,6 +237,46 @@ export async function confirmarEntregaViaje(opts: {
         { err, tripId },
         'generarCoachingViaje fallo — sin coaching persistido para este trip',
       );
+    }
+
+    // Pricing v2 — liquidación post-entrega (ADR-031 §5). Fire-and-forget:
+    // si falla, log error pero NO revierte el deliveredAt. El job futuro
+    // de "reconciliar liquidaciones pendientes" puede tomar trips
+    // entregados sin liquidación. Idempotente vía UNIQUE en asignacion_id.
+    const asgForLiq = await db
+      .select({ id: assignments.id })
+      .from(assignments)
+      .where(eq(assignments.tripId, tripId))
+      .limit(1);
+    const assignmentIdForLiq = asgForLiq[0]?.id;
+    if (assignmentIdForLiq) {
+      liquidarTrip({
+        db,
+        logger,
+        assignmentId: assignmentIdForLiq,
+        pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+      })
+        .then((res) => {
+          if (res.status === 'liquidacion_creada' || res.status === 'ya_liquidada') {
+            logger.info(
+              {
+                tripId,
+                assignmentId: assignmentIdForLiq,
+                status: res.status,
+                liquidacionId: res.liquidacionId,
+              },
+              'liquidación post-entrega',
+            );
+          } else {
+            logger.debug({ tripId, status: res.status }, 'liquidación post-entrega skipped');
+          }
+        })
+        .catch((err) => {
+          logger.error(
+            { err, tripId, assignmentId: assignmentIdForLiq },
+            'liquidarTrip falló — revisar manualmente o esperar job de reconciliación',
+          );
+        });
     }
 
     emitirCertificadoViaje({ db, logger, tripId, config })
