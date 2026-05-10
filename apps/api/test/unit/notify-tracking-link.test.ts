@@ -36,6 +36,7 @@ interface JoinRow {
   trackingCode: string;
   originRegion: string | null;
   destRegion: string | null;
+  consigneeWhatsapp: string | null;
   shipperUserId: string | null;
   shipperWhatsapp: string | null;
 }
@@ -74,6 +75,7 @@ const baseRow = (overrides: Partial<JoinRow> = {}): JoinRow => ({
   trackingCode: 'BOO-XYZ987',
   originRegion: 'XIII',
   destRegion: 'IV',
+  consigneeWhatsapp: null, // default: sin consignee opt-in
   shipperUserId: '00000000-0000-0000-0000-000000000b02',
   shipperWhatsapp: '+56912345678',
   ...overrides,
@@ -156,11 +158,15 @@ describe('notifyTrackingLinkAtAssignment', () => {
     expect(result.reason).toBe('no_token');
   });
 
-  it('skipea si shipperUserId null (trip sin createdByUserId)', async () => {
+  it('skipea si shipperUserId null + shipperWhatsapp null + sin consignee → no_owner', async () => {
+    // En la práctica: leftJoin users on createdByUserId IS NULL → todos los
+    // campos del user vienen NULL. Ambas columnas se mueven juntas.
     const { notifyTrackingLinkAtAssignment } = await import(
       '../../src/services/notify-tracking-link.js'
     );
-    const { db } = makeDbStub({ row: baseRow({ shipperUserId: null }) });
+    const { db } = makeDbStub({
+      row: baseRow({ shipperUserId: null, shipperWhatsapp: null, consigneeWhatsapp: null }),
+    });
     const result = await notifyTrackingLinkAtAssignment(
       {
         db,
@@ -174,7 +180,7 @@ describe('notifyTrackingLinkAtAssignment', () => {
     expect(result.reason).toBe('no_owner');
   });
 
-  it('skipea si shipper sin whatsapp_e164', async () => {
+  it('skipea si shipper sin whatsapp_e164 (con shipperUserId set) → no_whatsapp', async () => {
     const { notifyTrackingLinkAtAssignment } = await import(
       '../../src/services/notify-tracking-link.js'
     );
@@ -192,7 +198,7 @@ describe('notifyTrackingLinkAtAssignment', () => {
     expect(result.reason).toBe('no_whatsapp');
   });
 
-  it('envía con variables correctas (1=tracking_code, 2=origen, 3=destino, 4=token)', async () => {
+  it('envía con variables correctas (1=tracking_code, 2=origen, 3=destino, 4=token) — fallback shipper', async () => {
     const { notifyTrackingLinkAtAssignment } = await import(
       '../../src/services/notify-tracking-link.js'
     );
@@ -217,6 +223,7 @@ describe('notifyTrackingLinkAtAssignment', () => {
     );
     expect(result.skipped).toBe(false);
     expect(result.twilioMessageSid).toBe('SM_real');
+    expect(result.recipient).toBe('shipper');
     expect(sendContent).toHaveBeenCalledWith({
       to: '+56912345678',
       contentSid: VALID_SID,
@@ -227,6 +234,89 @@ describe('notifyTrackingLinkAtAssignment', () => {
         '4': TOKEN,
       },
     });
+  });
+
+  it('PR-L3b — consignee opt-in: envía DIRECTO al consignee (no al shipper)', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db } = makeDbStub({
+      row: baseRow({ consigneeWhatsapp: '+56987654321' }),
+    });
+    const sendContent = vi.fn().mockResolvedValue({
+      sid: 'SM_consignee',
+      status: 'queued',
+      to: 'whatsapp:+56987654321',
+      from: 'whatsapp:+19383365293',
+      body: '...',
+      date_created: '2026-05-10T20:00:00Z',
+    });
+    const twilio = makeTwilioStub({ sendContent });
+    const result = await notifyTrackingLinkAtAssignment(
+      {
+        db,
+        logger: noopLogger,
+        twilioClient: twilio,
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(result.skipped).toBe(false);
+    expect(result.recipient).toBe('consignee');
+    // El destino es el phone del consignee, NO del shipper.
+    expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56987654321' }));
+  });
+
+  it('PR-L3b — consignee + shipper ambos presentes: gana consignee', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db } = makeDbStub({
+      row: baseRow({
+        consigneeWhatsapp: '+56987654321',
+        shipperWhatsapp: '+56912345678',
+      }),
+    });
+    const sendContent = vi.fn().mockResolvedValue({
+      sid: 'SM_x',
+      status: 'queued',
+      to: 'x',
+      from: 'x',
+      body: '',
+      date_created: 'x',
+    });
+    const twilio = makeTwilioStub({ sendContent });
+    const result = await notifyTrackingLinkAtAssignment(
+      {
+        db,
+        logger: noopLogger,
+        twilioClient: twilio,
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(result.recipient).toBe('consignee');
+    expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56987654321' }));
+  });
+
+  it('PR-L3b — sin consignee ni shipper whatsapp: skip no_whatsapp', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db } = makeDbStub({
+      row: baseRow({ consigneeWhatsapp: null, shipperWhatsapp: null }),
+    });
+    const result = await notifyTrackingLinkAtAssignment(
+      {
+        db,
+        logger: noopLogger,
+        twilioClient: makeTwilioStub(),
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('no_whatsapp');
   });
 
   it('regiones unknown se mapean a placeholder em-dash', async () => {

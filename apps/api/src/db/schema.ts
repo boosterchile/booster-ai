@@ -556,6 +556,15 @@ export const trips = pgTable(
     pickupWindowEnd: timestamp('recogida_ventana_fin', { withTimezone: true }),
     /** Precio sugerido por generador de carga o admin. Null si pricing-engine sugerirá. */
     proposedPriceClp: integer('precio_propuesto_clp'),
+    /**
+     * Phase 5 PR-L3b — Datos opcionales del consignee. Si presentes,
+     * el WhatsApp tracking link se envía DIRECTO al destinatario al
+     * asignar (vs forwarding manual del shipper). Opt-in deliberado
+     * por privacy: shipper decide si quiere experiencia Uber-like
+     * para su recipient.
+     */
+    consigneeName: varchar('destinatario_nombre', { length: 100 }),
+    consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),

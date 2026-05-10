@@ -7,12 +7,18 @@
  *   - Resumen de ruta (origen → destino)
  *   - Botón "Ver seguimiento" → https://app.boosterchile.com/tracking/<token>
  *
- * **Por qué al shipper y NO al consignee directamente** (v1):
- *   El schema de `trips` aún NO tiene `consignee_phone` field. PR-L3b
- *   agregará el campo + UI de captura para enviar al destinatario
- *   final. Mientras tanto, el shipper recibe el link y lo forwarda
- *   manualmente a su consignee — patrón aceptable para una primera
- *   iteración (el shipper conoce a su consignee y puede compartir).
+ * **Recipient resolution** (Phase 5 PR-L3b):
+ *   Si el trip tiene `consigneeWhatsappE164` (capturado opt-in en el
+ *   form de crear carga), el link va DIRECTO al consignee — patrón
+ *   "Uber-like" donde el destinatario sigue el envío sin involucrar
+ *   al shipper.
+ *
+ *   Si el campo está NULL (default — shipper no quiso compartir el
+ *   phone del recipient), fallback al shipper user (createdByUserId).
+ *   El shipper forwarda manualmente.
+ *
+ *   Esta política se reporta en el resultado vía `recipient` para
+ *   audit/analytics.
  *
  * **Idempotencia**: igual que notify-offer.ts, marcar via columna
  * `tracking_link_enviado_en` en assignments. Mismo patrón anti-spam:
@@ -72,6 +78,7 @@ export async function notifyTrackingLinkAtAssignment(
 
   // Cargar assignment + trip + shipper user en un solo round-trip.
   // El shipper user es `trips.createdByUserId` (quien creó la carga).
+  // El consignee phone (opt-in) viene de trips directamente.
   const rows = await db
     .select({
       assignmentId: assignments.id,
@@ -79,6 +86,7 @@ export async function notifyTrackingLinkAtAssignment(
       trackingCode: trips.trackingCode,
       originRegion: trips.originRegionCode,
       destRegion: trips.destinationRegionCode,
+      consigneeWhatsapp: trips.consigneeWhatsappE164,
       shipperUserId: trips.createdByUserId,
       shipperWhatsapp: users.whatsappE164,
     })
@@ -103,18 +111,26 @@ export async function notifyTrackingLinkAtAssignment(
     return { assignmentId, skipped: true, reason: 'no_token' };
   }
 
-  if (!row.shipperUserId) {
-    logger.info(
-      { assignmentId },
-      'notifyTrackingLinkAtAssignment skipped — trip sin createdByUserId',
-    );
-    return { assignmentId, skipped: true, reason: 'no_owner' };
-  }
+  // Phase 5 PR-L3b — recipient resolution: preferir consignee si opt-in.
+  // El consignee es siempre el destinatario más relevante para tracking;
+  // el shipper queda como fallback si el campo está NULL.
+  const recipient: { phone: string; role: 'consignee' | 'shipper' } | null = row.consigneeWhatsapp
+    ? { phone: row.consigneeWhatsapp, role: 'consignee' }
+    : row.shipperWhatsapp
+      ? { phone: row.shipperWhatsapp, role: 'shipper' }
+      : null;
 
-  if (!row.shipperWhatsapp) {
+  if (!recipient) {
+    if (!row.shipperUserId) {
+      logger.info(
+        { assignmentId },
+        'notifyTrackingLinkAtAssignment skipped — sin consignee phone y trip sin createdByUserId',
+      );
+      return { assignmentId, skipped: true, reason: 'no_owner' };
+    }
     logger.info(
       { assignmentId, shipperUserId: row.shipperUserId },
-      'notifyTrackingLinkAtAssignment skipped — shipper user sin whatsapp_e164',
+      'notifyTrackingLinkAtAssignment skipped — sin consignee phone y shipper user sin whatsapp_e164',
     );
     return { assignmentId, skipped: true, reason: 'no_whatsapp' };
   }
@@ -128,7 +144,7 @@ export async function notifyTrackingLinkAtAssignment(
   });
 
   const response = await twilioClient.sendContent({
-    to: row.shipperWhatsapp,
+    to: recipient.phone,
     contentSid: contentSidTracking,
     contentVariables: variables,
   });
@@ -136,12 +152,17 @@ export async function notifyTrackingLinkAtAssignment(
   logger.info(
     {
       assignmentId,
-      shipperUserId: row.shipperUserId,
+      recipientRole: recipient.role,
       trackingCode: row.trackingCode,
       twilioSid: response.sid,
     },
     'notifyTrackingLinkAtAssignment sent',
   );
 
-  return { assignmentId, skipped: false, twilioMessageSid: response.sid };
+  return {
+    assignmentId,
+    skipped: false,
+    twilioMessageSid: response.sid,
+    recipient: recipient.role,
+  };
 }

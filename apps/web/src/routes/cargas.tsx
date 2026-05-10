@@ -643,6 +643,13 @@ interface TripFormValues {
   pickup_start_local: string;
   pickup_end_local: string;
   proposed_price_clp: string;
+  /**
+   * Phase 5 PR-L3c — Datos opcionales del destinatario. Si el shipper
+   * los llena, el WhatsApp tracking link va DIRECTO al consignee al
+   * asignar (vs forwarding manual). Privacy-first: opt-in.
+   */
+  consignee_name: string;
+  consignee_phone_e164: string;
 }
 
 const EMPTY_FORM: TripFormValues = {
@@ -657,6 +664,8 @@ const EMPTY_FORM: TripFormValues = {
   pickup_start_local: '',
   pickup_end_local: '',
   proposed_price_clp: '',
+  consignee_name: '',
+  consignee_phone_e164: '',
 };
 
 function tripFormToBody(v: TripFormValues): Record<string, unknown> {
@@ -686,6 +695,17 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
     proposed_price_clp: v.proposed_price_clp.trim()
       ? Number.parseInt(v.proposed_price_clp, 10)
       : null,
+    // Phase 5 PR-L3c — consignee opt-in. Solo incluir el bloque si el
+    // shipper llenó al menos un campo; si ambos vacíos, no enviamos
+    // `consignee` (el zod schema lo permite optional).
+    ...(v.consignee_name.trim() || v.consignee_phone_e164.trim()
+      ? {
+          consignee: {
+            ...(v.consignee_name.trim() ? { name: v.consignee_name.trim() } : {}),
+            ...(v.consignee_phone_e164.trim() ? { phone_e164: v.consignee_phone_e164.trim() } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -706,6 +726,8 @@ const SCHEMA_PATH_TO_FIELD: Record<string, keyof TripFormValues> = {
   'pickup_window.start_at': 'pickup_start_local',
   'pickup_window.end_at': 'pickup_end_local',
   proposed_price_clp: 'proposed_price_clp',
+  'consignee.name': 'consignee_name',
+  'consignee.phone_e164': 'consignee_phone_e164',
 };
 
 type TripFieldErrors = Partial<Record<keyof TripFormValues, string>>;
@@ -1043,6 +1065,48 @@ function TripForm({
                 {...register('proposed_price_clp')}
                 className={fieldInputClass(!!errors.proposed_price_clp)}
                 placeholder="Déjalo vacío si quieres que el sistema sugiera un precio"
+              />
+            )}
+          />
+        </div>
+      </section>
+
+      {/* Phase 5 PR-L3c — sección consignee opcional. */}
+      <section>
+        <h2 className="font-semibold text-lg text-neutral-900">Destinatario (opcional)</h2>
+        <p className="mt-1 text-neutral-600 text-sm">
+          Si llenas estos datos, el destinatario recibirá el link de seguimiento por WhatsApp
+          automáticamente al asignar el viaje. Si los dejas vacíos, recibirás el link tú y se lo
+          puedes reenviar.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label="Nombre del destinatario"
+            error={errors.consignee_name?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                maxLength={100}
+                {...register('consignee_name')}
+                className={fieldInputClass(!!errors.consignee_name)}
+                placeholder="Ej. María Pérez"
+              />
+            )}
+          />
+          <FormField
+            label="WhatsApp del destinatario"
+            error={errors.consignee_phone_e164?.message}
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="tel"
+                inputMode="tel"
+                {...register('consignee_phone_e164')}
+                className={fieldInputClass(!!errors.consignee_phone_e164)}
+                placeholder="+56912345678"
               />
             )}
           />
