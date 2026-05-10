@@ -16,6 +16,7 @@
     "@booster-ai/carbon-calculator": "workspace:*",
     "@booster-ai/certificate-generator": "workspace:*",
     "@booster-ai/config": "workspace:*",
+    "@booster-ai/driver-scoring": "workspace:*",
     "@booster-ai/logger": "workspace:*",
     "@booster-ai/matching-algorithm": "workspace:*",
     "@booster-ai/notification-fan-out": "workspace:*",

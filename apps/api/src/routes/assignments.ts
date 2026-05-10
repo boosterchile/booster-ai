@@ -24,6 +24,7 @@ import {
   assignments,
   empresas as empresasTable,
   telemetryPoints,
+  tripMetrics,
   trips,
   users as usersTable,
   vehicles,
@@ -292,6 +293,74 @@ export function createAssignmentsRoutes(opts: {
       ok: true,
       already_delivered: result.alreadyDelivered,
       delivered_at: result.deliveredAt.toISOString(),
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/behavior-score — Phase 2 PR-I4
+  //
+  // Devuelve el behavior score persistido en metricas_viaje del trip
+  // asociado al assignment. El score se calcula post-entrega
+  // (calcular-score-conduccion-viaje.ts) consumiendo eventos de
+  // eventos_conduccion_verde.
+  //
+  // Estados:
+  //   - score persistido (numérico) → 200 con shape completo
+  //   - score NULL (trip sin Teltonika o no entregado todavía) → 200
+  //     con score: null + status: 'no_disponible' para que la UI
+  //     muestre estado apropiado sin tirar 404
+  //   - assignment no existe / no es del carrier → 404 / 403
+  // ---------------------------------------------------------------------
+  app.get('/:id/behavior-score', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const [row] = await opts.db
+      .select({
+        assignmentEmpresaId: assignments.empresaId,
+        tripId: assignments.tripId,
+        score: tripMetrics.behaviorScore,
+        nivel: tripMetrics.behaviorScoreNivel,
+        breakdown: tripMetrics.behaviorScoreBreakdown,
+        calculatedAt: tripMetrics.calculatedAt,
+      })
+      .from(assignments)
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, assignments.tripId))
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (row.assignmentEmpresaId !== empresaId) {
+      return c.json({ error: 'forbidden', code: 'assignment_forbidden' }, 403);
+    }
+
+    if (row.score === null || row.score === undefined) {
+      return c.json({
+        trip_id: row.tripId,
+        score: null,
+        nivel: null,
+        breakdown: null,
+        status: 'no_disponible',
+        // Razón probable para la UI: cliente sin Teltonika activo, o
+        // trip todavía no entregado. La UI muestra "Activa Teltonika
+        // para ver behavior score" según el tier del transportista.
+        reason: 'sin_eventos_o_sin_telemetria',
+      });
+    }
+
+    return c.json({
+      trip_id: row.tripId,
+      score: Number(row.score),
+      nivel: row.nivel,
+      breakdown: row.breakdown,
+      calculated_at: row.calculatedAt,
+      status: 'disponible',
     });
   });
 
