@@ -3,10 +3,52 @@
 Procedimiento para cargar (o rotar) los Content SIDs de templates
 WhatsApp aprobados por Meta. Los secrets viven en Secret Manager:
 
-| Secret | Uso | Friendly name Twilio |
-|---|---|---|
-| `content-sid-offer-new` | Notificar carrier de nueva oferta (B.8) | `offer_new_v1` |
-| `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` |
+| Secret | Uso | Friendly name Twilio | SID actual |
+|---|---|---|---|
+| `content-sid-offer-new` | Notificar carrier de nueva oferta (B.8) | `offer_new_v1` | `HXa30e82ea818a72d08bb12a4214610a86` |
+| `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` | _pending Meta_ |
+| `content-sid-tracking` | Link público de tracking al shipper al asignar (Phase 5 PR-L3) | `tracking_link_v1` | `HXac1ef21ed9423258a2c38dad02f31e41` (submitted Meta 2026-05-10) |
+
+### Body de `tracking_link_v1` (creado vía Twilio Content API 2026-05-10)
+
+```
+🚛 Booster AI — Tu carga {{1}} ya tiene transportista asignado.
+
+De: {{2}}
+A: {{3}}
+
+Sigue el progreso del viaje en tiempo real. No necesitas registrarte.
+```
+
+**Botón URL**: `https://app.boosterchile.com/tracking/{{4}}`
+
+Variables (1-based):
+- `{{1}}` → tracking_code (e.g. `BOO-XYZ987`)
+- `{{2}}` → origen region label (e.g. `Metropolitana`)
+- `{{3}}` → destino region label (e.g. `Coquimbo`)
+- `{{4}}` → public tracking token UUID v4 (embedido SOLO en URL del botón, no en body)
+
+**Categoría Meta**: Utility (informa post-acción del usuario — su carga fue asignada).
+
+**Status approval** (consultar):
+```bash
+curl -s -u "$(gcloud secrets versions access latest --secret=twilio-account-sid):$(gcloud secrets versions access latest --secret=twilio-auth-token)" \
+  "https://content.twilio.com/v1/Content/HXac1ef21ed9423258a2c38dad02f31e41/ApprovalRequests" \
+  | python3 -m json.tool
+```
+
+Cuando `whatsapp.status == "approved"`, cargar el SID:
+```bash
+echo -n "HXac1ef21ed9423258a2c38dad02f31e41" \
+  | gcloud secrets versions add content-sid-tracking \
+      --data-file=- \
+      --project=booster-ai-494222
+
+gcloud run services update booster-ai-api \
+  --region=southamerica-west1 \
+  --update-annotations=last-secret-rotation=$(date +%s) \
+  --project=booster-ai-494222
+```
 
 ## Cuándo usar este runbook
 

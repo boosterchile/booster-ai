@@ -25,6 +25,7 @@ import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
+import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { configureWebPush } from './services/web-push.js';
 
 export interface CreateServerOptions {
@@ -42,6 +43,11 @@ export interface CreateServerOptions {
    * notificaciones reales.
    */
   notify?: NotifyOfferDeps;
+  /**
+   * Phase 5 PR-L3 — Deps del dispatcher del link público de tracking
+   * al shipper (post-accept oferta). Comparte twilioClient con `notify`.
+   */
+  notifyTrackingLink?: NotifyTrackingLinkDeps;
 }
 
 export function createServer(opts: CreateServerOptions): Hono {
@@ -191,7 +197,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Mismo chain firebaseAuth + userContext.
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware);
-    app.route('/offers', createOfferRoutes({ db: opts.db, logger }));
+    app.route(
+      '/offers',
+      createOfferRoutes({
+        db: opts.db,
+        logger,
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
+      }),
+    );
 
     // Admin jobs — endpoints internos disparados por Cloud Scheduler
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del

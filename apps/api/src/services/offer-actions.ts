@@ -12,6 +12,10 @@ import {
   trips,
 } from '../db/schema.js';
 import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
+import {
+  type NotifyTrackingLinkDeps,
+  notifyTrackingLinkAtAssignment,
+} from './notify-tracking-link.js';
 
 /**
  * Errores tipados para mapear a HTTP status en el route layer.
@@ -74,8 +78,14 @@ export async function acceptOffer(opts: {
   offerId: string;
   empresaId: string;
   userId: string;
+  /**
+   * Phase 5 PR-L3 — Deps para enviar el link público de tracking al
+   * shipper post-commit fire-and-forget. Si undefined, no se intenta
+   * el envío (dev local, tests).
+   */
+  notifyTrackingLink?: NotifyTrackingLinkDeps;
 }): Promise<AcceptOfferResult> {
-  const { db, logger, offerId, empresaId, userId } = opts;
+  const { db, logger, offerId, empresaId, userId, notifyTrackingLink } = opts;
 
   return await db
     .transaction(async (tx) => {
@@ -231,6 +241,24 @@ export async function acceptOffer(opts: {
           'fallo calcular metricas estimadas tras accept (asignacion creada igual; recalcular despues)',
         );
       }
+
+      // Phase 5 PR-L3 — enviar link público de tracking al shipper.
+      // Fire-and-forget: si Twilio falla, el accept de oferta ya está
+      // commiteado y no lo revertimos. Skip silencioso si Meta aún no
+      // aprobó el template (Content SID con placeholder ROTATE_ME).
+      if (notifyTrackingLink) {
+        try {
+          await notifyTrackingLinkAtAssignment(notifyTrackingLink, {
+            assignmentId: result.assignment.id,
+          });
+        } catch (err) {
+          logger.error(
+            { err, assignmentId: result.assignment.id },
+            'fallo despachar tracking link tras accept (sin impacto en assignment)',
+          );
+        }
+      }
+
       return result;
     });
 }

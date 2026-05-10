@@ -7,6 +7,7 @@ import { runMigrations } from './db/migrator.js';
 import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
+import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 
 const logger = createLogger({
   service: config.SERVICE_NAME,
@@ -57,6 +58,11 @@ async function main(): Promise<void> {
       'CONTENT_SID_OFFER_NEW no seteado — el template de oferta nueva no está aprobado todavía. Notificaciones serán no-op aunque Twilio esté configurado.',
     );
   }
+  if (!config.CONTENT_SID_TRACKING) {
+    logger.warn(
+      'CONTENT_SID_TRACKING no seteado — el template tracking_link_v1 no está aprobado todavía (submitted Meta 2026-05-10). Tracking link al shipper será no-op hasta cargar el SID real.',
+    );
+  }
 
   const notify: NotifyOfferDeps = {
     db,
@@ -66,7 +72,17 @@ async function main(): Promise<void> {
     webAppUrl: config.WEB_APP_URL,
   };
 
-  const app = createServer({ db, pool, firebaseAuth, logger, notify });
+  // Phase 5 PR-L3 — wire del dispatcher de tracking link al shipper.
+  // Reusa el mismo twilioClient que `notify` (un solo Twilio sender,
+  // varios templates aprobados).
+  const notifyTrackingLink: NotifyTrackingLinkDeps = {
+    db,
+    logger,
+    twilioClient,
+    contentSidTracking: config.CONTENT_SID_TRACKING ?? null,
+  };
+
+  const app = createServer({ db, pool, firebaseAuth, logger, notify, notifyTrackingLink });
 
   const server = serve(
     {

@@ -142,6 +142,11 @@ module "service_api" {
     # Ver docs/runbooks/load-content-sids.md.
     CONTENT_SID_OFFER_NEW   = google_secret_manager_secret.secrets["content-sid-offer-new"].secret_id
     CONTENT_SID_CHAT_UNREAD = google_secret_manager_secret.secrets["content-sid-chat-unread"].secret_id
+    # Phase 5 PR-L3 — Twilio template `tracking_link_v1` para enviar el
+    # link público de tracking al shipper al asignar el trip. Hasta que
+    # Meta apruebe (submitted 2026-05-10, SID HXac1ef21ed9423258a2c38dad02f31e41),
+    # el secret mantiene placeholder y notify-tracking-link skipea con warn.
+    CONTENT_SID_TRACKING = google_secret_manager_secret.secrets["content-sid-tracking"].secret_id
 
     # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
     # Authorization header al push service del browser). La pública se

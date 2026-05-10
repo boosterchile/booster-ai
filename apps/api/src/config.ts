@@ -199,6 +199,27 @@ const apiEnvSchema = commonEnvSchema
     ),
 
     /**
+     * Content SID del template Twilio `tracking_link_v1` (Phase 5 PR-L3).
+     * Body: "Tu carga {{1}} ya tiene transportista" + URL con {{4}} =
+     * token UUID v4. Variables (1-based):
+     *   {{1}} → tracking_code
+     *   {{2}} → origin region label (ej. "Metropolitana")
+     *   {{3}} → destination region label (ej. "Coquimbo")
+     *   {{4}} → public tracking token (UUID v4 opaco)
+     *
+     * Optional. Mientras Meta aprueba el template (submitted 2026-05-10,
+     * SID HXac1ef21ed9423258a2c38dad02f31e41), notify-tracking-link
+     * loggea warn y skipea sin afectar el flow de aceptar oferta.
+     */
+    CONTENT_SID_TRACKING: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
      * SA email autorizado a invocar /admin/jobs/* (P3.d Cloud Scheduler
      * cron de fallback WhatsApp). Cloud Scheduler firma OIDC con este SA;
      * el middleware valida claims.email === este valor.

@@ -36,7 +36,16 @@ const rejectBodySchema = z.object({
   reason: z.string().min(1).max(500).optional(),
 });
 
-export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
+export function createOfferRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * Phase 5 PR-L3 — Deps para el dispatcher de tracking link al
+   * shipper post-accept. Si no se pasa, el accept funciona pero no
+   * envía WhatsApp (fallback dev local).
+   */
+  notifyTrackingLink?: import('../services/notify-tracking-link.js').NotifyTrackingLinkDeps;
+}) {
   const app = new Hono();
 
   // GET /offers/mine?status=pendiente
@@ -126,6 +135,7 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
         offerId,
         empresaId: active.empresa.id,
         userId: userContext.user.id,
+        ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
       });
       return c.json(
         {
