@@ -210,6 +210,21 @@ const apiEnvSchema = commonEnvSchema
       .string()
       .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido')
       .optional(),
+
+    /**
+     * API key para Google Routes API (Phase 1 — eco route suggestion).
+     *
+     * IMPORTANTE: esta key DEBE estar restringida a los servidores de
+     * Cloud Run del backend, NO al dominio app.boosterchile.com — Routes
+     * API se llama server-to-server, no desde el browser. La restricción
+     * en GCP Console → APIs → Credentials → "Booster Routes - API
+     * Backend" debe ser por IP o por SA, nunca HTTP referrer.
+     *
+     * Optional: si está ausente, los servicios que la usan caen al
+     * fallback de estimarDistanciaKm (tabla pre-computada Chile) y NO
+     * generan sugerencia de eco-route. Útil en dev sin quota Routes API.
+     */
+    GOOGLE_ROUTES_API_KEY: z.string().min(1).optional(),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
