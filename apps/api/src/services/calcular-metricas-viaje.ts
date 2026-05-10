@@ -1,7 +1,10 @@
 import {
   type ResultadoEmisiones,
+  type RouteDataSource,
   type TipoCombustible,
   calcularEmisionesViaje,
+  calcularFactorIncertidumbre,
+  derivarNivelCertificacion,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
@@ -120,6 +123,32 @@ export async function calcularMetricasEstimadas(opts: {
       .limit(1);
     const isInitialCalculation = existing.length === 0;
 
+    // ADR-028 — derivar fuente de datos y nivel de certificación.
+    //
+    // En esta fase pre-entrega no hay telemetría real disponible — la
+    // distancia viene de `estimarDistanciaKm` (tabla Chile) y se trata
+    // conceptualmente como ruta modelada Maps-style. Si en Phase 1 se
+    // reemplaza por Routes API, la fuente sigue siendo `maps_directions`.
+    //
+    // `coveragePct = 0` porque no hay pings GPS aún; cuando se cierre el
+    // trip y telemetry-processor calcule la cobertura real, este servicio
+    // se llamará de nuevo (post-entrega) y los valores se actualizarán.
+    const routeDataSource: RouteDataSource = 'maps_directions';
+    const coveragePct = 0;
+    const certificationLevel = derivarNivelCertificacion({
+      precisionMethod: emisiones.metodoPrecision,
+      routeDataSource,
+      coveragePct,
+    });
+    const uncertaintyFactor = calcularFactorIncertidumbre({
+      nivelCertificacion: certificationLevel,
+      coveragePct,
+      // En modo estimado pre-entrega no comparamos contra Routes API, así
+      // que asumimos que el tipo declarado matchea (no penalizamos sin
+      // evidencia). La verificación real ocurre post-entrega.
+      vehicleTypeMatchesRoutesApi: true,
+    });
+
     const valuesToWrite = {
       distanceKmEstimated: emisiones.distanciaKm.toString(),
       carbonEmissionsKgco2eEstimated: emisiones.emisionesKgco2eWtw.toString(),
@@ -129,6 +158,11 @@ export async function calcularMetricasEstimadas(opts: {
       glecVersion: emisiones.versionGlec,
       emissionFactorUsed: emisiones.factorEmisionUsado.toString(),
       source: 'modelado',
+      // ADR-028 — campos nuevos del modelo dual.
+      routeDataSource,
+      coveragePct: coveragePct.toString(),
+      certificationLevel,
+      uncertaintyFactor: uncertaintyFactor.toString(),
       calculatedAt: new Date(),
     };
 

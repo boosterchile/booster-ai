@@ -228,6 +228,16 @@ export async function emitirCertificadoViaje(opts: {
       emissionFactorUsado: numOrNull(metrics.emissionFactorUsed) ?? 0,
       fuenteFactores: 'SEC Chile 2024 + GLEC v3.0',
       calculatedAt: metrics.calculatedAt ?? new Date(),
+      // ADR-028 — dual-source data fields. Si están NULL (trips legacy
+      // pre-migración 0009 que no fueron recalculados), el cert-generator
+      // cae al path legacy sin disclaimer. Una vez que el cron de recálculo
+      // pase sobre todos los trips, estos campos siempre estarán presentes.
+      ...(metrics.routeDataSource ? { routeDataSource: metrics.routeDataSource } : {}),
+      ...(metrics.coveragePct !== null ? { coveragePct: numOrNull(metrics.coveragePct) ?? 0 } : {}),
+      ...(metrics.certificationLevel ? { certificationLevel: metrics.certificationLevel } : {}),
+      ...(metrics.uncertaintyFactor !== null
+        ? { uncertaintyFactor: numOrNull(metrics.uncertaintyFactor) ?? 0 }
+        : {}),
     },
     empresaShipper: {
       id: shipper.id,
