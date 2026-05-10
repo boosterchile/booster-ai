@@ -202,8 +202,8 @@ flota, esta simplificación es **estándar y aceptable**. Sub-reporta
 emisiones cuando hay backhaul vacío, pero la convención GLEC permite usar
 la "shipment-leg-only methodology" si los datos no están.
 
-**Recomendación**: documentar explícitamente esta decisión en el ADR-016
-propuesto. No bloquea TRL 10 mientras se reporte la metodología.
+**Recomendación**: documentar explícitamente esta decisión en el ADR-021
+(ex-016) propuesto. No bloquea TRL 10 mientras se reporte la metodología.
 
 ---
 
@@ -474,7 +474,7 @@ WHERE certificate_issued_at IS NOT NULL;
 - [ ] Decidir si involucrar asesor GLEC externo (Smart Freight Centre tiene
       partners certificados en LATAM) para validar antes del cambio en
       producción. Costo aproximado USD 2-5k según alcance.
-- [ ] Si se acepta, abrir ADR-016 "Migración a factores GLEC v3.0
+- [ ] Si se acepta, abrir ADR-021 (ex-016) "Migración a factores GLEC v3.0
       validados internacionalmente" que supersede el comportamiento del
       ADR-001 sobre carbon-calculator.
 - [ ] Plan de comunicación a clientes con certificados emitidos.

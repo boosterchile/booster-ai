@@ -1,11 +1,11 @@
-# ADR-017 — Metodología de cálculo de emisiones (incluye evitadas) y factor WTW diesel B5 Chile
+# ADR-022 — Metodología de cálculo de emisiones (incluye evitadas) y factor WTW diesel B5 Chile
 
 **Status**: Accepted
 **Date**: 2026-05-05
 **Decider**: Felipe Vicencio (Product Owner)
 **Related**:
 - [ADR-005 Telemetría IoT](./005-telemetry-iot.md)
-- [ADR-016 GLEC v3 compliance](./016-glec-v3-compliance.md)
+- [ADR-021 GLEC v3 compliance](./021-glec-v3-compliance.md)
 - [docs/research/013-glec-audit.md](../research/013-glec-audit.md) — auditoría QA cerrada
 - [docs/market-research/004-decisiones-bloqueantes-resueltas.md §D1](../market-research/004-decisiones-bloqueantes-resueltas.md)
 
@@ -63,7 +63,7 @@ Donde:
 3. **El certificado de evitado es separado del certificado de emisiones causadas**. Un viaje produce dos certificados PADES: uno de emisiones (Scope 3 upstream/downstream del shipper) y uno de evitadas (claim Scope 3 reduction del shipper).
 4. **El claim del shipper sobre emisiones evitadas es informativo, no es un offset**. El certificado lo dice explícitamente: "Estas emisiones evitadas representan optimización logística verificada, no constituyen un crédito de carbono compensable ni un offset bajo VCS, GS, ACR ni CDM."
 
-### 4. Tres modos de cálculo (ratificados de ADR-016)
+### 4. Tres modos de cálculo (ratificados de ADR-021)
 
 | Modo | Input requerido | Incertidumbre típica | Cuándo aplica |
 |---|---|---|---|
@@ -86,7 +86,7 @@ El modo se registra en `trip_requests.precision_method`.
 
 - Certificados emitidos pre-corrección con factor 3.77 sobrestiman ~16%. Requiere migration script para regenerar certificados pendientes (los ya firmados se mantienen como evidencia histórica con su versión original anotada).
 - Cualquier auditor externo puede pedir trazabilidad de fuentes — mantener PDFs de DEFRA/GLEC v3 archivados en `references/` o linkeable.
-- Cambios futuros de factor (DEFRA actualiza anualmente cada marzo) requieren proceso disciplinado: agente abre PR de update con citation de nueva fuente, ADR-017a (changelog) registra el cambio.
+- Cambios futuros de factor (DEFRA actualiza anualmente cada marzo) requieren proceso disciplinado: agente abre PR de update con citation de nueva fuente, ADR-022a (changelog) registra el cambio.
 
 ### Acciones derivadas
 

@@ -14,7 +14,7 @@
 | **D3** | Proveedor SII | **Sovos/Paperless** (no Bsale) — multi-tenant nativo es requisito de marketplace | ADR-024 nuevo (supersede §Decisión de ADR-007 sobre provider) | Aprobar + iniciar contacto comercial Sovos para sandbox y pricing enterprise |
 | **D4** | BSP WhatsApp | **Meta Cloud API directo** (NO Twilio) — alinear con ADR-006 ya aceptado, descartar deuda técnica actual | Refresh ADR-006 §Estado de implementación | Discontinuar `apps/whatsapp-bot` Twilio path; reescribir contra Meta para F8 |
 | **D6** | NLU provider | **Gemini 2.5 Flash** (Vertex AI) — ya elegido en ADR-006, ratificar | (incluido en refresh ADR-006) | Implementar `packages/ai-provider/` con Gemini wrapper |
-| **D1** | Factor WTW corregido | **Aprobar 3.21 kgCO₂e/L** (B5 Chile) según GLEC v3.0 + DEFRA 2024 | ADR-017 (ya propuesto) | Cerrar BUG-013 + crear ADR-017 fijando fuente con sources |
+| **D1** | Factor WTW corregido | **Aprobar 3.21 kgCO₂e/L** (B5 Chile) según GLEC v3.0 + DEFRA 2024 | ADR-022 (creado, ex-017) | Cerrar BUG-013 + crear ADR-022 fijando fuente con sources |
 | **D2** | Sync Drizzle ↔ domain | **Hacer ahora como migration única** (Fase 0 del integration-plan) | (sin nuevo ADR; refresh ADR-001 changelog) | Producir migration `0017_esg_alignment.sql` que cierra los 4 issues schema del AUDIT.md |
 | **D5** | Economics F3 Teltonika | **Revenue-share con amortización** — subsidio cubierto, transportista paga vía descuento porcentual de comisión hasta amortizar device | ADR-019 (ya propuesto) | Modelar sensibilidades costo device/comisión/churn en spreadsheet |
 
@@ -234,9 +234,9 @@ NO se crea ADR nuevo (la decisión arquitectónica no cambia). Se actualiza el s
 
 **Por qué ahora**: el factor inflado invalida métricas pasadas pero el certificado_kms_key_version permite emitir nueva versión sin romper certificados ya firmados. Cuanto antes se corrija, menos certificados habrá para regenerar.
 
-**ADR**: ADR-017 (ya propuesto en integration-plan §6 F1 + apéndice). Debe citar fuentes exactas con URL y fecha de captura.
+**ADR**: ADR-022 (ex-ADR-017 propuesto en integration-plan §6 F1 + apéndice; renumerado por colisión con Serie A). Debe citar fuentes exactas con URL y fecha de captura.
 
-**Acción**: Felipe aprueba 3.21 → agente crea ADR-017 → BUG-013 cierra → migración de certificados pendientes corre → `/spec` F1 puede empezar.
+**Acción**: Felipe aprueba 3.21 → agente crea ADR-022 → BUG-013 cierra → migración de certificados pendientes corre → `/spec` F1 puede empezar.
 
 ---
 
@@ -309,7 +309,7 @@ Las 6 decisiones bloqueantes pasan de "pendiente de PO" a "**recomendación firm
 
 - F7 ya no espera D3 abierta; espera contacto comercial Sovos + sandbox UAT.
 - F8 ya no espera D4 ni D6; espera setup Meta Business Manager + implementación `packages/ai-provider`.
-- F1 espera ADR-017 producido (D1 cerrada).
+- F1 espera ADR-022 producido (D1 cerrada).
 
 Estos cambios se aplican como Edits en línea cuando Felipe confirme las recomendaciones.
 
@@ -319,7 +319,7 @@ Estos cambios se aplican como Edits en línea cuando Felipe confirme las recomen
 
 | ADR # | Título | Origen decisión | Status target |
 |---|---|---|---|
-| ADR-017 | Metodología emisiones evitadas vía empty-return + factor WTW corregido B5 Chile | D1 + F1 | Draft → Accepted |
+| ADR-022 (ex-017) | Metodología emisiones evitadas vía empty-return + factor WTW corregido B5 Chile | D1 + F1 | Accepted |
 | ADR-018 | Formato y disclaimers reporte IFRS S2 generado por Booster | F2 | Draft → Accepted |
 | ADR-019 | Programa Teltonika Direct: economics, ciclo de vida y kill switch | D5 + F3 | Draft → Accepted |
 | ADR-020 | Tiers de comisión por volumen y transparencia pública | F5 | Draft → Accepted |
@@ -345,6 +345,6 @@ Este documento **NO es decisión final** — son recomendaciones del agente con 
 3. ✅/❌ D1 — Factor 3.21 kgCO₂e/L para diesel B5 Chile.
 4. ✅/❌ D2 — Migration única en Fase 0.
 5. ✅/❌ D5 — Revenue-share con amortización (pendiente sensibilidades modeladas por Felipe).
-6. Si todas ✅, siguiente acción del agente: producir ADR-017, ADR-024 y refresh ADR-006 en orden — ANTES de cualquier `/spec`.
+6. Si todas ✅, siguiente acción del agente: producir ADR-022 (ex-017), ADR-024 y refresh ADR-006 en orden — ANTES de cualquier `/spec`.
 
 Una vez los ADRs nuevos estén Accepted, las features F1, F3, F7, F8 quedan completamente desbloqueadas para ciclo `/spec → /plan → /build`.
