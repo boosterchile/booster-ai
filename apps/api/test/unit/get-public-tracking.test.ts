@@ -98,6 +98,7 @@ describe('getPublicTracking', () => {
       trackingCode: string;
       originAddr: string;
       destAddr: string;
+      destRegionCode?: string | null;
       cargoType: string;
       vehicleId: string;
       vehicleType: string;
@@ -345,5 +346,163 @@ describe('computeProgress', () => {
       nowMs: NOW_MS,
     });
     expect(result.last_position_age_seconds).toBe(0);
+  });
+});
+
+describe('computeEtaMinutes', () => {
+  // Punto de referencia: Santiago (RM/XIII centroid).
+  const SANTIAGO_LAT = -33.4489;
+  const SANTIAGO_LNG = -70.6693;
+
+  it('trip status entregado → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: 'IV',
+        avgSpeedKmh: 80,
+        tripStatus: 'entregado',
+      }),
+    ).toBeNull();
+  });
+
+  it('trip status cancelado → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: 'IV',
+        avgSpeedKmh: 80,
+        tripStatus: 'cancelado',
+      }),
+    ).toBeNull();
+  });
+
+  it('sin posición actual → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: null,
+        currentLng: null,
+        destRegionCode: 'IV',
+        avgSpeedKmh: 80,
+        tripStatus: 'en_proceso',
+      }),
+    ).toBeNull();
+  });
+
+  it('sin avg speed (<2 pings o avg=0) → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: 'IV',
+        avgSpeedKmh: null,
+        tripStatus: 'en_proceso',
+      }),
+    ).toBeNull();
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: 'IV',
+        avgSpeedKmh: 0,
+        tripStatus: 'en_proceso',
+      }),
+    ).toBeNull();
+  });
+
+  it('region code no mapeado → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: 'XX',
+        avgSpeedKmh: 80,
+        tripStatus: 'en_proceso',
+      }),
+    ).toBeNull();
+  });
+
+  it('region code null → null', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: null,
+        avgSpeedKmh: 80,
+        tripStatus: 'en_proceso',
+      }),
+    ).toBeNull();
+  });
+
+  it('Santiago → La Serena (IV) a 80km/h: ETA ~ 5h en minutos', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    // Santiago a La Serena: ~470 km haversine. Con factor 1.3 ≈ 611km.
+    // A 80 km/h: 611/80 = 7.6h = ~458 min. (vs Routes API real ~6h)
+    const eta = computeEtaMinutes({
+      currentLat: SANTIAGO_LAT,
+      currentLng: SANTIAGO_LNG,
+      destRegionCode: 'IV',
+      avgSpeedKmh: 80,
+      tripStatus: 'en_proceso',
+    });
+    expect(eta).toBeGreaterThan(300);
+    expect(eta).toBeLessThan(550);
+  });
+
+  it('cerca del destino (Santiago → Santiago): ETA muy bajo, mínimo 1 min', async () => {
+    const { computeEtaMinutes } = await import('../../src/services/get-public-tracking.js');
+    // Misma posición que el centroide → 0 distance. Round y floor garantiza
+    // mínimo 1 min para evitar "0 min" confuso.
+    const eta = computeEtaMinutes({
+      currentLat: -33.4489,
+      currentLng: -70.6693,
+      destRegionCode: 'XIII',
+      avgSpeedKmh: 60,
+      tripStatus: 'en_proceso',
+    });
+    expect(eta).toBe(1);
+  });
+
+  it('todos los 16 codes de región chilenos están mapeados', async () => {
+    const { computeEtaMinutes, REGION_CENTROIDS_LAT_LNG } = await import(
+      '../../src/services/get-public-tracking.js'
+    );
+    const codes = [
+      'XV',
+      'I',
+      'II',
+      'III',
+      'IV',
+      'V',
+      'XIII',
+      'VI',
+      'VII',
+      'XVI',
+      'VIII',
+      'IX',
+      'XIV',
+      'X',
+      'XI',
+      'XII',
+    ];
+    for (const c of codes) {
+      expect(REGION_CENTROIDS_LAT_LNG[c]).toBeDefined();
+      // Confirmar que computeEtaMinutes no devuelve null por código faltante.
+      const eta = computeEtaMinutes({
+        currentLat: SANTIAGO_LAT,
+        currentLng: SANTIAGO_LNG,
+        destRegionCode: c,
+        avgSpeedKmh: 80,
+        tripStatus: 'en_proceso',
+      });
+      expect(eta, `code ${c}`).not.toBeNull();
+    }
   });
 });
