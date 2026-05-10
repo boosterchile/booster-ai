@@ -30,6 +30,15 @@ resource "google_compute_subnetwork" "private" {
     range_name    = "gke-services"
     ip_cidr_range = "10.24.0.0/20"
   }
+
+  # Trivy IaC: VPC Flow Logs habilitados para audit + investigacion de
+  # incidentes (#27). Sampling 0.5 + 10-min aggregation reduce costos
+  # ~10x vs full sampling — suficiente para anomaly detection.
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 
 # VPC peering range para Cloud SQL privada
@@ -42,10 +51,28 @@ resource "google_compute_global_address" "private_services" {
   network       = google_compute_network.vpc.id
 }
 
+# VPC peering range para Cloud Build private worker pool (Trivy IaC #17, #30).
+# /24 = 256 IPs, suficiente para builds concurrentes. Distinct de las otras
+# subnets del VPC (10.10.0.0/20 primary, 10.30.0.0/20 DR, etc.).
+resource "google_compute_global_address" "cloudbuild_pool_range" {
+  name          = "booster-cloudbuild-pool-range"
+  project       = google_project.booster_ai.project_id
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 24
+  network       = google_compute_network.vpc.id
+}
+
+# Una sola service networking connection — agregamos el range del pool
+# Cloud Build aqui (in-place update sin recrear la connection ni interrumpir
+# el peering de Cloud SQL).
 resource "google_service_networking_connection" "private_vpc" {
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_services.name]
+  network = google_compute_network.vpc.id
+  service = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [
+    google_compute_global_address.private_services.name,
+    google_compute_global_address.cloudbuild_pool_range.name,
+  ]
 }
 
 # Serverless VPC Access para que Cloud Run pueda llegar a Cloud SQL privada + Redis.
@@ -116,6 +143,33 @@ resource "google_sql_database_instance" "main" {
     database_flags {
       name  = "cloudsql.iam_authentication"
       value = "on"
+    }
+
+    # Trivy IaC: logging granular para audit + troubleshooting (#21-25).
+    # Estos flags impactan tamano de logs en Cloud Logging — costo modesto
+    # en piloto, pero visible. Si en produccion crece mucho, considerar
+    # desactivar log_temp_files (el mas verboso) o subir el threshold.
+    database_flags {
+      name  = "log_checkpoints"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_connections"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_disconnections"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_lock_waits"
+      value = "on"
+    }
+    database_flags {
+      # 0 = log todos los archivos temporales (consultas que spillan a disk).
+      # >0 = solo logs si tamano excede ese valor (en KB).
+      name  = "log_temp_files"
+      value = "0"
     }
 
     insights_config {
@@ -190,20 +244,30 @@ resource "google_sql_user" "iam_operators" {
   instance = google_sql_database_instance.main.name
   project  = google_project.booster_ai.project_id
   # Sin password: autenticación via IAM token.
+  #
+  # Trivy AVD-GCP-0008: este resource crea Postgres roles individuales que
+  # mapean a la identidad del operador (cloud-sql-proxy --auto-iam-authn
+  # autentica con OAuth token del user). API GCP NO acepta grupos aqui —
+  # cada miembro del engineers_group que necesite acceso DB se agrega
+  # manualmente a local.db_iam_operators. .trivyignore documenta que esta
+  # regla en este archivo es false-positive (Cloud SQL IAM API limit).
 }
 
-resource "google_project_iam_member" "db_iam_operators_client" {
-  for_each = toset(local.db_iam_operators)
-  project  = google_project.booster_ai.project_id
-  role     = "roles/cloudsql.client"
-  member   = "user:${each.value}"
+# Trivy AVD-GCP-0008: bindings a nivel proyecto migrados a engineers_group.
+# El cloud-sql-proxy de cada operador autentica con su OAuth token; la
+# membresia del grupo determina si el token es aceptado. Onboarding =
+# agregar miembro al grupo + 1 entry en local.db_iam_operators (sin
+# terraform apply). Offboarding inverso.
+resource "google_project_iam_member" "engineers_cloudsql_client" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/cloudsql.client"
+  member  = "group:${var.engineers_group}"
 }
 
-resource "google_project_iam_member" "db_iam_operators_instanceuser" {
-  for_each = toset(local.db_iam_operators)
-  project  = google_project.booster_ai.project_id
-  role     = "roles/cloudsql.instanceUser"
-  member   = "user:${each.value}"
+resource "google_project_iam_member" "engineers_cloudsql_instanceuser" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "group:${var.engineers_group}"
 }
 
 # Guardar password en Secret Manager (rotación posterior vía otro flujo).
@@ -369,11 +433,18 @@ module "db_bastion" {
   subnet                = google_compute_subnetwork.private.self_link
   service_account_email = google_service_account.db_bastion.email
 
+  # Trivy IaC AVD-GCP-0040: CMEK para boot disk del bastion.
+  disk_encryption_kms_key_self_link = google_kms_crypto_key.compute_disk.id
+
   cloudsql_instance_connection_name = google_sql_database_instance.main.connection_name
 
-  iap_users = local.db_iam_operators
+  # Trivy AVD-GCP-0008: bastion IAP + osLogin via grupo engineers@.
+  # Onboarding/offboarding sin terraform apply (se gestiona en Workspace).
+  iap_principals = ["group:${var.engineers_group}"]
 
   labels = {
     env = var.environment
   }
+
+  depends_on = [google_kms_crypto_key_iam_member.gce_disk_encrypter]
 }

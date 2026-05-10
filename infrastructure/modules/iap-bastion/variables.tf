@@ -33,6 +33,18 @@ variable "machine_type" {
   default     = "e2-micro"
 }
 
+variable "disk_encryption_kms_key_self_link" {
+  type        = string
+  description = <<-EOT
+    Self-link de la KMS crypto key para CMEK del boot disk del bastion.
+    Trivy IaC AVD-GCP-0040 ("VM disks should be encrypted with CMEK").
+    El SA de servicio de Compute Engine (service-PROJECT_NUMBER@compute-system.iam)
+    debe tener roles/cloudkms.cryptoKeyEncrypterDecrypter sobre esta key.
+    Pasar null para usar default Google-managed encryption.
+  EOT
+  default     = null
+}
+
 variable "service_account_email" {
   type        = string
   description = <<-EOT
@@ -57,12 +69,20 @@ variable "cloudsql_instance_connection_name" {
   EOT
 }
 
-variable "iap_users" {
+variable "iap_principals" {
   type        = list(string)
   description = <<-EOT
-    Lista de emails (sin prefijo "user:") con permiso de tunelar via IAP.
-    Cada uno necesita: roles/iap.tunnelResourceAccessor sobre el proyecto y
-    roles/compute.instanceAdmin.v1 (o más restrictivo: osLogin) sobre la VM.
+    Lista de IAM members (con prefijo) con permiso de tunelar via IAP.
+    Acepta:
+      - "user:operator@example.com"
+      - "group:engineers@example.com"   (preferido — Trivy AVD-GCP-0008)
+      - "serviceAccount:sa@project.iam.gserviceaccount.com"
+
+    Cada principal recibe: roles/iap.tunnelResourceAccessor sobre la VM y
+    roles/compute.osLogin sobre el proyecto.
+
+    Migracion 2026-05-09: variable renombrada de `iap_users` (que asumia
+    prefijo user:) a `iap_principals` para soportar grupos.
   EOT
   default     = []
 }

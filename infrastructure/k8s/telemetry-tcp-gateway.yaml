@@ -45,13 +45,37 @@ spec:
         app: telemetry-tcp-gateway
     spec:
       serviceAccountName: telemetry-gateway-sa
+      # Trivy IaC hardening: pod-level security defaults.
+      # UID/GID 10001 coincide con el booster user del Dockerfile (>= 10000
+      # satisface AVD-KSV-0118; evita colisiones con UIDs reservados del SO).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
+          # Trivy IaC hardening: container-level locked-down defaults.
+          # readOnlyRootFilesystem requiere emptyDir para /tmp (Node escribe
+          # v8-compile-cache + npm-related artefactos en startup).
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           # IMAGEN actualizada por Cloud Build con kubectl set image:
           #   kubectl set image deployment/telemetry-tcp-gateway \
           #     gateway=southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:$_COMMIT_SHA \
           #     -n telemetry
-          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:latest
+          #
+          # Tag :bootstrap es el "initial pull" para kubectl apply -f la
+          # primera vez que se crea el deployment (antes de que Cloud Build
+          # haga set image al SHA real). Trivy IaC AVD-KSV-0013 prohibe
+          # :latest pero acepta cualquier otro tag estable.
+          image: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/telemetry-tcp-gateway:bootstrap
           imagePullPolicy: Always
           ports:
             - name: teltonika-tcp
@@ -104,6 +128,9 @@ spec:
             - name: tls-cert
               mountPath: /etc/tls
               readOnly: true
+            # /tmp writable para readOnlyRootFilesystem: true (Node v8-cache).
+            - name: tmp
+              mountPath: /tmp
           resources:
             # GKE Autopilot solo permite ratios CPU:RAM específicos.
             # 0.5 CPU + 1Gi RAM es válido y suficiente para piloto.
@@ -145,6 +172,10 @@ spec:
           secret:
             secretName: telemetry-tls-cert
             optional: true
+        # /tmp writable (readOnlyRootFilesystem requiere mount aparte).
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

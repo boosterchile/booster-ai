@@ -45,6 +45,14 @@ resource "google_compute_subnetwork" "dr_private" {
   }
 
   private_ip_google_access = true
+
+  # Trivy IaC: VPC Flow Logs habilitados (#31). Mismos parametros que la
+  # subnet primary para consistencia (10-min agg + 0.5 sampling).
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 
 resource "google_container_cluster" "telemetry_dr" {
@@ -68,9 +76,28 @@ resource "google_container_cluster" "telemetry_dr" {
       cidr_block   = "10.30.0.0/20"
       display_name = "booster-ai-dr-private-subnet"
     }
+
+    # Cloud Build pool en south-west via cross-region peering (la VPC es
+    # global). El DR cluster solo recibe deploys cuando hay failover —
+    # operadores manuales usan IAP, no Cloud Build automatico.
     cidr_blocks {
-      cidr_block   = "0.0.0.0/0"
-      display_name = "any-authenticated"
+      cidr_block   = "${google_compute_global_address.cloudbuild_pool_range.address}/${google_compute_global_address.cloudbuild_pool_range.prefix_length}"
+      display_name = "cloudbuild-private-pool"
+    }
+
+    # IAP TCP forwarding para operadores accediendo al DR.
+    cidr_blocks {
+      cidr_block   = "35.235.240.0/20"
+      display_name = "iap-tcp-forwarding"
+    }
+
+    # IPs operadores (variable compartida con primary cluster).
+    dynamic "cidr_blocks" {
+      for_each = var.gke_operator_authorized_cidrs
+      content {
+        cidr_block   = cidr_blocks.value.cidr
+        display_name = cidr_blocks.value.name
+      }
     }
   }
 
