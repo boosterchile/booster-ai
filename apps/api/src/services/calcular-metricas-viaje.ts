@@ -9,7 +9,8 @@ import {
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { tripMetrics, trips, vehicles } from '../db/schema.js';
+import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { calcularCobertura } from './calcular-cobertura-telemetria.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
 
 /**
@@ -191,4 +192,165 @@ export async function calcularMetricasEstimadas(opts: {
 
     return { tripId, isInitialCalculation, emisiones };
   });
+}
+
+/**
+ * Re-deriva el nivel de certificación post-entrega usando la cobertura
+ * telemétrica real (ADR-028 §5).
+ *
+ * Disparo: al confirmar entrega, ANTES de emitir el certificado. Tiene
+ * que correr en este orden porque emitirCertificadoViaje lee
+ * `certification_level` y `uncertainty_factor` del row de
+ * `metricas_viaje` para elegir el template del PDF (primario vs
+ * secundario) y el ± impreso.
+ *
+ * Lógica:
+ *   1. Cargar trip + assignment + métricas existentes.
+ *   2. Si el vehículo NO tiene Teltonika asociado, no hay forma de
+ *      mejorar la cobertura — skip silencioso (el cert sale con los
+ *      valores estimados pre-entrega: maps_directions + 0%).
+ *   3. Si el vehículo tiene Teltonika, calcular cobertura entre
+ *      pickupAt y deliveredAt; promover routeDataSource a teltonika_gps.
+ *   4. Re-derivar nivel + uncertainty con los nuevos valores.
+ *   5. UPDATE selectivo de los 4 campos (no toca emisiones, factor, etc.
+ *      — esos se mantienen del cálculo estimado, salvo que en una
+ *      revisión futura agreguemos modo `exacto_canbus` con consumo real
+ *      del CAN bus).
+ *
+ * Idempotente: si la cobertura nueva da el mismo nivel, el UPDATE es
+ * no-op (drizzle igual hace el round-trip — opt: chequeo de igualdad
+ * antes de update si esto se vuelve hot path).
+ */
+export async function recalcularNivelPostEntrega(opts: {
+  db: Db;
+  logger: Logger;
+  tripId: string;
+}): Promise<{
+  recomputed: boolean;
+  /** Nivel resultante (puede ser igual al previo). */
+  certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
+  /** Cobertura calculada (0..100). */
+  coveragePct?: number;
+}> {
+  const { db, logger, tripId } = opts;
+
+  const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+  const trip = tripRows[0];
+  if (!trip) {
+    throw new TripNotFoundError(tripId);
+  }
+
+  const metricsRows = await db
+    .select()
+    .from(tripMetrics)
+    .where(eq(tripMetrics.tripId, tripId))
+    .limit(1);
+  const existing = metricsRows[0];
+  if (!existing) {
+    // No hay métricas previas — no hay nada que recalcular. Esto
+    // normalmente no debería ocurrir en producción (calcularMetricasEstimadas
+    // corre al asignar), pero defensivo: log + skip.
+    logger.warn({ tripId }, 'recalcularNivelPostEntrega: trip sin metricas_viaje');
+    return { recomputed: false };
+  }
+
+  // Necesitamos vehicleId + deliveredAt del assignment. Si no hay
+  // assignment cerrado, no se debería estar llamando esta función todavía.
+  const assignmentRows = await db
+    .select({
+      vehicleId: assignments.vehicleId,
+      deliveredAt: assignments.deliveredAt,
+    })
+    .from(assignments)
+    .where(eq(assignments.tripId, tripId))
+    .limit(1);
+  const assignment = assignmentRows[0];
+
+  if (!assignment?.vehicleId || !assignment.deliveredAt) {
+    logger.info(
+      { tripId, hasAssignment: !!assignment, hasVehicle: !!assignment?.vehicleId },
+      'recalcularNivelPostEntrega: skip (sin assignment con vehicle + deliveredAt)',
+    );
+    return { recomputed: false };
+  }
+
+  // Si el vehículo no tiene Teltonika, no hay telemetría — el nivel se
+  // queda como secundario_modeled con maps_directions y coverage 0.
+  // Skip silencioso para no escribir un UPDATE no-op.
+  const vehRows = await db
+    .select({ teltonikaImei: vehicles.teltonikaImei })
+    .from(vehicles)
+    .where(eq(vehicles.id, assignment.vehicleId))
+    .limit(1);
+  const vehiculo = vehRows[0];
+  if (!vehiculo?.teltonikaImei) {
+    logger.info(
+      { tripId, vehicleId: assignment.vehicleId },
+      'recalcularNivelPostEntrega: vehicle sin Teltonika — sin upgrade del nivel',
+    );
+    return { recomputed: false };
+  }
+
+  // Usar pickupWindowStart como inicio del trip si no hay pickup_at real.
+  // Es conservador: si el pickup real fue después, ampliamos la ventana
+  // de búsqueda y dejamos al cálculo el filtrado por gaps de continuidad.
+  const pickupAt = trip.pickupWindowStart ?? trip.createdAt;
+
+  const distanciaEstimadaKm = existing.distanceKmEstimated
+    ? Number(existing.distanceKmEstimated)
+    : 0;
+
+  const coveragePct = await calcularCobertura({
+    db,
+    logger,
+    vehicleId: assignment.vehicleId,
+    pickupAt,
+    deliveredAt: assignment.deliveredAt,
+    distanciaEstimadaKm,
+  });
+
+  const precisionMethod =
+    (existing.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
+    'por_defecto';
+
+  // routeDataSource sube a 'teltonika_gps' porque el vehículo tiene
+  // device asociado y SI calculamos cobertura (puede ser 0 si no llegó
+  // ningún ping, pero la fuente conceptual es Teltonika).
+  const routeDataSource: RouteDataSource = 'teltonika_gps';
+
+  const certificationLevel = derivarNivelCertificacion({
+    precisionMethod,
+    routeDataSource,
+    coveragePct,
+  });
+  const uncertaintyFactor = calcularFactorIncertidumbre({
+    nivelCertificacion: certificationLevel,
+    coveragePct,
+    vehicleTypeMatchesRoutesApi: true,
+  });
+
+  await db
+    .update(tripMetrics)
+    .set({
+      routeDataSource,
+      coveragePct: coveragePct.toString(),
+      certificationLevel,
+      uncertaintyFactor: uncertaintyFactor.toString(),
+      updatedAt: sql`now()`,
+    })
+    .where(eq(tripMetrics.tripId, tripId));
+
+  logger.info(
+    {
+      tripId,
+      vehicleId: assignment.vehicleId,
+      coveragePct,
+      certificationLevel,
+      uncertaintyFactor,
+      precisionMethod,
+    },
+    'nivel de certificación recalculado post-entrega',
+  );
+
+  return { recomputed: true, certificationLevel, coveragePct };
 }

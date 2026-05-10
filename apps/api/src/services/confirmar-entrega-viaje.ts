@@ -32,6 +32,7 @@ import type { Logger } from '@booster-ai/logger';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
+import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
 import {
   type EmitirCertificadoConfig,
   emitirCertificadoViaje,
@@ -184,6 +185,22 @@ export async function confirmarEntregaViaje(opts: {
   // re-disparamos (el cert ya debería existir; si no, un job de backfill
   // lo retoma).
   if (txResult.ok && !txResult.alreadyDelivered) {
+    // ADR-028 §5 — re-derivar nivel de certificación con telemetría real
+    // ANTES de emitir el cert. Esto convierte un trip que se persistió
+    // como secundario_modeled (al asignar) en primario_verificable o
+    // sigue como secundario con incertidumbre menor, según la cobertura
+    // GPS efectiva del viaje. Si falla, loggeamos pero seguimos con la
+    // emisión del cert con los valores estimados (no bloqueamos al
+    // cliente).
+    try {
+      await recalcularNivelPostEntrega({ db, logger, tripId });
+    } catch (err) {
+      logger.error(
+        { err, tripId },
+        'recalcularNivelPostEntrega fallo — emitiendo cert con valores estimados',
+      );
+    }
+
     emitirCertificadoViaje({ db, logger, tripId, config })
       .then((res) => {
         if (res.skipped) {
