@@ -21,6 +21,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
+import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
 import { api } from '../lib/api-client.js';
 
 interface AssignmentDetail {
@@ -90,6 +91,9 @@ function AsignacionDetallePage() {
     ? `${trip.origin.address_raw} → ${trip.destination.address_raw}`
     : undefined;
   const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
+  // Phase 4 PR-K4 — confirmación de entrega via voz hands-free.
+  // Surface visible mientras el trip está activo (asignado | en_proceso).
+  const isConfirmable = trip?.status === 'asignado' || trip?.status === 'en_proceso';
   const otroLado = trip?.shipper_legal_name ?? 'generador de carga';
 
   return (
@@ -111,6 +115,12 @@ function AsignacionDetallePage() {
           </div>
         </div>
       </div>
+
+      {/* Phase 4 PR-K4 — confirmación de entrega hands-free (voz +
+          botón visual). Visible para el carrier mientras el trip está
+          asignado o en_proceso. Doble confirmación dentro del componente
+          previene falsos positivos. */}
+      {isConfirmable && <DeliveryConfirmCard assignmentId={assignmentId} />}
 
       {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
           el trip está cerrado, porque el score se calcula post-entrega.
