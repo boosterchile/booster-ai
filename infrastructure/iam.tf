@@ -144,6 +144,7 @@ locals {
   github_deployer_roles = [
     "roles/run.admin",                # Deploy a Cloud Run
     "roles/cloudbuild.builds.editor", # Trigger Cloud Build
+    "roles/cloudbuild.workerPoolUser", # Usar el private worker pool (PR #68)
     "roles/artifactregistry.writer",  # Push Docker images
     # roles/iam.serviceAccountUser REMOVIDO del project-level (Trivy IaC
     # AVD-GCP-0008 — too broad; permitia impersonar CUALQUIER SA del proyecto).
