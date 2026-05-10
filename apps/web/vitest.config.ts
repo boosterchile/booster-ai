@@ -25,18 +25,6 @@ export default defineConfig({
         'src/**/index.ts',
         'src/**/*.test.{ts,tsx}',
         'src/**/*.spec.{ts,tsx}',
-        'src/main.tsx',
-        'src/router.tsx', // TanStack Router config con lazy imports — tested e2e
-        'src/sw.ts', // Service Worker — runtime de browser, no jsdom
-        'src/lib/firebase.ts', // initializeApp + setPersistence side-effects at-import
-        // Páginas grandes con TanStack Router + lazy imports + form complejos +
-        // mapas Google. Se testean mejor con Playwright e2e contra build real.
-        'src/routes/**',
-        // Componentes que dependen del SDK Google Maps en runtime — sólo
-        // se cubren con Playwright e2e contra build real. use-follow-vehicle
-        // es lógica pura y SI tiene tests unitarios.
-        'src/components/map/VehicleMap.tsx',
-        'src/components/map/LiveTrackingScreen.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
       // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable

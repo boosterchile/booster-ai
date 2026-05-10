@@ -1,0 +1,109 @@
+import { render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MeResponse } from '../hooks/use-me.js';
+
+type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
+let providedContext: Ctx = { kind: 'unmanaged' };
+
+vi.mock('../components/ProtectedRoute.js', () => ({
+  ProtectedRoute: ({ children }: { children: (ctx: Ctx) => ReactNode }) => (
+    <>{children(providedContext)}</>
+  ),
+}));
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+}));
+
+const signOutUserMock = vi.fn();
+vi.mock('../hooks/use-auth.js', () => ({
+  signOutUser: signOutUserMock,
+}));
+
+const { AppRoute } = await import('./app.js');
+
+function makeMe(
+  role: NonNullable<MeOnboarded['active_membership']>['role'] = 'dueno',
+  isCarrier = true,
+  isShipper = true,
+): MeOnboarded {
+  return {
+    needs_onboarding: false,
+    user: { id: 'u', full_name: 'Felipe', email: 'a@b.cl' } as MeOnboarded['user'],
+    memberships: [],
+    active_membership: {
+      id: 'm',
+      role,
+      status: 'activa',
+      joined_at: null,
+      empresa: {
+        id: 'e1',
+        legal_name: 'Booster SpA',
+        rut: '76',
+        is_generador_carga: isShipper,
+        is_transportista: isCarrier,
+        status: 'activa',
+      },
+    } as MeOnboarded['active_membership'],
+  } as MeOnboarded;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  providedContext = { kind: 'unmanaged' };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('AppRoute', () => {
+  it('contexto no onboarded → no renderiza dashboard', () => {
+    const { container } = render(<AppRoute />);
+    expect(container.querySelector('h1')).toBeNull();
+  });
+
+  it('contexto onboarded → renderiza dashboard con título Bienvenido', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<AppRoute />);
+    expect(screen.getByText('Bienvenido a Booster')).toBeInTheDocument();
+    expect(screen.getAllByText('Booster SpA').length).toBeGreaterThan(0);
+    expect(screen.getByText('Felipe')).toBeInTheDocument();
+  });
+
+  it('carrier → muestra card "Ofertas activas"', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    render(<AppRoute />);
+    expect(screen.getByText(/Ofertas activas/)).toBeInTheDocument();
+  });
+
+  it('shipper → muestra card "Crear carga"', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
+    render(<AppRoute />);
+    expect(screen.getByText(/Crear carga/)).toBeInTheDocument();
+  });
+
+  it('admin + transportista → muestra "Dispositivos pendientes"', () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe('admin', true, false),
+    };
+    render(<AppRoute />);
+    expect(screen.getByText(/Dispositivos pendientes/)).toBeInTheDocument();
+  });
+
+  it('no admin → no muestra admin dispositivos', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('conductor') };
+    render(<AppRoute />);
+    expect(screen.queryByText(/Dispositivos pendientes/)).not.toBeInTheDocument();
+  });
+
+  it('click Salir → signOutUser', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<AppRoute />);
+    screen.getByRole('button', { name: 'Cerrar sesión' }).click();
+    expect(signOutUserMock).toHaveBeenCalled();
+  });
+});
