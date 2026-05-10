@@ -7,10 +7,11 @@ function membership(
   id: string,
   name: string,
   status: MembershipPayload['status'] = 'activa',
+  role: MembershipPayload['role'] = 'dueno',
 ): MembershipPayload {
   return {
     id: `m-${id}`,
-    role: 'dueno',
+    role,
     status,
     joined_at: '2026-01-01T00:00:00Z',
     empresa: {
@@ -145,5 +146,89 @@ describe('CompanySwitcher', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('press tecla cualquiera no cierra el menu', () => {
+    render(
+      <CompanySwitcher
+        memberships={[membership('1', 'Empresa A'), membership('2', 'Empresa B')]}
+        activeEmpresaId="1"
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    fireEvent.keyDown(document, { key: 'A' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('click fuera del container cierra el menu', () => {
+    render(
+      <div>
+        <CompanySwitcher
+          memberships={[membership('1', 'Empresa A'), membership('2', 'Empresa B')]}
+          activeEmpresaId="1"
+          onSelect={vi.fn()}
+        />
+        <button type="button" data-testid="outside">
+          fuera
+        </button>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Empresa A/ }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByTestId('outside'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('disabled=true → trigger deshabilitado', () => {
+    render(
+      <CompanySwitcher
+        memberships={[membership('1', 'Empresa A'), membership('2', 'Empresa B')]}
+        activeEmpresaId="1"
+        onSelect={vi.fn()}
+        disabled
+      />,
+    );
+    expect(screen.getByRole('button')).toBeDisabled();
+  });
+
+  it('activeEmpresaId no encontrado → fallback al primer activo', () => {
+    render(
+      <CompanySwitcher
+        memberships={[membership('1', 'Empresa A'), membership('2', 'Empresa B')]}
+        activeEmpresaId="zzz-no-existe"
+        onSelect={vi.fn()}
+      />,
+    );
+    // Active es Empresa A (el primero del array filtrado).
+    const trigger = screen.getByRole('button');
+    expect(trigger).toHaveTextContent('Empresa A');
+  });
+
+  describe('roleLabel branches', () => {
+    const cases = [
+      ['admin', 'Administrador'],
+      ['despachador', 'Despachador'],
+      ['conductor', 'Conductor'],
+      ['visualizador', 'Visualizador'],
+      ['stakeholder_sostenibilidad', 'Stakeholder'],
+    ] as const;
+
+    for (const [role, label] of cases) {
+      it(`role=${role} → label "${label}"`, () => {
+        render(
+          <CompanySwitcher
+            memberships={[
+              membership('1', 'Empresa A', 'activa', role),
+              membership('2', 'Empresa B'),
+            ]}
+            activeEmpresaId="1"
+            onSelect={vi.fn()}
+          />,
+        );
+        fireEvent.click(screen.getByRole('button'));
+        expect(screen.getByText(label)).toBeInTheDocument();
+      });
+    }
   });
 });
