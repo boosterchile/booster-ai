@@ -15,10 +15,12 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { zValidator } from '@hono/zod-validator';
 import { desc, eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import {
   assignments,
@@ -31,6 +33,7 @@ import {
 } from '../db/schema.js';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
 
 export function createAssignmentsRoutes(opts: {
   db: Db;
@@ -294,6 +297,64 @@ export function createAssignmentsRoutes(opts: {
       already_delivered: result.alreadyDelivered,
       delivered_at: result.deliveredAt.toISOString(),
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/incidents — Phase 4 PR-K6
+  //
+  // El conductor reporta un incidente operacional durante el viaje
+  // (accidente, demora, falla mecánica, problema de carga, otro).
+  //
+  // Disparado vía:
+  //   - Voice command "marcar incidente" / "tengo un problema" (PR-K3
+  //     framework existente)
+  //   - Botón visual fallback en el assignment-detail
+  //
+  // Persiste como tripEvent (audit-only), NO bloquea el lifecycle del
+  // viaje. La cancelación es un flujo separado.
+  //
+  // Auth: carrier owner del assignment. 401/403 estándar.
+  // ---------------------------------------------------------------------
+  const incidentBodySchema = z.object({
+    incident_type: z.enum(INCIDENT_TYPES),
+    description: z.string().trim().max(1000).optional(),
+  });
+
+  app.post('/:id/incidents', zValidator('json', incidentBodySchema), async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const body = c.req.valid('json');
+
+    const result = await reportarIncidente({
+      db: opts.db,
+      logger: opts.logger,
+      assignmentId,
+      input: {
+        incidentType: body.incident_type,
+        ...(body.description ? { description: body.description } : {}),
+        actor: {
+          empresaId: auth.activeMembership.empresa.id,
+          userId: auth.userContext.user.id,
+        },
+      },
+    });
+
+    if (!result.ok) {
+      const statusCode = result.code === 'assignment_not_found' ? 404 : 403;
+      return c.json({ error: result.code, code: result.code }, statusCode);
+    }
+
+    return c.json(
+      {
+        ok: true,
+        trip_event_id: result.tripEventId,
+        recorded_at: result.recordedAt.toISOString(),
+      },
+      201,
+    );
   });
 
   // ---------------------------------------------------------------------

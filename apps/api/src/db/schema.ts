@@ -180,6 +180,13 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
   'telemetria_perdida',
   'ruta_desviada',
   'disputa_abierta',
+  /**
+   * Phase 4 PR-K6 — Conductor reporta incidente operacional durante
+   * el viaje (vía voice command "marcar incidente" o botón visual).
+   * Subtipo va en payload.incident_type. Diferente de disputa_abierta
+   * (legal); este es informativo + notifica al shipper.
+   */
+  'incidente_reportado',
 ]);
 
 export const tripEventSourceEnum = pgEnum('origen_evento_viaje', [
