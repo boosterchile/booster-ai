@@ -1,4 +1,11 @@
-import { APIProvider, AdvancedMarker, Map as GoogleMap, Pin } from '@vis.gl/react-google-maps';
+import {
+  APIProvider,
+  AdvancedMarker,
+  ControlPosition,
+  Map as GoogleMap,
+  MapControl,
+  Pin,
+} from '@vis.gl/react-google-maps';
 import { LocateFixed, MapPin } from 'lucide-react';
 import { env } from '../../lib/env.js';
 import { FollowVehicle, useFollowVehicle } from './use-follow-vehicle.js';
@@ -107,39 +114,52 @@ function VehicleMapInner({
 
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200 shadow-sm">
-      <div className="relative" style={{ height }}>
-        <APIProvider apiKey={apiKey}>
-          <GoogleMap
-            style={{ height: '100%', width: '100%' }}
-            defaultCenter={center}
-            defaultZoom={zoom}
-            gestureHandling="cooperative"
-            disableDefaultUI={false}
-            mapId="booster-vehicle-map"
-          >
-            <FollowVehicle
-              controller={follow}
-              latitude={latitude}
-              longitude={longitude}
-              zoom={zoom}
-            />
-            <AdvancedMarker position={center} title={`${plate} · ${speedLabel}`}>
-              <Pin background="#1FA058" borderColor="#0D6E3F" glyphColor="#FFFFFF" />
-            </AdvancedMarker>
-          </GoogleMap>
-        </APIProvider>
-        {!follow.following && (
-          <button
-            type="button"
-            onClick={follow.resume}
-            className="absolute right-3 bottom-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-neutral-200 transition hover:bg-neutral-50"
-            aria-label="Recentrar mapa en el vehículo"
-            title="Recentrar"
-          >
-            <LocateFixed className="h-5 w-5 text-neutral-700" aria-hidden />
-          </button>
-        )}
-      </div>
+      <APIProvider apiKey={apiKey}>
+        <GoogleMap
+          style={{ height, width: '100%' }}
+          defaultCenter={center}
+          defaultZoom={zoom}
+          gestureHandling="cooperative"
+          disableDefaultUI={false}
+          // Quitamos los controles que no aportan en un mapa embebido y que
+          // ocupan la esquina inferior derecha (donde va nuestro botón de
+          // Recentrar). En mobile, el Pegman de Street View se queda en
+          // bottom-right por default y se solapa con cualquier botón flotante
+          // que pongamos ahí; deshabilitarlo es la única forma limpia de
+          // evitar el overlap. Fullscreen tampoco tiene sentido en una vista
+          // embebida (rompería el layout de la página).
+          streetViewControl={false}
+          fullscreenControl={false}
+          mapId="booster-vehicle-map"
+        >
+          <FollowVehicle
+            controller={follow}
+            latitude={latitude}
+            longitude={longitude}
+            zoom={zoom}
+          />
+          <AdvancedMarker position={center} title={`${plate} · ${speedLabel}`}>
+            <Pin background="#1FA058" borderColor="#0D6E3F" glyphColor="#FFFFFF" />
+          </AdvancedMarker>
+          {!follow.following && (
+            // <MapControl> integra el botón con el sistema de layout de
+            // controles de Google Maps: queda apilado verticalmente sobre
+            // los controles de zoom (también RIGHT_BOTTOM) y nunca se
+            // solapa, sea desktop o mobile.
+            <MapControl position={ControlPosition.RIGHT_BOTTOM}>
+              <button
+                type="button"
+                onClick={follow.resume}
+                className="m-2 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-neutral-200 transition hover:bg-neutral-50"
+                aria-label="Recentrar mapa en el vehículo"
+                title="Recentrar"
+              >
+                <LocateFixed className="h-5 w-5 text-neutral-700" aria-hidden />
+              </button>
+            </MapControl>
+          )}
+        </GoogleMap>
+      </APIProvider>
       <div className="flex items-center justify-between gap-4 border-neutral-100 border-t bg-white px-4 py-2 text-neutral-700 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-mono font-semibold text-neutral-900">{plate}</span>
