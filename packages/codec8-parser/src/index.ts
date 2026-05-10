@@ -51,3 +51,15 @@ export {
   type IoSnapshot,
   type CrashTrace,
 } from './crash-trace.js';
+
+// Green Driving + Over-Speeding events (Phase 2 — driver behavior scoring)
+export {
+  GREEN_DRIVING_TYPE_AVL_ID,
+  GREEN_DRIVING_VALUE_AVL_ID,
+  OVER_SPEEDING_AVL_ID,
+  extractGreenDrivingEvents,
+  extractGreenDrivingEventsFromPacket,
+  hasGreenDrivingEvent,
+  type GreenDrivingEvent,
+  type GreenDrivingEventType,
+} from './green-driving.js';
