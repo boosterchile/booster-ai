@@ -64,6 +64,20 @@
       "when": 1777996800005,
       "tag": "0008_metricas_viaje_empty_backhaul",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778716800000,
+      "tag": "0009_metricas_viaje_dual_source_adr028",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778803200000,
+      "tag": "0010_eventos_conduccion_verde",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,18 @@
 import {
   type ResultadoEmisiones,
+  type RouteDataSource,
   type TipoCombustible,
   calcularEmisionesViaje,
+  calcularFactorIncertidumbre,
+  derivarNivelCertificacion,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { tripMetrics, trips, vehicles } from '../db/schema.js';
+import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { calcularCobertura } from './calcular-cobertura-telemetria.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
+import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
 /**
  * Calcular y persistir métricas ESG de un viaje, usando el carbon-calculator
@@ -48,6 +53,109 @@ export interface CalcularMetricasResult {
 }
 
 /**
+ * Mapeo de tipo_combustible interno (TipoCombustible) al enum de Routes
+ * API (VehicleEmissionType). Routes API solo acepta 4 valores; los
+ * combustibles más específicos del schema interno (GLP, GNC, hidrógeno)
+ * se mapean al más cercano:
+ *
+ *   - diesel              → DIESEL
+ *   - gasolina            → GASOLINE
+ *   - gas_glp / gas_gnc   → GASOLINE (closest behavioral analog)
+ *   - electrico           → ELECTRIC
+ *   - hibrido_*           → HYBRID
+ *   - hidrogeno           → ELECTRIC (closest hop, no H2 enum aún)
+ *
+ * Si el tipo no es uno de los del schema, devolvemos undefined → Routes
+ * API no calcula FUEL_CONSUMPTION para esa request (ahorra costo).
+ */
+function mapFuelToEmissionType(combustible: string): VehicleEmissionType | undefined {
+  switch (combustible) {
+    case 'diesel':
+      return 'DIESEL';
+    case 'gasolina':
+    case 'gas_glp':
+    case 'gas_gnc':
+      return 'GASOLINE';
+    case 'electrico':
+    case 'hidrogeno':
+      return 'ELECTRIC';
+    case 'hibrido_diesel':
+    case 'hibrido_gasolina':
+      return 'HYBRID';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Obtiene la distancia origen→destino del trip en km.
+ *
+ * Prioridad:
+ *   1. Si hay GOOGLE_ROUTES_API_KEY configurada Y el vehículo tiene
+ *      fuelType conocido → llamar Routes API. Usa la distancia de la
+ *      mejor ruta (TRAFFIC_AWARE_OPTIMAL).
+ *   2. Si Routes API falla (timeout, quota exceeded, etc.) o no hay
+ *      key → fallback a estimarDistanciaKm (tabla pre-computada Chile).
+ *
+ * Fallback explícito: cualquier error del Routes API se loggea WARN y
+ * caemos al fallback. NO bloquea el cálculo de métricas — el carrier
+ * recibe igual su confirmación de asignación.
+ *
+ * Función con I/O — no debe correrse dentro de una transacción de DB
+ * para no extender el lock por la duración del HTTP call (~500ms-1s).
+ */
+async function obtenerDistanciaKm(opts: {
+  origenDireccion: string;
+  destinoDireccion: string;
+  origenRegionCode: string | null;
+  destinoRegionCode: string | null;
+  fuelType: string | null;
+  routesApiKey: string | undefined;
+  logger: Logger;
+}): Promise<number> {
+  const {
+    origenDireccion,
+    destinoDireccion,
+    origenRegionCode,
+    destinoRegionCode,
+    fuelType,
+    routesApiKey,
+    logger,
+  } = opts;
+
+  if (routesApiKey) {
+    try {
+      const emissionType = fuelType ? mapFuelToEmissionType(fuelType) : undefined;
+      const routes = await computeRoutes({
+        apiKey: routesApiKey,
+        origin: origenDireccion,
+        destination: destinoDireccion,
+        emissionType,
+      });
+      const best = routes[0];
+      if (best && best.distanceKm > 0) {
+        logger.info(
+          { distanciaKm: best.distanceKm, durationS: best.durationS, source: 'routes_api' },
+          'distancia obtenida via Routes API',
+        );
+        return best.distanceKm;
+      }
+      logger.warn(
+        { origenDireccion, destinoDireccion },
+        'Routes API devolvió 0 rutas, fallback a estimarDistanciaKm',
+      );
+    } catch (err) {
+      logger.warn(
+        { err, origenDireccion, destinoDireccion },
+        'Routes API falló, fallback a estimarDistanciaKm',
+      );
+    }
+  }
+
+  return estimarDistanciaKm(origenRegionCode, destinoRegionCode);
+}
+
+/**
  * Calcular métricas estimadas (al asignar viaje, antes de la entrega).
  */
 export async function calcularMetricasEstimadas(opts: {
@@ -55,70 +163,117 @@ export async function calcularMetricasEstimadas(opts: {
   logger: Logger;
   tripId: string;
   vehicleId: string | null;
+  /**
+   * GOOGLE_ROUTES_API_KEY del config. Si está presente, se usa Routes API
+   * para distancia precisa. Si no, se cae al fallback de estimarDistanciaKm.
+   * Optional: el caller decide si la pasa o no (en dev sin quota la omite).
+   */
+  routesApiKey?: string | undefined;
 }): Promise<CalcularMetricasResult> {
-  const { db, logger, tripId, vehicleId } = opts;
+  const { db, logger, tripId, vehicleId, routesApiKey } = opts;
 
-  return await db.transaction(async (tx) => {
-    const tripRows = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
-    const trip = tripRows[0];
-    if (!trip) {
-      throw new TripNotFoundError(tripId);
-    }
+  // (1) Lectura de trip + vehicle FUERA de la transacción. Esto permite
+  // hacer el HTTP a Routes API sin extender el lock de la tx (que sería
+  // anti-patrón: un HTTP de ~500ms-1s holding row lock genera contención
+  // en re-cálculos concurrentes del mismo trip). Postgres MVCC garantiza
+  // que las lecturas son consistentes punto-en-tiempo aunque sean fuera
+  // del begin/commit del UPDATE final.
+  const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+  const trip = tripRows[0];
+  if (!trip) {
+    throw new TripNotFoundError(tripId);
+  }
 
-    const cargaKg = trip.cargoWeightKg ?? 0;
-    const distanciaKm = estimarDistanciaKm(trip.originRegionCode, trip.destinationRegionCode);
+  const veh = vehicleId
+    ? (await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1))[0]
+    : undefined;
 
-    // Resolver perfil del vehículo. Si no hay vehicleId aún, o no se
-    // encuentra, o no tiene perfil completo → modo por_defecto.
-    let emisiones: ResultadoEmisiones | null = null;
-    if (vehicleId) {
-      const vehs = await tx.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
-      const veh = vehs[0];
-      if (veh) {
-        const consumoBase = veh.consumptionLPer100kmBaseline
-          ? Number(veh.consumptionLPer100kmBaseline)
-          : null;
+  // (2) HTTP out-of-tx — Routes API o fallback a tabla.
+  const distanciaKm = await obtenerDistanciaKm({
+    origenDireccion: trip.originAddressRaw,
+    destinoDireccion: trip.destinationAddressRaw,
+    origenRegionCode: trip.originRegionCode,
+    destinoRegionCode: trip.destinationRegionCode,
+    fuelType: veh?.fuelType ?? null,
+    routesApiKey,
+    logger,
+  });
 
-        if (veh.fuelType && consumoBase != null) {
-          // Modo modelado — perfil completo declarado.
-          emisiones = calcularEmisionesViaje({
-            metodo: 'modelado',
-            distanciaKm,
-            cargaKg,
-            vehiculo: {
-              combustible: veh.fuelType as TipoCombustible,
-              consumoBasePor100km: consumoBase,
-              pesoVacioKg: veh.curbWeightKg,
-              capacidadKg: veh.capacityKg,
-            },
-          });
-        } else {
-          // Modo por_defecto — usamos tipo de vehículo como proxy.
-          emisiones = calcularEmisionesViaje({
-            metodo: 'por_defecto',
-            distanciaKm,
-            cargaKg,
-            tipoVehiculo: veh.vehicleType,
-          });
-        }
-      }
-    }
-    if (emisiones == null) {
-      // Fallback: por_defecto con camion_mediano (proxy genérico).
+  // (3) Compute emisiones (puro, GLEC v3.0).
+  const cargaKg = trip.cargoWeightKg ?? 0;
+  let emisiones: ResultadoEmisiones | null = null;
+  if (veh) {
+    const consumoBase = veh.consumptionLPer100kmBaseline
+      ? Number(veh.consumptionLPer100kmBaseline)
+      : null;
+
+    if (veh.fuelType && consumoBase != null) {
+      // Modo modelado — perfil completo declarado.
+      emisiones = calcularEmisionesViaje({
+        metodo: 'modelado',
+        distanciaKm,
+        cargaKg,
+        vehiculo: {
+          combustible: veh.fuelType as TipoCombustible,
+          consumoBasePor100km: consumoBase,
+          pesoVacioKg: veh.curbWeightKg,
+          capacidadKg: veh.capacityKg,
+        },
+      });
+    } else {
+      // Modo por_defecto — usamos tipo de vehículo como proxy.
       emisiones = calcularEmisionesViaje({
         metodo: 'por_defecto',
         distanciaKm,
         cargaKg,
-        tipoVehiculo: 'camion_mediano',
+        tipoVehiculo: veh.vehicleType,
       });
     }
+  }
+  if (emisiones == null) {
+    // Fallback: por_defecto con camion_mediano (proxy genérico).
+    emisiones = calcularEmisionesViaje({
+      metodo: 'por_defecto',
+      distanciaKm,
+      cargaKg,
+      tipoVehiculo: 'camion_mediano',
+    });
+  }
 
+  // (4) Persistencia — tx corta con todo pre-computado.
+  return await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(tripMetrics)
       .where(eq(tripMetrics.tripId, tripId))
       .limit(1);
     const isInitialCalculation = existing.length === 0;
+
+    // ADR-028 — derivar fuente de datos y nivel de certificación.
+    //
+    // En esta fase pre-entrega no hay telemetría real disponible — la
+    // distancia viene de `estimarDistanciaKm` (tabla Chile) y se trata
+    // conceptualmente como ruta modelada Maps-style. Si en Phase 1 se
+    // reemplaza por Routes API, la fuente sigue siendo `maps_directions`.
+    //
+    // `coveragePct = 0` porque no hay pings GPS aún; cuando se cierre el
+    // trip y telemetry-processor calcule la cobertura real, este servicio
+    // se llamará de nuevo (post-entrega) y los valores se actualizarán.
+    const routeDataSource: RouteDataSource = 'maps_directions';
+    const coveragePct = 0;
+    const certificationLevel = derivarNivelCertificacion({
+      precisionMethod: emisiones.metodoPrecision,
+      routeDataSource,
+      coveragePct,
+    });
+    const uncertaintyFactor = calcularFactorIncertidumbre({
+      nivelCertificacion: certificationLevel,
+      coveragePct,
+      // En modo estimado pre-entrega no comparamos contra Routes API, así
+      // que asumimos que el tipo declarado matchea (no penalizamos sin
+      // evidencia). La verificación real ocurre post-entrega.
+      vehicleTypeMatchesRoutesApi: true,
+    });
 
     const valuesToWrite = {
       distanceKmEstimated: emisiones.distanciaKm.toString(),
@@ -129,6 +284,11 @@ export async function calcularMetricasEstimadas(opts: {
       glecVersion: emisiones.versionGlec,
       emissionFactorUsed: emisiones.factorEmisionUsado.toString(),
       source: 'modelado',
+      // ADR-028 — campos nuevos del modelo dual.
+      routeDataSource,
+      coveragePct: coveragePct.toString(),
+      certificationLevel,
+      uncertaintyFactor: uncertaintyFactor.toString(),
       calculatedAt: new Date(),
     };
 
@@ -157,4 +317,165 @@ export async function calcularMetricasEstimadas(opts: {
 
     return { tripId, isInitialCalculation, emisiones };
   });
+}
+
+/**
+ * Re-deriva el nivel de certificación post-entrega usando la cobertura
+ * telemétrica real (ADR-028 §5).
+ *
+ * Disparo: al confirmar entrega, ANTES de emitir el certificado. Tiene
+ * que correr en este orden porque emitirCertificadoViaje lee
+ * `certification_level` y `uncertainty_factor` del row de
+ * `metricas_viaje` para elegir el template del PDF (primario vs
+ * secundario) y el ± impreso.
+ *
+ * Lógica:
+ *   1. Cargar trip + assignment + métricas existentes.
+ *   2. Si el vehículo NO tiene Teltonika asociado, no hay forma de
+ *      mejorar la cobertura — skip silencioso (el cert sale con los
+ *      valores estimados pre-entrega: maps_directions + 0%).
+ *   3. Si el vehículo tiene Teltonika, calcular cobertura entre
+ *      pickupAt y deliveredAt; promover routeDataSource a teltonika_gps.
+ *   4. Re-derivar nivel + uncertainty con los nuevos valores.
+ *   5. UPDATE selectivo de los 4 campos (no toca emisiones, factor, etc.
+ *      — esos se mantienen del cálculo estimado, salvo que en una
+ *      revisión futura agreguemos modo `exacto_canbus` con consumo real
+ *      del CAN bus).
+ *
+ * Idempotente: si la cobertura nueva da el mismo nivel, el UPDATE es
+ * no-op (drizzle igual hace el round-trip — opt: chequeo de igualdad
+ * antes de update si esto se vuelve hot path).
+ */
+export async function recalcularNivelPostEntrega(opts: {
+  db: Db;
+  logger: Logger;
+  tripId: string;
+}): Promise<{
+  recomputed: boolean;
+  /** Nivel resultante (puede ser igual al previo). */
+  certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
+  /** Cobertura calculada (0..100). */
+  coveragePct?: number;
+}> {
+  const { db, logger, tripId } = opts;
+
+  const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+  const trip = tripRows[0];
+  if (!trip) {
+    throw new TripNotFoundError(tripId);
+  }
+
+  const metricsRows = await db
+    .select()
+    .from(tripMetrics)
+    .where(eq(tripMetrics.tripId, tripId))
+    .limit(1);
+  const existing = metricsRows[0];
+  if (!existing) {
+    // No hay métricas previas — no hay nada que recalcular. Esto
+    // normalmente no debería ocurrir en producción (calcularMetricasEstimadas
+    // corre al asignar), pero defensivo: log + skip.
+    logger.warn({ tripId }, 'recalcularNivelPostEntrega: trip sin metricas_viaje');
+    return { recomputed: false };
+  }
+
+  // Necesitamos vehicleId + deliveredAt del assignment. Si no hay
+  // assignment cerrado, no se debería estar llamando esta función todavía.
+  const assignmentRows = await db
+    .select({
+      vehicleId: assignments.vehicleId,
+      deliveredAt: assignments.deliveredAt,
+    })
+    .from(assignments)
+    .where(eq(assignments.tripId, tripId))
+    .limit(1);
+  const assignment = assignmentRows[0];
+
+  if (!assignment?.vehicleId || !assignment.deliveredAt) {
+    logger.info(
+      { tripId, hasAssignment: !!assignment, hasVehicle: !!assignment?.vehicleId },
+      'recalcularNivelPostEntrega: skip (sin assignment con vehicle + deliveredAt)',
+    );
+    return { recomputed: false };
+  }
+
+  // Si el vehículo no tiene Teltonika, no hay telemetría — el nivel se
+  // queda como secundario_modeled con maps_directions y coverage 0.
+  // Skip silencioso para no escribir un UPDATE no-op.
+  const vehRows = await db
+    .select({ teltonikaImei: vehicles.teltonikaImei })
+    .from(vehicles)
+    .where(eq(vehicles.id, assignment.vehicleId))
+    .limit(1);
+  const vehiculo = vehRows[0];
+  if (!vehiculo?.teltonikaImei) {
+    logger.info(
+      { tripId, vehicleId: assignment.vehicleId },
+      'recalcularNivelPostEntrega: vehicle sin Teltonika — sin upgrade del nivel',
+    );
+    return { recomputed: false };
+  }
+
+  // Usar pickupWindowStart como inicio del trip si no hay pickup_at real.
+  // Es conservador: si el pickup real fue después, ampliamos la ventana
+  // de búsqueda y dejamos al cálculo el filtrado por gaps de continuidad.
+  const pickupAt = trip.pickupWindowStart ?? trip.createdAt;
+
+  const distanciaEstimadaKm = existing.distanceKmEstimated
+    ? Number(existing.distanceKmEstimated)
+    : 0;
+
+  const coveragePct = await calcularCobertura({
+    db,
+    logger,
+    vehicleId: assignment.vehicleId,
+    pickupAt,
+    deliveredAt: assignment.deliveredAt,
+    distanciaEstimadaKm,
+  });
+
+  const precisionMethod =
+    (existing.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
+    'por_defecto';
+
+  // routeDataSource sube a 'teltonika_gps' porque el vehículo tiene
+  // device asociado y SI calculamos cobertura (puede ser 0 si no llegó
+  // ningún ping, pero la fuente conceptual es Teltonika).
+  const routeDataSource: RouteDataSource = 'teltonika_gps';
+
+  const certificationLevel = derivarNivelCertificacion({
+    precisionMethod,
+    routeDataSource,
+    coveragePct,
+  });
+  const uncertaintyFactor = calcularFactorIncertidumbre({
+    nivelCertificacion: certificationLevel,
+    coveragePct,
+    vehicleTypeMatchesRoutesApi: true,
+  });
+
+  await db
+    .update(tripMetrics)
+    .set({
+      routeDataSource,
+      coveragePct: coveragePct.toString(),
+      certificationLevel,
+      uncertaintyFactor: uncertaintyFactor.toString(),
+      updatedAt: sql`now()`,
+    })
+    .where(eq(tripMetrics.tripId, tripId));
+
+  logger.info(
+    {
+      tripId,
+      vehicleId: assignment.vehicleId,
+      coveragePct,
+      certificationLevel,
+      uncertaintyFactor,
+      precisionMethod,
+    },
+    'nivel de certificación recalculado post-entrega',
+  );
+
+  return { recomputed: true, certificationLevel, coveragePct };
 }

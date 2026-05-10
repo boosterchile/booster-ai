@@ -203,6 +203,34 @@ export const precisionMethodEnum = pgEnum('metodo_precision', [
   'por_defecto',
 ]);
 
+/**
+ * Origen del polyline real recorrido por el viaje (ADR-028 §1).
+ * Es la segunda dimensión ortogonal a `metodo_precision`. Junto con
+ * `coverage_pct` determina si el viaje califica para certificado primario.
+ *
+ *   - teltonika_gps: pings GPS del dispositivo Teltonika (única fuente
+ *     que califica para nivel primario verificable).
+ *   - maps_directions: ruta sintetizada por Google Routes API.
+ *   - manual_declared: declaración del cliente sin telemetría ni simulación.
+ */
+export const routeDataSourceEnum = pgEnum('fuente_dato_ruta', [
+  'teltonika_gps',
+  'maps_directions',
+  'manual_declared',
+]);
+
+/**
+ * Nivel de certificación derivado al cierre del trip (ADR-028 §2).
+ * NO es self-declared — lo computa `derivarNivelCertificacion()` del
+ * package @booster-ai/carbon-calculator. Selecciona el template del
+ * cert-generator (primario verificable vs secundario estimativo).
+ */
+export const certificationLevelEnum = pgEnum('nivel_certificacion', [
+  'primario_verificable',
+  'secundario_modeled',
+  'secundario_default',
+]);
+
 export const reportingStandardEnum = pgEnum('estandar_reporte', [
   'GLEC_V3',
   'GHG_PROTOCOL',
@@ -210,6 +238,23 @@ export const reportingStandardEnum = pgEnum('estandar_reporte', [
   'GRI',
   'SASB',
   'CDP',
+]);
+
+/**
+ * Tipo de evento de conducción capturado por el FMC150 vía IO 253/255
+ * (Phase 2 PR-I2). Usado en `eventos_conduccion_verde`.
+ *
+ * Mapeo desde el codec8-parser (inglés) al DB (español sin tildes):
+ *   harsh_acceleration → aceleracion_brusca
+ *   harsh_braking      → frenado_brusco
+ *   harsh_cornering    → curva_brusca
+ *   over_speed         → exceso_velocidad
+ */
+export const tipoEventoConduccionEnum = pgEnum('tipo_evento_conduccion', [
+  'aceleracion_brusca',
+  'frenado_brusco',
+  'curva_brusca',
+  'exceso_velocidad',
 ]);
 
 export const stakeholderTypeEnum = pgEnum('tipo_stakeholder', [
@@ -664,7 +709,35 @@ export const tripMetrics = pgTable(
     precisionMethod: precisionMethodEnum('metodo_precision'),
     glecVersion: varchar('version_glec', { length: 10 }),
     emissionFactorUsed: numeric('factor_emision_usado', { precision: 8, scale: 5 }),
+    /** @deprecated Reemplazado por `route_data_source` (ADR-028). Mantenido
+     *  por backwards-compat hasta que el backfill complete y se ejecute la
+     *  drop column en una migración posterior. */
     source: varchar('fuente_datos', { length: 20 }),
+    /**
+     * ADR-028 §1: origen del polyline real recorrido. Independiente de
+     * `precision_method` (que captura calidad de medición de combustible).
+     */
+    routeDataSource: routeDataSourceEnum('fuente_dato_ruta'),
+    /**
+     * ADR-028 §2: fracción del viaje cubierta por la fuente principal,
+     * en porcentaje [0..100]. Para trips sin telemetría se setea a 0.
+     * Junto con `precision_method` y `route_data_source` determina el
+     * nivel de certificación.
+     */
+    coveragePct: numeric('cobertura_pct', { precision: 5, scale: 2 }),
+    /**
+     * ADR-028 §2: nivel de certificación derivado al cierre del trip.
+     * Computed por carbon-calculator.derivarNivelCertificacion(); no debe
+     * setearse manualmente por el cliente (greenwashing prevention).
+     * Alimenta el selector de template en cert-generator.
+     */
+    certificationLevel: certificationLevelEnum('nivel_certificacion'),
+    /**
+     * ADR-028 §3: factor de incertidumbre publicado en el cert.
+     * Decimal en [0, 1]. Ej: 0.05 = ±5%. Calculado por
+     * carbon-calculator.calcularFactorIncertidumbre().
+     */
+    uncertaintyFactor: numeric('factor_incertidumbre', { precision: 4, scale: 3 }),
     calculatedAt: timestamp('calculado_en', { withTimezone: true }),
     certificatePdfUrl: text('certificado_pdf_url'),
     certificateSha256: char('certificado_sha256', { length: 64 }),
@@ -912,6 +985,71 @@ export const telemetryPoints = pgTable(
       table.timestampReceivedAt,
     ),
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
+  }),
+);
+
+/**
+ * Eventos de conducción captados por el FMC150 (Phase 2 PR-I2).
+ *
+ * El device emite vía IO 253 (harsh accel/brake/cornering) e IO 255
+ * (over-speeding). El telemetry-processor extrae esos eventos del
+ * AvlRecord usando @booster-ai/codec8-parser/extractGreenDrivingEvents
+ * y los persiste acá. Tabla aparte de `telemetria_puntos` porque:
+ *
+ *   - Cardinalidad muy distinta: telemetría = ~1 ping/30s; eventos =
+ *     5-50 por trip típico. Mezclarlos rompe planes de query.
+ *   - Semántica distinta: puntos son state-of-world; eventos son
+ *     transiciones discretas. Indexes y queries son diferentes.
+ *   - Driver scoring (PR-I3) agrega solo desde acá; no quiere ruido
+ *     de los puntos periódicos.
+ *
+ * Dedup: UNIQUE (vehiculo_id, timestamp_device, tipo). Si por algún
+ * retry el processor procesa dos veces el mismo packet, el INSERT
+ * cae en ON CONFLICT DO NOTHING en el caller.
+ */
+export const greenDrivingEvents = pgTable(
+  'eventos_conduccion_verde',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    imei: varchar('imei', { length: 20 }).notNull(),
+    /** Timestamp del evento según el reloj del device (autoritativo). */
+    timestampDevice: timestamp('timestamp_device', { withTimezone: true }).notNull(),
+    /** Timestamp de recepción server-side (para SLO de pipeline). */
+    timestampReceivedAt: timestamp('timestamp_recibido_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    type: tipoEventoConduccionEnum('tipo').notNull(),
+    /**
+     * Magnitud del evento en su unidad nativa:
+     *   - aceleracion/frenado/curva: pico en mG (positivo)
+     *   - exceso_velocidad: km/h del momento
+     */
+    severity: numeric('severidad', { precision: 8, scale: 2 }).notNull(),
+    /** 'mG' para harsh; 'km/h' para over_speed. Explícito para evitar confusión. */
+    unit: varchar('unidad', { length: 8 }).notNull(),
+    /** GPS en el momento del evento (opcional — defensivo si pasa fix=0). */
+    latitude: numeric('latitud', { precision: 10, scale: 7 }),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }),
+    speedKmh: smallint('velocidad_kmh'),
+  },
+  (table) => ({
+    // Dedup natural — un device físicamente no puede emitir dos eventos
+    // del mismo tipo en el mismo timestamp_device (el reloj del device
+    // tiene resolución 1s). Si llega duplicado vía retry, ON CONFLICT.
+    vehicleTsTypeUnique: unique('uq_eventos_conduccion_vehiculo_ts_tipo').on(
+      table.vehicleId,
+      table.timestampDevice,
+      table.type,
+    ),
+    // Index para queries de scoring por (vehículo, ventana de trip).
+    vehicleTsIdx: index('idx_eventos_conduccion_vehiculo_ts').on(
+      table.vehicleId,
+      table.timestampDevice,
+    ),
+    typeTsIdx: index('idx_eventos_conduccion_tipo_ts').on(table.type, table.timestampDevice),
   }),
 );
 

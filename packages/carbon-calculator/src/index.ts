@@ -65,6 +65,8 @@ export {
 export type {
   TipoCombustible,
   MetodoPrecision,
+  RouteDataSource,
+  NivelCertificacion,
   FactorEmisionCombustible,
   PerfilVehiculo,
   ParametrosBackhaul,
@@ -74,3 +76,9 @@ export type {
   ParametrosCalculo,
   ResultadoEmisiones,
 } from './tipos.js';
+export {
+  derivarNivelCertificacion,
+  calcularFactorIncertidumbre,
+  THRESHOLD_PRIMARIO_PCT,
+  THRESHOLD_SECUNDARIO_MODELED_PCT,
+} from './certificacion/index.js';
