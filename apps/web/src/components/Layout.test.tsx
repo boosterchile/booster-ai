@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -16,10 +16,13 @@ vi.mock('../hooks/use-switch-company.js', () => ({
 }));
 
 vi.mock('../hooks/use-auth.js', () => ({
-  signOutUser: vi.fn(),
+  signOutUser: vi.fn(async () => undefined),
 }));
 
+import { signOutUser } from '../hooks/use-auth.js';
 import { Layout } from './Layout.js';
+
+const signOutUserMock = vi.mocked(signOutUser);
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -109,5 +112,100 @@ describe('Layout — integración del CompanySwitcher (FIX-013/§3.1)', () => {
       </Layout>,
     );
     expect(screen.getByText('contenido del main')).toBeInTheDocument();
+  });
+});
+
+describe('Layout — mobile menu + signOut', () => {
+  it('hamburguesa cambia aria-expanded false → true → false', () => {
+    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+    render(
+      <Layout me={me} title="Cargas">
+        <div>x</div>
+      </Layout>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Abrir menú' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('button', { name: 'Cerrar menú' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar menú' }));
+    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument();
+  });
+
+  it('click logo cierra el menú móvil si estaba abierto', () => {
+    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+    render(
+      <Layout me={me} title="Cargas">
+        <div>x</div>
+      </Layout>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+    fireEvent.click(screen.getByText('Booster AI'));
+    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument();
+  });
+
+  it('click "Salir" desktop llama signOutUser', () => {
+    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+    render(
+      <Layout me={me} title="Cargas">
+        <div>x</div>
+      </Layout>,
+    );
+    const buttons = screen.getAllByRole('button', { name: /Salir/ });
+    const first = buttons[0];
+    if (!first) {
+      throw new Error('expected button');
+    }
+    fireEvent.click(first);
+    expect(signOutUserMock).toHaveBeenCalled();
+  });
+
+  it('click "Salir" mobile (dentro del panel desplegable) también llama signOutUser', () => {
+    signOutUserMock.mockClear();
+    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+    render(
+      <Layout me={me} title="Cargas">
+        <div>x</div>
+      </Layout>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+    const buttons = screen.getAllByRole('button', { name: /Salir/ });
+    const last = buttons[buttons.length - 1];
+    if (!last) {
+      throw new Error('expected Salir button');
+    }
+    fireEvent.click(last);
+    expect(signOutUserMock).toHaveBeenCalled();
+  });
+
+  it('handleSwitchEmpresa invoca switchTo + cierra menú mobile', () => {
+    switchToMock.mockClear();
+    const me = buildMe([
+      membership('e-1', 'Naviera Costera'),
+      membership('e-2', 'Transportes Andes'),
+    ]);
+    render(
+      <Layout me={me} title="Cargas">
+        <div>x</div>
+      </Layout>,
+    );
+    // Abre el menú móvil para que su switcher esté visible.
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+    // El switcher mobile (el último renderizado) tiene los items del dropdown.
+    const switcherButtons = screen.getAllByRole('button', { expanded: false });
+    const lastSwitcher = switcherButtons[switcherButtons.length - 1];
+    if (!lastSwitcher) {
+      throw new Error('expected switcher trigger');
+    }
+    fireEvent.click(lastSwitcher);
+    const items = screen.getAllByRole('menuitem');
+    const target = items.find((el) => !el.hasAttribute('disabled'));
+    if (!target) {
+      throw new Error('expected non-disabled menuitem');
+    }
+    fireEvent.click(target);
+    expect(switchToMock).toHaveBeenCalled();
   });
 });

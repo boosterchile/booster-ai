@@ -41,13 +41,9 @@ export default defineConfig({
         // — testeables sólo con Playwright e2e contra build real.
         'src/components/map/**',
         'src/components/chat/ChatPanel.tsx',
-        'src/components/chat/PushSubscribeBanner.tsx',
         'src/components/profile/AuthProvidersSection.tsx',
-        'src/components/profile/ProfileForm.tsx',
         'src/components/onboarding/OnboardingForm.tsx',
         'src/components/map/**',
-        'src/components/offers/OfferCard.tsx',
-        'src/components/Layout.tsx', // navbar + dropdowns Tanstack Router; e2e
         // Hooks que sólo tienen sentido in-browser (SSE EventSource, telemetría).
         'src/hooks/use-chat-stream.ts',
         'src/hooks/use-chat-messages.ts',
