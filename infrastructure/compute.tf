@@ -157,6 +157,15 @@ module "service_api" {
     # ROTATE_ME_GOOGLE_ROUTES_API_KEY, el servicio cae al fallback de
     # estimarDistanciaKm (tabla pre-computada Chile) sin romper nada.
     GOOGLE_ROUTES_API_KEY = google_secret_manager_secret.secrets["google-routes-api-key"].secret_id
+
+    # Phase 3 PR-J2 — Gemini API key para coaching IA post-entrega.
+    # Server-side; el api la usa en generar-coaching-viaje.ts para
+    # llamar a Gemini REST API. Si la key está con placeholder o
+    # ausente, generarCoachingConduccion cae al fallback de plantilla
+    # determinística — el carrier sigue recibiendo coaching útil.
+    # El secret ya existe en security.tf; este binding lo expone como
+    # env var GEMINI_API_KEY al api Cloud Run (apps/api lee via config.ts).
+    GEMINI_API_KEY = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id
