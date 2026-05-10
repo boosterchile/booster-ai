@@ -38,6 +38,7 @@ import {
   type PublicTrackingFoundResponse,
   usePublicTracking,
 } from '../hooks/use-public-tracking.js';
+import { ApiError } from '../lib/api-client.js';
 
 export function PublicTrackingRoute() {
   const { token } = useParams({ strict: false }) as { token: string };
@@ -98,7 +99,10 @@ function LoadingState() {
 }
 
 function ErrorState({ error }: { error: unknown }) {
-  const isNotFound = error instanceof Error && error.message.includes('404');
+  // ApiError pasa el `error` field del response como `message`, así que
+  // `error.message` es típicamente 'not_found' (no contiene '404').
+  // Chequear directamente el status numérico es la forma confiable.
+  const isNotFound = error instanceof ApiError && error.status === 404;
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 shadow-sm">
       <div className="flex items-start gap-3">
