@@ -19,6 +19,7 @@ import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
+import { createPublicTrackingRoutes } from './routes/public-tracking.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
@@ -109,6 +110,12 @@ export function createServer(opts: CreateServerOptions): Hono {
         : {}),
     }),
   );
+
+  // Phase 5 PR-L1 — Public tracking del shipper / consignee. NO auth:
+  // la defensa es la opacidad del token UUID v4 (122 bits, no enumerable).
+  // El handler restringe los datos expuestos (plate parcial, sin
+  // driver name, telemetría sólo <30min).
+  app.route('/public/tracking', createPublicTrackingRoutes({ db: opts.db, logger }));
 
   // Protected routes — OIDC token from allowed Cloud Run SA required
   const authMiddleware = createAuthMiddleware({
