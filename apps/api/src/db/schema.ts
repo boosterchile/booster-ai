@@ -645,6 +645,15 @@ export const assignments = pgTable(
     pickedUpAt: timestamp('recogido_en', { withTimezone: true }),
     deliveredAt: timestamp('entregado_en', { withTimezone: true }),
     cancelledAt: timestamp('cancelado_en', { withTimezone: true }),
+    /**
+     * Phase 5 PR-L1 — Token público opaco (UUID v4) para que el
+     * generador de carga + consignee (futuro) puedan tracker el viaje
+     * vía link sin auth: GET /public/tracking/:token. Se genera en el
+     * INSERT de la assignment (offer-actions.ts). NULLABLE para
+     * backwards-compat con assignments pre-Phase-5; los nuevos siempre
+     * lo tienen.
+     */
+    publicTrackingToken: uuid('tracking_token_publico'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },

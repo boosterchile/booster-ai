@@ -92,6 +92,13 @@
       "when": 1778976000000,
       "tag": "0012_metricas_viaje_coaching",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779062400000,
+      "tag": "0013_assignments_public_tracking_token",
+      "breakpoints": true
     }
   ]
 }

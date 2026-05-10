@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, ne } from 'drizzle-orm';
 import { config } from '../config.js';
@@ -112,6 +113,9 @@ export async function acceptOffer(opts: {
       }
 
       // 3. Crear assignment. UNIQUE (viaje_id) protege contra race.
+      // Phase 5 PR-L1 — generamos `publicTrackingToken` UUID v4 al insert
+      // para habilitar el tracking público del consignee/shipper sin auth
+      // (futuro WhatsApp template + página /tracking/:token).
       const [assignment] = await tx
         .insert(assignments)
         .values({
@@ -122,6 +126,7 @@ export async function acceptOffer(opts: {
           status: 'asignado',
           agreedPriceClp: offer.proposedPriceClp,
           acceptedAt: now,
+          publicTrackingToken: randomUUID(),
         })
         .returning();
       if (!assignment) {
