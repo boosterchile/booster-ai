@@ -6,6 +6,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.{test,spec}.ts', 'test/**/*.{test,spec}.ts'],
+    // Bump default 5s → 15s. CI bajo coverage instrumentation tarda más
+    // en cargar el module graph (transform 4-6s + import 27s observado).
+    // Tests individuales son rápidos (<300ms localmente) pero el primer
+    // import del file puede tardar varios segundos en GH runners.
+    // Flake recurrente en `trip-requests-v2.test.ts > rechaza si no hay
+    // userContext con 401` resuelto con este bump (era 5038ms en CI).
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
