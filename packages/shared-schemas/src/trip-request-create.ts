@@ -73,6 +73,34 @@ export const tripRequestCreateInputSchema = z
     }),
     /** Precio sugerido por shipper en CLP. Null = pricing-engine sugiere. */
     proposed_price_clp: z.number().int().nonnegative().nullable(),
+    /**
+     * Phase 5 PR-L3b — Datos opcionales del consignee (destinatario en
+     * el lugar de entrega). Si están presentes:
+     *   - El link público de tracking se envía DIRECTAMENTE al
+     *     consignee vía WhatsApp al asignar (vs forwarding manual del
+     *     shipper).
+     *   - El destinatario aparece como rol abstracto en el chat
+     *     conductor↔destinatario (futuro PR-L5).
+     *
+     * Opt-in deliberado: el shipper típico tiene la relación con el
+     * consignee y prefiere NO compartir su número con plataforma —
+     * solo quien quiere la experiencia "Uber-like" para su recipient
+     * llena estos campos.
+     */
+    consignee: z
+      .object({
+        /** Nombre legible del destinatario. Para mostrar en saludo del template. */
+        name: z.string().trim().min(1).max(100).optional(),
+        /**
+         * Phone E.164 (con +). Validamos formato pero NO carrier-side —
+         * Twilio rechazará al envío si el número no tiene WhatsApp.
+         */
+        phone_e164: z
+          .string()
+          .regex(/^\+\d{8,15}$/, 'Debe estar en formato E.164 (+56912345678)')
+          .optional(),
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
     const startMs = Date.parse(data.pickup_window.start_at);
