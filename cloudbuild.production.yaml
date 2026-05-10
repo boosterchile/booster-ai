@@ -222,35 +222,35 @@ steps:
     waitFor: [push-sms-fallback-gateway]
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
-  # Update via kubectl set image al deployment del cluster.
-  - id: deploy-telemetry-tcp-gateway
-    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  #
+  # NOTA OPERACIONAL (2026-05-09): el deploy a GKE NO se hace desde Cloud
+  # Build private pool. El pool y el GKE control plane usan service
+  # networking peerings independientes que no propagan rutas entre si
+  # (limitacion VPC peering no-transitivo). kubectl desde el pool al
+  # master interno (172.16.0.2) hace timeout.
+  #
+  # Cloud Build SOLO buildea + pushea la imagen :${_COMMIT_SHA} a
+  # Artifact Registry. El operador deploya manualmente desde su laptop
+  # (autorizado en master_authorized_networks_config) o via IAP TCP:
+  #
+  #   ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}
+  #
+  # El script hace `kubectl set image` al SHA buildeado. Output del
+  # build incluye el SHA para facilitar copy-paste.
+  - id: gke-deploy-instructions
+    name: gcr.io/cloud-builders/curl
     entrypoint: bash
     args:
       - -c
       - |
-        set -eu
-        # --internal-ip: Cloud Build private pool sale por NAT egress (no por
-        # VPC peering). El master_authorized_networks_config whitelistea el
-        # peering range, no las IPs NAT de Google. Usar el endpoint interno
-        # del control plane (accesible via VPC peering) evita ese problema.
-        gcloud container clusters get-credentials booster-ai-telemetry \
-          --region=${_REGION} \
-          --project=${PROJECT_ID} \
-          --internal-ip
-
-        # Si la primera vez, apply manifests; sino, set image del deployment.
-        if ! kubectl get deployment telemetry-tcp-gateway -n telemetry > /dev/null 2>&1; then
-          echo "Primer deploy — apply manifests completos"
-          kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway.yaml
-        fi
-
-        kubectl set image deployment/telemetry-tcp-gateway \
-          gateway=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA} \
-          -n telemetry
-
-        kubectl rollout status deployment/telemetry-tcp-gateway \
-          -n telemetry --timeout=5m
+        echo "=========================================="
+        echo "  GKE deploy MANUAL pendiente"
+        echo "=========================================="
+        echo "  Imagen lista: ${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}"
+        echo ""
+        echo "  Para deployar al gateway, ejecutar desde laptop autorizado:"
+        echo "    ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}"
+        echo "=========================================="
     waitFor: [push-telemetry-tcp-gateway]
 
   # =========================================================================
