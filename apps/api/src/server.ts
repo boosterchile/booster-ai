@@ -16,6 +16,7 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
+import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
@@ -139,6 +140,9 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/me/push-subscription/*', userContextMiddlewareForMe);
     const meRouter = createMeRoutes({ db: opts.db, logger });
     meRouter.route('/push-subscription', createMePushSubscriptionRoutes({ db: opts.db, logger }));
+    // Stakeholder consent grants (ADR-028 §"Acciones derivadas §7"). Sólo
+    // requiere firebaseAuth — el handler resuelve userId vía firebase_uid.
+    meRouter.route('/consents', createMeConsentsRoutes({ db: opts.db, logger }));
     app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.

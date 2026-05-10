@@ -752,6 +752,50 @@ export const consents = pgTable(
   }),
 );
 
+/**
+ * Audit log de cada acceso de stakeholder a data PII/ESG. Cierra ADR-028
+ * §"Acciones derivadas §8" — sink BigQuery para análisis posterior.
+ *
+ * Patrón: cada handler que sirve data ESG a stakeholder llama
+ * `checkStakeholderConsent()` que (1) valida grant válido y (2) inserta
+ * row acá. Sin la insertion, NO se sirve la data (auditabilidad
+ * bloqueante).
+ *
+ * No se borra (append-only). Para cumplir Ley 19.628 derecho de borrado
+ * sin invalidar audit, los `actor_email` y `target_recurso_id` aquí
+ * pueden anonymizarse en un proceso separado a 5 años de retención
+ * (legal pendiente).
+ */
+export const stakeholderAccessLog = pgTable(
+  'log_acceso_stakeholder',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    accessedAt: timestamp('accedido_en', { withTimezone: true }).notNull().defaultNow(),
+    stakeholderId: uuid('stakeholder_id')
+      .notNull()
+      .references(() => stakeholders.id),
+    consentId: uuid('consentimiento_id')
+      .notNull()
+      .references(() => consents.id),
+    /** Tipo de recurso accedido (espejo de consentScopeType: trip, empresa, portafolio_viajes, etc.) */
+    targetScopeType: consentScopeTypeEnum('tipo_alcance').notNull(),
+    targetScopeId: uuid('alcance_id').notNull(),
+    /** Categoría de dato servida (emisiones, rutas, ...). Una row por categoría servida. */
+    dataCategory: consentDataCategoryEnum('categoria_dato').notNull(),
+    /** HTTP path que generó el acceso (ej. `/me/stakeholder/portfolio/123/emissions`) */
+    httpPath: varchar('http_path', { length: 500 }).notNull(),
+    /** firebase_uid del stakeholder al momento del request (denormalizado, in case user borra cuenta) */
+    actorFirebaseUid: varchar('actor_firebase_uid', { length: 128 }).notNull(),
+    /** Bytes servidos al stakeholder en este request (útil para tracking volumétrico). */
+    bytesServed: integer('bytes_servidos').notNull().default(0),
+  },
+  (table) => ({
+    accessedAtIdx: index('idx_log_acceso_stakeholder_accedido_en').on(table.accessedAt),
+    stakeholderIdx: index('idx_log_acceso_stakeholder_stakeholder').on(table.stakeholderId),
+    consentIdx: index('idx_log_acceso_stakeholder_consentimiento').on(table.consentId),
+  }),
+);
+
 // =============================================================================
 // INTAKE LEGACY (pre-empresa anonymous WhatsApp)
 // =============================================================================
