@@ -50,6 +50,43 @@ export type TipoCombustible =
 export type MetodoPrecision = 'exacto_canbus' | 'modelado' | 'por_defecto';
 
 /**
+ * Origen del polyline real recorrido (ADR-028 §1). Es la **segunda
+ * dimensión** ortogonal a `MetodoPrecision`:
+ *
+ *   - `teltonika_gps`: pings GPS reales del dispositivo Teltonika a lo
+ *     largo del trip. Es la única fuente que califica para certificado
+ *     primario verificable (combinada con `exacto_canbus` y cobertura ≥95%).
+ *   - `maps_directions`: ruta sintetizada por Google Routes API
+ *     (`computeRoutes` con `vehicleInfo`). El polyline NO está confirmado,
+ *     se asume — secundario modeled.
+ *   - `manual_declared`: cliente declaró origen→destino sin telemetría ni
+ *     simulación. Worst case — secundario default.
+ *
+ * Espejo de `routeDataSourceSchema` en `@booster-ai/shared-schemas`. Si
+ * cambia allá, actualizar acá (ver ADR-028 §1 y package philosophy:
+ * carbon-calculator es zero-dep, no importa zod).
+ */
+export type RouteDataSource = 'teltonika_gps' | 'maps_directions' | 'manual_declared';
+
+/**
+ * Nivel de certificación derivado (ADR-028 §2). NO es self-declared, lo
+ * computa `derivarNivelCertificacion()` a partir de `MetodoPrecision`,
+ * `RouteDataSource` y `coverage_pct`. El cliente NO puede setearlo
+ * manualmente — esto previene greenwashing por construcción.
+ *
+ *   - `primario_verificable`: GLEC §4.4 nivel 1 — auditable bajo SBTi/CDP.
+ *   - `secundario_modeled`: GLEC §4.4 nivel 2 con factores calibrados.
+ *   - `secundario_default`: GLEC §4.4 nivel 2 con factores genéricos
+ *     (último fallback, cuando no hay calibración local disponible).
+ *
+ * Espejo de `nivelCertificacionSchema` en `@booster-ai/shared-schemas`.
+ */
+export type NivelCertificacion =
+  | 'primario_verificable'
+  | 'secundario_modeled'
+  | 'secundario_default';
+
+/**
  * Factor de emisión completo Well-to-Wheel para un combustible en una
  * jurisdicción específica (Chile). Todos los valores son CO₂e (incluye
  * CH₄ + N₂O ponderados con IPCC AR6 GWP-100).
