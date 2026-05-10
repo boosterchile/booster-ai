@@ -309,6 +309,32 @@ const apiEnvSchema = commonEnvSchema
      *     integración del partner.
      */
     FACTORING_V1_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
+
+    /**
+     * Allowlist de emails con acceso a endpoints `/admin/cobra-hoy/*`
+     * (operadores de Booster Chile SpA, no admins de empresa carrier).
+     *
+     * Formato CSV: `dev@boosterchile.com,contacto@boosterchile.com`. El
+     * helper `requirePlatformAdmin` compara `userContext.user.email` ∈
+     * lista; sin match → 403 `forbidden_platform_admin`.
+     *
+     * Alineado con el Workspace group `admins@boosterchile.com` creado
+     * en el sprint IaC hardening (handoff 2026-05-09). Por simpleza
+     * mantenemos la fuente de verdad en config (ENV), no en BD ni en
+     * custom claims Firebase — son 1-2 humanos hasta TRL 10.
+     *
+     * Default vacío para que ningún entorno tenga acceso accidental.
+     * Cloud Run prod debe setear esta var explícitamente.
+     */
+    BOOSTER_PLATFORM_ADMIN_EMAILS: z
+      .string()
+      .default('')
+      .transform((s) =>
+        s
+          .split(',')
+          .map((x) => x.trim().toLowerCase())
+          .filter(Boolean),
+      ),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

@@ -9,6 +9,7 @@ import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -297,6 +298,13 @@ export function createServer(opts: CreateServerOptions): Hono {
       '/admin/dispositivos-pendientes',
       createAdminDispositivosRoutes({ db: opts.db, logger }),
     );
+
+    // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
+    // ADR-032). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist dentro
+    // del handler (no por role de empresa).
+    app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware);
+    app.use('/admin/cobra-hoy/*', userContextMiddleware);
+    app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
 
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);

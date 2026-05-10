@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import { RootComponent } from './routes/__root.js';
+import { AdminCobraHoyRoute } from './routes/admin-cobra-hoy.js';
 import { AdminDispositivosRoute } from './routes/admin-dispositivos.js';
 import { AppRoute } from './routes/app.js';
 import { AsignacionDetalleRoute } from './routes/asignacion-detalle.js';
@@ -74,6 +75,15 @@ const adminDispositivosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/admin/dispositivos',
   component: AdminDispositivosRoute,
+});
+
+// ADR-029 v1 / ADR-032 — admin platform-wide Cobra Hoy. Auth real está
+// en backend (BOOSTER_PLATFORM_ADMIN_EMAILS allowlist); la ruta queda
+// bajo /app para mantener la auth de Firebase y el layout.
+const adminCobraHoyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/admin/cobra-hoy',
+  component: AdminCobraHoyRoute,
 });
 
 const vehiculosListRoute = createRoute({
@@ -191,6 +201,7 @@ const routeTree = rootRoute.addChildren([
   legalTerminosRoute,
   cobraHoyHistorialRoute,
   legalCobraHoyRoute,
+  adminCobraHoyRoute,
 ]);
 
 export const router = createRouter({
