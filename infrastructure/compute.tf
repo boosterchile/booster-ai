@@ -150,6 +150,13 @@ module "service_api" {
     # `npx web-push generate-vapid-keys`.
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
+
+    # Phase 1 (ADR-028) — Google Routes API key para eco-route suggestion.
+    # Server-side; el api la usa al confirmar oferta y al consultar
+    # GET /offers/:id/eco-preview. Si está con placeholder
+    # ROTATE_ME_GOOGLE_ROUTES_API_KEY, el servicio cae al fallback de
+    # estimarDistanciaKm (tabla pre-computada Chile) sin romper nada.
+    GOOGLE_ROUTES_API_KEY = google_secret_manager_secret.secrets["google-routes-api-key"].secret_id
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id
