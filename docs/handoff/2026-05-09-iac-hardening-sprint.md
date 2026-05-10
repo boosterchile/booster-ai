@@ -125,6 +125,45 @@ Audit logs:       ADMIN_READ + DATA_READ + DATA_WRITE en allServices
 
 ---
 
+## Post-sprint cascade (2026-05-10)
+
+Tras mergear el handoff (#77), el primer push automatico a `main` disparo
+`Release + Deploy` y revelo 3 bugs que NO se vieron durante el sprint porque
+los deploys se hicieron via `terraform apply` directo + `kubectl set image`
+manual. La cascada se cerro con 3 PRs adicionales:
+
+| PR | Bug observado | Causa raiz | Fix |
+|---|---|---|---|
+| #78 | `--region flag required when workerpool resource includes region substitution` (3 runs failed: 25617342941, 25616851315, 25616721454) | PR #68 introdujo private pool regional `southamerica-west1`, pero `release.yml` no pasaba `--region` a `gcloud builds submit` | Agregar `--region=${{ env.GCP_REGION }}` al step (web edit via Chrome MCP — PAT carece de `workflow` scope) |
+| #79 | `PERMISSION_DENIED: caller does not have permission to act as service account .../github-deployer@...` | PR #70 scopeo `iam.serviceAccountUser` solo a `cloud_run_runtime`. `cloudbuild.production.yaml` declara `serviceAccount: .../github-deployer@`, requiriendo self-actAs | Binding explicito `iam.serviceAccountUser` de github-deployer **sobre si mismo** — preserva el aislamiento de PR #70 |
+| #80 | `PERMISSION_DENIED: IAM Authority does not have the permission 'cloudbuild.workerpools.use'` | github-deployer no tenia permission de USAR el private pool de PR #68 (solo tenia `cloudbuild.builds.editor` para crear builds) | Agregar `roles/cloudbuild.workerPoolUser` a `github_deployer_roles`. Scope minimo (use, no admin) |
+
+Verificacion final post-cascada (run 25618597775, commit `dd7fc9e`):
+
+```
+Cloud Build 8d072cdd-be9d-4b5d-92fe-2e6e9ff650b2 → SUCCESS (7m 47s)
+6 imagenes pusheadas, 5 servicios Cloud Run deployed
+Smoke test API health → HTTP 200
+```
+
+### Patron observado
+
+Todos los bugs son **cascadas predecibles** del scope-down + nuevo recurso:
+
+1. Cuando se scopea un rol IAM amplio (ej. `serviceAccountUser` project-wide),
+   verificar uno-por-uno los callers que dependian del scope amplio. Cada uno
+   puede romperse por una razon distinta.
+2. Cuando se introduce un recurso regional con SA propio o requisitos nuevos
+   (ej. private worker pool), el caller necesita roles especificos para
+   USARLO. `editor` para builds no implica permission sobre pools.
+
+### Mitigacion futura
+
+- **Test pre-merge**: en CI agregar un step `gcloud builds submit --no-source --no-cache` (dry run) que detecte permission errors antes del merge a main.
+- **Smoke deploy a staging**: el TODO `#STAGING-ENV` (referenciado en `release.yml`) es ahora critico — un staging real cacharia estos bugs antes de prod.
+
+---
+
 ## Ops runbook actualizado
 
 ### Para deployar el gateway (post-Cloud Build)
