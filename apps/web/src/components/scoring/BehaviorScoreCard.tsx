@@ -1,9 +1,11 @@
-import { ChevronDown, ChevronUp, Gauge, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Gauge, Info, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import {
   type BehaviorScoreResponse,
+  type CoachingResponse,
   type NivelScore,
   useBehaviorScore,
+  useCoaching,
 } from '../../hooks/use-behavior-score.js';
 
 /**
@@ -54,6 +56,10 @@ export interface BehaviorScoreCardProps {
 
 export function BehaviorScoreCard({ assignmentId }: BehaviorScoreCardProps) {
   const query = useBehaviorScore(assignmentId);
+  // Coaching IA — fetch en paralelo. Solo se muestra si está disponible.
+  // Si Gemini está caído y cae a plantilla, igual se muestra (la fuente
+  // se indica con icono pero el contenido es accionable de cualquier forma).
+  const coachingQuery = useCoaching(assignmentId);
   const [expanded, setExpanded] = useState(false);
 
   if (query.isLoading) {
@@ -148,6 +154,12 @@ export function BehaviorScoreCard({ assignmentId }: BehaviorScoreCardProps) {
             <BreakdownItem label="Curva brusca" value={breakdown.curvasBruscas} />
             <BreakdownItem label="Exceso velocidad" value={breakdown.excesosVelocidad} />
           </dl>
+          {/* Phase 3 PR-J3 — coaching IA. Se muestra dentro del drill-down
+              (no en el header colapsado) para que el usuario tenga foco
+              en el score primero, luego lee el feedback. */}
+          {coachingQuery.data && coachingQuery.data.status === 'disponible' && (
+            <CoachingMessage data={coachingQuery.data} />
+          )}
           <p className="mt-3 text-[11px] text-neutral-500">
             Score basado en metodología GLEC + estudios SAE eco-driving. Reducir frenadas y
             arrancadas bruscas baja el consumo de combustible 5–15%.
@@ -155,6 +167,37 @@ export function BehaviorScoreCard({ assignmentId }: BehaviorScoreCardProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Mensaje de coaching IA (Phase 3 PR-J3). Distingue visualmente si vino
+ * de Gemini (✨ Sparkles) o de plantilla determinística (icono Info más
+ * sobrio). Tono visual consistente: borde primary, fondo neutro claro,
+ * mensaje en negro neutral.
+ */
+function CoachingMessage({
+  data,
+}: {
+  data: Extract<CoachingResponse, { status: 'disponible' }>;
+}) {
+  const sourceLabel =
+    data.source === 'gemini' ? 'Sugerencia personalizada (IA)' : 'Sugerencia general';
+  return (
+    <section
+      aria-label="Coaching de conducción"
+      className="mt-3 rounded-md border border-primary-200 bg-white p-3"
+    >
+      <header className="mb-1.5 flex items-center gap-1.5 text-primary-700 text-xs">
+        {data.source === 'gemini' ? (
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+        ) : (
+          <Info className="h-3.5 w-3.5" aria-hidden />
+        )}
+        <span className="font-semibold">{sourceLabel}</span>
+      </header>
+      <p className="text-neutral-800 text-sm leading-snug">{data.message}</p>
+    </section>
   );
 }
 
