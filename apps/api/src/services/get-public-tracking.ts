@@ -1,6 +1,6 @@
 /**
  * Lookup público del estado de un trip por `tracking_token_publico`
- * (Phase 5 PR-L1).
+ * (Phase 5 PR-L1 + L2).
  *
  * Sin auth — el endpoint que llama esto NO requiere login. La defensa
  * es la opacidad del token (UUID v4, 122 bits de entropía no
@@ -12,7 +12,13 @@
  *   - Trip: tracking_code, status, origen / destino (texto), tipo de carga
  *   - Vehículo: tipo + plate parcial (últimos 4 chars) + posición
  *     reciente (lat/lng + speed) si <30 min vieja
- *   - ETA: placeholder en este PR — algoritmo viene en PR-L2
+ *   - Progress (PR-L2): avg_speed_kmh_last_15min + last_position_age_seconds
+ *     para que el consignee pueda interpretar el progreso ("se está
+ *     moviendo", "lleva 5 min sin reportar")
+ *   - ETA: aún null — la fórmula real necesita coords de destino que el
+ *     trips schema NO tiene (solo address text). Difiere a PR-L2b: o
+ *     geocodificar y guardar lat/lng al crear el trip, o llamar Routes
+ *     API on-demand con caché 60s.
  *
  * **Datos NO expuestos**:
  *   - Plate completa, RUT del transportista, precio acordado
@@ -36,6 +42,32 @@ export interface PublicTrackingPosition {
   speed_kmh: number | null;
 }
 
+/**
+ * Señales de progreso del viaje calculadas a partir del historial
+ * reciente de telemetría (Phase 5 PR-L2). El frontend las usa para
+ * interpretar el contexto: "se está moviendo a buen ritmo" vs "está
+ * detenido hace mucho" vs "perdió señal hace 5 min".
+ */
+export interface PublicTrackingProgress {
+  /**
+   * Velocidad promedio en los últimos 15 min (km/h). Null si hay <2
+   * lecturas en la ventana o si todas reportan 0 (vehículo parado).
+   *
+   * Útil para detectar "lleva 30 min sin moverse" vs "va a 70 km/h
+   * sostenido". Más estable que `position.speed_kmh` que es la lectura
+   * instantánea (puede ser 0 en un semáforo aunque el viaje esté en
+   * ritmo normal).
+   */
+  avg_speed_kmh_last_15min: number | null;
+  /**
+   * Edad de la última posición en segundos. 0 = recién llegó, 600 = 10 min.
+   * El frontend muestra "actualizado hace X min" para que el consignee
+   * tenga confianza calibrada en la posición. Null si no hay posición
+   * (ningún ping <30min).
+   */
+  last_position_age_seconds: number | null;
+}
+
 export interface PublicTrackingResponse {
   status: 'found';
   trip: {
@@ -53,7 +85,9 @@ export interface PublicTrackingResponse {
   };
   /** Posición reciente del vehículo. null si no hay lectura <30min. */
   position: PublicTrackingPosition | null;
-  /** ETA placeholder. PR-L2. */
+  /** Señales de progreso (PR-L2). */
+  progress: PublicTrackingProgress;
+  /** ETA placeholder hasta PR-L2b (geocoding o Routes API on-demand). */
   eta_minutes: null;
 }
 
@@ -61,6 +95,8 @@ export type PublicTrackingResult = PublicTrackingResponse | { status: 'not_found
 
 /** Threshold de "telemetría reciente". Las posiciones más viejas no se exponen. */
 const POSITION_FRESH_MINUTES = 30;
+/** Ventana para calcular avg_speed_kmh_last_15min. */
+const AVG_SPEED_WINDOW_MINUTES = 15;
 
 export async function getPublicTracking(opts: {
   db: Db;
@@ -100,9 +136,18 @@ export async function getPublicTracking(opts: {
     return { status: 'not_found' };
   }
 
-  // Last position dentro del threshold.
-  const cutoff = new Date(Date.now() - POSITION_FRESH_MINUTES * 60_000);
-  const posRows = await db
+  // Cargamos los pings de la ventana de avg_speed (15min) — más amplia
+  // que la de fresh-position (30min) sería innecesario; necesitamos solo
+  // pings de los últimos 15 min para el promedio. La última posición
+  // viene del primer elemento (orderBy DESC), y avg_speed agrega TODA
+  // la lista.
+  //
+  // POSITION_FRESH_MINUTES (30) > AVG_SPEED_WINDOW_MINUTES (15): si hay
+  // un ping a 20min, lo mostramos como posición "vieja" pero NO lo
+  // metemos al avg de 15min.
+  const now = Date.now();
+  const positionCutoff = new Date(now - POSITION_FRESH_MINUTES * 60_000);
+  const pings = await db
     .select({
       timestamp: telemetryPoints.timestampDevice,
       latitude: telemetryPoints.latitude,
@@ -115,22 +160,27 @@ export async function getPublicTracking(opts: {
         eq(telemetryPoints.vehicleId, row.vehicleId),
         isNotNull(telemetryPoints.latitude),
         isNotNull(telemetryPoints.longitude),
-        gte(telemetryPoints.timestampDevice, cutoff),
+        gte(telemetryPoints.timestampDevice, positionCutoff),
       ),
     )
     .orderBy(desc(telemetryPoints.timestampDevice))
-    .limit(1);
+    .limit(200); // cap defensivo: 200 pings cubre ~30min a 1Hz
 
-  const posRow = posRows[0];
+  const latest = pings[0];
   const position: PublicTrackingPosition | null =
-    posRow && posRow.latitude !== null && posRow.longitude !== null
+    latest && latest.latitude !== null && latest.longitude !== null
       ? {
-          timestamp: posRow.timestamp.toISOString(),
-          latitude: Number(posRow.latitude),
-          longitude: Number(posRow.longitude),
-          speed_kmh: posRow.speedKmh,
+          timestamp: latest.timestamp.toISOString(),
+          latitude: Number(latest.latitude),
+          longitude: Number(latest.longitude),
+          speed_kmh: latest.speedKmh,
         }
       : null;
+
+  const progress = computeProgress({
+    pings: pings.map((p) => ({ timestamp: p.timestamp, speedKmh: p.speedKmh })),
+    nowMs: now,
+  });
 
   return {
     status: 'found',
@@ -146,7 +196,60 @@ export async function getPublicTracking(opts: {
       plate_partial: maskPlate(row.vehiclePlate),
     },
     position,
+    progress,
     eta_minutes: null,
+  };
+}
+
+/**
+ * Calcula las señales de progreso a partir del historial reciente de
+ * telemetría. **Pure function** — recibe los pings ya filtrados por la
+ * caller, no toca la DB.
+ *
+ * Reglas:
+ *   - `avg_speed_kmh_last_15min` = promedio de speedKmh sobre pings con
+ *     timestamp dentro de 15min. Excluye speedKmh=null. Devuelve null si
+ *     hay <2 pings en la ventana O si todos los speeds son 0 (vehículo
+ *     parado — exponer "0 km/h" puede ser confuso, mejor null).
+ *   - `last_position_age_seconds` = (now - latest.timestamp) en segundos.
+ *     Null si no hay pings.
+ *
+ * El cap defensivo de pings en la query (200) garantiza que esta función
+ * corre en O(N) pequeño aún en viajes largos con muchos pings.
+ */
+export function computeProgress(opts: {
+  pings: Array<{ timestamp: Date; speedKmh: number | null }>;
+  nowMs: number;
+}): PublicTrackingProgress {
+  const { pings, nowMs } = opts;
+
+  if (pings.length === 0) {
+    return { avg_speed_kmh_last_15min: null, last_position_age_seconds: null };
+  }
+
+  const latest = pings[0]; // pings vienen orderBy DESC
+  const lastPositionAgeSeconds = latest
+    ? Math.max(0, Math.floor((nowMs - latest.timestamp.getTime()) / 1000))
+    : null;
+
+  const avgSpeedCutoff = nowMs - AVG_SPEED_WINDOW_MINUTES * 60_000;
+  const speedsInWindow = pings
+    .filter((p) => p.timestamp.getTime() >= avgSpeedCutoff && p.speedKmh !== null)
+    .map((p) => p.speedKmh as number);
+
+  let avgSpeed: number | null = null;
+  if (speedsInWindow.length >= 2) {
+    const sum = speedsInWindow.reduce((acc, s) => acc + s, 0);
+    const avg = sum / speedsInWindow.length;
+    // Si el avg es 0 (todas las lecturas en cero), devolver null —
+    // ambiguo entre "vehículo detenido legítimamente" y "GPS roto".
+    // El UI prefiere mostrar nada vs un "0 km/h" que confunde.
+    avgSpeed = avg > 0 ? Number(avg.toFixed(1)) : null;
+  }
+
+  return {
+    avg_speed_kmh_last_15min: avgSpeed,
+    last_position_age_seconds: lastPositionAgeSeconds,
   };
 }
 
