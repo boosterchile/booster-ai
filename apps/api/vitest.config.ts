@@ -24,11 +24,17 @@ export default defineConfig({
       // conforme se cubran services/*, routes/* críticos. Cada PR que
       // añada código sin tests baja el % y rompe el gate, forzando
       // disciplina de testing en nuevo código.
+      //
+      // Camino a 80%: pendiente cubrir matching.ts, offer-actions.ts,
+      // emitir-certificado-viaje.ts, web-push.ts, chat-whatsapp-fallback.ts,
+      // confirmar-entrega-viaje.ts, onboarding.ts, calcular-metricas-viaje.ts
+      // (~2000 LOC sin cubrir hoy). Cada uno requiere mocks de DB
+      // transactions + GCP SDK (KMS/GCS/Pub/Sub).
       thresholds: {
-        lines: 28,
-        functions: 22,
-        branches: 24,
-        statements: 28,
+        lines: 35,
+        functions: 29,
+        branches: 30,
+        statements: 35,
       },
     },
   },
