@@ -12,6 +12,7 @@ import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { calcularCobertura } from './calcular-cobertura-telemetria.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
+import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
 /**
  * Calcular y persistir métricas ESG de un viaje, usando el carbon-calculator
@@ -52,6 +53,109 @@ export interface CalcularMetricasResult {
 }
 
 /**
+ * Mapeo de tipo_combustible interno (TipoCombustible) al enum de Routes
+ * API (VehicleEmissionType). Routes API solo acepta 4 valores; los
+ * combustibles más específicos del schema interno (GLP, GNC, hidrógeno)
+ * se mapean al más cercano:
+ *
+ *   - diesel              → DIESEL
+ *   - gasolina            → GASOLINE
+ *   - gas_glp / gas_gnc   → GASOLINE (closest behavioral analog)
+ *   - electrico           → ELECTRIC
+ *   - hibrido_*           → HYBRID
+ *   - hidrogeno           → ELECTRIC (closest hop, no H2 enum aún)
+ *
+ * Si el tipo no es uno de los del schema, devolvemos undefined → Routes
+ * API no calcula FUEL_CONSUMPTION para esa request (ahorra costo).
+ */
+function mapFuelToEmissionType(combustible: string): VehicleEmissionType | undefined {
+  switch (combustible) {
+    case 'diesel':
+      return 'DIESEL';
+    case 'gasolina':
+    case 'gas_glp':
+    case 'gas_gnc':
+      return 'GASOLINE';
+    case 'electrico':
+    case 'hidrogeno':
+      return 'ELECTRIC';
+    case 'hibrido_diesel':
+    case 'hibrido_gasolina':
+      return 'HYBRID';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Obtiene la distancia origen→destino del trip en km.
+ *
+ * Prioridad:
+ *   1. Si hay GOOGLE_ROUTES_API_KEY configurada Y el vehículo tiene
+ *      fuelType conocido → llamar Routes API. Usa la distancia de la
+ *      mejor ruta (TRAFFIC_AWARE_OPTIMAL).
+ *   2. Si Routes API falla (timeout, quota exceeded, etc.) o no hay
+ *      key → fallback a estimarDistanciaKm (tabla pre-computada Chile).
+ *
+ * Fallback explícito: cualquier error del Routes API se loggea WARN y
+ * caemos al fallback. NO bloquea el cálculo de métricas — el carrier
+ * recibe igual su confirmación de asignación.
+ *
+ * Función con I/O — no debe correrse dentro de una transacción de DB
+ * para no extender el lock por la duración del HTTP call (~500ms-1s).
+ */
+async function obtenerDistanciaKm(opts: {
+  origenDireccion: string;
+  destinoDireccion: string;
+  origenRegionCode: string | null;
+  destinoRegionCode: string | null;
+  fuelType: string | null;
+  routesApiKey: string | undefined;
+  logger: Logger;
+}): Promise<number> {
+  const {
+    origenDireccion,
+    destinoDireccion,
+    origenRegionCode,
+    destinoRegionCode,
+    fuelType,
+    routesApiKey,
+    logger,
+  } = opts;
+
+  if (routesApiKey) {
+    try {
+      const emissionType = fuelType ? mapFuelToEmissionType(fuelType) : undefined;
+      const routes = await computeRoutes({
+        apiKey: routesApiKey,
+        origin: origenDireccion,
+        destination: destinoDireccion,
+        emissionType,
+      });
+      const best = routes[0];
+      if (best && best.distanceKm > 0) {
+        logger.info(
+          { distanciaKm: best.distanceKm, durationS: best.durationS, source: 'routes_api' },
+          'distancia obtenida via Routes API',
+        );
+        return best.distanceKm;
+      }
+      logger.warn(
+        { origenDireccion, destinoDireccion },
+        'Routes API devolvió 0 rutas, fallback a estimarDistanciaKm',
+      );
+    } catch (err) {
+      logger.warn(
+        { err, origenDireccion, destinoDireccion },
+        'Routes API falló, fallback a estimarDistanciaKm',
+      );
+    }
+  }
+
+  return estimarDistanciaKm(origenRegionCode, destinoRegionCode);
+}
+
+/**
  * Calcular métricas estimadas (al asignar viaje, antes de la entrega).
  */
 export async function calcularMetricasEstimadas(opts: {
@@ -59,64 +163,85 @@ export async function calcularMetricasEstimadas(opts: {
   logger: Logger;
   tripId: string;
   vehicleId: string | null;
+  /**
+   * GOOGLE_ROUTES_API_KEY del config. Si está presente, se usa Routes API
+   * para distancia precisa. Si no, se cae al fallback de estimarDistanciaKm.
+   * Optional: el caller decide si la pasa o no (en dev sin quota la omite).
+   */
+  routesApiKey?: string | undefined;
 }): Promise<CalcularMetricasResult> {
-  const { db, logger, tripId, vehicleId } = opts;
+  const { db, logger, tripId, vehicleId, routesApiKey } = opts;
 
-  return await db.transaction(async (tx) => {
-    const tripRows = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
-    const trip = tripRows[0];
-    if (!trip) {
-      throw new TripNotFoundError(tripId);
-    }
+  // (1) Lectura de trip + vehicle FUERA de la transacción. Esto permite
+  // hacer el HTTP a Routes API sin extender el lock de la tx (que sería
+  // anti-patrón: un HTTP de ~500ms-1s holding row lock genera contención
+  // en re-cálculos concurrentes del mismo trip). Postgres MVCC garantiza
+  // que las lecturas son consistentes punto-en-tiempo aunque sean fuera
+  // del begin/commit del UPDATE final.
+  const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+  const trip = tripRows[0];
+  if (!trip) {
+    throw new TripNotFoundError(tripId);
+  }
 
-    const cargaKg = trip.cargoWeightKg ?? 0;
-    const distanciaKm = estimarDistanciaKm(trip.originRegionCode, trip.destinationRegionCode);
+  const veh = vehicleId
+    ? (await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1))[0]
+    : undefined;
 
-    // Resolver perfil del vehículo. Si no hay vehicleId aún, o no se
-    // encuentra, o no tiene perfil completo → modo por_defecto.
-    let emisiones: ResultadoEmisiones | null = null;
-    if (vehicleId) {
-      const vehs = await tx.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
-      const veh = vehs[0];
-      if (veh) {
-        const consumoBase = veh.consumptionLPer100kmBaseline
-          ? Number(veh.consumptionLPer100kmBaseline)
-          : null;
+  // (2) HTTP out-of-tx — Routes API o fallback a tabla.
+  const distanciaKm = await obtenerDistanciaKm({
+    origenDireccion: trip.originAddressRaw,
+    destinoDireccion: trip.destinationAddressRaw,
+    origenRegionCode: trip.originRegionCode,
+    destinoRegionCode: trip.destinationRegionCode,
+    fuelType: veh?.fuelType ?? null,
+    routesApiKey,
+    logger,
+  });
 
-        if (veh.fuelType && consumoBase != null) {
-          // Modo modelado — perfil completo declarado.
-          emisiones = calcularEmisionesViaje({
-            metodo: 'modelado',
-            distanciaKm,
-            cargaKg,
-            vehiculo: {
-              combustible: veh.fuelType as TipoCombustible,
-              consumoBasePor100km: consumoBase,
-              pesoVacioKg: veh.curbWeightKg,
-              capacidadKg: veh.capacityKg,
-            },
-          });
-        } else {
-          // Modo por_defecto — usamos tipo de vehículo como proxy.
-          emisiones = calcularEmisionesViaje({
-            metodo: 'por_defecto',
-            distanciaKm,
-            cargaKg,
-            tipoVehiculo: veh.vehicleType,
-          });
-        }
-      }
-    }
-    if (emisiones == null) {
-      // Fallback: por_defecto con camion_mediano (proxy genérico).
+  // (3) Compute emisiones (puro, GLEC v3.0).
+  const cargaKg = trip.cargoWeightKg ?? 0;
+  let emisiones: ResultadoEmisiones | null = null;
+  if (veh) {
+    const consumoBase = veh.consumptionLPer100kmBaseline
+      ? Number(veh.consumptionLPer100kmBaseline)
+      : null;
+
+    if (veh.fuelType && consumoBase != null) {
+      // Modo modelado — perfil completo declarado.
+      emisiones = calcularEmisionesViaje({
+        metodo: 'modelado',
+        distanciaKm,
+        cargaKg,
+        vehiculo: {
+          combustible: veh.fuelType as TipoCombustible,
+          consumoBasePor100km: consumoBase,
+          pesoVacioKg: veh.curbWeightKg,
+          capacidadKg: veh.capacityKg,
+        },
+      });
+    } else {
+      // Modo por_defecto — usamos tipo de vehículo como proxy.
       emisiones = calcularEmisionesViaje({
         metodo: 'por_defecto',
         distanciaKm,
         cargaKg,
-        tipoVehiculo: 'camion_mediano',
+        tipoVehiculo: veh.vehicleType,
       });
     }
+  }
+  if (emisiones == null) {
+    // Fallback: por_defecto con camion_mediano (proxy genérico).
+    emisiones = calcularEmisionesViaje({
+      metodo: 'por_defecto',
+      distanciaKm,
+      cargaKg,
+      tipoVehiculo: 'camion_mediano',
+    });
+  }
 
+  // (4) Persistencia — tx corta con todo pre-computado.
+  return await db.transaction(async (tx) => {
     const existing = await tx
       .select()
       .from(tripMetrics)

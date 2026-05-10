@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, ne } from 'drizzle-orm';
+import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   type AssignmentRow,
@@ -203,6 +204,11 @@ export async function acceptOffer(opts: {
           logger,
           tripId: result.assignment.tripId,
           vehicleId: result.assignment.vehicleId || null,
+          // ADR-028 PR-H2: si hay GOOGLE_ROUTES_API_KEY, calcularMetricas
+          // usa Routes API para distancia (más precisa, traffic-aware) en
+          // vez de la tabla pre-computada Chile. Si no hay key (dev sin
+          // quota), cae al fallback automáticamente.
+          routesApiKey: config.GOOGLE_ROUTES_API_KEY,
         });
         logger.info(
           {
