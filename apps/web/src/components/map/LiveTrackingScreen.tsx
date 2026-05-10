@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 // biome-ignore lint/suspicious/noShadowRestrictedNames: `Map` es el componente exportado por la lib de Google Maps; renombrarlo localmente confunde más que ayuda.
-import { APIProvider, AdvancedMarker, Map, Pin } from '@vis.gl/react-google-maps';
+import { APIProvider, AdvancedMarker, ControlPosition, Map, Pin } from '@vis.gl/react-google-maps';
 import { ArrowLeft, Gauge, LocateFixed, MapPin, Navigation, RefreshCw, Truck } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { env } from '../../lib/env.js';
@@ -80,7 +80,14 @@ export function LiveTrackingScreen({
             disableDefaultUI={false}
             mapTypeControl={false}
             fullscreenControl={false}
-            streetViewControl={false}
+            // Pegman habilitado: el operador puede arrastrarlo sobre el
+            // vehículo para ver contexto street view. Lo movemos a RIGHT_TOP
+            // (en vez del default RIGHT_BOTTOM) porque la bottom card de
+            // stats tapa el corner inferior derecho. RIGHT_TOP queda libre
+            // — el header flotante usa max-w-6xl centrado, así que en mobile
+            // queda pegado al borde derecho debajo del refresh button (40x40)
+            // y en desktop queda en el espacio vacío a la derecha del card.
+            streetViewControlOptions={{ position: ControlPosition.RIGHT_TOP }}
             mapId="booster-live-map"
           >
             <FollowVehicle

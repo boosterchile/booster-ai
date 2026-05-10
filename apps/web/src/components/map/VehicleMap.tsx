@@ -121,14 +121,13 @@ function VehicleMapInner({
           defaultZoom={zoom}
           gestureHandling="cooperative"
           disableDefaultUI={false}
-          // Quitamos los controles que no aportan en un mapa embebido y que
-          // ocupan la esquina inferior derecha (donde va nuestro botón de
-          // Recentrar). En mobile, el Pegman de Street View se queda en
-          // bottom-right por default y se solapa con cualquier botón flotante
-          // que pongamos ahí; deshabilitarlo es la única forma limpia de
-          // evitar el overlap. Fullscreen tampoco tiene sentido en una vista
-          // embebida (rompería el layout de la página).
-          streetViewControl={false}
+          // Pegman (street view) sí lo queremos: el operador puede arrastrarlo
+          // sobre la posición del vehículo para ver contexto urbano. Como el
+          // botón de Recentrar va dentro de <MapControl RIGHT_BOTTOM>, Google
+          // lo apila con los demás controles del mismo cluster sin solapar.
+          // Fullscreen sí lo dejamos fuera: en una vista embebida (h=320)
+          // expandirlo rompería el layout de la página y no aporta valor
+          // distinto al botón "Ver en vivo" que lleva al modo Uber.
           fullscreenControl={false}
           mapId="booster-vehicle-map"
         >
