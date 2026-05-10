@@ -21,6 +21,7 @@
     "@booster-ai/logger": "workspace:*",
     "@booster-ai/matching-algorithm": "workspace:*",
     "@booster-ai/notification-fan-out": "workspace:*",
+    "@booster-ai/pricing-engine": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/whatsapp-client": "workspace:*",
     "@google-cloud/kms": "^4.5.0",

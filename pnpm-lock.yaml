@@ -65,6 +65,9 @@ importers:
       '@booster-ai/notification-fan-out':
         specifier: workspace:*
         version: link:../../packages/notification-fan-out
+      '@booster-ai/pricing-engine':
+        specifier: workspace:*
+        version: link:../../packages/pricing-engine
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
