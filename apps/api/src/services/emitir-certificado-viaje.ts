@@ -238,6 +238,14 @@ export async function emitirCertificadoViaje(opts: {
       ...(metrics.uncertaintyFactor !== null
         ? { uncertaintyFactor: numOrNull(metrics.uncertaintyFactor) ?? 0 }
         : {}),
+      // ADR-021 §6.4 — empty backhaul allocation. Si los 3 campos están
+      // poblados (trip con perfil energético + matching evaluado post-entrega),
+      // el cert renderiza la sección "Ahorro CO₂e via matching de retorno"
+      // cuando el ahorro > 0. Si están null (legacy pre-ADR-021 o modo
+      // por_defecto), el cert no muestra esa sección.
+      factorMatchingAplicado: numOrNull(metrics.factorMatchingAplicado),
+      emisionesEmptyBackhaulKgco2eWtw: numOrNull(metrics.emisionesEmptyBackhaulKgco2eWtw),
+      ahorroCo2eVsSinMatchingKgco2eWtw: numOrNull(metrics.ahorroCo2eVsSinMatchingKgco2e),
     },
     empresaShipper: {
       id: shipper.id,

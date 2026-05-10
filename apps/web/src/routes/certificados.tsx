@@ -39,6 +39,10 @@ interface CertificadoListItem {
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
   certificate_issued_at: string | null;
+  // ADR-021 §6.4 — empty backhaul allocation. Null para certs legacy
+  // o trips sin perfil energético del vehículo.
+  factor_matching_aplicado: string | null;
+  ahorro_co2e_vs_sin_matching_kgco2e: string | null;
 }
 
 interface CertificadosResponse {
@@ -140,7 +144,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
 
       {certsQ.data && certsQ.data.certificates.length > 0 && (
         <>
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
             <SummaryCard
               title="Certificados emitidos"
               value={certsQ.data.certificates.length.toString()}
@@ -150,6 +154,11 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
               title="Total CO₂e certificado"
               value={`${formatKg(sumKg(certsQ.data.certificates))} kg`}
               icon={<Leaf className="h-5 w-5 text-emerald-600" aria-hidden />}
+            />
+            <SummaryCard
+              title="Ahorro CO₂e via matching"
+              value={`${formatKg(sumAhorroBackhaul(certsQ.data.certificates))} kg`}
+              icon={<Leaf className="h-5 w-5 text-emerald-700" aria-hidden />}
             />
             <SummaryCard
               title="Estándar"
@@ -166,6 +175,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                   <Th>Trayecto</Th>
                   <Th>Carga</Th>
                   <Th className="text-right">CO₂e</Th>
+                  <Th className="text-right">Ahorro matching</Th>
                   <Th>Emitido</Th>
                   <Th className="text-right">Acción</Th>
                 </tr>
@@ -183,6 +193,16 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                     <Td className="text-xs">{formatCargoType(c.cargo_type)}</Td>
                     <Td className="text-right font-semibold text-emerald-700">
                       {c.kg_co2e ? `${formatKg(Number(c.kg_co2e))} kg` : '—'}
+                    </Td>
+                    <Td className="text-right">
+                      {c.ahorro_co2e_vs_sin_matching_kgco2e &&
+                      Number(c.ahorro_co2e_vs_sin_matching_kgco2e) > 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 text-xs">
+                          −{formatKg(Number(c.ahorro_co2e_vs_sin_matching_kgco2e))} kg
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400 text-xs">—</span>
+                      )}
                     </Td>
                     <Td className="text-neutral-600 text-xs">
                       {c.certificate_issued_at ? formatDate(c.certificate_issued_at) : '—'}
@@ -274,6 +294,15 @@ function SummaryCard({ title, value, icon }: { title: string; value: string; ico
 
 function sumKg(items: CertificadoListItem[]): number {
   return items.reduce((acc, c) => acc + (c.kg_co2e ? Number(c.kg_co2e) : 0), 0);
+}
+
+function sumAhorroBackhaul(items: CertificadoListItem[]): number {
+  return items.reduce(
+    (acc, c) =>
+      acc +
+      (c.ahorro_co2e_vs_sin_matching_kgco2e ? Number(c.ahorro_co2e_vs_sin_matching_kgco2e) : 0),
+    0,
+  );
 }
 
 function formatKg(n: number): string {

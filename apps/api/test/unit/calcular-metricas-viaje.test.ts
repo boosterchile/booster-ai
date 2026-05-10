@@ -159,6 +159,79 @@ describe('calcularMetricasEstimadas', () => {
     expect(result.isInitialCalculation).toBe(true);
   });
 
+  it('vehículo con perfil completo + carga → persiste empty backhaul fields (ADR-021)', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [
+          {
+            id: VEH_ID,
+            // 'diesel' es TipoCombustible válido del carbon-calculator.
+            fuelType: 'diesel',
+            consumptionLPer100kmBaseline: '28.5',
+            curbWeightKg: 7000,
+            capacityKg: 12000,
+            vehicleType: 'camion_pequeno',
+          },
+        ],
+        [],
+      ],
+      inserts: [[]],
+    });
+
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: VEH_ID,
+    });
+
+    // El INSERT debió recibir los 3 campos backhaul con valores ≥ 0.
+    const insertCall = (db.insert as ReturnType<typeof vi.fn>).mock.results.find((r) => r.value);
+    expect(insertCall).toBeDefined();
+    const values = (insertCall?.value as { values: ReturnType<typeof vi.fn> }).values.mock
+      .calls[0]?.[0] as Record<string, unknown>;
+    expect(values.factorMatchingAplicado).toBe('0.00');
+    expect(typeof values.emisionesEmptyBackhaulKgco2eWtw).toBe('string');
+    expect(Number(values.emisionesEmptyBackhaulKgco2eWtw)).toBeGreaterThan(0);
+    // Con factorMatching=0 el ahorro vs sin-matching es 0 (peor caso).
+    expect(values.ahorroCo2eVsSinMatchingKgco2e).toBe('0');
+  });
+
+  it('vehículo en modo por_defecto → backhaul fields quedan null', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [
+          {
+            id: VEH_ID,
+            fuelType: null,
+            consumptionLPer100kmBaseline: null,
+            curbWeightKg: null,
+            capacityKg: null,
+            vehicleType: 'camion_pequeno',
+          },
+        ],
+        [],
+      ],
+      inserts: [[]],
+    });
+
+    await calcularMetricasEstimadas({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      vehicleId: VEH_ID,
+    });
+
+    const insertCall = (db.insert as ReturnType<typeof vi.fn>).mock.results.find((r) => r.value);
+    const values = (insertCall?.value as { values: ReturnType<typeof vi.fn> }).values.mock
+      .calls[0]?.[0] as Record<string, unknown>;
+    expect(values.factorMatchingAplicado).toBeNull();
+    expect(values.emisionesEmptyBackhaulKgco2eWtw).toBeNull();
+    expect(values.ahorroCo2eVsSinMatchingKgco2e).toBeNull();
+  });
+
   it('vehículo SIN perfil completo (falta consumo) → cae a modo por_defecto', async () => {
     const db = makeDb({
       selects: [

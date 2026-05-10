@@ -1,8 +1,10 @@
 import {
   type ResultadoEmisiones,
+  type ResultadoEmptyBackhaul,
   type RouteDataSource,
   type TipoCombustible,
   calcularEmisionesViaje,
+  calcularEmptyBackhaul,
   calcularFactorIncertidumbre,
   derivarNivelCertificacion,
 } from '@booster-ai/carbon-calculator';
@@ -275,6 +277,20 @@ export async function calcularMetricasEstimadas(opts: {
       vehicleTypeMatchesRoutesApi: true,
     });
 
+    // ADR-021 §6.4 — empty backhaul allocation (GLEC v3.0).
+    //
+    // En la fase estimada pre-entrega el matching de retorno todavía no
+    // se conoce — por GLEC default, asumimos factorMatching = 0 (peor
+    // caso: camión vuelve 100% vacío) para no inflar el certificado
+    // con un ahorro especulativo. Post-entrega, `actualizarFactorMatchingViaje`
+    // recalcula con la heurística geo del próximo trip del vehículo.
+    //
+    // Sólo aplicable cuando tenemos perfil completo del vehículo
+    // (consumo + combustible + capacidad). En modo `por_defecto` el
+    // calculator no expone consumo base, así que skipeamos — el
+    // certificate-generator interpreta `null` como "no estimado".
+    const emptyBackhaul = calcularBackhaulSiCorresponde({ emisiones, veh });
+
     const valuesToWrite = {
       distanceKmEstimated: emisiones.distanciaKm.toString(),
       carbonEmissionsKgco2eEstimated: emisiones.emisionesKgco2eWtw.toString(),
@@ -289,6 +305,14 @@ export async function calcularMetricasEstimadas(opts: {
       coveragePct: coveragePct.toString(),
       certificationLevel,
       uncertaintyFactor: uncertaintyFactor.toString(),
+      // ADR-021 — empty backhaul.
+      factorMatchingAplicado: emptyBackhaul ? '0.00' : null,
+      emisionesEmptyBackhaulKgco2eWtw: emptyBackhaul
+        ? emptyBackhaul.emisionesKgco2eWtw.toString()
+        : null,
+      ahorroCo2eVsSinMatchingKgco2e: emptyBackhaul
+        ? emptyBackhaul.ahorroVsSinMatchingKgco2e.toString()
+        : null,
       calculatedAt: new Date(),
     };
 
@@ -478,4 +502,40 @@ export async function recalcularNivelPostEntrega(opts: {
   );
 
   return { recomputed: true, certificationLevel, coveragePct };
+}
+
+/**
+ * Devuelve el cálculo de empty backhaul cuando hay perfil completo del
+ * vehículo. Default: factorMatching = 0 (peor caso conservador, GLEC §6.4.2).
+ * El upgrade post-entrega lo aplica `actualizarFactorMatchingViaje`.
+ *
+ * Vehículo sin perfil energético (modo `por_defecto`) → retorna null:
+ * el calculator no expone consumo base, así que no podemos calcular
+ * empty backhaul honrando GLEC. El certificate-generator interpreta
+ * `null` como "no estimado" en lugar de mostrar 0.
+ */
+function calcularBackhaulSiCorresponde(opts: {
+  emisiones: ResultadoEmisiones;
+  veh:
+    | {
+        fuelType: string | null;
+        consumptionLPer100kmBaseline: string | null;
+        capacityKg: number | null;
+      }
+    | undefined;
+}): ResultadoEmptyBackhaul | null {
+  const { emisiones, veh } = opts;
+  if (!veh?.fuelType || !veh.consumptionLPer100kmBaseline || !veh.capacityKg) {
+    return null;
+  }
+  // ADR-021 §6.4 — la distancia de retorno se asume igual a la del leg
+  // cargado (ida = vuelta) como aproximación honest-default. Una versión
+  // futura podrá pedir el destino del próximo trip al Routes API.
+  return calcularEmptyBackhaul({
+    distanciaRetornoKm: emisiones.distanciaKm,
+    factorMatching: 0,
+    consumoBasePor100km: Number(veh.consumptionLPer100kmBaseline),
+    combustible: veh.fuelType as TipoCombustible,
+    capacidadKg: veh.capacityKg,
+  });
 }

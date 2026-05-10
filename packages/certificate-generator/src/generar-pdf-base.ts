@@ -306,6 +306,48 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   cursorY -= 150;
 
   // ============================================================
+  // Bloque 3.5 — Ahorro CO₂e via matching de retorno (ADR-021 §6.4)
+  // ============================================================
+  // Solo renderizamos si el cálculo se realizó (factorMatchingAplicado
+  // != null) Y hubo ahorro real (> 0). Esto evita ruido visual en certs
+  // donde el viaje no tuvo medición de backhaul, o donde el retorno fue
+  // 100% vacío (peor caso GLEC §6.4.2).
+  const factorMatching = params.metricas.factorMatchingAplicado;
+  const ahorroBackhaul = params.metricas.ahorroCo2eVsSinMatchingKgco2eWtw;
+  if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
+    drawSectionTitle(
+      page,
+      'Ahorro CO₂e via matching de retorno (GLEC v3.0 §6.4)',
+      40,
+      cursorY,
+      fontBold,
+      colorPrimary,
+    );
+    cursorY -= 22;
+    drawLabelValue(
+      page,
+      'Factor de matching aplicado',
+      `${(factorMatching * 100).toFixed(0)}%`,
+      40,
+      cursorY,
+      fontRegular,
+      fontBold,
+      colorMuted,
+    );
+    drawLabelValue(
+      page,
+      'Ahorro vs sin matching',
+      `${ahorroBackhaul.toFixed(2)} kg CO2e`,
+      width / 2,
+      cursorY,
+      fontRegular,
+      fontBold,
+      colorMuted,
+    );
+    cursorY -= 35;
+  }
+
+  // ============================================================
   // Bloque 4 — Metodología (auditoría)
   // ============================================================
   drawSectionTitle(page, 'Metodología', 40, cursorY, fontBold, colorPrimary);

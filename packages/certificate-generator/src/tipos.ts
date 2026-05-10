@@ -76,6 +76,17 @@ export interface DatosMetricasCertificado {
    * principal. Decimal en [0, 1].
    */
   uncertaintyFactor?: number;
+  /**
+   * ADR-021 §6.4 — Empty backhaul allocation (GLEC v3.0). Si están
+   * presentes Y `ahorroCo2eVsSinMatchingKgco2eWtw > 0`, el cert renderiza
+   * una sección "Ahorro CO₂e via matching de retorno" con el factor de
+   * matching aplicado y el ahorro absoluto. Si `factorMatchingAplicado`
+   * es null, asumimos que el viaje no tuvo medición de backhaul (modo
+   * por_defecto, o cálculo legacy pre-ADR-021).
+   */
+  factorMatchingAplicado?: number | null;
+  emisionesEmptyBackhaulKgco2eWtw?: number | null;
+  ahorroCo2eVsSinMatchingKgco2eWtw?: number | null;
 }
 
 /**

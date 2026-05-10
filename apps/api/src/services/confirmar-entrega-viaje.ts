@@ -35,6 +35,7 @@ import { and, eq } from 'drizzle-orm';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents, trips } from '../db/schema.js';
+import { actualizarFactorMatchingViaje } from './actualizar-factor-matching.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
 import { calcularScoreConduccionViaje } from './calcular-score-conduccion-viaje.js';
 import {
@@ -204,6 +205,19 @@ export async function confirmarEntregaViaje(opts: {
       logger.error(
         { err, tripId },
         'recalcularNivelPostEntrega fallo — emitiendo cert con valores estimados',
+      );
+    }
+
+    // ADR-021 §6.4 — recalcular factor_matching_aplicado post-entrega
+    // con heurística geo del próximo trip del vehículo. Fire-and-forget:
+    // si falla, el cert sale con los valores estimados (factorMatching=0
+    // conservador) — no bloquea la emisión.
+    try {
+      await actualizarFactorMatchingViaje({ db, logger, tripId });
+    } catch (err) {
+      logger.error(
+        { err, tripId },
+        'actualizarFactorMatchingViaje fallo — cert sale con factorMatching=0',
       );
     }
 
