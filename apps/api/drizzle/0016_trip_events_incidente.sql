@@ -1,0 +1,26 @@
+-- Migration 0015 — Tipo de evento `incidente_reportado` (Phase 4 PR-K6)
+--
+-- Agrega `incidente_reportado` al enum tipo_evento_viaje para que el
+-- conductor (vía voice command "marcar incidente" o botón) pueda
+-- reportar un problema operacional durante el viaje:
+--
+--   - accidente: choque, golpe, daño al vehículo
+--   - demora: retraso significativo (>1h, tráfico, ruta cerrada)
+--   - falla_mecanica: pinchazo, motor, frenos
+--   - problema_carga: rotura, derrame, contaminación
+--   - otro: catch-all con descripción libre
+--
+-- El subtipo + descripción quedan en `payload` JSONB del tripEvent.
+-- Esto evita un nuevo enum granular (incident_type_enum) que sería
+-- inflexible — el subtipo es metadata, no estado.
+--
+-- Diferencia con `disputa_abierta`:
+--   - disputa_abierta = formal, legal, requiere intervención admin
+--   - incidente_reportado = operacional, log informativo, notifica
+--     al shipper para que sepa el contexto pero no detiene el viaje
+--
+-- Riesgo deploy: bajo. ADD VALUE en enum es idempotente y reversible
+-- por DROP TYPE (con cascade). Postgres ≥ 11 lo permite sin lock
+-- exclusivo del enum.
+
+ALTER TYPE "tipo_evento_viaje" ADD VALUE IF NOT EXISTS 'incidente_reportado';
