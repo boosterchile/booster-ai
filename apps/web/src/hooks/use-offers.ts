@@ -82,6 +82,48 @@ export function useOffersMine(
   });
 }
 
+/**
+ * Eco preview de una oferta — emisiones estimadas pre-accept.
+ * Consume GET /offers/:id/eco-preview (Phase 1 PR-H3).
+ *
+ * Se fetcha LAZY (enabled debe ser true) para evitar disparar una
+ * llamada Routes API por cada offer en el list. La OfferCard la
+ * habilita cuando el carrier hace click en "Ver impacto ambiental".
+ */
+export interface EcoPreviewResponse {
+  trip_request_id: string;
+  suggested_vehicle_id: string | null;
+  distance_km: number;
+  duration_s: number | null;
+  fuel_liters_estimated: number | null;
+  emisiones_kgco2e_wtw: number;
+  emisiones_kgco2e_ttw: number;
+  emisiones_kgco2e_wtt: number;
+  intensidad_gco2e_por_tonkm: number;
+  precision_method: 'exacto_canbus' | 'modelado' | 'por_defecto';
+  data_source: 'routes_api' | 'tabla_chile';
+  glec_version: string;
+  generated_at: string;
+}
+
+export function useEcoPreview(offerId: string, opts: { enabled?: boolean } = {}) {
+  return useQuery<EcoPreviewResponse>({
+    queryKey: ['offers', 'eco-preview', offerId],
+    queryFn: () => api.get<EcoPreviewResponse>(`/offers/${offerId}/eco-preview`),
+    enabled: opts.enabled ?? false,
+    // 5 min de cache — el preview es deterministic salvo cambios de
+    // tráfico en Routes API. Si el carrier revisita la misma oferta no
+    // re-paga la llamada.
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
+}
+
 export function useAcceptOfferMutation() {
   const queryClient = useQueryClient();
   return useMutation<AcceptResponse, ApiError, { offerId: string }>({
