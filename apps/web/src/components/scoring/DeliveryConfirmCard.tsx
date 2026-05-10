@@ -147,7 +147,7 @@ export function DeliveryConfirmCard({
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-6 w-6 text-success-700" aria-hidden />
           <div>
-            <p className="font-semibold text-success-800 text-sm">Entrega confirmada</p>
+            <p className="font-semibold text-sm text-success-800">Entrega confirmada</p>
             <p className="mt-0.5 text-success-700 text-xs">
               Procesando coaching y certificado de carbono…
             </p>
