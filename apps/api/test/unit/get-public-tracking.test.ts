@@ -103,16 +103,16 @@ describe('getPublicTracking', () => {
       vehicleType: string;
       vehiclePlate: string;
     } | null;
-    positionRow?: {
+    pings?: Array<{
       timestamp: Date;
       latitude: string | null;
       longitude: string | null;
       speedKmh: number | null;
-    } | null;
+    }>;
   }) {
     const responses: Array<unknown[]> = [
       opts.assignmentRow ? [opts.assignmentRow] : [],
-      opts.positionRow ? [opts.positionRow] : [],
+      opts.pings ?? [],
     ];
     let callIdx = 0;
 
@@ -156,7 +156,7 @@ describe('getPublicTracking', () => {
     expect(result.status).toBe('not_found');
   });
 
-  it('found con sin posición reciente → response sin position', async () => {
+  it('found sin pings → position null + progress null', async () => {
     const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
     const { db } = makeDbStub({
       assignmentRow: {
@@ -170,7 +170,7 @@ describe('getPublicTracking', () => {
         vehicleType: 'camion_3_4',
         vehiclePlate: 'GR-AS12',
       },
-      positionRow: null,
+      pings: [],
     });
     const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
     expect(result.status).toBe('found');
@@ -179,13 +179,19 @@ describe('getPublicTracking', () => {
       expect(result.trip.status).toBe('en_proceso');
       expect(result.vehicle.plate_partial).toBe('***AS12');
       expect(result.position).toBeNull();
+      expect(result.progress.avg_speed_kmh_last_15min).toBeNull();
+      expect(result.progress.last_position_age_seconds).toBeNull();
       expect(result.eta_minutes).toBeNull();
     }
   });
 
-  it('found con posición reciente → response con position numérica', async () => {
+  it('found con pings recientes → position numérica + progress poblado', async () => {
     const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
-    const ts = new Date('2026-05-10T15:00:00Z');
+    // Timestamps relativos a "ahora" — el service usa Date.now() para el
+    // cutoff de la ventana 15min; si fijamos timestamps en un date
+    // estático del pasado, caen fuera de la ventana en vez de la entrada.
+    const now = Date.now();
+    const ts = new Date(now - 60_000); // 1 min atrás → IN window
     const { db } = makeDbStub({
       assignmentRow: {
         assignmentId: 'a1',
@@ -198,12 +204,22 @@ describe('getPublicTracking', () => {
         vehicleType: 'camion_3_4',
         vehiclePlate: 'GR-AS12',
       },
-      positionRow: {
-        timestamp: ts,
-        latitude: '-33.4172',
-        longitude: '-70.6063',
-        speedKmh: 65,
-      },
+      pings: [
+        // DESC: el primero es el más reciente.
+        { timestamp: ts, latitude: '-33.4172', longitude: '-70.6063', speedKmh: 65 },
+        {
+          timestamp: new Date(now - 5 * 60_000), // 5 min atrás → IN
+          latitude: '-33.4',
+          longitude: '-70.6',
+          speedKmh: 60,
+        },
+        {
+          timestamp: new Date(now - 10 * 60_000), // 10 min atrás → IN
+          latitude: '-33.39',
+          longitude: '-70.59',
+          speedKmh: 70,
+        },
+      ],
     });
     const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
     expect(result.status).toBe('found');
@@ -212,6 +228,11 @@ describe('getPublicTracking', () => {
       expect(result.position.longitude).toBeCloseTo(-70.6063, 4);
       expect(result.position.speed_kmh).toBe(65);
       expect(result.position.timestamp).toBe(ts.toISOString());
+      // progress: avg de [65, 60, 70] = 65.0
+      expect(result.progress.avg_speed_kmh_last_15min).toBeCloseTo(65, 1);
+      // last_position_age_seconds debería ser ~60 ± slack del runtime.
+      expect(result.progress.last_position_age_seconds).toBeGreaterThanOrEqual(59);
+      expect(result.progress.last_position_age_seconds).toBeLessThanOrEqual(62);
     }
   });
 
@@ -229,7 +250,7 @@ describe('getPublicTracking', () => {
         vehicleType: 'camion_3_4',
         vehiclePlate: 'TOPSECRET99',
       },
-      positionRow: null,
+      pings: [],
     });
     const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
     expect(result.status).toBe('found');
@@ -238,5 +259,91 @@ describe('getPublicTracking', () => {
       expect(result.vehicle.plate_partial).toBe('*******ET99');
       expect(result.vehicle.plate_partial).not.toContain('TOPSECRET');
     }
+  });
+});
+
+describe('computeProgress', () => {
+  const NOW_MS = new Date('2026-05-10T15:00:00Z').getTime();
+
+  it('sin pings → todo null', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    expect(computeProgress({ pings: [], nowMs: NOW_MS })).toEqual({
+      avg_speed_kmh_last_15min: null,
+      last_position_age_seconds: null,
+    });
+  });
+
+  it('1 ping → last_position_age computed, avg_speed null (necesita ≥2)', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [{ timestamp: new Date(NOW_MS - 30_000), speedKmh: 50 }],
+      nowMs: NOW_MS,
+    });
+    expect(result.last_position_age_seconds).toBe(30);
+    expect(result.avg_speed_kmh_last_15min).toBeNull();
+  });
+
+  it('2+ pings con speeds positivos → avg_speed redondeado a 1 decimal', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [
+        { timestamp: new Date(NOW_MS - 60_000), speedKmh: 60 },
+        { timestamp: new Date(NOW_MS - 120_000), speedKmh: 70 },
+        { timestamp: new Date(NOW_MS - 180_000), speedKmh: 80 },
+      ],
+      nowMs: NOW_MS,
+    });
+    expect(result.avg_speed_kmh_last_15min).toBeCloseTo(70, 1);
+    expect(result.last_position_age_seconds).toBe(60);
+  });
+
+  it('todos los speeds = 0 → avg_speed null (ambiguo: parado vs GPS roto)', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [
+        { timestamp: new Date(NOW_MS - 60_000), speedKmh: 0 },
+        { timestamp: new Date(NOW_MS - 120_000), speedKmh: 0 },
+      ],
+      nowMs: NOW_MS,
+    });
+    expect(result.avg_speed_kmh_last_15min).toBeNull();
+  });
+
+  it('pings con speedKmh=null se excluyen del avg', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [
+        { timestamp: new Date(NOW_MS - 60_000), speedKmh: null },
+        { timestamp: new Date(NOW_MS - 120_000), speedKmh: 60 },
+        { timestamp: new Date(NOW_MS - 180_000), speedKmh: 80 },
+      ],
+      nowMs: NOW_MS,
+    });
+    expect(result.avg_speed_kmh_last_15min).toBeCloseTo(70, 1);
+  });
+
+  it('pings fuera de ventana 15min se excluyen del avg', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [
+        { timestamp: new Date(NOW_MS - 60_000), speedKmh: 60 }, // 1 min — IN
+        { timestamp: new Date(NOW_MS - 16 * 60_000), speedKmh: 200 }, // 16 min — OUT
+        { timestamp: new Date(NOW_MS - 25 * 60_000), speedKmh: 200 }, // 25 min — OUT
+      ],
+      nowMs: NOW_MS,
+    });
+    // Solo el primero está en ventana; con <2 → avg null.
+    expect(result.avg_speed_kmh_last_15min).toBeNull();
+    // Pero last_position_age usa el más reciente.
+    expect(result.last_position_age_seconds).toBe(60);
+  });
+
+  it('last_position_age clamped a 0 si timestamp futuro (clock skew)', async () => {
+    const { computeProgress } = await import('../../src/services/get-public-tracking.js');
+    const result = computeProgress({
+      pings: [{ timestamp: new Date(NOW_MS + 30_000), speedKmh: 50 }], // 30s futuro
+      nowMs: NOW_MS,
+    });
+    expect(result.last_position_age_seconds).toBe(0);
   });
 });
