@@ -3,8 +3,14 @@ import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { offers, trips } from '../db/schema.js';
+import {
+  OfferForbiddenForPreviewError,
+  OfferNotFoundForPreviewError,
+  generarEcoPreview,
+} from '../services/eco-route-preview.js';
 import {
   OfferExpiredError,
   OfferNotFoundError,
@@ -161,6 +167,59 @@ export function createOfferRoutes(opts: { db: Db; logger: Logger }) {
         return c.json({ error: 'trip_already_assigned', code: 'trip_already_assigned' }, 409);
       }
       opts.logger.error({ err, offerId }, 'unexpected error in /offers/:id/accept');
+      throw err;
+    }
+  });
+
+  // GET /offers/:id/eco-preview — Phase 1 PR-H3
+  // Devuelve la huella de carbono estimada de la oferta (pre-accept).
+  // Usa Routes API si está configurado; si no, fallback a tabla Chile.
+  app.get('/:id/eco-preview', async (c) => {
+    const userContext = c.get('userContext');
+    if (!userContext) {
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
+    const active = userContext.activeMembership;
+    if (!active) {
+      return c.json({ error: 'no_active_empresa', code: 'no_active_empresa' }, 403);
+    }
+    if (!active.empresa.isTransportista) {
+      return c.json({ error: 'not_a_carrier', code: 'not_a_carrier' }, 403);
+    }
+
+    const offerId = c.req.param('id');
+
+    try {
+      const preview = await generarEcoPreview({
+        db: opts.db,
+        logger: opts.logger,
+        offerId,
+        empresaId: active.empresa.id,
+        routesApiKey: config.GOOGLE_ROUTES_API_KEY,
+      });
+      return c.json({
+        trip_request_id: preview.tripId,
+        suggested_vehicle_id: preview.suggestedVehicleId,
+        distance_km: preview.distanceKm,
+        duration_s: preview.durationS,
+        fuel_liters_estimated: preview.fuelLitersEstimated,
+        emisiones_kgco2e_wtw: preview.emisionesKgco2eWtw,
+        emisiones_kgco2e_ttw: preview.emisionesKgco2eTtw,
+        emisiones_kgco2e_wtt: preview.emisionesKgco2eWtt,
+        intensidad_gco2e_por_tonkm: preview.intensidadGco2ePorTonKm,
+        precision_method: preview.precisionMethod,
+        data_source: preview.dataSource,
+        glec_version: preview.glecVersion,
+        generated_at: preview.generatedAt,
+      });
+    } catch (err) {
+      if (err instanceof OfferNotFoundForPreviewError) {
+        return c.json({ error: 'offer_not_found', code: 'offer_not_found' }, 404);
+      }
+      if (err instanceof OfferForbiddenForPreviewError) {
+        return c.json({ error: 'offer_forbidden', code: 'offer_forbidden' }, 403);
+      }
+      opts.logger.error({ err, offerId }, 'unexpected error in /offers/:id/eco-preview');
       throw err;
     }
   });
