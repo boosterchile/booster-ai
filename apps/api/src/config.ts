@@ -265,24 +265,29 @@ const apiEnvSchema = commonEnvSchema
     GEMINI_API_KEY: z.string().min(1).optional(),
 
     /**
-     * Feature flag para activar pricing v2 (ADR-030). Default `false`.
+     * Feature flag para activar pricing v2 (ADR-030 + ADR-031).
      *
-     * Cuando es `false`:
-     *   - `liquidarTrip()` retorna `{ status: 'skipped_flag_disabled' }`
-     *     y NO escribe en `liquidaciones` ni `facturas_booster_clp`.
+     * Default por entorno (ADR-031 §2):
+     *   - production → `true` (activación inmediata para el primer carrier)
+     *   - dev/test/staging → `false` (preservar tests existentes)
+     *
+     * Comportamiento cuando es `false`:
+     *   - `liquidarTrip()` retorna `skipped_flag_disabled` sin tocar BD.
      *   - El cron mensual de cobro de membresías no factura.
      *
-     * Cuando es `true`:
+     * Comportamiento cuando es `true`:
      *   - El service evalúa carrier_memberships + consent T&Cs v2 antes
      *     de emitir cualquier cobro. Sin consent firmado, las liquidaciones
-     *     quedan en estado `pending_consent`.
-     *   - Sovos integration debe estar configurada (ADR-024) para que el
-     *     job de emisión de DTE no acumule liquidaciones bloqueadas.
+     *     quedan en `pending_consent` (DTE emisión bloqueada por el carrier,
+     *     no por Booster).
+     *   - DTE Tipo 33 se emite vía Sovos cuando esté integrado;
+     *     mientras tanto las liquidaciones quedan `lista_para_dte`
+     *     (auditables, válidas contablemente, sin presentación SII).
      *
-     * Prender este flag en prod requiere cumplir los 6 criterios del
-     * ADR-030 §"Activación en producción".
+     * Override explícito: setear `PRICING_V2_ACTIVATED=false` en Cloud Run
+     * env revierte la activación en segundos sin tocar BD ni código.
      */
-    PRICING_V2_ACTIVATED: z.coerce.boolean().default(false),
+    PRICING_V2_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

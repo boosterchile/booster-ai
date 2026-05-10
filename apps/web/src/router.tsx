@@ -7,6 +7,7 @@ import { CargaTrackRoute } from './routes/carga-track.js';
 import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
 import { CertificadosRoute } from './routes/certificados.js';
 import { IndexRoute } from './routes/index.js';
+import { LegalTerminosRoute } from './routes/legal-terminos.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
@@ -143,6 +144,12 @@ const publicTrackingRoute = createRoute({
   component: PublicTrackingRoute,
 });
 
+const legalTerminosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/legal/terminos',
+  component: LegalTerminosRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -162,6 +169,7 @@ const routeTree = rootRoute.addChildren([
   certificadosRoute,
   asignacionDetalleRoute,
   publicTrackingRoute,
+  legalTerminosRoute,
 ]);
 
 export const router = createRouter({
