@@ -79,3 +79,49 @@ export interface NotifyOfferResult {
   reason?: 'already_notified' | 'not_configured' | 'no_whatsapp' | 'no_owner' | 'offer_not_found';
   twilioMessageSid?: string;
 }
+
+// ----------------------------------------------------------------------------
+// Tracking link al asignar — Phase 5 PR-L3
+// ----------------------------------------------------------------------------
+// Template Twilio `tracking_link_v1` con 4 variables:
+//   {{1}} tracking_code
+//   {{2}} origin region label (ej. "Metropolitana")
+//   {{3}} destination region label (ej. "Coquimbo")
+//   {{4}} public tracking token (UUID v4 opaco) — embedido en URL
+//         botón: https://app.boosterchile.com/tracking/{{4}}
+
+/**
+ * Construye las variables del template Twilio `tracking_link_v1`.
+ *
+ * Importante: el body usa {{1}}/{{2}}/{{3}} para info legible, y el
+ * BOTÓN URL usa {{4}} para el token. Esto evita que el token aparezca
+ * en el texto visible (lo recibe el shipper, lo ve en pantalla, y
+ * podría inadvertidamente compartir el "tracking_code: <token>" si
+ * fueran la misma var). Separar var = separar superficies.
+ */
+export function buildTrackingLinkVariables(input: {
+  trackingCode: string;
+  originRegionCode: string | null;
+  destinationRegionCode: string | null;
+  publicTrackingToken: string;
+}): Record<string, string> {
+  return {
+    '1': input.trackingCode,
+    '2': regionLabel(input.originRegionCode),
+    '3': regionLabel(input.destinationRegionCode),
+    '4': input.publicTrackingToken,
+  };
+}
+
+export interface NotifyTrackingLinkResult {
+  assignmentId: string;
+  skipped: boolean;
+  reason?:
+    | 'already_notified'
+    | 'not_configured'
+    | 'no_whatsapp'
+    | 'no_owner'
+    | 'no_token'
+    | 'assignment_not_found';
+  twilioMessageSid?: string;
+}

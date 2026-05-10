@@ -226,6 +226,13 @@ locals {
     # (fallback WhatsApp para mensajes no leídos).
     "content-sid-offer-new",
     "content-sid-chat-unread",
+    # Phase 5 PR-L3 — template `tracking_link_v1` para enviar el link
+    # público de tracking al shipper cuando un trip se asigna. Body:
+    # "Tu carga {{1}} ya tiene transportista" + botón URL con {{4}} =
+    # token UUID. Categoría Meta: Utility (informa post-acción del
+    # usuario). SID Twilio creado: HXac1ef21ed9423258a2c38dad02f31e41
+    # (submitted to Meta 2026-05-10, approval ~24-48h).
+    "content-sid-tracking",
 
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
     # post-deploy y subidas con `gcloud secrets versions add`. La pública se
