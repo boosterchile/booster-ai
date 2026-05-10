@@ -99,6 +99,9 @@ export function createCertificatesRoutes(opts: {
         certificateSha256: tripMetrics.certificateSha256,
         certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
+        // ADR-021 §6.4 — empty backhaul.
+        factorMatchingAplicado: tripMetrics.factorMatchingAplicado,
+        ahorroCo2eVsSinMatchingKgco2e: tripMetrics.ahorroCo2eVsSinMatchingKgco2e,
       })
       .from(tripMetrics)
       .innerJoin(trips, eq(trips.id, tripMetrics.tripId))
@@ -128,6 +131,11 @@ export function createCertificatesRoutes(opts: {
         certificate_sha256: r.certificateSha256,
         certificate_kms_key_version: r.certificateKmsKeyVersion,
         certificate_issued_at: r.certificateIssuedAt,
+        // ADR-021 §6.4 — null si el cert es legacy pre-empty-backhaul o
+        // si el vehículo no tiene perfil energético. La UI esconde el badge
+        // cuando es null.
+        factor_matching_aplicado: r.factorMatchingAplicado,
+        ahorro_co2e_vs_sin_matching_kgco2e: r.ahorroCo2eVsSinMatchingKgco2e,
       })),
       pagination: { limit, offset, returned: rows.length },
     });
