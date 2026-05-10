@@ -192,7 +192,12 @@ describe('parseAvlPacket — Codec 8 (round-trip)', () => {
 
   it('rechaza CRC incorrecto', () => {
     const bad = Buffer.from(ejemploPacket);
-    bad[bad.length - 1] = bad[bad.length - 1]! ^ 0xff;
+    const lastIdx = bad.length - 1;
+    const lastByte = bad[lastIdx];
+    if (lastByte === undefined) {
+      throw new Error('packet vacío');
+    }
+    bad[lastIdx] = lastByte ^ 0xff;
     expect(() => parseAvlPacket(bad)).toThrow(CodecCrcError);
   });
 

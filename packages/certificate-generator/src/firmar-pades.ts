@@ -127,6 +127,22 @@ interface Pkcs7Result {
  *     signature OCTET STRING
  *   }
  */
+/**
+ * Helper para acceder a OIDs de node-forge. El typing es Record<string,string>
+ * pero las constantes (contentType, data, messageDigest, etc.) son literales
+ * hardcoded del propio node-forge, así que en runtime nunca son undefined.
+ * Throw defensivo por si una versión futura del paquete cambia esto.
+ */
+function oid(name: keyof typeof forge.pki.oids): string {
+  const value = forge.pki.oids[name];
+  if (value === undefined) {
+    throw new Error(
+      `forge.pki.oids.${String(name)} no está definido — versión incompatible de node-forge`,
+    );
+  }
+  return value;
+}
+
 async function construirPkcs7(
   pdfBytes: Buffer,
   cert: CertSelfSignedResultado,
@@ -134,7 +150,6 @@ async function construirPkcs7(
   signingTime: Date,
 ): Promise<Pkcs7Result> {
   const asn1 = forge.asn1;
-  const oids = forge.pki.oids;
 
   // Hash del PDF — va en el messageDigest signed attribute.
   const pdfDigest = createHash('sha256').update(pdfBytes).digest();
@@ -143,20 +158,22 @@ async function construirPkcs7(
   // En PKCS7 detached con signedAttrs, lo que se firma NO es el
   // pdfDigest, sino el DER-encoded SET OF Attribute. Esto agrega
   // signingTime + binding al contentType y previene replay attacks.
-  // forge.pki.oids está typed como Record<string, string> pero en runtime
-  // las constantes (contentType, data, messageDigest, etc.) son literales
-  // hardcoded del propio node-forge — los `!` son seguros.
   const signedAttrsAsn1 = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [
     crearAtributo(
-      oids.contentType!,
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(oids.data!).getBytes()),
+      oid('contentType'),
+      asn1.create(
+        asn1.Class.UNIVERSAL,
+        asn1.Type.OID,
+        false,
+        asn1.oidToDer(oid('data')).getBytes(),
+      ),
     ),
     crearAtributo(
-      oids.messageDigest!,
+      oid('messageDigest'),
       asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, pdfDigest.toString('binary')),
     ),
     crearAtributo(
-      oids.signingTime!,
+      oid('signingTime'),
       asn1.create(asn1.Class.UNIVERSAL, asn1.Type.UTCTIME, false, asn1.dateToUtcTime(signingTime)),
     ),
   ]);
@@ -190,11 +207,11 @@ async function construirPkcs7(
   const sid = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [issuer, serialAsn1]);
 
   // AlgorithmIdentifier helpers.
-  const sha256AlgId = crearAlgoritmoId(oids.sha256!);
+  const sha256AlgId = crearAlgoritmoId(oid('sha256'));
   // Algunos validadores PAdES esperan sha256WithRSAEncryption en el
   // signatureAlgorithm en vez de rsaEncryption puro. RFC 5652 acepta
   // ambos, pero usar sha256WithRSAEncryption es más explícito.
-  const sigAlgId = crearAlgoritmoId(oids.sha256WithRSAEncryption!);
+  const sigAlgId = crearAlgoritmoId(oid('sha256WithRSAEncryption'));
 
   // SignerInfo SEQUENCE.
   const signerInfo = asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
@@ -220,7 +237,12 @@ async function construirPkcs7(
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, [sha256AlgId]),
     // encapContentInfo — detached: solo eContentType, sin eContent.
     asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, [
-      asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(oids.data!).getBytes()),
+      asn1.create(
+        asn1.Class.UNIVERSAL,
+        asn1.Type.OID,
+        false,
+        asn1.oidToDer(oid('data')).getBytes(),
+      ),
     ]),
     // certificates [0] IMPLICIT SET OF Certificate.
     asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [certAsn1]),
@@ -233,7 +255,7 @@ async function construirPkcs7(
       asn1.Class.UNIVERSAL,
       asn1.Type.OID,
       false,
-      asn1.oidToDer(oids.signedData!).getBytes(),
+      asn1.oidToDer(oid('signedData')).getBytes(),
     ),
     asn1.create(asn1.Class.CONTEXT_SPECIFIC, 0, true, [signedData]),
   ]);

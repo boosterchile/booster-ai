@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TwilioApiError, TwilioWhatsAppClient } from './twilio-client.js';
 
 // Logger no-op para los tests.
+const noop = (): void => undefined;
 const noopLogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
 } as unknown as ConstructorParameters<typeof TwilioWhatsAppClient>[0]['logger'];
 
 const ACCOUNT_SID = 'AC1234567890abcdef';

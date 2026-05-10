@@ -15,13 +15,14 @@ beforeAll(() => {
   process.env.ALLOWED_CALLER_SA = 'caller@booster-ai.iam.gserviceaccount.com';
 });
 
+const noop = (): void => undefined;
 const noopLogger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+  fatal: noop,
   child: () => noopLogger,
 } as unknown as Parameters<typeof import('../../src/routes/me.js').createMeRoutes>[0]['logger'];
 

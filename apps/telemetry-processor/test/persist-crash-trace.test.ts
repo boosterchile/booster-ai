@@ -8,7 +8,7 @@ import {
   persistCrashTrace,
 } from '../src/persist-crash-trace.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: minimal logger mock for tests
+// minimal logger mock para tests (noExplicitAny está off para *.test.ts)
 const noopLogger: any = {
   trace: vi.fn(),
   debug: vi.fn(),

@@ -90,15 +90,20 @@ describe('selectTopNCandidates', () => {
     const top = selectTopNCandidates(candidates, 7);
     const scores = top.map((c) => c.score);
     for (let i = 0; i < scores.length - 1; i++) {
-      expect(scores[i]!).toBeGreaterThanOrEqual(scores[i + 1]!);
+      const a = scores[i];
+      const b = scores[i + 1];
+      if (a === undefined || b === undefined) {
+        throw new Error('score indefinido');
+      }
+      expect(a).toBeGreaterThanOrEqual(b);
     }
   });
 
   it('empate: estabilidad por vehicleId ascendente', () => {
     const top = selectTopNCandidates(candidates, 7);
     // Primeros 2 tienen score 0.95: v1 antes que v4 alphabéticamente
-    expect(top[0]!.vehicleId).toBe('v1');
-    expect(top[1]!.vehicleId).toBe('v4');
+    expect(top[0]?.vehicleId).toBe('v1');
+    expect(top[1]?.vehicleId).toBe('v4');
   });
 
   it('limit N respeta', () => {

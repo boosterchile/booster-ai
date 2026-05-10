@@ -34,7 +34,7 @@ function makeStubPool(opts: { fail?: boolean } = {}): pg.Pool {
       }
       return {
         query: async () => ({ rows: [{ '?column?': 1 }] }),
-        release: () => {},
+        release: (): void => undefined,
       };
     },
   } as unknown as pg.Pool;

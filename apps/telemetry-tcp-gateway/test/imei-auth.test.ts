@@ -9,7 +9,7 @@ function makeMockDb(opts: {
     .fn()
     .mockResolvedValueOnce({ rows: opts.vehicleRow ? [opts.vehicleRow] : [] })
     .mockResolvedValueOnce({ rows: opts.upsertedRow ? [opts.upsertedRow] : [] });
-  // biome-ignore lint/suspicious/noExplicitAny: mock minimal de drizzle
+  // mock minimal de drizzle (noExplicitAny está off para tests)
   return { execute } as any;
 }
 
@@ -21,7 +21,7 @@ const noopLogger = {
   fatal: vi.fn(),
   trace: vi.fn(),
   child: vi.fn(),
-  // biome-ignore lint/suspicious/noExplicitAny: minimal logger
+  // minimal logger mock (noExplicitAny está off para tests)
 } as any;
 
 describe('resolveImei', () => {
