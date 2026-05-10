@@ -20,6 +20,7 @@ import { ArrowLeft } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
+import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { api } from '../lib/api-client.js';
 
 interface AssignmentDetail {
@@ -110,6 +111,13 @@ function AsignacionDetallePage() {
           </div>
         </div>
       </div>
+
+      {/* Behavior score card — Phase 2 PR-I5. Solo se muestra cuando
+          el trip está cerrado, porque el score se calcula post-entrega.
+          Para trips en curso, el componente igual maneja el estado
+          "no disponible" pero lo escondemos para no agregar ruido a
+          la surface activa. */}
+      {isClosed && <BehaviorScoreCard assignmentId={assignmentId} />}
 
       {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
       <div className="flex-1 overflow-hidden">
