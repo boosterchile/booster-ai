@@ -172,6 +172,24 @@ resource "google_service_account_iam_member" "github_can_impersonate_runtime" {
   member             = "serviceAccount:${google_service_account.github_deployer.email}"
 }
 
+# github-deployer puede actuar como SI MISMO. Necesario porque
+# cloudbuild.production.yaml declara `serviceAccount: .../github-deployer@...`
+# (Cloud Build corre el build "como github-deployer"), y actAs de uno mismo
+# requiere binding explicito de roles/iam.serviceAccountUser desde que se
+# scopeo el rol project-wide en PR #70.
+#
+# Sin este binding, gcloud builds submit falla con:
+#   ERROR: PERMISSION_DENIED: caller does not have permission to act as
+#   service account .../github-deployer@...
+#
+# Mantiene el aislamiento de PR #70 (no abre actAs sobre otros SAs del
+# proyecto), solo permite la self-impersonation que el build necesita.
+resource "google_service_account_iam_member" "github_deployer_self_impersonate" {
+  service_account_id = google_service_account.github_deployer.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deployer.email}"
+}
+
 # =============================================================================
 # GKE Autopilot Default Compute SA — necesita pull de Artifact Registry
 # =============================================================================
