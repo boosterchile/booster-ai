@@ -28,6 +28,7 @@ import type { Logger } from '@booster-ai/logger';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripEvents } from '../db/schema.js';
+import { notifyIncidentToShipper } from './notify-incident-shipper.js';
 
 export const INCIDENT_TYPES = [
   'accidente',
@@ -120,6 +121,26 @@ export async function reportarIncidente(opts: {
     },
     'incidente reportado',
   );
+
+  // Phase 4 PR-K6c — push notif al shipper (fire-and-forget).
+  // No bloquea la response al conductor. Si falla, log + sigue: el
+  // shipper igual puede ver el evento en el detalle del trip
+  // refrescando manualmente. Sin throw — el INSERT está commiteado.
+  try {
+    await notifyIncidentToShipper({
+      db,
+      logger,
+      assignmentId,
+      tripEventId: evt.id,
+      incidentType: input.incidentType,
+      description: input.description ?? null,
+    });
+  } catch (err) {
+    logger.error(
+      { err, assignmentId, tripEventId: evt.id },
+      'notifyIncidentToShipper fallo — incidente registrado, push notif al shipper falló',
+    );
+  }
 
   return { ok: true, tripEventId: evt.id, recordedAt: evt.recordedAt };
 }
