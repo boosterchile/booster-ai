@@ -127,6 +127,13 @@
       "when": 1779408000000,
       "tag": "0017_factoring_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779494400000,
+      "tag": "0018_factoring_admin_notas",
+      "breakpoints": true
     }
   ]
 }

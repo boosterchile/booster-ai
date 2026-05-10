@@ -1525,6 +1525,10 @@ export const adelantosCarrier = pgTable(
     cobradoAShipperEn: timestamp('cobrado_a_shipper_en', { withTimezone: true }),
     moraDesde: timestamp('mora_desde', { withTimezone: true }),
     factoringMethodologyVersion: text('factoring_methodology_version').notNull(),
+    // ADR-032 / admin UI: notas append-only del operador platform-admin
+    // en cada transición. Formato libre con tag [ISO8601 admin_email] al
+    // inicio de cada línea.
+    notasAdmin: text('notas_admin'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
