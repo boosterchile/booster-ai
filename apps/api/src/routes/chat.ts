@@ -150,6 +150,7 @@ export function createChatRoutes(opts: {
         carrierEmpresaId: assignments.empresaId,
         shipperEmpresaId: trips.generadorCargaEmpresaId,
       })
+      // rls-allowlist: chat valida AMBAS partes (carrier+shipper) explícitamente abajo
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .where(eq(assignments.id, assignmentId))

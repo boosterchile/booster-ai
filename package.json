@@ -12,8 +12,9 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "biome check .",
+    "lint": "biome check . && pnpm lint:rls",
     "lint:fix": "biome check --write .",
+    "lint:rls": "node scripts/lint-rls.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "typecheck": "turbo run typecheck",
