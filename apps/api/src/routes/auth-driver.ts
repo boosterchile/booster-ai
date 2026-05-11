@@ -118,6 +118,7 @@ export function createDriverAuthRoutes(opts: {
 
     // 4. Verificar que efectivamente sea conductor activo (sino no tiene
     // sentido activar — quizás el carrier lo retiró antes de que activara).
+    // rls-allowlist: lookup user-scoped post-RUT+PIN, no hay empresa activa todavía
     const driverRows = await opts.db
       .select({ id: conductores.id, deletedAt: conductores.deletedAt })
       .from(conductores)
