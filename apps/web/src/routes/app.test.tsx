@@ -129,6 +129,36 @@ describe('AppRoute', () => {
     expect(screen.queryByText('Bienvenido a Booster')).not.toBeInTheDocument();
   });
 
+  it('platform admin → redirige a /app/platform-admin (sin importar memberships)', () => {
+    const me = makeMe();
+    (me.user as { is_platform_admin?: boolean }).is_platform_admin = true;
+    providedContext = { kind: 'onboarded', me };
+    render(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+    expect(screen.queryByText('Bienvenido a Booster')).not.toBeInTheDocument();
+  });
+
+  it('platform admin SIN memberships (auto-provisioned) → redirige a /app/platform-admin', () => {
+    const me: MeOnboarded = {
+      needs_onboarding: false,
+      user: {
+        id: 'u',
+        email: 'admin@boosterchile.com',
+        full_name: 'Admin',
+        phone: null,
+        whatsapp_e164: null,
+        rut: null,
+        is_platform_admin: true,
+        status: 'activo',
+      },
+      memberships: [],
+      active_membership: null,
+    };
+    providedContext = { kind: 'onboarded', me };
+    render(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
+  });
+
   it('click Salir → signOutUser', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<AppRoute />);
