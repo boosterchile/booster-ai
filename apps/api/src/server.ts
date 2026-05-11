@@ -263,6 +263,10 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       certConfig,
+      // Phase 1 PR-H5 — Routes API key para que GET /assignments/:id/eco-route
+      // pueda devolver la polyline. Sin esta key, el endpoint devuelve
+      // polyline_encoded=null con status='no_routes_api_key' (no error).
+      ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
