@@ -76,6 +76,12 @@ export interface AdelantoHistorial {
     | 'rechazado';
   desembolsado_en: string | null;
   creado_en: string;
+  /**
+   * Mensaje del admin visible al carrier. Solo presente para estados
+   * `rechazado`, `cancelado` o `mora` (privacidad operativa). Para otros
+   * estados es `null` aunque el admin haya dejado notas internas.
+   */
+  nota_visible: string | null;
 }
 
 export function useHistorialCobraHoy(opts: { enabled?: boolean } = {}) {
