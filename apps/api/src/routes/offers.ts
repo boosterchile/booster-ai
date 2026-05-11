@@ -219,6 +219,10 @@ export function createOfferRoutes(opts: {
         intensidad_gco2e_por_tonkm: preview.intensidadGco2ePorTonKm,
         precision_method: preview.precisionMethod,
         data_source: preview.dataSource,
+        // Phase 1 PR-H4 — polyline de Routes API para que el cliente
+        // pueda mostrar visualmente la ruta sugerida sobre la que se
+        // calculó el preview. null cuando data_source='tabla_chile'.
+        polyline_encoded: preview.polylineEncoded,
         glec_version: preview.glecVersion,
         generated_at: preview.generatedAt,
       });

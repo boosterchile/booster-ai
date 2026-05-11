@@ -8,6 +8,7 @@ import {
   useRejectOfferMutation,
 } from '../../hooks/use-offers.js';
 import { ApiError } from '../../lib/api-client.js';
+import { EcoRouteMapPreview } from './EcoRouteMapPreview.js';
 
 const CARGO_LABELS: Record<string, string> = {
   carga_seca: 'Carga seca',
@@ -318,6 +319,16 @@ function EcoPreviewBlock(props: {
         <Leaf className="h-3.5 w-3.5" aria-hidden />
         <span className="font-semibold">Impacto ambiental estimado</span>
       </header>
+
+      {/* Phase 1 PR-H4 — mapa de la ruta sugerida. Solo renderizado
+          cuando Routes API devolvió polyline. Cierra el loop "AI sugiere
+          la mejor ruta para reducir huella": el carrier ya no ve solo
+          números, ve la ruta exacta sobre la que se calculó. */}
+      {p.polyline_encoded && (
+        <div className="mt-2">
+          <EcoRouteMapPreview polylineEncoded={p.polyline_encoded} />
+        </div>
+      )}
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
         <div>
           <dt className="text-neutral-600">Distancia</dt>
