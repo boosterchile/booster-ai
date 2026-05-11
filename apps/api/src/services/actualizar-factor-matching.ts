@@ -3,30 +3,61 @@ import type { Logger } from '@booster-ai/logger';
 import { and, asc, eq, gt, lt, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { haversineKm } from './calcular-cobertura-telemetria.js';
+import { REGION_CENTROIDS_LAT_LNG } from './get-public-tracking.js';
+
+/**
+ * Factor de ajuste haversine → distancia por carretera. Misma constante
+ * que `get-public-tracking.ts` para coherencia en cálculos geo de Chile
+ * (red vial agrega ~30% sobre great-circle).
+ */
+const ROAD_DISTANCE_FACTOR = 1.3;
+
+/**
+ * Threshold de proximidad para considerar matching pleno. Si la
+ * distancia entre destino del trip actual y origen del próximo trip
+ * es ≤ 10% de la distancia de retorno, asumimos factorMatching=1.
+ *
+ * Esto evita penalizar gaps mínimos por imprecisión de centroides
+ * regionales (Chile usa centroides de capital regional, no exactos).
+ */
+const PROXIMIDAD_MATCH_PLENO_RATIO = 0.1;
 
 /**
  * ADR-021 §6.4 — recalcular `factor_matching_aplicado` post-entrega del
  * viaje, usando una heurística geo del próximo trip del mismo vehículo.
  *
- * **Heurística v1 (honest-default)**:
+ * **Heurística v2 (haversine, supersede v1 binaria por región)**:
  *
  *   - Buscar el próximo trip *cargado* del mismo vehículo cuya ventana
  *     de pickup arranca dentro de los **7 días corridos** posteriores a
  *     `deliveredAt` del trip actual.
- *   - Si **el origen del next trip está en la misma región chilena** que
- *     el destino del trip actual → `factorMatching = 1` (matching pleno).
- *   - Si no hay next trip en la ventana o arranca lejos →
- *     `factorMatching = 0` (peor caso, vuelve vacío).
+ *   - Si no hay next trip → `factorMatching = 0` (peor caso GLEC §6.4.2).
+ *   - Si hay next trip, calcular:
+ *     - `dist_retorno` = haversine(destino_actual, origen_actual) × 1.3
+ *     - `dist_gap` = haversine(destino_actual, origen_next) × 1.3
+ *   - Si `dist_gap ≤ 10% × dist_retorno` → `factorMatching = 1`
+ *     (proximidad suficiente para asumir match pleno; tolera ruido de
+ *     centroides regionales).
+ *   - Si `dist_gap ≥ dist_retorno` → `factorMatching = 0`
+ *     (next trip arranca tan lejos que no "evita" empty backhaul).
+ *   - Else: `factorMatching = round(1 − dist_gap / dist_retorno, 2)`
+ *     (lineal en proximidad).
  *
- * Esto NO mide kilómetros exactos del retorno cargado — es una
- * aproximación binaria conservadora. Sigue siendo GLEC §6.4 compliant
- * (la regla obliga a *atribuir empty backhaul al loaded leg*; nuestra
- * heurística decide cuánto atribuir).
+ * **Por qué supersede v1 binaria por región**: la heurística binaria
+ * trataba igual a un next trip a 5km del destino que a 500km dentro de
+ * la misma región (ej. Santiago → Talca y vuelta a Talca → Concepción,
+ * que son ambos VII pero geográficamente lejos). v2 corrige usando
+ * distancia great-circle real de los centroides de capital regional.
  *
- * Una versión futura (out of scope acá) puede:
- *   - Pedir Routes API el km loaded vs km total del retorno.
- *   - Considerar trips parciales (un trip que arranca a 50km del
- *     destino actual → factorMatching = (km_total − 50) / km_total).
+ * **Fallback a binaria por región**: si alguno de los region codes no
+ * está en `REGION_CENTROIDS_LAT_LNG` (futuras divisiones administrativas
+ * o regiones missing), caemos al comportamiento v1 (1 si same code,
+ * sino 0). Backwards-compatible.
+ *
+ * **GLEC §6.4 compliant**: la regla obliga a *atribuir empty backhaul
+ * al loaded leg*; nuestra heurística decide cuánto atribuir. Sigue
+ * siendo conservadora (no inventa ahorro, todo cap [0, 1]).
  *
  * **Idempotente**: re-llamar el service con el mismo tripId recalcula
  * con los datos vigentes (útil si después del primer recálculo aparece
@@ -39,6 +70,51 @@ import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
  *     debería haber corrido antes).
  *   - El trip no tiene assignment cerrado.
  */
+
+/**
+ * Calcula factorMatching ∈ [0, 1] usando haversine + ROAD_FACTOR
+ * sobre los centroides regionales. Función pura, testeable directamente.
+ *
+ * Retorna `null` si falta algún region code (caller cae al fallback
+ * v1 binaria).
+ */
+export function calcularFactorMatchingGeo(opts: {
+  origenCurrentRegionCode: string | null;
+  destinoCurrentRegionCode: string | null;
+  origenNextRegionCode: string | null;
+}): number | null {
+  const { origenCurrentRegionCode, destinoCurrentRegionCode, origenNextRegionCode } = opts;
+  if (!origenCurrentRegionCode || !destinoCurrentRegionCode || !origenNextRegionCode) {
+    return null;
+  }
+  const origenCurrent = REGION_CENTROIDS_LAT_LNG[origenCurrentRegionCode];
+  const destinoCurrent = REGION_CENTROIDS_LAT_LNG[destinoCurrentRegionCode];
+  const origenNext = REGION_CENTROIDS_LAT_LNG[origenNextRegionCode];
+  if (!origenCurrent || !destinoCurrent || !origenNext) {
+    return null;
+  }
+  const distRetorno =
+    haversineKm(destinoCurrent.lat, destinoCurrent.lng, origenCurrent.lat, origenCurrent.lng) *
+    ROAD_DISTANCE_FACTOR;
+  const distGap =
+    haversineKm(destinoCurrent.lat, destinoCurrent.lng, origenNext.lat, origenNext.lng) *
+    ROAD_DISTANCE_FACTOR;
+
+  // Same-region perfect overlap o trip intra-regional muy corto: tratamos
+  // como match pleno para evitar division por ~0.
+  if (distRetorno <= 0.001) {
+    return distGap <= 0.001 ? 1 : 0;
+  }
+  if (distGap <= PROXIMIDAD_MATCH_PLENO_RATIO * distRetorno) {
+    return 1;
+  }
+  if (distGap >= distRetorno) {
+    return 0;
+  }
+  const raw = 1 - distGap / distRetorno;
+  // Round a 2 decimales para encajar precisión BD numeric(3,2).
+  return Math.round(raw * 100) / 100;
+}
 export async function actualizarFactorMatchingViaje(opts: {
   db: Db;
   logger: Logger;
@@ -53,6 +129,7 @@ export async function actualizarFactorMatchingViaje(opts: {
   const tripRows = await db
     .select({
       id: trips.id,
+      originRegionCode: trips.originRegionCode,
       destinationRegionCode: trips.destinationRegionCode,
       destinationAddressRaw: trips.destinationAddressRaw,
     })
@@ -141,15 +218,27 @@ export async function actualizarFactorMatchingViaje(opts: {
     .limit(1);
   const nextTrip = nextRows[0];
 
-  // Heurística: matching pleno si la región del próximo origen == región
-  // del destino actual. Si no hay next trip → factorMatching = 0.
+  // Heurística v2 (haversine, ADR-021 §6.4):
+  //   - Sin next trip → factorMatching = 0 (peor caso GLEC §6.4.2).
+  //   - Con next trip + region codes válidos → factor lineal proximidad.
+  //   - Si los centroides no están disponibles → fallback v1 (binaria
+  //     por mismo region code).
   let factorMatching = 0;
-  if (
-    nextTrip?.originRegionCode &&
-    trip.destinationRegionCode &&
-    nextTrip.originRegionCode === trip.destinationRegionCode
-  ) {
-    factorMatching = 1;
+  if (nextTrip?.originRegionCode) {
+    const geoFactor = calcularFactorMatchingGeo({
+      origenCurrentRegionCode: trip.originRegionCode,
+      destinoCurrentRegionCode: trip.destinationRegionCode,
+      origenNextRegionCode: nextTrip.originRegionCode,
+    });
+    if (geoFactor !== null) {
+      factorMatching = geoFactor;
+    } else if (
+      trip.destinationRegionCode &&
+      nextTrip.originRegionCode === trip.destinationRegionCode
+    ) {
+      // Fallback v1 binaria por region code.
+      factorMatching = 1;
+    }
   }
 
   const empty = calcularEmptyBackhaul({
