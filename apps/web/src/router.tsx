@@ -24,6 +24,7 @@ import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
+import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
 import {
   SucursalesDetalleRoute,
   SucursalesListRoute,
@@ -169,6 +170,15 @@ const sucursalesDetalleRoute = createRoute({
   component: SucursalesDetalleRoute,
 });
 
+// D11 — Stakeholder geo dashboard. Surface restringida a rol
+// `stakeholder_sostenibilidad`. Datos agregados con k-anonymity ≥ 5;
+// nunca expone shippers o carriers individuales.
+const stakeholderZonasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/stakeholder/zonas',
+  component: StakeholderZonasRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -277,6 +287,7 @@ const routeTree = rootRoute.addChildren([
   sucursalesListRoute,
   sucursalesNuevaRoute,
   sucursalesDetalleRoute,
+  stakeholderZonasRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
