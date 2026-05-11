@@ -617,6 +617,49 @@ export const sucursalesEmpresa = pgTable(
 );
 
 /**
+ * D2 — Posiciones GPS reportadas por el browser del conductor para vehículos
+ * SIN Teltonika asociado. Stream paralelo a `telemetria_puntos` (que es el
+ * canal Teltonika). Los endpoints de lectura `/vehiculos/:id/ubicacion` y
+ * `/vehiculos/flota` consultan ambos streams y devuelven el más reciente.
+ *
+ * Source siempre 'browser' por ahora; campo reservado para futuros canales
+ * (e.g. driver app nativa, IoT plug-and-play sin Teltonika).
+ */
+export const posicionesMovilConductor = pgTable(
+  'posiciones_movil_conductor',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    assignmentId: uuid('asignacion_id'),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    /**
+     * User id del conductor que reporta (en lugar de driver_id del
+     * conductor.id) para mantener trazabilidad incluso cuando se borra el
+     * registro `conductores` por baja del carrier.
+     */
+    userId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    timestampDevice: timestamp('timestamp_device', { withTimezone: true }).notNull(),
+    timestampReceivedAt: timestamp('timestamp_recibido_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    latitude: numeric('latitud', { precision: 10, scale: 7 }).notNull(),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }).notNull(),
+    /** Precisión reportada por el browser en metros. Null si no disponible. */
+    accuracyM: numeric('precision_m', { precision: 8, scale: 2 }),
+    speedKmh: numeric('velocidad_kmh', { precision: 6, scale: 2 }),
+    headingDeg: smallint('rumbo_deg'),
+    source: varchar('fuente', { length: 20 }).notNull().default('browser'),
+  },
+  (table) => ({
+    vehicleTsIdx: index('idx_posmovil_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
+    userTsIdx: index('idx_posmovil_usuario_ts').on(table.userId, table.timestampDevice),
+  }),
+);
+
+/**
  * Conductores — perfil profesional separado de `users` (que es la identidad
  * Firebase / auth). Un user puede ser conductor en una sola empresa
  * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
@@ -1769,6 +1812,8 @@ export type ConductorRow = typeof conductores.$inferSelect;
 export type NewConductorRow = typeof conductores.$inferInsert;
 export type SucursalEmpresaRow = typeof sucursalesEmpresa.$inferSelect;
 export type NewSucursalEmpresaRow = typeof sucursalesEmpresa.$inferInsert;
+export type PosicionMovilConductorRow = typeof posicionesMovilConductor.$inferSelect;
+export type NewPosicionMovilConductorRow = typeof posicionesMovilConductor.$inferInsert;
 export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;

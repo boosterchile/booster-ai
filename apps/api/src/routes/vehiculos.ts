@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { telemetryPoints, vehicles } from '../db/schema.js';
+import { posicionesMovilConductor, telemetryPoints, vehicles } from '../db/schema.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -192,14 +192,19 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       .where(eq(vehicles.empresaId, empresaId))
       .orderBy(asc(vehicles.plate));
 
-    // D1 — Particionamos los vehículos en dos grupos:
+    // D1/D2 — Particionamos los vehículos en tres grupos:
     //   - withOwnDevice: tienen teltonika_imei propio → lookup por
     //     vehicle_id (path histórico, eficiente con indice ya existente).
     //   - withMirrorImei: solo tienen espejo → lookup por imei. Su data
     //     pertenece al stream de otro vehículo físico (demo o redundancia).
+    //   - withoutDevice: sin Teltonika → lookup en posiciones_movil_conductor
+    //     por vehicle_id (D2 browser GPS).
     const withOwnDevice = vehicleRows.filter((v) => v.teltonika_imei != null);
     const withMirrorImei = vehicleRows.filter(
       (v) => v.teltonika_imei == null && v.teltonika_imei_espejo != null,
+    );
+    const withoutDevice = vehicleRows.filter(
+      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo == null,
     );
 
     type LastPoint = {
@@ -258,18 +263,56 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       lastByImei.set(p.imei, p);
     }
 
+    // D2 — Browser GPS lookup para vehículos sin Teltonika.
+    const noDeviceVehicleIds = withoutDevice.map((v) => v.id);
+    const browserLastPoints =
+      noDeviceVehicleIds.length === 0
+        ? []
+        : await opts.db
+            .selectDistinctOn([posicionesMovilConductor.vehicleId], {
+              vehicle_id: posicionesMovilConductor.vehicleId,
+              timestamp_device: posicionesMovilConductor.timestampDevice,
+              latitude: posicionesMovilConductor.latitude,
+              longitude: posicionesMovilConductor.longitude,
+              speed_kmh: posicionesMovilConductor.speedKmh,
+              heading_deg: posicionesMovilConductor.headingDeg,
+            })
+            .from(posicionesMovilConductor)
+            .where(inArray(posicionesMovilConductor.vehicleId, noDeviceVehicleIds))
+            .orderBy(
+              posicionesMovilConductor.vehicleId,
+              desc(posicionesMovilConductor.timestampDevice),
+            );
+    const browserByVehicleId = new Map<string, LastPoint>();
+    for (const p of browserLastPoints) {
+      browserByVehicleId.set(p.vehicle_id, {
+        timestamp_device: p.timestamp_device,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        speed_kmh: p.speed_kmh != null ? Number.parseFloat(p.speed_kmh) : null,
+        angle_deg: p.heading_deg,
+      });
+    }
+
     const fleet = vehicleRows.map((v) => {
       const point: LastPoint | undefined = v.teltonika_imei
         ? lastByVehicleId.get(v.id)
         : v.teltonika_imei_espejo
           ? lastByImei.get(v.teltonika_imei_espejo)
-          : undefined;
+          : browserByVehicleId.get(v.id);
+      const source: 'own' | 'mirror' | 'browser_gps' | null = v.teltonika_imei
+        ? 'own'
+        : v.teltonika_imei_espejo
+          ? 'mirror'
+          : point
+            ? 'browser_gps'
+            : null;
       return {
         id: v.id,
         plate: v.plate,
         type: v.type,
         teltonika_imei: v.teltonika_imei ?? v.teltonika_imei_espejo,
-        teltonika_source: v.teltonika_imei ? 'own' : v.teltonika_imei_espejo ? 'mirror' : null,
+        teltonika_source: source,
         status: v.status,
         position: point
           ? {
@@ -569,13 +612,54 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       return c.json({ error: 'vehicle_not_found' }, 404);
     }
 
-    // D1 — Determinar fuente de datos:
-    //   - Si tiene teltonika_imei propio → leer por vehicle_id (path normal).
-    //   - Si tiene teltonika_imei_espejo → leer por imei (mira otro stream).
-    //   - Si no tiene ninguno → 404 no_teltonika.
+    // D1/D2 — Determinar fuente de datos en orden de prioridad:
+    //   - Tiene teltonika_imei propio → leer por vehicle_id (path histórico).
+    //   - Tiene teltonika_imei_espejo → leer por imei (D1 mirror).
+    //   - No tiene ningún Teltonika → leer de posiciones_movil_conductor (D2
+    //     GPS browser).
     const effectiveImei = vehicle.teltonikaImei ?? vehicle.teltonikaImeiEspejo;
+
     if (!effectiveImei) {
-      return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
+      // D2 — Browser GPS fallback.
+      const [browserPoint] = await opts.db
+        .select({
+          timestamp_device: posicionesMovilConductor.timestampDevice,
+          timestamp_received_at: posicionesMovilConductor.timestampReceivedAt,
+          latitude: posicionesMovilConductor.latitude,
+          longitude: posicionesMovilConductor.longitude,
+          speed_kmh: posicionesMovilConductor.speedKmh,
+          heading_deg: posicionesMovilConductor.headingDeg,
+          accuracy_m: posicionesMovilConductor.accuracyM,
+        })
+        .from(posicionesMovilConductor)
+        .where(eq(posicionesMovilConductor.vehicleId, id))
+        .orderBy(desc(posicionesMovilConductor.timestampDevice))
+        .limit(1);
+
+      if (!browserPoint) {
+        return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
+      }
+
+      return c.json({
+        vehicle_id: id,
+        plate: vehicle.plate,
+        teltonika_imei: null,
+        teltonika_source: 'browser_gps',
+        ubicacion: {
+          timestamp_device: browserPoint.timestamp_device,
+          timestamp_received_at: browserPoint.timestamp_received_at,
+          latitude: Number.parseFloat(browserPoint.latitude),
+          longitude: Number.parseFloat(browserPoint.longitude),
+          altitude_m: null,
+          angle_deg: browserPoint.heading_deg,
+          satellites: null,
+          speed_kmh:
+            browserPoint.speed_kmh != null ? Number.parseFloat(browserPoint.speed_kmh) : null,
+          priority: 0,
+          accuracy_m:
+            browserPoint.accuracy_m != null ? Number.parseFloat(browserPoint.accuracy_m) : null,
+        },
+      });
     }
 
     const baseSelect = opts.db
@@ -619,9 +703,10 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       plate: vehicle.plate,
       teltonika_imei: effectiveImei,
       /**
-       * D1 — `teltonika_source` indica si la data viene del device propio
-       * (`own`) o del IMEI espejo (`mirror`). El frontend puede usarlo para
-       * mostrar un badge "data en vivo (espejo)" en demos.
+       * D1/D2 — `teltonika_source` indica el canal de la posición:
+       *   - `own`: Teltonika propio del vehículo.
+       *   - `mirror`: leyendo el stream de otro IMEI (demo).
+       *   - `browser_gps`: posición del browser del conductor (D2).
        */
       teltonika_source: vehicle.teltonikaImei ? 'own' : 'mirror',
       ubicacion: {
