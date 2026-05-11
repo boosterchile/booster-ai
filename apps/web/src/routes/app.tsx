@@ -315,13 +315,24 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 Para usar Booster necesitas crear una empresa o unirte a una existente. Si recién te
                 registraste, hace falta completar el onboarding (RUT, datos legales, plan).
               </p>
-              <Link
-                to="/onboarding"
-                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
-              >
-                Crear empresa
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </Link>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  to="/onboarding"
+                  className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
+                >
+                  Crear empresa
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+                {/* Atajo discreto para admins de plataforma (validación de
+                    autorización es server-side en el backend). */}
+                <Link
+                  to="/app/platform-admin"
+                  className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100"
+                  data-testid="empty-state-link-platform-admin"
+                >
+                  Soy admin de plataforma
+                </Link>
+              </div>
             </section>
           )}
 
