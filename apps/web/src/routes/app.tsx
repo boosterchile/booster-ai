@@ -52,6 +52,15 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   const myRole = me.active_membership?.role;
   const isAdmin = myRole === 'dueno' || myRole === 'admin';
 
+  // Platform admin surface guard. El admin de plataforma no es tenant: no
+  // tiene empresa propia ni rol de tenant. Su único hub es
+  // /app/platform-admin (seed, ops platform-wide). Si además tuviera
+  // memberships de testing, puede navegar manualmente a las otras
+  // surfaces — pero el landing por defecto es el panel admin.
+  if (me.user.is_platform_admin) {
+    return <Navigate to="/app/platform-admin" />;
+  }
+
   // D9 — Driver surface guard. Si el rol activo es 'conductor', el user
   // no debería ver el dashboard carrier (ofertas/vehículos/cargas).
   // Redirigimos a /app/conductor/modo (su único hub). Excepción: si el
