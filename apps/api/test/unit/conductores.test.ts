@@ -308,9 +308,14 @@ describe('conductores routes', () => {
         }),
       });
       expect(res.status).toBe(201);
-      const body = (await res.json()) as { conductor: { id: string; license_expiry: string } };
+      const body = (await res.json()) as {
+        conductor: { id: string; license_expiry: string };
+        activation_pin: string;
+      };
       expect(body.conductor.id).toBe(CONDUCTOR_ID);
       expect(body.conductor.license_expiry).toBe('2027-12-31');
+      // D9: PIN de activación 6 dígitos devuelto al carrier.
+      expect(body.activation_pin).toMatch(/^\d{6}$/);
     });
 
     it('user existente con conductor activo → 409 user_already_driver', async () => {

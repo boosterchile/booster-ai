@@ -4,7 +4,9 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowLeft,
+  CheckCircle,
   Clock,
+  Copy,
   Pencil,
   Plus,
   ShieldOff,
@@ -381,10 +383,24 @@ export function ConductoresNuevoRoute() {
   );
 }
 
+interface CreateConductorResponse {
+  conductor: Conductor;
+  activation_pin: string;
+}
+
 function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  // D9 — PIN devuelto por el backend post-create. Lo mostramos en una card
+  // de éxito con botón "copiar". El carrier lo comparte con el conductor
+  // (papel, WhatsApp, SMS). Después de "Continuar" se navega y el PIN se
+  // pierde — no se puede recuperar después.
+  const [activationResult, setActivationResult] = useState<{
+    pin: string;
+    driverName: string;
+    driverRut: string;
+  } | null>(null);
 
   const createM = useMutation({
     mutationFn: async (input: NewConductorForm) => {
@@ -402,11 +418,15 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
       if (input.phone.trim()) {
         body.phone = input.phone.trim();
       }
-      return await api.post<{ conductor: Conductor }>('/conductores', body);
+      return await api.post<CreateConductorResponse>('/conductores', body);
     },
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conductores'] });
-      void navigate({ to: '/app/conductores' });
+      setActivationResult({
+        pin: res.activation_pin,
+        driverName: variables.full_name.trim(),
+        driverRut: variables.rut.trim(),
+      });
     },
     onError: (err: Error) => {
       if (err.message.includes('user_already_driver')) {
@@ -442,6 +462,29 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     }
     setError(null);
     createM.mutate(values);
+  }
+
+  if (activationResult) {
+    return (
+      <Layout me={me} title="Conductor creado">
+        <div className="mb-6 flex items-center gap-3">
+          <Link to="/app/conductores" className="text-neutral-500 hover:text-neutral-900">
+            <ArrowLeft className="h-5 w-5" aria-hidden />
+          </Link>
+          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Conductor creado</h1>
+        </div>
+
+        <ActivationPinCard
+          pin={activationResult.pin}
+          driverName={activationResult.driverName}
+          driverRut={activationResult.driverRut}
+          onContinue={() => {
+            setActivationResult(null);
+            void navigate({ to: '/app/conductores' });
+          }}
+        />
+      </Layout>
+    );
   }
 
   return (
@@ -905,6 +948,89 @@ function NoPermission() {
       <Link to="/app/conductores" className="mt-4 inline-block text-primary-600 underline">
         Volver a la lista
       </Link>
+    </div>
+  );
+}
+
+/**
+ * Card que se muestra UNA SOLA VEZ después de crear un conductor.
+ * Contiene el PIN de activación en plaintext. Después de "Continuar" se
+ * pierde — la BD solo guarda el hash. Si el PIN se extravía hay que retirar
+ * al conductor y crearlo de nuevo.
+ */
+function ActivationPinCard({
+  pin,
+  driverName,
+  driverRut,
+  onContinue,
+}: {
+  pin: string;
+  driverName: string;
+  driverRut: string;
+  onContinue: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(pin);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Sin clipboard (ej. http en local) — el usuario lo lee y tipea.
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border-2 border-success-300 bg-success-50 p-4">
+        <div className="flex items-start gap-3">
+          <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-success-700" aria-hidden />
+          <div>
+            <h2 className="font-semibold text-neutral-900">
+              {driverName} fue creado correctamente
+            </h2>
+            <p className="mt-1 text-neutral-700 text-sm">
+              RUT: <span className="font-mono">{driverRut}</span>. Ahora dale al conductor el PIN de
+              activación de abajo para que pueda ingresar a Booster con su RUT desde{' '}
+              <span className="font-mono">/login/conductor</span>.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+        <div className="text-neutral-600 text-sm">
+          <strong>PIN de activación</strong> (válido 1 sola vez — guárdalo ahora)
+        </div>
+        <div className="mt-3 flex items-center gap-4">
+          <div className="flex-1 rounded-md bg-neutral-900 px-6 py-4 text-center font-bold font-mono text-3xl text-white tracking-[0.5em]">
+            {pin}
+          </div>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-2 rounded-md border border-neutral-300 px-4 py-3 font-medium text-neutral-700 text-sm transition hover:bg-neutral-50"
+          >
+            <Copy className="h-4 w-4" aria-hidden />
+            {copied ? 'Copiado' : 'Copiar'}
+          </button>
+        </div>
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
+          <strong>Importante:</strong> este PIN no se vuelve a mostrar. Si el conductor lo pierde
+          tendrás que retirarlo y crearlo de nuevo.
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={onContinue}
+          className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
+        >
+          Continuar
+        </button>
+      </div>
     </div>
   );
 }

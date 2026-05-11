@@ -283,6 +283,19 @@ export function LoginRoute() {
                     Olvidé mi contraseña
                   </button>
                 </p>
+                {/* D9 — Link al login dedicado de conductores (RUT + PIN).
+                    Es una surface distinta porque los conductores no tienen
+                    email, solo RUT + PIN/password sintético. */}
+                <p>
+                  ¿Eres conductor?{' '}
+                  <a
+                    href="/login/conductor"
+                    className="font-medium text-primary-600 hover:underline"
+                    data-testid="login-link-conductor"
+                  >
+                    Ingresar con RUT
+                  </a>
+                </p>
               </>
             )}
             {mode === 'sign-up' && (

@@ -449,6 +449,15 @@ export const users = pgTable(
     rut: varchar('rut', { length: 20 }),
     status: userStatusEnum('estado').notNull().default('pendiente_verificacion'),
     isPlatformAdmin: boolean('es_admin_plataforma').notNull().default(false),
+    /**
+     * D9 — Hash scrypt del PIN de activación emitido por el carrier al
+     * crear el conductor. Solo presente mientras el `firebase_uid` es
+     * placeholder `pending-rut:...`. Se borra al completar el flujo
+     * driver-activate. Formato: `salt$N$r$p$keylen$derived` (hex).
+     *
+     * NULL para users que no son conductores o ya activaron.
+     */
+    activationPinHash: text('activacion_pin_hash'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp('ultimo_login_en', { withTimezone: true }),
@@ -457,6 +466,7 @@ export const users = pgTable(
     firebaseUidIdx: index('idx_usuarios_firebase_uid').on(table.firebaseUid),
     emailIdx: index('idx_usuarios_email').on(table.email),
     statusIdx: index('idx_usuarios_estado').on(table.status),
+    rutIdx: index('idx_usuarios_rut').on(table.rut),
   }),
 );
 

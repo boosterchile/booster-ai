@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   Banknote,
@@ -48,6 +48,15 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const myRole = me.active_membership?.role;
   const isAdmin = myRole === 'dueno' || myRole === 'admin';
+
+  // D9 — Driver surface guard. Si el rol activo es 'conductor', el user
+  // no debería ver el dashboard carrier (ofertas/vehículos/cargas).
+  // Redirigimos a /app/conductor/modo (su único hub). Excepción: si el
+  // mismo user tiene OTRA membership donde es dueño/admin/etc., puede
+  // hacer switch desde Layout y vuelve al dashboard carrier normalmente.
+  if (myRole === 'conductor') {
+    return <Navigate to="/app/conductor/modo" />;
+  }
 
   async function handleSignOut() {
     await signOutUser();

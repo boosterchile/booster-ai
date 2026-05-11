@@ -18,6 +18,7 @@ import { FlotaRoute } from './routes/flota.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
 import { LegalTerminosRoute } from './routes/legal-terminos.js';
+import { LoginConductorRoute } from './routes/login-conductor.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
@@ -52,6 +53,15 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   component: LoginRoute,
+});
+
+// D9 — Surface dedicada de login para conductores. Acepta RUT + PIN
+// (primera vez) o RUT + password (después). No usa ProtectedRoute porque
+// debe ser accesible sin sesión Firebase.
+const loginConductorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login/conductor',
+  component: LoginConductorRoute,
 });
 
 const onboardingRoute = createRoute({
@@ -227,6 +237,7 @@ const legalCobraHoyRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  loginConductorRoute,
   onboardingRoute,
   appRoute,
   ofertasRoute,

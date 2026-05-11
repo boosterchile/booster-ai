@@ -14,6 +14,7 @@ import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
+import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
@@ -346,6 +347,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/conductores', firebaseAuthMiddleware);
     app.use('/conductores', userContextMiddleware);
     app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
+
+    // D9 — Driver-only auth surface. `/auth/driver-activate` NO requiere
+    // firebase auth previa (el driver aún no tiene Firebase user). Otros
+    // endpoints de `/auth/*` futuros podrían tenerla; por eso montamos
+    // este sin middleware encima.
+    app.route(
+      '/auth',
+      createDriverAuthRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

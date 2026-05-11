@@ -9,6 +9,7 @@ import {
   reauthenticateWithCredential,
   reauthenticateWithPopup,
   sendPasswordResetEmail,
+  signInWithCustomToken,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -92,6 +93,17 @@ export async function signInWithGoogle(): Promise<User> {
  */
 export async function signInWithEmail(email: string, password: string): Promise<User> {
   const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
+  return result.user;
+}
+
+/**
+ * D9 — Login del conductor con custom token devuelto por
+ * `POST /auth/driver-activate`. Se usa solamente la primera vez que el
+ * conductor activa su cuenta; subsecuentes logins van por
+ * `signInWithEmail` con el email sintético + PIN/password.
+ */
+export async function signInDriverWithCustomToken(customToken: string): Promise<User> {
+  const result = await signInWithCustomToken(firebaseAuth, customToken);
   return result.user;
 }
 

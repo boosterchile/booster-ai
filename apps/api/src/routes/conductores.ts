@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { conductores, users } from '../db/schema.js';
+import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 
 /**
  * Endpoints CRUD de conductores. Solo accesibles desde la interfaz del
@@ -229,6 +230,13 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
     }
     const rut = rutParsed.data;
 
+    // D9 — PIN de activación de 6 dígitos. Lo generamos antes de la
+    // transacción para que el hash quede listo independiente del lookup-or-
+    // create. El plaintext NUNCA persiste; sólo se devuelve UNA vez en la
+    // respuesta del POST para que el carrier lo muestre al conductor.
+    const activationPin = generateActivationPin();
+    const activationPinHash = hashActivationPin(activationPin);
+
     try {
       const result = await opts.db.transaction(async (tx) => {
         // 1. Lookup user por RUT.
@@ -262,8 +270,19 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
           if (existingDriver.length > 0 && existingDriver[0]?.deletedAt == null) {
             return { ok: false as const, code: 'user_already_driver' };
           }
+
+          // Si el user existente todavía no se ha activado (firebase_uid es
+          // placeholder), seteamos el nuevo PIN de activación. Si ya está
+          // activado (UID real, ej. el conductor también es despachador en
+          // otra empresa con login completo), NO sobrescribimos su login.
+          if (existingUser.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX)) {
+            await tx
+              .update(users)
+              .set({ activationPinHash, updatedAt: sql`now()` })
+              .where(eq(users.id, userId));
+          }
         } else {
-          // 2. Crear user "pending".
+          // 2. Crear user "pending" con PIN de activación.
           const insertedUsers = await tx
             .insert(users)
             .values({
@@ -274,6 +293,7 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
               rut,
               status: 'pendiente_verificacion',
               isPlatformAdmin: false,
+              activationPinHash,
             })
             .returning({ id: users.id });
           const newUser = insertedUsers[0];
@@ -325,6 +345,13 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
             updated_at: result.driver.updatedAt,
             deleted_at: result.driver.deletedAt,
           },
+          /**
+           * PIN de activación de 6 dígitos en plaintext. Se devuelve UNA
+           * SOLA VEZ — el carrier debe mostrarlo al conductor inmediatamente
+           * (botón "copiar" + recordatorio). No se puede recuperar después.
+           * Si se pierde, hay que retirar al conductor y crearlo de nuevo.
+           */
+          activation_pin: activationPin,
         },
         201,
       );
