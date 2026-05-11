@@ -123,7 +123,19 @@ export function createServer(opts: CreateServerOptions): Hono {
   // la defensa es la opacidad del token UUID v4 (122 bits, no enumerable).
   // El handler restringe los datos expuestos (plate parcial, sin
   // driver name, telemetría sólo <30min).
-  app.route('/public/tracking', createPublicTrackingRoutes({ db: opts.db, logger }));
+  //
+  // Phase 5 PR-L2c — si GOOGLE_ROUTES_API_KEY está configurada, el ETA
+  // del tracking se calcula con Routes API (distancia real por carretera
+  // al destino exacto). Sin la key, fallback transparente al ETA al
+  // centroide regional (PR-L2b).
+  app.route(
+    '/public/tracking',
+    createPublicTrackingRoutes({
+      db: opts.db,
+      logger,
+      ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
+    }),
+  );
 
   // Protected routes — OIDC token from allowed Cloud Run SA required
   const authMiddleware = createAuthMiddleware({

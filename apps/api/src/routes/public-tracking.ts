@@ -21,7 +21,17 @@ import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { getPublicTracking } from '../services/get-public-tracking.js';
 
-export function createPublicTrackingRoutes(opts: { db: Db; logger: Logger }) {
+export function createPublicTrackingRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * Phase 5 PR-L2c — Routes API key opcional. Si presente, el ETA del
+   * tracking público se calcula con distancia por carretera real al
+   * destino exacto (vs centroide regional). Si ausente o el call falla,
+   * fallback transparente al método de PR-L2b.
+   */
+  routesApiKey?: string | undefined;
+}) {
   const app = new Hono();
 
   app.get('/:token', async (c) => {
@@ -31,6 +41,7 @@ export function createPublicTrackingRoutes(opts: { db: Db; logger: Logger }) {
       db: opts.db,
       logger: opts.logger,
       token,
+      ...(opts.routesApiKey ? { routesApiKey: opts.routesApiKey } : {}),
     });
 
     if (result.status === 'not_found') {

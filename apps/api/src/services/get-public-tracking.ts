@@ -31,6 +31,7 @@ import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, telemetryPoints, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
+import { computeRouteEta } from './compute-route-eta.js';
 
 /**
  * Centroides aproximados (capital regional) para las 16 regiones de
@@ -152,8 +153,14 @@ export async function getPublicTracking(opts: {
   db: Db;
   logger: Logger;
   token: string;
+  /**
+   * Phase 5 PR-L2c — si está presente, calculamos el ETA con Routes API
+   * (distancia real por carretera al destino exacto). Si está ausente
+   * o el call falla, fallback al ETA de centroide regional (PR-L2b).
+   */
+  routesApiKey?: string | undefined;
 }): Promise<PublicTrackingResult> {
-  const { db, logger, token } = opts;
+  const { db, logger, token, routesApiKey } = opts;
 
   // Validar formato UUID antes de query — si no parece UUID, no
   // pegamos la DB (defensa contra scanning).
@@ -165,6 +172,7 @@ export async function getPublicTracking(opts: {
   const rows = await db
     .select({
       assignmentId: assignments.id,
+      tripId: trips.id,
       tripStatus: trips.status,
       trackingCode: trips.trackingCode,
       originAddr: trips.originAddressRaw,
@@ -233,16 +241,44 @@ export async function getPublicTracking(opts: {
     nowMs: now,
   });
 
-  // Phase 5 PR-L2b — ETA al centroide regional. Solo cuando el trip
-  // está activo (no entregado/cancelado), hay posición + avg_speed
-  // confiable, y el código de región está mapeado.
-  const etaMinutes = computeEtaMinutes({
+  // Phase 5 PR-L2b — ETA al centroide regional. Computado primero como
+  // fallback para PR-L2c. Si Routes API funciona (con routesApiKey
+  // presente), se reemplaza con la distancia real al destino exacto.
+  const fallbackEtaMinutes = computeEtaMinutes({
     currentLat: position?.latitude ?? null,
     currentLng: position?.longitude ?? null,
     destRegionCode: row.destRegionCode,
     avgSpeedKmh: progress.avg_speed_kmh_last_15min,
     tripStatus: row.tripStatus,
   });
+
+  // Phase 5 PR-L2c — upgrade a Routes API on-demand. Si trip está activo
+  // y hay posición + avgSpeed + routesApiKey + destinationAddress,
+  // pedimos a Routes API la distancia real por carretera al destino y
+  // recalculamos con el avgSpeed del vehículo. Cache de 5min + grid 0.01°
+  // evita hammering. Fallback automático al centroide si algo falla.
+  let etaMinutes = fallbackEtaMinutes;
+  if (!NO_ETA_STATUSES.has(row.tripStatus)) {
+    const routeEtaResult = await computeRouteEta({
+      logger,
+      tripId: row.tripId,
+      currentLat: position?.latitude ?? null,
+      currentLng: position?.longitude ?? null,
+      destinationAddress: row.destAddr,
+      avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+      fallbackEtaMinutes,
+      routesApiKey,
+    });
+    etaMinutes = routeEtaResult.etaMinutes;
+    logger.debug(
+      {
+        tripId: row.tripId,
+        etaMinutes,
+        source: routeEtaResult.source,
+      },
+      'public tracking eta computed',
+    );
+  }
 
   return {
     status: 'found',
