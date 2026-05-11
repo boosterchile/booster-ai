@@ -7,6 +7,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, carrierMemberships, liquidaciones, membershipTiers } from '../db/schema.js';
+import { emitirDteLiquidacion } from './emitir-dte-liquidacion.js';
 
 /**
  * Service orquestador de liquidación del trip (ADR-030 §8).
@@ -183,6 +184,26 @@ export async function liquidarTrip(input: LiquidarTripInput): Promise<LiquidarTr
       },
       'liquidarTrip: liquidación creada',
     );
+
+    // ADR-024 wire — emisión fire-and-forget del DTE Tipo 33. Solo
+    // si la liquidación está `lista_para_dte` (con consent v2 firmado).
+    // Si el provider no está configurado, el service skipea con warn
+    // y la liquidación queda en `lista_para_dte` para el cron de
+    // reemisión futuro. NUNCA bloquea el cierre del trip.
+    if (status === 'lista_para_dte') {
+      try {
+        const dteResult = await emitirDteLiquidacion({ db, logger, liquidacionId });
+        logger.info(
+          { liquidacionId, dteStatus: dteResult.status },
+          'liquidarTrip: emitirDteLiquidacion completado',
+        );
+      } catch (err) {
+        logger.error(
+          { err, liquidacionId },
+          'liquidarTrip: emitirDteLiquidacion threw — liquidación queda lista_para_dte',
+        );
+      }
+    }
 
     return status === 'pending_consent'
       ? { status: 'pending_consent', liquidacionId }
