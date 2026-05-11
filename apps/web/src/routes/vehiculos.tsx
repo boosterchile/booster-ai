@@ -1,8 +1,4 @@
-import {
-  chileanPlateSchema,
-  formatPlateForDisplay,
-  normalizePlate,
-} from '@booster-ai/shared-schemas';
+import { chileanPlateSchema, normalizePlate } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -17,6 +13,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { ChileanPlate } from '../components/ChileanPlate.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -204,8 +201,8 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
                       void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })
                     }
                   >
-                    <Td className="font-mono font-semibold text-neutral-900">
-                      {formatPlateForDisplay(v.plate)}
+                    <Td>
+                      <ChileanPlate plate={v.plate} size="sm" />
                     </Td>
                     <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
                     <Td>
@@ -250,9 +247,7 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
                 className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="font-mono font-semibold text-neutral-900">
-                    {formatPlateForDisplay(v.plate)}
-                  </span>
+                  <ChileanPlate plate={v.plate} size="md" />
                   <span
                     className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
                   >
@@ -438,13 +433,15 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Detalle vehículo">
       <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <Link to="/app/vehiculos" className="text-neutral-500 hover:text-neutral-900">
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-            {vehicleQ.data?.plate ? formatPlateForDisplay(vehicleQ.data.plate) : 'Vehículo'}
-          </h1>
+          {vehicleQ.data?.plate ? (
+            <ChileanPlate plate={vehicleQ.data.plate} size="lg" />
+          ) : (
+            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículo</h1>
+          )}
         </div>
         {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' && (
           <div className="flex items-center gap-2">
