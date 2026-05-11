@@ -1436,6 +1436,14 @@ export const facturasBoosterClp = pgTable(
     dteFolio: text('dte_folio'),
     dteEmitidaEn: timestamp('dte_emitida_en', { withTimezone: true }),
     dtePdfGcsUri: text('dte_pdf_gcs_uri'),
+    // ADR-024 wire — provider que emitió el DTE ('sovos'|'mock'|'bsale'|...).
+    // Permite reconciliar histórico cuando rotamos provider.
+    dteProvider: text('dte_provider'),
+    // ID opaco del provider (track_id Sovos, etc.) para soporte y auditoría.
+    dteProviderTrackId: text('dte_provider_track_id'),
+    // Status SII canónico: `aceptado|rechazado|reparable|en_proceso|anulado`.
+    // Cron de reconciliación lo lee para queryStatus contra el provider.
+    dteStatus: text('dte_status'),
     status: text('status').notNull(),
     venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
     pagadaEn: timestamp('pagada_en', { withTimezone: true }),

@@ -326,6 +326,43 @@ const apiEnvSchema = commonEnvSchema
      * Default vacío para que ningún entorno tenga acceso accidental.
      * Cloud Run prod debe setear esta var explícitamente.
      */
+    /**
+     * ADR-024 — Provider activo para emisión de DTEs (factura comisión
+     * Booster al carrier post-liquidación). Valores válidos:
+     *   - 'disabled' (default): no se emiten DTEs. Las liquidaciones
+     *     quedan `lista_para_dte` indefinidamente. Útil en staging y
+     *     mientras no hay creds.
+     *   - 'mock': MockDteAdapter — folios sintéticos in-memory. Útil
+     *     en dev para validar el flow sin tocar Sovos. Restart del
+     *     server pierde la secuencia (no persistente).
+     *   - 'sovos': SovosDteAdapter contra Paperless Chile. Exige
+     *     SOVOS_API_KEY + SOVOS_BASE_URL.
+     */
+    DTE_PROVIDER: z.enum(['disabled', 'mock', 'sovos']).default('disabled'),
+
+    /**
+     * Sovos credentials (solo se leen cuando `DTE_PROVIDER='sovos'`).
+     * Optional para que dev/staging arranque sin estas. Cuando el
+     * factory las necesita y faltan, se lanza DteNotConfiguredError.
+     */
+    SOVOS_API_KEY: z.string().min(1).optional(),
+    SOVOS_BASE_URL: z.string().url().optional(),
+
+    /**
+     * Datos de Booster Chile SpA como emisor de la factura comisión.
+     * Hardcoded por env para no exponerlos en el repo. Se inyectan al
+     * SovosAdapter en cada emisión.
+     *
+     * BOOSTER_RUT debe ser el RUT real registrado en SII (cuando
+     * Booster Chile SpA esté constituida) — placeholder en config para
+     * dev/staging.
+     */
+    BOOSTER_RUT: z.string().min(1).default('76.000.000-0'),
+    BOOSTER_RAZON_SOCIAL: z.string().min(1).default('Booster Chile SpA'),
+    BOOSTER_GIRO: z.string().min(1).default('Marketplace digital de logística'),
+    BOOSTER_DIRECCION: z.string().min(1).default('Av. Providencia 1000'),
+    BOOSTER_COMUNA: z.string().min(1).default('Providencia'),
+
     BOOSTER_PLATFORM_ADMIN_EMAILS: z
       .string()
       .default('')

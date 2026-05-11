@@ -56,6 +56,9 @@ importers:
       '@booster-ai/driver-scoring':
         specifier: workspace:*
         version: link:../../packages/driver-scoring
+      '@booster-ai/dte-provider':
+        specifier: workspace:*
+        version: link:../../packages/dte-provider
       '@booster-ai/factoring-engine':
         specifier: workspace:*
         version: link:../../packages/factoring-engine

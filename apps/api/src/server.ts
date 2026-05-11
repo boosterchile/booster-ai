@@ -12,6 +12,7 @@ import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
+import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
@@ -317,6 +318,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware);
     app.use('/admin/cobra-hoy/*', userContextMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
+
+    // Admin platform-wide: re-emisión manual de DTEs Tipo 33 (ADR-024 +
+    // ADR-031). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el
+    // handler. Útil tras transient errors o tras configurar Sovos.
+    app.use('/admin/liquidaciones/*', firebaseAuthMiddleware);
+    app.use('/admin/liquidaciones/*', userContextMiddleware);
+    app.route('/admin/liquidaciones', createAdminLiquidacionesRoutes({ db: opts.db, logger }));
 
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);
