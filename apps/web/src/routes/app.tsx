@@ -13,6 +13,7 @@ import {
   Settings,
   Truck,
   User as UserIcon,
+  Users,
 } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -165,6 +166,29 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Vehículos</div>
                     <div className="text-neutral-600 text-sm">
                       Gestiona tu flota: alta, edición, asociación a Teltonika.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/conductores"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-conductores"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Conductores</div>
+                    <div className="text-neutral-600 text-sm">
+                      Crea, edita y monitorea licencias y vencimientos de los conductores de tu
+                      empresa.
                     </div>
                   </div>
                 </div>

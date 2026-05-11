@@ -17,6 +17,7 @@ import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
+import { createConductoresRoutes } from './routes/conductores.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -336,6 +337,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/vehiculos', firebaseAuthMiddleware);
     app.use('/vehiculos', userContextMiddleware);
     app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
+
+    // Conductores de la empresa activa (carrier). D8 — solo accesible
+    // desde la interfaz transportista; el conductor mismo no consume estos
+    // endpoints (su surface vive en D9 driver-only).
+    app.use('/conductores/*', firebaseAuthMiddleware);
+    app.use('/conductores/*', userContextMiddleware);
+    app.use('/conductores', firebaseAuthMiddleware);
+    app.use('/conductores', userContextMiddleware);
+    app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

@@ -9,6 +9,11 @@ import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/
 import { CertificadosRoute } from './routes/certificados.js';
 import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
 import { ConductorModoRoute } from './routes/conductor-modo.js';
+import {
+  ConductoresDetalleRoute,
+  ConductoresListRoute,
+  ConductoresNuevoRoute,
+} from './routes/conductores.js';
 import { FlotaRoute } from './routes/flota.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
@@ -113,6 +118,25 @@ const flotaRoute = createRoute({
   component: FlotaRoute,
 });
 
+// D8 — CRUD de conductores del carrier. Solo accesible desde la interfaz
+// transportista (no es self-signup driver). Roles dueno/admin/despachador
+// crean y editan; conductor + visualizador solo leen.
+const conductoresListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/conductores',
+  component: ConductoresListRoute,
+});
+const conductoresNuevoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/conductores/nuevo',
+  component: ConductoresNuevoRoute,
+});
+const conductoresDetalleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/conductores/$id',
+  component: ConductoresDetalleRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -214,6 +238,9 @@ const routeTree = rootRoute.addChildren([
   vehiculosDetalleRoute,
   vehiculoLiveRoute,
   flotaRoute,
+  conductoresListRoute,
+  conductoresNuevoRoute,
+  conductoresDetalleRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
