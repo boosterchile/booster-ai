@@ -185,24 +185,35 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         plate: vehicles.plate,
         type: vehicles.vehicleType,
         teltonika_imei: vehicles.teltonikaImei,
+        teltonika_imei_espejo: vehicles.teltonikaImeiEspejo,
         status: vehicles.vehicleStatus,
       })
       .from(vehicles)
       .where(eq(vehicles.empresaId, empresaId))
       .orderBy(asc(vehicles.plate));
 
-    const vehicleIds = vehicleRows.map((v) => v.id);
+    // D1 — Particionamos los vehículos en dos grupos:
+    //   - withOwnDevice: tienen teltonika_imei propio → lookup por
+    //     vehicle_id (path histórico, eficiente con indice ya existente).
+    //   - withMirrorImei: solo tienen espejo → lookup por imei. Su data
+    //     pertenece al stream de otro vehículo físico (demo o redundancia).
+    const withOwnDevice = vehicleRows.filter((v) => v.teltonika_imei != null);
+    const withMirrorImei = vehicleRows.filter(
+      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo != null,
+    );
+
     type LastPoint = {
-      vehicle_id: string;
       timestamp_device: Date;
       latitude: string | null;
       longitude: string | null;
       speed_kmh: number | null;
       angle_deg: number | null;
     };
-    const lastPoints =
-      vehicleIds.length === 0
-        ? ([] as LastPoint[])
+
+    const ownVehicleIds = withOwnDevice.map((v) => v.id);
+    const ownLastPoints =
+      ownVehicleIds.length === 0
+        ? []
         : await opts.db
             .selectDistinctOn([telemetryPoints.vehicleId], {
               vehicle_id: telemetryPoints.vehicleId,
@@ -213,23 +224,52 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
               angle_deg: telemetryPoints.angleDeg,
             })
             .from(telemetryPoints)
-            .where(inArray(telemetryPoints.vehicleId, vehicleIds))
+            .where(inArray(telemetryPoints.vehicleId, ownVehicleIds))
             .orderBy(telemetryPoints.vehicleId, desc(telemetryPoints.timestampDevice));
-
-    const lastById = new Map<string, LastPoint>();
-    for (const p of lastPoints) {
+    const lastByVehicleId = new Map<string, LastPoint>();
+    for (const p of ownLastPoints) {
       if (p.vehicle_id != null) {
-        lastById.set(p.vehicle_id, p);
+        lastByVehicleId.set(p.vehicle_id, p);
       }
     }
 
+    const mirrorImeis = [
+      ...new Set(
+        withMirrorImei.map((v) => v.teltonika_imei_espejo).filter((x): x is string => x != null),
+      ),
+    ];
+    const mirrorLastPoints =
+      mirrorImeis.length === 0
+        ? []
+        : await opts.db
+            .selectDistinctOn([telemetryPoints.imei], {
+              imei: telemetryPoints.imei,
+              timestamp_device: telemetryPoints.timestampDevice,
+              latitude: telemetryPoints.latitude,
+              longitude: telemetryPoints.longitude,
+              speed_kmh: telemetryPoints.speedKmh,
+              angle_deg: telemetryPoints.angleDeg,
+            })
+            .from(telemetryPoints)
+            .where(inArray(telemetryPoints.imei, mirrorImeis))
+            .orderBy(telemetryPoints.imei, desc(telemetryPoints.timestampDevice));
+    const lastByImei = new Map<string, LastPoint>();
+    for (const p of mirrorLastPoints) {
+      lastByImei.set(p.imei, p);
+    }
+
     const fleet = vehicleRows.map((v) => {
-      const point = lastById.get(v.id);
+      const point: LastPoint | undefined = v.teltonika_imei
+        ? lastByVehicleId.get(v.id)
+        : v.teltonika_imei_espejo
+          ? lastByImei.get(v.teltonika_imei_espejo)
+          : undefined;
       return {
         id: v.id,
         plate: v.plate,
         type: v.type,
-        teltonika_imei: v.teltonika_imei,
+        teltonika_imei: v.teltonika_imei ?? v.teltonika_imei_espejo,
+        teltonika_source: v.teltonika_imei ? 'own' : v.teltonika_imei_espejo ? 'mirror' : null,
         status: v.status,
         position: point
           ? {
@@ -516,18 +556,29 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const empresaId = auth.activeMembership.empresa.id;
 
     const [vehicle] = await opts.db
-      .select({ id: vehicles.id, plate: vehicles.plate, teltonikaImei: vehicles.teltonikaImei })
+      .select({
+        id: vehicles.id,
+        plate: vehicles.plate,
+        teltonikaImei: vehicles.teltonikaImei,
+        teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+      })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
     if (!vehicle) {
       return c.json({ error: 'vehicle_not_found' }, 404);
     }
-    if (!vehicle.teltonikaImei) {
+
+    // D1 — Determinar fuente de datos:
+    //   - Si tiene teltonika_imei propio → leer por vehicle_id (path normal).
+    //   - Si tiene teltonika_imei_espejo → leer por imei (mira otro stream).
+    //   - Si no tiene ninguno → 404 no_teltonika.
+    const effectiveImei = vehicle.teltonikaImei ?? vehicle.teltonikaImeiEspejo;
+    if (!effectiveImei) {
       return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
     }
 
-    const [last] = await opts.db
+    const baseSelect = opts.db
       .select({
         timestamp_device: telemetryPoints.timestampDevice,
         timestamp_received_at: telemetryPoints.timestampReceivedAt,
@@ -539,10 +590,17 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         speed_kmh: telemetryPoints.speedKmh,
         priority: telemetryPoints.priority,
       })
-      .from(telemetryPoints)
-      .where(eq(telemetryPoints.vehicleId, id))
-      .orderBy(desc(telemetryPoints.timestampDevice))
-      .limit(1);
+      .from(telemetryPoints);
+
+    const [last] = vehicle.teltonikaImei
+      ? await baseSelect
+          .where(eq(telemetryPoints.vehicleId, id))
+          .orderBy(desc(telemetryPoints.timestampDevice))
+          .limit(1)
+      : await baseSelect
+          .where(eq(telemetryPoints.imei, effectiveImei))
+          .orderBy(desc(telemetryPoints.timestampDevice))
+          .limit(1);
 
     if (!last) {
       return c.json(
@@ -550,7 +608,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           error: 'no_points_yet',
           code: 'no_points_yet',
           plate: vehicle.plate,
-          imei: vehicle.teltonikaImei,
+          imei: effectiveImei,
         },
         404,
       );
@@ -559,7 +617,13 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     return c.json({
       vehicle_id: id,
       plate: vehicle.plate,
-      teltonika_imei: vehicle.teltonikaImei,
+      teltonika_imei: effectiveImei,
+      /**
+       * D1 — `teltonika_source` indica si la data viene del device propio
+       * (`own`) o del IMEI espejo (`mirror`). El frontend puede usarlo para
+       * mostrar un badge "data en vivo (espejo)" en demos.
+       */
+      teltonika_source: vehicle.teltonikaImei ? 'own' : 'mirror',
       ubicacion: {
         timestamp_device: last.timestamp_device,
         timestamp_received_at: last.timestamp_received_at,

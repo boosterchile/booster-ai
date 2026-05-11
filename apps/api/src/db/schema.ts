@@ -404,6 +404,11 @@ export const empresas = pgTable(
     addressPostalCode: varchar('direccion_codigo_postal', { length: 20 }),
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
+    /**
+     * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
+     * de métricas/billing y limpiar con un solo DELETE cascada por FK.
+     */
+    isDemo: boolean('es_demo').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -531,6 +536,23 @@ export const vehicles = pgTable(
     /** Consumo base L/100km a carga normal. Null = no declarado. */
     consumptionLPer100kmBaseline: numeric('consumo_l_por_100km_base', { precision: 5, scale: 2 }),
     teltonikaImei: varchar('teltonika_imei', { length: 20 }).unique(),
+    /**
+     * D1 — IMEI **espejo**: cuando se setea, los endpoints de lectura
+     * (`/ubicacion`, `/flota`, `/telemetria`) leen `telemetria_puntos`
+     * filtrando por `imei = teltonika_imei_espejo` en vez de por
+     * `vehiculo_id`. Esto permite que un vehículo "mire" el stream
+     * telemetry de otro vehículo físico sin contaminar su data ni romper
+     * el FK de `telemetria_puntos.vehiculo_id`.
+     *
+     * Caso de uso: demo en producción que muestra los datos reales del
+     * Teltonika de Van Oosterwyk en un vehículo sintético del carrier
+     * demo, mientras Van Oosterwyk sigue recibiendo su data normal.
+     *
+     * Mutuamente excluyente con `teltonika_imei`: un vehículo o tiene
+     * device propio (escribe data nueva) o mira un IMEI ajeno (lee data
+     * existente). Validado en runtime, no en BD (para evitar trigger).
+     */
+    teltonikaImeiEspejo: varchar('teltonika_imei_espejo', { length: 20 }),
     lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
     inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
     vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),

@@ -169,6 +169,13 @@
       "when": 1779926400000,
       "tag": "0023_sucursales_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780012800000,
+      "tag": "0024_demo_seed_espejo",
+      "breakpoints": true
     }
   ]
 }

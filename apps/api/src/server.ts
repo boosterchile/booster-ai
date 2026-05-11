@@ -13,6 +13,7 @@ import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
+import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
@@ -332,6 +333,14 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/liquidaciones/*', firebaseAuthMiddleware);
     app.use('/admin/liquidaciones/*', userContextMiddleware);
     app.route('/admin/liquidaciones', createAdminLiquidacionesRoutes({ db: opts.db, logger }));
+
+    // D1 — Admin seed demo (POST/DELETE). Auth platform-admin allowlist.
+    app.use('/admin/seed/*', firebaseAuthMiddleware);
+    app.use('/admin/seed/*', userContextMiddleware);
+    app.route(
+      '/admin/seed',
+      createAdminSeedRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
 
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);
