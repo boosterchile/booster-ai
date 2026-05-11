@@ -3,6 +3,7 @@ import { Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-rea
 import { EmptyState } from '../components/EmptyState.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
+import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useOffersMine } from '../hooks/use-offers.js';
@@ -136,6 +137,17 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
 
           {isCarrier && offersQuery.data && offersQuery.data.offers.length > 0 && (
             <div className="mt-6 space-y-4">
+              {/* Phase 4 PR-K7 — control de aceptación por voz. Solo se
+                  renderiza cuando hay EXACTAMENTE 1 oferta pendiente —
+                  para >1 sería ambiguo qué oferta el comando "aceptar"
+                  refiere. Doble confirmación protege contra falsos
+                  positivos (aceptar oferta es contrato). */}
+              {offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
+                <VoiceAcceptOfferControl
+                  offerId={offersQuery.data.offers[0].id}
+                  trackingCode={offersQuery.data.offers[0].trip_request.tracking_code}
+                />
+              )}
               {offersQuery.data.offers.map((o) => (
                 <OfferCard key={o.id} offer={o} />
               ))}
