@@ -14,10 +14,15 @@ vi.mock('../../src/services/procesar-cobranza-cobra-hoy.js', () => ({
   procesarCobranzaCobraHoy: vi.fn(),
 }));
 
+vi.mock('../../src/services/reconciliar-dtes.js', () => ({
+  reconciliarDtes: vi.fn(),
+}));
+
 const { procesarMensajesNoLeidos } = await import('../../src/services/chat-whatsapp-fallback.js');
 const { procesarCobranzaCobraHoy } = await import(
   '../../src/services/procesar-cobranza-cobra-hoy.js'
 );
+const { reconciliarDtes } = await import('../../src/services/reconciliar-dtes.js');
 const { config: appConfig } = await import('../../src/config.js');
 
 const noop = (): void => undefined;
@@ -155,5 +160,40 @@ describe('POST /admin/jobs/cobra-hoy-cobranza', () => {
     const body = (await res.json()) as { moras_creadas: number; adelantos: unknown[] };
     expect(body.moras_creadas).toBe(0);
     expect(body.adelantos).toEqual([]);
+  });
+});
+
+describe('POST /admin/jobs/reconciliar-dtes', () => {
+  it('happy path: 200 con counts del service serializados snake_case', async () => {
+    (reconciliarDtes as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      queriedStatus: 12,
+      statusUpdated: 3,
+      retried: 2,
+      retriedOk: 1,
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/reconciliar-dtes', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      queried_status: 12,
+      status_updated: 3,
+      retried: 2,
+      retried_ok: 1,
+    });
+  });
+
+  it('tick vacío: 200 con counts en cero', async () => {
+    (reconciliarDtes as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      queriedStatus: 0,
+      statusUpdated: 0,
+      retried: 0,
+      retriedOk: 0,
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/reconciliar-dtes', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queried_status: number };
+    expect(body.queried_status).toBe(0);
   });
 });

@@ -140,3 +140,49 @@ resource "google_cloud_scheduler_job" "cobra_hoy_cobranza" {
     module.service_api,
   ]
 }
+
+# -----------------------------------------------------------------------------
+# ADR-024 — Cron de reconciliación DTE
+# -----------------------------------------------------------------------------
+# Cada hora. El handler:
+#   1. queryStatus sobre facturas con dte_status='en_proceso' (>1 min de
+#      antigüedad para evitar race) — actualiza dte_status según SII.
+#   2. Retry de facturas con transient error (sin folio, status pending_dte,
+#      >5 min).
+#
+# Skip silencioso si PRICING_V2_ACTIVATED=false o sin adapter activo.
+resource "google_cloud_scheduler_job" "reconciliar_dtes" {
+  name        = "reconciliar-dtes"
+  description = "Hourly: queryStatus de facturas DTE en_proceso + retry de transient errors."
+  project     = google_project.booster_ai.project_id
+
+  region    = "southamerica-east1"
+  schedule  = "0 * * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/reconciliar-dtes"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}

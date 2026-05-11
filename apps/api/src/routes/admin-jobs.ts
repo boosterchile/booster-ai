@@ -26,6 +26,7 @@ import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
+import { reconciliarDtes } from '../services/reconciliar-dtes.js';
 
 export function createAdminJobsRoutes(opts: {
   db: Db;
@@ -61,6 +62,32 @@ export function createAdminJobsRoutes(opts: {
    * (no es un error — el cron sigue activo aunque la feature esté off
    * por entornos de staging).
    */
+  /**
+   * ADR-024 — Cron de reconciliación DTE.
+   *
+   * Por tick:
+   *   1. queryStatus sobre facturas con `dte_status='en_proceso'` y
+   *      actualiza el campo según respuesta del provider.
+   *   2. Retry de facturas con transient error (sin folio, status
+   *      pending_dte, más de 5 min de antigüedad).
+   *
+   * No-op si `PRICING_V2_ACTIVATED=false` o no hay adapter activo.
+   * Frecuencia recomendada: cada hora.
+   */
+  app.post('/reconciliar-dtes', async (c) => {
+    const result = await reconciliarDtes({
+      db: opts.db,
+      logger: opts.logger,
+    });
+    return c.json({
+      ok: true,
+      queried_status: result.queriedStatus,
+      status_updated: result.statusUpdated,
+      retried: result.retried,
+      retried_ok: result.retriedOk,
+    });
+  });
+
   app.post('/cobra-hoy-cobranza', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
       opts.logger.debug('cobra-hoy-cobranza: FACTORING_V1_ACTIVATED=false, skip');
