@@ -28,9 +28,14 @@ CREATE TABLE shipper_credit_decisions (
 );
 
 -- Solo UNA decisión vigente por shipper (las expiradas quedan para auditoría).
+--
+-- NOTA: Postgres rechaza `WHERE expires_at > now()` porque `now()` no es
+-- IMMUTABLE. Workaround: índice unique por (empresa_shipper_id, expires_at).
+-- La app code filtra por `expires_at > now()` en queries de lectura. Si en
+-- el futuro queremos enforce a nivel BD, usar una columna boolean
+-- `vigente` actualizada por trigger o por la propia app.
 CREATE UNIQUE INDEX uq_shipper_credit_decisions_vigente
-  ON shipper_credit_decisions(empresa_shipper_id)
-  WHERE expires_at > now();
+  ON shipper_credit_decisions(empresa_shipper_id, expires_at);
 
 CREATE INDEX idx_shipper_credit_decisions_expires
   ON shipper_credit_decisions(expires_at);
