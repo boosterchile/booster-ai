@@ -210,7 +210,10 @@ describe('PATCH /me/profile', () => {
     });
     expect(res.status).toBe(200);
     const patchArg = spies.setFn.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(patchArg.rut).toBe('76.123.456-0');
+    // El rutSchema normaliza a canónico sin puntos (introducido en sprint
+    // demo follow-up para que la UX acepte input sin puntos pero la BD
+    // siempre guarde el formato canónico).
+    expect(patchArg.rut).toBe('76123456-0');
   });
 
   // ---------------------------------------------------------------------

@@ -44,8 +44,12 @@ Respuesta (guarda esto — el PIN no se vuelve a mostrar):
       "email": "demo-carrier@boosterchile.com",
       "password": "BoosterDemo2026!"
     },
+    "stakeholder": {
+      "email": "demo-stakeholder@boosterchile.com",
+      "password": "BoosterDemo2026!"
+    },
     "conductor": {
-      "rut": "12.345.678-5",
+      "rut": "12345678-5",
       "activation_pin": "<6 dígitos>"
     },
     "carrier_empresa_id": "...",
@@ -66,9 +70,12 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 
 | Usuario | Identificador | Credencial | Empresa | Rol |
 |---|---|---|---|---|
-| Dueño Andina Demo | demo-shipper@boosterchile.com | password `BoosterDemo2026!` | Andina Demo S.A. (RUT 76.999.111-1) | dueno (shipper) |
-| Dueño Transportes Demo Sur | demo-carrier@boosterchile.com | password `BoosterDemo2026!` | Transportes Demo Sur S.A. (RUT 77.888.222-K) | dueno (carrier) |
-| Pedro González | RUT `12.345.678-5` | PIN 6 dígitos (del seed response) | Transportes Demo Sur | conductor |
+| Dueño Andina Demo | demo-shipper@boosterchile.com | password `BoosterDemo2026!` | Andina Demo S.A. (RUT 76999111-1) | dueno (shipper) |
+| Dueño Transportes Demo Sur | demo-carrier@boosterchile.com | password `BoosterDemo2026!` | Transportes Demo Sur S.A. (RUT 77888222-K) | dueno (carrier) |
+| Stakeholder Demo | demo-stakeholder@boosterchile.com | password `BoosterDemo2026!` | Transportes Demo Sur (auditoría externa) | stakeholder_sostenibilidad |
+| Pedro González | RUT `12345678-5` | PIN 6 dígitos (del seed response) | Transportes Demo Sur | conductor |
+
+**Nota sobre RUT**: el sistema acepta RUT con o sin puntos al tipear, pero siempre persiste en formato canónico **sin puntos** (`12345678-5`). Los inputs de la UI muestran placeholder y hint indicando "Sin puntos, con guión".
 
 ### Cuenta real preexistente
 
@@ -164,19 +171,20 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 - La data del IMEI 863238075489155 fluye normalmente a Van Oosterwyk AND simultáneamente se refleja en el vehículo DEMO01 del carrier demo (via columna `teltonika_imei_espejo`).
 - **Cero contaminación** — Van Oosterwyk no ve nada del demo.
 
+### E. Como stakeholder — `demo-stakeholder@boosterchile.com`
+
+1. **Login**: `https://app.boosterchile.com/login` → email + password `BoosterDemo2026!`.
+2. **Surface guard**: si entra a `/app` se redirige automáticamente a `/app/stakeholder/zonas` (su único hub útil).
+3. **En `/app/stakeholder/zonas`** ve el dashboard de zonas de impacto logístico:
+   - 5 zonas predefinidas (Puerto Valparaíso, Puerto San Antonio, Mercado Lo Valledor, Polo Quilicura, ZOFRI Iquique).
+   - Card por zona con viajes 30d, CO₂e total, horario pico (data ilustrativa por ahora).
+   - Card metodología que explica k-anonymity ≥ 5, bounding boxes predefinidos, sin PII.
+   - Banner "Datos de demostración" — claridad de que las cifras son ilustrativas (la integración con agregaciones reales sobre trips queda follow-up).
+4. **NO accede** a /app/vehiculos, /app/ofertas, /app/cargas, /app/cumplimiento — surface restringida.
+
 ---
 
-## 5. Demostrar D11 (stakeholder geo)
-
-Pendiente de crear el user con rol `stakeholder_sostenibilidad`. Si quieres demostrar la surface ahora:
-
-1. Crea manualmente un user con membership rol `stakeholder_sostenibilidad` en Andina Demo o Transportes Demo Sur (o en una empresa stakeholder dedicada).
-2. Login con ese user → `/app/stakeholder/zonas`.
-3. Ves dashboard con 5 zonas predefinidas (Puerto Valparaíso, Puerto San Antonio, Lo Valledor, Polo Quilicura, ZOFRI Iquique) con data ILUSTRATIVA. La integración con agregaciones reales sobre trips queda follow-up.
-
----
-
-## 6. Limpieza
+## 5. Limpieza
 
 Cuando el demo termine, ejecuta:
 
@@ -189,7 +197,7 @@ Borra todas las empresas con `es_demo=true` + cascada (vehículos demo, conducto
 
 ---
 
-## 7. Mapa de features → URL → quién la demuestra
+## 6. Mapa de features → URL → quién la demuestra
 
 | Feature | URL | Rol que la demuestra |
 |---|---|---|
@@ -208,7 +216,7 @@ Borra todas las empresas con `es_demo=true` + cascada (vehículos demo, conducto
 
 ---
 
-## 8. Troubleshooting
+## 7. Troubleshooting
 
 - **"forbidden_platform_admin"** al gatillar seed → tu email no está en `BOOSTER_PLATFORM_ADMIN_EMAILS`. Pídeselo a IT.
 - **Conductor no puede activar (invalid_credentials)** → o el PIN está mal escrito, o se gatilló de nuevo el seed y se regeneró. Pide el nuevo PIN al admin que corrió el seed.

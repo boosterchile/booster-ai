@@ -44,6 +44,7 @@ import { generateActivationPin, hashActivationPin } from './activation-pin.js';
 export interface DemoCredentials {
   shipper_owner: { email: string; password: string };
   carrier_owner: { email: string; password: string };
+  stakeholder: { email: string; password: string };
   conductor: { rut: string; activation_pin: string | null };
   carrier_empresa_id: string;
   shipper_empresa_id: string;
@@ -51,13 +52,21 @@ export interface DemoCredentials {
   vehicle_without_device_id: string;
 }
 
-const DEMO_SHIPPER_RUT = '76.999.111-1';
-const DEMO_CARRIER_RUT = '77.888.222-K';
-const DEMO_CONDUCTOR_RUT = '12.345.678-5';
+// RUTs en canónico (sin puntos). El rutSchema acepta input con o sin
+// puntos y siempre normaliza al canónico — así que la BD almacena
+// siempre el mismo formato sin importar cómo se tipea.
+const DEMO_SHIPPER_RUT = '76999111-1';
+const DEMO_CARRIER_RUT = '77888222-K';
+const DEMO_CONDUCTOR_RUT = '12345678-5';
+const DEMO_STAKEHOLDER_USER_RUT = '11999003-3';
+const DEMO_SHIPPER_OWNER_RUT = '11999001-7';
+const DEMO_CARRIER_OWNER_RUT = '11999002-5';
+
 const DEMO_TELTONIKA_MIRROR = '863238075489155';
 
 const SHIPPER_OWNER_EMAIL = 'demo-shipper@boosterchile.com';
 const CARRIER_OWNER_EMAIL = 'demo-carrier@boosterchile.com';
+const STAKEHOLDER_EMAIL = 'demo-stakeholder@boosterchile.com';
 const DEMO_PASSWORD = 'BoosterDemo2026!';
 
 /**
@@ -113,7 +122,7 @@ export async function seedDemo(opts: {
     email: SHIPPER_OWNER_EMAIL,
     password: DEMO_PASSWORD,
     fullName: 'Dueño Andina Demo',
-    rut: '11.999.001-7',
+    rut: DEMO_SHIPPER_OWNER_RUT,
     isPlatformAdmin: false,
   });
   const carrierOwnerUserId = await ensureFirebaseUser({
@@ -123,7 +132,20 @@ export async function seedDemo(opts: {
     email: CARRIER_OWNER_EMAIL,
     password: DEMO_PASSWORD,
     fullName: 'Dueño Transportes Demo Sur',
-    rut: '11.999.002-5',
+    rut: DEMO_CARRIER_OWNER_RUT,
+    isPlatformAdmin: false,
+  });
+  // D11 — Stakeholder demo. Login normal email/password, accede a
+  // /app/stakeholder/zonas. Tiene membership rol stakeholder_sostenibilidad
+  // en la empresa carrier (lo audita externamente).
+  const stakeholderUserId = await ensureFirebaseUser({
+    db,
+    firebaseAuth,
+    logger,
+    email: STAKEHOLDER_EMAIL,
+    password: DEMO_PASSWORD,
+    fullName: 'Stakeholder Demo (Mesa pública sostenibilidad)',
+    rut: DEMO_STAKEHOLDER_USER_RUT,
     isPlatformAdmin: false,
   });
 
@@ -139,6 +161,15 @@ export async function seedDemo(opts: {
     userId: carrierOwnerUserId,
     empresaId: carrierEmpresaId,
     role: 'dueno',
+  });
+  // El stakeholder está enlazado al CARRIER (audita su operación). En
+  // futuro podría tener su propia empresa "Mesa pública demo"; por ahora
+  // mantener el modelo simple.
+  await ensureMembership({
+    db,
+    userId: stakeholderUserId,
+    empresaId: carrierEmpresaId,
+    role: 'stakeholder_sostenibilidad',
   });
 
   // 6. Sucursales del shipper.
@@ -206,6 +237,7 @@ export async function seedDemo(opts: {
   return {
     shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: DEMO_PASSWORD },
     carrier_owner: { email: CARRIER_OWNER_EMAIL, password: DEMO_PASSWORD },
+    stakeholder: { email: STAKEHOLDER_EMAIL, password: DEMO_PASSWORD },
     conductor: { rut: DEMO_CONDUCTOR_RUT, activation_pin: driverResult.activationPin },
     carrier_empresa_id: carrierEmpresaId,
     shipper_empresa_id: shipperEmpresaId,
@@ -388,7 +420,13 @@ async function ensureMembership(opts: {
   db: Db;
   userId: string;
   empresaId: string;
-  role: 'dueno' | 'admin' | 'despachador' | 'conductor';
+  role:
+    | 'dueno'
+    | 'admin'
+    | 'despachador'
+    | 'conductor'
+    | 'visualizador'
+    | 'stakeholder_sostenibilidad';
 }): Promise<void> {
   const { db, userId, empresaId, role } = opts;
   // Si ya existe membership con ese (user, empresa, role) → no-op.

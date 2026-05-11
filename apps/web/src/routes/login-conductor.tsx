@@ -125,6 +125,7 @@ export function LoginConductorRoute() {
           <FormField
             label="RUT"
             required
+            hint="Sin puntos, con guión. Ejemplo: 12345678-5"
             error={rutError ?? undefined}
             render={({ id, describedBy }) => (
               <input
@@ -134,7 +135,7 @@ export function LoginConductorRoute() {
                 value={rut}
                 onChange={(e) => setRut(e.target.value)}
                 className={fieldInputClass(!!rutError)}
-                placeholder="11.111.111-1"
+                placeholder="12345678-5"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}

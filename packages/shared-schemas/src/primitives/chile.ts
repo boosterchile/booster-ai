@@ -1,13 +1,42 @@
 import { z } from 'zod';
 
 /**
- * Validación RUT chileno. Formato: 12345678-9 o 12.345.678-9
- * Incluye verificación del dígito verificador.
+ * Validación RUT chileno. Acepta input con o sin puntos
+ * (12345678-9 o 12.345.678-9). Normaliza al canónico **sin puntos** con
+ * dígito verificador K en mayúscula. Incluye check del dígito verificador.
+ *
+ * Persiste canónico para que lookups por RUT (login conductor, búsqueda
+ * de user existente al crear conductor) sean estables sin importar cómo
+ * el usuario tipeó la entrada.
  */
 export const rutSchema = z
   .string()
-  .regex(/^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$/, 'RUT con formato inválido')
-  .refine(validateRutCheckDigit, 'Dígito verificador de RUT inválido');
+  .regex(/^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$/, 'RUT con formato inválido (ej: 12345678-5)')
+  .refine(validateRutCheckDigit, 'Dígito verificador de RUT inválido')
+  .transform(normalizeRut);
+
+/**
+ * Normaliza RUT a canónico: sin puntos, con guión, K mayúscula.
+ * Ej: "12.345.678-k" → "12345678-K"
+ */
+export function normalizeRut(raw: string): string {
+  return raw.replace(/\./g, '').toUpperCase();
+}
+
+/**
+ * Formatea un RUT canónico (sin puntos) para display con separadores
+ * de miles. Ej: "12345678-5" → "12.345.678-5".
+ *
+ * Si el input no matchea el patrón canónico, lo devuelve tal cual
+ * (defensivo — no rompemos UI con datos legacy).
+ */
+export function formatRutForDisplay(canonical: string): string {
+  const m = canonical.match(/^(\d{1,2})(\d{3})(\d{3})-([\dkK])$/);
+  if (!m) {
+    return canonical;
+  }
+  return `${m[1]}.${m[2]}.${m[3]}-${m[4]}`;
+}
 
 function validateRutCheckDigit(rut: string): boolean {
   const cleaned = rut.replace(/\./g, '').replace('-', '').toUpperCase();

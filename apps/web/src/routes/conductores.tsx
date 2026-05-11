@@ -558,6 +558,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           <FormField
             label="RUT"
             required
+            hint="Sin puntos, con guión. Ejemplo: 12345678-5"
             error={errors.rut?.message}
             render={({ id, describedBy }) => (
               <input
@@ -566,10 +567,11 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                 type="text"
                 {...register('rut', { required: 'Ingresa el RUT del conductor' })}
                 className={fieldInputClass(!!errors.rut)}
-                placeholder="11.111.111-1"
+                placeholder="12345678-5"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
+                inputMode="text"
                 readOnly={selfMode}
               />
             )}

@@ -60,6 +60,13 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
     return <Navigate to="/app/conductor/modo" />;
   }
 
+  // D11 — Stakeholder surface guard. Si el rol activo es stakeholder,
+  // su único hub útil es /app/stakeholder/zonas — el dashboard general
+  // (carrier/shipper) no le aplica.
+  if (myRole === 'stakeholder_sostenibilidad') {
+    return <Navigate to="/app/stakeholder/zonas" />;
+  }
+
   async function handleSignOut() {
     await signOutUser();
   }
