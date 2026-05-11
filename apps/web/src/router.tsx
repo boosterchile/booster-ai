@@ -8,6 +8,7 @@ import { CargaTrackRoute } from './routes/carga-track.js';
 import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
 import { CertificadosRoute } from './routes/certificados.js';
 import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
+import { ConductorModoRoute } from './routes/conductor-modo.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
 import { LegalTerminosRoute } from './routes/legal-terminos.js';
@@ -69,6 +70,16 @@ const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
   component: PerfilRoute,
+});
+
+// Phase 4 PR-K8 — onboarding del Modo Conductor. Una sola pantalla con
+// 4 cards (autoplay coaching, permisos mic+GPS, comandos de voz,
+// explainer). Hub centralizado para que el conductor habilite y entienda
+// las features voice-first de K1-K7. Layout `/app/*` autenticado.
+const conductorModoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/conductor/modo',
+  component: ConductorModoRoute,
 });
 
 const adminDispositivosRoute = createRoute({
@@ -186,6 +197,7 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   ofertasRoute,
   perfilRoute,
+  conductorModoRoute,
   adminDispositivosRoute,
   vehiculosListRoute,
   vehiculosNuevoRoute,
