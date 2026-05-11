@@ -296,6 +296,16 @@ export function LoginRoute() {
                     Ingresar con RUT
                   </a>
                 </p>
+                <p className="mt-3 border-neutral-200 border-t pt-3 text-neutral-500 text-xs">
+                  ¿Admin de plataforma Booster?{' '}
+                  <a
+                    href="/app/platform-admin"
+                    className="font-medium text-neutral-700 hover:underline"
+                    data-testid="login-link-platform-admin"
+                  >
+                    Ir al panel admin
+                  </a>
+                </p>
               </>
             )}
             {mode === 'sign-up' && (

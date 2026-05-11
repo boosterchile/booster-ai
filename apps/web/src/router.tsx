@@ -25,6 +25,7 @@ import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
+import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
 import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
 import {
@@ -189,6 +190,15 @@ const cumplimientoRoute = createRoute({
   component: CumplimientoRoute,
 });
 
+// Platform admin — operaciones internas (init/clean seed demo, etc.).
+// Acceso por allowlist de email en backend (BOOSTER_PLATFORM_ADMIN_EMAILS).
+// meRequirement=skip → solo Firebase auth, no requiere onboarding/empresa.
+const platformAdminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin',
+  component: PlatformAdminRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -307,6 +317,7 @@ const routeTree = rootRoute.addChildren([
   sucursalesDetalleRoute,
   stakeholderZonasRoute,
   cumplimientoRoute,
+  platformAdminRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
