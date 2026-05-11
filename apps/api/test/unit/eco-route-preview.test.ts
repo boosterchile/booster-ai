@@ -250,6 +250,8 @@ describe('generarEcoPreview — Routes API path', () => {
     expect(result.distanceKm).toBe(120.5);
     expect(result.durationS).toBe(5400);
     expect(result.fuelLitersEstimated).toBe(25.7);
+    // PR-H4: polyline encoded debe propagarse al preview.
+    expect(result.polylineEncoded).toBe('abc123');
     expect(computeRoutes).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: 'test-key',
@@ -258,6 +260,55 @@ describe('generarEcoPreview — Routes API path', () => {
         destination: TRIP_BASE.destinationAddressRaw,
       }),
     );
+  });
+
+  it('PR-H4: dataSource=tabla_chile (sin routesApiKey) → polylineEncoded null', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            offer: { id: OFFER_ID, empresaId: EMPRESA_ID, suggestedVehicleId: VEH_ID },
+            trip: TRIP_BASE,
+            vehicle: VEHICLE_DIESEL_FULL,
+          },
+        ],
+      ],
+    });
+    const result = await generarEcoPreview({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      // no routesApiKey
+    });
+    expect(result.dataSource).toBe('tabla_chile');
+    expect(result.polylineEncoded).toBeNull();
+  });
+
+  it('PR-H4: Routes API devuelve polyline vacío → polylineEncoded null (defensivo)', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { distanceKm: 100, durationS: 4500, fuelL: 20, polylineEncoded: '' },
+    ]);
+    const db = makeDb({
+      selects: [
+        [
+          {
+            offer: { id: OFFER_ID, empresaId: EMPRESA_ID, suggestedVehicleId: VEH_ID },
+            trip: TRIP_BASE,
+            vehicle: VEHICLE_DIESEL_FULL,
+          },
+        ],
+      ],
+    });
+    const result = await generarEcoPreview({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      routesApiKey: 'test-key',
+    });
+    expect(result.dataSource).toBe('routes_api');
+    expect(result.polylineEncoded).toBeNull();
   });
 
   it('routesApiKey pero Routes API throw → fallback a tabla_chile + log warn', async () => {

@@ -48,6 +48,20 @@ export interface EcoRoutePreview {
   intensidadGco2ePorTonKm: number;
   precisionMethod: ResultadoEmisiones['metodoPrecision'];
   dataSource: DataSourcePreview;
+  /**
+   * Phase 1 PR-H4 — polyline encoded (Google's Encoded Polyline Algorithm
+   * Format) de la ruta sugerida por Routes API. Permite al cliente
+   * mostrar visualmente al carrier la ruta exacta sobre la que se calculó
+   * el preview de emisiones — cierra el loop "AI sugiere la mejor ruta
+   * para reducir huella" haciendo que la ruta sea inspeccionable, no
+   * solo un número.
+   *
+   * `null` cuando `dataSource === 'tabla_chile'` (no hubo llamada a
+   * Routes API). Cuando `dataSource === 'routes_api'`, normalmente
+   * presente; puede ser string vacío si la API no devolvió polyline
+   * (caso raro pero defensivo).
+   */
+  polylineEncoded: string | null;
   glecVersion: string;
   generatedAt: Date;
 }
@@ -143,6 +157,7 @@ export async function generarEcoPreview(opts: {
   let durationS: number | null = null;
   let fuelLitersEstimated: number | null = null;
   let dataSource: DataSourcePreview = 'tabla_chile';
+  let polylineEncoded: string | null = null;
 
   if (routesApiKey) {
     try {
@@ -159,6 +174,10 @@ export async function generarEcoPreview(opts: {
         durationS = best.durationS;
         fuelLitersEstimated = best.fuelL;
         dataSource = 'routes_api';
+        // PR-H4: capturar la polyline para que el cliente la muestre.
+        // String vacío si Routes API no la devolvió (defensivo — no
+        // queremos crashear render por un edge case).
+        polylineEncoded = best.polylineEncoded || null;
       }
     } catch (err) {
       logger.warn(
@@ -220,6 +239,7 @@ export async function generarEcoPreview(opts: {
     intensidadGco2ePorTonKm: emisiones.intensidadGco2ePorTonKm,
     precisionMethod: emisiones.metodoPrecision,
     dataSource,
+    polylineEncoded,
     glecVersion: emisiones.versionGlec,
     generatedAt: new Date(),
   };

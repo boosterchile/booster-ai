@@ -102,6 +102,13 @@ export interface EcoPreviewResponse {
   intensidad_gco2e_por_tonkm: number;
   precision_method: 'exacto_canbus' | 'modelado' | 'por_defecto';
   data_source: 'routes_api' | 'tabla_chile';
+  /**
+   * Phase 1 PR-H4 — polyline encoded (Google's Encoded Polyline format)
+   * de la ruta sobre la que se calculó el preview. Solo presente cuando
+   * `data_source === 'routes_api'`. Permite a la UI mostrar visualmente
+   * la ruta sugerida (no solo emisiones numéricas).
+   */
+  polyline_encoded: string | null;
   glec_version: string;
   generated_at: string;
 }
