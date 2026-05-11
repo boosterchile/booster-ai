@@ -48,7 +48,7 @@ COMMENT ON TABLE shipper_credit_decisions IS
 -- =============================================================================
 CREATE TABLE adelantos_carrier (
   id                              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  asignacion_id                   uuid NOT NULL UNIQUE REFERENCES assignments(id) ON DELETE RESTRICT,
+  asignacion_id                   uuid NOT NULL UNIQUE REFERENCES asignaciones(id) ON DELETE RESTRICT,
   liquidacion_id                  uuid REFERENCES liquidaciones(id),
   empresa_carrier_id              uuid NOT NULL REFERENCES empresas(id),
   empresa_shipper_id              uuid NOT NULL REFERENCES empresas(id),
