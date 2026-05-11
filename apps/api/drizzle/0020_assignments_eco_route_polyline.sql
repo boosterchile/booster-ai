@@ -1,0 +1,36 @@
+-- Migration 0020 — Polyline eco-ruta persistida (Phase 1 PR-H5b)
+--
+-- Añade `eco_route_polyline_encoded` TEXT a `asignaciones` para que la
+-- polyline de la ruta sugerida por Routes API (Phase 1 PR-H4 +
+-- PR-H5) quede persistida al momento de aceptar la oferta.
+--
+-- Antes de este PR, `GET /assignments/:id/eco-route` re-fetchea Routes
+-- API en CADA visita del driver a la página de su asignación. Routes
+-- API factura ~$5/1000 calls; viajes largos con visitas frecuentes
+-- (el driver vuelve al detalle entre paradas) podían acumular costo
+-- innecesario para una ruta que NO cambia durante el viaje (mismo
+-- origen, mismo destino).
+--
+-- Persistiendo la polyline al accept (1 call total, idempotente) +
+-- leyéndola de DB después (zero costo), eliminamos ese ruido. Para
+-- assignments pre-existentes la columna queda NULL y el endpoint
+-- hace fallback a Routes API on-demand (mismo comportamiento que hoy).
+--
+-- **NULLABLE deliberado**:
+--   - Assignments pre-PR-H5b → NULL → fallback comportamiento previo
+--   - Nuevos assignments donde Routes API falle al momento del accept
+--     → NULL, el accept procede igual (el INSERT del assignment no
+--     debe bloquearse por un servicio externo)
+--   - Si la polyline llega a estar presente, el endpoint la devuelve
+--     directo sin tocar Routes API
+--
+-- **TEXT y no VARCHAR(N)**:
+--   Google Encoded Polyline puede ser largo para rutas inter-regionales
+--   (Santiago → Punta Arenas tiene ~3000+ caracteres). TEXT en
+--   Postgres no tiene overhead vs varchar para los tamaños típicos.
+--
+-- Riesgo deploy: bajo. ADD COLUMN nullable es metadata-only en
+-- Postgres ≥ 11. Sin defaults computados. Reversible vía DROP COLUMN.
+
+ALTER TABLE "asignaciones"
+  ADD COLUMN "eco_route_polyline_encoded" text;

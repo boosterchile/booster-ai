@@ -670,6 +670,16 @@ export const assignments = pgTable(
      * lo tienen.
      */
     publicTrackingToken: uuid('tracking_token_publico'),
+    /**
+     * Phase 1 PR-H5b — Polyline encoded de Routes API capturada al
+     * momento de aceptar la oferta. Persistida para evitar re-fetch
+     * en cada visita del driver a la asignación (Routes API factura
+     * ~$5/1000 calls). NULLABLE para backwards-compat con assignments
+     * pre-PR-H5b (sin la columna) y para casos donde Routes API
+     * falló al momento del accept (el INSERT del assignment no se
+     * bloquea por un servicio externo).
+     */
+    ecoRoutePolylineEncoded: text('eco_route_polyline_encoded'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
