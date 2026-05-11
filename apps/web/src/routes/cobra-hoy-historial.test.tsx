@@ -125,6 +125,7 @@ describe('CobraHoyHistorialRoute — estados de datos', () => {
           status: 'desembolsado' as const,
           desembolsado_en: '2026-05-08T12:00:00Z',
           creado_en: '2026-05-08T11:00:00Z',
+          nota_visible: null,
         },
       ],
     });
@@ -135,5 +136,78 @@ describe('CobraHoyHistorialRoute — estados de datos', () => {
     expect(screen.getByText('Desembolsado')).toBeInTheDocument();
     // Tarifa formateada con porcentaje.
     expect(screen.getByText(/\(1\.50%\)/)).toBeInTheDocument();
+    // Sin nota visible: el bloque NotaCarrier no debe aparecer.
+    expect(screen.queryByText(/Nota del equipo Booster/)).not.toBeInTheDocument();
+  });
+
+  it('rechazado con nota_visible → muestra NotaCarrier con AlertTriangle', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      adelantos: [
+        {
+          id: 'a1',
+          asignacion_id: 'asg-1',
+          monto_neto_clp: 176000,
+          plazo_dias_shipper: 30,
+          tarifa_pct: 1.5,
+          tarifa_clp: 2640,
+          monto_adelantado_clp: 173360,
+          status: 'rechazado' as const,
+          desembolsado_en: null,
+          creado_en: '2026-05-08T11:00:00Z',
+          nota_visible: 'Score insuficiente del shipper',
+        },
+      ],
+    });
+    renderRoute();
+    expect(await screen.findByText('Rechazado')).toBeInTheDocument();
+    expect(screen.getByText(/Nota del equipo Booster/)).toBeInTheDocument();
+    expect(screen.getByText(/Score insuficiente del shipper/)).toBeInTheDocument();
+  });
+
+  it('mora con nota_visible → muestra NotaCarrier en tono amber', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      adelantos: [
+        {
+          id: 'a1',
+          asignacion_id: 'asg-1',
+          monto_neto_clp: 176000,
+          plazo_dias_shipper: 30,
+          tarifa_pct: 1.5,
+          tarifa_clp: 2640,
+          monto_adelantado_clp: 173360,
+          status: 'mora' as const,
+          desembolsado_en: '2026-04-01T12:00:00Z',
+          creado_en: '2026-04-01T11:00:00Z',
+          nota_visible: 'auto-mora: shipper no pagó en plazo (10 días vencidos sobre 30).',
+        },
+      ],
+    });
+    renderRoute();
+    expect(await screen.findByText('En mora')).toBeInTheDocument();
+    expect(screen.getByText(/auto-mora: shipper no pagó en plazo/)).toBeInTheDocument();
+  });
+
+  it('adelanto con status sin nota_visible → no muestra panel de nota', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      adelantos: [
+        {
+          id: 'a1',
+          asignacion_id: 'asg-1',
+          monto_neto_clp: 176000,
+          plazo_dias_shipper: 30,
+          tarifa_pct: 1.5,
+          tarifa_clp: 2640,
+          monto_adelantado_clp: 173360,
+          status: 'rechazado' as const,
+          desembolsado_en: null,
+          creado_en: '2026-05-08T11:00:00Z',
+          // nota_visible null (admin no dejó motivo)
+          nota_visible: null,
+        },
+      ],
+    });
+    renderRoute();
+    expect(await screen.findByText('Rechazado')).toBeInTheDocument();
+    expect(screen.queryByText(/Nota del equipo Booster/)).not.toBeInTheDocument();
   });
 });

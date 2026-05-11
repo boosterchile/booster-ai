@@ -136,6 +136,44 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
   return app;
 }
 
+/**
+ * Decide qué mensaje del admin se expone al carrier en el historial,
+ * según el estado del adelanto. Pure: facilita test unitario sin BD.
+ *
+ *   - `rechazado` / `cancelado` → primero `rechazoMotivo` (campo
+ *     semánticamente acotado), si no hay → última línea de `notas_admin`.
+ *   - `mora` → última línea de `notas_admin` (típicamente la
+ *     auto-mora del cron).
+ *   - Otros estados → null (no surfaced para preservar privacidad
+ *     operativa: admins pueden dejar notas internas que el carrier
+ *     no debería ver hasta que se "cierre" su solicitud).
+ */
+export function buildNotaVisible(
+  status: string,
+  rechazoMotivo: string | null,
+  notasAdmin: string | null,
+): string | null {
+  if (status !== 'rechazado' && status !== 'cancelado' && status !== 'mora') {
+    return null;
+  }
+  if (rechazoMotivo && (status === 'rechazado' || status === 'cancelado')) {
+    return rechazoMotivo;
+  }
+  if (!notasAdmin) {
+    return null;
+  }
+  // Última línea no vacía (las notas se appenden con \n al final).
+  const lines = notasAdmin.split('\n').filter((l) => l.trim() !== '');
+  const last = lines[lines.length - 1];
+  if (!last) {
+    return null;
+  }
+  // Strip tag `[ISO email]` del prefijo: el carrier no necesita ver el
+  // email del operador ni la marca temporal — esa info queda en logs
+  // para auditoría.
+  return last.replace(/^\[[^\]]+\]\s*/, '').trim() || null;
+}
+
 export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
@@ -159,6 +197,8 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
         montoAdelantadoClp: adelantosCarrier.montoAdelantadoClp,
         status: adelantosCarrier.status,
         desembolsadoEn: adelantosCarrier.desembolsadoEn,
+        rechazoMotivo: adelantosCarrier.rechazoMotivo,
+        notasAdmin: adelantosCarrier.notasAdmin,
         createdAt: adelantosCarrier.createdAt,
       })
       .from(adelantosCarrier)
@@ -178,6 +218,11 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
         status: r.status,
         desembolsado_en: r.desembolsadoEn?.toISOString() ?? null,
         creado_en: r.createdAt.toISOString(),
+        // ADR-032 — el carrier solo ve mensajes para estados donde la
+        // explicación cierra el loop UX: rechazado, cancelado, mora.
+        // Para otros estados, los admins pueden dejar notas internas que
+        // NO deben filtrarse al carrier (privacidad operativa).
+        nota_visible: buildNotaVisible(r.status, r.rechazoMotivo, r.notasAdmin),
       })),
     });
   });

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Banknote, Clock3 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Banknote, Clock3, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
@@ -123,7 +123,7 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 bg-white">
-                {histQ.data.adelantos.map((a) => (
+                {histQ.data.adelantos.flatMap((a) => [
                   <tr key={a.id} className="hover:bg-neutral-50">
                     <Td className="text-neutral-600 text-xs">{formatDate(a.creado_en)}</Td>
                     <Td>
@@ -145,8 +145,15 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
                     <Td>
                       <StatusBadge status={a.status} />
                     </Td>
-                  </tr>
-                ))}
+                  </tr>,
+                  a.nota_visible ? (
+                    <tr key={`${a.id}-nota`} className="bg-neutral-50/50">
+                      <td colSpan={6} className="px-4 pt-0 pb-3">
+                        <NotaCarrier status={a.status} message={a.nota_visible} />
+                      </td>
+                    </tr>
+                  ) : null,
+                ])}
               </tbody>
             </table>
           </div>
@@ -220,6 +227,32 @@ function StatusBadge({ status }: { status: AdelantoHistorial['status'] }) {
     >
       {v.label}
     </span>
+  );
+}
+
+/**
+ * Mensaje del admin al carrier — solo para estados rechazado / cancelado / mora.
+ * Color y icono varían según severidad: rechazado/cancelado en danger, mora en amber.
+ */
+function NotaCarrier({
+  status,
+  message,
+}: {
+  status: AdelantoHistorial['status'];
+  message: string;
+}) {
+  const isDanger = status === 'rechazado' || status === 'cancelado';
+  const tone = isDanger
+    ? 'border-danger-500/30 bg-danger-50 text-danger-700'
+    : 'border-amber-500/30 bg-amber-50 text-amber-700';
+  const Icon = isDanger ? AlertTriangle : MessageSquare;
+  return (
+    <output className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${tone}`}>
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span>
+        <strong className="font-medium">Nota del equipo Booster:</strong> {message}
+      </span>
+    </output>
   );
 }
 

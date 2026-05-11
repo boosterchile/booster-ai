@@ -305,6 +305,8 @@ describe('GET /me/cobra-hoy/historial', () => {
         montoAdelantadoClp: 173360,
         status: 'desembolsado',
         desembolsadoEn: desembolsadoAt,
+        rechazoMotivo: null,
+        notasAdmin: null,
         createdAt,
       },
     ]);
@@ -323,6 +325,123 @@ describe('GET /me/cobra-hoy/historial', () => {
       status: 'desembolsado',
       desembolsado_en: desembolsadoAt.toISOString(),
       creado_en: createdAt.toISOString(),
+      // `desembolsado` no expone notas al carrier (privacidad operativa).
+      nota_visible: null,
     });
+  });
+
+  it('adelanto rechazado con motivo → nota_visible = rechazoMotivo', async () => {
+    const db = makeDbWithAdelantos([
+      {
+        id: 'a1',
+        asignacionId: 'asg-1',
+        montoNetoClp: 176000,
+        plazoDiasShipper: 30,
+        tarifaPct: '1.50',
+        tarifaClp: 2640,
+        montoAdelantadoClp: 173360,
+        status: 'rechazado',
+        desembolsadoEn: null,
+        rechazoMotivo: 'Score insuficiente del shipper',
+        notasAdmin: null,
+        createdAt: new Date('2026-05-08T11:00:00Z'),
+      },
+    ]);
+    const app = makeMeApp({ withContext: true, db });
+    const res = await app.request('/me/cobra-hoy/historial');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { adelantos: Array<Record<string, unknown>> };
+    expect(body.adelantos[0]?.nota_visible).toBe('Score insuficiente del shipper');
+  });
+
+  it('adelanto mora con notas_admin → nota_visible = última línea sin tag', async () => {
+    const db = makeDbWithAdelantos([
+      {
+        id: 'a1',
+        asignacionId: 'asg-1',
+        montoNetoClp: 176000,
+        plazoDiasShipper: 30,
+        tarifaPct: '1.50',
+        tarifaClp: 2640,
+        montoAdelantadoClp: 173360,
+        status: 'mora',
+        desembolsadoEn: new Date('2026-04-01T12:00:00Z'),
+        rechazoMotivo: null,
+        notasAdmin:
+          '[2026-05-01T09:00:00.000Z admin@boosterchile.com] approval ok\n[2026-05-10T09:00:00.000Z cron@boosterchile.com] auto-mora: shipper no pagó en plazo (10 días vencidos sobre 30).',
+        createdAt: new Date('2026-04-01T11:00:00Z'),
+      },
+    ]);
+    const app = makeMeApp({ withContext: true, db });
+    const res = await app.request('/me/cobra-hoy/historial');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { adelantos: Array<Record<string, unknown>> };
+    expect(body.adelantos[0]?.nota_visible).toBe(
+      'auto-mora: shipper no pagó en plazo (10 días vencidos sobre 30).',
+    );
+  });
+});
+
+describe('buildNotaVisible (helper puro)', () => {
+  it('estado solicitado → null aunque tenga notas', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('solicitado', null, '[2026-05-01 admin@x] nota interna')).toBeNull();
+  });
+
+  it('estado aprobado → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('aprobado', null, '[2026 admin@x] nota')).toBeNull();
+  });
+
+  it('estado desembolsado → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('desembolsado', null, '[t admin@x] x')).toBeNull();
+  });
+
+  it('estado cobrado_a_shipper → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('cobrado_a_shipper', null, '[t a@x] y')).toBeNull();
+  });
+
+  it('rechazado con rechazoMotivo → usa el motivo', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('rechazado', 'Sin antigüedad', null)).toBe('Sin antigüedad');
+  });
+
+  it('rechazado sin rechazoMotivo + notas_admin → última línea limpia', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(
+      buildNotaVisible(
+        'rechazado',
+        null,
+        '[2026-05-01T09:00:00.000Z admin@boosterchile.com] revisión inicial\n[2026-05-02T09:00:00.000Z admin@boosterchile.com] rechazado: límite excedido',
+      ),
+    ).toBe('rechazado: límite excedido');
+  });
+
+  it('cancelado sin motivo y sin notas → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('cancelado', null, null)).toBeNull();
+  });
+
+  it('mora sin notas → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('mora', null, null)).toBeNull();
+  });
+
+  it('mora con notas con varias líneas → última línea sin tag', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(
+      buildNotaVisible(
+        'mora',
+        null,
+        '[2026-05-01T09:00:00.000Z cron@boosterchile.com] auto-mora: shipper no pagó en plazo (5 días vencidos sobre 30).',
+      ),
+    ).toBe('auto-mora: shipper no pagó en plazo (5 días vencidos sobre 30).');
+  });
+
+  it('línea con tag pero sin contenido → null', async () => {
+    const { buildNotaVisible } = await import('../../src/routes/cobra-hoy.js');
+    expect(buildNotaVisible('rechazado', null, '[2026-05-01T09:00:00.000Z admin@x]')).toBeNull();
   });
 });
