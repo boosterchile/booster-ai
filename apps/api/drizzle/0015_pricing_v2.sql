@@ -78,7 +78,7 @@ COMMENT ON COLUMN carrier_memberships.consent_terms_v2_aceptado_en IS
 -- =============================================================================
 CREATE TABLE liquidaciones (
   id                                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  asignacion_id                       uuid NOT NULL UNIQUE REFERENCES assignments(id) ON DELETE RESTRICT,
+  asignacion_id                       uuid NOT NULL UNIQUE REFERENCES asignaciones(id) ON DELETE RESTRICT,
   empresa_carrier_id                  uuid NOT NULL REFERENCES empresas(id),
   tier_slug_aplicado                  text NOT NULL REFERENCES membership_tiers(slug),
   monto_bruto_clp                     integer NOT NULL CHECK (monto_bruto_clp >= 0),
