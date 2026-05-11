@@ -2,6 +2,7 @@ import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   Banknote,
+  Building2,
   Bus,
   Headphones,
   Leaf,
@@ -325,6 +326,29 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Mis cargas</div>
                     <div className="text-neutral-600 text-sm">
                       Estado del matching, asignaciones, seguimiento en vivo.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/sucursales"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-sucursales"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Sucursales</div>
+                    <div className="text-neutral-600 text-sm">
+                      Bodegas, plantas y centros de distribución. Puntos físicos de origen y destino
+                      para tus cargas.
                     </div>
                   </div>
                 </div>

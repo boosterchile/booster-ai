@@ -162,6 +162,13 @@
       "when": 1779840000000,
       "tag": "0022_users_activation_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1779926400000,
+      "tag": "0023_sucursales_empresa",
+      "breakpoints": true
     }
   ]
 }

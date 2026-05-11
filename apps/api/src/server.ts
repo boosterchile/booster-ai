@@ -25,6 +25,7 @@ import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
@@ -356,6 +357,13 @@ export function createServer(opts: CreateServerOptions): Hono {
       '/auth',
       createDriverAuthRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
     );
+
+    // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
+    app.use('/sucursales/*', firebaseAuthMiddleware);
+    app.use('/sucursales/*', userContextMiddleware);
+    app.use('/sucursales', firebaseAuthMiddleware);
+    app.use('/sucursales', userContextMiddleware);
+    app.route('/sucursales', createSucursalesRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

@@ -24,6 +24,11 @@ import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
+import {
+  SucursalesDetalleRoute,
+  SucursalesListRoute,
+  SucursalesNuevaRoute,
+} from './routes/sucursales.js';
 import { VehiculoLiveRoute } from './routes/vehiculo-live.js';
 import {
   VehiculosDetalleRoute,
@@ -147,6 +152,23 @@ const conductoresDetalleRoute = createRoute({
   component: ConductoresDetalleRoute,
 });
 
+// D7b — Sucursales del shipper. Puntos físicos de origen/destino.
+const sucursalesListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/sucursales',
+  component: SucursalesListRoute,
+});
+const sucursalesNuevaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/sucursales/nueva',
+  component: SucursalesNuevaRoute,
+});
+const sucursalesDetalleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/sucursales/$id',
+  component: SucursalesDetalleRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -252,6 +274,9 @@ const routeTree = rootRoute.addChildren([
   conductoresListRoute,
   conductoresNuevoRoute,
   conductoresDetalleRoute,
+  sucursalesListRoute,
+  sucursalesNuevaRoute,
+  sucursalesDetalleRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

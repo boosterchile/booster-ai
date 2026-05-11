@@ -546,6 +546,55 @@ export const vehicles = pgTable(
 );
 
 /**
+ * Sucursales de un generador de carga. Permite que un shipper tenga
+ * múltiples puntos de origen/destino físicos — ej. una cadena de retail
+ * con bodegas en distintas ciudades, o un fabricante que mueve producto
+ * desde planta a centro de distribución (intra-empresa).
+ *
+ * Una oferta puede asociarse opcionalmente a una sucursal origen y/o
+ * destino (FK nullable en `ofertas`, futuro). Eso permite que el carrier
+ * vea contexto adicional ("Recogida en Sucursal Maipú") y que el shipper
+ * filtre estadísticas por sucursal.
+ */
+export const sucursalesEmpresa = pgTable(
+  'sucursales_empresa',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    nombre: varchar('nombre', { length: 100 }).notNull(),
+    addressStreet: varchar('direccion_calle', { length: 200 }).notNull(),
+    addressCity: varchar('direccion_ciudad', { length: 100 }).notNull(),
+    addressRegion: varchar('direccion_region', { length: 4 }).notNull(),
+    /**
+     * Coordenadas centrado del punto de origen/destino. NULL si el shipper
+     * todavía no las completó. La UI las pide cuando se intenta usar la
+     * sucursal en una oferta — sin coords no se puede calcular distancia
+     * ni eco-route.
+     */
+    latitude: numeric('latitud', { precision: 10, scale: 7 }),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }),
+    /**
+     * Horario de operación libre en español (ej. "L-V 8-18, S 9-14").
+     * MVP es texto; iteraremos a horarios estructurados cuando el matching
+     * los necesite para auto-rechazar ofertas fuera de ventana.
+     */
+    operatingHours: varchar('horario_operacion', { length: 200 }),
+    isActive: boolean('es_activa').notNull().default(true),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('eliminado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    empresaIdx: index('idx_sucursales_empresa').on(table.empresaId),
+    activeIdx: index('idx_sucursales_activas')
+      .on(table.empresaId, table.isActive)
+      .where(sql`${table.deletedAt} IS NULL`),
+  }),
+);
+
+/**
  * Conductores — perfil profesional separado de `users` (que es la identidad
  * Firebase / auth). Un user puede ser conductor en una sola empresa
  * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
@@ -1696,6 +1745,8 @@ export type StakeholderRow = typeof stakeholders.$inferSelect;
 export type NewStakeholderRow = typeof stakeholders.$inferInsert;
 export type ConductorRow = typeof conductores.$inferSelect;
 export type NewConductorRow = typeof conductores.$inferInsert;
+export type SucursalEmpresaRow = typeof sucursalesEmpresa.$inferSelect;
+export type NewSucursalEmpresaRow = typeof sucursalesEmpresa.$inferInsert;
 export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;
