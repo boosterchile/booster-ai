@@ -20,7 +20,47 @@ Antes de poder usar el demo necesitas:
 
 ## 2. Gatillar el seed
 
-Una vez merge y allowlist OK, ejecuta:
+Una vez merge + allowlist OK, tienes 2 caminos:
+
+### Opción A — Snippet en DevTools (recomendado)
+
+Estando logueado en `https://app.boosterchile.com` como admin, abre DevTools (F12), pestaña **Console**, pega este snippet:
+
+```js
+(async () => {
+  const apiBase = window.location.hostname === 'app.boosterchile.com'
+    ? 'https://api.boosterchile.com' : '';
+  const { getAuth, getIdToken } = await import(
+    'https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js',
+  );
+  const auth = getAuth();
+  if (!auth.currentUser) {
+    console.error('Inicia sesión primero.');
+    return;
+  }
+  const token = await getIdToken(auth.currentUser, true);
+  const res = await fetch(`${apiBase}/admin/seed/demo`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+  });
+  if (!res.ok) {
+    console.error(`Status ${res.status}: ${await res.text()}`);
+    return;
+  }
+  const { credentials } = await res.json();
+  console.log('%c=== DEMO SEED OK ===', 'color: green; font-weight: bold; font-size: 14px');
+  console.log('SHIPPER  :', credentials.shipper_owner.email, '/', credentials.shipper_owner.password);
+  console.log('CARRIER  :', credentials.carrier_owner.email, '/', credentials.carrier_owner.password);
+  console.log('STAKEHOLDER:', credentials.stakeholder.email, '/', credentials.stakeholder.password);
+  console.log('CONDUCTOR:', credentials.conductor.rut, '/ PIN:', credentials.conductor.activation_pin);
+  console.log('vehicle DEMO01 (mirror):', credentials.vehicle_with_mirror_id);
+  console.log('vehicle DEMO02 (no device):', credentials.vehicle_without_device_id);
+})();
+```
+
+Imprime las credenciales legibles. **El PIN del conductor solo se imprime una vez** — cópialo.
+
+### Opción B — `curl` desde terminal
 
 ```bash
 TOKEN="<tu-firebase-id-token>"
