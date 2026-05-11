@@ -79,6 +79,21 @@ describe('AppRoute', () => {
     expect(screen.getByText(/Ofertas activas/)).toBeInTheDocument();
   });
 
+  it('carrier → muestra card "Modo Conductor" linkeada a /app/conductor/modo', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    render(<AppRoute />);
+    const link = screen.getByTestId('dashboard-link-modo-conductor');
+    expect(link).toBeInTheDocument();
+    // TanStack Link mock pasa `to` como atributo (no `href`).
+    expect(link).toHaveAttribute('to', '/app/conductor/modo');
+  });
+
+  it('shipper (no carrier) → NO muestra card "Modo Conductor"', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
+    render(<AppRoute />);
+    expect(screen.queryByTestId('dashboard-link-modo-conductor')).not.toBeInTheDocument();
+  });
+
   it('shipper → muestra card "Crear carga"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     render(<AppRoute />);
