@@ -385,17 +385,19 @@ export function ConductoresNuevoRoute() {
 
 interface CreateConductorResponse {
   conductor: Conductor;
-  activation_pin: string;
+  // D10 — PIN no se devuelve si el user ya estaba activado (e.g. dueño-conductor
+  // que se agrega a sí mismo). En ese caso no hay que mostrar la card de PIN.
+  activation_pin?: string;
 }
 
 function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  // D9 — PIN devuelto por el backend post-create. Lo mostramos en una card
-  // de éxito con botón "copiar". El carrier lo comparte con el conductor
-  // (papel, WhatsApp, SMS). Después de "Continuar" se navega y el PIN se
-  // pierde — no se puede recuperar después.
+  // D10 — Modo "Soy yo el conductor" para flujo dueño-conductor (un user con
+  // 2 memberships: dueño + conductor). Pre-fillea form con datos del me y
+  // skipea la card de PIN al success (el dueño ya tiene email/password).
+  const [selfMode, setSelfMode] = useState(false);
   const [activationResult, setActivationResult] = useState<{
     pin: string;
     driverName: string;
@@ -422,11 +424,17 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     },
     onSuccess: (res, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conductores'] });
-      setActivationResult({
-        pin: res.activation_pin,
-        driverName: variables.full_name.trim(),
-        driverRut: variables.rut.trim(),
-      });
+      // D10 — Si el backend no devolvió PIN (user ya activado),
+      // navegar directo a la lista. Si devolvió PIN, mostrar la card.
+      if (res.activation_pin) {
+        setActivationResult({
+          pin: res.activation_pin,
+          driverName: variables.full_name.trim(),
+          driverRut: variables.rut.trim(),
+        });
+      } else {
+        void navigate({ to: '/app/conductores' });
+      }
     },
     onError: (err: Error) => {
       if (err.message.includes('user_already_driver')) {
@@ -444,12 +452,31 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   const {
     register,
     handleSubmit,
+    setValue,
     setError: setFieldError,
     formState: { errors, submitCount },
   } = useForm<NewConductorForm>({
     mode: 'onSubmit',
     defaultValues: EMPTY_NEW,
   });
+
+  // D10 — Toggle self mode pre-fillea/limpia los campos de identidad.
+  function handleToggleSelfMode(checked: boolean) {
+    setSelfMode(checked);
+    if (checked) {
+      setValue('rut', me.user.rut ?? '', { shouldValidate: false });
+      setValue('full_name', me.user.full_name, { shouldValidate: false });
+      // email del me.user puede no estar en todos los tipos — usamos any-cast.
+      const meEmail = (me.user as { email?: string }).email;
+      if (meEmail) {
+        setValue('email', meEmail, { shouldValidate: false });
+      }
+    } else {
+      setValue('rut', '');
+      setValue('full_name', '');
+      setValue('email', '');
+    }
+  }
 
   useScrollToFirstError(errors, submitCount);
 
@@ -501,6 +528,31 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
         className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
         noValidate
       >
+        {/* D10 — Caso "patrón" Chile: el dueño del camión también lo
+            maneja. Toggle pre-fillea datos con el current user y skipea
+            la generación de PIN (el dueño ya tiene email/password). */}
+        {me.user.rut && (
+          <label className="flex items-start gap-3 rounded-md border border-primary-100 bg-primary-50/50 p-3">
+            <input
+              type="checkbox"
+              checked={selfMode}
+              onChange={(e) => handleToggleSelfMode(e.target.checked)}
+              className="mt-0.5 rounded"
+              data-testid="self-mode-toggle"
+            />
+            <div>
+              <div className="font-medium text-neutral-900 text-sm">
+                Soy yo el conductor de mi camión
+              </div>
+              <div className="mt-0.5 text-neutral-600 text-xs">
+                Activa esta opción si manejas tu propio vehículo. Usaremos tu RUT y nombre, y podrás
+                entrar a "Modo Conductor" directamente con tu email y contraseña actuales (sin PIN
+                extra).
+              </div>
+            </div>
+          </label>
+        )}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             label="RUT"
@@ -517,6 +569,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
+                readOnly={selfMode}
               />
             )}
           />

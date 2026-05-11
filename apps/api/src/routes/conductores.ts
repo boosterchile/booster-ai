@@ -230,12 +230,18 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
     }
     const rut = rutParsed.data;
 
-    // D9 — PIN de activación de 6 dígitos. Lo generamos antes de la
-    // transacción para que el hash quede listo independiente del lookup-or-
-    // create. El plaintext NUNCA persiste; sólo se devuelve UNA vez en la
+    // D9/D10 — PIN de activación de 6 dígitos.
+    //
+    // El PIN se genera **solo si** el conductor que se está creando es un
+    // user nuevo o un user-placeholder (firebase_uid `pending-rut:...`). Si
+    // ya es un user real activado (e.g. el dueño de la empresa que también
+    // se registra como conductor — flujo D10), NO generamos PIN: el dueño
+    // ya tiene su email/password y puede entrar a `/app/conductor/modo`
+    // directamente sin re-autenticarse.
+    //
+    // El plaintext del PIN NUNCA persiste; sólo se devuelve UNA vez en la
     // respuesta del POST para que el carrier lo muestre al conductor.
-    const activationPin = generateActivationPin();
-    const activationPinHash = hashActivationPin(activationPin);
+    let activationPin: string | null = null;
 
     try {
       const result = await opts.db.transaction(async (tx) => {
@@ -260,8 +266,6 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
           userId = existingUser.id;
 
           // Si ya hay conductor (no eliminado) para este user → conflicto.
-          // Acotamos UNIQUE(usuario_id) en la BD a "no eliminados" via la
-          // lógica de soft delete: chequeamos manualmente.
           const existingDriver = await tx
             .select({ id: conductores.id, deletedAt: conductores.deletedAt })
             .from(conductores)
@@ -271,18 +275,19 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
             return { ok: false as const, code: 'user_already_driver' };
           }
 
-          // Si el user existente todavía no se ha activado (firebase_uid es
-          // placeholder), seteamos el nuevo PIN de activación. Si ya está
-          // activado (UID real, ej. el conductor también es despachador en
-          // otra empresa con login completo), NO sobrescribimos su login.
+          // D10 — Si el user existente todavía es placeholder, seteamos PIN.
+          // Si ya está activado (UID real), saltamos el PIN — flujo
+          // dueño-conductor o conductor que también opera en otra empresa.
           if (existingUser.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX)) {
+            activationPin = generateActivationPin();
             await tx
               .update(users)
-              .set({ activationPinHash, updatedAt: sql`now()` })
+              .set({ activationPinHash: hashActivationPin(activationPin), updatedAt: sql`now()` })
               .where(eq(users.id, userId));
           }
         } else {
           // 2. Crear user "pending" con PIN de activación.
+          activationPin = generateActivationPin();
           const insertedUsers = await tx
             .insert(users)
             .values({
@@ -293,7 +298,7 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
               rut,
               status: 'pendiente_verificacion',
               isPlatformAdmin: false,
-              activationPinHash,
+              activationPinHash: hashActivationPin(activationPin),
             })
             .returning({ id: users.id });
           const newUser = insertedUsers[0];
@@ -350,8 +355,12 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
            * SOLA VEZ — el carrier debe mostrarlo al conductor inmediatamente
            * (botón "copiar" + recordatorio). No se puede recuperar después.
            * Si se pierde, hay que retirar al conductor y crearlo de nuevo.
+           *
+           * D10 — Undefined cuando el user ya estaba activado (e.g. dueño
+           * que se agrega a sí mismo como conductor): el dueño ya tiene
+           * email/password y no necesita PIN.
            */
-          activation_pin: activationPin,
+          ...(activationPin !== null ? { activation_pin: activationPin } : {}),
         },
         201,
       );

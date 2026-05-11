@@ -34,10 +34,18 @@ const { ConductoresListRoute, ConductoresNuevoRoute, ConductoresDetalleRoute } =
   './conductores.js'
 );
 
-function makeMe(role: 'dueno' | 'admin' | 'despachador' | 'conductor' = 'dueno'): MeOnboarded {
+function makeMe(
+  role: 'dueno' | 'admin' | 'despachador' | 'conductor' = 'dueno',
+  userOverrides: Partial<{ rut: string | null; full_name: string; email: string }> = {},
+): MeOnboarded {
   return {
     needs_onboarding: false,
-    user: { id: 'u', full_name: 'F' } as MeOnboarded['user'],
+    user: {
+      id: 'u',
+      full_name: userOverrides.full_name ?? 'F',
+      rut: userOverrides.rut ?? null,
+      email: userOverrides.email ?? null,
+    } as unknown as MeOnboarded['user'],
     memberships: [],
     active_membership: {
       id: 'm',
@@ -194,6 +202,7 @@ describe('ConductoresNuevoRoute', () => {
   it('mutation success → invalida queries y navega', async () => {
     vi.spyOn(api, 'post').mockResolvedValueOnce({
       conductor: buildConductor(),
+      activation_pin: '123456',
     });
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresNuevoRoute />);
@@ -207,6 +216,54 @@ describe('ConductoresNuevoRoute', () => {
     await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+  });
+
+  it('D10 — self-mode toggle prellena RUT del dueño', async () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe('dueno', {
+        rut: '22.222.222-2',
+        full_name: 'Felipe Vicencio',
+        email: 'felipe@example.cl',
+      }),
+    };
+    wrap(<ConductoresNuevoRoute />);
+
+    const toggle = screen.getByTestId('self-mode-toggle');
+    await userEvent.click(toggle);
+
+    expect(screen.getByLabelText(/^RUT/)).toHaveValue('22.222.222-2');
+    expect(screen.getByLabelText(/^Nombre completo/)).toHaveValue('Felipe Vicencio');
+  });
+
+  it('D10 — sin RUT en el me no muestra el toggle (precondición)', () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe('dueno', { rut: null }),
+    };
+    wrap(<ConductoresNuevoRoute />);
+    expect(screen.queryByTestId('self-mode-toggle')).toBeNull();
+  });
+
+  it('D10 — success sin activation_pin → navega directo a la lista', async () => {
+    vi.spyOn(api, 'post').mockResolvedValueOnce({
+      conductor: buildConductor(),
+      // sin activation_pin (dueño-conductor)
+    });
+    providedContext = {
+      kind: 'onboarded',
+      me: makeMe('dueno', { rut: '22.222.222-2', full_name: 'Felipe' }),
+    };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.click(screen.getByTestId('self-mode-toggle'));
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    // No debe mostrar la card de PIN
+    expect(screen.queryByText(/PIN de activación/)).toBeNull();
   });
 
   it('error user_already_driver → muestra mensaje específico', async () => {

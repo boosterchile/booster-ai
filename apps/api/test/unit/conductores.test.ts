@@ -310,11 +310,59 @@ describe('conductores routes', () => {
       expect(res.status).toBe(201);
       const body = (await res.json()) as {
         conductor: { id: string; license_expiry: string };
-        activation_pin: string;
+        activation_pin?: string;
       };
       expect(body.conductor.id).toBe(CONDUCTOR_ID);
       expect(body.conductor.license_expiry).toBe('2027-12-31');
-      // D9: PIN de activación 6 dígitos devuelto al carrier.
+      // D10: user pre-existente con firebase_uid REAL → no PIN devuelto.
+      // El user de este test tiene `fb-uid-juan` (no placeholder).
+      expect(body.activation_pin).toBeUndefined();
+    });
+
+    it('D10 — user con firebase_uid placeholder → SÍ devuelve PIN', async () => {
+      const stub = makeDbStub({
+        selectQueueRows: [
+          [
+            {
+              id: USER_ID,
+              fullName: 'Juan Pérez',
+              firebaseUid: 'pending-rut:11.111.111-1',
+            },
+          ],
+          [],
+        ],
+        insertReturning: [
+          [
+            {
+              id: CONDUCTOR_ID,
+              userId: USER_ID,
+              empresaId: EMPRESA_ID,
+              licenseClass: 'A5',
+              licenseNumber: 'LIC-12345',
+              licenseExpiry: new Date('2027-12-31T00:00:00Z'),
+              isExtranjero: false,
+              driverStatus: 'activo',
+              createdAt: new Date('2026-05-10T22:00:00Z'),
+              updatedAt: new Date('2026-05-10T22:00:00Z'),
+              deletedAt: null,
+            },
+          ],
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request('/conductores', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rut: VALID_RUT,
+          full_name: 'Juan Pérez',
+          license_class: 'A5',
+          license_number: 'LIC-12345',
+          license_expiry: '2027-12-31',
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { activation_pin: string };
       expect(body.activation_pin).toMatch(/^\d{6}$/);
     });
 
@@ -342,7 +390,7 @@ describe('conductores routes', () => {
       expect(body.code).toBe('user_already_driver');
     });
 
-    it('user no existente → crea user pending + conductor 201', async () => {
+    it('user no existente → crea user pending + conductor 201 + retorna PIN', async () => {
       const stub = makeDbStub({
         selectQueueRows: [
           // lookup user — no hay
