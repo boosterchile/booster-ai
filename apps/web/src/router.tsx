@@ -12,6 +12,7 @@ import { ConductorModoRoute } from './routes/conductor-modo.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
 import { LegalTerminosRoute } from './routes/legal-terminos.js';
+import { LiquidacionesRoute } from './routes/liquidaciones.js';
 import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
@@ -190,6 +191,14 @@ const legalCobraHoyRoute = createRoute({
   component: LegalCobraHoyRoute,
 });
 
+// ADR-031 §4.1 — Listado de liquidaciones del carrier activo. Surface
+// dedicada bajo /app con DTE Tipo 33 descargable cuando esté emitido.
+const liquidacionesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/liquidaciones',
+  component: LiquidacionesRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -213,6 +222,7 @@ const routeTree = rootRoute.addChildren([
   legalTerminosRoute,
   cobraHoyHistorialRoute,
   legalCobraHoyRoute,
+  liquidacionesRoute,
   adminCobraHoyRoute,
 ]);
 

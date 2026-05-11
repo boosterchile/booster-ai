@@ -8,6 +8,7 @@ import {
   Package,
   PackagePlus,
   Radio,
+  Receipt,
   Settings,
   Truck,
   User as UserIcon,
@@ -162,6 +163,27 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Cobra hoy</div>
                     <div className="text-neutral-600 text-sm">
                       Solicita pronto pago de viajes entregados y revisa tu historial de adelantos.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/liquidaciones"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Receipt className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Liquidaciones</div>
+                    <div className="text-neutral-600 text-sm">
+                      Desglose de cada viaje entregado: monto bruto, comisión, IVA y DTE Tipo 33.
                     </div>
                   </div>
                 </div>
