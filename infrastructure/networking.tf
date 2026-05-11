@@ -258,15 +258,48 @@ resource "google_compute_security_policy" "waf" {
   }
 
   # OWASP preset — XSS, SQLi, RCE, LFI, scanner detection
+  #
+  # Exclusiones SQLi (rules cookie/args-based con falsos positivos en JWTs):
+  #   - id942421 "Restricted SQL Character Anomaly Detection (cookies): # of
+  #     special characters exceeded (3)"
+  #   - id942431 "Restricted SQL Character Anomaly Detection (args): # of
+  #     special characters exceeded (6)"
+  #   - id942432 "Restricted SQL Character Anomaly Detection (args): # of
+  #     special characters exceeded (12)"
+  #
+  # Por qué se excluyen: los cookies de Firebase Auth (ID token JWT firmado en
+  # base64url) contienen rutinariamente >3 caracteres "especiales" (`-`, `_`,
+  # `=`, `.`, `;`), lo que dispara id942421 y devuelve 403 al PWA en
+  # app.boosterchile.com. Observado 2026-05-10 en producción: la regla
+  # bloqueaba `/`, `/sw.js` y `/favicon.ico` para cualquier usuario con cookies
+  # de sesión. id942431/id942432 son las hermanas que evalúan args/headers y
+  # disparan con los mismos JWTs cuando viajan en Authorization header o query
+  # string (caso típico del refresh flow de Firebase).
+  #
+  # SQLi se evalúa con `evaluatePreconfiguredWaf` (no `evaluatePreconfiguredExpr`)
+  # porque solo la primera honra `opt_out_rule_ids`. La sintaxis vieja
+  # `evaluatePreconfiguredExpr('sqli-v33-stable', [ids...])` se acepta pero
+  # ignora silenciosamente las exclusiones (verificado en logs 2026-05-10).
+  # `sensitivity: 1` mantiene el comportamiento del preset legacy (CRS 3.3
+  # paranoia level 1, las rules más mainstream).
+  #
+  # Defensa restante (SQLi):
+  #   - Resto del preset sqli-v33-stable: id942100/200/300 (SQL meta-characters),
+  #     id942110-160 (SQL keywords y union-based), id942180-260 (boolean-based,
+  #     time-based, stacked queries), id942270-340 (UNION SELECT, INTO OUTFILE),
+  #     id942350-410 (MySQL/Postgres specific patterns) — todo esto sigue activo.
+  #   - Drizzle ORM con parameterized queries en el api.
+  #   - Zod schemas validan shape de body antes de tocar BD.
+  #   - Firebase Auth middleware filtra requests sin token válido.
   rule {
     action   = "deny(403)"
     priority = "500"
     match {
       expr {
-        expression = "evaluatePreconfiguredExpr('xss-v33-stable') || evaluatePreconfiguredExpr('sqli-v33-stable') || evaluatePreconfiguredExpr('rce-v33-stable') || evaluatePreconfiguredExpr('lfi-v33-stable') || evaluatePreconfiguredExpr('scannerdetection-v33-stable')"
+        expression = "evaluatePreconfiguredExpr('xss-v33-stable') || evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1, 'opt_out_rule_ids': ['owasp-crs-v030301-id942421-sqli', 'owasp-crs-v030301-id942431-sqli', 'owasp-crs-v030301-id942432-sqli']}) || evaluatePreconfiguredExpr('rce-v33-stable') || evaluatePreconfiguredExpr('lfi-v33-stable') || evaluatePreconfiguredExpr('scannerdetection-v33-stable')"
       }
     }
-    description = "OWASP Top 10 preset deny"
+    description = "OWASP Top 10 preset deny — excluye SQLi cookie/args char-anomaly (Firebase JWTs)"
   }
 
   adaptive_protection_config {
