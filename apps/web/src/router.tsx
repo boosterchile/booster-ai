@@ -14,6 +14,7 @@ import {
   ConductoresListRoute,
   ConductoresNuevoRoute,
 } from './routes/conductores.js';
+import { CumplimientoRoute } from './routes/cumplimiento.js';
 import { FlotaRoute } from './routes/flota.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
@@ -179,6 +180,14 @@ const stakeholderZonasRoute = createRoute({
   component: StakeholderZonasRoute,
 });
 
+// D6 — Dashboard de cumplimiento: documentos vencidos o por vencer.
+// Solo para carriers (transportistas).
+const cumplimientoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/cumplimiento',
+  component: CumplimientoRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -288,6 +297,7 @@ const routeTree = rootRoute.addChildren([
   sucursalesNuevaRoute,
   sucursalesDetalleRoute,
   stakeholderZonasRoute,
+  cumplimientoRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -985,6 +986,13 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
               )}
             </fieldset>
           </form>
+
+          {/* D6 — Documentos del conductor (licencia, antecedentes, etc.). */}
+          <DocumentosSection
+            entityType="conductor"
+            entityId={conductorQ.data.id}
+            canWrite={canWrite && conductorQ.data.deleted_at == null}
+          />
         </>
       )}
     </Layout>

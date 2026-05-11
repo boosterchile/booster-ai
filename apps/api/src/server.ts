@@ -20,6 +20,7 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
+import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -373,6 +374,16 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/sucursales', firebaseAuthMiddleware);
     app.use('/sucursales', userContextMiddleware);
     app.route('/sucursales', createSucursalesRoutes({ db: opts.db, logger }));
+
+    // D6 — Compliance: documentos de vehículo + conductor + dashboard.
+    app.use('/documentos/*', firebaseAuthMiddleware);
+    app.use('/documentos/*', userContextMiddleware);
+    app.route('/documentos', createDocumentosRoutes({ db: opts.db, logger }));
+    app.use('/cumplimiento', firebaseAuthMiddleware);
+    app.use('/cumplimiento', userContextMiddleware);
+    app.use('/cumplimiento/*', firebaseAuthMiddleware);
+    app.use('/cumplimiento/*', userContextMiddleware);
+    app.route('/cumplimiento', createCumplimientoRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

@@ -5,6 +5,7 @@ import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react
 import { type ReactNode, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ChileanPlate } from '../components/ChileanPlate.js';
+import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -535,6 +536,13 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
               />
             </div>
           </div>
+
+          {/* D6 — Documentos del vehículo (revisión técnica, SOAP, etc.). */}
+          <DocumentosSection
+            entityType="vehiculo"
+            entityId={vehicleQ.data.id}
+            canWrite={canWrite}
+          />
         </>
       )}
     </Layout>

@@ -12,6 +12,7 @@ import {
   PackagePlus,
   Radio,
   Settings,
+  ShieldAlert,
   Truck,
   User as UserIcon,
   Users,
@@ -226,6 +227,29 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="text-neutral-600 text-sm">
                       Audio coaching, comandos de voz y permisos del navegador. Configura una vez
                       antes de manejar.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/cumplimiento"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-amber-500 hover:shadow-md"
+                data-testid="dashboard-link-cumplimiento"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-700"
+                    aria-hidden
+                  >
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Cumplimiento</div>
+                    <div className="text-neutral-600 text-sm">
+                      Documentos vencidos o por vencer de vehículos y conductores (revisión técnica,
+                      SOAP, licencia, antecedentes…).
                     </div>
                   </div>
                 </div>

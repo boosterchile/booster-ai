@@ -137,6 +137,59 @@ export const driverStatusEnum = pgEnum('estado_conductor', [
   'fuera_servicio',
 ]);
 
+/**
+ * D6 — Tipos de documento del vehículo. Reflejan requisitos legales
+ * chilenos de circulación (DS 170 + Ley Tránsito):
+ *
+ *   - revision_tecnica: anual obligatorio (DS 170 art 13)
+ *   - permiso_circulacion: anual obligatorio (Ley Rentas Municipales)
+ *   - soap: Seguro Obligatorio Accidentes Personales (anual)
+ *   - padron: certificado del Registro Civil
+ *   - seguro_carga: opcional, requerido para cargas peligrosas
+ *   - poliza_responsabilidad: seguro responsabilidad civil opcional
+ *   - certificado_emisiones: emisiones contaminantes (Plan PPDA Stgo)
+ *   - otro: catch-all texto libre en `notas`
+ */
+export const documentoVehiculoTipoEnum = pgEnum('tipo_documento_vehiculo', [
+  'revision_tecnica',
+  'permiso_circulacion',
+  'soap',
+  'padron',
+  'seguro_carga',
+  'poliza_responsabilidad',
+  'certificado_emisiones',
+  'otro',
+]);
+
+/**
+ * D6 — Tipos de documento del conductor.
+ *
+ *   - licencia_conducir: licencia clase A1-F (la clase específica vive en
+ *     `conductores.licencia_clase` — este doc es la imagen/PDF de la licencia)
+ *   - curso_b6: curso transporte cargas peligrosas (DS 298)
+ *   - certificado_antecedentes: Registro Civil PJUD
+ *   - examen_psicotecnico: requerido para A1-A5 cada 2-3 años
+ *   - hoja_vida_conductor: hoja del conductor profesional
+ *   - certificado_salud: prevención laboral
+ *   - otro: catch-all
+ */
+export const documentoConductorTipoEnum = pgEnum('tipo_documento_conductor', [
+  'licencia_conducir',
+  'curso_b6',
+  'certificado_antecedentes',
+  'examen_psicotecnico',
+  'hoja_vida_conductor',
+  'certificado_salud',
+  'otro',
+]);
+
+/**
+ * D6 — Estado del documento. Calculado por el handler (read-time) en base
+ * a `fecha_vencimiento` vs NOW(): vigente / por_vencer (≤ 30d) / vencido.
+ * Persistido como columna también para queries rápidas del dashboard.
+ */
+export const documentoEstadoEnum = pgEnum('estado_documento', ['vigente', 'por_vencer', 'vencido']);
+
 export const zoneTypeEnum = pgEnum('tipo_zona', ['recogida', 'entrega', 'ambos']);
 
 export const cargoTypeEnum = pgEnum('tipo_carga', [
@@ -409,6 +462,14 @@ export const empresas = pgTable(
      * de métricas/billing y limpiar con un solo DELETE cascada por FK.
      */
     isDemo: boolean('es_demo').notNull().default(false),
+    /**
+     * D6 — Opt-in del transportista para activar el módulo de compliance
+     * (documentos + mantenimientos preventivos del carrier). Cuando true,
+     * las queries del dashboard de cumplimiento aplican; cuando false, el
+     * módulo no aparece en la UI. El shipper puede solicitarlo via flag
+     * `compliance_requested_by_shipper_at` (futuro).
+     */
+    complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -613,6 +674,75 @@ export const sucursalesEmpresa = pgTable(
     activeIdx: index('idx_sucursales_activas')
       .on(table.empresaId, table.isActive)
       .where(sql`${table.deletedAt} IS NULL`),
+  }),
+);
+
+/**
+ * D6 — Documentos legales/operacionales del vehículo. Reflejan los
+ * requisitos del DS 170 + Ley Tránsito Chile: revisión técnica anual,
+ * permiso circulación, SOAP, etc.
+ *
+ * Para demo: `archivo_url` es texto libre (acepta links de Google Drive,
+ * Dropbox, etc.). Upload directo a GCS + signed URLs queda como follow-up.
+ *
+ * `estado` se persiste y se actualiza al crear/editar para que el
+ * dashboard de cumplimiento pueda hacer queries rápidas sin recalcular
+ * vs NOW() cada vez.
+ */
+export const documentosVehiculo = pgTable(
+  'documentos_vehiculo',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    tipo: documentoVehiculoTipoEnum('tipo').notNull(),
+    /**
+     * URL externa al archivo (Google Drive, Dropbox, Box, S3 público).
+     * Demo accepta cualquier URL https. Validación real (GCS signed URLs)
+     * en follow-up.
+     */
+    archivoUrl: text('archivo_url'),
+    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
+    /**
+     * Para documentos sin vencimiento (e.g. padrón) queda NULL. La query
+     * del dashboard ignora estos (estado siempre 'vigente').
+     */
+    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    estado: documentoEstadoEnum('estado').notNull().default('vigente'),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    vehicleIdx: index('idx_docs_vehiculo_vehiculo').on(table.vehicleId),
+    expiryIdx: index('idx_docs_vehiculo_vencimiento').on(table.fechaVencimiento),
+    estadoIdx: index('idx_docs_vehiculo_estado').on(table.estado),
+  }),
+);
+
+/**
+ * D6 — Documentos del conductor (licencia, antecedentes, psicotécnico,
+ * curso B6, etc.). Mismo patrón que `documentos_vehiculo`.
+ */
+export const documentosConductor = pgTable(
+  'documentos_conductor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conductorId: uuid('conductor_id').notNull(),
+    tipo: documentoConductorTipoEnum('tipo').notNull(),
+    archivoUrl: text('archivo_url'),
+    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
+    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    estado: documentoEstadoEnum('estado').notNull().default('vigente'),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conductorIdx: index('idx_docs_conductor_conductor').on(table.conductorId),
+    expiryIdx: index('idx_docs_conductor_vencimiento').on(table.fechaVencimiento),
+    estadoIdx: index('idx_docs_conductor_estado').on(table.estado),
   }),
 );
 
@@ -1814,6 +1944,10 @@ export type SucursalEmpresaRow = typeof sucursalesEmpresa.$inferSelect;
 export type NewSucursalEmpresaRow = typeof sucursalesEmpresa.$inferInsert;
 export type PosicionMovilConductorRow = typeof posicionesMovilConductor.$inferSelect;
 export type NewPosicionMovilConductorRow = typeof posicionesMovilConductor.$inferInsert;
+export type DocumentoVehiculoRow = typeof documentosVehiculo.$inferSelect;
+export type NewDocumentoVehiculoRow = typeof documentosVehiculo.$inferInsert;
+export type DocumentoConductorRow = typeof documentosConductor.$inferSelect;
+export type NewDocumentoConductorRow = typeof documentosConductor.$inferInsert;
 export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;
