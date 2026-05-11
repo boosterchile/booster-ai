@@ -1,18 +1,22 @@
-import { Link } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   Banknote,
+  Building2,
   Bus,
   Headphones,
   Leaf,
   LogOut,
+  MapPinned,
   Package,
   PackagePlus,
   Radio,
   Receipt,
   Settings,
+  ShieldAlert,
   Truck,
   User as UserIcon,
+  Users,
 } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -47,6 +51,22 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const myRole = me.active_membership?.role;
   const isAdmin = myRole === 'dueno' || myRole === 'admin';
+
+  // D9 — Driver surface guard. Si el rol activo es 'conductor', el user
+  // no debería ver el dashboard carrier (ofertas/vehículos/cargas).
+  // Redirigimos a /app/conductor/modo (su único hub). Excepción: si el
+  // mismo user tiene OTRA membership donde es dueño/admin/etc., puede
+  // hacer switch desde Layout y vuelve al dashboard carrier normalmente.
+  if (myRole === 'conductor') {
+    return <Navigate to="/app/conductor/modo" />;
+  }
+
+  // D11 — Stakeholder surface guard. Si el rol activo es stakeholder,
+  // su único hub útil es /app/stakeholder/zonas — el dashboard general
+  // (carrier/shipper) no le aplica.
+  if (myRole === 'stakeholder_sostenibilidad') {
+    return <Navigate to="/app/stakeholder/zonas" />;
+  }
 
   async function handleSignOut() {
     await signOutUser();
@@ -108,6 +128,28 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <section className="mt-10">
               <h2 className="font-semibold text-neutral-900 text-xl">Como transportista</h2>
               <Link
+                to="/app/flota"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-flota"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <MapPinned className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Seguimiento de flota</div>
+                    <div className="text-neutral-600 text-sm">
+                      Ubicación en tiempo real de todos tus vehículos en un mapa, con histórico.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
                 to="/app/ofertas"
                 className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
               >
@@ -142,7 +184,30 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                   <div>
                     <div className="font-medium text-neutral-900">Vehículos</div>
                     <div className="text-neutral-600 text-sm">
-                      Tu flota: agregar, editar, asociar dispositivos Teltonika.
+                      Gestiona tu flota: alta, edición, asociación a Teltonika.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/conductores"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-conductores"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Conductores</div>
+                    <div className="text-neutral-600 text-sm">
+                      Crea, edita y monitorea licencias y vencimientos de los conductores de tu
+                      empresa.
                     </div>
                   </div>
                 </div>
@@ -170,6 +235,29 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="text-neutral-600 text-sm">
                       Audio coaching, comandos de voz y permisos del navegador. Configura una vez
                       antes de manejar.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/cumplimiento"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-amber-500 hover:shadow-md"
+                data-testid="dashboard-link-cumplimiento"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-700"
+                    aria-hidden
+                  >
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Cumplimiento</div>
+                    <div className="text-neutral-600 text-sm">
+                      Documentos vencidos o por vencer de vehículos y conductores (revisión técnica,
+                      SOAP, licencia, antecedentes…).
                     </div>
                   </div>
                 </div>
@@ -291,6 +379,29 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                     <div className="font-medium text-neutral-900">Mis cargas</div>
                     <div className="text-neutral-600 text-sm">
                       Estado del matching, asignaciones, seguimiento en vivo.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
+                to="/app/sucursales"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-sucursales"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Sucursales</div>
+                    <div className="text-neutral-600 text-sm">
+                      Bodegas, plantas y centros de distribución. Puntos físicos de origen y destino
+                      para tus cargas.
                     </div>
                   </div>
                 </div>

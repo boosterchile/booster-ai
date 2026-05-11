@@ -246,7 +246,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             />
             <FormField
               label="RUT (opcional)"
-              hint="Tu RUT personal. No lo usamos para facturar — la facturación va al RUT empresa."
+              hint="Tu RUT personal sin puntos. Ejemplo: 12345678-5. No lo usamos para facturar."
               error={errors.user?.rut?.message}
               render={({ id, describedBy }) => (
                 <input
@@ -254,7 +254,8 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                   aria-describedby={describedBy}
                   {...register('user.rut')}
                   autoComplete="off"
-                  placeholder="12.345.678-9"
+                  placeholder="12345678-5"
+                  inputMode="text"
                   className={inputClass(!!errors.user?.rut)}
                 />
               )}
@@ -284,6 +285,7 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             />
             <FormField
               label="RUT empresa"
+              hint="Sin puntos, con guión. Ejemplo: 76123456-0"
               error={errors.empresa?.rut?.message}
               render={({ id, describedBy }) => (
                 <input
@@ -291,7 +293,8 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
                   aria-describedby={describedBy}
                   {...register('empresa.rut')}
                   autoComplete="off"
-                  placeholder="76.123.456-0"
+                  placeholder="76123456-0"
+                  inputMode="text"
                   className={inputClass(!!errors.empresa?.rut)}
                 />
               )}

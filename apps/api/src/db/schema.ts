@@ -107,6 +107,89 @@ export const fuelTypeEnum = pgEnum('tipo_combustible', [
 
 export const vehicleStatusEnum = pgEnum('estado_vehiculo', ['activo', 'mantenimiento', 'retirado']);
 
+/**
+ * Clases de licencia de conducir Chile (Ley Tránsito DS Nº 170):
+ *   A1-A5: profesionales (taxi/colectivo, transporte público, camiones).
+ *   A5 es la única que habilita camión articulado > 3.500 kg con remolque.
+ *   B: vehículos particulares hasta 9 pasajeros / 3.500 kg.
+ *   C: motocicletas.
+ *   D: maquinaria automotriz no agrícola.
+ *   E: tracción animal.
+ *   F: vehículos institucionales (carabineros, FFAA).
+ */
+export const licenciaClaseEnum = pgEnum('licencia_clase', [
+  'A1',
+  'A2',
+  'A3',
+  'A4',
+  'A5',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+]);
+
+export const driverStatusEnum = pgEnum('estado_conductor', [
+  'activo',
+  'suspendido',
+  'en_viaje',
+  'fuera_servicio',
+]);
+
+/**
+ * D6 — Tipos de documento del vehículo. Reflejan requisitos legales
+ * chilenos de circulación (DS 170 + Ley Tránsito):
+ *
+ *   - revision_tecnica: anual obligatorio (DS 170 art 13)
+ *   - permiso_circulacion: anual obligatorio (Ley Rentas Municipales)
+ *   - soap: Seguro Obligatorio Accidentes Personales (anual)
+ *   - padron: certificado del Registro Civil
+ *   - seguro_carga: opcional, requerido para cargas peligrosas
+ *   - poliza_responsabilidad: seguro responsabilidad civil opcional
+ *   - certificado_emisiones: emisiones contaminantes (Plan PPDA Stgo)
+ *   - otro: catch-all texto libre en `notas`
+ */
+export const documentoVehiculoTipoEnum = pgEnum('tipo_documento_vehiculo', [
+  'revision_tecnica',
+  'permiso_circulacion',
+  'soap',
+  'padron',
+  'seguro_carga',
+  'poliza_responsabilidad',
+  'certificado_emisiones',
+  'otro',
+]);
+
+/**
+ * D6 — Tipos de documento del conductor.
+ *
+ *   - licencia_conducir: licencia clase A1-F (la clase específica vive en
+ *     `conductores.licencia_clase` — este doc es la imagen/PDF de la licencia)
+ *   - curso_b6: curso transporte cargas peligrosas (DS 298)
+ *   - certificado_antecedentes: Registro Civil PJUD
+ *   - examen_psicotecnico: requerido para A1-A5 cada 2-3 años
+ *   - hoja_vida_conductor: hoja del conductor profesional
+ *   - certificado_salud: prevención laboral
+ *   - otro: catch-all
+ */
+export const documentoConductorTipoEnum = pgEnum('tipo_documento_conductor', [
+  'licencia_conducir',
+  'curso_b6',
+  'certificado_antecedentes',
+  'examen_psicotecnico',
+  'hoja_vida_conductor',
+  'certificado_salud',
+  'otro',
+]);
+
+/**
+ * D6 — Estado del documento. Calculado por el handler (read-time) en base
+ * a `fecha_vencimiento` vs NOW(): vigente / por_vencer (≤ 30d) / vencido.
+ * Persistido como columna también para queries rápidas del dashboard.
+ */
+export const documentoEstadoEnum = pgEnum('estado_documento', ['vigente', 'por_vencer', 'vencido']);
+
 export const zoneTypeEnum = pgEnum('tipo_zona', ['recogida', 'entrega', 'ambos']);
 
 export const cargoTypeEnum = pgEnum('tipo_carga', [
@@ -374,6 +457,19 @@ export const empresas = pgTable(
     addressPostalCode: varchar('direccion_codigo_postal', { length: 20 }),
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
+    /**
+     * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
+     * de métricas/billing y limpiar con un solo DELETE cascada por FK.
+     */
+    isDemo: boolean('es_demo').notNull().default(false),
+    /**
+     * D6 — Opt-in del transportista para activar el módulo de compliance
+     * (documentos + mantenimientos preventivos del carrier). Cuando true,
+     * las queries del dashboard de cumplimiento aplican; cuando false, el
+     * módulo no aparece en la UI. El shipper puede solicitarlo via flag
+     * `compliance_requested_by_shipper_at` (futuro).
+     */
+    complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -419,6 +515,15 @@ export const users = pgTable(
     rut: varchar('rut', { length: 20 }),
     status: userStatusEnum('estado').notNull().default('pendiente_verificacion'),
     isPlatformAdmin: boolean('es_admin_plataforma').notNull().default(false),
+    /**
+     * D9 — Hash scrypt del PIN de activación emitido por el carrier al
+     * crear el conductor. Solo presente mientras el `firebase_uid` es
+     * placeholder `pending-rut:...`. Se borra al completar el flujo
+     * driver-activate. Formato: `salt$N$r$p$keylen$derived` (hex).
+     *
+     * NULL para users que no son conductores o ya activaron.
+     */
+    activationPinHash: text('activacion_pin_hash'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp('ultimo_login_en', { withTimezone: true }),
@@ -427,6 +532,7 @@ export const users = pgTable(
     firebaseUidIdx: index('idx_usuarios_firebase_uid').on(table.firebaseUid),
     emailIdx: index('idx_usuarios_email').on(table.email),
     statusIdx: index('idx_usuarios_estado').on(table.status),
+    rutIdx: index('idx_usuarios_rut').on(table.rut),
   }),
 );
 
@@ -491,6 +597,23 @@ export const vehicles = pgTable(
     /** Consumo base L/100km a carga normal. Null = no declarado. */
     consumptionLPer100kmBaseline: numeric('consumo_l_por_100km_base', { precision: 5, scale: 2 }),
     teltonikaImei: varchar('teltonika_imei', { length: 20 }).unique(),
+    /**
+     * D1 — IMEI **espejo**: cuando se setea, los endpoints de lectura
+     * (`/ubicacion`, `/flota`, `/telemetria`) leen `telemetria_puntos`
+     * filtrando por `imei = teltonika_imei_espejo` en vez de por
+     * `vehiculo_id`. Esto permite que un vehículo "mire" el stream
+     * telemetry de otro vehículo físico sin contaminar su data ni romper
+     * el FK de `telemetria_puntos.vehiculo_id`.
+     *
+     * Caso de uso: demo en producción que muestra los datos reales del
+     * Teltonika de Van Oosterwyk en un vehículo sintético del carrier
+     * demo, mientras Van Oosterwyk sigue recibiendo su data normal.
+     *
+     * Mutuamente excluyente con `teltonika_imei`: un vehículo o tiene
+     * device propio (escribe data nueva) o mira un IMEI ajeno (lee data
+     * existente). Validado en runtime, no en BD (para evitar trigger).
+     */
+    teltonikaImeiEspejo: varchar('teltonika_imei_espejo', { length: 20 }),
     lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
     inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
     vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),
@@ -502,6 +625,224 @@ export const vehicles = pgTable(
     typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
     teltonikaImeiIdx: index('idx_vehiculos_teltonika_imei').on(table.teltonikaImei),
+  }),
+);
+
+/**
+ * Sucursales de un generador de carga. Permite que un shipper tenga
+ * múltiples puntos de origen/destino físicos — ej. una cadena de retail
+ * con bodegas en distintas ciudades, o un fabricante que mueve producto
+ * desde planta a centro de distribución (intra-empresa).
+ *
+ * Una oferta puede asociarse opcionalmente a una sucursal origen y/o
+ * destino (FK nullable en `ofertas`, futuro). Eso permite que el carrier
+ * vea contexto adicional ("Recogida en Sucursal Maipú") y que el shipper
+ * filtre estadísticas por sucursal.
+ */
+export const sucursalesEmpresa = pgTable(
+  'sucursales_empresa',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    nombre: varchar('nombre', { length: 100 }).notNull(),
+    addressStreet: varchar('direccion_calle', { length: 200 }).notNull(),
+    addressCity: varchar('direccion_ciudad', { length: 100 }).notNull(),
+    addressRegion: varchar('direccion_region', { length: 4 }).notNull(),
+    /**
+     * Coordenadas centrado del punto de origen/destino. NULL si el shipper
+     * todavía no las completó. La UI las pide cuando se intenta usar la
+     * sucursal en una oferta — sin coords no se puede calcular distancia
+     * ni eco-route.
+     */
+    latitude: numeric('latitud', { precision: 10, scale: 7 }),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }),
+    /**
+     * Horario de operación libre en español (ej. "L-V 8-18, S 9-14").
+     * MVP es texto; iteraremos a horarios estructurados cuando el matching
+     * los necesite para auto-rechazar ofertas fuera de ventana.
+     */
+    operatingHours: varchar('horario_operacion', { length: 200 }),
+    isActive: boolean('es_activa').notNull().default(true),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('eliminado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    empresaIdx: index('idx_sucursales_empresa').on(table.empresaId),
+    activeIdx: index('idx_sucursales_activas')
+      .on(table.empresaId, table.isActive)
+      .where(sql`${table.deletedAt} IS NULL`),
+  }),
+);
+
+/**
+ * D6 — Documentos legales/operacionales del vehículo. Reflejan los
+ * requisitos del DS 170 + Ley Tránsito Chile: revisión técnica anual,
+ * permiso circulación, SOAP, etc.
+ *
+ * Para demo: `archivo_url` es texto libre (acepta links de Google Drive,
+ * Dropbox, etc.). Upload directo a GCS + signed URLs queda como follow-up.
+ *
+ * `estado` se persiste y se actualiza al crear/editar para que el
+ * dashboard de cumplimiento pueda hacer queries rápidas sin recalcular
+ * vs NOW() cada vez.
+ */
+export const documentosVehiculo = pgTable(
+  'documentos_vehiculo',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    tipo: documentoVehiculoTipoEnum('tipo').notNull(),
+    /**
+     * URL externa al archivo (Google Drive, Dropbox, Box, S3 público).
+     * Demo accepta cualquier URL https. Validación real (GCS signed URLs)
+     * en follow-up.
+     */
+    archivoUrl: text('archivo_url'),
+    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
+    /**
+     * Para documentos sin vencimiento (e.g. padrón) queda NULL. La query
+     * del dashboard ignora estos (estado siempre 'vigente').
+     */
+    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    estado: documentoEstadoEnum('estado').notNull().default('vigente'),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    vehicleIdx: index('idx_docs_vehiculo_vehiculo').on(table.vehicleId),
+    expiryIdx: index('idx_docs_vehiculo_vencimiento').on(table.fechaVencimiento),
+    estadoIdx: index('idx_docs_vehiculo_estado').on(table.estado),
+  }),
+);
+
+/**
+ * D6 — Documentos del conductor (licencia, antecedentes, psicotécnico,
+ * curso B6, etc.). Mismo patrón que `documentos_vehiculo`.
+ */
+export const documentosConductor = pgTable(
+  'documentos_conductor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conductorId: uuid('conductor_id').notNull(),
+    tipo: documentoConductorTipoEnum('tipo').notNull(),
+    archivoUrl: text('archivo_url'),
+    fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
+    fechaVencimiento: timestamp('fecha_vencimiento', { mode: 'date' }),
+    estado: documentoEstadoEnum('estado').notNull().default('vigente'),
+    notas: text('notas'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conductorIdx: index('idx_docs_conductor_conductor').on(table.conductorId),
+    expiryIdx: index('idx_docs_conductor_vencimiento').on(table.fechaVencimiento),
+    estadoIdx: index('idx_docs_conductor_estado').on(table.estado),
+  }),
+);
+
+/**
+ * D2 — Posiciones GPS reportadas por el browser del conductor para vehículos
+ * SIN Teltonika asociado. Stream paralelo a `telemetria_puntos` (que es el
+ * canal Teltonika). Los endpoints de lectura `/vehiculos/:id/ubicacion` y
+ * `/vehiculos/flota` consultan ambos streams y devuelven el más reciente.
+ *
+ * Source siempre 'browser' por ahora; campo reservado para futuros canales
+ * (e.g. driver app nativa, IoT plug-and-play sin Teltonika).
+ */
+export const posicionesMovilConductor = pgTable(
+  'posiciones_movil_conductor',
+  {
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+    assignmentId: uuid('asignacion_id'),
+    vehicleId: uuid('vehiculo_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'restrict' }),
+    /**
+     * User id del conductor que reporta (en lugar de driver_id del
+     * conductor.id) para mantener trazabilidad incluso cuando se borra el
+     * registro `conductores` por baja del carrier.
+     */
+    userId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    timestampDevice: timestamp('timestamp_device', { withTimezone: true }).notNull(),
+    timestampReceivedAt: timestamp('timestamp_recibido_en', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    latitude: numeric('latitud', { precision: 10, scale: 7 }).notNull(),
+    longitude: numeric('longitud', { precision: 10, scale: 7 }).notNull(),
+    /** Precisión reportada por el browser en metros. Null si no disponible. */
+    accuracyM: numeric('precision_m', { precision: 8, scale: 2 }),
+    speedKmh: numeric('velocidad_kmh', { precision: 6, scale: 2 }),
+    headingDeg: smallint('rumbo_deg'),
+    source: varchar('fuente', { length: 20 }).notNull().default('browser'),
+  },
+  (table) => ({
+    vehicleTsIdx: index('idx_posmovil_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
+    userTsIdx: index('idx_posmovil_usuario_ts').on(table.userId, table.timestampDevice),
+  }),
+);
+
+/**
+ * Conductores — perfil profesional separado de `users` (que es la identidad
+ * Firebase / auth). Un user puede ser conductor en una sola empresa
+ * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
+ * crea de nuevo. La empresa debe ser transportista (validado en runtime, no
+ * en BD para mantener flexibilidad cuando una empresa cambia su flag).
+ *
+ * NO relación 1:1 conductor↔vehículo: la asignación de un conductor a un
+ * viaje específico vive en `asignaciones`. Un mismo conductor puede operar
+ * varios vehículos (turnos, reemplazos) y un mismo vehículo puede ser
+ * operado por varios conductores. La validación de "licencia vencida" o
+ * "extranjero en ruta a puerto restringido" se hace al crear la asignación,
+ * no en este modelo.
+ *
+ * Soft delete vía `deletedAt`: cuando un conductor deja la empresa quedan
+ * referenciado por sus asignaciones históricas para auditoría.
+ */
+export const conductores = pgTable(
+  'conductores',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('usuario_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    licenseClass: licenciaClaseEnum('licencia_clase').notNull(),
+    licenseNumber: varchar('licencia_numero', { length: 50 }).notNull(),
+    /**
+     * Vencimiento de la licencia. DATE en Postgres (sin hora) — la
+     * resolución diaria es suficiente y simplifica chequeos contra NOW().
+     */
+    licenseExpiry: timestamp('licencia_vencimiento', { mode: 'date' }).notNull(),
+    /**
+     * `true` si el conductor no es chileno residente. Algunos puertos
+     * (San Antonio, Valparaíso) y plantas industriales bloquean el ingreso
+     * de conductores extranjeros — se valida al asignar viaje, no acá.
+     */
+    isExtranjero: boolean('es_extranjero').notNull().default(false),
+    driverStatus: driverStatusEnum('estado_conductor').notNull().default('activo'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    /** Soft delete — cuando el conductor deja la empresa. */
+    deletedAt: timestamp('eliminado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    empresaIdx: index('idx_conductores_empresa').on(table.empresaId),
+    statusIdx: index('idx_conductores_estado').on(table.driverStatus),
+    expiryIdx: index('idx_conductores_licencia_vencimiento').on(table.licenseExpiry),
+    notDeletedIdx: index('idx_conductores_no_eliminados')
+      .on(table.empresaId, table.driverStatus)
+      .where(sql`${table.deletedAt} IS NULL`),
   }),
 );
 
@@ -1597,6 +1938,16 @@ export type TripMetricsRow = typeof tripMetrics.$inferSelect;
 export type NewTripMetricsRow = typeof tripMetrics.$inferInsert;
 export type StakeholderRow = typeof stakeholders.$inferSelect;
 export type NewStakeholderRow = typeof stakeholders.$inferInsert;
+export type ConductorRow = typeof conductores.$inferSelect;
+export type NewConductorRow = typeof conductores.$inferInsert;
+export type SucursalEmpresaRow = typeof sucursalesEmpresa.$inferSelect;
+export type NewSucursalEmpresaRow = typeof sucursalesEmpresa.$inferInsert;
+export type PosicionMovilConductorRow = typeof posicionesMovilConductor.$inferSelect;
+export type NewPosicionMovilConductorRow = typeof posicionesMovilConductor.$inferInsert;
+export type DocumentoVehiculoRow = typeof documentosVehiculo.$inferSelect;
+export type NewDocumentoVehiculoRow = typeof documentosVehiculo.$inferInsert;
+export type DocumentoConductorRow = typeof documentosConductor.$inferSelect;
+export type NewDocumentoConductorRow = typeof documentosConductor.$inferInsert;
 export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;

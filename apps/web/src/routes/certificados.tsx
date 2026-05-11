@@ -234,9 +234,73 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
             </code>
             .
           </p>
+
+          {/* D5 — Surfacing del método de cálculo. Aparece después de la
+              tabla porque el usuario suele entrar primero a "ver mi total"
+              y después quiere entender "cómo se calculó". */}
+          <MethodologyCard />
         </>
       )}
     </Layout>
+  );
+}
+
+/**
+ * D5 — Card explicativa del método de cálculo de huella. No usa data en
+ * vivo — es el "explainer" que se muestra al stakeholder y al shipper que
+ * quiere entender qué hay detrás del número kg CO2e del certificado.
+ */
+function MethodologyCard() {
+  return (
+    <section className="mt-8 rounded-lg border border-emerald-100 bg-emerald-50/40 p-5">
+      <h2 className="font-semibold text-base text-neutral-900">
+        Cómo calculamos la huella de carbono
+      </h2>
+      <p className="mt-1 text-neutral-700 text-sm">
+        Aplicamos GLEC Framework v3.0 (Smart Freight Centre) con factores de emisión publicados por
+        la Superintendencia de Electricidad y Combustibles (SEC) de Chile, edición 2024.
+      </p>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <MethodologyItem
+          step="1. Distancia"
+          body="Distancia real recorrida por el vehículo, medida con telemetría Teltonika o, en su defecto, ruta calculada por Google Routes API."
+        />
+        <MethodologyItem
+          step="2. Consumo"
+          body="Consumo declarado L/100km × distancia. Si el vehículo no declara consumo, usamos default por tipo y combustible."
+        />
+        <MethodologyItem
+          step="3. Factor emisión"
+          body="Factor SEC Chile 2024 (kg CO₂e/L). Diesel: 2,68. Gasolina: 2,32. GNC: 2,07. Eléctrico: factor de la matriz CL."
+        />
+      </div>
+
+      <div className="mt-4 rounded-md border border-emerald-200 bg-white p-3 font-mono text-neutral-800 text-xs">
+        <div className="font-semibold text-emerald-700">Ejemplo viaje Santiago → Concepción</div>
+        <div className="mt-2 space-y-0.5">
+          <div>distancia = 500 km</div>
+          <div>consumo = 28 L/100km · diesel (camión pesado cargado)</div>
+          <div>litros = 500 × 28 / 100 = 140 L</div>
+          <div>kg CO₂e = 140 × 2,68 = 375,2 kg</div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-neutral-600 text-xs">
+        El <strong>"Ahorro CO₂e via matching"</strong> compara la emisión real del viaje contra el
+        escenario sin matching (vehículo regresa vacío). Con backhaul ese viaje contraflujo no
+        ocurre, así que el ahorro es la emisión evitada del trip espejo.
+      </p>
+    </section>
+  );
+}
+
+function MethodologyItem({ step, body }: { step: string; body: string }) {
+  return (
+    <div className="rounded-md border border-emerald-100 bg-white p-3">
+      <div className="font-semibold text-emerald-700 text-xs uppercase tracking-wider">{step}</div>
+      <p className="mt-1 text-neutral-700 text-xs">{body}</p>
+    </div>
   );
 }
 

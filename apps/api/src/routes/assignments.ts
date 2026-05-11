@@ -25,6 +25,7 @@ import type { Db } from '../db/client.js';
 import {
   assignments,
   empresas as empresasTable,
+  posicionesMovilConductor,
   telemetryPoints,
   tripMetrics,
   trips,
@@ -369,6 +370,71 @@ export function createAssignmentsRoutes(opts: {
   const incidentBodySchema = z.object({
     incident_type: z.enum(INCIDENT_TYPES),
     description: z.string().trim().max(1000).optional(),
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/driver-position — D2: el conductor reporta posición desde el
+  // browser. Path complementario al stream de Teltonika cuando el vehículo
+  // no tiene device asociado.
+  //
+  // Auth: el user autenticado debe coincidir con assignment.driverUserId
+  // (es decir, el conductor asignado al viaje). No requiere rol específico
+  // del activeMembership (un user puede tener rol conductor en empresa X y
+  // dueño en empresa Y; lo importante es que es EL driver de este viaje).
+  // ---------------------------------------------------------------------
+  const driverPositionBodySchema = z.object({
+    timestamp_device: z.string().datetime(),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    accuracy_m: z.number().positive().max(10_000).nullable().optional(),
+    speed_kmh: z.number().min(0).max(300).nullable().optional(),
+    heading_deg: z.number().min(0).max(360).nullable().optional(),
+  });
+
+  app.post('/:id/driver-position', zValidator('json', driverPositionBodySchema), async (c) => {
+    const userContext = c.get('userContext');
+    if (!userContext) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    const assignmentId = c.req.param('id');
+    const body = c.req.valid('json');
+
+    // Verificar que el assignment existe y el user es el driver asignado.
+    const [assignment] = await opts.db
+      .select({
+        id: assignments.id,
+        driverUserId: assignments.driverUserId,
+        vehicleId: assignments.vehicleId,
+        status: assignments.status,
+      })
+      .from(assignments)
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+    if (!assignment) {
+      return c.json({ error: 'assignment_not_found' }, 404);
+    }
+    if (assignment.driverUserId !== userContext.user.id) {
+      return c.json({ error: 'not_assigned_driver', code: 'not_assigned_driver' }, 403);
+    }
+    // Solo aceptamos posiciones durante el viaje activo (no si ya terminó).
+    if (assignment.status !== 'asignado' && assignment.status !== 'recogido') {
+      return c.json({ error: 'assignment_not_active', code: 'assignment_not_active' }, 409);
+    }
+
+    await opts.db.insert(posicionesMovilConductor).values({
+      assignmentId,
+      vehicleId: assignment.vehicleId,
+      userId: userContext.user.id,
+      timestampDevice: new Date(body.timestamp_device),
+      latitude: body.latitude.toString(),
+      longitude: body.longitude.toString(),
+      accuracyM: body.accuracy_m != null ? body.accuracy_m.toString() : null,
+      speedKmh: body.speed_kmh != null ? body.speed_kmh.toString() : null,
+      headingDeg: body.heading_deg != null ? Math.round(body.heading_deg) : null,
+      source: 'browser',
+    });
+
+    return c.json({ ok: true });
   });
 
   app.post('/:id/incidents', zValidator('json', incidentBodySchema), async (c) => {

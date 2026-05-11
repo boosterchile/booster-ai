@@ -14,6 +14,7 @@ import {
 import { type ReactNode, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
 import {
@@ -156,11 +157,100 @@ function ConductorModoPage({ me }: { me: MeOnboarded }) {
             requestingMic={requestingMic}
             requestingGeo={requestingGeo}
           />
+          <MobileGpsReporterCard geoPermission={permissions.geo} />
           <VoiceCommandsReferenceCard />
           <HowItWorksCard />
         </div>
       </div>
     </Layout>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// D2 — Card: Reporte GPS móvil para vehículos SIN Teltonika
+// ---------------------------------------------------------------------------
+
+function MobileGpsReporterCard({ geoPermission }: { geoPermission: PermissionStatus }) {
+  const [assignmentId, setAssignmentId] = useState('');
+  const reporter = useDriverPositionReporter();
+  const canStart =
+    geoPermission === 'granted' && assignmentId.trim().length > 0 && !reporter.isWatching;
+
+  return (
+    <section
+      aria-label="Reporte GPS móvil"
+      className="rounded-lg border border-neutral-200 bg-white p-5"
+      data-testid="gps-reporter-card"
+    >
+      <div className="flex items-start gap-3">
+        <Navigation className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
+        <div className="flex-1">
+          <h2 className="font-semibold text-base text-neutral-900">
+            Reporte GPS móvil (sin Teltonika)
+          </h2>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Si tu vehículo no tiene equipo Teltonika instalado, podemos seguir tu trayecto usando el
+            GPS de tu teléfono. Pega el ID de tu asignación activa y presiona "Iniciar reporte".
+          </p>
+
+          {geoPermission !== 'granted' && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
+              Habilita el permiso GPS arriba antes de iniciar el reporte.
+            </div>
+          )}
+
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+            <input
+              type="text"
+              value={assignmentId}
+              onChange={(e) => setAssignmentId(e.target.value)}
+              placeholder="ID de asignación (UUID)"
+              className="rounded-md border border-neutral-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              disabled={reporter.isWatching}
+              data-testid="gps-reporter-assignment-input"
+            />
+            {reporter.isWatching ? (
+              <button
+                type="button"
+                onClick={() => reporter.stop()}
+                className="rounded-md bg-danger-600 px-4 py-2 font-medium text-sm text-white hover:bg-danger-700"
+                data-testid="gps-reporter-stop"
+              >
+                Detener
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => reporter.start(assignmentId.trim())}
+                disabled={!canStart}
+                className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                data-testid="gps-reporter-start"
+              >
+                Iniciar reporte
+              </button>
+            )}
+          </div>
+
+          {reporter.isWatching && (
+            <div className="mt-3 rounded-md bg-success-50 px-3 py-2 text-success-700 text-sm">
+              Reportando posición en vivo · {reporter.pointsSent} puntos enviados
+              {reporter.lastPosition && (
+                <div className="mt-1 font-mono text-xs">
+                  {reporter.lastPosition.latitude.toFixed(5)},{' '}
+                  {reporter.lastPosition.longitude.toFixed(5)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {reporter.lastError && (
+            <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
+              {reporter.lastError}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

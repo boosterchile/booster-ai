@@ -148,6 +148,48 @@
       "when": 1779667200000,
       "tag": "0020_assignments_eco_route_polyline",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1779753600000,
+      "tag": "0021_conductores",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1779840000000,
+      "tag": "0022_users_activation_pin",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1779926400000,
+      "tag": "0023_sucursales_empresa",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780012800000,
+      "tag": "0024_demo_seed_espejo",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780099200000,
+      "tag": "0025_posiciones_movil",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1780185600000,
+      "tag": "0026_compliance_documentos",
+      "breakpoints": true
     }
   ]
 }

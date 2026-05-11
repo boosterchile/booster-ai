@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { chileanPlateSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { telemetryPoints, vehicles } from '../db/schema.js';
+import { posicionesMovilConductor, telemetryPoints, vehicles } from '../db/schema.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -158,6 +158,175 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       .orderBy(asc(vehicles.plate));
 
     return c.json({ vehicles: rows });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /flota — vehículos de la empresa con su última ubicación.
+  //
+  // Versión bulk de /:id/ubicacion: una sola query con LATERAL JOIN
+  // (vía subselect DISTINCT ON) que retorna todos los vehículos de la
+  // empresa activa + su último punto GPS (si existe). Pensado para la
+  // vista de seguimiento de flota (/app/flota) que necesita renderizar
+  // un mapa con N markers sin N+1 round trips.
+  //
+  // Vehículos sin Teltonika asociado o sin telemetría todavía aparecen
+  // con `position: null`. La UI los muestra como "Sin posición aún".
+  // ---------------------------------------------------------------------
+  app.get('/flota', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const vehicleRows = await opts.db
+      .select({
+        id: vehicles.id,
+        plate: vehicles.plate,
+        type: vehicles.vehicleType,
+        teltonika_imei: vehicles.teltonikaImei,
+        teltonika_imei_espejo: vehicles.teltonikaImeiEspejo,
+        status: vehicles.vehicleStatus,
+      })
+      .from(vehicles)
+      .where(eq(vehicles.empresaId, empresaId))
+      .orderBy(asc(vehicles.plate));
+
+    // D1/D2 — Particionamos los vehículos en tres grupos:
+    //   - withOwnDevice: tienen teltonika_imei propio → lookup por
+    //     vehicle_id (path histórico, eficiente con indice ya existente).
+    //   - withMirrorImei: solo tienen espejo → lookup por imei. Su data
+    //     pertenece al stream de otro vehículo físico (demo o redundancia).
+    //   - withoutDevice: sin Teltonika → lookup en posiciones_movil_conductor
+    //     por vehicle_id (D2 browser GPS).
+    const withOwnDevice = vehicleRows.filter((v) => v.teltonika_imei != null);
+    const withMirrorImei = vehicleRows.filter(
+      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo != null,
+    );
+    const withoutDevice = vehicleRows.filter(
+      (v) => v.teltonika_imei == null && v.teltonika_imei_espejo == null,
+    );
+
+    type LastPoint = {
+      timestamp_device: Date;
+      latitude: string | null;
+      longitude: string | null;
+      speed_kmh: number | null;
+      angle_deg: number | null;
+    };
+
+    const ownVehicleIds = withOwnDevice.map((v) => v.id);
+    const ownLastPoints =
+      ownVehicleIds.length === 0
+        ? []
+        : await opts.db
+            .selectDistinctOn([telemetryPoints.vehicleId], {
+              vehicle_id: telemetryPoints.vehicleId,
+              timestamp_device: telemetryPoints.timestampDevice,
+              latitude: telemetryPoints.latitude,
+              longitude: telemetryPoints.longitude,
+              speed_kmh: telemetryPoints.speedKmh,
+              angle_deg: telemetryPoints.angleDeg,
+            })
+            .from(telemetryPoints)
+            .where(inArray(telemetryPoints.vehicleId, ownVehicleIds))
+            .orderBy(telemetryPoints.vehicleId, desc(telemetryPoints.timestampDevice));
+    const lastByVehicleId = new Map<string, LastPoint>();
+    for (const p of ownLastPoints) {
+      if (p.vehicle_id != null) {
+        lastByVehicleId.set(p.vehicle_id, p);
+      }
+    }
+
+    const mirrorImeis = [
+      ...new Set(
+        withMirrorImei.map((v) => v.teltonika_imei_espejo).filter((x): x is string => x != null),
+      ),
+    ];
+    const mirrorLastPoints =
+      mirrorImeis.length === 0
+        ? []
+        : await opts.db
+            .selectDistinctOn([telemetryPoints.imei], {
+              imei: telemetryPoints.imei,
+              timestamp_device: telemetryPoints.timestampDevice,
+              latitude: telemetryPoints.latitude,
+              longitude: telemetryPoints.longitude,
+              speed_kmh: telemetryPoints.speedKmh,
+              angle_deg: telemetryPoints.angleDeg,
+            })
+            .from(telemetryPoints)
+            .where(inArray(telemetryPoints.imei, mirrorImeis))
+            .orderBy(telemetryPoints.imei, desc(telemetryPoints.timestampDevice));
+    const lastByImei = new Map<string, LastPoint>();
+    for (const p of mirrorLastPoints) {
+      lastByImei.set(p.imei, p);
+    }
+
+    // D2 — Browser GPS lookup para vehículos sin Teltonika.
+    const noDeviceVehicleIds = withoutDevice.map((v) => v.id);
+    const browserLastPoints =
+      noDeviceVehicleIds.length === 0
+        ? []
+        : await opts.db
+            .selectDistinctOn([posicionesMovilConductor.vehicleId], {
+              vehicle_id: posicionesMovilConductor.vehicleId,
+              timestamp_device: posicionesMovilConductor.timestampDevice,
+              latitude: posicionesMovilConductor.latitude,
+              longitude: posicionesMovilConductor.longitude,
+              speed_kmh: posicionesMovilConductor.speedKmh,
+              heading_deg: posicionesMovilConductor.headingDeg,
+            })
+            .from(posicionesMovilConductor)
+            .where(inArray(posicionesMovilConductor.vehicleId, noDeviceVehicleIds))
+            .orderBy(
+              posicionesMovilConductor.vehicleId,
+              desc(posicionesMovilConductor.timestampDevice),
+            );
+    const browserByVehicleId = new Map<string, LastPoint>();
+    for (const p of browserLastPoints) {
+      browserByVehicleId.set(p.vehicle_id, {
+        timestamp_device: p.timestamp_device,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        speed_kmh: p.speed_kmh != null ? Number.parseFloat(p.speed_kmh) : null,
+        angle_deg: p.heading_deg,
+      });
+    }
+
+    const fleet = vehicleRows.map((v) => {
+      const point: LastPoint | undefined = v.teltonika_imei
+        ? lastByVehicleId.get(v.id)
+        : v.teltonika_imei_espejo
+          ? lastByImei.get(v.teltonika_imei_espejo)
+          : browserByVehicleId.get(v.id);
+      const source: 'own' | 'mirror' | 'browser_gps' | null = v.teltonika_imei
+        ? 'own'
+        : v.teltonika_imei_espejo
+          ? 'mirror'
+          : point
+            ? 'browser_gps'
+            : null;
+      return {
+        id: v.id,
+        plate: v.plate,
+        type: v.type,
+        teltonika_imei: v.teltonika_imei ?? v.teltonika_imei_espejo,
+        teltonika_source: source,
+        status: v.status,
+        position: point
+          ? {
+              timestamp_device: point.timestamp_device,
+              latitude: point.latitude != null ? Number.parseFloat(point.latitude) : null,
+              longitude: point.longitude != null ? Number.parseFloat(point.longitude) : null,
+              speed_kmh: point.speed_kmh,
+              angle_deg: point.angle_deg,
+            }
+          : null,
+      };
+    });
+
+    return c.json({ fleet });
   });
 
   // ---------------------------------------------------------------------
@@ -430,18 +599,70 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const empresaId = auth.activeMembership.empresa.id;
 
     const [vehicle] = await opts.db
-      .select({ id: vehicles.id, plate: vehicles.plate, teltonikaImei: vehicles.teltonikaImei })
+      .select({
+        id: vehicles.id,
+        plate: vehicles.plate,
+        teltonikaImei: vehicles.teltonikaImei,
+        teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+      })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
     if (!vehicle) {
       return c.json({ error: 'vehicle_not_found' }, 404);
     }
-    if (!vehicle.teltonikaImei) {
-      return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
+
+    // D1/D2 — Determinar fuente de datos en orden de prioridad:
+    //   - Tiene teltonika_imei propio → leer por vehicle_id (path histórico).
+    //   - Tiene teltonika_imei_espejo → leer por imei (D1 mirror).
+    //   - No tiene ningún Teltonika → leer de posiciones_movil_conductor (D2
+    //     GPS browser).
+    const effectiveImei = vehicle.teltonikaImei ?? vehicle.teltonikaImeiEspejo;
+
+    if (!effectiveImei) {
+      // D2 — Browser GPS fallback.
+      const [browserPoint] = await opts.db
+        .select({
+          timestamp_device: posicionesMovilConductor.timestampDevice,
+          timestamp_received_at: posicionesMovilConductor.timestampReceivedAt,
+          latitude: posicionesMovilConductor.latitude,
+          longitude: posicionesMovilConductor.longitude,
+          speed_kmh: posicionesMovilConductor.speedKmh,
+          heading_deg: posicionesMovilConductor.headingDeg,
+          accuracy_m: posicionesMovilConductor.accuracyM,
+        })
+        .from(posicionesMovilConductor)
+        .where(eq(posicionesMovilConductor.vehicleId, id))
+        .orderBy(desc(posicionesMovilConductor.timestampDevice))
+        .limit(1);
+
+      if (!browserPoint) {
+        return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
+      }
+
+      return c.json({
+        vehicle_id: id,
+        plate: vehicle.plate,
+        teltonika_imei: null,
+        teltonika_source: 'browser_gps',
+        ubicacion: {
+          timestamp_device: browserPoint.timestamp_device,
+          timestamp_received_at: browserPoint.timestamp_received_at,
+          latitude: Number.parseFloat(browserPoint.latitude),
+          longitude: Number.parseFloat(browserPoint.longitude),
+          altitude_m: null,
+          angle_deg: browserPoint.heading_deg,
+          satellites: null,
+          speed_kmh:
+            browserPoint.speed_kmh != null ? Number.parseFloat(browserPoint.speed_kmh) : null,
+          priority: 0,
+          accuracy_m:
+            browserPoint.accuracy_m != null ? Number.parseFloat(browserPoint.accuracy_m) : null,
+        },
+      });
     }
 
-    const [last] = await opts.db
+    const baseSelect = opts.db
       .select({
         timestamp_device: telemetryPoints.timestampDevice,
         timestamp_received_at: telemetryPoints.timestampReceivedAt,
@@ -453,10 +674,17 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         speed_kmh: telemetryPoints.speedKmh,
         priority: telemetryPoints.priority,
       })
-      .from(telemetryPoints)
-      .where(eq(telemetryPoints.vehicleId, id))
-      .orderBy(desc(telemetryPoints.timestampDevice))
-      .limit(1);
+      .from(telemetryPoints);
+
+    const [last] = vehicle.teltonikaImei
+      ? await baseSelect
+          .where(eq(telemetryPoints.vehicleId, id))
+          .orderBy(desc(telemetryPoints.timestampDevice))
+          .limit(1)
+      : await baseSelect
+          .where(eq(telemetryPoints.imei, effectiveImei))
+          .orderBy(desc(telemetryPoints.timestampDevice))
+          .limit(1);
 
     if (!last) {
       return c.json(
@@ -464,7 +692,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           error: 'no_points_yet',
           code: 'no_points_yet',
           plate: vehicle.plate,
-          imei: vehicle.teltonikaImei,
+          imei: effectiveImei,
         },
         404,
       );
@@ -473,7 +701,14 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     return c.json({
       vehicle_id: id,
       plate: vehicle.plate,
-      teltonika_imei: vehicle.teltonikaImei,
+      teltonika_imei: effectiveImei,
+      /**
+       * D1/D2 — `teltonika_source` indica el canal de la posición:
+       *   - `own`: Teltonika propio del vehículo.
+       *   - `mirror`: leyendo el stream de otro IMEI (demo).
+       *   - `browser_gps`: posición del browser del conductor (D2).
+       */
+      teltonika_source: vehicle.teltonikaImei ? 'own' : 'mirror',
       ubicacion: {
         timestamp_device: last.timestamp_device,
         timestamp_received_at: last.timestamp_received_at,

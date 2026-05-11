@@ -15,6 +15,9 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  // D9 — el dashboard renderiza <Navigate to="/app/conductor/modo" /> cuando
+  // el rol activo es conductor. Stub que no crashea en tests sin router real.
+  Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
 }));
 
 const signOutUserMock = vi.fn();
@@ -110,9 +113,20 @@ describe('AppRoute', () => {
   });
 
   it('no admin → no muestra admin dispositivos', () => {
-    providedContext = { kind: 'onboarded', me: makeMe('conductor') };
+    // D9: rol conductor ahora redirige a /app/conductor/modo, así que en
+    // vez de chequear el dashboard original chequeamos que el Navigate
+    // stub aparezca y que "Dispositivos pendientes" NO esté.
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     render(<AppRoute />);
     expect(screen.queryByText(/Dispositivos pendientes/)).not.toBeInTheDocument();
+  });
+
+  it('rol conductor → redirige a /app/conductor/modo (D9 surface guard)', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('conductor') };
+    render(<AppRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/conductor/modo');
+    // El dashboard original NO debería renderizarse.
+    expect(screen.queryByText('Bienvenido a Booster')).not.toBeInTheDocument();
   });
 
   it('click Salir → signOutUser', () => {

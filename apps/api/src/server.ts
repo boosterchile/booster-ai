@@ -13,10 +13,14 @@ import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
+import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
+import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
+import { createConductoresRoutes } from './routes/conductores.js';
+import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -24,6 +28,7 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
@@ -335,12 +340,55 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/liquidaciones/*', userContextMiddleware);
     app.route('/admin/liquidaciones', createAdminLiquidacionesRoutes({ db: opts.db, logger }));
 
+    // D1 — Admin seed demo (POST/DELETE). Auth platform-admin allowlist.
+    app.use('/admin/seed/*', firebaseAuthMiddleware);
+    app.use('/admin/seed/*', userContextMiddleware);
+    app.route(
+      '/admin/seed',
+      createAdminSeedRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
+
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);
     app.use('/vehiculos/*', userContextMiddleware);
     app.use('/vehiculos', firebaseAuthMiddleware);
     app.use('/vehiculos', userContextMiddleware);
     app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
+
+    // Conductores de la empresa activa (carrier). D8 — solo accesible
+    // desde la interfaz transportista; el conductor mismo no consume estos
+    // endpoints (su surface vive en D9 driver-only).
+    app.use('/conductores/*', firebaseAuthMiddleware);
+    app.use('/conductores/*', userContextMiddleware);
+    app.use('/conductores', firebaseAuthMiddleware);
+    app.use('/conductores', userContextMiddleware);
+    app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
+
+    // D9 — Driver-only auth surface. `/auth/driver-activate` NO requiere
+    // firebase auth previa (el driver aún no tiene Firebase user). Otros
+    // endpoints de `/auth/*` futuros podrían tenerla; por eso montamos
+    // este sin middleware encima.
+    app.route(
+      '/auth',
+      createDriverAuthRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
+
+    // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
+    app.use('/sucursales/*', firebaseAuthMiddleware);
+    app.use('/sucursales/*', userContextMiddleware);
+    app.use('/sucursales', firebaseAuthMiddleware);
+    app.use('/sucursales', userContextMiddleware);
+    app.route('/sucursales', createSucursalesRoutes({ db: opts.db, logger }));
+
+    // D6 — Compliance: documentos de vehículo + conductor + dashboard.
+    app.use('/documentos/*', firebaseAuthMiddleware);
+    app.use('/documentos/*', userContextMiddleware);
+    app.route('/documentos', createDocumentosRoutes({ db: opts.db, logger }));
+    app.use('/cumplimiento', firebaseAuthMiddleware);
+    app.use('/cumplimiento', userContextMiddleware);
+    app.use('/cumplimiento/*', firebaseAuthMiddleware);
+    app.use('/cumplimiento/*', userContextMiddleware);
+    app.route('/cumplimiento', createCumplimientoRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
       'firebaseAuth instance not provided — /me + /empresas routes disabled. Esto solo es OK en tests que no necesitan auth de usuario.',

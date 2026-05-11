@@ -197,7 +197,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
         hint={
           rutDisabled
             ? 'Tu RUT no se puede modificar. Si necesitas cambiarlo, contacta a soporte.'
-            : 'Tu RUT personal. Una vez declarado no se puede modificar desde aquí.'
+            : 'Sin puntos, con guión. Ejemplo: 12345678-5. Una vez declarado no se puede modificar desde aquí.'
         }
         error={errors.rut?.message}
         render={({ id, describedBy }) => (
@@ -209,7 +209,8 @@ export function ProfileForm({ initial }: ProfileFormProps) {
             // Cuando está editable dejamos el valor crudo para no pelear con el cursor.
             value={rutDisabled ? formatRut(initial.rut ?? '') : undefined}
             autoComplete="off"
-            placeholder="12.345.678-9"
+            placeholder="12345678-5"
+            inputMode="text"
             disabled={rutDisabled}
             className={`${inputClass(!!errors.rut)} disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500`}
           />
