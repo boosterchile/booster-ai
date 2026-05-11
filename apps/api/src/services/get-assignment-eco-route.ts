@@ -45,18 +45,19 @@ import { RoutesApiError, computeRoutes } from './routes-api.js';
 export interface AssignmentEcoRoute {
   /** Polyline encoded de Routes API. null cuando no se pudo obtener (sin key, API failure, etc). */
   polylineEncoded: string | null;
-  /** Distancia por carretera en km. null cuando polyline=null. */
+  /** Distancia por carretera en km. null cuando polyline=null o servida desde cache DB. */
   distanceKm: number | null;
-  /** Duración estimada en segundos. null cuando polyline=null. */
+  /** Duración estimada en segundos. null cuando polyline=null o servida desde cache DB. */
   durationS: number | null;
   /**
    * Code legible para el UI cuando no hay polyline:
-   *   - 'ok': polyline presente
+   *   - 'ok': polyline presente (live Routes API call)
+   *   - 'ok_cached': polyline presente, servida desde DB (Phase 1 PR-H5b)
    *   - 'no_routes_api_key': API key no configurada en el entorno
    *   - 'routes_api_failed': Routes API rechazó o falló
    *   - 'route_empty': Routes API no encontró ruta
    */
-  status: 'ok' | 'no_routes_api_key' | 'routes_api_failed' | 'route_empty';
+  status: 'ok' | 'ok_cached' | 'no_routes_api_key' | 'routes_api_failed' | 'route_empty';
 }
 
 export type GetAssignmentEcoRouteResult =
@@ -73,13 +74,15 @@ export async function getAssignmentEcoRoute(opts: {
 }): Promise<GetAssignmentEcoRouteResult> {
   const { db, logger, assignmentId, empresaId, routesApiKey } = opts;
 
-  // Cargar assignment + trip en una query (origin/destination addresses).
+  // Cargar assignment + trip en una query (origin/destination addresses
+  // + polyline cacheada PR-H5b).
   const rows = await db
     .select({
       assignmentId: assignments.id,
       assignmentEmpresaId: assignments.empresaId,
       originAddress: trips.originAddressRaw,
       destinationAddress: trips.destinationAddressRaw,
+      ecoRoutePolylineEncoded: assignments.ecoRoutePolylineEncoded,
     })
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
@@ -92,6 +95,23 @@ export async function getAssignmentEcoRoute(opts: {
   }
   if (row.assignmentEmpresaId !== empresaId) {
     return { kind: 'forbidden' };
+  }
+
+  // Phase 1 PR-H5b — fast path: si la polyline ya fue capturada al
+  // momento de aceptar la oferta (offer-actions.ts post-commit), la
+  // servimos directo desde DB sin tocar Routes API. distance/duration
+  // no se persistieron (esos vienen sólo del call live) — el cliente
+  // las usa para info opcional, no son críticas.
+  if (row.ecoRoutePolylineEncoded) {
+    return {
+      kind: 'ok',
+      data: {
+        polylineEncoded: row.ecoRoutePolylineEncoded,
+        distanceKm: null,
+        durationS: null,
+        status: 'ok_cached',
+      },
+    };
   }
 
   if (!routesApiKey) {

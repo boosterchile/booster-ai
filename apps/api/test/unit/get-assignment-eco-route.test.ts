@@ -50,6 +50,7 @@ interface JoinRow {
   assignmentEmpresaId: string;
   originAddress: string;
   destinationAddress: string;
+  ecoRoutePolylineEncoded?: string | null;
 }
 
 function makeDb(row: JoinRow | null) {
@@ -113,6 +114,54 @@ describe('getAssignmentEcoRoute', () => {
       });
     }
     expect(computeRoutes).not.toHaveBeenCalled();
+  });
+
+  it('PR-H5b fast path: polyline persistida en DB → status=ok_cached sin Routes API call', async () => {
+    const db = makeDb({
+      ...validRow,
+      ecoRoutePolylineEncoded: 'persisted_polyline_xyz',
+    });
+    const result = await getAssignmentEcoRoute({
+      db,
+      logger: noopLogger as never,
+      assignmentId: ASSIGNMENT_ID,
+      empresaId: EMPRESA_ID,
+      routesApiKey: 'fake-key', // present pero NO debe usarse
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.data).toEqual({
+        polylineEncoded: 'persisted_polyline_xyz',
+        distanceKm: null,
+        durationS: null,
+        status: 'ok_cached',
+      });
+    }
+    // **Crítico**: el fast path NO debe disparar el Routes API call.
+    expect(computeRoutes).not.toHaveBeenCalled();
+  });
+
+  it('PR-H5b: polyline NULL en DB + routesApiKey presente → live Routes API call', async () => {
+    (computeRoutes as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { distanceKm: 200, durationS: 7200, fuelL: 30, polylineEncoded: 'live_polyline' },
+    ]);
+    const db = makeDb({
+      ...validRow,
+      ecoRoutePolylineEncoded: null,
+    });
+    const result = await getAssignmentEcoRoute({
+      db,
+      logger: noopLogger as never,
+      assignmentId: ASSIGNMENT_ID,
+      empresaId: EMPRESA_ID,
+      routesApiKey: 'fake-key',
+    });
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.data.status).toBe('ok');
+      expect(result.data.polylineEncoded).toBe('live_polyline');
+    }
+    expect(computeRoutes).toHaveBeenCalledTimes(1);
   });
 
   it('Routes API exitosa → polyline + distance + duration', async () => {

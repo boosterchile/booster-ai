@@ -16,6 +16,7 @@ import {
   type NotifyTrackingLinkDeps,
   notifyTrackingLinkAtAssignment,
 } from './notify-tracking-link.js';
+import { persistEcoRoutePolyline } from './persist-eco-route-polyline.js';
 
 /**
  * Errores tipados para mapear a HTTP status en el route layer.
@@ -257,6 +258,25 @@ export async function acceptOffer(opts: {
             'fallo despachar tracking link tras accept (sin impacto en assignment)',
           );
         }
+      }
+
+      // Phase 1 PR-H5b — capturar y persistir polyline eco-ruta para que
+      // GET /assignments/:id/eco-route sirva el polyline desde DB sin
+      // re-fetch a Routes API en cada visita del driver. Fire-and-forget:
+      // si Routes API falla acá, el assignment queda con
+      // eco_route_polyline_encoded=null y el endpoint hace fallback live.
+      try {
+        await persistEcoRoutePolyline({
+          db,
+          logger,
+          assignmentId: result.assignment.id,
+          ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
+        });
+      } catch (err) {
+        logger.error(
+          { err, assignmentId: result.assignment.id },
+          'fallo persistir eco-route polyline tras accept (sin impacto en assignment)',
+        );
       }
 
       return result;
