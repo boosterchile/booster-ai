@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-react';
+import { Headphones, Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
@@ -86,18 +86,28 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
                 Cargas disponibles para tu empresa. Las ofertas expiran en 1 hora.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => offersQuery.refetch()}
-              disabled={offersQuery.isFetching}
-              className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${offersQuery.isFetching ? 'animate-spin' : ''}`}
-                aria-hidden
-              />
-              {offersQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/app/conductor/modo"
+                className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100"
+                data-testid="link-modo-conductor"
+              >
+                <Headphones className="h-4 w-4" aria-hidden />
+                Modo Conductor
+              </Link>
+              <button
+                type="button"
+                onClick={() => offersQuery.refetch()}
+                disabled={offersQuery.isFetching}
+                className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${offersQuery.isFetching ? 'animate-spin' : ''}`}
+                  aria-hidden
+                />
+                {offersQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
+              </button>
+            </div>
           </div>
 
           {!isCarrier && (
