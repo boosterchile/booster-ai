@@ -400,6 +400,7 @@ export function createAssignmentsRoutes(opts: {
     const body = c.req.valid('json');
 
     // Verificar que el assignment existe y el user es el driver asignado.
+    // rls-allowlist: scope por driverUserId, no empresa — el endpoint es del driver
     const [assignment] = await opts.db
       .select({
         id: assignments.id,

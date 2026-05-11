@@ -43,6 +43,7 @@ const TENANT_FREE_TABLES = new Set([
   'chatMessages', // se filtra por assignment_id (que ya validó tenant en resolveChatAccess)
   'pushSubscriptions', // se filtra por userId
   'telemetryPoints', // se filtra por vehicleId (que ya validó tenant)
+  'posicionesMovilConductor', // se filtra por vehicleId (que ya validó tenant), igual que telemetryPoints
 ]);
 
 /** Tokens que indican filtro empresaId presente. Match case-insensitive. */
@@ -83,10 +84,11 @@ function scanFile(filePath) {
     const queryStart = content.lastIndexOf('\n', match.index) + 1;
     const lineNumber = content.slice(0, queryStart).split('\n').length;
 
-    // Ventana de búsqueda: 5 líneas anteriores + 30 siguientes (los
-    // WHERE típicamente están dentro de las primeras ~5 líneas; el
-    // allowlist comment puede ir antes o después de la línea de la query).
-    const windowStart = Math.max(0, lineNumber - 6);
+    // Ventana de búsqueda: 10 líneas anteriores + 30 siguientes. El
+    // WHERE típicamente está dentro de las primeras ~5 líneas; el lookback
+    // de 10 cubre allowlist comments que quedan arriba de un `.select({...})`
+    // multilinea antes del `.from(table)`.
+    const windowStart = Math.max(0, lineNumber - 11);
     const windowEnd = Math.min(lineNumber - 1 + 30, lines.length);
     const window = lines.slice(windowStart, windowEnd).join('\n');
 

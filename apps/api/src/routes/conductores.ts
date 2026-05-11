@@ -266,6 +266,7 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
           userId = existingUser.id;
 
           // Si ya hay conductor (no eliminado) para este user → conflicto.
+          // rls-allowlist: chequeo global de unicidad user→conductor cross-empresa
           const existingDriver = await tx
             .select({ id: conductores.id, deletedAt: conductores.deletedAt })
             .from(conductores)
