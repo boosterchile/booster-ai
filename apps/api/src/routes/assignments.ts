@@ -33,12 +33,20 @@ import {
 } from '../db/schema.js';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
 
 export function createAssignmentsRoutes(opts: {
   db: Db;
   logger: Logger;
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Phase 1 PR-H5 — Routes API key opcional. Si está presente, el
+   * endpoint /assignments/:id/eco-route fetches polyline desde Routes
+   * API; si no, devuelve { polyline_encoded: null, status: 'no_routes_api_key' }
+   * sin error (la página del driver sigue funcional sin mapa).
+   */
+  routesApiKey?: string | undefined;
 }) {
   const app = new Hono();
 
@@ -222,6 +230,49 @@ export function createAssignmentsRoutes(opts: {
         driver_name: row.driverName,
         ubicacion_actual: ubicacionActual,
       },
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/eco-route — polyline de la ruta sugerida por Routes API
+  // para que el driver la visualice durante el viaje (Phase 1 PR-H5).
+  //
+  // Cierra el loop carrier→driver: el carrier ya veía la ruta antes de
+  // aceptar (EcoRouteMapPreview del eco-preview, PR-H4). Post-accept,
+  // el driver entra a /app/asignaciones/:id y también debe poder ver
+  // esa misma ruta para navegarla con consciencia de huella de carbono.
+  //
+  // Auth: carrier owner del assignment. Devuelve 404 si no existe, 403
+  // si pertenece a otra empresa. Si Routes API no está configurado o
+  // falla, devuelve 200 con `polyline_encoded: null` + status code
+  // legible — la página del driver sigue funcionando sin el mapa.
+  // ---------------------------------------------------------------------
+  app.get('/:id/eco-route', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const result = await getAssignmentEcoRoute({
+      db: opts.db,
+      logger: opts.logger,
+      assignmentId,
+      empresaId,
+      ...(opts.routesApiKey ? { routesApiKey: opts.routesApiKey } : {}),
+    });
+    if (result.kind === 'not_found') {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (result.kind === 'forbidden') {
+      return c.json({ error: 'forbidden', code: 'forbidden_owner_mismatch' }, 403);
+    }
+    return c.json({
+      polyline_encoded: result.data.polylineEncoded,
+      distance_km: result.data.distanceKm,
+      duration_s: result.data.durationS,
+      status: result.data.status,
     });
   });
 

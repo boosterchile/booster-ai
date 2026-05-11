@@ -21,6 +21,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { CobraHoyButton } from '../components/cobra-hoy/CobraHoyButton.js';
+import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
@@ -122,6 +123,15 @@ function AsignacionDetallePage() {
           </div>
         </div>
       </div>
+
+      {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
+          Collapsed por default; el driver expande on-tap para ver la
+          polyline de Routes API sobre el mapa. Cierra el loop
+          carrier→driver: misma ruta que vio antes de aceptar, ahora
+          disponible durante el viaje para navegación consciente de
+          huella. Visible para cualquier trip activo o entregado (la
+          ruta sigue siendo informativa post-entrega para revisar). */}
+      {!isClosed && <AssignmentEcoRouteCard assignmentId={assignmentId} />}
 
       {/* Phase 4 PR-K4 — confirmación de entrega hands-free (voz +
           botón visual). Visible para el carrier mientras el trip está
