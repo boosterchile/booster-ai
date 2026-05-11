@@ -9,9 +9,14 @@
 
 ## TL;DR
 
-Sprint nocturno para preparar demo end-to-end de Booster AI mostrando todas las funcionalidades. **11 features delivered en un solo PR**, ~10k+ LOC, 1605+ tests verdes.
+Sprint nocturno para preparar demo end-to-end de Booster AI mostrando todas las funcionalidades. **12 features delivered en un solo PR**, ~12k LOC, 1700 tests verdes. Set completo D1-D11 + D6 (compliance documentos + dashboard).
 
-Lo único pendiente es **D6 (compliance + mantenimientos)** que se acordó dejar para otra sesión por su tamaño.
+Pendientes (follow-ups, no bloqueantes del demo):
+- D6 brazo 2 — programaciones de mantenimiento preventivo (separate PR).
+- D6 — upload directo a GCS + signed URLs + CMEK (actualmente URL externa).
+- D6 — notificaciones cron + WhatsApp template para vencimientos.
+- D11 — agregaciones reales sobre trips (actualmente mock data en frontend).
+- D7b — FK ofertas → sucursales.
 
 ---
 
@@ -30,7 +35,7 @@ Lo único pendiente es **D6 (compliance + mantenimientos)** que se acordó dejar
 | **D2** | GPS móvil del browser para vehículos sin Teltonika | ✅ | `ddf2033` |
 | **D5** | Card metodología GLEC v3.0 en certificados | ✅ | `859ae34` |
 | **D11** | Stakeholder geo dashboard (skeleton + zonas demo) | ✅ | `b7a761d` |
-| **D6** | Compliance + mantenimientos preventivos | ⏳ pendiente | — |
+| **D6** | Compliance: documentos + dashboard cumplimiento | ✅ | `b904662` |
 
 ---
 
@@ -70,10 +75,10 @@ Lo único pendiente es **D6 (compliance + mantenimientos)** que se acordó dejar
 
 | Package | Antes del sprint | Después | Δ |
 |---|---|---|---|
-| api | 680 | 734 | +54 |
+| api | 680 | 743 | +63 |
 | web | 833 | 877 | +44 |
 | shared-schemas | 65 | 80 | +15 |
-| **Total** | 1578 | 1691 | **+113** |
+| **Total** | 1578 | 1700 | **+122** |
 
 Todos verdes. Typecheck, lint y build limpios en todos los packages.
 
@@ -86,8 +91,9 @@ Todos verdes. Typecheck, lint y build limpios en todos los packages.
 - `0023_sucursales_empresa.sql` — tabla sucursales.
 - `0024_demo_seed_espejo.sql` — `vehiculos.teltonika_imei_espejo` + `empresas.es_demo`.
 - `0025_posiciones_movil.sql` — tabla posiciones_movil_conductor.
+- `0026_compliance_documentos.sql` — documentos vehículo + conductor + flag opt-in carrier.
 
-5 migraciones nuevas. Todas son ADD COLUMN nullable / CREATE TABLE nuevas — metadata-only en Postgres ≥ 11, sin rewrite de tablas existentes. Reversibles con DROP.
+6 migraciones nuevas. Todas son ADD COLUMN nullable / CREATE TABLE nuevas — metadata-only en Postgres ≥ 11, sin rewrite de tablas existentes. Reversibles con DROP.
 
 ---
 
@@ -115,9 +121,12 @@ Todos verdes. Typecheck, lint y build limpios en todos los packages.
 
 ## Pendientes / próximos pasos
 
-### En la cola explícita
+### Brazo 2 de D6 — Mantenimientos preventivos (defer a su propio PR)
 
-- **D6 — Compliance + mantenimientos preventivos**: ~40% del esfuerzo total estimado del programa demo. Modelo nuevo: `documentos_vehiculo`, `documentos_conductor`, `mantenimientos`, `programaciones_mantenimiento`. Dashboard `/app/cumplimiento`. Subida a `gs://booster-ai-docs` con CMEK. Opt-in del carrier (shipper puede solicitarlo).
+- Tabla `mantenimientos` + `programaciones_mantenimiento` con reglas tipo
+  "cada N km" / "cada N días" + alerta T días antes.
+- Servicio cron diario que recalcule `estado` de documentos vencidos.
+- Notificaciones WhatsApp template `compliance_warning_v1` 7/3/0 días antes.
 
 ### Follow-ups técnicos identificados
 
@@ -125,6 +134,7 @@ Todos verdes. Typecheck, lint y build limpios en todos los packages.
 - **D11 agregaciones reales** — sustituir mock data del frontend por queries reales sobre trips agregadas con k-anonymity ≥ 5.
 - **D7b FK ofertas → sucursal** — agregar `sucursal_origen_id` y `sucursal_destino_id` opcionales a `ofertas` (tabla) + form en `/app/cargas/nueva`.
 - **D9 logins ongoing** — el conductor activado usa Firebase email/password con el email sintético. Permitir cambio de password desde perfil.
+- **D6 upload directo a GCS** — actualmente `archivo_url` acepta URL externa (Drive/Dropbox). Para producción: bucket `gs://booster-ai-docs` en Terraform con CMEK + signed URLs server-side.
 
 ### Operacional
 
