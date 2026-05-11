@@ -107,6 +107,36 @@ export const fuelTypeEnum = pgEnum('tipo_combustible', [
 
 export const vehicleStatusEnum = pgEnum('estado_vehiculo', ['activo', 'mantenimiento', 'retirado']);
 
+/**
+ * Clases de licencia de conducir Chile (Ley Tránsito DS Nº 170):
+ *   A1-A5: profesionales (taxi/colectivo, transporte público, camiones).
+ *   A5 es la única que habilita camión articulado > 3.500 kg con remolque.
+ *   B: vehículos particulares hasta 9 pasajeros / 3.500 kg.
+ *   C: motocicletas.
+ *   D: maquinaria automotriz no agrícola.
+ *   E: tracción animal.
+ *   F: vehículos institucionales (carabineros, FFAA).
+ */
+export const licenciaClaseEnum = pgEnum('licencia_clase', [
+  'A1',
+  'A2',
+  'A3',
+  'A4',
+  'A5',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+]);
+
+export const driverStatusEnum = pgEnum('estado_conductor', [
+  'activo',
+  'suspendido',
+  'en_viaje',
+  'fuera_servicio',
+]);
+
 export const zoneTypeEnum = pgEnum('tipo_zona', ['recogida', 'entrega', 'ambos']);
 
 export const cargoTypeEnum = pgEnum('tipo_carga', [
@@ -502,6 +532,63 @@ export const vehicles = pgTable(
     typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
     teltonikaImeiIdx: index('idx_vehiculos_teltonika_imei').on(table.teltonikaImei),
+  }),
+);
+
+/**
+ * Conductores — perfil profesional separado de `users` (que es la identidad
+ * Firebase / auth). Un user puede ser conductor en una sola empresa
+ * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
+ * crea de nuevo. La empresa debe ser transportista (validado en runtime, no
+ * en BD para mantener flexibilidad cuando una empresa cambia su flag).
+ *
+ * NO relación 1:1 conductor↔vehículo: la asignación de un conductor a un
+ * viaje específico vive en `asignaciones`. Un mismo conductor puede operar
+ * varios vehículos (turnos, reemplazos) y un mismo vehículo puede ser
+ * operado por varios conductores. La validación de "licencia vencida" o
+ * "extranjero en ruta a puerto restringido" se hace al crear la asignación,
+ * no en este modelo.
+ *
+ * Soft delete vía `deletedAt`: cuando un conductor deja la empresa quedan
+ * referenciado por sus asignaciones históricas para auditoría.
+ */
+export const conductores = pgTable(
+  'conductores',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('usuario_id')
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    licenseClass: licenciaClaseEnum('licencia_clase').notNull(),
+    licenseNumber: varchar('licencia_numero', { length: 50 }).notNull(),
+    /**
+     * Vencimiento de la licencia. DATE en Postgres (sin hora) — la
+     * resolución diaria es suficiente y simplifica chequeos contra NOW().
+     */
+    licenseExpiry: timestamp('licencia_vencimiento', { mode: 'date' }).notNull(),
+    /**
+     * `true` si el conductor no es chileno residente. Algunos puertos
+     * (San Antonio, Valparaíso) y plantas industriales bloquean el ingreso
+     * de conductores extranjeros — se valida al asignar viaje, no acá.
+     */
+    isExtranjero: boolean('es_extranjero').notNull().default(false),
+    driverStatus: driverStatusEnum('estado_conductor').notNull().default('activo'),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    /** Soft delete — cuando el conductor deja la empresa. */
+    deletedAt: timestamp('eliminado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    empresaIdx: index('idx_conductores_empresa').on(table.empresaId),
+    statusIdx: index('idx_conductores_estado').on(table.driverStatus),
+    expiryIdx: index('idx_conductores_licencia_vencimiento').on(table.licenseExpiry),
+    notDeletedIdx: index('idx_conductores_no_eliminados')
+      .on(table.empresaId, table.driverStatus)
+      .where(sql`${table.deletedAt} IS NULL`),
   }),
 );
 
@@ -1597,6 +1684,8 @@ export type TripMetricsRow = typeof tripMetrics.$inferSelect;
 export type NewTripMetricsRow = typeof tripMetrics.$inferInsert;
 export type StakeholderRow = typeof stakeholders.$inferSelect;
 export type NewStakeholderRow = typeof stakeholders.$inferInsert;
+export type ConductorRow = typeof conductores.$inferSelect;
+export type NewConductorRow = typeof conductores.$inferInsert;
 export type ConsentRow = typeof consents.$inferSelect;
 export type NewConsentRow = typeof consents.$inferInsert;
 export type WhatsAppIntakeRow = typeof whatsAppIntakeDrafts.$inferSelect;

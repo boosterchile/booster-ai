@@ -148,6 +148,13 @@
       "when": 1779667200000,
       "tag": "0020_assignments_eco_route_polyline",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1779753600000,
+      "tag": "0021_conductores",
+      "breakpoints": true
     }
   ]
 }
