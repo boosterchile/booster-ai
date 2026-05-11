@@ -24,6 +24,7 @@ import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/docum
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
+import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
@@ -179,6 +180,10 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Cobra Hoy historial (requiere userContext para empresa activa).
     app.use('/me/cobra-hoy/*', userContextMiddlewareForMe);
     meRouter.route('/', createCobraHoyMeRoutes({ db: opts.db, logger }));
+    // Liquidaciones del carrier activo (ADR-031 §4.1). Requiere
+    // userContext + flag PRICING_V2_ACTIVATED.
+    app.use('/me/liquidaciones', userContextMiddlewareForMe);
+    meRouter.route('/', createMeLiquidacionesRoutes({ db: opts.db, logger }));
     app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
