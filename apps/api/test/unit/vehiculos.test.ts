@@ -362,4 +362,145 @@ describe('vehiculos routes', () => {
     const res = await app.request(`/vehiculos/${VEHICLE_ID}/telemetria`);
     expect(res.status).toBe(404);
   });
+
+  // ---------------------------------------------------------------------
+  // GET /flota — bulk para vista /app/flota (multi-vehículo + posición).
+  // ---------------------------------------------------------------------
+  describe('GET /flota', () => {
+    /**
+     * Stub específico para flota: 2 selects encadenados.
+     *   1. select.from(vehicles).where().orderBy() → vehículos de empresa
+     *   2. (si hay vehículos) selectDistinctOn.from(points).where().orderBy() → último punto por veh.
+     */
+    function makeFlotaStub(opts: {
+      vehicleRows: Record<string, unknown>[];
+      pointRows: Record<string, unknown>[];
+    }) {
+      const orderBySelect = vi.fn().mockResolvedValue(opts.vehicleRows);
+      const whereSelect = vi.fn(() => ({ orderBy: orderBySelect }));
+      const fromSelect = vi.fn(() => ({ where: whereSelect }));
+      const selectFn = vi.fn(() => ({ from: fromSelect }));
+
+      const orderByDistinct = vi.fn().mockResolvedValue(opts.pointRows);
+      const whereDistinct = vi.fn(() => ({ orderBy: orderByDistinct }));
+      const fromDistinct = vi.fn(() => ({ where: whereDistinct }));
+      const selectDistinctOnFn = vi.fn(() => ({ from: fromDistinct }));
+
+      return {
+        db: { select: selectFn, selectDistinctOn: selectDistinctOnFn } as unknown as Parameters<
+          typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+        >[0]['db'],
+        spies: { selectFn, selectDistinctOnFn },
+      };
+    }
+
+    it('sin auth → 401', async () => {
+      const stub = makeFlotaStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db, { role: null });
+      const res = await app.request('/vehiculos/flota');
+      expect(res.status).toBe(401);
+    });
+
+    it('empresa sin vehículos → fleet vacía sin tocar telemetría', async () => {
+      const stub = makeFlotaStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db);
+      const res = await app.request('/vehiculos/flota');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { fleet: unknown[] };
+      expect(body.fleet).toEqual([]);
+      // Cuando no hay vehículos, no tiene sentido ir a buscar puntos.
+      expect(stub.spies.selectDistinctOnFn).not.toHaveBeenCalled();
+    });
+
+    it('vehículos sin telemetría → position null', async () => {
+      const stub = makeFlotaStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'BCDF12',
+            type: 'camion_pequeno',
+            teltonika_imei: null,
+            status: 'activo',
+          },
+        ],
+        pointRows: [],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request('/vehiculos/flota');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        fleet: Array<{ id: string; plate: string; position: unknown }>;
+      };
+      expect(body.fleet).toHaveLength(1);
+      expect(body.fleet[0]?.position).toBeNull();
+    });
+
+    it('mergea último punto por vehículo con su position', async () => {
+      const otherVehicleId = '33333333-3333-3333-3333-333333333333';
+      const stub = makeFlotaStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'BCDF12',
+            type: 'camion_pequeno',
+            teltonika_imei: '999000000000875',
+            status: 'activo',
+          },
+          {
+            id: otherVehicleId,
+            plate: 'AAAA11',
+            type: 'furgon_mediano',
+            teltonika_imei: null,
+            status: 'activo',
+          },
+        ],
+        pointRows: [
+          {
+            vehicle_id: VEHICLE_ID,
+            timestamp_device: new Date('2026-05-10T22:00:00Z'),
+            latitude: '-33.4489',
+            longitude: '-70.6693',
+            speed_kmh: 45,
+            angle_deg: 180,
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request('/vehiculos/flota');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        fleet: Array<{
+          id: string;
+          plate: string;
+          position: { latitude: number; longitude: number; speed_kmh: number | null } | null;
+        }>;
+      };
+      expect(body.fleet).toHaveLength(2);
+      const withPos = body.fleet.find((v) => v.id === VEHICLE_ID);
+      const withoutPos = body.fleet.find((v) => v.id === otherVehicleId);
+      expect(withPos?.position).not.toBeNull();
+      expect(withPos?.position?.latitude).toBeCloseTo(-33.4489, 4);
+      expect(withPos?.position?.longitude).toBeCloseTo(-70.6693, 4);
+      expect(withPos?.position?.speed_kmh).toBe(45);
+      expect(withoutPos?.position).toBeNull();
+    });
+
+    it('conductor (rol read) puede ver la flota', async () => {
+      const stub = makeFlotaStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'BCDF12',
+            type: 'camion_pequeno',
+            teltonika_imei: null,
+            status: 'activo',
+          },
+        ],
+        pointRows: [],
+      });
+      const app = await buildApp(stub.db, { role: 'conductor' });
+      const res = await app.request('/vehiculos/flota');
+      expect(res.status).toBe(200);
+    });
+  });
 });

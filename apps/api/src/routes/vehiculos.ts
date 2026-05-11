@@ -1,7 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { chileanPlateSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -158,6 +158,92 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       .orderBy(asc(vehicles.plate));
 
     return c.json({ vehicles: rows });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /flota — vehículos de la empresa con su última ubicación.
+  //
+  // Versión bulk de /:id/ubicacion: una sola query con LATERAL JOIN
+  // (vía subselect DISTINCT ON) que retorna todos los vehículos de la
+  // empresa activa + su último punto GPS (si existe). Pensado para la
+  // vista de seguimiento de flota (/app/flota) que necesita renderizar
+  // un mapa con N markers sin N+1 round trips.
+  //
+  // Vehículos sin Teltonika asociado o sin telemetría todavía aparecen
+  // con `position: null`. La UI los muestra como "Sin posición aún".
+  // ---------------------------------------------------------------------
+  app.get('/flota', async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = auth.activeMembership.empresa.id;
+
+    const vehicleRows = await opts.db
+      .select({
+        id: vehicles.id,
+        plate: vehicles.plate,
+        type: vehicles.vehicleType,
+        teltonika_imei: vehicles.teltonikaImei,
+        status: vehicles.vehicleStatus,
+      })
+      .from(vehicles)
+      .where(eq(vehicles.empresaId, empresaId))
+      .orderBy(asc(vehicles.plate));
+
+    const vehicleIds = vehicleRows.map((v) => v.id);
+    type LastPoint = {
+      vehicle_id: string;
+      timestamp_device: Date;
+      latitude: string | null;
+      longitude: string | null;
+      speed_kmh: number | null;
+      angle_deg: number | null;
+    };
+    const lastPoints =
+      vehicleIds.length === 0
+        ? ([] as LastPoint[])
+        : await opts.db
+            .selectDistinctOn([telemetryPoints.vehicleId], {
+              vehicle_id: telemetryPoints.vehicleId,
+              timestamp_device: telemetryPoints.timestampDevice,
+              latitude: telemetryPoints.latitude,
+              longitude: telemetryPoints.longitude,
+              speed_kmh: telemetryPoints.speedKmh,
+              angle_deg: telemetryPoints.angleDeg,
+            })
+            .from(telemetryPoints)
+            .where(inArray(telemetryPoints.vehicleId, vehicleIds))
+            .orderBy(telemetryPoints.vehicleId, desc(telemetryPoints.timestampDevice));
+
+    const lastById = new Map<string, LastPoint>();
+    for (const p of lastPoints) {
+      if (p.vehicle_id != null) {
+        lastById.set(p.vehicle_id, p);
+      }
+    }
+
+    const fleet = vehicleRows.map((v) => {
+      const point = lastById.get(v.id);
+      return {
+        id: v.id,
+        plate: v.plate,
+        type: v.type,
+        teltonika_imei: v.teltonika_imei,
+        status: v.status,
+        position: point
+          ? {
+              timestamp_device: point.timestamp_device,
+              latitude: point.latitude != null ? Number.parseFloat(point.latitude) : null,
+              longitude: point.longitude != null ? Number.parseFloat(point.longitude) : null,
+              speed_kmh: point.speed_kmh,
+              angle_deg: point.angle_deg,
+            }
+          : null,
+      };
+    });
+
+    return c.json({ fleet });
   });
 
   // ---------------------------------------------------------------------

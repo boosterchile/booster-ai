@@ -6,6 +6,7 @@ import {
   Headphones,
   Leaf,
   LogOut,
+  MapPinned,
   Package,
   PackagePlus,
   Radio,
@@ -107,6 +108,28 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <section className="mt-10">
               <h2 className="font-semibold text-neutral-900 text-xl">Como transportista</h2>
               <Link
+                to="/app/flota"
+                className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
+                data-testid="dashboard-link-flota"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
+                    aria-hidden
+                  >
+                    <MapPinned className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-neutral-900">Seguimiento de flota</div>
+                    <div className="text-neutral-600 text-sm">
+                      Ubicación en tiempo real de todos tus vehículos en un mapa, con histórico.
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
+              </Link>
+
+              <Link
                 to="/app/ofertas"
                 className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
               >
@@ -141,7 +164,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                   <div>
                     <div className="font-medium text-neutral-900">Vehículos</div>
                     <div className="text-neutral-600 text-sm">
-                      Tu flota: agregar, editar, asociar dispositivos Teltonika.
+                      Gestiona tu flota: alta, edición, asociación a Teltonika.
                     </div>
                   </div>
                 </div>

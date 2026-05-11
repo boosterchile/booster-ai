@@ -9,6 +9,7 @@ import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/
 import { CertificadosRoute } from './routes/certificados.js';
 import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
 import { ConductorModoRoute } from './routes/conductor-modo.js';
+import { FlotaRoute } from './routes/flota.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
 import { LegalTerminosRoute } from './routes/legal-terminos.js';
@@ -101,6 +102,15 @@ const vehiculosListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos',
   component: VehiculosListRoute,
+});
+
+// D3 — Surface dedicada de seguimiento de flota. Reemplaza el patrón
+// anterior en el que la ubicación del vehículo se accedía desde el form
+// de edición (`/app/vehiculos/$id`). El detalle quedó pure-edit.
+const flotaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/flota',
+  component: FlotaRoute,
 });
 
 const vehiculosNuevoRoute = createRoute({
@@ -203,6 +213,7 @@ const routeTree = rootRoute.addChildren([
   vehiculosNuevoRoute,
   vehiculosDetalleRoute,
   vehiculoLiveRoute,
+  flotaRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

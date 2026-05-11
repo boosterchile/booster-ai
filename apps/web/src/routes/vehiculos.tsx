@@ -1,24 +1,13 @@
 import { chileanPlateSchema, normalizePlate } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  ExternalLink,
-  MapPin,
-  Navigation,
-  Pencil,
-  Plus,
-  Trash2,
-  Truck,
-} from 'lucide-react';
+import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ChileanPlate } from '../components/ChileanPlate.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import { RelativeTime } from '../components/RelativeTime.js';
-import { VehicleMap } from '../components/map/VehicleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
@@ -224,14 +213,27 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
                       </span>
                     </Td>
                     <Td>
-                      <Link
-                        to="/app/vehiculos/$id"
-                        params={{ id: v.id }}
-                        className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                      >
-                        <Pencil className="h-3.5 w-3.5" aria-hidden />
-                        {canWrite ? 'Editar' : 'Ver'}
-                      </Link>
+                      <div className="flex items-center gap-3">
+                        <Link
+                          to="/app/vehiculos/$id/live"
+                          params={{ id: v.id }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-primary-700 hover:underline"
+                          aria-label={`Ver ubicación en vivo de ${v.plate}`}
+                        >
+                          <Navigation className="h-3.5 w-3.5" aria-hidden />
+                          Ubicación
+                        </Link>
+                        <Link
+                          to="/app/vehiculos/$id"
+                          params={{ id: v.id }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          {canWrite ? 'Editar' : 'Ver'}
+                        </Link>
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -278,7 +280,15 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
                     </>
                   )}
                 </div>
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex justify-end gap-2">
+                  <Link
+                    to="/app/vehiculos/$id/live"
+                    params={{ id: v.id }}
+                    className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-50"
+                  >
+                    <Navigation className="h-3.5 w-3.5" aria-hidden />
+                    Ubicación
+                  </Link>
                   <Link
                     to="/app/vehiculos/$id"
                     params={{ id: v.id }}
@@ -483,7 +493,11 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
       {vehicleQ.data && (
         <>
-          {/* Banner Teltonika + CTA "Ver en vivo" */}
+          {/* D3 — La ubicación en vivo y el histórico de telemetría se
+              movieron a /app/flota y /app/vehiculos/:id/live. Esta página
+              ahora es pure-edit. Para no perder el afordance rápido al
+              tracking dejamos un link discreto al inicio cuando hay
+              Teltonika asociado. */}
           {vehicleQ.data.teltonika_imei && (
             <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-primary-100 bg-primary-50 p-3">
               <div className="text-primary-900 text-sm">
@@ -501,18 +515,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             </div>
           )}
 
-          {/* HERO: ubicación actual del vehículo (prioritario, no secundario) */}
-          {vehicleQ.data.teltonika_imei && (
-            <UbicacionSection
-              vehicleId={vehicleQ.data.id}
-              plate={vehicleQ.data.plate}
-              height={480}
-              hero
-            />
-          )}
-
-          {/* Edición del vehículo (después del mapa, no antes) */}
-          <div className="mt-8">
+          <div>
             <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
             <p className="mt-1 text-neutral-600 text-sm">
               Capacidad, combustible, asociación a Teltonika.
@@ -532,9 +535,6 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
               />
             </div>
           </div>
-
-          {/* Histórico de telemetría — al final */}
-          {vehicleQ.data.teltonika_imei && <TelemetriaSection vehicleId={vehicleQ.data.id} />}
         </>
       )}
     </Layout>
@@ -929,202 +929,9 @@ function Td({ className = '', children }: { className?: string; children: ReactN
   return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
 }
 
-// =============================================================================
-// Ubicación en mapa — sección dentro de /app/vehiculos/:id
-// =============================================================================
-
-interface UbicacionResponse {
-  vehicle_id: string;
-  plate: string;
-  teltonika_imei: string | null;
-  ubicacion: {
-    timestamp_device: string;
-    latitude: number | null;
-    longitude: number | null;
-    altitude_m: number | null;
-    angle_deg: number | null;
-    satellites: number | null;
-    speed_kmh: number | null;
-    priority: number;
-  };
-}
-
-function UbicacionSection({
-  vehicleId,
-  plate,
-  height = 320,
-  hero = false,
-}: {
-  vehicleId: string;
-  plate: string;
-  height?: number;
-  hero?: boolean;
-}) {
-  const ubicacionQ = useQuery({
-    queryKey: ['vehiculos', vehicleId, 'ubicacion'],
-    queryFn: async () => {
-      try {
-        return await api.get<UbicacionResponse>(`/vehiculos/${vehicleId}/ubicacion`);
-      } catch {
-        // 404 si no hay puntos aún — devolvemos null y el componente
-        // muestra el placeholder amigable.
-        return null;
-      }
-    },
-    refetchInterval: 30_000,
-  });
-
-  return (
-    <section className={hero ? 'mt-2' : 'mt-10'}>
-      {!hero && (
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-neutral-900 text-xl">Ubicación actual</h2>
-            <p className="text-neutral-600 text-sm">
-              Reportado por el Teltonika:{' '}
-              <RelativeTime
-                date={ubicacionQ.data?.ubicacion.timestamp_device ?? null}
-                fallback="sin posición todavía"
-              />
-            </p>
-            <p className="text-neutral-400 text-xs">Esta vista se refresca cada 30 segundos.</p>
-          </div>
-        </div>
-      )}
-      <div className={hero ? '' : 'mt-4'}>
-        <VehicleMap
-          plate={plate}
-          latitude={ubicacionQ.data?.ubicacion.latitude ?? null}
-          longitude={ubicacionQ.data?.ubicacion.longitude ?? null}
-          speedKmh={ubicacionQ.data?.ubicacion.speed_kmh ?? null}
-          timestampDevice={ubicacionQ.data?.ubicacion.timestamp_device ?? null}
-          height={height}
-        />
-      </div>
-    </section>
-  );
-}
-
-// =============================================================================
-// Telemetría reciente — sección dentro de /app/vehiculos/:id
-// =============================================================================
-
-interface TelemetryPoint {
-  id: string;
-  imei: string;
-  timestamp_device: string;
-  timestamp_received_at: string;
-  priority: number;
-  longitude: string | null;
-  latitude: string | null;
-  altitude_m: number | null;
-  angle_deg: number | null;
-  satellites: number | null;
-  speed_kmh: number | null;
-  event_io_id: number | null;
-}
-
-function TelemetriaSection({ vehicleId }: { vehicleId: string }) {
-  const telemetriaQ = useQuery({
-    queryKey: ['vehiculos', vehicleId, 'telemetria'],
-    queryFn: async () => {
-      const res = await api.get<{
-        plate: string;
-        teltonika_imei: string | null;
-        count: number;
-        points: TelemetryPoint[];
-      }>(`/vehiculos/${vehicleId}/telemetria?limit=50`);
-      return res;
-    },
-    refetchInterval: 30_000,
-  });
-
-  return (
-    <section className="mt-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold text-neutral-900 text-xl">Telemetría reciente</h2>
-          <p className="text-neutral-600 text-sm">
-            Últimos 50 puntos GPS recibidos del Teltonika asociado.
-          </p>
-          <p className="text-neutral-400 text-xs">Esta vista se refresca cada 30 segundos.</p>
-        </div>
-        {telemetriaQ.data && (
-          <span className="rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">
-            {telemetriaQ.data.count} puntos
-          </span>
-        )}
-      </div>
-
-      {telemetriaQ.isLoading && <p className="mt-4 text-neutral-500">Cargando…</p>}
-      {telemetriaQ.error && <p className="mt-4 text-danger-700">Error al cargar telemetría.</p>}
-      {telemetriaQ.data && telemetriaQ.data.points.length === 0 && (
-        <div className="mt-4 rounded-md border border-neutral-200 border-dashed bg-white p-6 text-center text-neutral-600 text-sm">
-          Aún no se han recibido puntos GPS de este dispositivo. Si recién lo asociaste, los
-          primeros packets pueden tardar unos segundos en aparecer.
-        </div>
-      )}
-      {telemetriaQ.data && telemetriaQ.data.points.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-neutral-200">
-            <thead className="bg-neutral-50">
-              <tr>
-                <Th>Hora device</Th>
-                <Th>Posición</Th>
-                <Th>Velocidad</Th>
-                <Th>Altitud</Th>
-                <Th>Sat</Th>
-                <Th>Prioridad</Th>
-                <Th>{''}</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100 bg-white">
-              {telemetriaQ.data.points.map((p) => (
-                <tr key={p.id} className="hover:bg-neutral-50">
-                  <Td className="font-mono text-xs">
-                    {new Date(p.timestamp_device).toLocaleString('es-CL')}
-                  </Td>
-                  <Td className="font-mono text-xs">
-                    {p.latitude && p.longitude
-                      ? `${Number.parseFloat(p.latitude).toFixed(5)}, ${Number.parseFloat(p.longitude).toFixed(5)}`
-                      : '—'}
-                  </Td>
-                  <Td>{p.speed_kmh != null ? `${p.speed_kmh} km/h` : '—'}</Td>
-                  <Td>{p.altitude_m != null ? `${p.altitude_m} m` : '—'}</Td>
-                  <Td>{p.satellites ?? '—'}</Td>
-                  <Td>
-                    <span
-                      className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${
-                        p.priority === 2
-                          ? 'bg-danger-50 text-danger-700'
-                          : p.priority === 1
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-neutral-100 text-neutral-600'
-                      }`}
-                    >
-                      {p.priority === 2 ? 'Pánico' : p.priority === 1 ? 'Alta' : 'Baja'}
-                    </span>
-                  </Td>
-                  <Td>
-                    {p.latitude && p.longitude && (
-                      <a
-                        href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-primary-600 text-xs hover:underline"
-                      >
-                        <MapPin className="h-3.5 w-3.5" aria-hidden />
-                        Ver
-                        <ExternalLink className="h-3 w-3" aria-hidden />
-                      </a>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
+// D3 — Las antiguas secciones UbicacionSection y TelemetriaSection vivían acá
+// y mostraban el mapa hero + el histórico de telemetría dentro del form de
+// edición del vehículo. Esto rompía el principio "una página, una intención":
+// editar vs trackear. Se movieron a /app/flota (mapa multi-vehículo) y al
+// modo Uber /app/vehiculos/:id/live (single-vehicle full-screen). Esta página
+// quedó pure-edit.
