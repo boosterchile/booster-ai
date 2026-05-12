@@ -1,10 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import { Headphones, Inbox, LogOut, RefreshCw, Settings, User as UserIcon } from 'lucide-react';
+import { Headphones, Inbox, RefreshCw } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState.js';
+import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OfferCard } from '../components/offers/OfferCard.js';
 import { VoiceAcceptOfferControl } from '../components/offers/VoiceAcceptOfferControl.js';
-import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useOffersMine } from '../hooks/use-offers.js';
 
@@ -36,135 +36,97 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
 
   const offersQuery = useOffersMine({ enabled: isCarrier });
 
-  async function handleSignOut() {
-    await signOutUser();
-  }
-
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Link to="/app" className="flex items-center gap-3">
-              <div className="h-6 w-6 rounded-md bg-primary-500" aria-hidden />
-              <span className="font-semibold text-lg text-neutral-900">Booster AI</span>
-            </Link>
-            {activeEmpresa && (
-              <span className="ml-3 rounded-md bg-neutral-100 px-2 py-1 font-medium text-neutral-700 text-xs">
-                {activeEmpresa.legal_name}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/app/perfil"
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
-            >
-              <UserIcon className="h-4 w-4" aria-hidden />
-              <span>{me.user.full_name}</span>
-              <Settings className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-            </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-neutral-600 text-sm transition hover:bg-neutral-100"
-            >
-              <LogOut className="h-4 w-4" aria-hidden />
-              Salir
-            </button>
-          </div>
+    <Layout me={me} title="Ofertas activas">
+      {/* Header de página: en mobile stack vertical (título arriba,
+          descripción debajo, botones full-width). En sm+ vuelve al
+          layout horizontal compacto. Antes era flex row fijo y
+          comprimía el título a 2 líneas cortadas. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
+            Ofertas activas
+          </h1>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Cargas disponibles para tu empresa. Las ofertas expiran en 1 hora.
+          </p>
         </div>
-      </header>
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+          <Link
+            to="/app/conductor/modo"
+            className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100"
+            data-testid="link-modo-conductor"
+          >
+            <Headphones className="h-4 w-4" aria-hidden />
+            Modo Conductor
+          </Link>
+          <button
+            type="button"
+            onClick={() => offersQuery.refetch()}
+            disabled={offersQuery.isFetching}
+            className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${offersQuery.isFetching ? 'animate-spin' : ''}`}
+              aria-hidden
+            />
+            {offersQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
+          </button>
+        </div>
+      </div>
 
-      <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-                Ofertas activas
-              </h1>
-              <p className="mt-1 text-neutral-600 text-sm">
-                Cargas disponibles para tu empresa. Las ofertas expiran en 1 hora.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link
-                to="/app/conductor/modo"
-                className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100"
-                data-testid="link-modo-conductor"
-              >
-                <Headphones className="h-4 w-4" aria-hidden />
-                Modo Conductor
-              </Link>
-              <button
-                type="button"
-                onClick={() => offersQuery.refetch()}
-                disabled={offersQuery.isFetching}
-                className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${offersQuery.isFetching ? 'animate-spin' : ''}`}
-                  aria-hidden
-                />
-                {offersQuery.isFetching ? 'Actualizando…' : 'Actualizar'}
-              </button>
-            </div>
-          </div>
+      {!isCarrier && (
+        <output className="mt-6 block rounded-md border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-700">
+          Tu empresa <strong>{activeEmpresa?.legal_name}</strong> no opera como carrier. Esta vista
+          es solo para empresas transportistas. Si quieres activar este modo, contacta a{' '}
+          <a
+            href="mailto:soporte@boosterchile.com"
+            className="font-medium text-warning-700 underline"
+          >
+            soporte@boosterchile.com
+          </a>
+          .
+        </output>
+      )}
 
-          {!isCarrier && (
-            <output className="mt-6 block rounded-md border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-700">
-              Tu empresa <strong>{activeEmpresa?.legal_name}</strong> no opera como carrier. Esta
-              vista es solo para empresas transportistas. Si quieres activar este modo, contacta a{' '}
-              <a
-                href="mailto:soporte@boosterchile.com"
-                className="font-medium text-warning-700 underline"
-              >
-                soporte@boosterchile.com
-              </a>
-              .
-            </output>
-          )}
+      {isCarrier && offersQuery.isLoading && (
+        <div className="mt-10 text-center text-neutral-500 text-sm">Cargando ofertas…</div>
+      )}
 
-          {isCarrier && offersQuery.isLoading && (
-            <div className="mt-10 text-center text-neutral-500 text-sm">Cargando ofertas…</div>
-          )}
+      {isCarrier && offersQuery.isError && (
+        <output className="mt-6 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
+          No pudimos cargar las ofertas. Probá actualizar.
+        </output>
+      )}
 
-          {isCarrier && offersQuery.isError && (
-            <output className="mt-6 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
-              No pudimos cargar las ofertas. Probá actualizar.
-            </output>
-          )}
+      {isCarrier && offersQuery.data && offersQuery.data.offers.length === 0 && (
+        <div className="mt-10">
+          <EmptyState
+            icon={<Inbox className="h-10 w-10" aria-hidden />}
+            title="No hay ofertas activas ahora"
+            description="Cuando un generador de carga publique una compatible con tus zonas y vehículos, la verás aquí. Mantenemos esta vista actualizada cada 30 segundos."
+          />
+        </div>
+      )}
 
-          {isCarrier && offersQuery.data && offersQuery.data.offers.length === 0 && (
-            <div className="mt-10">
-              <EmptyState
-                icon={<Inbox className="h-10 w-10" aria-hidden />}
-                title="No hay ofertas activas ahora"
-                description="Cuando un generador de carga publique una compatible con tus zonas y vehículos, la verás aquí. Mantenemos esta vista actualizada cada 30 segundos."
-              />
-            </div>
-          )}
-
-          {isCarrier && offersQuery.data && offersQuery.data.offers.length > 0 && (
-            <div className="mt-6 space-y-4">
-              {/* Phase 4 PR-K7 — control de aceptación por voz. Solo se
+      {isCarrier && offersQuery.data && offersQuery.data.offers.length > 0 && (
+        <div className="mt-6 space-y-4">
+          {/* Phase 4 PR-K7 — control de aceptación por voz. Solo se
                   renderiza cuando hay EXACTAMENTE 1 oferta pendiente —
                   para >1 sería ambiguo qué oferta el comando "aceptar"
                   refiere. Doble confirmación protege contra falsos
                   positivos (aceptar oferta es contrato). */}
-              {offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
-                <VoiceAcceptOfferControl
-                  offerId={offersQuery.data.offers[0].id}
-                  trackingCode={offersQuery.data.offers[0].trip_request.tracking_code}
-                />
-              )}
-              {offersQuery.data.offers.map((o) => (
-                <OfferCard key={o.id} offer={o} />
-              ))}
-            </div>
+          {offersQuery.data.offers.length === 1 && offersQuery.data.offers[0] && (
+            <VoiceAcceptOfferControl
+              offerId={offersQuery.data.offers[0].id}
+              trackingCode={offersQuery.data.offers[0].trip_request.tracking_code}
+            />
           )}
+          {offersQuery.data.offers.map((o) => (
+            <OfferCard key={o.id} offer={o} />
+          ))}
         </div>
-      </main>
-    </div>
+      )}
+    </Layout>
   );
 }

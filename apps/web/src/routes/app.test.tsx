@@ -1,7 +1,15 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
+
+// Layout (usado por AppRoute) internamente usa TanStack Query (vía
+// useSwitchCompany). Sin QueryClientProvider, los tests revientan.
+function renderWithQueryClient(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -64,13 +72,13 @@ afterEach(() => {
 
 describe('AppRoute', () => {
   it('contexto no onboarded → no renderiza dashboard', () => {
-    const { container } = render(<AppRoute />);
+    const { container } = renderWithQueryClient(<AppRoute />);
     expect(container.querySelector('h1')).toBeNull();
   });
 
   it('contexto onboarded → renderiza dashboard con título Bienvenido', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByText('Bienvenido a Booster')).toBeInTheDocument();
     expect(screen.getAllByText('Booster SpA').length).toBeGreaterThan(0);
     expect(screen.getByText('Felipe')).toBeInTheDocument();
@@ -78,13 +86,13 @@ describe('AppRoute', () => {
 
   it('carrier → muestra card "Ofertas activas"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByText(/Ofertas activas/)).toBeInTheDocument();
   });
 
   it('carrier → muestra card "Modo Conductor" linkeada a /app/conductor/modo', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     const link = screen.getByTestId('dashboard-link-modo-conductor');
     expect(link).toBeInTheDocument();
     // TanStack Link mock pasa `to` como atributo (no `href`).
@@ -93,13 +101,13 @@ describe('AppRoute', () => {
 
   it('shipper (no carrier) → NO muestra card "Modo Conductor"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.queryByTestId('dashboard-link-modo-conductor')).not.toBeInTheDocument();
   });
 
   it('shipper → muestra card "Crear carga"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByText(/Crear carga/)).toBeInTheDocument();
   });
 
@@ -108,7 +116,7 @@ describe('AppRoute', () => {
       kind: 'onboarded',
       me: makeMe('admin', true, false),
     };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByText(/Dispositivos pendientes/)).toBeInTheDocument();
   });
 
@@ -117,13 +125,13 @@ describe('AppRoute', () => {
     // vez de chequear el dashboard original chequeamos que el Navigate
     // stub aparezca y que "Dispositivos pendientes" NO esté.
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.queryByText(/Dispositivos pendientes/)).not.toBeInTheDocument();
   });
 
   it('rol conductor → redirige a /app/conductor/modo (D9 surface guard)', () => {
     providedContext = { kind: 'onboarded', me: makeMe('conductor') };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/conductor/modo');
     // El dashboard original NO debería renderizarse.
     expect(screen.queryByText('Bienvenido a Booster')).not.toBeInTheDocument();
@@ -133,7 +141,7 @@ describe('AppRoute', () => {
     const me = makeMe();
     (me.user as { is_platform_admin?: boolean }).is_platform_admin = true;
     providedContext = { kind: 'onboarded', me };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
     expect(screen.queryByText('Bienvenido a Booster')).not.toBeInTheDocument();
   });
@@ -155,14 +163,20 @@ describe('AppRoute', () => {
       active_membership: null,
     };
     providedContext = { kind: 'onboarded', me };
-    render(<AppRoute />);
+    renderWithQueryClient(<AppRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app/platform-admin');
   });
 
-  it('click Salir → signOutUser', () => {
+  it('click Salir (vía menú mobile) → signOutUser', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    render(<AppRoute />);
-    screen.getByRole('button', { name: 'Cerrar sesión' }).click();
+    renderWithQueryClient(<AppRoute />);
+    // En mobile, el botón Salir vive dentro del panel del menú
+    // hamburguesa. Abrir menú primero.
+    const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
+    menuButton.click();
+    // El botón Salir del menú mobile tiene el texto literal "Salir".
+    const salir = screen.getByRole('button', { name: /Salir/i });
+    salir.click();
     expect(signOutUserMock).toHaveBeenCalled();
   });
 });
