@@ -130,6 +130,12 @@ module "service_api" {
     # código. Ver variables.tf para rollout plan.
     MATCHING_ALGORITHM_V2_ACTIVATED = tostring(var.matching_algorithm_v2_activated)
     MATCHING_V2_WEIGHTS_JSON        = var.matching_v2_weights_json
+
+    # Allowlist de operadores Booster que pueden entrar a /admin/* del API
+    # y /app/platform-admin/* de la PWA. CSV de emails (lower-cased en
+    # comparison). Sin esta env var nadie es admin — el código defaultea
+    # a array vacío. Era un bug detectado post-stack ADR-033.
+    BOOSTER_PLATFORM_ADMIN_EMAILS = var.booster_platform_admin_emails
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.

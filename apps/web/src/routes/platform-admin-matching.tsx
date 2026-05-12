@@ -20,19 +20,23 @@ import { signOutUser } from '../hooks/use-auth.js';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
- * /app/platform-admin/matching — UI para gestionar el matching engine v2
- * (ADR-033). Reservada a platform admins (allowlist en backend).
+ * /app/platform-admin/matching — Comparar algoritmo de asignación (ADR-033).
+ * Reservada a platform admins (allowlist en backend).
  *
  * Surface:
  *
- *   - Disparar corrida de backtest: fechas desde/hasta, tripsLimit,
- *     pesos custom opcionales (capacidad/backhaul/reputacion/tier).
- *   - Lista de corridas recientes con preview de métricas clave.
- *   - Detalle de una corrida: resumen + tabla expandible de resultados
- *     por trip (overlap, score deltas, backhaul hits).
+ *   - Lanzar simulación: rango de fechas opcional, cantidad máxima de
+ *     viajes a analizar, y opcionalmente ajustar los pesos de cada
+ *     criterio (capacidad ajustada, viaje de retorno, reputación, tier).
+ *   - Lista de simulaciones recientes con preview de métricas clave en
+ *     lenguaje natural ("75% coincide con el algoritmo actual").
+ *   - Detalle de una simulación: tarjetas de métricas, panel de
+ *     transportistas favorecidos / perjudicados, distribución de
+ *     calidad de match, y tabla expandible viaje por viaje.
  *
- * El backend ya gateéa con BOOSTER_PLATFORM_ADMIN_EMAILS — la UI muestra
- * error claro si el usuario no está en la lista.
+ * El backend gateéa con BOOSTER_PLATFORM_ADMIN_EMAILS — la UI muestra un
+ * mensaje humanizado (vía humanizeError) si el usuario no está en la
+ * lista, sin exponer el nombre de la env var ni códigos técnicos.
  */
 
 // ---------------------------------------------------------------------------
@@ -182,8 +186,10 @@ function PlatformAdminMatchingPage() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <div className="font-semibold text-neutral-900">Booster · Matching Engine v2</div>
-              <div className="text-neutral-500 text-xs">Backtest v1 vs v2 (ADR-033)</div>
+              <div className="font-semibold text-neutral-900">Comparar algoritmo de asignación</div>
+              <div className="text-neutral-500 text-xs">
+                Probá un nuevo algoritmo de asignación sobre viajes reales antes de activarlo
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -208,14 +214,35 @@ function PlatformAdminMatchingPage() {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-          Matching engine v2 · Backtest
+          ¿Qué transportistas habría elegido el nuevo algoritmo?
         </h1>
         <p className="mt-2 max-w-3xl text-neutral-600 text-sm">
-          Replay del scoring sobre trips históricos para comparar la distribución de ofertas del
-          algoritmo v1 (capacity-only) con v2 (multi-factor con backhaul awareness). Las señales v2
-          usan el estado actual de la BD — útil para evaluar pesos antes de activar el flag, no para
-          análisis estadístico riguroso.
+          Esta página simula cómo el <strong>nuevo algoritmo de asignación</strong> (que prioriza
+          transportistas con viaje de retorno disponible, buena reputación y vehículo bien
+          dimensionado) habría elegido transportistas en viajes pasados, y compara el resultado
+          contra el <strong>algoritmo actual</strong> (que sólo considera capacidad del vehículo).
+          Sirve para evaluar el cambio antes de activarlo en producción.
         </p>
+        <details className="mt-3 max-w-3xl text-neutral-600 text-sm">
+          <summary className="cursor-pointer font-medium text-neutral-700">
+            ¿Cómo funciona exactamente?
+          </summary>
+          <div className="mt-2 space-y-2 text-neutral-600 text-xs">
+            <p>
+              Para cada viaje pasado en la ventana elegida, la simulación recalcula qué
+              transportistas habrían recibido oferta bajo cada algoritmo y compara los dos
+              resultados. No crea ofertas reales ni modifica nada — solo computa "qué habría pasado
+              si".
+            </p>
+            <p>
+              Las señales del nuevo algoritmo (viajes activos del transportista, historial de
+              últimos 7 días, ofertas de últimos 90 días, tier de membresía) usan el estado actual
+              de la base de datos. Esto significa que la simulación responde a la pregunta "¿cómo se
+              vería hoy el matching bajo estos pesos?" — útil para evaluar pesos, no es análisis
+              estadístico estricto sobre el pasado.
+            </p>
+          </div>
+        </details>
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[420px_1fr]">
           <RunForm onSubmitted={refreshList} />
@@ -264,7 +291,7 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
     if (useCustomPesos && !pesosValid) {
       setState({
         kind: 'error',
-        message: `Pesos deben sumar 1.0 (suma actual: ${pesosSum.toFixed(2)})`,
+        message: `La suma de los pesos tiene que ser 1.00 (actualmente suma ${pesosSum.toFixed(2)})`,
       });
       return;
     }
@@ -303,49 +330,62 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
           <Sparkles className="h-5 w-5" />
         </div>
         <div className="flex-1">
-          <h2 className="font-semibold text-neutral-900">Disparar corrida</h2>
+          <h2 className="font-semibold text-neutral-900">Lanzar una simulación</h2>
           <p className="mt-1 text-neutral-600 text-sm">
-            Sets de 500 trips corren en &lt; 30 segundos. Hard-cap 5000.
+            Sobre cuántos viajes pasados querés simular el algoritmo nuevo. Tarda menos de 30
+            segundos para 500 viajes.
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <fieldset className="space-y-3">
+          <legend className="font-medium text-neutral-700 text-xs uppercase tracking-wide">
+            Qué viajes incluir
+          </legend>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="text-neutral-700">Desde (opcional)</span>
+              <input
+                type="date"
+                value={tripsDesde}
+                onChange={(e) => setTripsDesde(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-neutral-700">Hasta (opcional)</span>
+              <input
+                type="date"
+                value={tripsHasta}
+                onChange={(e) => setTripsHasta(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </label>
+          </div>
+          <p className="text-neutral-500 text-xs">
+            Sin fechas, toma los viajes más recientes hasta el límite indicado abajo.
+          </p>
+
           <label className="block text-sm">
-            <span className="text-neutral-700">Trips desde</span>
+            <span className="text-neutral-700">Cantidad máxima de viajes a simular</span>
             <input
-              type="date"
-              value={tripsDesde}
-              onChange={(e) => setTripsDesde(e.target.value)}
+              type="number"
+              min={1}
+              max={5000}
+              value={tripsLimit}
+              onChange={(e) => setTripsLimit(Number(e.target.value) || 500)}
               className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
             />
+            <span className="text-neutral-500 text-xs">Mínimo 1 — máximo 5000.</span>
           </label>
-          <label className="block text-sm">
-            <span className="text-neutral-700">Trips hasta</span>
-            <input
-              type="date"
-              value={tripsHasta}
-              onChange={(e) => setTripsHasta(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-            />
-          </label>
-        </div>
+        </fieldset>
 
-        <label className="block text-sm">
-          <span className="text-neutral-700">Límite de trips (1-5000)</span>
-          <input
-            type="number"
-            min={1}
-            max={5000}
-            value={tripsLimit}
-            onChange={(e) => setTripsLimit(Number(e.target.value) || 500)}
-            className="mt-1 block w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
-        </label>
-
-        <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <fieldset className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <legend className="-mt-1 px-1 font-medium text-neutral-700 text-xs uppercase tracking-wide">
+            Qué tan importante es cada criterio
+          </legend>
+          <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={useCustomPesos}
@@ -353,37 +393,48 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
               className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
             />
             <Settings2 className="h-4 w-4 text-neutral-600" aria-hidden />
-            <span className="font-medium text-neutral-700">Pesos custom (A/B test)</span>
+            <span className="font-medium text-neutral-700">
+              Ajustar manualmente (sino, usa los valores recomendados)
+            </span>
           </label>
+          <p className="mt-1 text-neutral-500 text-xs">
+            Los valores recomendados priorizan capacidad ajustada (40%) y viaje de retorno (35%),
+            con menos peso en reputación (15%) y tier de membresía (10%).
+          </p>
 
           {useCustomPesos && (
             <div className="mt-3 space-y-2">
               <PesoInput
-                label="Capacidad"
+                label="Capacidad ajustada"
+                hint="vehículo no sobredimensionado para la carga"
                 value={pesos.capacidad}
                 onChange={(v) => setPesos({ ...pesos, capacidad: v })}
               />
               <PesoInput
-                label="Backhaul"
+                label="Viaje de retorno"
+                hint="el transportista ya iba a esa zona"
                 value={pesos.backhaul}
                 onChange={(v) => setPesos({ ...pesos, backhaul: v })}
               />
               <PesoInput
                 label="Reputación"
+                hint="historial de ofertas aceptadas (90 días)"
                 value={pesos.reputacion}
                 onChange={(v) => setPesos({ ...pesos, reputacion: v })}
               />
               <PesoInput
-                label="Tier"
+                label="Tier de membresía"
+                hint="bonus para suscripciones de pago"
                 value={pesos.tier}
                 onChange={(v) => setPesos({ ...pesos, tier: v })}
               />
               <div className={`text-xs ${pesosValid ? 'text-success-700' : 'text-danger-700'}`}>
-                Suma: {pesosSum.toFixed(3)} {pesosValid ? '✓' : '(debe ser 1.000)'}
+                Suma actual: {pesosSum.toFixed(2)}{' '}
+                {pesosValid ? '✓ válida' : '— ajusta para que sume 1.00'}
               </div>
             </div>
           )}
-        </div>
+        </fieldset>
 
         <button
           type="submit"
@@ -394,12 +445,12 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
           {state.kind === 'loading' ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Ejecutando backtest…
+              Simulando…
             </>
           ) : (
             <>
               <PlayCircle className="h-4 w-4" aria-hidden />
-              Ejecutar backtest
+              Lanzar simulación
             </>
           )}
         </button>
@@ -409,13 +460,8 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div>
-                <div className="font-medium">No se pudo ejecutar</div>
-                <div className="mt-1 font-mono text-xs">{state.message}</div>
-                {state.message.includes('403') && (
-                  <div className="mt-2 text-xs">
-                    Tu email no está en <code>BOOSTER_PLATFORM_ADMIN_EMAILS</code>.
-                  </div>
-                )}
+                <div className="font-medium">No se pudo lanzar la simulación</div>
+                <div className="mt-1 text-xs">{humanizeError(state.message)}</div>
               </div>
             </div>
           </div>
@@ -423,10 +469,13 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
 
         {state.kind === 'success' && (
           <div className="rounded-md border border-success-200 bg-success-50 p-3 text-sm text-success-700">
-            <div className="font-medium">Corrida {state.id.slice(0, 8)}… completada</div>
+            <div className="font-medium">Simulación completada</div>
             <div className="mt-1 text-xs">
-              {state.resumen.tripsProcesados} trips · Overlap {state.resumen.topNOverlapPct}% ·
-              Δscore avg {state.resumen.scoreDeltaAvg.toFixed(3)}
+              {state.resumen.tripsProcesados} viajes analizados · {state.resumen.topNOverlapPct}% de
+              coincidencia con el algoritmo actual
+            </div>
+            <div className="mt-1 text-neutral-700 text-xs">
+              Mirá el detalle abajo seleccionando la simulación en la lista.
             </div>
           </div>
         )}
@@ -435,18 +484,44 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
   );
 }
 
+/**
+ * Traduce mensajes de error técnicos a algo entendible para el operador.
+ * El backend devuelve códigos como "forbidden_platform_admin" — útil en
+ * logs pero opaco en la UI.
+ */
+function humanizeError(raw: string): string {
+  if (raw.includes('403') || raw.includes('forbidden_platform_admin')) {
+    return 'Tu email no tiene permiso para acceder a esta sección. Si crees que es un error, pedile al equipo de infra que agregue tu email a la lista de administradores de plataforma.';
+  }
+  if (raw.includes('401')) {
+    return 'Tu sesión expiró. Recargá la página para volver a iniciar sesión.';
+  }
+  if (raw.includes('400') || raw.toLowerCase().includes('validation')) {
+    return 'Algún valor del formulario no es válido. Revisá las fechas y el límite de viajes.';
+  }
+  if (raw.includes('500') || raw.toLowerCase().includes('backtest_failed')) {
+    return `La simulación falló del lado del servidor. Detalle: ${raw}`;
+  }
+  return raw;
+}
+
 function PesoInput({
   label,
+  hint,
   value,
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: number;
   onChange: (v: number) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-xs">
-      <span className="w-20 shrink-0 text-neutral-600">{label}</span>
+    <label className="flex items-start gap-2 text-xs">
+      <div className="w-36 shrink-0 pt-1">
+        <div className="text-neutral-700">{label}</div>
+        {hint && <div className="text-neutral-500 text-[10px] leading-tight">{hint}</div>}
+      </div>
       <input
         type="number"
         min={0}
@@ -463,7 +538,8 @@ function PesoInput({
         step={0.05}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1"
+        className="mt-1 flex-1"
+        aria-label={`Peso de ${label}`}
       />
     </label>
   );
@@ -491,7 +567,7 @@ function RunsList({
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-neutral-900">Corridas recientes</h2>
+        <h2 className="font-semibold text-neutral-900">Simulaciones recientes</h2>
         <button
           type="button"
           onClick={onRefresh}
@@ -504,14 +580,17 @@ function RunsList({
 
       {error && (
         <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm">
-          <AlertTriangle className="mr-1 inline h-4 w-4" aria-hidden />
-          {error}
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>{humanizeError(error)}</span>
+          </div>
         </div>
       )}
 
       {runs.length === 0 && !loading && !error && (
         <div className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-4 text-center text-neutral-600 text-sm">
-          Sin corridas todavía. Lanza la primera desde el formulario.
+          Todavía no se hizo ninguna simulación. Lanza la primera desde el formulario de la
+          izquierda.
         </div>
       )}
 
@@ -528,22 +607,31 @@ function RunsList({
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-neutral-700 text-xs">
-                      {run.id.slice(0, 8)}…
-                    </span>
                     <EstadoBadge estado={run.estado} />
+                    <span className="text-neutral-500 text-xs">
+                      <Clock className="mr-1 inline h-3 w-3" aria-hidden />
+                      {formatTimestamp(run.createdAt)}
+                    </span>
                   </div>
-                  <div className="mt-0.5 text-neutral-500 text-xs">
-                    <Clock className="mr-1 inline h-3 w-3" aria-hidden />
-                    {new Date(run.createdAt).toLocaleString('es-CL')} · {run.createdByEmail}
+                  <div className="mt-0.5 text-neutral-700 text-sm">
+                    {run.tripsProcesados > 0
+                      ? `${run.tripsProcesados.toLocaleString('es-CL')} viajes analizados`
+                      : 'Aún en proceso…'}
                   </div>
                   {run.resumenPreview && (
-                    <div className="mt-1 text-neutral-700 text-xs">
-                      <strong>{run.tripsProcesados}</strong> trips · overlap{' '}
-                      {run.resumenPreview.topNOverlapPct}% · Δavg{' '}
-                      {run.resumenPreview.scoreDeltaAvg.toFixed(3)}
+                    <div className="mt-1 text-neutral-500 text-xs">
+                      <strong>{run.resumenPreview.topNOverlapPct}%</strong> coincide con el
+                      algoritmo actual
+                      {run.resumenPreview.scoreDeltaAvg !== 0 && (
+                        <>
+                          {' '}
+                          · cambio promedio de puntaje{' '}
+                          {formatDelta(run.resumenPreview.scoreDeltaAvg)}
+                        </>
+                      )}
                     </div>
                   )}
+                  <div className="mt-0.5 text-neutral-400 text-xs">por {run.createdByEmail}</div>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
               </button>
@@ -555,6 +643,24 @@ function RunsList({
   );
 }
 
+function formatTimestamp(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('es-CL', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatDelta(value: number): string {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(3)}`;
+}
+
 function EstadoBadge({ estado }: { estado: string }) {
   const styles: Record<string, string> = {
     pendiente: 'bg-neutral-100 text-neutral-700',
@@ -562,11 +668,17 @@ function EstadoBadge({ estado }: { estado: string }) {
     completada: 'bg-success-100 text-success-700',
     fallida: 'bg-danger-100 text-danger-700',
   };
+  const labels: Record<string, string> = {
+    pendiente: 'En cola',
+    ejecutando: 'Procesando',
+    completada: 'Lista',
+    fallida: 'Falló',
+  };
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs ${styles[estado] ?? 'bg-neutral-100 text-neutral-700'}`}
     >
-      {estado}
+      {labels[estado] ?? estado}
     </span>
   );
 }
@@ -597,8 +709,8 @@ function RunDetailView({
   if (run.errorMessage) {
     return (
       <section className="rounded-lg border border-danger-200 bg-danger-50 p-5">
-        <h2 className="font-semibold text-danger-900">Error en corrida {run.id.slice(0, 8)}…</h2>
-        <p className="mt-2 font-mono text-danger-700 text-xs">{run.errorMessage}</p>
+        <h2 className="font-semibold text-danger-900">No pudimos cargar esta simulación</h2>
+        <p className="mt-2 text-danger-700 text-sm">{humanizeError(run.errorMessage)}</p>
       </section>
     );
   }
@@ -610,20 +722,22 @@ function RunDetailView({
       <header className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-neutral-900">Detalle · {run.id.slice(0, 8)}…</h2>
+            <h2 className="font-semibold text-neutral-900">Detalle de la simulación</h2>
             <div className="mt-1 text-neutral-600 text-xs">
-              Disparado por <strong>{run.createdByEmail}</strong> el{' '}
-              {new Date(run.createdAt).toLocaleString('es-CL')}
+              Lanzada por <strong>{run.createdByEmail}</strong> el {formatTimestamp(run.createdAt)}
             </div>
           </div>
           <EstadoBadge estado={run.estado} />
         </div>
         {run.pesosUsados && (
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <PesoChip label="Capacidad" value={run.pesosUsados.capacidad} />
-            <PesoChip label="Backhaul" value={run.pesosUsados.backhaul} />
-            <PesoChip label="Reputación" value={run.pesosUsados.reputacion} />
-            <PesoChip label="Tier" value={run.pesosUsados.tier} />
+          <div className="mt-3">
+            <div className="mb-2 text-neutral-600 text-xs">Pesos usados en esta simulación:</div>
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <PesoChip label="Capacidad ajustada" value={run.pesosUsados.capacidad} />
+              <PesoChip label="Viaje de retorno" value={run.pesosUsados.backhaul} />
+              <PesoChip label="Reputación" value={run.pesosUsados.reputacion} />
+              <PesoChip label="Tier de membresía" value={run.pesosUsados.tier} />
+            </div>
           </div>
         )}
       </header>
@@ -647,10 +761,11 @@ function RunDetailView({
 }
 
 function PesoChip({ label, value }: { label: string; value: number }) {
+  const pct = Math.round(value * 100);
   return (
-    <div className="rounded-md bg-neutral-100 px-2 py-1">
-      <div className="text-neutral-500 text-xs">{label}</div>
-      <div className="font-mono font-semibold text-neutral-900 text-sm">{value.toFixed(2)}</div>
+    <div className="rounded-md bg-neutral-100 px-2 py-1.5">
+      <div className="text-neutral-500 text-[10px] leading-tight">{label}</div>
+      <div className="font-semibold text-neutral-900 text-sm">{pct}%</div>
     </div>
   );
 }
@@ -659,26 +774,47 @@ function ResumenCards({ resumen }: { resumen: MetricasResumen }) {
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <MetricCard
-        label="Trips procesados"
-        value={resumen.tripsProcesados.toString()}
-        hint={`${resumen.tripsConCandidatosV2} con candidatos v2`}
+        label="Viajes analizados"
+        value={resumen.tripsProcesados.toLocaleString('es-CL')}
+        hint={
+          resumen.tripsConCandidatosV2 === resumen.tripsProcesados
+            ? 'todos con transportistas elegibles'
+            : `${resumen.tripsConCandidatosV2.toLocaleString('es-CL')} con transportistas elegibles`
+        }
       />
       <MetricCard
-        label="Overlap top-N"
-        value={`${resumen.topNOverlapPct.toFixed(1)}%`}
-        hint="empresas comunes v1 vs v2"
+        label="Coincidencia con algoritmo actual"
+        value={`${Math.round(resumen.topNOverlapPct)}%`}
+        hint={
+          resumen.topNOverlapPct >= 70
+            ? 'muy similar — bajo riesgo de cambio brusco'
+            : resumen.topNOverlapPct >= 40
+              ? 'moderada — el nuevo algoritmo elige distinto en varios casos'
+              : 'baja — cambia mucho la selección de transportistas'
+        }
+        tone={resumen.topNOverlapPct >= 40 ? 'positive' : 'negative'}
       />
       <MetricCard
-        label="Δ score promedio"
-        value={resumen.scoreDeltaAvg.toFixed(3)}
-        hint={resumen.scoreDeltaAvg >= 0 ? 'v2 puntúa más alto' : 'v2 puntúa más bajo'}
+        label="Cambio promedio de puntaje"
+        value={formatDelta(resumen.scoreDeltaAvg)}
+        hint={
+          resumen.scoreDeltaAvg > 0.02
+            ? 'el algoritmo nuevo asigna a transportistas mejor calificados'
+            : resumen.scoreDeltaAvg < -0.02
+              ? 'el algoritmo nuevo asigna a transportistas peor calificados'
+              : 'casi sin diferencia'
+        }
         tone={resumen.scoreDeltaAvg >= 0 ? 'positive' : 'negative'}
       />
       <MetricCard
-        label="Backhaul hits"
-        value={`${resumen.backhaulHitRatePct.toFixed(1)}%`}
-        hint="trips con carrier de retorno"
-        tone="positive"
+        label="Viajes con retorno aprovechado"
+        value={`${Math.round(resumen.backhaulHitRatePct)}%`}
+        hint={
+          resumen.backhaulHitRatePct >= 20
+            ? 'el algoritmo nuevo aprovecha viajes de retorno'
+            : 'pocos transportistas tienen viaje de retorno disponible'
+        }
+        tone={resumen.backhaulHitRatePct >= 20 ? 'positive' : undefined}
       />
     </div>
   );
@@ -692,8 +828,8 @@ function MetricCard({
 }: {
   label: string;
   value: string;
-  hint?: string;
-  tone?: 'positive' | 'negative';
+  hint?: string | undefined;
+  tone?: 'positive' | 'negative' | undefined;
 }) {
   const tones: Record<string, string> = {
     positive: 'border-success-200 bg-success-50',
@@ -722,18 +858,25 @@ function MoversPanel({
       <div className="rounded-lg border border-success-200 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-2 font-semibold text-neutral-900 text-sm">
           <TrendingUp className="h-4 w-4 text-success-700" aria-hidden />
-          Empresas favorecidas
+          Transportistas que reciben más ofertas
         </h3>
+        <p className="mt-1 text-neutral-500 text-xs">
+          Con el algoritmo nuevo, estos transportistas recibirían más ofertas que hoy.
+        </p>
         {favorecidas.length === 0 ? (
-          <p className="mt-2 text-neutral-500 text-xs">Ninguna empresa ganó slots adicionales.</p>
+          <p className="mt-3 text-neutral-500 text-xs">
+            Ningún transportista gana ofertas adicionales en esta simulación.
+          </p>
         ) : (
-          <ul className="mt-2 space-y-1.5 text-sm">
+          <ul className="mt-3 space-y-1.5 text-sm">
             {favorecidas.map((e) => (
               <li key={e.empresaId} className="flex items-center justify-between">
                 <span className="font-mono text-neutral-700 text-xs">
                   {e.empresaId.slice(0, 12)}…
                 </span>
-                <span className="font-semibold text-success-700">+{e.delta}</span>
+                <span className="font-semibold text-success-700">
+                  +{e.delta} {e.delta === 1 ? 'oferta' : 'ofertas'}
+                </span>
               </li>
             ))}
           </ul>
@@ -742,18 +885,25 @@ function MoversPanel({
       <div className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-2 font-semibold text-neutral-900 text-sm">
           <TrendingDown className="h-4 w-4 text-amber-700" aria-hidden />
-          Empresas perjudicadas
+          Transportistas que reciben menos ofertas
         </h3>
+        <p className="mt-1 text-neutral-500 text-xs">
+          Con el algoritmo nuevo, estos transportistas recibirían menos ofertas que hoy.
+        </p>
         {perjudicadas.length === 0 ? (
-          <p className="mt-2 text-neutral-500 text-xs">Ninguna empresa perdió slots.</p>
+          <p className="mt-3 text-neutral-500 text-xs">
+            Ningún transportista pierde ofertas en esta simulación.
+          </p>
         ) : (
-          <ul className="mt-2 space-y-1.5 text-sm">
+          <ul className="mt-3 space-y-1.5 text-sm">
             {perjudicadas.map((e) => (
               <li key={e.empresaId} className="flex items-center justify-between">
                 <span className="font-mono text-neutral-700 text-xs">
                   {e.empresaId.slice(0, 12)}…
                 </span>
-                <span className="font-semibold text-amber-700">{e.delta}</span>
+                <span className="font-semibold text-amber-700">
+                  {e.delta} {e.delta === -1 ? 'oferta' : 'ofertas'}
+                </span>
               </li>
             ))}
           </ul>
@@ -764,25 +914,36 @@ function MoversPanel({
 }
 
 function DistribucionScores({ distribucion }: { distribucion: Record<string, number> }) {
-  const buckets = ['0-200', '200-400', '400-600', '600-800', '800-1000'];
+  // Buckets internos del backend: '0-200' → '800-1000' (score × 1000).
+  // Renombramos para el operador en términos de "nivel de match".
+  const niveles: Array<{ key: string; label: string }> = [
+    { key: '0-200', label: 'Bajo' },
+    { key: '200-400', label: 'Medio-bajo' },
+    { key: '400-600', label: 'Medio' },
+    { key: '600-800', label: 'Bueno' },
+    { key: '800-1000', label: 'Excelente' },
+  ];
   const total = Object.values(distribucion).reduce((a, b) => a + b, 0);
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-      <h3 className="font-semibold text-neutral-900 text-sm">Distribución de scores v2</h3>
+      <h3 className="font-semibold text-neutral-900 text-sm">
+        Qué tan buenos son los matches que produce el algoritmo nuevo
+      </h3>
       <p className="mt-1 text-neutral-500 text-xs">
-        Cuenta de ofertas v2 por bucket de score (×1000).
+        Cuántas ofertas caen en cada nivel de calidad de match (más a la derecha = mejor match entre
+        carga y transportista).
       </p>
       <div className="mt-3 space-y-2">
-        {buckets.map((bucket) => {
-          const count = distribucion[bucket] ?? 0;
+        {niveles.map(({ key, label }) => {
+          const count = distribucion[key] ?? 0;
           const pct = total > 0 ? (count / total) * 100 : 0;
           return (
-            <div key={bucket}>
+            <div key={key}>
               <div className="flex items-center justify-between text-xs">
-                <span className="font-mono text-neutral-700">{bucket}</span>
+                <span className="text-neutral-700">{label}</span>
                 <span className="text-neutral-500">
-                  {count} ({pct.toFixed(1)}%)
+                  {count.toLocaleString('es-CL')} ofertas ({pct.toFixed(1)}%)
                 </span>
               </div>
               <div className="mt-0.5 h-2 overflow-hidden rounded-full bg-neutral-100">
@@ -804,7 +965,7 @@ function ResultadosTable({ resultados }: { resultados: ResultadoTrip[] }) {
     <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-neutral-900 text-sm">
-          Detalle por trip ({resultados.length})
+          Detalle viaje por viaje ({resultados.length.toLocaleString('es-CL')})
         </h3>
         {resultados.length > 10 && (
           <button
@@ -820,17 +981,22 @@ function ResultadosTable({ resultados }: { resultados: ResultadoTrip[] }) {
           </button>
         )}
       </div>
+      <p className="mt-1 text-neutral-500 text-xs">
+        Cada fila es un viaje pasado y muestra cómo coinciden los algoritmos. "Coincidencia" es
+        cuántos de los transportistas que elegiría el algoritmo nuevo también los elegiría el
+        actual.
+      </p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-neutral-200 border-b text-neutral-500 text-xs">
-              <th className="py-2 text-left">Trip</th>
-              <th className="py-2 text-left">Origen</th>
-              <th className="py-2 text-right">Carga (kg)</th>
-              <th className="py-2 text-right">Candidatos</th>
-              <th className="py-2 text-right">Overlap</th>
-              <th className="py-2 text-right">Δ score</th>
-              <th className="py-2 text-center">Backhaul</th>
+              <th className="py-2 text-left">Viaje</th>
+              <th className="py-2 text-left">Región origen</th>
+              <th className="py-2 text-right">Peso de carga</th>
+              <th className="py-2 text-right">Transportistas elegibles</th>
+              <th className="py-2 text-right">Coincidencia</th>
+              <th className="py-2 text-right">Cambio de puntaje</th>
+              <th className="py-2 text-center">¿Aprovecha retorno?</th>
             </tr>
           </thead>
           <tbody>
@@ -838,28 +1004,33 @@ function ResultadosTable({ resultados }: { resultados: ResultadoTrip[] }) {
               <tr key={r.tripId} className="border-neutral-100 border-b">
                 <td className="py-2 font-mono text-neutral-700 text-xs">{r.tripId.slice(0, 8)}…</td>
                 <td className="py-2 text-neutral-700">{r.originRegionCode}</td>
-                <td className="py-2 text-right font-mono text-neutral-700">
-                  {r.cargoWeightKg.toLocaleString('es-CL')}
+                <td className="py-2 text-right text-neutral-700">
+                  {r.cargoWeightKg.toLocaleString('es-CL')} kg
                 </td>
-                <td className="py-2 text-right font-mono text-neutral-700">{r.candidatosTotal}</td>
-                <td className="py-2 text-right">
-                  <span className="font-mono text-neutral-700">
-                    {r.overlapEmpresas}/{r.ofertasV2.length}
-                  </span>
+                <td className="py-2 text-right text-neutral-700">{r.candidatosTotal}</td>
+                <td className="py-2 text-right text-neutral-700">
+                  {r.ofertasV2.length === 0 ? '—' : `${r.overlapEmpresas} de ${r.ofertasV2.length}`}
                 </td>
                 <td
-                  className={`py-2 text-right font-mono ${
-                    r.deltaScorePromedio >= 0 ? 'text-success-700' : 'text-amber-700'
+                  className={`py-2 text-right ${
+                    r.deltaScorePromedio > 0
+                      ? 'text-success-700'
+                      : r.deltaScorePromedio < 0
+                        ? 'text-amber-700'
+                        : 'text-neutral-500'
                   }`}
                 >
-                  {r.deltaScorePromedio >= 0 ? '+' : ''}
-                  {r.deltaScorePromedio.toFixed(3)}
+                  {formatDelta(r.deltaScorePromedio)}
                 </td>
                 <td className="py-2 text-center">
                   {r.backhaulHit ? (
-                    <span className="text-success-700">✓</span>
+                    <span className="text-success-700" aria-label="sí">
+                      Sí
+                    </span>
                   ) : (
-                    <span className="text-neutral-300">—</span>
+                    <span className="text-neutral-400" aria-label="no">
+                      No
+                    </span>
                   )}
                 </td>
               </tr>

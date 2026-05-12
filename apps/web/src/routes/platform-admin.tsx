@@ -151,7 +151,7 @@ function PlatformAdminPage() {
             className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
             data-testid="matching-backtest-link"
           >
-            Matching v2 backtest →
+            Comparar algoritmo de asignación →
           </Link>
         </div>
 
