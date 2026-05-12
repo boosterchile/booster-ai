@@ -19,6 +19,7 @@ import {
   trips,
   users,
   vehicles,
+  zones,
 } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin } from './activation-pin.js';
 
@@ -230,7 +231,37 @@ export async function seedDemo(opts: {
     fuelType: 'diesel',
   });
 
-  // 8. Conductor del carrier — flujo placeholder + PIN (D9).
+  // 8. Zonas operativas del carrier. Sin zonas, el matching engine no
+  //    encuentra al carrier como candidato (filtro de zona/región es el
+  //    primer paso en runMatching). Cubrimos región XIII (RM) donde el
+  //    shipper tiene sucursales — y de paso V (Valparaíso) y VI (O'Higgins)
+  //    para que el carrier aparezca como candidato si la demo crea trips
+  //    interregionales típicos (RM → V, V → VI, etc.).
+  //
+  //    Tipo 'ambos' = el carrier recoge Y entrega en esa región. Es la
+  //    opción más permisiva, alineada con un transportista real que opera
+  //    multi-región. Si el operador quiere afinar (solo pickup vs solo
+  //    delivery), puede editar desde la UI carrier.
+  await ensureZone({
+    db,
+    empresaId: carrierEmpresaId,
+    regionCode: 'XIII',
+    zoneType: 'ambos',
+  });
+  await ensureZone({
+    db,
+    empresaId: carrierEmpresaId,
+    regionCode: 'V',
+    zoneType: 'ambos',
+  });
+  await ensureZone({
+    db,
+    empresaId: carrierEmpresaId,
+    regionCode: 'VI',
+    zoneType: 'ambos',
+  });
+
+  // 9. Conductor del carrier — flujo placeholder + PIN (D9).
   const driverResult = await ensureConductor({
     db,
     firebaseAuth,
@@ -397,6 +428,7 @@ export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
       }
 
       await tx.delete(vehicles).where(eq(vehicles.empresaId, emp.id));
+      await tx.delete(zones).where(eq(zones.empresaId, emp.id));
       await tx.delete(sucursalesEmpresa).where(eq(sucursalesEmpresa.empresaId, emp.id));
       await tx.delete(memberships).where(eq(memberships.empresaId, emp.id));
       await tx.delete(empresas).where(eq(empresas.id, emp.id));
@@ -619,6 +651,45 @@ async function ensureSucursal(opts: {
     addressRegion: opts.addressRegion,
     latitude: opts.latitude,
     longitude: opts.longitude,
+  });
+}
+
+/**
+ * Idempotente: si ya existe una zona activa con la misma terna
+ * (empresa, region, tipo), no la duplica. Las zonas son críticas para
+ * que el matching engine considere al carrier candidato — sin una zona
+ * en la región del origen del trip, `runMatching` falla en el primer
+ * filtro con `no_carrier_in_origin_region`.
+ */
+async function ensureZone(opts: {
+  db: Db;
+  empresaId: string;
+  regionCode: string;
+  zoneType: 'recogida' | 'entrega' | 'ambos';
+}): Promise<void> {
+  const { db, empresaId, regionCode, zoneType } = opts;
+  const existing = await db
+    .select({ id: zones.id })
+    .from(zones)
+    .where(eq(zones.empresaId, empresaId));
+  // Lookup en memoria por terna (empresa, region, tipo). Set chico.
+  const existingByKey = await db
+    .select({
+      id: zones.id,
+      regionCode: zones.regionCode,
+      zoneType: zones.zoneType,
+    })
+    .from(zones)
+    .where(eq(zones.empresaId, empresaId));
+  if (existingByKey.some((z) => z.regionCode === regionCode && z.zoneType === zoneType)) {
+    return;
+  }
+  void existing;
+  await db.insert(zones).values({
+    empresaId,
+    regionCode,
+    zoneType,
+    isActive: true,
   });
 }
 
