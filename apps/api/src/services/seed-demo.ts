@@ -1,13 +1,22 @@
 import type { Logger } from '@booster-ai/logger';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
 import {
+  assignments,
+  chatMessages,
   conductores,
   empresas,
+  greenDrivingEvents,
   memberships,
+  offers,
   plans,
+  posicionesMovilConductor,
   sucursalesEmpresa,
+  telemetryPoints,
+  tripEvents,
+  tripMetrics,
+  trips,
   users,
   vehicles,
 } from '../db/schema.js';
@@ -249,10 +258,41 @@ export async function seedDemo(opts: {
 /**
  * Borra todo lo creado por el seed: empresas demo + cascada de FKs.
  */
+/**
+ * Borra todas las entidades creadas (o derivadas) del seed demo.
+ *
+ * Las empresas demo (`is_demo=true`) tienen FKs `ON DELETE RESTRICT` desde
+ * múltiples tablas (viajes, ofertas, asignaciones, chat, telemetría…), así
+ * que un simple `DELETE FROM empresas` falla con FK constraint error si
+ * durante la demo se generó cualquier flujo (viaje, oferta, asignación,
+ * mensaje, GPS). Acá hacemos la cascada manual en el orden correcto:
+ *
+ *   1. Para cada empresa demo (shipper Y/O carrier):
+ *      - Encontrar todos los viajes donde la empresa es shipper, O donde
+ *        recibió oferta como carrier, O donde aceptó como carrier.
+ *      - Para cada viaje, borrar en orden: chat_messages → trip_events →
+ *        trip_metrics → assignments → offers → trip.
+ *   2. Telemetría de los vehículos de la empresa: posiciones_movil,
+ *      telemetry_points, green_driving_events.
+ *   3. Conductores, vehículos, sucursales, memberships, empresa (orden
+ *      original).
+ *   4. Usuarios conductores huérfanos (sin otras memberships).
+ *
+ * Idempotente — si no hay nada que borrar, no falla.
+ *
+ * **Decisión de scope**: borramos TODA la actividad de las empresas demo,
+ * no solo lo "creado por el seed". Razón: una empresa marcada `is_demo`
+ * no debería tener datos reales mezclados; cualquier flujo que hayan
+ * generado en demo se asume desechable. Si en el futuro queremos
+ * preservar "demos históricas" para auditoría post-pitch, hay que marcar
+ * los trips también con `is_demo` y filtrar acá. Por ahora, scorched
+ * earth para empresas demo.
+ */
 export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
   empresas_eliminadas: number;
+  viajes_eliminados: number;
 }> {
-  const { db } = opts;
+  const { db, logger } = opts;
 
   // Encontramos las empresas demo.
   const demoEmpresas = await db
@@ -261,20 +301,98 @@ export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
     .where(eq(empresas.isDemo, true));
 
   if (demoEmpresas.length === 0) {
-    return { empresas_eliminadas: 0 };
+    return { empresas_eliminadas: 0, viajes_eliminados: 0 };
   }
 
+  const demoEmpresaIds = demoEmpresas.map((e) => e.id);
+  let totalViajesEliminados = 0;
+
   await db.transaction(async (tx) => {
+    // 1. Identificar todos los viajes que tocan alguna empresa demo
+    //    (como shipper o vía ofertas/asignaciones al carrier).
+    const tripsAsShipper = await tx
+      .select({ id: trips.id })
+      .from(trips)
+      .where(inArray(trips.generadorCargaEmpresaId, demoEmpresaIds));
+    const tripsViaOffers = await tx
+      .select({ tripId: offers.tripId })
+      .from(offers)
+      .where(inArray(offers.empresaId, demoEmpresaIds));
+    const tripsViaAssignments = await tx
+      .select({ tripId: assignments.tripId })
+      .from(assignments)
+      .where(inArray(assignments.empresaId, demoEmpresaIds));
+
+    const allTripIds = [
+      ...new Set([
+        ...tripsAsShipper.map((r) => r.id),
+        ...tripsViaOffers.map((r) => r.tripId),
+        ...tripsViaAssignments.map((r) => r.tripId),
+      ]),
+    ];
+    totalViajesEliminados = allTripIds.length;
+
+    if (allTripIds.length > 0) {
+      // 2. Asignaciones de esos viajes → necesitamos sus IDs para chat.
+      const assignmentRows = await tx
+        .select({ id: assignments.id })
+        .from(assignments)
+        .where(inArray(assignments.tripId, allTripIds));
+      const assignmentIds = assignmentRows.map((r) => r.id);
+
+      // 3. Chat messages primero (apuntan a assignments).
+      if (assignmentIds.length > 0) {
+        await tx.delete(chatMessages).where(inArray(chatMessages.assignmentId, assignmentIds));
+      }
+
+      // 4. Trip events (apuntan a trip).
+      await tx.delete(tripEvents).where(inArray(tripEvents.tripId, allTripIds));
+
+      // 5. Trip metrics (apuntan a trip).
+      await tx.delete(tripMetrics).where(inArray(tripMetrics.tripId, allTripIds));
+
+      // 6. Assignments (apuntan a trip + carrier empresa + vehicle).
+      if (assignmentIds.length > 0) {
+        await tx.delete(assignments).where(inArray(assignments.tripId, allTripIds));
+      }
+
+      // 7. Offers (apuntan a trip + carrier empresa + suggested vehicle).
+      await tx.delete(offers).where(inArray(offers.tripId, allTripIds));
+
+      // 8. El trip mismo (apunta a shipper empresa).
+      await tx.delete(trips).where(inArray(trips.id, allTripIds));
+    }
+
+    // 9. Por cada empresa demo, limpiar vehículos + telemetría + el resto
+    //    (orden conservado del flujo original).
     for (const emp of demoEmpresas) {
-      // Conductores → users via cascada de soft delete, pero acá hard delete.
+      // 9a. Vehículos de la empresa → necesitamos sus IDs para telemetría.
+      const vehicleRows = await tx
+        .select({ id: vehicles.id })
+        .from(vehicles)
+        .where(eq(vehicles.empresaId, emp.id));
+      const vehicleIds = vehicleRows.map((r) => r.id);
+
+      if (vehicleIds.length > 0) {
+        // Telemetría / GPS móvil / driving events apuntan a vehicle_id RESTRICT.
+        await tx
+          .delete(posicionesMovilConductor)
+          .where(inArray(posicionesMovilConductor.vehicleId, vehicleIds));
+        await tx.delete(telemetryPoints).where(inArray(telemetryPoints.vehicleId, vehicleIds));
+        await tx
+          .delete(greenDrivingEvents)
+          .where(inArray(greenDrivingEvents.vehicleId, vehicleIds));
+      }
+
+      // 9b. Conductores → users via cascada manual (driverUserIds para
+      //     borrar al final si no tienen otras memberships).
       const driverRows = await tx
         .select({ id: conductores.id, userId: conductores.userId })
         .from(conductores)
         .where(eq(conductores.empresaId, emp.id));
-      const driverIds = driverRows.map((d) => d.id);
       const driverUserIds = driverRows.map((d) => d.userId);
 
-      if (driverIds.length > 0) {
+      if (driverRows.length > 0) {
         await tx.delete(conductores).where(eq(conductores.empresaId, emp.id));
       }
 
@@ -283,9 +401,8 @@ export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
       await tx.delete(memberships).where(eq(memberships.empresaId, emp.id));
       await tx.delete(empresas).where(eq(empresas.id, emp.id));
 
-      // Borrar los user-conductores que solo existían para este demo (no
-      // tienen otras memberships). El usuario dueño del demo se borra solo
-      // si NO tiene otras memberships activas — chequeo manual.
+      // 9c. Borrar los user-conductores que solo existían para este demo
+      //     (no tienen otras memberships).
       for (const uid of driverUserIds) {
         const otherMemberships = await tx
           .select({ id: memberships.id })
@@ -299,7 +416,18 @@ export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
     }
   });
 
-  return { empresas_eliminadas: demoEmpresas.length };
+  logger.info(
+    {
+      empresasEliminadas: demoEmpresas.length,
+      viajesEliminados: totalViajesEliminados,
+    },
+    'seed-demo: cleanup completo',
+  );
+
+  return {
+    empresas_eliminadas: demoEmpresas.length,
+    viajes_eliminados: totalViajesEliminados,
+  };
 }
 
 // ---------------------------------------------------------------------------
