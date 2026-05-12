@@ -436,54 +436,142 @@ describe('deleteDemo', () => {
     const { deleteDemo } = await import('../../src/services/seed-demo.js');
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(0);
+    expect(out.viajes_eliminados).toBe(0);
   });
 
-  it('borra 1 empresa y deletea user-conductor sin otras memberships', async () => {
+  /**
+   * Las txSelects siguen un orden determinístico en la implementación:
+   *   1. tripsAsShipper (where generadorCargaEmpresaId in demoEmpresaIds)
+   *   2. tripsViaOffers (where offers.empresaId in demoEmpresaIds)
+   *   3. tripsViaAssignments (where assignments.empresaId in demoEmpresaIds)
+   *   4. assignmentRows (solo si hay trips — skip si paso 1+2+3 vacíos)
+   *   5. Por cada empresa: vehicleRows
+   *   6. Por cada empresa: driverRows
+   *   7. Por cada driver: otherMemberships
+   */
+
+  it('empresa demo sin actividad (sin trips, sin vehículos, sin conductores) → solo borra empresa básica', async () => {
     const stub = makeDbStub({
-      // db.select empresas where isDemo → 1 empresa
       selects: [[{ id: 'emp-1' }]],
-      // tx selects:
-      // 1. drivers by empresa → 1 driver
-      // 2. otherMemberships del driver → []
-      txSelects: [[{ id: 'd1', userId: 'u-driver-1' }], []],
+      txSelects: [
+        [], // tripsAsShipper
+        [], // tripsViaOffers
+        [], // tripsViaAssignments
+        [], // vehicleRows
+        [], // driverRows
+      ],
     });
     const { deleteDemo } = await import('../../src/services/seed-demo.js');
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
-    expect(stub.transaction).toHaveBeenCalledOnce();
-    // tx.delete debió llamarse para: conductores, vehicles, sucursales,
-    // memberships, empresas, users (6 total).
+    expect(out.viajes_eliminados).toBe(0);
+    // tx.delete: vehicles, sucursales, memberships, empresa = 4 (sin trips,
+    // sin telemetría, sin conductores).
+    const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    expect(calls).toBe(4);
+  });
+
+  it('empresa demo con conductores → borra cascada incluida users sin otras memberships', async () => {
+    const stub = makeDbStub({
+      selects: [[{ id: 'emp-1' }]],
+      txSelects: [
+        [], // tripsAsShipper
+        [], // tripsViaOffers
+        [], // tripsViaAssignments
+        [], // vehicleRows
+        [{ id: 'd1', userId: 'u-driver-1' }], // driverRows (1 conductor)
+        [], // otherMemberships del driver-1 (vacío → user huérfano)
+      ],
+    });
+    const { deleteDemo } = await import('../../src/services/seed-demo.js');
+    const out = await deleteDemo({ db: stub.db, logger: noopLogger });
+    expect(out.empresas_eliminadas).toBe(1);
+    expect(out.viajes_eliminados).toBe(0);
+    // tx.delete: conductores, vehicles, sucursales, memberships, empresa, users = 6
     expect(
       (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length,
     ).toBeGreaterThanOrEqual(5);
   });
 
-  it('borra empresa sin conductores (skip delete conductores y users)', async () => {
+  it('empresa demo con vehículos → limpia telemetría antes de borrar vehículos', async () => {
     const stub = makeDbStub({
       selects: [[{ id: 'emp-1' }]],
-      txSelects: [[]], // no drivers
+      txSelects: [
+        [], // tripsAsShipper
+        [], // tripsViaOffers
+        [], // tripsViaAssignments
+        [{ id: 'veh-1' }, { id: 'veh-2' }], // vehicleRows: 2 vehículos
+        [], // driverRows
+      ],
     });
     const { deleteDemo } = await import('../../src/services/seed-demo.js');
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
-    // tx.delete debió llamarse 4 veces (vehicles, sucursales, memberships, empresa)
-    // NO conductores ni users.
+    // tx.delete: posiciones_movil, telemetria_puntos, eventos_conduccion,
+    //            vehicles, sucursales, memberships, empresa = 7
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
-    expect(calls).toBe(4);
+    expect(calls).toBe(7);
+  });
+
+  it('empresa demo con viajes históricos → cascada completa por trip', async () => {
+    const stub = makeDbStub({
+      selects: [[{ id: 'emp-1' }]],
+      txSelects: [
+        [{ id: 'trip-1' }, { id: 'trip-2' }], // tripsAsShipper (2 viajes)
+        [], // tripsViaOffers (dedup vs as-shipper)
+        [], // tripsViaAssignments
+        [{ id: 'asg-1' }], // assignmentRows del trip → 1 asignación
+        [], // vehicleRows
+        [], // driverRows
+      ],
+    });
+    const { deleteDemo } = await import('../../src/services/seed-demo.js');
+    const out = await deleteDemo({ db: stub.db, logger: noopLogger });
+    expect(out.empresas_eliminadas).toBe(1);
+    expect(out.viajes_eliminados).toBe(2);
+    // tx.delete: chat_messages, trip_events, trip_metrics, assignments,
+    //            offers, trips, vehicles, sucursales, memberships, empresa = 10
+    const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    expect(calls).toBe(10);
+  });
+
+  it('viajes con offers/assignments al carrier demo se incluyen aunque shipper no sea demo', async () => {
+    // Caso edge: el carrier demo aparece en una offer/assignment de un
+    // trip NO demo (shipper real). El delete debería incluir ese trip
+    // igualmente para que el carrier pueda borrarse sin FK error.
+    const stub = makeDbStub({
+      selects: [[{ id: 'carrier-demo' }]],
+      txSelects: [
+        [], // tripsAsShipper (vacío, no es shipper)
+        [{ tripId: 'trip-A' }], // tripsViaOffers
+        [{ tripId: 'trip-B' }], // tripsViaAssignments
+        [], // assignmentRows
+        [], // vehicleRows
+        [], // driverRows
+      ],
+    });
+    const { deleteDemo } = await import('../../src/services/seed-demo.js');
+    const out = await deleteDemo({ db: stub.db, logger: noopLogger });
+    expect(out.viajes_eliminados).toBe(2); // trip-A + trip-B deduped
   });
 
   it('conserva user-conductor si tiene otra membership activa', async () => {
     const stub = makeDbStub({
       selects: [[{ id: 'emp-1' }]],
       txSelects: [
-        [{ id: 'd1', userId: 'u-shared' }],
-        [{ id: 'm-other' }], // otra membership → no borra el user
+        [], // tripsAsShipper
+        [], // tripsViaOffers
+        [], // tripsViaAssignments
+        [], // vehicleRows
+        [{ id: 'd1', userId: 'u-shared' }], // driver
+        [{ id: 'm-other' }], // otra membership → NO borra el user
       ],
     });
     const { deleteDemo } = await import('../../src/services/seed-demo.js');
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
-    // tx.delete: conductores, vehicles, sucursales, memberships, empresa = 5 (no user)
+    // tx.delete: conductores, vehicles, sucursales, memberships, empresa = 5
+    // (NO user porque tiene otra membership)
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     expect(calls).toBe(5);
   });
