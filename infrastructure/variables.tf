@@ -256,3 +256,45 @@ variable "gke_operator_authorized_cidrs" {
   }))
   default = []
 }
+
+# ---------------------------------------------------------------------------
+# Matching engine v2 — feature flag + pesos custom (ADR-033)
+# ---------------------------------------------------------------------------
+# Activación del scoring multifactor con backhaul awareness. Cuando es
+# `false` (default), el matching usa v1 capacity-only — el path actual,
+# bit-exacto. Cuando es `true`, el orchestrator hace lookups extras
+# (trips activos del carrier, histórico 7d, ofertas 90d, tier) y aplica
+# `scoreCandidateV2`.
+#
+# Rollout plan:
+#   1. Mantener `false` en main mientras se evalúa con backtest UI
+#      (/app/platform-admin/matching).
+#   2. Si las corridas muestran delta favorable, override a `true` en
+#      `tfvars.prod` o `terraform.tfvars.local` y aplicar.
+#   3. Monitorear 7d con métricas habituales (offer acceptance rate,
+#      time-to-match, distribución de empresas con offer).
+#   4. Si métricas estables, mantener; sino, revertir el flag (`false`
+#      en variables.tf o tfvars).
+#
+# Flip es reversible sin redeploy de código — solo cambia env var via
+# `terraform apply` (Cloud Run respawneará la revision en segundos).
+variable "matching_algorithm_v2_activated" {
+  description = "Activa el scoring multifactor v2 con backhaul awareness (ADR-033). false = v1 capacity-only."
+  type        = bool
+  default     = false
+}
+
+# Pesos custom JSON para los componentes del scoring v2. Empty string →
+# usa `DEFAULT_WEIGHTS_V2` del package matching-algorithm
+# (0.40 capacidad / 0.35 backhaul / 0.15 reputacion / 0.10 tier). Útil
+# para A/B testing post-launch sin redeploy de código.
+#
+# Shape esperado:
+#   {"capacidad":0.4,"backhaul":0.35,"reputacion":0.15,"tier":0.1}
+# Suma debe ser ≈ 1.0; el api hace validateWeights() runtime y cae a
+# defaults con WARN log si parsing falla.
+variable "matching_v2_weights_json" {
+  description = "JSON con pesos custom para scoring v2 (ADR-033). Empty → DEFAULT_WEIGHTS_V2 hardcoded."
+  type        = string
+  default     = ""
+}
