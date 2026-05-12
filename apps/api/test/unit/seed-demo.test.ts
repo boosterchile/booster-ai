@@ -183,9 +183,18 @@ describe('seedDemo', () => {
         [],
         // 13. ensureVehicle DEMO02: → []
         [],
-        // 14. ensureConductor: select users by rut → []
+        // 14. ensureZone XIII: 2 selects
         [],
-        // 14b. select conductores by userId → []
+        [],
+        // 15. ensureZone V: 2 selects
+        [],
+        [],
+        // 16. ensureZone VI: 2 selects
+        [],
+        [],
+        // 17. ensureConductor: select users by rut → []
+        [],
+        // 17b. select conductores by userId → []
         [],
       ],
       inserts: [
@@ -213,6 +222,12 @@ describe('seedDemo', () => {
         [{ id: 'veh-1' }],
         // vehicle 2
         [{ id: 'veh-2' }],
+        // zone XIII
+        [],
+        // zone V
+        [],
+        // zone VI
+        [],
         // user conductor
         [{ id: 'cond-user' }],
         // conductor
@@ -272,6 +287,15 @@ describe('seedDemo', () => {
         [{ id: 'veh-existing-1' }],
         // vehicle DEMO02: exists
         [{ id: 'veh-existing-2' }],
+        // zone XIII: 2 selects (existe → skip)
+        [],
+        [{ regionCode: 'XIII', zoneType: 'ambos' }],
+        // zone V: 2 selects (no existe → insert)
+        [],
+        [],
+        // zone VI: 2 selects (no existe → insert)
+        [],
+        [],
         // conductor: select users by rut → exists, placeholder UID (regen PIN)
         [{ id: 'cond-user-existing', firebaseUid: 'pending-rut:12345678-5' }],
         // select conductores by userId → exists, not deleted
@@ -279,6 +303,10 @@ describe('seedDemo', () => {
       ],
       inserts: [
         // segunda sucursal (la primera se saltó)
+        [],
+        // zone V (XIII se saltó)
+        [],
+        // zone VI
         [],
       ],
     });
@@ -465,10 +493,10 @@ describe('deleteDemo', () => {
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
     expect(out.viajes_eliminados).toBe(0);
-    // tx.delete: vehicles, sucursales, memberships, empresa = 4 (sin trips,
-    // sin telemetría, sin conductores).
+    // tx.delete: vehicles, zones, sucursales, memberships, empresa = 5 (sin
+    // trips, sin telemetría, sin conductores).
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
-    expect(calls).toBe(4);
+    expect(calls).toBe(5);
   });
 
   it('empresa demo con conductores → borra cascada incluida users sin otras memberships', async () => {
@@ -508,9 +536,9 @@ describe('deleteDemo', () => {
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
     // tx.delete: posiciones_movil, telemetria_puntos, eventos_conduccion,
-    //            vehicles, sucursales, memberships, empresa = 7
+    //            vehicles, zones, sucursales, memberships, empresa = 8
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
-    expect(calls).toBe(7);
+    expect(calls).toBe(8);
   });
 
   it('empresa demo con viajes históricos → cascada completa por trip', async () => {
@@ -530,9 +558,10 @@ describe('deleteDemo', () => {
     expect(out.empresas_eliminadas).toBe(1);
     expect(out.viajes_eliminados).toBe(2);
     // tx.delete: chat_messages, trip_events, trip_metrics, assignments,
-    //            offers, trips, vehicles, sucursales, memberships, empresa = 10
+    //            offers, trips, vehicles, zones, sucursales, memberships,
+    //            empresa = 11
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
-    expect(calls).toBe(10);
+    expect(calls).toBe(11);
   });
 
   it('viajes con offers/assignments al carrier demo se incluyen aunque shipper no sea demo', async () => {
@@ -570,9 +599,9 @@ describe('deleteDemo', () => {
     const { deleteDemo } = await import('../../src/services/seed-demo.js');
     const out = await deleteDemo({ db: stub.db, logger: noopLogger });
     expect(out.empresas_eliminadas).toBe(1);
-    // tx.delete: conductores, vehicles, sucursales, memberships, empresa = 5
-    // (NO user porque tiene otra membership)
+    // tx.delete: conductores, vehicles, zones, sucursales, memberships,
+    //            empresa = 6 (NO user porque tiene otra membership)
     const calls = (stub.tx.delete as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
-    expect(calls).toBe(5);
+    expect(calls).toBe(6);
   });
 });
