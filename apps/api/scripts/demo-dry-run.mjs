@@ -58,6 +58,12 @@ if (!FIREBASE_WEB_API_KEY) {
 const args = process.argv.slice(2);
 const ONLY_CLEANUP = args.includes('--cleanup');
 const KEEP_DATA = args.includes('--keep-data');
+// --seed-only: solo crea entidades base (empresas, users, vehículos,
+// conductor con PIN sin activar, zonas). NO crea trip, NO acepta
+// oferta, NO activa conductor. Útil para demos en vivo donde el
+// operador hace el flow en pantalla y necesita el PIN del conductor
+// disponible para mostrar el login D9 desde cero.
+const SEED_ONLY = args.includes('--seed-only');
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -390,6 +396,28 @@ async function main() {
 
   // Fase 1: seed
   const creds = await runSeed(adminToken);
+
+  if (SEED_ONLY) {
+    log('🎉', 'seed-only: entidades base creadas, listo para demo en vivo');
+    log('', '', '');
+    log('🔑', 'Credenciales (anotá el PIN ahora, no se vuelve a mostrar):');
+    log('  shipper:', `${creds.shipper_owner.email} / ${creds.shipper_owner.password}`);
+    log('  carrier:', `${creds.carrier_owner.email} / ${creds.carrier_owner.password}`);
+    log('  stakeholder:', `${creds.stakeholder.email} / ${creds.stakeholder.password}`);
+    log(
+      '  conductor:',
+      `RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ?? '(ya activado)'}`,
+    );
+    log('', '', '');
+    log('ℹ️ ', 'Ahora podés navegar la UI manualmente:');
+    log('  •', 'Login shipper → publica un viaje desde /app/cargas/nuevo');
+    log('  •', 'Login carrier → ve la oferta en /app/ofertas → acepta');
+    log('  •', 'Carrier asigna conductor en /app/asignacion/:id (dropdown)');
+    log('  •', 'Login conductor → /login/conductor con RUT + PIN → activa');
+    log('  •', 'Conductor activa GPS en /app/conductor/modo');
+    await rotateAdminPassword(adminUid);
+    return;
+  }
 
   // Fase 2: shipper crea viaje + matching dispara
   const shipperToken = await signInWithEmailPassword(

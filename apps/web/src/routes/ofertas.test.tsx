@@ -1,7 +1,14 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
+
+// Layout (usado por OfertasRoute) internamente usa TanStack Query.
+function renderWithQueryClient(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -72,28 +79,28 @@ afterEach(() => {
 
 describe('OfertasRoute', () => {
   it('contexto no onboarded → no renderiza', () => {
-    const { container } = render(<OfertasRoute />);
+    const { container } = renderWithQueryClient(<OfertasRoute />);
     expect(container.querySelector('h1')).toBeNull();
   });
 
   it('empresa no transportista → warning', () => {
     providedContext = { kind: 'onboarded', me: makeMe(false) };
     useOffersMineMock.mockReturnValue({ isLoading: false, isError: false, data: undefined });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getByText(/no opera como carrier/)).toBeInTheDocument();
   });
 
   it('carrier + loading → "Cargando ofertas"', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     useOffersMineMock.mockReturnValue({ isLoading: true, isError: false, data: undefined });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getByText(/Cargando ofertas/)).toBeInTheDocument();
   });
 
   it('carrier + error → mensaje de error', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     useOffersMineMock.mockReturnValue({ isLoading: false, isError: true, data: undefined });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getByText(/No pudimos cargar las ofertas/)).toBeInTheDocument();
   });
 
@@ -106,7 +113,7 @@ describe('OfertasRoute', () => {
       refetch: vi.fn(),
       isFetching: false,
     });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getByTestId('empty-state')).toBeInTheDocument();
   });
 
@@ -124,7 +131,7 @@ describe('OfertasRoute', () => {
       refetch: vi.fn(),
       isFetching: false,
     });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getAllByTestId('offer-card')).toHaveLength(2);
   });
 
@@ -138,7 +145,7 @@ describe('OfertasRoute', () => {
       refetch,
       isFetching: false,
     });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     screen.getByRole('button', { name: /Actualizar/ }).click();
     expect(refetch).toHaveBeenCalled();
   });
@@ -152,7 +159,7 @@ describe('OfertasRoute', () => {
       refetch: vi.fn(),
       isFetching: true,
     });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     expect(screen.getByRole('button', { name: /Actualizando/ })).toBeDisabled();
   });
 
@@ -165,7 +172,7 @@ describe('OfertasRoute', () => {
       refetch: vi.fn(),
       isFetching: false,
     });
-    render(<OfertasRoute />);
+    renderWithQueryClient(<OfertasRoute />);
     screen.getByRole('button', { name: /Salir/ }).click();
     expect(signOutUserMock).toHaveBeenCalled();
   });
