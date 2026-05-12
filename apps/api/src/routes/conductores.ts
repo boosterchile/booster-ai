@@ -48,6 +48,50 @@ function placeholderEmail(rut: string): string {
   return `pending-rut-${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
 }
 
+/**
+ * Helpers defensivos para serializar Dates de Drizzle.
+ *
+ * `Date.toISOString()` lanza RangeError "Invalid time value" si el Date
+ * tiene tiempo NaN — caso edge que ocurre cuando node-postgres parsea un
+ * timestamp con formato inesperado (TZ awareness rara, etc.). Sin estos
+ * helpers, una sola fila con un timestamp corrupto rompe el endpoint
+ * completo con 500. Caso real detectado durante el dry-run pre-Corfo.
+ */
+function safeIsoString(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? null : value.toISOString();
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return null;
+}
+
+/**
+ * Devuelve YYYY-MM-DD si el Date es válido. Null si es inválido o null.
+ * Si viene como string, devuelve los primeros 10 chars.
+ */
+function safeDateString(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    const t = value.getTime();
+    if (Number.isNaN(t)) {
+      return null;
+    }
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'string') {
+    return value.slice(0, 10);
+  }
+  return null;
+}
+
 export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
@@ -124,15 +168,12 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
         empresa_id: r.empresa_id,
         license_class: r.license_class,
         license_number: r.license_number,
-        license_expiry:
-          r.license_expiry instanceof Date
-            ? r.license_expiry.toISOString().slice(0, 10)
-            : r.license_expiry,
+        license_expiry: safeDateString(r.license_expiry),
         is_extranjero: r.is_extranjero,
         status: r.status,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-        deleted_at: r.deleted_at,
+        created_at: safeIsoString(r.created_at),
+        updated_at: safeIsoString(r.updated_at),
+        deleted_at: safeIsoString(r.deleted_at),
         user: {
           id: r.user_id,
           full_name: r.user_full_name,

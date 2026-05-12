@@ -269,12 +269,27 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       )
       .orderBy(desc(assignments.acceptedAt));
 
+    // Helper: serializar Dates de Drizzle de forma defensiva — un Date
+    // con NaN time (raro pero ocurre con TZ awareness rara de pg) rompe
+    // todo el response al hacer JSON.stringify implícito (toISOString
+    // throws RangeError). Mejor null que 500.
+    const safeIso = (d: unknown): string | null => {
+      if (d == null) {
+        return null;
+      }
+      if (d instanceof Date) {
+        const t = d.getTime();
+        return Number.isNaN(t) ? null : d.toISOString();
+      }
+      return typeof d === 'string' ? d : null;
+    };
+
     return c.json({
       assignments: rows.map((r) => ({
         id: r.assignmentId,
         status: r.assignmentStatus,
-        accepted_at: r.acceptedAt,
-        picked_up_at: r.pickedUpAt,
+        accepted_at: safeIso(r.acceptedAt),
+        picked_up_at: safeIso(r.pickedUpAt),
         agreed_price_clp: r.agreedPriceClp,
         carrier_empresa: {
           id: r.empresaId,
@@ -295,8 +310,8 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           },
           cargo_type: r.cargoType,
           cargo_weight_kg: r.cargoWeightKg,
-          pickup_window_start: r.pickupWindowStart,
-          pickup_window_end: r.pickupWindowEnd,
+          pickup_window_start: safeIso(r.pickupWindowStart),
+          pickup_window_end: safeIso(r.pickupWindowEnd),
         },
       })),
     });
