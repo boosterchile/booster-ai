@@ -298,3 +298,22 @@ variable "matching_v2_weights_json" {
   type        = string
   default     = ""
 }
+
+# ---------------------------------------------------------------------------
+# Platform admin allowlist
+# ---------------------------------------------------------------------------
+# Emails (CSV) que pueden acceder a /app/platform-admin/* en la PWA y a
+# /admin/* en el API. Operadores internos de Booster — NUNCA shippers,
+# carriers ni stakeholders.
+#
+# Hasta acá la variable no estaba declarada en Terraform, así que el env
+# var nunca llegaba a Cloud Run y el código defaulteaba a `''` (array
+# vacío) → ningún email era admin → 403 al entrar a la UI. Bug en infra
+# detectado durante UX review post-stack ADR-033.
+#
+# Para agregar/quitar admins: editar tfvars.local o tfvars.prod y aplicar.
+variable "booster_platform_admin_emails" {
+  description = "CSV de emails con acceso a las rutas /admin/* del API y la sección /app/platform-admin/* de la PWA."
+  type        = string
+  default     = "dev@boosterchile.com"
+}

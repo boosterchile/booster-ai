@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
- * Tests del UI de matching backtest (ADR-033 PR #4).
+ * Tests del UI de "Comparar algoritmo de asignación" (ADR-033).
+ *
+ * Verifican que los strings y mensajes de error estén en español natural
+ * sin jerga técnica (backtest, overlap, score deltas, ADR-033, etc.) —
+ * el operador no debería ver términos internos al leer la página.
  *
  * Patrones de mock:
  *   - `ProtectedRoute` bypass: la página se renderiza sin requerir auth.
@@ -90,35 +94,41 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('PlatformAdminMatchingPage — initial load', () => {
-  it('lista corridas al montar', async () => {
+describe('PlatformAdminMatchingPage — carga inicial', () => {
+  it('lista simulaciones al montar', async () => {
     const getSpy = vi.spyOn(api, 'get').mockResolvedValue({ ok: true, runs: [SAMPLE_RUN] });
     render(<PlatformAdminMatchingRoute />);
 
     await waitFor(() => {
       expect(getSpy).toHaveBeenCalledWith('/admin/matching/backtest');
     });
-    expect(await screen.findByText(/11111111…/)).toBeInTheDocument();
-    expect(screen.getByText(/75%/)).toBeInTheDocument();
+    // La fila muestra el conteo de viajes analizados + autor + métricas humanizadas.
+    expect(await screen.findByText(/100 viajes analizados/)).toBeInTheDocument();
+    expect(screen.getByText(/admin@boosterchile.com/)).toBeInTheDocument();
+    // El "75%" va dentro de un <strong> separado del resto del texto — busco partes.
+    expect(screen.getByText('75%')).toBeInTheDocument();
+    expect(screen.getByText(/coincide con el algoritmo actual/)).toBeInTheDocument();
   });
 
-  it('error en lista → muestra mensaje', async () => {
+  it('error 403 → humaniza el mensaje (sin allowlist)', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(
-      new ApiError(403, 'forbidden', null, 'forbidden access'),
+      new ApiError(403, 'forbidden_platform_admin', null, '403 forbidden_platform_admin'),
     );
     render(<PlatformAdminMatchingRoute />);
-    expect(await screen.findByText(/403: forbidden access/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Tu email no tiene permiso para acceder a esta sección/),
+    ).toBeInTheDocument();
   });
 
-  it('lista vacía → muestra empty state', async () => {
+  it('lista vacía → muestra estado vacío en español', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ ok: true, runs: [] });
     render(<PlatformAdminMatchingRoute />);
-    expect(await screen.findByText(/Sin corridas todavía/)).toBeInTheDocument();
+    expect(await screen.findByText(/Todavía no se hizo ninguna simulación/)).toBeInTheDocument();
   });
 });
 
-describe('RunForm — disparar corrida', () => {
-  it('botón "Ejecutar backtest" hace POST /admin/matching/backtest', async () => {
+describe('Formulario — lanzar simulación', () => {
+  it('botón "Lanzar simulación" hace POST /admin/matching/backtest', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ ok: true, runs: [] });
     const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
       ok: true,
@@ -138,34 +148,38 @@ describe('RunForm — disparar corrida', () => {
         expect.objectContaining({ tripsLimit: 500 }),
       );
     });
-    expect(await screen.findByText(/11111111… completada/)).toBeInTheDocument();
+    // Mensaje de éxito en español natural.
+    expect(await screen.findByText(/Simulación completada/)).toBeInTheDocument();
+    expect(screen.getByText(/100 viajes analizados · 75% de coincidencia/)).toBeInTheDocument();
   });
 
-  it('checkbox pesos custom muestra inputs de cada peso', async () => {
+  it('checkbox de ajustar manualmente muestra inputs de cada peso con descripciones', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ ok: true, runs: [] });
     const user = userEvent.setup();
     render(<PlatformAdminMatchingRoute />);
 
-    const checkbox = await screen.findByRole('checkbox', { name: /Pesos custom/i });
+    const checkbox = await screen.findByRole('checkbox', { name: /Ajustar manualmente/i });
     await user.click(checkbox);
 
-    expect(screen.getByText('Capacidad')).toBeInTheDocument();
-    expect(screen.getByText('Backhaul')).toBeInTheDocument();
+    // Labels descriptivos en lugar de jerga.
+    expect(screen.getByText('Capacidad ajustada')).toBeInTheDocument();
+    expect(screen.getByText('Viaje de retorno')).toBeInTheDocument();
     expect(screen.getByText('Reputación')).toBeInTheDocument();
-    expect(screen.getByText('Tier')).toBeInTheDocument();
+    expect(screen.getByText('Tier de membresía')).toBeInTheDocument();
+    // Hints explicativos
+    expect(screen.getByText(/vehículo no sobredimensionado para la carga/)).toBeInTheDocument();
   });
 
-  it('pesos custom con suma ≠ 1 → error inline antes de hacer POST', async () => {
+  it('pesos con suma ≠ 1 → mensaje claro en español, no se hace POST', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ ok: true, runs: [] });
     const postSpy = vi.spyOn(api, 'post');
 
     const user = userEvent.setup();
     render(<PlatformAdminMatchingRoute />);
 
-    const checkbox = await screen.findByRole('checkbox', { name: /Pesos custom/i });
+    const checkbox = await screen.findByRole('checkbox', { name: /Ajustar manualmente/i });
     await user.click(checkbox);
 
-    // Cambiar capacidad a 0.9 → suma = 1.5
     const capacidadInputs = screen.getAllByDisplayValue('0.4');
     const capacidadNumeric = capacidadInputs.find(
       (el) => el instanceof HTMLInputElement && el.type === 'number',
@@ -179,7 +193,7 @@ describe('RunForm — disparar corrida', () => {
     await user.click(button);
 
     expect(postSpy).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Pesos deben sumar 1\.0/)).toBeInTheDocument();
+    expect(await screen.findByText(/La suma de los pesos tiene que ser 1\.00/)).toBeInTheDocument();
   });
 
   it('servicio falla con 403 → muestra ayuda sobre allowlist', async () => {
@@ -194,12 +208,15 @@ describe('RunForm — disparar corrida', () => {
     const button = await screen.findByTestId('run-backtest-button');
     await user.click(button);
 
-    expect(await screen.findByText(/BOOSTER_PLATFORM_ADMIN_EMAILS/)).toBeInTheDocument();
+    // Mensaje humanizado, sin jerga técnica ni referencias a env vars.
+    expect(
+      await screen.findByText(/Tu email no tiene permiso para acceder a esta sección/),
+    ).toBeInTheDocument();
   });
 });
 
-describe('Detalle de corrida', () => {
-  it('click en una corrida hace GET /admin/matching/backtest/:id y muestra cards', async () => {
+describe('Detalle de una simulación', () => {
+  it('click en una simulación carga el detalle con métricas en español', async () => {
     const getSpy = vi.spyOn(api, 'get').mockImplementation(((path: string) => {
       if (path === '/admin/matching/backtest') {
         return Promise.resolve({ ok: true, runs: [SAMPLE_RUN] });
@@ -213,34 +230,37 @@ describe('Detalle de corrida', () => {
     const user = userEvent.setup();
     render(<PlatformAdminMatchingRoute />);
 
-    // Esperar que la lista se cargue.
-    const runButton = await screen.findByText(/11111111…/);
-    await user.click(runButton);
+    // La fila se identifica por el conteo de viajes analizados.
+    const runRow = await screen.findByText(/100 viajes analizados/);
+    await user.click(runRow);
 
     await waitFor(() => {
       expect(getSpy).toHaveBeenCalledWith(`/admin/matching/backtest/${SAMPLE_RUN.id}`);
     });
 
-    // Cards de métricas.
-    expect(await screen.findByText('Overlap top-N')).toBeInTheDocument();
-    expect(screen.getByText('75.0%')).toBeInTheDocument();
-    expect(screen.getByText('Δ score promedio')).toBeInTheDocument();
-    expect(screen.getByText('Backhaul hits')).toBeInTheDocument();
+    // Cards con labels descriptivos.
+    expect(await screen.findByText('Viajes analizados')).toBeInTheDocument();
+    expect(screen.getByText('Coincidencia con algoritmo actual')).toBeInTheDocument();
+    expect(screen.getByText('Cambio promedio de puntaje')).toBeInTheDocument();
+    expect(screen.getByText('Viajes con retorno aprovechado')).toBeInTheDocument();
 
-    // Empresas favorecidas / perjudicadas.
-    expect(screen.getByText('Empresas favorecidas')).toBeInTheDocument();
-    expect(screen.getByText(/\+5/)).toBeInTheDocument();
-    expect(screen.getByText('Empresas perjudicadas')).toBeInTheDocument();
+    // Panel de movers en lenguaje claro.
+    expect(screen.getByText('Transportistas que reciben más ofertas')).toBeInTheDocument();
+    expect(screen.getByText(/\+5 ofertas/)).toBeInTheDocument();
+    expect(screen.getByText('Transportistas que reciben menos ofertas')).toBeInTheDocument();
 
-    // Distribución de scores.
-    expect(screen.getByText(/Distribución de scores v2/)).toBeInTheDocument();
+    // Distribución renombrada en términos de calidad.
+    expect(
+      screen.getByText(/Qué tan buenos son los matches que produce el algoritmo nuevo/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Excelente')).toBeInTheDocument();
 
-    // Detalle por trip.
-    expect(screen.getByText(/Detalle por trip \(1\)/)).toBeInTheDocument();
+    // Tabla de detalle viaje por viaje (no "Detalle por trip").
+    expect(screen.getByText(/Detalle viaje por viaje/)).toBeInTheDocument();
     expect(screen.getByText(/trip-1…/)).toBeInTheDocument();
   });
 
-  it('detalle con errorMessage → muestra el error', async () => {
+  it('detalle con errorMessage → mensaje humanizado, sin código técnico', async () => {
     vi.spyOn(api, 'get').mockImplementation(((path: string) => {
       if (path === '/admin/matching/backtest') {
         return Promise.resolve({ ok: true, runs: [SAMPLE_RUN] });
@@ -251,10 +271,10 @@ describe('Detalle de corrida', () => {
     const user = userEvent.setup();
     render(<PlatformAdminMatchingRoute />);
 
-    const runButton = await screen.findByText(/11111111…/);
-    await user.click(runButton);
+    const runRow = await screen.findByText(/100 viajes analizados/);
+    await user.click(runRow);
 
-    expect(await screen.findByText(/Error en corrida/)).toBeInTheDocument();
-    expect(screen.getByText('500: boom')).toBeInTheDocument();
+    expect(await screen.findByText(/No pudimos cargar esta simulación/)).toBeInTheDocument();
+    expect(screen.getByText(/La simulación falló del lado del servidor/)).toBeInTheDocument();
   });
 });
