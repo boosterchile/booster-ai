@@ -3,11 +3,16 @@ import {
   MATCHING_CONFIG,
   type NoCandidatesReason,
   type ScoredCandidate,
+  type ScoredCandidateV2,
   scoreCandidate,
+  scoreCandidateV2,
   scoreToInt,
+  scoreToIntV2,
   selectTopNCandidates,
+  selectTopNCandidatesV2,
 } from '@booster-ai/matching-algorithm';
 import { and, eq, gte, inArray } from 'drizzle-orm';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   type OfferRow,
@@ -18,6 +23,8 @@ import {
   vehicles,
   zones,
 } from '../db/schema.js';
+import { buildCandidateV2, lookupCarriersForV2 } from './matching-v2-lookups.js';
+import { resolveMatchingV2Weights } from './matching-v2-weights.js';
 import { type NotifyOfferDeps, notifyOfferToCarrier } from './notify-offer.js';
 
 /**
@@ -145,8 +152,30 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
       }
 
       // 3. Por cada candidato, elegir vehículo más ajustado y scorear.
+      //    Si MATCHING_ALGORITHM_V2_ACTIVATED, hacemos lookups extras
+      //    (trips activos, histórico 7d, ofertas 90d, tier) para llenar
+      //    los inputs de `scoreCandidateV2`. Sino, usamos `scoreCandidate`
+      //    v1 capacity-only.
       const cargoWeight = trip.cargoWeightKg ?? 0;
-      const candidates: ScoredCandidate[] = [];
+      const algorithmVersion: 'v1' | 'v2' = appConfig.MATCHING_ALGORITHM_V2_ACTIVATED ? 'v2' : 'v1';
+
+      // Lookups v2 (sólo si flag está on). Una sola call batch para
+      // todas las empresas — devuelve Map por empresaId con defaults
+      // para las que no tienen historial.
+      const v2Lookups = appConfig.MATCHING_ALGORITHM_V2_ACTIVATED
+        ? await lookupCarriersForV2({
+            db: tx,
+            logger,
+            empresaIds: candidateEmpresas.map((e) => e.id),
+            originRegionCode: trip.originRegionCode,
+          })
+        : null;
+      const v2Weights = appConfig.MATCHING_ALGORITHM_V2_ACTIVATED
+        ? resolveMatchingV2Weights(logger)
+        : null;
+
+      const candidatesV1: ScoredCandidate[] = [];
+      const candidatesV2: ScoredCandidateV2[] = [];
 
       for (const emp of candidateEmpresas) {
         const vehs = await tx
@@ -167,48 +196,100 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
         }
 
         const vehicleCapacityKg = veh.capacityKg;
-        const score = scoreCandidate(
-          { empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg },
-          cargoWeight,
-        );
 
-        candidates.push({
-          empresaId: emp.id,
-          vehicleId: veh.id,
-          vehicleCapacityKg,
-          score,
-        });
+        if (algorithmVersion === 'v2' && v2Lookups && v2Weights) {
+          const lookup = v2Lookups.get(emp.id);
+          if (!lookup) {
+            // No debería pasar (Map debe tener entry por empresaId).
+            // Defensa: skip.
+            continue;
+          }
+          const candidate = buildCandidateV2({
+            empresaId: emp.id,
+            vehicleId: veh.id,
+            vehicleCapacityKg,
+            lookup,
+          });
+          const scored = scoreCandidateV2(
+            candidate,
+            { cargoWeightKg: cargoWeight, originRegionCode: trip.originRegionCode },
+            v2Weights,
+          );
+          candidatesV2.push(scored);
+        } else {
+          const score = scoreCandidate(
+            { empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg },
+            cargoWeight,
+          );
+          candidatesV1.push({
+            empresaId: emp.id,
+            vehicleId: veh.id,
+            vehicleCapacityKg,
+            score,
+          });
+        }
       }
 
-      if (candidates.length === 0) {
+      const candidatesCount = candidatesV1.length + candidatesV2.length;
+      if (candidatesCount === 0) {
         logger.info(
-          { tripId, reason: 'no_vehicle_with_capacity' },
+          { tripId, reason: 'no_vehicle_with_capacity', algorithmVersion },
           'matching produced 0 candidates',
         );
         return await finalizeNoCandidates(tx, trip.id, 'no_vehicle_with_capacity');
       }
 
-      // 4. Top N por score.
-      const topN = selectTopNCandidates(candidates);
-
-      // 5. Crear offers.
+      // 4. Top N por score (rama según versión del algoritmo).
       const expiresAt = new Date(Date.now() + MATCHING_CONFIG.OFFER_TTL_MINUTES * 60_000);
       const proposedPrice = trip.proposedPriceClp ?? 0;
 
-      const created = await tx
-        .insert(offers)
-        .values(
-          topN.map((c) => ({
-            tripId: trip.id,
-            empresaId: c.empresaId,
-            suggestedVehicleId: c.vehicleId,
-            score: scoreToInt(c.score),
-            status: 'pendiente' as const,
-            proposedPriceClp: proposedPrice,
-            expiresAt,
-          })),
-        )
-        .returning();
+      const offerRowsToInsert =
+        algorithmVersion === 'v2'
+          ? selectTopNCandidatesV2(candidatesV2, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST).map(
+              (c) => ({
+                tripId: trip.id,
+                empresaId: c.empresaId,
+                suggestedVehicleId: c.vehicleId,
+                score: scoreToIntV2(c.score),
+                status: 'pendiente' as const,
+                proposedPriceClp: proposedPrice,
+                expiresAt,
+              }),
+            )
+          : selectTopNCandidates(candidatesV1).map((c) => ({
+              tripId: trip.id,
+              empresaId: c.empresaId,
+              suggestedVehicleId: c.vehicleId,
+              score: scoreToInt(c.score),
+              status: 'pendiente' as const,
+              proposedPriceClp: proposedPrice,
+              expiresAt,
+            }));
+
+      // 5. Crear offers.
+      const created = await tx.insert(offers).values(offerRowsToInsert).returning();
+
+      // Log estructurado del v2 score breakdown para observabilidad.
+      // Permite reconstruir por qué cada carrier recibió oferta —
+      // requerimiento de ADR-033 §10 (métricas observables).
+      if (algorithmVersion === 'v2' && candidatesV2.length > 0) {
+        const topV2 = selectTopNCandidatesV2(candidatesV2, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST);
+        logger.info(
+          {
+            tripId,
+            algorithmVersion,
+            weights: v2Weights,
+            candidates_scored: topV2.map((c) => ({
+              empresaId: c.empresaId,
+              vehicleId: c.vehicleId,
+              score: c.score,
+              components: c.components,
+              backhaul_signal: c.backhaulSignal,
+            })),
+          },
+          'matching v2: score breakdown',
+        );
+      }
 
       // 6. Cambiar trip a ofertas_enviadas.
       await tx
@@ -223,7 +304,8 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
         payload: {
           offer_ids: created.map((o) => o.id),
           empresa_ids: created.map((o) => o.empresaId),
-          candidates_evaluated: candidates.length,
+          candidates_evaluated: candidatesCount,
+          algorithm_version: algorithmVersion,
         },
         source: 'sistema',
       });
@@ -231,15 +313,16 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
       logger.info(
         {
           tripId,
-          candidatesEvaluated: candidates.length,
+          candidatesEvaluated: candidatesCount,
           offersCreated: created.length,
+          algorithmVersion,
         },
         'matching complete',
       );
 
       return {
         tripId,
-        candidatesEvaluated: candidates.length,
+        candidatesEvaluated: candidatesCount,
         offersCreated: created.length,
         offers: created,
       };

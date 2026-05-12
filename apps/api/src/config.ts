@@ -363,6 +363,39 @@ const apiEnvSchema = commonEnvSchema
     BOOSTER_DIRECCION: z.string().min(1).default('Av. Providencia 1000'),
     BOOSTER_COMUNA: z.string().min(1).default('Providencia'),
 
+    /**
+     * ADR-033 — Activa el algoritmo de matching v2 (multi-factor con
+     * awareness de empty-backhaul). Default `false` en todos los
+     * entornos durante rollout inicial.
+     *
+     * Cuando `false`: el orquestador usa el scoring v1 capacity-only.
+     * Cuando `true`: el orquestador hace lookups adicionales (trips
+     * activos del carrier, histórico 7d, ofertas 90d, tier) y usa
+     * `scoreCandidateV2`. Ambos algoritmos coexisten — flag flip es
+     * reversible sin redeploy.
+     *
+     * Rollout plan:
+     *   1. PRs 1-4 mergeados con flag=false default.
+     *   2. Backtest sobre 30d de staging — si delta favorable, flag=true en staging por 7d.
+     *   3. Si métricas siguen estables, flag=true en prod.
+     */
+    MATCHING_ALGORITHM_V2_ACTIVATED: z.coerce.boolean().default(false),
+
+    /**
+     * ADR-033 §1 — Pesos custom para los componentes del scoring v2.
+     * JSON con shape `{ capacidad: number; backhaul: number;
+     * reputacion: number; tier: number }`. Suma debe ser ≈ 1.0
+     * (validado runtime por validateWeights).
+     *
+     * Si la env var está vacía o malformada → se usan
+     * `DEFAULT_WEIGHTS_V2` (0.40/0.35/0.15/0.10). Errores de parsing
+     * loggean WARN y no rompen el startup — preferimos fallback a
+     * defaults conocidos antes que crashear.
+     *
+     * Útil para A/B testing de pesos post-launch sin redeploy.
+     */
+    MATCHING_V2_WEIGHTS_JSON: z.string().default(''),
+
     BOOSTER_PLATFORM_ADMIN_EMAILS: z
       .string()
       .default('')
