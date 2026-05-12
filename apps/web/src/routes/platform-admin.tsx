@@ -136,13 +136,24 @@ function PlatformAdminPage() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Demo end-to-end</h1>
-        <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-          Inicializa o limpia el set de demo en producción. El seed crea 4 usuarios sintéticos
-          (shipper, carrier, stakeholder, conductor) + 2 vehículos del carrier (uno con IMEI espejo
-          al Teltonika real de Van Oosterwyk, otro sin device para reporte GPS móvil). Es
-          idempotente — re-ejecutar no duplica entidades.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Demo end-to-end</h1>
+            <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
+              Inicializa o limpia el set de demo en producción. El seed crea 4 usuarios sintéticos
+              (shipper, carrier, stakeholder, conductor) + 2 vehículos del carrier (uno con IMEI
+              espejo al Teltonika real de Van Oosterwyk, otro sin device para reporte GPS móvil). Es
+              idempotente — re-ejecutar no duplica entidades.
+            </p>
+          </div>
+          <Link
+            to="/app/platform-admin/matching"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
+            data-testid="matching-backtest-link"
+          >
+            Matching v2 backtest →
+          </Link>
+        </div>
 
         <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
           <SeedCard onSeed={handleSeed} state={seedState} />
@@ -268,7 +279,7 @@ function SeedCard({
       )}
 
       {state.kind === 'success' && (
-        <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-3 text-success-700 text-sm">
+        <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-3 text-sm text-success-700">
           <div className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             Demo creada. Credenciales abajo.
@@ -357,7 +368,7 @@ function CleanCard({
       )}
 
       {state.kind === 'success' && (
-        <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-3 text-success-700 text-sm">
+        <div className="mt-3 rounded-md border border-success-200 bg-success-50 p-3 text-sm text-success-700">
           <div className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             Eliminadas <strong>{state.count}</strong> empresas demo + cascada.
