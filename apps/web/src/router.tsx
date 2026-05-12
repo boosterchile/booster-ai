@@ -25,6 +25,7 @@ import { LoginRoute } from './routes/login.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
+import { PlatformAdminMatchingRoute } from './routes/platform-admin-matching.js';
 import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
 import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
@@ -199,6 +200,13 @@ const platformAdminRoute = createRoute({
   component: PlatformAdminRoute,
 });
 
+// ADR-033 §8 — Matching engine v2 backtest UI. Misma gate platform-admin.
+const platformAdminMatchingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/matching',
+  component: PlatformAdminMatchingRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -318,6 +326,7 @@ const routeTree = rootRoute.addChildren([
   stakeholderZonasRoute,
   cumplimientoRoute,
   platformAdminRoute,
+  platformAdminMatchingRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
