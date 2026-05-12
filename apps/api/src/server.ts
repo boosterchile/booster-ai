@@ -13,6 +13,7 @@ import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
+import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
@@ -347,6 +348,11 @@ export function createServer(opts: CreateServerOptions): Hono {
       '/admin/seed',
       createAdminSeedRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
     );
+
+    // ADR-033 §8 — Admin matching backtest. Misma allowlist platform-admin.
+    app.use('/admin/matching/*', firebaseAuthMiddleware);
+    app.use('/admin/matching/*', userContextMiddleware);
+    app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
 
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);

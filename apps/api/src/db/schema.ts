@@ -1911,6 +1911,64 @@ export const adelantosCarrier = pgTable(
 );
 
 // =============================================================================
+// MATCHING V2 — BACKTEST RUNS (ADR-033 §8)
+// =============================================================================
+
+/**
+ * Estado del lifecycle de una corrida de backtest del matching engine.
+ * Mappea a enum SQL `estado_backtest_run` creado en migration 0027.
+ */
+export const estadoBacktestRunEnum = pgEnum('estado_backtest_run', [
+  'pendiente',
+  'ejecutando',
+  'completada',
+  'fallida',
+]);
+
+/**
+ * Una fila = una corrida completa (set de trips analizados con v1 vs v2).
+ * El detalle por-trip va en `resultados` (JSONB) — no relacional para no
+ * over-engineerear MVP. Ver migration 0027 para diseño completo.
+ */
+export const matchingBacktestRuns = pgTable(
+  'matching_backtest_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    createdByEmail: varchar('created_by_email', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+
+    /** Ventana temporal de muestreo. NULL en ambos = todos los trips terminales. */
+    tripsDesde: timestamp('trips_desde', { withTimezone: true }),
+    tripsHasta: timestamp('trips_hasta', { withTimezone: true }),
+
+    /** Cap de trips a procesar; defendido 1..5000 a nivel SQL. */
+    tripsLimit: integer('trips_limit').notNull().default(500),
+
+    /** WeightsV2 custom (si NULL → DEFAULT_WEIGHTS_V2). */
+    pesosUsados: jsonb('pesos_usados'),
+
+    estado: estadoBacktestRunEnum('estado').notNull().default('pendiente'),
+    errorMessage: text('error_message'),
+
+    tripsProcesados: integer('trips_procesados').notNull().default(0),
+    tripsConCandidatosV2: integer('trips_con_candidatos_v2').notNull().default(0),
+    tripsConCandidatosV1: integer('trips_con_candidatos_v1').notNull().default(0),
+
+    /** MetricasResumen del servicio (shape estable, alimenta UI). */
+    metricasResumen: jsonb('metricas_resumen'),
+
+    /** Detalle por trip (array, capped al `tripsLimit`). */
+    resultados: jsonb('resultados'),
+  },
+  (table) => ({
+    estadoIdx: index('idx_matching_backtest_runs_estado').on(table.estado),
+    createdAtIdx: index('idx_matching_backtest_runs_created_at').on(table.createdAt),
+    createdByIdx: index('idx_matching_backtest_runs_created_by').on(table.createdByEmail),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -1974,3 +2032,6 @@ export type ShipperCreditDecisionRow = typeof shipperCreditDecisions.$inferSelec
 export type NewShipperCreditDecisionRow = typeof shipperCreditDecisions.$inferInsert;
 export type AdelantoCarrierRow = typeof adelantosCarrier.$inferSelect;
 export type NewAdelantoCarrierRow = typeof adelantosCarrier.$inferInsert;
+
+export type MatchingBacktestRunRow = typeof matchingBacktestRuns.$inferSelect;
+export type NewMatchingBacktestRunRow = typeof matchingBacktestRuns.$inferInsert;
