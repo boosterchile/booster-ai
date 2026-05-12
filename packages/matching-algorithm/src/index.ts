@@ -105,3 +105,31 @@ export {
   type ResultadoFactorMatching,
   calcularFactorMatching,
 } from './factor-matching.js';
+
+/**
+ * Matching algorithm v2 — multi-factor con awareness de empty-backhaul
+ * (ADR-033). Coexiste con v1 detrás de feature flag
+ * `MATCHING_ALGORITHM_V2_ACTIVATED`.
+ *
+ * Acceso desde el orquestador:
+ *   import { scoreCandidateV2 } from '@booster-ai/matching-algorithm';
+ * o equivalente con namespace:
+ *   import { v2 } from '@booster-ai/matching-algorithm';
+ */
+export {
+  DEFAULT_TIER_BOOSTS,
+  DEFAULT_WEIGHTS_V2,
+  SCORING_PARAMS_V2,
+  scoreCandidateV2,
+  scoreToIntV2,
+  selectTopNCandidatesV2,
+  tierBoostFromSlug,
+  validateWeights,
+} from './v2/index.js';
+export type {
+  CarrierCandidateV2,
+  ScoredCandidateV2,
+  TierSlug,
+  TripScoringContextV2,
+  WeightsV2,
+} from './v2/index.js';
