@@ -1,11 +1,19 @@
 import type { Logger } from '@booster-ai/logger';
 import { profileUpdateInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { carrierMemberships, empresas, memberships, users } from '../db/schema.js';
+import {
+  assignments,
+  carrierMemberships,
+  empresas,
+  memberships,
+  trips,
+  users,
+  vehicles,
+} from '../db/schema.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 
 /**
@@ -188,6 +196,109 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       },
       memberships: membershipsPayload,
       active_membership: active,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /me/assignments — assignments donde el user autenticado es
+  // el conductor asignado (assignments.driver_user_id === user.id).
+  //
+  // Devuelve los assignments activos (status IN ['asignado', 'en_proceso'])
+  // ordenados por más reciente primero. Sin paginación por ahora: un
+  // conductor rara vez tiene > 2-3 assignments activos simultáneos.
+  //
+  // Uso: la UI /app/conductor/modo lista los assignments y deja al
+  // conductor elegir cuál activar (en vez de pedir UUID copiado, que era
+  // el placeholder MVP). El conductor sólo ve los que están en estado
+  // operacional — si necesita el histórico (entregados), iría a otra
+  // surface dedicada (futuro).
+  //
+  // Auth: solo Firebase claims. NO requiere activeMembership (un
+  // conductor multi-empresa puede ver todos sus assignments sin tener
+  // que setear empresa activa). Pero igual scope al user.id.
+  // ---------------------------------------------------------------------
+  app.get('/assignments', async (c) => {
+    const claims = c.get('firebaseClaims') as FirebaseClaims | undefined;
+    if (!claims) {
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
+    const userRows = await opts.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.firebaseUid, claims.uid))
+      .limit(1);
+    const user = userRows[0];
+    if (!user) {
+      return c.json({ error: 'user_not_found', code: 'user_not_found' }, 404);
+    }
+
+    // Estados activos del assignment según assignmentStatusEnum:
+    //   asignado → carrier aceptó, todavía no se recoge la carga
+    //   recogido → conductor confirmó recogida, en tránsito a destino
+    // Excluímos: entregado (terminal), cancelado (terminal).
+    const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
+    const rows = await opts.db
+      .select({
+        assignmentId: assignments.id,
+        assignmentStatus: assignments.status,
+        empresaId: assignments.empresaId,
+        empresaLegalName: empresas.legalName,
+        acceptedAt: assignments.acceptedAt,
+        pickedUpAt: assignments.pickedUpAt,
+        agreedPriceClp: assignments.agreedPriceClp,
+        tripId: trips.id,
+        trackingCode: trips.trackingCode,
+        tripStatus: trips.status,
+        originAddressRaw: trips.originAddressRaw,
+        originRegionCode: trips.originRegionCode,
+        destinationAddressRaw: trips.destinationAddressRaw,
+        destinationRegionCode: trips.destinationRegionCode,
+        cargoType: trips.cargoType,
+        cargoWeightKg: trips.cargoWeightKg,
+        pickupWindowStart: trips.pickupWindowStart,
+        pickupWindowEnd: trips.pickupWindowEnd,
+        vehicleId: assignments.vehicleId,
+        vehiclePlate: vehicles.plate,
+      })
+      .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
+      .leftJoin(empresas, eq(empresas.id, assignments.empresaId))
+      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .where(
+        and(eq(assignments.driverUserId, user.id), inArray(assignments.status, ACTIVE_STATUSES)),
+      )
+      .orderBy(desc(assignments.acceptedAt));
+
+    return c.json({
+      assignments: rows.map((r) => ({
+        id: r.assignmentId,
+        status: r.assignmentStatus,
+        accepted_at: r.acceptedAt,
+        picked_up_at: r.pickedUpAt,
+        agreed_price_clp: r.agreedPriceClp,
+        carrier_empresa: {
+          id: r.empresaId,
+          legal_name: r.empresaLegalName,
+        },
+        vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
+        trip: {
+          id: r.tripId,
+          tracking_code: r.trackingCode,
+          status: r.tripStatus,
+          origin: {
+            address_raw: r.originAddressRaw,
+            region_code: r.originRegionCode,
+          },
+          destination: {
+            address_raw: r.destinationAddressRaw,
+            region_code: r.destinationRegionCode,
+          },
+          cargo_type: r.cargoType,
+          cargo_weight_kg: r.cargoWeightKg,
+          pickup_window_start: r.pickupWindowStart,
+          pickup_window_end: r.pickupWindowEnd,
+        },
+      })),
     });
   });
 

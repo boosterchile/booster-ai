@@ -16,6 +16,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { ApiError, api } from '../lib/api-client.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
 import {
   type PermissionState,
@@ -170,11 +171,75 @@ function ConductorModoPage({ me }: { me: MeOnboarded }) {
 // D2 — Card: Reporte GPS móvil para vehículos SIN Teltonika
 // ---------------------------------------------------------------------------
 
+interface DriverAssignment {
+  id: string;
+  status: string;
+  trip: {
+    id: string;
+    tracking_code: string;
+    status: string;
+    origin: { address_raw: string; region_code: string | null };
+    destination: { address_raw: string; region_code: string | null };
+    cargo_type: string;
+    cargo_weight_kg: number | null;
+    pickup_window_start: string | null;
+    pickup_window_end: string | null;
+  };
+  carrier_empresa: { id: string; legal_name: string | null };
+  vehicle: { id: string; plate: string | null } | null;
+}
+
 function MobileGpsReporterCard({ geoPermission }: { geoPermission: PermissionStatus }) {
-  const [assignmentId, setAssignmentId] = useState('');
+  // Estado de la lista de asignaciones activas del conductor logueado.
+  // Se carga al montar; el conductor elige una en vez de pegar UUID.
+  const [assignments, setAssignments] = useState<DriverAssignment[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('');
   const reporter = useDriverPositionReporter();
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cargar una sola
+  // vez al montar el componente.
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingAssignments(true);
+    setAssignmentsError(null);
+    api
+      .get<{ assignments: DriverAssignment[] }>('/me/assignments')
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setAssignments(res.assignments);
+        // Pre-seleccionar si hay una sola asignación activa.
+        if (res.assignments.length === 1) {
+          setSelectedAssignmentId(res.assignments[0]?.id ?? '');
+        }
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        const msg =
+          err instanceof ApiError
+            ? err.status === 404
+              ? 'No encontramos tu cuenta en el sistema.'
+              : `${err.status}: ${err.message}`
+            : (err as Error).message;
+        setAssignmentsError(msg);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAssignments(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const canStart =
-    geoPermission === 'granted' && assignmentId.trim().length > 0 && !reporter.isWatching;
+    geoPermission === 'granted' && selectedAssignmentId.trim().length > 0 && !reporter.isWatching;
 
   return (
     <section
@@ -190,7 +255,7 @@ function MobileGpsReporterCard({ geoPermission }: { geoPermission: PermissionSta
           </h2>
           <p className="mt-1 text-neutral-600 text-sm">
             Si tu vehículo no tiene equipo Teltonika instalado, podemos seguir tu trayecto usando el
-            GPS de tu teléfono. Pega el ID de tu asignación activa y presiona "Iniciar reporte".
+            GPS de tu teléfono. Elegí cuál asignación querés reportar.
           </p>
 
           {geoPermission !== 'granted' && (
@@ -199,34 +264,89 @@ function MobileGpsReporterCard({ geoPermission }: { geoPermission: PermissionSta
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-            <input
-              type="text"
-              value={assignmentId}
-              onChange={(e) => setAssignmentId(e.target.value)}
-              placeholder="ID de asignación (UUID)"
-              className="rounded-md border border-neutral-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-              disabled={reporter.isWatching}
-              data-testid="gps-reporter-assignment-input"
-            />
+          {loadingAssignments && (
+            <div className="mt-3 text-neutral-500 text-sm">Cargando tus asignaciones…</div>
+          )}
+
+          {assignmentsError && (
+            <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
+              No pudimos cargar tus asignaciones: {assignmentsError}
+            </div>
+          )}
+
+          {!loadingAssignments && !assignmentsError && assignments.length === 0 && (
+            <div className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-neutral-600 text-sm">
+              No tenés asignaciones activas en este momento. Cuando tu carrier te asigne un viaje,
+              aparecerá acá.
+            </div>
+          )}
+
+          {assignments.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="text-neutral-700 text-xs uppercase tracking-wide">
+                Tus asignaciones activas
+              </div>
+              <ul className="space-y-2" data-testid="gps-reporter-assignment-list">
+                {assignments.map((a) => {
+                  const isSelected = selectedAssignmentId === a.id;
+                  return (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAssignmentId(a.id)}
+                        disabled={reporter.isWatching}
+                        className={`w-full rounded-md border p-3 text-left transition disabled:opacity-50 ${
+                          isSelected
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-neutral-200 hover:bg-neutral-50'
+                        }`}
+                        data-testid={`gps-reporter-assignment-${a.id}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-mono text-neutral-500 text-xs">
+                            {a.trip.tracking_code}
+                          </div>
+                          <div className="text-neutral-500 text-xs">
+                            {a.vehicle?.plate ?? 'Sin patente'}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-neutral-900 text-sm">
+                          {a.trip.origin.address_raw} → {a.trip.destination.address_raw}
+                        </div>
+                        <div className="mt-1 text-neutral-500 text-xs">
+                          {a.trip.cargo_type} ·{' '}
+                          {a.trip.cargo_weight_kg
+                            ? `${a.trip.cargo_weight_kg.toLocaleString('es-CL')} kg`
+                            : 'peso no declarado'}{' '}
+                          · {a.carrier_empresa.legal_name ?? 'Carrier'}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-3">
             {reporter.isWatching ? (
               <button
                 type="button"
                 onClick={() => reporter.stop()}
-                className="rounded-md bg-danger-600 px-4 py-2 font-medium text-sm text-white hover:bg-danger-700"
+                className="w-full rounded-md bg-danger-600 px-4 py-2 font-medium text-sm text-white hover:bg-danger-700"
                 data-testid="gps-reporter-stop"
               >
-                Detener
+                Detener reporte
               </button>
             ) : (
               <button
                 type="button"
-                onClick={() => reporter.start(assignmentId.trim())}
+                onClick={() => reporter.start(selectedAssignmentId.trim())}
                 disabled={!canStart}
-                className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                className="w-full rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 data-testid="gps-reporter-start"
               >
-                Iniciar reporte
+                Iniciar reporte de la asignación seleccionada
               </button>
             )}
           </div>

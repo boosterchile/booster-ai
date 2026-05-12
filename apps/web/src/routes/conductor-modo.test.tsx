@@ -47,6 +47,23 @@ vi.mock('../services/coaching-voice.js', () => ({
   saveAutoplayPreference: (v: boolean) => saveAutoplayPreferenceSpy(v),
 }));
 
+// Mock api-client para que el flujo "lista de asignaciones" en
+// MobileGpsReporterCard pueda ser controlado por test. Por defecto
+// devuelve lista vacía (el conductor sin asignaciones), pero los tests
+// específicos pueden override.
+const apiGetSpy = vi.fn();
+vi.mock('../lib/api-client.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('../lib/api-client.js')>('../lib/api-client.js');
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      get: (...args: unknown[]) => apiGetSpy(...args),
+    },
+  };
+});
+
 const { ConductorModoRoute } = await import('./conductor-modo.js');
 
 function makeMe(): MeOnboarded {
@@ -71,6 +88,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   loadAutoplayPreferenceSpy.mockReturnValue(false);
   queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
+  // Default: el driver no tiene asignaciones activas. Tests específicos
+  // pueden mockear con assignments populados.
+  apiGetSpy.mockResolvedValue({ assignments: [] });
 });
 
 afterEach(() => {
@@ -172,5 +192,72 @@ describe('ConductorModoRoute', () => {
     render(<ConductorModoRoute />);
     const toggle = screen.getByTestId('autoplay-toggle') as HTMLInputElement;
     expect(toggle.checked).toBe(true);
+  });
+
+  describe('GPS reporter — lista de asignaciones (reemplaza pegar UUID)', () => {
+    const sampleAssignment = {
+      id: 'asg-123-456',
+      status: 'asignado',
+      trip: {
+        id: 'trip-1',
+        tracking_code: 'BOO-ABC123',
+        status: 'asignado',
+        origin: { address_raw: 'Av. Pajaritos 1234, Maipú', region_code: 'XIII' },
+        destination: { address_raw: 'Av. Brasil 2345, Valparaíso', region_code: 'V' },
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        pickup_window_start: null,
+        pickup_window_end: null,
+      },
+      carrier_empresa: { id: 'emp-c', legal_name: 'Transportes Demo Sur S.A.' },
+      vehicle: { id: 'veh-1', plate: 'DEMO01' },
+    };
+
+    it('sin asignaciones activas → muestra estado vacío explicativo', async () => {
+      providedContext = { kind: 'onboarded', me: makeMe() };
+      apiGetSpy.mockResolvedValue({ assignments: [] });
+      render(<ConductorModoRoute />);
+      expect(
+        await screen.findByText(/No tenés asignaciones activas en este momento/),
+      ).toBeInTheDocument();
+    });
+
+    it('con asignaciones → lista con tracking, ruta, carga y vehículo', async () => {
+      providedContext = { kind: 'onboarded', me: makeMe() };
+      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+      render(<ConductorModoRoute />);
+      expect(await screen.findByText('BOO-ABC123')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Av\. Pajaritos 1234, Maipú → Av\. Brasil 2345, Valparaíso/),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Transportes Demo Sur S\.A\./)).toBeInTheDocument();
+      expect(screen.getByText('DEMO01')).toBeInTheDocument();
+    });
+
+    it('asignación única → se pre-selecciona automáticamente', async () => {
+      providedContext = { kind: 'onboarded', me: makeMe() };
+      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+      render(<ConductorModoRoute />);
+      const card = await screen.findByTestId(`gps-reporter-assignment-${sampleAssignment.id}`);
+      // El estilo selected aplica clases bg-primary-50.
+      expect(card.className).toMatch(/bg-primary-50/);
+    });
+
+    it('click en una asignación la selecciona', async () => {
+      providedContext = { kind: 'onboarded', me: makeMe() };
+      const second = {
+        ...sampleAssignment,
+        id: 'asg-999',
+        trip: { ...sampleAssignment.trip, tracking_code: 'BOO-XYZ' },
+      };
+      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment, second] });
+      render(<ConductorModoRoute />);
+      const card2 = await screen.findByTestId('gps-reporter-assignment-asg-999');
+      fireEvent.click(card2);
+      // Ahora la segunda card debería estar resaltada.
+      await waitFor(() => {
+        expect(card2.className).toMatch(/bg-primary-50/);
+      });
+    });
   });
 });

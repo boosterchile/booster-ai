@@ -310,6 +310,42 @@ async function activateDriver(rut, pin) {
   return { idToken, syntheticEmail: res.body.synthetic_email };
 }
 
+async function listMyConductores(carrierToken, carrierEmpresaId) {
+  const res = await apiCall('GET', '/conductores', {
+    token: carrierToken,
+    empresaId: carrierEmpresaId,
+  });
+  if (res.status !== 200) {
+    fail('list conductores', res);
+  }
+  return res.body.conductores ?? [];
+}
+
+async function assignDriver(carrierToken, carrierEmpresaId, assignmentId, driverUserId) {
+  log('👷', 'Phase 4b: carrier asigna conductor al assignment');
+  const res = await apiCall('POST', `/assignments/${assignmentId}/asignar-conductor`, {
+    token: carrierToken,
+    empresaId: carrierEmpresaId,
+    body: { driver_user_id: driverUserId },
+  });
+  if (res.status !== 200) {
+    fail('asignar-conductor', res);
+  }
+  log(
+    '  ✓',
+    'conductor asignado al assignment',
+    `driver_user_id=${res.body.new_driver_user_id} name=${res.body.driver_name}`,
+  );
+}
+
+async function listMyAssignmentsAsDriver(driverToken) {
+  const res = await apiCall('GET', '/me/assignments', { token: driverToken });
+  if (res.status !== 200) {
+    fail('list /me/assignments', res);
+  }
+  return res.body.assignments ?? [];
+}
+
 async function reportDriverPosition(driverToken, assignmentId) {
   log('📍', 'Phase 5: conductor reporta GPS (1 punto, simulado)');
   // Lat/lng intermedio entre Maipú y Valparaíso (ruta 68 aprox).
@@ -410,6 +446,40 @@ async function main() {
     log('  !', 'conductor ya activado — saltando driver-activate');
     // Para el dry-run completo necesitaríamos el password, que se regenera
     // al re-activar. Saltamos GPS si no podemos loguear como driver.
+  }
+
+  // Fase 4b: carrier asigna el conductor al assignment.
+  // Esto cierra el gap del flow accept-offer (que crea el assignment con
+  // driver_user_id=NULL). Sin este paso, driver-position falla con
+  // 403 not_assigned_driver.
+  if (assignment && driverToken) {
+    // Listar los conductores del carrier para encontrar el user_id del
+    // conductor demo (cuyo RUT está en creds.conductor.rut).
+    const conductores = await listMyConductores(carrierToken, creds.carrier_empresa_id);
+    // Match por RUT normalizado (cred RUT viene canónico).
+    const demoConductor = conductores.find(
+      (c) => c.user?.rut === creds.conductor.rut || c.user_id !== undefined,
+    );
+    if (demoConductor) {
+      await assignDriver(
+        carrierToken,
+        creds.carrier_empresa_id,
+        assignment.id,
+        demoConductor.user_id,
+      );
+    } else {
+      log('  ⚠', 'conductor demo no aparece en la lista del carrier — skip asignación');
+    }
+  }
+
+  // Fase 4c: verificar que /me/assignments del driver lista el assignment.
+  if (driverToken) {
+    const driverAssignments = await listMyAssignmentsAsDriver(driverToken);
+    log(
+      '📋',
+      'Phase 4c: GET /me/assignments del driver',
+      `total=${driverAssignments.length} primer trip=${driverAssignments[0]?.trip?.tracking_code ?? '(vacío)'}`,
+    );
   }
 
   // Fase 5: conductor reporta GPS (si pudimos loguear)

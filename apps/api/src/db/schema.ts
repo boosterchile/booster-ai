@@ -254,6 +254,14 @@ export const tripEventTypeEnum = pgEnum('tipo_evento_viaje', [
   'oferta_rechazada',
   'oferta_expirada',
   'asignacion_creada',
+  /**
+   * Carrier asigna (o reasigna) un conductor específico a un assignment.
+   * Distinto de 'asignacion_creada' (que registra la creación del
+   * assignment tras accept-offer, típicamente con driver_user_id=NULL).
+   * Payload: { assignment_id, previous_driver_user_id, new_driver_user_id,
+   *            driver_name, acting_user_id }.
+   */
+  'conductor_asignado',
   'recogida_confirmada',
   'entrega_confirmada',
   'cancelado',

@@ -12,8 +12,26 @@ beforeAll(() => {
 vi.mock('../../src/services/confirmar-entrega-viaje.js', () => ({
   confirmarEntregaViaje: vi.fn(),
 }));
+// Mock asignar-conductor para validar el wire HTTP por separado del
+// servicio (que ya tiene su propio test file). Importamos las clases de
+// error reales para que el route las pueda detectar via instanceof.
+vi.mock('../../src/services/asignar-conductor-a-assignment.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../src/services/asignar-conductor-a-assignment.js')>();
+  return {
+    ...actual,
+    asignarConductorAAssignment: vi.fn(),
+  };
+});
 
 const { confirmarEntregaViaje } = await import('../../src/services/confirmar-entrega-viaje.js');
+const {
+  asignarConductorAAssignment,
+  AssignmentNotFoundError,
+  AssignmentNotMutableError,
+  AssignmentNotOwnedError,
+  DriverNotInCarrierError,
+} = await import('../../src/services/asignar-conductor-a-assignment.js');
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -323,5 +341,137 @@ describe('PATCH /assignments/:id/confirmar-entrega', () => {
       headers: { 'x-test-userctx': VALID_CTX },
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /assignments/:id/asignar-conductor', () => {
+  const VALID_BODY = { driver_user_id: '00000000-0000-0000-0000-000000000a05' };
+
+  // El test header VALID_CTX no incluía 'membership' (subobjeto), pero
+  // el endpoint nuevo lee `auth.activeMembership.membership.role`. Para
+  // estos tests usamos un contexto extendido con rol explícito.
+  const CTX_DUENO = JSON.stringify({
+    user: { id: USER_ID },
+    activeMembership: {
+      empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+      membership: { role: 'dueno' },
+    },
+  });
+
+  function makeReq(body: unknown = VALID_BODY, headers: Record<string, string> = {}) {
+    return {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    };
+  }
+
+  it('sin auth → 401', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/asignar-conductor`, makeReq());
+    expect(res.status).toBe(401);
+  });
+
+  it('rol no permitido (operador) → 403 forbidden_role', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const ctx = JSON.stringify({
+      user: { id: USER_ID },
+      activeMembership: {
+        empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+        membership: { role: 'operador' },
+      },
+    });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': ctx }),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()) as { code: string }).toEqual(
+      expect.objectContaining({ code: 'forbidden_role' }),
+    );
+  });
+
+  it('body inválido (driver_user_id no es UUID) → 400', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq({ driver_user_id: 'not-a-uuid' }, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('happy path: rol dueno → 200 + payload', async () => {
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      assignmentId: ASSIGNMENT_ID,
+      previousDriverUserId: null,
+      newDriverUserId: VALID_BODY.driver_user_id,
+      driverName: 'Pedro González',
+    });
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; driver_name: string };
+    expect(body.ok).toBe(true);
+    expect(body.driver_name).toBe('Pedro González');
+  });
+
+  it('service AssignmentNotFoundError → 404', async () => {
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AssignmentNotFoundError(ASSIGNMENT_ID),
+    );
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('service AssignmentNotOwnedError → 403', async () => {
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AssignmentNotOwnedError(ASSIGNMENT_ID, 'otra'),
+    );
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it('service AssignmentNotMutableError → 409 con status incluido', async () => {
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AssignmentNotMutableError(ASSIGNMENT_ID, 'entregado'),
+    );
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; status: string };
+    expect(body.code).toBe('assignment_not_mutable');
+    expect(body.status).toBe('entregado');
+  });
+
+  it('service DriverNotInCarrierError → 400', async () => {
+    (asignarConductorAAssignment as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new DriverNotInCarrierError(VALID_BODY.driver_user_id, CARRIER_EMP),
+    );
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(
+      `/assignments/${ASSIGNMENT_ID}/asignar-conductor`,
+      makeReq(VALID_BODY, { 'x-test-userctx': CTX_DUENO }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { code: string }).toEqual(
+      expect.objectContaining({ code: 'driver_not_in_carrier' }),
+    );
   });
 });

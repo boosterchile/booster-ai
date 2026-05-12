@@ -24,6 +24,7 @@ import { CobraHoyButton } from '../components/cobra-hoy/CobraHoyButton.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
+import { DriverAssignmentCard } from '../components/scoring/DriverAssignmentCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
 import { api } from '../lib/api-client.js';
 
@@ -123,6 +124,20 @@ function AsignacionDetallePage() {
           </div>
         </div>
       </div>
+
+      {/* Asignar conductor — visible mientras el assignment esté
+          mutable (asignado | recogido). Antes de aceptar este componente
+          no existía: el flow accept-offer creaba la assignment con
+          driver_user_id=NULL y no había forma de setearlo después.
+          Sin conductor asignado, el endpoint /assignments/:id/driver-position
+          rechaza con 403 y el conductor no puede reportar GPS. */}
+      {tripQ.data?.assignment && (
+        <DriverAssignmentCard
+          assignmentId={assignmentId}
+          currentDriverName={tripQ.data.assignment.driver_name}
+          assignmentStatus={tripQ.data.assignment.status}
+        />
+      )}
 
       {/* Phase 1 PR-H5 — Ruta eco-eficiente sugerida (post-accept).
           Collapsed por default; el driver expande on-tap para ver la

@@ -32,6 +32,13 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import {
+  AssignmentNotFoundError,
+  AssignmentNotMutableError,
+  AssignmentNotOwnedError,
+  DriverNotInCarrierError,
+  asignarConductorAAssignment,
+} from '../services/asignar-conductor-a-assignment.js';
 import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
@@ -601,6 +608,79 @@ export function createAssignmentsRoutes(opts: {
       generated_at: row.generadoEn,
       status: 'disponible',
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/asignar-conductor — Carrier asigna un conductor específico
+  // al assignment. Cierra el gap dejado por accept-offer (que crea el
+  // assignment con driver_user_id=NULL) y habilita el flujo del driver
+  // (driver-position, conductor-modo) que valida driver_user_id ===
+  // userContext.user.id.
+  //
+  // Auth: carrier owner del assignment. Rol requerido: dueno, admin,
+  // despachador (no operador genérico — esto es decisión de operación).
+  //
+  // Body: { driver_user_id: UUID }
+  // ---------------------------------------------------------------------
+  const asignarConductorBodySchema = z.object({
+    driver_user_id: z.string().uuid(),
+  });
+
+  app.post('/:id/asignar-conductor', zValidator('json', asignarConductorBodySchema), async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    // Rol-gate: dueno/admin/despachador. Los roles 'operador',
+    // 'visualizador', 'conductor' o 'stakeholder_*' no pueden asignar.
+    const role = auth.activeMembership.membership.role;
+    const allowedRoles = ['dueno', 'admin', 'despachador'] as const;
+    if (!(allowedRoles as readonly string[]).includes(role)) {
+      return c.json({ error: 'forbidden_role', code: 'forbidden_role', role }, 403);
+    }
+
+    const assignmentId = c.req.param('id');
+    const { driver_user_id } = c.req.valid('json');
+
+    try {
+      const result = await asignarConductorAAssignment({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId,
+        driverUserId: driver_user_id,
+        empresaId: auth.activeMembership.empresa.id,
+        actingUserId: auth.userContext.user.id,
+      });
+      return c.json({
+        ok: true,
+        assignment_id: result.assignmentId,
+        previous_driver_user_id: result.previousDriverUserId,
+        new_driver_user_id: result.newDriverUserId,
+        driver_name: result.driverName,
+      });
+    } catch (err) {
+      if (err instanceof AssignmentNotFoundError) {
+        return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+      }
+      if (err instanceof AssignmentNotOwnedError) {
+        return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
+      }
+      if (err instanceof AssignmentNotMutableError) {
+        return c.json(
+          {
+            error: 'assignment_not_mutable',
+            code: 'assignment_not_mutable',
+            status: err.status,
+          },
+          409,
+        );
+      }
+      if (err instanceof DriverNotInCarrierError) {
+        return c.json({ error: 'driver_not_in_carrier', code: 'driver_not_in_carrier' }, 400);
+      }
+      opts.logger.error({ err, assignmentId }, 'asignar-conductor failed');
+      return c.json({ error: 'internal_server_error' }, 500);
+    }
   });
 
   return app;
