@@ -244,7 +244,7 @@ export async function confirmarEntregaViaje(opts: {
         db,
         logger,
         tripId,
-        geminiApiKey: appConfig.GEMINI_API_KEY,
+        geminiProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
       });
     } catch (err) {
       logger.error(
