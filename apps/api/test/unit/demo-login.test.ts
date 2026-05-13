@@ -185,7 +185,7 @@ describe('POST /demo/login', () => {
     expect(body.redirect_to).toBe('/app');
   });
 
-  it('persona=conductor con firebase real → redirect_to /app/conductor/modo', async () => {
+  it('persona=conductor con firebase real → redirect_to /app/conductor', async () => {
     process.env.DEMO_MODE_ACTIVATED = 'true';
     const { db } = makeJoinDbStub([{ userId: 'u-driver-1', firebaseUid: 'fb-driver-1' }]);
     const fb = makeFirebaseStub();
@@ -197,7 +197,7 @@ describe('POST /demo/login', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { redirect_to: string };
-    expect(body.redirect_to).toBe('/app/conductor/modo');
+    expect(body.redirect_to).toBe('/app/conductor');
   });
 
   it('persona=conductor con firebase placeholder pending-rut → 503 (no emite token)', async () => {

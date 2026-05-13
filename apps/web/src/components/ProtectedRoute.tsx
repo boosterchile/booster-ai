@@ -2,6 +2,7 @@ import { Navigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
+import { useIsDemo } from '../hooks/use-is-demo.js';
 import { type MeResponse, useMe } from '../hooks/use-me.js';
 import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
@@ -46,6 +47,7 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { user, loading: authLoading } = useAuth();
   const { flags } = useFeatureFlags();
+  const isDemo = useIsDemo();
 
   const meEnabled = !!user && meRequirement !== 'skip';
   const { data: me, isLoading: meLoading, error: meError } = useMe({ enabled: meEnabled });
@@ -88,8 +90,17 @@ export function ProtectedRoute({
     // `has_clave_numerica` es opcional en la response /me para tolerar
     // versiones del API pre-Wave 4 PR 3. Tratamos `undefined` como
     // "ya seteada" (no forzamos) — para legacy users no se rompe nada.
+    //
+    // EXCEPCIÓN — sesiones de modo demo (claim `is_demo: true` en el
+    // custom token). El user demo entra via /demo/login con custom token
+    // y nunca va a usar login universal RUT+clave: forzar el modal
+    // bloquearía la demo Corfo sin valor real. `useIsDemo` devuelve
+    // `null` mientras resuelve el claim — tratamos `null` como "no es
+    // demo" para no esconder el modal a usuarios reales por error de
+    // race condition (worst case: usuario demo ve el modal medio segundo
+    // hasta que el claim resuelve, mucho mejor que esconderlo a reales).
     const needsClaveRotation =
-      flags.auth_universal_v1_activated && me.user.has_clave_numerica === false;
+      flags.auth_universal_v1_activated && me.user.has_clave_numerica === false && isDemo !== true;
     return (
       <>
         {children({ kind: 'onboarded', me })}
