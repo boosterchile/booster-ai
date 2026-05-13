@@ -286,7 +286,12 @@ variable "gke_operator_authorized_cidrs" {
 variable "matching_algorithm_v2_activated" {
   description = "Activa el scoring multifactor v2 con backhaul awareness (ADR-033). false = v1 capacity-only."
   type        = bool
-  default     = false
+  # Activado en prod desde 2026-05-07 (operación validada con backtest).
+  # Durante 2026-05-13 el valor parecía "true" por bug en config.ts
+  # (`z.coerce.boolean("false") === true`). Tras fix del booleanFlag, el
+  # valor real era `false` y la lógica server colapsó al v1.
+  # Restauro a `true` explícito para mantener producción en V2.
+  default = true
 }
 
 # Pesos custom JSON para los componentes del scoring v2. Empty string →
