@@ -9,10 +9,12 @@ import {
   MicOff,
   Navigation,
   NavigationOff,
+  Radio,
   Volume2,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
 import {
@@ -22,6 +24,7 @@ import {
   requestGeolocationPermission,
   requestMicrophonePermission,
 } from '../services/driver-mode-permissions.js';
+import { isWakeWordEnabled, setWakeWordEnabled } from '../services/wake-word-preference.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -164,6 +167,7 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
             requestingMic={requestingMic}
             requestingGeo={requestingGeo}
           />
+          <WakeWordCard />
           <VoiceCommandsReferenceCard />
           <HowItWorksCard />
         </div>
@@ -424,6 +428,89 @@ const VOICE_COMMANDS: VoiceCommandEntry[] = [
     context: 'Si dijiste algo por error y aún no se procesó, abortas la acción.',
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Card: Activación por voz (ADR-036 — wake-word "Oye Booster")
+// ---------------------------------------------------------------------------
+
+function WakeWordCard() {
+  const { flags } = useFeatureFlags();
+  const [enabled, setEnabled] = useState(() => isWakeWordEnabled());
+  const featureLive = flags.wake_word_voice_activated;
+
+  function handleToggle(checked: boolean) {
+    setEnabled(checked);
+    setWakeWordEnabled(checked);
+  }
+
+  return (
+    <section
+      aria-label="Activación por voz"
+      className="rounded-lg border border-neutral-200 bg-white p-5"
+      data-testid="wake-word-card"
+    >
+      <div className="flex items-start gap-3">
+        <Radio className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-base text-neutral-900">Activación por voz</h2>
+            {!featureLive && (
+              <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600 text-xs">
+                Próximamente
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Cuando está activo, di <strong>“Oye Booster”</strong> con el vehículo detenido y la app
+            empieza a escuchar tu comando. Sin tocar la pantalla.
+          </p>
+
+          {featureLive ? (
+            <label
+              className="mt-3 flex items-center gap-3 text-neutral-800 text-sm"
+              data-testid="wake-word-toggle-label"
+            >
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => handleToggle(e.target.checked)}
+                className="h-5 w-5 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                data-testid="wake-word-toggle"
+              />
+              <span className="font-medium">
+                {enabled
+                  ? 'Activado · esperando “Oye Booster” cuando estés parado'
+                  : 'Desactivado · seguir usando el botón de mic en cada acción'}
+              </span>
+            </label>
+          ) : (
+            <div
+              className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-neutral-600 text-sm"
+              data-testid="wake-word-not-yet"
+            >
+              Estamos entrenando el reconocedor con voces chilenas. Cuando esté listo, podrás
+              activarlo desde aquí. Mientras tanto, los comandos de voz funcionan tocando el ícono
+              de micrófono.
+            </div>
+          )}
+
+          <div className="mt-3 space-y-1 text-[11px] text-neutral-500">
+            <p className="flex items-start gap-1.5">
+              <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+              Solo escuchamos la frase “Oye Booster”. El audio se procesa en tu teléfono y no se
+              envía a Booster.
+            </p>
+            <p className="flex items-start gap-1.5">
+              <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+              El micrófono se pausa automáticamente cuando el vehículo se mueve, cuando la pantalla
+              se apaga o cuando cambias de pestaña. Para cuidar tu batería y tu privacidad.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function VoiceCommandsReferenceCard() {
   return (

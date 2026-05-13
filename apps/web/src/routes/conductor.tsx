@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Inbox,
   MapPin,
+  Mic,
   Navigation,
   Settings,
   Square,
@@ -12,12 +13,14 @@ import {
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 import {
   type PermissionStatus,
   queryDriverPermissions,
 } from '../services/driver-mode-permissions.js';
+import { isWakeWordEnabled } from '../services/wake-word-preference.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -91,9 +94,48 @@ function ConductorDashboardPage({ me }: { me: MeOnboarded }) {
       <ConductorHeader fullName={me.user.full_name} />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
         <WhatsAppSafetyBanner />
+        <WakeWordActiveBanner />
         <AssignmentsSection />
       </main>
     </div>
+  );
+}
+
+/**
+ * ADR-036 — Banner sticky cuando el conductor activó "Oye Booster" + el
+ * feature flag global está ON. Le da al conductor feedback visible
+ * verificable de que el mic está escuchando la wake-word (privacy
+ * transparente: si no ve el banner, el mic no está activo).
+ *
+ * Cuando el banner está visible, el listener Porcupine corre solo cuando
+ * el vehículo está detenido. La integración real con el controller entra
+ * en Wave 5 PR 2 — esta UI solo refleja la preferencia del usuario.
+ */
+function WakeWordActiveBanner() {
+  const { flags } = useFeatureFlags();
+  const [enabled, setEnabled] = useState(() => isWakeWordEnabled());
+
+  // Re-evaluar cada vez que el dashboard se monta (e.g. tras volver
+  // desde /configuracion donde el conductor pudo haber tocado el toggle).
+  useEffect(() => {
+    setEnabled(isWakeWordEnabled());
+  }, []);
+
+  if (!flags.wake_word_voice_activated || !enabled) {
+    return null;
+  }
+
+  return (
+    <output
+      className="mt-3 flex items-center gap-2 rounded-md border border-primary-200 bg-primary-50 p-2 text-primary-900 text-xs"
+      data-testid="wake-word-active-banner"
+    >
+      <Mic className="h-4 w-4 shrink-0 animate-pulse" aria-hidden />
+      <span>
+        Escuchando “Oye Booster” cuando estés parado. Toca el ícono de engranaje arriba para
+        desactivar.
+      </span>
+    </output>
   );
 }
 
