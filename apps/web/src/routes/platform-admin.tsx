@@ -669,25 +669,299 @@ function StakeholderOrgsSection() {
         {!loading && !error && orgs.length > 0 && (
           <ul className="divide-y divide-neutral-100">
             {orgs.map((org) => (
-              <li key={org.id} className="flex items-start justify-between gap-3 py-3">
-                <div>
-                  <div className="font-medium text-neutral-900">{org.nombre_legal}</div>
-                  <div className="mt-0.5 text-neutral-500 text-xs">
-                    {STAKEHOLDER_ORG_TYPE_LABEL[org.tipo]}
-                    {org.region_ambito && ` · ${org.region_ambito}`}
-                    {org.sector_ambito && ` · ${org.sector_ambito}`}
-                    {org.eliminado_en && ' · ELIMINADA'}
-                  </div>
-                </div>
-                <div className="text-neutral-400 text-xs">
-                  {new Date(org.creado_en).toLocaleDateString('es-CL')}
-                </div>
-              </li>
+              <StakeholderOrgRow key={org.id} org={org} />
             ))}
           </ul>
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Fila expandible de una organización stakeholder. Muestra resumen
+ * compacto + on-click expande a panel con lista de miembros + form de
+ * invitación. Cada panel se monta lazy (no carga miembros hasta que el
+ * admin expande).
+ */
+interface StakeholderOrgMember {
+  membership_id: string;
+  user_id: string;
+  rut: string | null;
+  email: string;
+  full_name: string;
+  status: 'pendiente_invitacion' | 'activa' | 'suspendida' | 'removida';
+  is_pending: boolean;
+  invitado_en: string;
+  unido_en: string | null;
+}
+
+interface StakeholderOrgDetailResponse extends OrganizacionStakeholder {
+  miembros: StakeholderOrgMember[];
+}
+
+function StakeholderOrgRow({ org }: { org: OrganizacionStakeholder }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <li className="py-3" data-testid={`stakeholder-org-row-${org.id}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-start justify-between gap-3 text-left transition hover:bg-neutral-50"
+        aria-expanded={expanded}
+        aria-controls={`stakeholder-org-detail-${org.id}`}
+        data-testid={`stakeholder-org-toggle-${org.id}`}
+      >
+        <div>
+          <div className="font-medium text-neutral-900">{org.nombre_legal}</div>
+          <div className="mt-0.5 text-neutral-500 text-xs">
+            {STAKEHOLDER_ORG_TYPE_LABEL[org.tipo]}
+            {org.region_ambito && ` · ${org.region_ambito}`}
+            {org.sector_ambito && ` · ${org.sector_ambito}`}
+            {org.eliminado_en && ' · ELIMINADA'}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-neutral-400 text-xs">
+          {new Date(org.creado_en).toLocaleDateString('es-CL')}
+          <span aria-hidden>{expanded ? '▾' : '▸'}</span>
+        </div>
+      </button>
+
+      {expanded && !org.eliminado_en && (
+        <div
+          id={`stakeholder-org-detail-${org.id}`}
+          className="mt-3 ml-1 border-neutral-100 border-l-2 pl-4"
+        >
+          <StakeholderOrgMembersPanel orgId={org.id} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
+  const [detail, setDetail] = useState<StakeholderOrgDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<StakeholderOrgDetailResponse>(`/admin/stakeholder-orgs/${orgId}`)
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setDetail(res);
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        const msg =
+          err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+        setError(msg);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, refreshTick]);
+
+  function handleInvited() {
+    setShowInvite(false);
+    setRefreshTick((t) => t + 1);
+  }
+
+  if (loading) {
+    return (
+      <div className="inline-flex items-center gap-2 text-neutral-500 text-xs">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        Cargando miembros…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
+        {error}
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return null;
+  }
+
+  return (
+    <div data-testid={`stakeholder-org-members-${orgId}`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="font-medium text-neutral-700 text-xs">
+          Miembros ({detail.miembros.length})
+        </span>
+        <button
+          type="button"
+          onClick={() => setShowInvite((v) => !v)}
+          className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-1 font-medium text-primary-700 text-xs hover:bg-primary-100"
+          data-testid={`stakeholder-org-invite-toggle-${orgId}`}
+        >
+          <Plus className="h-3 w-3" aria-hidden />
+          {showInvite ? 'Cancelar' : 'Invitar miembro'}
+        </button>
+      </div>
+
+      {showInvite && <InviteStakeholderMemberForm orgId={orgId} onInvited={handleInvited} />}
+
+      {detail.miembros.length === 0 ? (
+        <p className="text-neutral-500 text-xs">
+          Esta organización todavía no tiene miembros. Invita al primero con el botón de arriba.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {detail.miembros.map((m) => (
+            <li
+              key={m.membership_id}
+              className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-2 py-1.5 text-xs"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium text-neutral-900">{m.full_name}</div>
+                <div className="text-neutral-500">
+                  {m.rut && <span className="font-mono">{m.rut}</span>}
+                  {m.email && <span className="ml-2">{m.email}</span>}
+                </div>
+              </div>
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 font-medium text-[10px] uppercase tracking-wide ${
+                  m.status === 'activa'
+                    ? 'bg-success-50 text-success-700'
+                    : m.status === 'pendiente_invitacion'
+                      ? 'bg-amber-50 text-amber-700'
+                      : 'bg-neutral-100 text-neutral-600'
+                }`}
+              >
+                {m.status === 'pendiente_invitacion' ? 'pendiente' : m.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface InviteFormState {
+  rut: string;
+  email: string;
+  full_name: string;
+}
+
+function InviteStakeholderMemberForm({
+  orgId,
+  onInvited,
+}: {
+  orgId: string;
+  onInvited: () => void;
+}) {
+  const [form, setForm] = useState<InviteFormState>({ rut: '', email: '', full_name: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await api.post(`/admin/stakeholder-orgs/${orgId}/invitar`, {
+        rut: form.rut,
+        email: form.email,
+        full_name: form.full_name,
+      });
+      onInvited();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'already_member') {
+        setError('Este RUT ya es miembro de la organización.');
+      } else {
+        const msg =
+          err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+        setError(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      noValidate
+      className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-neutral-200 bg-white p-3 sm:grid-cols-3"
+      data-testid={`stakeholder-org-invite-form-${orgId}`}
+    >
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-neutral-700 text-xs">RUT</span>
+        <input
+          type="text"
+          value={form.rut}
+          onChange={(e) => setForm({ ...form, rut: e.target.value })}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="12.345.678-9"
+          data-testid={`stakeholder-org-invite-rut-${orgId}`}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-neutral-700 text-xs">Email</span>
+        <input
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="usuario@dominio.cl"
+          data-testid={`stakeholder-org-invite-email-${orgId}`}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-neutral-700 text-xs">Nombre completo</span>
+        <input
+          type="text"
+          value={form.full_name}
+          onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="Nombre completo"
+          data-testid={`stakeholder-org-invite-name-${orgId}`}
+        />
+      </label>
+      {error && (
+        <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs sm:col-span-3">
+          {error}
+        </div>
+      )}
+      <div className="sm:col-span-3">
+        <button
+          type="submit"
+          disabled={submitting || !form.rut || !form.email || !form.full_name}
+          className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-white text-xs hover:bg-primary-700 disabled:opacity-50"
+          data-testid={`stakeholder-org-invite-submit-${orgId}`}
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              Invitando…
+            </>
+          ) : (
+            'Enviar invitación'
+          )}
+        </button>
+      </div>
+    </form>
   );
 }
 
