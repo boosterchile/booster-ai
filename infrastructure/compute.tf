@@ -81,7 +81,7 @@ module "service_api" {
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
@@ -254,32 +254,16 @@ module "service_web" {
   labels = { app = "web", env = var.environment }
 }
 
-# --- apps/marketing (Next.js) ---
-module "service_marketing" {
-  source = "./modules/cloud-run-service"
-
-  project_id            = google_project.booster_ai.project_id
-  region                = var.region
-  service_name          = "booster-ai-marketing"
-  service_account_email = google_service_account.cloud_run_runtime.email
-
-  # ADR-034: tráfico real ~150 req/día (~0.002 RPS). Googlebot tolera cold start
-  # ocasional (no penaliza SEO si <30s); usuarios humanos esperan 5-10s al primer
-  # hit del día. Trade-off favorable vs $20-30/mes de min=1.
-  min_instances = 0
-  max_instances = 10
-  memory        = "512Mi"
-
-  env_vars = {
-    NODE_ENV = "production"
-  }
-
-  public = false # tráfico público entra via Global HTTPS LB (networking.tf); Cloud Run no acepta allUsers por org policy
-
-  secret_versions_ready = local.all_secret_versions_ready
-
-  labels = { app = "marketing", env = var.environment }
-}
+# NOTA: `module "service_marketing"` (Cloud Run booster-ai-marketing) fue
+# eliminado en 2026-05-13. Era un placeholder (imagen `gcr.io/cloudrun/
+# placeholder`) sin código fuente real ni IAM policy, conectado al LB via
+# backend `backend-booster-ai-marketing` y NEG marketing — tampoco recibía
+# tráfico porque DNS apex/www no apuntaban al LB. Auditoría de dominios
+# confirmó código IaC muerto.
+#
+# Reemplazo: apex/www ahora apuntan al LB y el url_map hace redirect 301
+# a app.boosterchile.com (ver path_matcher "marketing" en networking.tf).
+# Cuando exista proyecto marketing real, recrear el módulo + backend.
 
 # --- apps/matching-engine ---
 module "service_matching_engine" {

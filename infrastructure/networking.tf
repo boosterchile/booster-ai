@@ -56,6 +56,8 @@ locals {
     "api.${var.domain}",
     "app.${var.domain}",
     "demo.${var.domain}",
+    var.domain,           # apex (boosterchile.com) — landing comercial (redirect a app)
+    "www.${var.domain}",  # www  → redirect a app
   ]
 }
 
@@ -118,17 +120,6 @@ resource "google_compute_region_network_endpoint_group" "web" {
 
   cloud_run {
     service = module.service_web.name
-  }
-}
-
-resource "google_compute_region_network_endpoint_group" "marketing" {
-  name                  = "neg-booster-ai-marketing"
-  project               = google_project.booster_ai.project_id
-  region                = var.region
-  network_endpoint_type = "SERVERLESS"
-
-  cloud_run {
-    service = module.service_marketing.name
   }
 }
 
@@ -349,35 +340,6 @@ resource "google_compute_backend_service" "web" {
   }
 }
 
-resource "google_compute_backend_service" "marketing" {
-  name                  = "backend-booster-ai-marketing"
-  project               = google_project.booster_ai.project_id
-  protocol              = "HTTPS"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  security_policy       = google_compute_security_policy.waf.id
-
-  # CDN habilitado para marketing site (SEO + performance)
-  enable_cdn = true
-  cdn_policy {
-    cache_mode                   = "CACHE_ALL_STATIC"
-    default_ttl                  = 3600
-    client_ttl                   = 3600
-    max_ttl                      = 86400
-    negative_caching             = true
-    serve_while_stale            = 86400
-    signed_url_cache_max_age_sec = 0
-  }
-
-  backend {
-    group = google_compute_region_network_endpoint_group.marketing.id
-  }
-
-  log_config {
-    enable      = true
-    sample_rate = 1.0
-  }
-}
-
 resource "google_compute_backend_service" "whatsapp_bot" {
   name                  = "backend-booster-ai-whatsapp-bot"
   project               = google_project.booster_ai.project_id
@@ -400,9 +362,12 @@ resource "google_compute_backend_service" "whatsapp_bot" {
 # =============================================================================
 
 resource "google_compute_url_map" "main" {
-  name            = "booster-ai-url-map"
-  project         = google_project.booster_ai.project_id
-  default_service = google_compute_backend_service.marketing.id # apex + www → marketing
+  name    = "booster-ai-url-map"
+  project = google_project.booster_ai.project_id
+  # Default service para hosts/paths sin match explícito. Apuntamos al
+  # backend web (PWA) que tiene su propio 404 controlado por TanStack
+  # Router. Antes era el backend marketing que era un placeholder vacío.
+  default_service = google_compute_backend_service.web.id
 
   host_rule {
     hosts        = ["api.${var.domain}"]
@@ -452,9 +417,20 @@ resource "google_compute_url_map" "main" {
     default_service = google_compute_backend_service.web.id
   }
 
+  # apex (boosterchile.com) + www.boosterchile.com — redirect 301 a
+  # app.boosterchile.com mientras no exista un landing comercial dedicado.
+  # Reversible: cuando haya proyecto marketing real, cambiar
+  # `default_url_redirect` por `default_service` apuntando al nuevo
+  # backend. NO usamos backend marketing porque era placeholder vacío
+  # (eliminado en este PR).
   path_matcher {
-    name            = "marketing"
-    default_service = google_compute_backend_service.marketing.id
+    name = "marketing"
+    default_url_redirect {
+      host_redirect          = "app.${var.domain}"
+      redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+      strip_query            = false
+      https_redirect         = true
+    }
   }
 }
 
@@ -531,28 +507,39 @@ resource "google_compute_global_forwarding_rule" "http_redirect" {
 # Fase 1/5: confirmar en admin.google.com → Apps → Gmail → Authenticate
 # email antes del corte de NS.
 
-# === Booster 2.0 — preservar destinos legacy ===
-# Apex apunta a las IPs de AWS Global Accelerator (Booster 2.0 landing).
+# === apex + www: migrados al LB de Booster AI ===
+#
+# Histórico hasta 2026-05-13:
+#   apex → A 13.248.243.5, 76.223.105.230 (AWS GA, GoDaddy Website Builder
+#          Booster 2.0 con landing "Próximo lanzamiento")
+#   www  → CNAME ghs.googlehosted.com (Google Sites Booster 2.0, 503)
+#
+# Auditoría de dominios identificó que Booster AI ya está live (api/app/
+# demo operativos) pero el primer punto de contacto comercial seguía
+# sirviendo content de Booster 2.0/legacy inconsistente con la marca
+# actual. El servicio Cloud Run `booster-ai-marketing` además era un
+# placeholder vacío (`gcr.io/cloudrun/placeholder`), código IaC muerto.
+#
+# Decisión: apex + www apuntan al LB. El URL map de Booster AI hace
+# redirect 301 a app.boosterchile.com mientras no exista un landing
+# comercial dedicado. Reversible cuando haya proyecto marketing real:
+# basta cambiar el url_redirect por backend_service.
 resource "google_dns_record_set" "apex" {
   name         = "${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"
   ttl          = 3600
-  rrdatas = [
-    "13.248.243.5",
-    "76.223.105.230",
-  ]
+  rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
-# www → Google Sites (Booster 2.0)
 resource "google_dns_record_set" "www" {
   name         = "www.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
-  type         = "CNAME"
+  type         = "A"
   ttl          = 3600
-  rrdatas      = ["ghs.googlehosted.com."]
+  rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
 # app → Cloud Run booster-ai-web vía Global HTTPS LB.
