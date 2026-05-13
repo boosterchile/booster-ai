@@ -174,8 +174,10 @@ locals {
     # Database
     "database-url",
 
-    # Gemini / AI
-    "gemini-api-key",
+    # AI providers
+    # NOTA: gemini-api-key eliminada en ADR-037 — el backend ahora usa
+    # Vertex AI Gemini con ADC (workload identity del SA cloud_run_runtime).
+    # Cero API keys para Gemini.
     "anthropic-api-key", # por si usamos Claude como fallback en ai-provider
 
     # Maps Platform (ADR-009 del 2.0: key legacy Geocoding + Elevation)
@@ -241,27 +243,10 @@ locals {
     "webpush-vapid-public-key",
     "webpush-vapid-private-key",
 
-    # Google Routes API key (Phase 1 — eco route suggestion).
-    # Server-side ONLY: el api la usa para llamar
-    # https://routes.googleapis.com/directions/v2:computeRoutes desde
-    # Cloud Run. NO va al bundle del cliente (a diferencia de
-    # frontend-maps-key que es pública por diseño).
-    #
-    # Restricciones obligatorias en GCP Console al crear la key:
-    #   - API restriction: ONLY "Routes API" (limita blast radius)
-    #   - Application restriction: NONE inicialmente (Cloud Run egress IP
-    #     no es estática sin Cloud NAT). Si se conecta VPC connector con
-    #     egress estático, restringir por IP.
-    #   - Quota: cap a $X/mes en GCP Billing budgets para evitar abuso.
-    #
-    # Cargar el valor real con:
-    #   gcloud secrets versions add google-routes-api-key \
-    #     --data-file=<(echo -n "AIza...")
-    #
-    # El api lee config.GOOGLE_ROUTES_API_KEY; si vale el placeholder
-    # ROTATE_ME_..., el calculator cae al fallback estimarDistanciaKm
-    # automáticamente (no rompe el flujo de asignación).
-    "google-routes-api-key",
+    # NOTA: google-routes-api-key eliminada en ADR-038 — el backend ahora
+    # autentica contra Routes API con ADC + header X-Goog-User-Project (SA
+    # cloud_run_runtime tiene serviceusage.serviceUsageConsumer). Cero
+    # API keys para Routes API.
   ]
 }
 

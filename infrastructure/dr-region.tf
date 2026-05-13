@@ -78,11 +78,20 @@ resource "google_container_cluster" "telemetry_dr" {
     }
 
     # Cloud Build pool en south-west via cross-region peering (la VPC es
-    # global). El DR cluster solo recibe deploys cuando hay failover —
-    # operadores manuales usan IAP, no Cloud Build automatico.
+    # global). NOTA: en la práctica este peering NO logra TCP handshake al
+    # master DR (verificado 2026-05-13 — i/o timeout). Mantenido por compat
+    # pero el deploy real usa el pool DR de abajo.
     cidr_blocks {
       cidr_block   = "${google_compute_global_address.cloudbuild_pool_range.address}/${google_compute_global_address.cloudbuild_pool_range.prefix_length}"
-      display_name = "cloudbuild-private-pool"
+      display_name = "cloudbuild-private-pool-saw1"
+    }
+
+    # Cloud Build pool DR (us-central1, MISMA region que el cluster) —
+    # solución definitiva al bloqueo de deploy DR (issue #194). Pool
+    # us-central1 alcanza el master DR sin cross-region peering issues.
+    cidr_blocks {
+      cidr_block   = "${google_compute_global_address.cloudbuild_pool_range_dr.address}/${google_compute_global_address.cloudbuild_pool_range_dr.prefix_length}"
+      display_name = "cloudbuild-private-pool-us-central1"
     }
 
     # IAP TCP forwarding para operadores accediendo al DR.
