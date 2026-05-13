@@ -1,17 +1,24 @@
+import {
+  type OrganizacionStakeholder,
+  STAKEHOLDER_ORG_TYPE_LABEL,
+  type StakeholderOrgType,
+} from '@booster-ai/shared-schemas';
 import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowLeft,
+  Building2,
   CheckCircle2,
   Copy,
   ExternalLink,
   Loader2,
   LogOut,
   PlayCircle,
+  Plus,
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -161,6 +168,8 @@ function PlatformAdminPage() {
         </div>
 
         {seedState.kind === 'success' && <CredentialsPanel data={seedState.data} />}
+
+        <StakeholderOrgsSection />
 
         <details className="mt-8 rounded-lg border border-neutral-200 bg-white p-4 text-sm">
           <summary className="cursor-pointer font-medium text-neutral-900">
@@ -562,3 +571,260 @@ function CredRow({
 
 // Stub para que TS no se queje del import si lo usamos defensivamente.
 void ({} as ReactNode);
+
+// ---------------------------------------------------------------------------
+// Sección: Organizaciones stakeholder (ADR-034)
+// ---------------------------------------------------------------------------
+
+interface StakeholderOrgsListResponse {
+  organizations: OrganizacionStakeholder[];
+}
+
+function StakeholderOrgsSection() {
+  const [orgs, setOrgs] = useState<OrganizacionStakeholder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<StakeholderOrgsListResponse>('/admin/stakeholder-orgs')
+      .then((res) => {
+        if (cancelled) {
+          return;
+        }
+        setOrgs(res.organizations);
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        const msg =
+          err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+        setError(msg);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTick]);
+
+  function handleCreated() {
+    setShowCreate(false);
+    setRefreshTick((t) => t + 1);
+  }
+
+  return (
+    <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
+          <div>
+            <h2 className="font-semibold text-neutral-900">Organizaciones stakeholder</h2>
+            <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+              Reguladores, gremios, observatorios académicos, ONGs y departamentos ESG corporativos
+              que reciben datos agregados del marketplace (k-anonimidad ≥ 5). Alta solo desde aquí
+              (ADR-034).
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreate((v) => !v)}
+          className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
+          data-testid="stakeholder-org-create-toggle"
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          {showCreate ? 'Cancelar' : 'Crear organización'}
+        </button>
+      </div>
+
+      {showCreate && <CreateStakeholderOrgForm onCreated={handleCreated} />}
+
+      <div className="mt-4">
+        {loading && (
+          <div className="inline-flex items-center gap-2 text-neutral-500 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Cargando organizaciones…
+          </div>
+        )}
+        {error && (
+          <div className="rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm">
+            {error}
+          </div>
+        )}
+        {!loading && !error && orgs.length === 0 && (
+          <p className="text-neutral-500 text-sm">
+            No hay organizaciones stakeholder todavía. Crea la primera con el botón de arriba.
+          </p>
+        )}
+        {!loading && !error && orgs.length > 0 && (
+          <ul className="divide-y divide-neutral-100">
+            {orgs.map((org) => (
+              <li key={org.id} className="flex items-start justify-between gap-3 py-3">
+                <div>
+                  <div className="font-medium text-neutral-900">{org.nombre_legal}</div>
+                  <div className="mt-0.5 text-neutral-500 text-xs">
+                    {STAKEHOLDER_ORG_TYPE_LABEL[org.tipo]}
+                    {org.region_ambito && ` · ${org.region_ambito}`}
+                    {org.sector_ambito && ` · ${org.sector_ambito}`}
+                    {org.eliminado_en && ' · ELIMINADA'}
+                  </div>
+                </div>
+                <div className="text-neutral-400 text-xs">
+                  {new Date(org.creado_en).toLocaleDateString('es-CL')}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+interface CreateStakeholderOrgFormState {
+  nombre_legal: string;
+  tipo: StakeholderOrgType;
+  region_ambito: string;
+  sector_ambito: string;
+}
+
+function CreateStakeholderOrgForm({ onCreated }: { onCreated: () => void }) {
+  const [form, setForm] = useState<CreateStakeholderOrgFormState>({
+    nombre_legal: '',
+    tipo: 'observatorio_academico',
+    region_ambito: '',
+    sector_ambito: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await api.post('/admin/stakeholder-orgs', {
+        nombre_legal: form.nombre_legal,
+        tipo: form.tipo,
+        region_ambito: form.region_ambito.trim() === '' ? null : form.region_ambito.trim(),
+        sector_ambito: form.sector_ambito.trim() === '' ? null : form.sector_ambito.trim(),
+      });
+      onCreated();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const tipos: StakeholderOrgType[] = [
+    'regulador',
+    'gremio',
+    'observatorio_academico',
+    'ong',
+    'corporativo_esg',
+  ];
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2"
+      data-testid="stakeholder-org-create-form"
+    >
+      <label className="flex flex-col gap-1 sm:col-span-2">
+        <span className="font-medium text-neutral-700 text-sm">Nombre legal</span>
+        <input
+          type="text"
+          required
+          minLength={3}
+          maxLength={200}
+          value={form.nombre_legal}
+          onChange={(e) => setForm({ ...form, nombre_legal: e.target.value })}
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="Ej: Observatorio Logístico UC"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-neutral-700 text-sm">Tipo</span>
+        <select
+          value={form.tipo}
+          onChange={(e) => setForm({ ...form, tipo: e.target.value as StakeholderOrgType })}
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+        >
+          {tipos.map((t) => (
+            <option key={t} value={t}>
+              {STAKEHOLDER_ORG_TYPE_LABEL[t]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-neutral-700 text-sm">
+          Región ámbito <span className="text-neutral-400 text-xs">(opcional, ISO 3166-2:CL)</span>
+        </span>
+        <input
+          type="text"
+          value={form.region_ambito}
+          onChange={(e) => setForm({ ...form, region_ambito: e.target.value.toUpperCase() })}
+          maxLength={50}
+          pattern="^CL-[A-Z]{2,3}$"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="Ej: CL-RM"
+        />
+      </label>
+      <label className="flex flex-col gap-1 sm:col-span-2">
+        <span className="font-medium text-neutral-700 text-sm">
+          Sector ámbito <span className="text-neutral-400 text-xs">(opcional, slug)</span>
+        </span>
+        <input
+          type="text"
+          value={form.sector_ambito}
+          onChange={(e) =>
+            setForm({ ...form, sector_ambito: e.target.value.toLowerCase().replace(/\s+/g, '-') })
+          }
+          maxLength={100}
+          pattern="^[a-z0-9-]+$"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+          placeholder="Ej: transporte-carga"
+        />
+      </label>
+      {error && (
+        <div className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm sm:col-span-2">
+          {error}
+        </div>
+      )}
+      <div className="sm:col-span-2">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+          data-testid="stakeholder-org-create-submit"
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Creando…
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4" aria-hidden />
+              Crear organización
+            </>
+          )}
+        </button>
+      </div>
+    </form>
+  );
+}
