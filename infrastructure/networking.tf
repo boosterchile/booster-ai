@@ -55,6 +55,7 @@ locals {
   cert_domains = [
     "api.${var.domain}",
     "app.${var.domain}",
+    "demo.${var.domain}",
   ]
 }
 
@@ -82,8 +83,8 @@ resource "google_compute_managed_ssl_certificate" "main" {
     # ANTES de incluirlo acá (en local.cert_domains arriba), sino el cert
     # queda en FAILED_NOT_VISIBLE (lección de task #34).
     #
-    # apex/www/demo siguen en Booster 2.0 (AWS GA, Firebase) y no se sirven
-    # desde este LB.
+    # apex/www siguen en Booster 2.0 (AWS GA, Google Sites) y no se sirven
+    # desde este LB. demo se migró al LB en 2026-05-13 (modo demo PWA).
     domains = local.cert_domains
   }
 
@@ -412,6 +413,10 @@ resource "google_compute_url_map" "main" {
     path_matcher = "app"
   }
   host_rule {
+    hosts        = ["demo.${var.domain}"]
+    path_matcher = "demo"
+  }
+  host_rule {
     hosts        = ["${var.domain}", "www.${var.domain}"]
     path_matcher = "marketing"
   }
@@ -435,6 +440,15 @@ resource "google_compute_url_map" "main" {
 
   path_matcher {
     name            = "app"
+    default_service = google_compute_backend_service.web.id
+  }
+
+  # demo.boosterchile.com — mismo backend que app. El bundle web detecta
+  # el host header en runtime y renderiza UI de modo demo. NO hay backend
+  # service separado: cualquier desync entre app y demo sería un footgun
+  # (deploys mismatcheados).
+  path_matcher {
+    name            = "demo"
     default_service = google_compute_backend_service.web.id
   }
 
@@ -565,14 +579,29 @@ resource "google_dns_record_set" "app" {
   rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
-# demo → Google Sites (Booster 2.0 demo site)
+# demo → Cloud Run booster-ai-web vía Global HTTPS LB.
+#
+# Mismo backend que app.boosterchile.com — la PWA detecta el host header
+# (demo.* vs app.*) en runtime y muestra UI de modo demo. El endpoint
+# /demo/login del api (api.boosterchile.com) crea sesiones efímeras sin
+# Firebase Auth; el frontend lo invoca con CORS desde demo.*.
+#
+# Histórico: hasta 2026-05-13 este record era CNAME → ghs.googlehosted.com
+# (Google Sites de Booster 2.0). Migrado al LB de Booster AI cuando se
+# habilitó modo demo (feat/demo-mode-subdominio). El binding en el Google
+# Site legacy queda huérfano (sin tráfico) — no requiere acción.
+#
+# IMPORTANTE (lección task #34): aplicar este record en un APPLY APARTE
+# antes de agregar demo.${var.domain} a local.cert_domains. Si el cert
+# se intenta provisionar antes de que Google vea el A record propagado,
+# queda FAILED_NOT_VISIBLE y hay que regenerarlo (cert_suffix rotación).
 resource "google_dns_record_set" "demo" {
   name         = "demo.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
-  type         = "CNAME"
+  type         = "A"
   ttl          = 3600
-  rrdatas      = ["ghs.googlehosted.com."]
+  rrdatas      = [google_compute_global_address.lb_ipv4.address]
 }
 
 # === Booster AI ===

@@ -353,6 +353,23 @@ variable "wake_word_voice_activated" {
 }
 
 # ---------------------------------------------------------------------------
+# Modo demo (subdominio demo.boosterchile.com)
+# ---------------------------------------------------------------------------
+# Cuando ON, el api habilita el endpoint POST /demo/login (mintea custom
+# tokens Firebase para las 4 personas demo: shipper, carrier, conductor,
+# stakeholder) y corre auto-seed-demo en startup si no existen las
+# entidades demo. La PWA detecta el host header demo.* y muestra UI de
+# selector de persona en lugar del flow /login normal.
+#
+# Default true para demo Corfo (2026-05-18). Se apaga post-evento si
+# Felipe decide retirar el subdominio.
+variable "demo_mode_activated" {
+  description = "Activa modo demo: endpoint /demo/login + auto-seed on startup + UI demo en subdominio demo.boosterchile.com."
+  type        = bool
+  default     = true
+}
+
+# ---------------------------------------------------------------------------
 # Platform admin allowlist
 # ---------------------------------------------------------------------------
 # Emails (CSV) que pueden acceder a /app/platform-admin/* en la PWA y a
