@@ -28,6 +28,10 @@ export interface MembershipPayload {
     | 'stakeholder_sostenibilidad';
   status: 'pendiente_invitacion' | 'activa' | 'suspendida' | 'removida';
   joined_at: string | null;
+  /**
+   * Empresa de la membership. NULL cuando la membership es a una
+   * organización stakeholder (XOR — ADR-034).
+   */
   empresa: {
     id: string;
     legal_name: string;
@@ -35,7 +39,22 @@ export interface MembershipPayload {
     is_generador_carga: boolean;
     is_transportista: boolean;
     status: 'pendiente_verificacion' | 'activa' | 'suspendida';
-  };
+  } | null;
+  /**
+   * ADR-034 — Organización stakeholder de la membership. NULL cuando la
+   * membership es a una empresa (XOR). Aparece solo para users con rol
+   * `stakeholder_sostenibilidad` en una organización dada de alta por
+   * platform-admin.
+   *
+   * Opcional para tolerar respuestas pre-Wave 3 (clientes cacheados).
+   */
+  organizacion_stakeholder?: {
+    id: string;
+    nombre_legal: string;
+    tipo: 'regulador' | 'gremio' | 'observatorio_academico' | 'ong' | 'corporativo_esg';
+    region_ambito: string | null;
+    sector_ambito: string | null;
+  } | null;
 }
 
 export interface MeUser {

@@ -33,7 +33,7 @@ export function LiquidacionesRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isCarrier = ctx.me.active_membership?.empresa.is_transportista ?? false;
+        const isCarrier = ctx.me.active_membership?.empresa?.is_transportista ?? false;
         if (!isCarrier) {
           return <NoCarrierPermission />;
         }

@@ -30,7 +30,14 @@ export function CompanySwitcher({
   onSelect,
   disabled,
 }: CompanySwitcherProps) {
-  const activas = memberships.filter((m) => m.status === 'activa');
+  // ADR-034 — el switcher solo lista memberships a empresas comerciales,
+  // no a organizaciones stakeholder. Stakeholder users tienen su propia
+  // surface (`/app/stakeholder/zonas`) y normalmente single org; no
+  // necesitan switcher acá.
+  const activas = memberships.filter(
+    (m): m is typeof m & { empresa: NonNullable<typeof m.empresa> } =>
+      m.status === 'activa' && m.empresa != null,
+  );
   const active = activas.find((m) => m.empresa.id === activeEmpresaId) ?? activas[0];
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
