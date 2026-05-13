@@ -1,6 +1,6 @@
 import { STAKEHOLDER_ORG_TYPE_LABEL } from '@booster-ai/shared-schemas';
 import { Link, Navigate } from '@tanstack/react-router';
-import { ArrowLeft, Building2, Info, MapPin, Shield, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Building2, Info, MapPin, Shield, Star, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -26,11 +26,18 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * posterior cuando el seed demo tenga viajes históricos.
  *
  * Zonas predefinidas (estáticas en el frontend por ahora):
+ *   - Puerto de Coquimbo (zona destacada — exportación frutícola + minería IV región)
  *   - Puerto Valparaíso
  *   - Puerto San Antonio (mayor volumen contenedores Chile)
  *   - Mercado Lo Valledor (abastos Stgo)
  *   - Polo industrial Quilicura
  *   - Zona Franca Iquique
+ *
+ * `destacado: true` marca zonas prioritarias para el contexto de demo
+ * actual. Se muestran arriba en el grid con badge "Zona prioritaria"
+ * para que el stakeholder vea primero el caso de uso central. No es un
+ * concepto de producto permanente — pasa a feature flag o configuración
+ * por organización cuando salga del modo demo.
  */
 
 interface ZonaPredefinida {
@@ -52,9 +59,32 @@ interface ZonaPredefinida {
   demo_viajes_30d: number;
   demo_co2e_kg: number;
   demo_horario_pico: string;
+  /**
+   * Marca la zona como prioritaria en el contexto de demo actual. Las
+   * destacadas se ordenan primero en el grid y muestran badge visual.
+   * Default undefined (no destacada).
+   */
+  destacado?: boolean;
+  /** Etiqueta corta del foco de la zona (mostrada en cards destacadas). */
+  destacado_foco?: string;
 }
 
 const ZONAS_DEMO: ZonaPredefinida[] = [
+  {
+    id: 'puerto-coquimbo',
+    nombre: 'Puerto de Coquimbo',
+    region: 'IV Coquimbo',
+    region_iso: 'CL-CO',
+    tipo: 'puerto',
+    // Movimiento real ~1.5 Mt/año, dominado por concentrado de cobre
+    // (Carmen, Andacollo) + uva de mesa y vinos para exportación
+    // (refrigerados con ventana pico madrugada).
+    demo_viajes_30d: 728,
+    demo_co2e_kg: 287_400,
+    demo_horario_pico: '04:00 – 08:00',
+    destacado: true,
+    destacado_foco: 'Exportación frutícola + concentrado de cobre',
+  },
   {
     id: 'puerto-valparaiso',
     nombre: 'Puerto Valparaíso',
@@ -125,6 +155,20 @@ export function filterZonasByRegion(
   return zonas.filter((z) => z.region_iso === regionAmbito);
 }
 
+/**
+ * Ordena destacadas primero. Estable dentro de cada grupo (mantiene el
+ * orden de declaración en ZONAS_DEMO para que la curaduría editorial
+ * del array sea visible en la UI).
+ */
+export function sortZonasDestacadasPrimero(zonas: ZonaPredefinida[]): ZonaPredefinida[] {
+  return [...zonas].sort((a, b) => {
+    if (!!a.destacado === !!b.destacado) {
+      return 0;
+    }
+    return a.destacado ? -1 : 1;
+  });
+}
+
 const TIPO_LABEL: Record<ZonaPredefinida['tipo'], string> = {
   puerto: 'Puerto',
   mercado_abastos: 'Mercado de abastos',
@@ -162,7 +206,9 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
   // `organizacion_stakeholder` (no a una `empresa`). Extraemos el scope
   // declarado para filtrar las zonas mostradas.
   const org = me.active_membership?.organizacion_stakeholder ?? null;
-  const zonasVisibles = filterZonasByRegion(ZONAS_DEMO, org?.region_ambito);
+  const zonasVisibles = sortZonasDestacadasPrimero(
+    filterZonasByRegion(ZONAS_DEMO, org?.region_ambito),
+  );
 
   return (
     <Layout me={me} title="Zonas de impacto">
@@ -296,12 +342,26 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
 }
 
 function ZonaCard({ zona }: { zona: ZonaPredefinida }) {
+  const containerClass = zona.destacado
+    ? 'relative overflow-hidden rounded-lg border-2 border-primary-300 bg-gradient-to-br from-white to-primary-50/50 p-4 shadow-md ring-1 ring-primary-100 transition hover:border-primary-400 hover:shadow-lg'
+    : 'rounded-lg border border-neutral-200 bg-white p-4 shadow-sm transition hover:border-primary-300';
+
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm transition hover:border-primary-300">
+    <div className={containerClass}>
+      {zona.destacado && (
+        <span className="-translate-y-1/2 absolute top-0 right-3 inline-flex translate-y-0 items-center gap-1 rounded-full bg-primary-600 px-2.5 py-0.5 font-semibold text-[10px] text-white uppercase tracking-wider shadow-sm">
+          <Star className="h-3 w-3 fill-current" aria-hidden />
+          Zona prioritaria
+        </span>
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold text-neutral-900">{zona.nombre}</h3>
           <p className="text-neutral-500 text-xs">{zona.region}</p>
+          {zona.destacado && zona.destacado_foco && (
+            <p className="mt-1 text-primary-800 text-xs italic">{zona.destacado_foco}</p>
+          )}
         </div>
         <span
           className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${TIPO_COLOR[zona.tipo]}`}
