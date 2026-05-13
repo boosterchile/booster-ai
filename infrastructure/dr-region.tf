@@ -116,9 +116,25 @@ resource "google_container_cluster" "telemetry_dr" {
     master_ipv4_cidr_block  = "172.17.0.0/28"
 
     # Master global access habilitado para que Cloud Build pool (en south-west)
-    # alcance el master DR cross-region via VPC peering.
+    # alcance el master DR cross-region via VPC peering. NOTA 2026-05-13: en
+    # la práctica NO funcionó — el peering al control plane Autopilot no se
+    # establece. Resuelto vía DNS endpoint (control_plane_endpoints_config
+    # abajo) — kubectl alcanza el cluster via DNS + IAM auth sin peering.
     master_global_access_config {
       enabled = true
+    }
+  }
+
+  # DNS endpoint del control plane GKE — habilitado 2026-05-13 para resolver
+  # el bloqueo de deploy DR (issue #194). kubectl puede ahora alcanzar el
+  # cluster DR desde cualquier red (laptop, Cloud Build pool de cualquier
+  # region, Cloud Run jobs) sin requerir VPC peering — auth queda via IAM
+  # (roles/container.developer). El DNS endpoint es ~$0/mes.
+  #
+  # https://cloud.google.com/kubernetes-engine/docs/concepts/network-overview#dns-based-endpoint
+  control_plane_endpoints_config {
+    dns_endpoint_config {
+      allow_external_traffic = true
     }
   }
 
