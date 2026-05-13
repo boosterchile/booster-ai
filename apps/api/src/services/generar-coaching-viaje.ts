@@ -16,8 +16,9 @@ import { createGeminiGenFn } from './gemini-client.js';
  *   1. Cargar metricas_viaje del trip — necesitamos behavior_score y
  *      breakdown ya computados (PR-I4) como input al coaching.
  *   2. Construir ParametrosCoaching con los datos del trip + breakdown.
- *   3. Llamar a generarCoachingConduccion con Gemini wrapper (si hay
- *      GEMINI_API_KEY) o sin él (fallback plantilla).
+ *   3. Llamar a generarCoachingConduccion con Gemini wrapper (Vertex AI
+ *      via ADC, ADR-037) o fallback plantilla si geminiEnabled=false o
+ *      Vertex AI falla.
  *   4. Persistir coaching en metricas_viaje (mensaje + foco + fuente +
  *      modelo + timestamp).
  *
@@ -51,13 +52,13 @@ export async function generarCoachingViaje(opts: {
   logger: Logger;
   tripId: string;
   /**
-   * GEMINI_API_KEY del config. Si está presente, se usa Gemini API.
-   * Si no, fallback a plantilla determinística (sin AI). Optional —
-   * el caller decide si la pasa según config.
+   * GCP project ID — usado para construir el endpoint Vertex AI Gemini
+   * (ADR-037). Si está presente, intenta Gemini via ADC; sino, plantilla
+   * determinística. Optional — el caller decide.
    */
-  geminiApiKey?: string | undefined;
+  geminiProjectId?: string | undefined;
 }): Promise<GenerarCoachingResult> {
-  const { db, logger, tripId, geminiApiKey } = opts;
+  const { db, logger, tripId, geminiProjectId } = opts;
 
   // Cargar trip + metricas + assignment para construir el contexto.
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
@@ -125,9 +126,12 @@ export async function generarCoachingViaje(opts: {
     },
   };
 
-  // Construir genFn solo si hay API key. Sin key → undefined → el
-  // package va directo a plantilla.
-  const genFn = geminiApiKey ? createGeminiGenFn({ apiKey: geminiApiKey, logger }) : undefined;
+  // Construir genFn solo si hay projectId (Vertex AI necesita el project
+  // ID para construir el endpoint). Sin él → undefined → el package va
+  // directo a plantilla.
+  const genFn = geminiProjectId
+    ? createGeminiGenFn({ projectId: geminiProjectId, logger })
+    : undefined;
 
   const result: ResultadoCoaching = await generarCoachingConduccion(params, {
     ...(genFn ? { genFn } : {}),

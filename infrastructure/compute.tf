@@ -176,14 +176,13 @@ module "service_api" {
     # estimarDistanciaKm (tabla pre-computada Chile) sin romper nada.
     GOOGLE_ROUTES_API_KEY = google_secret_manager_secret.secrets["google-routes-api-key"].secret_id
 
-    # Phase 3 PR-J2 — Gemini API key para coaching IA post-entrega.
-    # Server-side; el api la usa en generar-coaching-viaje.ts para
-    # llamar a Gemini REST API. Si la key está con placeholder o
-    # ausente, generarCoachingConduccion cae al fallback de plantilla
-    # determinística — el carrier sigue recibiendo coaching útil.
-    # El secret ya existe en security.tf; este binding lo expone como
-    # env var GEMINI_API_KEY al api Cloud Run (apps/api lee via config.ts).
-    GEMINI_API_KEY = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
+    # ADR-037: GEMINI_API_KEY eliminada. apps/api ahora usa Vertex AI con
+    # ADC (workload identity del SA cloud_run_runtime, que ya tiene
+    # roles/aiplatform.user). El secret gemini-api-key del Secret Manager
+    # queda como artefacto histórico — la API key real se elimina con
+    # `gcloud services api-keys delete a5a60db7-0dc4-43c2-b08a-bb21e7834c2d`
+    # post-apply de este cambio. Cierra el banner GCP "unrestricted API keys
+    # for generativelanguage.googleapis.com".
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id
@@ -452,7 +451,8 @@ module "service_whatsapp_bot" {
   secrets = {
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
-    GEMINI_API_KEY     = google_secret_manager_secret.secrets["gemini-api-key"].secret_id
+    # ADR-037: GEMINI_API_KEY eliminada. El bot WhatsApp no usa Gemini en
+    # código — era binding huérfano.
   }
 
   # Necesario para llegar a Redis (172.25.0.4) que vive en VPC privado.
