@@ -75,7 +75,7 @@ export function Layout({
             className="flex shrink-0 items-center gap-2 sm:gap-3"
             onClick={() => setMobileOpen(false)}
           >
-            <div className="h-6 w-6 rounded-md bg-primary-500" aria-hidden />
+            <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
             <span className="whitespace-nowrap font-semibold text-lg text-neutral-900">
               Booster AI
             </span>
