@@ -7,6 +7,40 @@ import {
 } from '@booster-ai/config';
 import { z } from 'zod';
 
+/**
+ * Parsea env var boolean correctamente. `z.coerce.boolean()` es un footgun
+ * — coerce-ea CUALQUIER string non-empty a `true`, incluyendo "false".
+ *
+ * Bug descubierto 2026-05-13: `WAKE_WORD_VOICE_ACTIVATED="false"` se
+ * coerce-eaba a `true`. Propagó al endpoint /feature-flags y a logic
+ * server. Mismo issue afectaba a AUTH_UNIVERSAL_V1_ACTIVATED,
+ * MATCHING_ALGORITHM_V2_ACTIVATED, FACTORING_V1_ACTIVATED,
+ * PRICING_V2_ACTIVATED.
+ *
+ * Mapea explícitamente: "true"/"1" → true, "false"/"0"/"" → false,
+ * otros (incluyendo undefined) → defaultValue.
+ */
+function booleanFlag(defaultValue: boolean) {
+  return z
+    .preprocess((v) => {
+      if (typeof v === 'boolean') {
+        return v;
+      }
+      if (typeof v !== 'string') {
+        return defaultValue;
+      }
+      const normalized = v.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') {
+        return true;
+      }
+      if (normalized === 'false' || normalized === '0' || normalized === '') {
+        return false;
+      }
+      return defaultValue;
+    }, z.boolean())
+    .default(defaultValue);
+}
+
 const apiEnvSchema = commonEnvSchema
   .merge(databaseEnvSchema)
   .merge(redisEnvSchema)
@@ -267,7 +301,7 @@ const apiEnvSchema = commonEnvSchema
      * Override explícito: setear `PRICING_V2_ACTIVATED=false` en Cloud Run
      * env revierte la activación en segundos sin tocar BD ni código.
      */
-    PRICING_V2_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
+    PRICING_V2_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
 
     /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
@@ -288,7 +322,7 @@ const apiEnvSchema = commonEnvSchema
      *     queda diferido — adelantos quedan en `solicitado` hasta
      *     integración del partner.
      */
-    FACTORING_V1_ACTIVATED: z.coerce.boolean().default(process.env.NODE_ENV === 'production'),
+    FACTORING_V1_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
 
     /**
      * Allowlist de emails con acceso a endpoints `/admin/cobra-hoy/*`
@@ -359,7 +393,7 @@ const apiEnvSchema = commonEnvSchema
      *   2. Backtest sobre 30d de staging — si delta favorable, flag=true en staging por 7d.
      *   3. Si métricas siguen estables, flag=true en prod.
      */
-    MATCHING_ALGORITHM_V2_ACTIVATED: z.coerce.boolean().default(false),
+    MATCHING_ALGORITHM_V2_ACTIVATED: booleanFlag(false),
 
     /**
      * ADR-035 (Wave 4) — Feature flag para activar el flow universal
@@ -378,7 +412,7 @@ const apiEnvSchema = commonEnvSchema
      *      con flag=true. Si OK, flag=true en prod.
      *   3. PR 3 (migración 30d): forzar rotación al login siguiente.
      */
-    AUTH_UNIVERSAL_V1_ACTIVATED: z.coerce.boolean().default(false),
+    AUTH_UNIVERSAL_V1_ACTIVATED: booleanFlag(false),
 
     /**
      * ADR-036 (Wave 5) — Feature flag para wake-word "Oye Booster" en
@@ -395,7 +429,7 @@ const apiEnvSchema = commonEnvSchema
      * Rollout: false en prod hasta que el modelo custom
      * `oye-booster-cl.ppn` esté entrenado con voces chilenas (Wave 5 PR 2).
      */
-    WAKE_WORD_VOICE_ACTIVATED: z.coerce.boolean().default(false),
+    WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
 
     /**
      * ADR-033 §1 — Pesos custom para los componentes del scoring v2.

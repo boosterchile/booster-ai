@@ -1,35 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-
-// Mock de google-auth-library con vi.hoisted: garantiza que el mock se
-// inicialice antes del import del módulo testeado (vital con coverage
-// instrumentation, donde el orden de evaluación cambia y un vi.mock al
-// medio del archivo no siempre se hoist).
-//
-// En CI no hay ADC disponible (no Cloud Run, no `gcloud auth
-// application-default login`), pero routes-api.ts llama getAccessToken()
-// en cada request. Devolvemos un token fake para ejercitar la lógica de
-// fetch/parse sin tocar ADC real.
-// `GoogleAuth` se usa con `new`, así que el mock debe ser una clase real
-// (arrow function no es constructable). Devuelve siempre el mismo objeto
-// con getClient → getAccessToken cuyo .token es 'test-access-token'.
-vi.mock('google-auth-library', () => {
-  class MockGoogleAuth {
-    async getClient() {
-      return {
-        async getAccessToken() {
-          return { token: 'test-access-token' };
-        },
-      };
-    }
-  }
-  return { GoogleAuth: MockGoogleAuth };
-});
-
 import {
   type RouteSuggestion,
   RoutesApiError,
   computeRoutes,
 } from '../../src/services/routes-api.js';
+
+// google-auth-library está mockeada globalmente en test/setup.ts (ADR-038).
 
 /**
  * Tests del cliente Routes API (Phase 1 — eco route suggestion).
