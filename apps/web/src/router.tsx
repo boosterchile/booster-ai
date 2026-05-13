@@ -16,6 +16,7 @@ import {
   ConductoresNuevoRoute,
 } from './routes/conductores.js';
 import { CumplimientoRoute } from './routes/cumplimiento.js';
+import { DemoRoute } from './routes/demo.js';
 import { FlotaRoute } from './routes/flota.js';
 import { IndexRoute } from './routes/index.js';
 import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
@@ -64,6 +65,15 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   component: LoginRoute,
+});
+
+// Modo demo — selector de persona para el subdominio
+// demo.boosterchile.com. Sin Firebase signup; el backend mintea custom
+// token Firebase con claim is_demo:true via POST /demo/login.
+const demoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/demo',
+  component: DemoRoute,
 });
 
 // D9 — Surface dedicada de login para conductores. Acepta RUT + PIN
@@ -316,6 +326,7 @@ const liquidacionesRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  demoRoute,
   loginConductorRoute,
   onboardingRoute,
   appRoute,
