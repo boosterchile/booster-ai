@@ -161,11 +161,7 @@ variable "cloudsql_backup_retention_days" {
 variable "redis_tier" {
   description = "Redis tier: BASIC (single node) o STANDARD_HA (con failover)"
   type        = string
-  # ADR-035 (2026-05-13): BASIC porque uso real 30d = 0.6% de 1 GB (~6 MB)
-  # y solo guardamos caché efímera (conversation store, OIDC tokens, rate
-  # limit counters). Pérdida de caché en falla = degradación temporal, no
-  # falla funcional. Cambiar a STANDARD_HA cuando llegue cliente con SLA.
-  default = "BASIC"
+  default     = "STANDARD_HA"
 }
 
 variable "redis_memory_gb" {
