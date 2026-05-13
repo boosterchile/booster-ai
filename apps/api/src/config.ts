@@ -394,6 +394,23 @@ const apiEnvSchema = commonEnvSchema
     AUTH_UNIVERSAL_V1_ACTIVATED: z.coerce.boolean().default(false),
 
     /**
+     * ADR-036 (Wave 5) — Feature flag para wake-word "Oye Booster" en
+     * el conductor. Default OFF. Cuando `true`:
+     *   - La card "Activación por voz" en /app/conductor/configuracion
+     *     es activa (toggle real, no "próximamente").
+     *   - El usuario puede opt-in para que su PWA escuche el wake-word
+     *     "Oye Booster" cuando el vehículo está detenido.
+     *
+     * El listener Porcupine es on-device (WASM); el audio del wake-word
+     * NO sale del teléfono. Solo cuando se detecta la frase, el audio
+     * del comando subsecuente se envía a Booster para procesar.
+     *
+     * Rollout: false en prod hasta que el modelo custom
+     * `oye-booster-cl.ppn` esté entrenado con voces chilenas (Wave 5 PR 2).
+     */
+    WAKE_WORD_VOICE_ACTIVATED: z.coerce.boolean().default(false),
+
+    /**
      * ADR-033 §1 — Pesos custom para los componentes del scoring v2.
      * JSON con shape `{ capacidad: number; backhaul: number;
      * reputacion: number; tier: number }`. Suma debe ser ≈ 1.0

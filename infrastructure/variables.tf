@@ -305,6 +305,44 @@ variable "matching_v2_weights_json" {
 }
 
 # ---------------------------------------------------------------------------
+# ADR-035 Wave 4 — Auth universal RUT + clave numérica
+# ---------------------------------------------------------------------------
+# Cuando `true`, `/login` muestra selector de tipo usuario + form RUT +
+# clave numérica para todos los roles. Default `false` mantiene el flow
+# legacy (Google + email/password + reset).
+#
+# Rollout staged:
+#   1. PR 1 (foundation backend): flag=false default. Endpoint
+#      /auth/login-rut vivo pero sin uso del UI.
+#   2. PR 2 (UI selector): flag=false default. Activar en staging para
+#      smoke E2E. Si OK, activar en prod.
+#   3. PR 3 (migración 30d): forzar rotación al login siguiente de
+#      usuarios con email/password legacy.
+#
+# Flip es reversible sin redeploy de código.
+variable "auth_universal_v1_activated" {
+  description = "Activa el flow universal RUT + clave numérica (ADR-035). false = legacy email/password."
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
+# ADR-036 Wave 5 — Wake-word "Oye Booster"
+# ---------------------------------------------------------------------------
+# Cuando `true`, la card "Activación por voz" en
+# /app/conductor/configuracion es activa (toggle real, no
+# "próximamente"). El conductor debe además opt-in para que la PWA
+# escuche el wake-word "Oye Booster".
+#
+# Mantener `false` en prod hasta que el modelo custom `oye-booster-cl.ppn`
+# esté entrenado con voces chilenas vía Picovoice Console (Wave 5 PR 2).
+variable "wake_word_voice_activated" {
+  description = "Activa wake-word \"Oye Booster\" en /app/conductor (ADR-036)."
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
 # Platform admin allowlist
 # ---------------------------------------------------------------------------
 # Emails (CSV) que pueden acceder a /app/platform-admin/* en la PWA y a

@@ -1,9 +1,10 @@
-import { Navigate, useNavigate } from '@tanstack/react-router';
+import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import type { FirebaseError } from 'firebase/app';
 import { LogIn, Mail } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { FormField, inputClass } from '../components/FormField.js';
+import { LoginUniversal } from '../components/login/LoginUniversal.js';
 import {
   requestPasswordReset,
   signInWithEmail,
@@ -11,6 +12,7 @@ import {
   signUpWithEmail,
   useAuth,
 } from '../hooks/use-auth.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -23,19 +25,34 @@ interface LoginFormValues {
 const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
 
 /**
- * /login — pantalla de autenticación con tres flows:
- *   - Google sign-in (popup)
- *   - Email + password (sign in / sign up)
- *   - Password reset (email con link de Firebase)
+ * /login — pantalla de autenticación.
+ *
+ * ADR-035 (Wave 4) — dual flow basado en feature flag:
+ *   - Si `auth_universal_v1_activated=true`: renderiza `<LoginUniversal>`
+ *     con selector tipo usuario + form RUT + clave numérica.
+ *   - Si `auth_universal_v1_activated=false` (default): legacy flow
+ *     con Google + email/password + password reset.
+ *
+ * Escape hatch: `?legacy=1` en la URL fuerza el flow legacy aunque el
+ * flag esté ON. Usado por `LoginUniversal` cuando el user necesita
+ * rotar su clave numérica desde su método anterior (Wave 4 PR 3 wire).
  *
  * Tras login exitoso → /app, que decide via /me si va a /onboarding o
  * directo al dashboard según `needs_onboarding`.
  */
 export function LoginRoute() {
   const { user, loading } = useAuth();
+  const { flags } = useFeatureFlags();
+  // biome-ignore lint/suspicious/noExplicitAny: search params del legacy escape hatch sin type strict.
+  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string };
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('sign-in');
   const [resetSent, setResetSent] = useState(false);
+
+  // Si el flag está ON y el user NO forzó legacy, ruta al flow universal.
+  // Re-evaluamos esto tras `user`/loading checks debajo para mantener la
+  // semántica del legacy (Navigate to /app si ya logueado).
+  const useUniversalFlow = flags.auth_universal_v1_activated && search.legacy !== '1';
 
   const {
     register,
@@ -58,6 +75,10 @@ export function LoginRoute() {
 
   if (user) {
     return <Navigate to="/app" />;
+  }
+
+  if (useUniversalFlow) {
+    return <LoginUniversal />;
   }
 
   async function handleGoogleSignIn() {

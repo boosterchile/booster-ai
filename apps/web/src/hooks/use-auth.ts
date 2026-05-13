@@ -108,6 +108,18 @@ export async function signInDriverWithCustomToken(customToken: string): Promise<
 }
 
 /**
+ * ADR-035 — Login universal con custom token devuelto por
+ * `POST /auth/login-rut`. Reemplaza a `signInWithEmail` cuando el flag
+ * `auth_universal_v1_activated=true`. Funciona para cualquier rol
+ * (shipper / carrier / conductor / stakeholder / booster admin) — el
+ * tipo de UI inicial post-login lo determina el AppRoute via /me.
+ */
+export async function signInUniversalWithCustomToken(customToken: string): Promise<User> {
+  const result = await signInWithCustomToken(firebaseAuth, customToken);
+  return result.user;
+}
+
+/**
  * Registro nuevo con email + password. Setea displayName si se provee.
  *
  * Lanza FirebaseError si el email ya existe (auth/email-already-in-use),
