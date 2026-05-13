@@ -1,3 +1,4 @@
+import { STAKEHOLDER_ORG_TYPE_LABEL } from '@booster-ai/shared-schemas';
 import { Link, Navigate } from '@tanstack/react-router';
 import { ArrowLeft, Building2, Info, MapPin, Shield, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -36,6 +37,12 @@ interface ZonaPredefinida {
   id: string;
   nombre: string;
   region: string;
+  /**
+   * Código ISO 3166-2:CL (e.g. `CL-VS`, `CL-RM`). Usado para filtrar las
+   * zonas mostradas por el ámbito declarado de la organización stakeholder
+   * (ADR-034 — `organizacion_stakeholder.region_ambito`).
+   */
+  region_iso: string;
   tipo: 'puerto' | 'mercado_abastos' | 'polo_industrial' | 'zona_franca';
   /**
    * Datos demo en este sprint — la próxima iteración pulla esto del API
@@ -52,6 +59,7 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     id: 'puerto-valparaiso',
     nombre: 'Puerto Valparaíso',
     region: 'V Valparaíso',
+    region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1247,
     demo_co2e_kg: 312_400,
@@ -61,6 +69,7 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     id: 'puerto-san-antonio',
     nombre: 'Puerto San Antonio',
     region: 'V Valparaíso',
+    region_iso: 'CL-VS',
     tipo: 'puerto',
     demo_viajes_30d: 1893,
     demo_co2e_kg: 478_900,
@@ -70,6 +79,7 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     id: 'mercado-lo-valledor',
     nombre: 'Mercado Lo Valledor',
     region: 'XIII Metropolitana',
+    region_iso: 'CL-RM',
     tipo: 'mercado_abastos',
     demo_viajes_30d: 2104,
     demo_co2e_kg: 89_300,
@@ -79,6 +89,7 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     id: 'polo-quilicura',
     nombre: 'Polo industrial Quilicura',
     region: 'XIII Metropolitana',
+    region_iso: 'CL-RM',
     tipo: 'polo_industrial',
     demo_viajes_30d: 856,
     demo_co2e_kg: 167_200,
@@ -88,12 +99,31 @@ const ZONAS_DEMO: ZonaPredefinida[] = [
     id: 'zofri-iquique',
     nombre: 'Zona Franca Iquique',
     region: 'I Tarapacá',
+    region_iso: 'CL-TA',
     tipo: 'zona_franca',
     demo_viajes_30d: 425,
     demo_co2e_kg: 198_500,
     demo_horario_pico: '08:00 – 12:00',
   },
 ];
+
+/**
+ * Filtra las zonas según el ámbito geográfico de la organización
+ * stakeholder. NULL `region_ambito` = ámbito nacional → todas las zonas
+ * visibles. Cualquier otro valor filtra a las que matchean.
+ *
+ * Sin región matcheante: devuelve array vacío. El caller debe mostrar
+ * estado "No hay zonas en el ámbito de tu organización".
+ */
+export function filterZonasByRegion(
+  zonas: ZonaPredefinida[],
+  regionAmbito: string | null | undefined,
+): ZonaPredefinida[] {
+  if (!regionAmbito) {
+    return zonas;
+  }
+  return zonas.filter((z) => z.region_iso === regionAmbito);
+}
 
 const TIPO_LABEL: Record<ZonaPredefinida['tipo'], string> = {
   puerto: 'Puerto',
@@ -128,6 +158,12 @@ export function StakeholderZonasRoute() {
 }
 
 function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
+  // ADR-034 — el active_membership de un stakeholder apunta a una
+  // `organizacion_stakeholder` (no a una `empresa`). Extraemos el scope
+  // declarado para filtrar las zonas mostradas.
+  const org = me.active_membership?.organizacion_stakeholder ?? null;
+  const zonasVisibles = filterZonasByRegion(ZONAS_DEMO, org?.region_ambito);
+
   return (
     <Layout me={me} title="Zonas de impacto">
       <div className="flex items-center gap-3">
@@ -157,6 +193,33 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
         </div>
       </header>
 
+      {/* ADR-034 — Contexto de la organización stakeholder del usuario.
+          Muestra a qué organización pertenece y cuál es su ámbito de
+          datos (regional / sectorial / nacional). Esto da transparencia:
+          el stakeholder ve por qué algunas zonas no aparecen (filtro). */}
+      {org && (
+        <div
+          className="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-violet-200 bg-violet-50/50 p-4 text-sm"
+          data-testid="stakeholder-org-context"
+        >
+          <Building2 className="h-4 w-4 shrink-0 text-violet-700" aria-hidden />
+          <div className="text-violet-900">
+            <span className="font-semibold">{org.nombre_legal}</span>{' '}
+            <span className="text-violet-700 text-xs">
+              · {STAKEHOLDER_ORG_TYPE_LABEL[org.tipo]}
+            </span>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2 text-violet-700 text-xs">
+            <span className="rounded bg-violet-100 px-2 py-0.5">
+              Ámbito: {org.region_ambito ? `Región ${org.region_ambito}` : 'Nacional'}
+            </span>
+            {org.sector_ambito && (
+              <span className="rounded bg-violet-100 px-2 py-0.5">Sector: {org.sector_ambito}</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 rounded-md border border-amber-200 bg-amber-50/60 p-4 text-sm">
         <div className="flex items-start gap-2 text-amber-900">
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -169,15 +232,34 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
       </div>
 
       <section className="mt-8">
-        <h2 className="font-semibold text-neutral-900 text-xl">Zonas monitoreadas</h2>
+        <h2 className="font-semibold text-neutral-900 text-xl">
+          {org?.region_ambito ? `Zonas monitoreadas en ${org.region_ambito}` : 'Zonas monitoreadas'}
+        </h2>
         <p className="mt-1 text-neutral-600 text-sm">
-          Selecciona una zona para drill-down a flujos por hora, tipo de carga y mix de combustible.
+          {org?.region_ambito
+            ? `Tu organización tiene ámbito regional ${org.region_ambito}. Solo ves zonas dentro de esa región.`
+            : 'Selecciona una zona para drill-down a flujos por hora, tipo de carga y mix de combustible.'}
         </p>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {ZONAS_DEMO.map((z) => (
-            <ZonaCard key={z.id} zona={z} />
-          ))}
-        </div>
+
+        {zonasVisibles.length === 0 ? (
+          <div
+            className="mt-4 rounded-md border border-neutral-200 bg-white p-6 text-center text-neutral-600 text-sm"
+            data-testid="stakeholder-zonas-empty"
+          >
+            <Info className="mx-auto h-8 w-8 text-neutral-300" aria-hidden />
+            <p className="mt-2">
+              No hay zonas dentro del ámbito de tu organización
+              {org?.region_ambito && ` (${org.region_ambito})`}. Pídele a Booster que extienda el
+              ámbito o agregue zonas nuevas si tu organización las necesita.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {zonasVisibles.map((z) => (
+              <ZonaCard key={z.id} zona={z} />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-5">

@@ -57,7 +57,7 @@ export function CertificadosRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isShipper = ctx.me.active_membership?.empresa.is_generador_carga ?? false;
+        const isShipper = ctx.me.active_membership?.empresa?.is_generador_carga ?? false;
         if (!isShipper) {
           return <NoShipperPermission me={ctx.me} />;
         }

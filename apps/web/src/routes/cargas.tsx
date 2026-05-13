@@ -296,7 +296,7 @@ export function CargasListRoute() {
 }
 
 function CargasListPage({ me }: { me: MeOnboarded }) {
-  const isShipper = me.active_membership?.empresa.is_generador_carga ?? false;
+  const isShipper = me.active_membership?.empresa?.is_generador_carga ?? false;
 
   const tripsQ = useQuery({
     queryKey: ['cargas'],
@@ -617,7 +617,7 @@ export function CargasNuevoRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isShipper = ctx.me.active_membership?.empresa.is_generador_carga ?? false;
+        const isShipper = ctx.me.active_membership?.empresa?.is_generador_carga ?? false;
         if (!isShipper) {
           return (
             <Layout me={ctx.me} title="Nueva carga">
