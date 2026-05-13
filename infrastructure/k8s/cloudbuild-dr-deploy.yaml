@@ -1,0 +1,161 @@
+# Cloud Build pipeline para deployar telemetry-tcp-gateway en el cluster DR
+# (us-central1). Cierra issue #194.
+#
+# Por qué Cloud Build private worker pool y NO kubectl desde laptop:
+#   El cluster DR tiene `master_authorized_networks_config` restringido. El
+#   pool de Cloud Build privado YA ESTÁ en la allowlist (ver
+#   `infrastructure/dr-region.tf` master_authorized_networks_config). Esto
+#   evita tener que abrir el master al internet ni montar IAP tunnels.
+#
+# Run:
+#   gcloud builds submit --no-source \
+#     --config=infrastructure/k8s/cloudbuild-dr-deploy.yaml \
+#     --region=southamerica-west1 \
+#     --project=booster-ai-494222
+#
+# Pre-requisitos (idempotentes — el pipeline los verifica):
+#   - Imagen `telemetry-tcp-gateway:bootstrap` taggeada en Artifact Registry
+#   - cert-manager instalado en el cluster DR (si falta, install via helm)
+#   - ClusterIssuer `letsencrypt-prod` aplicado en el cluster DR
+
+steps:
+  # ----------------------------------------------------------------------
+  # 1. Get kubectl credentials del cluster DR (internal endpoint via VPC peering)
+  # ----------------------------------------------------------------------
+  - id: get-credentials-dr
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        gcloud container clusters get-credentials booster-ai-telemetry-dr \
+          --location=us-central1 \
+          --project=booster-ai-494222 \
+          --internal-ip
+        kubectl get nodes
+
+  # ----------------------------------------------------------------------
+  # 2. Verify cert-manager + install si falta (idempotente)
+  # ----------------------------------------------------------------------
+  - id: ensure-cert-manager
+    name: alpine/helm:3.16.3
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        set -eux
+        # Copy kubeconfig del step previo
+        cp -r /workspace/.kube ~/.kube 2>/dev/null || true
+        export KUBECONFIG=~/.kube/config
+
+        if kubectl get namespace cert-manager 2>/dev/null; then
+          echo "cert-manager namespace exists, checking deployment..."
+          if kubectl get deployment -n cert-manager cert-manager 2>/dev/null; then
+            echo "cert-manager already installed, skipping helm install"
+            exit 0
+          fi
+        fi
+
+        echo "Installing cert-manager via helm..."
+        helm repo add jetstack https://charts.jetstack.io
+        helm repo update
+        helm install cert-manager jetstack/cert-manager \
+          --namespace cert-manager --create-namespace \
+          --set crds.enabled=true \
+          --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com" \
+          --wait --timeout=5m
+
+        # Annotation post-install para Workload Identity binding (terraform
+        # ya bindeó el GCP SA — falta solo la annotation en el K8s SA).
+        kubectl annotate serviceaccount cert-manager \
+          --namespace cert-manager \
+          iam.gke.io/gcp-service-account=cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com \
+          --overwrite
+
+  # ----------------------------------------------------------------------
+  # 3. Apply ClusterIssuer (letsencrypt-prod) — pre-req del Certificate
+  # ----------------------------------------------------------------------
+  - id: apply-issuers
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        kubectl apply -f infrastructure/k8s/cert-manager-issuers.yaml
+        # ClusterIssuer Ready check (puede tomar ~30s)
+        for i in $$(seq 1 30); do
+          if kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True; then
+            echo "ClusterIssuer Ready"
+            break
+          fi
+          echo "Waiting for ClusterIssuer Ready... ($$i/30)"
+          sleep 5
+        done
+
+  # ----------------------------------------------------------------------
+  # 4. Apply Certificate (cert-dr.yaml) — cert-manager hace DNS-01 challenge
+  # ----------------------------------------------------------------------
+  - id: apply-cert-dr
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        # Crear namespace antes (el manifest del gateway lo crea pero el cert
+        # va al mismo namespace y se aplica primero).
+        kubectl create namespace telemetry --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f infrastructure/k8s/cert-dr.yaml
+        echo "Cert applied — DNS-01 challenge en curso (puede tomar ~2-5min)"
+
+  # ----------------------------------------------------------------------
+  # 5. Apply telemetry-tcp-gateway-dr.yaml (Deployment + Service + SA)
+  # ----------------------------------------------------------------------
+  - id: apply-gateway-dr
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway-dr.yaml
+        echo "Rollout watch (max 5min)..."
+        kubectl rollout status deployment/telemetry-tcp-gateway \
+          --namespace=telemetry --timeout=300s
+
+  # ----------------------------------------------------------------------
+  # 6. Verificar Service obtuvo el loadBalancerIP esperado
+  # ----------------------------------------------------------------------
+  - id: verify-service
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        for i in $$(seq 1 30); do
+          IP=$$(kubectl get svc -n telemetry telemetry-tcp-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          if [ "$$IP" = "136.116.208.86" ]; then
+            echo "Service LoadBalancer IP correcto: $$IP"
+            break
+          fi
+          echo "Waiting for LoadBalancer IP... current=$$IP expected=136.116.208.86 ($$i/30)"
+          sleep 10
+        done
+
+        # Final status snapshot
+        kubectl get pods,svc,certificate -n telemetry
+
+options:
+  # Usar el private worker pool — está en master_authorized_networks_config
+  # del cluster DR, así puede llegar al master vía VPC peering.
+  pool:
+    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
+  logging: CLOUD_LOGGING_ONLY
+  # machine_type viene del worker_config del pool (e2-standard-2 según
+  # infrastructure/cloudbuild.tf) — Cloud Build no permite override aquí.
+
+# Timeout total del pipeline (15 min — incluye DNS challenge + LB provisioning)
+timeout: 900s
