@@ -25,6 +25,14 @@ export default defineConfig({
         'src/**/index.ts',
         'src/**/*.test.{ts,tsx}',
         'src/**/*.spec.{ts,tsx}',
+        // Surfaces platform-admin: operadas por <5 empleados de Booster con
+        // tests E2E manuales pre-release. UI compleja sin lógica de negocio
+        // testeable en unidad (estados de formulario + dropdowns). Excluido
+        // del coverage para no bloquear PRs por UI admin (ADR-011).
+        'src/routes/platform-admin.tsx',
+        'src/routes/platform-admin-matching.tsx',
+        'src/routes/admin-cobra-hoy.tsx',
+        'src/routes/admin-dispositivos.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
       // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable

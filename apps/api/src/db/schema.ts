@@ -563,6 +563,63 @@ export const users = pgTable(
  * Membership = User pertenece a Empresa con un role. Composite UNIQUE
  * (user_id, empresa_id).
  */
+/**
+ * Tipos de organización stakeholder — ADR-034. Distintos de `empresas`
+ * (que son entidades comerciales del marketplace). Capturan reguladores
+ * estatales, gremios, observatorios académicos, ONGs ambientales y
+ * departamentos ESG corporativos. Cada uno tiene scope distinto sobre los
+ * datos agregados que se les exponen.
+ */
+export const stakeholderOrgTypeEnum = pgEnum('tipo_organizacion_stakeholder', [
+  'regulador',
+  'gremio',
+  'observatorio_academico',
+  'ong',
+  'corporativo_esg',
+]);
+
+/**
+ * Organizaciones stakeholder — entidades de pertenencia para usuarios con
+ * rol `stakeholder_sostenibilidad`. Paralelas a `empresas` (no hijas).
+ * Alta solo por platform-admin; soft-delete via `eliminado_en`.
+ *
+ * `region_ambito`: código ISO 3166-2:CL (e.g. `CL-RM`) o NULL = ámbito
+ * nacional. Determina el filtro geográfico de los datos agregados.
+ *
+ * `sector_ambito`: slug libre (`transporte-carga`, `manufactura`) o NULL =
+ * todos los sectores. Determina el filtro sectorial.
+ */
+export const organizacionesStakeholder = pgTable(
+  'organizaciones_stakeholder',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    nombreLegal: varchar('nombre_legal', { length: 200 }).notNull(),
+    tipo: stakeholderOrgTypeEnum('tipo').notNull(),
+    regionAmbito: varchar('region_ambito', { length: 50 }),
+    sectorAmbito: varchar('sector_ambito', { length: 100 }),
+    createdByAdminId: uuid('creado_por_admin_id').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('eliminado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    tipoIdx: index('idx_organizaciones_stakeholder_tipo').on(table.tipo),
+    regionIdx: index('idx_organizaciones_stakeholder_region').on(table.regionAmbito),
+    nombreLegalCheck: check(
+      'organizaciones_stakeholder_nombre_legal_check',
+      sql`length(${table.nombreLegal}) >= 3`,
+    ),
+  }),
+);
+
+/**
+ * Memberships — relación N:M entre usuario y entidad de pertenencia.
+ *
+ * ADR-034 introduce XOR entre `empresaId` y `organizacionStakeholderId`:
+ * una membership pertenece a una empresa O a una organización stakeholder,
+ * nunca a ambas, nunca a ninguna. El CHECK constraint en DB lo enforce
+ * (migration 0031).
+ */
 export const memberships = pgTable(
   'membresias',
   {
@@ -570,9 +627,21 @@ export const memberships = pgTable(
     userId: uuid('usuario_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
-    empresaId: uuid('empresa_id')
-      .notNull()
-      .references(() => empresas.id, { onDelete: 'restrict' }),
+    /**
+     * Empresa a la que pertenece la membership. NULL si la membership es
+     * de tipo stakeholder (ver `organizacionStakeholderId`). Aplica XOR
+     * constraint en DB.
+     */
+    empresaId: uuid('empresa_id').references(() => empresas.id, { onDelete: 'restrict' }),
+    /**
+     * Organización stakeholder a la que pertenece la membership. NULL si
+     * la membership pertenece a una empresa comercial. Aplica XOR
+     * constraint en DB con `empresaId`.
+     */
+    organizacionStakeholderId: uuid('organizacion_stakeholder_id').references(
+      () => organizacionesStakeholder.id,
+      { onDelete: 'restrict' },
+    ),
     role: membershipRoleEnum('rol').notNull(),
     status: membershipStatusEnum('estado').notNull().default('pendiente_invitacion'),
     invitedByUserId: uuid('invitado_por_id').references(() => users.id),
@@ -586,8 +655,14 @@ export const memberships = pgTable(
     userEmpresaUnique: unique('uq_membresias_usuario_empresa').on(table.userId, table.empresaId),
     userIdx: index('idx_membresias_usuario').on(table.userId),
     empresaIdx: index('idx_membresias_empresa').on(table.empresaId),
+    orgStakeholderIdx: index('idx_membresias_org_stakeholder').on(table.organizacionStakeholderId),
     roleIdx: index('idx_membresias_rol').on(table.role),
     statusIdx: index('idx_membresias_estado').on(table.status),
+    empresaXorStakeholder: check(
+      'chk_membresia_empresa_xor_stakeholder',
+      sql`(${table.empresaId} IS NOT NULL AND ${table.organizacionStakeholderId} IS NULL)
+          OR (${table.empresaId} IS NULL AND ${table.organizacionStakeholderId} IS NOT NULL)`,
+    ),
   }),
 );
 

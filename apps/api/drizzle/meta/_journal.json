@@ -213,6 +213,20 @@
       "breakpoints": true
     },
     {
+      "idx": 30,
+      "version": "7",
+      "when": 1780531200000,
+      "tag": "0030_organizaciones_stakeholder",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1780531200001,
+      "tag": "0031_memberships_stakeholder_org",
+      "breakpoints": true
+    },
+    {
       "idx": 32,
       "version": "7",
       "when": 1780617600000,

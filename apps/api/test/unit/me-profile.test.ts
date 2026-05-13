@@ -306,8 +306,12 @@ describe('PATCH /me/profile', () => {
   });
 
   it('GET /me con X-Empresa-Id stale → fallback a primer activeMembership', async () => {
-    // Sequence: SELECT user (limit) + SELECT memberships (innerJoin where).
+    // Sequence: SELECT user (limit) + SELECT empresa memberships (innerJoin
+    // where) + SELECT stakeholder-org memberships (innerJoin where).
+    // ADR-034 introdujo el segundo query; este test cubre el caso típico
+    // donde el user NO tiene memberships stakeholder (devolvemos []).
     let selectCallCount = 0;
+    let innerJoinCallCount = 0;
     const limitFn = vi.fn(() => {
       selectCallCount += 1;
       if (selectCallCount === 1) {
@@ -315,37 +319,43 @@ describe('PATCH /me/profile', () => {
       }
       return Promise.resolve([]);
     });
+    const empresaRows = [
+      {
+        membership: {
+          id: 'm1',
+          role: 'dueno',
+          status: 'activa',
+          joinedAt: new Date('2026-04-01T00:00:00Z'),
+          empresaId: 'real-empresa-id',
+        },
+        empresa: {
+          id: 'real-empresa-id',
+          legalName: 'Mi Empresa',
+          rut: '11.111.111-1',
+          isGeneradorCarga: true,
+          isTransportista: false,
+          status: 'activa',
+        },
+      },
+    ];
     const whereFnSelect = vi.fn(() => {
-      // Si es la 2da query (memberships), devolver array directo (await).
-      // Si es la 1ra (user), pasar a .limit().
+      // El N-ésimo innerJoin determina qué rows devolvemos. ADR-034:
+      //   1er innerJoin = empresas (con empresaRows)
+      //   2do innerJoin = organizacionesStakeholder (vacío, este test
+      //                   no cubre el caso stakeholder).
+      const currentCall = innerJoinCallCount;
       return {
         limit: limitFn,
         then: <T>(onFulfilled: (v: unknown[]) => T) => {
-          // Memberships: 1 row activa con empresaId 'real-empresa-id'
-          const rows = [
-            {
-              membership: {
-                id: 'm1',
-                role: 'dueno',
-                status: 'activa',
-                joinedAt: new Date('2026-04-01T00:00:00Z'),
-                empresaId: 'real-empresa-id',
-              },
-              empresa: {
-                id: 'real-empresa-id',
-                legalName: 'Mi Empresa',
-                rut: '11.111.111-1',
-                isGeneradorCarga: true,
-                isTransportista: false,
-                status: 'activa',
-              },
-            },
-          ];
+          const rows = currentCall === 1 ? empresaRows : [];
           return Promise.resolve(rows).then(onFulfilled);
         },
       };
     });
-    const innerJoinFn = vi.fn(() => ({ where: whereFnSelect }));
+    const innerJoinFn = vi.fn(() => {
+      innerJoinCallCount += 1;
+      return { where: whereFnSelect };
+    });
     const fromFn = vi.fn(() => ({ where: whereFnSelect, innerJoin: innerJoinFn }));
     const selectFn = vi.fn(() => ({ from: fromFn }));
     const db = { select: selectFn } as unknown as Parameters<

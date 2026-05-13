@@ -10,6 +10,7 @@ import {
   greenDrivingEvents,
   memberships,
   offers,
+  organizacionesStakeholder,
   plans,
   posicionesMovilConductor,
   sucursalesEmpresa,
@@ -77,6 +78,7 @@ const DEMO_TELTONIKA_MIRROR = '863238075489155';
 const SHIPPER_OWNER_EMAIL = 'demo-shipper@boosterchile.com';
 const CARRIER_OWNER_EMAIL = 'demo-carrier@boosterchile.com';
 const STAKEHOLDER_EMAIL = 'demo-stakeholder@boosterchile.com';
+const DEMO_STAKEHOLDER_ORG_NOMBRE = 'Observatorio Logístico Demo (Mesa pública sostenibilidad)';
 const DEMO_PASSWORD = 'BoosterDemo2026!';
 
 /**
@@ -172,13 +174,20 @@ export async function seedDemo(opts: {
     empresaId: carrierEmpresaId,
     role: 'dueno',
   });
-  // El stakeholder está enlazado al CARRIER (audita su operación). En
-  // futuro podría tener su propia empresa "Mesa pública demo"; por ahora
-  // mantener el modelo simple.
+  // ADR-034 — Stakeholder pertenece a una organización stakeholder
+  // (no a una empresa). Para el demo creamos un Observatorio Logístico
+  // académico con scope regional Metropolitano + sector transporte.
+  const stakeholderOrgId = await ensureOrganizacionStakeholder({
+    db,
+    nombreLegal: DEMO_STAKEHOLDER_ORG_NOMBRE,
+    tipo: 'observatorio_academico',
+    regionAmbito: 'CL-RM',
+    sectorAmbito: 'transporte-carga',
+  });
   await ensureMembership({
     db,
     userId: stakeholderUserId,
-    empresaId: carrierEmpresaId,
+    organizacionStakeholderId: stakeholderOrgId,
     role: 'stakeholder_sostenibilidad',
   });
 
@@ -446,6 +455,43 @@ export async function deleteDemo(opts: { db: Db; logger: Logger }): Promise<{
         }
       }
     }
+
+    // 10. Stakeholder orgs demo (ADR-034). Borrar memberships
+    //     stakeholder + la org. Los users stakeholder se borran abajo
+    //     si quedaron sin memberships.
+    const demoOrgs = await tx
+      .select({ id: organizacionesStakeholder.id })
+      .from(organizacionesStakeholder)
+      .where(eq(organizacionesStakeholder.nombreLegal, DEMO_STAKEHOLDER_ORG_NOMBRE));
+    if (demoOrgs.length > 0) {
+      const demoOrgIds = demoOrgs.map((o) => o.id);
+      // Identificar users stakeholder afectados antes de borrar memberships
+      // (para borrarlos al final si no tienen otras memberships).
+      const stakeholderMembershipUsers = await tx
+        .select({ userId: memberships.userId })
+        .from(memberships)
+        .where(inArray(memberships.organizacionStakeholderId, demoOrgIds));
+      const stakeholderUserIds = [...new Set(stakeholderMembershipUsers.map((m) => m.userId))];
+
+      await tx
+        .delete(memberships)
+        .where(inArray(memberships.organizacionStakeholderId, demoOrgIds));
+      await tx
+        .delete(organizacionesStakeholder)
+        .where(inArray(organizacionesStakeholder.id, demoOrgIds));
+
+      // Borrar users stakeholder que no tienen otras memberships.
+      for (const uid of stakeholderUserIds) {
+        const otherMemberships = await tx
+          .select({ id: memberships.id })
+          .from(memberships)
+          .where(eq(memberships.userId, uid))
+          .limit(1);
+        if (otherMemberships.length === 0) {
+          await tx.delete(users).where(eq(users.id, uid));
+        }
+      }
+    }
   });
 
   logger.info(
@@ -579,7 +625,10 @@ async function ensureFirebaseUser(opts: {
 async function ensureMembership(opts: {
   db: Db;
   userId: string;
-  empresaId: string;
+  /** XOR con organizacionStakeholderId. */
+  empresaId?: string;
+  /** XOR con empresaId (ADR-034). Solo para rol stakeholder_sostenibilidad. */
+  organizacionStakeholderId?: string;
   role:
     | 'dueno'
     | 'admin'
@@ -588,21 +637,19 @@ async function ensureMembership(opts: {
     | 'visualizador'
     | 'stakeholder_sostenibilidad';
 }): Promise<void> {
-  const { db, userId, empresaId, role } = opts;
-  // Si ya existe membership con ese (user, empresa, role) → no-op.
-  const existing = await db
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(eq(memberships.userId, userId))
-    .limit(50);
-  const alreadyHasRole = existing.some(() => false); // necesita full row; simplificamos
-  void alreadyHasRole;
+  const { db, userId, empresaId, organizacionStakeholderId, role } = opts;
+  if ((empresaId && organizacionStakeholderId) || (!empresaId && !organizacionStakeholderId)) {
+    throw new Error(
+      'ensureMembership: exige exactamente uno de empresaId | organizacionStakeholderId (ADR-034 CHECK XOR)',
+    );
+  }
 
   // Approach simple: try insert; si choca por UNIQUE composite, ignore.
   try {
     await db.insert(memberships).values({
       userId,
-      empresaId,
+      empresaId: empresaId ?? null,
+      organizacionStakeholderId: organizacionStakeholderId ?? null,
       role,
       status: 'activa',
       joinedAt: sql`now()`,
@@ -613,6 +660,42 @@ async function ensureMembership(opts: {
       throw err;
     }
   }
+}
+
+/**
+ * Crea (o reusa) una organización stakeholder demo (ADR-034). Idempotente
+ * por `nombre_legal`. Usada por el seed para representar un Observatorio
+ * Logístico que ve datos agregados del marketplace.
+ */
+async function ensureOrganizacionStakeholder(opts: {
+  db: Db;
+  nombreLegal: string;
+  tipo: 'regulador' | 'gremio' | 'observatorio_academico' | 'ong' | 'corporativo_esg';
+  regionAmbito?: string | null;
+  sectorAmbito?: string | null;
+}): Promise<string> {
+  const { db, nombreLegal, tipo, regionAmbito, sectorAmbito } = opts;
+  const existing = await db
+    .select({ id: organizacionesStakeholder.id })
+    .from(organizacionesStakeholder)
+    .where(eq(organizacionesStakeholder.nombreLegal, nombreLegal))
+    .limit(1);
+  if (existing[0]) {
+    return existing[0].id;
+  }
+  const [created] = await db
+    .insert(organizacionesStakeholder)
+    .values({
+      nombreLegal,
+      tipo,
+      regionAmbito: regionAmbito ?? null,
+      sectorAmbito: sectorAmbito ?? null,
+    })
+    .returning({ id: organizacionesStakeholder.id });
+  if (!created) {
+    throw new Error(`Failed to create organizacion_stakeholder: ${nombreLegal}`);
+  }
+  return created.id;
 }
 
 async function ensureSucursal(opts: {
