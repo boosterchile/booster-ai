@@ -127,28 +127,8 @@ resource "google_compute_router_nat" "primary_nat" {
   }
 }
 
-resource "google_compute_router" "dr_nat" {
-  name    = "booster-ai-nat-router-dr"
-  project = google_project.booster_ai.project_id
-  region  = var.dr_region
-  network = google_compute_network.vpc.id
-
-  description = "Router para Cloud NAT en la región DR. Mismo rationale que primary."
-}
-
-resource "google_compute_router_nat" "dr_nat" {
-  name                               = "booster-ai-nat-dr"
-  project                            = google_project.booster_ai.project_id
-  router                             = google_compute_router.dr_nat.name
-  region                             = var.dr_region
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
-
-  log_config {
-    enable = false
-    filter = "ERRORS_ONLY"
-  }
-}
+# ADR-035: router/NAT DR eliminados junto con dr-region.tf. Reactivar
+# cuando exista deployment productivo del TCP gateway en us-central1.
 
 # =============================================================================
 # OUTPUTS
