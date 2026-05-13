@@ -29,10 +29,12 @@ steps:
       - -c
       - |
         set -euxo pipefail
+        # SIN --internal-ip: usa el endpoint público del master, que está
+        # protegido por master_authorized_networks_config. El pool DR está
+        # allowlisted ahí via cloudbuild_pool_range_dr.
         gcloud container clusters get-credentials booster-ai-telemetry-dr \
           --location=us-central1 \
-          --project=booster-ai-494222 \
-          --internal-ip
+          --project=booster-ai-494222
         kubectl get nodes
 
   # ----------------------------------------------------------------------
@@ -149,13 +151,13 @@ steps:
         kubectl get pods,svc,certificate -n telemetry
 
 options:
-  # Usar el private worker pool — está en master_authorized_networks_config
-  # del cluster DR, así puede llegar al master vía VPC peering.
+  # Worker pool DR (us-central1, MISMA region que el cluster DR) — sesión
+  # 2026-05-13 demostró que pool saw1 falla cross-region (i/o timeout al
+  # master en us-central1 a pesar de master_global_access_config=enabled).
+  # Pool DR está allowlisted en master_authorized_networks_config.
   pool:
-    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
+    name: projects/booster-ai-494222/locations/us-central1/workerPools/booster-production-pool-dr
   logging: CLOUD_LOGGING_ONLY
-  # machine_type viene del worker_config del pool (e2-standard-2 según
-  # infrastructure/cloudbuild.tf) — Cloud Build no permite override aquí.
 
 # Timeout total del pipeline (15 min — incluye DNS challenge + LB provisioning)
 timeout: 900s
