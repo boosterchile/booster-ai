@@ -47,7 +47,11 @@ export function Layout({
   title: string;
   children: ReactNode;
 }) {
-  const activeEmpresaId = me.active_membership?.empresa.id ?? null;
+  // ADR-034 — empresa puede ser null cuando la membership activa es a una
+  // organización stakeholder. El Layout es shipper/carrier surface; el
+  // AppRoute redirige a stakeholders a /app/stakeholder/zonas antes de
+  // llegar acá, pero usamos chaining null-safe defensivamente.
+  const activeEmpresaId = me.active_membership?.empresa?.id ?? null;
   const [mobileOpen, setMobileOpen] = useState(false);
   const { switchTo, isPending: switchPending } = useSwitchCompany();
 
