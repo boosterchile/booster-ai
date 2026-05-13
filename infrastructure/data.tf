@@ -72,6 +72,10 @@ resource "google_service_networking_connection" "private_vpc" {
   reserved_peering_ranges = [
     google_compute_global_address.private_services.name,
     google_compute_global_address.cloudbuild_pool_range.name,
+    # Cloud Build pool DR (us-central1) — sesión 2026-05-13: resuelve el
+    # bloqueo de deploy DR (issue #194). Worker pool en mismo region que
+    # cluster DR evita el cross-region peering issue del master.
+    google_compute_global_address.cloudbuild_pool_range_dr.name,
   ]
 }
 

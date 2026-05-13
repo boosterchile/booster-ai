@@ -58,3 +58,65 @@ output "cloudbuild_worker_pool_name" {
   description = "Resource name del Cloud Build private worker pool. Pasar a `gcloud builds submit --worker-pool` o setear en options.pool.name del cloudbuild.yaml."
   value       = google_cloudbuild_worker_pool.production.id
 }
+
+# ---------------------------------------------------------------------------
+# Cloud Build worker pool en DR region (us-central1) — para deploys al
+# cluster GKE DR cuyo master internal IP (172.17.0.0/28) NO es alcanzable
+# cross-region desde saw1 a pesar de master_global_access_config=enabled.
+#
+# Sesión 2026-05-13 verificó empíricamente que el pool en saw1 falla con
+# `i/o timeout dial tcp 172.17.0.2:443` al intentar kubectl al cluster DR.
+# Un pool en la misma region elimina el cross-region peering issue.
+#
+# Costo:
+#   - e2-standard-2 en us-central1: $0.064/hr (vs $0.080 en saw1, 20% menos)
+#   - Uso esperado: ~2h/mes (deploys DR esporádicos) ≈ $0.13/mes
+#   - + IP range reservada: $0.01/mes
+#   Total: <$1/mes
+# ---------------------------------------------------------------------------
+
+# IP range para peering del pool DR. /24 = 256 IPs, suficiente para builds
+# concurrentes en DR. Distinto de 10.104.24.0 (primary pool).
+resource "google_compute_global_address" "cloudbuild_pool_range_dr" {
+  name          = "booster-cloudbuild-pool-range-dr"
+  project       = google_project.booster_ai.project_id
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 24
+  network       = google_compute_network.vpc.id
+}
+
+# Agregamos el range del pool DR al service networking connection existente
+# (private_vpc en data.tf). NO crear una connection nueva — Google solo
+# permite UNA por VPC + service. Hace un re-apply del recurso compartido.
+#
+# NOTA: data.tf:google_service_networking_connection.private_vpc tiene
+# reserved_peering_ranges = [private_services, cloudbuild_pool_range].
+# Necesita agregar cloudbuild_pool_range_dr ahí también — ver ese archivo.
+
+resource "google_cloudbuild_worker_pool" "production_dr" {
+  name     = "booster-production-pool-dr"
+  project  = google_project.booster_ai.project_id
+  location = var.dr_region # us-central1
+
+  worker_config {
+    machine_type   = "e2-standard-2"
+    disk_size_gb   = 100
+    no_external_ip = false
+  }
+
+  network_config {
+    peered_network = google_compute_network.vpc.id
+  }
+
+  depends_on = [
+    google_service_networking_connection.private_vpc,
+    google_compute_global_address.cloudbuild_pool_range_dr,
+    google_project_service.apis,
+  ]
+}
+
+output "cloudbuild_worker_pool_dr_name" {
+  description = "Resource name del Cloud Build private worker pool DR (us-central1). Usar en deploys al cluster DR via gcloud builds submit --worker-pool."
+  value       = google_cloudbuild_worker_pool.production_dr.id
+}
