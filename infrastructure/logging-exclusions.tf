@@ -37,3 +37,32 @@ resource "google_logging_project_exclusion" "gke_control_plane_noise" {
   # No deshabilitar — esta exclusion debe estar siempre activa.
   disabled = false
 }
+
+# ---------------------------------------------------------------------------
+# k8s_cluster + k8s_node informational events — exclusion adicional
+# ---------------------------------------------------------------------------
+# Hallazgo 2026-05-13 post-deploy DR: el ingest de logs explotó de 2 GB/mes
+# (pre-deploy) a ~149 GB/mes (estimado, basado en 34.75 GB en 7 días).
+# Cobrable: 99 GB × $0.50/GB ≈ $50/mes EXTRA.
+#
+# Top contributors (7d):
+#   19.75 GB  k8s_cluster (cluster events, autopilot autoscaling, kubelet)
+#    4.88 GB  k8s_node (node health checks, kubelet logs verbose)
+#    1.44 GB  gce_subnetwork (VPC flow logs — atacado en data.tf sampling)
+#    1.78 GB  k8s_container (logs INFO de los containers — KEEP, low cost)
+#
+# Esta exclusion descarta events de severidad INFO de k8s_cluster + k8s_node.
+# WARN/ERROR/CRITICAL siguen capturándose (necesarios para alertas).
+
+resource "google_logging_project_exclusion" "k8s_info_events_noise" {
+  name        = "k8s-info-events-noise"
+  project     = google_project.booster_ai.project_id
+  description = "Hallazgo 2026-05-13: descarta INFO events de k8s_cluster + k8s_node — autoscaling, kubelet heartbeats, etc. WARN/ERROR siguen capturándose. Reduce log ingest ~80 GB/mes post-deploy DR."
+
+  filter = <<-EOT
+    (resource.type="k8s_cluster" OR resource.type="k8s_node")
+    AND severity="INFO"
+  EOT
+
+  disabled = false
+}

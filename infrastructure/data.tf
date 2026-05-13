@@ -32,11 +32,16 @@ resource "google_compute_subnetwork" "private" {
   }
 
   # Trivy IaC: VPC Flow Logs habilitados para audit + investigacion de
-  # incidentes (#27). Sampling 0.5 + 10-min aggregation reduce costos
-  # ~10x vs full sampling — suficiente para anomaly detection.
+  # incidentes (#27). Sampling 0.1 (10% post-DR-deploy 2026-05-13) +
+  # 15-min aggregation. Bajado desde 0.5 al detectar que post-deploy DR
+  # generaba 1.44 GB/7d solo en flow logs de saw1. 0.1 es suficiente para
+  # anomaly detection sobre tráfico estable (sub-1 RPS de Cloud Run);
+  # incidentes raros con tráfico spike se siguen viendo. Si necesitamos
+  # más resolución para investigar algo específico, subir temporalmente
+  # y volver a bajar.
   log_config {
-    aggregation_interval = "INTERVAL_10_MIN"
-    flow_sampling        = 0.5
+    aggregation_interval = "INTERVAL_15_MIN"
+    flow_sampling        = 0.1
     metadata             = "INCLUDE_ALL_METADATA"
   }
 }
