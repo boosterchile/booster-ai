@@ -192,7 +192,7 @@ export function DemoRoute() {
       <header className="border-neutral-200 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <img src="/icons/icon.svg" alt="Booster AI" className="h-9 w-9" />
+            <img src="/icons/icon.svg" alt="Booster AI" className="h-11 w-11" />
             <div className="flex flex-col leading-tight">
               <span className="font-semibold text-base text-neutral-900">Booster AI</span>
               <span className="text-neutral-500 text-xs">Logística sostenible · Chile</span>

@@ -2,35 +2,36 @@
   <title>Booster AI</title>
   <!--
     Símbolo "boo / boo" en grilla 2 filas × 3 columnas.
-    Columna 1: dos "b" stilizadas como anillos con cola descendente.
+    Columna 1: dos "b" estilizadas (anillo + cola vertical en el lado izquierdo).
     Columnas 2 y 3: cuatro "o" como anillos circulares.
     El "o" de la fila inferior, columna central, es el acento verde brillante.
 
-    Paleta:
+    Paleta canónica del símbolo Booster:
       Azul marino: #1F2D5C
       Verde acento: #1FD75C
 
-    Fondo blanco a sangrado completo.
-  -->
-  <rect width="512" height="512" fill="#ffffff"/>
+    Trazo grueso (40) calibrado para legibilidad en tamaños chicos
+    (32-48 px en headers / tabs / favicons).
 
-  <!-- Grid: 6 anillos. Centro de cada anillo: x ∈ {128, 256, 384}, y ∈ {176, 336}.
-       Radio del anillo: 64. Ancho del trazo: 28. -->
-  <g fill="none" stroke="#1F2D5C" stroke-width="28">
+    Fondo transparente (sin <rect>) para que el ícono se adapte a
+    fondos claros y oscuros del producto.
+  -->
+
+  <g fill="none" stroke="#1F2D5C" stroke-width="40" stroke-linecap="round">
     <!-- Fila superior: b - o - o -->
-    <!-- "b": círculo con tail vertical en el lado izquierdo -->
-    <line x1="80"  y1="80"  x2="80"  y2="176"/>
-    <circle cx="128" cy="176" r="64"/>
-    <circle cx="256" cy="176" r="64"/>
-    <circle cx="384" cy="176" r="64"/>
+    <!-- "b": cola vertical izquierda + anillo derecho -->
+    <line x1="72" y1="60" x2="72" y2="172"/>
+    <circle cx="136" cy="176" r="68"/>
+    <circle cx="272" cy="176" r="68"/>
+    <circle cx="408" cy="176" r="68"/>
 
     <!-- Fila inferior: b - o(verde) - o -->
-    <line x1="80"  y1="240" x2="80"  y2="336"/>
-    <circle cx="128" cy="336" r="64"/>
-    <!-- "o" central inferior va aparte (verde) -->
-    <circle cx="384" cy="336" r="64"/>
+    <line x1="72" y1="224" x2="72" y2="336"/>
+    <circle cx="136" cy="340" r="68"/>
+    <!-- o central inferior va aparte (verde acento) -->
+    <circle cx="408" cy="340" r="68"/>
   </g>
 
-  <!-- "o" acento verde brillante (centro inferior) -->
-  <circle cx="256" cy="336" r="64" fill="none" stroke="#1FD75C" stroke-width="28"/>
+  <!-- o acento verde brillante (centro inferior) -->
+  <circle cx="272" cy="340" r="68" fill="none" stroke="#1FD75C" stroke-width="40"/>
 </svg>
