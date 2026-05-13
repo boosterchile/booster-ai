@@ -220,11 +220,10 @@ export async function acceptOffer(opts: {
           logger,
           tripId: result.assignment.tripId,
           vehicleId: result.assignment.vehicleId || null,
-          // ADR-028 PR-H2: si hay GOOGLE_ROUTES_API_KEY, calcularMetricas
-          // usa Routes API para distancia (más precisa, traffic-aware) en
-          // vez de la tabla pre-computada Chile. Si no hay key (dev sin
-          // quota), cae al fallback automáticamente.
-          routesApiKey: config.GOOGLE_ROUTES_API_KEY,
+          // ADR-038: Routes API via ADC. GOOGLE_CLOUD_PROJECT activa la
+          // llamada (distancia más precisa, traffic-aware). Si está ausente,
+          // fallback a la tabla pre-computada Chile.
+          routesProjectId: config.GOOGLE_CLOUD_PROJECT,
         });
         logger.info(
           {
@@ -270,7 +269,7 @@ export async function acceptOffer(opts: {
           db,
           logger,
           assignmentId: result.assignment.id,
-          ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
+          ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
         });
       } catch (err) {
         logger.error(

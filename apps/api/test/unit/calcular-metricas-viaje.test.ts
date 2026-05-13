@@ -362,13 +362,13 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
       logger: noopLogger,
       tripId: TRIP_ID,
       vehicleId: VEH_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.emisiones.distanciaKm).toBe(137.4);
     expect(computeRoutes).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKey: 'test-key',
+        projectId: 'test-project',
         emissionType: 'DIESEL',
       }),
     );
@@ -386,7 +386,7 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
       logger: noopLogger,
       tripId: TRIP_ID,
       vehicleId: null,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
@@ -405,7 +405,7 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
       logger: noopLogger,
       tripId: TRIP_ID,
       vehicleId: null,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
@@ -426,7 +426,7 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
       logger: noopLogger,
       tripId: TRIP_ID,
       vehicleId: null,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.emisiones.distanciaKm).toBeGreaterThan(0);
@@ -468,7 +468,7 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
         logger: noopLogger,
         tripId: TRIP_ID,
         vehicleId: VEH_ID,
-        routesApiKey: 'test-key',
+        routesProjectId: 'test-project',
       });
     }
     expect(computeRoutes).toHaveBeenCalledTimes(fuelCases.length);

@@ -112,7 +112,7 @@ async function obtenerDistanciaKm(opts: {
   origenRegionCode: string | null;
   destinoRegionCode: string | null;
   fuelType: string | null;
-  routesApiKey: string | undefined;
+  routesProjectId: string | undefined;
   logger: Logger;
 }): Promise<number> {
   const {
@@ -121,15 +121,15 @@ async function obtenerDistanciaKm(opts: {
     origenRegionCode,
     destinoRegionCode,
     fuelType,
-    routesApiKey,
+    routesProjectId,
     logger,
   } = opts;
 
-  if (routesApiKey) {
+  if (routesProjectId) {
     try {
       const emissionType = fuelType ? mapFuelToEmissionType(fuelType) : undefined;
       const routes = await computeRoutes({
-        apiKey: routesApiKey,
+        projectId: routesProjectId,
         origin: origenDireccion,
         destination: destinoDireccion,
         emissionType,
@@ -166,13 +166,13 @@ export async function calcularMetricasEstimadas(opts: {
   tripId: string;
   vehicleId: string | null;
   /**
-   * GOOGLE_ROUTES_API_KEY del config. Si está presente, se usa Routes API
-   * para distancia precisa. Si no, se cae al fallback de estimarDistanciaKm.
-   * Optional: el caller decide si la pasa o no (en dev sin quota la omite).
+   * GCP project ID — header X-Goog-User-Project para Routes API (ADR-038).
+   * Si presente, se usa Routes API via ADC para distancia precisa.
+   * Si no, fallback a estimarDistanciaKm.
    */
-  routesApiKey?: string | undefined;
+  routesProjectId?: string | undefined;
 }): Promise<CalcularMetricasResult> {
-  const { db, logger, tripId, vehicleId, routesApiKey } = opts;
+  const { db, logger, tripId, vehicleId, routesProjectId } = opts;
 
   // (1) Lectura de trip + vehicle FUERA de la transacción. Esto permite
   // hacer el HTTP a Routes API sin extender el lock de la tx (que sería
@@ -197,7 +197,7 @@ export async function calcularMetricasEstimadas(opts: {
     origenRegionCode: trip.originRegionCode,
     destinoRegionCode: trip.destinationRegionCode,
     fuelType: veh?.fuelType ?? null,
-    routesApiKey,
+    routesProjectId,
     logger,
   });
 

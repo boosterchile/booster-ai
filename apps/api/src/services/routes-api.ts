@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { GoogleAuth } from 'google-auth-library';
 
 /**
  * Cliente del Google Routes API (Phase 1 — eco route suggestion).
@@ -6,20 +7,34 @@ import type { Logger } from '@booster-ai/logger';
  * Endpoint: POST https://routes.googleapis.com/directions/v2:computeRoutes
  * Docs: https://developers.google.com/maps/documentation/routes/compute_route_directions
  *
- * Diseño:
+ * Diseño (ADR-038, migración desde API key):
+ *   - Autenticación: OAuth bearer token via ADC (Application Default
+ *     Credentials). En Cloud Run, ADC resuelve al SA del runtime (que
+ *     tiene roles/serviceusage.serviceUsageConsumer, suficiente para
+ *     Routes API + header X-Goog-User-Project).
+ *   - Cero API keys — cierra el banner GCP "unrestricted API keys" en la
+ *     parte Routes API.
  *   - Función pura (toma `fetch` inyectable para tests).
  *   - Devuelve estructura normalizada que oculta detalles del wire
  *     protocol de Google (microliters → liters, distanceMeters → km).
  *   - Acepta direcciones como strings (Routes API geocodifica internamente).
- *     Cuando agreguemos lat/lng a `viajes`, se podrá pasar coordenadas
- *     directamente sin geocoding extra (más barato).
  *
  * Costo: ~$5 USD por 1000 requests con extras computations habilitados.
  *
- * Restricción de la API key (configurada en GCP Console):
- *   - Por IP del egress de Cloud Run (preferido) o por SA token.
- *   - NUNCA por HTTP referrer (Routes API es server-side).
+ * Quota tracking: por projectId via header X-Goog-User-Project. La cuota
+ * de Routes API se factura al proyecto cuyo SA hace el token, NO al
+ * proyecto del SA — por eso el header es obligatorio para que GCP sepa
+ * a quién cobrar.
  */
+
+/**
+ * Singleton de GoogleAuth — una instancia por proceso evita el overhead
+ * de descubrir credenciales en cada request. El cliente cachea access
+ * tokens internamente y los renueva antes de expirar.
+ */
+const authClient = new GoogleAuth({
+  scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+});
 
 /** Tipos de combustible aceptados por Routes API. Espejo de
  *  google.routes.v2.VehicleEmissionType. */
@@ -45,8 +60,14 @@ export interface RouteSuggestion {
 }
 
 export interface ComputeRoutesParams {
-  /** API key con restricción server-side (no HTTP referrer). */
-  apiKey: string;
+  /**
+   * GCP project ID que se factura por las llamadas. En Cloud Run viene
+   * de la env var GOOGLE_CLOUD_PROJECT (auto-seteada). Se pasa como
+   * header X-Goog-User-Project para que Routes API sepa a quién cobrar
+   * la cuota (el SA hace el token, pero el proyecto del header recibe
+   * el cargo).
+   */
+  projectId: string;
   /** Origen — dirección textual (Routes API la geocodifica). */
   origin: string;
   /** Destino — dirección textual. */
@@ -99,7 +120,7 @@ const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoute
  */
 export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteSuggestion[]> {
   const {
-    apiKey,
+    projectId,
     origin,
     destination,
     emissionType,
@@ -134,13 +155,33 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
     .filter(Boolean)
     .join(',');
 
+  // ADC: en Cloud Run resuelve al SA del runtime (workload identity).
+  // En local-dev, a las creds de `gcloud auth application-default login`.
+  let accessToken: string | null | undefined;
+  try {
+    const client = await authClient.getClient();
+    const tokenResponse = await client.getAccessToken();
+    accessToken = tokenResponse.token;
+  } catch (err) {
+    logger?.error({ err, origin, destination }, 'Routes API: ADC token error');
+    throw new RoutesApiError(
+      `ADC token error calling Routes API: ${err instanceof Error ? err.message : 'unknown'}`,
+      'auth_error',
+      null,
+    );
+  }
+  if (!accessToken) {
+    throw new RoutesApiError('ADC returned no access token for Routes API', 'auth_error', null);
+  }
+
   let response: Response;
   try {
     response = await fetchImpl(ROUTES_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
+        Authorization: `Bearer ${accessToken}`,
+        'X-Goog-User-Project': projectId,
         'X-Goog-FieldMask': fieldMask,
       },
       body: JSON.stringify(body),

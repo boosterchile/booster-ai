@@ -233,27 +233,14 @@ const apiEnvSchema = commonEnvSchema
       .optional(),
 
     /**
-     * API key para Google Routes API (Phase 1 — eco route suggestion).
-     *
-     * IMPORTANTE: esta key DEBE estar restringida a los servidores de
-     * Cloud Run del backend, NO al dominio app.boosterchile.com — Routes
-     * API se llama server-to-server, no desde el browser. La restricción
-     * en GCP Console → APIs → Credentials → "Booster Routes - API
-     * Backend" debe ser por IP o por SA, nunca HTTP referrer.
-     *
-     * Optional: si está ausente, los servicios que la usan caen al
-     * fallback de estimarDistanciaKm (tabla pre-computada Chile) y NO
-     * generan sugerencia de eco-route. Útil en dev sin quota Routes API.
-     */
-    GOOGLE_ROUTES_API_KEY: z.string().min(1).optional(),
-
-    /**
      * GCP project ID — Cloud Run lo setea automáticamente en runtime.
-     * Usado para construir el endpoint Vertex AI Gemini (ADR-037).
+     * Usado para:
+     *   - Vertex AI Gemini endpoint (ADR-037, coaching IA post-entrega).
+     *   - Header X-Goog-User-Project en Routes API via ADC (ADR-038).
      *
      * Default-required en producción; optional acá porque en tests/dev
-     * locales puede no estar definido (el coaching cae al fallback
-     * plantilla automáticamente sin generar error).
+     * locales puede no estar definido (los flows caen al fallback
+     * determinístico automáticamente sin generar error).
      */
     GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
 

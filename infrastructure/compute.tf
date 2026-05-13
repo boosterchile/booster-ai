@@ -189,20 +189,17 @@ module "service_api" {
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
 
-    # Phase 1 (ADR-028) — Google Routes API key para eco-route suggestion.
-    # Server-side; el api la usa al confirmar oferta y al consultar
-    # GET /offers/:id/eco-preview. Si está con placeholder
-    # ROTATE_ME_GOOGLE_ROUTES_API_KEY, el servicio cae al fallback de
-    # estimarDistanciaKm (tabla pre-computada Chile) sin romper nada.
-    GOOGLE_ROUTES_API_KEY = google_secret_manager_secret.secrets["google-routes-api-key"].secret_id
-
-    # ADR-037: GEMINI_API_KEY eliminada. apps/api ahora usa Vertex AI con
-    # ADC (workload identity del SA cloud_run_runtime, que ya tiene
-    # roles/aiplatform.user). El secret gemini-api-key del Secret Manager
-    # queda como artefacto histórico — la API key real se elimina con
-    # `gcloud services api-keys delete a5a60db7-0dc4-43c2-b08a-bb21e7834c2d`
-    # post-apply de este cambio. Cierra el banner GCP "unrestricted API keys
-    # for generativelanguage.googleapis.com".
+    # ADR-038: GOOGLE_ROUTES_API_KEY eliminada. apps/api ahora autentica
+    # contra Routes API con ADC + header X-Goog-User-Project (el SA del
+    # runtime tiene roles/serviceusage.serviceUsageConsumer, suficiente).
+    # El secret google-routes-api-key queda en Secret Manager como
+    # artefacto histórico — la API key real se elimina con
+    # `gcloud services api-keys delete e091850a-d5ea-4941-bcf0-8f966032b58b`
+    # post-apply.
+    #
+    # ADR-037: GEMINI_API_KEY eliminada con el mismo patrón (Vertex AI +
+    # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
+    # post-apply de PR #196.
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id

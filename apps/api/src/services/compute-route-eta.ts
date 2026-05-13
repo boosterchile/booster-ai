@@ -58,8 +58,11 @@ export interface ComputeRouteEtaInput {
   avgSpeedKmh: number | null;
   /** ETA en minutos del fallback (PR-L2b centroide). Devolvemos esto si Routes API no aplica. */
   fallbackEtaMinutes: number | null;
-  /** API key del Routes API. Si undefined/empty, usamos fallback directo. */
-  routesApiKey: string | undefined;
+  /**
+   * GCP project ID para X-Goog-User-Project en Routes API (ADR-038).
+   * Si undefined/empty, usamos fallback directo sin llamar a Routes API.
+   */
+  routesProjectId: string | undefined;
   /** Inyectable para tests. Default: import dinámico de fetch global. */
   fetchImpl?: typeof fetch | undefined;
   /** Inyectable para tests. Default: in-memory module singleton. */
@@ -167,7 +170,7 @@ export async function computeRouteEta(input: ComputeRouteEtaInput): Promise<Comp
     destinationAddress,
     avgSpeedKmh,
     fallbackEtaMinutes,
-    routesApiKey,
+    routesProjectId,
     fetchImpl,
     cacheStore = defaultCache,
     nowMs = Date.now(),
@@ -176,7 +179,7 @@ export async function computeRouteEta(input: ComputeRouteEtaInput): Promise<Comp
   // Early returns: si nos faltan inputs críticos, devolvemos el fallback
   // sin tocar Routes API. Esto incluye los casos donde el fallback
   // también es null (NO_ETA_STATUSES, sin posición, etc.).
-  if (!routesApiKey) {
+  if (!routesProjectId) {
     return { etaMinutes: fallbackEtaMinutes, source: pickFallbackSource(fallbackEtaMinutes) };
   }
   if (currentLat === null || currentLng === null) {
@@ -206,7 +209,7 @@ export async function computeRouteEta(input: ComputeRouteEtaInput): Promise<Comp
     // lo interpreta como punto exacto sin geocoding.
     const origin = `${currentLat},${currentLng}`;
     const routes = await computeRoutes({
-      apiKey: routesApiKey,
+      projectId: routesProjectId,
       origin,
       destination: destinationAddress,
       computeAlternatives: false,

@@ -243,7 +243,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.dataSource).toBe('routes_api');
@@ -254,7 +254,7 @@ describe('generarEcoPreview — Routes API path', () => {
     expect(result.polylineEncoded).toBe('abc123');
     expect(computeRoutes).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKey: 'test-key',
+        projectId: 'test-project',
         emissionType: 'DIESEL',
         origin: TRIP_BASE.originAddressRaw,
         destination: TRIP_BASE.destinationAddressRaw,
@@ -305,7 +305,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
     expect(result.dataSource).toBe('routes_api');
     expect(result.polylineEncoded).toBeNull();
@@ -330,7 +330,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.dataSource).toBe('tabla_chile');
@@ -357,7 +357,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.dataSource).toBe('tabla_chile');
@@ -384,7 +384,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(result.dataSource).toBe('tabla_chile');
@@ -411,7 +411,7 @@ describe('generarEcoPreview — Routes API path', () => {
       logger: noopLogger,
       offerId: OFFER_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'test-key',
+      routesProjectId: 'test-project',
     });
 
     expect(computeRoutes).toHaveBeenCalledWith(
@@ -453,7 +453,7 @@ describe('generarEcoPreview — mapFuelToEmissionType branches', () => {
         logger: noopLogger,
         offerId: OFFER_ID,
         empresaId: EMPRESA_ID,
-        routesApiKey: 'test-key',
+        routesProjectId: 'test-project',
       });
 
       expect(computeRoutes).toHaveBeenCalledWith(

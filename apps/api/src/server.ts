@@ -142,16 +142,16 @@ export function createServer(opts: CreateServerOptions): Hono {
   // El handler restringe los datos expuestos (plate parcial, sin
   // driver name, telemetría sólo <30min).
   //
-  // Phase 5 PR-L2c — si GOOGLE_ROUTES_API_KEY está configurada, el ETA
-  // del tracking se calcula con Routes API (distancia real por carretera
-  // al destino exacto). Sin la key, fallback transparente al ETA al
-  // centroide regional (PR-L2b).
+  // ADR-038: Routes API via ADC. Pasamos GOOGLE_CLOUD_PROJECT en lugar
+  // de API key — el SA del runtime se autentica via workload identity, y
+  // el projectId va en X-Goog-User-Project. Si la env var está ausente,
+  // fallback transparente al ETA al centroide regional (PR-L2b).
   app.route(
     '/public/tracking',
     createPublicTrackingRoutes({
       db: opts.db,
       logger,
-      ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
+      ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
     }),
   );
 
@@ -289,10 +289,10 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       certConfig,
-      // Phase 1 PR-H5 — Routes API key para que GET /assignments/:id/eco-route
-      // pueda devolver la polyline. Sin esta key, el endpoint devuelve
-      // polyline_encoded=null con status='no_routes_api_key' (no error).
-      ...(config.GOOGLE_ROUTES_API_KEY ? { routesApiKey: config.GOOGLE_ROUTES_API_KEY } : {}),
+      // ADR-038: Routes API via ADC. GOOGLE_CLOUD_PROJECT va como
+      // X-Goog-User-Project. Sin él, GET /assignments/:id/eco-route
+      // devuelve polyline_encoded=null con status='no_routes_api_key'.
+      ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
