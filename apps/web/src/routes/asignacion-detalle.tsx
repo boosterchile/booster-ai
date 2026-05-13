@@ -56,7 +56,7 @@ export function AsignacionDetalleRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isCarrier = ctx.me.active_membership?.empresa.is_transportista ?? false;
+        const isCarrier = ctx.me.active_membership?.empresa?.is_transportista ?? false;
         if (!isCarrier) {
           return (
             <div className="mx-auto max-w-2xl px-6 py-12">
