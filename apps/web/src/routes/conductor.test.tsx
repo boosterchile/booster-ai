@@ -40,6 +40,27 @@ vi.mock('../services/driver-mode-permissions.js', () => ({
   queryDriverPermissions: (...args: unknown[]) => queryDriverPermissionsSpy(...args),
 }));
 
+// ADR-036 (Wave 5) — el banner del wake-word usa useFeatureFlags. Default
+// flag OFF en tests para que el banner no aparezca y los assertions
+// existentes pasen sin cambios.
+vi.mock('../hooks/use-feature-flags.js', () => ({
+  useFeatureFlags: () => ({
+    flags: {
+      auth_universal_v1_activated: false,
+      wake_word_voice_activated: false,
+      matching_algorithm_v2_activated: false,
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
+// Default mock para preference: wake-word OFF en localStorage.
+vi.mock('../services/wake-word-preference.js', () => ({
+  isWakeWordEnabled: () => false,
+  setWakeWordEnabled: vi.fn(),
+}));
+
 const reporterStartSpy = vi.fn();
 const reporterStopSpy = vi.fn();
 let reporterState = {

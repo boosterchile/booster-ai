@@ -52,6 +52,30 @@ vi.mock('../services/coaching-voice.js', () => ({
   saveAutoplayPreference: (v: boolean) => saveAutoplayPreferenceSpy(v),
 }));
 
+// ADR-036 — el card WakeWord usa useFeatureFlags. Default flag OFF en
+// tests para que el card aparezca como "Próximamente" (la mayoría de
+// assertions existentes no tocan este card). El test dedicado al wake-word
+// card setea el flag a true.
+const useFeatureFlagsMock = vi.fn(() => ({
+  flags: {
+    auth_universal_v1_activated: false,
+    wake_word_voice_activated: false,
+    matching_algorithm_v2_activated: false,
+  },
+  isLoading: false,
+  isError: false,
+}));
+vi.mock('../hooks/use-feature-flags.js', () => ({
+  useFeatureFlags: () => useFeatureFlagsMock(),
+}));
+
+const wakeWordEnabledMock = vi.fn(() => false);
+const setWakeWordEnabledMock = vi.fn();
+vi.mock('../services/wake-word-preference.js', () => ({
+  isWakeWordEnabled: () => wakeWordEnabledMock(),
+  setWakeWordEnabled: (v: boolean) => setWakeWordEnabledMock(v),
+}));
+
 const { ConductorConfiguracionRoute } = await import('./conductor-configuracion.js');
 
 function makeMe(): MeOnboarded {
@@ -89,14 +113,59 @@ describe('ConductorConfiguracionRoute', () => {
     expect(container.querySelector('[data-testid="autoplay-card"]')).toBeNull();
   });
 
-  it('contexto onboarded → renderiza las 4 cards de configuración', async () => {
+  it('contexto onboarded → renderiza las 5 cards de configuración', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<ConductorConfiguracionRoute />);
     expect(screen.getByTestId('autoplay-card')).toBeInTheDocument();
     expect(screen.getByTestId('permissions-card')).toBeInTheDocument();
+    expect(screen.getByTestId('wake-word-card')).toBeInTheDocument();
     expect(screen.getByTestId('voice-commands-card')).toBeInTheDocument();
     expect(screen.getByTestId('how-it-works-card')).toBeInTheDocument();
     await waitFor(() => expect(queryDriverPermissionsSpy).toHaveBeenCalled());
+  });
+
+  it('WakeWord card con flag OFF → muestra "Próximamente"', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    expect(screen.getByTestId('wake-word-card')).toBeInTheDocument();
+    expect(screen.getByTestId('wake-word-not-yet')).toBeInTheDocument();
+    expect(screen.queryByTestId('wake-word-toggle')).not.toBeInTheDocument();
+  });
+
+  it('WakeWord card con flag ON → toggle visible y refleja preferencia', () => {
+    useFeatureFlagsMock.mockReturnValueOnce({
+      flags: {
+        auth_universal_v1_activated: false,
+        wake_word_voice_activated: true,
+        matching_algorithm_v2_activated: false,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    wakeWordEnabledMock.mockReturnValueOnce(true);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const toggle = screen.getByTestId('wake-word-toggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
+
+  it('WakeWord toggle click → persiste vía setWakeWordEnabled', () => {
+    useFeatureFlagsMock.mockReturnValueOnce({
+      flags: {
+        auth_universal_v1_activated: false,
+        wake_word_voice_activated: true,
+        matching_algorithm_v2_activated: false,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    wakeWordEnabledMock.mockReturnValueOnce(false);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const toggle = screen.getByTestId('wake-word-toggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+    expect(setWakeWordEnabledMock).toHaveBeenCalledWith(true);
   });
 
   it('header tiene flecha de vuelta a /app/conductor', () => {
