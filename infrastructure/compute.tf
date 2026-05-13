@@ -210,7 +210,9 @@ module "service_web" {
   service_name          = "booster-ai-web"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = var.environment == "prod" ? 1 : 0
+  # ADR-034: tráfico real ~100 req/día (~0.001 RPS). Cold start 5-10s tolerable
+  # para landing pública. Si el tráfico crece 10× → volver a min=1.
+  min_instances = 0
   max_instances = 10
   memory        = "512Mi"
 
@@ -239,7 +241,10 @@ module "service_marketing" {
   service_name          = "booster-ai-marketing"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 1 # always-on para SEO
+  # ADR-034: tráfico real ~150 req/día (~0.002 RPS). Googlebot tolera cold start
+  # ocasional (no penaliza SEO si <30s); usuarios humanos esperan 5-10s al primer
+  # hit del día. Trade-off favorable vs $20-30/mes de min=1.
+  min_instances = 0
   max_instances = 10
   memory        = "512Mi"
 
@@ -291,7 +296,12 @@ module "service_telemetry_processor" {
   service_name          = "booster-ai-telemetry-processor"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 1 # siempre activo para procesamiento real-time
+  # ADR-034: a 2026-05 el procesador recibió ~0.27 req/día (Wave 3 todavía sin
+  # TCP gateway productivo desplegado). Pub/Sub push tiene retry exponencial
+  # automático que cubre el cold start (~5s). Cuando Wave 3 entre en producción
+  # y la tasa supere ~50 msg/min sostenidos, volver a min=1 para evitar latencia
+  # acumulada en el ack deadline.
+  min_instances = 0
   max_instances = 50
   cpu           = "2"
   memory        = "1Gi"
@@ -397,7 +407,11 @@ module "service_whatsapp_bot" {
   service_name          = "booster-ai-whatsapp-bot"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 1 # webhook Meta requiere respuesta rápida
+  # ADR-034: tráfico real ~19 req/día. Twilio (no Meta — la migración cambió de
+  # proveedor) reintenta el webhook con backoff exponencial 3× si responde >15s,
+  # por lo que cold starts de 5-10s no pierden mensajes. Cuando volumen supere
+  # ~1 msg/min sostenidos, volver a min=1.
+  min_instances = 0
   max_instances = 20
 
   # Fase 6.4 — bot migró a Twilio API (el número +1 938-336-5293 está en Twilio).

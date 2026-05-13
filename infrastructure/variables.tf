@@ -141,7 +141,12 @@ variable "github_repository" {
 variable "cloudsql_tier" {
   description = "Cloud SQL machine tier (db-custom-N-M formato)"
   type        = string
-  default     = "db-custom-2-7680" # 2 vCPU, 7.5 GB RAM. Punto de partida comercial; escalar con demanda real.
+  # ADR-034 (2026-05-13): right-sized desde db-custom-2-7680 → db-custom-1-6144
+  # tras auditoría que mostró uso real 30d: CPU avg 3.9% (max 23.7%), RAM avg
+  # 47.6% (max 48.4% ≈ 3.7 GB). Nuevo tier deja headroom 47% CPU y 38% RAM.
+  # Mantiene REGIONAL HA. Cuando entren clientes con tráfico productivo, subir
+  # primero a db-custom-2-8192 y luego escalar con monitoring real.
+  default = "db-custom-1-6144" # 1 vCPU, 6 GB RAM
 }
 
 variable "cloudsql_backup_retention_days" {
