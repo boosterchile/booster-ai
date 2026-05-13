@@ -28,8 +28,12 @@ import type { GenerarTextoFn } from '@booster-ai/coaching-generator';
 /** Timeout total del HTTP call (ms). Incluye latencia de obtener access token. */
 const TIMEOUT_MS = 12_000;
 
-/** Modelo default. Override via opts. */
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+/**
+ * Modelo default. `gemini-2.5-flash` es la generación vigente (gemini-1.5
+ * fue retirada por Google 2026-Q1). Override via opts si se necesita
+ * gemini-2.5-pro u otro tier.
+ */
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 /**
  * Región Vertex AI. `southamerica-east1` (São Paulo) tiene latencia ~80ms
