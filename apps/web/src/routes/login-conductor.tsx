@@ -22,7 +22,7 @@ interface AlreadyActivatedResponse {
  *
  * El frontend intenta primero `POST /auth/driver-activate` con el valor
  * como PIN. Posibles outcomes:
- *   1. 200: custom token → signInWithCustomToken → /app/conductor/modo.
+ *   1. 200: custom token → signInWithCustomToken → /app/conductor.
  *   2. 410 already_activated + synthetic_email: el user ya activó, así que
  *      fallthrough a signInWithEmail con el email sintético + el mismo valor
  *      como password.
@@ -69,7 +69,7 @@ export function LoginConductorRoute() {
       if (res.ok) {
         const body = (await res.json()) as ActivateResponse;
         await signInDriverWithCustomToken(body.custom_token);
-        void navigate({ to: '/app/conductor/modo' });
+        void navigate({ to: '/app/conductor' });
         return;
       }
 
@@ -78,7 +78,7 @@ export function LoginConductorRoute() {
         const body = (await res.json()) as AlreadyActivatedResponse;
         try {
           await signInWithEmail(body.synthetic_email, pin);
-          void navigate({ to: '/app/conductor/modo' });
+          void navigate({ to: '/app/conductor' });
           return;
         } catch (_authErr) {
           // El user ya activó pero ingresó password incorrecto.

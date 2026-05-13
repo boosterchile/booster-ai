@@ -228,7 +228,7 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
 
           <p className="mt-4 text-neutral-500 text-xs">
             Cada certificado se firma con RSA 4096 / SHA-256 (PKCS#1 v1.5) vía Google Cloud KMS.
-            Verificá la firma de cualquier certificado en{' '}
+            Verifica la firma de cualquier certificado en{' '}
             <code>
               api.boosterchile.com/certificates/{'{'}código{'}'}/verify
             </code>

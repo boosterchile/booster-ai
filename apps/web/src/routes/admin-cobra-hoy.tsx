@@ -135,7 +135,7 @@ function AdminCobraHoyPage({ me }: { me: MeOnboarded }) {
               <EmptyState
                 icon={<Banknote className="h-10 w-10" aria-hidden />}
                 title="No hay adelantos con este filtro"
-                description="Cuando los transportistas soliciten pronto pago verás las solicitudes acá para aprobar, desembolsar o cobrar."
+                description="Cuando los transportistas soliciten pronto pago verás las solicitudes aquí para aprobar, desembolsar o cobrar."
               />
             </div>
           )}
@@ -273,7 +273,7 @@ function AdelantoRow({ adelanto }: { adelanto: AdelantoAdminRow }) {
                 </button>
                 {transicionM.isError && (
                   <span role="alert" className="text-danger-700 text-sm">
-                    No pudimos aplicar la transición. Revisá los logs.
+                    No pudimos aplicar la transición. Revisa los logs.
                   </span>
                 )}
               </div>

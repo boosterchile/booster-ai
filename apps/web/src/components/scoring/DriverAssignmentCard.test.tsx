@@ -173,7 +173,7 @@ describe('DriverAssignmentCard', () => {
     fireEvent.click(screen.getByTestId('driver-assignment-submit'));
 
     expect(
-      await screen.findByText(/No tenés permiso para asignar conductores/),
+      await screen.findByText(/No tienes permiso para asignar conductores/),
     ).toBeInTheDocument();
   });
 
@@ -215,7 +215,7 @@ describe('DriverAssignmentCard', () => {
         />
       </Wrapper>,
     );
-    expect(await screen.findByText(/No tenés conductores activos/)).toBeInTheDocument();
+    expect(await screen.findByText(/No tienes conductores activos/)).toBeInTheDocument();
     // Y NO se muestra el form (no se debería poder asignar).
     expect(screen.queryByTestId('driver-assignment-select')).toBeNull();
   });

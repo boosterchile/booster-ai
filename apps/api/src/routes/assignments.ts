@@ -614,7 +614,7 @@ export function createAssignmentsRoutes(opts: {
   // POST /:id/asignar-conductor — Carrier asigna un conductor específico
   // al assignment. Cierra el gap dejado por accept-offer (que crea el
   // assignment con driver_user_id=NULL) y habilita el flujo del driver
-  // (driver-position, conductor-modo) que valida driver_user_id ===
+  // (driver-position, dashboard del conductor) que valida driver_user_id ===
   // userContext.user.id.
   //
   // Auth: carrier owner del assignment. Rol requerido: dueno, admin,

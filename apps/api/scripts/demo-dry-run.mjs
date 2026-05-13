@@ -414,7 +414,7 @@ async function main() {
     log('  •', 'Login carrier → ve la oferta en /app/ofertas → acepta');
     log('  •', 'Carrier asigna conductor en /app/asignacion/:id (dropdown)');
     log('  •', 'Login conductor → /login/conductor con RUT + PIN → activa');
-    log('  •', 'Conductor activa GPS en /app/conductor/modo');
+    log('  •', 'Conductor activa GPS en /app/conductor (dashboard del conductor)');
     await rotateAdminPassword(adminUid);
     return;
   }

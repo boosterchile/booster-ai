@@ -261,7 +261,7 @@ function PasswordLinkForm({
         setNeedsReauth(true);
         setError('root', {
           message:
-            'Por seguridad necesitamos confirmar tu identidad. Hacé click en "Re-autenticar" para continuar.',
+            'Por seguridad necesitamos confirmar tu identidad. Haz click en "Re-autenticar" para continuar.',
         });
       } else {
         setError('root', {

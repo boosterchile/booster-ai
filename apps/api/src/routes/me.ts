@@ -207,9 +207,10 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
   // ordenados por más reciente primero. Sin paginación por ahora: un
   // conductor rara vez tiene > 2-3 assignments activos simultáneos.
   //
-  // Uso: la UI /app/conductor/modo lista los assignments y deja al
-  // conductor elegir cuál activar (en vez de pedir UUID copiado, que era
-  // el placeholder MVP). El conductor sólo ve los que están en estado
+  // Uso: la UI /app/conductor (dashboard del conductor) lista los
+  // assignments y deja al conductor elegir cuál activar (en vez de pedir
+  // UUID copiado, que era el placeholder MVP). El conductor sólo ve los
+  // que están en estado
   // operacional — si necesita el histórico (entregados), iría a otra
   // surface dedicada (futuro).
   //

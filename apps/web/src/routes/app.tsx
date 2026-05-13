@@ -4,7 +4,6 @@ import {
   Banknote,
   Building2,
   Bus,
-  Headphones,
   Leaf,
   MapPinned,
   Package,
@@ -60,11 +59,12 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
 
   // D9 — Driver surface guard. Si el rol activo es 'conductor', el user
   // no debería ver el dashboard carrier (ofertas/vehículos/cargas).
-  // Redirigimos a /app/conductor/modo (su único hub). Excepción: si el
-  // mismo user tiene OTRA membership donde es dueño/admin/etc., puede
-  // hacer switch desde Layout y vuelve al dashboard carrier normalmente.
+  // Redirigimos a /app/conductor (su único hub: dashboard con servicios
+  // asignados + alerta WhatsApp + reporte GPS). Excepción: si el mismo
+  // user tiene OTRA membership donde es dueño/admin/etc., puede hacer
+  // switch desde Layout y vuelve al dashboard carrier normalmente.
   if (myRole === 'conductor') {
-    return <Navigate to="/app/conductor/modo" />;
+    return <Navigate to="/app/conductor" />;
   }
 
   // D11 — Stakeholder surface guard. Si el rol activo es stakeholder,
@@ -173,33 +173,6 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 <div className="font-medium text-neutral-900">Conductores</div>
                 <div className="text-neutral-600 text-sm">
                   Crea, edita y monitorea licencias y vencimientos de los conductores de tu empresa.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          {/* Phase 4 PR-K8 — entrypoint al Modo Conductor desde el
-                  dashboard principal. Ya existían links desde /app/ofertas
-                  y /app/perfil, pero el dashboard es la primera surface
-                  post-login: el carrier merece descubrirlo acá. */}
-          <Link
-            to="/app/conductor/modo"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-            data-testid="dashboard-link-modo-conductor"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Headphones className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Modo Conductor</div>
-                <div className="text-neutral-600 text-sm">
-                  Audio coaching, comandos de voz y permisos del navegador. Configura una vez antes
-                  de manejar.
                 </div>
               </div>
             </div>

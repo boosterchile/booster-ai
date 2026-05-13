@@ -12,11 +12,8 @@ import {
   Volume2,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
-import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import type { MeResponse } from '../hooks/use-me.js';
-import { ApiError, api } from '../lib/api-client.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
 import {
   type PermissionState,
@@ -29,8 +26,8 @@ import {
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * /app/conductor/modo — onboarding y configuración del **Modo Conductor**
- * (Phase 4 PR-K8).
+ * /app/conductor/configuracion — configuración del **Modo Conductor**
+ * (refactor del antiguo /app/conductor/modo, Phase 4 PR-K8).
  *
  * Cierre del ciclo Phase 4 voice-first: K1-K7 implementaron features
  * voice (auto-play coaching, comandos para confirmar entrega, marcar
@@ -65,20 +62,20 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * onboarding + troubleshooting + transparencia de qué requiere Booster.
  */
 
-export function ConductorModoRoute() {
+export function ConductorConfiguracionRoute() {
   return (
     <ProtectedRoute meRequirement="require-onboarded">
       {(ctx) => {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        return <ConductorModoPage me={ctx.me} />;
+        return <ConductorConfiguracionPage me={ctx.me} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function ConductorModoPage({ me }: { me: MeOnboarded }) {
+function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
   const [autoplayEnabled, setAutoplayEnabled] = useState(() => loadAutoplayPreference());
   const [permissions, setPermissions] = useState<PermissionState>({
     mic: 'unknown',
@@ -133,23 +130,32 @@ function ConductorModoPage({ me }: { me: MeOnboarded }) {
   }
 
   return (
-    <Layout me={me} title="Modo Conductor">
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        <Link
-          to="/app"
-          className="mb-4 inline-flex items-center gap-1 text-neutral-600 text-sm transition hover:text-neutral-900"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Volver al inicio
-        </Link>
+    <div className="flex min-h-screen flex-col bg-neutral-50">
+      <header className="border-neutral-200 border-b bg-white">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
+          <Link
+            to="/app/conductor"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-100"
+            aria-label="Volver al panel del conductor"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden />
+          </Link>
+          <div>
+            <h1 className="font-semibold text-base text-neutral-900">
+              Configuración del Modo Conductor
+            </h1>
+            <p className="text-neutral-500 text-xs">Ajustes que se guardan en este dispositivo</p>
+          </div>
+        </div>
+      </header>
 
-        <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Modo Conductor</h1>
-        <p className="mt-2 max-w-xl text-neutral-600 text-sm">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        <p className="max-w-xl text-neutral-600 text-sm">
           Configura una sola vez antes de manejar. Activamos audio, voz y GPS para que puedas operar
           la app sin tocar la pantalla mientras conduces.
         </p>
 
-        <div className="mt-8 space-y-4">
+        <div className="mt-6 space-y-4">
           <AutoplayCard enabled={autoplayEnabled} onChange={handleAutoplayToggle} />
           <PermissionsCard
             permissions={permissions}
@@ -158,219 +164,20 @@ function ConductorModoPage({ me }: { me: MeOnboarded }) {
             requestingMic={requestingMic}
             requestingGeo={requestingGeo}
           />
-          <MobileGpsReporterCard geoPermission={permissions.geo} />
           <VoiceCommandsReferenceCard />
           <HowItWorksCard />
         </div>
-      </div>
-    </Layout>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// D2 — Card: Reporte GPS móvil para vehículos SIN Teltonika
-// ---------------------------------------------------------------------------
-
-interface DriverAssignment {
-  id: string;
-  status: string;
-  trip: {
-    id: string;
-    tracking_code: string;
-    status: string;
-    origin: { address_raw: string; region_code: string | null };
-    destination: { address_raw: string; region_code: string | null };
-    cargo_type: string;
-    cargo_weight_kg: number | null;
-    pickup_window_start: string | null;
-    pickup_window_end: string | null;
-  };
-  carrier_empresa: { id: string; legal_name: string | null };
-  vehicle: { id: string; plate: string | null } | null;
-}
-
-function MobileGpsReporterCard({ geoPermission }: { geoPermission: PermissionStatus }) {
-  // Estado de la lista de asignaciones activas del conductor logueado.
-  // Se carga al montar; el conductor elige una en vez de pegar UUID.
-  const [assignments, setAssignments] = useState<DriverAssignment[]>([]);
-  const [loadingAssignments, setLoadingAssignments] = useState(false);
-  const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('');
-  const reporter = useDriverPositionReporter();
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cargar una sola
-  // vez al montar el componente.
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingAssignments(true);
-    setAssignmentsError(null);
-    api
-      .get<{ assignments: DriverAssignment[] }>('/me/assignments')
-      .then((res) => {
-        if (cancelled) {
-          return;
-        }
-        setAssignments(res.assignments);
-        // Pre-seleccionar si hay una sola asignación activa.
-        if (res.assignments.length === 1) {
-          setSelectedAssignmentId(res.assignments[0]?.id ?? '');
-        }
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return;
-        }
-        const msg =
-          err instanceof ApiError
-            ? err.status === 404
-              ? 'No encontramos tu cuenta en el sistema.'
-              : `${err.status}: ${err.message}`
-            : (err as Error).message;
-        setAssignmentsError(msg);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingAssignments(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const canStart =
-    geoPermission === 'granted' && selectedAssignmentId.trim().length > 0 && !reporter.isWatching;
-
-  return (
-    <section
-      aria-label="Reporte GPS móvil"
-      className="rounded-lg border border-neutral-200 bg-white p-5"
-      data-testid="gps-reporter-card"
-    >
-      <div className="flex items-start gap-3">
-        <Navigation className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
-        <div className="flex-1">
-          <h2 className="font-semibold text-base text-neutral-900">
-            Reporte GPS móvil (sin Teltonika)
-          </h2>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Si tu vehículo no tiene equipo Teltonika instalado, podemos seguir tu trayecto usando el
-            GPS de tu teléfono. Elegí cuál asignación querés reportar.
-          </p>
-
-          {geoPermission !== 'granted' && (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
-              Habilita el permiso GPS arriba antes de iniciar el reporte.
-            </div>
-          )}
-
-          {loadingAssignments && (
-            <div className="mt-3 text-neutral-500 text-sm">Cargando tus asignaciones…</div>
-          )}
-
-          {assignmentsError && (
-            <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
-              No pudimos cargar tus asignaciones: {assignmentsError}
-            </div>
-          )}
-
-          {!loadingAssignments && !assignmentsError && assignments.length === 0 && (
-            <div className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-neutral-600 text-sm">
-              No tenés asignaciones activas en este momento. Cuando tu carrier te asigne un viaje,
-              aparecerá acá.
-            </div>
-          )}
-
-          {assignments.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <div className="text-neutral-700 text-xs uppercase tracking-wide">
-                Tus asignaciones activas
-              </div>
-              <ul className="space-y-2" data-testid="gps-reporter-assignment-list">
-                {assignments.map((a) => {
-                  const isSelected = selectedAssignmentId === a.id;
-                  return (
-                    <li key={a.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedAssignmentId(a.id)}
-                        disabled={reporter.isWatching}
-                        className={`w-full rounded-md border p-3 text-left transition disabled:opacity-50 ${
-                          isSelected
-                            ? 'border-primary-500 bg-primary-50'
-                            : 'border-neutral-200 hover:bg-neutral-50'
-                        }`}
-                        data-testid={`gps-reporter-assignment-${a.id}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-mono text-neutral-500 text-xs">
-                            {a.trip.tracking_code}
-                          </div>
-                          <div className="text-neutral-500 text-xs">
-                            {a.vehicle?.plate ?? 'Sin patente'}
-                          </div>
-                        </div>
-                        <div className="mt-1 text-neutral-900 text-sm">
-                          {a.trip.origin.address_raw} → {a.trip.destination.address_raw}
-                        </div>
-                        <div className="mt-1 text-neutral-500 text-xs">
-                          {a.trip.cargo_type} ·{' '}
-                          {a.trip.cargo_weight_kg
-                            ? `${a.trip.cargo_weight_kg.toLocaleString('es-CL')} kg`
-                            : 'peso no declarado'}{' '}
-                          · {a.carrier_empresa.legal_name ?? 'Carrier'}
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-3">
-            {reporter.isWatching ? (
-              <button
-                type="button"
-                onClick={() => reporter.stop()}
-                className="w-full rounded-md bg-danger-600 px-4 py-2 font-medium text-sm text-white hover:bg-danger-700"
-                data-testid="gps-reporter-stop"
-              >
-                Detener reporte
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => reporter.start(selectedAssignmentId.trim())}
-                disabled={!canStart}
-                className="w-full rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-                data-testid="gps-reporter-start"
-              >
-                Iniciar reporte de la asignación seleccionada
-              </button>
-            )}
-          </div>
-
-          {reporter.isWatching && (
-            <div className="mt-3 rounded-md bg-success-50 px-3 py-2 text-success-700 text-sm">
-              Reportando posición en vivo · {reporter.pointsSent} puntos enviados
-              {reporter.lastPosition && (
-                <div className="mt-1 font-mono text-xs">
-                  {reporter.lastPosition.latitude.toFixed(5)},{' '}
-                  {reporter.lastPosition.longitude.toFixed(5)}
-                </div>
-              )}
-            </div>
-          )}
-
-          {reporter.lastError && (
-            <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
-              {reporter.lastError}
-            </div>
-          )}
+        <div className="mt-8 flex justify-end">
+          <Link
+            to="/app/conductor"
+            className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
+          >
+            Listo, volver al panel
+          </Link>
         </div>
-      </div>
-    </section>
+      </main>
+    </div>
   );
 }
 

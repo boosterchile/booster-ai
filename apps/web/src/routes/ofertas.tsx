@@ -1,5 +1,4 @@
-import { Link } from '@tanstack/react-router';
-import { Headphones, Inbox, RefreshCw } from 'lucide-react';
+import { Inbox, RefreshCw } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -52,14 +51,6 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-          <Link
-            to="/app/conductor/modo"
-            className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm shadow-xs transition hover:bg-neutral-100"
-            data-testid="link-modo-conductor"
-          >
-            <Headphones className="h-4 w-4" aria-hidden />
-            Modo Conductor
-          </Link>
           <button
             type="button"
             onClick={() => offersQuery.refetch()}
@@ -95,7 +86,7 @@ function OfertasPage({ me }: { me: MeOnboarded }) {
 
       {isCarrier && offersQuery.isError && (
         <output className="mt-6 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
-          No pudimos cargar las ofertas. Probá actualizar.
+          No pudimos cargar las ofertas. Intenta actualizar.
         </output>
       )}
 

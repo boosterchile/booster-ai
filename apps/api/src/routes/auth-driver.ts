@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { rutSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { conductores, users } from '../db/schema.js';
+import { conductores, memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
@@ -176,6 +176,64 @@ export function createDriverAuthRoutes(opts: {
         'DB update failed after Firebase user created',
       );
       return c.json({ error: 'db_error', code: 'db_error' }, 502);
+    }
+
+    // 6b. Promover membership de 'pendiente_invitacion' → 'activa' para
+    //     todas las membresias de este user que sean rol=conductor.
+    //     Invariante (migration 0029): todo conductor activo tiene una
+    //     membership con role=conductor. Si no existe (caso edge: el
+    //     conductor se creó antes de la migration o algo se desincronizó)
+    //     la creamos acá usando el empresaId del driver row.
+    try {
+      const driverEmpresaRows = await opts.db
+        .select({ empresaId: conductores.empresaId })
+        .from(conductores)
+        .where(eq(conductores.userId, user.id))
+        .limit(1);
+      const driverEmpresa = driverEmpresaRows[0];
+      if (driverEmpresa) {
+        const existingMembership = await opts.db
+          .select({ id: memberships.id, status: memberships.status })
+          .from(memberships)
+          .where(
+            and(
+              eq(memberships.userId, user.id),
+              eq(memberships.empresaId, driverEmpresa.empresaId),
+            ),
+          )
+          .limit(1);
+        const m = existingMembership[0];
+        if (m) {
+          // Promover a 'activa' si no lo está ya.
+          if (m.status !== 'activa') {
+            await opts.db
+              .update(memberships)
+              .set({
+                status: 'activa',
+                joinedAt: sql`now()`,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(memberships.id, m.id));
+          }
+        } else {
+          // Backfill seguro: insertar membership rol=conductor.
+          await opts.db.insert(memberships).values({
+            userId: user.id,
+            empresaId: driverEmpresa.empresaId,
+            role: 'conductor',
+            status: 'activa',
+            joinedAt: sql`now()`,
+          });
+        }
+      }
+    } catch (err) {
+      // No-fatal: el flujo del conductor funciona aún sin membership
+      // (driver-position resuelve via conductores.userId). Logueamos
+      // warn y seguimos.
+      opts.logger.warn(
+        { err, userId: user.id, rut },
+        'driver-activate: no se pudo promover/crear membership rol=conductor',
+      );
     }
 
     // 7. Mint custom token para que el cliente haga signInWithCustomToken.
