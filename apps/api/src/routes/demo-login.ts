@@ -63,7 +63,9 @@ const loginBodySchema = z.object({ persona: personaSchema });
 const REDIRECT_BY_PERSONA: Record<Persona, string> = {
   shipper: '/app',
   carrier: '/app',
-  conductor: '/app/conductor/modo',
+  // `/app/conductor` es la ruta real (router.tsx línea 118). Antes apuntaba
+  // a `/app/conductor/modo` — 404 verificado en demo prod 2026-05-13.
+  conductor: '/app/conductor',
   stakeholder: '/app/stakeholder/zonas',
 };
 

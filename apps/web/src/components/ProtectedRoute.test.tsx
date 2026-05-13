@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useAuthMock = vi.fn();
 const useMeMock = vi.fn();
+const useIsDemoMock = vi.fn();
 const NavigateMock = vi.fn(({ to }: { to: string }) => <div data-testid="navigate">{to}</div>);
 
 vi.mock('../hooks/use-auth.js', () => ({ useAuth: useAuthMock }));
 vi.mock('../hooks/use-me.js', () => ({ useMe: useMeMock }));
+vi.mock('../hooks/use-is-demo.js', () => ({ useIsDemo: useIsDemoMock }));
 vi.mock('@tanstack/react-router', () => ({ Navigate: NavigateMock }));
 
 const { ProtectedRoute } = await import('./ProtectedRoute.js');
@@ -23,6 +25,8 @@ function makeWrapper() {
 beforeEach(() => {
   vi.clearAllMocks();
   useMeMock.mockReturnValue({ data: undefined, isLoading: false, error: null });
+  // Default a "no demo" — los tests existentes asumen flujo normal.
+  useIsDemoMock.mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -145,6 +149,30 @@ describe('ProtectedRoute', () => {
       { wrapper: makeWrapper() },
     );
     expect(screen.getByTestId('kind').textContent).toBe('pre-onboarding');
+  });
+
+  it('require-onboarded + sesión demo (is_demo=true) + sin clave_numerica → NO muestra RotarClaveModal', () => {
+    useAuthMock.mockReturnValue({ user: { uid: 'u-demo' }, loading: false });
+    useMeMock.mockReturnValue({
+      data: {
+        needs_onboarding: false,
+        user: { id: 'u-uuid-demo', has_clave_numerica: false },
+        memberships: [],
+        active_membership: null,
+      },
+      isLoading: false,
+      error: null,
+    });
+    useIsDemoMock.mockReturnValue(true);
+    render(
+      <ProtectedRoute>{() => <div data-testid="children">contenido demo</div>}</ProtectedRoute>,
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+    // Children renderizado sin modal montado encima.
+    expect(screen.getByTestId('children')).toBeInTheDocument();
+    expect(screen.queryByText('Crea tu clave numérica')).not.toBeInTheDocument();
   });
 
   it('allow-pre-onboarding + meError → sintetiza me desde Firebase user', () => {
