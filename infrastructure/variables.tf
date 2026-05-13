@@ -323,7 +323,12 @@ variable "matching_v2_weights_json" {
 variable "auth_universal_v1_activated" {
   description = "Activa el flow universal RUT + clave numérica (ADR-035). false = legacy email/password."
   type        = bool
-  default     = false
+  # Activado por Felipe (PO) 2026-05-13 tras merge de Waves 4 PR 1-3.
+  # El cambio enciende el selector RUT+clave + modal forzado de rotación
+  # para usuarios legacy en su próximo login. Flip reversible sin
+  # redeploy de código — setear a `false` y `terraform apply` revierte
+  # al flow legacy en segundos.
+  default = true
 }
 
 # ---------------------------------------------------------------------------
