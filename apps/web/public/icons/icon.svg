@@ -1,35 +1,39 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Booster AI">
   <title>Booster AI</title>
   <!--
-    Símbolo "boo / boo" en grilla 2 filas × 3 columnas.
-    Columna 1: dos "b" estilizadas (anillo + cola vertical en el lado izquierdo).
+    Símbolo Booster — "boo / boo" en grilla 3 columnas × 2 filas.
+    Columna 1: dos "b" estilizadas (anillo + cola vertical izquierda).
     Columnas 2 y 3: cuatro "o" como anillos circulares.
-    El "o" de la fila inferior, columna central, es el acento verde brillante.
+    El "o" de la fila inferior, columna central, va en verde acento.
 
-    Paleta canónica del símbolo Booster:
+    Paleta canónica:
       Azul marino: #1F2D5C
       Verde acento: #1FD75C
 
-    Trazo grueso (40) calibrado para legibilidad en tamaños chicos
-    (28-48 px en headers, tabs y favicons).
+    Geometría: anillos r=56, stroke=36. Centros en x=128/256/384 (fila
+    horizontal) e y=160/352 (fila vertical). Cola "b" en x=64 (tangente
+    al borde izquierdo del anillo izquierdo), longitud 110 px hacia arriba.
 
-    Fondo transparente (sin <rect>) para que el ícono se adapte a
-    fondos claros y oscuros del producto.
+    Trazo grueso (36) calibrado para legibilidad en tamaños chicos
+    (24-64 px en headers, tabs, favicons). Fondo blanco para asegurar
+    visibilidad sobre cualquier contenedor.
   -->
 
-  <g fill="none" stroke="#1F2D5C" stroke-width="40" stroke-linecap="round">
-    <!-- Fila superior: b - o - o -->
-    <line x1="72" y1="60" x2="72" y2="172"/>
-    <circle cx="136" cy="176" r="68"/>
-    <circle cx="272" cy="176" r="68"/>
-    <circle cx="408" cy="176" r="68"/>
+  <rect width="512" height="512" fill="#ffffff" rx="8" />
 
-    <!-- Fila inferior: b - o(verde) - o -->
-    <line x1="72" y1="224" x2="72" y2="336"/>
-    <circle cx="136" cy="340" r="68"/>
-    <circle cx="408" cy="340" r="68"/>
+  <g fill="none" stroke="#1F2D5C" stroke-width="36" stroke-linecap="round">
+    <!-- Fila superior: b - o - o -->
+    <line x1="64" y1="62" x2="64" y2="160"/>
+    <circle cx="128" cy="160" r="56"/>
+    <circle cx="256" cy="160" r="56"/>
+    <circle cx="384" cy="160" r="56"/>
+
+    <!-- Fila inferior: b - [o verde] - o -->
+    <line x1="64" y1="254" x2="64" y2="352"/>
+    <circle cx="128" cy="352" r="56"/>
+    <circle cx="384" cy="352" r="56"/>
   </g>
 
-  <!-- o acento verde brillante (centro inferior) -->
-  <circle cx="272" cy="340" r="68" fill="none" stroke="#1FD75C" stroke-width="40"/>
+  <!-- "o" central inferior — acento verde brillante -->
+  <circle cx="256" cy="352" r="56" fill="none" stroke="#1FD75C" stroke-width="36" stroke-linecap="round"/>
 </svg>
