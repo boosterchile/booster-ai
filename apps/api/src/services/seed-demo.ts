@@ -66,9 +66,13 @@ export interface DemoCredentials {
 // RUTs en canónico (sin puntos). El rutSchema acepta input con o sin
 // puntos y siempre normaliza al canónico — así que la BD almacena
 // siempre el mismo formato sin importar cómo se tipea.
-const DEMO_SHIPPER_RUT = '76999111-1';
-const DEMO_CARRIER_RUT = '77888222-K';
-const DEMO_CONDUCTOR_RUT = '12345678-5';
+//
+// Exportadas para que el endpoint /demo/login (subdominio demo.*) y el
+// auto-seed startup hook puedan localizar las entidades demo en BD sin
+// reimplementar los literales y arriesgar drift.
+export const DEMO_SHIPPER_RUT = '76999111-1';
+export const DEMO_CARRIER_RUT = '77888222-K';
+export const DEMO_CONDUCTOR_RUT = '12345678-5';
 const DEMO_STAKEHOLDER_USER_RUT = '11999003-3';
 const DEMO_SHIPPER_OWNER_RUT = '11999001-7';
 const DEMO_CARRIER_OWNER_RUT = '11999002-5';
