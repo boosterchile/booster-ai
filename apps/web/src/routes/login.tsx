@@ -151,7 +151,7 @@ export function LoginRoute() {
     <div className="flex min-h-screen flex-col bg-neutral-50">
       <header className="border-neutral-200 border-b bg-white px-6 py-4">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
-          <div className="h-6 w-6 rounded-md bg-primary-500" aria-hidden />
+          <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
           <span className="font-semibold text-lg text-neutral-900">Booster AI</span>
         </div>
       </header>
