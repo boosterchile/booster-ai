@@ -47,6 +47,15 @@ export interface MeUser {
   rut: string | null;
   is_platform_admin: boolean;
   status: 'pendiente_verificacion' | 'activo' | 'suspendido' | 'eliminado';
+  /**
+   * ADR-035 Wave 4 PR 3 — true si el usuario ya seteó su clave numérica
+   * de 6 dígitos para auth universal. false (legacy) → frontend fuerza
+   * modal de "Crea tu clave numérica" post-login con método anterior.
+   *
+   * Opcional para tolerar respuestas legacy del backend pre-Wave 4 PR 3
+   * (las clientes que cacheen /me viejas no se rompen).
+   */
+  has_clave_numerica?: boolean;
 }
 
 export interface MeRegistered {
