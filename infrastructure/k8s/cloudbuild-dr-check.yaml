@@ -1,0 +1,34 @@
+# Cloud Build pipeline minimal: verificar acceso al cluster DR + estado
+# cert-manager. Si pasa, validamos que el deploy real (cloudbuild-dr-deploy.yaml)
+# tiene todo lo necesario.
+
+steps:
+  - id: check
+    name: gcr.io/cloud-builders/kubectl
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euxo pipefail
+        export CLOUDSDK_COMPUTE_REGION=us-central1
+        export CLOUDSDK_CONTAINER_USE_APPLICATION_DEFAULT_CREDENTIALS=true
+        gcloud container clusters get-credentials booster-ai-telemetry-dr \
+          --location=us-central1 \
+          --project=booster-ai-494222 \
+          --internal-ip
+        echo "--- nodes ---"
+        kubectl get nodes
+        echo "--- cert-manager status ---"
+        kubectl get ns cert-manager 2>&1 || echo "(cert-manager namespace NOT FOUND)"
+        kubectl get deployment -n cert-manager cert-manager 2>&1 || echo "(cert-manager deployment NOT FOUND)"
+        echo "--- existing namespaces ---"
+        kubectl get ns
+        echo "--- existing clusterissuers ---"
+        kubectl get clusterissuer 2>&1 || echo "(no clusterissuers)"
+
+options:
+  pool:
+    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 300s
