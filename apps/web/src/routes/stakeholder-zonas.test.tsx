@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterZonasByRegion } from './stakeholder-zonas.js';
+import { filterZonasByRegion, sortZonasDestacadasPrimero } from './stakeholder-zonas.js';
 
 const ZONAS = [
   {
@@ -68,5 +68,62 @@ describe('filterZonasByRegion (ADR-034)', () => {
   it('region_ambito sin matches → array vacío', () => {
     const result = filterZonasByRegion(ZONAS, 'CL-XX');
     expect(result).toHaveLength(0);
+  });
+});
+
+describe('sortZonasDestacadasPrimero', () => {
+  const ZONAS_MIXED = [
+    {
+      id: 'a',
+      nombre: 'A',
+      region: 'V',
+      region_iso: 'CL-VS',
+      tipo: 'puerto',
+      demo_viajes_30d: 1,
+      demo_co2e_kg: 1,
+      demo_horario_pico: 'x',
+    },
+    {
+      id: 'destacada',
+      nombre: 'Destacada',
+      region: 'IV',
+      region_iso: 'CL-CO',
+      tipo: 'puerto',
+      demo_viajes_30d: 1,
+      demo_co2e_kg: 1,
+      demo_horario_pico: 'x',
+      destacado: true,
+    },
+    {
+      id: 'b',
+      nombre: 'B',
+      region: 'V',
+      region_iso: 'CL-VS',
+      tipo: 'puerto',
+      demo_viajes_30d: 1,
+      demo_co2e_kg: 1,
+      demo_horario_pico: 'x',
+    },
+  ] as Parameters<typeof sortZonasDestacadasPrimero>[0];
+
+  it('mueve destacadas al inicio sin perturbar el orden relativo del resto', () => {
+    const result = sortZonasDestacadasPrimero(ZONAS_MIXED);
+    expect(result.map((z) => z.id)).toEqual(['destacada', 'a', 'b']);
+  });
+
+  it('no destacadas → preserva orden original', () => {
+    const sinDestacadas = ZONAS_MIXED.filter((z) => !z.destacado);
+    const result = sortZonasDestacadasPrimero(sinDestacadas);
+    expect(result.map((z) => z.id)).toEqual(['a', 'b']);
+  });
+
+  it('array vacío → array vacío', () => {
+    expect(sortZonasDestacadasPrimero([])).toEqual([]);
+  });
+
+  it('no muta el input', () => {
+    const original = [...ZONAS_MIXED];
+    sortZonasDestacadasPrimero(ZONAS_MIXED);
+    expect(ZONAS_MIXED).toEqual(original);
   });
 });
