@@ -12,6 +12,7 @@ export * from './primitives/geo.js';
 
 // Dominio — multi-tenant + ops (slice B pre-launch)
 export * from './domain/stakeholder.js';
+export * from './domain/organizacion-stakeholder.js';
 export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';

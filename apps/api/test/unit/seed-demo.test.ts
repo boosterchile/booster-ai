@@ -167,34 +167,30 @@ describe('seedDemo', () => {
         [],
         // 6. ensureFirebaseUser stakeholder: select users by email → []
         [],
-        // 7. ensureMembership shipper: select memberships limit 50 → []
+        // 7. ADR-034 — ensureOrganizacionStakeholder: select org by nombre → []
         [],
-        // 8. ensureMembership carrier: → []
-        [],
-        // 9. ensureMembership stakeholder: → []
-        [],
-        // 10. ensureSucursal Bodega Maipú: 2 selects
+        // 8. ensureSucursal Bodega Maipú: 2 selects
         [],
         [],
-        // 11. ensureSucursal CD Quilicura: 2 selects
+        // 9. ensureSucursal CD Quilicura: 2 selects
         [],
         [],
-        // 12. ensureVehicle DEMO01: select vehicles by plate → []
+        // 10. ensureVehicle DEMO01: select vehicles by plate → []
         [],
-        // 13. ensureVehicle DEMO02: → []
+        // 11. ensureVehicle DEMO02: → []
         [],
-        // 14. ensureZone XIII: 2 selects
-        [],
-        [],
-        // 15. ensureZone V: 2 selects
+        // 12. ensureZone XIII: 2 selects
         [],
         [],
-        // 16. ensureZone VI: 2 selects
+        // 13. ensureZone V: 2 selects
         [],
         [],
-        // 17. ensureConductor: select users by rut → []
+        // 14. ensureZone VI: 2 selects
         [],
-        // 17b. select conductores by userId → []
+        [],
+        // 15. ensureConductor: select users by rut → []
+        [],
+        // 15b. select conductores by userId → []
         [],
       ],
       inserts: [
@@ -208,11 +204,13 @@ describe('seedDemo', () => {
         [{ id: 'carrier-user' }],
         // user stakeholder
         [{ id: 'stake-user' }],
-        // membership shipper
+        // membership shipper (ADR-034: ensureMembership ya no hace SELECT previo)
         [],
         // membership carrier
         [],
-        // membership stakeholder
+        // ADR-034 — organizacion_stakeholder Observatorio Demo
+        [{ id: 'org-stake-1' }],
+        // membership stakeholder (ahora con organizacionStakeholderId)
         [],
         // sucursal 1
         [],
@@ -269,12 +267,8 @@ describe('seedDemo', () => {
         [{ id: 'carrier-user', firebaseUid: 'fb-old' }],
         // user stakeholder: exists, same
         [{ id: 'stake-user', firebaseUid: 'fb-stake' }],
-        // memberships shipper limit 50 → []
-        [],
-        // memberships carrier → []
-        [],
-        // memberships stakeholder → []
-        [],
+        // ADR-034 — ensureOrganizacionStakeholder: org exists, skip insert
+        [{ id: 'org-stake-existing' }],
         // sucursal 1 first select limit 50 → []
         [],
         // sucursal 1 second select (by empresa) → ya existe con ese nombre, skipea insert
@@ -302,6 +296,13 @@ describe('seedDemo', () => {
         [{ id: 'cond-existing', deletedAt: null }],
       ],
       inserts: [
+        // ADR-034 — ensureMembership ahora siempre intenta insert (con
+        // try/catch 23505 si ya existe). El test stub no levanta el
+        // error, así que devuelve [] (success). 3 inserts: shipper,
+        // carrier, stakeholder.
+        [],
+        [],
+        [],
         // segunda sucursal (la primera se saltó)
         [],
         // zone V (XIII se saltó)

@@ -15,6 +15,7 @@ import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
+import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
@@ -347,6 +348,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware);
     app.use('/admin/cobra-hoy/*', userContextMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
+
+    // Admin platform-wide: CRUD de organizaciones stakeholder (ADR-034).
+    // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
+    app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
+    app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
+    app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: re-emisión manual de DTEs Tipo 33 (ADR-024 +
     // ADR-031). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el

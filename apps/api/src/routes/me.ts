@@ -10,6 +10,7 @@ import {
   carrierMemberships,
   empresas,
   memberships,
+  organizacionesStakeholder,
   trips,
   users,
   vehicles,
@@ -134,13 +135,55 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
       });
     }
 
-    const rows = await opts.db
+    // Memberships en empresas (innerJoin filtra automáticamente las que
+    // tengan organizacionStakeholderId NOT NULL por XOR).
+    const empresaRows = await opts.db
       .select({ membership: memberships, empresa: empresas })
       .from(memberships)
       .innerJoin(empresas, eq(memberships.empresaId, empresas.id))
       .where(eq(memberships.userId, user.id));
 
-    const membershipsPayload = rows.map((r) => ({
+    // Memberships en organizaciones stakeholder (ADR-034). Query
+    // separado porque el JOIN apunta a tabla distinta.
+    const stakeholderOrgRows = await opts.db
+      .select({
+        membership: memberships,
+        org: organizacionesStakeholder,
+      })
+      .from(memberships)
+      .innerJoin(
+        organizacionesStakeholder,
+        eq(memberships.organizacionStakeholderId, organizacionesStakeholder.id),
+      )
+      .where(eq(memberships.userId, user.id));
+
+    /**
+     * Shape unificada: cada membership tiene `empresa` o
+     * `organizacion_stakeholder` populated, no ambas (XOR de DB).
+     */
+    type MembershipPayload = {
+      id: string;
+      role: (typeof memberships.role.enumValues)[number];
+      status: (typeof memberships.status.enumValues)[number];
+      joined_at: Date | null;
+      empresa: {
+        id: string;
+        legal_name: string | null;
+        rut: string;
+        is_generador_carga: boolean;
+        is_transportista: boolean;
+        status: (typeof empresas.status.enumValues)[number];
+      } | null;
+      organizacion_stakeholder: {
+        id: string;
+        nombre_legal: string;
+        tipo: (typeof organizacionesStakeholder.tipo.enumValues)[number];
+        region_ambito: string | null;
+        sector_ambito: string | null;
+      } | null;
+    };
+
+    const empresaMemberships: MembershipPayload[] = empresaRows.map((r) => ({
       id: r.membership.id,
       role: r.membership.role,
       status: r.membership.status,
@@ -153,13 +196,41 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         is_transportista: r.empresa.isTransportista,
         status: r.empresa.status,
       },
+      organizacion_stakeholder: null,
     }));
+
+    const stakeholderMemberships: MembershipPayload[] = stakeholderOrgRows.map((r) => ({
+      id: r.membership.id,
+      role: r.membership.role,
+      status: r.membership.status,
+      joined_at: r.membership.joinedAt,
+      empresa: null,
+      organizacion_stakeholder: {
+        id: r.org.id,
+        nombre_legal: r.org.nombreLegal,
+        tipo: r.org.tipo,
+        region_ambito: r.org.regionAmbito,
+        sector_ambito: r.org.sectorAmbito,
+      },
+    }));
+
+    const membershipsPayload: MembershipPayload[] = [
+      ...empresaMemberships,
+      ...stakeholderMemberships,
+    ];
 
     const requestedEmpresaId = c.req.header('x-empresa-id');
     const activeMembershipsList = membershipsPayload.filter((m) => m.status === 'activa');
-    let active: (typeof membershipsPayload)[number] | null = null;
+    let active: MembershipPayload | null = null;
     if (requestedEmpresaId) {
-      active = activeMembershipsList.find((m) => m.empresa.id === requestedEmpresaId) ?? null;
+      // El header `x-empresa-id` puede referir a empresa o a org stakeholder
+      // (frontend reusa el mismo header como "entidad activa").
+      active =
+        activeMembershipsList.find(
+          (m) =>
+            m.empresa?.id === requestedEmpresaId ||
+            m.organizacion_stakeholder?.id === requestedEmpresaId,
+        ) ?? null;
     }
     // Fallback al primer activeMembership si:
     //   - no hay requestedEmpresaId (no header), o
@@ -168,9 +239,6 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     //     cuenta, ej. user A logueado deja activeEmpresaId=X, después
     //     user B se loguea y X no es suya → null sin fallback dejaba la
     //     PWA en "Sin empresa activa" cuando el user SÍ tiene empresa).
-    // El fallback no es silencioso para el frontend: el frontend debería
-    // detectar que active.empresa.id !== requestedEmpresaId y actualizar
-    // localStorage. Pero la PWA no se rompe mientras tanto.
     if (!active && activeMembershipsList.length > 0) {
       active = activeMembershipsList[0] ?? null;
     }
