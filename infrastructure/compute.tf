@@ -131,6 +131,26 @@ module "service_api" {
     MATCHING_ALGORITHM_V2_ACTIVATED = tostring(var.matching_algorithm_v2_activated)
     MATCHING_V2_WEIGHTS_JSON        = var.matching_v2_weights_json
 
+    # ADR-035 (Wave 4) — Auth universal RUT + clave numérica. Default
+    # `false` mantiene el flow legacy email/password. Cuando `true`,
+    # `/login` muestra selector de tipo usuario + form RUT+clave para
+    # todos los roles (no solo conductor).
+    #
+    # Rollout staged:
+    #   1. PR 1 (foundation backend): flag=false default. Endpoint vivo
+    #      sin uso desde UI.
+    #   2. PR 2 (este PR — UI selector): flag=false default. Activar en
+    #      staging para validar smoke E2E. Si OK, activar en prod.
+    #   3. PR 3 (migración 30d): forzar rotación al login siguiente de
+    #      usuarios con email/password legacy.
+    AUTH_UNIVERSAL_V1_ACTIVATED = tostring(var.auth_universal_v1_activated)
+
+    # ADR-036 (Wave 5) — Wake-word "Oye Booster" para conductor. Default
+    # `false`. Activar SOLO después de entrenar el modelo custom con
+    # voces chilenas (Wave 5 PR 2). El conductor además debe opt-in en
+    # su configuración (default OFF en localStorage).
+    WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
+
     # Allowlist de operadores Booster que pueden entrar a /admin/* del API
     # y /app/platform-admin/* de la PWA. CSV de emails (lower-cased en
     # comparison). Sin esta env var nadie es admin — el código defaultea

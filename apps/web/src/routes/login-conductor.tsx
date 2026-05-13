@@ -4,6 +4,7 @@ import { Headphones } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { signInDriverWithCustomToken, signInWithEmail } from '../hooks/use-auth.js';
+import { getApiUrl } from '../lib/api-url.js';
 
 interface ActivateResponse {
   custom_token: string;
@@ -192,9 +193,4 @@ export function LoginConductorRoute() {
  * fetch directo (no `api.post`) porque el endpoint NO requiere Firebase
  * ID token — el conductor todavía no tiene sesión.
  */
-function getApiUrl(): string {
-  // VITE_API_URL puede no estar definida en producción si se usa el path
-  // relativo via reverse proxy. En ese caso usamos string vacía.
-  const apiUrl = import.meta.env.VITE_API_URL;
-  return typeof apiUrl === 'string' ? apiUrl : '';
-}
+// `getApiUrl` movido a `../lib/api-url.ts` (reusado por LoginUniversal Wave 4).

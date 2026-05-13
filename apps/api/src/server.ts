@@ -24,6 +24,7 @@ import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './route
 import { createConductoresRoutes } from './routes/conductores.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
+import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
@@ -127,6 +128,12 @@ export function createServer(opts: CreateServerOptions): Hono {
         : {}),
     }),
   );
+
+  // Public route — GET /feature-flags (ADR-035 + ADR-036).
+  // El cliente lo llama en boot para decidir qué UI renderizar en
+  // /login (selector RUT+clave vs email/password legacy). NO requiere
+  // auth porque la decisión de UI ocurre ANTES del login.
+  app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
 
   // Phase 5 PR-L1 — Public tracking del shipper / consignee. NO auth:
   // la defensa es la opacidad del token UUID v4 (122 bits, no enumerable).

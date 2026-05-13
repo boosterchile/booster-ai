@@ -15,9 +15,28 @@ vi.mock('../hooks/use-auth.js', () => ({
 }));
 
 const navigateMock = vi.fn();
+const useSearchMock = vi.fn(() => ({}));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
+  useSearch: () => useSearchMock(),
   Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
+}));
+
+// ADR-035 Wave 4 PR 2 — el LoginRoute lee `auth_universal_v1_activated`
+// via useFeatureFlags(). Por default mockeamos el flag OFF para que estos
+// tests sigan validando el flow legacy (Google + email/password). Los
+// tests del flow universal están en `components/login/LoginUniversal.test.tsx`.
+const useFeatureFlagsMock = vi.fn(() => ({
+  flags: {
+    auth_universal_v1_activated: false,
+    wake_word_voice_activated: false,
+    matching_algorithm_v2_activated: false,
+  },
+  isLoading: false,
+  isError: false,
+}));
+vi.mock('../hooks/use-feature-flags.js', () => ({
+  useFeatureFlags: () => useFeatureFlagsMock(),
 }));
 
 const { LoginRoute } = await import('./login.js');
