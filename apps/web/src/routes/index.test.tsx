@@ -37,4 +37,20 @@ describe('IndexRoute', () => {
     render(<IndexRoute />);
     expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
   });
+
+  it('host demo.boosterchile.com + user null → redirect /demo', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    vi.stubGlobal('location', { hostname: 'demo.boosterchile.com' });
+    render(<IndexRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/demo');
+    vi.unstubAllGlobals();
+  });
+
+  it('host demo.boosterchile.com + user presente → redirect /app (banner se muestra global)', () => {
+    useAuthMock.mockReturnValue({ user: { uid: 'u' }, loading: false });
+    vi.stubGlobal('location', { hostname: 'demo.boosterchile.com' });
+    render(<IndexRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
+    vi.unstubAllGlobals();
+  });
 });

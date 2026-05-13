@@ -8,6 +8,7 @@ import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
+import { ensureDemoSeeded } from './services/seed-demo-startup.js';
 
 const logger = createLogger({
   service: config.SERVICE_NAME,
@@ -34,6 +35,12 @@ async function main(): Promise<void> {
   // descarga JWKS de Firebase. ADC en Cloud Run, GOOGLE_APPLICATION_CREDENTIALS
   // en dev local.
   const firebaseAuth = getFirebaseAuth({ projectId: config.FIREBASE_PROJECT_ID });
+
+  // Auto-seed demo on startup (modo demo subdominio). No-op si flag OFF.
+  // Idempotente — si las entidades ya existen, skip. Errores se loguean
+  // pero NO propagan: un seed fallido nunca debe matar el startup del
+  // api (el /demo/login responderá 503 hasta que un operador investigue).
+  await ensureDemoSeeded({ db, firebaseAuth, logger, config });
 
   // Cliente Twilio para el dispatcher de notificaciones (B.8). Solo se
   // arma si las 3 env vars están seteadas — en dev es común que no estén,

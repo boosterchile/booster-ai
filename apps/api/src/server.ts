@@ -23,6 +23,7 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
+import { createDemoLoginRoutes } from './routes/demo-login.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
@@ -136,6 +137,20 @@ export function createServer(opts: CreateServerOptions): Hono {
   // /login (selector RUT+clave vs email/password legacy). NO requiere
   // auth porque la decisión de UI ocurre ANTES del login.
   app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
+
+  // Public route — POST /demo/login (modo demo subdominio).
+  // Mintea custom token Firebase para la persona demo (shipper/carrier/
+  // conductor/stakeholder). Endpoint público (sin firebase auth previa)
+  // porque la PWA en demo.boosterchile.com quiere login con un click
+  // sin tipear nada. Doble guard: flag DEMO_MODE_ACTIVATED + columna
+  // `es_demo=true` en BD. Si flag OFF, responde 404. Si firebaseAuth no
+  // está inyectado (tests), no se monta para evitar runtime errors.
+  if (opts.firebaseAuth) {
+    app.route(
+      '/demo',
+      createDemoLoginRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
+  }
 
   // Phase 5 PR-L1 — Public tracking del shipper / consignee. NO auth:
   // la defensa es la opacidad del token UUID v4 (122 bits, no enumerable).

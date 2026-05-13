@@ -4,8 +4,10 @@ import { useAuth } from '../hooks/use-auth.js';
 /**
  * `/` — landing redirect.
  *
- *   - User no logueado → /login
- *   - User logueado    → /app
+ *   - Host `demo.boosterchile.com` + no logueado → /demo (selector personas)
+ *   - Host `demo.boosterchile.com` + logueado    → /app (con DemoBanner)
+ *   - Otros hosts no logueado                    → /login
+ *   - Otros hosts logueado                       → /app
  *
  * Mientras useAuth().loading=true mostramos splash mínimo.
  */
@@ -18,6 +20,13 @@ export function IndexRoute() {
         <div className="font-medium text-neutral-500 text-sm">Cargando…</div>
       </div>
     );
+  }
+
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isDemoHost = host === 'demo.boosterchile.com' || host === 'demo.localhost';
+
+  if (isDemoHost && !user) {
+    return <Navigate to="/demo" />;
   }
 
   return <Navigate to={user ? '/app' : '/login'} />;

@@ -81,7 +81,7 @@ module "service_api" {
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},https://app.${var.domain},${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://marketing.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
@@ -150,6 +150,12 @@ module "service_api" {
     # voces chilenas (Wave 5 PR 2). El conductor además debe opt-in en
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
+
+    # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
+    # habilita POST /demo/login (mintea custom tokens Firebase para las
+    # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
+    # esta env var + columna es_demo=true en empresas.
+    DEMO_MODE_ACTIVATED = tostring(var.demo_mode_activated)
 
     # Allowlist de operadores Booster que pueden entrar a /admin/* del API
     # y /app/platform-admin/* de la PWA. CSV de emails (lower-cased en

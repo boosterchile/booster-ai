@@ -432,6 +432,30 @@ const apiEnvSchema = commonEnvSchema
     WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
 
     /**
+     * Modo demo (subdominio `demo.boosterchile.com`). Default OFF.
+     *
+     * Cuando `true`:
+     *   - El api habilita `POST /demo/login`, que mintea un Firebase
+     *     custom token para la persona demo solicitada (shipper,
+     *     carrier, conductor, stakeholder). Endpoint público (sin
+     *     Firebase auth previa), porque la PWA en `demo.*` quiere
+     *     login con un solo click sin email/password/PIN.
+     *   - En startup, el server corre `ensureDemoSeeded` para
+     *     garantizar que las 4 personas demo existen en la DB con sus
+     *     empresas marcadas `es_demo=true`. Idempotente.
+     *
+     * Cuando `false`:
+     *   - `POST /demo/login` responde 404 (no revela que el endpoint
+     *     existe en producción sin modo demo).
+     *   - El auto-seed startup hook es no-op.
+     *
+     * Doble guard contra exposición accidental: este flag + columna
+     * `es_demo=true` en `empresas`. Los users demo nunca acceden a data
+     * real, y viceversa.
+     */
+    DEMO_MODE_ACTIVATED: booleanFlag(false),
+
+    /**
      * ADR-033 §1 — Pesos custom para los componentes del scoring v2.
      * JSON con shape `{ capacidad: number; backhaul: number;
      * reputacion: number; tier: number }`. Suma debe ser ≈ 1.0
