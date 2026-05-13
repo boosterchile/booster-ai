@@ -193,6 +193,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         rut: user.rut,
         is_platform_admin: isPlatformAdmin,
         status: user.status,
+        // ADR-035 Wave 4 PR 3 — flag para que el frontend detecte que
+        // necesita forzar rotación de clave en el próximo login legacy.
+        // No exponemos el hash, solo si está seteada. NULL = el usuario
+        // no completó la migración → frontend muestra modal forzado.
+        has_clave_numerica: user.claveNumericaHash != null,
       },
       memberships: membershipsPayload,
       active_membership: active,

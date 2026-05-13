@@ -26,6 +26,7 @@ import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/docum
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
 import { createHealthRouter } from './routes/health.js';
+import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
@@ -186,6 +187,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Stakeholder consent grants (ADR-028 §"Acciones derivadas §7"). Sólo
     // requiere firebaseAuth — el handler resuelve userId vía firebase_uid.
     meRouter.route('/consents', createMeConsentsRoutes({ db: opts.db, logger }));
+    // ADR-035 Wave 4 PR 3 — setear/rotar clave numérica del usuario.
+    // Solo firebaseAuth (no userContext) porque el handler resuelve
+    // userId vía firebase_uid; aplica a cualquier usuario logueado,
+    // incluso pre-onboarding.
+    meRouter.route('/', createMeClaveNumericaRoutes({ db: opts.db, logger }));
     // Cobra Hoy historial (requiere userContext para empresa activa).
     app.use('/me/cobra-hoy/*', userContextMiddlewareForMe);
     meRouter.route('/', createCobraHoyMeRoutes({ db: opts.db, logger }));

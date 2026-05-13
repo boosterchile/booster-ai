@@ -1,7 +1,9 @@
 import { Navigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/use-auth.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import { type MeResponse, useMe } from '../hooks/use-me.js';
+import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
 export interface ProtectedRouteProps {
   /**
@@ -43,6 +45,7 @@ export function ProtectedRoute({
   children,
 }: ProtectedRouteProps) {
   const { user, loading: authLoading } = useAuth();
+  const { flags } = useFeatureFlags();
 
   const meEnabled = !!user && meRequirement !== 'skip';
   const { data: me, isLoading: meLoading, error: meError } = useMe({ enabled: meEnabled });
@@ -76,7 +79,23 @@ export function ProtectedRoute({
       // Defensive: si me está inconsistente, mejor onboarding que crash.
       return <Navigate to="/onboarding" />;
     }
-    return <>{children({ kind: 'onboarded', me })}</>;
+    // ADR-035 Wave 4 PR 3 — si el flag universal está activo Y el user
+    // todavía no creó su clave numérica, montamos el modal forzado sobre
+    // el children. El children sigue siendo accesible (se renderiza
+    // debajo del overlay) pero el modal bloquea la interacción hasta
+    // que el user crea la clave o el flag se apaga.
+    //
+    // `has_clave_numerica` es opcional en la response /me para tolerar
+    // versiones del API pre-Wave 4 PR 3. Tratamos `undefined` como
+    // "ya seteada" (no forzamos) — para legacy users no se rompe nada.
+    const needsClaveRotation =
+      flags.auth_universal_v1_activated && me.user.has_clave_numerica === false;
+    return (
+      <>
+        {children({ kind: 'onboarded', me })}
+        {needsClaveRotation && <RotarClaveModal />}
+      </>
+    );
   }
 
   // meRequirement === 'allow-pre-onboarding'
