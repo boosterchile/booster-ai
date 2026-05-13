@@ -96,7 +96,7 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
           <EmptyState
             icon={<FileText className="h-10 w-10" aria-hidden />}
             title="Aún no tienes liquidaciones"
-            description="Cuando un viaje entregado se procese, la liquidación aparecerá acá con el desglose y el DTE Tipo 33 de la comisión Booster."
+            description="Cuando un viaje entregado se procese, la liquidación aparecerá aquí con el desglose y el DTE Tipo 33 de la comisión Booster."
             action={
               <Link to="/app/ofertas" className={emptyStateActionClass}>
                 Ver ofertas activas

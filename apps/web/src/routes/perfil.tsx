@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Headphones } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { AuthProvidersSection } from '../components/profile/AuthProvidersSection.js';
@@ -58,30 +58,6 @@ function PerfilPage({ me }: { me: MeOnboarded }) {
         <AuthProvidersSection />
 
         <TwoFactorSection initialPhoneE164={me.user.whatsapp_e164 ?? me.user.phone ?? null} />
-
-        <section
-          aria-label="Modo Conductor"
-          className="mt-8 rounded-lg border border-neutral-200 bg-white p-5"
-          data-testid="perfil-modo-conductor-section"
-        >
-          <div className="flex items-start gap-3">
-            <Headphones className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
-            <div className="flex-1">
-              <h2 className="font-semibold text-base text-neutral-900">Modo Conductor</h2>
-              <p className="mt-1 text-neutral-600 text-sm">
-                Activa audio coaching automático, gestiona permisos de micrófono y GPS, y revisa los
-                comandos de voz para operar sin tocar la pantalla mientras conduces.
-              </p>
-              <Link
-                to="/app/conductor/modo"
-                className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700"
-                data-testid="link-modo-conductor-perfil"
-              >
-                Configurar modo conductor
-              </Link>
-            </div>
-          </div>
-        </section>
       </div>
     </Layout>
   );

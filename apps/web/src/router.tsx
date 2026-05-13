@@ -8,7 +8,8 @@ import { CargaTrackRoute } from './routes/carga-track.js';
 import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
 import { CertificadosRoute } from './routes/certificados.js';
 import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
-import { ConductorModoRoute } from './routes/conductor-modo.js';
+import { ConductorConfiguracionRoute } from './routes/conductor-configuracion.js';
+import { ConductorDashboardRoute } from './routes/conductor.js';
 import {
   ConductoresDetalleRoute,
   ConductoresListRoute,
@@ -98,14 +99,24 @@ const perfilRoute = createRoute({
   component: PerfilRoute,
 });
 
-// Phase 4 PR-K8 — onboarding del Modo Conductor. Una sola pantalla con
-// 4 cards (autoplay coaching, permisos mic+GPS, comandos de voz,
-// explainer). Hub centralizado para que el conductor habilite y entienda
-// las features voice-first de K1-K7. Layout `/app/*` autenticado.
-const conductorModoRoute = createRoute({
+// Dashboard del conductor — vista principal post-login del conductor
+// (rol='conductor'). Lista de servicios asignados + alerta preventiva
+// de WhatsApp + reporte GPS móvil + acceso a configuración.
+// La empresa de transporte NO ve esta vista; tiene su propia surface.
+const conductorDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/app/conductor/modo',
-  component: ConductorModoRoute,
+  path: '/app/conductor',
+  component: ConductorDashboardRoute,
+});
+
+// Configuración del Modo Conductor — solo permisos del navegador, audio
+// coaching, comandos de voz, "cómo funciona". El conductor entra aquí
+// la primera vez (forzado si no tiene permisos) o vía el ícono de
+// engranaje desde el dashboard. URL canónica: /app/conductor/configuracion.
+const conductorConfiguracionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/conductor/configuracion',
+  component: ConductorConfiguracionRoute,
 });
 
 const adminDispositivosRoute = createRoute({
@@ -310,7 +321,8 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   ofertasRoute,
   perfilRoute,
-  conductorModoRoute,
+  conductorDashboardRoute,
+  conductorConfiguracionRoute,
   adminDispositivosRoute,
   vehiculosListRoute,
   vehiculosNuevoRoute,

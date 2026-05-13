@@ -70,7 +70,7 @@ function HistorialPage({ me }: { me: MeOnboarded }) {
       {featureDisabled && (
         <output className="mt-6 block rounded-md border border-neutral-200 bg-neutral-50 p-4 text-neutral-700 text-sm">
           La opción de pronto pago todavía no está activa en este entorno. Cuando se habilite, verás
-          acá el historial de tus solicitudes.
+          aquí el historial de tus solicitudes.
         </output>
       )}
 

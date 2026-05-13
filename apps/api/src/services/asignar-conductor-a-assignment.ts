@@ -10,7 +10,7 @@ import { assignments, conductores, tripEvents, users } from '../db/schema.js';
  * `driver_user_id = NULL` y no había forma de setearlo después. El
  * resultado: el endpoint `/assignments/:id/driver-position` (que valida
  * `assignment.driverUserId === user.id`) era inalcanzable, y la UI
- * `/app/conductor/modo` exigía que el conductor pegara manualmente el
+ * `/app/conductor` exigía que el conductor pegara manualmente el
  * UUID del assignment (UX placeholder).
  *
  * Este servicio cierra el flujo: el carrier (dueño/admin/despachador)

@@ -204,6 +204,13 @@
       "when": 1780358400000,
       "tag": "0028_event_type_conductor_asignado",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1780444800000,
+      "tag": "0029_conductor_memberships_backfill",
+      "breakpoints": true
     }
   ]
 }

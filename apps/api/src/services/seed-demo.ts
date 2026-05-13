@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
 import {
@@ -834,5 +834,28 @@ async function ensureConductor(opts: {
   if (!row) {
     throw new Error('conductor insert returned no row');
   }
+
+  // 3. Crear membership con rol='conductor' si no existe ya. Invariante
+  //    del modelo (migration 0029): todo conductor activo tiene
+  //    membership en la misma empresa con role=conductor.
+  //    Estado: 'pendiente_invitacion' mientras el firebase_uid es
+  //    placeholder; cuando el conductor activa via D9 (driver-activate)
+  //    se promueve a 'activa'.
+  const existingMembership = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.empresaId, empresaId)))
+    .limit(1);
+  if (existingMembership.length === 0) {
+    await db.insert(memberships).values({
+      userId,
+      empresaId,
+      role: 'conductor',
+      // El user del conductor recién creado siempre arranca pending —
+      // activationPin presente significa que aún no se activó.
+      status: activationPin ? 'pendiente_invitacion' : 'activa',
+    });
+  }
+
   return { conductorId: row.id, activationPin };
 }

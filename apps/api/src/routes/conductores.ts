@@ -277,7 +277,7 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
     // user nuevo o un user-placeholder (firebase_uid `pending-rut:...`). Si
     // ya es un user real activado (e.g. el dueño de la empresa que también
     // se registra como conductor — flujo D10), NO generamos PIN: el dueño
-    // ya tiene su email/password y puede entrar a `/app/conductor/modo`
+    // ya tiene su email/password y puede entrar a `/app/conductor`
     // directamente sin re-autenticarse.
     //
     // El plaintext del PIN NUNCA persiste; sólo se devuelve UNA vez en la

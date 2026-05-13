@@ -188,7 +188,7 @@ function PlatformAdminMatchingPage() {
             <div>
               <div className="font-semibold text-neutral-900">Comparar algoritmo de asignación</div>
               <div className="text-neutral-500 text-xs">
-                Probá un nuevo algoritmo de asignación sobre viajes reales antes de activarlo
+                Prueba un nuevo algoritmo de asignación sobre viajes reales antes de activarlo
               </div>
             </div>
           </div>
@@ -332,7 +332,7 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
         <div className="flex-1">
           <h2 className="font-semibold text-neutral-900">Lanzar una simulación</h2>
           <p className="mt-1 text-neutral-600 text-sm">
-            Sobre cuántos viajes pasados querés simular el algoritmo nuevo. Tarda menos de 30
+            Sobre cuántos viajes pasados quieres simular el algoritmo nuevo. Tarda menos de 30
             segundos para 500 viajes.
           </p>
         </div>
@@ -491,13 +491,13 @@ function RunForm({ onSubmitted }: { onSubmitted: () => void | Promise<void> }) {
  */
 function humanizeError(raw: string): string {
   if (raw.includes('403') || raw.includes('forbidden_platform_admin')) {
-    return 'Tu email no tiene permiso para acceder a esta sección. Si crees que es un error, pedile al equipo de infra que agregue tu email a la lista de administradores de plataforma.';
+    return 'Tu email no tiene permiso para acceder a esta sección. Si crees que es un error, pídele al equipo de infra que agregue tu email a la lista de administradores de plataforma.';
   }
   if (raw.includes('401')) {
-    return 'Tu sesión expiró. Recargá la página para volver a iniciar sesión.';
+    return 'Tu sesión expiró. Recarga la página para volver a iniciar sesión.';
   }
   if (raw.includes('400') || raw.toLowerCase().includes('validation')) {
-    return 'Algún valor del formulario no es válido. Revisá las fechas y el límite de viajes.';
+    return 'Algún valor del formulario no es válido. Revisa las fechas y el límite de viajes.';
   }
   if (raw.includes('500') || raw.toLowerCase().includes('backtest_failed')) {
     return `La simulación falló del lado del servidor. Detalle: ${raw}`;

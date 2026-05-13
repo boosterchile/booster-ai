@@ -52,7 +52,7 @@ describe('LoginConductorRoute', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('200 + custom_token → signInWithCustomToken + navigate a /app/conductor/modo', async () => {
+  it('200 + custom_token → signInWithCustomToken + navigate a /app/conductor', async () => {
     fetchSpy.mockResolvedValueOnce(
       makeJsonResponse(200, {
         custom_token: 'tok-xyz',
@@ -67,7 +67,7 @@ describe('LoginConductorRoute', () => {
     await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
 
     await waitFor(() => expect(signInDriverWithCustomTokenMock).toHaveBeenCalledWith('tok-xyz'));
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor/modo' });
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor' });
   });
 
   it('410 already_activated → fallback signInWithEmail con synthetic_email', async () => {
@@ -90,7 +90,7 @@ describe('LoginConductorRoute', () => {
         '987654',
       ),
     );
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor/modo' });
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor' });
   });
 
   it('410 + signInWithEmail falla → "PIN o contraseña incorrectos"', async () => {

@@ -3,6 +3,19 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
 
+/**
+ * Tests del route `/app/conductor/configuracion`.
+ *
+ * Este surface es la **configuración** del Modo Conductor: permisos
+ * mic/GPS, audio coaching automático, lista de comandos de voz,
+ * explainer del flujo. NO incluye reporte GPS (eso vive en
+ * `/app/conductor`, el dashboard).
+ *
+ * Antecedente: estos tests son el port del antiguo
+ * `conductor-modo.test.tsx`, quitando las assertions del GPS reporter
+ * inline (movidas a `conductor.test.tsx`).
+ */
+
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type ProtectedContext =
   | { kind: 'onboarded'; me: MeOnboarded }
@@ -19,14 +32,6 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
-}));
-
-vi.mock('../components/Layout.js', () => ({
-  Layout: ({ children, title }: { children: ReactNode; title: string }) => (
-    <div data-testid="layout" data-title={title}>
-      {children}
-    </div>
-  ),
 }));
 
 const queryDriverPermissionsSpy = vi.fn();
@@ -47,24 +52,7 @@ vi.mock('../services/coaching-voice.js', () => ({
   saveAutoplayPreference: (v: boolean) => saveAutoplayPreferenceSpy(v),
 }));
 
-// Mock api-client para que el flujo "lista de asignaciones" en
-// MobileGpsReporterCard pueda ser controlado por test. Por defecto
-// devuelve lista vacía (el conductor sin asignaciones), pero los tests
-// específicos pueden override.
-const apiGetSpy = vi.fn();
-vi.mock('../lib/api-client.js', async () => {
-  const actual =
-    await vi.importActual<typeof import('../lib/api-client.js')>('../lib/api-client.js');
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      get: (...args: unknown[]) => apiGetSpy(...args),
-    },
-  };
-});
-
-const { ConductorModoRoute } = await import('./conductor-modo.js');
+const { ConductorConfiguracionRoute } = await import('./conductor-configuracion.js');
 
 function makeMe(): MeOnboarded {
   return {
@@ -88,26 +76,22 @@ beforeEach(() => {
   vi.clearAllMocks();
   loadAutoplayPreferenceSpy.mockReturnValue(false);
   queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
-  // Default: el driver no tiene asignaciones activas. Tests específicos
-  // pueden mockear con assignments populados.
-  apiGetSpy.mockResolvedValue({ assignments: [] });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('ConductorModoRoute', () => {
+describe('ConductorConfiguracionRoute', () => {
   it('contexto no onboarded → no renderiza', () => {
     providedContext = { kind: 'unmanaged' };
-    const { container } = render(<ConductorModoRoute />);
+    const { container } = render(<ConductorConfiguracionRoute />);
     expect(container.querySelector('[data-testid="autoplay-card"]')).toBeNull();
   });
 
-  it('contexto onboarded → renderiza las 4 cards', async () => {
+  it('contexto onboarded → renderiza las 4 cards de configuración', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    render(<ConductorModoRoute />);
-    expect(screen.getByTestId('layout')).toHaveAttribute('data-title', 'Modo Conductor');
+    render(<ConductorConfiguracionRoute />);
     expect(screen.getByTestId('autoplay-card')).toBeInTheDocument();
     expect(screen.getByTestId('permissions-card')).toBeInTheDocument();
     expect(screen.getByTestId('voice-commands-card')).toBeInTheDocument();
@@ -115,10 +99,24 @@ describe('ConductorModoRoute', () => {
     await waitFor(() => expect(queryDriverPermissionsSpy).toHaveBeenCalled());
   });
 
+  it('header tiene flecha de vuelta a /app/conductor', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const backLink = screen.getByLabelText(/Volver al panel del conductor/i);
+    expect(backLink).toHaveAttribute('to', '/app/conductor');
+  });
+
+  it('botón "Listo, volver al panel" navega a /app/conductor', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const doneLink = screen.getByText(/Listo, volver al panel/);
+    expect(doneLink).toHaveAttribute('to', '/app/conductor');
+  });
+
   it('autoplay toggle persiste vía saveAutoplayPreference', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     loadAutoplayPreferenceSpy.mockReturnValue(false);
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     const toggle = screen.getByTestId('autoplay-toggle') as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     fireEvent.click(toggle);
@@ -126,10 +124,18 @@ describe('ConductorModoRoute', () => {
     expect(toggle.checked).toBe(true);
   });
 
+  it('autoplay inicial cargado desde localStorage refleja en toggle', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    loadAutoplayPreferenceSpy.mockReturnValue(true);
+    render(<ConductorConfiguracionRoute />);
+    const toggle = screen.getByTestId('autoplay-toggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
+
   it('estado inicial granted muestra pill "Activado" sin botón Permitir', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'granted', geo: 'granted' });
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     await waitFor(() => expect(screen.getByTestId('mic-granted-pill')).toBeInTheDocument());
     expect(screen.getByTestId('geo-granted-pill')).toBeInTheDocument();
     expect(screen.queryByTestId('mic-request-btn')).not.toBeInTheDocument();
@@ -139,7 +145,7 @@ describe('ConductorModoRoute', () => {
   it('estado denied muestra instrucción de habilitar en settings', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'denied', geo: 'denied' });
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     await waitFor(() => expect(screen.getByTestId('mic-denied-help')).toBeInTheDocument());
     expect(screen.getByTestId('geo-denied-help')).toBeInTheDocument();
   });
@@ -148,7 +154,7 @@ describe('ConductorModoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
     requestMicrophonePermissionSpy.mockResolvedValue('granted');
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     await waitFor(() => expect(screen.getByTestId('mic-request-btn')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('mic-request-btn'));
     await waitFor(() => expect(requestMicrophonePermissionSpy).toHaveBeenCalled());
@@ -159,105 +165,29 @@ describe('ConductorModoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
     requestGeolocationPermissionSpy.mockResolvedValue('granted');
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     await waitFor(() => expect(screen.getByTestId('geo-request-btn')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('geo-request-btn'));
     await waitFor(() => expect(requestGeolocationPermissionSpy).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId('geo-granted-pill')).toBeInTheDocument());
   });
 
-  it('muestra los 4 comandos de voz con sus frases', () => {
+  it('muestra los 4 comandos de voz con sus frases canónicas', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     expect(screen.getByTestId('voice-cmd-aceptar_oferta')).toBeInTheDocument();
     expect(screen.getByTestId('voice-cmd-confirmar_entrega')).toBeInTheDocument();
     expect(screen.getByTestId('voice-cmd-marcar_incidente')).toBeInTheDocument();
     expect(screen.getByTestId('voice-cmd-cancelar')).toBeInTheDocument();
-    // Phrase wrapper actually contains the canonical phrase.
     expect(screen.getAllByText(/"aceptar oferta"/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('muestra explainer del flujo en how-it-works card', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    render(<ConductorModoRoute />);
+    render(<ConductorConfiguracionRoute />);
     expect(screen.getByTestId('how-it-works-card')).toBeInTheDocument();
     expect(screen.getByText(/detección de vehículo parado/i)).toBeInTheDocument();
     expect(screen.getByText(/doble confirmación/i)).toBeInTheDocument();
     expect(screen.getByText(/Ley 18\.290/i)).toBeInTheDocument();
-  });
-
-  it('autoplay inicial cargado desde localStorage refleja en toggle', () => {
-    providedContext = { kind: 'onboarded', me: makeMe() };
-    loadAutoplayPreferenceSpy.mockReturnValue(true);
-    render(<ConductorModoRoute />);
-    const toggle = screen.getByTestId('autoplay-toggle') as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
-  });
-
-  describe('GPS reporter — lista de asignaciones (reemplaza pegar UUID)', () => {
-    const sampleAssignment = {
-      id: 'asg-123-456',
-      status: 'asignado',
-      trip: {
-        id: 'trip-1',
-        tracking_code: 'BOO-ABC123',
-        status: 'asignado',
-        origin: { address_raw: 'Av. Pajaritos 1234, Maipú', region_code: 'XIII' },
-        destination: { address_raw: 'Av. Brasil 2345, Valparaíso', region_code: 'V' },
-        cargo_type: 'carga_seca',
-        cargo_weight_kg: 5000,
-        pickup_window_start: null,
-        pickup_window_end: null,
-      },
-      carrier_empresa: { id: 'emp-c', legal_name: 'Transportes Demo Sur S.A.' },
-      vehicle: { id: 'veh-1', plate: 'DEMO01' },
-    };
-
-    it('sin asignaciones activas → muestra estado vacío explicativo', async () => {
-      providedContext = { kind: 'onboarded', me: makeMe() };
-      apiGetSpy.mockResolvedValue({ assignments: [] });
-      render(<ConductorModoRoute />);
-      expect(
-        await screen.findByText(/No tenés asignaciones activas en este momento/),
-      ).toBeInTheDocument();
-    });
-
-    it('con asignaciones → lista con tracking, ruta, carga y vehículo', async () => {
-      providedContext = { kind: 'onboarded', me: makeMe() };
-      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
-      render(<ConductorModoRoute />);
-      expect(await screen.findByText('BOO-ABC123')).toBeInTheDocument();
-      expect(
-        screen.getByText(/Av\. Pajaritos 1234, Maipú → Av\. Brasil 2345, Valparaíso/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/Transportes Demo Sur S\.A\./)).toBeInTheDocument();
-      expect(screen.getByText('DEMO01')).toBeInTheDocument();
-    });
-
-    it('asignación única → se pre-selecciona automáticamente', async () => {
-      providedContext = { kind: 'onboarded', me: makeMe() };
-      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
-      render(<ConductorModoRoute />);
-      const card = await screen.findByTestId(`gps-reporter-assignment-${sampleAssignment.id}`);
-      // El estilo selected aplica clases bg-primary-50.
-      expect(card.className).toMatch(/bg-primary-50/);
-    });
-
-    it('click en una asignación la selecciona', async () => {
-      providedContext = { kind: 'onboarded', me: makeMe() };
-      const second = {
-        ...sampleAssignment,
-        id: 'asg-999',
-        trip: { ...sampleAssignment.trip, tracking_code: 'BOO-XYZ' },
-      };
-      apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment, second] });
-      render(<ConductorModoRoute />);
-      const card2 = await screen.findByTestId('gps-reporter-assignment-asg-999');
-      fireEvent.click(card2);
-      // Ahora la segunda card debería estar resaltada.
-      await waitFor(() => {
-        expect(card2.className).toMatch(/bg-primary-50/);
-      });
-    });
   });
 });

@@ -1054,8 +1054,8 @@ function ActivationPinCard({
               {driverName} fue creado correctamente
             </h2>
             <p className="mt-1 text-neutral-700 text-sm">
-              RUT: <span className="font-mono">{driverRut}</span>. Ahora dale al conductor el PIN de
-              activación de abajo para que pueda ingresar a Booster con su RUT desde{' '}
+              RUT: <span className="font-mono">{driverRut}</span>. Ahora entrégale al conductor el
+              PIN de activación de abajo para que pueda ingresar a Booster con su RUT desde{' '}
               <span className="font-mono">/login/conductor</span>.
             </p>
           </div>

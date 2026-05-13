@@ -118,7 +118,7 @@ function CargaTrackPage() {
           ) : tripQ.isLoading ? null : (
             <div className="text-center text-neutral-600 text-sm">
               Esta carga todavía no tiene transportista asignado. Cuando un carrier acepte la
-              oferta, vas a ver su vehículo acá en tiempo real.
+              oferta, verás su vehículo aquí en tiempo real.
             </div>
           )
         }

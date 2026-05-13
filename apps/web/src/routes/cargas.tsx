@@ -1432,7 +1432,7 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                 {!tripQ.data.metrics.certificate_issued_at &&
                   tripQ.data.trip_request.status === 'entregado' && (
                     <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-900 text-xs sm:col-span-2">
-                      Generando certificado de huella de carbono. Recargá en unos segundos.
+                      Generando certificado de huella de carbono. Recarga en unos segundos.
                     </div>
                   )}
               </div>

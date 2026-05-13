@@ -9,7 +9,7 @@ import { ApiError, api } from '../../lib/api-client.js';
  * Antes de este componente, los assignments se creaban con
  * driver_user_id=NULL y no había forma de setearlo después → el endpoint
  * `/assignments/:id/driver-position` era inalcanzable y la UI
- * /app/conductor/modo exigía pegar el UUID manualmente.
+ * /app/conductor exigía pegar el UUID manualmente.
  *
  * Ahora el carrier (rol dueno/admin/despachador) elige uno de sus
  * conductores activos del dropdown y lo asocia con un click. El backend
@@ -135,13 +135,13 @@ export function DriverAssignmentCard({
 
           {conductoresQ.isError && (
             <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
-              No pudimos cargar la lista de conductores. Recargá la página.
+              No pudimos cargar la lista de conductores. Recarga la página.
             </div>
           )}
 
           {!conductoresQ.isLoading && !conductoresQ.isError && conductoresActivos.length === 0 && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
-              No tenés conductores activos. Creá uno en{' '}
+              No tienes conductores activos. Crea uno en{' '}
               <a href="/app/conductores/nuevo" className="underline">
                 Conductores
               </a>{' '}
@@ -211,7 +211,7 @@ export function DriverAssignmentCard({
 function humanizeAsignarError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === 'forbidden_role') {
-      return 'No tenés permiso para asignar conductores. Pedile a un usuario dueño o admin que lo haga.';
+      return 'No tienes permiso para asignar conductores. Pídele a un usuario dueño o admin que lo haga.';
     }
     if (err.code === 'driver_not_in_carrier') {
       return 'El conductor elegido no pertenece a tu empresa.';

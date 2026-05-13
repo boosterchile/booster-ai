@@ -3,9 +3,11 @@ import { api } from '../lib/api-client.js';
 /**
  * D2 — Cliente del endpoint `POST /assignments/:id/driver-position`.
  *
- * Usado por el hook `useDriverPositionReporter` en el flujo conductor-modo:
- *   - El driver activa "Reporte GPS móvil" en /app/conductor/modo cuando
- *     opera un vehículo SIN Teltonika.
+ * Usado por el hook `useDriverPositionReporter` en el flujo del dashboard
+ * del conductor (`/app/conductor`):
+ *   - El driver toca "Iniciar reporte GPS" en /app/conductor cuando opera
+ *     un vehículo SIN Teltonika (el botón está inline en cada
+ *     assignment card).
  *   - `navigator.geolocation.watchPosition` dispara cada ~10s.
  *   - Cada disparo llama a esta función con la posición.
  *   - El backend persiste en `posiciones_movil_conductor` y los read
