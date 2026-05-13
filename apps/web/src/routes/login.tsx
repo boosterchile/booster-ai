@@ -77,6 +77,16 @@ export function LoginRoute() {
     return <Navigate to="/app" />;
   }
 
+  // demo.boosterchile.com NO debe servir /login — el login real vive en
+  // app.boosterchile.com. Si el user llega acá (típicamente post-logout
+  // desde un surface /app/* en host demo), lo redirigimos al selector
+  // de personas en vez de mostrar el form de login.
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isDemoHost = host === 'demo.boosterchile.com' || host === 'demo.localhost';
+  if (isDemoHost) {
+    return <Navigate to="/demo" />;
+  }
+
   if (useUniversalFlow) {
     return <LoginUniversal />;
   }
