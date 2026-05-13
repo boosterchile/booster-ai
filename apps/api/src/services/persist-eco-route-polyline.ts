@@ -40,11 +40,11 @@ export async function persistEcoRoutePolyline(opts: {
   db: Db;
   logger: Logger;
   assignmentId: string;
-  routesApiKey?: string | undefined;
+  routesProjectId?: string | undefined;
 }): Promise<PersistEcoRoutePolylineResult> {
-  const { db, logger, assignmentId, routesApiKey } = opts;
+  const { db, logger, assignmentId, routesProjectId } = opts;
 
-  if (!routesApiKey) {
+  if (!routesProjectId) {
     return { attempted: false, persisted: false, reason: 'no_routes_api_key' };
   }
 
@@ -71,7 +71,7 @@ export async function persistEcoRoutePolyline(opts: {
   let polylineEncoded: string | null = null;
   try {
     const routes = await computeRoutes({
-      apiKey: routesApiKey,
+      projectId: routesProjectId,
       origin: row.originAddress,
       destination: row.destinationAddress,
       computeAlternatives: false,

@@ -98,7 +98,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result).toEqual({
       attempted: true,
@@ -117,7 +117,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result).toEqual({ attempted: true, persisted: true });
     expect(updateSpy).toHaveBeenCalledTimes(1);
@@ -130,7 +130,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result.reason).toBe('route_empty');
     expect(result.persisted).toBe(false);
@@ -146,7 +146,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result.reason).toBe('route_empty');
     expect(updateSpy).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result.reason).toBe('routes_api_failed');
     expect(result.persisted).toBe(false);
@@ -179,7 +179,7 @@ describe('persistEcoRoutePolyline', () => {
       db,
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
-      routesApiKey: 'fake',
+      routesProjectId: 'test-project',
     });
     expect(result.reason).toBe('routes_api_failed');
     expect(updateSpy).not.toHaveBeenCalled();

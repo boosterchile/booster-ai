@@ -205,7 +205,7 @@ export function createOfferRoutes(opts: {
         logger: opts.logger,
         offerId,
         empresaId: active.empresa.id,
-        routesApiKey: config.GOOGLE_ROUTES_API_KEY,
+        routesProjectId: config.GOOGLE_CLOUD_PROJECT,
       });
       return c.json({
         trip_request_id: preview.tripId,

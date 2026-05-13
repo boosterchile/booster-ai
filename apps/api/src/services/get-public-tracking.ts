@@ -154,13 +154,14 @@ export async function getPublicTracking(opts: {
   logger: Logger;
   token: string;
   /**
-   * Phase 5 PR-L2c — si está presente, calculamos el ETA con Routes API
-   * (distancia real por carretera al destino exacto). Si está ausente
-   * o el call falla, fallback al ETA de centroide regional (PR-L2b).
+   * GCP project ID para X-Goog-User-Project en Routes API (ADR-038).
+   * Si presente, ETA se calcula con distancia real por carretera al
+   * destino exacto. Fallback al ETA de centroide regional (PR-L2b) si
+   * ausente o el call falla.
    */
-  routesApiKey?: string | undefined;
+  routesProjectId?: string | undefined;
 }): Promise<PublicTrackingResult> {
-  const { db, logger, token, routesApiKey } = opts;
+  const { db, logger, token, routesProjectId } = opts;
 
   // Validar formato UUID antes de query — si no parece UUID, no
   // pegamos la DB (defensa contra scanning).
@@ -253,7 +254,7 @@ export async function getPublicTracking(opts: {
   });
 
   // Phase 5 PR-L2c — upgrade a Routes API on-demand. Si trip está activo
-  // y hay posición + avgSpeed + routesApiKey + destinationAddress,
+  // y hay posición + avgSpeed + routesProjectId + destinationAddress,
   // pedimos a Routes API la distancia real por carretera al destino y
   // recalculamos con el avgSpeed del vehículo. Cache de 5min + grid 0.01°
   // evita hammering. Fallback automático al centroide si algo falla.
@@ -267,7 +268,7 @@ export async function getPublicTracking(opts: {
       destinationAddress: row.destAddr,
       avgSpeedKmh: progress.avg_speed_kmh_last_15min,
       fallbackEtaMinutes,
-      routesApiKey,
+      routesProjectId,
     });
     etaMinutes = routeEtaResult.etaMinutes;
     logger.debug(

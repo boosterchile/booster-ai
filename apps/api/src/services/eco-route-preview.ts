@@ -124,9 +124,14 @@ export async function generarEcoPreview(opts: {
   offerId: string;
   /** Empresa del carrier que está pidiendo el preview (validación de ownership). */
   empresaId: string;
-  routesApiKey?: string | undefined;
+  /**
+   * GCP project ID — usado para construir el header X-Goog-User-Project
+   * en el call a Routes API (ADR-038, migración desde API key a ADC).
+   * Si está ausente, skip Routes API y cae a tabla_chile.
+   */
+  routesProjectId?: string | undefined;
 }): Promise<EcoRoutePreview> {
-  const { db, logger, offerId, empresaId, routesApiKey } = opts;
+  const { db, logger, offerId, empresaId, routesProjectId } = opts;
 
   // (1) Cargar offer + trip + vehicle en una sola query con joins.
   const rows = await db
@@ -159,11 +164,11 @@ export async function generarEcoPreview(opts: {
   let dataSource: DataSourcePreview = 'tabla_chile';
   let polylineEncoded: string | null = null;
 
-  if (routesApiKey) {
+  if (routesProjectId) {
     try {
       const emissionType = veh?.fuelType ? mapFuelToEmissionType(veh.fuelType) : undefined;
       const routes = await computeRoutes({
-        apiKey: routesApiKey,
+        projectId: routesProjectId,
         origin: trip.originAddressRaw,
         destination: trip.destinationAddressRaw,
         emissionType,

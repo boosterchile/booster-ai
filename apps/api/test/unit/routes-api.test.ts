@@ -5,6 +5,8 @@ import {
   computeRoutes,
 } from '../../src/services/routes-api.js';
 
+// google-auth-library está mockeada globalmente en test/setup.ts (ADR-038).
+
 /**
  * Tests del cliente Routes API (Phase 1 — eco route suggestion).
  *
@@ -50,7 +52,7 @@ describe('computeRoutes — request body', () => {
     })) as unknown as typeof fetch;
 
     await computeRoutes({
-      apiKey: 'AIzaTest',
+      projectId: 'test-project',
       origin: 'Av. Apoquindo 5400, Las Condes',
       destination: 'Calle 1 Norte 123, Concepción',
       fetchImpl: fetchSpy,
@@ -76,7 +78,7 @@ describe('computeRoutes — request body', () => {
     })) as unknown as typeof fetch;
 
     await computeRoutes({
-      apiKey: 'AIzaTest',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       emissionType: 'DIESEL',
@@ -103,7 +105,7 @@ describe('computeRoutes — request body', () => {
     })) as unknown as typeof fetch;
 
     await computeRoutes({
-      apiKey: 'AIzaTest',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       fetchImpl: fetchSpy,
@@ -126,7 +128,7 @@ describe('computeRoutes — request body', () => {
     })) as unknown as typeof fetch;
 
     await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       computeAlternatives: true,
@@ -152,7 +154,7 @@ describe('computeRoutes — response parsing', () => {
     });
 
     const routes = await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       fetchImpl,
@@ -181,7 +183,7 @@ describe('computeRoutes — response parsing', () => {
     });
 
     const [r] = await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       emissionType: 'DIESEL',
@@ -201,7 +203,7 @@ describe('computeRoutes — response parsing', () => {
     });
 
     const routes = await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       computeAlternatives: true,
@@ -217,7 +219,7 @@ describe('computeRoutes — response parsing', () => {
   it('response sin rutas → [] (no throw)', async () => {
     const fetchImpl = makeFetchOk({}); // sin field "routes"
     const routes = await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       fetchImpl,
@@ -230,7 +232,7 @@ describe('computeRoutes — response parsing', () => {
       routes: [{}], // ruta sin nada
     });
     const [r] = await computeRoutes({
-      apiKey: 'k',
+      projectId: 'test-project',
       origin: 'A',
       destination: 'B',
       fetchImpl,
@@ -249,7 +251,7 @@ describe('computeRoutes — errores HTTP', () => {
     const fetchImpl = makeFetchError(400, 'Origin not parseable');
     await expect(
       computeRoutes({
-        apiKey: 'k',
+        projectId: 'test-project',
         origin: 'invalid',
         destination: 'B',
         fetchImpl,
@@ -265,7 +267,7 @@ describe('computeRoutes — errores HTTP', () => {
     for (const status of [401, 403]) {
       const fetchImpl = makeFetchError(status);
       await expect(
-        computeRoutes({ apiKey: 'wrong', origin: 'A', destination: 'B', fetchImpl }),
+        computeRoutes({ projectId: 'test-project', origin: 'A', destination: 'B', fetchImpl }),
       ).rejects.toMatchObject({ code: 'auth_error', httpStatus: status });
     }
   });
@@ -273,14 +275,14 @@ describe('computeRoutes — errores HTTP', () => {
   it('429 → quota_exceeded', async () => {
     const fetchImpl = makeFetchError(429);
     await expect(
-      computeRoutes({ apiKey: 'k', origin: 'A', destination: 'B', fetchImpl }),
+      computeRoutes({ projectId: 'test-project', origin: 'A', destination: 'B', fetchImpl }),
     ).rejects.toMatchObject({ code: 'quota_exceeded', httpStatus: 429 });
   });
 
   it('500 → unknown', async () => {
     const fetchImpl = makeFetchError(500);
     await expect(
-      computeRoutes({ apiKey: 'k', origin: 'A', destination: 'B', fetchImpl }),
+      computeRoutes({ projectId: 'test-project', origin: 'A', destination: 'B', fetchImpl }),
     ).rejects.toMatchObject({ code: 'unknown', httpStatus: 500 });
   });
 
@@ -290,7 +292,7 @@ describe('computeRoutes — errores HTTP', () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      computeRoutes({ apiKey: 'k', origin: 'A', destination: 'B', fetchImpl }),
+      computeRoutes({ projectId: 'test-project', origin: 'A', destination: 'B', fetchImpl }),
     ).rejects.toMatchObject({
       code: 'network_error',
       httpStatus: null,

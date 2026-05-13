@@ -49,12 +49,12 @@ export function createAssignmentsRoutes(opts: {
   logger: Logger;
   certConfig?: Partial<EmitirCertificadoConfig>;
   /**
-   * Phase 1 PR-H5 — Routes API key opcional. Si está presente, el
-   * endpoint /assignments/:id/eco-route fetches polyline desde Routes
-   * API; si no, devuelve { polyline_encoded: null, status: 'no_routes_api_key' }
-   * sin error (la página del driver sigue funcional sin mapa).
+   * GCP project ID — usado como X-Goog-User-Project en Routes API (ADR-038).
+   * Si está presente, el endpoint /assignments/:id/eco-route fetches polyline
+   * desde Routes API via ADC; si no, devuelve { polyline_encoded: null,
+   * status: 'no_routes_api_key' } sin error.
    */
-  routesApiKey?: string | undefined;
+  routesProjectId?: string | undefined;
 }) {
   const app = new Hono();
 
@@ -268,7 +268,7 @@ export function createAssignmentsRoutes(opts: {
       logger: opts.logger,
       assignmentId,
       empresaId,
-      ...(opts.routesApiKey ? { routesApiKey: opts.routesApiKey } : {}),
+      ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
     });
     if (result.kind === 'not_found') {
       return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);

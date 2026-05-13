@@ -70,9 +70,10 @@ export async function getAssignmentEcoRoute(opts: {
   logger: Logger;
   assignmentId: string;
   empresaId: string;
-  routesApiKey?: string | undefined;
+  /** GCP project ID — header X-Goog-User-Project para Routes API (ADR-038). */
+  routesProjectId?: string | undefined;
 }): Promise<GetAssignmentEcoRouteResult> {
-  const { db, logger, assignmentId, empresaId, routesApiKey } = opts;
+  const { db, logger, assignmentId, empresaId, routesProjectId } = opts;
 
   // Cargar assignment + trip en una query (origin/destination addresses
   // + polyline cacheada PR-H5b).
@@ -114,7 +115,7 @@ export async function getAssignmentEcoRoute(opts: {
     };
   }
 
-  if (!routesApiKey) {
+  if (!routesProjectId) {
     return {
       kind: 'ok',
       data: {
@@ -128,7 +129,7 @@ export async function getAssignmentEcoRoute(opts: {
 
   try {
     const routes = await computeRoutes({
-      apiKey: routesApiKey,
+      projectId: routesProjectId,
       origin: row.originAddress,
       destination: row.destinationAddress,
       computeAlternatives: false,

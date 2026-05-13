@@ -1,3 +1,24 @@
+import { vi } from 'vitest';
+
+// ADR-038: routes-api.ts y gemini-client.ts usan `new GoogleAuth(...)` a
+// nivel de módulo. En CI no hay ADC ni internet — `getAccessToken()` lanza
+// y los tests que indirectamente ejercitan estos clientes fallan. Mock
+// global con `importOriginal` para preservar OAuth2Client/JWT/otros exports
+// usados por otras dependencias (pg auth helpers, firebase-admin, etc.).
+vi.mock('google-auth-library', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('google-auth-library')>();
+  class MockGoogleAuth {
+    async getClient() {
+      return {
+        async getAccessToken() {
+          return { token: 'test-access-token' };
+        },
+      };
+    }
+  }
+  return { ...actual, GoogleAuth: MockGoogleAuth };
+});
+
 // Stub env vars antes que cualquier test importe módulos que evalúan config.
 // El `parseEnv` de packages/config llama process.exit(1) si fallan los Zod
 // schemas — sin estos defaults, vitest aborta el suite con

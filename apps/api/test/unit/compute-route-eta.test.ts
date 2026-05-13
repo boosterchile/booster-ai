@@ -87,7 +87,7 @@ const baseInput = (over: Partial<ComputeRouteEtaInput> = {}): ComputeRouteEtaInp
   destinationAddress: 'Av Ejemplo 123, Concepción',
   avgSpeedKmh: 60,
   fallbackEtaMinutes: 500,
-  routesApiKey: 'fake-key',
+  routesProjectId: 'test-project',
   ...over,
 });
 
@@ -99,7 +99,7 @@ beforeEach(() => {
 describe('computeRouteEta — fallback paths (no Routes API call)', () => {
   it('sin routesApiKey → devuelve fallback con source=centroide', async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
-    const res = await computeRouteEta(baseInput({ routesApiKey: undefined, fetchImpl }));
+    const res = await computeRouteEta(baseInput({ routesProjectId: undefined, fetchImpl }));
     expect(res).toEqual({ etaMinutes: 500, source: 'centroide' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe('computeRouteEta — fallback paths (no Routes API call)', () => {
 
   it('fallback null preservado como unavailable', async () => {
     const res = await computeRouteEta(
-      baseInput({ routesApiKey: undefined, fallbackEtaMinutes: null }),
+      baseInput({ routesProjectId: undefined, fallbackEtaMinutes: null }),
     );
     expect(res).toEqual({ etaMinutes: null, source: 'unavailable' });
   });

@@ -126,7 +126,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key', // present pero NO debe usarse
+      routesProjectId: 'test-project', // present pero NO debe usarse
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -154,7 +154,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -179,7 +179,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -192,7 +192,7 @@ describe('getAssignmentEcoRoute', () => {
     }
     expect(computeRoutes).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKey: 'fake-key',
+        projectId: 'test-project',
         origin: validRow.originAddress,
         destination: validRow.destinationAddress,
         computeAlternatives: false,
@@ -208,7 +208,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -227,7 +227,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -245,7 +245,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -268,7 +268,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
@@ -285,7 +285,7 @@ describe('getAssignmentEcoRoute', () => {
       logger: noopLogger as never,
       assignmentId: ASSIGNMENT_ID,
       empresaId: EMPRESA_ID,
-      routesApiKey: 'fake-key',
+      routesProjectId: 'test-project',
     });
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {

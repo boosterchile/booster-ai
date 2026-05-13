@@ -25,12 +25,12 @@ export function createPublicTrackingRoutes(opts: {
   db: Db;
   logger: Logger;
   /**
-   * Phase 5 PR-L2c — Routes API key opcional. Si presente, el ETA del
-   * tracking público se calcula con distancia por carretera real al
-   * destino exacto (vs centroide regional). Si ausente o el call falla,
-   * fallback transparente al método de PR-L2b.
+   * GCP project ID para X-Goog-User-Project en Routes API (ADR-038).
+   * Si presente, ETA del tracking público se calcula con distancia por
+   * carretera real al destino exacto (vs centroide regional). Fallback
+   * transparente al método de PR-L2b si ausente o si el call falla.
    */
-  routesApiKey?: string | undefined;
+  routesProjectId?: string | undefined;
 }) {
   const app = new Hono();
 
@@ -41,7 +41,7 @@ export function createPublicTrackingRoutes(opts: {
       db: opts.db,
       logger: opts.logger,
       token,
-      ...(opts.routesApiKey ? { routesApiKey: opts.routesApiKey } : {}),
+      ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
     });
 
     if (result.status === 'not_found') {
