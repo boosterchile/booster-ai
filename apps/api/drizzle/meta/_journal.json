@@ -211,6 +211,13 @@
       "when": 1780444800000,
       "tag": "0029_conductor_memberships_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780617600000,
+      "tag": "0032_user_clave_numerica",
+      "breakpoints": true
     }
   ]
 }

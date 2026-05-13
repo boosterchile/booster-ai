@@ -532,6 +532,21 @@ export const users = pgTable(
      * NULL para users que no son conductores o ya activaron.
      */
     activationPinHash: text('activacion_pin_hash'),
+    /**
+     * ADR-035 — Hash scrypt de la clave numérica (6 dígitos) del usuario.
+     * Usado por `/auth/login-rut` (auth universal). Distinto de
+     * `activationPinHash` (que solo aplica al PIN de activación inicial
+     * del conductor y se borra al activarse). La clave numérica persiste
+     * y puede rotarse desde `/perfil/seguridad`.
+     */
+    claveNumericaHash: text('clave_numerica_hash'),
+    /**
+     * ADR-035 — Hash scrypt del OTP de recovery enviado por WhatsApp
+     * cuando el usuario olvidó su clave numérica. Single-use; expira en
+     * 10 minutos vía `recoveryOtpExpiresAt`.
+     */
+    recoveryOtpHash: text('recovery_otp_hash'),
+    recoveryOtpExpiresAt: timestamp('recovery_otp_expires_at', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp('ultimo_login_en', { withTimezone: true }),

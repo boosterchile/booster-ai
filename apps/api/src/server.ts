@@ -17,6 +17,7 @@ import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backt
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
+import { createAuthUniversalRoutes } from './routes/auth-universal.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
@@ -377,6 +378,16 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.route(
       '/auth',
       createDriverAuthRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+    );
+
+    // ADR-035 — Auth universal RUT + clave numérica para todos los roles.
+    // `/auth/login-rut` NO requiere firebase auth previa (es el endpoint
+    // que mint el custom token que el cliente usa para signInWithCustomToken).
+    // Live siempre — el frontend decide cuándo usarlo según
+    // `AUTH_UNIVERSAL_V1_ACTIVATED`. Coexiste con `/auth/driver-activate`.
+    app.route(
+      '/auth',
+      createAuthUniversalRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
     );
 
     // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
