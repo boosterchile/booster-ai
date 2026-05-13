@@ -60,10 +60,14 @@ resource "google_container_cluster" "telemetry_dr" {
   project  = google_project.booster_ai.project_id
   location = var.dr_region
 
-  enable_autopilot    = true
-  deletion_protection = true
+  enable_autopilot = true
+  # ADR-035 step 1: liberado para permitir destroy del cluster en step 2.
+  # El cluster DR se elimina porque hoy NO tiene apps/telemetry-tcp-gateway
+  # desplegado — SLA Wave 3 D4 era teatro. Reactivar cuando exista el
+  # deployment real en us-central1.
+  deletion_protection = false
 
-  network    = google_compute_network.vpc.id
+  network = google_compute_network.vpc.id
   subnetwork = google_compute_subnetwork.dr_private.id
 
   ip_allocation_policy {
