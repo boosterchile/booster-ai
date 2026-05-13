@@ -49,5 +49,8 @@ export * from './trip-request-create.js';
 // Profile update (Slice B.8)
 export * from './profile.js';
 
+// Auth universal RUT + clave numérica (ADR-035 — Wave 4)
+export * from './auth.js';
+
 // AVL IDs catálogo (Wave 2 — Track B1 + B2)
 export * from './avl-ids/index.js';

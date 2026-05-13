@@ -382,6 +382,25 @@ const apiEnvSchema = commonEnvSchema
     MATCHING_ALGORITHM_V2_ACTIVATED: z.coerce.boolean().default(false),
 
     /**
+     * ADR-035 (Wave 4) — Feature flag para activar el flow universal
+     * RUT + clave numérica en `/login`.
+     *
+     * Cuando `false` (default): `/login` muestra el form email/password
+     * legacy. `/auth/login-rut` queda live pero el frontend no lo usa.
+     *
+     * Cuando `true`: `/login` muestra el selector de tipo de usuario +
+     * form RUT+clave. `/login/conductor` redirige a `/login?tipo=conductor`.
+     *
+     * Rollout:
+     *   1. PR 1 (backend foundation, este branch): flag=false default.
+     *      Endpoint vivo, sin uso desde UI.
+     *   2. PR 2 (frontend selector): flag=false default. Smoke staging
+     *      con flag=true. Si OK, flag=true en prod.
+     *   3. PR 3 (migración 30d): forzar rotación al login siguiente.
+     */
+    AUTH_UNIVERSAL_V1_ACTIVATED: z.coerce.boolean().default(false),
+
+    /**
      * ADR-033 §1 — Pesos custom para los componentes del scoring v2.
      * JSON con shape `{ capacidad: number; backhaul: number;
      * reputacion: number; tier: number }`. Suma debe ser ≈ 1.0
