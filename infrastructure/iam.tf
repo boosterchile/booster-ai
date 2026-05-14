@@ -73,6 +73,10 @@ locals {
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
     "roles/logging.logWriter",
+    # Observability dashboard (spec 2026-05-13) — read time series via API.
+    # metricWriter solo permite write; viewer es el read mínimo necesario
+    # para /admin/observability/usage/cloud-run|cloud-sql.
+    "roles/monitoring.viewer",
   ]
 }
 
@@ -95,6 +99,31 @@ resource "google_project_iam_member" "cloud_run_runtime_bindings" {
 # devolvía 500 unhandled error en runtime.
 resource "google_service_account_iam_member" "cloudrun_self_signer" {
   service_account_id = google_service_account.cloud_run_runtime.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
+# Observability dashboard (spec 2026-05-13) — SA dedicada con surface
+# area minimal: solo se usa para impersonar al Workspace admin via DWD
+# y leer seats + licencias. NO se le crea JSON key (cumple org policy
+# `iam.disableServiceAccountKeyCreation`). El runtime SA tiene
+# `serviceAccountTokenCreator` sobre ella, así que puede llamar
+# IAM Credentials `signJwt` para producir el JWT DWD on-the-fly.
+#
+# Pre-condición operativa: autorizar el oauth2ClientId de esta SA en
+# admin.google.com → Security → API Controls → Domain-wide Delegation
+# con los scopes admin.directory.user.readonly + apps.licensing.
+# Runbook: docs/runbooks/2026-05-13-workspace-admin-sdk-setup.md
+resource "google_service_account" "observability_workspace_reader" {
+  account_id   = "observability-workspace-reader"
+  display_name = "Observability Workspace Reader"
+  description  = "Lee seats + licencias Workspace via Admin SDK DWD. Solo-lectura. Usado por /admin/observability/usage. Zero-key (signJwt via IAM Credentials)."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+resource "google_service_account_iam_member" "cloudrun_can_impersonate_workspace_reader" {
+  service_account_id = google_service_account.observability_workspace_reader.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
@@ -142,10 +171,10 @@ resource "google_service_account" "github_deployer" {
 
 locals {
   github_deployer_roles = [
-    "roles/run.admin",                # Deploy a Cloud Run
-    "roles/cloudbuild.builds.editor", # Trigger Cloud Build
+    "roles/run.admin",                 # Deploy a Cloud Run
+    "roles/cloudbuild.builds.editor",  # Trigger Cloud Build
     "roles/cloudbuild.workerPoolUser", # Usar el private worker pool (PR #68)
-    "roles/artifactregistry.writer",  # Push Docker images
+    "roles/artifactregistry.writer",   # Push Docker images
     # roles/iam.serviceAccountUser REMOVIDO del project-level (Trivy IaC
     # AVD-GCP-0008 — too broad; permitia impersonar CUALQUIER SA del proyecto).
     # Reemplazado por google_service_account_iam_member.github_can_impersonate_runtime

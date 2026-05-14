@@ -40,3 +40,4 @@ process.env.FIREBASE_PROJECT_ID ??= 'booster-ai-test';
 process.env.JWT_ISSUER ??= 'booster-ai';
 process.env.API_AUDIENCE ??= 'https://api.test.boosterchile.com';
 process.env.ALLOWED_CALLER_SA ??= 'test-caller@booster-ai-test.iam.gserviceaccount.com';
+process.env.BOOSTER_PLATFORM_ADMIN_EMAILS ??= 'dev@boosterchile.com';

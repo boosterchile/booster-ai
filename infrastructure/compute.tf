@@ -168,6 +168,24 @@ module "service_api" {
     # comparison). Sin esta env var nadie es admin — el código defaultea
     # a array vacío. Era un bug detectado post-stack ADR-033.
     BOOSTER_PLATFORM_ADMIN_EMAILS = var.booster_platform_admin_emails
+
+    # Observability dashboard — spec 2026-05-13. Lee billing_export
+    # (BigQuery), Cloud Monitoring API, Twilio Usage, Google Workspace
+    # Admin SDK. Feature flag para rollback rápido vía terraform var.
+    OBSERVABILITY_DASHBOARD_ACTIVATED  = tostring(var.observability_dashboard_activated)
+    BILLING_EXPORT_TABLE               = var.billing_export_table
+    GOOGLE_WORKSPACE_DOMAIN            = var.google_workspace_domain
+    GOOGLE_WORKSPACE_IMPERSONATE_EMAIL = var.google_workspace_impersonate_email
+    # SA dedicada al reader (cero-key, signJwt via IAM Credentials).
+    # Definida en iam.tf como google_service_account.observability_workspace_reader.
+    GOOGLE_WORKSPACE_READER_SA_EMAIL = google_service_account.observability_workspace_reader.email
+    # Precios USD/seat/mes — Workspace API no los expone, configurados
+    # como vars Terraform. PO actualiza si Google cambia pricing.
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER    = tostring(var.google_workspace_price_per_seat_usd_starter)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STANDARD   = tostring(var.google_workspace_price_per_seat_usd_standard)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_PLUS       = tostring(var.google_workspace_price_per_seat_usd_plus)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_ENTERPRISE = tostring(var.google_workspace_price_per_seat_usd_enterprise)
+    MONTHLY_BUDGET_USD                             = tostring(var.monthly_budget_usd)
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
@@ -200,6 +218,11 @@ module "service_api" {
     # `npx web-push generate-vapid-keys`.
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
+
+    # NOTA observability dashboard: el reader SA usa IAM Credentials
+    # `signJwt` para producir JWTs DWD on-the-fly (cero-key). No hay
+    # secret JSON que montar. El email del reader SA viene de env vars
+    # (no de Secret Manager) porque no es sensible.
 
     # ADR-038: GOOGLE_ROUTES_API_KEY eliminada. apps/api ahora autentica
     # contra Routes API con ADC + header X-Goog-User-Project (el SA del
