@@ -94,6 +94,27 @@ export function createDemoLoginRoutes(opts: { db: Db; firebaseAuth: Auth; logger
       return c.json({ error: 'demo_not_seeded', code: 'demo_not_seeded' }, 503);
     }
 
+    // Persistir los claims en el user record. Los claims en
+    // `createCustomToken(uid, claims)` SOLO viven en el custom token —
+    // cuando Firebase refresca el ID token (cada ~1h) los claims se
+    // pierden porque no están en el user record. Para que el banner
+    // "MODO DEMO" persista entre refreshes hacemos también
+    // `setCustomUserClaims` que los persiste en el user record.
+    try {
+      await opts.firebaseAuth.setCustomUserClaims(userRow.firebaseUid, {
+        is_demo: true,
+        persona,
+      });
+    } catch (err) {
+      // Continuamos — el custom token con claims funcionará para esta
+      // sesión, solo el refresh post-1h perderá el claim. Banner
+      // intermitente es preferible a bloquear el login del demo.
+      opts.logger.warn(
+        { err, persona, firebaseUid: userRow.firebaseUid },
+        'demo/login: setCustomUserClaims falló (banner se perderá tras 1h)',
+      );
+    }
+
     // Mint custom token con claim `is_demo` y `persona`. El claim
     // `is_demo:true` es lo que la PWA usa para mostrar banner persistente
     // y prevenir cualquier acción destructiva en producción.
