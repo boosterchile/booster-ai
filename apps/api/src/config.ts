@@ -479,6 +479,13 @@ const apiEnvSchema = commonEnvSchema
           .map((x) => x.trim().toLowerCase())
           .filter(Boolean),
       ),
+
+    /**
+     * Bucket GCS público para assets editables vía Site Settings Editor
+     * (logos, favicons). Read público (CDN), write restringido al SA del
+     * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
+     */
+    PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
