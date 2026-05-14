@@ -157,6 +157,11 @@ module "service_api" {
     # esta env var + columna es_demo=true en empresas.
     DEMO_MODE_ACTIVATED = tostring(var.demo_mode_activated)
 
+    # ADR-039 — Site Settings Runtime Configuration. Bucket público de
+    # assets editables (logos, favicons) que sube el admin desde
+    # /app/platform-admin/site-settings.
+    PUBLIC_ASSETS_BUCKET = google_storage_bucket.public_assets.name
+
     # Allowlist de operadores Booster que pueden entrar a /admin/* del API
     # y /app/platform-admin/* de la PWA. CSV de emails (lower-cased en
     # comparison). Sin esta env var nadie es admin — el código defaultea
