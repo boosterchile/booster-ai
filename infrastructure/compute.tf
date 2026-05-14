@@ -168,6 +168,20 @@ module "service_api" {
     # comparison). Sin esta env var nadie es admin — el código defaultea
     # a array vacío. Era un bug detectado post-stack ADR-033.
     BOOSTER_PLATFORM_ADMIN_EMAILS = var.booster_platform_admin_emails
+
+    # Observability dashboard — spec 2026-05-13. Lee billing_export
+    # (BigQuery), Cloud Monitoring API, Twilio Usage, Google Workspace
+    # Admin SDK. Feature flag para rollback rápido vía terraform var.
+    OBSERVABILITY_DASHBOARD_ACTIVATED = tostring(var.observability_dashboard_activated)
+    BILLING_EXPORT_TABLE              = var.billing_export_table
+    GOOGLE_WORKSPACE_DOMAIN           = var.google_workspace_domain
+    # Precios USD/seat/mes — Workspace API no los expone, configurados
+    # como vars Terraform. PO actualiza si Google cambia pricing.
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER    = tostring(var.google_workspace_price_per_seat_usd_starter)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STANDARD   = tostring(var.google_workspace_price_per_seat_usd_standard)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_PLUS       = tostring(var.google_workspace_price_per_seat_usd_plus)
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_ENTERPRISE = tostring(var.google_workspace_price_per_seat_usd_enterprise)
+    MONTHLY_BUDGET_USD                             = tostring(var.monthly_budget_usd)
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.

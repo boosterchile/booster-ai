@@ -456,6 +456,59 @@ const apiEnvSchema = commonEnvSchema
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
     /**
+     * Dashboard de observabilidad (`/app/platform-admin/observability`).
+     *
+     * Cuando true: el router `/admin/observability/*` está activo y la UI
+     * muestra la sección en sidebar. Cuando false: endpoints retornan
+     * 503 `feature_disabled` y la UI oculta el link.
+     *
+     * Default: true (decisión PO 2026-05-13). El flag existe para rollback
+     * rápido si algo sale mal post-deploy.
+     */
+    OBSERVABILITY_DASHBOARD_ACTIVATED: booleanFlag(true),
+
+    /**
+     * BigQuery dataset que contiene el billing export.
+     * Formato `{project}.{dataset}.{table_prefix}`. La tabla específica
+     * (`gcp_billing_export_v1_*`) se infiere del billing account id.
+     *
+     * Habilitado 2026-05-13 vía consola Cloud Billing → Export. Datos
+     * empiezan a propagar ~24-48h post-habilitación.
+     */
+    BILLING_EXPORT_TABLE: z
+      .string()
+      .default('booster-ai-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377'),
+
+    /**
+     * Dominio Google Workspace gestionado por Booster. Usado por el
+     * Admin SDK (Domain-Wide Delegation) para listar seats + licenses.
+     *
+     * Vacío → tab "Workspace" del dashboard muestra "no configurado".
+     */
+    GOOGLE_WORKSPACE_DOMAIN: z.string().default(''),
+
+    /**
+     * Precios USD/mes/seat de planes Google Workspace. Google NO expone
+     * estos precios via API; el PO los actualiza vía Terraform var cuando
+     * Google los cambia. El dashboard multiplica seats × precio.
+     *
+     * Defaults a 2026-Q2 list price (Business Starter $6, Standard $12,
+     * Plus $18, Enterprise $30). Ajustar si hay descuento contractual.
+     */
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER: z.coerce.number().default(6),
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STANDARD: z.coerce.number().default(12),
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_PLUS: z.coerce.number().default(18),
+    GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_ENTERPRISE: z.coerce.number().default(30),
+
+    /**
+     * Budget USD/mes contra el cual se compara el spend del mes en curso.
+     * Visible como barra de progreso en el tab Forecast del dashboard.
+     * Default $1000/mes — overrideable via Terraform var.monthly_budget_usd
+     * que ya existe en variables.tf desde ADR-034.
+     */
+    MONTHLY_BUDGET_USD: z.coerce.number().default(1000),
+
+    /**
      * ADR-033 §1 — Pesos custom para los componentes del scoring v2.
      * JSON con shape `{ capacidad: number; backhaul: number;
      * reputacion: number; tier: number }`. Suma debe ser ≈ 1.0

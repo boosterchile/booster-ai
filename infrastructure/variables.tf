@@ -387,3 +387,51 @@ variable "booster_platform_admin_emails" {
   type        = string
   default     = "dev@boosterchile.com"
 }
+
+# ---------------------------------------------------------------------------
+# Observability Dashboard (spec 2026-05-13)
+# ---------------------------------------------------------------------------
+variable "observability_dashboard_activated" {
+  description = "Feature flag para el dashboard de observabilidad /app/platform-admin/observability. Default true."
+  type        = bool
+  default     = true
+}
+
+variable "billing_export_table" {
+  description = "BigQuery table fully qualified que contiene el billing export. La tabla específica gcp_billing_export_v1_* se infiere del billing account id."
+  type        = string
+  default     = "booster-ai-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377"
+}
+
+variable "google_workspace_domain" {
+  description = "Dominio Google Workspace gestionado por Booster (e.g. boosterchile.com). Vacío deshabilita el tab Workspace del dashboard."
+  type        = string
+  default     = "boosterchile.com"
+}
+
+# Precios USD/mes/seat de planes Google Workspace. Google no expone via API;
+# el PO los actualiza cuando Google publica nuevos precios.
+# Source: https://workspace.google.com/pricing (revisar trimestralmente).
+variable "google_workspace_price_per_seat_usd_starter" {
+  description = "USD/mes por seat de Business Starter"
+  type        = number
+  default     = 6
+}
+
+variable "google_workspace_price_per_seat_usd_standard" {
+  description = "USD/mes por seat de Business Standard"
+  type        = number
+  default     = 12
+}
+
+variable "google_workspace_price_per_seat_usd_plus" {
+  description = "USD/mes por seat de Business Plus"
+  type        = number
+  default     = 18
+}
+
+variable "google_workspace_price_per_seat_usd_enterprise" {
+  description = "USD/mes por seat de Enterprise (precio aproximado, custom contracts típico)"
+  type        = number
+  default     = 30
+}
