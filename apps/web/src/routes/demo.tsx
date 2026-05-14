@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { signInDriverWithCustomToken } from '../hooks/use-auth.js';
+import { useSiteSettings } from '../hooks/use-site-settings.js';
 import { getApiUrl } from '../lib/api-url.js';
 
 type Persona = 'shipper' | 'carrier' | 'conductor' | 'stakeholder';
@@ -20,67 +21,20 @@ interface DemoLoginResponse {
   redirect_to: string;
 }
 
-interface PersonaCard {
-  persona: Persona;
-  role: string;
-  entityName: string;
-  Icon: LucideIcon;
-  tagline: string;
-  highlights: readonly string[];
-}
+// Mapeo persona → icono Lucide (no es editable runtime, identidad visual
+// canónica). Las otras propiedades de cada card (role, entity_name,
+// tagline, highlights) sí vienen del site-settings publicado.
+const PERSONA_ICONS: Record<Persona, LucideIcon> = {
+  shipper: Building2,
+  carrier: Truck,
+  conductor: UserRound,
+  stakeholder: BarChart3,
+};
 
-const PERSONAS: readonly PersonaCard[] = [
-  {
-    persona: 'shipper',
-    role: 'Generador de carga',
-    entityName: 'Andina Demo S.A.',
-    Icon: Building2,
-    tagline: 'Publica cargas, ve ofertas y descarga certificados de huella verificada.',
-    highlights: [
-      '2 sucursales activas (Maipú, Quilicura)',
-      'Matching automático con transportistas',
-      'Certificados GLEC v3.0 descargables',
-    ],
-  },
-  {
-    persona: 'carrier',
-    role: 'Transportista',
-    entityName: 'Transportes Demo Sur',
-    Icon: Truck,
-    tagline: 'Acepta cargas, asigna conductor y vehículo, factura sin papeles.',
-    highlights: [
-      '2 vehículos · 1 conductor activo',
-      'Seguimiento en tiempo real vía Teltonika',
-      'Cobra Hoy · pronto pago integrado',
-    ],
-  },
-  {
-    persona: 'conductor',
-    role: 'Conductor profesional',
-    entityName: 'Pedro González',
-    Icon: UserRound,
-    tagline: 'Ve tu próximo viaje, navega con la ruta eco y reporta GPS desde el celular.',
-    highlights: [
-      'Modo Conductor full-screen',
-      'Ruta eco-eficiente sugerida',
-      'GPS móvil cuando no hay Teltonika',
-    ],
-  },
-  {
-    persona: 'stakeholder',
-    role: 'Observatorio sostenibilidad',
-    entityName: 'Observatorio Logístico',
-    Icon: BarChart3,
-    tagline: 'Métricas agregadas por zona logística con k-anonimización ≥ 5.',
-    highlights: [
-      'Zonas: puertos, mercados, polos industriales',
-      'Sin PII, sin empresas individuales',
-      'Metodología pública auditable',
-    ],
-  },
-];
-
-const CERTIFICATIONS = ['GLEC v3.0', 'GHG Protocol', 'ISO 14064', 'k-anonymity ≥ 5'] as const;
+// PERSONAS y CERTIFICATIONS vienen del site-settings publicado (ADR-039).
+// Default hardcoded vive en packages/shared-schemas/src/site-settings.ts
+// (`DEFAULT_SITE_CONFIG`) y se usa como fallback cuando el API no
+// responde — mantener sincronizado con el seed de la migration 0033.
 
 /**
  * /demo — Selector de persona para el subdominio demo.boosterchile.com.
@@ -96,6 +50,7 @@ const CERTIFICATIONS = ['GLEC v3.0', 'GHG Protocol', 'ISO 14064', 'k-anonymity �
  */
 export function DemoRoute() {
   const navigate = useNavigate();
+  const { config } = useSiteSettings();
   const [loadingPersona, setLoadingPersona] = useState<Persona | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -139,9 +94,13 @@ export function DemoRoute() {
       <header className="border-neutral-200 border-b bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-6 py-4">
           <div className="flex items-center gap-3">
-            <img src="/icons/icon.svg" alt="" aria-hidden className="h-9 w-9" />
+            <img
+              src={config.identity.logo_url ?? '/icons/icon.svg'}
+              alt={config.identity.logo_alt}
+              className="h-9 w-9"
+            />
             <span className="font-semibold text-base text-neutral-900 tracking-tight">
-              Booster AI
+              {config.identity.logo_alt}
             </span>
           </div>
           <span className="rounded-full border border-neutral-300 bg-white px-3 py-1 font-medium text-neutral-700 text-xs">
@@ -153,20 +112,17 @@ export function DemoRoute() {
       <main className="mx-auto max-w-6xl px-6 pt-16 pb-12">
         <section className="text-center">
           <h1 className="font-bold text-5xl text-neutral-900 tracking-tight sm:text-6xl">
-            Transporta más,
+            {config.hero.headline_line1}
             <br />
-            <span className="text-primary-600">impacta menos.</span>
+            <span className="text-primary-600">{config.hero.headline_line2}</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-neutral-700 leading-relaxed">
-            Marketplace B2B de logística sostenible para Chile. Conecta generadores de carga con
-            transportistas, optimiza retornos vacíos y certifica huella de carbono bajo GLEC v3.0.
+            {config.hero.subhead}
           </p>
-          <p className="mx-auto mt-4 max-w-xl text-neutral-500 text-sm">
-            Explora la demo desde cualquier rol — un click, sin registro.
-          </p>
+          <p className="mx-auto mt-4 max-w-xl text-neutral-500 text-sm">{config.hero.microcopy}</p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-            {CERTIFICATIONS.map((label) => (
+            {config.certifications.map((label) => (
               <span
                 key={label}
                 className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1 font-medium text-neutral-700 text-xs"
@@ -188,8 +144,9 @@ export function DemoRoute() {
         ) : null}
 
         <section className="mt-12 grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {PERSONAS.map((card) => {
+          {config.persona_cards.map((card) => {
             const isLoading = loadingPersona === card.persona;
+            const Icon = PERSONA_ICONS[card.persona];
             return (
               <article
                 key={card.persona}
@@ -197,7 +154,7 @@ export function DemoRoute() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 text-neutral-700">
-                    <card.Icon className="h-5 w-5" aria-hidden />
+                    <Icon className="h-5 w-5" aria-hidden />
                   </div>
                 </div>
 
@@ -205,7 +162,7 @@ export function DemoRoute() {
                   {card.role}
                 </p>
                 <h2 className="mt-1 font-semibold text-lg text-neutral-900 leading-snug">
-                  {card.entityName}
+                  {card.entity_name}
                 </h2>
 
                 <p className="mt-3 text-neutral-600 text-sm leading-relaxed">{card.tagline}</p>
