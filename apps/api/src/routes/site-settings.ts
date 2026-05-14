@@ -313,7 +313,7 @@ export function createSiteSettingsRoutes(opts: {
       await gcsFile.save(buffer, {
         contentType: mime,
         metadata: {
-          cacheControl: 'public, max-age=3600',
+          cacheControl: 'private, max-age=600',
         },
       });
     } catch (err) {
@@ -321,12 +321,31 @@ export function createSiteSettingsRoutes(opts: {
       return c.json({ error: 'upload_failed' }, 500);
     }
 
-    const url = `https://storage.googleapis.com/${opts.publicAssetsBucket}/${objectName}`;
+    // Signed URL TTL 7 días (max permitido por API v4 GCS). El bucket
+    // public_assets NO tiene allUsers IAM (bloqueado por Org Policy
+    // `iam.allowedPolicyMemberDomains`), entonces servimos via signed
+    // URL en lugar de URL pública directa. El frontend público
+    // /public/site-settings regenera signed URL fresca al servir.
+    let signedUrl: string;
+    try {
+      const [url] = await gcsFile.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      });
+      signedUrl = url;
+    } catch (err) {
+      opts.logger.error({ err, objectName }, 'site-settings signed URL failed');
+      return c.json({ error: 'signed_url_failed' }, 500);
+    }
+
     opts.logger.info(
       { adminEmail: auth.adminEmail, objectName, mime },
       'site-settings asset uploaded',
     );
-    return c.json({ ok: true, url });
+    // Devolver tanto el GCS path (para persistir en BD) como la signed URL
+    // inmediata (para preview en el admin UI).
+    return c.json({ ok: true, url: signedUrl, gcs_path: objectName });
   });
 
   return app;

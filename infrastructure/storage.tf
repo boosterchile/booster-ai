@@ -400,70 +400,17 @@ resource "google_storage_bucket_iam_member" "chat_attachments_runtime" {
   member = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
 
-# =============================================================================
-# Public assets bucket — ADR-039 Site Settings Runtime Configuration
-# =============================================================================
+# ADR-039 — Site Settings Runtime Configuration: write IAM para Site
+# Settings Editor sobre el bucket public_assets ya existente.
 #
-# Bucket público (read CDN-cached) para assets editables desde Site
-# Settings Editor: logos, favicons, imágenes de marca subidas por el
-# platform-admin desde /app/platform-admin/site-settings.
-#
-# Write restringido al SA del Cloud Run api; read público vía
-# storage.googleapis.com (sin signed URLs, máxima cacheabilidad CDN).
-
-resource "google_storage_bucket" "public_assets" {
-  name                        = "booster-ai-public-assets-${var.environment}"
-  project                     = google_project.booster_ai.project_id
-  location                    = "US" # multi-region para edges CDN globales
-  uniform_bucket_level_access = true
-  force_destroy               = false
-
-  cors {
-    origin = [
-      "https://app.${var.domain}",
-      "https://demo.${var.domain}",
-      "https://${var.domain}",
-      "https://www.${var.domain}",
-      "http://localhost:5173",
-    ]
-    method          = ["GET", "HEAD"]
-    response_header = ["Content-Type", "Cache-Control"]
-    max_age_seconds = 3600
-  }
-
-  versioning {
-    enabled = true
-  }
-
-  # Mantener últimas 5 versiones de cada objeto (rollback rápido si un
-  # logo se reemplaza por error).
-  lifecycle_rule {
-    condition {
-      num_newer_versions = 5
-    }
-    action {
-      type = "Delete"
-    }
-  }
-
-  labels = {
-    env        = var.environment
-    managed_by = "terraform"
-    purpose    = "public-assets-site-settings"
-  }
-
-  depends_on = [google_project_service.apis]
-}
-
-# Read público — cualquier visitante puede descargar los assets vía CDN.
-resource "google_storage_bucket_iam_member" "public_assets_public_read" {
-  bucket = google_storage_bucket.public_assets.name
-  role   = "roles/storage.objectViewer"
-  member = "allUsers"
-}
-
-# Write para el Cloud Run runtime SA — usado por POST /admin/site-settings/assets.
-resource "google_storage_bucket_iam_member" "public_assets_runtime_admin" {
+# Nota: el bucket no es realmente "público" (allUsers bloqueado por
+# Org Policy `iam.allowedPolicyMemberDomains` — ver comentario en
+# líneas 296-310). En lugar de URLs públicas permanentes, el endpoint
+# POST /admin/site-settings/assets emite **signed URLs** con TTL 7
+# días, regenerables. El backend persiste el GCS path en BD; el
+# endpoint público GET /public/site-settings regenera signed URL
+# fresca cada vez antes de devolver.
+resource "google_storage_bucket_iam_member" "public_assets_site_settings_runtime" {
   bucket = google_storage_bucket.public_assets.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
