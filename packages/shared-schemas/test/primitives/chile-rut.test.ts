@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatRutForDisplay, normalizeRut, rutSchema } from '../../src/primitives/chile.js';
+import {
+  ensureRutHasDash,
+  formatRutForDisplay,
+  normalizeRut,
+  rutSchema,
+} from '../../src/primitives/chile.js';
 
 describe('normalizeRut', () => {
   it('quita puntos manteniendo el guión', () => {
@@ -52,5 +57,49 @@ describe('rutSchema transform', () => {
 
   it('formato inválido → throw', () => {
     expect(() => rutSchema.parse('no-es-rut')).toThrow();
+  });
+});
+
+describe('ensureRutHasDash', () => {
+  it('input sin guión (solo dígitos) → inserta guión antes del último', () => {
+    expect(ensureRutHasDash('111111111')).toBe('11111111-1');
+  });
+
+  it('input sin guión con K → inserta guión, uppercase', () => {
+    expect(ensureRutHasDash('12345670k')).toBe('12345670-K');
+  });
+
+  it('input ya con guión → no toca (sin puntos)', () => {
+    expect(ensureRutHasDash('11111111-1')).toBe('11111111-1');
+  });
+
+  it('input con puntos y guión → quita puntos', () => {
+    expect(ensureRutHasDash('11.111.111-1')).toBe('11111111-1');
+  });
+
+  it('input con puntos pero sin guión (solo dígitos) → quita puntos + inserta guión', () => {
+    expect(ensureRutHasDash('11.111.111.1')).toBe('11111111-1');
+  });
+
+  it('input demasiado corto → devuelve sin tocar (rutSchema rechazará luego)', () => {
+    expect(ensureRutHasDash('123')).toBe('123');
+  });
+
+  it('input vacío → vacío', () => {
+    expect(ensureRutHasDash('')).toBe('');
+  });
+
+  it('input con espacios → trim y formatea', () => {
+    expect(ensureRutHasDash('  111111111  ')).toBe('11111111-1');
+  });
+
+  it('idempotente (aplicar dos veces no cambia)', () => {
+    const once = ensureRutHasDash('111111111');
+    expect(ensureRutHasDash(once)).toBe(once);
+  });
+
+  it('integración con rutSchema: input sin guión + ensureRutHasDash pasa validación', () => {
+    const normalized = ensureRutHasDash('111111111');
+    expect(rutSchema.parse(normalized)).toBe('11111111-1');
   });
 });

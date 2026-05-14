@@ -1,4 +1,4 @@
-import { rutSchema } from '@booster-ai/shared-schemas';
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { useNavigate } from '@tanstack/react-router';
 import { Headphones } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -47,7 +47,11 @@ export function LoginConductorRoute() {
     setRutError(null);
     setSubmitError(null);
 
-    const rutParsed = rutSchema.safeParse(rut);
+    // Pre-procesar: si el user tipeó solo dígitos (móvil con teclado
+    // numérico bloquea `-`), insertar guión automáticamente antes del
+    // dígito verificador. Idempotente.
+    const rutWithDash = ensureRutHasDash(rut);
+    const rutParsed = rutSchema.safeParse(rutWithDash);
     if (!rutParsed.success) {
       setRutError(rutParsed.error.issues[0]?.message ?? 'RUT inválido');
       return;

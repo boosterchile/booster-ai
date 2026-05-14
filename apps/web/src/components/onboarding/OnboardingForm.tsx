@@ -1,6 +1,7 @@
 import {
   type EmpresaOnboardingInput,
   empresaOnboardingInputSchema,
+  ensureRutHasDash,
 } from '@booster-ai/shared-schemas';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
@@ -133,7 +134,28 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
     trigger,
     control,
     watch,
+    setValue,
+    getValues,
   } = methods;
+
+  /**
+   * Auto-formato RUT al blur: si el user tipeó solo dígitos (teclado
+   * móvil suele venir sin `-`), insertar guión antes del dígito
+   * verificador. Idempotente para inputs ya bien formateados. Esto
+   * corre ANTES de que el zodResolver valide en `mode: onBlur`.
+   */
+  function normalizeRutFieldOnBlur(field: 'user.rut' | 'empresa.rut') {
+    return () => {
+      const current = getValues(field);
+      if (typeof current !== 'string') {
+        return;
+      }
+      const normalized = ensureRutHasDash(current);
+      if (normalized !== current) {
+        setValue(field, normalized, { shouldValidate: true, shouldDirty: true });
+      }
+    };
+  }
 
   async function nextStep() {
     const fieldsToValidate: ReadonlyArray<Parameters<typeof trigger>[0]> = (() => {
@@ -173,8 +195,19 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
   }
 
   async function onSubmit(values: EmpresaOnboardingInput) {
+    // Pre-procesar RUTs: si user tipeó solo dígitos (teclado móvil),
+    // insertar guión automáticamente antes del dígito verificador.
+    // Idempotente para inputs ya bien formateados. user.rut es opcional.
+    const normalized: EmpresaOnboardingInput = {
+      ...values,
+      user: {
+        ...values.user,
+        rut: values.user.rut ? ensureRutHasDash(values.user.rut) : values.user.rut,
+      },
+      empresa: { ...values.empresa, rut: ensureRutHasDash(values.empresa.rut) },
+    };
     try {
-      await mutation.mutateAsync(values);
+      await mutation.mutateAsync(normalized);
       void navigate({ to: '/app' });
     } catch {
       // mutation.error ya tiene el ApiError; el render lo muestra abajo.
@@ -246,13 +279,13 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             />
             <FormField
               label="RUT (opcional)"
-              hint="Tu RUT personal sin puntos. Ejemplo: 12345678-5. No lo usamos para facturar."
+              hint="Tu RUT personal. Acepta con o sin puntos y con o sin guión (123456785 también funciona)."
               error={errors.user?.rut?.message}
               render={({ id, describedBy }) => (
                 <input
                   id={id}
                   aria-describedby={describedBy}
-                  {...register('user.rut')}
+                  {...register('user.rut', { onBlur: normalizeRutFieldOnBlur('user.rut') })}
                   autoComplete="off"
                   placeholder="12345678-5"
                   inputMode="text"
@@ -285,13 +318,13 @@ export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormPr
             />
             <FormField
               label="RUT empresa"
-              hint="Sin puntos, con guión. Ejemplo: 76123456-0"
+              hint="RUT de tu empresa. Acepta con o sin puntos y con o sin guión (761234560 también funciona)."
               error={errors.empresa?.rut?.message}
               render={({ id, describedBy }) => (
                 <input
                   id={id}
                   aria-describedby={describedBy}
-                  {...register('empresa.rut')}
+                  {...register('empresa.rut', { onBlur: normalizeRutFieldOnBlur('empresa.rut') })}
                   autoComplete="off"
                   placeholder="76123456-0"
                   inputMode="text"
