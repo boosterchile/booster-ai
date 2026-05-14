@@ -17,8 +17,16 @@ import { TrendChart } from './TrendChart.js';
  *   - Trend chart 30d
  *   - DonutChart by-service
  *   - BarChart by-project
+ *   - Histórico mensual + link a facturas oficiales
  *   - Tabla top SKUs
  */
+
+// Billing account ID público de Booster (no es secreto). Si cambia,
+// actualizar aquí + en compute.tf si llega a env var. Validado en
+// gcloud billing projects describe booster-ai-494222.
+const BOOSTER_BILLING_ACCOUNT_ID = '019461-C73CDE-DCE377';
+const INVOICES_URL = `https://console.cloud.google.com/billing/${BOOSTER_BILLING_ACCOUNT_ID}/invoices`;
+
 export function CostosTab() {
   const overview = useObservabilityCostsOverview();
   const byService = useObservabilityCostsByService(30);
@@ -160,14 +168,17 @@ export function CostosTab() {
           <div>
             <h3 className="font-medium text-neutral-900 text-sm">Histórico mensual</h3>
             <p className="mt-0.5 text-neutral-500 text-xs">
-              Últimos 12 meses (mes actual = MTD, no cerrado). Fuente: BigQuery billing_export.
+              Últimos 12 meses (mes actual = MTD, no cerrado). Fuente: BigQuery billing_export (uso
+              GCP, granular por servicio). Para PDFs oficiales y montos finales con créditos/ajustes
+              aplicados, ver el link →
             </p>
           </div>
           <a
-            href="https://console.cloud.google.com/billing"
+            href={INVOICES_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary-700 text-xs hover:underline"
+            title="Facturas oficiales emitidas por Google. Esta tabla muestra gasto del billing_export (puede diferir levemente por créditos/ajustes que solo aparecen en la factura)."
           >
             Ver facturas oficiales en Cloud Console →
           </a>
