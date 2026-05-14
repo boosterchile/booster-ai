@@ -1,4 +1,9 @@
-import { type ProfileUpdateInput, chileanPhoneSchema, rutSchema } from '@booster-ai/shared-schemas';
+import {
+  type ProfileUpdateInput,
+  chileanPhoneSchema,
+  ensureRutHasDash,
+  rutSchema,
+} from '@booster-ai/shared-schemas';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Save } from 'lucide-react';
 import { useState } from 'react';
@@ -51,7 +56,9 @@ const profileFormSchema = z.object({
       (v) => v === '' || chileanPhoneSchema.safeParse(v).success,
       'Número de teléfono Chile inválido',
     ),
-  rut: z.string().refine((v) => v === '' || rutSchema.safeParse(v).success, 'RUT inválido'),
+  rut: z
+    .string()
+    .refine((v) => v === '' || rutSchema.safeParse(ensureRutHasDash(v)).success, 'RUT inválido'),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -108,7 +115,9 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       }
     }
     if (dirtyFields.rut && values.rut !== '' && initial.rut === null) {
-      const parsed = rutSchema.safeParse(values.rut);
+      // ensureRutHasDash: si user tipeó solo dígitos (teclado móvil),
+      // insertar guión antes del DV. Idempotente para input correcto.
+      const parsed = rutSchema.safeParse(ensureRutHasDash(values.rut));
       if (parsed.success) {
         patch.rut = parsed.data;
       }
