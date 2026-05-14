@@ -1,3 +1,4 @@
+import type { SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
   bigserial,
@@ -2067,6 +2068,26 @@ export const matchingBacktestRuns = pgTable(
 );
 
 // =============================================================================
+// ADR-039 — Site Settings Runtime Configuration
+// =============================================================================
+//
+// Tabla `configuracion_sitio` para editar marca + copy desde admin UI
+// sin redeploy. Versionada (cada publish crea fila nueva) y singleton
+// sobre publicada=true (index unique parcial). Cualquiera puede leer la
+// versión publicada vía GET /public/site-settings (cache 5min); solo
+// platform-admin puede crear drafts y publicar.
+
+export const configuracionSitio = pgTable('configuracion_sitio', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  version: integer('version').notNull(),
+  config: jsonb('config').notNull().$type<SiteConfig>(),
+  publicada: boolean('publicada').notNull().default(false),
+  notaPublicacion: text('nota_publicacion'),
+  creadoPorEmail: text('creado_por_email').notNull(),
+  creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2133,3 +2154,6 @@ export type NewAdelantoCarrierRow = typeof adelantosCarrier.$inferInsert;
 
 export type MatchingBacktestRunRow = typeof matchingBacktestRuns.$inferSelect;
 export type NewMatchingBacktestRunRow = typeof matchingBacktestRuns.$inferInsert;
+
+export type ConfiguracionSitioRow = typeof configuracionSitio.$inferSelect;
+export type NewConfiguracionSitioRow = typeof configuracionSitio.$inferInsert;

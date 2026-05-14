@@ -55,3 +55,6 @@ export * from './auth.js';
 
 // AVL IDs catálogo (Wave 2 — Track B1 + B2)
 export * from './avl-ids/index.js';
+
+// Site Settings — configuración runtime editable de marca y copy (ADR-039)
+export * from './site-settings.js';
