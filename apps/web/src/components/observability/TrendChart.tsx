@@ -33,10 +33,15 @@ export function TrendChart({
     );
   }
 
+  // NOTA: Tremor LineChart consume `className` para su wrapper interno; si
+  // pasamos `h-[280px]` como template string, Tailwind 4 no detecta la clase
+  // arbitrary y el wrapper queda con height: 0 (chart invisible). Usamos
+  // `h-full` (clase estándar siempre emitida) y forzamos la altura del
+  // parent vía style inline.
   return (
-    <div style={{ height }}>
+    <div style={{ height, width: '100%' }}>
       <LineChart
-        className={`h-[${height}px]`}
+        className="h-full w-full"
         data={data}
         index="date"
         categories={[categoryLabel]}

@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
 /**
+ * Observability dashboard (spec 2026-05-13) — @tremor/react construye
+ * clases Tailwind dinámicamente (template strings `fill-${color}-${shade}`,
+ * `bg-${color}-${shade}`, etc.) dentro de su `dist/lib/utils.js`. Tailwind 4
+ * NO puede detectar estas clases vía @source porque no existen como literales
+ * en el código fuente.
+ *
+ * Solución: safelist explícita con brace expansion. Cubre los 6 colores que
+ * usamos en el dashboard observability + neutrals (Tremor también los usa
+ * para axes, gridlines, labels) en las shades estándar. ~1300 clases extra
+ * en el bundle final — aceptable para un admin-only route raramente visitado.
+ */
+@source inline("{hover:,focus:,data-[selected]:,dark:,}{bg,text,border,fill,stroke,ring}-{emerald,red,amber,cyan,indigo,rose,fuchsia,violet,sky,gray,slate,zinc}-{50,100,200,300,400,500,600,700,800,900}");
+
+/**
  * Tema de Booster AI — Tailwind 4 CSS-first config.
  *
  * Espejo de los tokens en @booster-ai/ui-tokens. Si modificas algo aquí,
