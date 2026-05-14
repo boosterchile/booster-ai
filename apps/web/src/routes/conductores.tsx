@@ -1,4 +1,4 @@
-import { rutSchema } from '@booster-ai/shared-schemas';
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import {
@@ -482,14 +482,18 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   useScrollToFirstError(errors, submitCount);
 
   function onSubmit(values: NewConductorForm) {
-    const rutResult = rutSchema.safeParse(values.rut);
+    // ensureRutHasDash: si el operador tipea solo dígitos (teclado
+    // móvil bloquea `-`), normalizar antes de validar. Persistir el
+    // canónico en el mutate.
+    const rutWithDash = ensureRutHasDash(values.rut);
+    const rutResult = rutSchema.safeParse(rutWithDash);
     if (!rutResult.success) {
       const message = rutResult.error.issues[0]?.message ?? 'RUT inválido';
       setFieldError('rut', { type: 'manual', message });
       return;
     }
     setError(null);
-    createM.mutate(values);
+    createM.mutate({ ...values, rut: rutResult.data });
   }
 
   if (activationResult) {
