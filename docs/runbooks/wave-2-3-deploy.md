@@ -392,18 +392,40 @@ Solo después de:
 - [ ] G3.4 listo (failover test PASS, ver §6.2).
 - [ ] Wave 2 estable >7 días en producción sin alertas P0/P1 críticas.
 
-Por device:
+> **⚠️ Pre-step obligatorio aprendido del incidente 2026-05-11** (ver ADR-033): el firmware FMC150 `04.01.00.Rev.08` no tiene `ISRG Root X1` (CA root Let's Encrypt) en su trust store. Sin pre-cargar la CA, el handshake TLS falla silenciosamente y el device queda sin telemetría hasta rollback manual.
+
+Por device, **en este orden estricto**:
+
+**Paso 0 — Cargar CA root (una sola vez por device)**:
+1. Obtener `ISRG Root X1` PEM: `curl -sS -o /tmp/isrgrootx1.pem https://letsencrypt.org/certs/isrgrootx1.pem`
+2. FOTA WEB → tarea **"Cargar certificado TLS de usuario"** con `isrgrootx1.pem` (cancelar warning FMx — verificado funcional en prod 2026-05-12).
+3. Esperar status **Completado** en FOTA (depende de ventana de polling RMS del device).
+
+**Paso 1 — Push cfg Wave 3**:
 1. Update cfg con:
    - **Server Mode (primary)**: TLS, Domain `telemetry-tls.boosterchile.com`,
      Port 5061.
    - **Server Mode (backup)**: Backup, Domain
      `telemetry-dr.boosterchile.com`, Port 5061, TLS Enable.
-2. Push.
+2. FOTA WEB → tarea **"Configuración de la carga"** con `FMC150_Booster_Wave3.cfg`.
 3. Verificar conexión TLS via logs del gateway:
    ```bash
    kubectl logs -n telemetry deployment/telemetry-tcp-gateway \
      --tail=100 --context=booster-primary | grep "handshake IMEI completado"
    ```
+4. Validar puerto local (5061 = TLS, 5027 = plain):
+   ```bash
+   kubectl exec -n telemetry <pod> -- sh -c 'cat /proc/net/tcp6 | awk "NR>1 && \$4==\"01\" {print \$2}"'
+   # 0x13C5 = 5061 TLS ← esperado
+   ```
+
+**Rollback remoto si handshake falla** (sin acceso físico):
+
+SMS-MT vía operador SIM con sintaxis (2 espacios prefijo críticos):
+```
+  setparam 2020:0;2004:telemetry.boosterchile.com;2005:5027
+```
+ETA rollback: ~30s post-Delivered. Probado 2026-05-11.
 
 ---
 
