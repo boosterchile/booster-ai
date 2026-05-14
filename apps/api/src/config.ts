@@ -497,12 +497,12 @@ const apiEnvSchema = commonEnvSchema
     GOOGLE_WORKSPACE_IMPERSONATE_EMAIL: z.string().default(''),
 
     /**
-     * Contenido JSON del SA key de `observability-workspace-reader`.
-     * En Cloud Run viene del secret `google-workspace-admin-credentials`
-     * inyectado como env var (mismo patrón que TWILIO_*). En dev local
-     * puede dejarse vacío y el adapter degrada a `available: false`.
+     * Email completo del SA dedicado al Workspace reader. El SA del
+     * Cloud Run impersona esta SA via IAM Credentials `signJwt` (zero-
+     * key, cumple `iam.disableServiceAccountKeyCreation` org policy).
+     * Default vacío → adapter no se carga, UI degrada a "available=false".
      */
-    GOOGLE_WORKSPACE_CREDENTIALS_JSON: z.string().default(''),
+    GOOGLE_WORKSPACE_READER_SA_EMAIL: z.string().default(''),
 
     /**
      * Precios USD/mes/seat de planes Google Workspace. Google NO expone

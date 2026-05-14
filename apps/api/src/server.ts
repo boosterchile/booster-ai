@@ -427,7 +427,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         ...(config.TWILIO_AUTH_TOKEN ? { twilioAuthToken: config.TWILIO_AUTH_TOKEN } : {}),
         workspaceDomain: config.GOOGLE_WORKSPACE_DOMAIN,
         workspaceImpersonateEmail: config.GOOGLE_WORKSPACE_IMPERSONATE_EMAIL,
-        workspaceCredentialsJson: config.GOOGLE_WORKSPACE_CREDENTIALS_JSON,
+        workspaceReaderSaEmail: config.GOOGLE_WORKSPACE_READER_SA_EMAIL,
         workspacePriceMap: {
           starter: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER,
           standard: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STANDARD,

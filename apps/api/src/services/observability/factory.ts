@@ -33,8 +33,8 @@ export interface ObservabilityFactoryConfig {
   twilioAuthToken?: string;
   workspaceDomain: string;
   workspaceImpersonateEmail: string;
-  /** Contenido JSON crudo del SA key. Vacío = adapter no se carga. */
-  workspaceCredentialsJson: string;
+  /** Email del SA dedicado (DWD). Vacío = adapter no se carga. */
+  workspaceReaderSaEmail: string;
   workspacePriceMap: {
     starter: number;
     standard: number;
@@ -133,40 +133,25 @@ function tryLoadWorkspaceAdmin(
   config: ObservabilityFactoryConfig,
   logger: Logger,
 ): ReturnType<typeof createWorkspaceAdminClientGoogleapis> | null {
-  const trimmedJson = config.workspaceCredentialsJson.trim();
   if (
     !config.workspaceDomain ||
     !config.workspaceImpersonateEmail ||
-    !trimmedJson ||
-    trimmedJson.startsWith('ROTATE_ME_')
+    !config.workspaceReaderSaEmail
   ) {
     logger.info(
       {
         hasDomain: !!config.workspaceDomain,
         hasImpersonate: !!config.workspaceImpersonateEmail,
-        hasCredsJson: !!trimmedJson && !trimmedJson.startsWith('ROTATE_ME_'),
+        hasReaderSa: !!config.workspaceReaderSaEmail,
       },
       'observability: workspace admin SDK config incompleta — graceful degradation',
     );
     return null;
   }
 
-  try {
-    const key = JSON.parse(trimmedJson) as { client_email: string; private_key: string };
-    if (!key.client_email || !key.private_key) {
-      logger.warn('observability: workspace credentials missing client_email/private_key');
-      return null;
-    }
-    return createWorkspaceAdminClientGoogleapis({
-      serviceAccountKey: key,
-      impersonateEmail: config.workspaceImpersonateEmail,
-      logger,
-    });
-  } catch (err) {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      'observability: failed to parse workspace credentials JSON — graceful degradation',
-    );
-    return null;
-  }
+  return createWorkspaceAdminClientGoogleapis({
+    readerSaEmail: config.workspaceReaderSaEmail,
+    impersonateEmail: config.workspaceImpersonateEmail,
+    logger,
+  });
 }

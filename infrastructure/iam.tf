@@ -103,6 +103,31 @@ resource "google_service_account_iam_member" "cloudrun_self_signer" {
   member             = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
 
+# Observability dashboard (spec 2026-05-13) — SA dedicada con surface
+# area minimal: solo se usa para impersonar al Workspace admin via DWD
+# y leer seats + licencias. NO se le crea JSON key (cumple org policy
+# `iam.disableServiceAccountKeyCreation`). El runtime SA tiene
+# `serviceAccountTokenCreator` sobre ella, así que puede llamar
+# IAM Credentials `signJwt` para producir el JWT DWD on-the-fly.
+#
+# Pre-condición operativa: autorizar el oauth2ClientId de esta SA en
+# admin.google.com → Security → API Controls → Domain-wide Delegation
+# con los scopes admin.directory.user.readonly + apps.licensing.
+# Runbook: docs/runbooks/2026-05-13-workspace-admin-sdk-setup.md
+resource "google_service_account" "observability_workspace_reader" {
+  account_id   = "observability-workspace-reader"
+  display_name = "Observability Workspace Reader"
+  description  = "Lee seats + licencias Workspace via Admin SDK DWD. Solo-lectura. Usado por /admin/observability/usage. Zero-key (signJwt via IAM Credentials)."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+resource "google_service_account_iam_member" "cloudrun_can_impersonate_workspace_reader" {
+  service_account_id = google_service_account.observability_workspace_reader.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # Custom role mínimo para que el SA Cloud Run pueda crear/borrar
 # subscriptions efímeras del chat SSE (P3.b). Los roles standard
 # pubsub.publisher/pubsub.subscriber NO incluyen subscriptions.create

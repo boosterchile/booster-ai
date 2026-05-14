@@ -243,12 +243,13 @@ locals {
     "webpush-vapid-public-key",
     "webpush-vapid-private-key",
 
-    # Observability dashboard (spec 2026-05-13) — Service Account JSON key
-    # de `observability-workspace-reader` para llamar Admin SDK con
-    # Domain-Wide Delegation. Cargar con:
-    #   gcloud secrets versions add google-workspace-admin-credentials --data-file=key.json
-    # Runbook: docs/runbooks/2026-05-13-workspace-admin-sdk-setup.md
-    "google-workspace-admin-credentials",
+    # NOTA: spec 2026-05-13 observability dashboard usaba originalmente un
+    # secret `google-workspace-admin-credentials` con el JSON key del SA
+    # `observability-workspace-reader`. Refactor: cumple org policy
+    # `iam.disableServiceAccountKeyCreation` reemplazando JSON key por
+    # IAM Credentials `signJwt` con impersonación (zero-key). El SA
+    # `observability-workspace-reader` se crea en iam.tf y el runtime SA
+    # tiene `roles/iam.serviceAccountTokenCreator` sobre ella.
 
     # NOTA: google-routes-api-key eliminada en ADR-038 — el backend ahora
     # autentica contra Routes API con ADC + header X-Goog-User-Project (SA
