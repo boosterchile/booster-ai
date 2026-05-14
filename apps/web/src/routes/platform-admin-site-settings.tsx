@@ -7,19 +7,18 @@ import {
   History,
   Image as ImageIcon,
   Loader2,
+  LogOut,
   Palette,
   Save,
+  ShieldCheck,
   Type,
   Upload,
 } from 'lucide-react';
-import { type FormEvent, useEffect, useId, useState } from 'react';
-import { Layout } from '../components/Layout.js';
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import type { MeResponse } from '../hooks/use-me.js';
+import { signOutUser } from '../hooks/use-auth.js';
 import { getApiUrl } from '../lib/api-url.js';
 import { firebaseAuth } from '../lib/firebase.js';
-
-type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 interface PublishedRow {
   id: string;
@@ -52,16 +51,13 @@ interface AdminSiteSettingsResponse {
  * `DEFAULT_SITE_CONFIG`.
  */
 export function PlatformAdminSiteSettingsRoute() {
-  return (
-    <ProtectedRoute meRequirement="require-onboarded">
-      {(ctx) => {
-        if (ctx.kind !== 'onboarded') {
-          return null;
-        }
-        return <Page me={ctx.me} />;
-      }}
-    </ProtectedRoute>
-  );
+  // meRequirement="skip" — el auth platform-admin se valida en el
+  // backend vía BOOSTER_PLATFORM_ADMIN_EMAILS allowlist. No usamos
+  // require-onboarded porque ese flow aplica surface guard por rol
+  // (active_membership): si el user actual está logueado como
+  // conductor/stakeholder, lo redirige al surface de su rol antes de
+  // renderizar este admin. Mismo patrón que PlatformAdminMatchingRoute.
+  return <ProtectedRoute meRequirement="skip">{() => <Page />}</ProtectedRoute>;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -76,7 +72,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
-function Page({ me }: { me: MeOnboarded }) {
+function Page() {
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [config, setConfig] = useState<SiteConfig>(DEFAULT_SITE_CONFIG);
@@ -282,19 +278,23 @@ function Page({ me }: { me: MeOnboarded }) {
     return <Navigate to="/app" />;
   }
 
+  async function handleSignOut() {
+    await signOutUser();
+  }
+
   if (loading) {
     return (
-      <Layout me={me} title="Configuración del sitio">
+      <AdminShell onSignOut={handleSignOut}>
         <div className="flex min-h-[400px] items-center justify-center text-neutral-500">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
           Cargando configuración…
         </div>
-      </Layout>
+      </AdminShell>
     );
   }
 
   return (
-    <Layout me={me} title="Configuración del sitio">
+    <AdminShell onSignOut={handleSignOut}>
       <div className="flex items-center justify-between gap-3">
         <Link
           to="/app/platform-admin"
@@ -396,7 +396,7 @@ function Page({ me }: { me: MeOnboarded }) {
       </form>
 
       <HistorySection history={history} onRollback={handleRollback} submitting={submitting} />
-    </Layout>
+    </AdminShell>
   );
 }
 
@@ -776,5 +776,56 @@ function HistorySection({
         </tbody>
       </table>
     </section>
+  );
+}
+
+/**
+ * Shell minimalista de la surface admin platform-wide. Replica el patrón
+ * usado por PlatformAdminMatching: no usa `<Layout>` (que requiere `me`
+ * onboardeado) porque la auth platform-admin se valida solo por
+ * Firebase + email allowlist en el backend, independiente del rol
+ * o empresa del user actual.
+ */
+function AdminShell({
+  children,
+  onSignOut,
+}: {
+  children: ReactNode;
+  onSignOut: () => void | Promise<void>;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col bg-neutral-50">
+      <header className="border-neutral-200 border-b bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary-100 text-primary-700">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-neutral-900">Site Settings Editor</div>
+              <div className="text-neutral-500 text-xs">Editar marca y copy del demo · ADR-039</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/app/platform-admin"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Volver a Platform Admin
+            </Link>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
+            >
+              <LogOut className="h-4 w-4" aria-hidden />
+              Salir
+            </button>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">{children}</main>
+    </div>
   );
 }
