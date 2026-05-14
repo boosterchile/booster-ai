@@ -54,9 +54,20 @@ export function CostosTab() {
             )
           }
           description={
-            overview.data
-              ? `Mes anterior: $${overview.data.costClpPreviousMonth.toLocaleString('es-CL')} CLP`
-              : null
+            overview.data ? (
+              <>
+                <div>
+                  vs mismo periodo mes anterior:{' '}
+                  <strong>
+                    ${overview.data.costClpPreviousMonthSamePeriod.toLocaleString('es-CL')} CLP
+                  </strong>
+                </div>
+                <div className="mt-0.5 text-neutral-400">
+                  Mes anterior completo: $
+                  {overview.data.costClpPreviousMonth.toLocaleString('es-CL')} CLP
+                </div>
+              </>
+            ) : null
           }
           status="neutral"
         />

@@ -74,45 +74,59 @@ describe('CostsService', () => {
     vi.clearAllMocks();
   });
 
-  it('getOverview: calcula MTD + previous month + delta% (CLP nativo)', async () => {
+  it('getOverview: delta apples-to-apples vs mismo periodo mes anterior', async () => {
+    // Fila única: [thisMonthMtd, prevMonthSamePeriod, prevMonthFull, currency, last_export]
+    // Día 13 del mes — MTD 100k vs mismos 13 días del mes anterior 90k → +11.1%.
+    // Mes anterior completo 200k (contexto, no usado en delta).
     const fetchImpl = makeBqFetch(
-      [
-        ['2026-05-01', '100000', 'CLP', '2026-05-13T13:00:00Z'], // mes actual
-        ['2026-04-01', '90000', 'CLP', '2026-05-13T13:00:00Z'], // mes anterior
-      ],
-      ['month', 'net_cost', 'currency', 'last_export'],
+      [['100000', '90000', '200000', 'CLP', '2026-05-13T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
     );
     const svc = buildService(fetchImpl);
     const result = await svc.getOverview();
     expect(result.costClpMonthToDate).toBe(100_000);
-    expect(result.costClpPreviousMonth).toBe(90_000);
+    expect(result.costClpPreviousMonthSamePeriod).toBe(90_000);
+    expect(result.costClpPreviousMonth).toBe(200_000);
     expect(result.deltaPercentVsPreviousMonth).toBeCloseTo(11.1, 1);
     expect(result.lastBillingExportAt).toBe('2026-05-13T13:00:00Z');
   });
 
+  it('getOverview: delta NO compara contra mes completo (evita falso "−83%")', async () => {
+    // Día 5 del mes, MTD muy bajo. Si comparáramos contra mes-completo
+    // anterior (500k) daría "−96%" — falsa lectura. Con apples-to-apples
+    // comparamos contra primeros 5 días del mes anterior (15k): MTD 17k →
+    // delta = +13.3% (representativo del ritmo).
+    const fetchImpl = makeBqFetch(
+      [['17000', '15000', '500000', 'CLP', '2026-05-05T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
+    );
+    const svc = buildService(fetchImpl);
+    const result = await svc.getOverview();
+    expect(result.deltaPercentVsPreviousMonth).toBeCloseTo(13.3, 1);
+    expect(result.deltaPercentVsPreviousMonth).not.toBeCloseTo(-96.6, 1);
+  });
+
   it('getOverview: convierte USD a CLP cuando currency=USD', async () => {
     const fetchImpl = makeBqFetch(
-      [
-        ['2026-05-01', '100', 'USD', '2026-05-13T13:00:00Z'],
-        ['2026-04-01', '90', 'USD', '2026-05-13T13:00:00Z'],
-      ],
-      ['month', 'net_cost', 'currency', 'last_export'],
+      [['100', '90', '200', 'USD', '2026-05-13T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
     );
     const svc = buildService(fetchImpl);
     const result = await svc.getOverview();
     expect(result.costClpMonthToDate).toBe(100_000); // 100 USD × 1000
-    expect(result.costClpPreviousMonth).toBe(90_000);
+    expect(result.costClpPreviousMonthSamePeriod).toBe(90_000);
+    expect(result.costClpPreviousMonth).toBe(200_000);
   });
 
-  it('getOverview: previousMonth=0 → deltaPercent=null', async () => {
+  it('getOverview: prevSamePeriod=0 → deltaPercent=null (no division)', async () => {
     const fetchImpl = makeBqFetch(
-      [['2026-05-01', '50000', 'CLP', '2026-05-13T13:00:00Z']],
-      ['month', 'net_cost', 'currency', 'last_export'],
+      [['50000', '0', '40000', 'CLP', '2026-05-01T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
     );
     const svc = buildService(fetchImpl);
     const result = await svc.getOverview();
     expect(result.costClpMonthToDate).toBe(50_000);
-    expect(result.costClpPreviousMonth).toBe(0);
+    expect(result.costClpPreviousMonthSamePeriod).toBe(0);
     expect(result.deltaPercentVsPreviousMonth).toBeNull();
   });
 
@@ -238,11 +252,8 @@ describe('CostsService', () => {
 
   it('toClp: currency desconocida → loggea warn pero no crashea', async () => {
     const fetchImpl = makeBqFetch(
-      [
-        ['2026-05-01', '100', 'EUR'],
-        ['2026-04-01', '90', 'EUR'],
-      ],
-      ['month', 'net_cost', 'currency'],
+      [['100', '90', '200', 'EUR', '2026-05-13T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
     );
     const svc = buildService(fetchImpl);
     const result = await svc.getOverview();

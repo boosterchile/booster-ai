@@ -34,9 +34,22 @@ const QUERY_TIMEOUT_MS = 30_000;
 export interface CostsOverview {
   /** Costo acumulado del mes en curso (1-current day), en CLP. */
   costClpMonthToDate: number;
-  /** Costo del mes anterior completo, en CLP. */
+  /** Costo del mes anterior completo, en CLP. Solo contexto. */
   costClpPreviousMonth: number;
-  /** Δ% vs mes anterior (mismo periodo). null si no hay base. */
+  /**
+   * Costo del mes anterior considerando solo los mismos N días que llevamos
+   * en el mes actual (apples-to-apples). Si hoy es día 13 del mes, este es
+   * el costo del 1° al 13 del mes anterior. Usado para el delta% (más
+   * representativo que comparar contra mes-completo).
+   */
+  costClpPreviousMonthSamePeriod: number;
+  /**
+   * Δ% vs mismo periodo del mes anterior (apples-to-apples). Comparar
+   * mes-actual-parcial vs mes-anterior-completo genera la falsa lectura
+   * "siempre estamos gastando ~70% menos" temprano en el mes. Este delta
+   * usa `costClpPreviousMonthSamePeriod` y responde correctamente "voy
+   * gastando más o menos que el ritmo del mes anterior". null si no hay base.
+   */
   deltaPercentVsPreviousMonth: number | null;
   /** Última actualización del billing_export (UTC). */
   lastBillingExportAt: string | null;
@@ -128,39 +141,61 @@ export class CostsService {
 
   async getOverview(): Promise<CostsOverview> {
     return this.cache.getOrFetch('costs:overview', CACHE_TTL_OVERVIEW, async () => {
+      // Tres buckets en una sola query:
+      //   - thisMonthMtd: 1° del mes actual → hoy
+      //   - prevMonthSamePeriod: 1° del mes anterior → "mismo día del mes anterior"
+      //   - prevMonthFull: 1° del mes anterior → último día del mes anterior
+      // El "mismo día del mes anterior" se computa con DATE_SUB(...,
+      // INTERVAL 1 MONTH) que maneja casos límite (31→28/29 feb, 30→ene 30, etc).
       const sql = `
-        WITH base AS (
+        WITH dates AS (
           SELECT
-            DATE_TRUNC(DATE(usage_start_time, 'America/Santiago'), MONTH) AS month,
-            SUM(cost + IFNULL((SELECT SUM(amount) FROM UNNEST(credits)), 0)) AS net_cost,
-            ANY_VALUE(currency) AS currency,
-            MAX(export_time) AS last_export
+            CURRENT_DATE('America/Santiago') AS today,
+            DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH) AS this_month_start,
+            DATE_SUB(DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH), INTERVAL 1 MONTH) AS prev_month_start,
+            DATE_SUB(DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH), INTERVAL 1 DAY) AS prev_month_end,
+            DATE_SUB(CURRENT_DATE('America/Santiago'), INTERVAL 1 MONTH) AS prev_month_same_day
+        ),
+        rows AS (
+          SELECT
+            cost + IFNULL((SELECT SUM(amount) FROM UNNEST(credits)), 0) AS net_cost,
+            currency,
+            export_time,
+            DATE(usage_start_time, 'America/Santiago') AS d
           FROM \`${this.billingExportTable}\`
           WHERE DATE(usage_start_time, 'America/Santiago')
-            >= DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH) - INTERVAL 1 MONTH
-          GROUP BY month
+            >= (SELECT prev_month_start FROM dates)
+            AND DATE(usage_start_time, 'America/Santiago')
+            <= (SELECT today FROM dates)
         )
         SELECT
-          month,
-          net_cost,
-          currency,
-          last_export
-        FROM base
-        ORDER BY month DESC
+          SUM(IF(d >= (SELECT this_month_start FROM dates) AND d <= (SELECT today FROM dates), net_cost, 0)) AS this_month_mtd,
+          SUM(IF(d >= (SELECT prev_month_start FROM dates) AND d <= (SELECT prev_month_same_day FROM dates), net_cost, 0)) AS prev_month_same_period,
+          SUM(IF(d >= (SELECT prev_month_start FROM dates) AND d <= (SELECT prev_month_end FROM dates), net_cost, 0)) AS prev_month_full,
+          ANY_VALUE(currency) AS currency,
+          MAX(export_time) AS last_export
+        FROM rows
       `;
       const { rows, currency } = await this.runQuery(sql);
-      const thisMonth = Number.parseFloat(rows[0]?.[1] ?? '0');
-      const previousMonth = Number.parseFloat(rows[1]?.[1] ?? '0');
-      const lastExport = rows[0]?.[3] ?? null;
+      const thisMonthMtd = Number.parseFloat(rows[0]?.[0] ?? '0');
+      const prevMonthSamePeriod = Number.parseFloat(rows[0]?.[1] ?? '0');
+      const prevMonthFull = Number.parseFloat(rows[0]?.[2] ?? '0');
+      const lastExport = rows[0]?.[4] ?? null;
 
-      const thisMonthClp = await this.toClp(thisMonth, currency);
-      const previousMonthClp = await this.toClp(previousMonth, currency);
+      const thisMonthClp = await this.toClp(thisMonthMtd, currency);
+      const prevSamePeriodClp = await this.toClp(prevMonthSamePeriod, currency);
+      const prevFullClp = await this.toClp(prevMonthFull, currency);
+
+      // Delta apples-to-apples: mtd actual vs mismo periodo del mes anterior.
       const delta =
-        previousMonthClp > 0 ? ((thisMonthClp - previousMonthClp) / previousMonthClp) * 100 : null;
+        prevSamePeriodClp > 0
+          ? ((thisMonthClp - prevSamePeriodClp) / prevSamePeriodClp) * 100
+          : null;
 
       return {
         costClpMonthToDate: Math.round(thisMonthClp),
-        costClpPreviousMonth: Math.round(previousMonthClp),
+        costClpPreviousMonth: Math.round(prevFullClp),
+        costClpPreviousMonthSamePeriod: Math.round(prevSamePeriodClp),
         deltaPercentVsPreviousMonth: delta !== null ? Math.round(delta * 10) / 10 : null,
         lastBillingExportAt: lastExport,
       };

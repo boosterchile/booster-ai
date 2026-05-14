@@ -50,7 +50,8 @@ function buildOpts(
     costsService: {
       getOverview: vi.fn(async () => ({
         costClpMonthToDate: 100000,
-        costClpPreviousMonth: 90000,
+        costClpPreviousMonth: 200000,
+        costClpPreviousMonthSamePeriod: 90000,
         deltaPercentVsPreviousMonth: 11.1,
         lastBillingExportAt: '2026-05-13T13:00:00Z',
       })),

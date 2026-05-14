@@ -24,7 +24,8 @@ describe('CostosTab', () => {
       if (path === '/admin/observability/costs/overview') {
         return {
           costClpMonthToDate: 100_000,
-          costClpPreviousMonth: 90_000,
+          costClpPreviousMonth: 200_000,
+          costClpPreviousMonthSamePeriod: 90_000,
           deltaPercentVsPreviousMonth: 11.1,
           lastBillingExportAt: '2026-05-13T13:00:00Z',
         };

@@ -54,7 +54,8 @@ describe('useObservabilityCostsOverview', () => {
   it('GET /admin/observability/costs/overview', async () => {
     const spy = vi.spyOn(api, 'get').mockResolvedValueOnce({
       costClpMonthToDate: 100000,
-      costClpPreviousMonth: 90000,
+      costClpPreviousMonth: 200000,
+      costClpPreviousMonthSamePeriod: 90000,
       deltaPercentVsPreviousMonth: 11.1,
       lastBillingExportAt: '2026-05-13T13:00:00Z',
     });

@@ -29,7 +29,11 @@ export interface HealthSnapshot {
 
 export interface CostsOverview {
   costClpMonthToDate: number;
+  /** Costo del mes anterior completo (contexto). */
   costClpPreviousMonth: number;
+  /** Costo del mismo periodo del mes anterior (apples-to-apples). */
+  costClpPreviousMonthSamePeriod: number;
+  /** Δ% vs mismo periodo mes anterior — la métrica de "voy más o menos que el ritmo del mes pasado". */
   deltaPercentVsPreviousMonth: number | null;
   lastBillingExportAt: string | null;
 }
