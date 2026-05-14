@@ -2,6 +2,24 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+// jsdom no implementa ResizeObserver, requerido por @tremor/react /
+// recharts (LineChart, BarChart, DonutChart, ProgressBar). Stub minimal
+// para evitar "ReferenceError: ResizeObserver is not defined" cuando los
+// componentes intentan medirse al montar.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserverStub {
+    observe(): void {
+      // noop
+    }
+    unobserve(): void {
+      // noop
+    }
+    disconnect(): void {
+      // noop
+    }
+  } as unknown as typeof ResizeObserver;
+}
+
 // Stub VITE_* env vars antes que cualquier test importe `src/lib/env.ts`
 // (env.ts hace parse zod at-import; sin stub, lanza al cargar el módulo).
 // Los tests que necesitan valores específicos pueden sobreescribir vía

@@ -1,16 +1,19 @@
 import { Link } from '@tanstack/react-router';
 import {
   ActivityIcon,
-  AlertTriangleIcon,
   ArrowLeft,
   BarChart3Icon,
   GaugeIcon,
-  Loader2,
   TrendingUpIcon,
   WalletIcon,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { CapacityTab } from '../components/observability/CapacityTab.js';
+import { CostosTab } from '../components/observability/CostosTab.js';
+import { ForecastTab } from '../components/observability/ForecastTab.js';
+import { SaludTab } from '../components/observability/SaludTab.js';
+import { UsoTab } from '../components/observability/UsoTab.js';
 
 /**
  * /app/platform-admin/observability — dashboard de costos y operaciones
@@ -134,33 +137,14 @@ function PlatformAdminObservabilityPage() {
   );
 }
 
-/**
- * Placeholder de cada tab — C6 reemplaza con componentes reales
- * (CostosTab, SaludTab, UsoTab, CapacityTab, ForecastTab).
- */
 function TabContent({ active }: { active: TabId }) {
   return (
-    <section
-      role="tabpanel"
-      data-testid={`observability-panel-${active}`}
-      className="rounded-lg border border-neutral-300 border-dashed bg-white p-8"
-    >
-      <div className="flex items-start gap-3">
-        <Loader2 className="h-5 w-5 animate-spin text-neutral-400" aria-hidden />
-        <div>
-          <h2 className="font-semibold text-neutral-900">Tab {active}</h2>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Skeleton del C5 — la implementación de este tab llega en el commit C6 del PR de
-            observability dashboard. Endpoints del backend ya operativos en
-            <code className="ml-1 rounded bg-neutral-100 px-1 text-xs">/admin/observability/*</code>
-            .
-          </p>
-          <div className="mt-4 inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 text-xs">
-            <AlertTriangleIcon className="h-3.5 w-3.5" aria-hidden />
-            Pendiente C6 · backend está listo y respondiendo.
-          </div>
-        </div>
-      </div>
+    <section role="tabpanel" data-testid={`observability-panel-${active}`}>
+      {active === 'costos' && <CostosTab />}
+      {active === 'salud' && <SaludTab />}
+      {active === 'uso' && <UsoTab />}
+      {active === 'capacity' && <CapacityTab />}
+      {active === 'forecast' && <ForecastTab />}
     </section>
   );
 }
