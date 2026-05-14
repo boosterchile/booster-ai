@@ -18,18 +18,19 @@ import type { WorkspaceService } from '../services/observability/workspace-servi
  * Feature flag: OBSERVABILITY_DASHBOARD_ACTIVATED. Si false → 503 antes
  * de tocar BigQuery o cualquier API externa (kill-switch).
  *
- * Endpoints (11):
- *   GET /health                  — composite snapshot (uptime + run + sql)
- *   GET /costs/overview          — MTD + previous month + delta% (CLP)
- *   GET /costs/by-service?days=N — breakdown por servicio GCP
- *   GET /costs/by-project?days=N — breakdown por GCP project
- *   GET /costs/trend?days=N      — serie diaria
- *   GET /costs/top-skus?limit=N  — top SKUs del mes
- *   GET /usage/cloud-run         — latencia + CPU + RAM + RPS
- *   GET /usage/cloud-sql         — CPU + RAM + disco + ratio conexiones
- *   GET /usage/twilio            — balance + top categorías
- *   GET /usage/workspace         — seats + costo mensual (DWD requerido)
- *   GET /forecast                — extrapolación fin de mes vs budget
+ * Endpoints (12):
+ *   GET /health                       — composite snapshot (uptime + run + sql)
+ *   GET /costs/overview               — MTD + delta% apples-to-apples
+ *   GET /costs/by-service?days=N      — breakdown por servicio GCP
+ *   GET /costs/by-project?days=N      — breakdown por GCP project
+ *   GET /costs/trend?days=N           — serie diaria
+ *   GET /costs/top-skus?limit=N       — top SKUs del mes
+ *   GET /costs/monthly-history?months=N — histórico mensual hasta 24 meses
+ *   GET /usage/cloud-run              — latencia + CPU + RAM + RPS
+ *   GET /usage/cloud-sql              — CPU + RAM + disco + ratio conexiones
+ *   GET /usage/twilio                 — balance + top categorías
+ *   GET /usage/workspace              — seats + costo mensual (DWD requerido)
+ *   GET /forecast                     — extrapolación fin de mes vs budget
  */
 
 const rangeQuerySchema = z.object({
@@ -37,6 +38,10 @@ const rangeQuerySchema = z.object({
 });
 const limitQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+const monthsQuerySchema = z.object({
+  months: z.coerce.number().int().min(1).max(24).default(12),
 });
 
 export interface AdminObservabilityRoutesOpts {
@@ -171,6 +176,27 @@ export function createAdminObservabilityRoutes(opts: AdminObservabilityRoutesOpt
       opts.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
         'admin/observability/costs/top-skus failed',
+      );
+      return c.json({ error: 'costs_unavailable' }, 502);
+    }
+  });
+
+  app.get('/costs/monthly-history', async (c) => {
+    const auth = requirePlatformAdmin(c, guard());
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const parsed = monthsQuerySchema.safeParse({ months: c.req.query('months') });
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_query', details: parsed.error.flatten() }, 400);
+    }
+    try {
+      const items = await opts.costsService.getMonthlyHistory(parsed.data.months);
+      return c.json({ months: parsed.data.months, items });
+    } catch (err) {
+      opts.logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'admin/observability/costs/monthly-history failed',
       );
       return c.json({ error: 'costs_unavailable' }, 502);
     }

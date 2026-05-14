@@ -62,6 +62,13 @@ export interface TopSku {
   costClp: number;
 }
 
+export interface MonthlyHistoryItem {
+  month: string;
+  costClp: number;
+  deltaPercentVsPrior: number | null;
+  isCurrent: boolean;
+}
+
 export interface CloudRunMetrics {
   latencyP95Ms: number | null;
   cpuUtilization: number | null;
@@ -166,6 +173,17 @@ export function useObservabilityCostsTrend(days = 30) {
     queryFn: () =>
       api.get<{ days: number; points: CostsTrendPoint[] }>(
         `/admin/observability/costs/trend?days=${days}`,
+      ),
+    staleTime: STALE_COSTS,
+  });
+}
+
+export function useObservabilityMonthlyHistory(months = 12) {
+  return useQuery({
+    queryKey: ['observability', 'costs', 'monthly-history', months],
+    queryFn: () =>
+      api.get<{ months: number; items: MonthlyHistoryItem[] }>(
+        `/admin/observability/costs/monthly-history?months=${months}`,
       ),
     staleTime: STALE_COSTS,
   });

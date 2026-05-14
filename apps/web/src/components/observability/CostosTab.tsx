@@ -4,6 +4,7 @@ import {
   useObservabilityCostsByService,
   useObservabilityCostsOverview,
   useObservabilityCostsTrend,
+  useObservabilityMonthlyHistory,
   useObservabilityTopSkus,
 } from '../../hooks/use-observability.js';
 import { CurrencyValue } from './CurrencyValue.js';
@@ -24,6 +25,7 @@ export function CostosTab() {
   const byProject = useObservabilityCostsByProject(30);
   const trend = useObservabilityCostsTrend(30);
   const topSkus = useObservabilityTopSkus(10);
+  const monthlyHistory = useObservabilityMonthlyHistory(12);
 
   return (
     <div className="space-y-6">
@@ -154,6 +156,34 @@ export function CostosTab() {
       </div>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h3 className="font-medium text-neutral-900 text-sm">Histórico mensual</h3>
+            <p className="mt-0.5 text-neutral-500 text-xs">
+              Últimos 12 meses (mes actual = MTD, no cerrado). Fuente: BigQuery billing_export.
+            </p>
+          </div>
+          <a
+            href="https://console.cloud.google.com/billing"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary-700 text-xs hover:underline"
+          >
+            Ver facturas oficiales en Cloud Console →
+          </a>
+        </div>
+        <div className="mt-3">
+          {monthlyHistory.isLoading ? (
+            <SkeletonRect height={280} />
+          ) : monthlyHistory.data && monthlyHistory.data.items.length > 0 ? (
+            <MonthlyHistoryView items={monthlyHistory.data.items} />
+          ) : (
+            <ErrorBox error={monthlyHistory.error} retry={monthlyHistory.refetch} empty />
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
         <h3 className="font-medium text-neutral-900 text-sm">Top 10 SKUs del mes</h3>
         {topSkus.isLoading ? (
           <SkeletonRect height={200} />
@@ -187,6 +217,94 @@ export function CostosTab() {
       </section>
     </div>
   );
+}
+
+function MonthlyHistoryView({
+  items,
+}: {
+  items: Array<{
+    month: string;
+    costClp: number;
+    deltaPercentVsPrior: number | null;
+    isCurrent: boolean;
+  }>;
+}) {
+  return (
+    <>
+      <div style={{ height: 220, width: '100%' }}>
+        <BarChart
+          className="h-full w-full"
+          data={items.map((i) => ({
+            month: formatMonthShort(i.month),
+            Costo: i.costClp,
+          }))}
+          index="month"
+          categories={['Costo']}
+          colors={['emerald']}
+          valueFormatter={(v) => `$${Math.round(v).toLocaleString('es-CL')}`}
+          yAxisWidth={75}
+          showLegend={false}
+        />
+      </div>
+      <table className="mt-4 w-full text-sm">
+        <thead>
+          <tr className="border-neutral-100 border-b text-left text-neutral-500 text-xs">
+            <th className="py-2 font-medium">Mes</th>
+            <th className="py-2 text-right font-medium">Gasto CLP</th>
+            <th className="py-2 text-right font-medium">Δ% vs mes anterior</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...items].reverse().map((m) => (
+            <tr key={m.month} className="border-neutral-50 border-b last:border-0">
+              <td className="py-2 text-neutral-700">
+                {formatMonthLong(m.month)}
+                {m.isCurrent && (
+                  <span className="ml-2 inline-flex rounded bg-amber-50 px-1.5 py-0.5 font-medium text-[10px] text-amber-700 uppercase tracking-wide">
+                    En curso
+                  </span>
+                )}
+              </td>
+              <td className="py-2 text-right font-medium tabular-nums">
+                ${m.costClp.toLocaleString('es-CL')}
+              </td>
+              <td
+                className={`py-2 text-right tabular-nums ${
+                  m.deltaPercentVsPrior === null
+                    ? 'text-neutral-400'
+                    : m.deltaPercentVsPrior > 0
+                      ? 'text-danger-700'
+                      : m.deltaPercentVsPrior < 0
+                        ? 'text-success-700'
+                        : 'text-neutral-500'
+                }`}
+              >
+                {m.deltaPercentVsPrior === null
+                  ? '—'
+                  : `${m.deltaPercentVsPrior > 0 ? '↑' : m.deltaPercentVsPrior < 0 ? '↓' : '·'} ${Math.abs(m.deltaPercentVsPrior).toFixed(1)}%`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function formatMonthShort(yyyymm: string): string {
+  const [y, m] = yyyymm.split('-').map(Number);
+  if (!y || !m) {
+    return yyyymm;
+  }
+  return new Date(y, m - 1, 1).toLocaleDateString('es-CL', { month: 'short', year: '2-digit' });
+}
+
+function formatMonthLong(yyyymm: string): string {
+  const [y, m] = yyyymm.split('-').map(Number);
+  if (!y || !m) {
+    return yyyymm;
+  }
+  return new Date(y, m - 1, 1).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
 }
 
 function SkeletonRect({ height }: { height: number }) {

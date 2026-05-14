@@ -228,6 +228,65 @@ describe('CostsService', () => {
     expect(result[0]?.costClp).toBe(5000);
   });
 
+  it('getMonthlyHistory: serie ordenada con delta encadenado entre meses cerrados', async () => {
+    // Usamos 3 meses 2024 (cerrados) para que ninguno coincida con el
+    // currentMonth y todos lleven delta calculado.
+    const fetchImpl = makeBqFetch(
+      [
+        ['2024-03', '300000', 'CLP'],
+        ['2024-04', '450000', 'CLP'], // +50% vs mar
+        ['2024-05', '405000', 'CLP'], // -10% vs abr
+      ],
+      ['month', 'net_cost', 'currency'],
+    );
+    const svc = buildService(fetchImpl);
+    const result = await svc.getMonthlyHistory(3);
+    expect(result).toHaveLength(3);
+    expect(result[0]?.month).toBe('2024-03');
+    expect(result[0]?.deltaPercentVsPrior).toBeNull(); // primer mes sin delta
+    expect(result[1]?.deltaPercentVsPrior).toBeCloseTo(50.0, 1);
+    expect(result[2]?.deltaPercentVsPrior).toBeCloseTo(-10.0, 1);
+  });
+
+  it('getMonthlyHistory: mes en curso → isCurrent=true + delta=null (no apples-to-apples)', async () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const fetchImpl = makeBqFetch(
+      [
+        ['2024-01', '100000', 'CLP'],
+        [currentMonth, '50000', 'CLP'],
+      ],
+      ['month', 'net_cost', 'currency'],
+    );
+    const svc = buildService(fetchImpl);
+    const result = await svc.getMonthlyHistory(12);
+    expect(result[0]?.isCurrent).toBe(false);
+    expect(result[1]?.isCurrent).toBe(true);
+    // El mes actual NO calcula delta (MTD vs mes-completo sería engañoso).
+    expect(result[1]?.deltaPercentVsPrior).toBeNull();
+  });
+
+  it('getMonthlyHistory: clampea months a [1, 24]', async () => {
+    let capturedSql = '';
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as { query: string };
+      capturedSql = body.query;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '',
+        json: async () => ({
+          jobComplete: true,
+          schema: { fields: [{ name: 'month' }] },
+          rows: [],
+        }),
+      };
+    }) as unknown as typeof fetch;
+    const svc = buildService(fetchImpl);
+    await svc.getMonthlyHistory(999);
+    // 24 meses - 1 = 23 (offset desde el mes actual)
+    expect(capturedSql).toContain('INTERVAL 23 MONTH');
+  });
+
   it('runQuery: BQ error response → throw', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: false,

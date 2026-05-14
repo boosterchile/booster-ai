@@ -42,6 +42,15 @@ describe('CostosTab', () => {
       if (path.startsWith('/admin/observability/costs/top-skus')) {
         return { limit: 10, items: [{ service: 'Cloud Run', sku: 'CPU', costClp: 30_000 }] };
       }
+      if (path.startsWith('/admin/observability/costs/monthly-history')) {
+        return {
+          months: 12,
+          items: [
+            { month: '2026-04', costClp: 250_000, deltaPercentVsPrior: null, isCurrent: false },
+            { month: '2026-05', costClp: 248_350, deltaPercentVsPrior: -0.7, isCurrent: true },
+          ],
+        };
+      }
       return {};
     });
 

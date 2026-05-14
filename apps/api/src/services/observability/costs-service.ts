@@ -84,6 +84,17 @@ export interface TopSku {
   costClp: number;
 }
 
+export interface MonthlyHistoryItem {
+  /** "YYYY-MM" (e.g. "2026-04"). */
+  month: string;
+  /** Costo total del mes en CLP (neto de credits). */
+  costClp: number;
+  /** Δ% vs mes anterior en la serie. null para el primer mes. */
+  deltaPercentVsPrior: number | null;
+  /** true si el mes está actualmente en curso (no cerrado todavía). */
+  isCurrent: boolean;
+}
+
 export interface CostsServiceOpts {
   cache: ObservabilityCache;
   fxRateService: FxRateService;
@@ -287,6 +298,55 @@ export class CostsService {
         ...i,
         percentOfTotal: total > 0 ? Math.round((i.costClp / total) * 1000) / 10 : 0,
       }));
+    });
+  }
+
+  /**
+   * Histórico mensual de gasto (últimos N meses, default 12). El mes
+   * actual aparece marcado `isCurrent: true` — su valor es MTD, no mes
+   * cerrado. Permite al admin ver tendencia macro y detectar anomalías.
+   *
+   * Cache 1h — los meses cerrados no cambian, solo el actual se actualiza.
+   */
+  async getMonthlyHistory(months = 12): Promise<MonthlyHistoryItem[]> {
+    const clamped = Math.max(1, Math.min(24, Math.round(months)));
+    return this.cache.getOrFetch(`costs:monthly-history:${clamped}`, 3600, async () => {
+      const sql = `
+          SELECT
+            FORMAT_DATE('%Y-%m', DATE_TRUNC(DATE(usage_start_time, 'America/Santiago'), MONTH)) AS month,
+            SUM(cost + IFNULL((SELECT SUM(amount) FROM UNNEST(credits)), 0)) AS net_cost,
+            ANY_VALUE(currency) AS currency
+          FROM \`${this.billingExportTable}\`
+          WHERE DATE(usage_start_time, 'America/Santiago')
+            >= DATE_TRUNC(CURRENT_DATE('America/Santiago'), MONTH) - INTERVAL ${clamped - 1} MONTH
+          GROUP BY month
+          ORDER BY month ASC
+        `;
+      const { rows, currency } = await this.runQuery(sql);
+      const currentMonth = new Date().toISOString().slice(0, 7);
+
+      const items: MonthlyHistoryItem[] = await Promise.all(
+        rows.map(async (r) => ({
+          month: r[0] ?? '',
+          costClp: Math.round(await this.toClp(Number.parseFloat(r[1] ?? '0'), currency)),
+          deltaPercentVsPrior: null as number | null,
+          isCurrent: r[0] === currentMonth,
+        })),
+      );
+
+      // Segundo pass: calcular delta% encadenado entre meses CERRADOS.
+      // El mes actual queda con `deltaPercentVsPrior = null` porque su MTD
+      // no es comparable con el mes anterior completo (no es apples-to-apples).
+      // El UI lo renderiza como "—" + badge "EN CURSO" para claridad.
+      for (let i = 1; i < items.length; i++) {
+        const current = items[i];
+        const prior = items[i - 1];
+        if (current && !current.isCurrent && prior && prior.costClp > 0) {
+          const delta = ((current.costClp - prior.costClp) / prior.costClp) * 100;
+          current.deltaPercentVsPrior = Math.round(delta * 10) / 10;
+        }
+      }
+      return items;
     });
   }
 

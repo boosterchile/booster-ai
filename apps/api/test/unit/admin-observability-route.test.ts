@@ -68,6 +68,10 @@ function buildOpts(
       ]),
       getTrend: vi.fn(async () => [{ date: '2026-05-13', costClp: 5000 }]),
       getTopSkus: vi.fn(async () => [{ service: 'Cloud Run', sku: 'CPU', costClp: 30000 }]),
+      getMonthlyHistory: vi.fn(async () => [
+        { month: '2026-04', costClp: 250_000, deltaPercentVsPrior: null, isCurrent: false },
+        { month: '2026-05', costClp: 248_350, deltaPercentVsPrior: -0.7, isCurrent: true },
+      ]),
     } as any,
     monitoringService: {
       getCloudRunMetrics: vi.fn(async () => ({
@@ -247,6 +251,25 @@ describe('admin/observability — happy paths', () => {
     expect(opts.costsService.getTopSkus).toHaveBeenCalledWith(5);
   });
 
+  it('GET /costs/monthly-history?months=12 → 200 + items array', async () => {
+    const opts = buildOpts();
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/monthly-history?months=12');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { months: number; items: Array<{ isCurrent: boolean }> };
+    expect(body.months).toBe(12);
+    expect(body.items).toHaveLength(2);
+    expect(opts.costsService.getMonthlyHistory).toHaveBeenCalledWith(12);
+  });
+
+  it('GET /costs/monthly-history sin query → default 12 meses', async () => {
+    const opts = buildOpts();
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/monthly-history');
+    expect(res.status).toBe(200);
+    expect(opts.costsService.getMonthlyHistory).toHaveBeenCalledWith(12);
+  });
+
   it('GET /usage/cloud-run → 200 + metrics', async () => {
     const app = makeApp(buildOpts(), { withContext: true });
     const res = await app.request('/admin/observability/usage/cloud-run');
@@ -312,6 +335,7 @@ describe('admin/observability — error paths', () => {
         getByProject: vi.fn(),
         getTrend: vi.fn(),
         getTopSkus: vi.fn(),
+        getMonthlyHistory: vi.fn(),
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
