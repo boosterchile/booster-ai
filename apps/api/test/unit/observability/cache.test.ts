@@ -129,4 +129,35 @@ describe('ObservabilityCache', () => {
     const result = await cache.getOrFetch('key5', 60, fetcher);
     expect(result).toEqual({ v: 'second' });
   });
+
+  it('Redis password + TLS pasados al constructor (smoke test branches)', async () => {
+    // Solo verifica que la construcción con TLS + password no crashea
+    // (cubre las branches del spread en el constructor de ObservabilityCache).
+    const cacheWithTls = new ObservabilityCache({
+      host: 'localhost',
+      port: 6379,
+      password: 'secret-pass',
+      tls: true,
+      logger: fakeLogger,
+    });
+    expect(cacheWithTls).toBeDefined();
+    await cacheWithTls.close();
+  });
+
+  it('Redis get falla → fallthrough al fetcher sin crashear', async () => {
+    // Forzamos error en get monkey-patcheando el fakeStore.get para
+    // tirar excepción. El cache debería loggear warn + llamar fetcher.
+    const original = fakeStore.get.bind(fakeStore);
+    fakeStore.get = () => {
+      throw new Error('connection refused');
+    };
+    try {
+      const fetcher = vi.fn().mockResolvedValue({ v: 'fallback' });
+      const result = await cache.getOrFetch('key-err', 60, fetcher);
+      expect(result).toEqual({ v: 'fallback' });
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      fakeStore.get = original;
+    }
+  });
 });

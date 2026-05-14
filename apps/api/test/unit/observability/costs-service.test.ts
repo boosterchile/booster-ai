@@ -309,6 +309,37 @@ describe('CostsService', () => {
     await expect(svc.getOverview()).rejects.toThrow(/did not complete/);
   });
 
+  it('constructor sin getAccessToken inyectado → usa GoogleAuth ADC (smoke)', async () => {
+    // En setup.ts se mockea google-auth-library globalmente → token='test-access-token'.
+    // Aquí verificamos que el path "construct + lazy auth" no crashea.
+    const fetchImpl = makeBqFetch(
+      [['1000', '900', '2000', 'CLP', '2026-05-13T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
+    );
+    const svc = new CostsService({
+      cache: new InMemoryCacheStub() as unknown as ObservabilityCache,
+      fxRateService: fakeFx,
+      logger: fakeLogger,
+      billingExportTable: 'p.d.t',
+      queryProjectId: 'p',
+      fetchImpl,
+      // sin getAccessToken — fuerza el path ADC del constructor
+    });
+    const result = await svc.getOverview();
+    expect(result.costClpMonthToDate).toBe(1000);
+  });
+
+  it('toClp: amount NaN → retorna 0 (defensa contra parseFloat fail)', async () => {
+    const fetchImpl = makeBqFetch(
+      [['not-a-number', '0', '0', 'CLP', '2026-05-13T13:00:00Z']],
+      ['this_month_mtd', 'prev_month_same_period', 'prev_month_full', 'currency', 'last_export'],
+    );
+    const svc = buildService(fetchImpl);
+    const result = await svc.getOverview();
+    // parseFloat('not-a-number') = NaN → toClp retorna 0
+    expect(result.costClpMonthToDate).toBe(0);
+  });
+
   it('toClp: currency desconocida → loggea warn pero no crashea', async () => {
     const fetchImpl = makeBqFetch(
       [['100', '90', '200', 'EUR', '2026-05-13T13:00:00Z']],

@@ -356,4 +356,176 @@ describe('admin/observability — error paths', () => {
     const res = await app.request('/admin/observability/costs/by-service?days=99999');
     expect(res.status).toBe(400);
   });
+
+  it('GET /health con healthChecksService falla → 500 internal_error', async () => {
+    const opts = buildOpts({
+      healthChecksService: {
+        getSnapshot: vi.fn(async () => {
+          throw new Error('health-fail');
+        }),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/health');
+    expect(res.status).toBe(500);
+  });
+
+  it('GET /costs/by-project con BQ caído → 502', async () => {
+    const opts = buildOpts({
+      costsService: {
+        getOverview: vi.fn(),
+        getByService: vi.fn(),
+        getByProject: vi.fn(async () => {
+          throw new Error('BQ unavailable');
+        }),
+        getTrend: vi.fn(),
+        getTopSkus: vi.fn(),
+        getMonthlyHistory: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/by-project?days=30');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /costs/trend con BQ caído → 502', async () => {
+    const opts = buildOpts({
+      costsService: {
+        getOverview: vi.fn(),
+        getByService: vi.fn(),
+        getByProject: vi.fn(),
+        getTrend: vi.fn(async () => {
+          throw new Error('BQ unavailable');
+        }),
+        getTopSkus: vi.fn(),
+        getMonthlyHistory: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/trend');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /costs/top-skus con BQ caído → 502', async () => {
+    const opts = buildOpts({
+      costsService: {
+        getOverview: vi.fn(),
+        getByService: vi.fn(),
+        getByProject: vi.fn(),
+        getTrend: vi.fn(),
+        getTopSkus: vi.fn(async () => {
+          throw new Error('BQ unavailable');
+        }),
+        getMonthlyHistory: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/top-skus');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /costs/monthly-history con BQ caído → 502', async () => {
+    const opts = buildOpts({
+      costsService: {
+        getOverview: vi.fn(),
+        getByService: vi.fn(),
+        getByProject: vi.fn(),
+        getTrend: vi.fn(),
+        getTopSkus: vi.fn(),
+        getMonthlyHistory: vi.fn(async () => {
+          throw new Error('BQ unavailable');
+        }),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/costs/monthly-history');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /usage/cloud-run con Monitoring caído → 502', async () => {
+    const opts = buildOpts({
+      monitoringService: {
+        getCloudRunMetrics: vi.fn(async () => {
+          throw new Error('monitoring-fail');
+        }),
+        getCloudSqlMetrics: vi.fn(),
+        getUptimeSnapshot: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/usage/cloud-run');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /usage/cloud-sql con Monitoring caído → 502', async () => {
+    const opts = buildOpts({
+      monitoringService: {
+        getCloudRunMetrics: vi.fn(),
+        getCloudSqlMetrics: vi.fn(async () => {
+          throw new Error('monitoring-fail');
+        }),
+        getUptimeSnapshot: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/usage/cloud-sql');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /usage/twilio con Twilio caído → 502', async () => {
+    const opts = buildOpts({
+      twilioUsageService: {
+        getBalance: vi.fn(async () => {
+          throw new Error('twilio-fail');
+        }),
+        getMonthToDateUsage: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/usage/twilio');
+    expect(res.status).toBe(502);
+  });
+
+  it('GET /usage/workspace con error inesperado → available=false', async () => {
+    const opts = buildOpts({
+      workspaceService: {
+        getUsageSnapshot: vi.fn(async () => {
+          throw new Error('workspace-fail');
+        }),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/usage/workspace');
+    expect(res.status).toBe(200); // graceful: no crashea
+    const body = (await res.json()) as { available: boolean };
+    expect(body.available).toBe(false);
+  });
+
+  it('GET /forecast con BQ caído → 502', async () => {
+    const opts = buildOpts({
+      costsService: {
+        getOverview: vi.fn(async () => {
+          throw new Error('forecast-base-fail');
+        }),
+        getByService: vi.fn(),
+        getByProject: vi.fn(),
+        getTrend: vi.fn(),
+        getTopSkus: vi.fn(),
+        getMonthlyHistory: vi.fn(),
+        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
+      } as any,
+    });
+    const app = makeApp(opts, { withContext: true });
+    const res = await app.request('/admin/observability/forecast');
+    expect(res.status).toBe(502);
+  });
 });
