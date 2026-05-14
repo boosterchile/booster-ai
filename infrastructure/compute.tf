@@ -172,9 +172,10 @@ module "service_api" {
     # Observability dashboard — spec 2026-05-13. Lee billing_export
     # (BigQuery), Cloud Monitoring API, Twilio Usage, Google Workspace
     # Admin SDK. Feature flag para rollback rápido vía terraform var.
-    OBSERVABILITY_DASHBOARD_ACTIVATED = tostring(var.observability_dashboard_activated)
-    BILLING_EXPORT_TABLE              = var.billing_export_table
-    GOOGLE_WORKSPACE_DOMAIN           = var.google_workspace_domain
+    OBSERVABILITY_DASHBOARD_ACTIVATED  = tostring(var.observability_dashboard_activated)
+    BILLING_EXPORT_TABLE               = var.billing_export_table
+    GOOGLE_WORKSPACE_DOMAIN            = var.google_workspace_domain
+    GOOGLE_WORKSPACE_IMPERSONATE_EMAIL = var.google_workspace_impersonate_email
     # Precios USD/seat/mes — Workspace API no los expone, configurados
     # como vars Terraform. PO actualiza si Google cambia pricing.
     GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER    = tostring(var.google_workspace_price_per_seat_usd_starter)
@@ -214,6 +215,14 @@ module "service_api" {
     # `npx web-push generate-vapid-keys`.
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
+
+    # Observability dashboard (spec 2026-05-13) — JSON key del SA de
+    # `observability-workspace-reader` para Admin SDK Domain-Wide
+    # Delegation. Si el secret está en placeholder ROTATE_ME_*, el
+    # factory.ts detecta el prefijo y skipea sin crashear (la tab
+    # Workspace del dashboard muestra "available=false"). Runbook:
+    # docs/runbooks/2026-05-13-workspace-admin-sdk-setup.md
+    GOOGLE_WORKSPACE_CREDENTIALS_JSON = google_secret_manager_secret.secrets["google-workspace-admin-credentials"].secret_id
 
     # ADR-038: GOOGLE_ROUTES_API_KEY eliminada. apps/api ahora autentica
     # contra Routes API con ADC + header X-Goog-User-Project (el SA del

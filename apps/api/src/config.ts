@@ -488,6 +488,23 @@ const apiEnvSchema = commonEnvSchema
     GOOGLE_WORKSPACE_DOMAIN: z.string().default(''),
 
     /**
+     * Email del admin del Workspace que se impersona via Domain-Wide
+     * Delegation para llamar al Admin SDK. Required cuando
+     * GOOGLE_WORKSPACE_DOMAIN está seteado — sin esto la SA no puede
+     * actuar en nombre del dominio. Default vacío → adapter no se carga
+     * y la tab Workspace muestra "available=false".
+     */
+    GOOGLE_WORKSPACE_IMPERSONATE_EMAIL: z.string().default(''),
+
+    /**
+     * Contenido JSON del SA key de `observability-workspace-reader`.
+     * En Cloud Run viene del secret `google-workspace-admin-credentials`
+     * inyectado como env var (mismo patrón que TWILIO_*). En dev local
+     * puede dejarse vacío y el adapter degrada a `available: false`.
+     */
+    GOOGLE_WORKSPACE_CREDENTIALS_JSON: z.string().default(''),
+
+    /**
      * Precios USD/mes/seat de planes Google Workspace. Google NO expone
      * estos precios via API; el PO los actualiza vía Terraform var cuando
      * Google los cambia. El dashboard multiplica seats × precio.

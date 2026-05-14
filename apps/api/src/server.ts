@@ -14,6 +14,7 @@ import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
+import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -45,6 +46,7 @@ import { createVehiculosRoutes } from './routes/vehiculos.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
+import { buildObservabilityServices } from './services/observability/factory.js';
 import { configureWebPush } from './services/web-push.js';
 
 export interface CreateServerOptions {
@@ -409,6 +411,43 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/matching/*', firebaseAuthMiddleware);
     app.use('/admin/matching/*', userContextMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
+
+    // Spec 2026-05-13 — Admin platform-wide observability dashboard
+    // (costos GCP + Twilio + Workspace + uptime + capacity + forecast).
+    // Auth idem otros admin/*. Feature flag OBSERVABILITY_DASHBOARD_ACTIVATED.
+    const observability = buildObservabilityServices(
+      {
+        redisHost: config.REDIS_HOST,
+        redisPort: config.REDIS_PORT,
+        ...(config.REDIS_PASSWORD ? { redisPassword: config.REDIS_PASSWORD } : {}),
+        redisTls: config.REDIS_TLS,
+        billingExportTable: config.BILLING_EXPORT_TABLE,
+        gcpProjectId: config.GOOGLE_CLOUD_PROJECT ?? 'booster-ai-494222',
+        ...(config.TWILIO_ACCOUNT_SID ? { twilioAccountSid: config.TWILIO_ACCOUNT_SID } : {}),
+        ...(config.TWILIO_AUTH_TOKEN ? { twilioAuthToken: config.TWILIO_AUTH_TOKEN } : {}),
+        workspaceDomain: config.GOOGLE_WORKSPACE_DOMAIN,
+        workspaceImpersonateEmail: config.GOOGLE_WORKSPACE_IMPERSONATE_EMAIL,
+        workspaceCredentialsJson: config.GOOGLE_WORKSPACE_CREDENTIALS_JSON,
+        workspacePriceMap: {
+          starter: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STARTER,
+          standard: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_STANDARD,
+          plus: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_PLUS,
+          enterprise: config.GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_ENTERPRISE,
+        },
+        monthlyBudgetUsd: config.MONTHLY_BUDGET_USD,
+        observabilityDashboardActivated: config.OBSERVABILITY_DASHBOARD_ACTIVATED,
+      },
+      logger,
+    );
+    app.use('/admin/observability/*', firebaseAuthMiddleware);
+    app.use('/admin/observability/*', userContextMiddleware);
+    app.route(
+      '/admin/observability',
+      createAdminObservabilityRoutes({
+        ...observability,
+        logger,
+      }),
+    );
 
     // Vehículos de la empresa activa.
     app.use('/vehiculos/*', firebaseAuthMiddleware);

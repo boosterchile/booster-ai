@@ -409,6 +409,12 @@ variable "google_workspace_domain" {
   default     = "boosterchile.com"
 }
 
+variable "google_workspace_impersonate_email" {
+  description = "Email del admin del Workspace que la SA observability-workspace-reader impersona via Domain-Wide Delegation. Required cuando google_workspace_domain está seteado."
+  type        = string
+  default     = "dev@boosterchile.com"
+}
+
 # Precios USD/mes/seat de planes Google Workspace. Google no expone via API;
 # el PO los actualiza cuando Google publica nuevos precios.
 # Source: https://workspace.google.com/pricing (revisar trimestralmente).

@@ -73,6 +73,10 @@ locals {
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
     "roles/logging.logWriter",
+    # Observability dashboard (spec 2026-05-13) — read time series via API.
+    # metricWriter solo permite write; viewer es el read mínimo necesario
+    # para /admin/observability/usage/cloud-run|cloud-sql.
+    "roles/monitoring.viewer",
   ]
 }
 
@@ -142,10 +146,10 @@ resource "google_service_account" "github_deployer" {
 
 locals {
   github_deployer_roles = [
-    "roles/run.admin",                # Deploy a Cloud Run
-    "roles/cloudbuild.builds.editor", # Trigger Cloud Build
+    "roles/run.admin",                 # Deploy a Cloud Run
+    "roles/cloudbuild.builds.editor",  # Trigger Cloud Build
     "roles/cloudbuild.workerPoolUser", # Usar el private worker pool (PR #68)
-    "roles/artifactregistry.writer",  # Push Docker images
+    "roles/artifactregistry.writer",   # Push Docker images
     # roles/iam.serviceAccountUser REMOVIDO del project-level (Trivy IaC
     # AVD-GCP-0008 — too broad; permitia impersonar CUALQUIER SA del proyecto).
     # Reemplazado por google_service_account_iam_member.github_can_impersonate_runtime
