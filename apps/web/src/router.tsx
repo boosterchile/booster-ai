@@ -28,6 +28,7 @@ import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
 import { PlatformAdminMatchingRoute } from './routes/platform-admin-matching.js';
+import { PlatformAdminObservabilityRoute } from './routes/platform-admin-observability.js';
 import { PlatformAdminSiteSettingsRoute } from './routes/platform-admin-site-settings.js';
 import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
@@ -237,6 +238,14 @@ const platformAdminSiteSettingsRoute = createRoute({
   component: PlatformAdminSiteSettingsRoute,
 });
 
+// Spec 2026-05-13 — Observability dashboard (costos GCP + Twilio +
+// Workspace + salud + capacity + forecast). Misma gate platform-admin.
+const platformAdminObservabilityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/observability',
+  component: PlatformAdminObservabilityRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -360,6 +369,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
+  platformAdminObservabilityRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

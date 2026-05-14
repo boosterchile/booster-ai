@@ -153,13 +153,22 @@ function PlatformAdminPage() {
               idempotente — re-ejecutar no duplica entidades.
             </p>
           </div>
-          <Link
-            to="/app/platform-admin/matching"
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
-            data-testid="matching-backtest-link"
-          >
-            Comparar algoritmo de asignación →
-          </Link>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Link
+              to="/app/platform-admin/matching"
+              className="inline-flex items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
+              data-testid="matching-backtest-link"
+            >
+              Comparar algoritmo de asignación →
+            </Link>
+            <Link
+              to="/app/platform-admin/observability"
+              className="inline-flex items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
+              data-testid="observability-dashboard-link"
+            >
+              Observabilidad de plataforma →
+            </Link>
+          </div>
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-white p-4">
