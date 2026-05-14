@@ -1,6 +1,7 @@
 import {
   USER_TYPE_HINT_LABEL,
   type UserTypeHint,
+  ensureRutHasDash,
   loginRutSchema,
   rutSchema,
 } from '@booster-ai/shared-schemas';
@@ -151,7 +152,11 @@ export function LoginUniversal() {
     setRutError(null);
     setSubmitError(null);
 
-    const rutParsed = rutSchema.safeParse(rut);
+    // Pre-procesar: si el user tipeó solo dígitos (móvil bloquea el `-`
+    // con inputMode numeric), insertar guión automáticamente antes del
+    // dígito verificador. Idempotente — input con guión queda intacto.
+    const rutWithDash = ensureRutHasDash(rut);
+    const rutParsed = rutSchema.safeParse(rutWithDash);
     if (!rutParsed.success) {
       setRutError(rutParsed.error.issues[0]?.message ?? 'RUT inválido');
       return;
@@ -324,11 +329,15 @@ function FormView(props: FormViewProps) {
             <input
               type="text"
               autoComplete="username"
-              inputMode="numeric"
+              // inputMode="text" (no "numeric") — el RUT tiene guión y opcionalmente
+              // "K" en el dígito verificador. El teclado numérico móvil bloquea
+              // el guión y la letra. Si user tipea solo dígitos, ensureRutHasDash
+              // lo formatea antes de validar.
+              inputMode="text"
               value={props.rut}
               onChange={(e) => props.onChangeRut(e.target.value)}
               className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-              placeholder="12.345.678-9"
+              placeholder="12.345.678-9 (también 123456789 funciona)"
               data-testid="login-rut-input"
             />
             {props.rutError && (

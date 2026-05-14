@@ -24,6 +24,42 @@ export function normalizeRut(raw: string): string {
 }
 
 /**
+ * Inserta automáticamente el guión antes del dígito verificador si el
+ * input solo tiene dígitos (caso típico móvil: `inputMode="numeric"` no
+ * permite tipear `-`).
+ *
+ * Reglas:
+ *   - Si ya tiene `-`: devuelve tal cual (uppercase + sin puntos).
+ *   - Si solo tiene dígitos+K (7 a 9 chars): inserta `-` antes del último.
+ *   - En otro caso: devuelve tal cual (sin tocar, deja que rutSchema
+ *     rechace y muestre error legible).
+ *
+ * Idempotente: aplicar dos veces no cambia el resultado.
+ *
+ * Ejemplos:
+ *   ensureRutHasDash('12345678K')   → '12345678-K'
+ *   ensureRutHasDash('12345678-9')  → '12345678-9'
+ *   ensureRutHasDash('12.345.678-9')→ '12345678-9'
+ *   ensureRutHasDash('abc')         → 'abc'   (rutSchema rechaza después)
+ */
+export function ensureRutHasDash(raw: string): string {
+  const trimmed = raw.trim().toUpperCase();
+  if (trimmed === '') {
+    return trimmed;
+  }
+  // Quitar puntos primero para simplificar.
+  const withoutDots = trimmed.replace(/\./g, '');
+  if (withoutDots.includes('-')) {
+    return withoutDots;
+  }
+  // Solo dígitos (+K opcional al final), longitud razonable de RUT (7-9).
+  if (/^\d{7,8}[\dK]$/.test(withoutDots)) {
+    return `${withoutDots.slice(0, -1)}-${withoutDots.slice(-1)}`;
+  }
+  return withoutDots;
+}
+
+/**
  * Formatea un RUT canónico (sin puntos) para display con separadores
  * de miles. Ej: "12345678-5" → "12.345.678-5".
  *
