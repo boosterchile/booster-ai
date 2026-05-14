@@ -232,6 +232,13 @@
       "when": 1780617600000,
       "tag": "0032_user_clave_numerica",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1780704000000,
+      "tag": "0033_configuracion_sitio",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
 import { PlatformAdminMatchingRoute } from './routes/platform-admin-matching.js';
+import { PlatformAdminSiteSettingsRoute } from './routes/platform-admin-site-settings.js';
 import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
 import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
@@ -228,6 +229,14 @@ const platformAdminMatchingRoute = createRoute({
   component: PlatformAdminMatchingRoute,
 });
 
+// ADR-039 — Site Settings Editor. Editar marca + copy del demo sin
+// redeploy. Mismo gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS).
+const platformAdminSiteSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/site-settings',
+  component: PlatformAdminSiteSettingsRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -350,6 +359,7 @@ const routeTree = rootRoute.addChildren([
   cumplimientoRoute,
   platformAdminRoute,
   platformAdminMatchingRoute,
+  platformAdminSiteSettingsRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

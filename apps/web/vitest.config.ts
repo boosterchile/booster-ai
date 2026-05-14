@@ -31,6 +31,7 @@ export default defineConfig({
         // del coverage para no bloquear PRs por UI admin (ADR-011).
         'src/routes/platform-admin.tsx',
         'src/routes/platform-admin-matching.tsx',
+        'src/routes/platform-admin-site-settings.tsx',
         'src/routes/admin-cobra-hoy.tsx',
         'src/routes/admin-dispositivos.tsx',
         // Modo demo (subdominio demo.boosterchile.com): selector de

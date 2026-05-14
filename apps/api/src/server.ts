@@ -34,6 +34,10 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import {
+  createPublicSiteSettingsRoutes,
+  createSiteSettingsRoutes,
+} from './routes/site-settings.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
@@ -369,6 +373,22 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+
+    // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
+    // y copy desde la PWA; demo/login/onboarding leen la versión
+    // publicada via GET /public/site-settings (cache 5min).
+    app.use('/admin/site-settings/*', firebaseAuthMiddleware);
+    app.use('/admin/site-settings/*', userContextMiddleware);
+    app.route(
+      '/admin/site-settings',
+      createSiteSettingsRoutes({
+        db: opts.db,
+        logger,
+        publicAssetsBucket: config.PUBLIC_ASSETS_BUCKET,
+      }),
+    );
+    // Endpoint público sin auth — sirve la versión publicada con cache.
+    app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: re-emisión manual de DTEs Tipo 33 (ADR-024 +
     // ADR-031). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el
