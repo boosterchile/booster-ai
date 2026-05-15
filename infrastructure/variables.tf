@@ -366,7 +366,7 @@ variable "wake_word_voice_activated" {
 variable "demo_mode_activated" {
   description = "Activa modo demo: endpoint /demo/login + auto-seed on startup + UI demo en subdominio demo.boosterchile.com."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ---------------------------------------------------------------------------
