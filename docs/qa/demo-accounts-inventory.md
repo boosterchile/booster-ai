@@ -1,5 +1,7 @@
 # Demo Accounts Inventory — Pre-rotation Snapshot
 
+> **Update 2026-05-15 (post OPS-X spray validation)**: PF-5.1 (2026-05-14T21:00Z) fue verificación por code inspection, NO empírica. Test empírico via `signInWithPassword` revela que el conductor demo (`Gg9k3gIPa1cJZtgKC0RRkWQ0QHJ3`) tiene como password actual un **PIN 6-digit random**, no el literal `Boost***2026!`. El PIN fue generado por `generateActivationPin()` en `seed-demo.ts:872` y seteado como password Firebase por `auth-driver.ts:142` durante `/auth/driver-activate` ejecutado en algún momento del sprint demo D1. Cold-starts subsequent NO sobreescriben porque `ensureConductorDemoActivated` chequea idempotency en `firebaseUid.startsWith('pending-rut:')`. Claims pre-corrección remanentes en §1.1 tabla conductor (corregida abajo), §1.2 risk row #2 (razón obsoleta, score sigue válido), §lesson-learned #1 (3 cuentas con literal, no 4). Tratamiento OPS-1 sigue válido: `harden-demo-accounts.ts` sobreescribe el password regardless. Ref: `docs/handoff/2026-05-15-forensia-demo-password.md`.
+
 - **Generado**: 2026-05-14T19:55Z
 - **Task**: T1 (plan v3.1) — Inventory exhaustivo grep + Firebase + git history compromise
 - **Spec**: `.specs/security-blocking-hotfixes-2026-05-14/spec.md` (Approved 19:30Z; retool H1 19:45Z; OPS-Y 20:00Z; 4 UIDs + T9 deferred + T5 fallback 21:00Z)
@@ -34,7 +36,7 @@ Las 4 cuentas con `customClaims.is_demo=true` en el tenant. **Todas siguen activ
 | shipper | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
 | carrier | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
 | stakeholder | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
-| conductor | Custom token vía `POST /demo/login` (mintea `firebaseAuth.createCustomToken` en `apps/api/src/routes/demo-login.ts:121`) | `signInWithEmailAndPassword` con email sintético + password directo (`apps/web/src/routes/login-conductor.tsx:85` fallthrough cuando `/auth/driver-activate` responde `already_activated`) | **Sí** (`Boost***2026!` seteado por `apps/api/src/services/seed-demo-startup.ts:148`) | **null** — borrado por `seed-demo-startup.ts:176` |
+| conductor | Custom token vía `POST /demo/login` (mintea `firebaseAuth.createCustomToken` en `apps/api/src/routes/demo-login.ts:121`) | `signInWithEmailAndPassword` con email sintético + password directo (`apps/web/src/routes/login-conductor.tsx:85` fallthrough cuando `/auth/driver-activate` responde `already_activated`) | **NO** (PIN 6-dígit random post-`/auth/driver-activate` via `auth-driver.ts:142`; ver Update 2026-05-15 en encabezado) | **null** — borrado por `seed-demo-startup.ts:176` |
 
 **Conclusión PF-5.1 (2026-05-14T21:00Z)**: el conductor demo NO es "bootstrap-only" respecto al password directo — el `signInWithEmailAndPassword` está activo como fallback path en la PWA y es vector explotable del spray attack. Tratamiento simétrico a los 3 owners: rotation + TTL + revoke + secret en Secret Manager.
 
