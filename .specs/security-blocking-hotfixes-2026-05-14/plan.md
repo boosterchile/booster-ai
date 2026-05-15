@@ -1,8 +1,8 @@
-# Plan: security-blocking-hotfixes-2026-05-14 (v3.1)
+# Plan: security-blocking-hotfixes-2026-05-14 (v3.3)
 
-- Spec: `.specs/security-blocking-hotfixes-2026-05-14/spec.md` (Status: Approved 2026-05-14T19:30Z, retool H1 19:45Z, OPS-Y 20:00Z, **4º UID + T9.x deferred + T5 fallback** 21:00Z)
-- Created: 2026-05-14T20:00Z (v3); revisado **2026-05-14T21:00Z (v3.1)** post-PF-1..PF-5 + PF-5.1
-- Status: **Draft v3.1** (pending Felipe approval; PF-1..PF-5 EJECUTADOS exitosamente — outputs en spec §13)
+- Spec: `.specs/security-blocking-hotfixes-2026-05-14/spec.md` (Status: Approved 2026-05-14T19:30Z, retool H1 19:45Z, OPS-Y 20:00Z, **4º UID + T9.x deferred + T5 fallback** 21:00Z; **scope expansion 2026-05-15T20:05Z para SEC-032 → T-SEC-032a/b**)
+- Created: 2026-05-14T20:00Z (v3); revisado **2026-05-14T21:00Z (v3.1)** post-PF-1..PF-5 + PF-5.1; **expandido 2026-05-15T20:05Z (v3.2)** con T28 (SEC-032 PII redaction); **reescrito 2026-05-15T20:30Z (v3.3)** post devils-advocate v3.2 (11 objections, 4 BLOCKING).
+- Status: **Draft v3.3** (v3.1 Approved 2026-05-14T21:45Z; v3.2 REJECTED por devils-advocate 2026-05-15T20:15Z; v3.3 = correcciones inline a OBJ-1..8 — pending re-invoke devils-advocate antes de `/build` T-SEC-032).
 - Supersedes: `plan-v2-backup.md`
 
 > **Cambios v2 → v3** (críticos, ya aplicados):
@@ -29,6 +29,44 @@
 > - PF-4: ✅ `expires_at` string ISO preservado.
 > - PF-5: ⚠️ 4 UIDs demo, no 3 → conductor demo añadido al scope.
 > - PF-5.1: conductor usa BOTH paths (custom token primario + password fallback). Tratamiento simétrico → 7º secret.
+
+> **Cambios v3.1 → v3.2** (post audit-pass 2026-05-15 + decisión Felipe 2026-05-15T20:05Z) — **REJECTED por devils-advocate 2026-05-15T20:15Z, superseded por v3.3 abajo**:
+> 1. ~~T28 nueva~~ → renombrada T-SEC-032a/b en v3.3 por colisión con `Test T28 spec`.
+> 2. Driver: SEC-032 (HIGH, security.md ranked #8) confirmado independientemente en `performance.md §9` (audit 2026-05-15).
+> 3. Justificación scope expansion: HIGH-tier dentro del mismo módulo auth que H1/H2; package `logger` en 0 tests (test-quality.md §1) habilita coverage uplift como dependencia natural.
+> 4. Approval v3.1 preservado como snapshot.
+> 5. T-SEC-032 dependency-free vs T1..T27.
+> 6. Trazabilidad nueva §9 R23.
+
+> **Cambios v3.2 → v3.3** (post devils-advocate REJECTED 2026-05-15T20:15Z — fix inline de 4 BLOCKING + 3 HIGH + 1 LOW; OBJ-9 y OBJ-10 aceptados como residuales documentados):
+>
+> **OBJ-1 [BLOCKING] fix** — Devils-advocate reportó que `quality.md`, `architecture.md`, `performance.md`, `test-quality.md` no existían en el main repo (vivían en worktree `mystifying-hugle-b0dbe3`). **Copiados a `/Volumes/Pendrive128GB/Booster-AI/.specs/audit-2026-05-14/`** 2026-05-15T20:25Z; las citaciones del plan ahora resuelven.
+>
+> **OBJ-2 [BLOCKING] fix** — Acceptance pedía `pnpm --filter @booster-ai/logger test --coverage` pero `packages/logger/package.json` solo declara `"test"` sin script de coverage. **Files de T-SEC-032a expandidos** para incluir `packages/logger/package.json` con scripts: `"test:coverage": "vitest run --coverage --passWithNoTests"` + devDep `@vitest/coverage-v8: "^4.0.18"` (versión alineada con apps/api).
+>
+> **OBJ-3 [BLOCKING] fix** — v3.2 decía "7 keys" pero listaba 12; sloppy + no tomaba posición sobre `userId`/`ip`/`userAgent`. **v3.3 declara política explícita** (en redaction.ts comment block + en este plan):
+>   - **REDACT top-level (12 keys)**: `email`, `rut`, `phone`, `phone_number`, `phoneNumber`, `whatsapp_e164`, `whatsappE164`, `full_name`, `fullName`, `dni`, `firebase_uid`, `firebaseUid`.
+>   - **NO REDACT (declared exemption)**: `userId`, `uid` (UUID sintético, pseudonymización OK per Ley 19.628 art. 2 lit. f); `messageId` (sintético); `ip`, `userAgent` (security audit SEC-033 los pide para incident response); `path` (URL path, no PII); `service`, `version`, `level` (Pino metadata). El razonamiento queda comentado en `redaction.ts` para futuros contribuidores.
+>
+> **OBJ-4 [BLOCKING] fix** — Colisión namespace `T28` (plan task) vs `Test T28 spec` (PIN-regen-reset → T19). **Renombrado a `T-SEC-032a` + `T-SEC-032b`** — semantically obvio, sin colisión, grep `T-SEC-` agrupa security mitigations futuras.
+>
+> **OBJ-5 [HIGH] fix** — "Proof terciario" v3.2 era grep contra source code (theatre, no verifica runtime). **Reemplazado** por un proof que mide redacción real Pino emitiendo a un transport mock dentro del test unitario (más cerca de runtime real que un grep, sin requerir deploy a staging para validar).
+>
+> **OBJ-6 [HIGH] fix** — Paradoja de auto-referencia: v3.2 pedía SHA del commit T28 en security.md commit. **Reformulado**: security.md update se hace **en el mismo commit** que el src/test (sin SHA self-reference; la referencia es a `T-SEC-032 v3.3` plus la naturaleza de la mitigación). El SHA queda implícito en `git log --grep="T-SEC-032"` para auditoría futura.
+>
+> **OBJ-7 [HIGH] fix** — Task split en T-SEC-032a (~110 LOC: redaction.ts + redaction.test.ts + package.json + security.md update) y T-SEC-032b (~55 LOC: createLogger.test.ts coverage uplift). T-SEC-032a entrega el mitigation completo de SEC-032 + tests sobre el cambio; T-SEC-032b es el cleanup oportunista del package que estaba en 0 tests. T-SEC-032b puede mergearse independiente (incluso después del PR principal) sin re-abrir SEC-032.
+>
+> **OBJ-8 [MEDIUM] fix** — Interacción con forensia/seed-demo enumerada. **Findings**:
+>   - `apps/api/src/services/seed-demo.ts:612` emite `logger.info({ email, firebaseUid }, ...)` — post-T-SEC-032a ambos campos quedan `[Redacted]` en logs de app. **OK**: este log es operacional (creación de demo Firebase user), no se usa para correlación forense.
+>   - `infrastructure/scripts/forensia-demo-password.ts` (T12a) usa **Firebase Identity Toolkit REST API directo** (`signInWithPassword`), no consulta Cloud Logging. **Sin interacción** con T-SEC-032. Confirmado por inspección del script — no hay `cloud.logging` imports ni `gcloud logging read` calls.
+>   - `apps/api/src/routes/auth-driver.ts:154,174,246,250` también emite `{ rut, firebaseUid }` top-level. **Mismo fix, mismo path** — T-SEC-032a lo cubre por construcción (no requiere cambios adicionales en auth-driver.ts).
+>   - T9.5 instrumentation (`auth.is_demo.blocked`) usa labels `{ path, persona }` — ninguna es PII. Sin impacto.
+>
+> **OBJ-11 [LOW] fix** — Este changelog explícitamente enumera deltas a trazabilidad, files, acceptance proofs, y razonamiento de policy. Reviewer puede auditar el diff completo desde acá sin reconstruirlo.
+>
+> **OBJ-9 [MEDIUM] residual** — Pino caret pin `^9.5.0`. **Aceptado como riesgo declarado**: Renovate puede traer 9.5.x → 9.999.x con cambios sutiles en `redact.paths` semántica. Mitigación: snapshot test (incluido en redaction.test.ts) que captura output JSON literal de Pino contra un fixture de input; si Pino bumpea el comportamiento, el test falla y bloquea el merge automático. **Trade-off explícito**: no se pinea exact porque el resto del repo usa caret y romper la convención por un solo package agrega ruido a Renovate.
+>
+> **OBJ-10 [MEDIUM] residual** — Scope-expansion bar "same module + cost-benefit + cleanup positivo" sigue siendo unfalsifiable como objection. **Aceptado**: spec.md no se reabre en este ciclo (preservar Approval 2026-05-14T21:45Z). Para futuras expansions, Felipe debe declarar bar explícito o decretar "no más HIGH-tier en este spec" como política. Anotado como OOB-11 (out-of-band housekeeping del próximo cycle).
 
 ---
 
@@ -525,6 +563,57 @@ Phase C arranca **tras merge de toda Phase B** (sin tráfico de cambios en Cloud
 
 ---
 
+## Phase D — SEC-032 (HIGH) PII redaction top-level — v3.3 expansion
+
+Driver de la expansion: ver changelog v3.1 → v3.2 → v3.3 al inicio del archivo. Pre-flights: ninguno (T-SEC-032 no toca infra ni Firebase ni Secret Manager — es modificación local al package leaf `@booster-ai/logger`).
+
+### T-SEC-032a — Add bare-key paths a Pino `redactionPaths` + redaction tests + coverage script wiring (SEC-032 mitigation, atomic)
+- **Files**:
+  - `packages/logger/src/redaction.ts` — añadir 12 keys top-level al array `redactionPaths` + comentario explícito de la política REDACT vs NO-REDACT (ver changelog OBJ-3).
+    - REDACT: `email`, `rut`, `phone`, `phone_number`, `phoneNumber`, `whatsapp_e164`, `whatsappE164`, `full_name`, `fullName`, `dni`, `firebase_uid`, `firebaseUid`.
+    - Comentario in-source documenta la NO-REDACT exemption con el reasoning Ley 19.628 + SEC-033.
+  - `packages/logger/src/redaction.test.ts` — NEW (~80 LOC). Cubre:
+    1. Cada uno de los 12 bare keys redactados cuando aparece top-level (loop `it.each`).
+    2. Wildcards `*.email`/`*.rut`/etc. siguen redactando anidados (regresión).
+    3. Combinación top-level + nested en mismo log.
+    4. NO-REDACT exemption: `userId`, `messageId`, `ip`, `path` aparecen en claro post-redacción (verifica que la política se respeta).
+    5. **Pino snapshot test** (OBJ-9 mitigation): JSON output literal contra un fixture de input — detecta drift de Pino upstream.
+  - `packages/logger/package.json` — añadir:
+    - `"test:coverage": "vitest run --coverage --passWithNoTests"` al scripts block.
+    - `"@vitest/coverage-v8": "^4.0.18"` al devDependencies.
+  - `.specs/audit-2026-05-14/security.md` — SEC-032 line 215 block: añadir línea `**Status: MITIGATED in T-SEC-032a (plan v3.3)** — bare keys ahora redactadas; ver `packages/logger/src/redaction.ts` post-merge. **Forensia compat**: T-SEC-032 no afecta a `infrastructure/scripts/forensia-demo-password.ts` (T12a) — el script usa Firebase Identity Toolkit REST (`signInWithPassword`) directo, no consulta Cloud Logging; la redacción adicional de PII en logs de app no cambia ningún input ni output del script.` (sin SHA self-reference; OBJ-6 fix; **forensia evidence in-diff per NEW-2 fix**).
+- **LOC estimate**: ~110 LOC neto (10 LOC src + 80 LOC test + 3 LOC package.json + 2 LOC security.md + ~15 LOC de comentario in-source).
+- **Depends on**: ninguna. Independiente de T1..T27/OPS-*. T-SEC-032a mergeable en cualquier orden relativo a las otras tasks.
+- **Acceptance**:
+  - **PROOF 1 (redacción runtime)**: `redaction.test.ts` ejecuta Pino real (no mock) con `redactionPaths` aplicados; un log call con `{ email: 'a@b.cl', rut: '12345678-9' }` top-level produce JSON donde ambos campos son `[Redacted]`. Verificado por test fixture, no por grep (OBJ-5 fix).
+  - **PROOF 2 (NO-REDACT policy)**: el mismo test verifica que `{ userId: 'uuid-...', messageId: 'msg-...', ip: '1.2.3.4', path: '/me' }` sale en claro. Confirma que la exemption está documentada y enforced (OBJ-3 fix).
+  - **PROOF 3 (coverage script wiring)**: `pnpm --filter @booster-ai/logger test:coverage` exit 0 y emite coverage report en `packages/logger/coverage/`. Coverage de `redaction.ts` debe estar ≥80% (en práctica 100% — el archivo es un array + comment). `createLogger.ts` queda como deuda formalizada en T-SEC-032b — esta task no garantiza ≥80% global del package, solo del archivo tocado (OBJ-2 fix).
+  - **PROOF 4 (typecheck)**: `pnpm --filter @booster-ai/logger typecheck` exit 0.
+  - **PROOF 5 (lint)**: `pnpm lint` exit 0 (Biome sobre todo el diff, incluido el comentario in-source).
+  - **PROOF 6 (security.md updated)**: `git diff` muestra SEC-032 status linea actualizada a `MITIGATED in T-SEC-032a (plan v3.3)`. Sin SHA self-reference (OBJ-6 fix).
+  - **PROOF 7 (forensia compat)**: evidencia commiteada **dentro del diff** (en security.md update — ver Files arriba). El statement vive en el archivo de auditoría junto al status MITIGATED de SEC-032, sobreviviendo squash-merge y `git log --grep` (NEW-2 fix; reemplaza el "evidence-in-commit-message" de v3.3 inicial).
+- **Rollback**: revert único commit. Logger vuelve a state pre-T-SEC-032a (paths nested only). Sin side-effects en otros workspaces (logger es leaf dep; downstream consumers solo ven mejor redacción, no breaking). **El revert también reversa la actualización de `security.md` SEC-032 status** — comportamiento correcto: si la mitigación se reverse, su status de MITIGATED también debe revertirse (NEW-3 fix).
+- **Risk register linked**: §9 R23 (ver trazabilidad).
+
+### T-SEC-032b — Logger package coverage uplift (createLogger.ts tests, cleanup oportunista)
+- **Files**:
+  - `packages/logger/src/createLogger.test.ts` — NEW (~55 LOC). Cubre:
+    1. Factory `createLogger({ service, version, level })` retorna instancia Pino tipada.
+    2. `pretty: true` activa transport `pino-pretty` en dev; `pretty: false` (default prod) usa JSON output.
+    3. `correlationId` opcional propaga a child loggers.
+    4. `level` se respeta (filter `info > debug`, etc.).
+    5. Smoke test: integración con `redactionPaths` (un log con PII top-level se redacta correctamente through la factory).
+- **LOC estimate**: ~55 LOC.
+- **Depends on**: T-SEC-032a merged (porque comparte `redactionPaths` y verifica integración). Si T-SEC-032a no se mergea, T-SEC-032b no aplica.
+- **Acceptance**:
+  - **PROOF 1**: `pnpm --filter @booster-ai/logger test:coverage` reporta ≥80% statements/branches/lines/functions en `createLogger.ts` específicamente.
+  - **PROOF 2**: `pnpm --filter @booster-ai/logger typecheck` exit 0.
+  - **PROOF 3**: lint exit 0.
+- **Rollback**: revert único commit. Sin impacto en SEC-032 mitigation (T-SEC-032a sigue activa).
+- **Justificación de split (OBJ-7)**: T-SEC-032a entrega la mitigación completa de SEC-032 con tests proportional al cambio. T-SEC-032b es deuda pre-existente (package en 0 tests por test-quality.md §1) que se paga oportunistamente sin bloquear el security fix. Mergeable incluso post-merge del PR principal.
+
+---
+
 ## Out-of-band tasks (OOB)
 
 - **OOB-1**: `infrastructure/terraform.tfvars.example` — añadir `demo_mode_activated = false`. ~5 LOC.
@@ -537,6 +626,7 @@ Phase C arranca **tras merge de toda Phase B** (sin tráfico de cambios en Cloud
 - **OOB-8 (v3)**: ADR-**034** sobre el procedimiento de archivado de OPS-Y a los 90 días (renumerado de ADR-033 para evitar colisión con OOB-10/ADR-033 nuevo del Identity Platform gap).
 - **OOB-9 (v3, post-devils-advocate F4)**: `infrastructure/scripts/verify-ops-y-closure.ts` (~40 LOC) — script que automatiza la verificación de los 3 criterios de cierre de OPS-Y (`security.password_spray.matches_total = 0` por 90d, `password_rotated_at` en `docs/qa/demo-accounts.md`, rotación verificada en Secret Manager). Emite verdict YES/NO. Se ejecuta manualmente día 90 + ADR-032 cierra con su output.
 - **OOB-10 (v3.1, post-PF-2)**: file issue en `hashicorp/terraform-provider-google` solicitando exposición del campo `signUp.allow_new_accounts` (o equivalente) en `google_identity_platform_config` resource. Provider v6.50.0 NO lo expone; T5a queda manual + T5b alert por gap del provider. Linkear el issue al **ADR-033 nuevo** (`docs/adr/041-identity-platform-self-signup-manual-gap-provider.md`) que registra: (a) el gap del provider, (b) decisión de manual + alert hasta que el provider lo soporte, (c) procedimiento para migrar a IaC cuando el campo aparezca en futuras versiones del provider. ADR-033 referenciado desde spec §3 H1.2 + decision log §13.
+- **OOB-11 (v3.3, post-devils-advocate-v3.2 OBJ-10)**: declarar bar explícito para futuras scope-expansions del tipo "BLOCKING-only spec acepta finding HIGH adyacente". Bar propuesto (ajustable en próximo ciclo /spec): expansion permitida sólo si (i) el finding es provablemente explotable en la misma ventana que los BLOCKING; (ii) fix ≤2h; (iii) cubre gap pre-existente de CLAUDE.md §1 (e.g., 0 tests en package crítico). Sin documentar este bar en spec.md formalmente, el precedente v3.2/v3.3 (SEC-032 incluido) puede extenderse arbitrariamente. Anotar en próximo `/spec` housekeeping cycle o en una iteración 040-* ADR sobre scope discipline.
 
 ---
 
@@ -593,10 +683,17 @@ Phase C arranca **tras merge de toda Phase B** (sin tráfico de cambios en Cloud
 | §3 H3 plan-diff isolation | OPS-3 |
 | §3 H3 staging validation real | T25, T26 |
 | §3 H3 pre-flight | T24 |
-| Test T28 spec | T19 |
+| §9 R23 (v3.3) PII redaction top-level (SEC-032) | **T-SEC-032a** |
+| §9 R23 NO-REDACT policy (userId/uid/ip/userAgent exemption) | **T-SEC-032a** (proof 2) |
+| security.md SEC-032 status → MITIGATED | **T-SEC-032a** (proof 6) |
+| logger package coverage ≥80% en redaction.ts (CLAUDE.md §1) | **T-SEC-032a** (proof 3) |
+| logger package coverage ≥80% en createLogger.ts (cleanup oportunista) | **T-SEC-032b** (proof 1) |
+| Test T28 spec (PIN regen reset) | T19 |
 | Test T29 spec | T18 |
 | Test T30 spec | T23 |
 | Test T31 spec | T16 |
+
+> **Nota v3.3** (resuelve colisión que existía en v3.2): el namespace `T28` ahora es exclusivamente del spec ("Test T28 spec" → T19 task). Las tasks de mitigación SEC-032 usan `T-SEC-032a/b` (semantically obvio, sin colisión). Grep `T-SEC-` agrupa security mitigations futuras.
 
 ---
 

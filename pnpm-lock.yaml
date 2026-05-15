@@ -777,6 +777,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0

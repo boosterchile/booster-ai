@@ -213,6 +213,7 @@ Total: **41 hallazgos**.
 ### A09 — Security Logging and Monitoring Failures
 
 #### SEC-032 — [HIGH] Pino redaction paths usan `*.xxx` que no matchean campos top-level
+- **Status: MITIGATED in T-SEC-032a (plan v3.3, 2026-05-15)** — bare keys ahora redactadas; ver `packages/logger/src/redaction.ts` (12 keys top-level añadidas + comment block con política NO-REDACT documentada). Tests en `packages/logger/src/redaction.test.ts` cubren los 12 keys + regresión wildcards + NO-REDACT exemption + Pino snapshot anti-drift. **Forensia compat**: T-SEC-032 no afecta a `infrastructure/scripts/forensia-demo-password.ts` (T12a) — el script usa Firebase Identity Toolkit REST (`signInWithPassword`) directo, no consulta Cloud Logging; la redacción adicional de PII en logs de app no cambia ningún input ni output del script.
 - **Evidencia**: `packages/logger/src/redaction.ts:13-60`. Patterns como `*.email`, `*.rut`, `*.phone`, `*.fullName`. Pino redaction con wildcard `*.email` matchea `{ user: { email: ... } }`, pero NO `{ email: ... }` top-level.
 - **Hallazgos relacionados (logs con PII top-level)**:
   - `apps/api/src/routes/auth-universal.ts:110, 152, 171` — `logger.info({ rut, ... })`, `logger.error({ err, rut })` — `rut` NO se redacta.
