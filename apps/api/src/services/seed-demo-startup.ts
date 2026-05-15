@@ -4,7 +4,12 @@ import type { Auth } from 'firebase-admin/auth';
 import type { ApiEnv } from '../config.js';
 import type { Db } from '../db/client.js';
 import { conductores, empresas, users } from '../db/schema.js';
-import { DEMO_CONDUCTOR_RUT, DEMO_SHIPPER_RUT, seedDemo } from './seed-demo.js';
+import {
+  DEMO_CONDUCTOR_RUT,
+  DEMO_SHIPPER_RUT,
+  resolveDemoSeedPassword,
+  seedDemo,
+} from './seed-demo.js';
 
 /**
  * Hook que corre en startup del api server cuando `DEMO_MODE_ACTIVATED=true`.
@@ -34,7 +39,7 @@ export async function ensureDemoSeeded(opts: {
   db: Db;
   firebaseAuth: Auth;
   logger: Logger;
-  config: Pick<ApiEnv, 'DEMO_MODE_ACTIVATED'>;
+  config: Pick<ApiEnv, 'DEMO_MODE_ACTIVATED' | 'DEMO_SEED_PASSWORD'>;
 }): Promise<void> {
   const { db, firebaseAuth, logger, config } = opts;
 
@@ -44,6 +49,12 @@ export async function ensureDemoSeeded(opts: {
   }
 
   try {
+    // Fail-fast dentro del try: si DEMO_SEED_PASSWORD está unset, el throw
+    // queda atrapado por el catch existente y queda en logs como ERROR,
+    // sin matar el startup del api (filosofía del archivo: "un seed
+    // fallido nunca debe tumbar el server"). /demo/login responderá 503
+    // hasta que se configure el secret. Ref ADR-040.
+    const demoPassword = resolveDemoSeedPassword(config);
     // Pista cheap: empresa shipper demo (rut canónico + es_demo=true).
     // Si existe, asumimos que el seed completo corrió antes. El seed
     // es idempotente, así que tampoco haría daño correrlo de nuevo —
@@ -60,12 +71,12 @@ export async function ensureDemoSeeded(opts: {
       // Aunque ya esté seedeado, igual nos aseguramos de que el
       // conductor demo tenga firebase_uid real (sino el endpoint
       // /demo/login responde 503 para persona='conductor').
-      await ensureConductorDemoActivated({ db, firebaseAuth, logger });
+      await ensureConductorDemoActivated({ db, firebaseAuth, logger, demoPassword });
       return;
     }
 
     logger.info('ensureDemoSeeded: provisioning demo entities (first boot)');
-    const credentials = await seedDemo({ db, firebaseAuth, logger });
+    const credentials = await seedDemo({ db, firebaseAuth, logger, demoPassword });
     // Debug-only: estas son credenciales sintéticas de demo, pero
     // todavía son "secretos" en el sentido amplio. No queremos verlas
     // en Cloud Logging con nivel info por default.
@@ -83,7 +94,7 @@ export async function ensureDemoSeeded(opts: {
     // Promover el conductor demo a un firebase user real. Sin esto,
     // /demo/login para persona='conductor' responde 503 porque el
     // firebase_uid sigue siendo `pending-rut:...`.
-    await ensureConductorDemoActivated({ db, firebaseAuth, logger });
+    await ensureConductorDemoActivated({ db, firebaseAuth, logger, demoPassword });
   } catch (err) {
     // NO propagar — un seed fallido no debe tumbar el startup. El api
     // sigue sirviendo todo lo demás; /demo/login responderá 503 hasta
@@ -94,24 +105,26 @@ export async function ensureDemoSeeded(opts: {
 
 /**
  * Promueve el conductor demo de placeholder `pending-rut:*` a un
- * firebase user real con email sintético + password fijo de demo. Sin
+ * firebase user real con email sintético + password de demo. Sin
  * esto, `/demo/login` para persona='conductor' no puede emitir un
  * custom token (createCustomToken exige un UID real Firebase).
  *
  * Idempotente: si el conductor ya tiene firebase_uid real, no-op.
  *
- * El password sintético `BoosterDemo2026!` es el mismo que usan los
- * otros owners demo (ver `DEMO_PASSWORD` en seed-demo.ts). El conductor
- * normalmente usaría su PIN como password tras activación; acá lo
- * sobreescribimos porque el flujo demo entra via custom token, no via
- * signInWithEmailAndPassword.
+ * El password viene inyectado vía `demoPassword` (resuelto por
+ * `resolveDemoSeedPassword` desde DEMO_SEED_PASSWORD env / Secret Manager).
+ * Es el mismo que usan los otros owners demo. El conductor normalmente
+ * usaría su PIN como password tras activación; acá lo sobreescribimos
+ * porque el flujo demo entra via custom token, no via
+ * signInWithEmailAndPassword. Ref: ADR-040.
  */
 async function ensureConductorDemoActivated(opts: {
   db: Db;
   firebaseAuth: Auth;
   logger: Logger;
+  demoPassword: string;
 }): Promise<void> {
-  const { db, firebaseAuth, logger } = opts;
+  const { db, firebaseAuth, logger, demoPassword } = opts;
 
   // 1. Buscar el conductor demo y su user actual.
   const rows = await db
@@ -137,9 +150,10 @@ async function ensureConductorDemoActivated(opts: {
 
   // 2. Crear (o reusar) el Firebase user. Email sintético determinístico
   //    en `.invalid` (RFC2606) para no rutear emails reales. Password
-  //    fijo `BoosterDemo2026!` consistente con los owners demo.
+  //    inyectado desde Secret Manager (DEMO_SEED_PASSWORD), consistente
+  //    con los owners demo del set seedeado por seedDemo().
   const syntheticEmail = `drivers+${DEMO_CONDUCTOR_RUT.replace(/[.\-]/g, '')}@boosterchile.invalid`;
-  const password = 'BoosterDemo2026!';
+  const password = demoPassword;
   let firebaseUid: string;
   try {
     const existingFb = await firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);

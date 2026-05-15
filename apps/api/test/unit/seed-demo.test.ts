@@ -147,7 +147,12 @@ describe('seedDemo', () => {
     const fb = makeFirebaseAuth({});
     const { seedDemo } = await import('../../src/services/seed-demo.js');
     await expect(
-      seedDemo({ db: stub.db, firebaseAuth: fb.auth, logger: noopLogger }),
+      seedDemo({
+        db: stub.db,
+        firebaseAuth: fb.auth,
+        logger: noopLogger,
+        demoPassword: 'test-seed-password-1234',
+      }),
     ).rejects.toThrow(/plan/);
   });
 
@@ -237,7 +242,12 @@ describe('seedDemo', () => {
       createdUids: ['fb-shipper', 'fb-carrier', 'fb-stake'],
     });
     const { seedDemo } = await import('../../src/services/seed-demo.js');
-    const out = await seedDemo({ db: stub.db, firebaseAuth: fb.auth, logger: noopLogger });
+    const out = await seedDemo({
+      db: stub.db,
+      firebaseAuth: fb.auth,
+      logger: noopLogger,
+      demoPassword: 'test-seed-password-1234',
+    });
 
     expect(out.carrier_empresa_id).toBe('carrier-emp');
     expect(out.shipper_empresa_id).toBe('shipper-emp');
@@ -319,7 +329,12 @@ describe('seedDemo', () => {
       ]),
     });
     const { seedDemo } = await import('../../src/services/seed-demo.js');
-    const out = await seedDemo({ db: stub.db, firebaseAuth: fb.auth, logger: noopLogger });
+    const out = await seedDemo({
+      db: stub.db,
+      firebaseAuth: fb.auth,
+      logger: noopLogger,
+      demoPassword: 'test-seed-password-1234',
+    });
 
     expect(out.shipper_empresa_id).toBe('shipper-exist');
     expect(out.carrier_empresa_id).toBe('carrier-exist');
@@ -396,7 +411,12 @@ describe('seedDemo', () => {
       ]),
     });
     const { seedDemo } = await import('../../src/services/seed-demo.js');
-    const out = await seedDemo({ db: stub.db, firebaseAuth: fb.auth, logger: noopLogger });
+    const out = await seedDemo({
+      db: stub.db,
+      firebaseAuth: fb.auth,
+      logger: noopLogger,
+      demoPassword: 'test-seed-password-1234',
+    });
     expect(out).toBeTruthy();
     expect(membershipInsertCount).toBe(3);
     expect(out.conductor.activation_pin).toBeNull(); // user existente activo, no se regen
@@ -454,7 +474,12 @@ describe('seedDemo', () => {
     })();
     const { seedDemo } = await import('../../src/services/seed-demo.js');
     await expect(
-      seedDemo({ db: stub.db, firebaseAuth: fb.auth, logger: noopLogger }),
+      seedDemo({
+        db: stub.db,
+        firebaseAuth: fb.auth,
+        logger: noopLogger,
+        demoPassword: 'test-seed-password-1234',
+      }),
     ).rejects.toThrow(/boom/);
   });
 });

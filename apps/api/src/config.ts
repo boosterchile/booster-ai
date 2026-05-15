@@ -456,6 +456,21 @@ const apiEnvSchema = commonEnvSchema
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
     /**
+     * Password sintético de las cuentas demo. Inyectado al runtime SA del
+     * Cloud Run via Secret Manager (secret `demo-seed-password`, creado en
+     * T2 / `infrastructure/security-hotfixes-2026-05-14.tf`).
+     *
+     * Optional en el schema porque dev/staging arrancan sin DEMO_MODE_ACTIVATED
+     * y no necesitan el valor. Cuando DEMO_MODE_ACTIVATED=true, el helper
+     * `resolveDemoSeedPassword` (seed-demo.ts) hace fail-fast dinámico si
+     * está unset — refusa seedear con un literal hardcoded.
+     *
+     * Ref: ADR-040 (defensa en profundidad sobre T7 flag flip), hotfix
+     * security-blocking-hotfixes-2026-05-14 §3 H1.4.
+     */
+    DEMO_SEED_PASSWORD: z.string().min(8, 'DEMO_SEED_PASSWORD min 8 chars').optional(),
+
+    /**
      * Dashboard de observabilidad (`/app/platform-admin/observability`).
      *
      * Cuando true: el router `/admin/observability/*` está activo y la UI

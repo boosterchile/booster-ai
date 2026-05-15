@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
+import type { ApiEnv } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   assignments,
@@ -83,7 +84,28 @@ const SHIPPER_OWNER_EMAIL = 'demo-shipper@boosterchile.com';
 const CARRIER_OWNER_EMAIL = 'demo-carrier@boosterchile.com';
 const STAKEHOLDER_EMAIL = 'demo-stakeholder@boosterchile.com';
 const DEMO_STAKEHOLDER_ORG_NOMBRE = 'Observatorio Logístico Demo (Mesa pública sostenibilidad)';
-const DEMO_PASSWORD = 'BoosterDemo2026!';
+
+/**
+ * Resuelve el password sintético de las cuentas demo desde env, con
+ * fail-fast si está unset. Refusa caer a un literal hardcoded —
+ * defensa en profundidad sobre el flag DEMO_MODE_ACTIVATED.
+ *
+ * El valor viene de Secret Manager (secret `demo-seed-password`, T2)
+ * inyectado como env var DEMO_SEED_PASSWORD al runtime del Cloud Run.
+ *
+ * Ref: ADR-040, hotfix security-blocking-hotfixes-2026-05-14 §3 H1.4.
+ */
+export function resolveDemoSeedPassword(env: Pick<ApiEnv, 'DEMO_SEED_PASSWORD'>): string {
+  const value = env.DEMO_SEED_PASSWORD;
+  if (!value || value.length < 8) {
+    throw new Error(
+      'DEMO_SEED_PASSWORD missing — refusing to seed with hardcoded literal. ' +
+        'Set env var via Secret Manager (secret: demo-seed-password) before ' +
+        'enabling DEMO_MODE_ACTIVATED.',
+    );
+  }
+  return value;
+}
 
 /**
  * Crea (o reusa) el set demo completo. Idempotente: corridas sucesivas
@@ -93,8 +115,9 @@ export async function seedDemo(opts: {
   db: Db;
   firebaseAuth: Auth;
   logger: Logger;
+  demoPassword: string;
 }): Promise<DemoCredentials> {
-  const { db, firebaseAuth, logger } = opts;
+  const { db, firebaseAuth, logger, demoPassword } = opts;
 
   // 1. Resolver plan (estándar). Buscamos el plan_id ya existente.
   const planRows = await db
@@ -136,7 +159,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: SHIPPER_OWNER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Dueño Andina Demo',
     rut: DEMO_SHIPPER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -146,7 +169,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: CARRIER_OWNER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Dueño Transportes Demo Sur',
     rut: DEMO_CARRIER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -159,7 +182,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: STAKEHOLDER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Stakeholder Demo (Mesa pública sostenibilidad)',
     rut: DEMO_STAKEHOLDER_USER_RUT,
     isPlatformAdmin: false,
@@ -288,9 +311,9 @@ export async function seedDemo(opts: {
   });
 
   return {
-    shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: DEMO_PASSWORD },
-    carrier_owner: { email: CARRIER_OWNER_EMAIL, password: DEMO_PASSWORD },
-    stakeholder: { email: STAKEHOLDER_EMAIL, password: DEMO_PASSWORD },
+    shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: demoPassword },
+    carrier_owner: { email: CARRIER_OWNER_EMAIL, password: demoPassword },
+    stakeholder: { email: STAKEHOLDER_EMAIL, password: demoPassword },
     conductor: { rut: DEMO_CONDUCTOR_RUT, activation_pin: driverResult.activationPin },
     carrier_empresa_id: carrierEmpresaId,
     shipper_empresa_id: shipperEmpresaId,

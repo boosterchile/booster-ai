@@ -45,6 +45,9 @@ async function buildApp(opts: {
         : Promise.resolve(opts.seedReturn ?? { ok: true }),
     ),
     deleteDemo: vi.fn(() => Promise.resolve(opts.deleteReturn ?? { empresas_eliminadas: 0 })),
+    // Mock del helper de fail-fast: en estos tests asumimos secret configurado.
+    // El path "secret missing → 500" se testea aparte si fuera necesario.
+    resolveDemoSeedPassword: vi.fn(() => 'test-seed-password-1234'),
   }));
 
   const { createAdminSeedRoutes } = await import('../../src/routes/admin-seed.js');

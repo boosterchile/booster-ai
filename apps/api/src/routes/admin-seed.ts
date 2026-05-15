@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { deleteDemo, seedDemo } from '../services/seed-demo.js';
+import { deleteDemo, resolveDemoSeedPassword, seedDemo } from '../services/seed-demo.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -50,10 +50,17 @@ export function createAdminSeedRoutes(opts: { db: Db; firebaseAuth: Auth; logger
     }
     opts.logger.info({ adminEmail: auth.adminEmail }, 'admin/seed/demo POST');
     try {
+      // Fail-fast: si DEMO_SEED_PASSWORD no está configurado, el throw
+      // queda atrapado por el catch siguiente y retorna 500 con detail
+      // explícito. Defensa en profundidad sobre el flag DEMO_MODE_ACTIVATED
+      // (un admin invocando este endpoint sin secret cargado recibe error
+      // claro en vez de seedear con literal hardcoded). Ref ADR-040.
+      const demoPassword = resolveDemoSeedPassword(appConfig);
       const credentials = await seedDemo({
         db: opts.db,
         firebaseAuth: opts.firebaseAuth,
         logger: opts.logger,
+        demoPassword,
       });
       return c.json({ ok: true, credentials });
     } catch (err) {

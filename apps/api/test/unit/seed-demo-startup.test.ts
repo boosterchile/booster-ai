@@ -151,7 +151,7 @@ describe('ensureDemoSeeded', () => {
       db,
       firebaseAuth: fb.auth,
       logger: noopLogger,
-      config: { DEMO_MODE_ACTIVATED: true },
+      config: { DEMO_MODE_ACTIVATED: true, DEMO_SEED_PASSWORD: 'test-seed-password-1234' },
     });
 
     expect(seedDemoSpy).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('ensureDemoSeeded', () => {
       db,
       firebaseAuth: fb.auth,
       logger: noopLogger,
-      config: { DEMO_MODE_ACTIVATED: true },
+      config: { DEMO_MODE_ACTIVATED: true, DEMO_SEED_PASSWORD: 'test-seed-password-1234' },
     });
 
     expect(seedDemoSpy).toHaveBeenCalledTimes(1);
@@ -220,7 +220,7 @@ describe('ensureDemoSeeded', () => {
         db,
         firebaseAuth: fb.auth,
         logger: noopLogger,
-        config: { DEMO_MODE_ACTIVATED: true },
+        config: { DEMO_MODE_ACTIVATED: true, DEMO_SEED_PASSWORD: 'test-seed-password-1234' },
       }),
     ).resolves.toBeUndefined();
     expect(seedDemoSpy).toHaveBeenCalled();
