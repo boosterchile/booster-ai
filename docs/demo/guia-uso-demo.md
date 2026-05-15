@@ -78,15 +78,15 @@ Respuesta (guarda esto — el PIN no se vuelve a mostrar):
   "credentials": {
     "shipper_owner": {
       "email": "demo-shipper@boosterchile.com",
-      "password": "BoosterDemo2026!"
+      "password": "<obtain-from-secret-manager>"
     },
     "carrier_owner": {
       "email": "demo-carrier@boosterchile.com",
-      "password": "BoosterDemo2026!"
+      "password": "<obtain-from-secret-manager>"
     },
     "stakeholder": {
       "email": "demo-stakeholder@boosterchile.com",
-      "password": "BoosterDemo2026!"
+      "password": "<obtain-from-secret-manager>"
     },
     "conductor": {
       "rut": "12345678-5",
@@ -110,9 +110,9 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 
 | Usuario | Identificador | Credencial | Empresa | Rol |
 |---|---|---|---|---|
-| Dueño Andina Demo | demo-shipper@boosterchile.com | password `BoosterDemo2026!` | Andina Demo S.A. (RUT 76999111-1) | dueno (shipper) |
-| Dueño Transportes Demo Sur | demo-carrier@boosterchile.com | password `BoosterDemo2026!` | Transportes Demo Sur S.A. (RUT 77888222-K) | dueno (carrier) |
-| Stakeholder Demo | demo-stakeholder@boosterchile.com | password `BoosterDemo2026!` | Transportes Demo Sur (auditoría externa) | stakeholder_sostenibilidad |
+| Dueño Andina Demo | demo-shipper@boosterchile.com | password `<obtain-from-secret-manager>` | Andina Demo S.A. (RUT 76999111-1) | dueno (shipper) |
+| Dueño Transportes Demo Sur | demo-carrier@boosterchile.com | password `<obtain-from-secret-manager>` | Transportes Demo Sur S.A. (RUT 77888222-K) | dueno (carrier) |
+| Stakeholder Demo | demo-stakeholder@boosterchile.com | password `<obtain-from-secret-manager>` | Transportes Demo Sur (auditoría externa) | stakeholder_sostenibilidad |
 | Pedro González | RUT `12345678-5` | PIN 6 dígitos (del seed response) | Transportes Demo Sur | conductor |
 
 **Nota sobre RUT**: el sistema acepta RUT con o sin puntos al tipear, pero siempre persiste en formato canónico **sin puntos** (`12345678-5`). Los inputs de la UI muestran placeholder y hint indicando "Sin puntos, con guión".
@@ -213,7 +213,7 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 
 ### E. Como stakeholder — `demo-stakeholder@boosterchile.com`
 
-1. **Login**: `https://app.boosterchile.com/login` → email + password `BoosterDemo2026!`.
+1. **Login**: `https://app.boosterchile.com/login` → email + password `<obtain-from-secret-manager>`.
 2. **Surface guard**: si entra a `/app` se redirige automáticamente a `/app/stakeholder/zonas` (su único hub útil).
 3. **En `/app/stakeholder/zonas`** ve el dashboard de zonas de impacto logístico:
    - 5 zonas predefinidas (Puerto Valparaíso, Puerto San Antonio, Mercado Lo Valledor, Polo Quilicura, ZOFRI Iquique).

@@ -104,8 +104,8 @@ Todos verdes. Typecheck, lint y build limpios en todos los packages.
 3. `POST /admin/seed/demo` con Firebase token de un admin → returns credenciales:
    ```json
    {
-     "shipper_owner": { "email": "demo-shipper@boosterchile.com", "password": "BoosterDemo2026!" },
-     "carrier_owner": { "email": "demo-carrier@boosterchile.com", "password": "BoosterDemo2026!" },
+     "shipper_owner": { "email": "demo-shipper@boosterchile.com", "password": "<obtain-from-secret-manager>" },
+     "carrier_owner": { "email": "demo-carrier@boosterchile.com", "password": "<obtain-from-secret-manager>" },
      "conductor": { "rut": "12.345.678-5", "activation_pin": "<6 dígitos>" }
    }
    ```

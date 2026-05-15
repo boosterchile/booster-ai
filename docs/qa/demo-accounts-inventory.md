@@ -5,7 +5,7 @@
 - **Spec**: `.specs/security-blocking-hotfixes-2026-05-14/spec.md` (Approved 19:30Z; retool H1 19:45Z; OPS-Y 20:00Z; 4 UIDs + T9 deferred + T5 fallback 21:00Z)
 - **Plan**: `.specs/security-blocking-hotfixes-2026-05-14/plan.md` v3.1
 - **Tenant**: `booster-ai-494222` (Firebase / Identity Platform)
-- **Estado**: pre-rotation. Las 4 cuentas demo todavía tienen password `BoosterDemo2026!` activo. Este doc es el snapshot que OPS-1 transforma.
+- **Estado**: pre-rotation. Las 4 cuentas demo todavía tienen password `Boost***2026!` activo. Este doc es el snapshot que OPS-1 transforma.
 
 > **Propósito**: consolidar lo que sabemos del estado actual de las cuentas demo antes de OPS-1 (rotation). Sirve de baseline para:
 > - T3 (harden script): conocer UIDs target, persona → secret mapping, claims actuales.
@@ -31,10 +31,10 @@ Las 4 cuentas con `customClaims.is_demo=true` en el tenant. **Todas siguen activ
 
 | Persona | Flow primario (con `DEMO_MODE_ACTIVATED=true`) | Flow fallback / secundario | Password directo seteado en Firebase | Activation PIN |
 |---|---|---|---|---|
-| shipper | `signInWithPassword` (email + password directo) | n/a | **Sí** (`BoosterDemo2026!`) | n/a |
-| carrier | `signInWithPassword` (email + password directo) | n/a | **Sí** (`BoosterDemo2026!`) | n/a |
-| stakeholder | `signInWithPassword` (email + password directo) | n/a | **Sí** (`BoosterDemo2026!`) | n/a |
-| conductor | Custom token vía `POST /demo/login` (mintea `firebaseAuth.createCustomToken` en `apps/api/src/routes/demo-login.ts:121`) | `signInWithEmailAndPassword` con email sintético + password directo (`apps/web/src/routes/login-conductor.tsx:85` fallthrough cuando `/auth/driver-activate` responde `already_activated`) | **Sí** (`BoosterDemo2026!` seteado por `apps/api/src/services/seed-demo-startup.ts:148`) | **null** — borrado por `seed-demo-startup.ts:176` |
+| shipper | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
+| carrier | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
+| stakeholder | `signInWithPassword` (email + password directo) | n/a | **Sí** (`Boost***2026!`) | n/a |
+| conductor | Custom token vía `POST /demo/login` (mintea `firebaseAuth.createCustomToken` en `apps/api/src/routes/demo-login.ts:121`) | `signInWithEmailAndPassword` con email sintético + password directo (`apps/web/src/routes/login-conductor.tsx:85` fallthrough cuando `/auth/driver-activate` responde `already_activated`) | **Sí** (`Boost***2026!` seteado por `apps/api/src/services/seed-demo-startup.ts:148`) | **null** — borrado por `seed-demo-startup.ts:176` |
 
 **Conclusión PF-5.1 (2026-05-14T21:00Z)**: el conductor demo NO es "bootstrap-only" respecto al password directo — el `signInWithEmailAndPassword` está activo como fallback path en la PWA y es vector explotable del spray attack. Tratamiento simétrico a los 3 owners: rotation + TTL + revoke + secret en Secret Manager.
 
@@ -93,17 +93,17 @@ Ejecutado 2026-05-14T21:00Z. Investigación de archivos: `seed-demo-startup.ts` 
 
 **Caveat de superficie**: el RUT del conductor demo `12345678-5` está hardcoded en `seed-demo.ts:75` y el email sintético es derivable de la fórmula (`drivers+<RUT-sin-puntos>@boosterchile.invalid`). Ambos están en git history público — no son secretos, pero sí superficie reconocible. Rotación del password cierra el vector explotable; el RUT/email pueden quedar visibles sin riesgo.
 
-### 2.4 PF-1.bis — Inventory cross-repo del literal `BoosterDemo2026`
+### 2.4 PF-1.bis — Inventory cross-repo del literal `Boost***2026`
 
 Ejecutado 2026-05-14T19:45Z (investigación pre-aprobación retool H1). Archivos con el literal en HEAD:
 
 | Archivo | Línea | Contexto |
 |---|---|---|
-| `apps/api/src/services/seed-demo.ts` | 86 | `const DEMO_PASSWORD = 'BoosterDemo2026!';` |
-| `apps/api/src/services/seed-demo-startup.ts` | 103 | Comentario `/** El password sintético BoosterDemo2026! ... */` |
-| `apps/api/src/services/seed-demo-startup.ts` | 140 | Comentario `// password fijo BoosterDemo2026! consistente ...` |
-| `apps/api/src/services/seed-demo-startup.ts` | 142 | `const password = 'BoosterDemo2026!';` |
-| `apps/api/dist/main.js` | 4771 | `var DEMO_PASSWORD = "BoosterDemo2026!";` (artefacto compilado; `dist/` está en `.gitignore`, no commiteado) |
+| `apps/api/src/services/seed-demo.ts` | 86 | `const DEMO_PASSWORD = 'Boost***2026!';` |
+| `apps/api/src/services/seed-demo-startup.ts` | 103 | Comentario `/** El password sintético Boost***2026! ... */` |
+| `apps/api/src/services/seed-demo-startup.ts` | 140 | Comentario `// password fijo Boost***2026! consistente ...` |
+| `apps/api/src/services/seed-demo-startup.ts` | 142 | `const password = 'Boost***2026!';` |
+| `apps/api/dist/main.js` | 4771 | `var DEMO_PASSWORD = "Boost***2026!";` (artefacto compilado; `dist/` está en `.gitignore`, no commiteado) |
 | `docs/demo/guia-uso-demo.md` | 81, 85, 89, 113, 114, 115, 216 | Doc de uso del demo expone el password al lector |
 | `docs/handoff/2026-05-11-demo-features-night-sprint.md` | 107, 108 | Handoff expone password |
 
@@ -118,7 +118,7 @@ Ejecutado 2026-05-14T19:45Z (investigación pre-aprobación retool H1). Archivos
 
 ## 3. Comprometidos en git history (R21 — Opción C aplicada)
 
-7 commits introducen o tocan el literal `BoosterDemo2026` en `main` del repo público `boosterchile/booster-ai` (GitHub). Antigüedad del primero: **3 días 15 horas** al momento de PF-5.1 (2026-05-14T21:00Z). Repo confirmado **PÚBLICO** vía `curl -sI https://api.github.com/repos/boosterchile/booster-ai → HTTP 200 anónimo`. 0 forks detectados por `gh api repos/.../forks`, pero el dato NO captura clones directos, mirrors externos, GitHub Archive (BigQuery export), ni cache de agentes AI.
+7 commits introducen o tocan el literal `Boost***2026` en `main` del repo público `boosterchile/booster-ai` (GitHub). Antigüedad del primero: **3 días 15 horas** al momento de PF-5.1 (2026-05-14T21:00Z). Repo confirmado **PÚBLICO** vía `curl -sI https://api.github.com/repos/boosterchile/booster-ai → HTTP 200 anónimo`. 0 forks detectados por `gh api repos/.../forks`, pero el dato NO captura clones directos, mirrors externos, GitHub Archive (BigQuery export), ni cache de agentes AI.
 
 | # | SHA corto | SHA completo | Timestamp (CLT) | Subject |
 |---|---|---|---|---|
@@ -153,7 +153,7 @@ Universo no-demo del tenant = 10 users totales - 4 demo = **6 cuentas target del
 
 ```text
 para cada UID en {los 6 de arriba}:
-  intentar signInWithPassword(email, 'BoosterDemo2026!') vía REST
+  intentar signInWithPassword(email, 'Boost***2026!') vía REST
   esperar 200ms (self-throttle ≤ 5 req/s)
   si response == 200 (auth exitosa):
     → MATCH POSITIVO: pausa H1 entera, NO ejecutar OPS-1
@@ -209,7 +209,7 @@ Si los 3 verifican → archivar OPS-Y, cerrar ADR-032 con "monitoreo archivado e
 
 Documentado acá para que la lección sobreviva al cierre del feature:
 
-1. **Password literal compartido en seed**: 4 cuentas (3 owners + 1 conductor) terminaron con el mismo password `BoosterDemo2026!` literal porque (a) `seed-demo.ts:86` lo declara como constante, (b) `seed-demo-startup.ts:142` lo duplica inline. Lesson: secrets compartidos en código → 1 leak compromete N cuentas. OOB-5 actualiza `references/security-checklist.md`.
+1. **Password literal compartido en seed**: 4 cuentas (3 owners + 1 conductor) terminaron con el mismo password `Boost***2026!` literal porque (a) `seed-demo.ts:86` lo declara como constante, (b) `seed-demo-startup.ts:142` lo duplica inline. Lesson: secrets compartidos en código → 1 leak compromete N cuentas. OOB-5 actualiza `references/security-checklist.md`.
 
 2. **Seed corre en cold-start sin gate adicional**: `apps/api/src/index.ts:11` importa `ensureDemoSeeded()` y se invoca incondicionalmente al levantar el API si `DEMO_MODE_ACTIVATED=true`. Race condition con rotation manual era inevitable hasta el retool H1 (orden H1.0 → H1.4 → H1.1).
 
@@ -226,6 +226,6 @@ Documentado acá para que la lección sobreviva al cierre del feature:
   - PF-1: `grep -rEn "^\s+app\.(post|put|patch|delete)\(" apps/api/src/routes --include='*.ts'`
   - PF-5: `POST identitytoolkit.googleapis.com/v1/projects/booster-ai-494222/accounts:query`
   - PF-5.1: `grep -nE "demo|drivers\+|BoosterDemo|DEMO_" apps/api/src/services/{activation-pin,clave-numerica,seed-demo*}.ts apps/api/src/routes/{auth-driver,demo-login}.ts apps/web/src/routes/login-conductor.tsx`
-  - Git history: `git log --all -S "BoosterDemo2026" --format='%H | %aI | %s' --no-merges`
+  - Git history: `git log --all -S "Boost***2026" --format='%H | %aI | %s' --no-merges`
 - Snapshot raw del tenant Firebase guardado en `/tmp/_t1_fresh.json` (efímero, no commiteado).
 - Próxima revisión: PF-5 se re-ejecuta antes de OPS-1 (es parte del pre-condition de OPS-1 en plan v3.1).

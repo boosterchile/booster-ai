@@ -7,7 +7,7 @@
 
 ## Context
 
-Durante la auditoría de seguridad del 2026-05-14 se identificó que el password literal `BoosterDemo2026!` quedó hardcodeado en código de producción y en docs commiteados a `main` del repositorio `boosterchile/booster-ai` (CI/CD canónico es GitHub — ver memoria interna `reference_cicd_github_canonical.md`).
+Durante la auditoría de seguridad del 2026-05-14 se identificó que el password literal `Boost***2026!` quedó hardcodeado en código de producción y en docs commiteados a `main` del repositorio `boosterchile/booster-ai` (CI/CD canónico es GitHub — ver memoria interna `reference_cicd_github_canonical.md`).
 
 **Cronología del incidente (estructural, no se confirmó explotación activa):**
 
@@ -37,7 +37,7 @@ Durante la auditoría de seguridad del 2026-05-14 se identificó que el password
 - Mirror GitLab (memoria menciona "GitLab está como mirror con CI semi-roto"; el mirror se actualizó al menos parcialmente).
 - Agentes de IA con clones cacheados (Cursor, Copilot, ChatGPT con plugins de repo, etc.).
 
-**Naturaleza del compromise**: el literal NO sale del threat surface al borrarlo de HEAD. La rotación de Firebase Auth quema el password viejo en *ese* tenant, pero no impide que un humano que vio el literal lo haya reusado en otra cuenta de prod (e.g. un sysadmin que reusó `BoosterDemo2026!` como password de prueba en `app.boosterchile.com` para un user real).
+**Naturaleza del compromise**: el literal NO sale del threat surface al borrarlo de HEAD. La rotación de Firebase Auth quema el password viejo en *ese* tenant, pero no impide que un humano que vio el literal lo haya reusado en otra cuenta de prod (e.g. un sysadmin que reusó `Boost***2026!` como password de prueba en `app.boosterchile.com` para un user real).
 
 ## Decision
 
@@ -61,7 +61,7 @@ Operacionalmente esto se traduce en:
 
 - **Descripción**: borrar el literal del repo, rotar passwords de las 3 cuentas Firebase, asumir residual.
 - **Costo**: bajo (es lo que el spec original asumía como R4 residual).
-- **Riesgo**: alto. No detecta reuso del password en cuentas no-demo. Si un humano del equipo reutilizó `BoosterDemo2026!` para una cuenta real (e.g. un dev creó un user de prueba con ese password "porque ya estaba en mi clipboard"), esa cuenta queda comprometida indefinidamente y nadie lo sabe.
+- **Riesgo**: alto. No detecta reuso del password en cuentas no-demo. Si un humano del equipo reutilizó `Boost***2026!` para una cuenta real (e.g. un dev creó un user de prueba con ese password "porque ya estaba en mi clipboard"), esa cuenta queda comprometida indefinidamente y nadie lo sabe.
 - **Por qué fue rechazada**: cubre la fuente original pero no las copias derivadas. El compromise por reuso humano no es hipotético — es un patrón observado.
 
 ### Opción B — `git filter-repo` (o BFG Repo-Cleaner) para purgar el literal del history

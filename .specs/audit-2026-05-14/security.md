@@ -20,7 +20,7 @@ Total: **41 hallazgos**.
 
 **Takeaway**:
 
-1. El **modo demo está activado por default en producción** (`var.demo_mode_activated = true` en `infrastructure/variables.tf:369`) con un password hardcodeado (`BoosterDemo2026!`) y un endpoint público `POST /demo/login` que mintea Firebase custom tokens. La compartimentación se basa exclusivamente en el filtro `empresas.is_demo=true`: no hay separación física de tenants demo vs prod en la BD. Esto es el riesgo individual más grande.
+1. El **modo demo está activado por default en producción** (`var.demo_mode_activated = true` en `infrastructure/variables.tf:369`) con un password hardcodeado (`Boost***2026!`) y un endpoint público `POST /demo/login` que mintea Firebase custom tokens. La compartimentación se basa exclusivamente en el filtro `empresas.is_demo=true`: no hay separación física de tenants demo vs prod en la BD. Esto es el riesgo individual más grande.
 2. La **autenticación por RUT + clave numérica / PIN no tiene rate-limiting implementado** (sólo está documentado como TODO en `activation-pin.ts:10-11`). PIN de 6 dígitos = 10⁶ combos brute-forceables en horas sin throttling.
 3. La **redacción Pino** de PII usa wildcards `*.email`, `*.rut`, etc. que solo matchean en sub-paths; campos top-level (los logs en auth y login lo hacen así) NO se redactan.
 4. **Object Retention Lock** en el bucket de documentos legales (DTE 6 años SII) está configurado con `is_locked = false` — el plazo es defeat-able por un admin con permisos GCS.
@@ -33,15 +33,15 @@ Total: **41 hallazgos**.
 ### A01 — Broken Access Control
 
 #### SEC-001 — [BLOCKING] Modo demo activado por default en producción
-- **Evidencia**: `infrastructure/variables.tf:366-370` declara `variable "demo_mode_activated"` con `default = true`; `apps/api/src/server.ts:154-159` monta `POST /demo/login` cuando `firebaseAuth` está presente; `apps/api/src/services/seed-demo.ts:86` define `const DEMO_PASSWORD = 'BoosterDemo2026!'` que se asigna a Firebase users reales en producción (`seed-demo.ts:139,149,162`) y se devuelve en el response de `POST /admin/seed/demo` (`seed-demo.ts:291-293`); `apps/api/src/services/seed-demo-startup.ts:142` lo replica para el conductor demo.
-- **Descripción**: El flag `DEMO_MODE_ACTIVATED` controla (i) el endpoint público `POST /demo/login` que mintea Firebase custom tokens con `is_demo: true` para "shipper", "carrier", "conductor", "stakeholder" sin auth previa, y (ii) un startup hook (`ensureDemoSeeded`) que crea Firebase Auth users con password `BoosterDemo2026!` en la BD prod. El doble guard documentado (`flag + empresas.is_demo=true`) sólo protege contra emisión de tokens para users no-demo; NO impide que el password sintético funcione como credencial real (Firebase email/password login con `demo-shipper@boosterchile.com` + `BoosterDemo2026!` es válido contra el mismo Firebase project que app.boosterchile.com).
+- **Evidencia**: `infrastructure/variables.tf:366-370` declara `variable "demo_mode_activated"` con `default = true`; `apps/api/src/server.ts:154-159` monta `POST /demo/login` cuando `firebaseAuth` está presente; `apps/api/src/services/seed-demo.ts:86` define `const DEMO_PASSWORD = 'Boost***2026!'` que se asigna a Firebase users reales en producción (`seed-demo.ts:139,149,162`) y se devuelve en el response de `POST /admin/seed/demo` (`seed-demo.ts:291-293`); `apps/api/src/services/seed-demo-startup.ts:142` lo replica para el conductor demo.
+- **Descripción**: El flag `DEMO_MODE_ACTIVATED` controla (i) el endpoint público `POST /demo/login` que mintea Firebase custom tokens con `is_demo: true` para "shipper", "carrier", "conductor", "stakeholder" sin auth previa, y (ii) un startup hook (`ensureDemoSeeded`) que crea Firebase Auth users con password `Boost***2026!` en la BD prod. El doble guard documentado (`flag + empresas.is_demo=true`) sólo protege contra emisión de tokens para users no-demo; NO impide que el password sintético funcione como credencial real (Firebase email/password login con `demo-shipper@boosterchile.com` + `Boost***2026!` es válido contra el mismo Firebase project que app.boosterchile.com).
 - **Impacto**: Cualquier persona en internet puede (a) llamar `POST /demo/login` y obtener un Firebase ID token con custom claim `is_demo: true` + scope al user demo, accediendo a las superficies de shipper/carrier/conductor/stakeholder; (b) si conoce el email + password sintético, autenticarse via Firebase email/password directamente, obteniendo el mismo acceso pero con persistencia más larga. Aunque sólo escala a datos demo, comparte BD con prod y cualquier query mal-scoped (ver SEC-005) es un bridge.
 - **Recomendación**: cambiar `default = false` en `infrastructure/variables.tf:369`. Activar `demo_mode_activated = true` solo en `terraform.tfvars` específico de un entorno con `project_id != booster-ai-494222` o un Cloud Run separado. Adicionalmente: subir el password `DEMO_PASSWORD` a Secret Manager con rotación periódica, o regenerar passwords por seed corrida.
 
 #### SEC-002 — [HIGH] `POST /admin/seed/demo` no respeta `DEMO_MODE_ACTIVATED`
 - **Evidencia**: `apps/api/src/routes/admin-seed.ts:30-44` define `requirePlatformAdmin` inline sin chequear el flag; `seed-demo.ts:96` corre el seed completo siempre que el caller esté en `BOOSTER_PLATFORM_ADMIN_EMAILS`.
 - **Descripción**: Un platform-admin (allowlist por email en config) puede invocar `POST /admin/seed/demo` aunque `DEMO_MODE_ACTIVATED=false`. El handler crea Firebase users en producción + filas en `usuarios/empresas/conductores/...` marcadas `is_demo=true`. No hay barrera intermedia.
-- **Impacto**: Si la allowlist se contamina (ver SEC-003) o un admin se compromete, la propagación incluye la introducción de credenciales sintéticas conocidas (`BoosterDemo2026!`) en producción.
+- **Impacto**: Si la allowlist se contamina (ver SEC-003) o un admin se compromete, la propagación incluye la introducción de credenciales sintéticas conocidas (`Boost***2026!`) en producción.
 - **Recomendación**: agregar guard `if (!appConfig.DEMO_MODE_ACTIVATED) return c.json({ error: 'feature_disabled' }, 503)` al inicio de los handlers POST y DELETE; idealmente refactorizar para usar `requirePlatformAdmin` del middleware compartido con `featureFlag: appConfig.DEMO_MODE_ACTIVATED`.
 
 #### SEC-003 — [HIGH] Auto-provisioning de platform-admin sin verificación de email
@@ -190,7 +190,7 @@ Total: **41 hallazgos**.
 - **Descripción**: si un atacante puede invocar `signInWithEmailAndPassword(syntheticEmail, password)` sobre Firebase directamente (sin pasar por el API), brute-force se convierte en password-guessing contra Firebase Auth, que tiene su propio rate-limit pero igualmente más débil que un endpoint server-controlado.
 - **Recomendación**: deshabilitar email/password sign-in para users-conductor (usar solo signInWithCustomToken); o agregar prefijo random al sintético tras activate.
 
-#### SEC-029 — [LOW] Password sintético `BoosterDemo2026!` no rota
+#### SEC-029 — [LOW] Password sintético `Boost***2026!` no rota
 - **Evidencia**: `apps/api/src/services/seed-demo.ts:86`, también `seed-demo-startup.ts:142`. Mismo valor para todos los demo users en cualquier corrida.
 - **Recomendación**: subir a Secret Manager con rotación; o generar por seed-run y devolver al admin que lo invocó.
 

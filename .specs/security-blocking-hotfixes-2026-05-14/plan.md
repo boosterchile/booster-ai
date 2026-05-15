@@ -129,7 +129,7 @@ T7 ──┬──→ T11
 - **Files**: `docs/qa/demo-accounts-inventory.md` (nuevo).
 - **LOC estimate**: ~40.
 - **Depends on**: ninguna.
-- **Acceptance**: spec §3 H1.4 — listado `archivo:línea` de `BoosterDemo2026` + 3 emails demo cross-repo. Identifica seed source(s). Resultado commiteado.
+- **Acceptance**: spec §3 H1.4 — listado `archivo:línea` de `Boost***2026` + 3 emails demo cross-repo. Identifica seed source(s). Resultado commiteado.
 - **Rollback**: revert.
 - **Nota v3**: la investigación 2026-05-14T19:00Z ya hizo este grep; los hallazgos (`seed-demo.ts:86`, `seed-demo-startup.ts:142`, refs en `dist/main.js` y `demo-login.ts:257`) se commitean directamente en T1 sin re-ejecutar.
 
@@ -159,7 +159,7 @@ T7 ──┬──→ T11
 - **Files**: `docs/demo/guia-uso-demo.md` (líneas 81, 85, 89, 113, 114, 115, 216) + `docs/handoff/2026-05-11-demo-features-night-sprint.md` (líneas 107, 108).
 - **LOC estimate**: ~30.
 - **Depends on**: T7 mergeado (el flag ya está OFF; sanitizar docs no rompe nada operativo).
-- **Acceptance**: spec §3 H1.0 — `git grep -F 'BoosterDemo2026'` sobre HEAD en `docs/` = 0 matches. Texto reemplazado por instrucción "obtener password actual del operador o Secret Manager".
+- **Acceptance**: spec §3 H1.0 — `git grep -F 'Boost***2026'` sobre HEAD en `docs/` = 0 matches. Texto reemplazado por instrucción "obtener password actual del operador o Secret Manager".
 - **Rollback**: revert. No tiene side-effects.
 
 ### T12a — Forensia PRE-rotation + OPS-X-PASSWORD-SPRAY-RETROACTIVE
@@ -168,7 +168,7 @@ T7 ──┬──→ T11
 - **Depends on**: PF-5 (UIDs verificadas), T7 mergeado (el flag está OFF, así que el spray no afecta tráfico legítimo demo).
 - **Acceptance**: spec §3 H1.5 + §9 R21 —
   - Scan Cloud Logging audit logs 60d buscando logins sospechosos sobre UIDs **no-demo** (excluye las 4 cuentas demo del scope H1).
-  - **OPS-X (sub-task)**: spray con literal `BoosterDemo2026!` contra TODO el universo no-demo del tenant (post-PF-5: total 10 users en tenant - 4 demo = **6 cuentas no-demo target del spray**). Tipo: `signInWithPassword` REST controlado con self-throttle del script (≤ 5 req/s) para no triggear alertas del propio tenant.
+  - **OPS-X (sub-task)**: spray con literal `Boost***2026!` contra TODO el universo no-demo del tenant (post-PF-5: total 10 users en tenant - 4 demo = **6 cuentas no-demo target del spray**). Tipo: `signInWithPassword` REST controlado con self-throttle del script (≤ 5 req/s) para no triggear alertas del propio tenant.
   - **Sanity check pre-spray**: verificar que el literal aún funciona contra las 4 cuentas demo (signin debe retornar 200). Si NO retorna 200 contra una cuenta demo → la rotación ya ocurrió accidentalmente o algo está mal; abortar y diagnosticar.
   - Reporte produce: (a) 0 matches no-demo → continuar a OPS-1. (b) ≥1 match no-demo → **pausa H1 entera, R17 incident response**, NO ejecutar OPS-1 (rotation destruye evidencia de cadena de ataque).
 - **Rollback**: N/A (script read-only respecto a state — el spray es `signInWithPassword` con credenciales conocidas).
@@ -200,7 +200,7 @@ T7 ──┬──→ T11
 - **LOC estimate**: ~95.
 - **Depends on**: T2 (secret existe), **T7 mergeado y deployed** (NUEVA dep v3 — flag OFF garantiza que el seed no corre; si T6 deployea mientras flag=true y secret=placeholder, el seed CRASHEA y eso es feature pero rompe el servicio sin tener las cuentas rotadas). **Evidence gate de T7 commiteado en PR.**
 - **Acceptance**: spec §3 H1.4 + H1.6 —
-  - `apps/api/src/` no contiene literal (`git grep -F 'BoosterDemo2026' apps/api/src/` = 0).
+  - `apps/api/src/` no contiene literal (`git grep -F 'Boost***2026' apps/api/src/` = 0).
   - Seed CRASHEA fail-fast si `DEMO_SEED_PASSWORD` unset y `DEMO_MODE_ACTIVATED=true`. Mensaje: `'DEMO_SEED_PASSWORD missing — refusing to seed with hardcoded literal'`.
   - Seed NO corre si `DEMO_MODE_ACTIVATED=false` (path actual ya cubre esto; mantener).
   - Tests unit + integration verdes.
@@ -349,7 +349,7 @@ T7 ──┬──→ T11
 - **LOC estimate**: ~25.
 - **Depends on**: T7 mergeado, OPS-1 ejecutado.
 - **Acceptance**: confirmación post-deploy de que:
-  - `signInWithPassword` con literal `BoosterDemo2026!` contra los 3 emails demo retorna `INVALID_LOGIN_CREDENTIALS` (esperado: 401).
+  - `signInWithPassword` con literal `Boost***2026!` contra los 3 emails demo retorna `INVALID_LOGIN_CREDENTIALS` (esperado: 401).
   - `signInWithPassword` con password nuevo (leído de Secret Manager) retorna 200 + ID token con `is_demo=true` y `expires_at` en customClaims.
   - `curl POST /demo/login` retorna 404 (T7 efecto).
   - Si cualquiera de los anteriores no se cumple → bug; volver a OPS-1 o investigar.
@@ -362,7 +362,7 @@ T7 ──┬──→ T11
 - **Acceptance**: SA existe con bindings esperados. `gcloud iam service-accounts get-iam-policy ...` retorna los roles listados, ni más ni menos (principio de mínimo privilegio).
 - **Rollback**: `terraform destroy -target=google_service_account.password_spray_trigger` (~2 min).
 
-### OPS-Y — Monitoring sostenido password-spray `BoosterDemo2026!` (NUEVA v3, cierre R21)
+### OPS-Y — Monitoring sostenido password-spray `Boost***2026!` (NUEVA v3, cierre R21)
 - **Operador**: Felipe Vicencio.
 - **Files**: `infrastructure/cloud-functions/password-spray-incident-trigger/` (Cloud Function: `index.ts`, `package.json`, `tests/`) + `infrastructure/monitoring.tf` (log-based metric + alert policy + Pub/Sub topic) + `docs/adr/040-git-history-password-compromise-opcion-c.md`.
 - **LOC estimate Cloud Function**: ~90. **LOC estimate infra IaC**: ~60. **Total**: ~150 (justificado por integración Cloud Logging → Pub/Sub → Cloud Function + alert + dashboard).
@@ -680,7 +680,7 @@ Ejecutado 2026-05-14T20:30Z (agente `agent-rigor:devils-advocate`, ledger `2026-
 
 #### P3-F1 — Ventana de exposure T7→OPS-1 (residual aceptado)
 
-T7 cierra `/demo/login` pero NO neutraliza el literal contra Firebase Auth REST. Las 3 cuentas demo siguen autenticables con `BoosterDemo2026!` vía `signInWithEmailAndPassword` hasta OPS-1.
+T7 cierra `/demo/login` pero NO neutraliza el literal contra Firebase Auth REST. Las 3 cuentas demo siguen autenticables con `Boost***2026!` vía `signInWithEmailAndPassword` hasta OPS-1.
 - **Duración esperada**: horas, no días.
 - **Mitigación activa**: T12a + OPS-X-PASSWORD-SPRAY-RETROACTIVE corre detectando intentos en esa ventana. Match → R17 incident response inmediato.
 - **Por qué no se cierra antes**: spec §5 Q5 prohíbe disable/delete (Felipe). Ventana estructuralmente irreducible vía disable.
