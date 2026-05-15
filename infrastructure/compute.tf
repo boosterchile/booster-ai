@@ -219,6 +219,16 @@ module "service_api" {
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
 
+    # T6.2 (hotfix security-blocking-hotfixes-2026-05-14) — Password sintético
+    # de las cuentas demo, leído por seed-demo.ts via resolveDemoSeedPassword.
+    # Defensa en profundidad sobre T7 (DEMO_MODE_ACTIVATED=false en prod): si
+    # algún día el flag se flippea a true sin haber cargado un secret real,
+    # el fail-fast del helper crashea explícitamente en lugar de seedear con
+    # un literal hardcoded. Version "latest" → rotation del secret se propaga
+    # sin re-apply (el módulo cablea version=latest por default).
+    # Ref: ADR-040, T6 commit 8d71213, T2 commit ad970bc.
+    DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
+
     # NOTA observability dashboard: el reader SA usa IAM Credentials
     # `signJwt` para producir JWTs DWD on-the-fly (cero-key). No hay
     # secret JSON que montar. El email del reader SA viene de env vars
