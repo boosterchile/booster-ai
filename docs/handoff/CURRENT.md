@@ -39,16 +39,13 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 
 ## (b) PRs abiertos — 0
 
-**Repo cerrado**: sin PRs pendientes a 2026-05-16 23:15 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` (D11 si el PO decide avanzar).
+**Repo cerrado**: sin PRs pendientes a 2026-05-16 23:15 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` D11 (numeración ya resuelta — ver abajo).
 
 ---
 
-## Housekeeping para D11 (próximo `/plan`)
+## Housekeeping ADRs
 
-La spec D11 (#164) entró a `main` con dos referencias numéricas que **ya están tomadas** y deben reasignarse al entrar a `/plan`:
-
-- **ADR-033** mencionado en el título del spec → reasignar a **ADR-041** (siguiente libre tras 040). ADR-033 está tomado por `033-matching-algorithm-v2-multifactor-backhaul-aware.md`.
-- **Migration 0027** mencionada en el spec → reasignar a **0034** (siguiente libre tras 0033 site-settings). Migration 0027 está tomada por `0027_matching_backtest_runs.sql`.
+**D11 numeración ya alineada con `main`**: el spec en `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md` referencia **ADR-041** y **migration 0034** (siguientes libres). El título del PR original #164 menciona "ADR-033" — quedó como artefacto histórico del merge commit, sin impacto en el contenido del spec.
 
 `main` arrastra colisiones históricas de numeración ADR en 028 (`dual-source-data-model-teltonika-vs-maps` + `rbac-auth-firebase-multi-tenant-with-consent-grants`), 034 (`gcp-cost-efficiency-2026-05` + `stakeholder-organizations`) y 035 (`auth-universal-rut-clave-numerica` + `trl10-mantener-ha-recortar-ruido`). No se tocan retroactivamente (los hashes son referenciados externamente). A partir de **ADR-040** se aplica la disciplina de "un número por archivo".
 

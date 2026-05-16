@@ -4,7 +4,7 @@
 **Owner**: Felipe Vicencio (PO) + Claude
 **Branch**: `claude/spanish-greeting-pqMN2`
 **Sprint origen**: PR #157 (demo features) — D11 quedó como skeleton con mock data
-**ADR a crear**: `033-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md`
+**ADR a crear**: `041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md`
 
 ---
 
@@ -22,13 +22,13 @@ Hoy el stakeholder ve cards plausibles pero **no auditables** (cualquier humano 
 
 ## Solución propuesta
 
-Reemplazar el skeleton con un sistema end-to-end de agregaciones reales sobre `viajes` filtradas por bounding box geográfico predefinido y ventana temporal, aplicando k-anonymity ≥ 5 a nivel de servidor. Las zonas dejan de vivir en el frontend y pasan a una tabla `zonas_stakeholder` poblada por seed migration (curable por la mesa pública sin redeploy del web). El endpoint `GET /stakeholder/zonas` devuelve totales 30d (viajes, CO₂e, horario pico) por zona; `GET /stakeholder/zonas/:id/agregaciones` devuelve breakdown por hora del día, tipo de carga y mix de combustible. Frontend pulla ambos endpoints con TanStack Query y reemplaza el banner "datos de demostración" por la metodología real (k-anonymity threshold, ventana, fuente). Decisión arquitectónica formalizada en ADR-033.
+Reemplazar el skeleton con un sistema end-to-end de agregaciones reales sobre `viajes` filtradas por bounding box geográfico predefinido y ventana temporal, aplicando k-anonymity ≥ 5 a nivel de servidor. Las zonas dejan de vivir en el frontend y pasan a una tabla `zonas_stakeholder` poblada por seed migration (curable por la mesa pública sin redeploy del web). El endpoint `GET /stakeholder/zonas` devuelve totales 30d (viajes, CO₂e, horario pico) por zona; `GET /stakeholder/zonas/:id/agregaciones` devuelve breakdown por hora del día, tipo de carga y mix de combustible. Frontend pulla ambos endpoints con TanStack Query y reemplaza el banner "datos de demostración" por la metodología real (k-anonymity threshold, ventana, fuente). Decisión arquitectónica formalizada en ADR-041.
 
 ## Criterios de aceptación
 
 Cada criterio debe ser verificable con evidencia (test, output, screenshot).
 
-1. **Tabla `zonas_stakeholder`** existe en BD vía migration `0027_zonas_stakeholder.sql` con columnas: `id` (uuid), `slug` (text unique), `nombre` (text), `region_code` (text), `tipo` (enum `puerto`/`mercado_abastos`/`polo_industrial`/`zona_franca`), `lat_min`, `lat_max`, `lng_min`, `lng_max` (doubles, bounding box), `is_active` (bool), `created_at`, `updated_at`. Seed insert de las 5 zonas iniciales con bounding boxes reales (validados manualmente sobre OSM). **Evidencia**: migration aplicada en test DB + query `SELECT COUNT(*) FROM zonas_stakeholder WHERE is_active = true` retorna 5.
+1. **Tabla `zonas_stakeholder`** existe en BD vía migration `0034_zonas_stakeholder.sql` con columnas: `id` (uuid), `slug` (text unique), `nombre` (text), `region_code` (text), `tipo` (enum `puerto`/`mercado_abastos`/`polo_industrial`/`zona_franca`), `lat_min`, `lat_max`, `lng_min`, `lng_max` (doubles, bounding box), `is_active` (bool), `created_at`, `updated_at`. Seed insert de las 5 zonas iniciales con bounding boxes reales (validados manualmente sobre OSM). **Evidencia**: migration aplicada en test DB + query `SELECT COUNT(*) FROM zonas_stakeholder WHERE is_active = true` retorna 5.
 
 2. **Schema Zod canónico** `zonaStakeholderSchema` en `packages/shared-schemas/src/domain/zona-stakeholder.ts` con tipos exportados. Drizzle table coincide 1:1 (snake_case en SQL, camelCase en TS). **Evidencia**: tests unit del schema (válido / inválido / bounding box invertido).
 
@@ -50,11 +50,11 @@ Cada criterio debe ser verificable con evidencia (test, output, screenshot).
 
 8. **Horario pico**: ventana de 4 horas consecutivas con mayor número de pickups en los últimos 30 días, calculado server-side. Si <5 viajes en toda la ventana, `null`. **Evidencia**: unit test con casos sintéticos.
 
-9. **UI cards reales**: `apps/web/src/routes/stakeholder-zonas.tsx` deja de importar `ZONAS_DEMO`, pulla `GET /stakeholder/zonas` con TanStack Query, muestra spinner mientras carga, "Sin data suficiente" cuando `insufficient_data: true`, y elimina el banner amarillo "Datos de demostración". Banner se reemplaza por una nota neutra que enlaza a la metodología (ADR-033). **Evidencia**: vitest + screenshot manual.
+9. **UI cards reales**: `apps/web/src/routes/stakeholder-zonas.tsx` deja de importar `ZONAS_DEMO`, pulla `GET /stakeholder/zonas` con TanStack Query, muestra spinner mientras carga, "Sin data suficiente" cuando `insufficient_data: true`, y elimina el banner amarillo "Datos de demostración". Banner se reemplaza por una nota neutra que enlaza a la metodología (ADR-041). **Evidencia**: vitest + screenshot manual.
 
 10. **UI drill-down**: nueva ruta `/app/stakeholder/zonas/$slug` (TanStack Router) muestra los 3 breakdowns (hora, tipo, combustible) como gráficos simples (barras horizontales con números, no chart library nueva — reusar tailwind). Botón "Drill-down" deja de estar disabled. **Evidencia**: vitest del componente + screenshot.
 
-11. **ADR-033** `docs/adr/033-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md` documenta:
+11. **ADR-041** `docs/adr/041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md` documenta:
     - Decisión: bounding boxes predefinidos (no arbitrary polygon input) + k-anonymity ≥ 5 + ventana 30d.
     - Alternativas consideradas (geohash, h3 hex grid, polygon input libre) y por qué se rechazaron.
     - Trade-offs (precisión vs privacidad vs auditabilidad).
@@ -70,11 +70,11 @@ Cada criterio debe ser verificable con evidencia (test, output, screenshot).
 Para evitar scope creep, esta spec **NO** cubre:
 
 - **CRUD admin de zonas**: las zonas se administran vía migration. UI admin para añadir/editar zonas queda para sprint posterior si la mesa pública lo pide.
-- **Drill-down a trip individual**: nunca. El stakeholder NO ve trips identificables. Esto es invariante por diseño (ADR-033).
+- **Drill-down a trip individual**: nunca. El stakeholder NO ve trips identificables. Esto es invariante por diseño (ADR-041).
 - **Exportación CSV/PDF de las agregaciones**: queda para sprint posterior si stakeholders lo piden formalmente.
 - **WebSockets / streaming en vivo**: las queries son batch sobre últimos 30d, refrescables on demand. No hay live updates.
 - **Ventanas configurables por el usuario** (7d, 90d): por ahora ventana fija de 30d. Param `window` se valida pero solo acepta `30d`. Spec puede expandirse en iteración 2.
-- **Soporte multi-tenant para stakeholders** (ej. consorcio de gremios con vistas separadas): todos los stakeholders activos ven la misma data agregada — los `consent grants` no aplican aquí porque la data ya es anónima. Esto es decisión documentada en ADR-033.
+- **Soporte multi-tenant para stakeholders** (ej. consorcio de gremios con vistas separadas): todos los stakeholders activos ven la misma data agregada — los `consent grants` no aplican aquí porque la data ya es anónima. Esto es decisión documentada en ADR-041.
 - **Geocoding de cargo requests sin `geocode`**: si un `cargo_request.origin.geocode` viene null, el viaje simplemente no entra en ninguna zona (se loguea pero no se interpola). Backfill de geocoding es spec separada.
 - **Cache (Redis)**: las queries son lo suficientemente simples para no cachear en v1. Si el dashboard sufre, se añade cache en iteración posterior.
 
@@ -86,7 +86,7 @@ Para evitar scope creep, esta spec **NO** cubre:
 | **Bounding boxes mal calibrados** | Media | Medio (datos engañosos) | Validar bbox de cada zona contra OSM antes del seed; documentar fuente del bbox en comment de la migration. Test integration con coordenadas borde. |
 | **Performance de query con muchos trips** | Baja (volumen actual ~50/día) | Medio | Index sobre `(pickup_at, state)` ya existe; añadir GIN/btree sobre `cargo_requests.origin->>'geocode'` si EXPLAIN ANALYZE muestra full scan. Medir con seed de 10k trips. |
 | **`cargo_request.origin.geocode` null en producción** | Alta (no toda carga viene geocodificada) | Bajo (zona simplemente no la cuenta) | Loguear warning estructurado. Métrica de "% trips geocodificados" en dashboard observability. No bloquea spec. |
-| **Stakeholder ve data y exige más zonas** | Alta | Bajo (es el objetivo) | Proceso de "nueva zona" documentado en ADR-033 (PR con migration). Roadmap futuro: admin endpoint. |
+| **Stakeholder ve data y exige más zonas** | Alta | Bajo (es el objetivo) | Proceso de "nueva zona" documentado en ADR-041 (PR con migration). Roadmap futuro: admin endpoint. |
 | **CO₂e en `actual` y `estimated` ambos null** | Media | Bajo | Fallback documentado (criterio 7); warning log. |
 
 ## Plan de testing
