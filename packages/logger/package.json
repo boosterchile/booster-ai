@@ -10,13 +10,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
     "pino": "^9.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "pino-pretty": "^11.3.0",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"

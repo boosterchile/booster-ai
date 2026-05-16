@@ -632,6 +632,9 @@ importers:
 
   packages/carbon-calculator:
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -675,6 +678,9 @@ importers:
       '@types/node-forge':
         specifier: ^1.3.11
         version: 1.3.14
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -687,6 +693,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
@@ -702,6 +711,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -718,6 +730,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -736,6 +751,9 @@ importers:
 
   packages/driver-scoring:
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -752,6 +770,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -761,6 +782,9 @@ importers:
 
   packages/factoring-engine:
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -777,6 +801,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0
@@ -792,6 +819,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -804,6 +834,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -813,6 +846,9 @@ importers:
 
   packages/pricing-engine:
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -826,6 +862,9 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -853,6 +892,9 @@ importers:
 
   packages/ui-tokens:
     devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -869,6 +911,9 @@ importers:
       '@types/node':
         specifier: ^22.14.0
         version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
