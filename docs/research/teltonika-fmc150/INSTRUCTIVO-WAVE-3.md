@@ -4,6 +4,29 @@
 
 > **Backup obligatorio**: antes de tocar nada, **Save to file** la cfg actual del device como `FMC150_Booster_Wave2.cfg` (si no la tenés ya). Eso queda como rollback.
 
+> **⚠️ Lección 2026-05-11**: el firmware FMC150 `04.01.00.Rev.08` **no tiene `ISRG Root X1` (CA root Let's Encrypt) preinstalado** en su trust store. Sin el paso §0, el handshake TLS falla silenciosamente y el device queda sin enviar telemetría hasta rollback manual. **Hacer §0 ANTES de tocar §1**.
+
+---
+
+## §0 — Cargar CA root `ISRG Root X1` al device (obligatorio para FMx)
+
+Esta task **debe completarse antes** de pushear el cfg Wave 3. Si se hace en orden inverso, el device queda con cfg apuntando a TLS pero sin CA → handshake falla.
+
+1. **Obtener el cert** ISRG Root X1 PEM:
+   ```bash
+   curl -sS -o /tmp/isrgrootx1.pem https://letsencrypt.org/certs/isrgrootx1.pem
+   openssl x509 -in /tmp/isrgrootx1.pem -noout -subject -dates
+   # Subject: ISRG Root X1, válido hasta 2035-06-04
+   ```
+
+2. **FOTA Web** → Dispositivo → **Crear tarea** → tipo **"Cargar certificado TLS de usuario"** → subir `isrgrootx1.pem`.
+
+   > FOTA muestra un warning amarillo: *"FMx platform communication channel security is not compatible with TLS secure certificate transfer requirements. Use with caution."* **Es falso positivo** — en producción 2026-05-11 con firmware `04.01.00.Rev.08` el cert SÍ se transfirió correctamente y persistió a través de `cpureset` completo (validación 2026-05-12).
+
+3. **Esperar a que la task pase a Completado** en FOTA. Solo después, ir a §1 con el cfg Wave 3.
+
+> Si el vehículo está en operación con cellular intermitente, la task puede tardar horas en Completarse (requiere polling RMS exitoso). Una ventana de cellular estable de varios minutos (vehículo detenido en zona urbana) basta.
+
 ---
 
 ## §1 — `GPRS → Server Settings` (primary → TLS)
@@ -15,7 +38,7 @@
 | Protocol | TCP | TCP (TLS va por encima) |
 | **TLS Encryption** | None | **TLS** |
 
-> El cert es Let's Encrypt (CA pública). El FMC150 valida contra su trust store interno — no hace falta subir CA al device.
+> El cert servidor es Let's Encrypt (chain: `server → R13 → ISRG Root X1`). Con §0 completado, el FMC150 valida el chain contra el ISRG Root X1 ya cargado al device.
 
 ---
 
@@ -57,11 +80,23 @@ Si el primary se cae:
 
 Si el handshake TLS falla (cert expirado, CA no confiable en device, etc.):
 
+### Opción A — Configurador local (con acceso físico al device)
+
 1. **Load from file** → `FMC150_Booster_Wave2.cfg`.
 2. **Save to device**.
 3. Device vuelve a primary plain `telemetry.boosterchile.com:5027`. Records reanudan.
 
-> Wave 2 sigue siendo soportado por el server (Service `telemetry-tcp-gateway` con port 5027 plain sigue activo). El rollback es inmediato.
+### Opción B — Rollback remoto vía SMS (probado 2026-05-11)
+
+Si no hay acceso físico al device pero la SIM acepta SMS-MT (en Truphone Connect, "SMS MT Service: Active"):
+
+```
+  setparam 2020:0;2004:telemetry.boosterchile.com;2005:5027
+```
+
+**Crítico**: los 2 espacios líderes son obligatorios porque cfg tiene `1250:0` (SMS Login disabled) con `1251`/`1252` vacíos. Sin los espacios el firmware FMC150 04.01.x descarta el SMS silenciosamente. Tiempo de rollback efectivo: ~30s desde Delivered + reconexión cellular del device.
+
+> Wave 2 sigue siendo soportado por el server (Service `telemetry-tcp-gateway` con port 5027 plain sigue activo). El rollback es inmediato una vez el device aplica el setparam.
 
 ---
 
