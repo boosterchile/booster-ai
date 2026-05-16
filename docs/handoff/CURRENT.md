@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-16 22:55 UTC (post-merges #166 + #226 + #227 + #228)
+**Última actualización**: 2026-05-16 23:15 UTC (post-merges #166 + #226 + #227 + #228 + #229 + #164 — sesión completa cerrada con 0 PRs abiertos)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -32,47 +32,25 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 - [#226](https://github.com/boosterchile/booster-ai/pull/226) (commit `641288d`, 22:26 UTC) — `docs(handoff): snapshot CURRENT.md estado proyecto 2026-05-16` (primera versión de este documento, +130 líneas).
 - [#227](https://github.com/boosterchile/booster-ai/pull/227) (commit `d5e2e06`, 22:34 UTC) — `docs(handoff): actualizar CURRENT.md post-merge #166 + #226`. Reduce el documento a 1 PR abierto (#164), agrega la sección "Mergeados 2026-05-16" y "Housekeeping ADRs", clarifica que #164 no contiene archivo ADR todavía (solo spec) y recomienda ADR-041.
 - [#228](https://github.com/boosterchile/booster-ai/pull/228) (commit `fa03246`, 22:53 UTC) — `docs(runbooks): plantillas /goal v2 con lessons de la sesion 2026-05-16`. Añade `docs/runbooks/goal-templates.md` (+255 líneas) con los aprendizajes operativos del flujo `/goal` aplicado a esta sesión.
+- [#229](https://github.com/boosterchile/booster-ai/pull/229) (commit `c8ce2a3`, 23:05 UTC) — `docs(handoff): refresh CURRENT.md post-merge #227 + #228`. Segunda iteración del documento aplicando Plan 1 v2 vía `/goal` (9 min, 12.6k tokens, 0 errores fácticos — validó las plantillas v2 en producción).
+- [#164](https://github.com/boosterchile/booster-ai/pull/164) (commit `2429f86`, 23:14 UTC) — `docs(spec): D11 stakeholder geo aggregations — cards + drill-down + ADR-033`. Spec D11 formalizada en `main` tras 5 días en DRAFT. Habilita `/plan` y `/build` cuando el PO decida. Files: `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md` (+136 líneas).
 
 ---
 
-## (b) PRs abiertos — solo 1
+## (b) PRs abiertos — 0
 
-### [#164](https://github.com/boosterchile/booster-ai/pull/164) — `docs(spec): D11 stakeholder geo aggregations — cards + drill-down + ADR-033`
-
-| Campo | Valor |
-|---|---|
-| Branch | `claude/spanish-greeting-pqMN2` |
-| Creado | 2026-05-11 |
-| Tipo | Spec-only (sin código de implementación, sin migration) |
-| Estado | OPEN — pendiente review del PO antes de pasar a `/plan` y `/build` |
-| Alcance | Sustituir mock data del skeleton stakeholder geo por agregaciones reales sobre `viajes` con **k-anonymity ≥ 5**. Tabla `zonas_stakeholder` (migration 0027), endpoints `GET /stakeholder/zonas` (cards 30d) + `GET /stakeholder/zonas/:slug/agregaciones` (drill-down), ruta web `/app/stakeholder/zonas/$slug`. 13 criterios de aceptación verificables. El título del PR menciona "ADR-033" como referencia futura (bounding boxes + ventana 30d), pero **el PR no contiene archivo ADR** — solo el spec. La asignación de número ADR sucede al entrar a `/plan` y `/build`. Recomendación: usar **ADR-041** (siguiente libre tras 040). |
-| Archivos | `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md` (nuevo, 136 líneas) |
-
-**CI status** (último run 2026-05-11):
-
-| Check | Workflow | Resultado |
-|---|---|---|
-| Install dependencies | CI | SUCCESS |
-| Lint (Biome) | CI | SUCCESS |
-| Typecheck (tsc) | CI | SUCCESS |
-| Test + Coverage (≥80%) | CI | SUCCESS |
-| Build | CI | SUCCESS |
-| CI Success | CI | SUCCESS |
-| Gitleaks secret scan | Security | SUCCESS |
-| npm audit (HIGH+) | Security | SUCCESS |
-| Trivy filesystem + config scan | Security | SUCCESS |
-| CodeQL (javascript-typescript) | Security | SUCCESS |
-| Generate SBOM | Security | SUCCESS |
-
-→ **CI verde end-to-end**. Bloqueante = review humano + decisión sobre alcance.
+**Repo cerrado**: sin PRs pendientes a 2026-05-16 23:15 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` (D11 si el PO decide avanzar).
 
 ---
 
-## Housekeeping ADRs
+## Housekeeping para D11 (próximo `/plan`)
 
-`main` arrastra colisiones históricas de numeración en 028 (`dual-source-data-model-teltonika-vs-maps` + `rbac-auth-firebase-multi-tenant-with-consent-grants`), 034 (`gcp-cost-efficiency-2026-05` + `stakeholder-organizations`) y 035 (`auth-universal-rut-clave-numerica` + `trl10-mantener-ha-recortar-ruido`). No se tocan retroactivamente (los hashes son referenciados externamente). A partir de **ADR-040** se aplica la disciplina de "un número por archivo".
+La spec D11 (#164) entró a `main` con dos referencias numéricas que **ya están tomadas** y deben reasignarse al entrar a `/plan`:
 
-Próximo ADR libre: **ADR-041** (sugerido para D11 cuando #164 pase a `/plan`).
+- **ADR-033** mencionado en el título del spec → reasignar a **ADR-041** (siguiente libre tras 040). ADR-033 está tomado por `033-matching-algorithm-v2-multifactor-backhaul-aware.md`.
+- **Migration 0027** mencionada en el spec → reasignar a **0034** (siguiente libre tras 0033 site-settings). Migration 0027 está tomada por `0027_matching_backtest_runs.sql`.
+
+`main` arrastra colisiones históricas de numeración ADR en 028 (`dual-source-data-model-teltonika-vs-maps` + `rbac-auth-firebase-multi-tenant-with-consent-grants`), 034 (`gcp-cost-efficiency-2026-05` + `stakeholder-organizations`) y 035 (`auth-universal-rut-clave-numerica` + `trl10-mantener-ha-recortar-ruido`). No se tocan retroactivamente (los hashes son referenciados externamente). A partir de **ADR-040** se aplica la disciplina de "un número por archivo".
 
 ---
 
