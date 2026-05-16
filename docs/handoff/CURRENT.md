@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-16
+**Última actualización**: 2026-05-16 22:30 UTC (post-merges #166 + #226)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -26,9 +26,14 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 
 **Verificación**: `gh pr list --state merged --search "wave" --limit 50` (ejecutado 2026-05-16).
 
+### Mergeados 2026-05-16 (post-handoff inicial)
+
+- [#166](https://github.com/boosterchile/booster-ai/pull/166) (commit `b5d1f18`) — `docs(telemetry): Wave 3 v2 — preload CA root + ADR-040`. Rebased sobre main, ADR renumerado de 033→040 por colisión con `033-matching-algorithm-v2`. `npm audit (HIGH+)` resuelto vía bump OpenTelemetry de #184.
+- [#226](https://github.com/boosterchile/booster-ai/pull/226) (commit `641288d`) — `docs(handoff): snapshot CURRENT.md estado proyecto 2026-05-16` (este mismo documento, primera versión).
+
 ---
 
-## (b) PRs abiertos — exactamente 2
+## (b) PRs abiertos — solo 1
 
 ### [#164](https://github.com/boosterchile/booster-ai/pull/164) — `docs(spec): D11 stakeholder geo aggregations — cards + drill-down + ADR-033`
 
@@ -38,7 +43,7 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 | Creado | 2026-05-11 |
 | Tipo | Spec-only (sin código de implementación, sin migration) |
 | Estado | OPEN — pendiente review del PO antes de pasar a `/plan` y `/build` |
-| Alcance | Sustituir mock data del skeleton stakeholder geo por agregaciones reales sobre `viajes` con **k-anonymity ≥ 5**. Tabla `zonas_stakeholder` (migration 0027), endpoints `GET /stakeholder/zonas` (cards 30d) + `GET /stakeholder/zonas/:slug/agregaciones` (drill-down), ruta web `/app/stakeholder/zonas/$slug`. 13 criterios de aceptación verificables. El título del PR menciona "ADR-033" como referencia futura (bounding boxes + ventana 30d), pero **el PR no contiene archivo ADR** — solo el spec. La asignación de número ADR sucede al entrar a `/plan` y `/build`. |
+| Alcance | Sustituir mock data del skeleton stakeholder geo por agregaciones reales sobre `viajes` con **k-anonymity ≥ 5**. Tabla `zonas_stakeholder` (migration 0027), endpoints `GET /stakeholder/zonas` (cards 30d) + `GET /stakeholder/zonas/:slug/agregaciones` (drill-down), ruta web `/app/stakeholder/zonas/$slug`. 13 criterios de aceptación verificables. El título del PR menciona "ADR-033" como referencia futura (bounding boxes + ventana 30d), pero **el PR no contiene archivo ADR** — solo el spec. La asignación de número ADR sucede al entrar a `/plan` y `/build`. Recomendación: usar **ADR-041** (siguiente libre tras 040). |
 | Archivos | `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md` (nuevo, 136 líneas) |
 
 **CI status** (último run 2026-05-11):
@@ -59,38 +64,13 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 
 → **CI verde end-to-end**. Bloqueante = review humano + decisión sobre alcance.
 
-### [#166](https://github.com/boosterchile/booster-ai/pull/166) — `docs(telemetry): Wave 3 v2 — preload CA root + ADR-033`
+---
 
-| Campo | Valor |
-|---|---|
-| Branch | `claude/sweet-brown-7fdf26` |
-| Creado | 2026-05-12 |
-| Tipo | Docs + ADR (telemetría Teltonika, distinto eje que las waves del plan de identidad) |
-| Estado | OPEN — mergeable `UNSTABLE` (npm audit HIGH+ falla) |
-| Alcance | Documenta el procedimiento validado en prod 2026-05-12 con Van Oosterwyk: cargar `ISRG Root X1` PEM al FMC150 vía FOTA **antes** del push cfg TLS. Sin este paso, firmware `04.01.00.Rev.08` no valida el chain Let's Encrypt y el handshake falla silenciosamente. 3 validaciones logradas: TLS 5061 vía `/proc/net/tcp6`, persistencia post-`cpureset`, failover DR ~2 min. Rollback SMS-MT documentado. |
-| Archivos | `docs/adr/033-wave-3-tls-ca-preload-fmc150.md` (nuevo), `docs/research/teltonika-fmc150/INSTRUCTIVO-WAVE-3.md` (§0 + §4), `docs/runbooks/wave-2-3-deploy.md` (§5.2), `docs/handoff/2026-05-11-wave-3-incidente-rollback.md` (nuevo) |
+## Housekeeping ADRs
 
-**CI status** (último run 2026-05-12):
+`main` arrastra colisiones históricas de numeración en 028 (`dual-source-data-model-teltonika-vs-maps` + `rbac-auth-firebase-multi-tenant-with-consent-grants`), 034 (`gcp-cost-efficiency-2026-05` + `stakeholder-organizations`) y 035 (`auth-universal-rut-clave-numerica` + `trl10-mantener-ha-recortar-ruido`). No se tocan retroactivamente (los hashes son referenciados externamente). A partir de **ADR-040** se aplica la disciplina de "un número por archivo".
 
-| Check | Workflow | Resultado |
-|---|---|---|
-| Install dependencies | CI | SUCCESS |
-| Lint (Biome) | CI | SUCCESS |
-| Typecheck (tsc) | CI | SUCCESS |
-| Test + Coverage (≥80%) | CI | SUCCESS |
-| Build | CI | SUCCESS |
-| CI Success | CI | SUCCESS |
-| Gitleaks secret scan | Security | SUCCESS |
-| **npm audit (HIGH+)** | Security | **FAILURE** |
-| Trivy filesystem + config scan | Security | SUCCESS |
-| CodeQL (javascript-typescript) | Security | SUCCESS |
-| Generate SBOM | Security | SUCCESS |
-
-→ **Rebase sobre main** debería fijar `npm audit` (PR [#184](https://github.com/boosterchile/booster-ai/pull/184) bumpeó `@opentelemetry/*` a 0.218 cerrando los 4 HIGH del run).
-
-**Colisión ADR-033 con `main`**: el archivo `docs/adr/033-wave-3-tls-ca-preload-fmc150.md` que trae #166 colisiona con `docs/adr/033-matching-algorithm-v2-multifactor-backhaul-aware.md` ya mergeado en main. **Fix planificado**: renumerar el ADR de #166 a **ADR-040** (siguiente libre tras 039) durante el rebase. PR #164 no aporta archivo ADR — solo referencia textualmente el número en el spec; no contribuye a esta colisión.
-
-> **Nota housekeeping**: `main` ya arrastra colisiones históricas en 028 (`dual-source-data-model-teltonika-vs-maps` + `rbac-auth-firebase-multi-tenant-with-consent-grants`), 034 (`gcp-cost-efficiency-2026-05` + `stakeholder-organizations`) y 035 (`auth-universal-rut-clave-numerica` + `trl10-mantener-ha-recortar-ruido`). No se tocan retroactivamente (los hashes son referenciados externamente), pero a partir de ADR-040 se aplica la disciplina de "un número por archivo".
+Próximo ADR libre: **ADR-041** (sugerido para D11 cuando #164 pase a `/plan`).
 
 ---
 
