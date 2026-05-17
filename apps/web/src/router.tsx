@@ -32,6 +32,7 @@ import { PlatformAdminObservabilityRoute } from './routes/platform-admin-observa
 import { PlatformAdminSiteSettingsRoute } from './routes/platform-admin-site-settings.js';
 import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
+import { StakeholderZonasDetalleRoute } from './routes/stakeholder-zonas.$slug.js';
 import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
 import {
   SucursalesDetalleRoute,
@@ -206,6 +207,13 @@ const stakeholderZonasRoute = createRoute({
   component: StakeholderZonasRoute,
 });
 
+// D11/T10 — Drill-down de zona stakeholder con agregaciones reales.
+const stakeholderZonaDetalleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/stakeholder/zonas/$slug',
+  component: StakeholderZonasDetalleRoute,
+});
+
 // D6 — Dashboard de cumplimiento: documentos vencidos o por vencer.
 // Solo para carriers (transportistas).
 const cumplimientoRoute = createRoute({
@@ -365,6 +373,7 @@ const routeTree = rootRoute.addChildren([
   sucursalesNuevaRoute,
   sucursalesDetalleRoute,
   stakeholderZonasRoute,
+  stakeholderZonaDetalleRoute,
   cumplimientoRoute,
   platformAdminRoute,
   platformAdminMatchingRoute,
