@@ -1038,6 +1038,9 @@ export const trips = pgTable(
     originAddressRaw: text('origen_direccion_raw').notNull(),
     originRegionCode: varchar('origen_codigo_region', { length: 4 }),
     originComunaCode: varchar('origen_codigo_comuna', { length: 10 }),
+    /** Geocode WGS84 del origen (D11/ADR-041). Null = no geocodificado. */
+    originLat: numeric('origen_lat', { precision: 10, scale: 7 }),
+    originLng: numeric('origen_lng', { precision: 10, scale: 7 }),
     destinationAddressRaw: text('destino_direccion_raw').notNull(),
     destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),

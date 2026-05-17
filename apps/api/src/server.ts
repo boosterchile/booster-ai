@@ -39,6 +39,7 @@ import {
   createPublicSiteSettingsRoutes,
   createSiteSettingsRoutes,
 } from './routes/site-settings.js';
+import { createStakeholderRoutes } from './routes/stakeholder.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
@@ -375,6 +376,10 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+
+    // D11 — Stakeholder geo aggregations (ADR-041). Auth inline (rol).
+    app.use('/stakeholder/*', firebaseAuthMiddleware);
+    app.route('/stakeholder', createStakeholderRoutes({ db: opts.db, logger }));
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
     // y copy desde la PWA; demo/login/onboarding leen la versión
