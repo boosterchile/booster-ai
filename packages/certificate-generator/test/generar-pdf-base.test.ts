@@ -97,6 +97,40 @@ describe('generarPdfBase', () => {
     expect(big.length).toBeGreaterThan(small.length);
   });
 
+  // Regression: este test fallaba ANTES del fix porque pdf-lib embebe
+  // Helvetica WinAnsi que NO soporta el subscript ₂ (U+2082). El section
+  // title decía 'Ahorro CO₂e via matching de retorno' y crasheaba al
+  // ejecutar drawText. Tras normalizar a 'CO2e' ASCII (consistente con el
+  // resto del PDF), esta branch del rendering ya no rompe.
+  it('renderiza bloque ahorro backhaul sin caracteres no representables (regression CO2e)', async () => {
+    const bytes = await generarPdfBase({
+      viaje: viajeMinimo,
+      metricas: {
+        ...metricasMinimo,
+        factorMatchingAplicado: 0.35,
+        ahorroCo2eVsSinMatchingKgco2eWtw: 109.2,
+      },
+      empresaShipper: empresaMinimo,
+      verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+    });
+    expect(bytes.length).toBeGreaterThan(2000);
+    expect(Buffer.from(bytes.slice(0, 8)).toString('utf-8').startsWith('%PDF-')).toBe(true);
+  });
+
+  it('rama sin ahorro backhaul (factorMatching null) sigue funcionando', async () => {
+    const bytes = await generarPdfBase({
+      viaje: viajeMinimo,
+      metricas: {
+        ...metricasMinimo,
+        factorMatchingAplicado: null,
+        ahorroCo2eVsSinMatchingKgco2eWtw: null,
+      },
+      empresaShipper: empresaMinimo,
+      verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+    });
+    expect(bytes.length).toBeGreaterThan(2000);
+  });
+
   it('renderiza sin deliveredAt (entrega en curso)', async () => {
     const { deliveredAt: _ignored, ...viajeSinEntrega } = viajeMinimo;
     const bytes = await generarPdfBase({
