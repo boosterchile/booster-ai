@@ -84,7 +84,7 @@
 - **Rollback**: revertir commit. Caveat: si T8/T9 ya consumen, ese rollback rompe los endpoints — revertir T8/T9 también.
 - **Nota objeción #3**: la firma `aplicarKAnonymity<T>(buckets, k, countField)` es decisión de API pública. Si tras T8 se descubre que la firma no escala, el cambio cascade a T8/T9. Mitigación: tests cubren los casos de uso reales antes de T8.
 
-### T5: Aggregations helpers — hora del día + horario pico
+### T5: Aggregations helpers — hora del día + horario pico [DONE 2026-05-17 — PR #250]
 
 - **Files**: `apps/api/src/services/stakeholder-aggregations.ts` (nuevo), `apps/api/test/unit/stakeholder-aggregations.test.ts` (nuevo)
 - **LOC estimate**: ~100
