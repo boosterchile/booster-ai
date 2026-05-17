@@ -61,7 +61,7 @@
 - **Rollback**: revertir commit (sin migration aún, sin endpoint que consuma).
 - **Nota objeción #2 resuelta**: T2 viene ANTES que T3 (la migration + seed importan esta table definition).
 
-### T3: Migration 0034 + seed 5 zonas
+### T3: Migration 0034 + seed 5 zonas [DONE 2026-05-17 — PR #248]
 
 - **Files**: `apps/api/drizzle/0034_zonas_stakeholder.sql` (nuevo), `apps/api/drizzle/meta/_journal.json` (update), `apps/api/src/db/seed/zonas-stakeholder.ts` (nuevo, importa de T2)
 - **LOC estimate**: ~80
