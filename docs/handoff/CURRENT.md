@@ -1,8 +1,20 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 ~06:50 UTC (post D11 v2 plan + handoff fresco — 10 PRs mergeados post-restart, infra completa, T8-T12 v2 pendientes en sesión fresca)
+**Última actualización**: 2026-05-17 ~08:20 UTC (D11 v2 T8 abort → bloqueo formal T8-T12 pendiente test-integration-infra)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
+
+---
+
+## Bloqueo D11 v2 T8-T12 (2026-05-17)
+
+**Estado**: D11 v2 T8 fue implementado en branch `fix/d11-t8-stakeholder-zonas-endpoint` (HEAD `d88085f`, worktree `naughty-sinoussi-c8ddf8`) y **NO se mergeó**. Sesión de cierre descubrió que el test staged era unit con DB mockeada, no integration con DB real como exige plan v2 §192 y handoff lección #3. Auditoría reveló que `apps/api/test/integration/` no existe en el repo — no hay patrón ni helper de DB real en ninguna app.
+
+**Decisión PO**: bloquear T8-T12 hasta que exista infra de integration testing. Nueva spec [`docs/specs/2026-05-17-test-integration-infra-apps-api.md`](../specs/2026-05-17-test-integration-infra-apps-api.md) en Draft. Una vez implementada esa infra (con su propio ADR-043), re-abrir T8 contra el patrón real.
+
+**Trabajo preservado**: código de la route (`apps/api/src/routes/stakeholder.ts`, 115 LOC) sirve como referencia en el working tree del worktree. El test unit-mocked se descarta cuando se re-implemente.
+
+**Plan D11 v2 actualizado**: [`docs/plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md`](../plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md) — Status: BLOCKED, sección "Status post-build T8 v2" añadida, T8-T12 headers marcados `[BLOCKED 2026-05-17]`.
 
 ---
 

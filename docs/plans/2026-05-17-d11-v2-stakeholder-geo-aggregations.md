@@ -7,7 +7,30 @@
 - **Plan v1**: [`2026-05-17-d11-stakeholder-geo-aggregations.md`](2026-05-17-d11-stakeholder-geo-aggregations.md) — BLOCKED, ver §"Status post-review".
 - **Owner**: Felipe Vicencio (PO) + Claude
 - **Creado v2**: 2026-05-17 post review formal (12 PRs) + ADR-042 mergeado.
-- **Status**: Active.
+- **Status**: **BLOCKED** (2026-05-17 ~08:20 UTC) — T8-T12 dependen de [`docs/specs/2026-05-17-test-integration-infra-apps-api.md`](../specs/2026-05-17-test-integration-infra-apps-api.md). Ver §"Status post-build" abajo.
+
+---
+
+## Status post-build T8 v2 (2026-05-17 ~08:20 UTC)
+
+T8 v2 fue implementado en branch `fix/d11-t8-stakeholder-zonas-endpoint` (HEAD `d88085f`) cubriendo route + tests + server wire, total 216 LOC. **No se mergeó.** Razones, en orden de gravedad:
+
+1. **Tipo de test no cumple plan**: el test staged es `apps/api/test/unit/stakeholder-zonas-route.test.ts` con DB mockeada vía `vi.fn()`. El plan v2 §T8 (línea 48) exige `apps/api/test/integration/stakeholder-zonas.test.ts` y §192 explícita *"Tests integration NO mocked-Drizzle — usar test DB real"*. El handoff D11 v2 lección #3 lo refuerza.
+2. **Ausencia de infra**: auditoría descubrió que `apps/api/test/integration/` no existe y no hay helper de DB real en todo el repo. T8 unit-mocked fue forzado por ausencia del patrón, no por decisión técnica documentada.
+3. **Violación contrato**: aceptar T8 unit-mocked sería deuda técnica deliberada — CLAUDE.md §1 ("Cero deuda técnica desde day 0") y §2 ("Evidence over assumption") lo prohíben. El SQL del endpoint (`LEFT JOIN`, `ANY(comuna_codes)`, `now() - interval '30 days'`, `WHERE is_active`) **nunca se ejerce** en CI con el mock actual.
+
+**Decisión PO 2026-05-17**: bloquear T8-T12 hasta que exista la infra de integration testing. Crear spec separada [`docs/specs/2026-05-17-test-integration-infra-apps-api.md`](../specs/2026-05-17-test-integration-infra-apps-api.md) → ADR-043 → implementación → re-abrir T8 contra infra real.
+
+**Working tree preservado**: los archivos `apps/api/src/routes/stakeholder.ts` (115 LOC) + `apps/api/test/unit/stakeholder-zonas-route.test.ts` (94 LOC) + diff `server.ts` (+7) viven en el branch `fix/d11-t8-stakeholder-zonas-endpoint` working tree sin staging ni commit. Sirven como referencia para re-implementación post-infra: el código de la route puede reusarse tal cual; el test se reemplaza por integration real.
+
+**Próximos pasos**:
+
+1. Aprobación PO de [`docs/specs/2026-05-17-test-integration-infra-apps-api.md`](../specs/2026-05-17-test-integration-infra-apps-api.md).
+2. `/plan` sobre esa spec → plan atómico.
+3. `/build` la infra (T-INFRA-1..6).
+4. ADR-043 cierra la decisión arquitectónica.
+5. Re-abrir D11 v2 T8 contra la infra. Recalcular waivers LOC con el patrón real.
+6. Continuar T9-T12 sobre el mismo patrón.
 
 ---
 
@@ -41,7 +64,7 @@
 
 ## Tasks v2 — endpoints + UI + perf (T8–T12)
 
-### T8 v2: Endpoint `GET /stakeholder/zonas` (cards 30d, comuna filter)
+### T8 v2: Endpoint `GET /stakeholder/zonas` (cards 30d, comuna filter) [BLOCKED 2026-05-17 — pending test-integration-infra]
 
 - **Files**:
   - `apps/api/src/routes/stakeholder.ts` (nuevo)
@@ -63,7 +86,7 @@
   - Integration tests con 6 roles (5 negados + 1 admitido).
 - **Rollback**: revertir commit. UI v1 (mock data) sigue funcionando hasta T11 v2.
 
-### T9 v2: Endpoint `GET /stakeholder/zonas/:slug/agregaciones`
+### T9 v2: Endpoint `GET /stakeholder/zonas/:slug/agregaciones` [BLOCKED 2026-05-17 — pending test-integration-infra]
 
 - **Files**:
   - `apps/api/src/routes/stakeholder.ts` (extender T8)
@@ -81,7 +104,7 @@
   - Tests cubren k-anonymity en cada dimensión + zona insufficient + 6 roles.
 - **Rollback**: revertir commit. T10 v2 UI maneja error genérico vía TanStack Query.
 
-### T10 v2: UI drill-down route `/app/stakeholder/zonas/$slug`
+### T10 v2: UI drill-down route `/app/stakeholder/zonas/$slug` [BLOCKED 2026-05-17 — pending T8+T9]
 
 - **Files**:
   - `apps/web/src/routes/stakeholder-zonas.$slug.tsx` (nuevo o re-implementar)
@@ -101,7 +124,7 @@
   - Render tests con TanStack Query + RouterProvider mock: loading / data / insufficient / error.
 - **Rollback**: revertir. T11 v2 enlace al drill-down se rompe (404).
 
-### T11 v2: UI cards `stakeholder-zonas.tsx`
+### T11 v2: UI cards `stakeholder-zonas.tsx` [BLOCKED 2026-05-17 — pending T8+T10]
 
 - **Files**:
   - `apps/web/src/routes/stakeholder-zonas.tsx` (refactor)
@@ -123,7 +146,7 @@
   - Render tests para los 4 estados + screenshot manual.
 - **Rollback**: revertir. UI vuelve a estado pre-D11 mock (cosmetic, no crítico).
 
-### T12 v2: Perf gate — `EXPLAIN ANALYZE` real + script `test:perf` separado
+### T12 v2: Perf gate — `EXPLAIN ANALYZE` real + script `test:perf` separado [BLOCKED 2026-05-17 — pending T8 + test-integration-infra]
 
 - **Files**:
   - `apps/api/test/perf/stakeholder-zonas-explain.test.ts` (re-implementar con DB real)
