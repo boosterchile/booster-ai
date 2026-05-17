@@ -1,8 +1,10 @@
 # ADR-041 — Stakeholder geo aggregations: bounding boxes predefinidos + k-anonymity ≥ 5
 
 **Fecha**: 2026-05-17
-**Estado**: Accepted
-**Refs**: `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md`, `docs/plans/2026-05-17-d11-stakeholder-geo-aggregations.md`, ADR-034 (`stakeholder-organizations`), ADR-021 (`glec-v3-compliance`)
+**Estado**: **Superseded parcial por [ADR-042](042-stakeholder-geo-aggregations-comuna-filter-and-domain-alignment.md)** (decisión §1 "bounding boxes predefinidos" reemplazada por filtro `originComunaCode`; decisiones §2 k-anonymity, §3 ventana 30d, §4 proceso "nueva zona" se mantienen vigentes).
+**Refs**: `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md`, `docs/plans/2026-05-17-d11-stakeholder-geo-aggregations.md`, ADR-034 (`stakeholder-organizations`), ADR-021 (`glec-v3-compliance`), [ADR-042](042-stakeholder-geo-aggregations-comuna-filter-and-domain-alignment.md) (supersede parcial)
+
+> **Nota histórica (2026-05-17 post-BUILD review)**: este ADR se preserva como contexto del intento original (bbox). Durante el BUILD T8 el agente descubrió que el schema real no soporta filtro por geocode (no existe `cargo_request.origin.geocode` ni `viajes.lat/lng`). PO decidió pivote a Opción 2 — filtro por `originComunaCode` documentado en ADR-042. Las decisiones de k-anonymity ≥5, ventana 30d, y proceso "nueva zona" de este ADR siguen siendo la base; solo el método de filtrado geográfico cambió.
 
 ## Contexto
 
