@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 ~06:00 UTC (post D11 BUILD review formal — 12 PRs revisados, 1 mergeado, plan v1 BLOCKED, pivote Opción 2)
+**Última actualización**: 2026-05-17 ~06:50 UTC (post D11 v2 plan + handoff fresco — 10 PRs mergeados post-restart, infra completa, T8-T12 v2 pendientes en sesión fresca)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
