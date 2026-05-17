@@ -116,7 +116,7 @@
   - Tests: dentro, fuera, en borde (lat=lat_min, lng=lng_max), bbox invertido (defensive).
 - **Rollback**: revertir commit.
 
-### T8: Endpoint `GET /stakeholder/zonas` (cards 30d) [BLOCKED 2026-05-17 — ver §Abort]
+### T8: Endpoint `GET /stakeholder/zonas` (cards 30d) [DONE 2026-05-17 — PR #253, gap resuelto inline via migration 0035]
 
 - **Files**: `apps/api/src/routes/stakeholder.ts` (nuevo o extender), `apps/api/test/integration/stakeholder.test.ts` (nuevo, incluye fixtures inline)
 - **LOC estimate**: ~120 *(waiver: endpoint integra auth + agregación + k-anonymity + logging + integration tests con fixtures de 3 escenarios. Splitearlo crea PRs con menos coherencia funcional. Test fixtures inline son ~30 LOC dentro del waiver, no task aparte.)*
