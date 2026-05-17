@@ -175,7 +175,7 @@
   - Component tests + screenshot manual.
 - **Rollback**: revertir commit. UI vuelve a mock data (no daño crítico, solo cosmético).
 
-### T12: Performance — `EXPLAIN ANALYZE` + índice condicional [BLOCKED 2026-05-17 — depende de T8]
+### T12: Performance — `EXPLAIN ANALYZE` + índice condicional [DONE 2026-05-17 — PR #257]
 
 - **Files**: `apps/api/test/perf/stakeholder-zonas-explain.test.ts` (nuevo, ejecutable manual + en CI), eventualmente `apps/api/drizzle/0035_geocode_index.sql` (condicional)
 - **LOC estimate**: ~50 (test + posible migration condicional)
