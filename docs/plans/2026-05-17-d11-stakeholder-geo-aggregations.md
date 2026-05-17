@@ -95,7 +95,7 @@
   - Tests: cero viajes, exactamente k, k+1, distribución bimodal.
 - **Rollback**: revertir commit (helpers no expuestos por endpoint todavía).
 
-### T6: Aggregations helpers — tipo carga + combustible
+### T6: Aggregations helpers — tipo carga + combustible [DONE 2026-05-17 — PR #251]
 
 - **Files**: `apps/api/src/services/stakeholder-aggregations.ts` (extender), `apps/api/test/unit/stakeholder-aggregations.test.ts` (extender)
 - **LOC estimate**: ~80
