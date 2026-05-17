@@ -306,7 +306,12 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   cursorY -= 150;
 
   // ============================================================
-  // Bloque 3.5 — Ahorro CO₂e via matching de retorno (ADR-021 §6.4)
+  // Bloque 3.5 — Ahorro CO2e via matching de retorno (ADR-021 §6.4).
+  // Nota: usamos "CO2e" ASCII en vez de "CO₂e" (U+2082) porque pdf-lib
+  // embebe Helvetica WinAnsi, que no incluye los caracteres Unicode de
+  // subscript. Renderizar el subscript crashea con
+  // `WinAnsiEncoding cannot encode '₂'`. El resto del PDF usa la
+  // misma convención (líneas 72, 238, 340).
   // ============================================================
   // Solo renderizamos si el cálculo se realizó (factorMatchingAplicado
   // != null) Y hubo ahorro real (> 0). Esto evita ruido visual en certs
@@ -317,7 +322,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   if (factorMatching != null && ahorroBackhaul != null && ahorroBackhaul > 0) {
     drawSectionTitle(
       page,
-      'Ahorro CO₂e via matching de retorno (GLEC v3.0 §6.4)',
+      'Ahorro CO2e via matching de retorno (GLEC v3.0 §6.4)',
       40,
       cursorY,
       fontBold,
