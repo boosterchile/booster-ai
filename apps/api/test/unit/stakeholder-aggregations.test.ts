@@ -5,6 +5,7 @@ import {
   agregarPorHoraDelDia,
   agregarPorTipoCarga,
   calcularHorarioPico,
+  puntoEnBoundingBox,
 } from '../../src/services/stakeholder-aggregations.js';
 
 const mk = (
@@ -96,6 +97,29 @@ describe('agregarPorTipoCarga', () => {
     expect(seca).toEqual({ tipo: 'carga_seca', viajes: 3, co2e_kg: 150 });
     expect(refr).toEqual({ tipo: 'refrigerada', viajes: 1, co2e_kg: 200 });
     expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('puntoEnBoundingBox', () => {
+  // Bbox Puerto Valparaíso (mismo que migration 0034).
+  const zona = { lat_min: -33.0501, lat_max: -33.0252, lng_min: -71.645, lng_max: -71.61 };
+
+  it('dentro del bbox → true', () => {
+    expect(puntoEnBoundingBox({ lat: -33.04, lng: -71.62 }, zona)).toBe(true);
+  });
+  it('fuera del bbox (lat menor que lat_min) → false', () => {
+    expect(puntoEnBoundingBox({ lat: -33.1, lng: -71.62 }, zona)).toBe(false);
+  });
+  it('en el borde lat=lat_min y lng=lng_max → true (inclusivo)', () => {
+    expect(puntoEnBoundingBox({ lat: -33.0501, lng: -71.61 }, zona)).toBe(true);
+  });
+  it('bbox invertido (defensive) → false', () => {
+    expect(
+      puntoEnBoundingBox(
+        { lat: -33.04, lng: -71.62 },
+        { lat_min: -33.0, lat_max: -33.1, lng_min: -71.6, lng_max: -71.7 },
+      ),
+    ).toBe(false);
   });
 });
 

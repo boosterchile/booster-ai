@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import type { CargoType, FuelType } from '@booster-ai/shared-schemas';
+import type { CargoType, FuelType, ZonaStakeholder } from '@booster-ai/shared-schemas';
 
 /** Helpers puros para endpoints /stakeholder/zonas — D11/ADR-041. Timezone CL. */
 const HORA_FMT = new Intl.DateTimeFormat('en-US', {
@@ -145,4 +145,24 @@ export function agregarPorCombustible(
     viajes: b.viajes,
     co2e_kg: b.co2e_kg,
   }));
+}
+
+/**
+ * True si el punto cae dentro del bbox de la zona (inclusivo en todos los
+ * bordes). Defensive: false si la zona tiene bbox invertido (la migration
+ * lo previene con CHECK constraint pero el helper no asume).
+ */
+export function puntoEnBoundingBox(
+  point: { lat: number; lng: number },
+  zona: Pick<ZonaStakeholder, 'lat_min' | 'lat_max' | 'lng_min' | 'lng_max'>,
+): boolean {
+  if (zona.lat_min >= zona.lat_max || zona.lng_min >= zona.lng_max) {
+    return false;
+  }
+  return (
+    point.lat >= zona.lat_min &&
+    point.lat <= zona.lat_max &&
+    point.lng >= zona.lng_min &&
+    point.lng <= zona.lng_max
+  );
 }
