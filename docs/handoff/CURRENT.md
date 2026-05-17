@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 ~08:20 UTC (D11 v2 T8 abort → bloqueo formal T8-T12 pendiente test-integration-infra)
+**Última actualización**: 2026-05-17 ~09:10 UTC (T0 test-integration-infra PASS — pickup point se mueve a T1)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -23,25 +23,32 @@
 | Plan devils-advocate review | complete (7 P0 + 6 P1 + 5 P2 — 12/13 P0+P1 abordados) | [`docs/plans/2026-05-17-test-integration-infra-apps-api-devils-advocate.md`](../plans/2026-05-17-test-integration-infra-apps-api-devils-advocate.md) |
 | Plan D11 v2 (T8-T12 BLOCKED) | actualizado | [`docs/plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md`](../plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md) |
 
-**Pickup point próxima sesión — T0**:
+**T0 — PASS (2026-05-17 ~09:10 UTC)**:
 
-Cooling-off agent-rigor §6.1 (30 min entre /plan y /build) aplicado al cerrar sesión 2026-05-17 ~09:10 UTC.
+Mediciones contra Postgres@16 local (brew, `booster_test_prototype`):
 
-Próxima sesión arranca con T0 del plan: script `apps/api/scripts/prototype-test-db.ts` (no-merge) que mide:
-1. Tiempo de `runMigrations` corrida 1 vs corrida 2 (no-op idempotencia).
-2. `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` + extension `pgcrypto` antes de migrate.
-3. Verificar que `applyOutOfOrderPending` no falla en segunda corrida.
+- Run 1 cold (DROP+CREATE+migrate): **472 ms** (<30 s objetivo)
+- Run 2 full reset: 115 ms
+- Run 3 in-place sin DROP: **4 ms** (<5 s objetivo)
+- Sin errores; 36/36/36 migrations consistentes
 
-Success criterion para arrancar T1: primera corrida <30s, segunda <5s, sin errores. Captura del output queda pegada en el PR body de T1.
+Evidencia completa: [`2026-05-17-t0-prototype-test-db-output.md`](2026-05-17-t0-prototype-test-db-output.md). El script `apps/api/scripts/prototype-test-db.ts` queda untracked (no se mergea por diseño T0).
+
+**Hallazgo colateral**: `0009_stakeholder_access_log.sql` existe en disco pero NO está en `meta/_journal.json` (37 .sql vs 36 entradas journal). La tabla `stakeholderAccessLog` está declarada en `schema.ts:1406`. En prod la tabla probablemente NO existe. Task separada flagueada (no bloquea T1). Justifica retroactivamente la decisión PO de exigir T0 antes de T1.
+
+**Pickup point próxima sesión — T1**:
+
+Próxima sesión arranca con T1 del plan v2: `vitest.integration.config.ts` + scripts + setup.integration + helper test-db + test ref `SELECT 1`. Acceptance enumerada en plan §T1 (LOC ~95). Sin bloqueos de T0.
 
 **Cómo arrancar próxima sesión**:
 
 ```bash
 cd /Volumes/Pendrive128GB/Booster-AI/.claude/worktrees/naughty-sinoussi-c8ddf8
 git pull github fix/d11-t8-stakeholder-zonas-endpoint
-# Verificar PR #267 estado: gh pr view 267 --json state,mergeStateStatus
+# Verificar Postgres local sigue corriendo: pg_isready -h localhost
+# Si no: brew services start postgresql@16
 # Leer plan v2: docs/plans/2026-05-17-test-integration-infra-apps-api.md
-# Arrancar T0: implementar scripts/prototype-test-db.ts según plan §T0
+# Arrancar T1: vitest.integration.config.ts + setup.integration.ts + helpers/test-db.ts + health-db.integration.test.ts
 ```
 
 **Trabajo preservado en working tree** (no commit, untracked):
