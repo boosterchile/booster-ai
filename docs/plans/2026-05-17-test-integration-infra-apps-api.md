@@ -130,7 +130,7 @@ Total: **13 archivos nuevos, 4 modificados**. Cerca del techo de 10 módulos del
 
 ## Tasks
 
-### T0: Prototipo medido (bloquea D1-D6)
+### T0: Prototipo medido (bloquea D1-D6) [DONE 2026-05-17 — PR [#268](https://github.com/boosterchile/booster-ai/pull/268)]
 
 - **Files**:
   - `apps/api/scripts/prototype-test-db.ts` (nuevo, **NO se mergea** — sirve para medir y validar; se descarta tras T1b).
@@ -145,7 +145,7 @@ Total: **13 archivos nuevos, 4 modificados**. Cerca del techo de 10 módulos del
 - **Rollback**: no aplica — el script no se mergea. Si las mediciones invalidan D2/D3, abrir `/plan` v3.
 - **Success criterion para arrancar T1**: primera corrida <30s en local, segunda <5s, sin errores.
 
-### T1: `vitest.integration.config.ts` + scripts + setup.integration + helper test-db + test ref `SELECT 1`
+### T1: `vitest.integration.config.ts` + scripts + setup.integration + helper test-db + test ref `SELECT 1` [DONE 2026-05-17 — PR [#269](https://github.com/boosterchile/booster-ai/pull/269)]
 
 - **Files**:
   - `apps/api/vitest.integration.config.ts` (nuevo) — config con `globalSetup` placeholder (vacío en T1, real en T1b), `setupFiles=['./test/setup.integration.ts']`, `include=['test/integration/**']`, `pool='forks'`, `poolOptions.forks.singleFork=true`, `sequence.concurrent=false`.
