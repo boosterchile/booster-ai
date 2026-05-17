@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 01:20 UTC (post-coverage batch — 11 PRs adicionales mergeados, todos los packages a ≥80/80/80/80)
+**Última actualización**: 2026-05-17 02:25 UTC (post #242 + #243 — runbook tweaks anti-loop)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -52,6 +52,9 @@ Sesión nocturna dedicada a cobertura de tests por package + housekeeping.
 | [#238](https://github.com/boosterchile/booster-ai/pull/238) | `ba0ee10` | 00:50 | `test(shared-schemas): cobertura 98.53/87.5/94.11/98.52` | `all-schemas.test.ts` (+428) |
 | [#239](https://github.com/boosterchile/booster-ai/pull/239) | `756e9b4` | 01:06 | `fix(certificate-generator): CO2e ASCII en section title (subscript crash)` | `generar-pdf-base.ts` (±7/2), `generar-pdf-base.test.ts` (+34) — fix de bug descubierto en #237 + regression test (cert-gen subió a 99.63/82.53/100/99.63) |
 | [#240](https://github.com/boosterchile/booster-ai/pull/240) | `a1419a2` | 01:18 | `docs(runbooks): sanity check zero anti-Stop-hook-loop` | `goal-templates.md` (±16/2) |
+| [#241](https://github.com/boosterchile/booster-ai/pull/241) | `def7e64` | 01:46 | `docs(handoff): refresh CURRENT.md post-coverage batch` | `docs/handoff/CURRENT.md` (+23/−2) |
+| [#242](https://github.com/boosterchile/booster-ai/pull/242) | `21a3d37` | 02:15 | `docs(runbooks): terse post-abort en sanity check zero` | `goal-templates.md` (±3/1) |
+| [#243](https://github.com/boosterchile/booster-ai/pull/243) | `69534d3` | 02:21 | `docs(runbooks): embeber terse-post-abort en /goal text de Plans 3-5` | `goal-templates.md` (+10/0) |
 
 **Resultado coverage**: los 15 packages no-stub pasan **≥80/80/80/80** (statements/branches/functions/lines). Lowest: certificate-generator branches=80.15%. Stubs (`ai-provider`, `carta-porte-generator`, `document-indexer`, `trip-state-machine`, `ui-components`) siguen exemptados hasta tener lógica real (PO-aprobado).
 
