@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import type { CargoType, FuelType } from '@booster-ai/shared-schemas';
 
 /** Helpers puros para endpoints /stakeholder/zonas — D11/ADR-041. Timezone CL. */
 const HORA_FMT = new Intl.DateTimeFormat('en-US', {
@@ -9,6 +10,8 @@ const HORA_FMT = new Intl.DateTimeFormat('en-US', {
 
 export interface ViajeAgregable {
   pickup_at: Date;
+  tipo_carga: CargoType;
+  fuel_type: FuelType;
   carbon_emissions_kgco2e_actual: number | null;
   carbon_emissions_kgco2e_estimated: number | null;
 }
@@ -20,6 +23,16 @@ export interface BucketHora {
 export interface HorarioPico {
   inicio: number;
   fin: number;
+}
+export interface BucketTipoCarga {
+  tipo: CargoType;
+  viajes: number;
+  co2e_kg: number;
+}
+export interface BucketCombustible {
+  fuel_type: FuelType;
+  viajes: number;
+  co2e_kg: number;
 }
 
 /** Hora 0..23 en America/Santiago para un timestamp UTC. */
@@ -88,4 +101,48 @@ export function calcularHorarioPico(viajes: readonly ViajeAgregable[]): HorarioP
     }
   }
   return { inicio, fin: inicio + 3 };
+}
+
+/** Helper genérico de agrupación: bucketea por una key callback y suma CO2e. */
+function agruparPorClave<K extends string>(
+  viajes: readonly ViajeAgregable[],
+  key: (v: ViajeAgregable) => K,
+  logger?: Logger,
+): { clave: K; viajes: number; co2e_kg: number }[] {
+  const acc = new Map<K, { viajes: number; co2e_kg: number }>();
+  for (const v of viajes) {
+    const k = key(v);
+    const bucket = acc.get(k) ?? { viajes: 0, co2e_kg: 0 };
+    bucket.viajes += 1;
+    const c = resolveCo2e(v, logger);
+    if (c != null) {
+      bucket.co2e_kg += c;
+    }
+    acc.set(k, bucket);
+  }
+  return Array.from(acc.entries()).map(([clave, b]) => ({ clave, ...b }));
+}
+
+/** Bucketea por tipo de carga. Sólo aparecen tipos con ≥1 viaje. */
+export function agregarPorTipoCarga(
+  viajes: readonly ViajeAgregable[],
+  logger?: Logger,
+): BucketTipoCarga[] {
+  return agruparPorClave(viajes, (v) => v.tipo_carga, logger).map((b) => ({
+    tipo: b.clave,
+    viajes: b.viajes,
+    co2e_kg: b.co2e_kg,
+  }));
+}
+
+/** Bucketea por combustible del vehículo. Sólo aparecen tipos con ≥1 viaje. */
+export function agregarPorCombustible(
+  viajes: readonly ViajeAgregable[],
+  logger?: Logger,
+): BucketCombustible[] {
+  return agruparPorClave(viajes, (v) => v.fuel_type, logger).map((b) => ({
+    fuel_type: b.clave,
+    viajes: b.viajes,
+    co2e_kg: b.co2e_kg,
+  }));
 }

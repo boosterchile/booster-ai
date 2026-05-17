@@ -1,12 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   type ViajeAgregable,
+  agregarPorCombustible,
   agregarPorHoraDelDia,
+  agregarPorTipoCarga,
   calcularHorarioPico,
 } from '../../src/services/stakeholder-aggregations.js';
 
-const mk = (iso: string, actual?: number | null, estimated?: number | null): ViajeAgregable => ({
+const mk = (
+  iso: string,
+  actual?: number | null,
+  estimated?: number | null,
+  tipo_carga: ViajeAgregable['tipo_carga'] = 'carga_seca',
+  fuel_type: ViajeAgregable['fuel_type'] = 'diesel',
+): ViajeAgregable => ({
   pickup_at: new Date(iso),
+  tipo_carga,
+  fuel_type,
   carbon_emissions_kgco2e_actual: actual ?? null,
   carbon_emissions_kgco2e_estimated: estimated ?? null,
 });
@@ -64,5 +74,51 @@ describe('calcularHorarioPico', () => {
       ...repeat(2, () => mk('2026-05-17T02:00:00Z')),
     ];
     expect(calcularHorarioPico(viajes)).toEqual({ inicio: 5, fin: 8 });
+  });
+});
+
+describe('agregarPorTipoCarga', () => {
+  it('vacío → []', () => {
+    expect(agregarPorTipoCarga([])).toEqual([]);
+  });
+  it('suma CO2e por tipo; fallback estimated y warn cuando ambos null', () => {
+    const warn = vi.fn();
+    const logger = { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as never;
+    const viajes = [
+      mk('2026-05-17T12:00:00Z', 100, null, 'carga_seca'),
+      mk('2026-05-17T12:00:00Z', null, 50, 'carga_seca'),
+      mk('2026-05-17T12:00:00Z', null, null, 'carga_seca'), // warn, no suma
+      mk('2026-05-17T12:00:00Z', 200, null, 'refrigerada'),
+    ];
+    const r = agregarPorTipoCarga(viajes, logger);
+    const seca = r.find((b) => b.tipo === 'carga_seca');
+    const refr = r.find((b) => b.tipo === 'refrigerada');
+    expect(seca).toEqual({ tipo: 'carga_seca', viajes: 3, co2e_kg: 150 });
+    expect(refr).toEqual({ tipo: 'refrigerada', viajes: 1, co2e_kg: 200 });
+    expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('agregarPorCombustible', () => {
+  it('vacío → []', () => {
+    expect(agregarPorCombustible([])).toEqual([]);
+  });
+  it('agrupa por fuel_type', () => {
+    const viajes = [
+      mk('2026-05-17T12:00:00Z', 100, null, 'carga_seca', 'diesel'),
+      mk('2026-05-17T12:00:00Z', 80, null, 'carga_seca', 'diesel'),
+      mk('2026-05-17T12:00:00Z', 0, null, 'carga_seca', 'electrico'),
+    ];
+    const r = agregarPorCombustible(viajes);
+    expect(r.find((b) => b.fuel_type === 'diesel')).toEqual({
+      fuel_type: 'diesel',
+      viajes: 2,
+      co2e_kg: 180,
+    });
+    expect(r.find((b) => b.fuel_type === 'electrico')).toEqual({
+      fuel_type: 'electrico',
+      viajes: 1,
+      co2e_kg: 0,
+    });
   });
 });
