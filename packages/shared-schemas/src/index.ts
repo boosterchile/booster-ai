@@ -59,3 +59,6 @@ export * from './avl-ids/index.js';
 
 // Site Settings — configuración runtime editable de marca y copy (ADR-039)
 export * from './site-settings.js';
+
+// Aggregations — privacy invariants compartidos backend/frontend (D11/ADR-041)
+export * from './aggregations/k-anonymity.js';
