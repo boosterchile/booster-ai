@@ -21,6 +21,22 @@ export interface ViajeAgregable {
   pickupWindowStart: Date;
   carbonEmissionsKgco2eActual: number | null;
   carbonEmissionsKgco2eEstimated: number | null;
+  /** Tipo de carga del cargo_request asociado (denormalizado al construir ViajeAgregable). */
+  tipoCarga: string;
+  /** fuel_type del vehículo asignado (denormalizado al construir ViajeAgregable). */
+  fuelType: string;
+}
+
+export interface BucketTipoCarga {
+  tipo: string;
+  viajes: number;
+  co2e_kg: number;
+}
+
+export interface BucketCombustible {
+  fuel_type: string;
+  viajes: number;
+  co2e_kg: number;
 }
 
 export interface BucketHora {
@@ -150,4 +166,77 @@ export function calcularHorarioPico(viajes: readonly ViajeAgregable[]): HorarioP
     return null;
   }
   return { inicio, fin: inicio + 3 };
+}
+
+/**
+ * Helper genérico de agrupación: bucketea por una key callback y suma CO2e.
+ *
+ * NOTA (decisión PO 2026-05-17, review #251): si `resolveCo2e()` retorna `null`,
+ * el viaje cuenta en `viajes` pero NO contribuye a `co2e_kg`. Esto refleja
+ * honestamente la cobertura del dato CO2e sin sub-reportar volumen.
+ */
+function agruparPorClave<K extends string>(
+  viajes: readonly ViajeAgregable[],
+  key: (v: ViajeAgregable) => K,
+  logger?: Logger,
+): { clave: K; viajes: number; co2e_kg: number }[] {
+  const acc = new Map<K, { viajes: number; co2e_kg: number }>();
+  for (const v of viajes) {
+    const k = key(v);
+    const bucket = acc.get(k) ?? { viajes: 0, co2e_kg: 0 };
+    bucket.viajes += 1;
+    const c = resolveCo2e(v, logger);
+    if (c != null) {
+      bucket.co2e_kg += c;
+    }
+    acc.set(k, bucket);
+  }
+  return Array.from(acc.entries()).map(([clave, b]) => ({ clave, ...b }));
+}
+
+/**
+ * Bucketea por tipo de carga. Sólo aparecen tipos con ≥1 viaje en el dataset.
+ * El caller debe aplicar k-anonymity con `aplicarKAnonymityQuasiId` antes de
+ * serializar — la presencia del bucket leak quasi-identifier (ADR-042 §6 nivel 3).
+ */
+export function agregarPorTipoCarga(
+  viajes: readonly ViajeAgregable[],
+  logger?: Logger,
+): BucketTipoCarga[] {
+  return agruparPorClave(viajes, (v) => v.tipoCarga, logger).map((b) => ({
+    tipo: b.clave,
+    viajes: b.viajes,
+    co2e_kg: b.co2e_kg,
+  }));
+}
+
+/**
+ * Bucketea por combustible del vehículo. Sólo aparecen tipos con ≥1 viaje.
+ * El caller debe aplicar k-anonymity con `aplicarKAnonymityQuasiId` antes de
+ * serializar — la presencia del bucket leak quasi-identifier (ADR-042 §6 nivel 3).
+ */
+export function agregarPorCombustible(
+  viajes: readonly ViajeAgregable[],
+  logger?: Logger,
+): BucketCombustible[] {
+  return agruparPorClave(viajes, (v) => v.fuelType, logger).map((b) => ({
+    fuel_type: b.clave,
+    viajes: b.viajes,
+    co2e_kg: b.co2e_kg,
+  }));
+}
+
+/**
+ * Wrapper k-anonymity para buckets cuya CLAVE de agrupación es un
+ * quasi-identifier (e.g. tipo_carga, fuel_type). Usa `dropSubKBuckets: true`
+ * para FILTRAR del output los buckets con count<k, en vez de enmascarar.
+ *
+ * Razón (ADR-042 §6 nivel 3): si zona tiene 7 viajes total y 2 son `gnv`, dejar
+ * `{fuel_type:'gnv', viajes:null}` revela "hay actividad GNV en esta zona" → re-id
+ * trivial si un solo shipper opera GNV. Suprimir el bucket entero protege.
+ */
+export function aplicarKAnonymityQuasiId<T extends { viajes: number }>(buckets: readonly T[]): T[] {
+  return aplicarKAnonymity(buckets as readonly (T & Record<string, unknown>)[], K_ANON, 'viajes', {
+    dropSubKBuckets: true,
+  }) as T[];
 }

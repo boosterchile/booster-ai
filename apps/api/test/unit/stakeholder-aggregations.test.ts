@@ -1,17 +1,39 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   type ViajeAgregable,
+  agregarPorCombustible,
   agregarPorHoraDelDia,
+  agregarPorTipoCarga,
   aplicarKAnonymityHorario,
+  aplicarKAnonymityQuasiId,
   calcularHorarioPico,
   resolveCo2e,
 } from '../../src/services/stakeholder-aggregations.js';
 
-const mk = (iso: string, actual?: number | null, estimated?: number | null): ViajeAgregable => ({
-  pickupWindowStart: new Date(iso),
-  carbonEmissionsKgco2eActual: actual ?? null,
-  carbonEmissionsKgco2eEstimated: estimated ?? null,
-});
+interface MkOptions {
+  actual?: number | null;
+  estimated?: number | null;
+  tipoCarga?: string;
+  fuelType?: string;
+}
+
+const mk = (
+  iso: string,
+  actualOrOpts?: number | null | MkOptions,
+  estimated?: number | null,
+): ViajeAgregable => {
+  const opts: MkOptions =
+    typeof actualOrOpts === 'object' && actualOrOpts !== null
+      ? actualOrOpts
+      : { actual: actualOrOpts, estimated };
+  return {
+    pickupWindowStart: new Date(iso),
+    carbonEmissionsKgco2eActual: opts.actual ?? null,
+    carbonEmissionsKgco2eEstimated: opts.estimated ?? null,
+    tipoCarga: opts.tipoCarga ?? 'carga_seca',
+    fuelType: opts.fuelType ?? 'diesel',
+  };
+};
 const repeat = (n: number, fn: () => ViajeAgregable) => Array.from({ length: n }, fn);
 
 describe('resolveCo2e', () => {
@@ -132,5 +154,92 @@ describe('calcularHorarioPico', () => {
     ];
     // Ventana 15..18 tiene 7 viajes (> 5). Gana sobre ventana 4..7 (5 viajes).
     expect(calcularHorarioPico(viajes)).toEqual({ inicio: 15, fin: 18 });
+  });
+});
+
+describe('agregarPorTipoCarga', () => {
+  it('agrupa por tipo y suma CO2e (CARGA_SECA + GNV)', () => {
+    const viajes = [
+      ...repeat(3, () => mk('2026-05-17T10:00:00Z', { actual: 100, tipoCarga: 'carga_seca' })),
+      ...repeat(2, () => mk('2026-05-17T10:00:00Z', { actual: 50, tipoCarga: 'refrigerada' })),
+    ];
+    const r = agregarPorTipoCarga(viajes);
+    expect(r.find((b) => b.tipo === 'carga_seca')).toEqual({
+      tipo: 'carga_seca',
+      viajes: 3,
+      co2e_kg: 300,
+    });
+    expect(r.find((b) => b.tipo === 'refrigerada')).toEqual({
+      tipo: 'refrigerada',
+      viajes: 2,
+      co2e_kg: 100,
+    });
+  });
+
+  it('viaje sin CO2e cuenta en viajes pero no en co2e_kg (decisión PO)', () => {
+    const warn = vi.fn();
+    const logger = { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as never;
+    const viajes = [
+      mk('2026-05-17T10:00:00Z', { actual: 100, tipoCarga: 'carga_seca' }),
+      mk('2026-05-17T10:00:00Z', { actual: null, estimated: null, tipoCarga: 'carga_seca' }),
+    ];
+    const r = agregarPorTipoCarga(viajes, logger);
+    expect(r[0]).toEqual({ tipo: 'carga_seca', viajes: 2, co2e_kg: 100 });
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('fallback actual → estimated', () => {
+    const viajes = [
+      mk('2026-05-17T10:00:00Z', { actual: null, estimated: 80, tipoCarga: 'carga_seca' }),
+    ];
+    expect(agregarPorTipoCarga(viajes)[0]?.co2e_kg).toBe(80);
+  });
+});
+
+describe('agregarPorCombustible', () => {
+  it('agrupa por fuel_type y suma CO2e (diesel + electrico)', () => {
+    const viajes = [
+      ...repeat(3, () => mk('2026-05-17T10:00:00Z', { actual: 100, fuelType: 'diesel' })),
+      ...repeat(2, () => mk('2026-05-17T10:00:00Z', { actual: 5, fuelType: 'electrico' })),
+    ];
+    const r = agregarPorCombustible(viajes);
+    expect(r.find((b) => b.fuel_type === 'diesel')).toEqual({
+      fuel_type: 'diesel',
+      viajes: 3,
+      co2e_kg: 300,
+    });
+    expect(r.find((b) => b.fuel_type === 'electrico')).toEqual({
+      fuel_type: 'electrico',
+      viajes: 2,
+      co2e_kg: 10,
+    });
+  });
+});
+
+describe('aplicarKAnonymityQuasiId (ADR-042 §6 nivel 3)', () => {
+  it('filtra (drop) buckets con count < k — preserva privacy de quasi-identifier', () => {
+    const buckets = [
+      { tipo: 'carga_seca', viajes: 6, co2e_kg: 600 },
+      { tipo: 'refrigerada', viajes: 3, co2e_kg: 150 }, // < k, debe DROP
+      { tipo: 'gnv', viajes: 1, co2e_kg: 30 }, // < k, debe DROP
+    ];
+    const r = aplicarKAnonymityQuasiId(buckets);
+    expect(r).toEqual([{ tipo: 'carga_seca', viajes: 6, co2e_kg: 600 }]);
+  });
+
+  it('todos buckets >= k → no filtra', () => {
+    const buckets = [
+      { fuel_type: 'diesel', viajes: 10, co2e_kg: 1000 },
+      { fuel_type: 'gnv', viajes: 5, co2e_kg: 200 },
+    ];
+    expect(aplicarKAnonymityQuasiId(buckets)).toEqual(buckets);
+  });
+
+  it('all sub-k → array vacío (zona sin tipos con suficientes viajes)', () => {
+    const buckets = [
+      { tipo: 'a', viajes: 2, co2e_kg: 20 },
+      { tipo: 'b', viajes: 3, co2e_kg: 30 },
+    ];
+    expect(aplicarKAnonymityQuasiId(buckets)).toEqual([]);
   });
 });
