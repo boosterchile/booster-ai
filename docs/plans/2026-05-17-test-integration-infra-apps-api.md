@@ -7,7 +7,7 @@
 - **Created**: 2026-05-17 ~08:45 UTC
 - **Revised v2**: 2026-05-17 ~09:00 UTC (post devils-advocate del plan v1)
 - **Owner**: Felipe Vicencio (PO) + Claude
-- **Status**: Active v2 (pending PO approval)
+- **Status**: **Approved** (PO, 2026-05-17 ~09:05 UTC — plan v2 post devils-advocate)
 
 ---
 
