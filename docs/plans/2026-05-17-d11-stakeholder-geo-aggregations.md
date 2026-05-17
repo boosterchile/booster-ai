@@ -135,7 +135,7 @@
   - Integration test: 6 roles (5 negados + 1 admitido).
 - **Rollback**: revertir commit. **Caveat (objeción #6 resuelta)**: si T11 (UI cards) ya mergeó, este rollback rompe la página de cards con 500 en producción. Plan de rollback post-T11: revertir T11 ANTES de T8 (frontend vuelve a estado pre-D11 con mock data).
 
-### T9: Endpoint `GET /stakeholder/zonas/:slug/agregaciones` [BLOCKED 2026-05-17 — depende de T8]
+### T9: Endpoint `GET /stakeholder/zonas/:slug/agregaciones` [DONE 2026-05-17 — PR #254]
 
 - **Files**: `apps/api/src/routes/stakeholder.ts` (extender), `apps/api/test/integration/stakeholder.test.ts` (extender)
 - **LOC estimate**: ~110 *(waiver: 3 breakdowns + metodologia + integration tests con k-anonymity per-cell. Auth ya viene de T8. El extra sobre 100 son los 3 helpers de agregación llamados en sequence + el field `metodologia` con generación del ISO timestamp.)*
