@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (PO) + Claude (agent-rigor)
 - **Date**: 2026-05-17
-- **Status**: **Draft** — pendiente PO approval
+- **Status**: **Approved** (PO, 2026-05-17 ~20:55 UTC)
 - **Supersedes**: PR #275 ([prod-query-tool spec](2026-05-17-prod-query-tool.md), cerrado tras verificación empírica)
 - **ADR a crear**: `045-agent-query-helper.md`
 
