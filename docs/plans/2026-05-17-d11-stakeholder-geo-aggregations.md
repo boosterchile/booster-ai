@@ -59,7 +59,7 @@
 
 ## Tasks
 
-### T1: ADR-041 — decisiones arquitectónicas
+### T1: ADR-041 — decisiones arquitectónicas [DONE 2026-05-17 — PR #246]
 
 - **Files**: `docs/adr/041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md` (nuevo)
 - **LOC estimate**: ~80
