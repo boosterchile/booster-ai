@@ -97,6 +97,27 @@ describe('generarPdfBase', () => {
     expect(big.length).toBeGreaterThan(small.length);
   });
 
+  it('renderiza sin deliveredAt (entrega en curso)', async () => {
+    const { deliveredAt: _ignored, ...viajeSinEntrega } = viajeMinimo;
+    const bytes = await generarPdfBase({
+      viaje: viajeSinEntrega,
+      metricas: metricasMinimo,
+      empresaShipper: empresaMinimo,
+      verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+    });
+    expect(bytes.length).toBeGreaterThan(2000);
+  });
+
+  it('precisionMethod desconocido → fallback raw (no rompe)', async () => {
+    const bytes = await generarPdfBase({
+      viaje: viajeMinimo,
+      metricas: { ...metricasMinimo, precisionMethod: 'unknown_method_xyz' as never },
+      empresaShipper: empresaMinimo,
+      verifyUrl: 'https://api.boosterchile.com/certificates/BOO-TEST01/verify',
+    });
+    expect(bytes.length).toBeGreaterThan(2000);
+  });
+
   it('renderiza datos opcionales del transportista cuando los hay', async () => {
     const bytes = await generarPdfBase({
       viaje: viajeMinimo,
