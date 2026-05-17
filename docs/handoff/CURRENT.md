@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-16 23:15 UTC (post-merges #166 + #226 + #227 + #228 + #229 + #164 — sesión completa cerrada con 0 PRs abiertos)
+**Última actualización**: 2026-05-17 01:20 UTC (post-coverage batch — 11 PRs adicionales mergeados, todos los packages a ≥80/80/80/80)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -35,11 +35,31 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 - [#229](https://github.com/boosterchile/booster-ai/pull/229) (commit `c8ce2a3`, 23:05 UTC) — `docs(handoff): refresh CURRENT.md post-merge #227 + #228`. Segunda iteración del documento aplicando Plan 1 v2 vía `/goal` (9 min, 12.6k tokens, 0 errores fácticos — validó las plantillas v2 en producción).
 - [#164](https://github.com/boosterchile/booster-ai/pull/164) (commit `2429f86`, 23:14 UTC) — `docs(spec): D11 stakeholder geo aggregations — cards + drill-down + ADR-033`. Spec D11 formalizada en `main` tras 5 días en DRAFT. Habilita `/plan` y `/build` cuando el PO decida. Files: `docs/specs/2026-05-11-stakeholder-geo-aggregations-d11.md` (+136 líneas).
 
+### Mergeados 2026-05-16/17 (post-coverage batch)
+
+Sesión nocturna dedicada a cobertura de tests por package + housekeeping.
+
+| PR | SHA | UTC | Título | Files |
+|---|---|---|---|---|
+| [#230](https://github.com/boosterchile/booster-ai/pull/230) | `786a5b3` | 23:17 | `docs(handoff): cierre sesion 2026-05-16 — 0 PRs abiertos` | `docs/handoff/CURRENT.md` (+12/−34) |
+| [#231](https://github.com/boosterchile/booster-ai/pull/231) | `94155fe` | 23:22 | `refactor(d11-spec): renumerar ADR-033→041 y migration 0027→0034` | `docs/specs/…-d11.md` (±8/8), `docs/handoff/CURRENT.md` (±3/6) |
+| [#232](https://github.com/boosterchile/booster-ai/pull/232) | `48c3d04` | 23:52 | `chore(coverage): infra de coverage en 15 packages + floor baseline` | 15 × `vitest.config.ts` + 15 × `package.json` + `pnpm-lock.yaml` |
+| [#233](https://github.com/boosterchile/booster-ai/pull/233) | `fa301d3` | 23:58 | `test(ui-tokens): cobertura 100/100/100/100` | `tokens.test.ts` (+207), `vitest.config.ts` (±5/9) |
+| [#234](https://github.com/boosterchile/booster-ai/pull/234) | `96e10c5` | 00:07 | `test(logger): cobertura 93/92/100/93 — createLogger + redaction` | `createLogger.test.ts` (+129), `redaction.test.ts` (+52) |
+| [#235](https://github.com/boosterchile/booster-ai/pull/235) | `4a758e6` | 00:13 | `test(config): cobertura 100/100/100/100 — parseEnv + 5 schemas` | `parseEnv.test.ts` + 5 × `schemas/*.test.ts` (+243 total) |
+| [#236](https://github.com/boosterchile/booster-ai/pull/236) | `09dc62f` | 00:19 | `test(whatsapp-client): cobertura 95/91/86/97 — WhatsAppClient HTTP` | `client.test.ts` (+156) |
+| [#237](https://github.com/boosterchile/booster-ai/pull/237) | `5bd0228` | 00:39 | `test(certificate-generator): cobertura 97.82/80.15/100/97.82` | 5 × test (`ca-self-signed`, `emitir-certificado`, `firmar-kms`, `firmar-pades`, `storage`) + ajuste `generar-pdf-base.test.ts` (+734) |
+| [#238](https://github.com/boosterchile/booster-ai/pull/238) | `ba0ee10` | 00:50 | `test(shared-schemas): cobertura 98.53/87.5/94.11/98.52` | `all-schemas.test.ts` (+428) |
+| [#239](https://github.com/boosterchile/booster-ai/pull/239) | `756e9b4` | 01:06 | `fix(certificate-generator): CO2e ASCII en section title (subscript crash)` | `generar-pdf-base.ts` (±7/2), `generar-pdf-base.test.ts` (+34) — fix de bug descubierto en #237 + regression test (cert-gen subió a 99.63/82.53/100/99.63) |
+| [#240](https://github.com/boosterchile/booster-ai/pull/240) | `a1419a2` | 01:18 | `docs(runbooks): sanity check zero anti-Stop-hook-loop` | `goal-templates.md` (±16/2) |
+
+**Resultado coverage**: los 15 packages no-stub pasan **≥80/80/80/80** (statements/branches/functions/lines). Lowest: certificate-generator branches=80.15%. Stubs (`ai-provider`, `carta-porte-generator`, `document-indexer`, `trip-state-machine`, `ui-components`) siguen exemptados hasta tener lógica real (PO-aprobado).
+
 ---
 
 ## (b) PRs abiertos — 0
 
-**Repo cerrado**: sin PRs pendientes a 2026-05-16 23:15 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` D11 (numeración ya resuelta — ver abajo).
+**Repo cerrado** a 2026-05-17 01:20 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` D11.
 
 ---
 
@@ -84,4 +104,5 @@ Las seis waves del plan de identidad universal + dashboard conductor están **co
 - **Demo Corfo** agendada para lunes 2026-05-18 con Wave 1 + auth universal listos (hoy es 2026-05-16, faltan 2 días).
 - **Subdominio `demo.boosterchile.com`** operativo desde 2026-05-13 ([#206](https://github.com/boosterchile/booster-ai/pull/206)) — 4 personas click-to-enter sin formulario.
 - **Issue [#194](https://github.com/boosterchile/booster-ai/issues/194)** (DR deploy) resuelto por [#210](https://github.com/boosterchile/booster-ai/pull/210) (habilitación DNS endpoint cluster DR).
+- **Coverage gate activo en CI desde 2026-05-16** ([#232](https://github.com/boosterchile/booster-ai/pull/232)): cada `packages/*` no-stub emite `coverage-summary.json` y vitest enforza thresholds 80/80/80/80 in-config. El bash gate del workflow CI valida los summaries y bloquea merge si alguno cae bajo umbral. Esto cierra el hueco de "CI silenciosamente pasa porque ningún package emite cobertura".
 - **Próximos handoffs fechados** se siguen creando como `docs/handoff/YYYY-MM-DD-<topic>.md`; este `CURRENT.md` se actualiza tras cada cambio de estado significativo (merge de PR mayor, deploy a prod, blocker resuelto, blocker nuevo).
