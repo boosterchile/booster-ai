@@ -10,7 +10,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage --passWithNoTests"
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "test:integration:lint": "node ./scripts/check-no-concurrent-in-integration.mjs",
+    "pretest:integration": "pnpm run test:integration:lint",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
+    "test:all": "pnpm run test && pnpm run test:integration"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
