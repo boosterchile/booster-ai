@@ -12,7 +12,17 @@
 
 Estos requisitos están implícitos en cada plantilla; cada `/goal` los incluye en su condición de cierre o los hereda del entorno.
 
-### Pre-flight obligatorio (primer turno del agente)
+### Sanity check zero — ANTES de cualquier acción (anti-Stop-hook-loop)
+
+El Stop hook de `/goal` re-invoca al agente cada turno mientras la condición de cierre no se cumpla. Si la condición es **estructuralmente insatisfacible**, el agente entra en bucle infinito y la única salida es que el PO tipee `/goal clear`. Para evitarlo, el agente DEBE validar antes del pre-flight:
+
+1. **Placeholders sin sustituir**: si el texto del goal contiene `<[A-Z]+>` (ej. `<PR>`, `<feature>`, `<from>`, `<to>`), reportar al chat *"Goal no satisfacible: placeholder `<X>` sin sustituir. Reformular con valor concreto."* y terminar SIN llamar hooks ni invocar el pre-flight ledger.
+2. **Recursos requeridos ausentes**: si la condición depende de un recurso que no existe (ej. plantilla "cerrar PR" pero `gh pr list --state open --json number --jq length` retorna 0; plantilla BUILD pero `.specs/<feature>/plan.md` no existe), reportar y terminar.
+3. **Cancelación explícita del PO**: si el PO ya respondió "cancelar" a una pregunta del agente, NO seguir re-evaluando — terminar y dejar mensaje *"Esperando /goal clear del PO."* una sola vez.
+
+Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable.
+
+### Pre-flight obligatorio (primer turno del agente, post-sanity check)
 
 1. Leer `/Users/fvicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md` y escribir `skill_read` al ledger antes de cualquier `Write`/`Edit`. Sin esto, el primer `Write` se bloquea por `PreToolUse`.
 2. Declarar `phase_enter` (con feature slug) **o** `skip-cycle` con justificación, también al ledger.
@@ -34,6 +44,8 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 - Un test falla **2 reintentos consecutivos** sin diagnóstico nuevo entre intentos.
 - Vocabulario drift (las palabras listadas en agent-rigor `CLAUDE.md` §4, e.g. <quote>MVP</quote>, <quote>for now</quote>, <quote>quick fix</quote>) aparece en código generado.
 - La condición de cierre requiere una decisión de producto que solo el PO puede tomar (numeración ADR, breaking change, schema BD).
+- Placeholder literal sin sustituir en el goal (`<PR>`, `<feature>`, `<from>`, `<to>`) — ver "Sanity check zero" arriba.
+- Recurso requerido ausente (PR inexistente, `plan.md` inexistente, branch inexistente) — ver "Sanity check zero" arriba.
 
 ---
 
@@ -120,10 +132,12 @@ Abort si: un test que escribo falla 2 reintentos consecutivos sin que el código
 ```
 Cerrar PR #<PR> en main con CI 100% verde.
 
+Sanity check zero: si <PR> sigue siendo placeholder literal o `gh pr list --state open --json number --jq length` retorna 0, ABORTAR y reportar antes del pre-flight. NO invocar hooks ni ledger writes para un goal insatisfacible.
+
 Pre-flight: leer agent-rigor CLAUDE.md + skill_read. skip-cycle si es solo docs/rebase, phase_enter si toca código.
 
 Steps:
-1. `gh pr view <PR> --json files,headRefName,mergeStateStatus,statusCheckRollup` — capturar nombre de branch y estado.
+1. `gh pr view <PR> --json files,headRefName,mergeStateStatus,statusCheckRollup` — capturar nombre de branch y estado. Si el comando falla (PR no existe), ABORTAR.
 2. Si mergeStateStatus = BEHIND o UNSTABLE por checks de seguridad, hacer rebase:
    a. Identificar worktree del branch con `git worktree list | grep <headRefName>`. Si no existe, NO crear uno nuevo — pedir al PO. (Evita worktree proliferation.)
    b. En el worktree: `git fetch github main && git rebase github/main`.
