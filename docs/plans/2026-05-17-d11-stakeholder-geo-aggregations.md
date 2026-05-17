@@ -73,7 +73,7 @@
   - `SELECT COUNT(*) FROM zonas_stakeholder WHERE is_active = true` retorna 5.
 - **Rollback**: revertir commit + ejecutar `DROP TABLE zonas_stakeholder` si aplicada. **Caveat (objeción #11 resuelta)**: una vez T8/T9 estén en `main`, este rollback rompe los endpoints. Si T8 ya mergeó, revertir T3 requiere revertir también T8/T9 como unidad.
 
-### T4: k-anonymity helper puro
+### T4: k-anonymity helper puro [DONE 2026-05-17 — PR #249]
 
 - **Files**: `packages/shared-schemas/src/aggregations/k-anonymity.ts` (nuevo), `packages/shared-schemas/src/aggregations/k-anonymity.test.ts` (nuevo), `packages/shared-schemas/src/index.ts` (re-export)
 - **LOC estimate**: ~90 (≈30 helper + ≈60 tests)
