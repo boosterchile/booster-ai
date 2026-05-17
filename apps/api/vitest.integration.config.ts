@@ -23,6 +23,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: ['./test/setup.integration.ts'],
+    globalSetup: ['./test/integration/setup-global.ts'],
     include: ['test/integration/**/*.{test,spec}.ts'],
     // Vitest 4: poolOptions se movieron a top-level. `pool: 'forks'` +
     // `forks.singleFork: true` garantiza un único worker para serializar
