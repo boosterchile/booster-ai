@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 02:25 UTC (post #242 + #243 — runbook tweaks anti-loop)
+**Última actualización**: 2026-05-17 ~06:00 UTC (post D11 BUILD review formal — 12 PRs revisados, 1 mergeado, plan v1 BLOCKED, pivote Opción 2)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
 
@@ -60,9 +60,33 @@ Sesión nocturna dedicada a cobertura de tests por package + housekeeping.
 
 ---
 
-## (b) PRs abiertos — 0
+## (b) PRs abiertos — 9 (D11 BUILD review formal)
 
-**Repo cerrado** a 2026-05-17 01:20 UTC. Próximo trabajo arranca con `/spec` (nueva feature) o `/plan` D11.
+D11 BUILD ejecutado autónomamente vía `/goal` el 2026-05-17 (12 tasks DONE, ~$5-10 USD). Review formal con sub-agentes (`code-reviewer`, `devils-advocate`, `security-auditor`, `ux-designer`) reveló **bugs CRITICAL de privacy + violación de contrato agent-rigor + LOC waivers excedidos 2-3×**. Plan v1 BLOCKED, pivote a Opción 2 (`originComunaCode` mapping).
+
+| PR | Task | Status |
+|---|---|---|
+| [#246](https://github.com/boosterchile/booster-ai/pull/246) | T1 ADR-041 | SUPERSEDE — pendiente ADR-042 |
+| [#247](https://github.com/boosterchile/booster-ai/pull/247) | T2 Zod+Drizzle | REQUEST_CHANGES — `numeric` ↔ `z.number()` mismatch |
+| [#249](https://github.com/boosterchile/booster-ai/pull/249) | T4 k-anonymity | REQUEST_FIX privacy CRITICAL |
+| [#250](https://github.com/boosterchile/booster-ai/pull/250) | T5 hora+pico | REQUEST_CHANGES naming + k-anon |
+| [#251](https://github.com/boosterchile/booster-ai/pull/251) | T6 tipo+combustible | MERGE post-T5 fix |
+| [#252](https://github.com/boosterchile/booster-ai/pull/252) | T7 puntoEnBoundingBox | REQUEST_CHANGES NaN |
+| [#253](https://github.com/boosterchile/booster-ai/pull/253) | T8 abort doc | OPEN — reset a abort-doc-only (`7b2a18e`) |
+| [#255](https://github.com/boosterchile/booster-ai/pull/255) | T10 UI drill-down | REQUEST_CHANGES blocked-by-T9-v2 |
+| [#256](https://github.com/boosterchile/booster-ai/pull/256) | T11 UI cards | REQUEST_CHANGES + SPLIT blocked-by-T8-v2 |
+| [#257](https://github.com/boosterchile/booster-ai/pull/257) | T12 perf | REVERT_DONE_MARK — test tautológico |
+
+**Cerrados sin merge**: #254 (T9, REJECT — privacy bugs heredados).
+
+**Mergeado**: #248 (T3 migration zonas_stakeholder + seed, commit `2843e69`).
+
+**Hallazgos sistémicos**:
+1. Helper k-anonymity (#249) tiene 1 CRITICAL (quasi-identifier strings leak) + 3 HIGH. Es el ÚNICO control técnico privacy → prioridad #1.
+2. Schema drift `domain/` ↔ `db/`: `domain/trip.ts` tiene state values en inglés (`delivered`, etc.); `db/schema.ts` divergió a español (`entregado`). ADR-042 resolverá.
+3. "DONE" sin evidencia: T8 marcado DONE auto-resolviendo abort, T12 marcado DONE con test placeholder tautológico.
+
+**Trazabilidad**: [`docs/handoff/2026-05-17-d11-review-plan.md`](2026-05-17-d11-review-plan.md) + comments en GitHub por PR.
 
 ---
 

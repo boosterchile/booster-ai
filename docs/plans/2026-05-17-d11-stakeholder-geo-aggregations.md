@@ -4,9 +4,32 @@
 - **Owner**: Felipe Vicencio (PO) + Claude
 - **Creado**: 2026-05-17
 - **Revisado**: 2026-05-17 post devils-advocate (12 objeciones, 4 fuertes resueltas)
-- **Status**: Active
-- **ADR a producir en T1**: ADR-041 (`041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md`)
-- **Migration a producir en T3**: `0034_zonas_stakeholder.sql`
+- **Re-revisado**: 2026-05-17 post BUILD review formal de 12 PRs — **plan v1 obsoleto, pivote a Opción 2**
+- **Status**: **BLOCKED — pivote Opción 2 en curso, ver plan v2 (próximo)**
+
+## Status post-review (2026-05-17 ~06:00 UTC)
+
+| Task | PR | Status |
+|---|---|---|
+| T1 ADR-041 | [#246](https://github.com/boosterchile/booster-ai/pull/246) | **SUPERSEDE** — pendiente ADR-042 |
+| T2 Zod+Drizzle | [#247](https://github.com/boosterchile/booster-ai/pull/247) | REQUEST_CHANGES — `numeric` ↔ `z.number()` mismatch |
+| T3 Migration 0034 + seed | [#248](https://github.com/boosterchile/booster-ai/pull/248) | ✅ **MERGED** `2843e69` |
+| T4 k-anonymity helper | [#249](https://github.com/boosterchile/booster-ai/pull/249) | REQUEST_FIX privacy — 1 CRITICAL + 3 HIGH |
+| T5 hora+pico | [#250](https://github.com/boosterchile/booster-ai/pull/250) | REQUEST_CHANGES — `pickup_at` no existe |
+| T6 tipo+combustible | [#251](https://github.com/boosterchile/booster-ai/pull/251) | MERGE post-T5 fix |
+| T7 puntoEnBoundingBox | [#252](https://github.com/boosterchile/booster-ai/pull/252) | REQUEST_CHANGES NaN — y posiblemente obsoleto post-Opción 2 |
+| **T8 endpoint cards** | [#253](https://github.com/boosterchile/booster-ai/pull/253) | ❌ **REJECT** — reset a abort-doc-only (`7b2a18e`) |
+| **T9 endpoint drill-down** | #254 | ❌ **CLOSED** post-REJECT |
+| T10 UI drill-down | [#255](https://github.com/boosterchile/booster-ai/pull/255) | REQUEST_CHANGES — bloqueado por T9 v2 |
+| T11 UI cards | [#256](https://github.com/boosterchile/booster-ai/pull/256) | REQUEST_CHANGES + SPLIT — bloqueado por T8 v2 |
+| T12 perf gate | [#257](https://github.com/boosterchile/booster-ai/pull/257) | **REVERT_DONE_MARK** — test placeholder tautológico |
+
+**Pivote a Opción 2** (decisión PO post-review): filtro por `originComunaCode` mapeado a zona en vez de bounding box geográfico. ADR-042 supersedes parcial ADR-041. Schema/domain drift se resuelve en mismo ADR.
+
+**Hallazgo sistémico**: el plan v1 asumió un schema (`cargo_request.origin.geocode`, `state IN ('delivered'...)`) que no coincide con `db/schema.ts`. El domain canónico en `packages/shared-schemas/src/domain/trip.ts` sí tenía el shape de la spec; el drift estaba entre domain y db. Se resuelve en ADR-042.
+
+- **ADR producido en T1 (v1)**: ADR-041 (`041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md`) — pendiente SUPERSEDE
+- **Migration producida en T3 (v1)**: `0034_zonas_stakeholder.sql` ✅ en main
 
 **Convención de path**: este plan vive en `docs/plans/` (no `.specs/`) para consistencia con `docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`. Desviación deliberada del framework agent-rigor.
 
