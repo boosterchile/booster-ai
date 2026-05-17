@@ -165,7 +165,7 @@ Total: **13 archivos nuevos, 4 modificados**. Cerca del techo de 10 módulos del
   - **Enumerar routes residuales**: comando en commit body: `grep -L "createXxxRoutes\\|opts\\.db" apps/api/src/routes/*.ts`. Output documentado. Si hay >0 routes que importan `createDb` directamente, listarlas en commit body como riesgo conocido para T1b/T8 re-open.
 - **Rollback**: revertir commit. Suite unit no se afecta.
 
-### T1b: Migration runner integrado en globalSetup
+### T1b: Migration runner integrado en globalSetup [DONE 2026-05-17]
 
 - **Files**:
   - `apps/api/test/integration/setup-global.ts` (nuevo) — globalSetup: `DROP SCHEMA + CREATE SCHEMA + runMigrations`.
