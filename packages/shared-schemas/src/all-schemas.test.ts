@@ -28,6 +28,7 @@ import * as tripMetrics from './domain/trip-metrics.js';
 import * as trip from './domain/trip.js';
 import * as user from './domain/user.js';
 import * as vehicle from './domain/vehicle.js';
+import * as zonaStakeholder from './domain/zona-stakeholder.js';
 import * as zone from './domain/zone.js';
 import * as telemetryEvents from './events/telemetry-events.js';
 import * as tripEvents from './events/trip-events.js';
@@ -372,6 +373,7 @@ describe('domain modules — importables sin errores (schemas executados al impo
     trip,
     user,
     vehicle,
+    'zona-stakeholder': zonaStakeholder,
     zone,
   };
   for (const [name, mod] of Object.entries(modules)) {
@@ -387,6 +389,45 @@ describe('events', () => {
   });
   it('trip-events exports', () => {
     expect(Object.keys(tripEvents).length).toBeGreaterThan(0);
+  });
+});
+
+describe('zonaStakeholderSchema (bbox refine — D11/ADR-041)', () => {
+  const baseZona = {
+    id: VALID_UUID,
+    slug: 'puerto-valparaiso',
+    nombre: 'Puerto Valparaíso',
+    region_code: 'CL-VS',
+    tipo: 'puerto' as const,
+    lat_min: -33.0501,
+    lat_max: -33.025,
+    lng_min: -71.65,
+    lng_max: -71.61,
+    is_active: true,
+    creado_en: VALID_DATE,
+    actualizado_en: VALID_DATE,
+  };
+
+  it('acepta bounding box bien formado', () => {
+    expect(() => zonaStakeholder.zonaStakeholderSchema.parse(baseZona)).not.toThrow();
+  });
+
+  it('rechaza bbox invertido en latitud (lat_min > lat_max)', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({ ...baseZona, lat_min: -33.0, lat_max: -33.1 }),
+    ).toThrow(/lat_min debe ser estrictamente menor que lat_max/);
+  });
+
+  it('rechaza bbox invertido en longitud (lng_min > lng_max)', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({ ...baseZona, lng_min: -71.5, lng_max: -71.7 }),
+    ).toThrow(/lng_min debe ser estrictamente menor que lng_max/);
+  });
+
+  it('rechaza slug con mayúsculas o espacios (cubre criterio "inválido")', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({ ...baseZona, slug: 'Puerto Valparaíso' }),
+    ).toThrow();
   });
 });
 

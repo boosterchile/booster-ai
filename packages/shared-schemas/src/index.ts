@@ -17,6 +17,7 @@ export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';
 export * from './domain/zone.js';
+export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';
 export * from './domain/assignment.js';
 export * from './domain/trip-event.js';
@@ -58,3 +59,6 @@ export * from './avl-ids/index.js';
 
 // Site Settings — configuración runtime editable de marca y copy (ADR-039)
 export * from './site-settings.js';
+
+// Aggregations — privacy invariants compartidos backend/frontend (D11/ADR-041)
+export * from './aggregations/k-anonymity.js';

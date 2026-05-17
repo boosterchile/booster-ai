@@ -59,7 +59,7 @@
 
 ## Tasks
 
-### T1: ADR-041 — decisiones arquitectónicas
+### T1: ADR-041 — decisiones arquitectónicas [DONE 2026-05-17 — PR #246]
 
 - **Files**: `docs/adr/041-stakeholder-geo-aggregations-bounding-boxes-k-anonymity.md` (nuevo)
 - **LOC estimate**: ~80
@@ -72,7 +72,7 @@
   - Referenced by: T2, T8, T9, T11.
 - **Rollback**: revertir commit (puro doc, sin consumidores).
 
-### T2: Zod schema canónico + Drizzle table
+### T2: Zod schema canónico + Drizzle table [DONE 2026-05-17 — PR #247]
 
 - **Files**: `packages/shared-schemas/src/domain/zona-stakeholder.ts` (nuevo), `packages/shared-schemas/src/domain/zona-stakeholder.test.ts` (nuevo), `apps/api/src/db/schema.ts` (extender con `zonasStakeholder` Drizzle table), `packages/shared-schemas/src/index.ts` (re-export)
 - **LOC estimate**: ~80
@@ -84,7 +84,7 @@
 - **Rollback**: revertir commit (sin migration aún, sin endpoint que consuma).
 - **Nota objeción #2 resuelta**: T2 viene ANTES que T3 (la migration + seed importan esta table definition).
 
-### T3: Migration 0034 + seed 5 zonas
+### T3: Migration 0034 + seed 5 zonas [DONE 2026-05-17 — PR #248]
 
 - **Files**: `apps/api/drizzle/0034_zonas_stakeholder.sql` (nuevo), `apps/api/drizzle/meta/_journal.json` (update), `apps/api/src/db/seed/zonas-stakeholder.ts` (nuevo, importa de T2)
 - **LOC estimate**: ~80
@@ -96,7 +96,7 @@
   - `SELECT COUNT(*) FROM zonas_stakeholder WHERE is_active = true` retorna 5.
 - **Rollback**: revertir commit + ejecutar `DROP TABLE zonas_stakeholder` si aplicada. **Caveat (objeción #11 resuelta)**: una vez T8/T9 estén en `main`, este rollback rompe los endpoints. Si T8 ya mergeó, revertir T3 requiere revertir también T8/T9 como unidad.
 
-### T4: k-anonymity helper puro
+### T4: k-anonymity helper puro [DONE 2026-05-17 — PR #249]
 
 - **Files**: `packages/shared-schemas/src/aggregations/k-anonymity.ts` (nuevo), `packages/shared-schemas/src/aggregations/k-anonymity.test.ts` (nuevo), `packages/shared-schemas/src/index.ts` (re-export)
 - **LOC estimate**: ~90 (≈30 helper + ≈60 tests)
