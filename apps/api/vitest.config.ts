@@ -6,6 +6,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.{test,spec}.ts', 'test/**/*.{test,spec}.ts'],
+    // Integration tests viven en su propia config (vitest.integration.config.ts)
+    // y se corren via `pnpm test:integration`. Excluirlos aquí evita que el
+    // default `pnpm test` intente correrlos sin TEST_DATABASE_URL.
+    exclude: ['node_modules/**', 'dist/**', 'test/integration/**'],
     // Bump default 5s → 15s. CI bajo coverage instrumentation tarda más
     // en cargar el module graph (transform 4-6s + import 27s observado).
     // Tests individuales son rápidos (<300ms localmente) pero el primer
