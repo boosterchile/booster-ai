@@ -106,7 +106,7 @@
   - Tests: fallback CO₂e `actual` → `estimated` → skip + warning log.
 - **Rollback**: revertir commit.
 
-### T7: `puntoEnBoundingBox` helper
+### T7: `puntoEnBoundingBox` helper [DONE 2026-05-17 — PR #252]
 
 - **Files**: `apps/api/src/services/stakeholder-aggregations.ts` (extender), `apps/api/test/unit/stakeholder-aggregations.test.ts` (extender)
 - **LOC estimate**: ~50
