@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (PO) + Claude (agent-rigor)
 - **Date**: 2026-05-17
-- **Status**: Draft
+- **Status**: **Approved** (PO, 2026-05-17 ~08:35 UTC — opción (a) tras devils-advocate review)
 - **Linked**: D11 v2 plan T8-T12 bloqueadas por ausencia de esta infra
 - **ADR a crear**: `043-integration-testing-infrastructure-apps-api.md`
 
@@ -145,3 +145,4 @@ No bloqueantes (se pueden cerrar durante `/plan` o quedar como residuales):
 
 - 2026-05-17 — Initial draft (Claude bajo agent-rigor) tras auditoría que reveló ausencia de infra integration en `apps/api` durante intento de cerrar D11 v2 T8.
 - 2026-05-17 — Devils-advocate review pasado vía sub-agente `agent-rigor:devils-advocate`. Output completo en [`./2026-05-17-test-integration-infra-apps-api-devils-advocate.md`](./2026-05-17-test-integration-infra-apps-api-devils-advocate.md). Hallazgos verificados de hecho: 37 migrations (no 36+ ni 35); colisión `0009_*` confirmada; drift coverage CI/vitest confirmado. Spec actualizada: CR-2 reformulado, CR-7 reformulado con threshold real del CI, §8 alternativas E y F agregadas, §9 riesgos P1-4..P1-7 agregados, §12 open questions P0-2/3/4/6 agregadas como bloqueantes de `/plan`. P2 quedan para conversación PO.
+- 2026-05-17 ~08:35 UTC — **PO aprueba spec** (opción (a) tras leer Draft + devils-advocate output). Status: `Draft` → `Approved`. Habilita inicio de `/plan` phase. P0-2/3/4/6 quedan como entrada bloqueante de `/plan` — el plan debe abordarlos con decisión concreta antes de iniciar `/build`.
