@@ -78,6 +78,38 @@ async function buildApp(
   return app;
 }
 
+describe('GET /stakeholder/zonas/:slug/agregaciones', () => {
+  // El endpoint hace 4 selects en orden: user, member, zona, viajes.
+  // Reusamos makeDb pero el orden de fields para zonas debe coincidir.
+  it('window != 30d → 400 invalid_window', async () => {
+    const app = await buildApp(
+      makeDb({
+        user: { id: 'u-s', firebaseUid: 'fb-s' },
+        member: { id: 'm-1' },
+      }),
+    );
+    const res = await app.request('/stakeholder/zonas/puerto-valparaiso/agregaciones?window=7d', {
+      headers: { 'x-test-claims': JSON.stringify({ uid: 'fb-s' }) },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toMatchObject({ error: 'invalid_window' });
+  });
+
+  it('zona inexistente → 404', async () => {
+    const app = await buildApp(
+      makeDb({
+        user: { id: 'u-s', firebaseUid: 'fb-s' },
+        member: { id: 'm-1' },
+        zonas: [], // sin matches
+      }),
+    );
+    const res = await app.request('/stakeholder/zonas/no-existe/agregaciones', {
+      headers: { 'x-test-claims': JSON.stringify({ uid: 'fb-s' }) },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /stakeholder/zonas', () => {
   it('sin firebaseClaims → 401', async () => {
     const app = await buildApp(makeDb({}));

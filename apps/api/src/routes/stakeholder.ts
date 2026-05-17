@@ -3,10 +3,21 @@ import { aplicarKAnonymity } from '@booster-ai/shared-schemas';
 import { and, eq, gte, isNotNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
-import { memberships, tripMetrics, trips, users, zonasStakeholder } from '../db/schema.js';
+import {
+  assignments,
+  memberships,
+  tripMetrics,
+  trips,
+  users,
+  vehicles,
+  zonasStakeholder,
+} from '../db/schema.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 import {
   type ViajeAgregable,
+  agregarPorCombustible,
+  agregarPorHoraDelDia,
+  agregarPorTipoCarga,
   calcularHorarioPico,
   puntoEnBoundingBox,
 } from '../services/stakeholder-aggregations.js';
@@ -133,6 +144,114 @@ export function createStakeholderRoutes(opts: { db: Db; logger: Logger }) {
     });
 
     return c.json({ zonas: cards });
+  });
+
+  // GET /stakeholder/zonas/:slug/agregaciones?window=30d
+  app.get('/zonas/:slug/agregaciones', async (c) => {
+    const claims = c.get('firebaseClaims') as FirebaseClaims | undefined;
+    if (!claims) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    const userRow = (
+      await opts.db.select().from(users).where(eq(users.firebaseUid, claims.uid)).limit(1)
+    )[0];
+    if (!userRow) {
+      return c.json({ error: 'forbidden' }, 403);
+    }
+    const member = (
+      await opts.db
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.userId, userRow.id),
+            eq(memberships.role, 'stakeholder_sostenibilidad'),
+            eq(memberships.status, 'activa'),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!member) {
+      return c.json({ error: 'forbidden_stakeholder_role' }, 403);
+    }
+
+    const window_ = c.req.query('window') ?? '30d';
+    if (window_ !== '30d') {
+      return c.json({ error: 'invalid_window', accepted: ['30d'] }, 400);
+    }
+    const slug = c.req.param('slug');
+    const zona = (
+      await opts.db.select().from(zonasStakeholder).where(eq(zonasStakeholder.slug, slug)).limit(1)
+    )[0];
+    if (!zona || !zona.isActive) {
+      return c.json({ error: 'zona_no_encontrada' }, 404);
+    }
+
+    const z = {
+      lat_min: Number(zona.latMin),
+      lat_max: Number(zona.latMax),
+      lng_min: Number(zona.lngMin),
+      lng_max: Number(zona.lngMax),
+    };
+    const windowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await opts.db
+      .select({
+        pickup_at: trips.pickupWindowStart,
+        origin_lat: trips.originLat,
+        origin_lng: trips.originLng,
+        tipo_carga: trips.cargoType,
+        fuel_type: vehicles.fuelType,
+        actual: tripMetrics.carbonEmissionsKgco2eActual,
+        estimated: tripMetrics.carbonEmissionsKgco2eEstimated,
+      })
+      .from(trips)
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .leftJoin(assignments, eq(assignments.tripId, trips.id))
+      .leftJoin(vehicles, eq(assignments.vehicleId, vehicles.id))
+      .where(
+        and(
+          eq(trips.status, 'entregado'),
+          gte(trips.pickupWindowStart, windowStart),
+          isNotNull(trips.originLat),
+          isNotNull(trips.originLng),
+          isNotNull(vehicles.fuelType),
+        ),
+      );
+
+    const viajes: ViajeAgregable[] = rows
+      .filter((r) =>
+        puntoEnBoundingBox({ lat: Number(r.origin_lat), lng: Number(r.origin_lng) }, z),
+      )
+      .map((r) => ({
+        pickup_at: r.pickup_at as Date,
+        tipo_carga: r.tipo_carga,
+        fuel_type: r.fuel_type!,
+        carbon_emissions_kgco2e_actual: r.actual == null ? null : Number(r.actual),
+        carbon_emissions_kgco2e_estimated: r.estimated == null ? null : Number(r.estimated),
+      }));
+
+    const porHora = aplicarKAnonymity(agregarPorHoraDelDia(viajes, opts.logger), 5, 'viajes', {
+      preserveFields: ['hora'],
+    });
+    const porTipo = aplicarKAnonymity(agregarPorTipoCarga(viajes, opts.logger), 5, 'viajes');
+    const porFuel = aplicarKAnonymity(agregarPorCombustible(viajes, opts.logger), 5, 'viajes');
+
+    opts.logger.info(
+      { stakeholderId: userRow.id, zonaSlug: zona.slug, totalViajes: viajes.length },
+      'GET /stakeholder/zonas/:slug/agregaciones',
+    );
+
+    return c.json({
+      por_hora_del_dia: porHora,
+      por_tipo_carga: porTipo,
+      por_combustible: porFuel,
+      metodologia: {
+        k_anonymity: 5,
+        ventana_dias: 30,
+        fuente: 'viajes_completados',
+        generado_at: new Date().toISOString(),
+      },
+    });
   });
 
   return app;

@@ -27,7 +27,7 @@ export interface KAnonymityOptions<T> {
   preserveFields?: ReadonlyArray<keyof T>;
 }
 
-export function aplicarKAnonymity<T extends Record<string, unknown>>(
+export function aplicarKAnonymity<T extends object>(
   buckets: readonly T[],
   k: number,
   countField: keyof T,
@@ -35,11 +35,11 @@ export function aplicarKAnonymity<T extends Record<string, unknown>>(
 ): KAnonymized<T>[] {
   const preserve = new Set<keyof T>(options.preserveFields ?? []);
   return buckets.map((bucket) => {
-    const count = bucket[countField];
+    const count = (bucket as Record<string, unknown>)[countField as string];
     if (typeof count !== 'number' || count >= k) {
       return { ...bucket } as KAnonymized<T>;
     }
-    const masked: Record<string, unknown> = { ...bucket };
+    const masked = { ...bucket } as Record<string, unknown>;
     for (const key of Object.keys(masked)) {
       if (!preserve.has(key as keyof T) && typeof masked[key] === 'number') {
         masked[key] = null;
