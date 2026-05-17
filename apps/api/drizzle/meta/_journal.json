@@ -250,8 +250,22 @@
     {
       "idx": 35,
       "version": "7",
+      "when": 1780876799999,
+      "tag": "0035_history_marker_renumber",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
       "when": 1780876800000,
       "tag": "0036_zonas_stakeholder_comuna_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780876800001,
+      "tag": "0037_stakeholder_access_log",
       "breakpoints": true
     }
   ]

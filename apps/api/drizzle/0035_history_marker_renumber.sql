@@ -1,0 +1,21 @@
+-- Migration 0035 — History marker (renumber alignment)
+--
+-- Esta migration existe únicamente para alinear `idx` del journal Drizzle
+-- con el prefix `0035` del filename. La migration original `0035_*` nunca
+-- se creó (gap entre 0034_zonas_stakeholder y 0036_zonas_stakeholder_comuna_codes
+-- al momento del merge de #261). Ese gap quedó como drift permanente: el
+-- journal tenía la entry idx=35 con tag `0036_*`.
+--
+-- Esta migration fill-the-gap permite que `idx == int(filename_prefix)`
+-- para toda entry del journal, sin tocar el contenido de migrations ya
+-- aplicadas en prod (cuyos hashes están en `drizzle.__drizzle_migrations`
+-- y no se pueden cambiar sin intervención manual sobre Cloud SQL).
+--
+-- Idempotente, no-op. Solo deja una row en `drizzle.__drizzle_migrations`
+-- para que el conteo journal-entries == applied-rows quede coherente.
+--
+-- Contexto completo: ADR-044 (a crear en G4 del plan
+-- docs/plans/2026-05-17-migration-journal-integrity-guard.md).
+-- Spec: docs/specs/2026-05-17-migration-journal-integrity-guard.md.
+
+SELECT 1;

@@ -1,4 +1,14 @@
--- Migration 0009 — Audit log de accesos de stakeholders a data PII/ESG
+-- Migration 0037 — Audit log de accesos de stakeholders a data PII/ESG
+--
+-- Renumerada desde `0009_stakeholder_access_log.sql` el 2026-05-17 vía
+-- feat/migration-journal-integrity-guard-impl. El archivo original existía
+-- en disco pero NO en `meta/_journal.json`, por lo que nunca se aplicó en
+-- prod. Verificación G1 (Cloud SQL Studio, 2026-05-17): la tabla
+-- `log_acceso_stakeholder` NO existe en prod → fresh CREATE seguro.
+-- Ver ADR-044 y docs/specs/2026-05-17-migration-journal-integrity-guard.md.
+--
+-- Contenido original (sin cambios estructurales):
+--
 --
 -- Cierra ADR-028 §"Acciones derivadas §8" (audit log bloqueante para
 -- accesos stakeholder). Cada handler que sirve data ESG a un stakeholder
