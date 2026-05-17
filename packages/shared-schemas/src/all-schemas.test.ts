@@ -392,7 +392,7 @@ describe('events', () => {
   });
 });
 
-describe('zonaStakeholderSchema (bbox refine — D11/ADR-041)', () => {
+describe('zonaStakeholderSchema (D11/ADR-041 + ADR-042)', () => {
   const baseZona = {
     id: VALID_UUID,
     slug: 'puerto-valparaiso',
@@ -403,12 +403,13 @@ describe('zonaStakeholderSchema (bbox refine — D11/ADR-041)', () => {
     lat_max: -33.025,
     lng_min: -71.65,
     lng_max: -71.61,
+    comuna_codes: ['CL-VS-VAL'],
     is_active: true,
     creado_en: VALID_DATE,
     actualizado_en: VALID_DATE,
   };
 
-  it('acepta bounding box bien formado', () => {
+  it('acepta zona bien formada (bbox + comuna_codes)', () => {
     expect(() => zonaStakeholder.zonaStakeholderSchema.parse(baseZona)).not.toThrow();
   });
 
@@ -428,6 +429,39 @@ describe('zonaStakeholderSchema (bbox refine — D11/ADR-041)', () => {
     expect(() =>
       zonaStakeholder.zonaStakeholderSchema.parse({ ...baseZona, slug: 'Puerto Valparaíso' }),
     ).toThrow();
+  });
+
+  it('acepta comuna_codes vacío (back-compat con default DB ARRAY[])', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({ ...baseZona, comuna_codes: [] }),
+    ).not.toThrow();
+  });
+
+  it('acepta múltiples comuna_codes (zona que cubre N comunas)', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({
+        ...baseZona,
+        comuna_codes: ['CL-RM-QUI', 'CL-RM-LAM', 'CL-RM-PUD'],
+      }),
+    ).not.toThrow();
+  });
+
+  it('rechaza comuna_code con formato inválido (e.g. "Quilicura" en vez de "CL-RM-QUI")', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({
+        ...baseZona,
+        comuna_codes: ['Quilicura'],
+      }),
+    ).toThrow(/Código comuna ISO 3166-2:CL inválido/);
+  });
+
+  it('rechaza comuna_code sin componente comuna (e.g. solo "CL-RM")', () => {
+    expect(() =>
+      zonaStakeholder.zonaStakeholderSchema.parse({
+        ...baseZona,
+        comuna_codes: ['CL-RM'],
+      }),
+    ).toThrow(/Código comuna ISO 3166-2:CL inválido/);
   });
 });
 
