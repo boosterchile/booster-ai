@@ -20,7 +20,9 @@ El Stop hook de `/goal` re-invoca al agente cada turno mientras la condición de
 2. **Recursos requeridos ausentes**: si la condición depende de un recurso que no existe (ej. plantilla "cerrar PR" pero `gh pr list --state open --json number --jq length` retorna 0; plantilla BUILD pero `.specs/<feature>/plan.md` no existe), reportar y terminar.
 3. **Cancelación explícita del PO**: si el PO ya respondió "cancelar" a una pregunta del agente, NO seguir re-evaluando — terminar y dejar mensaje *"Esperando /goal clear del PO."* una sola vez.
 
-Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable.
+**Terse post-abort**: el harness de `/goal` no entiende "abort permanent" como estado terminal — sigue re-invocando al agente en cada Stop hook hasta que el PO tipee `/goal clear`. En esas re-invocaciones, el agente DEBE responder solo con `.` (un punto) sin re-explicar el abort. Razón: la primera declaración de abort ya contiene el diagnóstico completo; repetirlo en cada re-invocación desperdicia ~2k tokens por turno (observado: ~16k tokens en 8 re-invocaciones tras un abort, todos diciendo lo mismo). El PO ve el `.` en chat y sabe que está esperando su `/goal clear`.
+
+Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable. El sanity check zero previno todos los efectos secundarios (no ledger writes, no branches, no PRs falsos) pero el harness siguió bucleando — la regla "terse post-abort" reduce el costo de ese bucle de ~16k tokens a ~4k tokens.
 
 ### Pre-flight obligatorio (primer turno del agente, post-sanity check)
 
