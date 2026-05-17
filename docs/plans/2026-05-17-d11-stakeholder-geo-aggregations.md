@@ -148,7 +148,7 @@
   - Integration test: bucketing horario + k-anonymity en celda con 4 viajes (null) vs 5 viajes (número).
 - **Rollback**: revertir commit. **Caveat**: si T10 (UI drill-down) ya mergeó, esa página retorna error genérico (TanStack Query maneja). Sin daño funcional crítico, pero estakeholder ve "error" en drill-down hasta revertir T10 también.
 
-### T10: UI drill-down ruta + componente [BLOCKED 2026-05-17 — depende de T9]
+### T10: UI drill-down ruta + componente [DONE 2026-05-17 — PR #255]
 
 - **Files**: `apps/web/src/routes/stakeholder-zonas.$slug.tsx` (nuevo), `apps/web/src/services/stakeholder-aggregations-client.ts` (nuevo — hook `useStakeholderAgregaciones`), `apps/web/src/routes/stakeholder-zonas.$slug.test.tsx` (nuevo)
 - **LOC estimate**: ~100
