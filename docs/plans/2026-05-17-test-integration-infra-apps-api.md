@@ -8,6 +8,16 @@
 - **Revised v2**: 2026-05-17 ~09:00 UTC (post devils-advocate del plan v1)
 - **Owner**: Felipe Vicencio (PO) + Claude
 - **Status**: **Approved** (PO, 2026-05-17 ~09:05 UTC — plan v2 post devils-advocate)
+- **Spec hermano**: [`docs/specs/2026-05-17-migration-journal-integrity-guard.md`](../specs/2026-05-17-migration-journal-integrity-guard.md) — guard disk↔journal disparado por hallazgo orphan `0009_stakeholder_access_log` durante T0.
+
+---
+
+## Correcciones aplicadas durante BUILD
+
+| Fecha | Sección | Corrección | PR |
+|---|---|---|---|
+| 2026-05-17 | §D2 pseudo-code | Agregar `DROP SCHEMA IF EXISTS drizzle CASCADE` además de `public`. Sin él, `__drizzle_migrations` sobrevive entre runs y `runMigrations` skipea todo en la 2ª corrida (Run 2 = 36/0/0 en lugar de 36/36/36). | [#270](https://github.com/boosterchile/booster-ai/pull/270) (T0) + [#272](https://github.com/boosterchile/booster-ai/pull/272) (T1b) |
+| 2026-05-17 | §T1b acceptance | "Count == archivos `.sql` (37)" es incorrecto. El journal (`meta/_journal.json`) tiene 36 entries, no 37. La discrepancia es el orphan `0009_stakeholder_access_log.sql`. El criterio correcto: `count(__drizzle_migrations) == count(journal entries) == 36`. | [#272](https://github.com/boosterchile/booster-ai/pull/272) (T1b) |
 
 ---
 
@@ -43,11 +53,12 @@ Descartadas explícitamente:
 Resuelve P0-1 (idempotencia bajo segunda corrida) **y** P0-2 fidelidad. Pasos del globalSetup:
 
 ```ts
-// pseudo
+// pseudo (corregido post-T0 — agregar DROP SCHEMA drizzle)
 const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
 const client = await pool.connect();
 try {
   await client.query('DROP SCHEMA IF EXISTS public CASCADE;');
+  await client.query('DROP SCHEMA IF EXISTS drizzle CASCADE;'); // ← agregado tras T0
   await client.query('CREATE SCHEMA public;');
   await client.query(`GRANT ALL ON SCHEMA public TO ${user};`);
   // Re-instalar extensiones explícitas que las migrations no crean si ya existen.
@@ -58,9 +69,11 @@ try {
 await runMigrations(pool, logger);
 ```
 
-El `DROP SCHEMA` + `CREATE SCHEMA` garantiza estado inicial limpio cada run. `runMigrations` corre solo en globalSetup (UNA vez por proceso vitest) → su advisory lock no afecta suites paralelas.
+El `DROP SCHEMA public CASCADE` tira las tablas de dominio. `DROP SCHEMA drizzle CASCADE` tira `__drizzle_migrations` (donde Drizzle trackea hashes aplicados); **sin este segundo DROP, runs sucesivos heredan hashes viejos y `runMigrations` skipea todas las migrations, dejando `public` vacío pero Drizzle pensando que está todo aplicado**. T0 lo validó: con ambos DROPs, three runs consecutivos convergen al mismo estado (36/36/36); sin el DROP de `drizzle`, la segunda corrida hubiera resultado 36/0/0.
 
-Validable en T0 con medición real.
+`runMigrations` corre solo en globalSetup (UNA vez por proceso vitest) → su advisory lock no afecta suites paralelas.
+
+Validable en T0 con medición real. **Validado: PR [#270](https://github.com/boosterchile/booster-ai/pull/270).**
 
 ### D3 — Aislamiento entre tests: **TRUNCATE selectivo + `singleFork: true` con válvula de salida**
 
@@ -174,10 +187,11 @@ Total: **13 archivos nuevos, 4 modificados**. Cerca del techo de 10 módulos del
 - **LOC estimate**: ~85 (50 globalSetup + 30 test + 5 config edit).
 - **Depends on**: T1, T0.
 - **Acceptance**:
-  - `pnpm test:integration` corre globalSetup + 2 tests (health + migrations) en <15s local.
-  - Re-correr `pnpm test:integration` SEGUNDA vez consecutiva pasa (DROP+CREATE + runMigrations idempotente).
-  - Count de migrations aplicadas == count de archivos `.sql` (37 al 2026-05-17).
-  - Si `applyOutOfOrderPending` dispara, log warning visible.
+  - `pnpm test:integration` corre globalSetup + 2 tests (health + migrations) en <15s local. **Cumplido en PR [#272](https://github.com/boosterchile/booster-ai/pull/272): 1.19s.**
+  - Re-correr `pnpm test:integration` SEGUNDA vez consecutiva pasa (DROP+CREATE + runMigrations idempotente). **Cumplido: Run 1 651ms, Run 2 845ms.**
+  - ~~Count de migrations aplicadas == count de archivos `.sql` (37 al 2026-05-17).~~ **Corrección 2026-05-17**: durante T0 se descubrió que el journal (`meta/_journal.json`) tiene **36 entries** mientras que en disco hay **37 archivos `.sql`**. La discrepancia es el orphan `0009_stakeholder_access_log.sql` (declarado en `schema.ts:1406`, no aplicado en prod — task spawned). El criterio correcto es: `count(__drizzle_migrations) == count(journal entries) == 36`. El guard contra futuros orphans vive en spec separado [`docs/specs/2026-05-17-migration-journal-integrity-guard.md`](../specs/2026-05-17-migration-journal-integrity-guard.md).
+  - Si `applyOutOfOrderPending` dispara, log warning visible. **No disparó en T0 ni T1b — esperado, schema reseteado en cada run.**
+- **Mejora aplicada vs §D2 original**: el pseudo-code del plan §D2 omitió `DROP SCHEMA IF EXISTS drizzle CASCADE`. T0 reveló que sin ese DROP, `__drizzle_migrations` sobrevive con hashes viejos entre runs y `runMigrations` skipea todo en la segunda corrida. T1b incluye el DROP del schema `drizzle` además del `public`.
 - **Rollback**: revertir commit. T1 sigue funcionando (sin migrations).
 
 ### T3: Helper `seed()` + `cleanupTables()` + test ref
