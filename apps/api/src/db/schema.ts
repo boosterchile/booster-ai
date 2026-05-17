@@ -580,6 +580,17 @@ export const stakeholderOrgTypeEnum = pgEnum('tipo_organizacion_stakeholder', [
 ]);
 
 /**
+ * Tipo de zona stakeholder — D11 / ADR-041. Determina icono/label en la
+ * UI; el filtro de viajes opera por bounding box, no por tipo.
+ */
+export const tipoZonaStakeholderEnum = pgEnum('tipo_zona_stakeholder', [
+  'puerto',
+  'mercado_abastos',
+  'polo_industrial',
+  'zona_franca',
+]);
+
+/**
  * Organizaciones stakeholder — entidades de pertenencia para usuarios con
  * rol `stakeholder_sostenibilidad`. Paralelas a `empresas` (no hijas).
  * Alta solo por platform-admin; soft-delete via `eliminado_en`.
@@ -610,6 +621,42 @@ export const organizacionesStakeholder = pgTable(
       'organizaciones_stakeholder_nombre_legal_check',
       sql`length(${table.nombreLegal}) >= 3`,
     ),
+  }),
+);
+
+/**
+ * Zonas stakeholder — D11 / ADR-041. Geografía curada por migration para
+ * agregaciones del rol `stakeholder_sostenibilidad`. Bounding box
+ * axis-aligned en lat/lng WGS84. No relacionada con `zones` (zonas
+ * operativas del transportista).
+ *
+ * El `slug` es estable y URL-safe — la UI del drill-down navega a
+ * `/app/stakeholder/zonas/$slug`. CHECK constraints garantizan
+ * `lat_min < lat_max` y `lng_min < lng_max` a nivel DB; el schema Zod
+ * (`packages/shared-schemas/src/domain/zona-stakeholder.ts`) replica la
+ * validación para feedback temprano antes de la INSERT.
+ */
+export const zonasStakeholder = pgTable(
+  'zonas_stakeholder',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    slug: varchar('slug', { length: 60 }).notNull().unique(),
+    nombre: varchar('nombre', { length: 120 }).notNull(),
+    regionCode: varchar('region_code', { length: 8 }).notNull(),
+    tipo: tipoZonaStakeholderEnum('tipo').notNull(),
+    latMin: numeric('lat_min', { precision: 10, scale: 7 }).notNull(),
+    latMax: numeric('lat_max', { precision: 10, scale: 7 }).notNull(),
+    lngMin: numeric('lng_min', { precision: 10, scale: 7 }).notNull(),
+    lngMax: numeric('lng_max', { precision: 10, scale: 7 }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    activeIdx: index('idx_zonas_stakeholder_active').on(table.isActive),
+    tipoIdx: index('idx_zonas_stakeholder_tipo').on(table.tipo),
+    bboxLatCheck: check('zonas_stakeholder_bbox_lat_check', sql`${table.latMin} < ${table.latMax}`),
+    bboxLngCheck: check('zonas_stakeholder_bbox_lng_check', sql`${table.lngMin} < ${table.lngMax}`),
   }),
 );
 
@@ -2157,3 +2204,6 @@ export type NewMatchingBacktestRunRow = typeof matchingBacktestRuns.$inferInsert
 
 export type ConfiguracionSitioRow = typeof configuracionSitio.$inferSelect;
 export type NewConfiguracionSitioRow = typeof configuracionSitio.$inferInsert;
+
+export type ZonaStakeholderRow = typeof zonasStakeholder.$inferSelect;
+export type NewZonaStakeholderRow = typeof zonasStakeholder.$inferInsert;
