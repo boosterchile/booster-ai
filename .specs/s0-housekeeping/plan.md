@@ -20,7 +20,7 @@
   - Test list para S1 enumerado (mínimo 3 tests integration, en términos de patterns no de tablas específicas).
 - **Rollback**: revert PR. No afecta runtime.
 
-### T2: archivar AUDIT.md, PLAN-PHASE-0.md, DESIGN.md raíz
+### T2: archivar AUDIT.md, PLAN-PHASE-0.md, DESIGN.md raíz [DONE 2026-05-17]
 - **Files**: `git mv` de los 3 + `docs/archive/2026-05-17-{audit,plan-phase-0,design}.md` con frontmatter `superseded_by:`. Posible `docs/archive/README.md` (~20 LOC) si la carpeta no existe aún.
 - **LOC estimate**: ~60 (mv + 3 frontmatters + README opcional).
 - **Depends on**: ninguna.
