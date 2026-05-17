@@ -136,6 +136,8 @@ Cerrar PR #<PR> en main con CI 100% verde.
 
 Sanity check zero: si <PR> sigue siendo placeholder literal o `gh pr list --state open --json number --jq length` retorna 0, ABORTAR y reportar antes del pre-flight. NO invocar hooks ni ledger writes para un goal insatisfacible.
 
+Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
+
 Pre-flight: leer agent-rigor CLAUDE.md + skill_read. skip-cycle si es solo docs/rebase, phase_enter si toca código.
 
 Steps:
@@ -178,6 +180,10 @@ Reemplazar TODO uso de `<from>` por `<to>` en código, excluyendo:
 - Commits previos (git log/blame no se modifica).
 - Cualquier string dentro de tests que valida que el campo legacy todavía es aceptado.
 
+Sanity check zero: si <from> o <to> siguen siendo placeholders literales, o `rg "<from>" --type ts -l | wc -l` retorna 0, ABORTAR antes del pre-flight. NO invocar hooks ni ledger writes ni Edits.
+
+Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
+
 Pre-flight: leer agent-rigor CLAUDE.md + skill_read. phase_enter "refactor-<from>-to-<to>". Leer skill 51-code-simplification.
 
 Steps:
@@ -215,6 +221,10 @@ Abort si: typecheck rompe en >3 archivos (señal de que el rename no era seguro)
 
 ```
 Ejecutar BUILD de .specs/<feature>/plan.md tareas T1 hasta Tn en orden.
+
+Sanity check zero: si <feature> sigue siendo placeholder literal, o `.specs/<feature>/plan.md` no existe, o `.specs/<feature>/spec.md` no existe, ABORTAR antes del pre-flight. NO invocar hooks ni ledger writes.
+
+Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
 Pre-flight: leer agent-rigor CLAUDE.md + skill_read. phase_enter "<feature>" phase "build". Leer skill 30-incremental-implementation y 32-context-engineering. Si plan.md tiene tareas UI, leer también 34-frontend-ui-engineering y design-system/MASTER.md.
 
