@@ -67,17 +67,28 @@ if [[ -n "$SQL_FILE" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Soft warning para DML/DDL keywords (no es perimeter, es advisory)
+# Soft warning para DML/DDL/función-mutante (no es perimeter, es advisory).
+#
+# Estrategia: stripear string literals ('...' y "...") antes del grep para
+# reducir falsos positivos (ej. SELECT '...UPDATE...' AS msg). Falsos negativos
+# documentados: SQL con comentarios -- o /* */ que escondan keywords; CTEs con
+# nombres que contengan keywords; queries que usen funciones mutantes NO
+# listadas en el patrón. El helper es advisory; la línea de defensa real es
+# que el agente revise su propio SQL antes de enviarlo.
 # ------------------------------------------------------------------------------
+SQL_STRIPPED=$(echo "$SQL" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+MUTATION_PATTERN='\b(UPDATE|DELETE|INSERT|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|MERGE|COPY|VACUUM|REINDEX|REFRESH|CLUSTER|LOCK|pg_terminate_backend|pg_cancel_backend|pg_advisory_unlock|pg_advisory_unlock_all|pg_advisory_xact_lock|setseed|setval|nextval|lo_import|lo_export|lo_create|lo_unlink|pg_read_server_files|pg_read_binary_file|pg_write_server_files)\b'
 if [[ "$SKIP_CONFIRM" -eq 0 ]] \
-   && echo "$SQL" | grep -qiE '\b(UPDATE|DELETE|INSERT|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE)\b'; then
-  echo "⚠ SQL contiene keywords mutantes (UPDATE/DELETE/INSERT/DROP/CREATE/ALTER/TRUNCATE/GRANT/REVOKE)." >&2
-  echo "  Para mutations usar migrations (apps/api/drizzle/), no este helper." >&2
-  echo "  Si es intencional, pasar -y para skip-confirm." >&2
+   && echo "$SQL_STRIPPED" | grep -qiE "$MUTATION_PATTERN"; then
+  echo "⚠ SQL contiene keywords mutantes o funciones de side-effect." >&2
+  echo "  Patrones detectados: $(echo "$SQL_STRIPPED" | grep -oiE "$MUTATION_PATTERN" | sort -u | tr '\n' ' ')" >&2
+  echo "  Para mutations de schema/data usar migrations (apps/api/drizzle/), no este helper." >&2
+  echo "  Si es intencional (ej. forensia con SELECT pg_terminate_backend, raro), pasar -y." >&2
   if [[ -t 0 ]]; then
     read -r -p "  Continuar de todos modos? [y/N] " ans
     [[ "$ans" =~ ^[yY]$ ]] || { echo "Abortado." >&2; exit 1; }
   else
+    # abort por seguridad si no-TTY: previene runaway agents que mutan sin confirmación
     echo "✗ stdin no es TTY y -y no fue pasado. Abortado por seguridad." >&2
     exit 1
   fi
@@ -91,9 +102,22 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "✗ python3 requerido (parseo de Secret Manager response + URL rewrite)." >&2
+  echo "  macOS: 'xcode-select --install' o 'brew install python@3.13'." >&2
+  exit 1
+fi
+
 if ! command -v psql >/dev/null 2>&1; then
   echo "→ psql no encontrado, instalando con brew…" >&2
   brew install libpq && brew link --force libpq
+fi
+
+# Pre-check port — error claro inmediato vs esperar 30s al tunnel timeout
+if lsof -iTCP:"$LOCAL_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "✗ Puerto $LOCAL_PORT ya está LISTEN. Otro tunnel/proceso ocupa el puerto." >&2
+  echo "  Fix: \`LOCAL_PORT=5440 $0 ...\` o \`lsof -iTCP:$LOCAL_PORT -sTCP:LISTEN\` para identificar." >&2
+  exit 1
 fi
 
 # ADC token file con permisos 600, limpiado en EXIT.

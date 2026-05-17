@@ -1,7 +1,7 @@
 # ADR-045 — Agent query helper (bastion + ADC headless wrapper)
 
 **Fecha**: 2026-05-17
-**Estado**: Accepted
+**Estado**: Proposed (promueve a Accepted en commit post-merge)
 **Refs**:
 - [`docs/specs/2026-05-17-agent-query-helper.md`](../specs/2026-05-17-agent-query-helper.md) (Approved 2026-05-17 ~20:55 UTC)
 - [`docs/plans/2026-05-17-agent-query-helper.md`](../plans/2026-05-17-agent-query-helper.md)
@@ -9,6 +9,7 @@
 - [`scripts/db/agent-query.sh`](../../scripts/db/agent-query.sh)
 - ADR-013 (database access pattern — 3-layer model, esta ADR abre Capa 4)
 - PR [#275](https://github.com/boosterchile/booster-ai/pull/275) (spec C descartado tras devils-advocate)
+- Memoria persistente del agente: `~/.claude/projects/<proj>/memory/reference_prod_db_headless_query.md` (patrón verificado para futuras sesiones)
 
 ## Contexto
 
@@ -21,6 +22,26 @@ Devils-advocate v2 sobre spec C identificó 3 P0 nuevos:
 - **P0-NEW-1**: `@booster-ai/logger` NO expone `redactPII(text)`. La spec asumía API inexistente.
 - **P0-NEW-2**: la afirmación "IAP tunneling requiere user OAuth interactivo" era factualmente incorrecta. IAP acepta cualquier IAM principal (user o SA) con `roles/iap.tunnelResourceAccessor`.
 - **P0-NEW-3**: el CLI helper enviaba access token (OAuth) donde Cloud Run IAM requiere ID token (audience-bound). El flow propuesto no funcionaría.
+
+### Evidencia empírica del bug que motiva existir como script paralelo a `connect.sh`
+
+Sesión 2026-05-17 ejecutó múltiples comandos gcloud headless. Output literal:
+
+```
+$ gcloud auth print-access-token
+ERROR: (gcloud.auth.print-access-token) There was a problem refreshing
+your current auth tokens: Reauthentication failed. cannot prompt during
+non-interactive execution.
+
+$ gcloud auth application-default print-access-token
+ya29.a0AQvPyINS...  # ← funciona
+```
+
+`connect.sh` línea 117 ejecuta `gcloud auth print-access-token` para el IAM mode, y `gcloud secrets versions access` (que también usa user OAuth) en password mode. Ambos modos caen en el mismo bug headless.
+
+`agent-query.sh` usa exclusivamente `gcloud auth application-default print-access-token` (ADC) + `gcloud --access-token-file=<path>` para todas las invocaciones gcloud. No comparte el path del bug.
+
+### Verificación empírica del approach minimal
 
 Verificación empírica 2026-05-17 ~20:50 UTC reveló que **una alternativa ~80% más barata existe usando infraestructura ya deployada**:
 
@@ -44,7 +65,12 @@ Crear `scripts/db/agent-query.sh`, wrapper bash de ~150 LOC sobre el patrón ver
 3. **Rol DB `booster_app`** (existente): el script conecta como `booster_app` via Secret Manager. NO se crea un `booster_query_tool` read-only por defecto — movido a v1.1 si patrón se vuelve frecuente.
 4. **Soft warning para keywords DML/DDL**: el script imprime warning + pide confirmación interactiva si detecta `UPDATE|DELETE|INSERT|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE`. Aborta si stdin no es TTY y no se pasó `-y`. Es advisory, no perimeter — el agente sigue siendo responsable.
 5. **Statement timeout 30s default** (overridable via env). Previene queries colgadas.
-6. **Audit existente**: Cloud Audit Logs (IAP) captura por-invocador IAM; pg_audit (Cloud SQL) captura SQL bajo `booster_app`. No se introduce audit dedicado nuevo — gap por-invocador-real-en-SQL se cierra cuando ADR-013 Capa 2 (IAM database auth) se ejecute.
+6. **Audit existente (capacidad real, NO aspiracional)**:
+   - **Cloud Audit Logs (IAP)** capturan por-invocador IAM con timestamp + email + IP.
+   - **Cloud SQL `log_statement=ddl`** loggea DDLs solamente (verificable en `infrastructure/data.tf:141`). NO loggea SELECT/DML.
+   - **Query Insights** (`insights_config.query_insights_enabled=true`) captura SQL con literales placeholderizados (no valores), accesible via GCP Console (retención ~30d).
+   - **`cloudsql.enable_pgaudit` NO está habilitado** en la instance (verificable). Si forensia futura requiere SQL crudo con valores, hay que encenderlo (trade-off: ~10x cost en Cloud Logging).
+   - Gap "audit per-invocador real en SQL" se cierra cuando ADR-013 Capa 2 (IAM database auth) se ejecute.
 
 ## Consecuencias
 
@@ -97,6 +123,12 @@ Crear `scripts/db/agent-query.sh`, wrapper bash de ~150 LOC sobre el patrón ver
 - **Pros**: type-safe, integrable con tests vitest.
 - **Cons**: overkill para ~150 LOC. Alineado con `connect.sh` existente (también bash) mantiene consistencia.
 - **Verdict**: considerar si crece >150 LOC o si se necesita API programática (no CLI).
+
+### F. `gcloud sql connect --user=booster_app`
+
+- **Pros**: comando nativo Google, no requiere bastion intermedio.
+- **Cons**: usa `gcloud auth print-access-token` internamente (mismo bug headless que `connect.sh`). Verificado en sesión 2026-05-17 — mismo error `Reauthentication failed. cannot prompt during non-interactive execution`. Además, requiere que la instance Cloud SQL acepte conexiones del IP de gcloud cloud-sql-proxy efímero, lo cual no aplica con private-IP-only.
+- **Verdict**: descartado, mismo blocker que el path original.
 
 ### E. Status quo (Cloud SQL Studio web UI manual)
 

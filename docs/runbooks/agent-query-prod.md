@@ -115,7 +115,8 @@ Mensaje exacto: `✗ tunnel no quedó listening tras 30s. Log:` seguido del log 
 
 Causas posibles + fix:
 
-- **Bastion DOWN**: verificá con la query del pre-requisito #4. Si status ≠ RUNNING, escalá a SRE — bastion estaba previsto siempre RUNNING (per ADR-013).
+- **ADC inválido (causa raíz más común)**: verificá primero `gcloud auth application-default print-access-token | head -c 20` — debe imprimir `ya29....`. Si falla, `gcloud auth application-default login` una vez.
+- **Bastion DOWN**: verificá con la query del pre-requisito #4. Si status ≠ RUNNING, escalá a SRE — bastion estaba previsto siempre RUNNING desde su instanciación.
 - **IAP firewall rule eliminada**: poco probable; la regla `allow-iap` existe en Terraform (`infrastructure/modules/iap-bastion/main.tf`). Si fue eliminada, restaurar via terraform apply.
 - **Red local rara**: VPN corporativa puede bloquear IAP TCP (35.235.240.0/20 origin range). Probar desconectando VPN.
 - **Increase `TUNNEL_TIMEOUT_S=60`**: red lenta hacia GCP.
@@ -144,19 +145,37 @@ Verifica que `current_user` y `current_database()` son los esperados (ver troubl
 
 ---
 
-## Audit trail
+## Audit trail (estado real vs aspiracional — verificado 2026-05-17)
 
-Toda invocación queda registrada en:
+**Qué se captura HOY** (verificable contra `infrastructure/data.tf:141-194`):
 
 1. **Cloud Audit Logs** (acceso IAP tunnel):
    - Filtro: `protoPayload.serviceName="iap.googleapis.com"` AND `protoPayload.resourceName=~"db-bastion"`.
    - Captura: timestamp + email del invocador (dev@boosterchile.com via ADC) + IP origen.
 
-2. **pg_audit en Cloud SQL** (queries ejecutadas):
-   - Configurado a nivel instance (ver Terraform `infrastructure/data.tf`).
-   - Captura el SQL bajo identidad `booster_app` (no del invocador del IAP — gap conocido, ADR-013 Capa 2 lo cierra cuando migremos a IAM database auth).
+2. **Cloud SQL `log_statement=ddl`**:
+   - Solo loggea DDLs (CREATE/ALTER/DROP). **SELECT/INSERT/UPDATE/DELETE NO se loggean** a Cloud Logging.
+   - Útil si el helper se usa para algo no esperado (ej. DDL), no para audit de queries SELECT.
 
-Para forensia post-incidente: cruzar los timestamps de los dos logs identifica qué humano/agente corrió qué query.
+3. **Cloud SQL Query Insights** (habilitado via `insights_config.query_insights_enabled = true`):
+   - Captura SQL con literales **placeholderizados** (ej. `SELECT * FROM users WHERE id = $1`).
+   - Identidad capturada: rol DB (`booster_app`), no del invocador IAP.
+   - Acceso vía GCP Console → Cloud SQL → Query Insights tab (retención hasta 30 días).
+   - Útil para identificar patrones de query a posteriori, NO para reconstruir el SQL exacto con valores.
+
+**Qué NO se captura HOY** (gap conocido):
+
+- **pg_audit (`cloudsql.enable_pgaudit`) NO está habilitado.** Para forensia con SQL crudo + valores, esto se debería encender. Trade-off: mayor volumen de logs (~10x según docs Cloud SQL), costo Cloud Logging proporcional.
+- **Identidad real del invocador IAP en el contexto SQL**: requiere migrar a IAM database auth (ADR-013 Capa 2, pendiente).
+
+**Para forensia post-incidente HOY**:
+1. Cloud Audit Logs IAP → identifica timestamp + email del invocador.
+2. Query Insights → patrones SQL en esa ventana de tiempo (no valores exactos).
+3. Si necesitás reconstruir SQL exacto: el agente Claude tiene `~/.claude/projects/<...>/memory/` y session ledger que guarda el SQL textual ejecutado. Cross-reference con timestamp de IAP audit.
+
+**Cómo cerrar el gap** (out-of-scope v1):
+- Encender `cloudsql.enable_pgaudit=on` en `infrastructure/data.tf` (requiere reboot de instance, ~5 min downtime, ~10x cost en Cloud Logging).
+- Migrar `booster_app` a IAM database auth (ADR-013 Capa 2).
 
 ---
 
