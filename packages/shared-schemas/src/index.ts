@@ -17,6 +17,7 @@ export * from './domain/empresa.js';
 export * from './domain/plan.js';
 export * from './domain/membership.js';
 export * from './domain/zone.js';
+export * from './domain/zona-stakeholder.js';
 export * from './domain/offer.js';
 export * from './domain/assignment.js';
 export * from './domain/trip-event.js';
