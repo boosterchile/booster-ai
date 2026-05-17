@@ -276,7 +276,7 @@ Se importa directo (`import { redactPII } from '@booster-ai/logger'`). Tests en 
 | Devils-advocate del PR + fixes | Multiple rounds | 1-2h |
 | **Total** | | **15-17h** |
 
-Más realista que v1 (6-8h). Distribuir en 3-4 sesiones de 4-5h. **No debe meterse antes de Corfo 2026-05-18**.
+Más realista que v1 (6-8h). Distribuir en 3-4 sesiones de 4-5h con cooling-off entre cada una. Fecha de cierre se determina por completitud de los 6 quality gates de §13, no por deadlines externos.
 
 ## 9. Open questions (resueltas vs v1)
 
@@ -329,6 +329,15 @@ Concerns esperados en review v2:
 5. ADR-045 documenta decisión + alternativas descartadas + supersede parcial de ADR-013 Phase 2.
 6. Update CLAUDE.md memoria con la nueva capacidad disponible (después del merge).
 
-## 13. NOT before Demo Corfo 2026-05-18
+## 13. Calidad antes que fechas externas
 
-Esta spec NO se mete en sprint pre-demo. La friction de G1 dolió hoy pero esta spec construye superficie de ataque nueva — merece tiempo para revisar adversarial sin presión del demo. Approval del spec OK ahora; BUILD post-demo.
+Esta spec construye superficie de ataque permanente (servicio con acceso a prod DB). No se mergea bajo presión de deadlines externos. **El BUILD se completa cuando**:
+
+1. Devils-advocate v2 del spec confirma cero P0 residuales.
+2. Plan H1-H10 revisado adversarial sin objeciones bloqueantes.
+3. Cada PR del BUILD pasa code-reviewer + security-auditor + devils-advocate.
+4. Test list §7 (28 tests) verde end-to-end.
+5. Terraform plan validado en CI sin warnings.
+6. ADR-045 documenta cada decisión + alternativas descartadas con razón.
+
+Fechas comerciales (demos, presentaciones, deliverables externos) se programan **después** de tener evidencia verificable de los 6 puntos anteriores. La friction de G1 quedó documentada y la dimos resolución manual hoy — no es bloqueante para nada urgente.
