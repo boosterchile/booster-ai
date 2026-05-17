@@ -1,8 +1,53 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 ~06:50 UTC (post D11 v2 plan + handoff fresco — 10 PRs mergeados post-restart, infra completa, T8-T12 v2 pendientes en sesión fresca)
+**Última actualización**: 2026-05-17 ~08:20 UTC (D11 v2 T8 abort → bloqueo formal T8-T12 pendiente test-integration-infra)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
+
+---
+
+## Bloqueo D11 v2 T8-T12 (2026-05-17)
+
+**Estado al cierre de sesión 2026-05-17 ~09:10 UTC**:
+
+- D11 v2 T8 implementado en `fix/d11-t8-stakeholder-zonas-endpoint` con test unit-mocked → **NO mergeable** por violación de CLAUDE.md §1/§2 (test no ejerce el SQL real).
+- Pivote a spec + plan separados para crear infra de integration testing en `apps/api`.
+
+**Avance de la sesión** (PR [#267](https://github.com/boosterchile/booster-ai/pull/267), 4 commits docs-only):
+
+| Artefacto | Status | Path |
+|---|---|---|
+| Spec test-integration-infra-apps-api | **Approved** (PO 2026-05-17 ~08:35 UTC) | [`docs/specs/2026-05-17-test-integration-infra-apps-api.md`](../specs/2026-05-17-test-integration-infra-apps-api.md) |
+| Spec devils-advocate review | complete (6 P0 + 11 P1 + 7 P2) | [`docs/specs/2026-05-17-test-integration-infra-apps-api-devils-advocate.md`](../specs/2026-05-17-test-integration-infra-apps-api-devils-advocate.md) |
+| Plan v2 con 9 tasks (T0..T6) | **Approved** (PO 2026-05-17 ~09:05 UTC) | [`docs/plans/2026-05-17-test-integration-infra-apps-api.md`](../plans/2026-05-17-test-integration-infra-apps-api.md) |
+| Plan devils-advocate review | complete (7 P0 + 6 P1 + 5 P2 — 12/13 P0+P1 abordados) | [`docs/plans/2026-05-17-test-integration-infra-apps-api-devils-advocate.md`](../plans/2026-05-17-test-integration-infra-apps-api-devils-advocate.md) |
+| Plan D11 v2 (T8-T12 BLOCKED) | actualizado | [`docs/plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md`](../plans/2026-05-17-d11-v2-stakeholder-geo-aggregations.md) |
+
+**Pickup point próxima sesión — T0**:
+
+Cooling-off agent-rigor §6.1 (30 min entre /plan y /build) aplicado al cerrar sesión 2026-05-17 ~09:10 UTC.
+
+Próxima sesión arranca con T0 del plan: script `apps/api/scripts/prototype-test-db.ts` (no-merge) que mide:
+1. Tiempo de `runMigrations` corrida 1 vs corrida 2 (no-op idempotencia).
+2. `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` + extension `pgcrypto` antes de migrate.
+3. Verificar que `applyOutOfOrderPending` no falla en segunda corrida.
+
+Success criterion para arrancar T1: primera corrida <30s, segunda <5s, sin errores. Captura del output queda pegada en el PR body de T1.
+
+**Cómo arrancar próxima sesión**:
+
+```bash
+cd /Volumes/Pendrive128GB/Booster-AI/.claude/worktrees/naughty-sinoussi-c8ddf8
+git pull github fix/d11-t8-stakeholder-zonas-endpoint
+# Verificar PR #267 estado: gh pr view 267 --json state,mergeStateStatus
+# Leer plan v2: docs/plans/2026-05-17-test-integration-infra-apps-api.md
+# Arrancar T0: implementar scripts/prototype-test-db.ts según plan §T0
+```
+
+**Trabajo preservado en working tree** (no commit, untracked):
+- `apps/api/src/routes/stakeholder.ts` (115 LOC) — reusable post-infra.
+- `apps/api/test/unit/stakeholder-zonas-route.test.ts` (94 LOC) — descartable.
+- `apps/api/src/server.ts` (+7 LOC) — wire de la route.
 
 ---
 
