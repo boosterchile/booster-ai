@@ -49,7 +49,7 @@
   - Referenced by: T2, T8, T9, T11.
 - **Rollback**: revertir commit (puro doc, sin consumidores).
 
-### T2: Zod schema canónico + Drizzle table
+### T2: Zod schema canónico + Drizzle table [DONE 2026-05-17 — PR #247]
 
 - **Files**: `packages/shared-schemas/src/domain/zona-stakeholder.ts` (nuevo), `packages/shared-schemas/src/domain/zona-stakeholder.test.ts` (nuevo), `apps/api/src/db/schema.ts` (extender con `zonasStakeholder` Drizzle table), `packages/shared-schemas/src/index.ts` (re-export)
 - **LOC estimate**: ~80
