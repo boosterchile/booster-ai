@@ -42,7 +42,7 @@
   - `.husky/pre-commit` invoca `node scripts/check-adr-numbering.mjs --allow-legacy 028,034,035` antes de salir.
 - **Rollback**: `git revert`; pre-commit deja de invocar el script.
 
-### T4: ADR-XXX — historical ADR numbering collisions
+### T4: ADR-046 — historical ADR numbering collisions [DONE 2026-05-17]
 - **Files**: `docs/adr/<próximo-libre>-historical-adr-numbering-collisions.md`. Verificar próximo libre con `ls docs/adr/ | sort | tail -3` (post-ADR-045, hueco visible en 043 que va a T1; así que este toma 046).
 - **LOC estimate**: ~80 (markdown).
 - **Depends on**: T1 (ADR-043 ya creado, para no chocar numeración).
