@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   extractDrizzleEnums,
   extractZodEnums,
@@ -152,7 +152,9 @@ describe('renderMarkdown', () => {
   });
 
   it('includes divergence count in frontmatter', () => {
-    const divs = [{ domainName: 'fooSchema', domainValues: [], sqlMatch: null, kind: 'no-sql-match' }];
+    const divs = [
+      { domainName: 'fooSchema', domainValues: [], sqlMatch: null, kind: 'no-sql-match' },
+    ];
     const md = renderMarkdown(divs, { domainDir: 'd', schemaFile: 's' });
     expect(md).toContain('divergences_total: 1');
   });

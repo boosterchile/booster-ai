@@ -74,8 +74,7 @@ export function parseArgs(argv) {
 export function extractZodEnums(tsContent) {
   const enums = new Map();
   const zodEnumRe = /export\s+const\s+(\w+)\s*=\s*z\.enum\(\[([\s\S]*?)\]\)/g;
-  let m;
-  while ((m = zodEnumRe.exec(tsContent)) !== null) {
+  for (const m of tsContent.matchAll(zodEnumRe)) {
     const name = m[1];
     const valuesBlock = m[2];
     const values = [...valuesBlock.matchAll(/'([^']+)'/g)].map((v) => v[1]);
@@ -93,8 +92,7 @@ export function extractZodEnums(tsContent) {
 export function extractDrizzleEnums(tsContent) {
   const enums = new Map();
   const pgEnumRe = /export\s+const\s+(\w+)\s*=\s*pgEnum\(\s*'([^']+)'\s*,\s*\[([\s\S]*?)\]\)/g;
-  let m;
-  while ((m = pgEnumRe.exec(tsContent)) !== null) {
+  for (const m of tsContent.matchAll(pgEnumRe)) {
     const tsName = m[1];
     const sqlName = m[2];
     const valuesBlock = m[3];
@@ -174,15 +172,23 @@ export function renderMarkdown(divergences, args) {
   lines.push('');
   lines.push('# Drift inventory schema/domain — Sprint S1 T1.1');
   lines.push('');
-  lines.push(`Generado por \`scripts/repo-checks/drift-inventory.mjs\`. Cubre SC-S1.1 + gate SC-S1.0 del sprint S1.`);
+  lines.push(
+    'Generado por `scripts/repo-checks/drift-inventory.mjs`. Cubre SC-S1.1 + gate SC-S1.0 del sprint S1.',
+  );
   lines.push('');
-  lines.push(`**Total divergencias detectadas**: ${divergences.length} (threshold gate: ${GATE_THRESHOLD_DIVERGENCES}).`);
+  lines.push(
+    `**Total divergencias detectadas**: ${divergences.length} (threshold gate: ${GATE_THRESHOLD_DIVERGENCES}).`,
+  );
   lines.push('');
   lines.push('## Acción del PO');
   lines.push('');
-  lines.push('Clasificar cada divergencia como **Clase A** (TS-only refactor), **Clase B** (breaking API → flag + sunset + ADR), o **Clase C** (cambio SQL → ADR de excepción).');
+  lines.push(
+    'Clasificar cada divergencia como **Clase A** (TS-only refactor), **Clase B** (breaking API → flag + sunset + ADR), o **Clase C** (cambio SQL → ADR de excepción).',
+  );
   lines.push('');
-  lines.push('Tras clasificar, cambiar frontmatter `gate: PENDING_PO` → `gate: APPROVED_BY_PO <fecha>` para permitir que pre-commit hook acepte commits `feat(domain)`.');
+  lines.push(
+    'Tras clasificar, cambiar frontmatter `gate: PENDING_PO` → `gate: APPROVED_BY_PO <fecha>` para permitir que pre-commit hook acepte commits `feat(domain)`.',
+  );
   lines.push('');
   lines.push('## Divergencias');
   lines.push('');
@@ -191,13 +197,19 @@ export function renderMarkdown(divergences, args) {
     lines.push('');
     return lines.join('\n');
   }
-  lines.push('| # | Schema domain (TS) | Schema SQL (Drizzle) | Tipo | TS-only values | SQL-only values | Clase (PO) |');
+  lines.push(
+    '| # | Schema domain (TS) | Schema SQL (Drizzle) | Tipo | TS-only values | SQL-only values | Clase (PO) |',
+  );
   lines.push('|---|---|---|---|---|---|---|');
   divergences.forEach((d, idx) => {
     const tsOnly = (d.tsOnly || []).join(', ') || '(none)';
     const sqlOnly = (d.sqlOnly || []).join(', ') || '(none)';
-    const sqlRef = d.sqlMatch ? `\`${d.sqlMatch.tsName}\` (\`${d.sqlMatch.sqlName}\`)` : '_no match_';
-    lines.push(`| ${idx + 1} | \`${d.domainName}\` | ${sqlRef} | ${d.kind} | ${tsOnly} | ${sqlOnly} | _TBD_ |`);
+    const sqlRef = d.sqlMatch
+      ? `\`${d.sqlMatch.tsName}\` (\`${d.sqlMatch.sqlName}\`)`
+      : '_no match_';
+    lines.push(
+      `| ${idx + 1} | \`${d.domainName}\` | ${sqlRef} | ${d.kind} | ${tsOnly} | ${sqlOnly} | _TBD_ |`,
+    );
   });
   lines.push('');
   lines.push('## Tabla LOC adaptive (T1.5)');
@@ -247,7 +259,9 @@ export function main(argv) {
     mkdirSync(dirname(args.output), { recursive: true });
     writeFileSync(args.output, md);
     if (!args.quiet) {
-      process.stdout.write(`[drift-inventory] wrote ${divergences.length} divergence(s) to ${args.output}\n`);
+      process.stdout.write(
+        `[drift-inventory] wrote ${divergences.length} divergence(s) to ${args.output}\n`,
+      );
     }
   } else {
     process.stdout.write(md);
