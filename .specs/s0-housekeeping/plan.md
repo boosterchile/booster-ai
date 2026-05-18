@@ -78,7 +78,7 @@
   - Estructura paralela a T6: Scope (penetration test + OWASP Top 10 review sobre staging + auth flows + WhatsApp webhook + microservicios pre-extraction), SLAs (lead time ≤6 sem, reporte priorizado por severidad), Timeline (post-S10), Sent to ≥3 vendors.
 - **Rollback**: revert PR.
 
-### T8: ADR tool de load testing + setup k6 mínimo
+### T8: ADR tool de load testing + setup k6 mínimo [DONE 2026-05-18]
 - **Files**: `docs/adr/047-load-testing-tool-k6.md` (asumiendo 046 fue tomado por T4) + `apps/api/test/load/smoke.k6.js` + `apps/api/test/load/README.md` + edit `apps/api/package.json` (script `load-test:smoke`).
 - **LOC estimate**: ~180 (120 ADR + 30 smoke + 20 README + 10 package.json).
 - **Depends on**: T4 (para conocer numeración).
