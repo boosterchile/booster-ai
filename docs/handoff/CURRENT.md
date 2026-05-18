@@ -1,8 +1,24 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-17 ~09:10 UTC (T0 test-integration-infra PASS — pickup point se mueve a T1)
+**Última actualización**: 2026-05-18 (T5 sprint S0 — `.gitlab-ci.yml` eliminado; repo canónico = GitHub)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
-**Plan de referencia**: [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md)
+**Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (sprint S0 en progreso) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sprint S0 production-readiness en progreso (2026-05-18)
+
+Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/spec.md) (Approved). T11 hace wrap completo al cierre.
+
+Estado por tarea (PRs):
+- ✅ T1 — ADR-043 metodología drift schema/domain ([#278](https://github.com/boosterchile/booster-ai/pull/278))
+- ✅ T2 — archivar `AUDIT.md`/`PLAN-PHASE-0.md`/`DESIGN.md` a `docs/archive/` ([#280](https://github.com/boosterchile/booster-ai/pull/280))
+- ✅ T3 — `scripts/repo-checks/check-adr-numbering` + workspace + pre-commit hook ([#281](https://github.com/boosterchile/booster-ai/pull/281))
+- ✅ T4 — ADR-046 colisiones históricas (028,034,035) TTL perpetuo ([#282](https://github.com/boosterchile/booster-ai/pull/282))
+- ⏩ T5 — eliminar `.gitlab-ci.yml` (este PR); repo canónico = GitHub
+- ⏸ T6..T11 pendientes (RFP GLEC + RFP pentest + ADR k6 + ADR strangler + outreach piloto + wrap CURRENT.md)
+
+Pickup point próxima sesión: T6 (RFP auditor GLEC).
 
 ---
 
