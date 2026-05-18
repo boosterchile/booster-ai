@@ -30,6 +30,17 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
   - **Pre-commit hook** rechaza commits con scope `feat(domain)` si frontmatter dice `gate: PENDING_PO`.
 - **Rollback**: revert PR. Script + hook update se eliminan.
 
+### T1.0.heuristic-improvement (NO bloqueante, paralelo a T1.2+)
+
+- **Files**: `scripts/repo-checks/drift-inventory.mjs` (mejora `normalizeForMatch` con mappings explícitos).
+- **LOC estimate**: ~50 (script edit + tests).
+- **Depends on**: T1.1 (post-triage, inventory-classification.md ya producido).
+- **Acceptance**:
+  - Mappings agregados (mínimo): `licenseClass ↔ licenciaClase`, `nivelCertificacion ↔ certificationLevel`, `telemetrySource ↔ tripEventSource`, `role ↔ membershipRole`, `transportistaStatus ↔ empresaStatus`.
+  - Re-correr `node scripts/repo-checks/drift-inventory.mjs` post-mejora reduce `divergences_total` de 10 a ~3-4 (los falsos positivos H se resuelven).
+  - Tests cubren los nuevos matches en `drift-inventory.test.mjs`.
+- **Rollback**: revert PR. Script funcional sin mappings extra.
+
 ### T1.2a..T1.2n: Resolución Clase A — una sub-task por divergencia (cubre O-1)
 
 - **Plantilla recurrente**: una T1.2x por cada divergencia Clase A en `inventory.md`.
