@@ -101,7 +101,7 @@
 > **T9b (medición budget)** se difiere a **S2** — requiere métricas de tráfico reales que aún no se han instrumentado para esto específicamente. Cubre la parte cuantitativa de SC-30 del plan maestro.
 > **T9c (criterios drill)** se incorpora a la **spec de S3** como parte del SC-30 del plan maestro.
 
-### T10: outreach cliente piloto — identificar ≥5 prospects + dry-run PO + primer contacto
+### T10: outreach cliente piloto — identificar ≥5 prospects + dry-run PO + primer contacto [DONE-doc 2026-05-18 — dry-run PO + envíos pendientes]
 - **Files**:
   - `.private/piloto-prospects.md` (gitignored). **OQ-S0.1 resuelta: privada**.
   - `.gitignore` (edit: agregar `.private/` si no está).
