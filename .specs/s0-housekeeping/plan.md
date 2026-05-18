@@ -70,7 +70,7 @@
   - Tabla "Sent to" tiene ≥3 entradas con `Status: Sent` y fecha (Felipe envía emails como parte de esta task).
 - **Rollback**: revert PR; emails ya enviados no se rollbackean (notificación de retiro si necesario).
 
-### T7: RFP vendor pentest
+### T7: RFP vendor pentest [DONE-doc 2026-05-18 — envíos pendientes PO]
 - **Files**: `docs/audits/security-rfp.md` (`docs/audits/` ya existe).
 - **LOC estimate**: ~110.
 - **Depends on**: ninguna.
