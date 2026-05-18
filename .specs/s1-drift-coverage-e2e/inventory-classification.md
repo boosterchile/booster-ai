@@ -213,7 +213,7 @@ El cierre v1 caracterizó Caso 8 como "foundational blocker" del Bloque B (XStat
 
 Lo que Caso 8 representa realmente es un problema de **boundary translation**: cómo mapear el `tripStateSchema` TS extendido (17 valores) al subset canónico de la machine (5 valores) y al `tripStatusEnum` SQL (9 valores). Es trabajo paralelo a T1.6, no precondición.
 
-Sub-spec `.specs/tripstate-alignment/` (pendiente, **compromiso fecha 2026-06-01**) decide:
+Sub-spec `.specs/tripstate-alignment/` (pendiente, **pre-requisito de Bloque B** — avance gated por readiness no calendario) decide:
 - ¿Los 17 valores TS son superset legítimo (e.g. estados intermedios solo en UI)?
 - ¿Los 9 SQL son la verdad operacional + 5 canonical son los de máquina?
 - ¿Boundary translators dónde viven (route handlers? service layer?)?
@@ -223,4 +223,4 @@ Sub-spec `.specs/tripstate-alignment/` (pendiente, **compromiso fecha 2026-06-01
 - **Inventario script + hook**: vivos, bloquean nuevos commits drift.
 - **Taxonomía H + I**: codificada acá. Próximo triage la consulta sin re-derivarla.
 - **0 drift estructural accionable**: sostenible mientras nuevos schemas pasen por el flow ADR-043.
-- **Follow-ups tracked**: T1.0.heuristic-improvement, T1.x.parser, sub-spec `tripstate-alignment` (2026-06-01), H-S1a-1 segunda mitad — todos con sprint objetivo + ubicación de tracking.
+- **Follow-ups tracked**: T1.0.heuristic-improvement, T1.x.parser, sub-spec `tripstate-alignment` (pre-requisito de Bloque B), H-S1a-1 segunda mitad — todos con sprint objetivo + ubicación de tracking.
