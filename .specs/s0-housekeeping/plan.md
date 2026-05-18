@@ -89,7 +89,7 @@
   - Sin overrun de quota Cloud (corre 100% local o staging quota separada).
 - **Rollback**: revert PR; script no se ejecuta en CI todavía (gating real es S8).
 
-### T9a: ADR strangler vs cutover — decisión conceptual (sin números)
+### T9a: ADR strangler vs cutover — decisión conceptual (sin números) [DONE 2026-05-18]
 - **Files**: `docs/adr/048-microservices-extraction-strategy.md`.
 - **LOC estimate**: ~130 (decisión + alternatives + criterios cualitativos). *(Reducido post-O-1 review.md: sin tabla budget cuantitativa ni criterios drill detallados.)*
 - **Depends on**: T4 (numeración).
