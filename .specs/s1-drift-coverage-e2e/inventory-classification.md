@@ -1,3 +1,10 @@
+---
+gate: APPROVED_BY_PO 2026-05-18
+triaged_at: 2026-05-18T14:45:00Z
+divergences_post_triage_real: 2 (Clase A) + 1 diferido (Clase B+, caso 8 tripState)
+heuristic_false_positives: 6 (Clase H — casos 2, 3, 4, 6, 7, 9, 10)
+---
+
 # Drift inventory — Triage manual + clasificación (T1.1)
 
 - Auto-generado: [`inventory.md`](./inventory.md)
