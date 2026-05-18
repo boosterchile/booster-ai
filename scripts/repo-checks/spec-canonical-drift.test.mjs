@@ -260,10 +260,7 @@ describe('validateAnnotation', () => {
   });
 
   it('returns no-bullets when bullet list is empty', () => {
-    writeFileSync(
-      join(tmpDir, 'schema.ts'),
-      `export const fooEnum = pgEnum('foo', ['a', 'b']);`,
-    );
+    writeFileSync(join(tmpDir, 'schema.ts'), `export const fooEnum = pgEnum('foo', ['a', 'b']);`);
     const result = validateAnnotation(
       { sourcePath: 'schema.ts', identifier: 'fooEnum', bullets: [], line: 1 },
       tmpDir,
@@ -273,10 +270,7 @@ describe('validateAnnotation', () => {
   });
 
   it('returns identifier-not-found when source lacks the identifier', () => {
-    writeFileSync(
-      join(tmpDir, 'schema.ts'),
-      `export const otherEnum = pgEnum('other', ['x']);`,
-    );
+    writeFileSync(join(tmpDir, 'schema.ts'), `export const otherEnum = pgEnum('other', ['x']);`);
     const result = validateAnnotation(
       { sourcePath: 'schema.ts', identifier: 'missingEnum', bullets: ['a'], line: 1 },
       tmpDir,
@@ -292,7 +286,12 @@ describe('validateAnnotation', () => {
       `export const fooEnum = pgEnum('foo', ['en_proceso', 'entregado']);`,
     );
     const result = validateAnnotation(
-      { sourcePath: 'schema.ts', identifier: 'fooEnum', bullets: ['en_curso', 'entregado'], line: 1 },
+      {
+        sourcePath: 'schema.ts',
+        identifier: 'fooEnum',
+        bullets: ['en_curso', 'entregado'],
+        line: 1,
+      },
       tmpDir,
     );
     expect(result.ok).toBe(false);
@@ -352,9 +351,15 @@ describe('renderHumanReport', () => {
     const results = [
       {
         file: 'specs/foo.md',
-        annotations: [{ sourcePath: 'src/x.ts', identifier: 'fooEnum', bullets: ['typo'], line: 42 }],
+        annotations: [
+          { sourcePath: 'src/x.ts', identifier: 'fooEnum', bullets: ['typo'], line: 42 },
+        ],
         validations: {
-          42: { ok: false, kind: 'value-not-in-source', details: "Values in spec not present in source: 'typo'" },
+          42: {
+            ok: false,
+            kind: 'value-not-in-source',
+            details: "Values in spec not present in source: 'typo'",
+          },
         },
       },
     ];

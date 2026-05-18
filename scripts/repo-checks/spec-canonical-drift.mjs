@@ -70,9 +70,13 @@ export function parseArgs(argv) {
 export function findMarkdownFiles(rootDir) {
   const results = [];
   function walk(dir) {
-    if (!existsSync(dir)) return;
+    if (!existsSync(dir)) {
+      return;
+    }
     for (const entry of readdirSync(dir)) {
-      if (entry === 'node_modules' || entry === 'coverage' || entry.startsWith('.git')) continue;
+      if (entry === 'node_modules' || entry === 'coverage' || entry.startsWith('.git')) {
+        continue;
+      }
       const full = join(dir, entry);
       let stat;
       try {
@@ -100,12 +104,16 @@ export function parseAnnotations(mdContent) {
   const lines = mdContent.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const match = ANNOTATION_RE.exec(lines[i]);
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     const sourcePath = match[1];
     const identifier = match[2];
     const bullets = [];
     let j = i + 1;
-    while (j < lines.length && lines[j].trim() === '') j++;
+    while (j < lines.length && lines[j].trim() === '') {
+      j++;
+    }
     while (j < lines.length) {
       const bm = BULLET_RE.exec(lines[j]);
       if (bm) {
@@ -133,8 +141,12 @@ export function extractSourceValues(sourceContent, identifier) {
     `export\\s+const\\s+${escaped}\\s*=\\s*z\\.enum\\(\\[([\\s\\S]*?)\\]\\)`,
   );
   let m = pgEnumRe.exec(sourceContent);
-  if (!m) m = zodEnumRe.exec(sourceContent);
-  if (!m) return null;
+  if (!m) {
+    m = zodEnumRe.exec(sourceContent);
+  }
+  if (!m) {
+    return null;
+  }
   const valuesBlock = m[1];
   return [...valuesBlock.matchAll(/'([^']+)'/g)].map((v) => v[1]);
 }
@@ -200,7 +212,9 @@ export function renderHumanReport(results, totals) {
   for (const r of results) {
     for (const a of r.annotations) {
       const v = r.validations[a.line];
-      if (v.ok) continue;
+      if (v.ok) {
+        continue;
+      }
       lines.push('');
       lines.push(`  ${r.file}:${a.line}`);
       lines.push(`    annotation: ${a.sourcePath}:${a.identifier}`);
@@ -258,13 +272,17 @@ export function main(argv) {
   for (const f of allFiles) {
     const content = readFileSync(resolve(args.repoRoot, f), 'utf-8');
     const annotations = parseAnnotations(content);
-    if (annotations.length === 0) continue;
+    if (annotations.length === 0) {
+      continue;
+    }
     const validations = {};
     for (const a of annotations) {
       total++;
       const v = validateAnnotation(a, args.repoRoot);
       validations[a.line] = v;
-      if (!v.ok) drift++;
+      if (!v.ok) {
+        drift++;
+      }
     }
     results.push({ file: f, annotations, validations });
   }
