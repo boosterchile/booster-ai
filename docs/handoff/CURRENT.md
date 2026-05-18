@@ -1,8 +1,61 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-18 (Sprint S0 production-readiness **cerrado** — T11 wrap)
+**Última actualización**: 2026-05-18 (Sprint **S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01** — firma PO Opción A + 3 condiciones, ver [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
-**Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (sprint S0 cerrado, pickup S1) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+**Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sprint S1a drift schema/domain — CERRADO (2026-05-18, firma PO Opción A)
+
+Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-coverage-e2e/plan-s1a.md). Cierre formal en [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) — **gate APPROVED_BY_PO 2026-05-18, Opción A con 3 condiciones vinculantes** (ver §11).
+
+**S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01.**
+
+### Cierre por tarea (Bloque A)
+
+| Task | PR | LOC (+/-) | Estado |
+|---|---|---|---|
+| T1.1 — Inventario drift schema/domain + pre-commit hook | [#293](https://github.com/boosterchile/booster-ai/pull/293) | +736/-2 | ✅ Merged |
+| T1.2 — Caso 5 `tripEventTypeSchema` (alinea 2 valores SQL) | [#294](https://github.com/boosterchile/booster-ai/pull/294) | +242/-15 | ✅ Merged |
+| T1.3-discovery — Discovery broader pre-reclasificación | [#295](https://github.com/boosterchile/booster-ai/pull/295) | +205/-0 | ✅ Merged |
+| T1.3 — Caso 1 `cargoRequestStatusSchema` → Clase I + annotación | [#296](https://github.com/boosterchile/booster-ai/pull/296) | +86/-32 | ✅ Merged |
+| T1.5 — Integration tests Pattern A + B + H-S1a-1 partial cov | [#297](https://github.com/boosterchile/booster-ai/pull/297) | +168/-1 | ✅ Merged |
+| Spec/plan v2 + reviews (pre-S1a) | [#292](https://github.com/boosterchile/booster-ai/pull/292) | +968/-0 | ✅ Merged |
+
+**Baseline drift final**: 1 A (resuelta) + 1 I (annotada) + 1 B+ (diferida) + 0 C + 6 H = **0 drift estructural accionable**.
+
+### Bloque B — diferido a S2 (firma PO Opción A + 3 condiciones, [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
+
+T1.6 (XState scaffold) + T1.7a/b/c/d (wiring 3 services + followup doc) **no ejecutadas**. Ejecutan en S2 (lane paralela a S1b).
+
+**Condición 1**: sub-spec `.specs/tripstate-alignment/spec.md` creada **antes del 2026-06-01** con acceptance material (§boundary-translation con 17 TS / 5 machine / 9 SQL mapping + §scope cut + §SCs measurable + §risks ≥3 reales + gate explícito). Si el spec no existe con esas secciones al 2026-06-01, el deferral falló su gobernanza — acción correctiva re-evalúa work/traspaso/deuda explícita.
+
+**Condición 2**: spike `spike/tripstate-machine-exploration` permitido como exploración, NO mergeable. Sirve solo como insumo del sub-spec. Ejecutar T1.6/T1.7 disfrazado de spike sería laundering C disfrazado de A.
+
+**Condición 3**: tras merge de PR #298, S1a está cerrado. `tripstate` work posterior vive en sub-spec / plan-s2 / spike — no en "todavía estamos cerrando S1a".
+
+Razones del PO para descartar B (mezcla concerns S1b worse off) y C (sprint discipline + sub-spec necesaria independiente del timing + estimado optimista) en §11.
+
+### Taxonomía drift extendida (deliverable durable)
+
+ADR-043 define A/B/C; el triage T1.1 + discovery T1.3 amplió a:
+- **Clase H** — Falso positivo heurístico (script reporta divergencia pero SQL existe con naming distinto).
+- **Clase I** — Intentional pre-materialization (TS schema deliberadamente antes que SQL counterpart, con dependencias estructurales documentadas en ADRs vivos).
+
+Ambas son **categorías operacionales del proyecto Booster AI**, no modificaciones al ADR-043. Tracking en [`inventory-classification.md`](../../.specs/s1-drift-coverage-e2e/inventory-classification.md) §Nomenclatura.
+
+### Follow-ups no bloqueantes (heredados)
+
+| Follow-up | Sprint objetivo | Tracking |
+|---|---|---|
+| T1.0.heuristic-improvement (mejorar `normalizeForMatch`) | S2 | `plan-s1a.md` §T1.0 |
+| T1.x.parser (`@drift-status` parsing en drift-inventory script) | S2 (post-T1.0) | `plan-s1a.md` §T1.x.parser |
+| Sub-spec `.specs/tripstate-alignment/` (caso 8) | S2 — crear **antes del 2026-06-01** (compromiso de fecha) | `inventory-classification.md` Caso 8 + `s1a-cierre.md` §6 |
+| H-S1a-1 segunda mitad (`.parse()` en boundaries HTTP/DB/queue) | S2 o S3 | `spec.md` §12.5 |
+| Bloque B (XState scaffold + wiring) | S2 (lane paralela a S1b) — recomendación Opción A `s1a-cierre.md` §9, pendiente firma PO | `s1a-cierre.md` §6 |
+
+---
 
 ---
 
@@ -75,30 +128,28 @@ Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/
 
 ---
 
-## Pickup point S1 (drift implementación + coverage + e2e crítico)
+## Pickup point S1b (branches coverage + Playwright + sharding)
 
-**Spec sprint**: a producir en próxima sesión como `.specs/s1-drift-coverage-e2e/spec.md` siguiendo el roadmap §S1.
+**Plan**: [`.specs/s1-drift-coverage-e2e/plan-s1b.md`](../../.specs/s1-drift-coverage-e2e/plan-s1b.md) (Approved 2026-05-18) — arranque **condicional** a firma PO sobre `s1a-cierre.md` §9.
 
-**Scope target S1** (del roadmap maestro):
+**Scope S1b**:
 
-- Aplicar **ADR-043** (metodología drift schema↔domain) ya mergeado:
-  - Producir inventario completo de divergencias (script grep + clasificación A/B/C).
-  - Migration breaking-safe + refactor consumers Clase A.
-  - Tests integration sobre infra T1+T2 ya mergeada (PR #271/#272).
-  - Implementar `packages/trip-state-machine` con XState (sub-spec stubs-decision).
-- Subir **branches coverage `apps/api`** al 80% (actual: 75.01%).
-- Añadir **4 specs Playwright críticos en CI por PR** (shipper-publica-carga, carrier-acepta-oferta, login-universal-rut-clave-numerica, public-tracking-via-link).
-- **Sharding Playwright + path-based filter** en `ci.yml` (cubre SC-29 ≤10 min p95 CI).
-- **a11y axe-core** en cada flujo Playwright (0 violations P0/P1).
+- **T1.8** — Identificar branches uncovered + lista nombrada (≥10 error paths reales).
+- **T1.9a..T1.9j** — Tests añadidos por path; meta: `apps/api` branches coverage ≥80% (actual: 75.01%).
+- **T1.10** — 4 specs Playwright críticos en CI por PR (shipper-publica-carga, carrier-acepta-oferta, login-universal-rut-clave-numerica, public-tracking-via-link) + axe-core (0 violations P0/P1) + sharding + path-based filter en `ci.yml` (cubre SC-29 ≤10 min p95 CI).
 
-**Cubre SCs maestros**: SC-2, SC-4, SC-15 (parcial 4/8), SC-16 (parcial), SC-29.
+**Cubre SCs maestros**: SC-2 (parcial), SC-4, SC-15 (parcial 4/8), SC-16 (parcial), SC-29.
 
-**Acción inmediata PO** (sin esperar al inicio de S1):
+**Bloque B Sprint S1** (XState `trip-state-machine` + wiring): **diferido** a sub-spec `.specs/tripstate-alignment/` cuando arranque T1.x dedicado (ver `s1a-cierre.md` §6 — pendiente firma PO).
 
-1. **Enviar RFP GLEC** (template en `docs/compliance/glec-rfp.md` §7.2). Razón: lead time auditor 4-8 sem; arrancar ya minimiza camino crítico.
+**Acción inmediata PO** (S1a firma ya aplicada; S1b listo para arrancar):
+
+1. **Enviar RFP GLEC** (template en `docs/compliance/glec-rfp.md` §7.2). Razón: lead time auditor 4-8 sem.
 2. **Enviar RFP pentest** (template en `docs/audits/security-rfp.md` §7.2). Razón: lead time vendor 4-6 sem.
-3. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto es el más largo (variable, mes+).
+3. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto el más largo.
 4. **Decidir OQ-S0.3** (qué hacer con remote `origin` GitLab).
+
+**Próxima sesión de agente** (post-merge #298): `/spec tripstate-alignment` siguiendo Condición 1 de [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11. Target del spec: antes del 2026-06-01.
 
 ---
 

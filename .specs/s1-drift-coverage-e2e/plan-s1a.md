@@ -143,7 +143,10 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - Pattern C (flag transición / migration) testeado si Clase C aplicó.
 - **Rollback**: revert PR.
 
-### T1.6: `packages/trip-state-machine` scaffold con XState v5
+### T1.6: `packages/trip-state-machine` scaffold con XState v5 [DEFERRED — sub-spec tripstate-alignment]
+
+> **Diferida en T1.S1a.cierre 2026-05-18** ([`s1a-cierre.md`](./s1a-cierre.md) §6, Opción A recomendada — pendiente firma PO): el scope de S1a no alcanzó a Bloque B en la sesión de ejecución. Spec §SC-S1.5 ya nombra los 5 canonical states (`borrador, asignado, en_curso, entregado, cancelado`) → el scaffold NO está bloqueado por foundational; lo está por scope. Recomendación: ejecutar Bloque B en S2 (paralelo a S1b) + crear sub-spec `.specs/tripstate-alignment/` **antes del 2026-06-01** para el boundary mapping (17 TS ↔ 5 machine ↔ 9 SQL).
+
 
 - **Files**: `packages/trip-state-machine/{package.json,tsconfig.json,vitest.config.ts,src/index.ts,src/trip.machine.ts,src/trip.machine.test.ts,README.md}` (nuevos).
 - **LOC estimate**: ~330 distribuidos (waiver: 4 archivos config + machine + tests + README, ninguno individual >120 LOC).
@@ -156,7 +159,10 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - **OQ-S1.2 resuelta**: sección README "Testing strategy" declara sí/no `@xstate/test` con razón (cubre O-10 trigger).
 - **Rollback**: revert PR; package se elimina; consumers no lo importan todavía.
 
-### T1.7a: Wire flag `TRIP_STATE_MACHINE_ACTIVATED` + 1 service (liquidar-trip)
+### T1.7a: Wire flag `TRIP_STATE_MACHINE_ACTIVATED` + 1 service (liquidar-trip) [DEFERRED — sub-spec tripstate-alignment]
+
+> **Diferida en T1.S1a.cierre 2026-05-18** — depende de T1.6.
+
 
 - **Files**: `apps/api/src/config.ts` (+1 flag) + `apps/api/src/services/liquidar-trip.ts` (branch flag legacy/machine) + `apps/api/test/unit/liquidar-trip-machine-wiring.test.ts`.
 - **LOC estimate**: ~100 (flag + 1 service edit + 1 test).
@@ -167,7 +173,10 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - Flag `TRIP_STATE_MACHINE_ACTIVATED` declarado con `booleanFlag(false)` default.
 - **Rollback**: flag OFF retoma legacy en <5 min sin tocar consumers.
 
-### T1.7b: Wire 2do service (confirmar-entrega-viaje)
+### T1.7b: Wire 2do service (confirmar-entrega-viaje) [DEFERRED — sub-spec tripstate-alignment]
+
+> **Diferida en T1.S1a.cierre 2026-05-18** — depende de T1.7a.
+
 
 - **Files**: `apps/api/src/services/confirmar-entrega-viaje.ts` + test.
 - **LOC estimate**: ~80.
@@ -175,7 +184,10 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
 - **Acceptance**: idem T1.7a para confirmar-entrega.
 - **Rollback**: flag OFF retoma legacy.
 
-### T1.7c: Wire 3er service (asignar-conductor-a-assignment)
+### T1.7c: Wire 3er service (asignar-conductor-a-assignment) [DEFERRED — sub-spec tripstate-alignment]
+
+> **Diferida en T1.S1a.cierre 2026-05-18** — depende de T1.7a.
+
 
 - **Files**: `apps/api/src/services/asignar-conductor-a-assignment.ts` + test.
 - **LOC estimate**: ~80.
@@ -183,7 +195,10 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
 - **Acceptance**: idem T1.7a para asignar-conductor.
 - **Rollback**: flag OFF retoma legacy.
 
-### T1.7d: Followup doc OUT-of-scope state machine migration
+### T1.7d: Followup doc OUT-of-scope state machine migration [DEFERRED — sub-spec tripstate-alignment]
+
+> **Diferida en T1.S1a.cierre 2026-05-18** — depende de T1.7a/b/c.
+
 
 - **Files**: `.specs/s1-drift-coverage-e2e/followup-state-machine-migration.md` (nuevo).
 - **LOC estimate**: ~50 (doc).
@@ -193,11 +208,11 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - Cada OUT-of-scope con owner (S2 o S3) + justificación de por qué no se migra en S1a.
 - **Rollback**: revert PR (doc-only).
 
-### T1.S1a.cierre: Decisión cierre S1a → arranque S1b (gate)
+### T1.S1a.cierre: Decisión cierre S1a → arranque S1b (gate) [DONE 2026-05-18 — APPROVED_BY_PO Opción A + 3 condiciones]
 
-- **Files**: `.specs/s1-drift-coverage-e2e/s1a-cierre.md` (nuevo).
-- **LOC estimate**: ~70 (doc con tabla cuantitativa).
-- **Depends on**: T1.1..T1.7d completos.
+- **Files**: `.specs/s1-drift-coverage-e2e/s1a-cierre.md` (gate `APPROVED_BY_PO`, §11 vinculante), `inventory-classification.md` §S1a — Outcomes, `docs/handoff/CURRENT.md` (updated).
+- **LOC estimate**: ~70 (doc con tabla cuantitativa) — actual: ~280 (cierre + outcomes + §11 firma + 3 condiciones vinculantes).
+- **Depends on**: T1.1, T1.2, T1.3, T1.5 mergeados (Bloque A) + firma PO sobre Bloque B (resuelta: Opción A).
 - **Acceptance** (cubre O-9 cuantitativo):
   - Tabla LOC mergeado vs planificado por task.
   - Ratio agregado Bloque A+B ≥40% **mandatorio** para arranque S1b.

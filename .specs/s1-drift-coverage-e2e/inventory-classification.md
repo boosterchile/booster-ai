@@ -150,3 +150,77 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 - **2026-05-18 ~14:00 UTC** — Discovery broader pre-T1.3 (8 puntos del checklist PO). Hallazgo decisivo: `cargoRequestIdSchema` es FK estructural en `trip.cargo_request_id` + 4 ADRs vivos + 1 skill core describen `CargoRequest` como concepto del producto vigente. Caso 1 NO es orphan abandonado.
 - **2026-05-18 ~15:00 UTC** — PO firma **Opción C con 3 refinamientos**: (a) crear Clase I como categoría taxonómica nueva (no docstring libre), (b) annotación machine-readable con tags `@drift-status` `@materialization-trigger` `@depends-on` `@review-on`, (c) ampliar taxonomía en este doc paralelo a Clase H. Plus follow-up no bloqueante: T1.x.parser para drift-inventory parsing del tag.
 - **2026-05-18 ~15:30 UTC** — T1.3 implementado: Clase I agregada al §Nomenclatura; Caso 1 reclasificado de A-orphan a I-pre-materialization; `domain/cargo-request.ts` recibe annotación estructurada; baseline final post-T1.2+T1.3: **0 drift estructural accionable en S1a** (1 A resuelta + 1 I anotada + 1 B+ diferida).
+
+---
+
+## S1a — Outcomes
+
+> Sección de cierre del Sprint S1a. Producida durante T1.S1a.cierre ([`s1a-cierre.md`](./s1a-cierre.md)) post-T1.5. Captura el **valor cualitativo** del sprint, complementaria a la tabla cuantitativa de `s1a-cierre.md`.
+
+### 1. Counts finales por clase (post-T1.5)
+
+| Clase | Conteo | Casos | Disposición |
+|---|---|---|---|
+| **A** (refactor TS-only) | 1 | Caso 5 (`tripEventTypeSchema`) | Resuelta T1.2 ([#294](https://github.com/boosterchile/booster-ai/pull/294)) |
+| **I** (Intentional pre-materialization) | 1 | Caso 1 (`cargoRequestStatusSchema`) | Annotada T1.3 ([#296](https://github.com/boosterchile/booster-ai/pull/296)) |
+| **B+** (diferida a sub-spec) | 1 | Caso 8 (`tripStateSchema`) | Diferida a `.specs/tripstate-alignment/` (cuando arranque T1.x dedicado) |
+| **C** (SQL migration) | 0 | — | — |
+| **H** (heurístico FP) | 6 | Casos 2, 3, 4, 6, 7, 9, 10 | T1.0.heuristic-improvement (no bloqueante) |
+
+**Total**: 9 casos clasificados (de 10 reportados; 1 collapsa en H tras triage).
+**Drift estructural accionable post-S1a**: **0**.
+
+### 2. Observación meta — qué fue el valor real del sprint
+
+El **deliverable durable** de S1a NO es la alineación de 2 valores enum del Caso 5 (acción mecánica de ~5 LOC en `trip-event.ts`). El deliverable durable es:
+
+1. **Metodología ADR-043 ejecutada end-to-end**: discovery → triage → clasificación → resolución → integration test. Esa secuencia es replicable contra cualquier divergencia futura sin re-inventar el proceso.
+2. **Tooling perm**: `scripts/repo-checks/drift-inventory.mjs` + pre-commit hook bloquean drift inadvertido en commits futuros. Coverage 97/91/100/97. Re-ejecutable cuando aparezca nuevo schema.
+3. **Taxonomía extendida**: Clases H + I emergieron del triage real, no del ADR original. Son categorías **operacionales del proyecto Booster AI**, no del ADR genérico. Permiten que el siguiente triage no confunda FPs heurísticos con drift real ni elimine scaffolding deliberado.
+
+**Implicación práctica**: si el próximo schema Zod aparece sin counterpart SQL, el agente NO pregunta "¿hay que eliminarlo?" — corre el script, ve la Clase (H/A/I), aplica el playbook documentado.
+
+### 3. Anécdota `trackingCode varchar(12)` — por qué integration tests > theater
+
+Durante implementación de T1.5, el primer intento de helper `createMinimalTrip()` usó:
+
+```typescript
+trackingCode: `T15-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+```
+
+Resultado: Postgres rechazó con error 22001 (string too long). El campo es `varchar(12)`, el string generado tenía ≥20 chars.
+
+**Por qué importa**: si T1.5 hubiera sido puramente **declarativo** (script + hook re-validation post-T1.2), este bug NUNCA habría salido a luz — porque el constraint vive en SQL, no en TS schemas. El integration test ejerció el code path real (INSERT contra Postgres) y el constraint se activó.
+
+**Conclusión**: tests declarativos validan la **intención** del autor; integration tests validan la **realidad** del sistema. ADR-043 §4 patterns son específicos sobre esta distinción — Pattern A no es "imprimí el schema y comparalo con el SQL"; es "INSERT + SELECT real, asegurate de que el valor sobrevive el round-trip".
+
+Fix aplicado en T1.5: `trackingCode: \`T15${Math.random().toString(36).slice(2, 11).toUpperCase()}\`` (exactamente 12 chars).
+
+### 4. Hallazgo H-S1a-1 — scope cubierto vs backlog explícito
+
+Spec §12.5 documenta el hallazgo. Post-T1.5:
+
+- **Primera mitad cubierta** (code path runtime ejercitado): integration test confirma que los 2 valores enum agregados en T1.2 pasan por Drizzle ORM y vuelven con identidad exacta. La alineación TS↔SQL es funcional end-to-end, no solo declarativa.
+- **Segunda mitad pendiente** (boundary parsing): `apps/api/src/routes/*.ts` aún NO instala `tripEventTypeSchema.parse()` en boundaries HTTP. Idem `DB writers` y `queue consumers` Pub/Sub.
+
+**Decisión de scope**: la segunda mitad NO es una omisión accidental. Es trabajo de S2/S3 con scope dedicado (auditoría boundaries → política `.parse()` vs `.safeParse()` → instrumentación + tests por boundary). T1.5 nunca pretendió cubrirla — su alcance fue verificar que la mitad declarativa de S1a no es theater.
+
+**Trazabilidad futura**: `git log --grep="H-S1a-1"` retorna los commits específicos cuando el planner de S2/S3 quiera contexto sin abrir spec.md.
+
+### 5. Caso 8 (tripStateSchema) — clarificación post devils-advocate
+
+El cierre v1 caracterizó Caso 8 como "foundational blocker" del Bloque B (XState scaffold). **Eso era incorrecto**: spec §SC-S1.5 (línea 43) ya nombra los 5 canonical states de la machine (`borrador, asignado, en_curso, entregado, cancelado`) anclados a `tripStatusEnum`. El scaffold puede ejecutar contra esos 5 estados hoy.
+
+Lo que Caso 8 representa realmente es un problema de **boundary translation**: cómo mapear el `tripStateSchema` TS extendido (17 valores) al subset canónico de la machine (5 valores) y al `tripStatusEnum` SQL (9 valores). Es trabajo paralelo a T1.6, no precondición.
+
+Sub-spec `.specs/tripstate-alignment/` (pendiente, **compromiso fecha 2026-06-01**) decide:
+- ¿Los 17 valores TS son superset legítimo (e.g. estados intermedios solo en UI)?
+- ¿Los 9 SQL son la verdad operacional + 5 canonical son los de máquina?
+- ¿Boundary translators dónde viven (route handlers? service layer?)?
+
+### 6. Estado post-cierre
+
+- **Inventario script + hook**: vivos, bloquean nuevos commits drift.
+- **Taxonomía H + I**: codificada acá. Próximo triage la consulta sin re-derivarla.
+- **0 drift estructural accionable**: sostenible mientras nuevos schemas pasen por el flow ADR-043.
+- **Follow-ups tracked**: T1.0.heuristic-improvement, T1.x.parser, sub-spec `tripstate-alignment` (2026-06-01), H-S1a-1 segunda mitad — todos con sprint objetivo + ubicación de tracking.
