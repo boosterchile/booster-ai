@@ -5,8 +5,8 @@ triaged_at: 2026-05-18T14:45:00Z
 source_domain: packages/shared-schemas/src/domain
 source_schema: apps/api/src/db/schema.ts
 divergences_total: 10
-divergences_post_triage_real: 3-4 (Clase A) + 1 diferido (Clase B+, caso 8 tripState)
-heuristic_false_positives: 5-6 (Clase H — ver inventory-classification.md)
+divergences_post_triage_real: 2 (Clase A) + 1 diferido (Clase B+, caso 8 tripState)
+heuristic_false_positives: 6 (Clase H — casos 2, 3, 4, 6, 7, 9, 10; ver inventory-classification.md)
 gate_threshold: 10
 classification_doc: inventory-classification.md
 ---

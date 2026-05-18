@@ -24,11 +24,19 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 
 ## Triage detallado por caso
 
-### Caso 1 — `cargoRequestStatusSchema` (`no-sql-match`)
+### Caso 1 — `cargoRequestStatusSchema` (`no-sql-match`) — CERRADO
 
 - **Heurístico reportó**: sin match.
-- **Triage manual**: `grep pgEnum.*(cargo|carga|request|solicitud)` retorna solo `cargoTypeEnum` (tipo_carga, no status). El "status" de un cargo request probablemente vive en columna `trips.status` o en `cargoRequests.status` como columna text directa (no pgEnum).
-- **Clase**: **A** (legítimo) — schema TS no tiene equivalente pgEnum SQL; refactor TS-only si se decide alinear, o queda como TS-only legítimo.
+- **Triage profundo** (`rg cargoRequest --type ts apps/ packages/`):
+  - **0 consumers en `apps/`** (todo el código).
+  - **0 tabla SQL** `cargo_requests`, **0 pgEnum** cargoRequest*.
+  - Referencias: solo `domain/cargo-request.ts` (definición), `primitives/ids.ts` (`cargoRequestIdSchema`), `all-schemas.test.ts` (smoke test), y comentario en `trip-request.ts` que dice _"esto NO es un cargoRequest completo… matching tentativo produce cargoRequest real"_.
+  - Veredicto: schema TS-only **orphan** — el dominio define el concepto pero **nunca se materializó** en SQL ni en código. Diseño legacy abandonado (trips fueron el modelo dominante).
+- **Clase**: **A — sub-tipo "TS-only-orphan"**. Acción T1.2: investigar abandono y decidir entre:
+  - (a) Eliminar `cargoRequestStatusSchema` + `cargoRequestSchema` completo del domain (PR de cleanup).
+  - (b) Mantener como "concepto TS-future documentado" si hay roadmap futuro para cargo_requests separados de trips.
+
+  Recomendación pre-T1.2: **(a) eliminar** — 24 días de historia del proyecto sin uso real sugiere abandono claro.
 
 ### Caso 2 — `licenseClassSchema` (`no-sql-match`)
 
@@ -78,25 +86,30 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 - **Triage manual**: ✅ 2 candidatos: `membershipRoleEnum` (rol_membresia) y `chatSenderRoleEnum` (rol_remitente_chat). El match depende del contexto del schema TS.
 - **Clase**: **H** — agregar match en T1.0.heuristic-improvement (probablemente match con `membershipRoleEnum`).
 
-### Caso 10 — `zonaStakeholderTipoSchema` (`no-sql-match`)
+### Caso 10 — `zonaStakeholderTipoSchema` (`no-sql-match`) — CERRADO
 
 - **Heurístico reportó**: sin match.
-- **Triage manual**: `zoneTypeEnum` (tipo_zona) existe pero es genérico (`recogida`, `entrega`, `ambos`). Zonas de stakeholder pueden tener tipos distintos (zona industrial, comercial, rural, etc.) o ser un subset de zonas generales. **Requiere verificación adicional en el contenido del Zod schema**.
-- **Clase**: **A** (probable, legítimo TS-only) — pendiente confirmación durante T1.2.
+- **Triage profundo** (`rg tipoZonaStakeholderEnum apps/api/src/db/schema.ts`):
+  - ✅ `tipoZonaStakeholderEnum` (`tipo_zona_stakeholder`) EXISTE en SQL.
+  - **Mismos 4 valores exactos** en ambos lados: `puerto`, `mercado_abastos`, `polo_industrial`, `zona_franca`.
+  - Heurístico `normalizeForMatch` falló porque SQL ts-name empieza con `tipo` (`tipoZonaStakeholderEnum`) en lugar de terminar con `Enum` precedido del concept name (`zonaStakeholderTipoEnum`). El stemming `tipo...Stakeholder...` ↔ `zonaStakeholder...Tipo` no es captado.
+- **Clase**: **H** (falso positivo del heurístico) — match perfecto en SQL. Agregar mapping en T1.0.heuristic-improvement.
 
 ---
 
-## Resumen baseline post-triage
+## Resumen baseline post-triage (CERRADO sin rangos)
 
 | Clase | Conteo | Casos |
 |---|---|---|
-| **A (real, requiere refactor)** | 2-3 | 5 ✅ confirmado, 1 y 10 (probable) |
-| **B+ (diferido)** | 1 | 8 — sub-spec dedicada futura |
-| **C (cambio SQL)** | 0 | — |
-| **H (heurístico FP)** | 5-6 | 2, 3, 4, 6, 7, 9 |
-| **Total divergencias reales (A+B+C)** | **3-4** | (vs 10 reportadas por heurístico) |
+| **A (real, requiere refactor)** | **2** | **5** (agregar 2 valores SQL faltantes) + **1** (TS-only-orphan, eliminar) |
+| **B+ (diferido)** | **1** | **8** — sub-spec dedicada futura |
+| **C (cambio SQL)** | **0** | — |
+| **H (heurístico FP)** | **6** | **2, 3, 4, 6, 7, 9, 10** (7 casos; verificar que `transportistaStatus` reusa empresaStatusEnum durante T1.0.heuristic-improvement → si no, sería A) |
+| **Total divergencias estructurales reales (A+B+C)** | **3** | vs 10 reportadas por heurístico |
 
-**Gate SC-S1.0**: 3-4 divergencias estructurales reales << threshold 10. **Gate APPROVED_BY_PO**.
+**Gate SC-S1.0**: 3 divergencias estructurales reales (2 A + 1 B+ diferido) << threshold 10. **Gate APPROVED_BY_PO 2026-05-18**.
+
+> **Nota sobre Caso 4** (`transportistaStatus`): clasificado **H probable** pero sujeto a verificación durante T1.0.heuristic-improvement. Si el schema `transportistaStatusSchema` reusa los mismos valores que `empresaStatusEnum`, es H confirmado. Si tiene valores propios diferenciados, se reclasifica a A en ese PR (no bloquea S1a — el ajuste a la baseline ocurre en T1.0.heuristic-improvement post-merge).
 
 ---
 
