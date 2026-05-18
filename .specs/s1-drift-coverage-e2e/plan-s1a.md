@@ -41,18 +41,45 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
   - Tests cubren los nuevos matches en `drift-inventory.test.mjs`.
 - **Rollback**: revert PR. Script funcional sin mappings extra.
 
-### T1.2a..T1.2n: Resolución Clase A — una sub-task por divergencia (cubre O-1)
+### T1.2: Caso 5 — `tripEventTypeSchema` agregar 2 valores SQL faltantes
 
-- **Plantilla recurrente**: una T1.2x por cada divergencia Clase A en `inventory.md`.
-- **Files por sub-task**: 1-2 archivos en `packages/shared-schemas/src/domain/*` + consumers afectados (`apps/api/src/services/*` o `apps/api/src/routes/*`) + tests existentes ajustados.
-- **LOC por sub-task**: ≤80 (cumple ≤100 LOC sin waiver).
-- **Depends on**: T1.1 + SC-S1.0 gate `APPROVED_BY_PO`. Sub-tasks pueden ejecutar en paralelo entre sí.
-- **Acceptance por sub-task** (parte de T-S1.3):
-  - Identifier/enum value específico en `inventory.md` está alineado a SQL canónico.
-  - `pnpm typecheck` + `pnpm test` verdes post-PR.
-  - `grep -E "<valor inglés viejo>" packages/shared-schemas/src/domain/` retorna 0 hits para esa divergencia.
-- **Acceptance T1.2 global**: todas las sub-tasks Clase A en `Implemented` + `grep -rE "'(delivered|confirmed|completed|pending|active|cancelled)'" packages/shared-schemas/src/domain/` retorna 0 hits totales.
-- **Rollback por sub-task**: revert PR específico. Cero impacto runtime (cambio TS-only).
+> **Scope cerrado post-triage**: T1.2 cubre **solo el Caso 5** (aditivo, Clase A). El Caso 1 (`cargoRequestStatusSchema` TS-only-orphan, eliminación) se mueve a **T1.3 separado** por razones de bisectability + perfil de riesgo distinto (aditivo vs destructivo).
+
+- **Files**:
+  - `packages/shared-schemas/src/domain/trip-event.ts` (edit: agregar `conductor_asignado` + `incidente_reportado` al enum).
+  - `packages/shared-schemas/src/all-schemas.test.ts` (edit: nuevo describe block `tripEvent` con tests).
+  - `.specs/s1-drift-coverage-e2e/t1.2-discovery.md` (nuevo: discovery findings).
+- **LOC estimate**: ~5 (trip-event.ts edit) + ~30 (tests) + ~50 (discovery doc) = ~85.
+- **Depends on**: T1.1 mergeado (gate SC-S1.0 APPROVED) + Discovery T1.2 completado (0 exhaustive matching consumers, 0 runtime parse, 2 valores YA emitidos en services).
+- **Acceptance** (T-S1.3 parcial):
+  - `tripEventTypeSchema` tiene exactamente **14 valores** (12 actuales + `conductor_asignado` + `incidente_reportado`).
+  - Test **whitelist guardrail** en `all-schemas.test.ts` que valida `tripEventTypeSchema.options` contra listado explícito de los 14 valores esperados (detecta remociones silenciosas en refactors futuros).
+  - Test que `tripEventTypeSchema.parse('conductor_asignado')` y `.parse('incidente_reportado')` no lanzan.
+  - `pnpm --filter @booster-ai/shared-schemas test` verde.
+- **Rollback**: revert PR. Cero impacto runtime (Zod no se usa en `.parse()` runtime — ver Hallazgo H-S1a-1 en spec §12.5).
+
+### T1.3: Caso 1 — eliminar `cargoRequestStatusSchema` orphan (Clase A sub-tipo TS-only-orphan)
+
+- **Files**:
+  - `packages/shared-schemas/src/domain/cargo-request.ts` (delete o reducir si `cargoRequestSchema` y otros sub-schemas también son orphan).
+  - `packages/shared-schemas/src/all-schemas.test.ts` (edit: remover import si aplica + remover entries del smoke test loop).
+  - `packages/shared-schemas/src/primitives/ids.ts` (verificar si `cargoRequestIdSchema` queda orphan tras eliminación).
+  - `packages/shared-schemas/src/trip-request.ts` (verificar comentario que menciona `cargoRequest` — actualizar si refiere a concepto eliminado).
+- **LOC estimate**: ~-150 (delete schema + remove imports/refs). Net negative.
+- **Depends on**: T1.2 mergeado.
+- **Pre-discovery obligatorio** (broader que T1.2):
+  - `rg "cargoRequest|CargoRequest" --type ts -l` listar TODOS los archivos.
+  - Verificar consumers transitivos (imports indirectos de tests, primitives, etc.).
+  - Decisión final: eliminar todo el archivo `cargo-request.ts` vs preservar `cargoRequestIdSchema` si tiene uso.
+- **Acceptance** (T-S1.3 parcial):
+  - `rg "cargoRequestStatusSchema|cargoRequestSchema" packages/shared-schemas/` retorna 0 hits post-merge.
+  - `pnpm typecheck` + `pnpm test` verdes.
+  - Si `cargoRequestIdSchema` preservado: docstring explica por qué + uso esperado futuro (link a hipotético S2+).
+- **Rollback**: revert PR. Concepto vuelve al domain como estaba.
+
+### T1.4..T1.n: (placeholder) Resoluciones de divergencias adicionales Clase A/B/C si emergen
+
+Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adicional (e.g. el caso 4 `transportistaStatus` resulta tener valores propios diferenciados → A real, no H), se agrega T1.4+ siguiendo la misma plantilla atomizada. Baseline actual post-triage: solo Casos 5 y 1 son A reales; T1.4+ probablemente N/A.
 
 ### T1.3a..T1.3n: Resolución Clase B — una sub-task por divergencia breaking API
 
