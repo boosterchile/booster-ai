@@ -161,8 +161,11 @@ export function findDivergences(domainEnums, sqlEnums) {
  */
 export function renderMarkdown(divergences, args) {
   const lines = [];
+  lines.push('<!-- AUTO-GENERATED FILE — do not edit by hand. -->');
+  lines.push(
+    '<!-- Curated metadata (gate, triage stats, decisions) lives in inventory-classification.md -->',
+  );
   lines.push('---');
-  lines.push('gate: PENDING_PO');
   lines.push(`generated_at: ${new Date().toISOString()}`);
   lines.push(`source_domain: ${args.domainDir}`);
   lines.push(`source_schema: ${args.schemaFile}`);
@@ -187,7 +190,7 @@ export function renderMarkdown(divergences, args) {
   );
   lines.push('');
   lines.push(
-    'Tras clasificar, cambiar frontmatter `gate: PENDING_PO` → `gate: APPROVED_BY_PO <fecha>` para permitir que pre-commit hook acepte commits `feat(domain)`.',
+    'Tras clasificar, cambiar `gate: PENDING_PO` → `gate: APPROVED_BY_PO <fecha>` en el frontmatter de [`inventory-classification.md`](./inventory-classification.md) (gate vive ahí post refactor C+; este archivo es auto-generado por el script T1.1).',
   );
   lines.push('');
   lines.push('## Divergencias');

@@ -146,9 +146,21 @@ describe('findDivergences', () => {
 });
 
 describe('renderMarkdown', () => {
-  it('produces frontmatter with gate=PENDING_PO', () => {
+  it('opens with AUTO-GENERATED banner (post refactor C+)', () => {
     const md = renderMarkdown([], { domainDir: 'd', schemaFile: 's' });
-    expect(md).toMatch(/^---\ngate: PENDING_PO/);
+    expect(md.startsWith('<!-- AUTO-GENERATED FILE')).toBe(true);
+    expect(md).toContain('inventory-classification.md');
+  });
+
+  it('frontmatter has NO gate field (gate vive en classification.md post C+)', () => {
+    const md = renderMarkdown([], { domainDir: 'd', schemaFile: 's' });
+    // Extract frontmatter block.
+    const frontmatterMatch = md.match(/---\n([\s\S]*?)\n---/);
+    expect(frontmatterMatch).not.toBeNull();
+    const frontmatter = frontmatterMatch[1];
+    expect(frontmatter).not.toMatch(/^gate:/m);
+    expect(frontmatter).toMatch(/^generated_at:/m);
+    expect(frontmatter).toMatch(/^gate_threshold:/m);
   });
 
   it('includes divergence count in frontmatter', () => {

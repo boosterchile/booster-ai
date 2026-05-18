@@ -26,18 +26,20 @@ node scripts/repo-checks/check-adr-numbering.mjs --allow-legacy 028,034,035 || {
 }
 
 # T1.1 of S1a: bloquea commits que tocan packages/shared-schemas/src/domain/
-# si el drift inventory tiene gate: PENDING_PO (cubre SC-S1.0 enforcement).
-INVENTORY_FILE=".specs/s1-drift-coverage-e2e/inventory.md"
+# si el drift gate tiene PENDING_PO (cubre SC-S1.0 enforcement).
+# Post refactor C+: gate vive en inventory-classification.md (PO-curated),
+# no en inventory.md (auto-generated por script T1.1).
+CLASSIFICATION_FILE=".specs/s1-drift-coverage-e2e/inventory-classification.md"
 DOMAIN_DIR_PATTERN="packages/shared-schemas/src/domain/"
-if [ -f "$INVENTORY_FILE" ]; then
+if [ -f "$CLASSIFICATION_FILE" ]; then
   DOMAIN_STAGED=$(git diff --cached --name-only | grep "^${DOMAIN_DIR_PATTERN}" || true)
   if [ -n "$DOMAIN_STAGED" ]; then
-    GATE=$(head -3 "$INVENTORY_FILE" | grep '^gate:' | awk '{print $2}')
+    GATE=$(head -5 "$CLASSIFICATION_FILE" | grep '^gate:' | awk '{print $2}')
     if [ "$GATE" = "PENDING_PO" ]; then
       echo ""
       echo "[ERROR] Commits que tocan ${DOMAIN_DIR_PATTERN} bloqueados por gate SC-S1.0."
-      echo "        $INVENTORY_FILE tiene 'gate: PENDING_PO'."
-      echo "        Acción: revisar $INVENTORY_FILE + .specs/s1-drift-coverage-e2e/inventory-classification.md"
+      echo "        $CLASSIFICATION_FILE tiene 'gate: PENDING_PO'."
+      echo "        Accion: revisar inventory.md (auto) + $CLASSIFICATION_FILE (curated)."
       echo "        Tras clasificar A/B/C, cambiar 'gate: PENDING_PO' por 'gate: APPROVED_BY_PO <fecha>'."
       exit 1
     fi
