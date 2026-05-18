@@ -18,6 +18,31 @@ Este doc lista lo necesario para retomar **S1** (drift implementación + branche
 
 ## 2. Setup en el device nuevo (post-SSH)
 
+### 2.0 Acceso via Tailscale (MagicDNS)
+
+Ambos devices están en la tailnet `boosterchile@`. MagicDNS resuelve los hostnames sin `.tail-XXXXX.ts.net`:
+
+| Hostname Tailscale | IP | Rol |
+|---|---|---|
+| `mac-mini-de-felipe` | 100.74.31.63 | Mac Mini (este host — origen) |
+| `macbook-pro-de-felipe` | 100.94.169.21 | MacBook Pro (destino, donde continuarás S1) |
+
+**Conectar al MacBook**:
+
+```bash
+# Verificar reachability antes (desde el origen, sea cual sea)
+tailscale ping macbook-pro-de-felipe
+tailscale status | grep macbook-pro-de-felipe
+
+# SSH nativo (si el MacBook tiene Remote Login habilitado)
+ssh boosterchile@macbook-pro-de-felipe
+
+# O Tailscale SSH (sin manejar SSH keys, autoriza via tailnet)
+tailscale ssh boosterchile@macbook-pro-de-felipe
+```
+
+Si `tailscale ping` muestra latencia alta o cambia a relayed, ver `tailscale netcheck` para diagnóstico.
+
 ### 2.1 Clone o pull
 
 Si es **clone nuevo**:
@@ -105,13 +130,18 @@ Para S1 **NO se necesita** GCP — los integration tests corren contra Postgres 
 |---|---|---|
 | `.private/piloto-prospects.md` | 6 KB | Shortlist 5+5 prospects piloto, info comercial sensible (decisión OQ-S0.1 resuelta) |
 
-**Cómo transferir al MacBook nuevo** (si necesitas continuar el outreach desde allá):
+**Cómo transferir al MacBook (vía Tailscale)**:
 
 ```bash
-# Desde este Mac (origen):
-scp .private/piloto-prospects.md user@macbook:~/booster-ai/.private/piloto-prospects.md
+# Desde el Mac Mini (origen) — MagicDNS resuelve el hostname:
+scp .private/piloto-prospects.md \
+  boosterchile@macbook-pro-de-felipe:~/booster-ai/.private/piloto-prospects.md
 
-# O via 1Password / cualquier vault seguro tuyo.
+# O usando Tailscale SCP nativo (mismo resultado, autoriza por tailnet en lugar de SSH keys):
+tailscale file cp .private/piloto-prospects.md macbook-pro-de-felipe:
+# (luego en el MacBook: `tailscale file get` o queda en ~/Downloads/Tailscale)
+
+# Alternativa: via 1Password / cualquier vault seguro tuyo.
 ```
 
 Si no transfieres y necesitas la shortlist, se puede regenerar desde `docs/handoff/2026-05-18-piloto-outreach.md` (stub público con categorías + criterios fit) — perderás solo los scores/contactos específicos.
@@ -240,3 +270,4 @@ En el MacBook nuevo (clone fresco) esto no aplica.
 ## 10. Decision log
 
 - **2026-05-18** — Handoff producido al cierre de sesión post-Sprint S0. PO continúa desde MacBook vía SSH. Todo el trabajo de S0 está en `main`; pickup point claro en S1.
+- **2026-05-18** — Fix Tailscale: §2.0 agregada con hostnames MagicDNS reales (`mac-mini-de-felipe` ↔ `macbook-pro-de-felipe`) + comandos específicos (`tailscale ssh`, `tailscale file cp`); §3 reemplaza `user@macbook` genérico con hostname Tailscale correcto.
