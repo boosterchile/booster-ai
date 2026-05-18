@@ -44,4 +44,20 @@ if [ -f "$INVENTORY_FILE" ]; then
   fi
 fi
 
+# H-S1a-2: spec-canonical-drift — corre cuando hay cambios en specs/docs markdown
+# o en los source files típicamente referenciados por annotations.
+SPEC_OR_DOC_STAGED=$(git diff --cached --name-only | grep -E '^(\.specs|docs)/.*\.md$' || true)
+SOURCE_STAGED=$(git diff --cached --name-only | grep -E '^(apps/api/src/db/schema\.ts|packages/shared-schemas/src/domain/.*\.ts)$' || true)
+if [ -n "$SPEC_OR_DOC_STAGED" ] || [ -n "$SOURCE_STAGED" ]; then
+  echo "[pre-commit] Verificando spec-canonical-drift..."
+  node scripts/repo-checks/spec-canonical-drift.mjs --quiet || {
+    echo ""
+    echo "[ERROR] spec-canonical-drift detectó drift entre specs y source-of-truth."
+    echo "        Re-ejecutá sin --quiet para ver detalle:"
+    echo "        node scripts/repo-checks/spec-canonical-drift.mjs"
+    echo "        Ver convention en scripts/repo-checks/README.md §spec-canonical-drift."
+    exit 1
+  }
+fi
+
 echo "[pre-commit] OK"
