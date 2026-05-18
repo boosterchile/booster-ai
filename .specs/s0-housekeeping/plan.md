@@ -61,7 +61,7 @@
   - CURRENT.md actualizado con línea "GitLab CI eliminado, repo canónico = GitHub (PR #YYY)".
 - **Rollback**: revert PR (archivo vuelve).
 
-### T6: RFP auditor GLEC v3.0
+### T6: RFP auditor GLEC v3.0 [DONE-doc 2026-05-18 — envíos pendientes PO]
 - **Files**: `docs/compliance/glec-rfp.md` + `docs/compliance/README.md` (si no existe, ~30 LOC).
 - **LOC estimate**: ~130 (100 RFP + 30 README opcional).
 - **Depends on**: ninguna.
