@@ -1,73 +1,122 @@
-# Drift inventory — Análisis manual + clasificación (T1.1)
+# Drift inventory — Triage manual + clasificación (T1.1)
 
 - Auto-generado: [`inventory.md`](./inventory.md)
 - Sprint: S1a (drift schema/domain implementation)
-- Cubre: SC-S1.1 (clasificación) + input para SC-S1.0 gate
-- Status: **Propuesta del agente** (firma PO requerida)
+- Cubre: SC-S1.1 (clasificación) + gate SC-S1.0
+- Status: **Triaged 2026-05-18 por PO** — gate APPROVED_BY_PO
 
 ---
 
-## Resumen ejecutivo
+## Nomenclatura extendida (post-triage)
 
-Script `scripts/repo-checks/drift-inventory.mjs` detectó **10 divergencias** entre `packages/shared-schemas/src/domain/*.ts` y `apps/api/src/db/schema.ts`. Threshold gate es `> 10` (estrictamente mayor) → **gate SC-S1.0 PASA** automáticamente con exit code 0. Sin embargo, requiere clasificación A/B/C antes de T1.2.
+ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **4ta categoría: H = heurístico FP**.
 
-| Caso | Clase propuesta | Razón |
-|---|---|---|
-| 1 — `cargoRequestStatusSchema` (no-sql-match) | **Clase A — falso positivo heurístico** | El SQL probablemente usa otro nombre (verificar manual). TS-only refactor si confirma. |
-| 2 — `licenseClassSchema` (no-sql-match) | **Falso positivo** | SQL tiene `licenciaClaseEnum`; heurística falló en match `licenseClass*` ↔ `licenciaClase*`. |
-| 3 — `telemetrySourceSchema` (no-sql-match) | **Clase A — TS-only legítimo** | Telemetría source (gps/can_bus/manual) probablemente vive en columna text sin pgEnum. Acceptable TS-only o crear pgEnum (Clase C). |
-| 4 — `transportistaStatusSchema` (no-sql-match) | **Falso positivo** | SQL probablemente `empresaStatusEnum` o similar; cross-check manual. |
-| 5 — `tripEventTypeSchema` ↔ `tripEventTypeEnum` (value-mismatch) | **Clase A** | Domain ZERO valores en TS-only (lista vacía). SQL tiene 2 extras: `conductor_asignado`, `incidente_reportado`. Domain alinea agregando los 2 valores. |
-| 6 — `nivelCertificacionSchema` (no-sql-match) | **Clase A — TS-only legítimo o falso positivo** | Verificar si SQL tiene `certificacionNivelEnum` o similar; si no, TS-only. |
-| 7 — `tripMetricsSourceSchema` (no-sql-match) | **Clase A — TS-only legítimo** | Probablemente vive en columna text. Acceptable TS-only. |
-| 8 — **`tripStateSchema` ↔ `tripStatusEnum`** (value-mismatch CRÍTICO) | **Clase B** | 17 valores TS vs 9 SQL. Mapeo no 1:1. Requiere ADR de excepción + flag + sunset + posiblemente refactor del state machine completo. |
-| 9 — `roleSchema` (no-sql-match) | **Falso positivo** | SQL tiene `membershipRoleEnum`; heurística falló. |
-| 10 — `zonaStakeholderTipoSchema` (no-sql-match) | **Clase A — TS-only legítimo o falso positivo** | Verificar si SQL tiene equivalente. |
-
-**Distribución sugerida**:
-- **Clase A** (TS-only refactor): 4-6 casos (1, 3, 5, 6, 7, 10) — depende de cross-check manual.
-- **Clase B** (breaking API + flag + ADR): **1 caso crítico (tripStateSchema)**.
-- **Falsos positivos del heurístico**: ~3-4 casos (2, 4, 9 confirmados; otros por verificar).
-- **Clase C** (cambio SQL): 0 candidatos claros.
-
-## Análisis profundo: caso 8 — `tripStateSchema` ↔ `tripStatusEnum`
-
-### El problema
-
-| TS (`tripStateSchema`) | SQL (`tripStatusEnum`, `estado_viaje`) |
+| Clase | Descripción ADR-043 / extensión |
 |---|---|
-| 17 valores fine-grained | 9 valores coarse-grained |
-| `requested`, `offered_to_carrier`, `accepted`, `driver_assigned`, `driver_en_route`, `pickup_completed`, `in_transit`, `delivered`, `confirmed_by_shipper`, `completed_rated`, `carrier_rejected`, `carrier_timed_out`, `driver_rejected`, `cancelled_by_shipper`, `cancelled_by_carrier`, `failed`, `disputed` | `borrador`, `esperando_match`, `emparejando`, `ofertas_enviadas`, `asignado`, `en_proceso`, `entregado`, `cancelado`, `expirado` |
+| **A** | TS-only refactor: cambio en `domain/*.ts`, sin migration SQL. PR ≤100 LOC. |
+| **B** | Breaking API: requiere flag + doble-emit + sunset + ADR de excepción. |
+| **C** | Cambio SQL: migration + ADR de excepción + down-migration testeada. |
+| **H** | **Falso positivo heurístico** (nuevo, post-T1.1 triage): el script `drift-inventory.mjs` reportó divergencia pero **el SQL sí tiene equivalente** con naming distinto que el match heurístico no captura. Resolución: ajustar allowlist o mejorar `normalizeForMatch` (tracked en T1.0.heuristic-improvement, no bloqueante). |
 
-### Por qué es Clase B (no Clase A)
+> **Nota**: Clase H NO es modificación al ADR-043 — es categoría operacional propia del proceso de triage T1.1. Las migraciones reales que ejecuta T1.2-T1.4 siguen siendo A/B/C del ADR original. H casos NO requieren acción de refactor; solo ajustar el script (T1.0.heuristic-improvement).
 
-- **No es alineación 1:1**: el TS state machine es fine-grained (17 estados); el SQL es coarse-grained (9 estados). Reemplazar TS valores con SQL valores **elimina información de estado** (e.g. `carrier_rejected` vs `driver_rejected` ambos colapsan a `cancelado`).
-- **Consumers downstream esperan los 17 valores**: probablemente Wave 5 wake-word, eco-routing, coaching, etc. Refactor breaking.
-- **Decisión arquitectónica pendiente**: ¿el dominio debe ser fine-grained y traducir en el boundary HTTP, o coarse-grained alineado con SQL?
+---
 
-### Decisión propuesta (ADR-049 a producir en T1.3 si confirma Clase B)
+## Triage detallado por caso
 
-**Opción A** (recomendada): mantener TS fine-grained, agregar columna SQL `viajes.estado_detallado` con los 17 valores; `viajes.estado` queda como rollup coarse-grained de los 9. Esto es **Clase C** (migración SQL).
+### Caso 1 — `cargoRequestStatusSchema` (`no-sql-match`)
 
-**Opción B**: TS reduce a 9 valores; consumers downstream se actualizan. Breaking changes en lógica de negocio. **Clase B** con flag + sunset largo (≥2 sprints).
+- **Heurístico reportó**: sin match.
+- **Triage manual**: `grep pgEnum.*(cargo|carga|request|solicitud)` retorna solo `cargoTypeEnum` (tipo_carga, no status). El "status" de un cargo request probablemente vive en columna `trips.status` o en `cargoRequests.status` como columna text directa (no pgEnum).
+- **Clase**: **A** (legítimo) — schema TS no tiene equivalente pgEnum SQL; refactor TS-only si se decide alinear, o queda como TS-only legítimo.
 
-**Opción C**: mantener TS fine-grained, NO alinear con SQL; documentar como **excepción permanente** al ADR-043. Domain decoupled del SQL para este enum específico.
+### Caso 2 — `licenseClassSchema` (`no-sql-match`)
 
-### Sub-spec recomendada
+- **Heurístico reportó**: sin match.
+- **Triage manual**: ✅ `licenciaClaseEnum` (`licencia_clase`) existe en `schema.ts`. Match real con naming distinto que el heurístico `licenseClass*` ↔ `licenciaClase*` no captura.
+- **Clase**: **H** (falso positivo) — agregar match al script en T1.0.heuristic-improvement. Sin acción de refactor.
 
-Este caso solo merece su propia sub-spec `.specs/s1-drift-coverage-e2e/tripstate-alignment/spec.md` con análisis profundo, alternatives, decisión PO. Posiblemente se difiere a S2 o sprint dedicado.
+### Caso 3 — `telemetrySourceSchema` (`no-sql-match`)
 
-## Recomendación SC-S1.0
+- **Heurístico reportó**: sin match.
+- **Triage manual**: ✅ 2 candidatos en SQL — `tripEventSourceEnum` (origen_evento_viaje) y `routeDataSourceEnum` (fuente_dato_ruta). Probable: `telemetrySourceSchema` representa la fuente del dato telemétrico (CAN bus / GPS / manual), match con uno de los dos.
+- **Clase**: **H** — refinar match en script T1.0.heuristic-improvement.
 
-Aunque el script reporta exit 0 (10 divergencias = en el borde), el caso 8 (tripState) es estructuralmente Clase B+ y merece su propia sub-spec. **Recomendación**:
+### Caso 4 — `transportistaStatusSchema` (`no-sql-match`)
 
-1. **Resolver casos 5 (Clase A simple)** en T1.2a — agregar 2 valores SQL a `tripEventTypeSchema`.
-2. **Validar manualmente los 4 falsos positivos heurísticos** (casos 2, 4, 6, 9, 10) en T1.2b — confirmar SQL equivalent + actualizar inventory.md.
-3. **Diferir caso 8 (tripState)** a sub-spec dedicada `.specs/tripstate-alignment/`. Crear stub spec + plan en T1.2c. Implementación real en sprint dedicado (S1c o S2).
-4. **PO decide gate**: dado el split del trabajo, ¿se cambia frontmatter a `APPROVED_BY_PO` ahora y se procede con T1.2a/b/c, o se pausa hasta resolver caso 8 completo?
+- **Heurístico reportó**: sin match.
+- **Triage manual**: `empresaStatusEnum` (estado_empresa) existe; transportista es un tipo de empresa (membership), por lo que su status probablemente reusa el enum genérico de empresa.
+- **Clase**: **H** (probable) — si transportista reusa `empresaStatusEnum`, agregar match. Si tiene status propio diferenciado, sería **A**. Validar en T1.0.heuristic-improvement.
 
-## Acción PO
+### Caso 5 — `tripEventTypeSchema` (`value-mismatch`)
 
-Revisar este análisis. Si OK con el plan (T1.2a/b/c arrancan, caso 8 se difiere a sub-spec separada), cambiar frontmatter de `inventory.md` a `gate: APPROVED_BY_PO 2026-05-18` + agregar línea en este doc confirmando la clasificación.
+- **Heurístico reportó**: match con `tripEventTypeEnum` (tipo_evento_viaje), SQL tiene 2 valores extras: `conductor_asignado`, `incidente_reportado`.
+- **Triage manual**: ✅ confirmado. SQL es source-of-truth (ADR-043 §1); domain TS está incompleto.
+- **Clase**: **A** — agregar `conductor_asignado` y `incidente_reportado` a `tripEventTypeSchema`. PR ~30 LOC.
 
-Sin firma PO, `inventory.md` mantiene `gate: PENDING_PO` y pre-commit hook bloquea commits `feat(domain)`.
+### Caso 6 — `nivelCertificacionSchema` (`no-sql-match`)
+
+- **Heurístico reportó**: sin match.
+- **Triage manual**: ✅ `certificationLevelEnum` (nivel_certificacion) existe. Match real con naming inglés↔español.
+- **Clase**: **H** — agregar match en T1.0.heuristic-improvement.
+
+### Caso 7 — `tripMetricsSourceSchema` (`no-sql-match`)
+
+- **Heurístico reportó**: sin match.
+- **Triage manual**: ✅ La columna `source` de `tripMetrics` (en tabla `metricas_viaje`) usa `tripEventSourceEnum`. Reuso de enum, no enum propio.
+- **Clase**: **H** — agregar match (apunta al mismo enum que Caso 3).
+
+### Caso 8 — `tripStateSchema` (`value-mismatch` CRÍTICO)
+
+- **Heurístico reportó**: match con `tripStatusEnum`, 17 valores TS vs 9 SQL, mapeo no 1:1.
+- **Triage manual**: ✅ caso real, NO falso positivo. Requiere decisión arquitectónica (mantener TS fine-grained con boundary translation vs reducir TS a 9 estados vs columna SQL extendida).
+- **Clase**: **B+** — **DIFERIDO** a sub-spec dedicada `.specs/tripstate-alignment/` que se crea cuando arranque T1.x específico. **No bloquea S1a**.
+
+### Caso 9 — `roleSchema` (`no-sql-match`)
+
+- **Heurístico reportó**: sin match.
+- **Triage manual**: ✅ 2 candidatos: `membershipRoleEnum` (rol_membresia) y `chatSenderRoleEnum` (rol_remitente_chat). El match depende del contexto del schema TS.
+- **Clase**: **H** — agregar match en T1.0.heuristic-improvement (probablemente match con `membershipRoleEnum`).
+
+### Caso 10 — `zonaStakeholderTipoSchema` (`no-sql-match`)
+
+- **Heurístico reportó**: sin match.
+- **Triage manual**: `zoneTypeEnum` (tipo_zona) existe pero es genérico (`recogida`, `entrega`, `ambos`). Zonas de stakeholder pueden tener tipos distintos (zona industrial, comercial, rural, etc.) o ser un subset de zonas generales. **Requiere verificación adicional en el contenido del Zod schema**.
+- **Clase**: **A** (probable, legítimo TS-only) — pendiente confirmación durante T1.2.
+
+---
+
+## Resumen baseline post-triage
+
+| Clase | Conteo | Casos |
+|---|---|---|
+| **A (real, requiere refactor)** | 2-3 | 5 ✅ confirmado, 1 y 10 (probable) |
+| **B+ (diferido)** | 1 | 8 — sub-spec dedicada futura |
+| **C (cambio SQL)** | 0 | — |
+| **H (heurístico FP)** | 5-6 | 2, 3, 4, 6, 7, 9 |
+| **Total divergencias reales (A+B+C)** | **3-4** | (vs 10 reportadas por heurístico) |
+
+**Gate SC-S1.0**: 3-4 divergencias estructurales reales << threshold 10. **Gate APPROVED_BY_PO**.
+
+---
+
+## Acciones derivadas (no bloqueantes)
+
+1. **T1.0.heuristic-improvement** (no bloqueante, paralelo a T1.2+): mejorar `normalizeForMatch` en `drift-inventory.mjs` para reconocer:
+   - `licenseClass` ↔ `licenciaClase`
+   - `nivelCertificacion` ↔ `certificationLevel`
+   - `telemetrySource` ↔ `tripEventSource` (o `routeDataSource`)
+   - `role` ↔ `membershipRole` / `chatSenderRole`
+   - `transportistaStatus` ↔ `empresaStatus`
+
+   Re-correr script post-mejora debería reducir false positives a 0.
+
+2. **Sub-spec `tripstate-alignment`**: se crea cuando arranque T1.x dedicado (sprint posterior). En este sprint S1a, mención en `followup-state-machine-migration.md` como pendiente arquitectónico.
+
+3. **T1.2 arranca** con Caso 5 (Clase A confirmada) + verificar Casos 1 y 10 (probables Clase A legítima).
+
+---
+
+## Decision log
+
+- **2026-05-18 ~10:30 UTC** — Triage manual completo. Baseline real post-triage: 3-4 divergencias estructurales (vs 10 reportadas). Caso 8 diferido a sub-spec futura. 5-6 falsos positivos del heurístico → T1.0.heuristic-improvement no bloqueante. **Gate SC-S1.0 APPROVED_BY_PO**.

@@ -1,10 +1,14 @@
 ---
-gate: PENDING_PO
+gate: APPROVED_BY_PO 2026-05-18
 generated_at: 2026-05-18T14:22:30.670Z
+triaged_at: 2026-05-18T14:45:00Z
 source_domain: packages/shared-schemas/src/domain
 source_schema: apps/api/src/db/schema.ts
 divergences_total: 10
+divergences_post_triage_real: 3-4 (Clase A) + 1 diferido (Clase B+, caso 8 tripState)
+heuristic_false_positives: 5-6 (Clase H — ver inventory-classification.md)
 gate_threshold: 10
+classification_doc: inventory-classification.md
 ---
 
 # Drift inventory schema/domain — Sprint S1 T1.1
