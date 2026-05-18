@@ -17,4 +17,12 @@ fi
 echo "[pre-commit] Ejecutando lint-staged (Biome)..."
 npx lint-staged
 
+echo "[pre-commit] Verificando numeracion ADR (check-adr-numbering)..."
+node scripts/repo-checks/check-adr-numbering.mjs --allow-legacy 028,034,035 || {
+  echo ""
+  echo "[ERROR] Colision de numeros ADR detectada en docs/adr/."
+  echo "        Renombra el ADR nuevo al siguiente numero libre."
+  exit 1
+}
+
 echo "[pre-commit] OK"

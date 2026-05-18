@@ -30,7 +30,7 @@
   - Cada uno tiene primera línea con frontmatter YAML: `superseded_by: docs/handoff/CURRENT.md`, `archived_at: 2026-05-17`, `reason: "Reemplazado por production-readiness spec + handoff vivo"`.
 - **Rollback**: revert PR; archivos vuelven al raíz.
 
-### T3: scripts/check-adr-numbering.mjs + tests + pre-commit
+### T3: scripts/check-adr-numbering.mjs + tests + pre-commit [DONE 2026-05-17]
 - **Files**: `scripts/check-adr-numbering.mjs` + `scripts/check-adr-numbering.test.mjs` + edit `.husky/pre-commit` (+1 línea).
 - **LOC estimate**: ~110 (80 script + 25 tests + 5 husky).
 - **Depends on**: ninguna.
@@ -185,3 +185,4 @@ Total LOC neto estimado v2: ~1 200 LOC (T1 reducido + T9 reducido + T10 reorgani
 - **2026-05-17** — Devils-advocate: 5 P0 + 5 P1 + 4 P2 (review.md).
 - **2026-05-17** — **Aplicado v2**: T1 acotado a metodología (O-2); T9 split en T9a (S0) + T9b (S2) + T9c (S3) (O-1); T10 reforzado con criterios fit + dry-run PO + irreversibilidad (O-3); OQ-S0.1/S0.2 resueltas (O-4); estimación 8-10 días con buffer (O-5); waiver discriminado por categoría (O-6).
 - **2026-05-17** — **APPROVED por PO** junto con spec.md v2. T1 puede arrancar (con cooling-off recomendado por skill 20 §Solo-Developer Adaptation).
+- **2026-05-17** — T3 ejecutado con desviación de path: el script terminó en `scripts/repo-checks/check-adr-numbering.mjs` (workspace package nuevo `@booster-ai/repo-checks`) en lugar de `scripts/check-adr-numbering.mjs` declarado en plan. Razón: vitest v8 coverage no resuelve archivos fuera del project root del workspace; mover el script al workspace permite coverage gate ≥80/75/80/80 (resultado real: 93/95/100/93). Pre-commit hook actualizado al nuevo path. Decisión consistente con la intención del SC-S0.3 (script + tests + coverage + hook), no con el path literal.
