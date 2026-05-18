@@ -132,7 +132,7 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - (b) Down-migration completa de la tabla — solo si datos no críticos (verificado pre-rollback).
   - Acceptance test prueba ambas paths en staging.
 
-### T1.5: Tests integration drift sobre infra T1+T2
+### T1.5: Tests integration drift sobre infra T1+T2 [DONE 2026-05-18]
 
 - **Files**: `apps/api/test/integration/drift-alignment.integration.test.ts` (nuevo).
 - **LOC estimate** (adaptive, cubre O-7): `40 × patterns_aplicables` según inventario. Si 3 patterns (A+B+C), ~120 LOC. Si solo A, ~40 LOC. Anotado en `inventory.md` tras T1.1.
