@@ -40,7 +40,16 @@ Cada criterio es comprobable de forma binaria. La spec se considera **Implementa
 
 ### 3.2 Trip state machine package
 
-- [ ] **SC-S1.5** — `packages/trip-state-machine` implementado con XState v5. Estados desde `db/schema.ts` `tripStatusEnum`: `borrador`, `asignado`, `en_curso`, `entregado`, `cancelado`. Coverage ≥80/80/80/80.
+- [ ] **SC-S1.5** — `packages/trip-state-machine` implementado con XState v5. Estados canonical de la machine (subset documentado de `db/schema.ts` `tripStatusEnum`):
+
+  <!-- canonical-source: apps/api/src/db/schema.ts:tripStatusEnum -->
+  - `borrador`
+  - `asignado`
+  - `en_proceso`
+  - `entregado`
+  - `cancelado`
+
+  Coverage ≥80/80/80/80.
 - [ ] **SC-S1.6** — `apps/api/src/services/*` que mutan estado de trip consumen la state machine **detrás de flag** (cubre O-5 review). Lista IN-scope de call sites: `liquidar-trip.ts`, `confirmar-entrega-viaje.ts`, `asignar-conductor-a-assignment.ts`. Cualquier otro call site queda en `.specs/s1-drift-coverage-e2e/followup-state-machine-migration.md` con owner + sprint objetivo (S2 o S3).
 - [ ] **SC-S1.6b** (**NUEVO post-O-5**) — Flag `TRIP_STATE_MACHINE_ACTIVATED` declarado en `apps/api/src/config.ts` (default `true` en dev, `false` en staging primer deploy). Services mantienen branch legacy (string comparison) + branch machine durante 1 sprint. Tras S2 con telemetría limpia, flag OFF rama legacy → cleanup en S3.
 

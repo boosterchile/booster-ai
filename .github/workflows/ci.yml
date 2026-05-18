@@ -138,6 +138,27 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Spec canonical drift (H-S1a-2) — verifica annotations spec ↔ source-of-truth
+  # ---------------------------------------------------------------------------
+  spec-canonical-drift:
+    name: Spec canonical drift
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run spec-canonical-drift
+        run: node scripts/repo-checks/spec-canonical-drift.mjs
+
+  # ---------------------------------------------------------------------------
   # Build — cada app y package compila a producción
   # ---------------------------------------------------------------------------
   build:
@@ -171,7 +192,7 @@ jobs:
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, spec-canonical-drift, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -180,6 +201,7 @@ jobs:
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.spec-canonical-drift.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
