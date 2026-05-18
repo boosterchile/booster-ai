@@ -138,6 +138,27 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Drift checks — T1.1 schema/domain + H-S1a-2 spec ↔ source canonical drift.
+  # Cierra enforcement gap: pre-commit hooks son bypassable via --no-verify;
+  # CI hace la enforcement no-bypassable. Scripts solo usan Node stdlib —
+  # no requiere pnpm install ni deps externas.
+  # ---------------------------------------------------------------------------
+  drift-checks:
+    name: Drift checks (schema + spec)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: T1.1 drift-inventory (schema/domain)
+        run: node scripts/repo-checks/drift-inventory.mjs --quiet
+      - name: H-S1a-2 spec-canonical-drift (spec ↔ source)
+        run: node scripts/repo-checks/spec-canonical-drift.mjs
+
+  # ---------------------------------------------------------------------------
   # Build — cada app y package compila a producción
   # ---------------------------------------------------------------------------
   build:
@@ -171,7 +192,7 @@ jobs:
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, drift-checks, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -180,6 +201,7 @@ jobs:
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.drift-checks.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
