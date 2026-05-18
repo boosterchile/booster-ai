@@ -52,7 +52,7 @@
   - Política: "Desde ADR-040 (incluido), aplica disciplina 'un número por archivo'. Numeración pre-040 queda con colisiones documentadas para no romper referencias externas."
 - **Rollback**: revert PR.
 
-### T5: eliminar .gitlab-ci.yml
+### T5: eliminar .gitlab-ci.yml [DONE 2026-05-18]
 - **Files**: `git rm .gitlab-ci.yml` + commit mensaje `chore(ci): remove gitlab mirror — GitHub canonical (memoria PO)`.
 - **LOC estimate**: -78 (delta neto negativo).
 - **Depends on**: OQ-S0.2 resuelta (ninguna branch GitLab activa requiere migración).
