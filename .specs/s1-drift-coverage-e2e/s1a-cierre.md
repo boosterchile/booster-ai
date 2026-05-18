@@ -1,14 +1,17 @@
 ---
-gate: PENDING_PO
+gate: APPROVED_BY_PO
 sprint: S1a
 closed_at: 2026-05-18
+firma_po: 2026-05-18
+firma_opcion: A
+conditions: 3
 ---
 
-# Cierre Sprint S1a — drift schema/domain (Bloque A done; Bloque B diferido)
+# Cierre Sprint S1a — drift schema/domain (Bloque A done; Bloque B → S2)
 
 - Plan: [`plan-s1a.md`](./plan-s1a.md)
 - Spec: [`spec.md`](./spec.md) (Approved v2)
-- Status: **DRAFT — pendiente firma PO** para arranque S1b vs Block B placement.
+- Status: **APPROVED_BY_PO 2026-05-18 — Opción A con 3 condiciones** (ver §11).
 
 ---
 
@@ -147,16 +150,14 @@ Los 4 hallazgos meta del sprint están documentados en detalle en [`inventory-cl
 
 ---
 
-## 9. Firma PO requerida
+## 9. Firma PO
 
-Para cerrar S1a y desbloquear S1b, el PO debe firmar una de las **4 opciones explícitas** (silencio ≠ firma):
+- [x] **A — APROBADA 2026-05-18** — S1b arranca; Bloque B → S2 (lane paralela); sub-spec `tripstate-alignment` creada antes del 2026-06-01. Aprobada **con 3 condiciones** (ver §11).
+- [ ] B — no aplicable.
+- [ ] C — descartada por PO (razones en §11).
+- [ ] D — n/a.
 
-- [ ] **A — RECOMENDADA — S1b arranca; Bloque B → S2 (lane paralela); sub-spec `tripstate-alignment` creada antes del 2026-06-01**. Pro: cierre limpio + compromiso con fecha. Con: SC-S1.6/SC-S1.6b siguen 1 sprint más.
-- [ ] **B — S1b arranca; Bloque B se incorpora a S1b** (S1b se expande de 4-6 a 7-9 días; `plan-s1b.md` requiere edit). Pro: no requiere nueva sub-spec. Con: dilata S1b + mezcla scope.
-- [ ] **C — S1a NO cierra; ejecutar Bloque B previo al cierre AHORA** (T1.6 + T1.7 contra los 5 canonical states de SC-S1.5; sub-spec `tripstate-alignment` en paralelo S2). Pro: cierra todos los SCs. Con: extiende S1a 2-3 días.
-- [ ] **D — Otro** (especificar).
-
-**Status**: **firma pendiente**. Si el PO no firma explícitamente, S1a NO cierra (Opción A no es default).
+**Status**: **APPROVED_BY_PO 2026-05-18 con Opción A + 3 condiciones**. Detalle vinculante en §11.
 
 ---
 
@@ -171,3 +172,53 @@ Para cerrar S1a y desbloquear S1b, el PO debe firmar una de las **4 opciones exp
 - **2026-05-18 ~16:30 UTC** — Cierre S1a redactado (DRAFT v1) con recomendación Bloque B → sub-spec `tripstate-alignment`. Pendiente firma PO.
 - **2026-05-18 ~16:50 UTC** — **Devils-advocate v1** sobre el cierre. Objeciones P0: (1) la justificación "build on sand" contradice spec §SC-S1.5 (5 canonical states ya nombrados), (2) "deferral implícito" desde silencio PO es self-laundering. Objeción P1: follow-up sin owner/fecha/trigger. Objeción P2: alternativa C dismissed sin steelman.
 - **2026-05-18 ~17:00 UTC** — **DRAFT v2**: §6 reescrito reconociendo que Caso 8 es boundary translation no foundational; justificación deferral cambia a "scope-out, no sequencing"; §9 reescrito para forzar firma explícita (silencio ≠ default); §10 acepta deferral como propuesta del agente, no decisión PO. Alternativas A/B/C/D steelmanned con compromiso de fecha 2026-06-01 para sub-spec `tripstate-alignment` en Opción A.
+- **2026-05-18 ~17:25 UTC** — **APPROVED_BY_PO Opción A + 3 condiciones** (§11). Sin estas tres, A es deferral hollow; con ellas, es disciplina auditable. C descartada por sprint discipline + sub-spec necesaria independientemente + estimado optimista. B descartada por mezclar concerns. Gate sube a `APPROVED_BY_PO`. Próximo paso: merge #298, próxima sesión arranca `/spec tripstate-alignment`.
+
+---
+
+## 11. Firma PO 2026-05-18 — Opción A con 3 condiciones (vinculantes)
+
+### Razones del PO para descartar B y C (verbatim)
+
+> **C es genuinamente defendible post-devils-advocate.** Se descarta por tres razones combinadas:
+>
+> 1. **Sprint discipline.** S1a se scopea como drift-elimination methodology + tooling. Bloque A ejecutó ese scope limpio. Sumar Bloque B post-hoc porque técnicamente se puede es exactamente el scope creep que vuelve los sprints administrativamente irrelevantes.
+> 2. **La sub-spec `tripstate-alignment` es necesaria independientemente del timing.** Incluso si scaffoldás la máquina hoy contra los 5 canonical states, la boundary translation (17 TS ↔ 5 machine ↔ 9 SQL) sigue siendo decisión arquitectónica que merece análisis propio. Hacer la máquina antes que la sub-spec produce decisiones implícitas sobre la translation que después hay que revertir o documentar retroactivamente. Sub-spec primero → la máquina nace con boundaries explícitas.
+> 3. **2-3 días para state machine scaffold honestamente hecho es optimista.** Si genuinamente toma 2-3 días, probablemente fue <quote>MVP</quote>. Si toma 5-7 (más realista), extendés S1a substantialmente. El honest estimate convierte C en "extender S1a una semana" — y a esa escala ya es S2 con otro nombre.
+>
+> **B la descarto rápido**: bundlear state machine work con coverage/Playwright mezcla concerns sin razón. S1b worse off, Bloque B worse off.
+
+### Condición 1 — Acceptance concreto del sub-spec antes del 2026-06-01
+
+`.specs/tripstate-alignment/spec.md` debe contener, antes del **2026-06-01** (no después), las siguientes secciones materiales:
+
+- **§boundary-translation** — los 3 niveles documentados (17 valores TS extendidos / 5 canonical machine / 9 SQL `tripStatusEnum`) + spec de la mapping function (qué TS values colapsan a qué canonical, qué canonical maps a qué SQL).
+- **§scope** — qué entra a S2 vs qué queda para sprints posteriores. NO todo va a entrar en un sprint; el spec debe declarar el cut explícito.
+- **§SCs** — numerados y measurable. No prose-only; cada SC debe ser pasable/no-pasable mecánicamente.
+- **§risks** — al menos 3 riesgos reales (no boilerplate). Ejemplos esperables: divergencia runtime entre machine y SQL, breaking change para consumers fuera de IN-scope, ambigüedad en mapping reversible.
+- **Gate** — frontmatter YAML con `gate: PENDING_PO` o `APPROVED_BY_PO` explícito al cierre del documento.
+
+**Verificación 2026-06-01**: si el sub-spec no existe con esas secciones materiales, el deferral falló su gobernanza. Acción correctiva entonces: re-evaluar si el work se completa, se trasapasa, o se reclasifica como deuda explícita.
+
+### Condición 2 — Spike permitido entre hoy y 2026-06-01, NO como implementación
+
+Si entre hoy y 2026-06-01 querés exercise la máquina contra los 5 canonical states para validar assumptions antes de redactar el spec:
+
+- **OK**: branch spike descartable, no merge. Sirve como insumo del sub-spec.
+- **NO OK**: ejecutar T1.6/T1.7 disfrazado de "spike" y mergear. Esto sería **laundering C disfrazado de A** — la distinción importa para auditabilidad.
+
+El spike, si ocurre, vive en branch nombrado `spike/tripstate-machine-exploration` y NO se mergea a main. Cualquier output útil se cita en el sub-spec.
+
+### Condición 3 — Clean break del sprint S1a
+
+Tras merge de [PR #298](https://github.com/boosterchile/booster-ai/pull/298), **S1a está cerrado**. Cualquier work sobre `tripstate` posterior vive en:
+
+- **Sub-spec `.specs/tripstate-alignment/`** (cuando se cree).
+- **Plan S2** (cuando incluya Bloque B).
+- **Branch spike descartable** (Condición 2).
+
+NO vive en "todavía estamos cerrando S1a". `docs/handoff/CURRENT.md` debe decir explícitamente: _"S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01"_.
+
+### Lectura de la firma para sesiones futuras
+
+Si una sesión futura abre este archivo y ve `gate: APPROVED_BY_PO + firma_opcion: A + conditions: 3`, debe leer §11 entero antes de tocar nada relacionado con `trip-state-machine` o `tripStateSchema`. Las 3 condiciones son vinculantes, no decorativas.

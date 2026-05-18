@@ -1,14 +1,16 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-18 (Sprint S1a **Bloque A cerrado** — T1.S1a.cierre DRAFT pendiente firma PO)
+**Última actualización**: 2026-05-18 (Sprint **S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01** — firma PO Opción A + 3 condiciones, ver [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
 ---
 
-## Sprint S1a drift schema/domain — Bloque A CERRADO (2026-05-18)
+## Sprint S1a drift schema/domain — CERRADO (2026-05-18, firma PO Opción A)
 
-Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-coverage-e2e/plan-s1a.md). Cierre formal en [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) — **DRAFT, pendiente firma PO** sobre placement de Bloque B (recomendación: diferir a sub-spec `tripstate-alignment`).
+Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-coverage-e2e/plan-s1a.md). Cierre formal en [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) — **gate APPROVED_BY_PO 2026-05-18, Opción A con 3 condiciones vinculantes** (ver §11).
+
+**S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01.**
 
 ### Cierre por tarea (Bloque A)
 
@@ -23,9 +25,17 @@ Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-c
 
 **Baseline drift final**: 1 A (resuelta) + 1 I (annotada) + 1 B+ (diferida) + 0 C + 6 H = **0 drift estructural accionable**.
 
-### Bloque B — diferido
+### Bloque B — diferido a S2 (firma PO Opción A + 3 condiciones, [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
 
-T1.6 (XState scaffold) + T1.7a/b/c/d (wiring 3 services + followup doc) **no ejecutadas**. Recomendación documentada en `s1a-cierre.md` §6: incorporar a sub-spec `.specs/tripstate-alignment/` (caso 8 — `tripStateSchema` 17 TS vs 9 SQL) cuando arranque T1.x dedicado. Justificación: sequencing arquitectónico (definir estados canónicos antes de scaffold de machine).
+T1.6 (XState scaffold) + T1.7a/b/c/d (wiring 3 services + followup doc) **no ejecutadas**. Ejecutan en S2 (lane paralela a S1b).
+
+**Condición 1**: sub-spec `.specs/tripstate-alignment/spec.md` creada **antes del 2026-06-01** con acceptance material (§boundary-translation con 17 TS / 5 machine / 9 SQL mapping + §scope cut + §SCs measurable + §risks ≥3 reales + gate explícito). Si el spec no existe con esas secciones al 2026-06-01, el deferral falló su gobernanza — acción correctiva re-evalúa work/traspaso/deuda explícita.
+
+**Condición 2**: spike `spike/tripstate-machine-exploration` permitido como exploración, NO mergeable. Sirve solo como insumo del sub-spec. Ejecutar T1.6/T1.7 disfrazado de spike sería laundering C disfrazado de A.
+
+**Condición 3**: tras merge de PR #298, S1a está cerrado. `tripstate` work posterior vive en sub-spec / plan-s2 / spike — no en "todavía estamos cerrando S1a".
+
+Razones del PO para descartar B (mezcla concerns S1b worse off) y C (sprint discipline + sub-spec necesaria independiente del timing + estimado optimista) en §11.
 
 ### Taxonomía drift extendida (deliverable durable)
 
@@ -132,13 +142,14 @@ Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/
 
 **Bloque B Sprint S1** (XState `trip-state-machine` + wiring): **diferido** a sub-spec `.specs/tripstate-alignment/` cuando arranque T1.x dedicado (ver `s1a-cierre.md` §6 — pendiente firma PO).
 
-**Acción inmediata PO** (sin esperar al arranque de S1b):
+**Acción inmediata PO** (S1a firma ya aplicada; S1b listo para arrancar):
 
-1. **Firmar `s1a-cierre.md` §9** (decisión sobre Bloque B placement) — **bloquea arranque S1b**.
-2. **Enviar RFP GLEC** (template en `docs/compliance/glec-rfp.md` §7.2). Razón: lead time auditor 4-8 sem.
-3. **Enviar RFP pentest** (template en `docs/audits/security-rfp.md` §7.2). Razón: lead time vendor 4-6 sem.
-4. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto el más largo.
-5. **Decidir OQ-S0.3** (qué hacer con remote `origin` GitLab).
+1. **Enviar RFP GLEC** (template en `docs/compliance/glec-rfp.md` §7.2). Razón: lead time auditor 4-8 sem.
+2. **Enviar RFP pentest** (template en `docs/audits/security-rfp.md` §7.2). Razón: lead time vendor 4-6 sem.
+3. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto el más largo.
+4. **Decidir OQ-S0.3** (qué hacer con remote `origin` GitLab).
+
+**Próxima sesión de agente** (post-merge #298): `/spec tripstate-alignment` siguiendo Condición 1 de [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11. Target del spec: antes del 2026-06-01.
 
 ---
 

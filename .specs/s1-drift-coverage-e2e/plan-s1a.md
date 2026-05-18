@@ -208,11 +208,11 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
   - Cada OUT-of-scope con owner (S2 o S3) + justificación de por qué no se migra en S1a.
 - **Rollback**: revert PR (doc-only).
 
-### T1.S1a.cierre: Decisión cierre S1a → arranque S1b (gate) [DRAFT — pendiente firma PO 2026-05-18]
+### T1.S1a.cierre: Decisión cierre S1a → arranque S1b (gate) [DONE 2026-05-18 — APPROVED_BY_PO Opción A + 3 condiciones]
 
-- **Files**: `.specs/s1-drift-coverage-e2e/s1a-cierre.md` (creado), `inventory-classification.md` §S1a — Outcomes (sección agregada), `docs/handoff/CURRENT.md` (updated).
-- **LOC estimate**: ~70 (doc con tabla cuantitativa) — actual: ~200 (cierre + outcomes + tablas SC + recomendación Bloque B).
-- **Depends on**: T1.1, T1.2, T1.3, T1.5 mergeados (Bloque A) + decisión PO sobre Bloque B.
+- **Files**: `.specs/s1-drift-coverage-e2e/s1a-cierre.md` (gate `APPROVED_BY_PO`, §11 vinculante), `inventory-classification.md` §S1a — Outcomes, `docs/handoff/CURRENT.md` (updated).
+- **LOC estimate**: ~70 (doc con tabla cuantitativa) — actual: ~280 (cierre + outcomes + §11 firma + 3 condiciones vinculantes).
+- **Depends on**: T1.1, T1.2, T1.3, T1.5 mergeados (Bloque A) + firma PO sobre Bloque B (resuelta: Opción A).
 - **Acceptance** (cubre O-9 cuantitativo):
   - Tabla LOC mergeado vs planificado por task.
   - Ratio agregado Bloque A+B ≥40% **mandatorio** para arranque S1b.
