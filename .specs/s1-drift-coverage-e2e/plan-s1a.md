@@ -18,7 +18,7 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
 
 ## Tasks (15+ atómicas; estructura recurrente para T1.2/T1.7)
 
-### T1.1: Inventario automatizado drift schema/domain — con enforcement
+### T1.1: Inventario automatizado drift schema/domain — con enforcement [DONE 2026-05-18]
 
 - **Files**: `scripts/repo-checks/drift-inventory.mjs` (nuevo, perm) + `.specs/s1-drift-coverage-e2e/inventory.md` (output) + edit `.husky/pre-commit` (~5 LOC adicional check).
 - **LOC estimate**: ~80 (script) + ~50 (markdown output con frontmatter `gate: PENDING_PO`) + ~5 (hook).
