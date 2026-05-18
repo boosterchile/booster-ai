@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -44,8 +44,9 @@ describe('parseArgs', () => {
 describe('findCollisions', () => {
   let tmp;
   beforeEach(() => {
-    tmp = join(tmpdir(), `adrs-${Date.now()}-${Math.random()}`);
-    mkdirSync(tmp, { recursive: true });
+    // mkdtempSync: atomic + cryptographically secure random suffix; avoids
+    // CodeQL js/file-creation-in-temp-dir (race condition risk in tmpdir).
+    tmp = mkdtempSync(join(tmpdir(), 'adrs-'));
   });
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
@@ -109,8 +110,7 @@ describe('main (integration)', () => {
   let stdoutSpy;
   let stderrSpy;
   beforeEach(() => {
-    tmp = join(tmpdir(), `adrs-main-${Date.now()}-${Math.random()}`);
-    mkdirSync(tmp, { recursive: true });
+    tmp = mkdtempSync(join(tmpdir(), 'adrs-main-'));
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
