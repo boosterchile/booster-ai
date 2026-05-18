@@ -41,7 +41,7 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
   - Tests cubren los nuevos matches en `drift-inventory.test.mjs`.
 - **Rollback**: revert PR. Script funcional sin mappings extra.
 
-### T1.2: Caso 5 — `tripEventTypeSchema` agregar 2 valores SQL faltantes
+### T1.2: Caso 5 — `tripEventTypeSchema` agregar 2 valores SQL faltantes [DONE 2026-05-18]
 
 > **Scope cerrado post-triage**: T1.2 cubre **solo el Caso 5** (aditivo, Clase A). El Caso 1 (`cargoRequestStatusSchema` TS-only-orphan, eliminación) se mueve a **T1.3 separado** por razones de bisectability + perfil de riesgo distinto (aditivo vs destructivo).
 
@@ -53,7 +53,7 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
 - **Depends on**: T1.1 mergeado (gate SC-S1.0 APPROVED) + Discovery T1.2 completado (0 exhaustive matching consumers, 0 runtime parse, 2 valores YA emitidos en services).
 - **Acceptance** (T-S1.3 parcial):
   - `tripEventTypeSchema` tiene exactamente **14 valores** (12 actuales + `conductor_asignado` + `incidente_reportado`).
-  - Test **whitelist guardrail** en `all-schemas.test.ts` que valida `tripEventTypeSchema.options` contra listado explícito de los 14 valores esperados (detecta remociones silenciosas en refactors futuros).
+  - Test **whitelist guardrail** en `all-schemas.test.ts` que valida `tripEventTypeSchema.options` contra listado explícito de los **19 valores esperados** (17 existentes + 2 nuevos; detecta remociones silenciosas en refactors futuros).
   - Test que `tripEventTypeSchema.parse('conductor_asignado')` y `.parse('incidente_reportado')` no lanzan.
   - `pnpm --filter @booster-ai/shared-schemas test` verde.
 - **Rollback**: revert PR. Cero impacto runtime (Zod no se usa en `.parse()` runtime — ver Hallazgo H-S1a-1 en spec §12.5).

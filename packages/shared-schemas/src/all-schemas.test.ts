@@ -355,6 +355,56 @@ describe('site-settings', () => {
   });
 });
 
+describe('tripEvent — whitelist guardrail (Sprint S1a T1.2)', () => {
+  /**
+   * Listado explícito de los 19 valores esperados en `tripEventTypeSchema`,
+   * alineado con `tripEventTypeEnum` SQL (`apps/api/src/db/schema.ts`).
+   *
+   * Por qué whitelist: un test "los 2 nuevos parsean" no detecta remoción
+   * silenciosa de valores en refactors futuros. Esta lista actúa como
+   * guardrail — cualquier cambio al enum requiere actualizar esta lista
+   * explícitamente. Drift inverso bloqueado.
+   *
+   * Orden idéntico al SQL para que `tripEventTypeSchema.options` haga
+   * match exacto con `toEqual()`.
+   */
+  const EXPECTED_TRIP_EVENT_TYPES = [
+    'intake_iniciado',
+    'intake_capturado',
+    'matching_iniciado',
+    'ofertas_enviadas',
+    'oferta_aceptada',
+    'oferta_rechazada',
+    'oferta_expirada',
+    'asignacion_creada',
+    'conductor_asignado',
+    'recogida_confirmada',
+    'entrega_confirmada',
+    'cancelado',
+    'carbono_calculado',
+    'certificado_emitido',
+    'telemetria_primera_recibida',
+    'telemetria_perdida',
+    'ruta_desviada',
+    'disputa_abierta',
+    'incidente_reportado',
+  ] as const;
+
+  it(`tripEventTypeSchema tiene exactamente ${EXPECTED_TRIP_EVENT_TYPES.length} valores (whitelist)`, () => {
+    expect(tripEvent.tripEventTypeSchema.options).toEqual(EXPECTED_TRIP_EVENT_TYPES);
+  });
+
+  it('valores agregados en T1.2 (caso 5 de inventory) parsean correctamente', () => {
+    expect(tripEvent.tripEventTypeSchema.parse('conductor_asignado')).toBe('conductor_asignado');
+    expect(tripEvent.tripEventTypeSchema.parse('incidente_reportado')).toBe('incidente_reportado');
+  });
+
+  it('rechaza valores fuera del enum', () => {
+    expect(() => tripEvent.tripEventTypeSchema.parse('valor_inventado')).toThrow();
+    expect(() => tripEvent.tripEventTypeSchema.parse('')).toThrow();
+  });
+});
+
 describe('domain modules — importables sin errores (schemas executados al import)', () => {
   const modules = {
     assignment,
