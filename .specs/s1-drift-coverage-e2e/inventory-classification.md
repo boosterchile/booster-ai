@@ -17,26 +17,38 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 | **B** | Breaking API: requiere flag + doble-emit + sunset + ADR de excepción. |
 | **C** | Cambio SQL: migration + ADR de excepción + down-migration testeada. |
 | **H** | **Falso positivo heurístico** (nuevo, post-T1.1 triage): el script `drift-inventory.mjs` reportó divergencia pero **el SQL sí tiene equivalente** con naming distinto que el match heurístico no captura. Resolución: ajustar allowlist o mejorar `normalizeForMatch` (tracked en T1.0.heuristic-improvement, no bloqueante). |
+| **I** | **Intentional pre-materialization** (nuevo, post-T1.3 discovery): schema TS existe **deliberadamente antes** de su contraparte SQL, con **dependencias estructurales documentadas** (ADRs, skills, FKs activas desde otros schemas). No es drift accidental, no es FP heurístico, no es decisión arquitectónica pendiente — es **scaffolding deliberado del roadmap**. Anotación obligatoria en código vía tag `@drift-status intentional-pre-materialization` + campos `@materialization-trigger`, `@depends-on`, `@review-on` para que sea machine-readable. Resolución: drift-inventory script ignora schemas con la tag (tracked en T1.x.parser, no bloqueante). |
 
-> **Nota**: Clase H NO es modificación al ADR-043 — es categoría operacional propia del proceso de triage T1.1. Las migraciones reales que ejecuta T1.2-T1.4 siguen siendo A/B/C del ADR original. H casos NO requieren acción de refactor; solo ajustar el script (T1.0.heuristic-improvement).
+> **Nota sobre Clases H + I**: NO son modificaciones al ADR-043 — son **categorías operacionales** propias del proceso de triage de Booster AI. Las migraciones reales que ejecuta T1.2-T1.n siguen siendo A/B/C del ADR original. H/I NO requieren acción de refactor; solo ajustar el script (T1.0.heuristic-improvement para H; T1.x.parser para I).
+>
+> **Distintivos entre Clases**:
+> - **A vs I**: A requiere alinear TS con SQL (acción); I requiere DOCUMENTAR que TS existe antes que SQL deliberadamente (anotación + dependencias).
+> - **H vs I**: H es bug del heurístico (SQL existe pero el script no lo encontró); I es realidad estructural (SQL no existe todavía pero hay roadmap documentado).
+> - **B+ vs I**: B+ (caso 8 tripState) es decisión arquitectónica pendiente con análisis abierto; I es decisión ya tomada (el roadmap está en ADRs vivos) — solo falta la materialización del SQL.
 
 ---
 
 ## Triage detallado por caso
 
-### Caso 1 — `cargoRequestStatusSchema` (`no-sql-match`) — CERRADO
+### Caso 1 — `cargoRequestStatusSchema` (`no-sql-match`) — RECLASIFICADO POST-DISCOVERY T1.3
 
 - **Heurístico reportó**: sin match.
-- **Triage profundo** (`rg cargoRequest --type ts apps/ packages/`):
-  - **0 consumers en `apps/`** (todo el código).
-  - **0 tabla SQL** `cargo_requests`, **0 pgEnum** cargoRequest*.
-  - Referencias: solo `domain/cargo-request.ts` (definición), `primitives/ids.ts` (`cargoRequestIdSchema`), `all-schemas.test.ts` (smoke test), y comentario en `trip-request.ts` que dice _"esto NO es un cargoRequest completo… matching tentativo produce cargoRequest real"_.
-  - Veredicto: schema TS-only **orphan** — el dominio define el concepto pero **nunca se materializó** en SQL ni en código. Diseño legacy abandonado (trips fueron el modelo dominante).
-- **Clase**: **A — sub-tipo "TS-only-orphan"**. Acción T1.2: investigar abandono y decidir entre:
-  - (a) Eliminar `cargoRequestStatusSchema` + `cargoRequestSchema` completo del domain (PR de cleanup).
-  - (b) Mantener como "concepto TS-future documentado" si hay roadmap futuro para cargo_requests separados de trips.
+- **Triage profundo inicial T1.1** (`rg cargoRequest --type ts apps/ packages/`): 0 consumers en `apps/`, 0 tabla SQL, 0 pgEnum cargoRequest*. **Diagnóstico inicial T1.1 (errado)**: schema TS-only orphan, acción = eliminar.
+- **Discovery exhaustivo T1.3** (8 puntos del checklist PO, `.specs/s1-drift-coverage-e2e/t1.3-discovery.md`):
+  - `cargoRequestIdSchema` **YA es FK estructural** en `tripSchema.cargo_request_id` (concepto integrado al dominio Trip canónico vigente).
+  - **4 ADRs vivos + 1 skill core** describen `CargoRequest` como concepto del producto:
+    - ADR-006 (WhatsApp NLU): criterio acceptance _"CargoRequest válido desde conversación de 4-6 turnos"_.
+    - ADR-008 (PWA multirol): `NewCargoRequest.tsx` route planificada.
+    - ADR-010 (marketing+commerce): onboarding wizard _"Crea tu primera carga"_.
+    - skill `empty-leg-matching`: `cargoRequest: CargoRequest` input central del algoritmo.
+  - Comentario en `trip-request.ts` que parecía concept-orphan = **roadmap explícito del Slice 2** del flujo WhatsApp NLU.
+- **Clase post-T1.3**: **I — Intentional pre-materialization** (categoría nueva, ver §Nomenclatura).
 
-  Recomendación pre-T1.2: **(a) eliminar** — 24 días de historia del proyecto sin uso real sugiere abandono claro.
+**Acción T1.3 aplicada (Opción C firmada PO)**:
+1. Annotación machine-readable en `domain/cargo-request.ts` con `@drift-status intentional-pre-materialization` + `@materialization-trigger` + `@depends-on` + `@review-on`.
+2. Esta entrada reclasificada como **instancia de Clase I**, no de Clase A.
+3. Schema **NO se elimina** — se mantiene como scaffolding deliberado.
+4. **Follow-up no bloqueante**: T1.x.parser en `plan-s1a.md` agregará parsing de `@drift-status` al drift-inventory script para que ignore automáticamente schemas Clase I anotados.
 
 ### Caso 2 — `licenseClassSchema` (`no-sql-match`)
 
@@ -97,17 +109,18 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 
 ---
 
-## Resumen baseline post-triage (CERRADO sin rangos)
+## Resumen baseline post-triage (CERRADO sin rangos) — UPDATED post-T1.3
 
 | Clase | Conteo | Casos |
 |---|---|---|
-| **A (real, requiere refactor)** | **2** | **5** (agregar 2 valores SQL faltantes) + **1** (TS-only-orphan, eliminar) |
-| **B+ (diferido)** | **1** | **8** — sub-spec dedicada futura |
+| **A (real, requiere refactor)** | **1** | **5** (agregar 2 valores SQL faltantes) — DONE en T1.2 |
+| **I (Intentional pre-materialization)** | **1** | **1** (`cargoRequestStatusSchema` — annotada en T1.3) |
+| **B+ (diferido a sub-spec)** | **1** | **8** (`tripStateSchema` — sub-spec dedicada futura) |
 | **C (cambio SQL)** | **0** | — |
 | **H (heurístico FP)** | **6** | **2, 3, 4, 6, 7, 9, 10** (7 casos; verificar que `transportistaStatus` reusa empresaStatusEnum durante T1.0.heuristic-improvement → si no, sería A) |
-| **Total divergencias estructurales reales (A+B+C)** | **3** | vs 10 reportadas por heurístico |
+| **Total divergencias estructurales reales (A+B+C)** | **2** | vs 10 reportadas por heurístico (post-T1.3: 1 A resuelta + 1 I anotada + 1 B+ diferida = 0 drift estructural accionable en S1a) |
 
-**Gate SC-S1.0**: 3 divergencias estructurales reales (2 A + 1 B+ diferido) << threshold 10. **Gate APPROVED_BY_PO 2026-05-18**.
+**Gate SC-S1.0**: APPROVED_BY_PO 2026-05-18. Baseline final post-T1.2+T1.3: **0 drift estructural accionable** en S1a (Case 5 ya alineado, Case 1 reclasificado como Clase I + annotación machine-readable, Case 8 diferido a sub-spec dedicada).
 
 > **Nota sobre Caso 4** (`transportistaStatus`): clasificado **H probable** pero sujeto a verificación durante T1.0.heuristic-improvement. Si el schema `transportistaStatusSchema` reusa los mismos valores que `empresaStatusEnum`, es H confirmado. Si tiene valores propios diferenciados, se reclasifica a A en ese PR (no bloquea S1a — el ajuste a la baseline ocurre en T1.0.heuristic-improvement post-merge).
 
@@ -133,3 +146,7 @@ ADR-043 original define 3 clases (A/B/C). El triage T1.1 reveló necesidad de **
 ## Decision log
 
 - **2026-05-18 ~10:30 UTC** — Triage manual completo. Baseline real post-triage: 3-4 divergencias estructurales (vs 10 reportadas). Caso 8 diferido a sub-spec futura. 5-6 falsos positivos del heurístico → T1.0.heuristic-improvement no bloqueante. **Gate SC-S1.0 APPROVED_BY_PO**.
+- **2026-05-18 ~11:30 UTC** — Triage profundo Casos 1 y 10. Caso 10 → Clase H confirmada (`tipoZonaStakeholderEnum` existe). Caso 1 → "Clase A sub-tipo TS-only-orphan" tentativa. Baseline intermedio: 2 A + 1 B+ + 0 C + 6 H = 3 estructurales.
+- **2026-05-18 ~14:00 UTC** — Discovery broader pre-T1.3 (8 puntos del checklist PO). Hallazgo decisivo: `cargoRequestIdSchema` es FK estructural en `trip.cargo_request_id` + 4 ADRs vivos + 1 skill core describen `CargoRequest` como concepto del producto vigente. Caso 1 NO es orphan abandonado.
+- **2026-05-18 ~15:00 UTC** — PO firma **Opción C con 3 refinamientos**: (a) crear Clase I como categoría taxonómica nueva (no docstring libre), (b) annotación machine-readable con tags `@drift-status` `@materialization-trigger` `@depends-on` `@review-on`, (c) ampliar taxonomía en este doc paralelo a Clase H. Plus follow-up no bloqueante: T1.x.parser para drift-inventory parsing del tag.
+- **2026-05-18 ~15:30 UTC** — T1.3 implementado: Clase I agregada al §Nomenclatura; Caso 1 reclasificado de A-orphan a I-pre-materialization; `domain/cargo-request.ts` recibe annotación estructurada; baseline final post-T1.2+T1.3: **0 drift estructural accionable en S1a** (1 A resuelta + 1 I anotada + 1 B+ diferida).

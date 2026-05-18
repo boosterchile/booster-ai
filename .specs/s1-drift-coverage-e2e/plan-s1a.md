@@ -58,24 +58,37 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
   - `pnpm --filter @booster-ai/shared-schemas test` verde.
 - **Rollback**: revert PR. Cero impacto runtime (Zod no se usa en `.parse()` runtime — ver Hallazgo H-S1a-1 en spec §12.5).
 
-### T1.3: Caso 1 — eliminar `cargoRequestStatusSchema` orphan (Clase A sub-tipo TS-only-orphan)
+### T1.3: Caso 1 — reclasificar `cargoRequestStatusSchema` a Clase I + annotación machine-readable [DONE 2026-05-18]
+
+> **Scope revisado post-discovery (PO firma Opción C)**: T1.3 cambia de "eliminar orphan" a **"introducir Clase I taxonomía + annotar con tags machine-readable"**. Razón: discovery broader (8 puntos checklist, ver `.specs/s1-drift-coverage-e2e/t1.3-discovery.md`) reveló que `cargoRequestStatusSchema` NO es orphan abandonado — es scaffolding deliberado con `cargoRequestIdSchema` ya integrado como FK en `trip.cargo_request_id` + 4 ADRs vivos + 1 skill core. Eliminarlo rompía planes documentados vigentes.
 
 - **Files**:
-  - `packages/shared-schemas/src/domain/cargo-request.ts` (delete o reducir si `cargoRequestSchema` y otros sub-schemas también son orphan).
-  - `packages/shared-schemas/src/all-schemas.test.ts` (edit: remover import si aplica + remover entries del smoke test loop).
-  - `packages/shared-schemas/src/primitives/ids.ts` (verificar si `cargoRequestIdSchema` queda orphan tras eliminación).
-  - `packages/shared-schemas/src/trip-request.ts` (verificar comentario que menciona `cargoRequest` — actualizar si refiere a concepto eliminado).
-- **LOC estimate**: ~-150 (delete schema + remove imports/refs). Net negative.
-- **Depends on**: T1.2 mergeado.
-- **Pre-discovery obligatorio** (broader que T1.2):
-  - `rg "cargoRequest|CargoRequest" --type ts -l` listar TODOS los archivos.
-  - Verificar consumers transitivos (imports indirectos de tests, primitives, etc.).
-  - Decisión final: eliminar todo el archivo `cargo-request.ts` vs preservar `cargoRequestIdSchema` si tiene uso.
+  - `packages/shared-schemas/src/domain/cargo-request.ts` (edit: annotación estructurada con `@drift-status intentional-pre-materialization` + `@clase I` + `@materialization-trigger` + `@depends-on` + `@review-on`).
+  - `.specs/s1-drift-coverage-e2e/inventory-classification.md` (edit: §Nomenclatura agrega Clase I paralela a H; Caso 1 reclasificado de "A sub-tipo orphan" a instancia de Clase I; tabla baseline updated).
+  - `.specs/s1-drift-coverage-e2e/plan-s1a.md` (este archivo: T1.3 acceptance revisada + T1.x.parser follow-up agregado).
+- **LOC estimate**: +30 docstring annotación + ~80 classification updates = ~110.
+- **Depends on**: T1.2 mergeado + T1.3-discovery mergeado (PR #295).
 - **Acceptance** (T-S1.3 parcial):
-  - `rg "cargoRequestStatusSchema|cargoRequestSchema" packages/shared-schemas/` retorna 0 hits post-merge.
-  - `pnpm typecheck` + `pnpm test` verdes.
-  - Si `cargoRequestIdSchema` preservado: docstring explica por qué + uso esperado futuro (link a hipotético S2+).
-- **Rollback**: revert PR. Concepto vuelve al domain como estaba.
+  - `domain/cargo-request.ts` tiene annotación estructurada arriba de `cargoRequestStatusSchema` con los 4 tags machine-readable obligatorios (`@drift-status`, `@materialization-trigger`, `@depends-on`, `@review-on`).
+  - `inventory-classification.md` §Nomenclatura tiene definición de Clase I paralela a A/B/C/H + distinción explícita vs H y B+.
+  - Caso 1 reclasificado como instancia de Clase I (no Clase A).
+  - Tabla baseline updated: 1 A (caso 5 done) + 1 I (caso 1 annotada) + 1 B+ diferido + 0 C + 6 H = **0 drift estructural accionable en S1a**.
+  - `pnpm typecheck` + `pnpm test` verdes (sin cambios funcionales).
+- **Rollback**: revert PR. Schema vuelve sin annotación; classification doc vuelve a "A sub-tipo orphan" tentativa.
+
+### T1.x.parser (NO bloqueante, follow-up sprint posterior)
+
+> Tracking del PO refinamiento #3 post-T1.3: parsing de `@drift-status` en el drift-inventory script para que ignore automáticamente schemas Clase I anotados.
+
+- **Files**: `scripts/repo-checks/drift-inventory.mjs` (edit: agregar `parseTags()` que extrae `@drift-status` del comentario JSDoc precedente al `export const ... = z.enum(`) + `scripts/repo-checks/drift-inventory.test.mjs` (tests del parser).
+- **LOC estimate**: ~60 (parser + tests).
+- **Depends on**: T1.3 (la annotación existe), T1.0.heuristic-improvement (refactor del script ya planificado).
+- **Acceptance**:
+  - Script con flag `--respect-drift-status-tags` (default true) ignora schemas Zod precedidos por `/** @drift-status intentional-pre-materialization */` o `/** @drift-status <otro estado válido> */`.
+  - Tests verifican: (a) parser extrae el tag correctamente; (b) `findDivergences()` skipea schemas Clase I; (c) sin el flag (override), aparecen igual en el inventory.
+  - Re-correr `node scripts/repo-checks/drift-inventory.mjs` post-implementación reporta **0 divergences para Caso 1** (en lugar de los 1 actuales) + agrega contador `intentional_pre_materialization: N` al frontmatter.
+- **Rationale para diferir**: T1.3 mantiene scope atómico. La annotación tiene valor inmediato como documentación + categoría aunque el script aún la ignore. El parser se prioriza cuando aparezca el siguiente caso I (no urgente con solo 1). Mismo patrón que T1.0.heuristic-improvement.
+- **Rollback**: revert PR. Script vuelve a flaggear Clase I como divergencias (comportamiento actual).
 
 ### T1.4..T1.n: (placeholder) Resoluciones de divergencias adicionales Clase A/B/C si emergen
 
