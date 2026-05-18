@@ -249,9 +249,41 @@ Quedantes (no bloquean approve):
 - **OQ-S1.2** (T1.6): `@xstate/test` agregado o no — decisión durante T1.6.
 - **OQ-S1.3** (T1.12): `dorny/paths-filter@v3` vs custom — decisión durante T1.12.
 
+## 12.5 Hallazgos S1a → backlog S2/S3
+
+Observaciones arquitectónicas descubiertas durante el sprint S1a que NO modifican el scope/SCs del sprint actual pero **requieren visibilidad cuando se planifique S2/S3**. Documentadas acá (no en discovery docs sueltos) para que sean encontradas al hacer `/spec` de sprints posteriores.
+
+### Hallazgo H-S1a-1: Zod schemas no enforced en runtime
+
+**Origen**: Discovery T1.2 sobre `tripEventTypeSchema` (2026-05-18).
+
+**Observación**: `tripEventSchema` (parent que contiene `event_type: tripEventTypeSchema`) **tiene 0 llamadas `.parse()` / `.safeParse()` en runtime** en todo el código de `apps/`. El schema vive como **documentación declarativa del dominio**, no como validation activa.
+
+Por extensión muy probable (no verificado, pendiente investigación S2/S3): otros 5-6 schemas Zod en `packages/shared-schemas/src/domain/` tienen la misma propiedad — fuente de verdad teórica que ningún boundary HTTP / DB writer / queue consumer / event handler ejecuta como gate.
+
+**Implicación**:
+
+Alinear TS↔SQL en S1a (objetivo ADR-043) **elimina drift estructural** pero **NO previene** que código emita payloads con valores inválidos en runtime. La defensa real contra drift de runtime es `.parse()` en boundaries (routes, DB writers, etc.).
+
+Si el problema de "drift" que S1 pretende resolver incluye también "código que serializa enum values inventados" (caso real: hoy services emiten `conductor_asignado` / `incidente_reportado` sin que ningún schema los rechace), entonces S1a sola **no resuelve** ese problema — solo resuelve la parte declarativa.
+
+**Acciones diferidas** (S2 o S3, decisión PO en `/spec` del sprint):
+
+1. Auditar boundaries críticos (`apps/api/src/routes/**`, `apps/api/src/services/notify-*`, queue consumers Pub/Sub, etc.) para identificar dónde `.parse()` debería aplicarse.
+2. Decidir política: ¿`safeParse()` en todo boundary HTTP que retorna trip events? ¿`parse()` en DB writers? ¿Validation en consumers Pub/Sub?
+3. Si la respuesta es "sí, enforce runtime", producir sprint dedicado con scope: instrumentar boundaries + tests de boundary + alert si parse falla en prod.
+4. Si la respuesta es "no, drift estructural es suficiente", documentar en ADR-043 que el dominio Zod es **doc-only by design** y eliminar la ambigüedad.
+
+Este hallazgo NO bloquea S1a porque T1.2 cierra el caso 5 (alinear TS con SQL) que es deliverable del sprint. La pregunta "¿sirve para algo?" queda explícita para los siguientes sprints.
+
+**Severidad**: M (estructural — afecta efectividad del drift-elimination program a partir de T1.2). **Owner**: PO. **Sprint objetivo**: S2 o S3.
+
+---
+
 ## 13. Decision log
 
 - **2026-05-18** — Initial draft post-aprobación spec maestra v2 + cierre S0. 14 SCs + 14 tareas.
 - **2026-05-18** — Devils-advocate pass: 5 P0 + 5 P1 + 3 P2 = 13 objeciones (review.md). PO aprobó aplicar **todas (P0 + P1 + P2)**.
 - **2026-05-18** — **Aplicado v2**: SC-S1.0 stop-the-line gate (O-1); SC-S1.7 split en lista nombrada + métrico (O-2); §7.0 orden de ejecución secuencial A→B (O-3); estimación 8-12 días + SC-S1.checkpoint día 5 (O-4); flag `TRIP_STATE_MACHINE_ACTIVATED` obligatorio SC-S1.6b (O-5); SC-S1.8 eliminado (O-6); SC-S1.13 eliminado (O-7); SC-S1.12 reformulado a ≥10 PRs sample (O-8); OQ-S1.4 resuelta pre-approve (O-9); burnout subido a H/M con mitigación accionable (O-10); T1.7 lista IN/OUT-scope explícita + followup doc (O-11); SC-S1.4b RLS en Clase C (O-12); umbral runners distribuidos declarado en §5 + alt E (O-13).
 - **2026-05-18** — **APPROVED por PO**. Pasa a fase PLAN.
+- **2026-05-18** — Post-T1.1 + discovery T1.2: agregada §12.5 con Hallazgo H-S1a-1 (Zod schemas no enforced en runtime — observación arquitectónica que afecta efectividad del drift-elimination program; diferido a S2/S3 con owner PO).
