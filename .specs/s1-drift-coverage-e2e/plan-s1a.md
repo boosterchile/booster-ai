@@ -18,7 +18,7 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
 
 ## Tasks (15+ atómicas; estructura recurrente para T1.2/T1.7)
 
-### T1.1: Inventario automatizado drift schema/domain — con enforcement
+### T1.1: Inventario automatizado drift schema/domain — con enforcement [DONE 2026-05-18]
 
 - **Files**: `scripts/repo-checks/drift-inventory.mjs` (nuevo, perm) + `.specs/s1-drift-coverage-e2e/inventory.md` (output) + edit `.husky/pre-commit` (~5 LOC adicional check).
 - **LOC estimate**: ~80 (script) + ~50 (markdown output con frontmatter `gate: PENDING_PO`) + ~5 (hook).
@@ -29,6 +29,17 @@ Bloques A + B de la spec maestra: aplicar metodología ADR-043 (inventario + res
   - `inventory.md` tiene frontmatter YAML con `gate: PENDING_PO` por default; PO cambia a `gate: APPROVED_BY_PO <fecha>` tras revisar.
   - **Pre-commit hook** rechaza commits con scope `feat(domain)` si frontmatter dice `gate: PENDING_PO`.
 - **Rollback**: revert PR. Script + hook update se eliminan.
+
+### T1.0.heuristic-improvement (NO bloqueante, paralelo a T1.2+)
+
+- **Files**: `scripts/repo-checks/drift-inventory.mjs` (mejora `normalizeForMatch` con mappings explícitos).
+- **LOC estimate**: ~50 (script edit + tests).
+- **Depends on**: T1.1 (post-triage, inventory-classification.md ya producido).
+- **Acceptance**:
+  - Mappings agregados (mínimo): `licenseClass ↔ licenciaClase`, `nivelCertificacion ↔ certificationLevel`, `telemetrySource ↔ tripEventSource`, `role ↔ membershipRole`, `transportistaStatus ↔ empresaStatus`.
+  - Re-correr `node scripts/repo-checks/drift-inventory.mjs` post-mejora reduce `divergences_total` de 10 a ~3-4 (los falsos positivos H se resuelven).
+  - Tests cubren los nuevos matches en `drift-inventory.test.mjs`.
+- **Rollback**: revert PR. Script funcional sin mappings extra.
 
 ### T1.2a..T1.2n: Resolución Clase A — una sub-task por divergencia (cubre O-1)
 
