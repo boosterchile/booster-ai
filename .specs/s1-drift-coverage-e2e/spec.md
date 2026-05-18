@@ -278,6 +278,21 @@ Este hallazgo NO bloquea S1a porque T1.2 cierra el caso 5 (alinear TS con SQL) q
 
 **Severidad**: M (estructural — afecta efectividad del drift-elimination program a partir de T1.2). **Owner**: PO. **Sprint objetivo**: S2 o S3.
 
+### Cobertura parcial via T1.5 (2026-05-18)
+
+T1.5 (`apps/api/test/integration/drift-alignment.integration.test.ts`) cubre **parcialmente** este hallazgo:
+
+- **✅ Cubierto por T1.5**:
+  - Pattern A (round-trip enum values): tests integration ejercen INSERT + SELECT real con los 2 valores agregados en T1.2 (`conductor_asignado`, `incidente_reportado`) sobre Postgres local. Validan que (a) el valor SQL es preservado en el read, (b) `tripEventTypeSchema.parse()` lo acepta post-T1.2. **Esto valida la alineación T1.2 end-to-end via el code path real, NO theater declarativo.**
+  - Pattern B (identifier match Drizzle): test integration replica EXACTAMENTE el `db.select({...})` que hace `apps/api/src/routes/trip-requests-v2.ts` (mapping `event_type: tripEvents.eventType`). Detecta: rename de schema field, Drizzle mapping break, response shape regression.
+
+- **❌ NO cubierto por T1.5** (sigue siendo backlog S2/S3):
+  - **`.parse()` / `.safeParse()` en boundaries HTTP**: T1.5 ejerce el code path real pero NO instala validation Zod activa en route handlers. Un POST con `{event_type: 'foo_invalido'}` hoy aún sería aceptado por el endpoint y rechazado solo al INSERT por el constraint pgEnum (defensa en capa SQL, no TS).
+  - **DB writers**: ningún service usa `.parse()` antes de INSERT.
+  - **Queue consumers Pub/Sub**: idem.
+
+**Conclusión**: T1.5 cierra la **primera mitad** de H-S1a-1 (guardrail funcional + verificación end-to-end de alineamientos T1.2 vía Drizzle). La **segunda mitad** (enforcement runtime en boundaries) sigue siendo trabajo S2/S3.
+
 ---
 
 ## 13. Decision log
