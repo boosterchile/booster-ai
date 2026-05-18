@@ -120,7 +120,7 @@
   - `.private/` agregado a `.gitignore`.
 - **Rollback / irreversibilidad**: outreach es **acción irreversible** (admitido en spec.md §11). Si un prospect inicia diálogo y luego no procedemos, cierre formal con email de "no fit en este momento". El git revert solo afecta el stub público, no las conversaciones ya iniciadas.
 
-### T11: actualizar CURRENT.md al cierre del sprint
+### T11: actualizar CURRENT.md al cierre del sprint [DONE 2026-05-18]
 - **Files**: `docs/handoff/CURRENT.md` (edit).
 - **LOC estimate**: ~30 (sección nueva "Sprint S0 cierre 2026-05-XX" + actualización del estado general).
 - **Depends on**: T1..T10 completas (esta es la última).

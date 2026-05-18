@@ -1,24 +1,104 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-18 (T5 sprint S0 — `.gitlab-ci.yml` eliminado; repo canónico = GitHub)
+**Última actualización**: 2026-05-18 (Sprint S0 production-readiness **cerrado** — T11 wrap)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
-**Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (sprint S0 en progreso) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+**Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (sprint S0 cerrado, pickup S1) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
 ---
 
-## Sprint S0 production-readiness en progreso (2026-05-18)
+## Sprint S0 production-readiness — CERRADO (2026-05-18)
 
-Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/spec.md) (Approved). T11 hace wrap completo al cierre.
+Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/spec.md) + [`.specs/s0-housekeeping/plan.md`](../../.specs/s0-housekeeping/plan.md) (Approved 2026-05-17).
 
-Estado por tarea (PRs):
-- ✅ T1 — ADR-043 metodología drift schema/domain ([#278](https://github.com/boosterchile/booster-ai/pull/278))
-- ✅ T2 — archivar `AUDIT.md`/`PLAN-PHASE-0.md`/`DESIGN.md` a `docs/archive/` ([#280](https://github.com/boosterchile/booster-ai/pull/280))
-- ✅ T3 — `scripts/repo-checks/check-adr-numbering` + workspace + pre-commit hook ([#281](https://github.com/boosterchile/booster-ai/pull/281))
-- ✅ T4 — ADR-046 colisiones históricas (028,034,035) TTL perpetuo ([#282](https://github.com/boosterchile/booster-ai/pull/282))
-- ⏩ T5 — eliminar `.gitlab-ci.yml` (este PR); repo canónico = GitHub
-- ⏸ T6..T11 pendientes (RFP GLEC + RFP pentest + ADR k6 + ADR strangler + outreach piloto + wrap CURRENT.md)
+### Cierre por tarea
 
-Pickup point próxima sesión: T6 (RFP auditor GLEC).
+| # | Tarea | PR | Cubre SC-S0 | Estado |
+|---|---|---|---|---|
+| T1 | ADR-043 metodología drift schema/domain | [#278](https://github.com/boosterchile/booster-ai/pull/278) | .1 | ✅ Merged |
+| T2 | Archivar `AUDIT.md`/`PLAN-PHASE-0.md`/`DESIGN.md` a `docs/archive/` | [#280](https://github.com/boosterchile/booster-ai/pull/280) | .2 | ✅ Merged |
+| T3 | `scripts/repo-checks/check-adr-numbering` + workspace + pre-commit hook | [#281](https://github.com/boosterchile/booster-ai/pull/281) | .3 | ✅ Merged |
+| T4 | ADR-046 colisiones históricas (028,034,035) TTL perpetuo | [#282](https://github.com/boosterchile/booster-ai/pull/282) | .4 | ✅ Merged |
+| T5 | Eliminar `.gitlab-ci.yml` — GitHub canonical | [#283](https://github.com/boosterchile/booster-ai/pull/283) | .5 | ✅ Merged |
+| T6 | RFP auditor GLEC v3.0 + `docs/compliance/` scaffold | [#284](https://github.com/boosterchile/booster-ai/pull/284) | .6 (doc) | ✅ Merged · ⚠️ envíos PO pendientes |
+| T7 | RFP vendor pentest pre-launch + shortlist por categoría | [#285](https://github.com/boosterchile/booster-ai/pull/285) | .7 (doc) | ✅ Merged · ⚠️ envíos PO pendientes |
+| T8 | ADR-047 load testing tool (k6) + smoke scaffold | [#286](https://github.com/boosterchile/booster-ai/pull/286) | .8 | ✅ Merged |
+| T9a | ADR-048 microservices extraction strategy (conceptual) | [#287](https://github.com/boosterchile/booster-ai/pull/287) | .9a | ✅ Merged |
+| T10 | Outreach cliente piloto + `.private/` gitignored | [#288](https://github.com/boosterchile/booster-ai/pull/288) | .10 (doc) | ✅ Merged · ⚠️ dry-run + envíos PO pendientes |
+| T11 | Wrap CURRENT.md (este PR) | _pending_ | .11 | ⏩ In progress |
+
+11/11 tareas materializadas. **3 SCs cierran a nivel doc + acción PO** (.6 GLEC, .7 pentest, .10 piloto) — los envíos reales corren en lanes externas paralelas, no bloquean el cierre del sprint.
+
+### ADRs nuevos producidos (4)
+
+| ADR | Título | Decisión clave | Consecuencia sobre roadmap |
+|---|---|---|---|
+| [043](../adr/043-drift-schema-domain.md) | Drift schema ↔ domain — metodología | SQL canónico (español); domain alinea. Clasificación A/B/C por migración. | S1 ejecuta el inventario detallado + migration; tests integration sobre infra T1+T2. |
+| [046](../adr/046-historical-adr-numbering-collisions.md) | Historical ADR numbering collisions (028/034/035) | **TTL perpetuo** — las 3 colisiones legacy no se renumeran. Flag `--allow-legacy` permanente en pre-commit. | Disciplina "un número por archivo" desde ADR-040 enforced. Modificaciones a allowlist requieren supersede ADR. |
+| [047](../adr/047-load-testing-tool-k6.md) | Load testing tool: k6 | k6 + scripts JS + OTEL nativa. **Reversible hasta S8**. | S8 ejecuta suite real (50 RPS sostenido api, 200 RPS pico, 1000+ TCP gateway). Smoke actual es throwaway. |
+| [048](../adr/048-microservices-extraction-strategy.md) | Microservices extraction strategy | Strangler con mirroring **staging** + cutover prod con flag por endpoint + monolito fallback 2 sem. Split T9b/T9c diferido. | S3/S4 ejecutan extracción; cada microservicio produce sub-ADR. T9b (budget USD/sem) en S2; T9c (criterios drill) en spec S3. |
+
+### Sub-spec dependiente
+
+- [`.specs/stubs-decision/spec.md`](../../.specs/stubs-decision/spec.md) — **Approved 2026-05-17**. 8 decisiones binarias: eliminar `ai-provider` + `document-indexer`; promover `trip-state-machine` (S1) + `ui-components` parcial (S2) + 3 apps (S3/S4) + `carta-porte-generator` (S4).
+
+### Velocity check (SC-S0.28 spec maestra)
+
+- Estimación: 8–10 días lane Felipe (post devils-advocate v2).
+- Real: 11 PRs producidos en **~5 horas de sesión** (densidad alta porque la mayoría son doc-only o scaffolds; el único código real fue T3 ~110 LOC).
+- **Conclusión**: velocity observada >> 0.7× nominal en este sprint. Sin replan formal de S1-S13. Re-evaluar al cierre de S1 (tarea pendiente: `docs/handoff/<fecha>-velocity-check-post-S2.md`).
+
+### Lanes externas activadas
+
+| Lane | Activada por | Fecha esperada respuesta | Owner |
+|---|---|---|---|
+| **GLEC audit** (cubre SC-23 post-Impl) | T6 — RFP a SGS Chile / Bureau Veritas Chile / DNV LATAM | Respuestas vendors: ≤2 sem; contrato firmado: ≤4 sem; certificado: ≤8 sem post-firma | **PO acción**: enviar emails con template `docs/compliance/glec-rfp.md` §7.2 |
+| **Pentest pre-launch** (cubre SC-24) | T7 — RFP a 3 categorías de vendor (Global EMEA / Boutique LATAM / Pentest-as-a-Service) | Respuestas: ≤2 sem; contrato: ≤4 sem; audit final: ≤6 sem post-firma | **PO acción**: enviar emails con template `docs/audits/security-rfp.md` §7.2 |
+| **Cliente piloto** (cubre SC-27a) | T10 — shortlist 5+5 prospects en `.private/piloto-prospects.md` | Respuestas: variable (warm 1-2 sem, cold 2-4 sem); contrato firmado: en sprint S13 | **PO acción**: dry-run shortlist + envíos con template `.private/` §"Mensaje template" |
+
+### Objections devils-advocate cerradas en S0
+
+| Obj | Severidad | Status | Cubierta por |
+|---|---|---|---|
+| O-1 | P0 | ✅ Closed | Split T9a/T9b/T9c en ADR-048 |
+| O-2 | P0 | ✅ Closed | SC-S0.1 acotado a metodología (sin enumeración) |
+| O-3 | P0 | ✅ Closed | SC-S0.10 reforzado con criterios fit + dry-run PO + irreversibilidad |
+| O-4 | P0 | ✅ Closed | OQ-S0.1 resuelta (privada) + OQ-S0.2 verificada por agente |
+| O-5 | P0 | ✅ Closed | Estimación movida a 8-10 días; orden re-secuenciado |
+| O-8 | P1 | ✅ Closed | ADR-046 TTL perpetuo explícito |
+| O-9 | P1 | ✅ Closed | ADR-047 reversibilidad hasta S8 explícita |
+
+### Open questions remaining (post-S0)
+
+- **OQ-S0.3** — Reapuntar remote `origin` (sigue GitLab) a GitHub o eliminar. NO bloquea S1; decisión PO antes de S2.
+- **SC-S0.9b** (en S2) — Medir tráfico actual de `notify-*.ts`, `matching*.ts`, `documentos.ts` para producir tabla USD/sem budget mirroring.
+- **SC-S0.9c** (en spec S3) — Criterios concretos de rollback drill para primer microservicio (`notification-service`).
+
+---
+
+## Pickup point S1 (drift implementación + coverage + e2e crítico)
+
+**Spec sprint**: a producir en próxima sesión como `.specs/s1-drift-coverage-e2e/spec.md` siguiendo el roadmap §S1.
+
+**Scope target S1** (del roadmap maestro):
+
+- Aplicar **ADR-043** (metodología drift schema↔domain) ya mergeado:
+  - Producir inventario completo de divergencias (script grep + clasificación A/B/C).
+  - Migration breaking-safe + refactor consumers Clase A.
+  - Tests integration sobre infra T1+T2 ya mergeada (PR #271/#272).
+  - Implementar `packages/trip-state-machine` con XState (sub-spec stubs-decision).
+- Subir **branches coverage `apps/api`** al 80% (actual: 75.01%).
+- Añadir **4 specs Playwright críticos en CI por PR** (shipper-publica-carga, carrier-acepta-oferta, login-universal-rut-clave-numerica, public-tracking-via-link).
+- **Sharding Playwright + path-based filter** en `ci.yml` (cubre SC-29 ≤10 min p95 CI).
+- **a11y axe-core** en cada flujo Playwright (0 violations P0/P1).
+
+**Cubre SCs maestros**: SC-2, SC-4, SC-15 (parcial 4/8), SC-16 (parcial), SC-29.
+
+**Acción inmediata PO** (sin esperar al inicio de S1):
+
+1. **Enviar RFP GLEC** (template en `docs/compliance/glec-rfp.md` §7.2). Razón: lead time auditor 4-8 sem; arrancar ya minimiza camino crítico.
+2. **Enviar RFP pentest** (template en `docs/audits/security-rfp.md` §7.2). Razón: lead time vendor 4-6 sem.
+3. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto es el más largo (variable, mes+).
+4. **Decidir OQ-S0.3** (qué hacer con remote `origin` GitLab).
 
 ---
 
