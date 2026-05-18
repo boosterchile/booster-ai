@@ -102,7 +102,7 @@ Ver detalle completo en [`inventory-classification.md`](./inventory-classificati
 >
 > Por lo tanto, la recomendación de diferir Bloque B se sostiene por **scope**, no por **sequencing arquitectónico**.
 
-**Recomendación**: diferir Bloque B (T1.6 + T1.7a/b/c/d, XState scaffold + wiring) al **Sprint S2** (en paralelo con S1b, lane separada), con creación de sub-spec `.specs/tripstate-alignment/` **antes del 2026-06-01** para resolver Caso 8 + decidir el boundary mapping.
+**Recomendación**: diferir Bloque B (T1.6 + T1.7a/b/c/d, XState scaffold + wiring) al **Sprint S2** (en paralelo con S1b, lane separada), con creación de sub-spec `.specs/tripstate-alignment/` (pre-requisito de Bloque B) para resolver Caso 8 + decidir el boundary mapping.
 
 **Justificación honesta**:
 
@@ -120,7 +120,7 @@ Ver detalle completo en [`inventory-classification.md`](./inventory-classificati
 **Recomendación operacional (Opción A)**:
 
 - S1a cierra con SC-S1.6 + SC-S1.6b como **Deferred → S2** (compromiso de fecha, no open-ended).
-- Crear `.specs/tripstate-alignment/spec.md` **antes del 2026-06-01** — owner Felipe + agente. Trigger: arrancar `/spec tripstate-alignment` en próxima sesión post-cierre S1a.
+- Crear `.specs/tripstate-alignment/spec.md` — owner Felipe + agente. Trigger: arrancar `/spec tripstate-alignment` en próxima sesión post-cierre S1a. Avance gated por readiness (§11 Condición 1), no calendario.
 - `plan-s2.md` incluye: (a) T-S2.X "ejecutar Bloque B contra 5 canonical states" + (b) T-S2.Y "consumir sub-spec tripstate-alignment para boundary mapping".
 
 **Eliminación de "deferral implícito"**: la versión inicial de §10 calificó como "deferral implícito" la falta de mención del PO sobre Bloque B. Eso era **agent self-laundering** (silencio ≠ firma). Corregido: la deferral es **propuesta del agente**, no decisión PO. La firma §9 es lo que materializa la decisión.
@@ -152,7 +152,7 @@ Los 4 hallazgos meta del sprint están documentados en detalle en [`inventory-cl
 
 ## 9. Firma PO
 
-- [x] **A — APROBADA 2026-05-18** — S1b arranca; Bloque B → S2 (lane paralela); sub-spec `tripstate-alignment` creada antes del 2026-06-01. Aprobada **con 3 condiciones** (ver §11).
+- [x] **A — APROBADA 2026-05-18** — S1b arranca; Bloque B → S2 (lane paralela); sub-spec `tripstate-alignment` creada como pre-requisito de Bloque B. Aprobada **con 3 condiciones** (ver §11).
 - [ ] B — no aplicable.
 - [ ] C — descartada por PO (razones en §11).
 - [ ] D — n/a.
@@ -173,6 +173,7 @@ Los 4 hallazgos meta del sprint están documentados en detalle en [`inventory-cl
 - **2026-05-18 ~16:50 UTC** — **Devils-advocate v1** sobre el cierre. Objeciones P0: (1) la justificación "build on sand" contradice spec §SC-S1.5 (5 canonical states ya nombrados), (2) "deferral implícito" desde silencio PO es self-laundering. Objeción P1: follow-up sin owner/fecha/trigger. Objeción P2: alternativa C dismissed sin steelman.
 - **2026-05-18 ~17:00 UTC** — **DRAFT v2**: §6 reescrito reconociendo que Caso 8 es boundary translation no foundational; justificación deferral cambia a "scope-out, no sequencing"; §9 reescrito para forzar firma explícita (silencio ≠ default); §10 acepta deferral como propuesta del agente, no decisión PO. Alternativas A/B/C/D steelmanned con compromiso de fecha 2026-06-01 para sub-spec `tripstate-alignment` en Opción A.
 - **2026-05-18 ~17:25 UTC** — **APPROVED_BY_PO Opción A + 3 condiciones** (§11). Sin estas tres, A es deferral hollow; con ellas, es disciplina auditable. C descartada por sprint discipline + sub-spec necesaria independientemente + estimado optimista. B descartada por mezclar concerns. Gate sube a `APPROVED_BY_PO`. Próximo paso: merge #298, próxima sesión arranca `/spec tripstate-alignment`.
+- **2026-05-18 ~18:30 UTC** — **Amend §11 PO-driven**: cláusulas de fecha (`2026-06-01`, `2026-05-29`) removidas de Condiciones 1 + 2 + de referencias §6/§9. Triggers reformulados como readiness criteria (completitud de las 5 sub-bullets + `gate: APPROVED_BY_PO` del sub-spec). Razón: las fechas fueron output de tooling, no decisión PO; contradicen la regla base "no tenemos horarios". Entradas históricas de este decision log (firma, DRAFT v2 timestamps) NO se tocan — son registro accurate de lo que se decidió en cada momento. Trazabilidad: [PR #299](https://github.com/boosterchile/booster-ai/pull/299).
 
 ---
 
@@ -188,9 +189,9 @@ Los 4 hallazgos meta del sprint están documentados en detalle en [`inventory-cl
 >
 > **B la descarto rápido**: bundlear state machine work con coverage/Playwright mezcla concerns sin razón. S1b worse off, Bloque B worse off.
 
-### Condición 1 — Acceptance concreto del sub-spec antes del 2026-06-01
+### Condición 1 — Acceptance material del sub-spec
 
-`.specs/tripstate-alignment/spec.md` debe contener, antes del **2026-06-01** (no después), las siguientes secciones materiales:
+`.specs/tripstate-alignment/spec.md` debe contener las siguientes secciones materiales para declarar la condición cumplida (no "creamos el archivo" — eso es trivial):
 
 - **§boundary-translation** — los 3 niveles documentados (17 valores TS extendidos / 5 canonical machine / 9 SQL `tripStatusEnum`) + spec de la mapping function (qué TS values colapsan a qué canonical, qué canonical maps a qué SQL).
 - **§scope** — qué entra a S2 vs qué queda para sprints posteriores. NO todo va a entrar en un sprint; el spec debe declarar el cut explícito.
@@ -198,11 +199,11 @@ Los 4 hallazgos meta del sprint están documentados en detalle en [`inventory-cl
 - **§risks** — al menos 3 riesgos reales (no boilerplate). Ejemplos esperables: divergencia runtime entre machine y SQL, breaking change para consumers fuera de IN-scope, ambigüedad en mapping reversible.
 - **Gate** — frontmatter YAML con `gate: PENDING_PO` o `APPROVED_BY_PO` explícito al cierre del documento.
 
-**Verificación 2026-06-01**: si el sub-spec no existe con esas secciones materiales, el deferral falló su gobernanza. Acción correctiva entonces: re-evaluar si el work se completa, se trasapasa, o se reclasifica como deuda explícita.
+**Trigger de avance**: completitud de las 5 sub-bullets + `gate: APPROVED_BY_PO` del sub-spec. **No calendario**. Sin eso, S2 sigue bloqueado y el spec quedó como artefacto administrativo, no decisión técnica.
 
-### Condición 2 — Spike permitido entre hoy y 2026-06-01, NO como implementación
+### Condición 2 — Spike permitido durante el drafting del sub-spec, NO como implementación
 
-Si entre hoy y 2026-06-01 querés exercise la máquina contra los 5 canonical states para validar assumptions antes de redactar el spec:
+Si durante el periodo de drafting del sub-spec (entre cierre de S1a y `APPROVED_BY_PO` del sub-spec) querés exercise la máquina contra los 5 canonical states para validar assumptions antes de redactar el spec:
 
 - **OK**: branch spike descartable, no merge. Sirve como insumo del sub-spec.
 - **NO OK**: ejecutar T1.6/T1.7 disfrazado de "spike" y mergear. Esto sería **laundering C disfrazado de A** — la distinción importa para auditabilidad.
@@ -217,7 +218,7 @@ Tras merge de [PR #298](https://github.com/boosterchile/booster-ai/pull/298), **
 - **Plan S2** (cuando incluya Bloque B).
 - **Branch spike descartable** (Condición 2).
 
-NO vive en "todavía estamos cerrando S1a". `docs/handoff/CURRENT.md` debe decir explícitamente: _"S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01"_.
+NO vive en "todavía estamos cerrando S1a". `docs/handoff/CURRENT.md` debe decir explícitamente: _"S1a Bloque A complete; Bloque B deferred to S2 con sub-spec tripstate-alignment como pre-requisito"_.
 
 ### Lectura de la firma para sesiones futuras
 

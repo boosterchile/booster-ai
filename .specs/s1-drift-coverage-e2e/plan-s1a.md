@@ -145,7 +145,7 @@ Post-T1.2/T1.3, si `T1.0.heuristic-improvement` revela alguna Clase A real adici
 
 ### T1.6: `packages/trip-state-machine` scaffold con XState v5 [DEFERRED — sub-spec tripstate-alignment]
 
-> **Diferida en T1.S1a.cierre 2026-05-18** ([`s1a-cierre.md`](./s1a-cierre.md) §6, Opción A recomendada — pendiente firma PO): el scope de S1a no alcanzó a Bloque B en la sesión de ejecución. Spec §SC-S1.5 ya nombra los 5 canonical states (`borrador, asignado, en_curso, entregado, cancelado`) → el scaffold NO está bloqueado por foundational; lo está por scope. Recomendación: ejecutar Bloque B en S2 (paralelo a S1b) + crear sub-spec `.specs/tripstate-alignment/` **antes del 2026-06-01** para el boundary mapping (17 TS ↔ 5 machine ↔ 9 SQL).
+> **Diferida en T1.S1a.cierre 2026-05-18** ([`s1a-cierre.md`](./s1a-cierre.md) §6, Opción A recomendada — pendiente firma PO): el scope de S1a no alcanzó a Bloque B en la sesión de ejecución. Spec §SC-S1.5 ya nombra los 5 canonical states (`borrador, asignado, en_curso, entregado, cancelado`) → el scaffold NO está bloqueado por foundational; lo está por scope. Recomendación: ejecutar Bloque B en S2 (paralelo a S1b) + crear sub-spec `.specs/tripstate-alignment/` (pre-requisito de Bloque B, avance gated por readiness no calendario) para el boundary mapping (17 TS ↔ 5 machine ↔ 9 SQL).
 
 
 - **Files**: `packages/trip-state-machine/{package.json,tsconfig.json,vitest.config.ts,src/index.ts,src/trip.machine.ts,src/trip.machine.test.ts,README.md}` (nuevos).

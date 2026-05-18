@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-18 (Sprint **S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01** — firma PO Opción A + 3 condiciones, ver [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
+**Última actualización**: 2026-05-18 (Sprint **S1a Bloque A complete; Bloque B deferred to S2 con sub-spec tripstate-alignment como pre-requisito** — firma PO Opción A + 3 condiciones, ver [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
@@ -10,7 +10,7 @@
 
 Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-coverage-e2e/plan-s1a.md). Cierre formal en [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) — **gate APPROVED_BY_PO 2026-05-18, Opción A con 3 condiciones vinculantes** (ver §11).
 
-**S1a Bloque A complete; Bloque B deferred to S2 con sub-spec target 2026-06-01.**
+**S1a Bloque A complete; Bloque B deferred to S2 con sub-spec tripstate-alignment como pre-requisito.**
 
 ### Cierre por tarea (Bloque A)
 
@@ -29,7 +29,7 @@ Sub-sprint: [`.specs/s1-drift-coverage-e2e/plan-s1a.md`](../../.specs/s1-drift-c
 
 T1.6 (XState scaffold) + T1.7a/b/c/d (wiring 3 services + followup doc) **no ejecutadas**. Ejecutan en S2 (lane paralela a S1b).
 
-**Condición 1**: sub-spec `.specs/tripstate-alignment/spec.md` creada **antes del 2026-06-01** con acceptance material (§boundary-translation con 17 TS / 5 machine / 9 SQL mapping + §scope cut + §SCs measurable + §risks ≥3 reales + gate explícito). Si el spec no existe con esas secciones al 2026-06-01, el deferral falló su gobernanza — acción correctiva re-evalúa work/traspaso/deuda explícita.
+**Condición 1**: sub-spec `.specs/tripstate-alignment/spec.md` con acceptance material (§boundary-translation con 17 TS / 5 machine / 9 SQL mapping + §scope cut + §SCs measurable + §risks ≥3 reales + gate explícito). El trigger de avance es **completitud de las 5 sub-bullets + gate `APPROVED_BY_PO` del sub-spec**, no calendario. Sin eso, S2 sigue bloqueado y el spec quedó como artefacto administrativo.
 
 **Condición 2**: spike `spike/tripstate-machine-exploration` permitido como exploración, NO mergeable. Sirve solo como insumo del sub-spec. Ejecutar T1.6/T1.7 disfrazado de spike sería laundering C disfrazado de A.
 
@@ -51,7 +51,7 @@ Ambas son **categorías operacionales del proyecto Booster AI**, no modificacion
 |---|---|---|
 | T1.0.heuristic-improvement (mejorar `normalizeForMatch`) | S2 | `plan-s1a.md` §T1.0 |
 | T1.x.parser (`@drift-status` parsing en drift-inventory script) | S2 (post-T1.0) | `plan-s1a.md` §T1.x.parser |
-| Sub-spec `.specs/tripstate-alignment/` (caso 8) | S2 — crear **antes del 2026-06-01** (compromiso de fecha) | `inventory-classification.md` Caso 8 + `s1a-cierre.md` §6 |
+| Sub-spec `.specs/tripstate-alignment/` (caso 8) | S2 — pre-requisito de Bloque B (avance gated por readiness, no calendario) | `inventory-classification.md` Caso 8 + `s1a-cierre.md` §6 |
 | H-S1a-1 segunda mitad (`.parse()` en boundaries HTTP/DB/queue) | S2 o S3 | `spec.md` §12.5 |
 | Bloque B (XState scaffold + wiring) | S2 (lane paralela a S1b) — recomendación Opción A `s1a-cierre.md` §9, pendiente firma PO | `s1a-cierre.md` §6 |
 
@@ -149,7 +149,7 @@ Sprint maestro: [`.specs/s0-housekeeping/spec.md`](../../.specs/s0-housekeeping/
 3. **Dry-run + envíos cliente piloto** (`.private/piloto-prospects.md`). Razón: lead time outreach piloto el más largo.
 4. **Decidir OQ-S0.3** (qué hacer con remote `origin` GitLab).
 
-**Próxima sesión de agente** (post-merge #298): `/spec tripstate-alignment` siguiendo Condición 1 de [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11. Target del spec: antes del 2026-06-01.
+**Próxima sesión de agente** (post-merge #298): `/spec tripstate-alignment` siguiendo Condición 1 de [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11. Avance gated por readiness (5 sub-bullets + gate `APPROVED_BY_PO` del sub-spec), no calendario.
 
 ---
 
