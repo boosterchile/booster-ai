@@ -45,7 +45,7 @@ Fases secuenciales. No saltar fases. No fusionar fases para "ir más rápido".
 
 ANTES de proponer cualquier solución técnica o invocar subagents, leer en este orden:
 
-1. **`CLAUDE.md`** completo — principios rectores + stack canónico + reglas operativas.
+1. **`CLAUDE.md`** (raíz del repo, NO `audit-outputs/CLAUDE.md` que es propuesta no promovida) — principios rectores + stack canónico + reglas operativas.
 2. **`docs/handoff/CURRENT.md`** — estado vivo del proyecto (sprint actual, decisiones pendientes, P0 abiertos).
 3. **ADRs relevantes** en `docs/adr/` — filtrar por keywords de la misión (`grep -li`).
 4. **`audit-outputs/`** si existe — findings activos pueden afectar decisiones (ej. R-001 P0 OTel bloquea cualquier feature que vaya a producción sin observabilidad).

@@ -1,0 +1,1 @@
+../../../skills/arquitecto-maestro/SKILL.md

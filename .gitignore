@@ -128,9 +128,17 @@ __pycache__/
 * 3.*
 
 # Claude Code local settings
-.claude/
+.claude/*
 
 # Playwright screenshots (UI verification debug artifacts)
 *.png
 !apps/**/*.png
 !packages/**/*.png
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Excepciones a .claude/: skills compartidas versionadas como parte de la
+# arquitectura del repo (no son settings personales). Ver ADR-054.
+# ─────────────────────────────────────────────────────────────────────────────
+!.claude/skills/
+!.claude/skills/arquitecto-maestro/
+!.claude/skills/arquitecto-maestro/SKILL.md
