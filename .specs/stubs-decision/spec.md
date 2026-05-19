@@ -52,6 +52,19 @@ Ninguno directo. Esta es una decisión interna de housekeeping. Indirectamente:
 | `apps/matching-engine` | **PROMOVER** | Idem. Capacidad declarada en README + ADR-023/033 (matching V1/V2). Hoy en `apps/api/src/services/matching*.ts` + `packages/matching-algorithm`. | **S3** (cubre SC-10). |
 | `apps/document-service` | **PROMOVER** | Idem. Capacidad declarada en README + ADR-007 (Chile docs) + ADR-024 (Sovos). Hoy en `apps/api/src/routes/documentos.ts` + `packages/dte-provider` + `packages/carta-porte-generator`. | **S4** (cubre SC-11). |
 
+
+---
+
+> **SUPERSEDED PARCIALMENTE**: ADR-051 (2026-05-19) supersedea puntos
+> específicos de esta sección bajo el principio operativo "tiempo a producción"
+> declarado por PO 2026-05-19. La sección mantiene status `Approved` pero los
+> puntos enumerados en `docs/adr/ADR-051-resolucion-8-stubs.md` §"Supersedes
+> explícitos sobre stubs-decision" quedan inaplicables a partir de esa fecha.
+>
+> Mapping exacto: 6 de 8 stubs superseded (matching-engine, notification-service,
+> document-service, ai-provider, carta-porte-generator, document-indexer).
+> Coinciden y mantienen vigencia: trip-state-machine y ui-components.
+
 ### 7.2 Packages stub
 
 | Stub | Decisión | Razón | Acción |
@@ -61,6 +74,19 @@ Ninguno directo. Esta es una decisión interna de housekeeping. Indirectamente:
 | `packages/document-indexer` | **ELIMINAR** | El plan original era CRUD docs. La realidad es que la indexación está hecha via `apps/api/src/routes/documentos.ts` con Drizzle directo. No hay caso de uso fuera de `document-service` que requiera abstracción. Mantenerlo es duplicación implícita. | Eliminar + ADR de supersede parcial ADR-001. **Ejecuta en S2.** |
 | `packages/trip-state-machine` | **PROMOVER** | Capacidad declarada explícita en README + comentarios en código original ("XState machines"). Hoy la state transition lógica está implícita en services (`liquidar-trip.ts`, `confirmar-entrega-viaje.ts`, etc.) y es la fuente del drift schema↔domain que ADR-043 resuelve. Una state machine declarativa elimina la fuente del drift estructuralmente. | **Implementar en S1** como parte del fix de drift (ADR-043). LOC estimado ~250 (definición XState + tests). |
 | `packages/ui-components` | **PROMOVER** parcial | Capacidad declarada en README (shadcn/ui + componentes Booster). Hoy `apps/web/src/components/` tiene ~42 componentes; algunos son obviamente reutilizables (`ChileanPlate`, `CompanySwitcher`, `EmptyState`, `FormField`, `Layout`, `ProtectedRoute`, `RelativeTime`, `DemoBanner`, `ConsentTermsBanner`, `DocumentosSection`). | **Extraer 5-8 componentes reutilizables** a `packages/ui-components` en S2 + tests por componente. NO mover todo (los componentes específicos de una página quedan en `apps/web`). LOC estimado ~600 (moves + tests). |
+
+
+---
+
+> **SUPERSEDED PARCIALMENTE**: ADR-051 (2026-05-19) supersedea puntos
+> específicos de esta sección bajo el principio operativo "tiempo a producción"
+> declarado por PO 2026-05-19. La sección mantiene status `Approved` pero los
+> puntos enumerados en `docs/adr/ADR-051-resolucion-8-stubs.md` §"Supersedes
+> explícitos sobre stubs-decision" quedan inaplicables a partir de esa fecha.
+>
+> Mapping exacto: 6 de 8 stubs superseded (matching-engine, notification-service,
+> document-service, ai-provider, carta-porte-generator, document-indexer).
+> Coinciden y mantienen vigencia: trip-state-machine y ui-components.
 
 ### 7.3 Resumen
 
