@@ -10,4 +10,4 @@ const logger = createLogger({
 logger.info({ runtime: 'cloud-run' }, '@booster-ai/document-service starting (skeleton)');
 
 // TODO: implementar según el ADR correspondiente.
-// Ver docs/adr/ y skills/ para el plan de implementación.
+// Ver docs/adr/ y plugin booster-skills para el plan de implementación.

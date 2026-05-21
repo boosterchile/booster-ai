@@ -3,7 +3,8 @@
 Este documento es el **contrato de trabajo** entre Felipe Vicencio (Product Owner) y Claude (agente de desarrollo principal). Fija cómo trabaja el agente en este repo, qué decisiones puede tomar solo, cuándo pregunta, cómo documenta y cómo se valida su trabajo.
 
 **Fecha de adopción**: 2026-04-23
-**Marco de referencia**: [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) — Production-grade engineering skills for AI coding agents.
+**Última actualización**: 2026-05-20 (ADR-049 plugin system)
+**Marco de referencia**: plugins de Claude Code `agent-rigor` + `booster-skills` (ver §Integración con plugins de Claude Code).
 
 ---
 
@@ -16,69 +17,153 @@ Este documento es el **contrato de trabajo** entre Felipe Vicencio (Product Owne
 - **Misión del producto**: Marketplace B2B de logística sostenible que conecta generadores de carga con transportistas, optimizando retornos vacíos y certificando huella de carbono bajo GLEC v3.0 / GHG Protocol / ISO 14064
 - **Estado objetivo**: TRL 10 (sistema probado, certificado y listo para despliegue comercial)
 
-## Principios rectores — inviolables desde el commit 1
+## Integración con plugins de Claude Code
 
-Estos principios tienen precedencia sobre cualquier instrucción puntual. Si una instrucción contradice un principio, Claude lo señala antes de ejecutar.
+Este proyecto se opera bajo Claude Code (CLI) y consume **dos plugins** que en conjunto forman el sistema operativo de desarrollo. Decisión arquitectónica documentada en [ADR-049](docs/adr/049-claude-code-plugin-system-adoption.md).
 
-### 1. Cero deuda técnica desde day 0
+### Plugin 1: `agent-rigor` 0.2.0+
 
-- **Sin `any`** en TypeScript. Biome lo prohíbe con `noExplicitAny: error`. Excepción: tests internos, documentada con comentario.
-- **Sin `console.*`** en código de producción. Todo logging estructurado con `packages/logger` (Pino). Excepción: CLI dev tools.
-- **Sin secretos en el repo**. Ni en `.env`, ni en código, ni en documentación. Todas las credenciales via `GOOGLE_APPLICATION_CREDENTIALS` (dev local) o Secret Manager (prod). Pre-commit hook con `gitleaks` lo aplica.
-- **Sin features sin tests**. Coverage mínimo 80% bloqueante en CI desde el primer PR. No se mergea código sin tests que lo cubran.
-- **Sin infra manual**. Todo en Terraform, incluyendo IAM humana. Cambios a infra requieren PR.
+Provee la **disciplina senior-engineering generalista**: ciclo no-negociable, hooks de enforcement, sub-agents del ciclo, session ledger, benchmark.
 
-### 2. Evidence over assumption
+Repo: [`boosterchile/best-skill-claude`](https://github.com/boosterchile/best-skill-claude)
 
-Cada afirmación técnica debe respaldarse con evidencia verificable:
+Instalación:
+```bash
+/plugin marketplace add boosterchile/best-skill-claude
+/plugin install agent-rigor@agent-rigor
+```
 
-- "Los tests pasan" → output de `pnpm test` pegado en el PR.
-- "El deploy funciona" → URL de Cloud Run + log de health check.
-- "La query es eficiente" → output de `EXPLAIN ANALYZE` o traza OpenTelemetry.
-- "No hay regresiones" → diff de métricas antes/después.
+Contenido relevante:
+- **Ciclo no-negociable**: `/agent-rigor:spec` → `/agent-rigor:plan` → `/agent-rigor:build` → `/agent-rigor:test` → `/agent-rigor:review` → `/agent-rigor:ship`.
+- **Comandos adicionales**: `/agent-rigor:design`, `/agent-rigor:code-simplify`, `/agent-rigor:benchmark`.
+- **Sub-agents**: `code-reviewer`, `devils-advocate` (mandatory en solo-dev mode), `security-auditor`, `test-engineer`, `ux-designer`.
+- **22 skills numeradas**: `00-using-this-pack` a `64-shipping-and-launch`.
+- **Hooks enforcement**: PreToolUse anti-racionalización (vocabulario drift catalogado en `agent-rigor/CLAUDE.md §4`) + ciclo forzado (no `Write/Edit` sin spec previa).
+- **Session ledger**: `.claude/ledger/<sessionId>.jsonl` con todas las decisiones, skips, waivers.
 
-Si Claude no puede generar la evidencia, **no afirma**. Dice "no validado" o "pendiente de verificar".
+**Path canónico de specs**: `.specs/<feature-slug>/{idea,spec,plan,verify,review,ship}.md`. Definido por agent-rigor. No usar `docs/specs/`.
 
-### 3. Process over knowledge
+### Plugin 2: `booster-skills` 0.1.0+
 
-Este repo usa el framework de Agent Skills de Addy Osmani. El agente no confía en su memoria — sigue los workflows definidos en `skills/` para cada operación. Cada skill tiene:
+Provee el **dominio + stack + auditoría específicos de Booster AI**.
 
-- **When to use** — condiciones de activación
-- **Core process** — pasos numerados y específicos
-- **Anti-rationalizations** — tentaciones comunes que el skill advierte
-- **Exit criteria** — checkpoints verificables
+Repo: [`boosterchile/booster-skills`](https://github.com/boosterchile/booster-skills)
 
-Si una tarea no tiene un skill definido y es repetible, Claude propone crear el skill antes de ejecutar.
+Instalación:
+```bash
+/plugin marketplace add boosterchile/booster-skills
+/plugin install booster-skills@booster-skills
+```
 
-### 4. Decisiones en ADRs, no en conversación
+Contenido:
 
-Cualquier decisión arquitectónica con impacto futuro (stack, patrón, contrato público) se documenta como ADR en `docs/adr/`. Conversaciones de Slack/chat no son evidencia de decisión.
+- **7 skills**: `arquitecto-maestro`, `adding-cloud-run-service`, `carbon-calculation-glec`, `empty-leg-matching`, `incident-response`, `booster-stack-conventions`, `booster-deploy-cloud-run`.
+- **6 sub-agents** de auditoría arquitectónica: `dependency-auditor`, `explore-architecture`, `performance-analyzer`, `refactor-advisor`, `security-scanner`, `tech-debt-detector`.
 
-### 5. Type safety end-to-end
+### Verificación
 
-El tipado empieza en la BD (Drizzle schema), se comparte via `packages/shared-schemas` (Zod), y llega hasta el cliente (TanStack Query types inferidos). **No hay frontera donde los tipos se pierdan**. Si aparece una frontera de tipos (ej. llamada HTTP externa sin schema), Claude crea el Zod schema antes de usar los datos.
+Tras instalar ambos plugins, una sesión nueva de Claude Code debe reportar (vía `/plugin list`):
 
-### 6. Observabilidad desde el primer endpoint
+- `agent-rigor@agent-rigor` ✓ enabled
+- `booster-skills@booster-skills` ✓ enabled
 
-Cada endpoint del backend y cada interacción relevante del frontend genera:
+### Distribución de responsabilidades
 
-- Log estructurado con `correlationId` consistente
-- Span de OpenTelemetry con contexto propagado
-- Métrica custom si es operación de negocio (matches creados, emisiones calculadas, etc.)
+| Responsabilidad | Plugin |
+|---|---|
+| Ciclo Define → Plan → Build → Verify → Review → Ship | `agent-rigor` |
+| Anti-racionalización + waivers + cooling-off | `agent-rigor` |
+| Sub-agents del ciclo (5) | `agent-rigor` |
+| Session ledger + benchmark | `agent-rigor` |
+| Stack Booster (Zod, Biome, Logger, OTel, coverage) | `booster-skills` (skill `booster-stack-conventions`) |
+| Deploy Booster (Cloud Run + Cloud Build + monitoreo 2h) | `booster-skills` (skill `booster-deploy-cloud-run`) |
+| Dominio Booster (carbon GLEC, empty-leg matching) | `booster-skills` |
+| Auditoría arquitectónica del codebase | `booster-skills` (6 sub-agents) |
+| Reglas específicas del proyecto (stack, naming, ADRs Booster) | este CLAUDE.md |
 
-No se "añaden logs después". Se añaden al momento de escribir el código.
+### Precedencia en conflicto
 
-### 7. Seguridad por defecto
+Si una regla de agent-rigor entra en conflicto con una regla específica Booster declarada en este CLAUDE.md o en una skill de booster-skills, **gana la regla Booster** para este proyecto. Ejemplos:
 
-- Toda input externa pasa por validación Zod antes de tocar lógica de negocio.
-- Toda consulta a BD usa parámetros (Drizzle los fuerza).
-- Toda operación server-to-server con GCP usa ADC + OAuth (nunca API keys, salvo legacy explicitado en ADR-009).
-- Toda PII se redacta en logs automáticamente via Pino serializers.
-- Pre-commit bloquea commits con patrones de secretos detectados.
+- agent-rigor sugiere convención de naming en inglés; este CLAUDE.md declara naming bilingüe Booster → gana Booster.
+- agent-rigor `64-shipping-and-launch` da checklist de 12 puntos; `booster-deploy-cloud-run` agrega 4 pasos específicos GCP → ambos aplican, los específicos no reemplazan los generales.
+
+### Capas adicionales locales del proyecto
+
+Además de los plugins, el repo Booster mantiene 3 archivos en `agents/` raíz como **overrides locales Booster** del agent-rigor genérico:
+
+| Archivo | Qué extiende | Por qué override local Booster |
+|---|---|---|
+| `agents/code-reviewer.md` | `agent-rigor:code-reviewer` | Añade disciplina ADR Booster + anti-rationalizations Booster específicas |
+| `agents/security-auditor.md` | `agent-rigor:security-auditor` | Añade compliance Chile: Ley 19.628 (privacy), SII/DTE (retention 6 años), modelo Uber-like + Sustainability Stakeholder (ADR-004, ADR-034) |
+| `agents/sre-oncall.md` | — (sin equivalente en plugins) | Único: SLOs, observabilidad GCP, capacity planning específico |
+
+Cuando agent-rigor invoca `subagent_type: code-reviewer` o `security-auditor` en este repo, Claude Code resuelve al override local en lugar del genérico del plugin. Es comportamiento deliberado.
+
+Migración futura de este contenido al plugin `booster-skills` (v0.2.0+ con compliance Chile) tracked en [`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`](.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md).
+
+Para resolver referencias a paths antiguos (`skills/`, `.claude/commands/`, etc.) que aparezcan en ADRs históricos (≤ ADR-048): ver [ADR-050 path-remapping](docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md).
+
+## Reglas no-negociables del stack Booster
+
+Estas reglas son **contratos**, no preferencias. La skill `booster-stack-conventions` (en plugin `booster-skills`) las hace cumplir automáticamente cada vez que se escribe código en este proyecto. Cambiar cualquiera de ellas requiere un ADR formal.
+
+### Type safety end-to-end
+
+- **Zero `any`** (Biome lo prohíbe). Si TypeScript no infiere un tipo, crear Zod schema y derivar con `z.infer<>`.
+- **Zero `@ts-ignore` / `@ts-expect-error`** sin issue de GitHub asociado.
+- **Zero `as unknown as T`** sin validación Zod previa.
+
+### Validación en boundaries
+
+Todo input externo pasa por Zod **antes** de tocar lógica:
+
+- HTTP body/query/headers → Zod en handler (típicamente vía `@hono/zod-validator`).
+- Variables de entorno → Zod en `packages/config/env.ts` al startup.
+- Payloads Pub/Sub, Cloud Tasks → Zod en el consumer.
+- Respuestas de APIs externas → Zod en el cliente.
+
+### Observabilidad obligatoria
+
+- **Zero `console.*`** — usar `@booster-ai/logger` con structured logs.
+- **Cada endpoint nuevo** tiene: log estructurado con `trace_id`, span OpenTelemetry, métrica custom si la operación es de negocio.
+- **No silently swallow errors**: cada `catch` debe loguear con contexto + re-throw o recovery explícito con métrica.
+
+### Seguridad por defecto
+
+- **Secretos**: Google Secret Manager, nunca en código, nunca en variables de entorno hardcoded en repo.
+- **API keys GCP**: con restricciones IP/referrer activadas.
+- **Auth**: JWT Zero-Trust según ADR-001. No introducir mecanismos alternativos sin ADR.
+
+### Testing
+
+- **Coverage 80%+** en código nuevo (líneas, branches, funciones). CI bloquea si baja.
+- **Unit tests**: `*.test.ts` al lado del archivo (`src/foo.ts` → `src/foo.test.ts`).
+- **Integration tests**: `test/integration/` por workspace. Levantan DB Postgres local.
+- **E2E tests**: `pnpm --filter @booster-ai/web test:e2e`. Playwright. Solo flujos críticos.
+- **Tests existen ANTES del commit del feature**, no después.
+
+### Commits y PRs
+
+- **Conventional Commits con scope**: `<type>(<scope>): <summary>`. Ejemplos válidos: `feat(matching): ...`, `fix(auth): ...`, `refactor(carbon): ...`.
+- **Scope** corresponde al dominio del cambio (matching, telemetry, auth, web, api, infra, db, carbon, etc.).
+- **Summary** en español, imperativo, ≤72 chars.
+- **Squash merges** a `main`.
+- **PRs con sección `## Evidencia` obligatoria**: output tests, screenshots si UI, curl trace si endpoint, ADR compliance checklist, `pnpm ci` final. Sin sección Evidencia el PR no se mergea.
+
+### Deploy
+
+- **Staging automático** vía Cloud Build trigger en merge a `main`.
+- **Producción**: manual approval en Cloud Build.
+- **Monitoreo 2h post-deploy**: error rate, latency P95, logs limpios.
+- **NO deploy viernes después de las 16:00 hora Chile** sin waiver explícito + plan de sábado.
+- Detalles en skill `booster-deploy-cloud-run`.
+
+> **Recordatorio**: Estas reglas son la columna vertebral de "Cero deuda técnica desde day 0". Saltearlas requiere waiver explícito documentado en `.claude/ledger/`.
 
 ---
 
-## Estructura del repo (v2 — tras ADR-004..008)
+## Estructura del repo (v3 — tras ADR-049)
 
 ```
 Booster-AI/
@@ -95,21 +180,30 @@ Booster-AI/
 ├── .nvmrc
 ├── .gitignore
 │
-├── .claude/commands/           # slash commands: /spec /plan /build /test /review /ship
+├── .claude/                    # minimal post-PR-2 (ADR-049)
+│   ├── settings.json           # declara plugins (project scope)
+│   ├── settings.local.json     # permisos pre-autorizados (gitignored)
+│   ├── ledger/                 # sesiones agent-rigor (.jsonl per session)
+│   ├── worktrees/              # sesiones parallel
+│   └── staging/                # (gitignored) workaround pattern audit-session
 │
-├── skills/                     # workflows estructurados (9 categorías — ver ADR-002)
-│   # core-engineering, operations-sre, compliance, customer-ops,
-│   # data-ml, iot-telemetry, growth-business, performance, api-lifecycle
+├── agents/                     # 3 overrides Booster locales (ver §Capas adicionales)
+│   ├── code-reviewer.md        # extiende agent-rigor:code-reviewer
+│   ├── security-auditor.md     # + compliance Chile (Ley 19.628, SII/DTE)
+│   └── sre-oncall.md           # único: SLOs + observabilidad GCP
 │
-├── agents/                     # code-reviewer, security-auditor, test-engineer, sre-oncall
-├── hooks/                      # session-start
-├── references/                 # testing/security/performance/a11y checklists
-├── runbooks/                   # procedimientos one-off con snapshot
-├── playbooks/                  # decisiones de producto
+├── references/                 # checklists Booster (code-review, security, IDOR audits)
+├── playbooks/                  # decisiones de producto/negocio
 │
-├── docs/adr/                   # Architecture Decision Records
-│   # 001-stack  002-skill-framework  004-uber-like-model
-│   # 005-telemetry-iot  006-whatsapp  007-chile-documents  008-pwa-multirole
+├── docs/
+│   ├── adr/                    # ADRs (049 al cierre de PR-2; incluye ADR-049 plugin system)
+│   ├── plugins/                # REPORTE-migracion-booster-skills-v0.1.0.md (replicabilidad)
+│   ├── handoff/                # CURRENT.md + handoffs históricos fechados
+│   └── ... (otros sub-dirs Booster)
+│
+├── .specs/                     # path canónico agent-rigor: <feature-slug>/{spec,plan,verify,review,ship}.md
+│   ├── _followups/             # follow-up stubs no urgentes
+│   └── <feature-slug>/         # specs activas por feature
 │
 ├── apps/                       # 8 apps
 │   ├── api/                    # Backend principal (Hono)
@@ -121,25 +215,17 @@ Booster-AI/
 │   ├── whatsapp-bot/           # Webhook Meta + NLU
 │   └── document-service/       # DTE + Carta Porte + OCR
 │
-├── packages/                   # ~16 packages compartidos
+├── packages/                   # ~21 packages compartidos
 │   # shared-schemas, logger, ai-provider, config,
 │   # trip-state-machine, codec8-parser, pricing-engine,
 │   # matching-algorithm, carbon-calculator, whatsapp-client,
 │   # dte-provider, carta-porte-generator, document-indexer,
-│   # notification-fan-out, ui-tokens, ui-components
+│   # notification-fan-out, ui-tokens, ui-components, etc.
 │
 ├── infrastructure/             # Terraform 100% IaC (incluye IAM humana)
 │   ├── main.tf
 │   ├── modules/
-│   │   ├── gke-telemetry/      # GKE Autopilot para TCP gateway
-│   │   ├── cloud-run-service/  # módulo reusable Cloud Run
-│   │   ├── pubsub-topic/
-│   │   ├── firestore/
-│   │   └── secret/
-│   └── environments/
-│       ├── dev/
-│       ├── staging/
-│       └── prod/
+│   └── environments/{dev,staging,prod}/
 │
 └── .github/workflows/
     ├── ci.yml                  # lint + test + coverage + build
@@ -148,10 +234,16 @@ Booster-AI/
     └── e2e-staging.yml         # Playwright contra staging
 ```
 
+Cambios v2→v3 (post-PR-2 / ADR-049):
+
+- **Eliminados**: `skills/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `hooks/` — funcionalidad migrada a plugins (`agent-rigor` + `booster-skills`).
+- **Conservados**: `agents/` (3 overrides Booster documentados), `references/`, `playbooks/`.
+- **Añadidos**: `.claude/staging/` (workaround pattern audit-session), `docs/plugins/` (REPORTE replicabilidad), `.specs/_followups/`.
+
 ## Cómo decido cuándo preguntar vs ejecutar
 
 **Ejecuto sin preguntar** cuando:
-- La tarea tiene un skill definido en `skills/` que la cubre end-to-end.
+- La tarea tiene una skill definida (en `agent-rigor:*` o `booster-skills:*`) que la cubre end-to-end.
 - Es un cambio mecánico de aplicación directa (ej. renombrar una variable, añadir un comentario).
 - Es trabajo de limpieza/refactor que no altera contratos públicos ni comportamiento externo.
 - El usuario lo instruyó explícitamente sin ambigüedad.

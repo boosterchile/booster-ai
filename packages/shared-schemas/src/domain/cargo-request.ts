@@ -30,7 +30,7 @@ export type CargoType = z.infer<typeof cargoTypeSchema>;
  *   - docs/adr/006-whatsapp-primary-channel.md §acceptance ("CargoRequest válido desde conversación de 4-6 turnos")
  *   - docs/adr/008-pwa-multirole.md (route NewCargoRequest.tsx planificada)
  *   - docs/adr/010-marketing-site-and-commerce.md (onboarding wizard "Crea tu primera carga")
- *   - skills/empty-leg-matching/SKILL.md (input central del algoritmo de matching)
+ *   - booster-skills:empty-leg-matching (input central del algoritmo de matching)
  *   - packages/shared-schemas/src/domain/trip.ts (cargo_request_id es FK estructural YA activa)
  *   - packages/shared-schemas/src/trip-request.ts (comentario roadmap Slice 2)
  * @review-on next-touch

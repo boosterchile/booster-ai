@@ -50,7 +50,7 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
-- Antes de una tarea compleja: consultar [`skills/`](./skills/) — puede haber un workflow definido.
+- Antes de una tarea compleja: consultar los plugins `agent-rigor` y `booster-skills` (vía `/plugin list`) — puede haber un workflow definido.
 - Antes de introducir una dependencia nueva: crear ADR.
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 

@@ -37,4 +37,4 @@ src/
 └── services/            # lógica de negocio (TODO)
 ```
 
-Sigue el skill `skills/adding-cloud-run-service/SKILL.md`.
+Seguir la skill `booster-skills:adding-cloud-run-service`.

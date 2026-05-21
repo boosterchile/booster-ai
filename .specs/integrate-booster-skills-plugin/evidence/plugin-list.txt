@@ -1,0 +1,12 @@
+Installed plugins:
+
+  ❯ agent-rigor@agent-rigor
+    Version: 0.2.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ booster-skills@booster-skills
+    Version: 0.1.0
+    Scope: project
+    Status: ✔ enabled
+

@@ -1,0 +1,29 @@
+==== T21: Orphan refs check post-T17 ====
+Generated: 2026-05-21T06:32:23Z
+
+==== Comando ====
+find docs apps packages infrastructure scripts README.md AGENTS.md -type f \( -name "*.md" -o -name "*.ts" -o -name "*.json" \) -exec grep -lE "skills/(adding-cloud-run-service|carbon-calculation-glec|empty-leg-matching|incident-response|arquitecto-maestro|using-agent-skills|writing-adrs|writing-tests)/SKILL\.md|\.claude/commands|\.claude/agents|hooks/session-start" {} +
+
+==== Archivos legítimos excluidos (esperado contenerlos) ====
+- .specs/integrate-booster-skills-plugin/* (audit trail PR-2)
+- docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md (historia migratoria)
+- docs/adr/002-skill-framework-adoption.md (ADR superseded, conserva contexto)
+- docs/adr/049-claude-code-plugin-system-adoption.md (documenta los paths borrados)
+- docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md (mapping table)
+- docs/adr/001-stack-selection.md (historical, no editable per ADR-046)
+- docs/adr/011-admin-console.md (historical, idem)
+- docs/plans/2026-05-17-test-integration-infra-apps-api.md (snapshot histórico)
+- docs/specs/2026-05-17-test-integration-infra-apps-api.md (snapshot)
+- docs/specs/2026-05-17-test-integration-infra-apps-api-devils-advocate.md (snapshot)
+
+==== Output bruto: archivos con refs huérfanas tras T17 (debe ser vacío o solo legítimos) ====
+docs/adr/001-stack-selection.md
+docs/adr/002-skill-framework-adoption.md
+docs/adr/011-admin-console.md
+docs/adr/049-claude-code-plugin-system-adoption.md
+docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md
+docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md
+
+==== Output filtrado (excluyendo legítimos) ====
+
+(Si vacío arriba = SC-22 PASS — zero orphan refs en archivos no-legítimos)
