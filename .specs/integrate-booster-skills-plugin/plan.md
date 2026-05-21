@@ -260,4 +260,4 @@ PO eligió Opción A (mini-round 3). Tasks ejecutadas:
 ### T22.5e: Stub `.specs/_followups/castellanizar-adr-headers.md` (S1 follow-up) [DONE 2026-05-21]
 ### T22.5f: Stub `.specs/_followups/github-branch-protection-squash.md` (S2 follow-up) [DONE 2026-05-21]
 ### T22.5g: Re-ejecutar verify.sh + verificar 31 PASS / 0 FAIL / 4 EXTERNAL [DONE 2026-05-21]
-### T22.5h: Commit incremental fixes mini-round-3 (PO ejecuta) — PENDIENTE
+### T22.5h: Commit incremental fixes mini-round-3 (PO ejecuta) — PENDIENTE [DONE 2026-05-21]
