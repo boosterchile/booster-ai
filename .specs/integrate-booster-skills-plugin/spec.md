@@ -76,8 +76,8 @@ Verificaciones empíricas adicionales realizadas en esta sesión:
 | SC-7 | `.claude/{ledger,settings.json,settings.local.json,worktrees}/` sin diff vs main | `git diff main -- .claude/ledger .claude/settings.json .claude/settings.local.json .claude/worktrees` vacío |
 | SC-8 | `CLAUDE.md` contiene `## Integración con plugins de Claude Code` y `## Reglas no-negociables del stack Booster` | `grep -qF "## Integración con plugins de Claude Code" CLAUDE.md && grep -qF "## Reglas no-negociables del stack Booster" CLAUDE.md` |
 | SC-9 | `CLAUDE.md` no contiene la sección antigua `## Principios rectores — inviolables desde el commit 1` | `! grep -qF "Principios rectores — inviolables desde el commit 1" CLAUDE.md` |
-| SC-10 | `docs/adr/049-...md` con `**Status**: Accepted` + referencia `boosterchile/booster-skills` | `grep -qE "^\*\*Status\*\*: Accepted" docs/adr/049-*.md && grep -qF "boosterchile/booster-skills" docs/adr/049-*.md` |
-| SC-11 | `docs/adr/002-...md` marcada `**Status**: Superseded by ADR-049` | `grep -qE "^\*\*Status\*\*: Superseded by ADR-049" docs/adr/002-skill-framework-adoption.md` |
+| SC-10 | `docs/adr/049-...md` con `**Estado**: Accepted` + referencia `boosterchile/booster-skills` | `grep -qE "^\*\*Estado\*\*: Accepted" docs/adr/049-*.md && grep -qF "boosterchile/booster-skills" docs/adr/049-*.md` |
+| SC-11 | `docs/adr/002-...md` marcada `**Estado**: Superseded by ADR-049` | `grep -qE "^\*\*Estado\*\*: Superseded by ADR-049" docs/adr/002-skill-framework-adoption.md` |
 | SC-12 | Branch del PR = `chore/integrate-booster-skills-plugin` | `git rev-parse --abbrev-ref HEAD` retorna ese string |
 | SC-13 | CI verde (lint, typecheck, test) | GitHub Actions: todos los checks pasan |
 | SC-14 | Sin nuevos `any`, `@ts-ignore`, `console.*` | `git diff main -- '*.ts' '*.tsx'` no contiene esos tokens en líneas añadidas |
@@ -149,6 +149,8 @@ NO se toca en este PR:
 - No tocar `.claude/{ledger,settings.json,settings.local.json,worktrees}/`.
 - Vocabulario anti-drift activo (lista canónica en `agent-rigor/CLAUDE.md §4`).
 
+- **Squash merge MANDATORIO en `/ship`** — no opcional. Justificación: limpia typos cosméticos detectados durante el cleanup (e.g., `versionadoç` en T13d, `*` extra en T13a) y presenta un solo commit limpio en main. Se enforce en `agent-rigor:64-shipping-and-launch` checklist.
+
 ### 6.3 Repos GitHub vinculados (canónico)
 
 - **`github.com/boosterchile/booster-ai`** — repo donde vive este PR (PR-2).
@@ -186,7 +188,7 @@ NO se toca en este PR:
 | 2 | Rename branch: `git branch -m chore/integrate-booster-skills-plugin` | PO | Branch correcto activo |
 | 3 | Crear `docs/plugins/` y commitear el REPORTE-migracion-booster-skills-v0.1.0.md (G4) — desde `/Users/fvicencio/Desktop/ahora/` vía `cp` | Agent | `docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md` |
 | 4 | Escribir `docs/adr/049-claude-code-plugin-system-adoption.md` vía staging + `cp` (incluye §Replicabilidad referenciando `docs/plugins/REPORTE...`) | Agent | ADR-049 creada |
-| 5 | Reescribir `docs/adr/002-skill-framework-adoption.md` con `Status: Superseded by ADR-049` vía staging + `cp` | Agent | ADR-002 superseded |
+| 5 | Reescribir `docs/adr/002-skill-framework-adoption.md` con `Estado: Superseded by ADR-049` vía staging + `cp` | Agent | ADR-002 superseded |
 | 6 | Reescribir `CLAUDE.md` vía staging + `cp` con merge selectivo: insertar §Integración (incluye sub-sección "Capas adicionales locales del proyecto" documentando `agents/` raíz — G6) + reemplazar §Principios rectores con §Reglas no-negociables del stack Booster | Agent | CLAUDE.md actualizada |
 | 7 | Escribir `.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md` stub vía staging + `cp` (G5) | Agent | Stub creado |
 | 8 | Añadir `.claude/staging/` a `.gitignore` vía staging + `cp` (G7) | Agent | .gitignore actualizado |
@@ -291,9 +293,9 @@ grep -qF "## Reglas no-negociables del stack Booster" CLAUDE.md
 ! grep -qF "Principios rectores — inviolables desde el commit 1" CLAUDE.md
 
 # SC-10..11: ADRs
-grep -qE "^\*\*Status\*\*: Accepted" docs/adr/049-claude-code-plugin-system-adoption.md
+grep -qE "^\*\*Estado\*\*: Accepted" docs/adr/049-claude-code-plugin-system-adoption.md
 grep -qF "boosterchile/booster-skills" docs/adr/049-claude-code-plugin-system-adoption.md
-grep -qE "^\*\*Status\*\*: Superseded by ADR-049" docs/adr/002-skill-framework-adoption.md
+grep -qE "^\*\*Estado\*\*: Superseded by ADR-049" docs/adr/002-skill-framework-adoption.md
 
 # SC-12: branch
 test "$(git rev-parse --abbrev-ref HEAD)" = "chore/integrate-booster-skills-plugin"

@@ -1,7 +1,7 @@
 # ADR-002 — Adopción del framework de Agent Skills
 
-**Status**: Superseded by ADR-049
-**Date**: 2026-04-23
+**Estado**: Superseded by ADR-049
+**Fecha**: 2026-04-23
 **Decider**: Felipe Vicencio (Product Owner)
 **Related**: [ADR-001](./001-stack-selection.md), [ADR-049](./049-claude-code-plugin-system-adoption.md), [CLAUDE.md](../../CLAUDE.md)
 

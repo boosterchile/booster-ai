@@ -1,329 +1,231 @@
-# Plan: integrate-booster-skills-plugin (v2)
+# Plan v3: integrate-booster-skills-plugin
 
-- **Spec**: `.specs/integrate-booster-skills-plugin/spec.md` v4 (SHA256 `8163778f50c99e74294b1cb506f9b4e4953d6574cd39d30d0f2d094f061d49c6`), APPROVED_BY_PO_2026-05-20 v4
-- **Created**: 2026-05-20
-- **Status**: Draft v2 — pendiente aprobación PO
-- **Cambios v1→v2 post devils-advocate**:
-  - B-1: T6 split a T6a (insertar §Integración) + T6b (reemplazar §Principios rectores con §Reglas no-negociables)
-  - B-2: T12 split a T12a..T12e (5 commits = 5 tasks atómicas)
-  - B-3: T11 ahora explícito en handoff PO→Agent post-deletes
-  - B-4: T2 incluye verificación `git ls-files` para confirmar trackability (rollback de T9/T10 viable)
-  - S-1: T6a depende de T4 (CLAUDE.md referencia ADR-049)
-  - S-2: T13 nueva: actualizar `docs/handoff/CURRENT.md` post-merge
-  - S-3: T1 incluye pre-check de existencia del branch destino
-- **Waivers en ledger**:
-  - 13 modules touched > 10 (cleanup masivo deliberado)
-  - T4 (~150 LOC) > 100 (ADR doc atómico, split daña narrativa)
+- **Spec**: `.specs/integrate-booster-skills-plugin/spec.md` v4 (APPROVED_BY_PO_2026-05-20 v4)
+- **Plan previo**: v2 (APPROVED_PLAN_BY_PO_2026-05-20 v2) — T1-T13e DONE, T14 post-merge pendiente
+- **Trigger v3**: REVIEW verdict CHANGES_REQUESTED — sub-agents detectaron 19 orphan refs + idioma header ADR-049 + .gitignore redundancia + SC-17d cosmético
+- **Created**: 2026-05-21
+- **Status**: Draft v3 — pendiente aprobación PO
 
 ---
 
-## Convenciones
+## Cambios v2 → v3
 
-- `[AGENT]` — Claude Code ejecuta (Write+cp staging pattern, Bash no bloqueado).
-- `[PO]` — PO ejecuta manualmente desde otra sesión/terminal (audit-session bloquea).
-- `[HANDOFF]` — sincronización explícita entre AGENT y PO (PO comunica completion via chat antes que AGENT avance).
-- **Acceptance** mapea a SC del spec §3.
-- **Rollback** ejecutable, no aspiracional.
+- **8 tasks nuevas** (T15-T22) que ejecutan los fixes derivados del review
+- **T14 (post-merge CURRENT.md)** se mantiene, renumerado a T25
+- **Squash merge MANDATORIO en SHIP** (T20 doc + T24 ejecución) — single hard requirement, no opcional
+- Plan v2 T1-T13e quedan DONE (no se re-ejecutan)
+
+Razones del re-plan:
+1. R-9 mitigación del spec era demasiado estrecha (solo CLAUDE.md + .github/workflows/) — 19 archivos del repo tienen orphan refs no cubiertos
+2. ADR-049 header en inglés vs ADR-045-048 en español (SC-10 verificó literal pero no consistency)
+3. .gitignore línea 139 (`.claude/staging/`) redundante con línea 131 (`.claude/`)
+4. SC-17d depende de column header de tabla — verificación cosmética
+5. Commits con typos (versionadoç, hooks/*) — resuelve squash merge mandatory
 
 ---
 
-## Tasks
+## Tasks nuevas
 
-### T1: Rename branch (con pre-check) [DONE 2026-05-20]
-- **Files**: ninguno
-- **LOC**: 0
-- **Depends on**: ninguna
-- **Owner**: `[PO]`
-- **Pre-check**: PO ejecuta `git branch --list chore/integrate-booster-skills-plugin`. Si retorna no vacío, ejecutar `git branch -D chore/integrate-booster-skills-plugin` (con confirmación) ANTES de rename.
-- **Comando**: `git branch -m chore/integrate-booster-skills-plugin`
-- **Acceptance**: SC-12 — `git rev-parse --abbrev-ref HEAD` = `chore/integrate-booster-skills-plugin`
-- **Rollback**: `git branch -m claude/flamboyant-jones-42a39b`
-
-### T2: Capturar pre-cleanup snapshot + verificar trackability [DONE 2026-05-20]
-- **Files**: `.specs/integrate-booster-skills-plugin/evidence/pre-cleanup-snapshot.txt` (nuevo)
-- **LOC**: 0 (output capture)
-- **Depends on**: ninguna (T1 no es prerequisito; el snapshot captura estado pre cualquier modificación)
-- **Owner**: `[AGENT]` — Bash batch
-- **Contenido capturado**:
-  - `find skills -mindepth 1 -maxdepth 2 | sort`
-  - `grep -n "^## \|^# " CLAUDE.md`
-  - `wc -l CLAUDE.md`
-  - `git status --short`
-  - `git log --oneline -3`
-  - `git branch --show-current`
-  - `find .claude -mindepth 1 -maxdepth 2 \( -type f -o -type d -o -type l \) | sort`
-  - `find agents hooks references playbooks -maxdepth 2 | sort`
-  - `grep -rE "skills/|\.claude/commands|\.claude/agents" .github/workflows/`
-  - `grep -nF "hooks/" CLAUDE.md`
-  - **B-4**: `git ls-files .claude/commands/ .claude/agents/ skills/ hooks/session-start.md` — confirma que TODOS los archivos a borrar están tracked. Si retorna vacío o subset, rollback de T9/T10 vía `git restore` no funcionará — debe revertirse al snapshot con `git checkout main -- <path>` o copiar desde el working tree de otra sesión.
-- **Acceptance**: archivo existe, 12 secciones nombradas, no vacío, sección `git ls-files` confirma trackability completa
-- **Rollback**: `rm .specs/integrate-booster-skills-plugin/evidence/pre-cleanup-snapshot.txt`
-
-### T3: Crear `docs/plugins/` y commitear REPORTE-migracion (G4 part 1) [DONE 2026-05-20]
+### T15: Castellanizar header ADR-049 + actualizar SC-10 en verify.sh [DONE 2026-05-21]
 - **Files**:
-  - `docs/plugins/` (nuevo dir)
-  - `docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md` (copia)
-- **LOC**: 0 nueva-LOC (es copy verbatim)
-- **Depends on**: T1
-- **Owner**: `[AGENT]`
-- **Comando**: `mkdir -p docs/plugins/ && cp "/Users/fvicencio/Desktop/ahora/REPORTE-migracion-booster-skills-v0.1.0.md" docs/plugins/`
-- **Acceptance**: SC-18 part 1 — `[ -f docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md ]`
-- **Rollback**: `rm -rf docs/plugins/`
+  - `docs/adr/049-claude-code-plugin-system-adoption.md` (modificar líneas 3-4)
+  - `docs/adr/002-skill-framework-adoption.md` (modificar líneas 3-4 para alineación cross-ADR)
+  - `.specs/integrate-booster-skills-plugin/verify.sh` (modificar SC-10/SC-11 grep patterns)
+  - `.specs/integrate-booster-skills-plugin/spec.md` (actualizar SC-10/SC-11 description)
+- **LOC**: ~12 LOC delta
+- **Owner**: `[AGENT]` — sed sobre 4 archivos
+- **Cambios específicos**:
+  - ADR-049: `**Status**` → `**Estado**`; `**Date**` → `**Fecha**`
+  - ADR-002: `**Status**: Superseded by ADR-049` → `**Estado**: Superseded by ADR-049`; `**Date**` → `**Fecha**`
+  - verify.sh SC-10a: `grep -qE "^\*\*Status\*\*: Accepted"` → `grep -qE "^\*\*Estado\*\*: Accepted"`
+  - verify.sh SC-11: idem
+  - spec.md §3 SC-10/SC-11: actualizar texto descriptivo
+- **Acceptance**: ADR-045-049 y ADR-002 todos usan `**Estado**`/`**Fecha**` consistentemente; verify.sh SC-10/SC-11 actualizados pasan
+- **Rollback**: `git restore docs/adr/049-...md docs/adr/002-...md .specs/integrate-booster-skills-plugin/verify.sh .specs/integrate-booster-skills-plugin/spec.md`
 
-### T4: Crear `docs/adr/049-claude-code-plugin-system-adoption.md` (G4 part 2) [DONE 2026-05-20]
-- **Files**: `docs/adr/049-claude-code-plugin-system-adoption.md` (nuevo, ~150 LOC, **waiver**)
-- **LOC**: ~150
-- **Depends on**: T3 (referencia el path `docs/plugins/REPORTE-...md`)
-- **Owner**: `[AGENT]` — Write to `.claude/staging/adr-049.md` + `cp` to `docs/adr/`
-- **Contenido obligatorio** (per spec v4 Apéndice A):
-  - Status: Accepted
-  - Date: 2026-05-20
+### T16: Crear ADR-050 path-remapping [DONE 2026-05-21]
+- **Files**: `docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md` (nuevo)
+- **LOC**: ~80 LOC
+- **Owner**: `[AGENT]` — Write to staging + cp
+- **Contenido**:
+  - Estado: Accepted
+  - Fecha: 2026-05-21
   - Decider: Felipe Vicencio (PO)
-  - Supersedes: ADR-002
-  - Related: ADR-001, CLAUDE.md, ADR-046
-  - §Contexto, §Decisión (3 capas), §Consecuencias (+/-)
-  - §Replicabilidad — 5-step procedure + link a `docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md`
-  - §Validación, §Referencias
-- **Acceptance**: SC-10 + SC-18 part 2
-- **Rollback**: `rm docs/adr/049-claude-code-plugin-system-adoption.md`
+  - Related: ADR-049, ADR-002, ADR-001, ADR-011
+  - §Contexto: ADRs históricos (001, 011) referencian paths que PR-2 borró. ADR-046 prohíbe editar ADRs viejos directamente.
+  - §Decisión: documentar el mapping path antiguo → nuevo namespacing como referencia canónica. Lectores futuros que ven `skills/X` en ADRs viejos resuelven con esta tabla.
+  - §Mapping tabla:
+    - `skills/adding-cloud-run-service/SKILL.md` → `booster-skills:adding-cloud-run-service`
+    - `skills/carbon-calculation-glec/SKILL.md` → `booster-skills:carbon-calculation-glec`
+    - `skills/empty-leg-matching/SKILL.md` → `booster-skills:empty-leg-matching`
+    - `skills/incident-response/SKILL.md` → `booster-skills:incident-response`
+    - `skills/arquitecto-maestro/SKILL.md` → `booster-skills:arquitecto-maestro`
+    - `skills/using-agent-skills/SKILL.md` → `agent-rigor:00-using-this-pack` (deprecated, no migra)
+    - `skills/writing-adrs/SKILL.md` → `agent-rigor:63-documentation-and-adrs` (deprecated, no migra)
+    - `skills/writing-tests/SKILL.md` → `agent-rigor:31-test-driven-development` (nunca existió como skill local; era TODO)
+    - `.claude/commands/spec.md` → `/agent-rigor:spec`
+    - `.claude/commands/plan.md` → `/agent-rigor:plan`
+    - `.claude/commands/build.md` → `/agent-rigor:build`
+    - `.claude/commands/test.md` → `/agent-rigor:test`
+    - `.claude/commands/review.md` → `/agent-rigor:review`
+    - `.claude/commands/ship.md` → `/agent-rigor:ship`
+    - `.claude/agents/<6>` → `booster-skills:<6>` namespaced
+    - `hooks/session-start.md` → reemplazado por agent-rigor SessionStart hook (en `~/.claude/plugins/cache/agent-rigor/...`)
+  - §Consecuencias: ADRs 001 y 011 quedan intactos; referencias se resuelven mentalmente vía esta tabla; futuros ADRs deben usar nombres canónicos de plugins
+  - §Referencias: ADR-049 (decisión arquitectónica), CLAUDE.md (sección §Integración con plugins de Claude Code), docs/plugins/REPORTE (ejemplo trabajado)
+- **Acceptance**: SC-NUEVO (ver spec actualizada) — ADR-050 existe con Estado: Accepted y contiene la tabla de mapping
+- **Rollback**: `rm docs/adr/050-...md`
 
-### T5: Marcar ADR-002 como Superseded by ADR-049 [DONE 2026-05-20]
-- **Files**: `docs/adr/002-skill-framework-adoption.md` (modificar)
-- **LOC**: ~5 LOC delta
-- **Depends on**: T4
-- **Owner**: `[AGENT]` — Read + Write a staging + cp
-- **Cambios**:
-  - Línea 3: `**Status**: Accepted` → `**Status**: Superseded by ADR-049`
-  - Apéndice al final: sección "## Supersedence Note (2026-05-20)" con razón + link
-- **Acceptance**: SC-11
-- **Rollback**: `git restore docs/adr/002-skill-framework-adoption.md`
-
-### T6a: Insertar §"Integración con plugins de Claude Code" en CLAUDE.md (G6 incluido) [DONE 2026-05-20]
-- **Files**: `CLAUDE.md` (modificar)
-- **LOC**: ~80 LOC delta (insertar 80 nuevas líneas)
-- **Depends on**: T4 (CLAUDE.md referencia ADR-049 en sub-sección "Distribución de responsabilidades")
-- **Owner**: `[AGENT]` — Read CLAUDE.md + Write a staging con sección nueva insertada antes de `## Principios rectores` + cp
+### T17: Fix orphan refs Categorías A+B+C+D+G (13 archivos) [DONE 2026-05-21]
+- **Files modificados**:
+  - **Categoría A**: `README.md` (líneas 115, 127), `AGENTS.md` (línea 53)
+  - **Categoría B**: 7 `apps/*/README.md` (línea 40 api, línea 10 los otros 6)
+  - **Categoría C**: 3 `apps/*/src/main.ts` (línea 13: matching-engine, notification-service, document-service)
+  - **Categoría D**: `docs/ci-cd.md` (líneas 135, 142)
+  - **Categoría G**: `packages/shared-schemas/src/domain/cargo-request.ts` (línea 33)
+- **LOC**: ~30 LOC delta total
+- **Owner**: `[AGENT]` — Write to staging + cp para cada archivo, o sed -i '' si patrón uniforme
 - **Cambios específicos**:
-  - Insertar antes de `## Principios rectores`:
-    - `## Integración con plugins de Claude Code` (titulo)
-    - Sub-sección Plugin 1 agent-rigor (repo, instalación, contenido)
-    - Sub-sección Plugin 2 booster-skills (repo `boosterchile/booster-skills`, instalación, contenido)
-    - Sub-sección "Verificación" (`/plugin list`)
-    - Sub-sección "Distribución de responsabilidades" (tabla; referencia ADR-049 implícito por mención)
-    - Sub-sección "Precedencia en conflicto" (reglas Booster ganan)
-    - **Sub-sección "Capas adicionales locales del proyecto" (G6)** — tabla 3 archivos × (qué extiende / por qué local), literal "override local Booster", link a `.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`
-  - **OQ-2 resolución inline**: actualizar `## Estructura del repo (v2 — tras ADR-004..008)` → `(v3 — tras ADR-049)` y reflejar nueva realidad (sin skills/, agents/ con 3 overrides documentados, plugins instalados)
-- **Acceptance**: SC-8 part 1 (literal `## Integración con plugins de Claude Code`) + SC-17 (G6 verificable)
-- **Rollback**: `git restore CLAUDE.md`
+  - Reemplazar `skills/adding-cloud-run-service/SKILL.md` → `booster-skills:adding-cloud-run-service` (skill del plugin)
+  - Reemplazar `skills/incident-response/SKILL.md` → `booster-skills:incident-response`
+  - Reemplazar `skills/empty-leg-matching/SKILL.md` → `booster-skills:empty-leg-matching`
+  - Reemplazar `skills/writing-tests/SKILL.md` → `agent-rigor:31-test-driven-development`
+  - Reemplazar referencias genéricas a `skills/` o `.claude/commands/` → ver ADR-049 + ADR-050
+  - `README.md` líneas 115, 127: actualizar el tree y la lista
+  - `AGENTS.md` línea 53: actualizar el bullet
+  - `apps/*/src/main.ts` línea 13 comments: actualizar a referencia plugin
+- **Acceptance**: SC-NUEVO — `find docs apps packages infrastructure scripts README.md AGENTS.md -type f -exec grep -lE "skills/|\.claude/commands|\.claude/agents|hooks/session-start" {} +` retorna solo los archivos legítimos (.specs/, docs/plugins/REPORTE, ADR-002, ADR-049, ADR-050, ADRs 001/011 si se aceptan)
+- **Rollback**: `git restore <13 archivos>`
 
-### T6b: Reemplazar §"Principios rectores" con §"Reglas no-negociables del stack Booster" en CLAUDE.md [DONE 2026-05-20]
-- **Files**: `CLAUDE.md` (modificar — segundo round de cambios)
-- **LOC**: ~+80 LOC nuevas, -62 LOC reemplazadas, neto +18 LOC
-- **Depends on**: T6a (mismo archivo, edición secuencial; mantener orden para evitar conflict)
-- **Owner**: `[AGENT]` — Read CLAUDE.md post-T6a + Write a staging con reemplazo + cp
-- **Cambios específicos**:
-  - Remover sección `## Principios rectores — inviolables desde el commit 1` (líneas 19-80 del CLAUDE.md original)
-  - Insertar sección `## Reglas no-negociables del stack Booster` con contenido del addendum sección 3:
-    - Type safety end-to-end (Zero any/ts-ignore, Zod boundaries)
-    - Validación en boundaries (Zod en handlers, env, Pub/Sub, APIs externas)
-    - Observabilidad obligatoria (Zero console, trace_id, OTel, métricas custom)
-    - Seguridad por defecto (Secret Manager, API key restrictions, JWT)
-    - Testing (coverage 80%+, *.test.ts colocados, integration, E2E)
-    - Commits y PRs (Conventional Commits con scope, Evidencia obligatoria)
-    - Deploy (staging auto, prod manual approval, monitoreo 2h, no-deploy viernes-16h-CL)
-- **Acceptance**: SC-8 part 2 (literal `## Reglas no-negociables del stack Booster`) + SC-9 (sección antigua removida)
-- **Rollback**: `git restore CLAUDE.md` (revierte T6a + T6b)
-
-### T7: Crear `.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md` stub (G5) [DONE 2026-05-20]
-- **Files**: `.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md` (nuevo)
-- **LOC**: ~30
-- **Depends on**: T1
-- **Owner**: `[AGENT]` — Write a staging + cp
-- **Contenido**: Stub con title, status Draft, trigger, objetivo, inputs (ADRs 004/007/021/034), procedimiento 5 steps, acceptance, prompt para sesión futura
-- **Acceptance**: SC-20
-- **Rollback**: `rm .specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`
-
-### T8: Añadir `.claude/staging/` a `.gitignore` (G7) [DONE 2026-05-20]
-- **Files**: `.gitignore` (modificar)
-- **LOC**: 1
-- **Depends on**: T1
-- **Owner**: `[AGENT]` — Read + Write a staging con append + cp
-- **Cambio**: append línea `.claude/staging/` con comentario explicativo
-- **Acceptance**: SC-19
+### T18: Limpiar `.gitignore:139` redundancia [DONE 2026-05-21]
+- **Files**: `.gitignore` (eliminar líneas 138-139 — comment + path)
+- **LOC**: -3 LOC
+- **Owner**: `[AGENT]` — sed -i '' delete específico
+- **Decisión técnica**: línea 131 `.claude/` ya cubre `.claude/staging/`. SC-19 redactado para verificar literal pero el contenido es noise. **Acción**: eliminar líneas 138-139 (newline + comment + path). Si futuro `.gitignore` cambia el patrón `.claude/` (e.g., agregando `!.claude/staging-public/`), entonces re-incluir staging/. Al cierre de PR-2 es redundante.
+- **Acceptance**: SC-19 se reformula a "Verificar que `.claude/staging/` está cubierto por `.gitignore` vía línea `.claude/`" — pasa empíricamente vía `git check-ignore .claude/staging/test.md`
 - **Rollback**: `git restore .gitignore`
 
-### T9: Borrar `.claude/commands/{6}`, `.claude/agents/{6}`, `.claude/skills/` (si existe) [DONE 2026-05-20]
-- **Files removed**:
-  - `.claude/commands/build.md`, `plan.md`, `review.md`, `ship.md`, `spec.md`, `test.md` + dir
-  - `.claude/agents/dependency-auditor.md`, `explore-architecture.md`, `performance-analyzer.md`, `refactor-advisor.md`, `security-scanner.md`, `tech-debt-detector.md` + dir
-  - `.claude/skills/` (defensivo: probable que no exista)
-- **LOC**: 0 (deletes)
-- **Depends on**: T2 (snapshot captured)
-- **Owner**: `[PO]` — desde otra sesión:
+### T19: Refinar SC-17d a grep semántico [DONE 2026-05-21]
+- **Files**:
+  - `.specs/integrate-booster-skills-plugin/verify.sh` (modificar SC-17d)
+  - `.specs/integrate-booster-skills-plugin/spec.md` §3 SC-17 description
+- **LOC**: ~5 LOC delta
+- **Owner**: `[AGENT]`
+- **Cambio**: SC-17d actual `grep -qF "override local Booster"` (cosmético) → **multi-string grep validando que los 3 archivos están descritos PROXIMOS a la palabra "override"**:
   ```bash
-  cd /Volumes/Pendrive128GB/Booster-AI/.claude/worktrees/flamboyant-jones-42a39b
-  rm -f .claude/commands/{build,plan,review,ship,spec,test}.md
-  rmdir .claude/commands 2>/dev/null || true
-  rm -f .claude/agents/{dependency-auditor,explore-architecture,performance-analyzer,refactor-advisor,security-scanner,tech-debt-detector}.md
-  rmdir .claude/agents 2>/dev/null || true
-  rm -rf .claude/skills/ 2>/dev/null || true
+  # Nuevo SC-17d: validación semántica
+  grep -A 10 "agents/code-reviewer.md" CLAUDE.md | grep -qi "override"
+  grep -A 10 "agents/security-auditor.md" CLAUDE.md | grep -qi "override"
+  grep -A 10 "agents/sre-oncall.md" CLAUDE.md | grep -qi "override"
   ```
-- **Acceptance**: SC-1 + SC-2 + SC-3
-- **Rollback**: `git restore .claude/commands .claude/agents .claude/skills` (viable si T2 confirmó trackability)
+- **Acceptance**: SC-17d refined pasa con el contenido actual de CLAUDE.md (ya documenta los 3 con "override")
+- **Rollback**: `git restore .specs/integrate-booster-skills-plugin/verify.sh .specs/integrate-booster-skills-plugin/spec.md`
 
-### T10: Borrar `skills/` raíz, `hooks/session-start.md`, `hooks/` [DONE 2026-05-20]
-- **Files removed**:
-  - Todo `skills/` (6 subdirs)
-  - `hooks/session-start.md`
-  - `hooks/` (dir vacío post-delete)
-- **LOC**: 0
-- **Depends on**: T2 (snapshot)
-- **Owner**: `[PO]` — desde otra sesión:
+### T20: Documentar squash merge MANDATORY en spec.md (para ship.md downstream) [DONE 2026-05-21]
+- **Files**: `.specs/integrate-booster-skills-plugin/spec.md` (actualizar §SHIP-related notes)
+- **LOC**: ~10 LOC delta
+- **Owner**: `[AGENT]`
+- **Cambio**: añadir a §6.2 Reglas del PO o §7.2 Approach task 14 una nota: "**Squash merge MANDATORIO** en `/ship` — no opcional. Justificación: limpia typos cosméticos en commits T13a (`hooks/*`) y T13d (`versionadoç`); presenta un solo commit limpio en main."
+- **Acceptance**: spec contiene literal "Squash merge MANDATORIO"; ship.md cuando se produzca lo incluye en su checklist
+- **Rollback**: `git restore .specs/integrate-booster-skills-plugin/spec.md`
+
+### T21: Re-ejecutar verify.sh + nuevo orphan-refs check [DONE 2026-05-21]
+- **Files**:
+  - `.specs/integrate-booster-skills-plugin/verify.sh` (extender con SC-NUEVOS para T15-T20)
+  - `.specs/integrate-booster-skills-plugin/verify.md` (sobrescribir con nuevos resultados)
+  - `.specs/integrate-booster-skills-plugin/evidence/orphan-refs-check.txt` (nuevo — output del grep exhaustivo)
+- **LOC**: ~30 LOC verify.sh + 50 LOC verify.md actualizado
+- **Owner**: `[AGENT]`
+- **Pasos**:
+  1. Añadir a verify.sh: SC-21 (ADR-050 existe con Estado: Accepted), SC-22 (zero orphan refs después de T17 — usando el grep exhaustivo), SC-23 (.gitignore .claude/staging/ cubierto vía línea 131 sin línea 139 explícita)
+  2. Ejecutar verify.sh
+  3. Sobrescribir verify.md con nuevos resultados (esperado: 26 originales + 3-4 nuevos = ~30 PASS / 0 FAIL / 4 EXTERNAL)
+  4. Guardar el output completo del grep orphan-refs en evidence/
+- **Acceptance**: verify.sh exit 0 con 0 FAIL; orphan-refs-check.txt confirma zero matches en archivos no-legítimos
+- **Rollback**: `git restore .specs/integrate-booster-skills-plugin/verify.sh .specs/integrate-booster-skills-plugin/verify.md` + eliminar `.specs/integrate-booster-skills-plugin/evidence/orphan-refs-check.txt`
+
+### T22: Commit incremental T15-T21 + actualizar plan.md DONE markers
+- **Files staged**: todos los archivos modificados por T15-T21
+- **Owner**: `[PO]` (commit bloqueado para agent)
+- **Comando**:
   ```bash
-  rm -rf skills/
-  rm -f hooks/session-start.md
-  rmdir hooks 2>/dev/null || true
+  git add docs/adr/049-claude-code-plugin-system-adoption.md \
+          docs/adr/002-skill-framework-adoption.md \
+          docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md \
+          README.md AGENTS.md docs/ci-cd.md \
+          apps/api/README.md apps/document-service/README.md apps/matching-engine/README.md \
+          apps/notification-service/README.md apps/telemetry-processor/README.md \
+          apps/telemetry-tcp-gateway/README.md apps/whatsapp-bot/README.md \
+          apps/matching-engine/src/main.ts apps/notification-service/src/main.ts apps/document-service/src/main.ts \
+          packages/shared-schemas/src/domain/cargo-request.ts \
+          .gitignore \
+          .specs/integrate-booster-skills-plugin/
+  git commit -m "fix(claude): orphan refs + ADR-050 path-remapping + idioma headers ADRs"
   ```
-- **Acceptance**: SC-4 + SC-5
-- **Rollback**: `git restore skills hooks` (viable si T2 confirmó trackability)
-
-### T11: [HANDOFF] PO comunica completion T9 + T10 [DONE 2026-05-20]
-- **Files**: ninguno
-- **LOC**: 0
-- **Depends on**: T9, T10 (PO debe haberlas ejecutado)
-- **Owner**: `[HANDOFF PO→AGENT]` — PO escribe en chat `T9+T10 DONE` (o equivalente). Sin este ack, T12 no arranca.
-- **Acceptance**: PO confirma en chat
-- **Rollback**: n/a (es sincronización)
-
-### T12: Capturar post-cleanup evidence [DONE 2026-05-20]
-- **Files**: `.specs/integrate-booster-skills-plugin/evidence/{plugin-list.txt, git-status.txt, tree-before.txt, tree-after.txt}` (nuevos)
-- **LOC**: 0 (output capture)
-- **Depends on**: T11 (handoff confirmado)
-- **Owner**: `[AGENT]` + `[PO]` para `/plugin list`
-  - `[PO]` corre `/plugin list` desde Claude Code, pega output en chat o en `.claude/staging/plugin-list.txt`
-  - `[AGENT]` `cp .claude/staging/plugin-list.txt .specs/integrate-booster-skills-plugin/evidence/plugin-list.txt`
-  - `[AGENT]` Bash: `git status --short > .specs/integrate-booster-skills-plugin/evidence/git-status.txt`
-  - `[AGENT]` Bash: capturar tree antes (del snapshot T2) y tree-after fresh
-- **Acceptance**: SC-15 — los 4 archivos existen, plugin-list.txt contiene literales `agent-rigor@agent-rigor` + `booster-skills@booster-skills`
-- **Rollback**: `rm -rf .specs/integrate-booster-skills-plugin/evidence/`
-
-### T13a: Commit 1 — deletes (chore)
-- **Files staged**: `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `skills/`, `hooks/`
-- **Depends on**: T12 (evidence capturada)
-- **Owner**: `[PO]` —
-  ```bash
-  git add .claude/commands .claude/agents .claude/skills skills hooks
-  git commit -m "chore(claude): borrar .claude/commands/, .claude/agents/, .claude/skills/, skills/, hooks/"
-  ```
-- **Acceptance**: `git log -1` muestra el mensaje literal con scope `(claude)`
+- **Acceptance**: commit nuevo en branch; `git log --oneline -6` muestra 6 commits ahead of main
 - **Rollback**: `git reset --soft HEAD~1`
 
-### T13b: Commit 2 — CLAUDE.md merge (docs)
-- **Files staged**: `CLAUDE.md`
-- **Depends on**: T13a
-- **Owner**: `[PO]` —
-  ```bash
-  git add CLAUDE.md
-  git commit -m "docs(claude): consolidar CLAUDE.md con integracion plugins y reglas stack"
-  ```
-- **Acceptance**: `git log -1` con mensaje literal
-- **Rollback**: `git reset --soft HEAD~1`
+### T23 (era T22 en v2): Re-REVIEW con sub-agents
+- **Skill**: `agent-rigor:50-code-review-and-quality` (re-invocar)
+- **Owner**: `[AGENT]`
+- **Pasos**:
+  1. Cooling-off check (si waiver, registrar; si elapsed real, proceder)
+  2. Invocar code-reviewer + devils-advocate (segunda iteración)
+  3. Verificar que los 19 orphan refs están resueltos
+  4. Verificar idioma header
+  5. Producir review.md v2 (sobrescribir con nuevo verdict)
+- **Acceptance**: verdict APPROVED (o nueva ronda de objeciones específicas)
+- **Rollback**: n/a
 
-### T13c: Commit 3 — ADRs + plugins doc (docs)
-- **Files staged**: `docs/adr/049-...md`, `docs/adr/002-...md`, `docs/plugins/`
-- **Depends on**: T13b
-- **Owner**: `[PO]` —
-  ```bash
-  git add docs/adr/049-claude-code-plugin-system-adoption.md docs/adr/002-skill-framework-adoption.md docs/plugins/
-  git commit -m "docs(adr): ADR-049 adopcion plugins Claude Code; ADR-002 superseded"
-  ```
-- **Acceptance**: `git log -1`
-- **Rollback**: `git reset --soft HEAD~1`
+### T24 (era T23 en v2): SHIP con squash merge mandatorio
+- **Skill**: `agent-rigor:64-shipping-and-launch`
+- **Owner**: `[AGENT]` prepara cuerpo; `[PO]` ejecuta `gh pr create` + `gh pr merge --squash`
+- **Acceptance**: PR mergeado en main vía squash, ADR-049 + ADR-050 live, CLAUDE.md v3 live
 
-### T13d: Commit 4 — .gitignore (chore)
-- **Files staged**: `.gitignore`
-- **Depends on**: T13c
-- **Owner**: `[PO]` —
-  ```bash
-  git add .gitignore
-  git commit -m "chore(git): excluir .claude/staging/ de versionado"
-  ```
-- **Acceptance**: `git log -1`
-- **Rollback**: `git reset --soft HEAD~1`
-
-### T13e: Commit 5 — specs + followups (docs)
-- **Files staged**: `.specs/integrate-booster-skills-plugin/`, `.specs/_followups/`
-- **Depends on**: T13d
-- **Owner**: `[PO]` —
-  ```bash
-  git add .specs/integrate-booster-skills-plugin/ .specs/_followups/
-  git commit -m "docs(specs): spec v4 + plan + verify + review + ship + followups stub"
-  ```
-- **Acceptance**: `git log -1` + `git log --oneline -5` muestra 5 commits con ordering correcto
-- **Rollback**: `git reset --soft HEAD~1`
-
-### T14: Update `docs/handoff/CURRENT.md` (post-merge a main)
-- **Files**: `docs/handoff/CURRENT.md` (modificar)
-- **LOC**: ~10-20 LOC (añadir sección "## Refactor sistema de desarrollo cerrado (2026-05-DD)")
-- **Depends on**: PR-2 mergeado en main (post `/agent-rigor:ship`)
-- **Owner**: `[AGENT]` — Read CURRENT.md + Write a staging con sección añadida + cp + commit aparte (o squash con commit final)
-- **Contenido a añadir**: cierre de refactor 3-capas, plugin booster-skills v0.1.0 operativo, scope canónico aplicado, agents/ raíz documentado como override, link a ADR-049
-- **Acceptance**: CURRENT.md actualizado y commiteado en main (S-2 resuelto)
-- **Rollback**: `git restore docs/handoff/CURRENT.md`
+### T25 (era T14 / T24 en v2): Post-merge update CURRENT.md
+- Sin cambios — task T14 original renombrada por orden
 
 ---
 
 ## Out-of-band tasks
 
-- **OOB-1**: `.claude/staging/` queda con artefactos de esta sesión (spec-pr2*.md, plan-pr2-v*.md, adr-049.md, etc.) — ignored por T8 pero físicamente presentes. Decisión: aceptar como conocido (referencia futura útil); el PO puede limpiar manualmente cuando lo crea conveniente.
-- **OOB-2**: Squash de los 5 commits T13a-T13e en uno solo al hacer merge — decisión del PO en `/agent-rigor:ship`.
-- **OOB-3**: Post-merge: `git remote prune origin` para limpiar referencias.
-- **OOB-4**: Si tras T6a/T6b la sección "Estructura del repo" actualizada queda inconsistente con la realidad (e.g. menciona un dir que ya no existe), `/agent-rigor:test` lo detecta vía SC-17 grep.
+- **OOB-1**: ADR-049 §Validación checklist 2 ítems `[ ]` → `[x]` se actualizan en T25 (post-merge), no en T15-T22.
+- **OOB-2**: Pre-commit commitlint gap para chars no-ASCII al final del summary — crear stub adicional en `.specs/_followups/` durante T22 commit.
+- **OOB-3**: Squash merge elimina typos `versionadoç` y `hooks/*` — confirmado en T20 documentación.
 
 ---
 
-## Open questions
+## Open questions (no bloqueantes)
 
-- **OQ-1**: ¿Los hooks audit-session se desactivan al cierre PR-2 o quedan activos? Resolución: `/agent-rigor:ship`.
-- **OQ-2**: Resuelto inline en T6a (actualizar "Estructura del repo (v2)" → "(v3)").
-
----
-
-## Devils-advocate pass (auto-aplicado v1→v2)
-
-| Objeción | Severidad | Resolución v2 |
-|---|---|---|
-| B-1: T6 es 2 tareas | Bloqueante | Split T6→T6a + T6b |
-| B-2: T12 son 5 commits | Bloqueante | Split T12→T13a..T13e |
-| B-3: Falta handoff T9/T10→T11 | Bloqueante | T11 nuevo: [HANDOFF] explícito |
-| B-4: Rollback T9/T10 no verificado | Bloqueante | T2 incluye `git ls-files` check |
-| S-1: T6a missing dependency T4 | Sustantiva | T6a depends on T4 explicitado |
-| S-2: Missing CURRENT.md task | Sustantiva | T14 añadida |
-| S-3: T1 sin pre-check branch existente | Sustantiva | T1 incluye pre-check + comando `git branch -D` si necesario |
-| S-4: T6 podría exceder 100 LOC con OQ-2 | Sustantiva | Resuelto por split + OQ-2 absorbida en T6a |
-| C-1: T2 antes de T1 | Cosmética | T2 ya no depende de T1 |
-| C-2: `.claude/staging/` huérfanos | Cosmética | Aceptado como conocido (OOB-1) |
-
-**Veredicto post-v2**: ready for PO approval pending external pasada formal en transición a BUILD.
+- **OQ-historic-ADR-status**: ¿Marcar ADR-049 §Validación checklist como `[x]` en T25 o en un commit follow-up? **Resolución**: en T25 post-merge para mantener atomicidad del PR-2.
+- **OQ-extra-followup**: ¿Crear stub para commitlint gap (OOB-2) como follow-up #2? **Resolución**: sí, durante T22.
 
 ---
 
-## Verification del plan (sub-checklist skill 20)
+## Devils-advocate pass v3 (pre-pasada del propio arquitecto-maestro)
+
+1. **¿Plan v3 cubre TODOS los hallazgos del review?**
+   - 5 bloqueantes code-reviewer: T15 (idioma), T17 (orphans Cat A-D, G), T18 (gitignore), T19 (SC-17d), T20+T21 (squash) — ✓
+   - 5 bloqueantes devils-advocate: T17 cubre A-D+G; T16 cubre E (ADR-050); F aceptado como historical (residual risk documented); + squash en T20 — ✓
+   - Code-reviewer questions/suggestions: ADR-049 §Validación → OOB-1 (T25); SC-13 confidence → verifica en CI tras push T24; evidence tracked → ya confirmado vía commit T13e — ✓
+
+2. **¿Hay riesgo de iteración v4?**
+   - Si T17 sed reemplazos rompen sintaxis Markdown o JSDoc: bajo (cambios mecánicos string-to-string). Mitigación: revisar diff antes de T22 commit.
+   - Si ADR-050 introduce inconsistencia con ADR-049: bajo (T16 es nuevo doc independiente).
+   - Si re-VERIFY (T21) detecta nuevos hallazgos: medio. Mitigación: verify.sh ampliado cubre dimensiones del review.
+
+3. **¿Aceptamos Categoría F (3 historical specs/plans) sin tocar?**
+   - Sí. Aceptable como residual risk en review.md actual. PR-3 (migración specs path canónica) puede o no afectarlos en el futuro.
+
+---
+
+## Verificación del plan v3 (sub-checklist skill 20)
 
 - [x] Todas tasks son vertical slices (cada una deja el repo en estado funcional)
-- [x] LOC ≤100 por task **excepto T4** (waiver ADR atómico)
-- [x] Acceptance trace a SC del spec: T1→SC-12, T2→pre, T3→SC-18, T4→SC-10/18, T5→SC-11, T6a→SC-8/17, T6b→SC-8/9, T7→SC-20, T8→SC-19, T9→SC-1/2/3, T10→SC-4/5, T11→handoff, T12→SC-15, T13a-e→commit ordering, T14→post-merge CURRENT.md
+- [x] LOC ≤100 por task — todas dentro (T16 ~80 ADR-050 es el más grande, justificable como doc atómico)
+- [x] Acceptance trace a SC del spec actualizada
 - [x] Rollback plan ejecutable para cada task
-- [x] Devils-advocate output captured (sección anterior)
-
----
-
-## Notas operacionales
-
-- **Solo-developer cooling-off**: 30 min entre approval de plan v2 y T1.
-- **Branch rename safety (T1)**: pre-check incluido. Si conflict, PO decide `-D` o re-evaluar nombre.
-- **R-1 mitigation activa**: cada `[AGENT]` Write→staging+cp; cada `[PO]` ejecuta desde otra sesión.
-- **Total**: 14 tasks (T1, T2, T3, T4, T5, T6a, T6b, T7, T8, T9, T10, T11, T12, T13a, T13b, T13c, T13d, T13e, T14) — más atómico que v1 (12).
+- [x] Devils-advocate pre-pasada documentada (sección anterior)
 
 ---
 
@@ -331,6 +233,16 @@
 
 **Status**: Pendiente.
 
-**Para aprobar**: `APPROVED_PLAN_BY_PO_2026-05-20 v2` con firma textual.
+**Para aprobar**: `APPROVED_PLAN_BY_PO_2026-05-21 v3` con firma textual.
 
-Tras approval: cooling-off 30 min, después `/agent-rigor:build` arranca con T1.
+Tras approval: ejecuto T15-T21 inmediatamente (AGENT-heavy con un solo PO commit en T22), después T23 re-REVIEW, después T24 SHIP con squash.
+
+---
+
+## Resumen ejecutivo
+
+- **9 tasks nuevas** (T15-T25 con T25 = T14 original renombrado por orden)
+- **Trabajo agent**: ~45 min secuencial para T15-T21
+- **Trabajo PO**: 1 commit (T22) + 1 PR create + 1 squash merge
+- **Total LOC delta esperado**: ~150 (mayormente ADR-050 + verify.sh extensions)
+- **Verdict objetivo post-fix**: APPROVED en T23 re-review → SHIP en T24

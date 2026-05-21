@@ -1,7 +1,7 @@
 # ADR-049 — Adopción del sistema de plugins de Claude Code
 
-**Status**: Accepted
-**Date**: 2026-05-20
+**Estado**: Accepted
+**Fecha**: 2026-05-20
 **Decider**: Felipe Vicencio (Product Owner)
 **Supersedes**: [ADR-002](./002-skill-framework-adoption.md)
 **Related**: [ADR-001](./001-stack-selection.md), [ADR-046](./046-historical-adr-numbering-collisions.md), [CLAUDE.md](../../CLAUDE.md)

@@ -135,5 +135,3 @@ __pycache__/
 !apps/**/*.png
 !packages/**/*.png
 
-# Plugin work-around: staging area for spec edits (see ADR-049 §Replicabilidad)
-.claude/staging/

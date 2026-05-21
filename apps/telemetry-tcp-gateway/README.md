@@ -7,4 +7,4 @@ TCP server Teltonika Codec8. GKE Autopilot (ADR-005). 1000+ conexiones persisten
 
 ## Implementación pendiente
 
-Seguir el skill `skills/adding-cloud-run-service/SKILL.md` (o adaptado para GKE si aplica) y los ADRs relacionados.
+Seguir la skill `booster-skills:adding-cloud-run-service` (o adaptado para GKE si aplica) y los ADRs relacionados.

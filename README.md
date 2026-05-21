@@ -112,10 +112,9 @@ packages/
 └── ui-components/           # shadcn/ui + componentes Booster
 
 infrastructure/              # Terraform (GCP)
-skills/                      # Workflows para agentes de IA
-agents/                      # Personas reutilizables
-.claude/                     # Slash commands para Claude
-docs/adr/                    # Architecture Decision Records (001..008)
+agents/                      # 3 overrides Booster (ver §Capas adicionales en CLAUDE.md)
+.claude/                     # Plugins config + ledger + worktrees (post-ADR-049)
+docs/adr/                    # Architecture Decision Records (001..050)
 ```
 
 ## Desarrollo con agentes de IA
@@ -124,7 +123,7 @@ Este repo está diseñado para ser trabajado con Claude como agente principal:
 
 - [`CLAUDE.md`](./CLAUDE.md) — contrato de trabajo detallado
 - [`AGENTS.md`](./AGENTS.md) — subconjunto cross-tool (Copilot, Cursor, etc.)
-- [`skills/`](./skills/) — workflows estructurados siguiendo el framework de [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)
+- Plugins `agent-rigor` + `booster-skills` — workflows estructurados como plugins de Claude Code (ver [ADR-049](./docs/adr/049-claude-code-plugin-system-adoption.md))
 
 ## Comandos canónicos
 
