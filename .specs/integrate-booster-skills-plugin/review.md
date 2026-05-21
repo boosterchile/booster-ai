@@ -1,201 +1,223 @@
-# Review: integrate-booster-skills-plugin
+# Review v2: integrate-booster-skills-plugin
 
-- **Reviewer**: Felipe Vicencio + agent-rigor (code-reviewer + devils-advocate sub-agents)
+- **Reviewer**: Felipe Vicencio + agent-rigor (code-reviewer round 2 + devils-advocate round 2)
 - **Date**: 2026-05-21
-- **Cooling-off respected**: Waiver granted ("ya releí todo en este chat + 4hrs rest" — ledger `waiver_granted` 2026-05-21T04:36)
-- **Verdict**: **CHANGES_REQUESTED** — send back to BUILD for orphan refs + idioma header + .gitignore redundancia
+- **Cooling-off respected**: Waiver granted ("ya releí todo en este chat + 4hrs rest aplicaron antes" — ledger entry 2026-05-21T06:46)
+- **Round 1 review**: `.specs/integrate-booster-skills-plugin/review.md` (preserved at copy `review-v1-pre-T15-T21.md`)
+- **Verdict**: **CHANGES_REQUESTED (mini-round 3)** — 3 bloqueantes verificados + 2 cosméticos + 1 follow-up stub
 
 ---
 
-## Five-axis review (code-reviewer sub-agent + verified empirically)
+## Round 1 findings status (post T15-T21)
 
-### Correctness
+| # | Round 1 finding | Status | Evidence |
+|---|---|---|---|
+| 1 | `.gitignore:139` `.claude/staging/` redundante | ✅ RESOLVED | T18 eliminó líneas; SC-23b PASS |
+| 2 | ADR-049 idioma header inglés | ✅ RESOLVED | T15: `head -5 docs/adr/049-*` ahora `**Estado**`/`**Fecha**` |
+| 3 | Typo `versionadoç` (T13d) | ⏸ DEFERRED | Squash merge T24 lo absorbe |
+| 4 | `*` extra en T13a + enum incompleta | ⏸ DEFERRED | Squash merge T24 |
+| 5 | SC-17d cosmético | ✅ RESOLVED | T19 semantic check con 3× grep -A 10 |
+| 6 | 19 archivos orphan refs | ✅ RESOLVED | T17 fix; SC-22 PASS empíricamente |
 
-| Finding | Severidad | Evidencia |
-|---|---|---|
-| `.gitignore:131` `.claude/` ya ignora todo el directorio. Línea 139 `.claude/staging/` añadida en T8 es **redundante**. SC-19 pasa por grep literal pero no aporta nada operacional. | BLOQUEANTE leve | `grep -n "^\.claude" .gitignore` retorna 131 (.claude/) y 139 (.claude/staging/) |
-| ADR-049 §Validación tiene 2 checklist items `[ ]` sin marcar sobre el propio PR-2 que esta materializa. | SUSTANTIVO | `docs/adr/049-...md` líneas 107-113. Se deben marcar `[x]` post-merge, o quedan como historical snapshot |
-| Los 20 SCs internos pasan (26 PASS / 0 FAIL / 4 EXTERNAL) pero NO cubren un riesgo material: **orphan references en el resto del repo** | **BLOQUEANTE CRÍTICO** | Ver §Devils-advocate findings |
-
-### Clarity
-
-| Finding | Severidad | Evidencia |
-|---|---|---|
-| `CLAUDE.md:91-103` "Capas adicionales locales" asume que el lector entiende el mecanismo de resolución override del plugin Claude Code. | SUGGESTION | Sin link a doc oficial ni a test empírico |
-| Falta nota explícita en CLAUDE.md de la transición v2→v3 ("Reemplaza §Principios rectores; ver ADR-049 §Lo que sobrevive") | SUGGESTION | Trazabilidad del delta no es inmediata sin abrir el ADR |
-
-### Complexity
-
-| Finding | Severidad | Evidencia |
-|---|---|---|
-| CLAUDE.md 326 LOC para contrato TRL-10 — razonable | OK | +90 LOC vs 236 original |
-| ADR-049 122 LOC < 150 prevista — waiver T4 sin usar plenamente | OK | Waiver registrado pero no excede |
-| Duplicación entre CLAUDE.md `:70-82` (tabla Distribución) y ADR-049 `:34-39` (tabla 3-capas) | SUGGESTION | Cubren el mismo terreno con enfoques distintos. Monitorear drift |
-
-### Consistency
-
-| Finding | Severidad | Evidencia |
-|---|---|---|
-| ADR-049 usa **`**Status**` / `**Date**` en inglés** mientras ADR-045-048 (recientes) usan **`**Estado**` / `**Fecha**` en español** | **BLOQUEANTE** | ADR-045/046/047/048 todos `**Estado**: Accepted` / `**Fecha**: YYYY-MM-DD`. ADR-049 actual: `**Status**: Accepted` / `**Date**: 2026-05-20`. Inconsistencia detectable. SC-10 fue redactada con el bug y solo verifica el literal — no detecta el problema. |
-| Commit `fda0c3d` (T13d) message: `chore(git): excluir .claude/staging/ de versionadoç` con `ç` extra | BLOQUEANTE | Visible en `git log`. Verify.md OB-1 lo marcó cosmético; en review subimos a bloqueante: si NO se squash-mergea, queda permanente. |
-| Commit `dcc1f52` (T13a) message: `chore(claude): borrar .claude/commands/, skills/, hooks/` — falta enumeración de `.claude/agents/` y `.claude/skills/` que el plan T13a prescribía | BLOQUEANTE | Subspecifica el cambio real. Same fix via squash merge mandatorio. |
-| ADR-049 §Replicabilidad usa imperativo español ("Identificar / Construir / Validar / Publicar / Instalar") consistente con CLAUDE.md | OK | Bien |
-
-### Coverage
-
-| Finding | Severidad | Evidencia |
-|---|---|---|
-| SC-17d depende de column header de tabla. Sostiene literal pero no semántica. | BLOQUEANTE leve | Verify.md devils-advocate punto 1 lo reconoció. Refinar a grep semántico o aceptar limitación. |
-| 4 EXTERNAL aceptables. **SC-13 (CI verde) no validado empíricamente** — el PR borra archivos pero no se confirmó que `pnpm lint/typecheck/test` corra limpio con la nueva estructura. | SUSTANTIVO | Verify Group G. Sin CI run previo, confianza basada en "no tocamos código TS" pero pre-commit hooks (gitleaks, biome lint-staged, check-adr-numbering) podrían reaccionar diferente en CI. |
-| No hay verificación de que pre-commit commitlint detectaría typos como `versionadoç`. Si los pasó, los hooks tienen gap. | SUGGESTION | Stub para `.specs/_followups/`: validar commitlint pattern para chars no-ASCII al final del summary. |
-| `.specs/integrate-booster-skills-plugin/evidence/` (4 archivos T12) ¿están en git? | QUESTION | Verify Group H asumió su existencia post-T13e. Empíricamente: SÍ, los 4 quedaron en commit `7df06b3` (10 files changed). |
+Round 1 totalmente cerrado (excepto T24 squash merge enforcement).
 
 ---
 
-## Devils-advocate findings (sub-agent + verified empirically)
+## Sub-agent round 2 verdicts
 
-**Hallazgo crítico**: spec/verify cubrió un scope demasiado estrecho. R-9 (`hooks/` borrado deja refs rotas en CLAUDE.md) solo cheqeó CLAUDE.md y `.github/workflows/`. **19 archivos del repo contienen referencias huérfanas a paths borrados**:
+### code-reviewer (agent_id a3d7d176)
 
-### Categoría A — TOP-LEVEL DOCS (2 archivos) — BLOQUEANTE
+VERDICT: **APPROVED**. 0 bloqueantes, 1 question (SC-21 strictness), 2 suggestions (writing-tests row en ADR-050, tilde en verify.sh). Verificación empírica de cada round 1 finding confirmada.
 
-| Archivo | Línea | Contenido | Fix |
-|---|---|---|---|
-| `README.md` | 115 | `skills/                      # Workflows para agentes de IA` | Actualizar tree para reflejar v3 estructura sin skills/ |
-| `README.md` | 127 | ``[`skills/`](./skills/) — workflows estructurados...`` | Reemplazar con ref a `booster-skills:*` namespacing + link a ADR-049 |
-| `AGENTS.md` | 53 | ``- Antes de una tarea compleja: consultar [`skills/`](./skills/)...`` | Reemplazar con ref a plugin booster-skills |
+### devils-advocate (agent_id a15b5aa2)
 
-### Categoría B — APP READMEs (7 archivos) — BLOQUEANTE
+VERDICT: **REQUEST_CHANGES**. 3 bloqueantes + 3 sustantivos + 2 cosméticos. Encontró defectos que code-reviewer pasó por alto.
 
-7 README.md de apps con misma referencia: `skills/adding-cloud-run-service/SKILL.md` → debería ser `booster-skills:adding-cloud-run-service`.
-
-| Archivo | Línea |
-|---|---|
-| `apps/api/README.md` | 40 |
-| `apps/document-service/README.md` | 10 |
-| `apps/matching-engine/README.md` | 10 |
-| `apps/notification-service/README.md` | 10 |
-| `apps/telemetry-processor/README.md` | 10 |
-| `apps/telemetry-tcp-gateway/README.md` | 10 |
-| `apps/whatsapp-bot/README.md` | 10 |
-
-Fix mecánico repetitivo: sed sobre los 7.
-
-### Categoría C — APP SOURCE COMMENTS (probablemente 3) — BLOQUEANTE LEVE
-
-| Archivo | Línea | Contenido | Fix |
-|---|---|---|---|
-| `apps/matching-engine/src/main.ts` | 13 | `// Ver docs/adr/ y skills/ para el plan de implementación.` | Reemplazar `skills/` con `booster-skills:` |
-| `apps/notification-service/src/main.ts` | 13 | idem | idem |
-| `apps/document-service/src/main.ts` | (verificar) | (probable) | idem |
-
-### Categoría D — CI/CD DOC (1 archivo) — BLOQUEANTE
-
-| Archivo | Líneas | Contenido | Fix |
-|---|---|---|---|
-| `docs/ci-cd.md` | 135 | `3. Añadir tests siguiendo \`skills/writing-tests/SKILL.md\` (TODO — skill pendiente)` | Skill `writing-tests` no existe ni en plugin ni se va a crear. Reemplazar con ref a `agent-rigor:31-test-driven-development` |
-| `docs/ci-cd.md` | 142 | `3. Si es real: seguir \`skills/incident-response/SKILL.md\`` | Reemplazar con `booster-skills:incident-response` |
-
-### Categoría E — HISTORICAL ADRs (2 archivos) — SUSTANTIVO con decisión PO
-
-**ADR-046 §1 (numbering collisions): "los ADRs son decisiones cerradas. Se crea un nuevo ADR que supersede, no se edita el viejo."**
-
-ADR-002 ya fue editado en T5 con un "Supersedence Note" — precedente válido para edición no-destructiva.
-
-| Archivo | Líneas | Contenido | Opciones |
-|---|---|---|---|
-| `docs/adr/001-stack-selection.md` | 176 | `**Preparado para Claude como agente principal**: CLAUDE.md + skills/ + .claude/commands/ formalizan la colaboración humano-agente.` | (a) **Note appended** ("2026-05-21: `skills/` y `.claude/commands/` se reemplazaron por plugins per ADR-049"), (b) **ADR-050 path-remapping** que documenta el cambio, (c) **Aceptar como historical** sin tocar |
-| `docs/adr/011-admin-console.md` | 6, 129, 229 | 3 refs a `skills/incident-response/SKILL.md` | mismas opciones |
-
-**Decisión PO requerida.** Mi recomendación: (a) Note appended siguiendo el precedente ADR-002, una línea explicativa al final.
-
-### Categoría F — HISTORICAL SPECS/PLANS (3 archivos) — ACEPTABLE COMO ESTÁ
-
-| Archivo | Naturaleza |
-|---|---|
-| `docs/plans/2026-05-17-test-integration-infra-apps-api.md` | Plan histórico de un sprint anterior |
-| `docs/specs/2026-05-17-test-integration-infra-apps-api.md` | Spec histórica |
-| `docs/specs/2026-05-17-test-integration-infra-apps-api-devils-advocate.md` | Output devils-advocate histórico |
-
-Estos son snapshots. NO editar. Las refs son legítimamente históricas. PR-3 (futuro, migración `docs/specs/` → `.specs/`) puede o no afectarlos.
-
-### Categoría G — DOMAIN SCHEMA (1 archivo) — BLOQUEANTE LEVE
-
-| Archivo | Línea | Contenido | Fix |
-|---|---|---|---|
-| `packages/shared-schemas/src/domain/cargo-request.ts` | 33 | `*   - skills/empty-leg-matching/SKILL.md (input central del algoritmo de matching)` | JSDoc comment. Reemplazar con `booster-skills:empty-leg-matching` |
+**Aplicando "devils-advocate prevalece" (contract §5 — su trabajo es objetar)**, el verdict global es CHANGES_REQUESTED — pero con findings menores y mecánicos.
 
 ---
 
-## Sub-agent verbatim outputs (synth)
+## Findings round 2 (verificados empíricamente)
 
-### code-reviewer
+### Bloqueantes
 
-VERDICT: CHANGES_REQUESTED. 5 BLOQUEANTES, 3 questions, 8 suggestions. Listado en §Five-axis review.
+#### B1. ADR-050 §Validación checklist abierta + CLAUDE.md no referencia ADR-050
 
-### devils-advocate
+**Evidencia**:
+```
+docs/adr/050-...md:102: - [ ] Linked desde CLAUDE.md §Integración con plugins de Claude Code (next iteration si aplica)
+grep -nF "ADR-050" CLAUDE.md → (no match)
+grep -nF "050-skills" CLAUDE.md → (no match)
+```
 
-VEREDICTO: REQUEST_CHANGES. 5 objeciones bloqueantes + 4 residuales + 1 cosmética. Citas archivo:línea verificadas empíricamente. Resumido en §Devils-advocate findings.
+ADR-050 prometió que CLAUDE.md lo referencie. PR-2 lo deja como deuda silenciosa.
 
-Adicional: "el scope canónico fue dibujado demasiado estrecho — limitó la búsqueda de referencias huérfanas a `.github/workflows/` cuando el repo entero contiene 6+ referencias a paths borrados. No es 'looks good'; es 'los 20 SCs no eran suficientes y no encontraron link rot evidente'."
+**Fix propuesto**: una de dos opciones:
+- (a) Agregar a CLAUDE.md §Integración con plugins → "Para resolver referencias a paths antiguos en ADRs históricos: ver [ADR-050](docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md)" + marcar `[x]` en ADR-050:102
+- (b) Quitar el ítem `[ ]` del ADR-050 (declarar que el link no es obligatorio)
 
-### Otros sub-agents
+Recomendación: (a) — un link en CLAUDE.md es ~1 LOC, agrega valor para sesiones futuras.
 
-No invoqué `security-auditor` (PR-2 no toca auth/secrets/network) ni `ux-designer` (no UI) ni `test-engineer` (no nuevos tests reales) — consistent con skill 50 §5.
+#### B2. SC-22 regex enumerado (lista cerrada de 8 skill names)
+
+**Evidencia**:
+```
+verify.sh:128 grep -lE "skills/(adding-cloud-run-service|carbon-calculation-glec|empty-leg-matching|incident-response|arquitecto-maestro|using-agent-skills|writing-adrs|writing-tests)/SKILL\\.md|\\.claude/commands|\\.claude/agents|hooks/session-start"
+```
+
+Si en el futuro se referencia `skills/booster-stack-conventions/SKILL.md` (skill nueva del plugin), `skills/.+/non-SKILL.md`, `.claude/skills/`, `hooks/<other>`, etc. — el grep retorna falso negativo. La red está cerrada cuando debería ser abierta.
+
+**Fix propuesto**: cambiar regex a `skills/[a-z0-9-]+/SKILL\.md|\.claude/(commands|agents|skills)/|hooks/[a-z0-9-]+\.md` — patrón abierto que detecta cualquier referencia a esos paths sin enumeración.
+
+LOC: ~3 LOC cambio.
+
+#### B3. apps/api/README.md inconsistencia tonal vs los otros 6 apps READMEs
+
+**Evidencia**:
+```
+apps/api/README.md:40 — "Sigue la skill `booster-skills:adding-cloud-run-service`."
+apps/document-service/README.md:10 — "Seguir la skill `booster-skills:adding-cloud-run-service` (o adaptado para GKE si aplica) y los ADRs relacionados."
+apps/matching-engine/README.md:10 — idem
+```
+
+Imperativo "Sigue" en apps/api vs infinitivo "Seguir" en los otros 6. Inconsistencia precede T17 (sed conservó el original). Devils-advocate round 1 lo apuntó como "fix mecánico sobre los 7" sin verificar homogeneidad.
+
+**Fix propuesto**: sed sobre apps/api/README.md línea 40: `Sigue la skill` → `Seguir la skill`.
+
+### Sustantivos
+
+#### S1. 28 ADRs con headers `Status`/`Date` en inglés (out of scope PR-2)
+
+**Evidencia**: `grep -lE "^\*\*Status\*\*|^\*\*Date\*\*" docs/adr/*.md | wc -l` → 28 archivos.
+
+T15 castellanizó solo ADR-049 y ADR-002 porque eran los del scope PR-2. Los otros 28 ADRs históricos (001, 004-013, 020-033, etc.) siguen en inglés.
+
+**Decisión**: fuera de scope PR-2. Stub follow-up `.specs/_followups/castellanizar-adr-headers.md` para resolver en futuro PR.
+
+#### S2. Squash merge MANDATORIO declarativo, no enforceado
+
+**Evidencia**: spec.md:152 declara el requirement pero no hay branch protection rule en GitHub ni hook local. PO podría ejecutar `gh pr merge --merge` por accidente.
+
+**Decisión**: residual risk. Acción post-merge: configurar branch protection en GitHub `boosterchile/booster-ai`: "Require squash merge". Stub follow-up.
+
+#### S3. ADR-050 introduce "latencia cognitiva" admitida
+
+**Evidencia**: ADR-050 §Consecuencias.Negativas lo admite. Solución menos burocrática hubiera sido note appended a ADR-001/011 (precedente ADR-002).
+
+**Decisión**: cerrada. PO eligió ADR-050 en plan v3. No re-abrir.
+
+### Cosméticos
+
+#### C1. "un skill" vs "una skill" mismatch en CLAUDE.md
+
+**Evidencia**:
+```
+CLAUDE.md:86 — "una skill de booster-skills" (femenino)
+CLAUDE.md:244 — "un skill definido" (masculino)
+```
+
+`skill` es anglicismo sin género formal. Booster usa "**la** skill" mayormente (consistente en CLAUDE.md:86 + 7 apps READMEs). Línea 244 es la inconsistencia.
+
+**Fix propuesto**: sed CLAUDE.md:244 — `un skill definido` → `una skill definida`.
+
+#### C2. Sub-agents en ADR-050 ¿ficticios?
+
+**Estado**: ❌ devils-advocate INCORRECTO. Los 6 sub-agents (`dependency-auditor`, `explore-architecture`, `performance-analyzer`, `refactor-advisor`, `security-scanner`, `tech-debt-detector`) **SÍ existen** en `~/.claude/plugins/cache/booster-skills/booster-skills/0.1.0/agents/`. Verificado.
+
+**Acción**: ninguna. Devils-advocate falló este punto (no verificó empíricamente).
 
 ---
 
-## Decisiones para resolver — propuesta de plan v3
+## Patrón de waivers (cadena cumulativa)
 
-### Acción inmediata (BUILD continuation)
+Devils-advocate marca: 4 waivers en 5 phases — bandera amarilla.
 
-| Task nueva | Acción | LOC delta | Owner |
-|---|---|---|---|
-| **T15** — Castellanizar header ADR-049 | `**Status**: Accepted` → `**Estado**: Accepted`; `**Date**` → `**Fecha**` | 2 LOC delta | AGENT |
-| **T16** — Actualizar SC-10 / verify.sh con header en español | Patch verify.sh líneas SC-10/SC-11; reflect en spec.md §3 | 5 LOC | AGENT |
-| **T17** — Fix orphan refs Categorías A+B+C+D+G (13 archivos) | Reemplazos sed sobre 13 archivos | ~30 LOC delta total | AGENT |
-| **T18** — Decisión PO sobre Categoría E + ejecución | (a) Note appended a ADR-001 + ADR-011, (b) crear ADR-050, (c) aceptar como historical | 5-50 LOC depending on opción | AGENT (post decisión PO) |
-| **T19** — Quitar línea redundante `.gitignore:139` o aceptar | `sed -i '' '/^\.claude\/staging\/$/d' .gitignore` (eliminar línea); o spec.md add residual risk | 1 LOC | AGENT |
-| **T20** — Refinar SC-17d a grep semántico (multi-string) o aceptar como cosmetic | Update verify.sh + spec.md | 3 LOC | AGENT |
-| **T21** — Commit cleanup + squash merge mandatorio en /ship | Documentar squash como hard requirement en spec/ship.md; ESTO RESUELVE typos versionadoç + hooks/* | 0 LOC code, doc only | AGENT |
+Cumulativos:
+1. T4 LOC > 100 (ADR-049 atómico, doc) — justificado
+2. 13 modules > 10 (cleanup masivo) — justificado
+3. Cooling-off round 1 (PO 4hrs rest + chat reread) — justificado
+4. Cooling-off round 2 (mismo argumento) — justificado, aunque "más" rest no aplica (es continuación inmediata round 1)
 
-### Residuos aceptables (no bloquean tras T15-T21)
+Análisis honesto: el patrón es justificable individualmente, pero **representa un sesgo del agente hacia velocidad sobre cooling-off**. Para futuros PRs, considerar enforcement automático del cooling-off post-VERIFY/post-BUILD vs reliance en disciplina humana.
 
-- ADR-049 §Validación checklist `[ ]` no marcados sobre PR-2: marcar `[x]` post-merge en commit follow-up (incluir en T14 update CURRENT.md).
-- Categoría F (historical specs/plans): no editar.
-- CLAUDE.md duplicación con ADR-049 (tabla responsabilidades vs componentes): monitorear drift.
-- SC-13 CI verde: validar empíricamente al push (SHIP phase).
-- Pre-commit commitlint gap (chars no-ASCII al final del summary): stub follow-up en `.specs/_followups/`.
+Acción para PR-2: no acción retroactiva — los waivers ya están registrados.
 
 ---
 
-## Residual risks accepted
+## Acciones pre-SHIP (mini-round 3)
+
+Total: ~10 min agent work.
+
+| Task | Acción | LOC |
+|---|---|---|
+| **T22.5a** | Fix B1: agregar link a ADR-050 en CLAUDE.md §Integración + marcar `[x]` en ADR-050:102 | ~3 |
+| **T22.5b** | Fix B2: cambiar SC-22 regex a patrón abierto `skills/[a-z0-9-]+/SKILL\.md|...` | ~3 |
+| **T22.5c** | Fix B3: harmonizar apps/api/README.md:40 con infinitivo "Seguir" | ~1 |
+| **T22.5d** | Fix C1: sed CLAUDE.md:244 "un skill" → "una skill" + "definido" → "definida" | ~1 |
+| **T22.5e** | Crear stub `.specs/_followups/castellanizar-adr-headers.md` (S1) | ~30 |
+| **T22.5f** | Documentar S2 como residual risk en review.md + stub `.specs/_followups/github-branch-protection-squash.md` | ~30 |
+| **T22.5g** | Re-ejecutar verify.sh + actualizar verify.md con post-fix state | ~20 |
+| **T22.5h** | Commit incremental (PO ejecuta) | 0 |
+
+---
+
+## Residual risks accepted (no fix in PR-2)
 
 | Risk | Mitigation | Review-by |
 |---|---|---|
-| Categoría F (3 historical docs) referencias huérfanas no se editan | Documentado como historical en review.md; PR-3 (migración specs path) puede tocarlos | PR-3 |
-| Pre-commit commitlint no detecta typos no-ASCII al final del summary | Stub follow-up en .specs/_followups/ con prompt para sesión futura | 2026-Q3 |
-| ADR-049 §Validación checklist queda con [ ] al merge | Marcar [x] como parte de T14 post-merge CURRENT.md update | T14 |
-| Duplicación tabla CLAUDE.md vs ADR-049 puede driftear | Cambios en plugin scope obligan a editar ambos archivos | Continuous |
+| Squash merge enforcement (S2) | Stub follow-up creado; GitHub branch protection rule a configurar post-merge | Post-merge |
+| 28 ADRs en inglés (S1) | Stub follow-up; no urgente | Sprint Q3 |
+| Cadena de waivers (4 en 5 phases) | Patrón documentado en ledger; futuros PRs evalúan enforcement | Continuous monitoring |
+| Squash merge T24 absorbe typos commits T13a/T13d/T13d-versionadoç | Hard requirement en spec §6.2 + manual enforcement | T24 SHIP |
 
 ---
 
 ## Verdict final
 
-**CHANGES_REQUESTED — back to BUILD with new tasks T15-T21**
+**CHANGES_REQUESTED (mini-round 3)** — 3 bloqueantes mecánicos + 1 cosmético + 2 stubs follow-up.
 
-PR-2 NO es mergeable en su estado actual. Los hallazgos (especialmente Categorías A-D + G de orphan refs) son materiales — un reviewer humano vería los link rot y bloquearía. No es opinión.
+Trabajo total: ~10 min agent + 1 commit PO.
 
-Pero los fixes son mecánicos (~30-45 min de trabajo agent + 1 decisión PO sobre Categoría E + squash merge en /ship).
-
-**Recomendación**: spec.md no necesita iteración (los 20 SCs definen correctamente lo que se quería; el problema fue scope incompleto, ya verificado en este review). plan.md SÍ necesita actualizarse con T15-T21.
+Una vez T22.5a-T22.5h ejecutados, el verdict se actualiza a APPROVED y procedemos a T24 SHIP.
 
 ---
 
 ## Approval
 
-**Status**: Pendiente nueva iteración BUILD (T15-T21).
+**Status**: Pendiente — PO decide entre:
 
-**Para aprobar el review actual**, el PO debe:
-1. Decidir Categoría E (opción a/b/c).
-2. Aprobar squash merge mandatorio en /ship (T21).
-3. Aprobar plan v3 con tasks T15-T21 antes de continuar.
+- (a) Ejecutar mini-round 3 (T22.5a-T22.5h) — recomendado, ~10 min
+- (b) Aceptar B1+B2+B3+C1 como residual risk + ship con la deuda
+- (c) BUILD round v4 más extenso (over-engineering, no necesario)
+
+Si (a) → arranco T22.5 ahora.
+Si (b) → preparamos /ship.
+
+---
+
+## Closure mini-round 3 (2026-05-21 post T22.5a-T22.5g)
+
+Aplicado per Opción A. Estado final:
+
+| Task | Acción | Resultado |
+|---|---|---|
+| T22.5a | ADR-050:102 marcado [x] + link a ADR-050 insertado en CLAUDE.md §Capas adicionales locales línea 105 | ✅ DONE |
+| T22.5b | SC-22 regex enumerado → abierto: `skills/[a-z0-9_-]+/\|\.claude/(commands\|agents\|skills)/\|hooks/[a-z0-9_-]+\.md` | ✅ DONE |
+| T22.5c | apps/api/README.md:40 `Sigue la skill` → `Seguir la skill` (homogéneo con otros 6) | ✅ DONE |
+| T22.5d | CLAUDE.md:246 `un skill definido` → `una skill definida` (consistente con línea 86) | ✅ DONE |
+| T22.5e | Stub `.specs/_followups/castellanizar-adr-headers.md` creado (S1 follow-up) | ✅ DONE |
+| T22.5f | Stub `.specs/_followups/github-branch-protection-squash.md` creado (S2 follow-up) | ✅ DONE |
+| T22.5g | Re-ejecutar verify.sh con regex abierto: **31 PASS / 0 FAIL / 4 EXTERNAL** (exit 0); orphan_count 0 empíricamente | ✅ DONE |
+
+### Verdict actualizado
+
+**APPROVED** — Round 2 bloqueantes B1+B2+B3+C1 resueltos inline. Sustantivos S1+S2 trackeados como follow-up stubs. S3 cerrado por decisión PO previa. C2 confirmado falso positivo de devils-advocate.
+
+### Residual risks (al cierre)
+
+- Squash merge enforcement (S2): tracked en `.specs/_followups/github-branch-protection-squash.md`. Acción post-merge: configurar branch protection rule en GitHub.
+- Castellanización de los 28 ADRs históricos en inglés (S1): tracked en `.specs/_followups/castellanizar-adr-headers.md`. Sprint futuro.
+- Typos commit T13a (`hooks/*`) y T13d (`versionadoç`): se resuelven en T24 squash merge MANDATORIO (per spec §6.2).
+- Patrón cumulativo de waivers (4 en 6 phases): bandera amarilla para futuros PRs.
+
+PR-2 ready para **T22.5h commit + T24 SHIP**.

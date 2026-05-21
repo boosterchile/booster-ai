@@ -102,6 +102,8 @@ Cuando agent-rigor invoca `subagent_type: code-reviewer` o `security-auditor` en
 
 Migración futura de este contenido al plugin `booster-skills` (v0.2.0+ con compliance Chile) tracked en [`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`](.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md).
 
+Para resolver referencias a paths antiguos (`skills/`, `.claude/commands/`, etc.) que aparezcan en ADRs históricos (≤ ADR-048): ver [ADR-050 path-remapping](docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md).
+
 ## Reglas no-negociables del stack Booster
 
 Estas reglas son **contratos**, no preferencias. La skill `booster-stack-conventions` (en plugin `booster-skills`) las hace cumplir automáticamente cada vez que se escribe código en este proyecto. Cambiar cualquiera de ellas requiere un ADR formal.
@@ -241,7 +243,7 @@ Cambios v2→v3 (post-PR-2 / ADR-049):
 ## Cómo decido cuándo preguntar vs ejecutar
 
 **Ejecuto sin preguntar** cuando:
-- La tarea tiene un skill definido (en `agent-rigor:*` o `booster-skills:*`) que la cubre end-to-end.
+- La tarea tiene una skill definida (en `agent-rigor:*` o `booster-skills:*`) que la cubre end-to-end.
 - Es un cambio mecánico de aplicación directa (ej. renombrar una variable, añadir un comentario).
 - Es trabajo de limpieza/refactor que no altera contratos públicos ni comportamiento externo.
 - El usuario lo instruyó explícitamente sin ambigüedad.

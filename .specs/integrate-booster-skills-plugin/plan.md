@@ -144,7 +144,7 @@ Razones del re-plan:
 - **Acceptance**: verify.sh exit 0 con 0 FAIL; orphan-refs-check.txt confirma zero matches en archivos no-legítimos
 - **Rollback**: `git restore .specs/integrate-booster-skills-plugin/verify.sh .specs/integrate-booster-skills-plugin/verify.md` + eliminar `.specs/integrate-booster-skills-plugin/evidence/orphan-refs-check.txt`
 
-### T22: Commit incremental T15-T21 + actualizar plan.md DONE markers
+### T22: Commit incremental T15-T21 + actualizar plan.md DONE markers [DONE 2026-05-21]
 - **Files staged**: todos los archivos modificados por T15-T21
 - **Owner**: `[PO]` (commit bloqueado para agent)
 - **Comando**:
@@ -246,3 +246,18 @@ Tras approval: ejecuto T15-T21 inmediatamente (AGENT-heavy con un solo PO commit
 - **Trabajo PO**: 1 commit (T22) + 1 PR create + 1 squash merge
 - **Total LOC delta esperado**: ~150 (mayormente ADR-050 + verify.sh extensions)
 - **Verdict objetivo post-fix**: APPROVED en T23 re-review → SHIP en T24
+
+---
+
+## Mini-round 3 (T22.5) — aplicado 2026-05-21 post REVIEW v2
+
+PO eligió Opción A (mini-round 3). Tasks ejecutadas:
+
+### T22.5a: Link ADR-050 en CLAUDE.md + marcar [x] en ADR-050:102 [DONE 2026-05-21]
+### T22.5b: SC-22 regex enumerado → abierto en verify.sh [DONE 2026-05-21]
+### T22.5c: apps/api/README.md:40 imperativo → infinitivo (homogeneizar con 6 otros) [DONE 2026-05-21]
+### T22.5d: CLAUDE.md "un skill definido" → "una skill definida" [DONE 2026-05-21]
+### T22.5e: Stub `.specs/_followups/castellanizar-adr-headers.md` (S1 follow-up) [DONE 2026-05-21]
+### T22.5f: Stub `.specs/_followups/github-branch-protection-squash.md` (S2 follow-up) [DONE 2026-05-21]
+### T22.5g: Re-ejecutar verify.sh + verificar 31 PASS / 0 FAIL / 4 EXTERNAL [DONE 2026-05-21]
+### T22.5h: Commit incremental fixes mini-round-3 (PO ejecuta) — PENDIENTE

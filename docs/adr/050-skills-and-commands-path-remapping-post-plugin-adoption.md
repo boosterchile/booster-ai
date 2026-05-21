@@ -99,7 +99,7 @@ ADR-001 y ADR-011 **no se modifican**. Sus referencias a paths borrados quedan c
 - [x] ADR-050 archivo existe en `docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md`
 - [x] Tabla de mapping completa: 8 skills + 6 commands + 6 agents + 1 hook + 3 overrides locales
 - [x] Referenciado desde ADR-049 §Referencias (al cierre de PR-2)
-- [ ] Linked desde CLAUDE.md §Integración con plugins de Claude Code (next iteration si aplica)
+- [x] Linked desde CLAUDE.md §Integración con plugins de Claude Code (next iteration si aplica)
 - [x] ADR-046 §1 respetado: cero ediciones a ADRs <050
 
 ## Referencias

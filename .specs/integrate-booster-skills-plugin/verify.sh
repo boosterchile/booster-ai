@@ -124,7 +124,7 @@ grep -qE "^\*\*Estado\*\*: Accepted" docs/adr/050-skills-and-commands-path-remap
 grep -qF "skills/adding-cloud-run-service/SKILL.md" docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md && grep -qF "booster-skills:adding-cloud-run-service" docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md && check "SC-21b ADR-050 contiene mapping table" PASS || check "SC-21b" FAIL
 
 # SC-22: zero orphan refs en archivos NO legitimos (exclusion list: .specs/integrate-..., docs/plugins/REPORTE, docs/adr/002/049/050)
-ORPHAN_COUNT=$(find docs apps packages infrastructure scripts README.md AGENTS.md -type f \( -name "*.md" -o -name "*.ts" -o -name "*.json" \) -exec grep -lE "skills/(adding-cloud-run-service|carbon-calculation-glec|empty-leg-matching|incident-response|arquitecto-maestro|using-agent-skills|writing-adrs|writing-tests)/SKILL\.md|\.claude/commands|\.claude/agents|hooks/session-start" {} + 2>/dev/null \
+ORPHAN_COUNT=$(find docs apps packages infrastructure scripts README.md AGENTS.md -type f \( -name "*.md" -o -name "*.ts" -o -name "*.json" \) -exec grep -lE "skills/[a-z0-9_-]+/|\.claude/(commands|agents|skills)/|hooks/[a-z0-9_-]+\.md" {} + 2>/dev/null \
   | grep -vE "\.specs/integrate-booster-skills-plugin/|docs/plugins/REPORTE|docs/adr/002-skill-framework|docs/adr/049-claude-code-plugin|docs/adr/050-skills-and-commands|docs/plans/2026-05-17|docs/specs/2026-05-17|docs/adr/001-stack-selection|docs/adr/011-admin-console" \
   | wc -l | tr -d ' ')
 [ "$ORPHAN_COUNT" = "0" ] && check "SC-22 zero orphan refs en archivos no legitimos (post-T17)" PASS || check "SC-22 — $ORPHAN_COUNT archivos con refs" FAIL
