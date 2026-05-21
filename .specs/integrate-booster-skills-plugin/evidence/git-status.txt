@@ -1,0 +1,77 @@
+==== T12: Post-cleanup git status ====
+Generated: 2026-05-20T23:52:53Z
+Branch: chore/integrate-booster-skills-plugin
+
+==== git status --short ====
+ D .claude/commands/build.md
+ D .claude/commands/plan.md
+ D .claude/commands/review.md
+ D .claude/commands/ship.md
+ D .claude/commands/spec.md
+ D .claude/commands/test.md
+ M .gitignore
+ M CLAUDE.md
+ M docs/adr/002-skill-framework-adoption.md
+ D hooks/session-start.md
+ D skills/adding-cloud-run-service/SKILL.md
+ D skills/carbon-calculation-glec/SKILL.md
+ D skills/empty-leg-matching/SKILL.md
+ D skills/incident-response/SKILL.md
+ D skills/using-agent-skills/SKILL.md
+ D skills/writing-adrs/SKILL.md
+?? .specs/_followups/
+?? .specs/integrate-booster-skills-plugin/
+?? docs/adr/049-claude-code-plugin-system-adoption.md
+?? docs/plugins/
+
+==== git status (full, sin -short) ====
+On branch chore/integrate-booster-skills-plugin
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	deleted:    .claude/commands/build.md
+	deleted:    .claude/commands/plan.md
+	deleted:    .claude/commands/review.md
+	deleted:    .claude/commands/ship.md
+	deleted:    .claude/commands/spec.md
+	deleted:    .claude/commands/test.md
+	modified:   .gitignore
+	modified:   CLAUDE.md
+	modified:   docs/adr/002-skill-framework-adoption.md
+	deleted:    hooks/session-start.md
+	deleted:    skills/adding-cloud-run-service/SKILL.md
+	deleted:    skills/carbon-calculation-glec/SKILL.md
+	deleted:    skills/empty-leg-matching/SKILL.md
+	deleted:    skills/incident-response/SKILL.md
+	deleted:    skills/using-agent-skills/SKILL.md
+	deleted:    skills/writing-adrs/SKILL.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.specs/_followups/
+	.specs/integrate-booster-skills-plugin/
+	docs/adr/049-claude-code-plugin-system-adoption.md
+	docs/plugins/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+==== git diff --stat ====
+ .claude/commands/build.md                |  52 --------
+ .claude/commands/plan.md                 |  39 ------
+ .claude/commands/review.md               |  42 ------
+ .claude/commands/ship.md                 |  50 -------
+ .claude/commands/spec.md                 |  48 -------
+ .claude/commands/test.md                 |  40 ------
+ .gitignore                               |   3 +
+ CLAUDE.md                                | 218 ++++++++++++++++++++++---------
+ docs/adr/002-skill-framework-adoption.md |  32 ++++-
+ hooks/session-start.md                   |  38 ------
+ skills/adding-cloud-run-service/SKILL.md | 212 ------------------------------
+ skills/carbon-calculation-glec/SKILL.md  | 169 ------------------------
+ skills/empty-leg-matching/SKILL.md       | 171 ------------------------
+ skills/incident-response/SKILL.md        | 150 ---------------------
+ skills/using-agent-skills/SKILL.md       |  62 ---------
+ skills/writing-adrs/SKILL.md             | 125 ------------------
+ 16 files changed, 187 insertions(+), 1264 deletions(-)

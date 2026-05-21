@@ -1,0 +1,161 @@
+==== T2: Pre-cleanup snapshot ====
+Generated: 2026-05-20T23:23:40Z
+Session: 4672f6ac-9aab-4d6b-ae07-2eeabdbad529
+Worktree: /Volumes/Pendrive128GB/Booster-AI/.claude/worktrees/flamboyant-jones-42a39b
+Branch (at snapshot time, may be pre-T1): claude/flamboyant-jones-42a39b
+
+==== 1. find skills (raíz, depth 2) ====
+skills/adding-cloud-run-service
+skills/adding-cloud-run-service/SKILL.md
+skills/carbon-calculation-glec
+skills/carbon-calculation-glec/SKILL.md
+skills/empty-leg-matching
+skills/empty-leg-matching/SKILL.md
+skills/incident-response
+skills/incident-response/SKILL.md
+skills/using-agent-skills
+skills/using-agent-skills/SKILL.md
+skills/writing-adrs
+skills/writing-adrs/SKILL.md
+
+==== 2. CLAUDE.md sections (^## / ^#) ====
+1:# CLAUDE.md — Contrato de trabajo del agente en Booster AI
+10:## Identidad del proyecto
+19:## Principios rectores — inviolables desde el commit 1
+81:## Estructura del repo (v2 — tras ADR-004..008)
+151:## Cómo decido cuándo preguntar vs ejecutar
+171:## Qué archivos NUNCA toco sin permiso explícito
+179:## Convenciones de código
+188:## Cómo genero evidencia para cada tarea
+203:## Escalation
+213:## Path de crecimiento de este archivo
+219:## Reglas de naming bilingüe (Booster AI)
+227:## Reglas de arquitectura (no negociables)
+
+==== 3. CLAUDE.md line count ====
+     236 CLAUDE.md
+
+==== 4. git status --short ====
+?? .specs/integrate-booster-skills-plugin/
+
+==== 5. git log --oneline -5 ====
+c1122b6 chore: delete diagnostic test workflow file (PAT verification cleanup)
+61d989f diagnostic test
+cbd8cc8 chore: delete diagnostic test file (PAT scope verification)
+c48cd6b diag
+3cbc574 refactor(drift-inventory): separate auto-generated from PO-curated metadata (C+) (#302)
+
+==== 6. git branch --show-current ====
+claude/flamboyant-jones-42a39b
+
+==== 7. find .claude/ (depth 2, todos los tipos) ====
+.claude/.DS_Store
+.claude/agents
+.claude/agents/dependency-auditor.md
+.claude/agents/explore-architecture.md
+.claude/agents/performance-analyzer.md
+.claude/agents/refactor-advisor.md
+.claude/agents/security-scanner.md
+.claude/agents/tech-debt-detector.md
+.claude/commands
+.claude/commands/build.md
+.claude/commands/plan.md
+.claude/commands/review.md
+.claude/commands/ship.md
+.claude/commands/spec.md
+.claude/commands/test.md
+.claude/ledger
+.claude/ledger/.current
+.claude/ledger/.last_source_write
+.claude/ledger/2026-05-14_60626df9-19e3-495c-a80d-8f4b958f80c2.jsonl
+.claude/ledger/2026-05-14_677b10be-2a10-42bb-ac46-27ec6fe90f20.jsonl
+.claude/ledger/2026-05-14_8788045e-e1ef-4f6a-b490-98701c24a943.jsonl
+.claude/ledger/2026-05-14_91fb8a4a-6060-4448-836e-2baca2e01c7a.jsonl
+.claude/ledger/2026-05-14_e774968a-fdbc-48a5-9553-6d993bddb60e.jsonl
+.claude/ledger/2026-05-14_t1-inventory.jsonl
+.claude/ledger/2026-05-15_8788045e-e1ef-4f6a-b490-98701c24a943.jsonl
+.claude/ledger/2026-05-17_0013a8d1-8b48-4ac3-a084-4efc0f7b0fe7.jsonl
+.claude/ledger/2026-05-17_2ad75b3f-fe27-4fc1-851a-67fc2777ffb0.jsonl
+.claude/ledger/2026-05-17_51c0f604-e3f0-4cc5-942d-47ffb38e9037.jsonl
+.claude/ledger/2026-05-17_8eef12fe-1dfc-4389-936f-139caac69d93.jsonl
+.claude/ledger/2026-05-17_e48d6f1c-c589-41c6-bb6a-fbfd1ffd3809.jsonl
+.claude/ledger/2026-05-18_8eef12fe-1dfc-4389-936f-139caac69d93.jsonl
+.claude/ledger/2026-05-19_21c07e7c-e6f9-4de9-9c1d-f819e6b5d5d7.jsonl
+.claude/ledger/2026-05-19_620a53e5-024d-4e09-a8cb-7a255cde8e2a.jsonl
+.claude/ledger/2026-05-20_15b79a70-5588-48b6-875a-e097e4857ac2.jsonl
+.claude/ledger/2026-05-20_4672f6ac-9aab-4d6b-ae07-2eeabdbad529.jsonl
+.claude/ledger/2026-05-20_a1336857-1e35-43f4-b3bb-830fdcabb791.jsonl
+.claude/ledger/2026-05-20_d082aca2-f94e-453f-9872-32b72b8f1a7d.jsonl
+.claude/settings.json
+.claude/settings.local.json
+.claude/settings.local.json.backup-pre-hotfix-2026-05-14
+.claude/staging
+.claude/staging/plan-pr2-v1.md
+.claude/staging/plan-pr2-v2.md
+.claude/staging/spec-pr2-v2.md
+.claude/staging/spec-pr2-v3.md
+.claude/staging/spec-pr2-v4.md
+.claude/staging/spec-pr2.md
+
+==== 8. find root dirs (agents/ hooks/ references/ playbooks/) ====
+agents
+agents/code-reviewer.md
+agents/security-auditor.md
+agents/sre-oncall.md
+hooks
+hooks/session-start.md
+playbooks
+playbooks/001-posicionamiento-competitivo.md
+playbooks/002-canal-coaching-voz-no-whatsapp.md
+playbooks/README.md
+references
+references/code-review-checklist.md
+references/security
+references/security-checklist.md
+references/security/idor-audit-2026-05-10.md
+
+==== 9. CI workflows referencias a paths a borrar (R-3/R-6 mitigation check) ====
+Comando: grep -rE 'skills/|\.claude/commands|\.claude/agents' .github/workflows/
+(empty above = no referencias = CI safe)
+
+==== 10. CLAUDE.md grep 'hooks/' (R-8/R-9 mitigation check) ====
+Comando: grep -nF 'hooks/' CLAUDE.md
+105:├── hooks/                      # session-start
+(empty above = no referencias rotas tras borrar hooks/)
+
+==== 11. B-4 Trackability check (git ls-files de archivos a borrar) ====
+Comando: git ls-files .claude/commands/ .claude/agents/ skills/ hooks/session-start.md
+.claude/commands/build.md
+.claude/commands/plan.md
+.claude/commands/review.md
+.claude/commands/ship.md
+.claude/commands/spec.md
+.claude/commands/test.md
+hooks/session-start.md
+skills/adding-cloud-run-service/SKILL.md
+skills/carbon-calculation-glec/SKILL.md
+skills/empty-leg-matching/SKILL.md
+skills/incident-response/SKILL.md
+skills/using-agent-skills/SKILL.md
+skills/writing-adrs/SKILL.md
+
+Counts:
+  .claude/commands/ tracked files: 6
+  .claude/agents/ tracked files:   0
+  skills/ tracked files:           6
+  hooks/session-start.md tracked:  1
+
+Si los counts cubren los archivos a borrar, rollback via 'git restore' es viable.
+
+==== 12. .claude/staging/ contenido actual (artefactos sesión) ====
+total 312
+drwxr-xr-x@  8 fvicencio  staff    256 May 20 19:16 .
+drwxr-xr-x@ 10 fvicencio  staff    320 May 20 17:44 ..
+-rw-r--r--@  1 fvicencio  staff  16530 May 20 19:08 plan-pr2-v1.md
+-rw-r--r--@  1 fvicencio  staff  18013 May 20 19:16 plan-pr2-v2.md
+-rw-r--r--@  1 fvicencio  staff  35271 May 20 17:49 spec-pr2-v2.md
+-rw-r--r--@  1 fvicencio  staff  24406 May 20 18:05 spec-pr2-v3.md
+-rw-r--r--@  1 fvicencio  staff  29809 May 20 18:32 spec-pr2-v4.md
+-rw-r--r--@  1 fvicencio  staff  22560 May 20 17:09 spec-pr2.md
+
+==== Snapshot end ====
