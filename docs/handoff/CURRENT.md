@@ -1,8 +1,70 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-18 (Sprint **S1a Bloque A complete; Bloque B deferred to S2 con sub-spec tripstate-alignment como pre-requisito** — firma PO Opción A + 3 condiciones, ver [`s1a-cierre.md`](../../.specs/s1-drift-coverage-e2e/s1a-cierre.md) §11)
+**Última actualización**: 2026-05-21 (Refactor sistema de desarrollo **CERRADO** — PR-2 [#312](https://github.com/boosterchile/booster-ai/pull/312) merged; plugins `agent-rigor` + `booster-skills` operativos; cleanup local completado per ADR-049 / ADR-050)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Refactor sistema de desarrollo Booster — CERRADO (2026-05-21, PR-2 [#312](https://github.com/boosterchile/booster-ai/pull/312) merged)
+
+Misión global del refactor: integrar plugins de Claude Code para reemplazar el sistema local de skills + commands + agents disperso. **3 PRs secuenciales**, todos cerrados.
+
+### Cierre por PR
+
+| PR | Repo | Cambio | Estado |
+|---|---|---|---|
+| PR-1 | `boosterchile/booster-skills` | Publicación inicial v0.1.0 del plugin (7 skills + 6 agents) — `arquitecto-maestro`, `adding-cloud-run-service`, `carbon-calculation-glec`, `empty-leg-matching`, `incident-response`, `booster-stack-conventions`, `booster-deploy-cloud-run` | ✅ Cerrado 2026-05-20 |
+| PR-2 | `boosterchile/booster-ai` | Cleanup local + adopción 3-capas — borrar `.claude/{commands,agents,skills}/`, `skills/`, `hooks/` + CLAUDE.md v3 + ADR-049 + ADR-050 + docs/plugins/REPORTE | ✅ [#312](https://github.com/boosterchile/booster-ai/pull/312) merged 2026-05-21 (squash commit `9127b44`) |
+| PR-3 | `boosterchile/booster-ai` (futuro) | Migración `docs/specs/` → `.specs/<feature-slug>/` (path canónico agent-rigor) | 🔲 Pendiente — no urgente |
+
+### Sistema operativo de desarrollo (post-refactor)
+
+3 capas con responsabilidades claras:
+
+| Capa | Componente | Scope | Repo |
+|---|---|---|---|
+| 1 | `agent-rigor@0.2.0` | Disciplina senior-engineering generalista (ciclo + hooks + sub-agents + ledger) | `boosterchile/best-skill-claude` |
+| 2 | `booster-skills@0.1.0` | Dominio + stack + auditoría Booster (7 skills + 6 sub-agents) | `boosterchile/booster-skills` |
+| 3 | `.claude/` local minimal | settings declara plugins; ledger preserva historial; worktrees parallel | este repo |
+| 3b | `agents/` raíz | 3 overrides locales Booster (`code-reviewer`, `security-auditor`, `sre-oncall`) — extienden agent-rigor con compliance Chile, ADR Booster discipline, SLOs GCP | este repo |
+
+Path canónico de specs: `.specs/<feature-slug>/{idea,spec,plan,verify,review,ship}.md` (definido por agent-rigor).
+
+### Decisión arquitectónica + replicabilidad
+
+- **[ADR-049](../../docs/adr/049-claude-code-plugin-system-adoption.md)** documenta la adopción del sistema de plugins (supersede ADR-002) + §Replicabilidad con procedimiento de 5 pasos para crear plugin equivalente en otro proyecto.
+- **[ADR-050](../../docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md)** documenta tabla de mapping path antiguo → namespacing nuevo para resolver referencias en ADRs históricos (001, 011) sin editarlos (respeta ADR-046 §1).
+- **[`docs/plugins/REPORTE-migracion-booster-skills-v0.1.0.md`](../plugins/REPORTE-migracion-booster-skills-v0.1.0.md)** es el ejemplo trabajado completo de creación de plugin (audit trail con decisiones, bugs encontrados, validaciones aplicadas).
+
+### Audit trail completo
+
+Trazabilidad del refactor: `.specs/integrate-booster-skills-plugin/` contiene:
+- `spec.md` v4 (final aprobada) + 3 versiones rechazadas (v1, v2 cascade-of-errors, v3 canonical-but-incomplete)
+- `plan.md` v3 + v2 preservado
+- `verify.md` v2 (31 PASS / 0 FAIL / 4 EXTERNAL) + v1 preservado
+- `review.md` (round 1 + round 2 con verdict APPROVED post mini-round 3)
+- `ship.md` con 12-point checklist adaptado a chore meta-work
+- `evidence/` con `/plugin list` output, snapshots tree antes/después, git-status, orphan-refs-check
+- `verify.sh` ejecutable (146 LOC, 23 SCs verificables)
+
+Métricas del ciclo: 4 iteraciones de spec, 3 iteraciones de plan, 2 rondas de review (mini-round 3 inline), 4 waivers justificados (T4 LOC, 13 modules touched, 2 cooling-offs), 15 decisiones PO registradas en ledger.
+
+### Follow-ups post-PR-2 (no bloqueantes)
+
+| Follow-up | Stub | Trigger |
+|---|---|---|
+| Migrar `agents/{code-reviewer,security-auditor,sre-oncall}.md` al plugin booster-skills v0.2.0 con compliance Chile (Ley 19.628, SII/DTE, modelo Uber-like + Sustainability Stakeholder) | [`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`](../../.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md) | Próximo PR que toque cualquiera de los 3 archivos, O publicación v0.2.0 por otro motivo |
+| Castellanizar headers de 28 ADRs históricos (`Status`/`Date` → `Estado`/`Fecha` para consistencia post-ADR-049) | [`.specs/_followups/castellanizar-adr-headers.md`](../../.specs/_followups/castellanizar-adr-headers.md) | Sprint cleanup documental, bajo prioridad |
+| Configurar branch protection rule en GitHub para enforce squash merge (PR-2 dependió de manual `--squash` por ausencia de regla) | [`.specs/_followups/github-branch-protection-squash.md`](../../.specs/_followups/github-branch-protection-squash.md) | Inmediato (post-PR-2): mitiga riesgo de typos en main si futuro PR usa `--merge` o `--rebase` |
+
+### Estado del repo post-refactor
+
+- `.claude/`: minimal — solo `ledger/`, `settings.json`, `settings.local.json`, `worktrees/`, `staging/` (gitignored)
+- `agents/`: 3 overrides Booster documentados como capa local
+- `docs/adr/`: 050 ADRs (último ADR-050)
+- `.specs/`: 7 features activas (audit-2026-05-14, integrate-booster-skills-plugin, production-readiness, s0-housekeeping, s1-drift-coverage-e2e, stubs-decision, tripstate-alignment) + `_followups/` (3 stubs)
+- `CLAUDE.md` v3: 335 líneas con §Integración con plugins + §Reglas no-negociables del stack Booster + §Capas adicionales locales del proyecto + §Estructura del repo v3
 
 ---
 
