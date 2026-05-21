@@ -1,9 +1,9 @@
 # ADR-002 — Adopción del framework de Agent Skills
 
-**Status**: Accepted
+**Status**: Superseded by ADR-049
 **Date**: 2026-04-23
 **Decider**: Felipe Vicencio (Product Owner)
-**Related**: [ADR-001](./001-stack-selection.md), [CLAUDE.md](../../CLAUDE.md)
+**Related**: [ADR-001](./001-stack-selection.md), [ADR-049](./049-claude-code-plugin-system-adoption.md), [CLAUDE.md](../../CLAUDE.md)
 
 ---
 
@@ -142,3 +142,31 @@ En orden de prioridad para el primer mes:
 - [addyosmani/agent-skills docs/skill-anatomy.md](https://github.com/addyosmani/agent-skills/blob/main/docs/skill-anatomy.md)
 - [ADR-001](./001-stack-selection.md) — stack selection
 - [CLAUDE.md](../../CLAUDE.md) — contrato agente
+
+---
+
+## Supersedence Note (2026-05-20)
+
+Este ADR fue superseded por [ADR-049](./049-claude-code-plugin-system-adoption.md), que adopta el sistema de plugins de Claude Code en lugar de la estructura local de carpetas (`skills/`, `agents/`, `.claude/commands/`, `hooks/`).
+
+**Razones del supersedence**:
+
+- Auditoría 2026-05-19 detectó 6 de 7 skills locales no auto-triggerables por frontmatter inválido.
+- Bug `devops-sre` fantasma en `.claude/commands/review.md` (agent inexistente).
+- Drift inevitable entre múltiples fuentes (`skills/`, `.claude/skills/`, `agents/`, `.claude/agents/`) sin source-of-truth claro.
+- Sistema de plugins permite versionado explícito, distribución vía GitHub, y replicabilidad cross-proyecto.
+
+**Lo que sobrevive de ADR-002**:
+
+- Filosofía de skills como workflows (process over knowledge, evidence over assumption).
+- Anatomía mínima de SKILL.md (con campos del spec oficial: `name` + `description` en frontmatter).
+- Principio "Conventional Commits estricto" — preservado en CLAUDE.md.
+
+**Lo que cambia**:
+
+- Skills viven en plugins (`agent-rigor` global + `booster-skills` project scope), no en `skills/` local del repo.
+- Slash commands son provistos por plugin (`/agent-rigor:spec` etc.), no por `.claude/commands/`.
+- Sub-agents son provistos por plugin (`booster-skills:dependency-auditor` etc.), no por `.claude/agents/`.
+- `hooks/session-start.md` documental obsoleto: agent-rigor instala sus hooks reales en `~/.claude/plugins/cache/.../hooks/`.
+
+Ver ADR-049 §Replicabilidad para procedimiento de creación de un plugin equivalente en otro proyecto.
