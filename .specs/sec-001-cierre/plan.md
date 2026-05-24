@@ -111,7 +111,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit. Phone no se redacta pero T4 (email/RUT/JWT/password) sigue funcionando — degradación parcial aceptable.
 - **Spec trace**: §3 H4 SC-H4.1 phone.
 
-### T6: PII redaction fixtures + threshold validation + ADR
+### T6: PII redaction fixtures + threshold validation + ADR [DONE 2026-05-24]
 
 - **Files**: `packages/logger/test/fixtures/legit-1000.json` (new), `packages/logger/test/fixtures/adversarial-100.json` (new), `packages/logger/src/redaction-thresholds.test.ts` (new), `docs/adr/05X-pii-redaction-logger.md` (new, número asignado durante T6 chequeando `docs/adr/` next free).
 - **LOC estimate**: ~30 LOC test code (las fixtures son data, no contadas como LOC functional). ADR ~50 líneas markdown.
