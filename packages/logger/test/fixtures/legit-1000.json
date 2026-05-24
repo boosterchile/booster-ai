@@ -1,0 +1,4002 @@
+[
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t0000001-0001-0003-0005-a0000000000b 200 20ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 10ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t0000001-0001-0003-0005-a0000000000b/offers 422 15ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t0000001-0001-0003-0005-a0000000000b 204 5ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 1ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-0 consumed lag=0ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=t0000001-0001-0003-0005-a0000000000b"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=t0000001-0001-0003-0005-a0000000000b"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=0s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t0000001-0001-0003-0005-a0000000000b latency=10ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=0 took=5ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=3ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=1 took=8ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t0000001-0001-0003-0005-a0000000000b:status ttl=60s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t0000001-0001-0003-0005-a0000000000b:idempotency ttl=30s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=20"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=1"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v0.0.0"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1000"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t0000001-0001-0003-0005-a0000000000b status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t0000001-0001-0003-0005-a0000000000b status=delivered duration=1h0m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t0000001-0001-0003-0005-a0000000000b score=0.7 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t0000001.ts line=20"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t0000001-0001-0003-0005-a0000000000b client_id=t0000001"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/te3779b2-0008-0010-0016-a0000000001e 200 21ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 11ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/te3779b2-0008-0010-0016-a0000000001e/offers 200 16ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/te3779b2-0008-0010-0016-a0000000001e 204 6ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 2ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-1 consumed lag=1ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=te3779b2-0008-0010-0016-a0000000001e"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=te3779b2-0008-0010-0016-a0000000001e"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=60s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=te3779b2-0008-0010-0016-a0000000001e latency=11ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=1 took=6ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=4ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=2 took=9ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:te3779b2-0008-0010-0016-a0000000001e:status ttl=61s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:te3779b2-0008-0010-0016-a0000000001e:idempotency ttl=31s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.01"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=21"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=2"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v1.1.1"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1001"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip te3779b2-0008-0010-0016-a0000000001e status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip te3779b2-0008-0010-0016-a0000000001e status=delivered duration=2h7m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer te3779b2-0008-0010-0016-a0000000001e score=0.71 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/te3779b2.ts line=21"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/te3779b2-0008-0010-0016-a0000000001e client_id=te3779b2"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tc6ef363-000f-001d-0027-a00000000031 200 22ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 12ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tc6ef363-000f-001d-0027-a00000000031/offers 422 17ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tc6ef363-000f-001d-0027-a00000000031 204 7ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 3ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-2 consumed lag=2ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=tc6ef363-000f-001d-0027-a00000000031"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=tc6ef363-000f-001d-0027-a00000000031"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=120s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tc6ef363-000f-001d-0027-a00000000031 latency=12ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=2 took=7ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=5ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=3 took=10ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tc6ef363-000f-001d-0027-a00000000031:status ttl=62s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tc6ef363-000f-001d-0027-a00000000031:idempotency ttl=32s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.02"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=22"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=3"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v2.2.2"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1002"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tc6ef363-000f-001d-0027-a00000000031 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tc6ef363-000f-001d-0027-a00000000031 status=delivered duration=3h14m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tc6ef363-000f-001d-0027-a00000000031 score=0.72 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tc6ef363.ts line=22"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tc6ef363-000f-001d-0027-a00000000031 client_id=tc6ef363"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/taa66d14-0016-002a-0038-a00000000044 200 23ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 13ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/taa66d14-0016-002a-0038-a00000000044/offers 200 18ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/taa66d14-0016-002a-0038-a00000000044 204 8ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 4ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-3 consumed lag=3ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=taa66d14-0016-002a-0038-a00000000044"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=taa66d14-0016-002a-0038-a00000000044"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=180s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=taa66d14-0016-002a-0038-a00000000044 latency=13ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=3 took=8ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=6ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=4 took=11ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:taa66d14-0016-002a-0038-a00000000044:status ttl=63s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:taa66d14-0016-002a-0038-a00000000044:idempotency ttl=33s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.03"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=23"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=4"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v3.3.3"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1003"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip taa66d14-0016-002a-0038-a00000000044 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip taa66d14-0016-002a-0038-a00000000044 status=delivered duration=4h21m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer taa66d14-0016-002a-0038-a00000000044 score=0.73 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/taa66d14.ts line=23"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/taa66d14-0016-002a-0038-a00000000044 client_id=taa66d14"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t8dde6c5-001d-0037-0049-a00000000057 200 24ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 14ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t8dde6c5-001d-0037-0049-a00000000057/offers 422 19ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t8dde6c5-001d-0037-0049-a00000000057 204 9ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 5ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-4 consumed lag=4ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t8dde6c5-001d-0037-0049-a00000000057"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t8dde6c5-001d-0037-0049-a00000000057"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=240s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t8dde6c5-001d-0037-0049-a00000000057 latency=14ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=4 took=9ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=7ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=5 took=12ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t8dde6c5-001d-0037-0049-a00000000057:status ttl=64s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t8dde6c5-001d-0037-0049-a00000000057:idempotency ttl=34s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.04"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=24"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=5"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v4.4.4"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1004"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t8dde6c5-001d-0037-0049-a00000000057 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t8dde6c5-001d-0037-0049-a00000000057 status=delivered duration=5h28m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t8dde6c5-001d-0037-0049-a00000000057 score=0.74 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t8dde6c5.ts line=24"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t8dde6c5-001d-0037-0049-a00000000057 client_id=t8dde6c5"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t7156076-0024-0044-005a-a0000000006a 200 25ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 15ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t7156076-0024-0044-005a-a0000000006a/offers 200 20ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t7156076-0024-0044-005a-a0000000006a 204 10ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 6ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-5 consumed lag=5ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t7156076-0024-0044-005a-a0000000006a"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t7156076-0024-0044-005a-a0000000006a"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=300s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t7156076-0024-0044-005a-a0000000006a latency=15ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=5 took=10ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=8ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=6 took=13ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t7156076-0024-0044-005a-a0000000006a:status ttl=65s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t7156076-0024-0044-005a-a0000000006a:idempotency ttl=35s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.05"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=25"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=6"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v5.5.5"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1005"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t7156076-0024-0044-005a-a0000000006a status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t7156076-0024-0044-005a-a0000000006a status=delivered duration=6h35m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t7156076-0024-0044-005a-a0000000006a score=0.75 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t7156076.ts line=25"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t7156076-0024-0044-005a-a0000000006a client_id=t7156076"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t54cda27-002b-0051-006b-a0000000007d 200 26ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 16ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t54cda27-002b-0051-006b-a0000000007d/offers 422 21ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t54cda27-002b-0051-006b-a0000000007d 204 11ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 7ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-6 consumed lag=6ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=t54cda27-002b-0051-006b-a0000000007d"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=t54cda27-002b-0051-006b-a0000000007d"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=360s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t54cda27-002b-0051-006b-a0000000007d latency=16ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=6 took=11ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=9ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=7 took=14ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t54cda27-002b-0051-006b-a0000000007d:status ttl=66s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t54cda27-002b-0051-006b-a0000000007d:idempotency ttl=36s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.06"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=26"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=7"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v6.6.6"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1006"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t54cda27-002b-0051-006b-a0000000007d status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t54cda27-002b-0051-006b-a0000000007d status=delivered duration=7h42m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t54cda27-002b-0051-006b-a0000000007d score=0.76 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t54cda27.ts line=26"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t54cda27-002b-0051-006b-a0000000007d client_id=t54cda27"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t38453d8-0032-005e-007c-a00000000090 200 27ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 17ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t38453d8-0032-005e-007c-a00000000090/offers 200 22ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t38453d8-0032-005e-007c-a00000000090 204 12ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 8ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-7 consumed lag=7ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t38453d8-0032-005e-007c-a00000000090"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t38453d8-0032-005e-007c-a00000000090"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=420s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t38453d8-0032-005e-007c-a00000000090 latency=17ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=7 took=12ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=10ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=8 took=15ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t38453d8-0032-005e-007c-a00000000090:status ttl=67s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t38453d8-0032-005e-007c-a00000000090:idempotency ttl=37s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.07"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=27"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=8"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v7.7.7"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1007"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t38453d8-0032-005e-007c-a00000000090 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t38453d8-0032-005e-007c-a00000000090 status=delivered duration=8h49m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t38453d8-0032-005e-007c-a00000000090 score=0.77 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t38453d8.ts line=27"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t38453d8-0032-005e-007c-a00000000090 client_id=t38453d8"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t1bbcd89-0039-006b-008d-a000000000a3 200 28ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 18ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t1bbcd89-0039-006b-008d-a000000000a3/offers 422 23ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t1bbcd89-0039-006b-008d-a000000000a3 204 13ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 9ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-0 consumed lag=8ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t1bbcd89-0039-006b-008d-a000000000a3"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t1bbcd89-0039-006b-008d-a000000000a3"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=480s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t1bbcd89-0039-006b-008d-a000000000a3 latency=18ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=8 took=13ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=11ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=9 took=16ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t1bbcd89-0039-006b-008d-a000000000a3:status ttl=68s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t1bbcd89-0039-006b-008d-a000000000a3:idempotency ttl=38s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.08"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=28"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=9"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v8.8.8"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1008"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t1bbcd89-0039-006b-008d-a000000000a3 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t1bbcd89-0039-006b-008d-a000000000a3 status=delivered duration=1h56m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t1bbcd89-0039-006b-008d-a000000000a3 score=0.78 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t1bbcd89.ts line=28"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t1bbcd89-0039-006b-008d-a000000000a3 client_id=t1bbcd89"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tff3473a-0040-0078-009e-a000000000b6 200 29ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 19ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tff3473a-0040-0078-009e-a000000000b6/offers 200 24ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tff3473a-0040-0078-009e-a000000000b6 204 14ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 10ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-1 consumed lag=9ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=tff3473a-0040-0078-009e-a000000000b6"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=tff3473a-0040-0078-009e-a000000000b6"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=540s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tff3473a-0040-0078-009e-a000000000b6 latency=19ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=9 took=14ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=12ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=10 took=17ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tff3473a-0040-0078-009e-a000000000b6:status ttl=69s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tff3473a-0040-0078-009e-a000000000b6:idempotency ttl=39s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.09"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=29"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=10"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v9.9.9"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1009"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tff3473a-0040-0078-009e-a000000000b6 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tff3473a-0040-0078-009e-a000000000b6 status=delivered duration=2h3m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tff3473a-0040-0078-009e-a000000000b6 score=0.79 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tff3473a.ts line=29"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tff3473a-0040-0078-009e-a000000000b6 client_id=tff3473a"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/te2ac0eb-0047-0085-00af-a000000000c9 200 30ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 20ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/te2ac0eb-0047-0085-00af-a000000000c9/offers 422 25ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/te2ac0eb-0047-0085-00af-a000000000c9 204 15ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 1ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-2 consumed lag=10ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=te2ac0eb-0047-0085-00af-a000000000c9"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=te2ac0eb-0047-0085-00af-a000000000c9"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=600s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=te2ac0eb-0047-0085-00af-a000000000c9 latency=20ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=10 took=15ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=13ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=1 took=18ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:te2ac0eb-0047-0085-00af-a000000000c9:status ttl=70s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:te2ac0eb-0047-0085-00af-a000000000c9:idempotency ttl=40s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.1"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=30"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=11"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v0.10.10"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1010"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip te2ac0eb-0047-0085-00af-a000000000c9 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip te2ac0eb-0047-0085-00af-a000000000c9 status=delivered duration=3h10m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer te2ac0eb-0047-0085-00af-a000000000c9 score=0.8 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/te2ac0eb.ts line=30"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/te2ac0eb-0047-0085-00af-a000000000c9 client_id=te2ac0eb"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tc623a9c-004e-0092-00c0-a000000000dc 200 31ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 21ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tc623a9c-004e-0092-00c0-a000000000dc/offers 200 26ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tc623a9c-004e-0092-00c0-a000000000dc 204 16ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 2ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-3 consumed lag=11ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=tc623a9c-004e-0092-00c0-a000000000dc"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=tc623a9c-004e-0092-00c0-a000000000dc"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=660s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tc623a9c-004e-0092-00c0-a000000000dc latency=21ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=11 took=16ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=14ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=2 took=19ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tc623a9c-004e-0092-00c0-a000000000dc:status ttl=71s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tc623a9c-004e-0092-00c0-a000000000dc:idempotency ttl=41s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.11"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=31"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=12"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v1.11.11"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1011"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tc623a9c-004e-0092-00c0-a000000000dc status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tc623a9c-004e-0092-00c0-a000000000dc status=delivered duration=4h17m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tc623a9c-004e-0092-00c0-a000000000dc score=0.81 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tc623a9c.ts line=31"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tc623a9c-004e-0092-00c0-a000000000dc client_id=tc623a9c"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/ta99b44d-0055-009f-00d1-a000000000ef 200 32ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 22ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/ta99b44d-0055-009f-00d1-a000000000ef/offers 422 27ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/ta99b44d-0055-009f-00d1-a000000000ef 204 17ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 3ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-4 consumed lag=12ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=ta99b44d-0055-009f-00d1-a000000000ef"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=ta99b44d-0055-009f-00d1-a000000000ef"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=720s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=ta99b44d-0055-009f-00d1-a000000000ef latency=22ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=12 took=17ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=15ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=3 took=20ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:ta99b44d-0055-009f-00d1-a000000000ef:status ttl=72s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:ta99b44d-0055-009f-00d1-a000000000ef:idempotency ttl=42s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.12"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=32"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=13"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v2.12.12"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1012"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip ta99b44d-0055-009f-00d1-a000000000ef status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip ta99b44d-0055-009f-00d1-a000000000ef status=delivered duration=5h24m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer ta99b44d-0055-009f-00d1-a000000000ef score=0.82 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/ta99b44d.ts line=32"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/ta99b44d-0055-009f-00d1-a000000000ef client_id=ta99b44d"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t8d12dfe-005c-00ac-00e2-a00000000102 200 33ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 23ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t8d12dfe-005c-00ac-00e2-a00000000102/offers 200 28ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t8d12dfe-005c-00ac-00e2-a00000000102 204 18ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 4ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-5 consumed lag=13ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t8d12dfe-005c-00ac-00e2-a00000000102"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t8d12dfe-005c-00ac-00e2-a00000000102"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=780s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t8d12dfe-005c-00ac-00e2-a00000000102 latency=23ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=13 took=18ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=16ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=4 took=21ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t8d12dfe-005c-00ac-00e2-a00000000102:status ttl=73s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t8d12dfe-005c-00ac-00e2-a00000000102:idempotency ttl=43s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.13"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=33"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=14"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v3.13.13"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1013"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t8d12dfe-005c-00ac-00e2-a00000000102 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t8d12dfe-005c-00ac-00e2-a00000000102 status=delivered duration=6h31m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t8d12dfe-005c-00ac-00e2-a00000000102 score=0.83 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t8d12dfe.ts line=33"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t8d12dfe-005c-00ac-00e2-a00000000102 client_id=t8d12dfe"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t708a7af-0063-00b9-00f3-a00000000115 200 34ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 24ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t708a7af-0063-00b9-00f3-a00000000115/offers 422 29ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t708a7af-0063-00b9-00f3-a00000000115 204 19ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 5ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-6 consumed lag=14ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t708a7af-0063-00b9-00f3-a00000000115"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t708a7af-0063-00b9-00f3-a00000000115"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=840s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t708a7af-0063-00b9-00f3-a00000000115 latency=24ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=14 took=19ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=17ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=5 took=22ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t708a7af-0063-00b9-00f3-a00000000115:status ttl=74s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t708a7af-0063-00b9-00f3-a00000000115:idempotency ttl=44s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.14"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=34"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=15"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v4.14.14"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1014"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t708a7af-0063-00b9-00f3-a00000000115 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t708a7af-0063-00b9-00f3-a00000000115 status=delivered duration=7h38m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t708a7af-0063-00b9-00f3-a00000000115 score=0.84 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t708a7af.ts line=34"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t708a7af-0063-00b9-00f3-a00000000115 client_id=t708a7af"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t5402160-006a-00c6-0104-a00000000128 200 35ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 25ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t5402160-006a-00c6-0104-a00000000128/offers 200 30ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t5402160-006a-00c6-0104-a00000000128 204 20ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 6ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-7 consumed lag=15ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=t5402160-006a-00c6-0104-a00000000128"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=t5402160-006a-00c6-0104-a00000000128"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=900s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t5402160-006a-00c6-0104-a00000000128 latency=25ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=15 took=20ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=18ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=6 took=23ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t5402160-006a-00c6-0104-a00000000128:status ttl=75s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t5402160-006a-00c6-0104-a00000000128:idempotency ttl=45s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.15"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=35"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=16"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v5.15.15"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1015"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t5402160-006a-00c6-0104-a00000000128 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t5402160-006a-00c6-0104-a00000000128 status=delivered duration=8h45m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t5402160-006a-00c6-0104-a00000000128 score=0.85 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t5402160.ts line=35"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t5402160-006a-00c6-0104-a00000000128 client_id=t5402160"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t3779b11-0071-00d3-0115-a0000000013b 200 36ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 26ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t3779b11-0071-00d3-0115-a0000000013b/offers 422 31ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t3779b11-0071-00d3-0115-a0000000013b 204 21ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 7ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-0 consumed lag=16ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t3779b11-0071-00d3-0115-a0000000013b"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t3779b11-0071-00d3-0115-a0000000013b"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=960s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t3779b11-0071-00d3-0115-a0000000013b latency=26ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=16 took=21ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=19ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=7 took=24ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t3779b11-0071-00d3-0115-a0000000013b:status ttl=76s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t3779b11-0071-00d3-0115-a0000000013b:idempotency ttl=46s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.16"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=36"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=17"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v6.16.16"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1016"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t3779b11-0071-00d3-0115-a0000000013b status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t3779b11-0071-00d3-0115-a0000000013b status=delivered duration=1h52m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t3779b11-0071-00d3-0115-a0000000013b score=0.86 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t3779b11.ts line=36"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t3779b11-0071-00d3-0115-a0000000013b client_id=t3779b11"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t1af14c2-0078-00e0-0126-a0000000014e 200 37ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 27ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t1af14c2-0078-00e0-0126-a0000000014e/offers 200 32ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t1af14c2-0078-00e0-0126-a0000000014e 204 22ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 8ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-1 consumed lag=17ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t1af14c2-0078-00e0-0126-a0000000014e"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t1af14c2-0078-00e0-0126-a0000000014e"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=1020s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t1af14c2-0078-00e0-0126-a0000000014e latency=27ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=17 took=22ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=20ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=8 took=25ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t1af14c2-0078-00e0-0126-a0000000014e:status ttl=77s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t1af14c2-0078-00e0-0126-a0000000014e:idempotency ttl=47s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.17"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=37"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=18"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v7.17.17"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1017"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t1af14c2-0078-00e0-0126-a0000000014e status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t1af14c2-0078-00e0-0126-a0000000014e status=delivered duration=2h59m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t1af14c2-0078-00e0-0126-a0000000014e score=0.87 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t1af14c2.ts line=37"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t1af14c2-0078-00e0-0126-a0000000014e client_id=t1af14c2"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tfe68e73-007f-00ed-0137-a00000000161 200 38ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 28ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tfe68e73-007f-00ed-0137-a00000000161/offers 422 33ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tfe68e73-007f-00ed-0137-a00000000161 204 23ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 9ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-2 consumed lag=18ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=tfe68e73-007f-00ed-0137-a00000000161"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=tfe68e73-007f-00ed-0137-a00000000161"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=1080s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tfe68e73-007f-00ed-0137-a00000000161 latency=28ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=18 took=23ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=21ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=9 took=26ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tfe68e73-007f-00ed-0137-a00000000161:status ttl=78s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tfe68e73-007f-00ed-0137-a00000000161:idempotency ttl=48s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.18"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=38"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=19"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v8.18.18"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1018"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tfe68e73-007f-00ed-0137-a00000000161 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tfe68e73-007f-00ed-0137-a00000000161 status=delivered duration=3h6m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tfe68e73-007f-00ed-0137-a00000000161 score=0.88 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tfe68e73.ts line=38"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tfe68e73-007f-00ed-0137-a00000000161 client_id=tfe68e73"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/te1e0824-0086-00fa-0148-a00000000174 200 39ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 29ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/te1e0824-0086-00fa-0148-a00000000174/offers 200 34ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/te1e0824-0086-00fa-0148-a00000000174 204 24ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 10ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-3 consumed lag=19ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=te1e0824-0086-00fa-0148-a00000000174"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=te1e0824-0086-00fa-0148-a00000000174"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=1140s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=te1e0824-0086-00fa-0148-a00000000174 latency=29ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=19 took=24ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=22ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=10 took=27ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:te1e0824-0086-00fa-0148-a00000000174:status ttl=79s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:te1e0824-0086-00fa-0148-a00000000174:idempotency ttl=49s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.19"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=39"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=20"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v9.19.19"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1019"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip te1e0824-0086-00fa-0148-a00000000174 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip te1e0824-0086-00fa-0148-a00000000174 status=delivered duration=4h13m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer te1e0824-0086-00fa-0148-a00000000174 score=0.89 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/te1e0824.ts line=39"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/te1e0824-0086-00fa-0148-a00000000174 client_id=te1e0824"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tc5581d5-008d-0107-0159-a00000000187 200 40ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 30ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tc5581d5-008d-0107-0159-a00000000187/offers 422 35ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tc5581d5-008d-0107-0159-a00000000187 204 25ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 1ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-4 consumed lag=20ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=tc5581d5-008d-0107-0159-a00000000187"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=tc5581d5-008d-0107-0159-a00000000187"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=1200s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tc5581d5-008d-0107-0159-a00000000187 latency=30ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=20 took=25ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=23ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=1 took=28ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tc5581d5-008d-0107-0159-a00000000187:status ttl=80s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tc5581d5-008d-0107-0159-a00000000187:idempotency ttl=50s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.2"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=40"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=21"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v0.0.20"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1020"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tc5581d5-008d-0107-0159-a00000000187 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tc5581d5-008d-0107-0159-a00000000187 status=delivered duration=5h20m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tc5581d5-008d-0107-0159-a00000000187 score=0.9 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tc5581d5.ts line=40"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tc5581d5-008d-0107-0159-a00000000187 client_id=tc5581d5"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/ta8cfb86-0094-0114-016a-a0000000019a 200 41ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 31ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/ta8cfb86-0094-0114-016a-a0000000019a/offers 200 36ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/ta8cfb86-0094-0114-016a-a0000000019a 204 26ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 2ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-5 consumed lag=21ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=ta8cfb86-0094-0114-016a-a0000000019a"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=ta8cfb86-0094-0114-016a-a0000000019a"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=1260s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=ta8cfb86-0094-0114-016a-a0000000019a latency=31ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=21 took=26ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=24ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=2 took=29ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:ta8cfb86-0094-0114-016a-a0000000019a:status ttl=81s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:ta8cfb86-0094-0114-016a-a0000000019a:idempotency ttl=51s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.21"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=41"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=22"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v1.1.21"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1021"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip ta8cfb86-0094-0114-016a-a0000000019a status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip ta8cfb86-0094-0114-016a-a0000000019a status=delivered duration=6h27m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer ta8cfb86-0094-0114-016a-a0000000019a score=0.91 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/ta8cfb86.ts line=41"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/ta8cfb86-0094-0114-016a-a0000000019a client_id=ta8cfb86"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t8c47537-009b-0121-017b-a000000001ad 200 42ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 32ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t8c47537-009b-0121-017b-a000000001ad/offers 422 37ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t8c47537-009b-0121-017b-a000000001ad 204 27ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 3ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-6 consumed lag=22ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t8c47537-009b-0121-017b-a000000001ad"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t8c47537-009b-0121-017b-a000000001ad"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=1320s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t8c47537-009b-0121-017b-a000000001ad latency=32ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=22 took=27ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=25ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=3 took=30ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t8c47537-009b-0121-017b-a000000001ad:status ttl=82s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t8c47537-009b-0121-017b-a000000001ad:idempotency ttl=52s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.22"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=42"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=23"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v2.2.22"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1022"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t8c47537-009b-0121-017b-a000000001ad status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t8c47537-009b-0121-017b-a000000001ad status=delivered duration=7h34m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t8c47537-009b-0121-017b-a000000001ad score=0.92 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t8c47537.ts line=42"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t8c47537-009b-0121-017b-a000000001ad client_id=t8c47537"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t6fbeee8-00a2-012e-018c-a000000001c0 200 43ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 33ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t6fbeee8-00a2-012e-018c-a000000001c0/offers 200 38ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t6fbeee8-00a2-012e-018c-a000000001c0 204 28ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 4ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-7 consumed lag=23ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t6fbeee8-00a2-012e-018c-a000000001c0"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t6fbeee8-00a2-012e-018c-a000000001c0"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=1380s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t6fbeee8-00a2-012e-018c-a000000001c0 latency=33ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=23 took=28ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=26ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=4 took=31ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t6fbeee8-00a2-012e-018c-a000000001c0:status ttl=83s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t6fbeee8-00a2-012e-018c-a000000001c0:idempotency ttl=53s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.23"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=43"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=24"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v3.3.23"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1023"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t6fbeee8-00a2-012e-018c-a000000001c0 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t6fbeee8-00a2-012e-018c-a000000001c0 status=delivered duration=8h41m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t6fbeee8-00a2-012e-018c-a000000001c0 score=0.93 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t6fbeee8.ts line=43"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t6fbeee8-00a2-012e-018c-a000000001c0 client_id=t6fbeee8"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t5336899-00a9-013b-019d-a000000001d3 200 44ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 34ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t5336899-00a9-013b-019d-a000000001d3/offers 422 39ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t5336899-00a9-013b-019d-a000000001d3 204 29ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 5ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-0 consumed lag=24ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=t5336899-00a9-013b-019d-a000000001d3"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=t5336899-00a9-013b-019d-a000000001d3"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=1440s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t5336899-00a9-013b-019d-a000000001d3 latency=34ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=24 took=29ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=27ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=5 took=32ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t5336899-00a9-013b-019d-a000000001d3:status ttl=84s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t5336899-00a9-013b-019d-a000000001d3:idempotency ttl=54s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.24"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=44"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=25"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v4.4.24"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1024"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t5336899-00a9-013b-019d-a000000001d3 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t5336899-00a9-013b-019d-a000000001d3 status=delivered duration=1h48m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t5336899-00a9-013b-019d-a000000001d3 score=0.94 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t5336899.ts line=44"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t5336899-00a9-013b-019d-a000000001d3 client_id=t5336899"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t36ae24a-00b0-0148-01ae-a000000001e6 200 45ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 35ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t36ae24a-00b0-0148-01ae-a000000001e6/offers 200 40ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t36ae24a-00b0-0148-01ae-a000000001e6 204 30ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 6ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-1 consumed lag=25ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t36ae24a-00b0-0148-01ae-a000000001e6"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t36ae24a-00b0-0148-01ae-a000000001e6"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=1500s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t36ae24a-00b0-0148-01ae-a000000001e6 latency=35ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=25 took=30ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=28ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=6 took=33ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t36ae24a-00b0-0148-01ae-a000000001e6:status ttl=85s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t36ae24a-00b0-0148-01ae-a000000001e6:idempotency ttl=55s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.25"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=45"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=26"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v5.5.25"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1025"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t36ae24a-00b0-0148-01ae-a000000001e6 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t36ae24a-00b0-0148-01ae-a000000001e6 status=delivered duration=2h55m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t36ae24a-00b0-0148-01ae-a000000001e6 score=0.95 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t36ae24a.ts line=45"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t36ae24a-00b0-0148-01ae-a000000001e6 client_id=t36ae24a"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t1a25bfb-00b7-0155-01bf-a000000001f9 200 46ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 36ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t1a25bfb-00b7-0155-01bf-a000000001f9/offers 422 41ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t1a25bfb-00b7-0155-01bf-a000000001f9 204 31ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 7ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-2 consumed lag=26ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t1a25bfb-00b7-0155-01bf-a000000001f9"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t1a25bfb-00b7-0155-01bf-a000000001f9"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=1560s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t1a25bfb-00b7-0155-01bf-a000000001f9 latency=36ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=26 took=31ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=29ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=7 took=34ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t1a25bfb-00b7-0155-01bf-a000000001f9:status ttl=86s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t1a25bfb-00b7-0155-01bf-a000000001f9:idempotency ttl=56s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.26"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=46"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=27"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v6.6.26"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1026"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t1a25bfb-00b7-0155-01bf-a000000001f9 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t1a25bfb-00b7-0155-01bf-a000000001f9 status=delivered duration=3h2m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t1a25bfb-00b7-0155-01bf-a000000001f9 score=0.96 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t1a25bfb.ts line=46"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t1a25bfb-00b7-0155-01bf-a000000001f9 client_id=t1a25bfb"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tfd9d5ac-00be-0162-01d0-a0000000020c 200 47ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 37ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tfd9d5ac-00be-0162-01d0-a0000000020c/offers 200 42ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tfd9d5ac-00be-0162-01d0-a0000000020c 204 32ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 8ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-3 consumed lag=27ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=tfd9d5ac-00be-0162-01d0-a0000000020c"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=tfd9d5ac-00be-0162-01d0-a0000000020c"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=1620s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tfd9d5ac-00be-0162-01d0-a0000000020c latency=37ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=27 took=32ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=30ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=8 took=35ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tfd9d5ac-00be-0162-01d0-a0000000020c:status ttl=87s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tfd9d5ac-00be-0162-01d0-a0000000020c:idempotency ttl=57s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.27"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=47"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=28"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v7.7.27"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1027"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tfd9d5ac-00be-0162-01d0-a0000000020c status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tfd9d5ac-00be-0162-01d0-a0000000020c status=delivered duration=4h9m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tfd9d5ac-00be-0162-01d0-a0000000020c score=0.97 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tfd9d5ac.ts line=47"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tfd9d5ac-00be-0162-01d0-a0000000020c client_id=tfd9d5ac"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/te114f5d-00c5-016f-01e1-a0000000021f 200 48ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 38ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/te114f5d-00c5-016f-01e1-a0000000021f/offers 422 43ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/te114f5d-00c5-016f-01e1-a0000000021f 204 33ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 9ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-4 consumed lag=28ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=te114f5d-00c5-016f-01e1-a0000000021f"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=te114f5d-00c5-016f-01e1-a0000000021f"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=1680s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=te114f5d-00c5-016f-01e1-a0000000021f latency=38ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=28 took=33ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=31ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=9 took=36ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:te114f5d-00c5-016f-01e1-a0000000021f:status ttl=88s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:te114f5d-00c5-016f-01e1-a0000000021f:idempotency ttl=58s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.28"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=48"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=29"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v8.8.28"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1028"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip te114f5d-00c5-016f-01e1-a0000000021f status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip te114f5d-00c5-016f-01e1-a0000000021f status=delivered duration=5h16m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer te114f5d-00c5-016f-01e1-a0000000021f score=0.98 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/te114f5d.ts line=48"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/te114f5d-00c5-016f-01e1-a0000000021f client_id=te114f5d"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tc48c90e-00cc-017c-01f2-a00000000232 200 49ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 39ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tc48c90e-00cc-017c-01f2-a00000000232/offers 200 44ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tc48c90e-00cc-017c-01f2-a00000000232 204 34ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 10ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-5 consumed lag=29ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=tc48c90e-00cc-017c-01f2-a00000000232"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=tc48c90e-00cc-017c-01f2-a00000000232"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=1740s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tc48c90e-00cc-017c-01f2-a00000000232 latency=39ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=29 took=34ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=32ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=10 took=37ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tc48c90e-00cc-017c-01f2-a00000000232:status ttl=89s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tc48c90e-00cc-017c-01f2-a00000000232:idempotency ttl=59s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.29"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=49"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=30"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v9.9.29"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1029"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tc48c90e-00cc-017c-01f2-a00000000232 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tc48c90e-00cc-017c-01f2-a00000000232 status=delivered duration=6h23m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tc48c90e-00cc-017c-01f2-a00000000232 score=0.99 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tc48c90e.ts line=49"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tc48c90e-00cc-017c-01f2-a00000000232 client_id=tc48c90e"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/ta8042bf-00d3-0189-0203-a00000000245 200 50ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 40ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/ta8042bf-00d3-0189-0203-a00000000245/offers 422 45ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/ta8042bf-00d3-0189-0203-a00000000245 204 5ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 1ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-6 consumed lag=30ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=ta8042bf-00d3-0189-0203-a00000000245"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=ta8042bf-00d3-0189-0203-a00000000245"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=1800s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=ta8042bf-00d3-0189-0203-a00000000245 latency=40ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=30 took=35ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=3ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=1 took=38ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:ta8042bf-00d3-0189-0203-a00000000245:status ttl=90s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:ta8042bf-00d3-0189-0203-a00000000245:idempotency ttl=60s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.3"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=50"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=31"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v0.10.0"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1030"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip ta8042bf-00d3-0189-0203-a00000000245 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip ta8042bf-00d3-0189-0203-a00000000245 status=delivered duration=7h30m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer ta8042bf-00d3-0189-0203-a00000000245 score=0.7 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/ta8042bf.ts line=50"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/ta8042bf-00d3-0189-0203-a00000000245 client_id=ta8042bf"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t8b7bc70-00da-0196-0214-a00000000258 200 51ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 41ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t8b7bc70-00da-0196-0214-a00000000258/offers 200 46ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t8b7bc70-00da-0196-0214-a00000000258 204 6ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 2ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-7 consumed lag=31ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t8b7bc70-00da-0196-0214-a00000000258"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t8b7bc70-00da-0196-0214-a00000000258"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=1860s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t8b7bc70-00da-0196-0214-a00000000258 latency=41ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=31 took=36ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=4ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=2 took=39ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t8b7bc70-00da-0196-0214-a00000000258:status ttl=91s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t8b7bc70-00da-0196-0214-a00000000258:idempotency ttl=61s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.31"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=51"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=32"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v1.11.1"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1031"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t8b7bc70-00da-0196-0214-a00000000258 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t8b7bc70-00da-0196-0214-a00000000258 status=delivered duration=8h37m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t8b7bc70-00da-0196-0214-a00000000258 score=0.71 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t8b7bc70.ts line=51"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t8b7bc70-00da-0196-0214-a00000000258 client_id=t8b7bc70"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t6ef3621-00e1-01a3-0225-a0000000026b 200 52ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 42ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t6ef3621-00e1-01a3-0225-a0000000026b/offers 422 47ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t6ef3621-00e1-01a3-0225-a0000000026b 204 7ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 3ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-0 consumed lag=32ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t6ef3621-00e1-01a3-0225-a0000000026b"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t6ef3621-00e1-01a3-0225-a0000000026b"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=1920s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t6ef3621-00e1-01a3-0225-a0000000026b latency=42ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=32 took=37ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=5ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=3 took=40ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t6ef3621-00e1-01a3-0225-a0000000026b:status ttl=92s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t6ef3621-00e1-01a3-0225-a0000000026b:idempotency ttl=62s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.32"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=52"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=33"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v2.12.2"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1032"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t6ef3621-00e1-01a3-0225-a0000000026b status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t6ef3621-00e1-01a3-0225-a0000000026b status=delivered duration=1h44m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t6ef3621-00e1-01a3-0225-a0000000026b score=0.72 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t6ef3621.ts line=52"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t6ef3621-00e1-01a3-0225-a0000000026b client_id=t6ef3621"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t526afd2-00e8-01b0-0236-a0000000027e 200 53ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 43ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t526afd2-00e8-01b0-0236-a0000000027e/offers 200 48ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t526afd2-00e8-01b0-0236-a0000000027e 204 8ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 4ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-1 consumed lag=33ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=t526afd2-00e8-01b0-0236-a0000000027e"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=t526afd2-00e8-01b0-0236-a0000000027e"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=1980s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t526afd2-00e8-01b0-0236-a0000000027e latency=43ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=33 took=38ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=6ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=4 took=41ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t526afd2-00e8-01b0-0236-a0000000027e:status ttl=93s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t526afd2-00e8-01b0-0236-a0000000027e:idempotency ttl=63s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.33"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=53"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=34"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v3.13.3"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1033"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t526afd2-00e8-01b0-0236-a0000000027e status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t526afd2-00e8-01b0-0236-a0000000027e status=delivered duration=2h51m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t526afd2-00e8-01b0-0236-a0000000027e score=0.73 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t526afd2.ts line=53"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t526afd2-00e8-01b0-0236-a0000000027e client_id=t526afd2"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t35e2983-00ef-01bd-0247-a00000000291 200 54ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 44ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t35e2983-00ef-01bd-0247-a00000000291/offers 422 49ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t35e2983-00ef-01bd-0247-a00000000291 204 9ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 5ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-2 consumed lag=34ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=t35e2983-00ef-01bd-0247-a00000000291"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=t35e2983-00ef-01bd-0247-a00000000291"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=2040s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t35e2983-00ef-01bd-0247-a00000000291 latency=44ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=34 took=39ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=7ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=5 took=42ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t35e2983-00ef-01bd-0247-a00000000291:status ttl=94s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t35e2983-00ef-01bd-0247-a00000000291:idempotency ttl=64s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.34"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=54"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=35"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v4.14.4"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1034"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t35e2983-00ef-01bd-0247-a00000000291 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t35e2983-00ef-01bd-0247-a00000000291 status=delivered duration=3h58m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t35e2983-00ef-01bd-0247-a00000000291 score=0.74 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t35e2983.ts line=54"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t35e2983-00ef-01bd-0247-a00000000291 client_id=t35e2983"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/t195a334-00f6-01ca-0258-a000000002a4 200 55ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 45ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/t195a334-00f6-01ca-0258-a000000002a4/offers 200 50ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/t195a334-00f6-01ca-0258-a000000002a4 204 10ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 6ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-3 consumed lag=35ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=t195a334-00f6-01ca-0258-a000000002a4"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=t195a334-00f6-01ca-0258-a000000002a4"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=2100s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=t195a334-00f6-01ca-0258-a000000002a4 latency=45ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=35 took=40ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=8ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=6 took=43ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:t195a334-00f6-01ca-0258-a000000002a4:status ttl=95s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:t195a334-00f6-01ca-0258-a000000002a4:idempotency ttl=65s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.35"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=55"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=36"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v5.15.5"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1035"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip t195a334-00f6-01ca-0258-a000000002a4 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip t195a334-00f6-01ca-0258-a000000002a4 status=delivered duration=4h5m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer t195a334-00f6-01ca-0258-a000000002a4 score=0.75 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/t195a334.ts line=55"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/t195a334-00f6-01ca-0258-a000000002a4 client_id=t195a334"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tfcd1ce5-00fd-01d7-0269-a000000002b7 200 56ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 46ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tfcd1ce5-00fd-01d7-0269-a000000002b7/offers 422 51ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tfcd1ce5-00fd-01d7-0269-a000000002b7 204 11ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 7ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-4 consumed lag=36ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=tfcd1ce5-00fd-01d7-0269-a000000002b7"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=tfcd1ce5-00fd-01d7-0269-a000000002b7"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-0 state=running uptime=2160s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tfcd1ce5-00fd-01d7-0269-a000000002b7 latency=46ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=36 took=41ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=9ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=7 took=44ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tfcd1ce5-00fd-01d7-0269-a000000002b7:status ttl=96s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tfcd1ce5-00fd-01d7-0269-a000000002b7:idempotency ttl=66s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.36"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=56"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=37"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v6.16.6"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1036"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tfcd1ce5-00fd-01d7-0269-a000000002b7 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tfcd1ce5-00fd-01d7-0269-a000000002b7 status=delivered duration=5h12m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tfcd1ce5-00fd-01d7-0269-a000000002b7 score=0.76 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tfcd1ce5.ts line=56"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tfcd1ce5-00fd-01d7-0269-a000000002b7 client_id=tfcd1ce5"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/te049696-0104-01e4-027a-a000000002ca 200 57ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 47ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/te049696-0104-01e4-027a-a000000002ca/offers 200 52ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/te049696-0104-01e4-027a-a000000002ca 204 12ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 8ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-5 consumed lag=37ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=2 msgId=te049696-0104-01e4-027a-a000000002ca"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=2 msgId=te049696-0104-01e4-027a-a000000002ca"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-1 state=running uptime=2220s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=te049696-0104-01e4-027a-a000000002ca latency=47ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=37 took=42ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=10ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=8 took=45ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:te049696-0104-01e4-027a-a000000002ca:status ttl=97s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:te049696-0104-01e4-027a-a000000002ca:idempotency ttl=67s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.37"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=57"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=38"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v7.17.7"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1037"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip te049696-0104-01e4-027a-a000000002ca status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip te049696-0104-01e4-027a-a000000002ca status=delivered duration=6h19m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer te049696-0104-01e4-027a-a000000002ca score=0.77 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/te049696.ts line=57"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/te049696-0104-01e4-027a-a000000002ca client_id=te049696"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/tc3c1047-010b-01f1-028b-a000000002dd 200 58ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 48ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/tc3c1047-010b-01f1-028b-a000000002dd/offers 422 53ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/tc3c1047-010b-01f1-028b-a000000002dd 204 13ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 9ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-6 consumed lag=38ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=3 msgId=tc3c1047-010b-01f1-028b-a000000002dd"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=3 msgId=tc3c1047-010b-01f1-028b-a000000002dd"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-2 state=running uptime=2280s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=tc3c1047-010b-01f1-028b-a000000002dd latency=48ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=38 took=43ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=11ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=9 took=46ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:tc3c1047-010b-01f1-028b-a000000002dd:status ttl=98s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:tc3c1047-010b-01f1-028b-a000000002dd:idempotency ttl=68s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.38"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=58"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=39"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v8.18.8"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1038"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip tc3c1047-010b-01f1-028b-a000000002dd status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip tc3c1047-010b-01f1-028b-a000000002dd status=delivered duration=7h26m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer tc3c1047-010b-01f1-028b-a000000002dd score=0.78 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/tc3c1047.ts line=58"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/tc3c1047-010b-01f1-028b-a000000002dd client_id=tc3c1047"
+  },
+  {
+    "category": "http_get",
+    "text": "GET /api/v1/trips/ta7389f8-0112-01fe-029c-a000000002f0 200 59ms"
+  },
+  {
+    "category": "http_post",
+    "text": "POST /api/v1/auth/refresh 401 49ms"
+  },
+  {
+    "category": "http_put",
+    "text": "PUT /api/v1/carriers/ta7389f8-0112-01fe-029c-a000000002f0/offers 200 54ms"
+  },
+  {
+    "category": "http_delete",
+    "text": "DELETE /api/v1/sessions/ta7389f8-0112-01fe-029c-a000000002f0 204 14ms"
+  },
+  {
+    "category": "http_health",
+    "text": "GET /health 200 10ms"
+  },
+  {
+    "category": "worker_state",
+    "text": "worker matching-engine-7 consumed lag=39ms"
+  },
+  {
+    "category": "pubsub_topic",
+    "text": "pubsub topic=trips.offer.dispatched attempt=1 msgId=ta7389f8-0112-01fe-029c-a000000002f0"
+  },
+  {
+    "category": "pubsub_telemetry",
+    "text": "pubsub topic=telemetry.points.codec8 attempt=1 msgId=ta7389f8-0112-01fe-029c-a000000002f0"
+  },
+  {
+    "category": "worker_uptime",
+    "text": "worker telemetry-processor-3 state=running uptime=2340s"
+  },
+  {
+    "category": "pubsub_ack",
+    "text": "pubsub ack msgId=ta7389f8-0112-01fe-029c-a000000002f0 latency=49ms"
+  },
+  {
+    "category": "db_select",
+    "text": "db.query SELECT table=viajes rows=39 took=44ms"
+  },
+  {
+    "category": "db_insert",
+    "text": "db.query INSERT table=usuarios rows=1 took=12ms"
+  },
+  {
+    "category": "db_update",
+    "text": "db.query UPDATE table=ofertas rows=10 took=47ms"
+  },
+  {
+    "category": "cache_hit",
+    "text": "redis.cache.hit key=trip:ta7389f8-0112-01fe-029c-a000000002f0:status ttl=99s"
+  },
+  {
+    "category": "cache_miss",
+    "text": "redis.cache.miss key=carrier:ta7389f8-0112-01fe-029c-a000000002f0:idempotency ttl=69s"
+  },
+  {
+    "category": "metric_distribution",
+    "text": "metric matching.score.distribution value=0.39"
+  },
+  {
+    "category": "metric_carbon",
+    "text": "metric carbon.calc.ms value=59"
+  },
+  {
+    "category": "metric_otel",
+    "text": "metric otel.span.count value=40"
+  },
+  {
+    "category": "config_load",
+    "text": "config loaded NODE_ENV=production version=v9.19.9"
+  },
+  {
+    "category": "service_start",
+    "text": "service booster-ai-api started on port 8080 pid=1039"
+  },
+  {
+    "category": "trip_in_transit",
+    "text": "trip ta7389f8-0112-01fe-029c-a000000002f0 status=in_transit lane=Santiago-Valparaiso"
+  },
+  {
+    "category": "trip_delivered",
+    "text": "trip ta7389f8-0112-01fe-029c-a000000002f0 status=delivered duration=8h33m"
+  },
+  {
+    "category": "offer_score",
+    "text": "offer ta7389f8-0112-01fe-029c-a000000002f0 score=0.79 reason=base_distance"
+  },
+  {
+    "category": "error_timeout",
+    "text": "error TimeoutError at /app/src/handlers/ta7389f8.ts line=59"
+  },
+  {
+    "category": "warn_deprecated",
+    "text": "warn deprecated_api_call endpoint=/v0/ta7389f8-0112-01fe-029c-a000000002f0 client_id=ta7389f8"
+  }
+]
