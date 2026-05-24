@@ -363,10 +363,13 @@ variable "wake_word_voice_activated" {
 #
 # Default true para demo Corfo (2026-05-18). Se apaga post-evento si
 # Felipe decide retirar el subdominio.
+#
+# 2026-05-24 — `false` per SEC-001 cierre T0 (drift reconcile vs state real prod).
+# Vuelve a `true` en H1.6 SC-1.6.1 post H1.1..H1.5 + H4. Ver `.specs/sec-001-cierre/`.
 variable "demo_mode_activated" {
   description = "Activa modo demo: endpoint /demo/login + auto-seed on startup + UI demo en subdominio demo.boosterchile.com."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ---------------------------------------------------------------------------
