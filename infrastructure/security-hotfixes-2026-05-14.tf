@@ -143,3 +143,16 @@ resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_adm
   role      = "roles/secretmanager.admin"
   member    = "user:dev@boosterchile.com"
 }
+
+# T7.5.1 SEC-001 (sec-001-cierre ronda 2 P0-C) — grant viewer al SA
+# `github-deployer` (impersonated por GitHub Actions via WIF; ver
+# release.yml:77 patrón canónico) sobre `demo-seed-password` para que el
+# CI gate `check-secret-version-exists` pueda listar versions. Viewer NO
+# permite acceder al payload (eso requiere secretAccessor); solo metadata
+# count que es lo que el gate necesita.
+resource "google_secret_manager_secret_iam_member" "demo_seed_password_github_deployer_viewer" {
+  project   = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].project
+  secret_id = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
+  role      = "roles/secretmanager.viewer"
+  member    = "serviceAccount:${google_service_account.github_deployer.email}"
+}

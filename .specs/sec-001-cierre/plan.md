@@ -138,7 +138,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → secret destroyed por terraform. **Cuidado**: si algún Cloud Run revision sigue referenciado al env, fallará en restart. Mitigation: aplicar revert SOLO si T8 también revertido (orden coordinado).
 - **Spec trace**: §3 H1.4 SC-1.4.2.
 
-### T7.5: Set initial Secret Manager version + CI gate (nuevo en v2 per P0-5)
+### T7.5: Set initial Secret Manager version + CI gate (nuevo en v2 per P0-5) [DONE 2026-05-24]
 
 - **Files**: `infrastructure/scripts/init-demo-seed-password.sh` (new, ~10 LOC); `infrastructure/scripts/check-secret-version-exists.sh` (new, ~20 LOC); `infrastructure/main.tf` o `secrets.tf` (add `google_secret_manager_secret_iam_member` para `github-deployer` SA, ~5 LOC HCL); `docs/runbooks/secret-init-runbook.md` (new); `.github/workflows/security.yml` (modify, add `check-secret-version-exists` job ~25 LOC YAML).
 - **LOC estimate**: ~70 (scripts + IAM grant + runbook + workflow job).
