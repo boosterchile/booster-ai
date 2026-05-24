@@ -1,3 +1,5 @@
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+
 /**
  * Paths que Pino debe redactar automáticamente en cada log.
  *
@@ -58,3 +60,63 @@ export const redactionPaths: string[] = [
   '*.privateNotes',
   '*.private_notes',
 ];
+
+// ----------------------------------------------------------------------------
+// Value-based redaction (T4 SC-H4.1) — regex sobre VALORES de strings
+// ----------------------------------------------------------------------------
+//
+// Complementa la path-based redaction (Pino redact paths) para catch PII que
+// aparece dentro de strings (mensajes libres) o en fields con nombres no
+// allowlisted. Aplicado vía `formatters.log` en createLogger.
+
+const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+const JWT_RE = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
+const RUT_RE = /\b\d{7,8}-?[\dkK]\b/g;
+const SENSITIVE_KEY_RE = /pass|secret|token|key|auth/i;
+
+function isValidRut(candidate: string): boolean {
+  return rutSchema.safeParse(ensureRutHasDash(candidate)).success;
+}
+
+/**
+ * Redacta PII patterns en una string: emails, JWTs, RUTs (con módulo-11
+ * check para evitar false positives sobre números aleatorios).
+ */
+export function redactValue(input: string): string {
+  let out = input.replace(EMAIL_RE, '[REDACTED:email]').replace(JWT_RE, '[REDACTED:jwt]');
+  out = out.replace(RUT_RE, (match) => (isValidRut(match) ? '[REDACTED:rut]' : match));
+  return out;
+}
+
+/**
+ * Walks recursive un object/array; redacta strings via `redactValue` + reemplaza
+ * values donde la KEY matchea sensitive pattern (/pass|secret|token|key|auth/i).
+ * Protege contra circular refs via WeakSet.
+ */
+export function redactObjectValues(
+  obj: unknown,
+  visited: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (typeof obj === 'string') {
+    return redactValue(obj);
+  }
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (visited.has(obj as object)) {
+    return obj;
+  }
+  visited.add(obj as object);
+  if (Array.isArray(obj)) {
+    return obj.map((v) => redactObjectValues(v, visited));
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && SENSITIVE_KEY_RE.test(k)) {
+      out[k] = '[REDACTED:password]';
+    } else {
+      out[k] = redactObjectValues(v, visited);
+    }
+  }
+  return out;
+}

@@ -126,4 +126,33 @@ describe('createLogger', () => {
     expect(typeof logger.info).toBe('function');
     expect(typeof logger.error).toBe('function');
   });
+
+  // --- T4 SC-H4.1: value-based redaction (regex sobre strings) ---
+
+  it('value-redaction: redacta email inline en message string', () => {
+    const logger = createLogger({ service: 's' });
+    logger.info('signin from user@example.com');
+    expect(lastLog().message).toBe('signin from [REDACTED:email]');
+  });
+
+  it('value-redaction: redacta RUT válido en field arbitrario (no en paths)', () => {
+    const logger = createLogger({ service: 's' });
+    logger.info({ note: 'cliente 11111111-1 consultó' }, 'lookup');
+    expect(lastLog().note).toBe('cliente [REDACTED:rut] consultó');
+  });
+
+  it('value-redaction: redacta JWT inline en message', () => {
+    const logger = createLogger({ service: 's' });
+    const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMSJ9.abc-signature';
+    logger.info(`auth header: Bearer ${jwt}`);
+    expect(lastLog().message).toBe('auth header: Bearer [REDACTED:jwt]');
+  });
+
+  it('value-redaction: key custom no-allowlisted con "secret" → [REDACTED:password]', () => {
+    const logger = createLogger({ service: 's' });
+    logger.info({ customApiSecret: 'abc123' }, 'evt');
+    // path-based (Pino redact) no cubre `customApiSecret` literal,
+    // pero value-redaction matchea la key con /secret/i.
+    expect(lastLog().customApiSecret).toBe('[REDACTED:password]');
+  });
 });

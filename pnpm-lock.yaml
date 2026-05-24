@@ -794,6 +794,9 @@ importers:
 
   packages/logger:
     dependencies:
+      '@booster-ai/shared-schemas':
+        specifier: workspace:*
+        version: link:../shared-schemas
       pino:
         specifier: ^9.5.0
         version: 9.14.0
