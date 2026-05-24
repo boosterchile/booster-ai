@@ -1,8 +1,71 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-21 (Refactor sistema de desarrollo **CERRADO** — PR-2 [#312](https://github.com/boosterchile/booster-ai/pull/312) merged; plugins `agent-rigor` + `booster-skills` operativos; cleanup local completado per ADR-049 / ADR-050)
+**Última actualización**: 2026-05-24 (SEC-001 cierre **/build T0 en flight** — variables.tf default flipped + PR submitted; spec Approved + plan Sprint 1 Active; 8 P0 cerrados via 6 rondas devils-advocate total)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## SEC-001 cierre — spec Approved (2026-05-24)
+
+Sesión de smoke E2E sobre `demo.boosterchile.com` reveló regresión backend: `POST /demo/login` → 404 silencioso porque `DEMO_MODE_ACTIVATED=false` en Cloud Run prod. Investigación trazó la causa a la rama abandonada `feat/security-blocking-hotfixes-2026-05-14` (22 commits sin PR; literal `BoosterDemo2026!` sigue en main HEAD en `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`; sin middleware enforcement; sin docs/qa; H2 `/auth/driver-activate` sin rate-limit; H3 bucket DTE `is_locked=false`). El `terraform apply` que apagó el flag se ejecutó desde esa rama → **drift IaC**: state Cloud Run diverge de main.
+
+### Artefactos producidos en sesión 2026-05-24
+
+| Path | Estado | LOC |
+|---|---|---|
+| [`.specs/sec-001-cierre/spec.md`](../../.specs/sec-001-cierre/spec.md) | **Approved** (v3.2) | 514 |
+| [`.specs/sec-001-cierre/review.md`](../../.specs/sec-001-cierre/review.md) | 4 rondas devils-advocate | 272+ |
+| [`.specs/sec-h3-dte-retention-lock/spec.md`](../../.specs/sec-h3-dte-retention-lock/spec.md) | Draft (spec hermano, split per O-5) | 140 |
+| `.claude/ledger/2026-05-24_6f2f4fcd-da5a-46e9-9ea8-f22edbb59dde.jsonl` | 96 entries (auditoría completa) | — |
+
+### Trayectoria devils-advocate (4 rondas, 0 P0 final)
+
+| Ronda | Versión | P0 | P1 | P2 | Verdict |
+|---|---|---|---|---|---|
+| 1 | v1 | 6 | 8 | 3 | DO_NOT_APPROVE |
+| 2 | v2 | 3 | 7 | 3 | APPROVE_WITH_RESERVATIONS |
+| 3 | v3 | 2 | 4 | 3 | APPROVE_WITH_RESERVATIONS |
+| 4 | v3.1 | 1 | 4 | 3 | APPROVE_WITH_RESERVATIONS_FINAL |
+| — | **v3.2** | 0 | 0 | 3 residual | **PO Approved** |
+
+### Alcance del spec
+
+- **H1.0–H1.6**: demo mode flag + recreación de 4 UIDs (post-disclosure account replacement per SP-800-63) + middleware enforcement + TTL claim + monitoring 90d.
+- **H1.2 expandido (O-1 in-scope)**: migración signup público `createUserWithEmailAndPassword` + `sendPasswordResetEmail` + Google provider + 11 métodos más a flow via Admin SDK con admin-approval gate. Self-signup Identity Platform OFF AMBOS providers.
+- **H2**: rate-limit `/auth/driver-activate` (5/15min/RUT + IP-based 30/15min + fail-closed Redis).
+- **H3 split**: `.specs/sec-h3-dte-retention-lock/` cubre bucket DTE retention lock SII Chile (irreversibilidad documentada). Mergea ANTES de H1.6.
+- **H4 in-scope (O-12)**: PII redaction en `@booster-ai/logger` (compliance Ley 19.628).
+
+### Decisiones PO documentadas en spec §13 (8)
+
+| # | Decisión |
+|---|---|
+| O-1 | H1.2 in-scope con migration signup a Admin SDK first |
+| O-5 | H3 split a spec hermano |
+| O-11 | Recreate UIDs (new emails `demo-2026-*`) per SP-800-63 |
+| O-12 | H4 PII redaction in-scope |
+| O2-3 sub-1 | Perf budget realista ≤5ms cached / ≤200ms uncached |
+| O2-3 sub-2 | Fail-closed (503 Retry-After:30) ante Firebase/Redis fail |
+| OQ9 | settings.json renombrado a settings.audit.json (hook stale) |
+| Final | Approve v3.2 + arranca /plan next-session |
+
+### Deuda definida (tracked en spec §13 + review.md para /plan)
+
+| Item | Tipo | Status |
+|---|---|---|
+| P1-R4-1: Google fallback orphan Firebase users (`auth.deleteUser` cleanup) | task /plan | abierto |
+| P1-R4-2: Memorystore HA como SC concreto Terraform | task /plan | abierto |
+| P1-R4-3: `normalizePhone` helper + ref `two-factor.ts` corregida | task /plan | abierto |
+| P1-R4-4: Drizzle migration ordering pre seed-demo-startup | task /plan | abierto |
+| P2-R4-1..3: enumeration timing oracle / UID migration en logs / drift TODO IaC | residual aceptado | doc |
+| P2-R3-1..3: similares de round 3 | residual aceptado | doc |
+
+### Próximo paso
+
+`/agent-rigor:plan` ejecutado 2026-05-24. **Plan Active** en [`.specs/sec-001-cierre/plan.md`](../../.specs/sec-001-cierre/plan.md) (v3, 14 tasks Sprint 1, 296 LOC) post 2 rondas devils-advocate (8 P0 cerrados). Sprints 2-3 documentados como "Future sprints" requiriendo /plan separados.
+
+Next-session arranca con `/agent-rigor:build` → **T0** (drift reconcile): flipea `infrastructure/variables.tf` `demo_mode_activated default = true → false`; `terraform plan` strict gate verifica EXACTAMENTE 1 línea diff (any otro diff bloquea apply); `terraform apply`; `curl POST /demo/login` → 404 verificado post-apply. T0 es prerequisito de T1+T7 (cualquier task que toque infra).
 
 ---
 
