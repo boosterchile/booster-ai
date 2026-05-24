@@ -134,6 +134,58 @@ jobs:
           category: trivy-config
 
   # ---------------------------------------------------------------------------
+  # T7.5 SEC-001 — gate fail-closed: el secret demo-seed-password debe tener
+  # al menos 1 version antes de mergear cambios a apps/api/src/services/seed-demo*.ts.
+  # Previene P0-5 del round 1 devils-advocate: que T8 mergee con secret vacío
+  # y crashee cold-starts del api.
+  #
+  # Auth WIF mismo patrón que release.yml:77 (google-github-actions/auth@v2).
+  # SA: github-deployer (vars.WIF_SERVICE_ACCOUNT_DEPLOY) con
+  # roles/secretmanager.viewer sobre demo-seed-password — grant en
+  # infrastructure/security-hotfixes-2026-05-14.tf (T7.5.1).
+  # ---------------------------------------------------------------------------
+  check-secret-version-exists:
+    name: Demo seed password — version exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # paths filter via if + paths-filter action; aquí usamos paths via files
+    # context. El job solo es relevante en PRs que tocan seed-demo*.ts (P0-5).
+    # En push a main corre incondicionalmente para detectar regresiones.
+    permissions:
+      contents: read
+      id-token: write  # Para WIF
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect seed-demo changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            seed:
+              - 'apps/api/src/services/seed-demo*.ts'
+              - 'infrastructure/scripts/check-secret-version-exists.sh'
+              - 'infrastructure/scripts/init-demo-seed-password.sh'
+              - 'infrastructure/security-hotfixes-2026-05-14.tf'
+              - '.github/workflows/security.yml'
+      - name: Authenticate to Google Cloud
+        if: steps.changes.outputs.seed == 'true' || github.event_name == 'push'
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: booster-ai-494222
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
+      - name: Set up gcloud
+        if: steps.changes.outputs.seed == 'true' || github.event_name == 'push'
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Check demo-seed-password has >= 1 version
+        if: steps.changes.outputs.seed == 'true' || github.event_name == 'push'
+        run: |
+          bash infrastructure/scripts/check-secret-version-exists.sh demo-seed-password
+      - name: Skipped (no seed-demo changes)
+        if: steps.changes.outputs.seed != 'true' && github.event_name != 'push'
+        run: echo "Skip — PR no toca seed-demo*.ts ni el plumbing del gate."
+
+  # ---------------------------------------------------------------------------
   # SBOM generation — Software Bill of Materials para auditoría
   # ---------------------------------------------------------------------------
   sbom:
