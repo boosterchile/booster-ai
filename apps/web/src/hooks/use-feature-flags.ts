@@ -12,6 +12,7 @@ export interface FeatureFlags {
   auth_universal_v1_activated: boolean;
   wake_word_voice_activated: boolean;
   matching_algorithm_v2_activated: boolean;
+  demo_mode_activated: boolean;
 }
 
 const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
@@ -50,6 +51,7 @@ export function useFeatureFlags(): {
     auth_universal_v1_activated: false,
     wake_word_voice_activated: false,
     matching_algorithm_v2_activated: false,
+    demo_mode_activated: false,
   };
 
   return {

@@ -24,6 +24,7 @@ import { LegalTerminosRoute } from './routes/legal-terminos.js';
 import { LiquidacionesRoute } from './routes/liquidaciones.js';
 import { LoginConductorRoute } from './routes/login-conductor.js';
 import { LoginRoute } from './routes/login.js';
+import { MaintenanceRoute } from './routes/maintenance.js';
 import { OfertasRoute } from './routes/ofertas.js';
 import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
@@ -76,6 +77,16 @@ const demoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/demo',
   component: DemoRoute,
+});
+
+// SC-INT-1 (sec-001-cierre): página de mantenimiento renderizada por
+// DemoRoute cuando flag demo_mode_activated=false. Ruta directa
+// `/maintenance` expone también el componente para preview/QA sin
+// depender del flag.
+const maintenanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/maintenance',
+  component: MaintenanceRoute,
 });
 
 // D9 — Surface dedicada de login para conductores. Acepta RUT + PIN
@@ -382,6 +393,7 @@ const routeTree = rootRoute.addChildren([
   legalCobraHoyRoute,
   liquidacionesRoute,
   adminCobraHoyRoute,
+  maintenanceRoute,
 ]);
 
 export const router = createRouter({

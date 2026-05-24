@@ -28,6 +28,7 @@ describe('useFeatureFlags', () => {
       auth_universal_v1_activated: true,
       wake_word_voice_activated: false,
       matching_algorithm_v2_activated: true,
+      demo_mode_activated: true,
     });
     const Wrapper = makeWrapper();
     const { result } = renderHook(() => useFeatureFlags(), { wrapper: Wrapper });
@@ -36,6 +37,7 @@ describe('useFeatureFlags', () => {
     expect(result.current.flags.auth_universal_v1_activated).toBe(true);
     expect(result.current.flags.wake_word_voice_activated).toBe(false);
     expect(result.current.flags.matching_algorithm_v2_activated).toBe(true);
+    expect(result.current.flags.demo_mode_activated).toBe(true);
   });
 
   it('default conservador (todos false) si el endpoint falla', async () => {
@@ -50,6 +52,7 @@ describe('useFeatureFlags', () => {
     expect(result.current.flags.auth_universal_v1_activated).toBe(false);
     expect(result.current.flags.wake_word_voice_activated).toBe(false);
     expect(result.current.flags.matching_algorithm_v2_activated).toBe(false);
+    expect(result.current.flags.demo_mode_activated).toBe(false);
   });
 
   it('loading inicial → flags por defecto (false) sin crash', () => {
@@ -60,5 +63,20 @@ describe('useFeatureFlags', () => {
     expect(result.current.isLoading).toBe(true);
     // Aun en loading state, debe haber un valor defaultivo seguro.
     expect(result.current.flags.auth_universal_v1_activated).toBe(false);
+    expect(result.current.flags.demo_mode_activated).toBe(false);
+  });
+
+  it('surface demo_mode_activated cuando backend lo devuelve en false', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      auth_universal_v1_activated: false,
+      wake_word_voice_activated: false,
+      matching_algorithm_v2_activated: false,
+      demo_mode_activated: false,
+    });
+    const Wrapper = makeWrapper();
+    const { result } = renderHook(() => useFeatureFlags(), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.flags.demo_mode_activated).toBe(false);
   });
 });
