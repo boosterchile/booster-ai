@@ -1,0 +1,1134 @@
+random_password.pg_app_password: Refreshing state... [id=none]
+random_id.cert_suffix: Refreshing state... [id=R-jBrg]
+random_id.cloudsql_suffix: Refreshing state... [id=B9npOQ]
+random_password.pin_rate_limit_hmac_pepper: Refreshing state... [id=none]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-seed-password"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-seed-password/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["sre-notification-webhook"]: Refreshing state... [id=projects/booster-ai-494222/secrets/sre-notification-webhook/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["pin-rate-limit-hmac-pepper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["pin-rate-limit-hmac-pepper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-shipper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-shipper/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-carrier"]: Refreshing state... [id=projects/469283083998/secrets/demo-account-password-carrier/versions/1]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-seed-password"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-seed-password/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-stakeholder"]: Refreshing state... [id=projects/469283083998/secrets/demo-account-password-stakeholder/versions/1]
+google_secret_manager_secret.hotfix_2026_05_14["sre-notification-webhook"]: Refreshing state... [id=projects/booster-ai-494222/secrets/sre-notification-webhook]
+google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-stakeholder]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-stakeholder"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-stakeholder/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-carrier]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["sre-notification-webhook"]: Refreshing state... [id=projects/469283083998/secrets/sre-notification-webhook/versions/1]
+google_secret_manager_secret.hotfix_2026_05_14["pin-rate-limit-hmac-pepper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-shipper"]: Refreshing state... [id=projects/469283083998/secrets/demo-account-password-shipper/versions/1]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-conductor"]: Refreshing state... [id=projects/469283083998/secrets/demo-account-password-conductor/versions/1]
+google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-seed-password]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-conductor"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-conductor/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-conductor]
+google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-shipper]
+google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-seed-password"]: Refreshing state... [id=projects/469283083998/secrets/demo-seed-password/versions/1]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-stakeholder"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-stakeholder/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-carrier"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-carrier/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_secret_manager_secret_version.pin_rate_limit_hmac_pepper: Refreshing state... [id=projects/469283083998/secrets/pin-rate-limit-hmac-pepper/versions/1]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-carrier"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-carrier/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-conductor"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-conductor/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-shipper"]: Refreshing state... [id=projects/booster-ai-494222/secrets/demo-account-password-shipper/roles/secretmanager.admin/user:dev@boosterchile.com]
+google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["sre-notification-webhook"]: Refreshing state... [id=projects/booster-ai-494222/secrets/sre-notification-webhook/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project.booster_ai: Refreshing state... [id=projects/booster-ai-494222]
+google_logging_metric.gnss_jamming_critical_events: Refreshing state... [id=telemetry/gnss_jamming_critical_events]
+google_service_account.cert_manager_cloud_dns: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.compute_default_sa_artifact_reader: Refreshing state... [id=booster-ai-494222/roles/artifactregistry.reader/serviceAccount:469283083998-compute@developer.gserviceaccount.com]
+google_logging_metric.tcp_connection_resets: Refreshing state... [id=telemetry/tcp_connection_resets]
+google_logging_metric.sms_fallback_received: Refreshing state... [id=telemetry/sms_fallback_received]
+google_compute_url_map.http_redirect: Refreshing state... [id=projects/booster-ai-494222/global/urlMaps/booster-ai-http-redirect]
+google_logging_metric.crash_trace_persistence_failures: Refreshing state... [id=crash_trace_persistence_failures]
+google_bigquery_dataset.audit: Refreshing state... [id=projects/booster-ai-494222/datasets/audit]
+google_bigquery_dataset.observatory: Refreshing state... [id=projects/booster-ai-494222/datasets/observatory]
+google_compute_security_policy.waf: Refreshing state... [id=projects/booster-ai-494222/global/securityPolicies/booster-ai-waf]
+google_compute_address.telemetry_dr_lb: Refreshing state... [id=projects/booster-ai-494222/regions/us-central1/addresses/booster-ai-telemetry-dr-lb]
+google_bigquery_dataset.telemetry: Refreshing state... [id=projects/booster-ai-494222/datasets/telemetry]
+google_logging_metric.crash_events: Refreshing state... [id=telemetry/crash_events]
+google_bigquery_dataset.matching: Refreshing state... [id=projects/booster-ai-494222/datasets/matching]
+google_project_iam_member.engineers_cloudsql_client: Refreshing state... [id=booster-ai-494222/roles/cloudsql.client/group:engineers@boosterchile.com]
+google_project_service.apis["compute.googleapis.com"]: Refreshing state... [id=booster-ai-494222/compute.googleapis.com]
+google_project_service.apis["elevation-backend.googleapis.com"]: Refreshing state... [id=booster-ai-494222/elevation-backend.googleapis.com]
+google_project_service.apis["storage.googleapis.com"]: Refreshing state... [id=booster-ai-494222/storage.googleapis.com]
+google_project_iam_audit_config.all_services: Refreshing state... [id=booster-ai-494222/audit_config/allServices]
+google_project_service.apis["cloudkms.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudkms.googleapis.com]
+google_project_service.apis["cloudtrace.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudtrace.googleapis.com]
+google_project_service.apis["servicenetworking.googleapis.com"]: Refreshing state... [id=booster-ai-494222/servicenetworking.googleapis.com]
+google_project_service.apis["aiplatform.googleapis.com"]: Refreshing state... [id=booster-ai-494222/aiplatform.googleapis.com]
+google_project_service.apis["artifactregistry.googleapis.com"]: Refreshing state... [id=booster-ai-494222/artifactregistry.googleapis.com]
+google_project_iam_member.engineers_cloudsql_instanceuser: Refreshing state... [id=booster-ai-494222/roles/cloudsql.instanceUser/group:engineers@boosterchile.com]
+google_project_service.apis["dns.googleapis.com"]: Refreshing state... [id=booster-ai-494222/dns.googleapis.com]
+google_project_service.apis["cloudbuild.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudbuild.googleapis.com]
+google_project_service.apis["firebase.googleapis.com"]: Refreshing state... [id=booster-ai-494222/firebase.googleapis.com]
+google_project_service.apis["vpcaccess.googleapis.com"]: Refreshing state... [id=booster-ai-494222/vpcaccess.googleapis.com]
+google_project_service.apis["addressvalidation.googleapis.com"]: Refreshing state... [id=booster-ai-494222/addressvalidation.googleapis.com]
+google_project_service.apis["cloudprofiler.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudprofiler.googleapis.com]
+google_project_service.apis["iam.googleapis.com"]: Refreshing state... [id=booster-ai-494222/iam.googleapis.com]
+google_project_service.apis["routeoptimization.googleapis.com"]: Refreshing state... [id=booster-ai-494222/routeoptimization.googleapis.com]
+google_project_service.apis["orgpolicy.googleapis.com"]: Refreshing state... [id=booster-ai-494222/orgpolicy.googleapis.com]
+google_project_service.apis["redis.googleapis.com"]: Refreshing state... [id=booster-ai-494222/redis.googleapis.com]
+google_project_service.apis["container.googleapis.com"]: Refreshing state... [id=booster-ai-494222/container.googleapis.com]
+google_project_service.apis["iamcredentials.googleapis.com"]: Refreshing state... [id=booster-ai-494222/iamcredentials.googleapis.com]
+google_project_service.apis["sqladmin.googleapis.com"]: Refreshing state... [id=booster-ai-494222/sqladmin.googleapis.com]
+google_project_service.apis["billingbudgets.googleapis.com"]: Refreshing state... [id=booster-ai-494222/billingbudgets.googleapis.com]
+google_project_service.apis["logging.googleapis.com"]: Refreshing state... [id=booster-ai-494222/logging.googleapis.com]
+google_project_service.apis["fcm.googleapis.com"]: Refreshing state... [id=booster-ai-494222/fcm.googleapis.com]
+google_project_service.apis["clouderrorreporting.googleapis.com"]: Refreshing state... [id=booster-ai-494222/clouderrorreporting.googleapis.com]
+google_project_service.apis["documentai.googleapis.com"]: Refreshing state... [id=booster-ai-494222/documentai.googleapis.com]
+google_project_service.apis["monitoring.googleapis.com"]: Refreshing state... [id=booster-ai-494222/monitoring.googleapis.com]
+google_project_service.apis["run.googleapis.com"]: Refreshing state... [id=booster-ai-494222/run.googleapis.com]
+google_project_service.apis["firestore.googleapis.com"]: Refreshing state... [id=booster-ai-494222/firestore.googleapis.com]
+google_project_service.apis["places.googleapis.com"]: Refreshing state... [id=booster-ai-494222/places.googleapis.com]
+google_project_service.apis["routes.googleapis.com"]: Refreshing state... [id=booster-ai-494222/routes.googleapis.com]
+google_project_service.apis["geocoding-backend.googleapis.com"]: Refreshing state... [id=booster-ai-494222/geocoding-backend.googleapis.com]
+google_project_iam_custom_role.chat_subscription_manager: Refreshing state... [id=projects/booster-ai-494222/roles/chatSubscriptionManager]
+data.google_storage_project_service_account.gcs: Reading...
+google_project_service.apis["secretmanager.googleapis.com"]: Refreshing state... [id=booster-ai-494222/secretmanager.googleapis.com]
+google_logging_project_exclusion.k8s_info_events_noise: Refreshing state... [id=projects/booster-ai-494222/exclusions/k8s-info-events-noise]
+google_logging_metric.unplug_events: Refreshing state... [id=telemetry/unplug_events]
+google_logging_project_exclusion.gke_control_plane_noise: Refreshing state... [id=projects/booster-ai-494222/exclusions/gke-control-plane-noise]
+google_logging_metric.device_records_per_minute: Refreshing state... [id=telemetry/device_records_per_minute]
+google_bigquery_dataset.esg_analytics: Refreshing state... [id=projects/booster-ai-494222/datasets/esg_analytics]
+google_logging_metric.parser_errors: Refreshing state... [id=telemetry/parser_errors]
+google_project_service.apis["bigquery.googleapis.com"]: Refreshing state... [id=booster-ai-494222/bigquery.googleapis.com]
+google_project_service.apis["identitytoolkit.googleapis.com"]: Refreshing state... [id=booster-ai-494222/identitytoolkit.googleapis.com]
+google_project_service.apis["iap.googleapis.com"]: Refreshing state... [id=booster-ai-494222/iap.googleapis.com]
+data.google_storage_project_service_account.gcs: Read complete after 0s [id=service-469283083998@gs-project-accounts.iam.gserviceaccount.com]
+google_project_service.apis["generativelanguage.googleapis.com"]: Refreshing state... [id=booster-ai-494222/generativelanguage.googleapis.com]
+google_project_service.apis["oslogin.googleapis.com"]: Refreshing state... [id=booster-ai-494222/oslogin.googleapis.com]
+google_project_service.apis["sts.googleapis.com"]: Refreshing state... [id=booster-ai-494222/sts.googleapis.com]
+google_project_service.apis["pubsub.googleapis.com"]: Refreshing state... [id=booster-ai-494222/pubsub.googleapis.com]
+google_project_iam_member.cert_manager_dns_reader: Refreshing state... [id=booster-ai-494222/roles/dns.reader/serviceAccount:cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com]
+google_project_service.apis["cloudbilling.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudbilling.googleapis.com]
+google_project_service.apis["cloudscheduler.googleapis.com"]: Refreshing state... [id=booster-ai-494222/cloudscheduler.googleapis.com]
+google_service_account_iam_member.cert_manager_workload_identity_primary: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/serviceAccount:booster-ai-494222.svc.id.goog[cert-manager/cert-manager]]
+google_compute_target_http_proxy.redirect: Refreshing state... [id=projects/booster-ai-494222/global/targetHttpProxies/booster-ai-http-proxy-redirect]
+google_monitoring_dashboard.telemetry_overview: Refreshing state... [id=projects/469283083998/dashboards/ef21eb5a-796d-4919-a4ea-d2ad5fb1e37d]
+google_compute_network.vpc: Refreshing state... [id=projects/booster-ai-494222/global/networks/booster-ai-vpc]
+google_service_account.db_bastion: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/db-bastion-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_pubsub_topic.telemetry_events: Refreshing state... [id=projects/booster-ai-494222/topics/telemetry-events]
+google_compute_address.telemetry_tls_lb: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/addresses/booster-telemetry-tls-lb-ip]
+google_project_iam_member.human_owners["group:admins@boosterchile.com"]: Refreshing state... [id=booster-ai-494222/roles/owner/group:admins@boosterchile.com]
+google_pubsub_topic.traffic_condition: Refreshing state... [id=projects/booster-ai-494222/topics/traffic-condition-events]
+google_pubsub_topic.dlq: Refreshing state... [id=projects/booster-ai-494222/topics/pubsub-dead-letter]
+google_compute_address.telemetry_lb: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/addresses/booster-telemetry-lb-ip]
+google_service_account.internal_cron_invoker: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/internal-cron-invoker@booster-ai-494222.iam.gserviceaccount.com]
+google_compute_managed_ssl_certificate.main: Refreshing state... [id=projects/booster-ai-494222/global/sslCertificates/booster-ai-cert-47e8c1ae]
+google_service_account.observability_workspace_reader: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/observability-workspace-reader@booster-ai-494222.iam.gserviceaccount.com]
+google_artifact_registry_repository.containers: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/repositories/containers]
+google_monitoring_notification_channel.email_alerts: Refreshing state... [id=projects/booster-ai-494222/notificationChannels/17747354302538606390]
+google_pubsub_topic.trip_events: Refreshing state... [id=projects/booster-ai-494222/topics/trip-events]
+google_pubsub_topic.vehicle_availability: Refreshing state... [id=projects/booster-ai-494222/topics/vehicle-availability-events]
+google_pubsub_topic.whatsapp_inbound: Refreshing state... [id=projects/booster-ai-494222/topics/whatsapp-inbound-events]
+google_compute_global_address.lb_ipv4: Refreshing state... [id=projects/booster-ai-494222/global/addresses/booster-ai-lb-ipv4]
+google_kms_key_ring.main: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring]
+google_pubsub_topic.telemetry_events_trip_transitions: Refreshing state... [id=projects/booster-ai-494222/topics/telemetry-events-trip-transitions]
+google_org_policy_policy.allow_public_iam: Refreshing state... [id=projects/booster-ai-494222/policies/iam.allowedPolicyMemberDomains]
+google_service_account.github_deployer: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_pubsub_topic.telemetry_events_eco_score: Refreshing state... [id=projects/booster-ai-494222/topics/telemetry-events-eco-score]
+google_pubsub_topic.telemetry_events_safety_p0: Refreshing state... [id=projects/booster-ai-494222/topics/telemetry-events-safety-p0]
+google_pubsub_topic.document_events: Refreshing state... [id=projects/booster-ai-494222/topics/document-events]
+google_pubsub_topic.crash_traces: Refreshing state... [id=projects/booster-ai-494222/topics/crash-traces]
+google_iam_workload_identity_pool.github: Refreshing state... [id=projects/booster-ai-494222/locations/global/workloadIdentityPools/github-actions]
+google_pubsub_topic.notification_events: Refreshing state... [id=projects/booster-ai-494222/topics/notification-events]
+google_pubsub_topic.telemetry_events_security_p1: Refreshing state... [id=projects/booster-ai-494222/topics/telemetry-events-security-p1]
+google_secret_manager_secret.secrets["whatsapp-webhook-verify-token"]: Refreshing state... [id=projects/booster-ai-494222/secrets/whatsapp-webhook-verify-token]
+google_secret_manager_secret.secrets["jwt-signing-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/jwt-signing-key]
+google_secret_manager_secret.secrets["whatsapp-access-token"]: Refreshing state... [id=projects/booster-ai-494222/secrets/whatsapp-access-token]
+google_secret_manager_secret.secrets["content-sid-offer-new"]: Refreshing state... [id=projects/booster-ai-494222/secrets/content-sid-offer-new]
+google_secret_manager_secret.secrets["dte-provider-api-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/dte-provider-api-key]
+google_secret_manager_secret.secrets["content-sid-tracking"]: Refreshing state... [id=projects/booster-ai-494222/secrets/content-sid-tracking]
+google_secret_manager_secret.secrets["twilio-account-sid"]: Refreshing state... [id=projects/booster-ai-494222/secrets/twilio-account-sid]
+google_secret_manager_secret.secrets["dte-provider-client-secret"]: Refreshing state... [id=projects/booster-ai-494222/secrets/dte-provider-client-secret]
+google_secret_manager_secret.secrets["webpush-vapid-private-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/webpush-vapid-private-key]
+google_secret_manager_secret.secrets["backend-legacy-maps-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/backend-legacy-maps-key]
+google_secret_manager_secret.secrets["whatsapp-app-secret"]: Refreshing state... [id=projects/booster-ai-494222/secrets/whatsapp-app-secret]
+google_secret_manager_secret.secrets["flow-secret-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/flow-secret-key]
+google_secret_manager_secret.secrets["flow-api-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/flow-api-key]
+google_secret_manager_secret.secrets["database-url"]: Refreshing state... [id=projects/booster-ai-494222/secrets/database-url]
+google_secret_manager_secret.secrets["whatsapp-business-account-id"]: Refreshing state... [id=projects/booster-ai-494222/secrets/whatsapp-business-account-id]
+google_secret_manager_secret.secrets["content-sid-chat-unread"]: Refreshing state... [id=projects/booster-ai-494222/secrets/content-sid-chat-unread]
+google_secret_manager_secret.secrets["frontend-maps-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/frontend-maps-key]
+google_secret_manager_secret.secrets["sentry-dsn"]: Refreshing state... [id=projects/booster-ai-494222/secrets/sentry-dsn]
+google_secret_manager_secret.secrets["firebase-admin-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/firebase-admin-key]
+google_secret_manager_secret.secrets["twilio-auth-token"]: Refreshing state... [id=projects/booster-ai-494222/secrets/twilio-auth-token]
+google_dns_managed_zone.main: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone]
+google_secret_manager_secret.secrets["anthropic-api-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/anthropic-api-key]
+google_secret_manager_secret.secrets["webpush-vapid-public-key"]: Refreshing state... [id=projects/booster-ai-494222/secrets/webpush-vapid-public-key]
+google_secret_manager_secret.secrets["whatsapp-phone-number-id"]: Refreshing state... [id=projects/booster-ai-494222/secrets/whatsapp-phone-number-id]
+google_pubsub_topic.chat_messages: Refreshing state... [id=projects/booster-ai-494222/topics/chat-messages]
+google_firestore_database.default: Refreshing state... [id=projects/booster-ai-494222/databases/(default)]
+google_service_account.cloud_run_runtime: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.db_bastion_bindings["roles/cloudsql.client"]: Refreshing state... [id=booster-ai-494222/roles/cloudsql.client/serviceAccount:db-bastion-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.db_bastion_bindings["roles/logging.logWriter"]: Refreshing state... [id=booster-ai-494222/roles/logging.logWriter/serviceAccount:db-bastion-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.db_bastion_bindings["roles/monitoring.metricWriter"]: Refreshing state... [id=booster-ai-494222/roles/monitoring.metricWriter/serviceAccount:db-bastion-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_compute_global_address.cloudbuild_pool_range_dr: Refreshing state... [id=projects/booster-ai-494222/global/addresses/booster-cloudbuild-pool-range-dr]
+google_pubsub_subscription.telemetry_events_processor: Refreshing state... [id=projects/booster-ai-494222/subscriptions/telemetry-events-processor-sub]
+google_compute_router.primary_nat: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/routers/booster-ai-nat-router-primary]
+google_compute_router.dr_nat: Refreshing state... [id=projects/booster-ai-494222/regions/us-central1/routers/booster-ai-nat-router-dr]
+google_compute_global_address.private_services: Refreshing state... [id=projects/booster-ai-494222/global/addresses/booster-ai-private-services]
+google_compute_global_address.cloudbuild_pool_range: Refreshing state... [id=projects/booster-ai-494222/global/addresses/booster-cloudbuild-pool-range]
+google_vpc_access_connector.serverless: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/connectors/booster-serverless-vpc]
+google_compute_subnetwork.private: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/subnetworks/booster-ai-private]
+google_compute_subnetwork.dr_private: Refreshing state... [id=projects/booster-ai-494222/regions/us-central1/subnetworks/booster-ai-dr-private]
+google_kms_crypto_key.documents: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/documents-cmek]
+google_kms_crypto_key.document_signing: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/document-signing]
+google_kms_crypto_key.crash_traces: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/crash-traces-cmek]
+google_kms_crypto_key.storage_operational: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/storage-operational-cmek]
+google_kms_crypto_key.compute_disk: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/compute-disk-cmek]
+google_kms_crypto_key.certificate_carbono_signing: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/certificate-carbono-signing]
+google_pubsub_subscription.telemetry_events_trip_transitions: Refreshing state... [id=projects/booster-ai-494222/subscriptions/telemetry-events-trip-transitions-sub]
+google_compute_global_forwarding_rule.http_redirect: Refreshing state... [id=projects/booster-ai-494222/global/forwardingRules/booster-ai-http-fwd-redirect]
+google_pubsub_subscription.telemetry_events_safety_p0_notification: Refreshing state... [id=projects/booster-ai-494222/subscriptions/telemetry-events-safety-p0-notification-sub]
+google_pubsub_subscription.crash_traces_processor: Refreshing state... [id=projects/booster-ai-494222/subscriptions/crash-traces-processor-sub]
+google_monitoring_alert_policy.parser_errors_p1: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/726475839804236408]
+google_monitoring_alert_policy.pubsub_backlog_p2: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/14208480068667799881]
+google_monitoring_alert_policy.pubsub_dlq: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/16082302431029202109]
+google_monitoring_alert_policy.gnss_jamming_p0: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/2528161700348268972]
+google_monitoring_alert_policy.crash_event_p0: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/12190173738961712477]
+google_monitoring_alert_policy.api_latency_p95: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/9883913223025859284]
+google_monitoring_alert_policy.uptime_failures: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/13223826523702605967]
+google_monitoring_alert_policy.api_error_rate: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/5541296491907084247]
+google_monitoring_alert_policy.routes_api_daily_volume: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/12755939780063454753]
+google_monitoring_alert_policy.cloudsql_storage: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/16082302431029202148]
+google_monitoring_alert_policy.routes_api_rate: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/2418078412079316540]
+google_monitoring_alert_policy.gemini_api_rate: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/7860703333182070604]
+google_monitoring_alert_policy.unplug_event_p0: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/10361058206375902168]
+google_service_account_iam_member.github_deployer_self_impersonate: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/github-deployer@booster-ai-494222.iam.gserviceaccount.com/roles/iam.serviceAccountUser/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/logging.viewer"]: Refreshing state... [id=booster-ai-494222/roles/logging.viewer/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/storage.objectAdmin"]: Refreshing state... [id=booster-ai-494222/roles/storage.objectAdmin/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/serviceusage.serviceUsageConsumer"]: Refreshing state... [id=booster-ai-494222/roles/serviceusage.serviceUsageConsumer/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/cloudbuild.builds.editor"]: Refreshing state... [id=booster-ai-494222/roles/cloudbuild.builds.editor/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/cloudbuild.workerPoolUser"]: Refreshing state... [id=booster-ai-494222/roles/cloudbuild.workerPoolUser/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/artifactregistry.writer"]: Refreshing state... [id=booster-ai-494222/roles/artifactregistry.writer/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/run.admin"]: Refreshing state... [id=booster-ai-494222/roles/run.admin/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/logging.logWriter"]: Refreshing state... [id=booster-ai-494222/roles/logging.logWriter/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.github_deployer_bindings["roles/container.developer"]: Refreshing state... [id=booster-ai-494222/roles/container.developer/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_pubsub_subscription.telemetry_events_eco_score_matching: Refreshing state... [id=projects/booster-ai-494222/subscriptions/telemetry-events-eco-score-matching-sub]
+google_pubsub_subscription.telemetry_events_security_p1_notification: Refreshing state... [id=projects/booster-ai-494222/subscriptions/telemetry-events-security-p1-notification-sub]
+google_iam_workload_identity_pool_provider.github: Refreshing state... [id=projects/booster-ai-494222/locations/global/workloadIdentityPools/github-actions/providers/github]
+google_service_account_iam_member.wif_to_deployer: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/github-deployer@booster-ai-494222.iam.gserviceaccount.com/roles/iam.workloadIdentityUser/principalSet://iam.googleapis.com/projects/469283083998/locations/global/workloadIdentityPools/github-actions/attribute.repository/boosterchile/booster-ai]
+google_secret_manager_secret_version.placeholder["webpush-vapid-private-key"]: Refreshing state... [id=projects/469283083998/secrets/webpush-vapid-private-key/versions/1]
+google_secret_manager_secret_version.placeholder["dte-provider-api-key"]: Refreshing state... [id=projects/469283083998/secrets/dte-provider-api-key/versions/1]
+google_secret_manager_secret_version.placeholder["whatsapp-access-token"]: Refreshing state... [id=projects/469283083998/secrets/whatsapp-access-token/versions/1]
+google_secret_manager_secret_version.placeholder["whatsapp-business-account-id"]: Refreshing state... [id=projects/469283083998/secrets/whatsapp-business-account-id/versions/1]
+google_secret_manager_secret_version.placeholder["whatsapp-webhook-verify-token"]: Refreshing state... [id=projects/469283083998/secrets/whatsapp-webhook-verify-token/versions/1]
+google_secret_manager_secret_version.placeholder["frontend-maps-key"]: Refreshing state... [id=projects/469283083998/secrets/frontend-maps-key/versions/1]
+google_secret_manager_secret_version.placeholder["flow-api-key"]: Refreshing state... [id=projects/469283083998/secrets/flow-api-key/versions/1]
+google_secret_manager_secret_version.placeholder["firebase-admin-key"]: Refreshing state... [id=projects/469283083998/secrets/firebase-admin-key/versions/1]
+google_secret_manager_secret_version.placeholder["webpush-vapid-public-key"]: Refreshing state... [id=projects/469283083998/secrets/webpush-vapid-public-key/versions/1]
+google_secret_manager_secret_version.placeholder["content-sid-offer-new"]: Refreshing state... [id=projects/469283083998/secrets/content-sid-offer-new/versions/1]
+google_secret_manager_secret_version.placeholder["content-sid-chat-unread"]: Refreshing state... [id=projects/469283083998/secrets/content-sid-chat-unread/versions/1]
+google_secret_manager_secret_version.placeholder["dte-provider-client-secret"]: Refreshing state... [id=projects/469283083998/secrets/dte-provider-client-secret/versions/1]
+google_secret_manager_secret_version.placeholder["whatsapp-app-secret"]: Refreshing state... [id=projects/469283083998/secrets/whatsapp-app-secret/versions/1]
+google_secret_manager_secret_version.placeholder["anthropic-api-key"]: Refreshing state... [id=projects/469283083998/secrets/anthropic-api-key/versions/1]
+google_secret_manager_secret_version.placeholder["flow-secret-key"]: Refreshing state... [id=projects/469283083998/secrets/flow-secret-key/versions/1]
+google_secret_manager_secret_version.placeholder["backend-legacy-maps-key"]: Refreshing state... [id=projects/469283083998/secrets/backend-legacy-maps-key/versions/1]
+google_secret_manager_secret_version.placeholder["sentry-dsn"]: Refreshing state... [id=projects/469283083998/secrets/sentry-dsn/versions/1]
+google_secret_manager_secret_version.placeholder["twilio-account-sid"]: Refreshing state... [id=projects/469283083998/secrets/twilio-account-sid/versions/1]
+google_secret_manager_secret_version.placeholder["jwt-signing-key"]: Refreshing state... [id=projects/469283083998/secrets/jwt-signing-key/versions/1]
+google_secret_manager_secret_version.placeholder["twilio-auth-token"]: Refreshing state... [id=projects/469283083998/secrets/twilio-auth-token/versions/1]
+google_secret_manager_secret_version.placeholder["content-sid-tracking"]: Refreshing state... [id=projects/469283083998/secrets/content-sid-tracking/versions/1]
+google_secret_manager_secret_version.placeholder["whatsapp-phone-number-id"]: Refreshing state... [id=projects/469283083998/secrets/whatsapp-phone-number-id/versions/1]
+google_compute_router_nat.primary_nat: Refreshing state... [id=booster-ai-494222/southamerica-west1/booster-ai-nat-router-primary/booster-ai-nat-primary]
+google_bigquery_dataset_iam_member.crash_events_runtime: Refreshing state... [id=projects/booster-ai-494222/datasets/telemetry/roles/bigquery.dataEditor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_service_account_iam_member.github_can_impersonate_runtime: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com/roles/iam.serviceAccountUser/serviceAccount:github-deployer@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_chat_subscription_manager: Refreshing state... [id=booster-ai-494222/projects/booster-ai-494222/roles/chatSubscriptionManager/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_service_account_iam_member.cloudrun_self_signer: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com/roles/iam.serviceAccountTokenCreator/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_service_account_iam_member.cloudrun_can_impersonate_workspace_reader: Refreshing state... [id=projects/booster-ai-494222/serviceAccounts/observability-workspace-reader@booster-ai-494222.iam.gserviceaccount.com/roles/iam.serviceAccountTokenCreator/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/monitoring.viewer"]: Refreshing state... [id=booster-ai-494222/roles/monitoring.viewer/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/pubsub.subscriber"]: Refreshing state... [id=booster-ai-494222/roles/pubsub.subscriber/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/pubsub.publisher"]: Refreshing state... [id=booster-ai-494222/roles/pubsub.publisher/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/storage.objectUser"]: Refreshing state... [id=booster-ai-494222/roles/storage.objectUser/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/cloudtrace.agent"]: Refreshing state... [id=booster-ai-494222/roles/cloudtrace.agent/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/cloudkms.cryptoKeyEncrypterDecrypter"]: Refreshing state... [id=booster-ai-494222/roles/cloudkms.cryptoKeyEncrypterDecrypter/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/documentai.apiUser"]: Refreshing state... [id=booster-ai-494222/roles/documentai.apiUser/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/bigquery.dataEditor"]: Refreshing state... [id=booster-ai-494222/roles/bigquery.dataEditor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/monitoring.metricWriter"]: Refreshing state... [id=booster-ai-494222/roles/monitoring.metricWriter/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/aiplatform.user"]: Refreshing state... [id=booster-ai-494222/roles/aiplatform.user/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/datastore.user"]: Refreshing state... [id=booster-ai-494222/roles/datastore.user/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/firebaseauth.admin"]: Refreshing state... [id=booster-ai-494222/roles/firebaseauth.admin/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/serviceusage.serviceUsageConsumer"]: Refreshing state... [id=booster-ai-494222/roles/serviceusage.serviceUsageConsumer/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/firebase.admin"]: Refreshing state... [id=booster-ai-494222/roles/firebase.admin/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/secretmanager.secretAccessor"]: Refreshing state... [id=booster-ai-494222/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/logging.logWriter"]: Refreshing state... [id=booster-ai-494222/roles/logging.logWriter/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/bigquery.jobUser"]: Refreshing state... [id=booster-ai-494222/roles/bigquery.jobUser/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_project_iam_member.cloud_run_runtime_bindings["roles/cloudsql.client"]: Refreshing state... [id=booster-ai-494222/roles/cloudsql.client/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_container_cluster.telemetry: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/clusters/booster-ai-telemetry]
+google_kms_crypto_key_iam_member.gcs_encrypter: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/documents-cmek/roles/cloudkms.cryptoKeyEncrypterDecrypter/serviceAccount:service-469283083998@gs-project-accounts.iam.gserviceaccount.com]
+google_kms_crypto_key_iam_member.crash_traces_gcs_encrypter: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/crash-traces-cmek/roles/cloudkms.cryptoKeyEncrypterDecrypter/serviceAccount:service-469283083998@gs-project-accounts.iam.gserviceaccount.com]
+google_kms_crypto_key_iam_member.gcs_encrypter_operational: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/storage-operational-cmek/roles/cloudkms.cryptoKeyEncrypterDecrypter/serviceAccount:service-469283083998@gs-project-accounts.iam.gserviceaccount.com]
+google_storage_bucket.access_logs: Refreshing state... [id=booster-ai-494222-access-logs-prod]
+google_kms_crypto_key_iam_member.gce_disk_encrypter: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/compute-disk-cmek/roles/cloudkms.cryptoKeyEncrypterDecrypter/serviceAccount:service-469283083998@compute-system.iam.gserviceaccount.com]
+google_kms_crypto_key_iam_member.cloud_run_certificate_signer: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/certificate-carbono-signing/roles/cloudkms.signerVerifier/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_kms_crypto_key_iam_member.cloud_run_certificate_viewer: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/certificate-carbono-signing/roles/cloudkms.publicKeyViewer/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_dns_record_set.api: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/api.boosterchile.com./A]
+google_dns_record_set.www: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/www.boosterchile.com./A]
+google_dns_record_set.dkim_google: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/google._domainkey.boosterchile.com./TXT]
+google_dns_record_set.app: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/app.boosterchile.com./A]
+google_dns_record_set.telemetry_tls: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/telemetry-tls.boosterchile.com./A]
+google_dns_record_set.apex: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/boosterchile.com./A]
+google_dns_record_set.telemetry_dr: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/telemetry-dr.boosterchile.com./A]
+google_dns_record_set.demo: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/demo.boosterchile.com./A]
+google_dns_record_set.dmarc: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/_dmarc.boosterchile.com./TXT]
+google_dns_record_set.telemetry: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/telemetry.boosterchile.com./A]
+google_dns_managed_zone_iam_member.cert_manager_dns_admin: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/roles/dns.admin/serviceAccount:cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com]
+google_dns_record_set.apex_txt: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/boosterchile.com./TXT]
+google_dns_record_set.mx: Refreshing state... [id=projects/booster-ai-494222/managedZones/booster-ai-zone/rrsets/boosterchile.com./MX]
+google_compute_router_nat.dr_nat: Refreshing state... [id=booster-ai-494222/us-central1/booster-ai-nat-router-dr/booster-ai-nat-dr]
+google_service_networking_connection.private_vpc: Refreshing state... [id=projects%2Fbooster-ai-494222%2Fglobal%2Fnetworks%2Fbooster-ai-vpc:servicenetworking.googleapis.com]
+google_storage_bucket.uploads_raw: Refreshing state... [id=booster-ai-494222-uploads-raw-prod]
+google_container_cluster.telemetry_dr: Refreshing state... [id=projects/booster-ai-494222/locations/us-central1/clusters/booster-ai-telemetry-dr]
+google_storage_bucket_iam_member.access_logs_writer: Refreshing state... [id=b/booster-ai-494222-access-logs-prod/roles/storage.legacyBucketWriter/group:cloud-storage-analytics@google.com]
+google_storage_bucket.documents: Refreshing state... [id=booster-ai-494222-documents-prod]
+google_storage_bucket.chat_attachments: Refreshing state... [id=booster-ai-494222-chat-attachments-prod]
+google_storage_bucket.public_assets: Refreshing state... [id=booster-ai-494222-public-assets-prod]
+google_storage_bucket.crash_traces: Refreshing state... [id=booster-ai-494222-crash-traces-prod]
+google_monitoring_uptime_check_config.api_health: Refreshing state... [id=projects/booster-ai-494222/uptimeCheckConfigs/api-health-zwnpfsYhO8s]
+google_monitoring_uptime_check_config.marketing_home: Refreshing state... [id=projects/booster-ai-494222/uptimeCheckConfigs/marketing-home-lOo12SbFH9A]
+google_storage_bucket_iam_member.public_assets_site_settings_runtime: Refreshing state... [id=b/booster-ai-494222-public-assets-prod/roles/storage.objectAdmin/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_storage_bucket_iam_member.chat_attachments_runtime: Refreshing state... [id=b/booster-ai-494222-chat-attachments-prod/roles/storage.objectAdmin/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_storage_bucket_iam_member.crash_traces_runtime: Refreshing state... [id=b/booster-ai-494222-crash-traces-prod/roles/storage.objectAdmin/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com]
+google_bigquery_table.crash_events: Refreshing state... [id=projects/booster-ai-494222/datasets/telemetry/tables/crash_events]
+google_monitoring_alert_policy.crash_trace_persistence_failures: Refreshing state... [id=projects/booster-ai-494222/alertPolicies/5357888396471663942]
+module.db_bastion.google_project_iam_member.os_login_users["group:engineers@boosterchile.com"]: Refreshing state... [id=booster-ai-494222/roles/compute.osLogin/group:engineers@boosterchile.com]
+module.db_bastion.google_compute_firewall.iap_ssh: Refreshing state... [id=projects/booster-ai-494222/global/firewalls/db-bastion-iap-ssh]
+module.db_bastion.google_compute_firewall.iap_postgres: Refreshing state... [id=projects/booster-ai-494222/global/firewalls/db-bastion-iap-postgres]
+google_cloudbuild_worker_pool.production_dr: Refreshing state... [id=projects/booster-ai-494222/locations/us-central1/workerPools/booster-production-pool-dr]
+google_cloudbuild_worker_pool.production: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool]
+google_redis_instance.main: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/instances/booster-ai-redis]
+google_sql_database_instance.main: Refreshing state... [id=booster-ai-pg-07d9e939]
+google_sql_database.booster_ai: Refreshing state... [id=projects/booster-ai-494222/instances/booster-ai-pg-07d9e939/databases/booster_ai]
+google_sql_user.app: Refreshing state... [id=booster_app//booster-ai-pg-07d9e939]
+google_sql_user.iam_operators["dev@boosterchile.com"]: Refreshing state... [id=dev@boosterchile.com//booster-ai-pg-07d9e939]
+module.db_bastion.google_compute_instance.bastion: Refreshing state... [id=projects/booster-ai-494222/zones/southamerica-west1-a/instances/db-bastion]
+module.db_bastion.google_iap_tunnel_instance_iam_member.operators["group:engineers@boosterchile.com"]: Refreshing state... [id=projects/booster-ai-494222/iap_tunnel/zones/southamerica-west1-a/instances/db-bastion/roles/iap.tunnelResourceAccessor/group:engineers@boosterchile.com]
+google_secret_manager_secret_version.database_url: Refreshing state... [id=projects/469283083998/secrets/database-url/versions/5]
+module.service_telemetry_processor.terraform_data.wait_for_secret_versions: Refreshing state... [id=09091e4a-18d1-28de-3250-20b042a70f66]
+module.service_notification.terraform_data.wait_for_secret_versions: Refreshing state... [id=814d6025-6e64-aa80-2066-d0042a22cf4e]
+module.service_sms_fallback_gateway.terraform_data.wait_for_secret_versions: Refreshing state... [id=3077c16d-d166-7367-45af-959ce3ca997c]
+module.service_matching_engine.terraform_data.wait_for_secret_versions: Refreshing state... [id=38eeba41-5d0e-df03-f19c-2111592d35ea]
+module.service_api.terraform_data.wait_for_secret_versions: Refreshing state... [id=5dd26ff6-91ec-53f7-78bf-fdbb94ab6146]
+module.service_web.terraform_data.wait_for_secret_versions: Refreshing state... [id=b4a17db9-bbab-6391-6346-31e73353c45c]
+module.service_whatsapp_bot.terraform_data.wait_for_secret_versions: Refreshing state... [id=2833ea4e-cc80-5ce8-5775-f9fd2ac91c57]
+module.service_document.terraform_data.wait_for_secret_versions: Refreshing state... [id=e58c96ee-1ce5-827f-d50a-9893fd7e830b]
+module.service_web.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-web]
+module.service_notification.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-notification-service]
+module.service_matching_engine.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-matching-engine]
+module.service_telemetry_processor.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-telemetry-processor]
+module.service_sms_fallback_gateway.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-sms-fallback-gateway]
+module.service_whatsapp_bot.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-whatsapp-bot]
+module.service_api.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-api]
+module.service_web.google_cloud_run_v2_service_iam_member.invoker[0]: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-web/roles/run.invoker/allUsers]
+module.service_document.google_cloud_run_v2_service.service: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-document-service]
+google_compute_region_network_endpoint_group.web: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/networkEndpointGroups/neg-booster-ai-web]
+module.service_sms_fallback_gateway.google_cloud_run_v2_service_iam_member.invoker[0]: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-sms-fallback-gateway/roles/run.invoker/allUsers]
+module.service_whatsapp_bot.google_cloud_run_v2_service_iam_member.invoker[0]: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-whatsapp-bot/roles/run.invoker/allUsers]
+google_compute_region_network_endpoint_group.whatsapp_bot: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/networkEndpointGroups/neg-booster-ai-whatsapp-bot]
+google_compute_backend_service.web: Refreshing state... [id=projects/booster-ai-494222/global/backendServices/backend-booster-ai-web]
+google_compute_backend_service.whatsapp_bot: Refreshing state... [id=projects/booster-ai-494222/global/backendServices/backend-booster-ai-whatsapp-bot]
+module.service_api.google_cloud_run_v2_service_iam_member.invoker[0]: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-api/roles/run.invoker/allUsers]
+google_compute_region_network_endpoint_group.api: Refreshing state... [id=projects/booster-ai-494222/regions/southamerica-west1/networkEndpointGroups/neg-booster-ai-api]
+google_compute_backend_service.api: Refreshing state... [id=projects/booster-ai-494222/global/backendServices/backend-booster-ai-api]
+google_cloud_run_v2_service_iam_member.scheduler_invoker_api: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-api/roles/run.invoker/serviceAccount:internal-cron-invoker@booster-ai-494222.iam.gserviceaccount.com]
+google_cloud_scheduler_job.cobra_hoy_cobranza: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-east1/jobs/cobra-hoy-cobranza]
+google_cloud_scheduler_job.chat_whatsapp_fallback: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-east1/jobs/chat-whatsapp-fallback]
+google_cloud_scheduler_job.reconciliar_dtes: Refreshing state... [id=projects/booster-ai-494222/locations/southamerica-east1/jobs/reconciliar-dtes]
+google_compute_url_map.main: Refreshing state... [id=projects/booster-ai-494222/global/urlMaps/booster-ai-url-map]
+google_compute_target_https_proxy.main: Refreshing state... [id=projects/booster-ai-494222/global/targetHttpsProxies/booster-ai-https-proxy]
+google_compute_global_forwarding_rule.https: Refreshing state... [id=projects/booster-ai-494222/global/forwardingRules/booster-ai-https-fwd]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  ~ update in-place
+  - destroy
+
+Terraform will perform the following actions:
+
+  # google_container_cluster.telemetry will be updated in-place
+  ~ resource "google_container_cluster" "telemetry" {
+        id                                       = "projects/booster-ai-494222/locations/southamerica-west1/clusters/booster-ai-telemetry"
+        name                                     = "booster-ai-telemetry"
+        # (37 unchanged attributes hidden)
+
+      ~ master_authorized_networks_config {
+            # (2 unchanged attributes hidden)
+
+          + cidr_blocks {
+              + cidr_block   = "181.42.135.69/32"
+              + display_name = "operator-fvicencio-laptop"
+            }
+
+            # (3 unchanged blocks hidden)
+        }
+
+        # (34 unchanged blocks hidden)
+    }
+
+  # google_container_cluster.telemetry_dr will be updated in-place
+  ~ resource "google_container_cluster" "telemetry_dr" {
+        id                                       = "projects/booster-ai-494222/locations/us-central1/clusters/booster-ai-telemetry-dr"
+        name                                     = "booster-ai-telemetry-dr"
+        # (37 unchanged attributes hidden)
+
+      ~ master_authorized_networks_config {
+            # (2 unchanged attributes hidden)
+
+          + cidr_blocks {
+              + cidr_block   = "181.42.135.69/32"
+              + display_name = "operator-fvicencio-laptop"
+            }
+
+            # (4 unchanged blocks hidden)
+        }
+
+        # (34 unchanged blocks hidden)
+    }
+
+  # google_monitoring_dashboard.telemetry_overview will be updated in-place
+  ~ resource "google_monitoring_dashboard" "telemetry_overview" {
+      ~ dashboard_json = jsonencode(
+          ~ {
+              - etag         = "2bae112a8006da670157e96d07d6d211"
+              ~ mosaicLayout = {
+                  ~ tiles   = [
+                      ~ {
+                          ~ widget = {
+                              ~ xyChart = {
+                                  ~ dataSets = [
+                                      ~ {
+                                          - plotType        = "LINE"
+                                          - targetAxis      = "Y1"
+                                            # (1 unchanged attribute hidden)
+                                        },
+                                    ]
+                                }
+                                # (1 unchanged attribute hidden)
+                            }
+                          + xPos   = 0
+                          + yPos   = 0
+                            # (2 unchanged attributes hidden)
+                        },
+                      ~ {
+                          ~ widget = {
+                              ~ xyChart = {
+                                  ~ dataSets = [
+                                      ~ {
+                                          - plotType        = "LINE"
+                                          - targetAxis      = "Y1"
+                                            # (1 unchanged attribute hidden)
+                                        },
+                                    ]
+                                }
+                                # (1 unchanged attribute hidden)
+                            }
+                          + yPos   = 0
+                            # (3 unchanged attributes hidden)
+                        },
+                      ~ {
+                          ~ widget = {
+                              ~ xyChart = {
+                                  ~ dataSets = [
+                                      ~ {
+                                          - plotType        = "LINE"
+                                          - targetAxis      = "Y1"
+                                            # (1 unchanged attribute hidden)
+                                        },
+                                    ]
+                                }
+                                # (1 unchanged attribute hidden)
+                            }
+                          + xPos   = 0
+                            # (3 unchanged attributes hidden)
+                        },
+                      ~ {
+                          ~ widget = {
+                              ~ xyChart = {
+                                  ~ dataSets = [
+                                      ~ {
+                                          - plotType        = "LINE"
+                                          - targetAxis      = "Y1"
+                                            # (1 unchanged attribute hidden)
+                                        },
+                                    ]
+                                }
+                                # (1 unchanged attribute hidden)
+                            }
+                            # (4 unchanged attributes hidden)
+                        },
+                      ~ {
+                          ~ widget = {
+                              ~ xyChart = {
+                                  ~ dataSets = [
+                                      ~ {
+                                          - plotType        = "LINE"
+                                          - targetAxis      = "Y1"
+                                            # (1 unchanged attribute hidden)
+                                        },
+                                    ]
+                                }
+                                # (1 unchanged attribute hidden)
+                            }
+                          + xPos   = 0
+                            # (3 unchanged attributes hidden)
+                        },
+                    ]
+                    # (1 unchanged attribute hidden)
+                }
+              - name         = "projects/469283083998/dashboards/ef21eb5a-796d-4919-a4ea-d2ad5fb1e37d"
+                # (1 unchanged attribute hidden)
+            }
+        )
+        id             = "projects/469283083998/dashboards/ef21eb5a-796d-4919-a4ea-d2ad5fb1e37d"
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-carrier@boosterchile.com (UID s1qSYAUJZcUtjGu4Pg2wjcjgd2o1). Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.283544Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-carrier@boosterchile.com (UID s1qSYAUJZcUtjGu4Pg2wjcjgd2o1). Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/demo-account-password-carrier" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/demo-account-password-carrier" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "demo-account-password-carrier" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo drivers+123456785@boosterchile.invalid (conductor, UID Gg9k3gIPa1cJZtgKC0RRkWQ0QHJ3). Spec §3 H1.1, PF-5.1, OPS-1, ADR-032."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.273994Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo drivers+123456785@boosterchile.invalid (conductor, UID Gg9k3gIPa1cJZtgKC0RRkWQ0QHJ3). Spec §3 H1.1, PF-5.1, OPS-1, ADR-032."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/demo-account-password-conductor" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/demo-account-password-conductor" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "demo-account-password-conductor" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-shipper@boosterchile.com (UID nQSqGqVCHGUn8yrU21uFtnLvaCK2). Reemplaza literal compromised. Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.041075Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-shipper@boosterchile.com (UID nQSqGqVCHGUn8yrU21uFtnLvaCK2). Reemplaza literal compromised. Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/demo-account-password-shipper" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/demo-account-password-shipper" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "demo-account-password-shipper" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-stakeholder@boosterchile.com (UID Uxa37UZPAEPWPYEhjjG772ELOiI2). Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.277170Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password rotado de la cuenta demo demo-stakeholder@boosterchile.com (UID Uxa37UZPAEPWPYEhjjG772ELOiI2). Spec §3 H1.1, OPS-1, ADR-032."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/demo-account-password-stakeholder" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "demo-account-password-stakeholder" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password leído por seed-demo*.ts cuando DEMO_MODE_ACTIVATED=true. Reemplaza literal hardcoded BoosterDemo2026! en seed-demo.ts:86 y seed-demo-startup.ts:142. Spec §3 H1.4, T6, ADR-032."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.034821Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Password leído por seed-demo*.ts cuando DEMO_MODE_ACTIVATED=true. Reemplaza literal hardcoded BoosterDemo2026! en seed-demo.ts:86 y seed-demo-startup.ts:142. Spec §3 H1.4, T6, ADR-032."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/demo-seed-password" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/demo-seed-password" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "demo-seed-password" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["pin-rate-limit-hmac-pepper"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "HMAC-SHA256 pepper para hashear RUTs en labels de métrica auth.pin.lockout (devils-advocate v2 #10). Generado random 64 chars hex desde Terraform. Spec §3 H2."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.278708Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "HMAC-SHA256 pepper para hashear RUTs en labels de métrica auth.pin.lockout (devils-advocate v2 #10). Generado random 64 chars hex desde Terraform. Spec §3 H2."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/pin-rate-limit-hmac-pepper" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "pin-rate-limit-hmac-pepper" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret.hotfix_2026_05_14["sre-notification-webhook"] will be destroyed
+  # (because google_secret_manager_secret.hotfix_2026_05_14 is not in configuration)
+  - resource "google_secret_manager_secret" "hotfix_2026_05_14" {
+      - annotations           = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Slack webhook URL para alertas SRE: T-TTL-WARN, OPS-Y password-spray match, rate_limiter.fallback_active, identity_platform_config drift. Spec §3 H1 + H2."
+        } -> null
+      - create_time           = "2026-05-14T20:01:16.150078Z" -> null
+      - deletion_protection   = false -> null
+      - effective_annotations = {
+          - "hotfix-ref" = "spec-security-blocking-hotfixes-2026-05-14"
+          - "purpose"    = "Slack webhook URL para alertas SRE: T-TTL-WARN, OPS-Y password-spray match, rate_limiter.fallback_active, identity_platform_config drift. Spec §3 H1 + H2."
+        } -> null
+      - effective_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - id                    = "projects/booster-ai-494222/secrets/sre-notification-webhook" -> null
+      - labels                = {
+          - "env"        = "prod"
+          - "feature"    = "security-hotfix-2026-05-14"
+          - "managed_by" = "terraform"
+          - "phase"      = "a"
+        } -> null
+      - name                  = "projects/469283083998/secrets/sre-notification-webhook" -> null
+      - project               = "booster-ai-494222" -> null
+      - secret_id             = "sre-notification-webhook" -> null
+      - terraform_labels      = {
+          - "env"                        = "prod"
+          - "feature"                    = "security-hotfix-2026-05-14"
+          - "goog-terraform-provisioned" = "true"
+          - "managed_by"                 = "terraform"
+          - "phase"                      = "a"
+        } -> null
+      - version_aliases       = {} -> null
+        # (2 unchanged attributes hidden)
+
+      - replication {
+          - auto {
+            }
+        }
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-carrier"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzI/CCME=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-carrier/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-carrier" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-conductor"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzJAMV+M=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-conductor/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-conductor" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-shipper"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzJAix8Y=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-shipper/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-shipper" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-account-password-stakeholder"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzJBz12I=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["demo-seed-password"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzI+//SY=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-seed-password/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-seed-password" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["pin-rate-limit-hmac-pepper"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzI++qyw=" -> null
+      - id        = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor["sre-notification-webhook"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_api_accessor is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_api_accessor" {
+      - etag      = "BwZRzI/PUbs=" -> null
+      - id        = "projects/booster-ai-494222/secrets/sre-notification-webhook/roles/secretmanager.secretAccessor/serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - member    = "serviceAccount:booster-cloudrun-sa@booster-ai-494222.iam.gserviceaccount.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.secretAccessor" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/sre-notification-webhook" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-carrier"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzI/CCME=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-carrier/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-carrier" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-conductor"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzJAMV+M=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-conductor/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-conductor" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-shipper"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzJAix8Y=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-shipper/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-shipper" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-account-password-stakeholder"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzJBz12I=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["demo-seed-password"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzI+//SY=" -> null
+      - id        = "projects/booster-ai-494222/secrets/demo-seed-password/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/demo-seed-password" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["pin-rate-limit-hmac-pepper"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzI++qyw=" -> null
+      - id        = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper" -> null
+    }
+
+  # google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin["sre-notification-webhook"] will be destroyed
+  # (because google_secret_manager_secret_iam_member.hotfix_2026_05_14_felipe_admin is not in configuration)
+  - resource "google_secret_manager_secret_iam_member" "hotfix_2026_05_14_felipe_admin" {
+      - etag      = "BwZRzI/PUbs=" -> null
+      - id        = "projects/booster-ai-494222/secrets/sre-notification-webhook/roles/secretmanager.admin/user:dev@boosterchile.com" -> null
+      - member    = "user:dev@boosterchile.com" -> null
+      - project   = "booster-ai-494222" -> null
+      - role      = "roles/secretmanager.admin" -> null
+      - secret_id = "projects/booster-ai-494222/secrets/sre-notification-webhook" -> null
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-carrier"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:23.709116Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/demo-account-password-carrier/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/demo-account-password-carrier/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/demo-account-password-carrier" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-conductor"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:22.521863Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/demo-account-password-conductor/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/demo-account-password-conductor/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/demo-account-password-conductor" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-shipper"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:24.007Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/demo-account-password-shipper/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/demo-account-password-shipper/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/demo-account-password-shipper" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-account-password-stakeholder"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:24.669202Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/demo-account-password-stakeholder/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/demo-account-password-stakeholder/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/demo-account-password-stakeholder" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["demo-seed-password"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:24.980534Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/demo-seed-password/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/demo-seed-password/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/demo-seed-password" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.hotfix_2026_05_14_placeholder["sre-notification-webhook"] will be destroyed
+  # (because google_secret_manager_secret_version.hotfix_2026_05_14_placeholder is not in configuration)
+  - resource "google_secret_manager_secret_version" "hotfix_2026_05_14_placeholder" {
+      - create_time            = "2026-05-14T20:01:22.218781Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/sre-notification-webhook/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/sre-notification-webhook/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/sre-notification-webhook" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # google_secret_manager_secret_version.pin_rate_limit_hmac_pepper will be destroyed
+  # (because google_secret_manager_secret_version.pin_rate_limit_hmac_pepper is not in configuration)
+  - resource "google_secret_manager_secret_version" "pin_rate_limit_hmac_pepper" {
+      - create_time            = "2026-05-14T20:01:20.014012Z" -> null
+      - deletion_policy        = "DELETE" -> null
+      - enabled                = true -> null
+      - id                     = "projects/469283083998/secrets/pin-rate-limit-hmac-pepper/versions/1" -> null
+      - is_secret_data_base64  = false -> null
+      - name                   = "projects/469283083998/secrets/pin-rate-limit-hmac-pepper/versions/1" -> null
+      - secret                 = "projects/booster-ai-494222/secrets/pin-rate-limit-hmac-pepper" -> null
+      - secret_data            = (sensitive value) -> null
+      - secret_data_wo         = (write-only attribute) -> null
+      - secret_data_wo_version = 0 -> null
+      - version                = "1" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # random_password.pin_rate_limit_hmac_pepper will be destroyed
+  # (because random_password.pin_rate_limit_hmac_pepper is not in configuration)
+  - resource "random_password" "pin_rate_limit_hmac_pepper" {
+      - bcrypt_hash = (sensitive value) -> null
+      - id          = "none" -> null
+      - length      = 64 -> null
+      - lower       = true -> null
+      - min_lower   = 0 -> null
+      - min_numeric = 0 -> null
+      - min_special = 0 -> null
+      - min_upper   = 0 -> null
+      - number      = true -> null
+      - numeric     = true -> null
+      - result      = (sensitive value) -> null
+      - special     = false -> null
+      - upper       = true -> null
+    }
+
+  # module.service_sms_fallback_gateway.google_cloud_run_v2_service.service will be updated in-place
+  ~ resource "google_cloud_run_v2_service" "service" {
+        id                      = "projects/booster-ai-494222/locations/southamerica-west1/services/booster-ai-sms-fallback-gateway"
+        name                    = "booster-ai-sms-fallback-gateway"
+        # (33 unchanged attributes hidden)
+
+      ~ template {
+            # (10 unchanged attributes hidden)
+
+          ~ containers {
+                name           = null
+                # (7 unchanged attributes hidden)
+
+              - env {
+                  # At least one attribute in this block is (or was) sensitive,
+                  # so its contents will not be displayed.
+                }
+              + env {
+                  # At least one attribute in this block is (or was) sensitive,
+                  # so its contents will not be displayed.
+                }
+
+                # (16 unchanged blocks hidden)
+            }
+
+            # (1 unchanged block hidden)
+        }
+
+        # (2 unchanged blocks hidden)
+    }
+
+Plan: 0 to add, 4 to change, 29 to destroy.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
