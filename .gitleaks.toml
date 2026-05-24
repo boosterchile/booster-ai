@@ -24,7 +24,14 @@
 useDefault = true
 
 [allowlist]
-description = "Firebase + Google Maps web keys — públicas por diseño"
+description = "Firebase + Google Maps web keys + JWT test fixtures (PII redaction T4 SEC-001)"
 paths = [
   '''cloudbuild\.production\.yaml''',
+  # Test fixtures con JWTs sintéticos para verificar PII redaction (T4 SEC-001).
+  # NO son JWTs reales — payload `{"sub":"user1"}` con signature placeholder
+  # (no firma real, no expira, no autoriza nada). Documentado en commit messages
+  # + PR #319. Sin esta allowlist gitleaks dispara la regla `jwt` sobre cualquier
+  # string `eyJ...\..*\..*` que estructuralmente es JWT shape.
+  '''packages/logger/src/value-redaction\.test\.ts''',
+  '''packages/logger/src/createLogger\.test\.ts''',
 ]
