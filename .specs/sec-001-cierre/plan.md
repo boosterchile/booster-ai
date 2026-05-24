@@ -85,7 +85,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit. Si `STRICT_MIGRATION_ORDERING` set true en alguna revision, env var vuelve a default false en revert → behavior previo restaurado en < 1 minuto.
 - **Spec trace**: round 4 P1-R4-4 + P0-2 + P0-4. Sprint 2 SCs dependientes: SC-1.1.8 (demo_accounts), SC-1.2.1 (signup_requests).
 
-### T4: PII redaction core (email/RUT/JWT/password) en `@booster-ai/logger`
+### T4: PII redaction core (email/RUT/JWT/password) en `@booster-ai/logger` [DONE 2026-05-24]
 
 - **Files**: `packages/logger/src/redaction.ts` (new), `packages/logger/src/createLogger.ts` (wire redaction), `packages/logger/src/redaction.test.ts` (new).
 - **LOC estimate**: ~80 (impl ~40 + tests ~40).
@@ -282,6 +282,8 @@ Anything que emergió durante planning y debe resolverse antes de /build:
 - 2026-05-24 — **T0b merged** PR #316 (commit `172e345`). Post-merge `terraform plan` desde main: `Plan: 0 to add, 2 to change, 0 to destroy` — strict gate verified (29 destroys eliminated).
 - 2026-05-24 — **🚨 SMS fallback gateway incident RESOLVED**: bug `WEBHOOK_PUBLIC_URL=''` (17 días activo desde commit 4c7ccc2 Wave 2/3) descubierto durante T0b investigation. Fix vía `terraform apply -target=module.service_sms_fallback_gateway... -var-file=terraform.tfvars.local`. Cloud Run revision `00217-4ds` rolled; curl 403 (sig check active, era 503); 0 CRITICAL logs post 21:26. Incident report PR #317 merged (commit `aa1cf4b`). 5 follow-ups identificados.
 - 2026-05-24 — **T2 DONE** (PR pending). `normalizePhone(raw: string): string | null` agregado a `packages/shared-schemas/src/primitives/chile.ts`. TDD discipline: tests primero (16 tests fail con TypeError), implementación mínima (29 LOC), GREEN (16/16 pass). Coverage chile.ts: 98% stmts / 93.33% branches / 100% funcs (líneas uncovered son pre-existentes en validateRutCheckDigit, no mi código). Package full: 206 tests passing (was 190). typecheck clean; biome clean; zero `any`.
+- 2026-05-24 — **T2 merged** PR #318 (commit `c0bfd6e`).
+- 2026-05-24 — **T4 DONE** (PR pending). PII redaction core en `@booster-ai/logger`. Hallazgo importante: `redaction.ts` ya existía path-based (Pino redact paths) — EXTIENDO con value-based regex (complementario). Funciones nuevas: `redactValue(input: string): string` (regex sobre strings: email/JWT/RUT con módulo-11 check) + `redactObjectValues(obj, visited)` (recursive walk + sensitive key /pass|secret|token|key|auth/i match). Wire en createLogger: `hooks.logMethod` para string args (message) + `formatters.log` para object payload — Pino docs confirmaron formatters.log NO recibe message. Workspace dep add: `@booster-ai/shared-schemas` para reusar `rutSchema + ensureRutHasDash` (módulo-11). TDD: RED (19 tests fail), GREEN (39 tests pass = 11 path + 19 value + 9 createLogger). Coverage 97.72% / 96.87% / 100% / 97.56%. Edge case found: logger tsconfig tenía rootDir (único package con esa restricción + workspace dep) → removed para alinear con apps pattern.
 - 2026-05-24 — Plan v3 producido via 5 surgical Edits:
   - T0 acceptance: gate strict — exactly 1 line diff, otros drifts bloquean apply until T7+T7.5+T8 ready.
   - T3 acceptance: STRICT_MIGRATION_ORDERING=true en STAGING desde Sprint 1 merge (real cold-start coverage); prod queda false hasta Sprint 2.

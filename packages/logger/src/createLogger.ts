@@ -1,5 +1,5 @@
 import { type Logger as PinoLogger, type LoggerOptions as PinoOptions, pino } from 'pino';
-import { redactionPaths } from './redaction.js';
+import { redactObjectValues, redactValue, redactionPaths } from './redaction.js';
 
 export type Logger = PinoLogger;
 
@@ -44,10 +44,23 @@ export function createLogger(options: LoggerOptions): Logger {
         severity: pinoLevelToGcpSeverity(label),
         level: number,
       }),
+      // T4 SC-H4.1: value-based PII redaction sobre el log record entero.
+      // Complementa path-based redact (arriba): cubre PII en strings libres
+      // y en keys no allowlisted (e.g. `customApiSecret`, mensaje con email).
+      log: (obj) => redactObjectValues(obj) as Record<string, unknown>,
     },
     redact: {
       paths: [...redactionPaths, ...additionalRedactionPaths],
       censor: '[REDACTED]',
+    },
+    // T4 SC-H4.1: intercepta string args (message + format args) ANTES del
+    // serialize de Pino para aplicar value-based regex redaction. Complementa
+    // formatters.log que cubre el object payload.
+    hooks: {
+      logMethod(inputArgs, method) {
+        const out = inputArgs.map((a) => (typeof a === 'string' ? redactValue(a) : a));
+        return method.apply(this, out as Parameters<typeof method>);
+      },
     },
     timestamp: pino.stdTimeFunctions.isoTime,
     messageKey: 'message',

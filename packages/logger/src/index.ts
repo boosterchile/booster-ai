@@ -9,4 +9,4 @@
  */
 
 export { createLogger, type Logger, type LoggerOptions } from './createLogger.js';
-export { redactionPaths } from './redaction.js';
+export { redactionPaths, redactObjectValues, redactValue } from './redaction.js';

@@ -14,6 +14,7 @@
     "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
+    "@booster-ai/shared-schemas": "workspace:*",
     "pino": "^9.5.0"
   },
   "devDependencies": {
