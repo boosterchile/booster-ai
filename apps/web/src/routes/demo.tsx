@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { signInDriverWithCustomToken } from '../hooks/use-auth.js';
+import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import { useSiteSettings } from '../hooks/use-site-settings.js';
 import { getApiUrl } from '../lib/api-url.js';
+import { MaintenanceRoute } from './maintenance.js';
 
 type Persona = 'shipper' | 'carrier' | 'conductor' | 'stakeholder';
 
@@ -51,8 +53,20 @@ const PERSONA_ICONS: Record<Persona, LucideIcon> = {
 export function DemoRoute() {
   const navigate = useNavigate();
   const { config } = useSiteSettings();
+  const { flags } = useFeatureFlags();
   const [loadingPersona, setLoadingPersona] = useState<Persona | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // SC-INT-1 (sec-001-cierre): mientras el flag demo está OFF, mostrar
+  // copy explícita de mantenimiento en vez de la landing que fallaría
+  // al hacer POST /demo/login (endpoint inactivo cuando flag=false).
+  // Fail-safe: durante loading o error de /feature-flags el hook
+  // retorna defaults conservadores (todos false), por lo que la
+  // maintenance también se muestra — comportamiento alineado con el
+  // estado actual de prod.
+  if (!flags.demo_mode_activated) {
+    return <MaintenanceRoute />;
+  }
 
   async function handleEnter(persona: Persona) {
     setErrorMessage(null);

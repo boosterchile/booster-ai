@@ -191,7 +191,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → solo per-RUT rate-limit queda (T9 funcional pero sin IP defense ni fail-closed). Degradación parcial aceptable.
 - **Spec trace**: §3 H2 SC-H2.1b, SC-H2.4 + SC-1.2.5 cascade docs.
 
-### T11: Maintenance page demo.boosterchile.com (SC-INT-1)
+### T11: Maintenance page demo.boosterchile.com (SC-INT-1) [DONE 2026-05-24]
 
 - **Files**: `apps/web/src/routes/maintenance.tsx` (new), `apps/web/src/router.tsx` (modificar para incluir route), `apps/web/src/routes/demo.tsx` (modificar para check flag `DEMO_MODE_ACTIVATED` desde `/feature-flags` y conditional render maintenance vs landing).
 - **LOC estimate**: ~50 (component ~30 + router wire ~5 + demo.tsx fetch+conditional ~15).
