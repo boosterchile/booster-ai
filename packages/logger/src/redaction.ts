@@ -69,10 +69,11 @@ export const redactionPaths: string[] = [
 // aparece dentro de strings (mensajes libres) o en fields con nombres no
 // allowlisted. Aplicado vía `formatters.log` en createLogger.
 
-// Username + domain ambos splittean en segmentos `.label` para evitar polynomial
-// ReDoS (CodeQL js/polynomial-redos). Sin split, `[\w.+-]+@` causa backtracking
-// polinomial en strings sin `@` (engine intenta múltiples divisiones).
-const EMAIL_RE = /[\w+-]+(?:\.[\w+-]+)*@[\w-]+(?:\.[\w-]+)+/g;
+// Username/domain split en segmentos `\w+` con separadores single-char
+// (`[.+\-]` y `[.\-]`). Sin char class overlap entre segmentos y separadores
+// → CodeQL js/polynomial-redos safe (cada `\w+` es greedy single-class
+// unambiguous; separadores son single chars sin quantifier).
+const EMAIL_RE = /\w+(?:[.+\-]\w+)*@\w+(?:[.-]\w+)+/g;
 const JWT_RE = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
 const RUT_RE = /\b\d{7,8}-?[\dkK]\b/g;
 const SENSITIVE_KEY_RE = /pass|secret|token|key|auth/i;
