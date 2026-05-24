@@ -124,7 +124,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit. Tests y ADR son documentación; runtime no afectado.
 - **Spec trace**: §3 H4 SC-H4.1, SC-H4.4.
 
-### T7: Secret Manager `demo-seed-password` (Terraform + IAM)
+### T7: Secret Manager `demo-seed-password` (Terraform + IAM) [DONE 2026-05-24]
 
 - **Files**: `infrastructure/main.tf` o `infrastructure/secrets.tf` (resource `google_secret_manager_secret` + version + `google_secret_manager_secret_iam_member`), `infrastructure/compute.tf` (env var mount al service api).
 - **LOC estimate**: ~35 (HCL: 1 secret + 1 version + 2 IAM bindings + env var mount).

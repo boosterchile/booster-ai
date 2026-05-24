@@ -27,10 +27,15 @@ locals {
   # Lista de IDs de todas las secret versions que deben existir antes de crear
   # cualquier Cloud Run service que monte secrets. Se pasa a cada módulo via
   # `secret_versions_ready` para que Terraform propague el orden automáticamente.
-  # Incluye los 14 placeholders + database_url (que es generado dinámicamente).
+  # Incluye los 14 placeholders originales + database_url (generado dinámicamente)
+  # + las versions del set hotfix-2026-05-14 (6 placeholders + pepper aleatorio)
+  # que ya están mounteadas por al menos un service (T7 SEC-001 monta
+  # DEMO_SEED_PASSWORD en el api).
   all_secret_versions_ready = concat(
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
+    [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
+    [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
   )
 
   # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
@@ -235,6 +240,19 @@ module "service_api" {
     # ADR-037: GEMINI_API_KEY eliminada con el mismo patrón (Vertex AI +
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
+
+    # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
+    # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
+    # está ON. Reemplaza el literal `BoosterDemo2026!` hardcoded en
+    # `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`.
+    # El secret + IAM bindings + placeholder version `REPLACE_ME_BEFORE_DEPLOY`
+    # están declarados en `security-hotfixes-2026-05-14.tf` (importado en
+    # T0b PR #316); aquí solo se mountea como env var. La rotación a
+    # password real ocurre via `gcloud secrets versions add demo-seed-password`
+    # (T7.5 run-once) ANTES de que T8 active el lookup en el código —
+    # T7.5 gate de CI bloquea PRs que toquen seed-demo*.ts si version
+    # count == 0.
+    DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id
