@@ -99,7 +99,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit. Logs vuelven a no redactar PII — compliance Ley 19.628 regression pero no customer-facing.
 - **Spec trace**: §3 H4 SC-H4.1 base.
 
-### T5: PII redaction phone (usa T2 normalizePhone)
+### T5: PII redaction phone (usa T2 normalizePhone) [DONE 2026-05-24]
 
 - **Files**: `packages/logger/src/redaction.ts` (extend), `packages/logger/src/redaction.test.ts` (extend).
 - **LOC estimate**: ~50 (extension impl ~20 + tests ~30).
@@ -284,6 +284,8 @@ Anything que emergió durante planning y debe resolverse antes de /build:
 - 2026-05-24 — **T2 DONE** (PR pending). `normalizePhone(raw: string): string | null` agregado a `packages/shared-schemas/src/primitives/chile.ts`. TDD discipline: tests primero (16 tests fail con TypeError), implementación mínima (29 LOC), GREEN (16/16 pass). Coverage chile.ts: 98% stmts / 93.33% branches / 100% funcs (líneas uncovered son pre-existentes en validateRutCheckDigit, no mi código). Package full: 206 tests passing (was 190). typecheck clean; biome clean; zero `any`.
 - 2026-05-24 — **T2 merged** PR #318 (commit `c0bfd6e`).
 - 2026-05-24 — **T4 DONE** (PR pending). PII redaction core en `@booster-ai/logger`. Hallazgo importante: `redaction.ts` ya existía path-based (Pino redact paths) — EXTIENDO con value-based regex (complementario). Funciones nuevas: `redactValue(input: string): string` (regex sobre strings: email/JWT/RUT con módulo-11 check) + `redactObjectValues(obj, visited)` (recursive walk + sensitive key /pass|secret|token|key|auth/i match). Wire en createLogger: `hooks.logMethod` para string args (message) + `formatters.log` para object payload — Pino docs confirmaron formatters.log NO recibe message. Workspace dep add: `@booster-ai/shared-schemas` para reusar `rutSchema + ensureRutHasDash` (módulo-11). TDD: RED (19 tests fail), GREEN (39 tests pass = 11 path + 19 value + 9 createLogger). Coverage 97.72% / 96.87% / 100% / 97.56%. Edge case found: logger tsconfig tenía rootDir (único package con esa restricción + workspace dep) → removed para alinear con apps pattern.
+- 2026-05-24 — **T4 merged** PR #319 (commit `d9571bf`) post 3 iteraciones EMAIL_RE para CodeQL ReDoS + gitleaks allowlist test fixtures + alert #125 dismissed false positive.
+- 2026-05-24 — **T5 DONE** (PR pending). PII redaction phone — extiende `redactValue` con PHONE_RE (`\+?\d[\d \t\-()]{6,18}\d` anchored a digit start/end para evitar consumir spaces de bordes) + validate cada match via `normalizePhone` de `@booster-ai/shared-schemas` (T2). Orden en redactValue: email → JWT → RUT → phone (RUT antes para no confundirlos). Tests: 9 phone tests (con +56 spaces/dashes/parens, sin prefix, múltiples, internacional NO redacta, no-phone passthrough, RUT no-confunde). TDD: RED (6 fail por wrong regex con space borders), fix anchor a digits, GREEN (48/48 pass). Coverage 97.87% / 97.05% / 100% / 97.67%.
 - 2026-05-24 — Plan v3 producido via 5 surgical Edits:
   - T0 acceptance: gate strict — exactly 1 line diff, otros drifts bloquean apply until T7+T7.5+T8 ready.
   - T3 acceptance: STRICT_MIGRATION_ORDERING=true en STAGING desde Sprint 1 merge (real cold-start coverage); prod queda false hasta Sprint 2.

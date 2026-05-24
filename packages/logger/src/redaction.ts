@@ -1,4 +1,4 @@
-import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
+import { ensureRutHasDash, normalizePhone, rutSchema } from '@booster-ai/shared-schemas';
 
 /**
  * Paths que Pino debe redactar automáticamente en cada log.
@@ -76,6 +76,11 @@ export const redactionPaths: string[] = [
 const EMAIL_RE = /\w+(?:[.+\-]\w+)*@\w+(?:[.-]\w+)+/g;
 const JWT_RE = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
 const RUT_RE = /\b\d{7,8}-?[\dkK]\b/g;
+// Phone-candidate: optional `+`, comienza y termina con dígito; medio puede
+// tener separadores single-char (espacios, dashes, parens). Anclar en dígitos
+// evita consumir spaces de bordes. Validación real vía normalizePhone (T2):
+// non-Chile o formato inválido → null → no redacta.
+const PHONE_RE = /\+?\d[\d \t\-()]{6,18}\d/g;
 const SENSITIVE_KEY_RE = /pass|secret|token|key|auth/i;
 
 function isValidRut(candidate: string): boolean {
@@ -89,6 +94,10 @@ function isValidRut(candidate: string): boolean {
 export function redactValue(input: string): string {
   let out = input.replace(EMAIL_RE, '[REDACTED:email]').replace(JWT_RE, '[REDACTED:jwt]');
   out = out.replace(RUT_RE, (match) => (isValidRut(match) ? '[REDACTED:rut]' : match));
+  // Phone después de RUT para que RUTs válidos no se confundan con phone candidates.
+  out = out.replace(PHONE_RE, (match) =>
+    normalizePhone(match) !== null ? '[REDACTED:phone]' : match,
+  );
   return out;
 }
 

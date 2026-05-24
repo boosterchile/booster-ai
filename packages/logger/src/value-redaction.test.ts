@@ -56,6 +56,47 @@ describe('redactValue — RUT patterns (con módulo-11 validation)', () => {
   });
 });
 
+describe('redactValue — phone patterns (T5 SC-H4.1, validated via normalizePhone)', () => {
+  it('móvil con +56 prefix y spaces → [REDACTED:phone]', () => {
+    expect(redactValue('tel: +56 9 1234 5678')).toBe('tel: [REDACTED:phone]');
+  });
+
+  it('móvil 9-digit sin prefix → [REDACTED:phone]', () => {
+    expect(redactValue('contact 912345678 urgent')).toBe('contact [REDACTED:phone] urgent');
+  });
+
+  it('móvil 11-digit con 56 sin + → [REDACTED:phone]', () => {
+    expect(redactValue('phone 56912345678')).toBe('phone [REDACTED:phone]');
+  });
+
+  it('móvil con dashes → [REDACTED:phone]', () => {
+    expect(redactValue('llamar +56-9-1234-5678')).toBe('llamar [REDACTED:phone]');
+  });
+
+  it('móvil con parens → [REDACTED:phone]', () => {
+    expect(redactValue('cell +56 (9) 12345678')).toBe('cell [REDACTED:phone]');
+  });
+
+  it('múltiples phones en string → todos redactados', () => {
+    expect(redactValue('A: +56912345678, B: 956789012')).toBe(
+      'A: [REDACTED:phone], B: [REDACTED:phone]',
+    );
+  });
+
+  it('phone internacional NO-Chile → NO redacta (false positive avoidance)', () => {
+    expect(redactValue('US tel +1 234 567 8900')).toBe('US tel +1 234 567 8900');
+  });
+
+  it('número que no es phone Chile → passthrough', () => {
+    expect(redactValue('precio $1234567')).toBe('precio $1234567');
+  });
+
+  it('RUT válido NO se confunde con phone (RUT check viene antes)', () => {
+    // 11111111-1 es RUT válido (DV=1). Debe redactarse como :rut, no :phone.
+    expect(redactValue('cliente 11111111-1')).toBe('cliente [REDACTED:rut]');
+  });
+});
+
 describe('redactObjectValues — recursive walk', () => {
   it('flat object con sensitive key (matchea /pass|secret|token|key/i) → value redacted', () => {
     const input = { username: 'alice', password: 'p4ssw0rd' };
