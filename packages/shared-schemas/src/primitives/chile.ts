@@ -100,6 +100,37 @@ export const chileanPhoneSchema = z
   .string()
   .regex(/^\+56[2-9]\d{8}$/, 'Número de teléfono Chile inválido');
 
+const CHILE_MOVIL_RE = /^\+56[2-9]\d{8}$/;
+const CHILE_FIJO_RE = /^\+56[2-9]\d{7}$/;
+
+/**
+ * Normaliza teléfono chileno a E.164 (`+56XXXXXXXXX`) o retorna `null` si
+ * el input no matchea ningún formato chileno válido (móvil 9 dígitos o
+ * fijo 8 dígitos después de `+56`).
+ *
+ * Strip de separadores comunes (espacios, dashes, parens, puntos) antes
+ * del match. Acepta prefix inferido:
+ *   - 9 dígitos empezando con `9` → asume móvil sin prefix, prepend `+56`
+ *   - 11 dígitos empezando con `56` → asume sin `+`, prepend `+`
+ *
+ * Idempotente: aplicar al output de un call previo no cambia el resultado.
+ *
+ * Casos `null`: empty, `1` como primer dígito post-`+56`, longitud fuera de
+ * rango, números internacionales no-Chile.
+ */
+export function normalizePhone(raw: string): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return null;
+  }
+  let cleaned = raw.replace(/[\s\-().]/g, '');
+  if (/^9\d{8}$/.test(cleaned)) {
+    cleaned = `+56${cleaned}`;
+  } else if (/^56\d{9,10}$/.test(cleaned)) {
+    cleaned = `+${cleaned}`;
+  }
+  return CHILE_MOVIL_RE.test(cleaned) || CHILE_FIJO_RE.test(cleaned) ? cleaned : null;
+}
+
 /**
  * Código de región Chile (I-XVI / metropolitana).
  */
