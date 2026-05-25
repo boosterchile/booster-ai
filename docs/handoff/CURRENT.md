@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-24 (SEC-001 cierre **/build T0 en flight** — variables.tf default flipped + PR submitted; spec Approved + plan Sprint 1 Active; 8 P0 cerrados via 6 rondas devils-advocate total)
+**Última actualización**: 2026-05-25 (SEC-001 **Sprint 1 CERRADO** — 14 tasks merged + apply prod + secret rotation + 0 git grep matches; H4 PII redaction + H1.4 Secret Manager + H2 rate-limit + INT-1 maintenance page todos shipped)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
@@ -61,11 +61,77 @@ Sesión de smoke E2E sobre `demo.boosterchile.com` reveló regresión backend: `
 | P2-R4-1..3: enumeration timing oracle / UID migration en logs / drift TODO IaC | residual aceptado | doc |
 | P2-R3-1..3: similares de round 3 | residual aceptado | doc |
 
+### Sprint 1 cerrado (2026-05-25) — 14 tasks shipped
+
+12 PRs mergeados a `main` en ventana 2026-05-24 → 2026-05-25:
+
+| Task | PR | Commit | Foco |
+|---|---|---|---|
+| T0a drift reconcile (flag flip) | [#315](https://github.com/boosterchile/booster-ai/pull/315) | `a899e14` | variables.tf default true→false |
+| T0b HCL import (secrets hotfix) | [#316](https://github.com/boosterchile/booster-ai/pull/316) | `172e345` | 145 LOC import abandoned branch, 0 destroys |
+| Incidente SMS fallback gateway | [#317](https://github.com/boosterchile/booster-ai/pull/317) | `aa1cf4b` | WEBHOOK_PUBLIC_URL fix (17d outage) |
+| T2 normalizePhone helper | [#318](https://github.com/boosterchile/booster-ai/pull/318) | `c0bfd6e` | shared-schemas chile primitives |
+| T4 PII redaction core | [#319](https://github.com/boosterchile/booster-ai/pull/319) | `d9571bf` | email/RUT/JWT/password redaction |
+| T5 PII redaction phone | [#320](https://github.com/boosterchile/booster-ai/pull/320) | `512195f` | extends T4 via T2 normalizePhone |
+| T6 PII fixtures + thresholds + ADR-051 | [#322](https://github.com/boosterchile/booster-ai/pull/322) | `d7380d5` | FP=0/1000, FN=1/100 |
+| T11 maintenance page | [#323](https://github.com/boosterchile/booster-ai/pull/323) | `c4e7026` | demo.boosterchile.com conditional render |
+| T7 Secret Manager env mount | [#324](https://github.com/boosterchile/booster-ai/pull/324) | `396edf0` | DEMO_SEED_PASSWORD en compute.tf |
+| T7.5 init script + CI gate WIF | [#325](https://github.com/boosterchile/booster-ai/pull/325) | `f3b21e6` | check-secret-version-exists job |
+| T8 seed-demo lee env | [#326](https://github.com/boosterchile/booster-ai/pull/326) | `5af2548` | literal eliminado del repo |
+| T7.5 evidence post-apply | [#327](https://github.com/boosterchile/booster-ai/pull/327) | `8ab57ba` | secret v2 + Cloud Run revision rotation |
+| T1 Redis HA verify (no-op) | [#328](https://github.com/boosterchile/booster-ai/pull/328) | `a9f6296` | state ya STANDARD_HA confirmado |
+| T3 STRICT_MIGRATION_ORDERING | [#329](https://github.com/boosterchile/booster-ai/pull/329) | `e68c67a` | gating fail-closed startup |
+| T9 rate-limit-pin base | [#330](https://github.com/boosterchile/booster-ai/pull/330) | `9d1b2e5` | per-RUT 5/15min |
+| T10 rate-limit IP + fail-closed | [#331](https://github.com/boosterchile/booster-ai/pull/331) | `7fa4c8d` | IP 30/15min + 503 + cascade docs |
+
+### Evidencia operacional Sprint 1
+
+- **Estado prod** verificado 2026-05-25:
+  - `POST /demo/login` → **404** (flag OFF preservado, SC-1.0.2).
+  - `demo.boosterchile.com/demo` → **200** maintenance page (SC-INT-1).
+  - Secret `demo-seed-password` versions: v1 placeholder + v2 random (32B base64).
+  - Cloud Run api revision `00304-4sf` Ready+Healthy con `DEMO_SEED_PASSWORD=secretRef:latest` + `REDIS_HOST` mounteado.
+  - `git grep -F 'BoosterDemo2026' -- docs/ apps/ infrastructure/ packages/` → **0 matches** (SC-1.4.4).
+- **terraform plan** post-apply T7+T7.5: residual = 1 cosmetic dashboard (monitoring_dashboard JSON formatting; pre-existente al SEC-001).
+- **Evidence archivos**: `.specs/sec-001-cierre/sprint-1-evidence/` (T0 + T1 + T7.5 + Sprint 1 index).
+
+### Sprint 1 dimensiones cubiertas
+
+| Sub-fase | SCs | Status |
+|---|---|---|
+| **H1.0** demo mode flag default false | SC-1.0.1, SC-1.0.2 | ✅ T0 |
+| **H1.4** Secret Manager seed password | SC-1.4.1, SC-1.4.2, SC-1.4.3, SC-1.4.4 | ✅ T7+T7.5+T8 |
+| **H2** rate-limit `/auth/driver-activate` | SC-H2.1, SC-H2.1b, SC-H2.1c, SC-H2.2, SC-H2.4 | ✅ T1+T9+T10 |
+| **H4** PII redaction logger | SC-H4.1, SC-H4.4 | ✅ T4+T5+T6 |
+| **INT-1** maintenance page demo subdomain | SC-INT-1 | ✅ T11 |
+| **P1-R4-2** Memorystore HA verified | round 4 closure | ✅ T1 |
+| **P1-R4-3** normalizePhone helper | round 4 closure | ✅ T2 |
+| **P1-R4-4** Drizzle migration ordering | round 4 closure + P0-4 gating | ✅ T3 |
+| **P0-A** strict gate exact-1-diff (round 2) | gate enforcement | ✅ T0a/T0b sequence |
+| **P0-B** STRICT_MIGRATION_ORDERING gating | outage prevention | ✅ T3 |
+| **P0-C** T7.5.1 WIF viewer grant | CI gate fail-closed loudly | ✅ T7.5 + apply |
+| **P0-5** secret init CI gate | seed-demo precondition | ✅ T7.5 + verified verde post-apply |
+| **SC-1.2.5** rate-limit cascade docs | layering Cloud Armor+Redis | ✅ T10 |
+
+### Sprint 2 — plan stub
+
+[`.specs/sec-001-cierre/plan-sprint-2.md`](../../.specs/sec-001-cierre/plan-sprint-2.md) outline (sin acceptance details — requiere `/agent-rigor:plan` propio):
+
+- **H1.1**: recreate 4 UIDs demo (new emails `demo-2026-*`) per O-11 SP-800-63.
+- **H1.3**: is-demo middleware enforcement + tests cross-tenant.
+- **H1.2**: migración signup público `createUserWithEmailAndPassword` + `sendPasswordResetEmail` + Google provider a flow Admin SDK con admin-approval gate (O-1).
+- **H1.5**: forensia + audit logs filtering (round 4 P2-R4-2).
+- **H1.6**: reactivación demo (flag flip a true) + TTL claim + 90d monitoring.
+
+H3 spec hermano (`sec-h3-dte-retention-lock`) requiere su propio `/plan` independiente.
+
 ### Próximo paso
 
-`/agent-rigor:plan` ejecutado 2026-05-24. **Plan Active** en [`.specs/sec-001-cierre/plan.md`](../../.specs/sec-001-cierre/plan.md) (v3, 14 tasks Sprint 1, 296 LOC) post 2 rondas devils-advocate (8 P0 cerrados). Sprints 2-3 documentados como "Future sprints" requiriendo /plan separados.
+`/agent-rigor:plan plan-sprint-2` cuando PO esté listo. Recomendado fresh session (este sesión cerró con ~330 tool calls / ~370 ledger entries).
 
-Next-session arranca con `/agent-rigor:build` → **T0** (drift reconcile): flipea `infrastructure/variables.tf` `demo_mode_activated default = true → false`; `terraform plan` strict gate verifica EXACTAMENTE 1 línea diff (any otro diff bloquea apply); `terraform apply`; `curl POST /demo/login` → 404 verificado post-apply. T0 es prerequisito de T1+T7 (cualquier task que toque infra).
+Pendiente operacional post-Sprint 1:
+- **Cosmetic drift residual**: `google_monitoring_dashboard.telemetry_overview` JSON formatter (1 modify pendiente; sin impacto runtime; aplicable cuando sea próximo `terraform apply`).
+- **#STAGING-ENV**: backlog tracking para crear segundo GCP project con infra paralela. Bloquea el flip prod de `STRICT_MIGRATION_ORDERING=true` en Sprint 2.
 
 ---
 

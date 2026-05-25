@@ -204,7 +204,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → demo.boosterchile.com vuelve a renderizar landing con alert error. Customer-facing degradation aceptable (es regresión a estado actual).
 - **Spec trace**: §3 §SC-INT-1.
 
-### T12: CURRENT.md + Sprint 1 evidence + Sprint 2 plan stub
+### T12: CURRENT.md + Sprint 1 evidence + Sprint 2 plan stub [DONE 2026-05-25 — Sprint 1 CERRADO]
 
 - **Files**: `docs/handoff/CURRENT.md` (modificar §SEC-001 cierre con sección "Sprint 1 cerrado"), `.specs/sec-001-cierre/plan-sprint-2.md` (stub con outline de tareas H1.1, H1.3, H1.2, H1.5, H1.6), `.specs/sec-001-cierre/sprint-1-evidence/` (directory con evidencia por task: outputs de tests + screenshots + curls).
 - **LOC estimate**: ~50 (CURRENT.md ~20 + plan-sprint-2 stub ~20 + evidence index ~10).
