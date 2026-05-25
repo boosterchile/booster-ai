@@ -241,7 +241,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: script en repo sin efecto. One-shot retire irreversible by design; resume-from-partial-retire mitigates partial failure.
 - **Spec trace**: §3 SC-1.1.1, SC-1.1.2, SC-1.1.4, SC-1.1.5; §7.5 H1.1 rollback irreversible.
 
-### T5: demo-expires middleware (Hono context) + cache-warm (rate-limited) (P0-R3-5 fix)
+### T5: demo-expires middleware (Hono context) + cache-warm (rate-limited) (P0-R3-5 fix) [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/middleware/demo-expires.ts` + test, `apps/api/src/routes/demo-cache-warm.ts` + test (hereda IP rate-limit Sprint 1), `apps/web/src/routes/demo.tsx` (modify pre-warm wire).
 - **LOC estimate**: ~100.
