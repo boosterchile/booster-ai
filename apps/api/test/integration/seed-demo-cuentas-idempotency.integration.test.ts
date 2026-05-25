@@ -127,14 +127,16 @@ describe('integration: cuentas_demo lookupOrCreateCuentaDemoEmail idempotency (S
     );
     expect(count.rows[0].c).toBe(4);
 
+    // ORDER BY email (text) garantiza orden alfabético; pgEnum ORDER BY
+    // ordena por DEFINICION del enum (CREATE TYPE order), no alfabético.
     const rows = await handle.pool.query<{ persona: string; email: string }>(
-      'SELECT persona, email FROM cuentas_demo ORDER BY persona',
+      'SELECT persona, email FROM cuentas_demo ORDER BY email',
     );
     expect(rows.rows).toEqual([
-      { persona: 'conductor', email: 'drivers+demo-2026-conductor@boosterchile.invalid' },
+      { persona: 'transportista', email: 'demo-2026-carrier@boosterchile.com' },
       { persona: 'generador_carga', email: 'demo-2026-shipper@boosterchile.com' },
       { persona: 'stakeholder', email: 'demo-2026-stakeholder@boosterchile.com' },
-      { persona: 'transportista', email: 'demo-2026-carrier@boosterchile.com' },
+      { persona: 'conductor', email: 'drivers+demo-2026-conductor@boosterchile.invalid' },
     ]);
   });
 
