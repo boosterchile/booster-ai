@@ -3,7 +3,7 @@ import { rutSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { conductores, memberships, users } from '../db/schema.js';
@@ -59,8 +59,17 @@ export function createDriverAuthRoutes(opts: {
   db: Db;
   firebaseAuth: Auth;
   logger: Logger;
+  // T9 SEC-001 — rate-limit-pin middleware (5 intentos/15min/RUT).
+  // Optional para no romper consumers de test que no necesitan el
+  // gate; en prod server.ts SIEMPRE lo pasa. Cuando undefined, el
+  // endpoint queda sin rate-limit (legacy pre-T9 behavior).
+  rateLimitPin?: MiddlewareHandler;
 }) {
   const app = new Hono();
+
+  if (opts.rateLimitPin) {
+    app.use('/driver-activate', opts.rateLimitPin);
+  }
 
   app.post('/driver-activate', zValidator('json', activateBodySchema), async (c) => {
     const body = c.req.valid('json');
