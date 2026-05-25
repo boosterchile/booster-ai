@@ -243,7 +243,7 @@ module "service_api" {
 
     # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
     # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
-    # está ON. Reemplaza el literal `BoosterDemo2026!` hardcoded en
+    # está ON. Reemplaza el literal hardcoded que vivía en
     # `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`.
     # El secret + IAM bindings + placeholder version `REPLACE_ME_BEFORE_DEPLOY`
     # están declarados en `security-hotfixes-2026-05-14.tf` (importado en
