@@ -42,9 +42,16 @@ process.env.API_AUDIENCE ??= 'https://api.test.boosterchile.com';
 process.env.ALLOWED_CALLER_SA ??= 'test-caller@booster-ai-test.iam.gserviceaccount.com';
 process.env.BOOSTER_PLATFORM_ADMIN_EMAILS ??= 'dev@boosterchile.com';
 // T8 SEC-001 — seedDemo / ensureConductorDemoActivated llaman
-// getDemoPassword() que throw si DEMO_SEED_PASSWORD ausente. En tests
-// unitarios sin el secret real, default a una cadena reconocible.
-// Tests que validan el throw path explícitamente hacen
-// `delete process.env.DEMO_SEED_PASSWORD` en su propio beforeEach
-// (ver src/services/seed-demo.test.ts).
+// getDemoPassword() (Sprint 1 legacy) que throw si DEMO_SEED_PASSWORD
+// ausente. Default a cadena reconocible.
 process.env.DEMO_SEED_PASSWORD ??= 'test-only-not-a-real-secret';
+
+// T3 SEC-001 Sprint 2a — getDemoPasswordForPersona() (per-persona Secret
+// Manager pattern post-Sprint-2a) lee 4 env vars distintas. Defaults
+// reconocibles para tests unitarios. Tests que validan el throw path
+// explícitamente hacen vi.stubEnv(<key>, '') en su propio beforeEach
+// (ver src/services/seed-demo.test.ts).
+process.env.DEMO_ACCOUNT_PASSWORD_SHIPPER_2026 ??= 'test-only-shipper-2026';
+process.env.DEMO_ACCOUNT_PASSWORD_CARRIER_2026 ??= 'test-only-carrier-2026';
+process.env.DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026 ??= 'test-only-stakeholder-2026';
+process.env.DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 ??= 'test-only-conductor-firebase-2026';

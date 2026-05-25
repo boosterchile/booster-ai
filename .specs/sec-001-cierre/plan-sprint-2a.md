@@ -206,7 +206,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: revertir Terraform.
 - **Spec trace**: §3 SC-1.1.5; §7.4 P0 secrets.
 
-### T3: seed-demo refactor DB-driven (Spanish naming)
+### T3: seed-demo refactor DB-driven (Spanish naming) [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/services/seed-demo.ts`, `seed-demo-startup.ts`, tests, integration tests.
 - **LOC estimate**: ~100.
