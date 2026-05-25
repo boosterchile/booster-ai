@@ -1,11 +1,13 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { PersonaDemo } from '@booster-ai/shared-schemas';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
 import {
   assignments,
   chatMessages,
   conductores,
+  cuentasDemo,
   empresas,
   greenDrivingEvents,
   memberships,
@@ -79,38 +81,89 @@ const DEMO_CARRIER_OWNER_RUT = '11999002-5';
 
 const DEMO_TELTONIKA_MIRROR = '863238075489155';
 
-const SHIPPER_OWNER_EMAIL = 'demo-shipper@boosterchile.com';
-const CARRIER_OWNER_EMAIL = 'demo-carrier@boosterchile.com';
-const STAKEHOLDER_EMAIL = 'demo-stakeholder@boosterchile.com';
 const DEMO_STAKEHOLDER_ORG_NOMBRE = 'Observatorio Logístico Demo (Mesa pública sostenibilidad)';
 
 /**
- * T8 SEC-001 (sec-001-cierre §3 H1.4 SC-1.4.1/SC-1.4.3/SC-1.4.4) —
- * lee el password de demo desde `process.env.DEMO_SEED_PASSWORD`.
+ * T3 SEC-001 Sprint 2a — Email determinístico por persona post Sprint 2a
+ * (ADR-053 post-disclosure account replacement). Usado SOLO como fallback
+ * para el primer cold-start cuando `cuentas_demo` está vacía. Subsecuentes
+ * cold-starts leen el email desde DB (preservando whatever fue creado por
+ * T4 `harden-demo-accounts.ts --recreate`).
  *
- * El env var es mountado por Cloud Run desde el secret
- * `demo-seed-password` (HCL en `infrastructure/compute.tf` service_api +
- * `infrastructure/security-hotfixes-2026-05-14.tf`). El secret se
- * inicializa con un valor real (no placeholder) corriendo el run-once
- * `infrastructure/scripts/init-demo-seed-password.sh` por el PO post-T7
- * apply.
+ * Naming: persona key Spanish per CLAUDE.md + spec v3.3. Email value
+ * English como identificador estable (no contract enum value).
  *
- * Fail-closed loudly: si el env está ausente o vacío, lanza un Error
- * con mensaje accionable (referencia al runbook). Se llama desde
- * `seedDemo` y `ensureConductorDemoActivated`, ambos en el path
- * `DEMO_MODE_ACTIVATED=true` — cuando el flag está OFF, ninguno se
- * invoca, así que la falta de env var no causa crash.
+ * Conductor email matches spec SC-1.1.1 v3.2: `drivers+demo-2026-conductor@
+ * boosterchile.invalid` — dash entre `demo` y `2026` consistente con el
+ * filter `email.contains("demo-2026")` que matchea las 4.
  */
-export function getDemoPassword(): string {
-  const pw = process.env.DEMO_SEED_PASSWORD;
+const DEMO_DETERMINISTIC_EMAILS: Record<PersonaDemo, string> = {
+  generador_carga: 'demo-2026-shipper@boosterchile.com',
+  transportista: 'demo-2026-carrier@boosterchile.com',
+  stakeholder: 'demo-2026-stakeholder@boosterchile.com',
+  conductor: 'drivers+demo-2026-conductor@boosterchile.invalid',
+};
+
+/**
+ * T3 SEC-001 Sprint 2a — Lookup email activo en cuentas_demo (SELECT
+ * persona=X AND deshabilitado_en IS NULL). Si no existe row activa, INSERT
+ * con email determinístico (`DEMO_DETERMINISTIC_EMAILS[persona]`) y retorna.
+ *
+ * Race-safe para concurrent cold-starts en múltiples replicas: PK constraint
+ * sobre email + `onConflictDoNothing()` previene duplicados; ambas replicas
+ * retornan el mismo email determinístico.
+ *
+ * Llamado por `seedDemo` y `ensureConductorDemoActivated`. Spec §3 H1.1
+ * SC-1.1.8 v3.2.
+ */
+export async function lookupOrCreateCuentaDemoEmail(db: Db, persona: PersonaDemo): Promise<string> {
+  const rows = await db
+    .select({ email: cuentasDemo.email })
+    .from(cuentasDemo)
+    .where(and(eq(cuentasDemo.persona, persona), isNull(cuentasDemo.deshabilitadoEn)))
+    .limit(1);
+  if (rows[0]) {
+    return rows[0].email;
+  }
+  const email = DEMO_DETERMINISTIC_EMAILS[persona];
+  await db.insert(cuentasDemo).values({ persona, email }).onConflictDoNothing();
+  return email;
+}
+
+/**
+ * T3 SEC-001 Sprint 2a — Mapping persona enum Spanish → suffix English del
+ * env var. Cloud Run mountea 4 env vars desde Secret Manager (per T2):
+ * - `DEMO_ACCOUNT_PASSWORD_SHIPPER_2026` ← `demo-account-password-shipper-2026`
+ * - `DEMO_ACCOUNT_PASSWORD_CARRIER_2026` ← `demo-account-password-carrier-2026`
+ * - `DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026` ← `demo-account-password-stakeholder-2026`
+ * - `DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026` ← `...-conductor-2026-firebase`
+ */
+const PERSONA_ENV_SUFFIX: Record<PersonaDemo, string> = {
+  generador_carga: 'SHIPPER_2026',
+  transportista: 'CARRIER_2026',
+  stakeholder: 'STAKEHOLDER_2026',
+  conductor: 'CONDUCTOR_FIREBASE_2026',
+};
+
+/**
+ * T3 SEC-001 Sprint 2a (sec-001-cierre §3 H1.1 SC-1.1.5) — lee el password
+ * por persona desde el env var correspondiente (mountado por Cloud Run
+ * desde Secret Manager via T2).
+ *
+ * Reemplaza el `getDemoPassword()` Sprint 1 single-env-var por per-persona
+ * lookup (ADR-053 post-disclosure replacement: cada UID nueva tiene su
+ * propio password, no uno compartido).
+ *
+ * Fail-closed loudly: si el env está ausente o vacío, lanza Error con
+ * mensaje accionable referenciando T2 + init-demo-secrets-2026.sh. Solo
+ * se invoca en path `DEMO_MODE_ACTIVATED=true`; flag OFF → no crash.
+ */
+export function getDemoPasswordForPersona(persona: PersonaDemo): string {
+  const envKey = `DEMO_ACCOUNT_PASSWORD_${PERSONA_ENV_SUFFIX[persona]}`;
+  const pw = process.env[envKey];
   if (!pw || pw.trim() === '') {
     throw new Error(
-      'DEMO_SEED_PASSWORD env var ausente o vacía. Es requerida cuando ' +
-        'DEMO_MODE_ACTIVATED=true. Verifica que el Secret Manager secret ' +
-        '`demo-seed-password` esté mountado en Cloud Run ' +
-        '(infrastructure/compute.tf service_api) y que tenga al menos 1 version ' +
-        'no-placeholder — corre infrastructure/scripts/init-demo-seed-password.sh ' +
-        'desde la máquina del PO. Ver docs/runbooks/secret-init-runbook.md.',
+      `${envKey} env var ausente o vacía. Requerida cuando DEMO_MODE_ACTIVATED=true (persona=${persona}). Verifica: 1) terraform apply de plan-sprint-2a T2 creó el secret + IAM bindings; 2) infrastructure/scripts/init-demo-secrets-2026.sh corrido desde máquina del PO post-apply (genera version 1 con random 128-bit); 3) Cloud Run revision restart para mountear nueva env var. Ver .specs/sec-001-cierre/plan-sprint-2a.md T2 + sprint-2a-evidence/.`,
     );
   }
   return pw;
@@ -126,9 +179,17 @@ export async function seedDemo(opts: {
   logger: Logger;
 }): Promise<DemoCredentials> {
   const { db, firebaseAuth, logger } = opts;
-  // Fail-closed: si el env no está mountado el seed crashea acá (early
-  // exit) en lugar de avanzar y crear users Firebase sin password.
-  const demoPassword = getDemoPassword();
+  // Fail-closed: si los env vars per-persona no están mountados, el seed
+  // crashea acá (early exit) en lugar de avanzar y crear users Firebase
+  // sin password. Per-persona lookup post-Sprint-2a T3 (sec-001-cierre §3
+  // H1.1 SC-1.1.5). Email lookups via lookupOrCreateCuentaDemoEmail
+  // (cuentas_demo table T1) reemplazan los module-level email constants.
+  const shipperOwnerPassword = getDemoPasswordForPersona('generador_carga');
+  const carrierOwnerPassword = getDemoPasswordForPersona('transportista');
+  const stakeholderPassword = getDemoPasswordForPersona('stakeholder');
+  const shipperOwnerEmail = await lookupOrCreateCuentaDemoEmail(db, 'generador_carga');
+  const carrierOwnerEmail = await lookupOrCreateCuentaDemoEmail(db, 'transportista');
+  const stakeholderEmail = await lookupOrCreateCuentaDemoEmail(db, 'stakeholder');
 
   // 1. Resolver plan (estándar). Buscamos el plan_id ya existente.
   const planRows = await db
@@ -169,8 +230,8 @@ export async function seedDemo(opts: {
     db,
     firebaseAuth,
     logger,
-    email: SHIPPER_OWNER_EMAIL,
-    password: demoPassword,
+    email: shipperOwnerEmail,
+    password: shipperOwnerPassword,
     fullName: 'Dueño Andina Demo',
     rut: DEMO_SHIPPER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -179,8 +240,8 @@ export async function seedDemo(opts: {
     db,
     firebaseAuth,
     logger,
-    email: CARRIER_OWNER_EMAIL,
-    password: demoPassword,
+    email: carrierOwnerEmail,
+    password: carrierOwnerPassword,
     fullName: 'Dueño Transportes Demo Sur',
     rut: DEMO_CARRIER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -192,8 +253,8 @@ export async function seedDemo(opts: {
     db,
     firebaseAuth,
     logger,
-    email: STAKEHOLDER_EMAIL,
-    password: demoPassword,
+    email: stakeholderEmail,
+    password: stakeholderPassword,
     fullName: 'Stakeholder Demo (Mesa pública sostenibilidad)',
     rut: DEMO_STAKEHOLDER_USER_RUT,
     isPlatformAdmin: false,
@@ -322,9 +383,9 @@ export async function seedDemo(opts: {
   });
 
   return {
-    shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: demoPassword },
-    carrier_owner: { email: CARRIER_OWNER_EMAIL, password: demoPassword },
-    stakeholder: { email: STAKEHOLDER_EMAIL, password: demoPassword },
+    shipper_owner: { email: shipperOwnerEmail, password: shipperOwnerPassword },
+    carrier_owner: { email: carrierOwnerEmail, password: carrierOwnerPassword },
+    stakeholder: { email: stakeholderEmail, password: stakeholderPassword },
     conductor: { rut: DEMO_CONDUCTOR_RUT, activation_pin: driverResult.activationPin },
     carrier_empresa_id: carrierEmpresaId,
     shipper_empresa_id: shipperEmpresaId,

@@ -58,10 +58,18 @@ const noopLogger = {
 function makeDbStub(opts: {
   shipperRows: Array<Record<string, unknown>>;
   conductorRows?: Array<Record<string, unknown>>;
+  /**
+   * T3 SEC-001 Sprint 2a: lookupOrCreateCuentaDemoEmail(db, 'conductor')
+   * llamado desde ensureConductorDemoActivated. Default: row existente
+   * con email determinístico → no INSERT en mock. Override a `[]` para
+   * forzar el path INSERT (mock acepta via onConflictDoNothing).
+   */
+  cuentaDemoConductorRows?: Array<Record<string, unknown>>;
 }) {
   const limitQueue: Array<Array<Record<string, unknown>>> = [
     opts.shipperRows,
     opts.conductorRows ?? [],
+    opts.cuentaDemoConductorRows ?? [{ email: 'drivers+demo-2026-conductor@boosterchile.invalid' }],
   ];
 
   const updateWhereSpy = vi.fn(() => Promise.resolve(undefined));
@@ -80,11 +88,17 @@ function makeDbStub(opts: {
     return { from };
   });
 
+  // T3 SEC-001 Sprint 2a — insert chain con onConflictDoNothing para
+  // lookupOrCreateCuentaDemoEmail si el SELECT retorna empty.
+  const onConflictDoNothing = vi.fn(() => Promise.resolve());
+  const values = vi.fn(() => ({ onConflictDoNothing }));
+  const insert = vi.fn(() => ({ values }));
+
   return {
-    db: { select: selectSpy, update } as unknown as Parameters<
+    db: { select: selectSpy, insert, update } as unknown as Parameters<
       typeof import('../../src/services/seed-demo-startup.js').ensureDemoSeeded
     >[0]['db'],
-    spies: { select: selectSpy, update, updateWhere: updateWhereSpy },
+    spies: { select: selectSpy, insert, update, updateWhere: updateWhereSpy },
   };
 }
 

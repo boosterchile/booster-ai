@@ -259,6 +259,19 @@ module "service_api" {
     # T7.5 gate de CI bloquea PRs que toquen seed-demo*.ts si version
     # count == 0.
     DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
+
+    # T3 SEC-001 Sprint 2a (plan-sprint-2a.md T3, sec-001-cierre §3 H1.1
+    # SC-1.1.5) — per-persona demo account passwords. Reemplazan el single
+    # DEMO_SEED_PASSWORD path para las UIDs NUEVAS post-disclosure
+    # replacement (ADR-053). Co-existen con DEMO_SEED_PASSWORD que sigue
+    # cubriendo el path legacy hasta que T4 ejecute el one-shot retire de
+    # las UIDs viejas. Mounted como env vars desde los 4 secrets creados
+    # en T2; init de version 1 por PO con infrastructure/scripts/
+    # init-demo-secrets-2026.sh post terraform apply.
+    DEMO_ACCOUNT_PASSWORD_SHIPPER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper-2026"].secret_id
+    DEMO_ACCOUNT_PASSWORD_CARRIER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier-2026"].secret_id
+    DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026        = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder-2026"].secret_id
+    DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor-2026-firebase"].secret_id
   })
 
   vpc_connector = google_vpc_access_connector.serverless.id

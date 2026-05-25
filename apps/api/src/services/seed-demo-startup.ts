@@ -4,7 +4,13 @@ import type { Auth } from 'firebase-admin/auth';
 import type { ApiEnv } from '../config.js';
 import type { Db } from '../db/client.js';
 import { conductores, empresas, users } from '../db/schema.js';
-import { DEMO_CONDUCTOR_RUT, DEMO_SHIPPER_RUT, getDemoPassword, seedDemo } from './seed-demo.js';
+import {
+  DEMO_CONDUCTOR_RUT,
+  DEMO_SHIPPER_RUT,
+  getDemoPasswordForPersona,
+  lookupOrCreateCuentaDemoEmail,
+  seedDemo,
+} from './seed-demo.js';
 
 /**
  * Hook que corre en startup del api server cuando `DEMO_MODE_ACTIVATED=true`.
@@ -135,12 +141,13 @@ async function ensureConductorDemoActivated(opts: {
     return;
   }
 
-  // 2. Crear (o reusar) el Firebase user. Email sintético determinístico
-  //    en `.invalid` (RFC2606) para no rutear emails reales. Password
-  //    leído del env DEMO_SEED_PASSWORD (T8 SEC-001) — mismo helper que
-  //    los owners demo en seedDemo, garantiza un solo lugar de verdad.
-  const syntheticEmail = `drivers+${DEMO_CONDUCTOR_RUT.replace(/[.\-]/g, '')}@boosterchile.invalid`;
-  const password = getDemoPassword();
+  // 2. Crear (o reusar) el Firebase user. Email leído de `cuentas_demo`
+  //    (Sprint 2a T1+T3): SELECT por persona='conductor' AND deshabilitado_en
+  //    IS NULL; si vacío, INSERT con email determinístico `drivers+demo-2026-
+  //    conductor@boosterchile.invalid` (spec SC-1.1.1 v3.2). Password
+  //    per-persona desde Secret Manager via env var (Sprint 2a T2).
+  const syntheticEmail = await lookupOrCreateCuentaDemoEmail(db, 'conductor');
+  const password = getDemoPasswordForPersona('conductor');
   let firebaseUid: string;
   try {
     const existingFb = await firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);

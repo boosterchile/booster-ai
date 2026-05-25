@@ -55,6 +55,11 @@ function makeDbStub(opts: {
       opts.capture?.inserts.push({ table: lastInsertTable, values: vals });
       return {
         returning,
+        // T3 SEC-001 Sprint 2a — lookupOrCreateCuentaDemoEmail usa
+        // .onConflictDoNothing() para race-safe inserts en cuentas_demo.
+        // Mock retorna Promise<void> sin shift al queue (la chain no
+        // expone resultado).
+        onConflictDoNothing: vi.fn(() => Promise.resolve()),
         // permite `await db.insert(t).values(v)` sin .returning
         then: (resolve: (v: unknown[]) => void) => resolve(queue.shift() ?? []),
       };
@@ -143,7 +148,11 @@ function makeFirebaseAuth(opts: {
 
 describe('seedDemo', () => {
   it('falla si plan "estandar" no existe', async () => {
-    const stub = makeDbStub({ selects: [[]] });
+    // T3 SEC-001 Sprint 2a: seedDemo ahora hace 3 lookups en cuentas_demo
+    // (uno por persona owner) ANTES del plan lookup. Mocks empty → lookup
+    // hace INSERT via onConflictDoNothing (no-op en mock). Luego plan
+    // lookup → [] → throw /plan/.
+    const stub = makeDbStub({ selects: [[], [], [], []] });
     const fb = makeFirebaseAuth({});
     const { seedDemo } = await import('../../src/services/seed-demo.js');
     await expect(
@@ -155,6 +164,13 @@ describe('seedDemo', () => {
     const capture = { inserts: [] as Array<{ table: string; values: unknown }>, deletes: [] };
     const stub = makeDbStub({
       selects: [
+        // T3 SEC-001 Sprint 2a: 3 cuentas_demo lookups (uno por persona
+        // owner: generador_carga, transportista, stakeholder). Empty →
+        // lookupOrCreateCuentaDemoEmail hace INSERT con onConflictDoNothing
+        // y retorna el email determinístico (demo-2026-*).
+        [],
+        [],
+        [],
         // 1. plan
         [{ id: 'plan-1' }],
         // 2. ensureEmpresa shipper: select empresas → []
@@ -243,9 +259,10 @@ describe('seedDemo', () => {
     expect(out.shipper_empresa_id).toBe('shipper-emp');
     expect(out.vehicle_with_mirror_id).toBe('veh-1');
     expect(out.vehicle_without_device_id).toBe('veh-2');
-    expect(out.shipper_owner.email).toBe('demo-shipper@boosterchile.com');
-    expect(out.carrier_owner.email).toBe('demo-carrier@boosterchile.com');
-    expect(out.stakeholder.email).toBe('demo-stakeholder@boosterchile.com');
+    // T3 SEC-001 Sprint 2a: emails post-disclosure replacement (ADR-053).
+    expect(out.shipper_owner.email).toBe('demo-2026-shipper@boosterchile.com');
+    expect(out.carrier_owner.email).toBe('demo-2026-carrier@boosterchile.com');
+    expect(out.stakeholder.email).toBe('demo-2026-stakeholder@boosterchile.com');
     expect(out.conductor.rut).toBe('12345678-5');
     expect(out.conductor.activation_pin).toBeTruthy();
     expect(fb.calls.create).toBe(3);
@@ -255,6 +272,11 @@ describe('seedDemo', () => {
   it('idempotencia: encuentra empresa + users + vehicles existentes y los reusa', async () => {
     const stub = makeDbStub({
       selects: [
+        // T3 SEC-001 Sprint 2a: 3 cuentas_demo lookups existentes (post
+        // primer cold-start). Retorna emails activos sin INSERT.
+        [{ email: 'demo-2026-shipper@boosterchile.com' }],
+        [{ email: 'demo-2026-carrier@boosterchile.com' }],
+        [{ email: 'demo-2026-stakeholder@boosterchile.com' }],
         // plan
         [{ id: 'plan-1' }],
         // empresa shipper: exists
@@ -313,9 +335,9 @@ describe('seedDemo', () => {
     });
     const fb = makeFirebaseAuth({
       existingByEmail: new Map([
-        ['demo-shipper@boosterchile.com', { uid: 'fb-shipper' }],
-        ['demo-carrier@boosterchile.com', { uid: 'fb-carrier-new' }],
-        ['demo-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
+        ['demo-2026-shipper@boosterchile.com', { uid: 'fb-shipper' }],
+        ['demo-2026-carrier@boosterchile.com', { uid: 'fb-carrier-new' }],
+        ['demo-2026-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
       ]),
     });
     const { seedDemo } = await import('../../src/services/seed-demo.js');
@@ -390,9 +412,9 @@ describe('seedDemo', () => {
 
     const fb = makeFirebaseAuth({
       existingByEmail: new Map([
-        ['demo-shipper@boosterchile.com', { uid: 'fb-shipper' }],
-        ['demo-carrier@boosterchile.com', { uid: 'fb-carrier' }],
-        ['demo-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
+        ['demo-2026-shipper@boosterchile.com', { uid: 'fb-shipper' }],
+        ['demo-2026-carrier@boosterchile.com', { uid: 'fb-carrier' }],
+        ['demo-2026-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
       ]),
     });
     const { seedDemo } = await import('../../src/services/seed-demo.js');
@@ -429,9 +451,9 @@ describe('seedDemo', () => {
     });
     const fb = makeFirebaseAuth({
       existingByEmail: new Map([
-        ['demo-shipper@boosterchile.com', { uid: 'fb-shipper' }],
-        ['demo-carrier@boosterchile.com', { uid: 'fb-carrier' }],
-        ['demo-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
+        ['demo-2026-shipper@boosterchile.com', { uid: 'fb-shipper' }],
+        ['demo-2026-carrier@boosterchile.com', { uid: 'fb-carrier' }],
+        ['demo-2026-stakeholder@boosterchile.com', { uid: 'fb-stake' }],
       ]),
     });
     // necesita 3 selects más para los users restantes:
