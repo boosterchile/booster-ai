@@ -17,7 +17,7 @@ gh api repos/boosterchile/booster-ai/branches/main/protection \
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["ci-success"]
+    "contexts": ["CI Success"]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
@@ -32,7 +32,9 @@ gh api repos/boosterchile/booster-ai/branches/main/protection \
 JSON
 ```
 
-Nota: la sintaxis `-f required_status_checks[contexts][]="ci-success"` planeada originalmente en plan v3 fue reemplazada por JSON via stdin porque GitHub API requiere nested objects + arrays que `gh api -f` no maneja robustamente. Resultado equivalente, semántica idéntica.
+Nota 1 (forma): la sintaxis `-f required_status_checks[contexts][]="..."` planeada originalmente en plan v3 fue reemplazada por JSON via stdin porque GitHub API requiere nested objects + arrays que `gh api -f` no maneja robustamente. Resultado equivalente, semántica idéntica.
+
+Nota 2 (context name — discovery durante build): plan v3 + initial PR #333 commit usaron `"contexts": ["ci-success"]` asumiendo el job key del workflow. GitHub Checks API registra el check con el `name:` field del job (display name), que para nuestro `ci-success` job es **`CI Success`** (con espacio + capital S). Pre-merge de PR #333 fue corregido vía segundo `gh api PUT` con `contexts=["CI Success"]`. Discrepancia trackeada en ledger 2026-05-25T13:04:11Z como `correction` event. Plan-sprint-2a.md + este evidence file actualizados a `"CI Success"` correcto en T7a PR (2026-05-25).
 
 ## Verificación post-apply
 
@@ -44,7 +46,7 @@ Output (filtered):
 
 ```
 required_status_checks.strict:     True
-required_status_checks.contexts:   ['ci-success']
+required_status_checks.contexts:   ['CI Success']
 enforce_admins.enabled:            True
 required_approving_review_count:   0
 allow_force_pushes.enabled:        False

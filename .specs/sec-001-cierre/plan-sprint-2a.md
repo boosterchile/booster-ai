@@ -137,25 +137,29 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Wall-clock**: ~30min.
 - **Depends on**: T0 (job `ci-success` debe existir antes de marcarlo required).
 - **Acceptance**:
-  - Comando ejecutado (formato exacto en evidence file):
+  - Comando ejecutado (forma final, JSON via stdin — más robusto que `-f` flags para nested objects). **Discovery durante T0.5 build (2026-05-25)**: GitHub Checks API registra el status check con el `name:` field del workflow job (display name **`CI Success`**, con espacio + capital S), NO el job key (`ci-success`). Plan v3 + initial PR #333 commit asumieron job key; corregido pre-merge vía segundo `gh api PUT` con contexts `["CI Success"]`:
     ```bash
     gh api repos/boosterchile/booster-ai/branches/main/protection \
       -X PUT \
       -H "Accept: application/vnd.github+json" \
-      -f required_status_checks[strict]=true \
-      -f required_status_checks[contexts][]="ci-success" \
-      -f enforce_admins=true \
-      -f required_pull_request_reviews[required_approving_review_count]=0 \
-      -f restrictions=null
+      --input - <<'JSON'
+    {
+      "required_status_checks": {"strict": true, "contexts": ["CI Success"]},
+      "enforce_admins": true,
+      "required_pull_request_reviews": {"required_approving_review_count": 0},
+      "restrictions": null,
+      "allow_force_pushes": false,
+      "allow_deletions": false
+    }
+    JSON
     ```
-    (Adapt to gh CLI flag escaping conventions; verify JSON via `gh api repos/boosterchile/booster-ai/branches/main/protection | jq` post-apply.)
-  - Result verificado: `gh api ... /branches/main/protection | jq '.required_status_checks.contexts'` retorna `["ci-success"]`.
+  - Result verificado: `gh api ... /branches/main/protection | jq '.required_status_checks.contexts'` retorna `["CI Success"]`.
   - **Configuración**: `enforce_admins=true` (rules apply to admins, no bypass) + `required_approving_review_count=0` (zero approvals required) → PO puede self-merge sin bloqueo. **Nota v4 (P1-R4-1)**: raising `required_approving_review_count >0` en futuro deadlocks until second human dev exists.
   - Future IaC: full Terraform migration tracked en `_followups/main-branch-protection-terraform-iac.md` (requiere `integrations/github` provider + PAT secret en Secret Manager).
 - **Rollback**: `gh api repos/boosterchile/booster-ai/branches/main/protection -X DELETE` (revert protection). Solo PO con admin scope.
 - **Spec trace**: ENABLER para T0 enforcement; cierre de gap "T0 gate es promesa, no enforcement" round 3 P0-R3-2.
 
-### T7a: ADR-053 con `Status: Proposed` full content (P1-R3-3 fix)
+### T7a: ADR-053 con `Status: Proposed` full content (P1-R3-3 fix) [DONE 2026-05-25]
 
 - **Files**: `docs/adr/053-post-disclosure-account-replacement.md` (transición desde `Reserved` stub a `Proposed` con full decision content).
 - **LOC estimate**: ~50 (markdown).
