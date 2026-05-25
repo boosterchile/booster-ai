@@ -179,7 +179,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → middleware desconectado del wire de auth-driver.ts → endpoint vuelve a comportamiento pre-spec (sin rate-limit). Riesgo: regresión seguridad H2 reverso. Mitigation: solo revertir si bug crítico encontrado en T10.
 - **Spec trace**: §3 H2 SC-H2.1, SC-H2.1c, SC-H2.2, SC-H2.3 + §SC-1.3.8 interaction.
 
-### T10: Rate-limit IP-based + fail-closed Redis + Cloud Armor cascade docs
+### T10: Rate-limit IP-based + fail-closed Redis + Cloud Armor cascade docs [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/middleware/rate-limit-pin.ts` (extend con IP-based + fail-closed), `apps/api/src/middleware/rate-limit-pin.test.ts` (extend), `docs/qa/rate-limit-cascade.md` (new).
 - **LOC estimate**: ~60 (extension ~25 + tests ~25 + doc ~10).
