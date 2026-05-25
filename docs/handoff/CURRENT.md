@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-25 (SEC-001 **Sprint 1 CERRADO** — 14 tasks merged + apply prod + secret rotation + 0 git grep matches; H4 PII redaction + H1.4 Secret Manager + H2 rate-limit + INT-1 maintenance page todos shipped)
+**Última actualización**: 2026-05-25 (SEC-001 **Sprint 2a CERRADO** 12/12 — H1.1 recreate 4 UIDs ejecutado prod + retire-old-batch CERRÓ vector compromised passwords; window-of-overlap ~50min cumpliendo SLA 4h; T8 Redis fail-closed integration via testcontainers shipped)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
@@ -113,12 +113,56 @@ Sesión de smoke E2E sobre `demo.boosterchile.com` reveló regresión backend: `
 | **P0-5** secret init CI gate | seed-demo precondition | ✅ T7.5 + verified verde post-apply |
 | **SC-1.2.5** rate-limit cascade docs | layering Cloud Armor+Redis | ✅ T10 |
 
-### Sprint 2 — plan stub
+### Sprint 2a cerrado (2026-05-25) — 12/12 tasks shipped + vector cerrado en prod
 
-[`.specs/sec-001-cierre/plan-sprint-2.md`](../../.specs/sec-001-cierre/plan-sprint-2.md) outline (sin acceptance details — requiere `/agent-rigor:plan` propio):
+Sprint 2a cubrió **H1.1 (post-disclosure account replacement per ADR-053 + NIST SP 800-63)**: recreación de 4 cuentas demo + retirement de UIDs viejas comprometidas, con infraestructura de monitoreo TTL + middleware enforcement + integration test fail-closed Redis. 8 PRs mergeados a `main` en ventana ~14h:
 
-- **H1.1**: recreate 4 UIDs demo (new emails `demo-2026-*`) per O-11 SP-800-63.
-- **H1.3**: is-demo middleware enforcement + tests cross-tenant.
+| Task | PR | Commit | Foco |
+|---|---|---|---|
+| T0 CI integration job + setup-global migrator | [#333](https://github.com/boosterchile/booster-ai/pull/333) | — | DB+Redis service containers + migrator inline |
+| T0.5 branch protection gh-api | — (PO direct) | — | `ci-success` required check + enforce_admins |
+| T7a ADR-053 Proposed + plan v3.3 amendment | [#334](https://github.com/boosterchile/booster-ai/pull/334) | `21f8bab` | spec generador_carga rename |
+| T1 Drizzle migration cuentas_demo | [#335](https://github.com/boosterchile/booster-ai/pull/335) | `bc573db` | 0038_cuentas_demo + domain schema |
+| T2 4 Secret Manager secrets + init script | [#336](https://github.com/boosterchile/booster-ai/pull/336) | `451a3a2` | demo-account-password-{persona}-2026 |
+| T3 seed-demo DB-driven + per-persona env | [#337](https://github.com/boosterchile/booster-ai/pull/337) | `dc031ec` | reads `DEMO_ACCOUNT_PASSWORD_<SUFFIX>_2026` |
+| T4 harden-demo-accounts service + CLI | [#338](https://github.com/boosterchile/booster-ai/pull/338) | `a1290ac` | recreateAll + retire + retireOldBatch + renew + RUNBOOK |
+| T5 demo-expires middleware + cache-warm + landing pre-warm | [#339](https://github.com/boosterchile/booster-ai/pull/339) | `974b0b8` | TTL claim enforce + perf budget P95 200ms |
+| T6a demo TTL alerter cron + log-based metrics + alert | [#340](https://github.com/boosterchile/booster-ai/pull/340) | `e3e99e2` | conditional-counter pattern + Cloud Scheduler 06:00 |
+| T6b demo-accounts.md per-UID table + alerts refs | [#341](https://github.com/boosterchile/booster-ai/pull/341) | `2dd16a1` | runbook 212 LOC |
+| Fix STRICT_MIGRATION_ORDERING block (terraform apply unblock) | [#342](https://github.com/boosterchile/booster-ai/pull/342) | `c117474` | env_vars not secrets |
+| Tsup entry harden-demo + terraform apply 2026-05-25 evidencia | [#344](https://github.com/boosterchile/booster-ai/pull/344) | `9956ded` | build/api + apply evidence |
+| T4 + T7b cierre evidence + ADR-053 Accepted | [#345](https://github.com/boosterchile/booster-ai/pull/345) | `10c0c17` | one-shot retire evidence + per-UID table |
+| T8 Redis fail-closed integration via testcontainers | [#346](https://github.com/boosterchile/booster-ai/pull/346) | `bb115c2` | 3 scenarios SC-1.1.2c + SC-H2.1b + MIT license audit |
+
+### Evidencia operacional Sprint 2a
+
+- **Vector compromised passwords PR#206 (disclosure 2026-05-10 → audit 2026-05-14) CERRADO en prod 2026-05-25T20:42Z**.
+- **terraform apply 2026-05-25T17:55Z** (post-#342 fix): Cloud Run revision `booster-ai-api-00320-nhd` serving 100% traffic con 4 secrets + 4 env_vars + Cloud Scheduler + 2 log-based metrics + 1 alert policy.
+- **`init-demo-secrets-2026.sh`** ejecutado: 4 secrets version 1 (random base64 16B).
+- **`harden-demo-accounts.mjs --recreate`** ejecutado desde Cloud Shell ~19:48Z: created:4 skipped:0 durationMs=4537. 4 UIDs nuevas activas:
+  - generador_carga `GtVtmajwdtU6UARYQDykP8AW1Vx2`
+  - transportista `4DDODougqUXNkm7jTZJgkJKs5z2`
+  - stakeholder `1h10ASeyeUSP18B7IKLXveZCxt82`
+  - conductor `P4fuEB3HIzOAqr4m4X1vJjA7cam1`
+- **`harden-demo-accounts.mjs --retire-old-batch`** ejecutado 2026-05-25T20:42:54Z: retired:4 failed:[] durationMs=3435. 4 UIDs viejas (nQSqGqVC..., Uxa37UZP..., s1qSYAUJ..., Gg9k3gIP...) disabled + audit logs emitted (log-based metric `sec001/demo_uid_retired` cuenta +4).
+- **Window-of-overlap ~50min** (19:48Z recreate → 20:42Z retire). Bien dentro SLA 4h post-deploy-approval.
+- **Evidence dir**: `.specs/sec-001-cierre/sprint-2a-evidence/` (terraform-apply + t4-one-shot-retire + t8-license-audit + t0-5-branch-protection).
+
+### Sprint 2a dimensiones cubiertas
+
+| Sub-fase | SCs | Status |
+|---|---|---|
+| **H1.1** post-disclosure account replacement (ADR-053) | SC-1.1.1, SC-1.1.2, SC-1.1.2c, SC-1.1.3, SC-1.1.4, SC-1.1.5 | ✅ T1+T2+T3+T4+T8 |
+| **H1.3** is-demo middleware enforcement | SC-1.3.1, SC-1.3.2, SC-1.3.4 | ✅ T5 |
+| **H2.1b** real Redis fail-closed validation | SC-H2.1b | ✅ T8 |
+| **H1.x ops** TTL alerter + Cloud Monitoring | SC-1.x.1, SC-1.x.2 | ✅ T6a+T6b |
+| **CI gating** integration tests (DB+Redis) | gate enforcement | ✅ T0+T0.5 |
+| **ADR lifecycle** post-disclosure replacement | ADR-053 Proposed→Accepted | ✅ T7a+T7b |
+
+### Sprint 2b — pendiente plan
+
+Items remaining del Sprint 2 originally-scoped (no urgent — sub-sprint Sprint 2a cierra el vector activo):
+
 - **H1.2**: migración signup público `createUserWithEmailAndPassword` + `sendPasswordResetEmail` + Google provider a flow Admin SDK con admin-approval gate (O-1).
 - **H1.5**: forensia + audit logs filtering (round 4 P2-R4-2).
 - **H1.6**: reactivación demo (flag flip a true) + TTL claim + 90d monitoring.
@@ -127,11 +171,13 @@ H3 spec hermano (`sec-h3-dte-retention-lock`) requiere su propio `/plan` indepen
 
 ### Próximo paso
 
-`/agent-rigor:plan plan-sprint-2` cuando PO esté listo. Recomendado fresh session (este sesión cerró con ~330 tool calls / ~370 ledger entries).
+`/agent-rigor:plan plan-sprint-2b` cuando PO esté listo, o cierre operacional permanente del SEC-001 si Sprint 2b items se difieren a otro spec. Recomendado fresh session.
 
-Pendiente operacional post-Sprint 1:
-- **Cosmetic drift residual**: `google_monitoring_dashboard.telemetry_overview` JSON formatter (1 modify pendiente; sin impacto runtime; aplicable cuando sea próximo `terraform apply`).
-- **#STAGING-ENV**: backlog tracking para crear segundo GCP project con infra paralela. Bloquea el flip prod de `STRICT_MIGRATION_ORDERING=true` en Sprint 2.
+Pendiente operacional post-Sprint 2a:
+- **Cosmetic drift residual**: `google_monitoring_dashboard.telemetry_overview` JSON formatter (heredado Sprint 1; sin impacto runtime).
+- **#STAGING-ENV**: backlog tracking para crear segundo GCP project con infra paralela. Bloquea el flip prod de `STRICT_MIGRATION_ORDERING=true`.
+- **Silent-window guard alert** para `sec001/demo_uid_retired` (baseline ahora >0 post-T4): tracked como follow-up post-operational, evaluable Sprint 2b.
+- **TTL renovación próxima**: 2026-06-17 (cron T6a `demo-account-ttl-alert` debería emitir `demo.ttl_low` -7d).
 
 ---
 
