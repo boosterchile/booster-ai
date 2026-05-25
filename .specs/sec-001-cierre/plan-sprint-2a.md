@@ -223,7 +223,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: PRE-T1-apply-prod viable; post requires migration backward.
 - **Spec trace**: §3 SC-1.1.8.
 
-### T4: `harden-demo-accounts.ts` + RUNBOOK + one-shot retire 4 UIDs viejas (P0-R2-3 + P1-R3-4 + P1-R3-5 fixes)
+### T4: `harden-demo-accounts.ts` + RUNBOOK + one-shot retire 4 UIDs viejas (P0-R2-3 + P1-R3-4 + P1-R3-5 fixes) [DONE 2026-05-25]
 
 - **Files**: `infrastructure/scripts/harden-demo-accounts.ts` + test, `docs/qa/demo-accounts.md` (minimal en T4).
 - **LOC estimate**: ~100.
