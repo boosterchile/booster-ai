@@ -3,7 +3,7 @@ import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
 import { createDb } from './db/client.js';
-import { runMigrations } from './db/migrator.js';
+import { runMigrationsGated } from './db/migrator.js';
 import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -24,11 +24,13 @@ async function main(): Promise<void> {
     connectTimeoutMs: config.DATABASE_CONNECT_TIMEOUT_MS,
   });
 
-  // Correr migraciones antes de aceptar tráfico. Si falla, abortamos startup.
-  // Cloud Run startup probe no ruteará hasta que el server esté listening.
-  // Pasamos el pool (no el db wrapper) porque el migrator necesita un cliente
-  // dedicado para advisory lock — ver db/migrator.ts.
-  await runMigrations(pool, logger);
+  // Correr migraciones antes de aceptar tráfico. T3 SEC-001: el wrapper
+  // runMigrationsGated aplica STRICT_MIGRATION_ORDERING — si flag=true
+  // y migrations fallan, abortamos startup. Si flag=false (default
+  // Sprint 1 prod), loguea ERROR pero continúa (legacy behavior).
+  // Pasamos el pool (no el db wrapper) porque el migrator necesita un
+  // cliente dedicado para advisory lock — ver db/migrator.ts.
+  await runMigrationsGated(pool, logger, { strict: config.STRICT_MIGRATION_ORDERING });
 
   // Firebase Auth singleton — usado por el middleware /me y los demás
   // endpoints user-facing. Lazy-init: la primera llamada a verifyIdToken

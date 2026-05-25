@@ -456,6 +456,28 @@ const apiEnvSchema = commonEnvSchema
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
     /**
+     * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
+     * fail-closed startup cuando `runMigrations` falla.
+     *
+     * Cuando `true`: si `runMigrations` (drizzle migrate + recovery
+     * out-of-order) lanza, el server ABORTA el startup (process exits
+     * != 0). Cloud Run no rutea tráfico a la revision. Fail-closed.
+     *
+     * Cuando `false` (default Sprint 1 prod): si falla, loguea ERROR
+     * pero continúa el startup. El error queda en Cloud Logging para
+     * post-mortem pero NO mata el server (legacy behavior).
+     *
+     * Rollout (per spec §T3 acceptance):
+     *   1. Sprint 1 (este PR): default false en prod. Staging Cloud Run
+     *      = true *cuando exista* (gap: no hay staging GCP hoy, per
+     *      release.yml:60-65; documentado en docs/qa/migration-ordering.md).
+     *   2. Sprint 2: flip prod a true cuando entren Drizzle migrations
+     *      nuevas (demo_accounts, signup_requests) — ahí el fail-closed
+     *      protege contra outage por migration broken.
+     */
+    STRICT_MIGRATION_ORDERING: booleanFlag(false),
+
+    /**
      * Dashboard de observabilidad (`/app/platform-admin/observability`).
      *
      * Cuando true: el router `/admin/observability/*` está activo y la UI
