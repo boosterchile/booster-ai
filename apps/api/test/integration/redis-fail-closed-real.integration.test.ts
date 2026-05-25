@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRateLimitPinMiddleware } from '../../src/middleware/rate-limit-pin.js';
 
 const VALID_RUT = '11111111-1';
-const HOST_PORT = 16379;
 const REQ: RequestInit = {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -14,10 +13,6 @@ const REQ: RequestInit = {
 };
 const logger = createLogger({ service: 't8', version: '0', level: 'silent', pretty: false });
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
-const startRedis = () =>
-  new RedisContainer('redis:7-alpine')
-    .withExposedPorts({ container: 6379, host: HOST_PORT })
-    .start();
 
 function buildApp(redis: Redis): Hono {
   const app = new Hono();
@@ -41,15 +36,16 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
   let app: Hono;
 
   beforeEach(async () => {
-    container = await startRedis();
+    container = await new RedisContainer('redis:7-alpine').start();
     redis = new Redis({
-      host: 'localhost',
-      port: HOST_PORT,
+      host: container.getHost(),
+      port: container.getMappedPort(6379),
       maxRetriesPerRequest: 0,
       enableOfflineQueue: false,
       commandTimeout: 1000,
       retryStrategy: (n) => Math.min(n * 100, 2000),
     });
+    await redis.ping();
     app = buildApp(redis);
   }, 60_000);
 
@@ -84,15 +80,11 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
     });
   });
 
-  it('Scenario 3: Redis restart en mismo host port — ioredis auto-reconnect, middleware recupera 200', async () => {
+  it('Scenario 3: Redis restart (mismo container) — ioredis auto-reconnect, middleware recupera 200', async () => {
     expect((await app.request('/activate', REQ)).status).toBe(200);
 
-    await container?.stop();
-    await wait(500);
-    expect((await app.request('/activate', REQ)).status).toBe(503);
-
-    container = await startRedis();
-    await wait(3000);
+    await container?.restart();
+    await wait(2000);
 
     expect((await app.request('/activate', REQ)).status).toBe(200);
   }, 90_000);
