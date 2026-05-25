@@ -40,11 +40,14 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
     redis = new Redis({
       host: container.getHost(),
       port: container.getMappedPort(6379),
-      maxRetriesPerRequest: 0,
+      maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
-      commandTimeout: 1000,
-      retryStrategy: (n) => Math.min(n * 100, 2000),
+      commandTimeout: 1500,
+      lazyConnect: true,
+      retryStrategy: (n) => Math.min(n * 100, 1000),
     });
+    redis.on('error', () => undefined);
+    await redis.connect();
     await redis.ping();
     app = buildApp(redis);
   }, 60_000);
