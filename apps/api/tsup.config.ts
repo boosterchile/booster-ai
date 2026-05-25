@@ -13,7 +13,13 @@ import { defineConfig } from 'tsup';
  * autocontenido. Elegimos bundling por simplicidad del Dockerfile.
  */
 export default defineConfig({
-  entry: ['src/main.ts', 'src/jobs/merge-duplicate-users.ts'],
+  entry: [
+    'src/main.ts',
+    'src/jobs/merge-duplicate-users.ts',
+    // T4 SEC-001 Sprint 2a — service module consumido por
+    // apps/api/scripts/harden-demo-accounts.mjs CLI wrapper.
+    'src/services/harden-demo-accounts.ts',
+  ],
   format: ['esm'],
   clean: true,
   sourcemap: true,
