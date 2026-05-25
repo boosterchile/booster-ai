@@ -186,3 +186,50 @@ resource "google_cloud_scheduler_job" "reconciliar_dtes" {
     module.service_api,
   ]
 }
+
+# -----------------------------------------------------------------------------
+# T6a SEC-001 Sprint 2a — Cloud Scheduler diario para TTL alerter
+# -----------------------------------------------------------------------------
+# Per spec sec-001-cierre §3 H1.1 SC-1.1.6 + plan-sprint-2a T6a.
+# Daily 06:00 America/Santiago. El handler:
+#   - SELECT firebase_uid FROM cuentas_demo WHERE deshabilitado_en IS NULL.
+#   - getUser per UID + compute days_remaining.
+#   - Emite structured log `demo.ttl_low` solo si days_remaining ≤ 7.
+#   - Redis dedup key TTL 24h evita re-alert mismo día.
+# Output log es consumido por google_logging_metric.demo_ttl_low (abajo
+# en monitoring.tf).
+resource "google_cloud_scheduler_job" "demo_account_ttl_alert" {
+  name        = "demo-account-ttl-alert"
+  description = "Daily 06:00 Santiago: scan cuentas demo activas + emit log `demo.ttl_low` si TTL <= 7 días. SEC-001 H1.1 SC-1.1.6."
+  project     = google_project.booster_ai.project_id
+
+  region    = "southamerica-east1"
+  schedule  = "0 6 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/demo-account-ttl-alert"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}

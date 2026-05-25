@@ -21,10 +21,13 @@
 
 import type { Logger } from '@booster-ai/logger';
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import type Redis from 'ioredis';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
+import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { reconciliarDtes } from '../services/reconciliar-dtes.js';
 
@@ -34,6 +37,10 @@ export function createAdminJobsRoutes(opts: {
   twilioClient: TwilioWhatsAppClient | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
+  /** T6a SEC-001 Sprint 2a — para POST /demo-account-ttl-alert. Null en tests sin Firebase. */
+  firebaseAuth?: Auth | null;
+  /** T6a SEC-001 Sprint 2a — para dedup Redis del TTL alerter. */
+  redis?: Redis | null;
 }) {
   const app = new Hono();
 
@@ -107,6 +114,31 @@ export function createAdminJobsRoutes(opts: {
         dias_vencidos: a.diasVencidos,
       })),
     });
+  });
+
+  /**
+   * T6a SEC-001 Sprint 2a (spec §3 H1.1 SC-1.1.6) — TTL alerter daily
+   * tick. Cloud Scheduler invoca a 06:00 America/Santiago. Emite
+   * structured log `demo.ttl_low` solo cuando una cuenta demo activa
+   * tiene ≤7 días de TTL restante; Redis dedup por día evita
+   * re-alertar.
+   *
+   * Si Firebase Auth o Redis no están inyectados (tests / dev sin
+   * config), retorna 503 + skipped: true (Cloud Scheduler considera
+   * no-error pero el log queda).
+   */
+  app.post('/demo-account-ttl-alert', async (c) => {
+    if (!opts.firebaseAuth || !opts.redis) {
+      opts.logger.warn('demo-account-ttl-alert: firebaseAuth o redis no inyectado, skip');
+      return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
+    }
+    const result = await runDemoTtlAlerter({
+      db: opts.db,
+      firebaseAuth: opts.firebaseAuth,
+      redis: opts.redis,
+      logger: opts.logger,
+    });
+    return c.json({ ok: true, ...result });
   });
 
   return app;
