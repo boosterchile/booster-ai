@@ -280,7 +280,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: deshabilitar Cloud Scheduler + remove log-metrics + alerts.
 - **Spec trace**: §3 SC-1.1.6.
 
-### T6b: docs/qa/demo-accounts.md expansion
+### T6b: docs/qa/demo-accounts.md expansion [DONE 2026-05-25]
 
 - **Files**: `docs/qa/demo-accounts.md` (extend desde minimal T4).
 - **LOC estimate**: ~30.

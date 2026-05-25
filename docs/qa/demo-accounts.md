@@ -125,14 +125,65 @@ node apps/api/scripts/harden-demo-accounts.mjs --retire-old-batch
 Las UIDs ya disabled serán contadas como `skippedAlreadyDisabled`. Las
 restantes se retirarán.
 
+## Per-UID metadata (post T4 one-shot)
+
+Hasta que T4 `--recreate` corra en prod, los `firebase_uid` no existen
+todavía. Post-recreate, completar esta tabla con los UIDs reales
+extraídos del Firebase console o `gcloud identity-platform accounts:lookup`:
+
+| Persona | Email | Firebase UID | Secret name | Owner |
+|---|---|---|---|---|
+| `generador_carga` | `demo-2026-shipper@boosterchile.com` | `<TBD>` | `demo-account-password-shipper-2026` | dev@boosterchile.com |
+| `transportista` | `demo-2026-carrier@boosterchile.com` | `<TBD>` | `demo-account-password-carrier-2026` | dev@boosterchile.com |
+| `stakeholder` | `demo-2026-stakeholder@boosterchile.com` | `<TBD>` | `demo-account-password-stakeholder-2026` | dev@boosterchile.com |
+| `conductor` | `drivers+demo-2026-conductor@boosterchile.invalid` | `<TBD>` | `demo-account-password-conductor-2026-firebase` | dev@boosterchile.com |
+
+**Propósito común**: 4 cuentas demo del subdominio `demo.boosterchile.com`.
+Custom claim `{ is_demo: true, persona: <enum>, expires_at: <ISO+30d> }`.
+TTL renovable via `harden-demo-accounts.mjs --renew`. NUNCA usar para
+producción real — `is-demo` middleware enforcement bloquea writes
+estructurales en endpoints no-allowlisted (T7/H1.3 Sprint 2b).
+
+**Sin secrets en este archivo** — solo punteros a Secret Manager.
+Acceso PO + API SA via IAM bindings declarados en
+`infrastructure/security-hotfixes-2026-05-14.tf`.
+
 ## Cloud Monitoring alerts asociadas
 
-(Expandido en T6b post-merge de T6a.)
+T6a Sprint 2a (`infrastructure/monitoring.tf` §"T6a SEC-001"):
 
-- **Alert 1**: `demo.account.ttl_remaining_days < 7` → notify
-  `dev@boosterchile.com` + canal SRE.
-- **Alert 2 (silent-window guard)**: si `count(audit_demo_uid_retired)
-  < 4 WITHIN 4h of deploy_event_timestamp` → notify on-call.
+### Alert activo
+
+**`demo_ttl_low`** (`google_monitoring_alert_policy.demo_ttl_low`):
+
+- **Fires when**: log-based metric `sec001/demo_ttl_low` rate > 0
+  sustained 60s (= al menos 1 evento `jsonPayload.event="demo.ttl_low"`
+  en la última ventana 1min).
+- **Source**: el cron `demo-account-ttl-alert` (Cloud Scheduler daily
+  06:00 Santiago) invoca `runDemoTtlAlerter` que emite el log solo si
+  `days_remaining ≤ 7` Y Redis dedup key no existe para el día actual.
+- **Notification channel**: `email_alerts` (`var.alert_email`,
+  típicamente PO).
+- **Auto-close**: 25h post-trigger (cron diario hará silenciar el
+  alert el día siguiente si TTL renovado).
+- **Action**: ejecutar `node apps/api/scripts/harden-demo-accounts.mjs
+  --renew <uid> --extend-days 30` para la persona afectada (UID +
+  persona aparecen en el log payload).
+
+### Log-based metric ready (sin alert todavía)
+
+**`demo_uid_retired`** (`google_logging_metric.demo_uid_retired`):
+
+- Counter DELTA que cuenta eventos `jsonPayload.event="audit.demo_uid_
+  retired"` (emitidos por `harden-demo-accounts.ts retire()` por cada
+  UID retirada).
+- Sin alert policy aún. Una vez T4 one-shot retire ejecute por primera
+  vez en prod (4 eventos esperados), agregar **silent-window guard
+  alert**: `count(metric) < 4 sustained 4h post-deploy` → notify
+  on-call. Tracked como follow-up post-operational-T4 para evitar
+  alert fired-on-empty-state pre-execution.
+
+Ver `infrastructure/monitoring.tf` líneas finales para HCL canónico.
 
 ## Rotación de password per persona
 
