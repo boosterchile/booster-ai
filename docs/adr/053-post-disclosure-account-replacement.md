@@ -1,6 +1,6 @@
 # ADR-053: Post-disclosure account replacement (SEC-001 H1.1)
 
-- **Status**: Proposed (2026-05-25; transitions to Accepted at PR #1 Sprint 2a H1.1 merge per plan T7b).
+- **Status**: Accepted (2026-05-25; T4 one-shot retire ejecutado exitosamente en prod — ver `.specs/sec-001-cierre/sprint-2a-evidence/t4-one-shot-retire.md`)
 - **Date**: 2026-05-25
 - **Deciders**: Felipe Vicencio (PO)
 - **Linked**:

@@ -125,18 +125,20 @@ node apps/api/scripts/harden-demo-accounts.mjs --retire-old-batch
 Las UIDs ya disabled serán contadas como `skippedAlreadyDisabled`. Las
 restantes se retirarán.
 
-## Per-UID metadata (post T4 one-shot)
+## Per-UID metadata (post T4 one-shot — 2026-05-25)
 
-Hasta que T4 `--recreate` corra en prod, los `firebase_uid` no existen
-todavía. Post-recreate, completar esta tabla con los UIDs reales
-extraídos del Firebase console o `gcloud identity-platform accounts:lookup`:
+T4 `--recreate` ejecutado 2026-05-25T~19:48Z en prod desde Cloud Shell.
+T4 `--retire-old-batch` ejecutado 2026-05-25T20:42Z (window-of-overlap ~50min).
+Evidencia: [`t4-one-shot-retire.md`](../../.specs/sec-001-cierre/sprint-2a-evidence/t4-one-shot-retire.md).
 
 | Persona | Email | Firebase UID | Secret name | Owner |
 |---|---|---|---|---|
-| `generador_carga` | `demo-2026-shipper@boosterchile.com` | `<TBD>` | `demo-account-password-shipper-2026` | dev@boosterchile.com |
-| `transportista` | `demo-2026-carrier@boosterchile.com` | `<TBD>` | `demo-account-password-carrier-2026` | dev@boosterchile.com |
-| `stakeholder` | `demo-2026-stakeholder@boosterchile.com` | `<TBD>` | `demo-account-password-stakeholder-2026` | dev@boosterchile.com |
-| `conductor` | `drivers+demo-2026-conductor@boosterchile.invalid` | `<TBD>` | `demo-account-password-conductor-2026-firebase` | dev@boosterchile.com |
+| `generador_carga` | `demo-2026-shipper@boosterchile.com` | `GtVtmajwdtU6UARYQDykP8AW1Vx2` | `demo-account-password-shipper-2026` | dev@boosterchile.com |
+| `transportista` | `demo-2026-carrier@boosterchile.com` | `4DDODougqUXNkm7jTZJgkJKs5z2` | `demo-account-password-carrier-2026` | dev@boosterchile.com |
+| `stakeholder` | `demo-2026-stakeholder@boosterchile.com` | `1h10ASeyeUSP18B7IKLXveZCxt82` | `demo-account-password-stakeholder-2026` | dev@boosterchile.com |
+| `conductor` | `drivers+demo-2026-conductor@boosterchile.invalid` | `P4fuEB3HIzOAqr4m4X1vJjA7cam1` | `demo-account-password-conductor-2026-firebase` | dev@boosterchile.com |
+
+**Próxima renovación TTL**: 2026-06-17 (cron T6a `demo-account-ttl-alert` emitirá `demo.ttl_low`).
 
 **Propósito común**: 4 cuentas demo del subdominio `demo.boosterchile.com`.
 Custom claim `{ is_demo: true, persona: <enum>, expires_at: <ISO+30d> }`.
