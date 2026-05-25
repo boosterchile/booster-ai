@@ -45,7 +45,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → variables.tf vuelve a `default = true`. Pero importante: el state remoto sigue `false` (drift cierra in main, pero apply revertido en cualquier momento podría flipear estado a `true` activando demo con literal y UIDs viejos). **Mitigation**: T0 es prerequisito de cualquier otra task que toque infra (T1, T7) — durante el resto de Sprint 1, `terraform apply` desde main NO flipea el demo flag involuntariamente. Si T0 se revierte, el riesgo de auto-revert vuelve.
 - **Spec trace**: §3 H1.0 SC-1.0.1, SC-1.0.2; §7.4 drift categórico; round 4 P0-3.
 
-### T1: Memorystore HA — verify state vs config (modificado en v2 per P0-1)
+### T1: Memorystore HA — verify state vs config (modificado en v2 per P0-1) [DONE 2026-05-25 — no-op, state ya STANDARD_HA]
 
 - **Files**: `infrastructure/data.tf:312` (existing `resource "google_redis_instance" "main"` — verificar tier setting); `infrastructure/variables.tf:redis_tier` (default ya es `"STANDARD_HA"` per evidence devils-advocate); evidence en `.specs/sec-001-cierre/sprint-1-evidence/t1-redis-state.md`.
 - **LOC estimate**: ~0-30 LOC (rango porque puede ser no-op).
