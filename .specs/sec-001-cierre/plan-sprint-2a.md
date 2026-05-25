@@ -130,7 +130,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: revertir workflow extension. T0.5 branch protection sigue activa pero check ya no existe — merge se desbloquea (degradación silenciosa hasta re-add).
 - **Spec trace**: ENABLER para SC-1.1.8, SC-1.1.2c, SC-H2.1b integration tests gating.
 
-### T0.5: Enable GitHub branch protection on `main` (P0-R3-2 fix)
+### T0.5: Enable GitHub branch protection on `main` (P0-R3-2 fix) [DONE 2026-05-25]
 
 - **Files**: documentado en `sprint-2a-evidence/t0-5-branch-protection.md`; comando ejecutado manualmente por PO.
 - **LOC estimate**: ~0 LOC repo (operacional one-shot).
