@@ -60,6 +60,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@testcontainers/redis": "^12.0.0",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.11.10",
     "@types/web-push": "^3.6.4",
