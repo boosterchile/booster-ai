@@ -335,6 +335,9 @@ export function createServer(opts: CreateServerOptions): Hono {
           twilioClient: opts.notify?.twilioClient ?? null,
           contentSidChatUnread: config.CONTENT_SID_CHAT_UNREAD ?? null,
           webAppUrl: config.WEB_APP_URL,
+          // T6a SEC-001 Sprint 2a — TTL alerter wire (firebase + redis).
+          firebaseAuth: opts.firebaseAuth ?? null,
+          redis: redisForRateLimit,
         }),
       );
     } else {

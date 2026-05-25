@@ -263,7 +263,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: revertir merge. Demo path pierde enforcement.
 - **Spec trace**: §3 SC-1.1.2b, SC-1.1.2c, SC-1.1.3; §9 R-DA-CLAIM-LATENCY.
 
-### T6a: TTL alerter Cloud Run endpoint + Cloud Scheduler + LOG-BASED alerts (P0-R3-1 fix)
+### T6a: TTL alerter Cloud Run endpoint + Cloud Scheduler + LOG-BASED alerts (P0-R3-1 fix) [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/routes/admin-jobs.ts` (extend), `apps/api/src/services/demo-account-ttl-alerter.ts` + test (new — emite **structured logs** para log-based metrics, no SDK custom metric), `infrastructure/scheduling.tf` (extend Cloud Scheduler), `infrastructure/monitoring.tf` (extend con 2 `google_logging_metric` + 2 `google_monitoring_alert_policy`).
 - **LOC estimate**: ~80 (endpoint ~10 + service ~25 + scheduler tf ~15 + monitoring tf con 2 log-metrics + 2 alerts ~30).

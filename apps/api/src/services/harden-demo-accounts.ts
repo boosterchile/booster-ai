@@ -225,8 +225,11 @@ export async function retire(
     .set({ deshabilitadoEn: sql`now()` })
     .where(eq(cuentasDemo.firebaseUid, uid));
 
+  // T6a SEC-001 Sprint 2a — structured event field para google_logging_metric
+  // filter (jsonPayload.event = "audit.demo_uid_retired"). Cada retire produce
+  // 1 datapoint en el counter metric. Full batch (4 UIDs) → 4 events.
   logger.info(
-    { uid, email: user.email, reason },
+    { event: 'audit.demo_uid_retired', uid, email: user.email, reason },
     'harden-demo-accounts.retire: UID disabled + audit log + cuentas_demo.deshabilitado_en synced',
   );
   return { status: 'retired' };

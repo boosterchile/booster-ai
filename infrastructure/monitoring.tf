@@ -28,10 +28,10 @@ resource "google_monitoring_uptime_check_config" "api_health" {
   period       = "60s"
 
   http_check {
-    path           = "/health"
-    port           = "443"
-    use_ssl        = true
-    validate_ssl   = true
+    path         = "/health"
+    port         = "443"
+    use_ssl      = true
+    validate_ssl = true
     accepted_response_status_codes {
       status_value = 200
     }
@@ -212,4 +212,123 @@ resource "google_monitoring_alert_policy" "cloudsql_storage" {
   }
 
   notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+}
+
+# =============================================================================
+# T6a SEC-001 Sprint 2a — Log-based metrics + alerts demo accounts (H1.1)
+# =============================================================================
+# Per spec sec-001-cierre §3 H1.1 SC-1.1.6 + plan-sprint-2a T6a P0-R4-2:
+# conditional-counter pattern (NO custom metric SDK). Matches el patrón
+# existente de telemetry-monitoring.tf (device_records_per_minute,
+# tcp_connection_resets, etc.).
+#
+# IAM nota (per plan T6a + iam.tf:74): el SA del API ya tiene
+# `roles/monitoring.metricWriter` global; no se requiere binding nuevo.
+
+# -----------------------------------------------------------------------------
+# Log-based metric 1 — demo.ttl_low events emitted by
+# apps/api/src/services/demo-account-ttl-alerter.ts cuando una cuenta
+# demo activa tiene days_remaining ≤ 7.
+# -----------------------------------------------------------------------------
+resource "google_logging_metric" "demo_ttl_low" {
+  name    = "sec001/demo_ttl_low"
+  project = google_project.booster_ai.project_id
+
+  description = "Cuentas demo con TTL ≤ 7 días. Counter DELTA — cada datapoint es 1 alert dedupeado por día (Redis dedup en el alerter)."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="demo.ttl_low"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Demo accounts TTL low (≤7d)"
+    labels {
+      key         = "persona"
+      value_type  = "STRING"
+      description = "Persona enum Spanish (generador_carga/transportista/stakeholder/conductor)"
+    }
+  }
+
+  label_extractors = {
+    "persona" = "EXTRACT(jsonPayload.persona)"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Log-based metric 2 — audit.demo_uid_retired events emitted by
+# apps/api/src/services/harden-demo-accounts.ts retire(). Cada batch
+# retire (4 UIDs viejas) produce 4 datapoints. Counter pattern para
+# observabilidad de operación + base para silent-window guard futuro
+# (deferred a follow-up post-T4 operational execution).
+# -----------------------------------------------------------------------------
+resource "google_logging_metric" "demo_uid_retired" {
+  name    = "sec001/demo_uid_retired"
+  project = google_project.booster_ai.project_id
+
+  description = "Auditoría de UID demo retirado (harden-demo-accounts retire). Counter DELTA — 4 events expected en batch one-shot post-deploy. Spec §3 H1.1 SC-1.1.4."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="audit.demo_uid_retired"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Demo UID retired (audit)"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Alert policy — TTL low (primary). Fires cuando rate(demo_ttl_low) > 0
+# sustained 1min. Notifica al email channel existente (PO).
+# -----------------------------------------------------------------------------
+resource "google_monitoring_alert_policy" "demo_ttl_low" {
+  display_name = "Demo accounts TTL ≤ 7 days"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+
+  conditions {
+    display_name = "demo.ttl_low events present"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.demo_ttl_low.name}\" AND resource.type=\"cloud_run_revision\""
+      duration        = "60s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+
+  alert_strategy {
+    # Auto-close 25h post-trigger: el cron diario corre 06:00; si TTL
+    # se renovó, no habrá más eventos en 24h → alert se cierra sola.
+    auto_close = "90000s"
+  }
+
+  documentation {
+    content   = <<-EOT
+    Una o más cuentas demo tienen TTL ≤ 7 días. Renovar via:
+      `node apps/api/scripts/harden-demo-accounts.mjs --renew <uid> --extend-days 30`
+    Ver `docs/qa/demo-accounts.md` §"Renovación TTL".
+
+    UIDs y personas afectados aparecen en los logs del job
+    `demo-account-ttl-alert` (Cloud Logging filter: `jsonPayload.event=demo.ttl_low`).
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.demo_ttl_low]
 }
