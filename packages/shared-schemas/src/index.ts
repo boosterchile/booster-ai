@@ -62,3 +62,6 @@ export * from './site-settings.js';
 
 // Aggregations — privacy invariants compartidos backend/frontend (D11/ADR-041)
 export * from './aggregations/k-anonymity.js';
+
+// SEC-001 Sprint 2a H1.1 — cuentas demo DB-driven registry (ADR-053)
+export * from './domain/cuentas-demo.js';

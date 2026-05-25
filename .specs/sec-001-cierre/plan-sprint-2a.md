@@ -172,7 +172,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: revertir commit. ADR vuelve a `Reserved` stub.
 - **Spec trace**: §3 SC-IAC.3; §7.1 ADR numbering.
 
-### T1: Drizzle migration `cuentas_demo` (Spanish naming per CLAUDE.md, P0-R3-4 fix)
+### T1: Drizzle migration `cuentas_demo` (Spanish naming per CLAUDE.md, P0-R3-4 fix) [DONE 2026-05-25]
 
 - **Files**: `apps/api/drizzle/0038_cuentas_demo.sql`, `packages/shared-schemas/src/domain/cuentas-demo.ts`, `packages/shared-schemas/src/index.ts`, `packages/shared-schemas/src/all-schemas.test.ts`, `apps/api/src/db/schema.ts`.
 - **LOC estimate**: ~75 (migration ~20 + Zod ~20 + schema.ts ~20 + barrel ~1 + all-schemas test ~5 + layout header ~5 + section header ~4).
