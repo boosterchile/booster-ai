@@ -45,6 +45,34 @@ locals {
       purpose     = "Slack webhook URL para alertas SRE: T-TTL-WARN, OPS-Y password-spray match, rate_limiter.fallback_active, identity_platform_config drift. Spec §3 H1 + H2."
       placeholder = true
     }
+
+    # SEC-001 Sprint 2a H1.1 — 4 secrets nuevos para las UIDs NUEVAS de la
+    # demo recreate (ADR-053 post-disclosure account replacement). Co-existen
+    # con los Sprint 1 demo-account-password-* (que cubren las UIDs viejas
+    # hasta que T4 ejecute el one-shot retire). Naming English per spec
+    # SC-1.1.5 (secret names son identificadores, no contract enum values —
+    # los values del enum sí migraron a Spanish en spec v3.3).
+    #
+    # placeholder = false: NO se crea version desde Terraform. El script
+    # init-demo-secrets-2026.sh corrido manualmente por PO post-`terraform
+    # apply` genera el primer version con random 128-bit por secret. Mismo
+    # patrón operacional Sprint 1 T7.5 (init-demo-seed-password.sh).
+    "demo-account-password-shipper-2026" = {
+      purpose     = "Password de la cuenta demo recreada demo-2026-shipper@boosterchile.com (UID nueva, persona=generador_carga). SEC-001 Sprint 2a H1.1 SC-1.1.5. ADR-053. Generado por init-demo-secrets-2026.sh."
+      placeholder = false
+    }
+    "demo-account-password-carrier-2026" = {
+      purpose     = "Password de la cuenta demo recreada demo-2026-carrier@boosterchile.com (UID nueva, persona=transportista). SEC-001 Sprint 2a H1.1 SC-1.1.5. ADR-053."
+      placeholder = false
+    }
+    "demo-account-password-stakeholder-2026" = {
+      purpose     = "Password de la cuenta demo recreada demo-2026-stakeholder@boosterchile.com (UID nueva, persona=stakeholder). SEC-001 Sprint 2a H1.1 SC-1.1.5. ADR-053."
+      placeholder = false
+    }
+    "demo-account-password-conductor-2026-firebase" = {
+      purpose     = "Password Firebase path del conductor demo recreado drivers+demo-2026-conductor@boosterchile.invalid (persona=conductor). El conductor usa AMBOS paths: custom token primario via /demo/login + Firebase email+pwd secundario; este secret cubre el path secundario solamente. PIN path es independiente. SEC-001 Sprint 2a H1.1 SC-1.1.5. ADR-053."
+      placeholder = false
+    }
   }
 }
 

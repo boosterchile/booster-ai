@@ -192,7 +192,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 - **Rollback**: revertir + migration `0039_drop_cuentas_demo.sql` si staging-applied.
 - **Spec trace**: §3 SC-1.1.8; CLAUDE.md §Reglas naming bilingüe compliance.
 
-### T2: Secret Manager — 4 secrets `demo-account-password-*-2026` + init script
+### T2: Secret Manager — 4 secrets `demo-account-password-*-2026` + init script [DONE 2026-05-25]
 
 - **Files**: `infrastructure/security-hotfixes-2026-05-14.tf`, `infrastructure/scripts/init-demo-secrets.ts` + test.
 - **LOC estimate**: ~80.
