@@ -241,6 +241,12 @@ module "service_api" {
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
 
+    # T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
+    # fail-closed startup cuando runMigrations falla. Default false en
+    # Sprint 1 prod (legacy behavior preservada); flip a true en Sprint 2.
+    # El env var se lee en apps/api/src/main.ts vía runMigrationsGated.
+    STRICT_MIGRATION_ORDERING = tostring(var.strict_migration_ordering)
+
     # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
     # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
     # está ON. Reemplaza el literal hardcoded que vivía en

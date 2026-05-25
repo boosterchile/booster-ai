@@ -171,6 +171,21 @@ variable "redis_memory_gb" {
 }
 
 # -----------------------------------------------------------------------------
+# T3 SEC-001 — Migration ordering gating
+# -----------------------------------------------------------------------------
+# Si true, runMigrations falla → server NO arranca (fail-closed). Si false,
+# loguea ERROR y continúa (legacy). Default false en Sprint 1 prod; flip a
+# true en Sprint 2 cuando entren las migraciones nuevas (demo_accounts,
+# signup_requests). Staging Cloud Run debería correr con true desde el
+# merge de T3 — gap: no hay staging GCP hoy (ver release.yml:60-65 +
+# docs/qa/migration-ordering.md §Staging gap).
+variable "strict_migration_ordering" {
+  description = "Si true, runMigrations falla → server NO arranca (fail-closed). Si false, loguea ERROR y continúa (legacy)."
+  type        = bool
+  default     = false
+}
+
+# -----------------------------------------------------------------------------
 # Budget alert
 # -----------------------------------------------------------------------------
 variable "monthly_budget_usd" {

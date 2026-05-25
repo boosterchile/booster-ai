@@ -70,7 +70,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit. Sin consumers todavía (T5 lo consume), zero impact.
 - **Spec trace**: §3 H4 SC-H4.1 phone normalization; round 4 P1-R4-3.
 
-### T3: Drizzle migration ordering protocol — P1-R4-4 (modificado en v2 per P0-2 + P0-4)
+### T3: Drizzle migration ordering protocol — P1-R4-4 (modificado en v2 per P0-2 + P0-4) [DONE 2026-05-25 — staging gap documentado]
 
 - **Files**: `apps/api/src/db/migrator.ts` (existing — agrega gating + integration test path; función `runMigrations(pool, logger)` ya existe línea 75; NO crear `migrate.ts` que el plan v1 erróneamente referenciaba), `apps/api/src/main.ts` (modificar startup sequence), `docs/qa/migration-ordering.md` (new), `apps/api/test/integration/migration-ordering.integration.test.ts` (new), `infrastructure/compute.tf` (env var `STRICT_MIGRATION_ORDERING`).
 - **LOC estimate**: ~90 (impl ~40 + integration test ~30 + doc ~10 + tf env var ~5 + main.ts wire ~5).

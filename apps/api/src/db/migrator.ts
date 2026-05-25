@@ -105,6 +105,54 @@ export async function runMigrations(pool: pg.Pool, logger: Logger): Promise<void
 }
 
 /**
+ * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4, P0-4) — wrapper que
+ * envuelve `runMigrations` y aplica el gating env var
+ * `STRICT_MIGRATION_ORDERING`:
+ *
+ *   - `strict=true` → si `runMigrations` falla, loguea ERROR + relanza
+ *     (fail-closed). El caller en `main.ts` propaga al `main().catch`
+ *     que `process.exit(1)` — el server NO arranca. Cloud Run revision
+ *     queda Failed y el LB no rutea tráfico.
+ *
+ *   - `strict=false` → si `runMigrations` falla, loguea ERROR pero NO
+ *     relanza (legacy behavior). El server arranca y atiende tráfico.
+ *     Las migraciones quedan parcialmente aplicadas (riesgo asumido).
+ *     Default en prod durante Sprint 1; flip a true en Sprint 2 cuando
+ *     entran las migraciones nuevas (demo_accounts, signup_requests).
+ *
+ * Diseño:
+ *   - El error SIEMPRE se loguea a nivel ERROR — no hay swallow
+ *     silencioso aunque strict=false. Cloud Logging captura el error
+ *     con `err.stack` y `strict` flag para post-mortem.
+ *   - El payload incluye `strict` para que el operador en Logging vea
+ *     de inmediato si el modo fail-closed estaba activo o no.
+ */
+export async function runMigrationsGated(
+  pool: pg.Pool,
+  logger: Logger,
+  options: {
+    strict: boolean;
+    // Test-only seam: inyectar la fn de migration para mockear sin
+    // pasar por vi.mock (que falla con same-module imports). Default
+    // = runMigrations real.
+    runner?: (pool: pg.Pool, logger: Logger) => Promise<void>;
+  },
+): Promise<void> {
+  const runner = options.runner ?? runMigrations;
+  try {
+    await runner(pool, logger);
+  } catch (err) {
+    logger.error(
+      { err, strict: options.strict },
+      'runMigrations failed; STRICT_MIGRATION_ORDERING gating decides whether to abort startup',
+    );
+    if (options.strict) {
+      throw err;
+    }
+  }
+}
+
+/**
  * Detecta migrations del journal cuyo hash NO está en `drizzle.__drizzle_migrations`
  * y las aplica en una sola transacción. Retorna los tags aplicados.
  *
