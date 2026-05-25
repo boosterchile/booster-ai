@@ -267,6 +267,13 @@
       "when": 1780876800001,
       "tag": "0037_stakeholder_access_log",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780876800002,
+      "tag": "0038_cuentas_demo",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ import * as auth from './auth.js';
 import * as common from './common.js';
 import * as assignment from './domain/assignment.js';
 import * as cargoRequest from './domain/cargo-request.js';
+import * as cuentasDemo from './domain/cuentas-demo.js';
 import * as driver from './domain/driver.js';
 import * as empresa from './domain/empresa.js';
 import * as membership from './domain/membership.js';
@@ -409,6 +410,7 @@ describe('domain modules — importables sin errores (schemas executados al impo
   const modules = {
     assignment,
     'cargo-request': cargoRequest,
+    'cuentas-demo': cuentasDemo,
     driver,
     empresa,
     membership,
@@ -439,6 +441,60 @@ describe('events', () => {
   });
   it('trip-events exports', () => {
     expect(Object.keys(tripEvents).length).toBeGreaterThan(0);
+  });
+});
+
+describe('cuentaDemoSchema (SEC-001 Sprint 2a H1.1)', () => {
+  const VALID_CUENTA = {
+    persona: 'generador_carga' as const,
+    email: 'demo-2026-shipper@boosterchile.com',
+    firebase_uid: 'nQSqGqVCHGUn8yrU21uFtnLvaCK2',
+    creado_en: VALID_DATE,
+    deshabilitado_en: null,
+  };
+
+  it('round-trip: parse cuenta activa con firebase_uid + deshabilitado_en null', () => {
+    expect(cuentasDemo.cuentaDemoSchema.parse(VALID_CUENTA)).toEqual(VALID_CUENTA);
+  });
+
+  it('acepta firebase_uid null (estado transitorio durante creación)', () => {
+    expect(
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, firebase_uid: null }),
+    ).toBeDefined();
+  });
+
+  it('acepta deshabilitado_en con timestamp (cuenta retirada)', () => {
+    expect(
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, deshabilitado_en: VALID_DATE }),
+    ).toBeDefined();
+  });
+
+  it('personaDemoSchema acepta exactamente los 4 valores Spanish per spec v3.3', () => {
+    expect(cuentasDemo.personaDemoSchema.options).toEqual([
+      'generador_carga',
+      'transportista',
+      'stakeholder',
+      'conductor',
+    ]);
+  });
+
+  it('rechaza persona English (regression contra pre-v3.3 amendment)', () => {
+    expect(() =>
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, persona: 'shipper' }),
+    ).toThrow();
+    expect(() =>
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, persona: 'carrier' }),
+    ).toThrow();
+  });
+
+  it('rechaza email inválido o que excede max 320', () => {
+    expect(() =>
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, email: 'not-an-email' }),
+    ).toThrow();
+    const tooLong = `${'a'.repeat(310)}@b.cl`; // 315+ chars
+    expect(() =>
+      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, email: `${tooLong}xxxxxxxx` }),
+    ).toThrow();
   });
 });
 

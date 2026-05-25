@@ -46,6 +46,7 @@ const inet = customType<{ data: string; driverData: string }>({
  *   - operaciones: viajes, ofertas, asignaciones, eventos_viaje, metricas_viaje
  *   - sostenibilidad: stakeholders, consentimientos
  *   - intake legacy: borradores_whatsapp
+ *   - cuentas demo (SEC-001 Sprint 2a H1.1): cuentas_demo
  */
 
 // =============================================================================
@@ -429,6 +430,20 @@ export const chatSenderRoleEnum = pgEnum('rol_remitente_chat', [
 export const pushSubscriptionStatusEnum = pgEnum('estado_push_subscription', [
   'activa',
   'inactiva',
+]);
+
+/**
+ * SEC-001 Sprint 2a H1.1 — persona enum para cuentas_demo (migration 0038).
+ * Values Spanish per CLAUDE.md §Reglas naming bilingüe + spec v3.3 amendment
+ * 2026-05-25. Equivalencias: generador_carga ↔ shipper, transportista ↔
+ * carrier, stakeholder y conductor invariantes. Ver
+ * docs/adr/053-post-disclosure-account-replacement.md.
+ */
+export const personaDemoEnum = pgEnum('persona_demo', [
+  'generador_carga',
+  'transportista',
+  'stakeholder',
+  'conductor',
 ]);
 
 // =============================================================================
@@ -2136,6 +2151,35 @@ export const configuracionSitio = pgTable('configuracion_sitio', {
 });
 
 // =============================================================================
+// SEC-001 SPRINT 2A — CUENTAS DEMO (H1.1)
+// =============================================================================
+//
+// Tabla `cuentas_demo` para H1.1 SEC-001 Sprint 2a (plan-sprint-2a T1+T3).
+// Reemplaza module-level constants pre-Sprint-2a por registry DB-driven.
+// El seed (apps/api/src/services/seed-demo-startup.ts) consulta esta tabla
+// con SELECT email WHERE persona=X AND deshabilitado_en IS NULL para
+// decidir create / skip / alert en cada cold-start. Idempotente by design.
+// Ver migration 0038_cuentas_demo.sql + ADR-053.
+
+export const cuentasDemo = pgTable('cuentas_demo', {
+  persona: personaDemoEnum('persona').notNull(),
+  email: varchar('email', { length: 320 }).notNull().primaryKey(),
+  /**
+   * UID asignado por Firebase Admin SDK auth.createUser. NULL durante
+   * la creación inicial (entre INSERT row y llamada Firebase). NULL
+   * transitorio es estado válido — el script T4 detecta y resume.
+   */
+  firebaseUid: varchar('firebase_uid', { length: 128 }),
+  creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Timestamp cuando la cuenta fue retirada via auth.updateUser({
+   * disabled: true }). NULL = activa. NOT NULL = retirada
+   * irreversiblemente per ADR-053.
+   */
+  deshabilitadoEn: timestamp('deshabilitado_en', { withTimezone: true }),
+});
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2208,3 +2252,7 @@ export type NewConfiguracionSitioRow = typeof configuracionSitio.$inferInsert;
 
 export type ZonaStakeholderRow = typeof zonasStakeholder.$inferSelect;
 export type NewZonaStakeholderRow = typeof zonasStakeholder.$inferInsert;
+
+// SEC-001 Sprint 2a H1.1 — cuentas_demo (migration 0038)
+export type CuentaDemoRow = typeof cuentasDemo.$inferSelect;
+export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
