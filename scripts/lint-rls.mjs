@@ -44,6 +44,7 @@ const TENANT_FREE_TABLES = new Set([
   'pushSubscriptions', // se filtra por userId
   'telemetryPoints', // se filtra por vehicleId (que ya validó tenant)
   'posicionesMovilConductor', // se filtra por vehicleId (que ya validó tenant), igual que telemetryPoints
+  'cuentasDemo', // T1 SEC-001 Sprint 2a: 4-row global registry de cuentas demo (no per-tenant). Ver ADR-053 + docs/qa/demo-accounts.md.
 ]);
 
 /** Tokens que indican filtro empresaId presente. Match case-insensitive. */

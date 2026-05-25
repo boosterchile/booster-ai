@@ -8,7 +8,7 @@ import {
   Truck,
   UserRound,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signInDriverWithCustomToken } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import { useSiteSettings } from '../hooks/use-site-settings.js';
@@ -16,6 +16,16 @@ import { getApiUrl } from '../lib/api-url.js';
 import { MaintenanceRoute } from './maintenance.js';
 
 type Persona = 'shipper' | 'carrier' | 'conductor' | 'stakeholder';
+
+// T5 SEC-001 Sprint 2a — mapping UI English → API Spanish (post spec
+// v3.3 amendment). El endpoint /api/v1/demo/cache-warm/:persona valida
+// con personaDemoSchema (Spanish enum). Spec SC-1.1.2b.
+const UI_TO_API_PERSONA: Record<Persona, string> = {
+  shipper: 'generador_carga',
+  carrier: 'transportista',
+  conductor: 'conductor',
+  stakeholder: 'stakeholder',
+};
 
 interface DemoLoginResponse {
   custom_token: string;
@@ -56,6 +66,29 @@ export function DemoRoute() {
   const { flags } = useFeatureFlags();
   const [loadingPersona, setLoadingPersona] = useState<Persona | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // T5 SEC-001 Sprint 2a — pre-warm cache demo-claim para las 4 personas.
+  // Fire-and-forget en mount: el endpoint GET /api/v1/demo/cache-warm/
+  // :persona invoca Firebase Admin getUser + SET Redis cache TTL 60s.
+  // Resultado: el primer click del usuario en una card demo tiene
+  // latencia cached (~5ms p95) vs uncached (~200ms). Failure tolerado
+  // (logger warn al backend; el middleware demo-expires hace fallback
+  // live). Spec §3 H1.1 SC-1.1.2b.
+  useEffect(() => {
+    if (!flags.demo_mode_activated) {
+      return;
+    }
+    const apiBase = getApiUrl();
+    for (const apiPersona of Object.values(UI_TO_API_PERSONA)) {
+      // Fire-and-forget: no await, no error propagation al UI.
+      void fetch(`${apiBase}/api/v1/demo/cache-warm/${apiPersona}`, {
+        method: 'GET',
+        credentials: 'omit',
+      }).catch(() => {
+        // Silent — el middleware demo-expires hará fallback live.
+      });
+    }
+  }, [flags.demo_mode_activated]);
 
   // SC-INT-1 (sec-001-cierre): mientras el flag demo está OFF, mostrar
   // copy explícita de mantenimiento en vez de la landing que fallaría
@@ -252,7 +285,7 @@ export function DemoRoute() {
             {' · '}
             <span className="font-mono">demo.boosterchile.com</span>
           </p>
-          <p className="mt-2 max-w-2xl mx-auto">
+          <p className="mx-auto mt-2 max-w-2xl">
             Las 4 personas comparten data. Lo que crea una lo ve la otra — simula el ciclo completo:
             shipper publica → carrier acepta → conductor entrega → stakeholder mide.
           </p>
