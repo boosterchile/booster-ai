@@ -38,7 +38,7 @@ Numerados por hallazgo y sub-fase. Cada SC verificable con comando concreto post
 ### H1.0 — Flag flip y endpoint público
 
 - [ ] **SC-1.0.1**: `infrastructure/variables.tf` declara `variable "demo_mode_activated" { default = false }` durante el período de construcción (cambio explícito de `true` actual). Al cierre, vuelve a `true` (SC-1.6.1).
-- [ ] **SC-1.0.2**: durante construcción, `curl -s -o /dev/null -w '%{http_code}' -X POST https://api.boosterchile.com/demo/login -H 'content-type: application/json' -d '{"persona":"shipper"}'` → **`404`**.
+- [ ] **SC-1.0.2** _(v3.3 amendment 2026-05-25: persona value Spanish per CLAUDE.md naming)_: durante construcción, `curl -s -o /dev/null -w '%{http_code}' -X POST https://api.boosterchile.com/demo/login -H 'content-type: application/json' -d '{"persona":"generador_carga"}'` → **`404`**.
 - [ ] **SC-1.0.3**: al cierre, mismo `curl` → **`200`** con body `{custom_token, redirect_to, persona, expires_at}`.
 
 ### H1.1 — Recreación de las 4 cuentas demo (post-disclosure account replacement per O-11)
@@ -186,8 +186,8 @@ H3 movido a spec hermano `.specs/sec-h3-dte-retention-lock/spec.md` per decisió
 **AFTER (post-merge + apply)**:
 1. Carga landing `/demo` (idéntica).
 2. Click en card (ej. shipper "Andina Demo S.A.").
-3. POST `/demo/login {persona:"shipper"}` → 200 con `custom_token`.
-4. `signInWithCustomToken` → sesión Firebase con claims `{is_demo: true, persona: "shipper", expires_at: "<ISO+30d>"}`. **UIDs son los NUEVOS** (`demo-2026-shipper@...`), no los viejos retirados.
+3. POST `/demo/login {persona:"generador_carga"}` → 200 con `custom_token`. _(v3.3 amendment 2026-05-25: persona value Spanish per CLAUDE.md naming. Equivalencias: `generador_carga` ↔ shipper, `transportista` ↔ carrier, `stakeholder` ↔ stakeholder (anglicismo aceptado), `conductor` ↔ conductor. Emails siguen English como identificadores.)_
+4. `signInWithCustomToken` → sesión Firebase con claims `{is_demo: true, persona: "generador_carga", expires_at: "<ISO+30d>"}`. **UIDs son los NUEVOS** (`demo-2026-shipper@...` emails identificadores English), no los viejos retirados.
 5. Redirect a `/app` (o `/app/conductor/modo`, `/app/stakeholder/zonas`).
 6. Banner persistente "MODO DEMO" en toda la sesión (verificado persiste across SPA navigations per T9b).
 7. **Restricción nueva**: cualquier POST/PUT/PATCH/DELETE no-allowlistado → 403 + métrica.
@@ -389,7 +389,7 @@ Reconciliación se ejecuta cuando H1.4+H1.1+H1.0(false→true) están done. `ter
 
 - **T13**: `gsutil retention get gs://<bucket-dte>` → `locked=true` (cross-ref H3 spec hermano).
 - **T14**: `curl GET /feature-flags` → `demo_mode_activated: true`.
-- **T15**: `curl POST /demo/login -d '{"persona":"shipper"}'` → 200 + token.
+- **T15** _(v3.3 amendment 2026-05-25)_: `curl POST /demo/login -d '{"persona":"generador_carga"}'` → 200 + token.
 - **T16**: Identity Platform Admin API → self-signup OFF verificado.
 - **T17**: 2h monitoreo post-deploy: error rate, latency P95, logs limpios sin PII (verificación H4), métrica `auth.is_demo.blocked` baseline 0.
 
@@ -443,6 +443,7 @@ Resolver antes de `/agent-rigor:plan`:
 - 2026-05-24 — Spec v3.1 producido via 7 surgical Edits (~80 LOC totales): **P0-R3-1**: SC-1.2.0 inventory ampliado a auth-creation + auth-mutation + sign-in paths (incluye Google provider, `signInWithEmailAndPassword`, `reauthenticateWithCredential`, etc.); SC-1.2.2 Identity Platform ahora aplica a AMBOS email/password Y Google providers (fallback backend check si Identity Platform per-provider no soporta). **P0-R3-2**: SC-1.1.8 UUID → deterministic fixed string + DB table `demo_accounts` con SELECT/INSERT lookup; nuevo integration test `seed-demo-third-cold-start.integration.test.ts` verifica no unbounded growth. **P1-R3-1**: SC-1.2.5 Cloud Armor cascade documentation + new integration test. **P1-R3-2**: §9 R-DA-CLAIM-LATENCY budget aligned con §6.8 (≤5ms cached / ≤200ms uncached). **P1-R3-3**: §9 nueva R-DA-REDIS-SPOF row con Memorystore HA mitigation. **P1-R3-4**: SC-H4.1 phone normalization step ANTES del regex. P2 residuales: P2-R3-1 email enumeration timing oracle (admin response latency), P2-R3-2 UID/email migration en audit logs / support tickets, P2-R3-3 Status field naming (cambiado a v3.1 con calificadores).
 - 2026-05-24 — Devils-advocate round 4 confirmatorio sobre v3.1. Verdict APPROVE_WITH_RESERVATIONS_FINAL. 1 P0 + 4 P1 + 3 P2. **P0-R4-1**: SC-1.1.1 conductor email decía `drivers+demo2026@...` mientras SC-1.1.8 decía `drivers+demo2026-conductor@...` — inconsistencia entre Edits; además filter `email.contains("demo-2026")` (con dash) no matcheaba ninguna versión del conductor email.
 - 2026-05-24 — Spec v3.2 producido via 3 surgical Edits (~5 LOC): SC-1.1.1 + SC-1.1.8 unificados a `drivers+demo-2026-conductor@boosterchile.invalid` (dashes consistentes, filter matchea las 4). P1-R4-1..R4-4 + P2-R4-1..R4-3 quedan como deuda definida con tracking en /plan (devils-advocate explícito: "4 P1s become explicit /plan tasks"). NO round 5 per devils-advocate recommendation.
+- 2026-05-25 — Spec v3.3 amendment: SC-1.0.2 + §4 lines 189-190 + T15 (4 occurrences) — persona enum values renamed English → Spanish per CLAUDE.md §Reglas naming bilingüe (`shipper` → `generador_carga`, `carrier` → `transportista`, `stakeholder` y `conductor` invariantes). Triggered durante /plan plan-sprint-2a round 4 devils-advocate P0-R4-1 (contract conflict CLAUDE.md ↔ spec v3.2). PO approve inline 2026-05-25 via AskUserQuestion ("Spanish completo + amend spec"). Emails identificadores siguen English. Status sigue Approved. Spec hermano (`sec-h3-dte-retention-lock`) sin impacto.
 - 2026-05-24 — **PO final approve** (sesión `2026-05-24_6f2f4fcd-da5a-46e9-9ea8-f22edbb59dde`). Status → Approved. Spec listo para `/agent-rigor:plan`. Trayectoria total: 4 rondas devils-advocate (6→3→2→1→0 P0); 8 decisiones PO; 514 LOC final. Next-session: `/agent-rigor:plan` con foco en P1-R4-1..R4-4 como primeras tasks del plan.
 
 ## 14. Execution plan for solo-dev (nuevo per O-13)
