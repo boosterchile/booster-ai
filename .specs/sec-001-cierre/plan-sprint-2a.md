@@ -114,7 +114,7 @@ H1.1 cierra **SC-1.1.1..SC-1.1.8** en un solo PR. Spec §14.1 PR #4 minimum-viab
 
 ## Tasks
 
-### T0: CI integration-tests job (P0-R2-1 v2 + P0-R3-3 v3 fixes)
+### T0: CI integration-tests job (P0-R2-1 v2 + P0-R3-3 v3 fixes) [DONE 2026-05-25]
 
 - **Files**: `.github/workflows/ci.yml`.
 - **LOC estimate**: ~40.

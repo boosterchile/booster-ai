@@ -138,6 +138,58 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Integration tests — DB (postgres) + Redis services
+  # Sprint 2a T0 (sec-001-cierre): habilita CI gating para *.integration.test.ts
+  # files que vitest.config.ts:9 excluye del default test run.
+  # Vitest globalSetup (apps/api/test/integration/setup-global.ts) corre las
+  # migrations inline contra TEST_DATABASE_URL antes del primer test.
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration tests (DB + Redis)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run integration tests
+        run: pnpm --filter @booster-ai/api test:integration
+
+  # ---------------------------------------------------------------------------
   # Build — cada app y package compila a producción
   # ---------------------------------------------------------------------------
   build:
@@ -171,7 +223,7 @@ jobs:
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, integration-tests, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -180,6 +232,7 @@ jobs:
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
