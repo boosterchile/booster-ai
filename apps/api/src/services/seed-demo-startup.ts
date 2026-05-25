@@ -4,7 +4,7 @@ import type { Auth } from 'firebase-admin/auth';
 import type { ApiEnv } from '../config.js';
 import type { Db } from '../db/client.js';
 import { conductores, empresas, users } from '../db/schema.js';
-import { DEMO_CONDUCTOR_RUT, DEMO_SHIPPER_RUT, seedDemo } from './seed-demo.js';
+import { DEMO_CONDUCTOR_RUT, DEMO_SHIPPER_RUT, getDemoPassword, seedDemo } from './seed-demo.js';
 
 /**
  * Hook que corre en startup del api server cuando `DEMO_MODE_ACTIVATED=true`.
@@ -100,11 +100,11 @@ export async function ensureDemoSeeded(opts: {
  *
  * Idempotente: si el conductor ya tiene firebase_uid real, no-op.
  *
- * El password sintético `BoosterDemo2026!` es el mismo que usan los
- * otros owners demo (ver `DEMO_PASSWORD` en seed-demo.ts). El conductor
- * normalmente usaría su PIN como password tras activación; acá lo
- * sobreescribimos porque el flujo demo entra via custom token, no via
- * signInWithEmailAndPassword.
+ * El password sintético es leído del env `DEMO_SEED_PASSWORD` (T8) —
+ * el mismo que usan los otros owners demo (ver `getDemoPassword` en
+ * seed-demo.ts). El conductor normalmente usaría su PIN como password
+ * tras activación; acá lo sobreescribimos porque el flujo demo entra
+ * via custom token, no via signInWithEmailAndPassword.
  */
 async function ensureConductorDemoActivated(opts: {
   db: Db;
@@ -137,9 +137,10 @@ async function ensureConductorDemoActivated(opts: {
 
   // 2. Crear (o reusar) el Firebase user. Email sintético determinístico
   //    en `.invalid` (RFC2606) para no rutear emails reales. Password
-  //    fijo `BoosterDemo2026!` consistente con los owners demo.
+  //    leído del env DEMO_SEED_PASSWORD (T8 SEC-001) — mismo helper que
+  //    los owners demo en seedDemo, garantiza un solo lugar de verdad.
   const syntheticEmail = `drivers+${DEMO_CONDUCTOR_RUT.replace(/[.\-]/g, '')}@boosterchile.invalid`;
-  const password = 'BoosterDemo2026!';
+  const password = getDemoPassword();
   let firebaseUid: string;
   try {
     const existingFb = await firebaseAuth.getUserByEmail(syntheticEmail).catch(() => null);

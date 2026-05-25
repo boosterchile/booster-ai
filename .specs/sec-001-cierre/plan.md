@@ -152,7 +152,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → CI gate desaparece. Secret version sigue existiendo (no se borra). T8 puede mergear sin verification — pero entonces P0-5 reaparece (seed crashea en cold-start si flag ON). Solo revertir si bug crítico en el CI gate mismo.
 - **Spec trace**: round 4 P0-5; spec §3 H1.4 SC-1.4.2 reforzado.
 
-### T8: seed-demo.ts + seed-demo-startup.ts leen DEMO_SEED_PASSWORD
+### T8: seed-demo.ts + seed-demo-startup.ts leen DEMO_SEED_PASSWORD [DONE 2026-05-24]
 
 - **Files**: `apps/api/src/services/seed-demo.ts` (modificar línea 86, eliminar literal `BoosterDemo2026!`), `apps/api/src/services/seed-demo-startup.ts` (modificar línea 142, mismo cambio), `apps/api/src/services/seed-demo.test.ts` (extend).
 - **LOC estimate**: ~50 (refactor ~20 + tests ~30).

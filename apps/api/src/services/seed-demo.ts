@@ -83,7 +83,38 @@ const SHIPPER_OWNER_EMAIL = 'demo-shipper@boosterchile.com';
 const CARRIER_OWNER_EMAIL = 'demo-carrier@boosterchile.com';
 const STAKEHOLDER_EMAIL = 'demo-stakeholder@boosterchile.com';
 const DEMO_STAKEHOLDER_ORG_NOMBRE = 'Observatorio Logístico Demo (Mesa pública sostenibilidad)';
-const DEMO_PASSWORD = 'BoosterDemo2026!';
+
+/**
+ * T8 SEC-001 (sec-001-cierre §3 H1.4 SC-1.4.1/SC-1.4.3/SC-1.4.4) —
+ * lee el password de demo desde `process.env.DEMO_SEED_PASSWORD`.
+ *
+ * El env var es mountado por Cloud Run desde el secret
+ * `demo-seed-password` (HCL en `infrastructure/compute.tf` service_api +
+ * `infrastructure/security-hotfixes-2026-05-14.tf`). El secret se
+ * inicializa con un valor real (no placeholder) corriendo el run-once
+ * `infrastructure/scripts/init-demo-seed-password.sh` por el PO post-T7
+ * apply.
+ *
+ * Fail-closed loudly: si el env está ausente o vacío, lanza un Error
+ * con mensaje accionable (referencia al runbook). Se llama desde
+ * `seedDemo` y `ensureConductorDemoActivated`, ambos en el path
+ * `DEMO_MODE_ACTIVATED=true` — cuando el flag está OFF, ninguno se
+ * invoca, así que la falta de env var no causa crash.
+ */
+export function getDemoPassword(): string {
+  const pw = process.env.DEMO_SEED_PASSWORD;
+  if (!pw || pw.trim() === '') {
+    throw new Error(
+      'DEMO_SEED_PASSWORD env var ausente o vacía. Es requerida cuando ' +
+        'DEMO_MODE_ACTIVATED=true. Verifica que el Secret Manager secret ' +
+        '`demo-seed-password` esté mountado en Cloud Run ' +
+        '(infrastructure/compute.tf service_api) y que tenga al menos 1 version ' +
+        'no-placeholder — corre infrastructure/scripts/init-demo-seed-password.sh ' +
+        'desde la máquina del PO. Ver docs/runbooks/secret-init-runbook.md.',
+    );
+  }
+  return pw;
+}
 
 /**
  * Crea (o reusa) el set demo completo. Idempotente: corridas sucesivas
@@ -95,6 +126,9 @@ export async function seedDemo(opts: {
   logger: Logger;
 }): Promise<DemoCredentials> {
   const { db, firebaseAuth, logger } = opts;
+  // Fail-closed: si el env no está mountado el seed crashea acá (early
+  // exit) en lugar de avanzar y crear users Firebase sin password.
+  const demoPassword = getDemoPassword();
 
   // 1. Resolver plan (estándar). Buscamos el plan_id ya existente.
   const planRows = await db
@@ -136,7 +170,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: SHIPPER_OWNER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Dueño Andina Demo',
     rut: DEMO_SHIPPER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -146,7 +180,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: CARRIER_OWNER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Dueño Transportes Demo Sur',
     rut: DEMO_CARRIER_OWNER_RUT,
     isPlatformAdmin: false,
@@ -159,7 +193,7 @@ export async function seedDemo(opts: {
     firebaseAuth,
     logger,
     email: STAKEHOLDER_EMAIL,
-    password: DEMO_PASSWORD,
+    password: demoPassword,
     fullName: 'Stakeholder Demo (Mesa pública sostenibilidad)',
     rut: DEMO_STAKEHOLDER_USER_RUT,
     isPlatformAdmin: false,
@@ -288,9 +322,9 @@ export async function seedDemo(opts: {
   });
 
   return {
-    shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: DEMO_PASSWORD },
-    carrier_owner: { email: CARRIER_OWNER_EMAIL, password: DEMO_PASSWORD },
-    stakeholder: { email: STAKEHOLDER_EMAIL, password: DEMO_PASSWORD },
+    shipper_owner: { email: SHIPPER_OWNER_EMAIL, password: demoPassword },
+    carrier_owner: { email: CARRIER_OWNER_EMAIL, password: demoPassword },
+    stakeholder: { email: STAKEHOLDER_EMAIL, password: demoPassword },
     conductor: { rut: DEMO_CONDUCTOR_RUT, activation_pin: driverResult.activationPin },
     carrier_empresa_id: carrierEmpresaId,
     shipper_empresa_id: shipperEmpresaId,

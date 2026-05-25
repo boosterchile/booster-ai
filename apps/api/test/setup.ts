@@ -41,3 +41,10 @@ process.env.JWT_ISSUER ??= 'booster-ai';
 process.env.API_AUDIENCE ??= 'https://api.test.boosterchile.com';
 process.env.ALLOWED_CALLER_SA ??= 'test-caller@booster-ai-test.iam.gserviceaccount.com';
 process.env.BOOSTER_PLATFORM_ADMIN_EMAILS ??= 'dev@boosterchile.com';
+// T8 SEC-001 — seedDemo / ensureConductorDemoActivated llaman
+// getDemoPassword() que throw si DEMO_SEED_PASSWORD ausente. En tests
+// unitarios sin el secret real, default a una cadena reconocible.
+// Tests que validan el throw path explícitamente hacen
+// `delete process.env.DEMO_SEED_PASSWORD` en su propio beforeEach
+// (ver src/services/seed-demo.test.ts).
+process.env.DEMO_SEED_PASSWORD ??= 'test-only-not-a-real-secret';

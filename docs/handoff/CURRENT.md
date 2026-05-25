@@ -8,7 +8,7 @@
 
 ## SEC-001 cierre — spec Approved (2026-05-24)
 
-Sesión de smoke E2E sobre `demo.boosterchile.com` reveló regresión backend: `POST /demo/login` → 404 silencioso porque `DEMO_MODE_ACTIVATED=false` en Cloud Run prod. Investigación trazó la causa a la rama abandonada `feat/security-blocking-hotfixes-2026-05-14` (22 commits sin PR; literal `BoosterDemo2026!` sigue en main HEAD en `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`; sin middleware enforcement; sin docs/qa; H2 `/auth/driver-activate` sin rate-limit; H3 bucket DTE `is_locked=false`). El `terraform apply` que apagó el flag se ejecutó desde esa rama → **drift IaC**: state Cloud Run diverge de main.
+Sesión de smoke E2E sobre `demo.boosterchile.com` reveló regresión backend: `POST /demo/login` → 404 silencioso porque `DEMO_MODE_ACTIVATED=false` en Cloud Run prod. Investigación trazó la causa a la rama abandonada `feat/security-blocking-hotfixes-2026-05-14` (22 commits sin PR; literal `<DEMO_SEED_PASSWORD literal eliminado en T8>` seguía en main HEAD en `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`; sin middleware enforcement; sin docs/qa; H2 `/auth/driver-activate` sin rate-limit; H3 bucket DTE `is_locked=false`). El `terraform apply` que apagó el flag se ejecutó desde esa rama → **drift IaC**: state Cloud Run diverge de main.
 
 ### Artefactos producidos en sesión 2026-05-24
 

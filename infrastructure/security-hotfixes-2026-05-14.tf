@@ -34,7 +34,7 @@ locals {
       placeholder = true
     }
     "demo-seed-password" = {
-      purpose     = "Password leído por seed-demo*.ts cuando DEMO_MODE_ACTIVATED=true. Reemplaza literal hardcoded BoosterDemo2026! en seed-demo.ts:86 y seed-demo-startup.ts:142. Spec §3 H1.4, T6, ADR-032."
+      purpose     = "Password leído por seed-demo*.ts cuando DEMO_MODE_ACTIVATED=true via env var DEMO_SEED_PASSWORD (T7+T8 sec-001-cierre). Reemplaza literal hardcoded eliminado de seed-demo.ts:86 y seed-demo-startup.ts:142 en T8. Spec §3 H1.4, T6, ADR-032."
       placeholder = true
     }
     "pin-rate-limit-hmac-pepper" = {
