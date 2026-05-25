@@ -165,7 +165,7 @@ El spec v3.2 cubre 8 sub-fases (H1.0-H1.6 + H2 + H4) con ~50 SCs. Si se planeara
 - **Rollback**: revertir commit → literal vuelve a HEAD. Operational impact: ninguno si flag está OFF (estado actual de prod). Pero `git grep` test del CI fallaría si volvemos al estado pre-merge — coordinated revert con T7.
 - **Spec trace**: §3 H1.4 SC-1.4.1, SC-1.4.3, SC-1.4.4.
 
-### T9: Rate-limit-pin middleware base (RUT normalize + per-RUT counter)
+### T9: Rate-limit-pin middleware base (RUT normalize + per-RUT counter) [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/middleware/rate-limit-pin.ts` (new), `apps/api/src/middleware/rate-limit-pin.test.ts` (new), `apps/api/src/routes/auth-driver.ts` (wire middleware antes del handler).
 - **LOC estimate**: ~90 (middleware ~50 + tests ~30 + wire ~10).

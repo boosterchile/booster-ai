@@ -3,11 +3,13 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
+import Redis from 'ioredis';
 import type pg from 'pg';
 import { config } from './config.js';
 import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
+import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
@@ -108,6 +110,23 @@ export function createServer(opts: CreateServerOptions): Hono {
   );
 
   app.use('*', secureHeaders());
+
+  // T9 SEC-001 — cliente Redis dedicado al rate-limit-pin middleware.
+  // Conexión propia (no comparte pool con ObservabilityCache) para
+  // aislar métricas y errores. lazyConnect=true evita crashear el
+  // startup si Memorystore está unreachable; el middleware loguea el
+  // error y T10 introducirá el fail-closed 503.
+  const redisForRateLimit = new Redis({
+    host: config.REDIS_HOST,
+    port: config.REDIS_PORT,
+    ...(config.REDIS_PASSWORD ? { password: config.REDIS_PASSWORD } : {}),
+    ...(config.REDIS_TLS ? { tls: {} } : {}),
+    maxRetriesPerRequest: 2,
+    lazyConnect: true,
+  });
+  redisForRateLimit.on('error', (err) => {
+    logger.warn({ err: err.message }, 'rate-limit-pin: Redis error');
+  });
 
   // P3.c — VAPID config global (idempotente). Si las env vars están
   // ausentes, configureWebPush no hace nada y el wire post-INSERT
@@ -469,9 +488,25 @@ export function createServer(opts: CreateServerOptions): Hono {
     // firebase auth previa (el driver aún no tiene Firebase user). Otros
     // endpoints de `/auth/*` futuros podrían tenerla; por eso montamos
     // este sin middleware encima.
+    //
+    // T9 SEC-001 — rate-limit-pin middleware (5/15min/RUT, key
+    // `rl:pin-activate:<rutCanonical>`) wireado dentro de
+    // createDriverAuthRoutes vía opts.rateLimitPin. La instancia Redis
+    // viene de `redisForRateLimit` arriba; comparte Memorystore con el
+    // resto del proceso pero es una conexión propia (aislamiento de
+    // pool y métricas).
+    const rateLimitPin = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+    });
     app.route(
       '/auth',
-      createDriverAuthRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+      createDriverAuthRoutes({
+        db: opts.db,
+        firebaseAuth: opts.firebaseAuth,
+        logger,
+        rateLimitPin,
+      }),
     );
 
     // ADR-035 — Auth universal RUT + clave numérica para todos los roles.
