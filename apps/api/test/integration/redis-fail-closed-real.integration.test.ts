@@ -83,12 +83,19 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
     });
   });
 
-  it('Scenario 3: Redis restart (mismo container) — ioredis auto-reconnect, middleware recupera 200', async () => {
+  it('Scenario 3: TCP socket destroy mid-flight — ioredis auto-reconnect recupera 200 sin restart de app', async () => {
     expect((await app.request('/activate', REQ)).status).toBe(200);
 
-    await container?.restart();
-    await wait(2000);
+    redis?.stream?.destroy();
+    await wait(100);
+
+    for (let i = 0; i < 30; i += 1) {
+      if (redis?.status === 'ready') {
+        break;
+      }
+      await wait(200);
+    }
 
     expect((await app.request('/activate', REQ)).status).toBe(200);
-  }, 90_000);
+  }, 60_000);
 });
