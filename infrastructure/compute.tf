@@ -191,6 +191,17 @@ module "service_api" {
     GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_PLUS       = tostring(var.google_workspace_price_per_seat_usd_plus)
     GOOGLE_WORKSPACE_PRICE_PER_SEAT_USD_ENTERPRISE = tostring(var.google_workspace_price_per_seat_usd_enterprise)
     MONTHLY_BUDGET_USD                             = tostring(var.monthly_budget_usd)
+
+    # T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
+    # fail-closed startup cuando runMigrations falla. Default false en
+    # Sprint 1 prod (legacy behavior preservada); flip a true en Sprint 2.
+    # El env var se lee en apps/api/src/main.ts vía runMigrationsGated.
+    # PLAIN env var (no secret) — fix moved aquí desde `secrets` block 2026-05-25:
+    # Sprint 1 T3 leftover bug lo dejó en bloque secrets causando que Cloud
+    # Run intentara mount un secreto llamado literalmente "false" (= valor
+    # de tostring(false)). Apply falló con "Secret projects/.../secrets/false
+    # was not found" en el primer Sprint 2a apply 2026-05-25T17:55Z.
+    STRICT_MIGRATION_ORDERING = tostring(var.strict_migration_ordering)
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
@@ -240,12 +251,6 @@ module "service_api" {
     # ADR-037: GEMINI_API_KEY eliminada con el mismo patrón (Vertex AI +
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
-
-    # T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
-    # fail-closed startup cuando runMigrations falla. Default false en
-    # Sprint 1 prod (legacy behavior preservada); flip a true en Sprint 2.
-    # El env var se lee en apps/api/src/main.ts vía runMigrationsGated.
-    STRICT_MIGRATION_ORDERING = tostring(var.strict_migration_ordering)
 
     # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
     # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
