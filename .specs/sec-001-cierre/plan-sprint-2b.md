@@ -134,7 +134,7 @@ PR3 discoveries deferred a Sprint 2c.
 
 ---
 
-### T6: ADR-052 (signup migration Admin SDK) Proposed + `signup-paths-audit.md` inventory
+### T6: ADR-052 (signup migration Admin SDK) Proposed + `signup-paths-audit.md` inventory [DONE 2026-05-26]
 
 - **Files**: `docs/adr/052-signup-migration-admin-sdk-gate.md` (nuevo, Status: Proposed), `docs/qa/signup-paths-audit.md` (nuevo)
 - **LOC estimate**: ~100
