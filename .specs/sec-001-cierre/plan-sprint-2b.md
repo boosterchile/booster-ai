@@ -41,7 +41,7 @@ PR3 discoveries deferred a Sprint 2c.
 
 ## 3. Tasks
 
-### T1: middleware `is-demo-enforcement` con 3 modos + unit tests
+### T1: middleware `is-demo-enforcement` con 3 modos + unit tests [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/middleware/is-demo-enforcement.ts` (nuevo), `apps/api/src/middleware/is-demo-enforcement.test.ts` (nuevo)
 - **LOC estimate**: ~140 (waiver vs ≤100 — justificado: precedente `demo-expires.ts` 240 LOC, 3 modos + factory + 5 escenarios tests es realista 130-150 LOC. Re-split a T1a+T1b solo agrega ceremony sin valor; ambas mitad serían triviales separadas)
