@@ -217,7 +217,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir test file.
 - **Spec trace**: §3 SC-1.2.5, §10 T-SIGNUP-1 fail-closed.
 
-### T9c: integration test matrix — per-method negative tests (SC-1.2.4)
+### T9c: integration test matrix — per-method negative tests (SC-1.2.4) [DONE 2026-05-26]
 
 - **Files**: `apps/api/test/integration/signup-paths-negative.integration.test.ts` (nuevo)
 - **LOC estimate**: ~80
