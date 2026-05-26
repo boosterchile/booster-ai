@@ -13,6 +13,7 @@ import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { ALLOWLISTED_PATHS } from './middleware/is-demo-allowlist.js';
 import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcement.js';
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
+import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
@@ -34,6 +35,7 @@ import { createDemoLoginRoutes } from './routes/demo-login.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
+import { createHealthSignupFlowRouter } from './routes/health-signup-flow.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
@@ -41,6 +43,7 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
+import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
   createPublicSiteSettingsRoutes,
   createSiteSettingsRoutes,
@@ -150,6 +153,12 @@ export function createServer(opts: CreateServerOptions): Hono {
   // Public routes (no auth) — /health (liveness) + /ready (DB ping).
   app.route('/', createHealthRouter({ pool: opts.pool, logger }));
 
+  // T8 SEC-001 Sprint 2b — GET /health/signup-flow liveness probe específico
+  // para el synthetic monitor `signup-probe` (T13 SC-1.2.3). Sin DB ni Redis;
+  // solo verifica que el route está montado y el proceso vivo. Distinguible
+  // de /health para alerting fino post-deploy.
+  app.route('/health', createHealthSignupFlowRouter());
+
   // Public route — /webpush/vapid-public-key (necesario para que el browser
   // pueda subscribe; no es secreto, es la identidad del sender).
   app.route(
@@ -193,6 +202,26 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
   }
+
+  // T8 SEC-001 Sprint 2b — POST /api/v1/signup-request (SC-1.2.1 + SC-1.2.5
+  // + ADR-052). Endpoint público (sin firebase auth) que reemplaza el flow
+  // `createUserWithEmailAndPassword` client-side por admin-approval gate.
+  //
+  // Order CRITICAL: rate-limit middleware se monta ANTES del route para que
+  // toda request al path pase por el counter 5/15min/IP (fail-closed 503 si
+  // Redis down). Sin esto, attacker podría flood el INSERT a la tabla
+  // solicitudes_registro. Cloud Armor cascade (1000/min/IP) actúa como
+  // pre-filtro upstream — ver docs/qa/rate-limit-cascade.md.
+  //
+  // Allowlist entry `POST /api/v1/signup-request` ya preempty en T3
+  // is-demo-allowlist.ts (sin claim is_demo en path público; defense para
+  // evitar 403 si wire global futuro aplica).
+  const rateLimitSignup = createRateLimitSignupMiddleware({
+    redis: redisForRateLimit,
+    logger,
+  });
+  app.use('/api/v1/signup-request', rateLimitSignup);
+  app.route('/api/v1/signup-request', createSignupRequestRoutes({ db: opts.db, logger }));
 
   // Phase 5 PR-L1 — Public tracking del shipper / consignee. NO auth:
   // la defensa es la opacidad del token UUID v4 (122 bits, no enumerable).
