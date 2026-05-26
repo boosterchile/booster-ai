@@ -186,6 +186,59 @@ jobs:
         run: echo "Skip — PR no toca seed-demo*.ts ni el plumbing del gate."
 
   # ---------------------------------------------------------------------------
+  # T2b SEC-001 Sprint 2b — Comment-lint del allowlist is-demo
+  # Spec sec-001-cierre §3 SC-1.3.6 part 2 + plan-sprint-2b §3 T2b.
+  # Valida que cada entry en `is-demo-allowlist.ts` tiene rationale
+  # non-empty + reviewBy ISO YYYY-MM-DD strictly in future. Drift
+  # detection: corre en cada push/PR; expiraciones se detectan day-0.
+  # ---------------------------------------------------------------------------
+  is-demo-allowlist-comments:
+    name: is-demo allowlist comment-lint (SC-1.3.6 T6c)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate allowlist entries (rationale + reviewBy future)
+        run: pnpm --filter @booster-ai/api exec tsx scripts/check-is-demo-allowlist-comments.ts
+
+  # ---------------------------------------------------------------------------
+  # T2b SEC-001 Sprint 2b — PR-modifies guard del allowlist is-demo
+  # Spec sec-001-cierre §3 SC-1.3.6 part 3 + plan-sprint-2b §3 T2b.
+  # Si el PR-diff modifica `is-demo-allowlist.ts`, re-corre el validator
+  # T6c. Defense-in-depth + visibility en PR check name. Sin `[skip ci]`
+  # (branch protection guard via required status check).
+  # ---------------------------------------------------------------------------
+  is-demo-allowlist-pr-guard:
+    name: is-demo allowlist PR-modifies guard (SC-1.3.6 T6d)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history para git diff vs base
+      - uses: pnpm/action-setup@v6
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: PR-modifies guard (validates entries if file in diff)
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: pnpm --filter @booster-ai/api exec tsx scripts/check-allowlist-pr-guard.ts
+
+  # ---------------------------------------------------------------------------
   # SBOM generation — Software Bill of Materials para auditoría
   # ---------------------------------------------------------------------------
   sbom:

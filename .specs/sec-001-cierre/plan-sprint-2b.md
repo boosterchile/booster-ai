@@ -72,7 +72,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir ambos archivos.
 - **Spec trace**: §3 SC-1.3.3, SC-1.3.4.
 
-### T2b: CI lint scripts T6c (comment lint) + T6d (PR-modifies-allowlist guard)
+### T2b: CI lint scripts T6c (comment lint) + T6d (PR-modifies-allowlist guard) [DONE 2026-05-26]
 
 - **Files**: `apps/api/scripts/check-is-demo-allowlist-comments.ts` (nuevo), `apps/api/scripts/check-allowlist-pr-guard.ts` (nuevo), `.github/workflows/security.yml` (modify — 2 jobs)
 - **LOC estimate**: ~80
