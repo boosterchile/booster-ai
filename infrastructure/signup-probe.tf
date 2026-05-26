@@ -89,11 +89,15 @@ resource "google_monitoring_alert_policy" "signup_probe_failure" {
       # con LT detecta any failure dentro de la window.
       threshold_value = 1
 
+      # `check_passed` se reporta como DOUBLE (1.0 ok / 0.0 fail). ALIGN_
+      # FRACTION_TRUE convierte a fracción true por período (1.0 = todos
+      # los samples pass, 0.0 = todos fail). Sin cross_series_reducer
+      # explícito el monitor opera por serie individual (uno por uptime
+      # check_id), que es lo que queremos para alertar sobre este check
+      # específico.
       aggregations {
-        alignment_period     = "60s"
-        per_series_aligner   = "ALIGN_FRACTION_TRUE"
-        cross_series_reducer = "REDUCE_COUNT_FALSE"
-        group_by_fields      = ["resource.label.project_id"]
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_FRACTION_TRUE"
       }
     }
   }
