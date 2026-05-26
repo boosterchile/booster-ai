@@ -445,3 +445,17 @@ Resolver OQ-2C-1 a OQ-2C-9 antes de cerrar `/plan` Sprint 2c (todas formal block
   `/plan` Sprint 2c can begin in next session pending:
   1. OQ-2C-1..9 resolution (formal blockers per spec §12).
   2. ADR-052 Status flip Proposed → Accepted (gate C13 + mechanical CI gate C14 to be implemented in /plan).
+
+- **2026-05-26 22:35Z** — **OQ-2C-1..9 research complete** (ver `oq-research.md`). 7 fully resolved + 2 partial/inconclusive with defensive design:
+  - **OQ-2C-1, OQ-2C-4**: `auth/internal-error` + substring-search for `'BLOCKED_SIGNUP_PENDING_APPROVAL'` in `error.message`. `translateAuthError` pattern documented.
+  - **OQ-2C-2**: Gen 1 supports `min_instances` (max 1000); cost ~$0.20/mo idle. Decision: pre-launch baseline determines need (default 0; escalate to 1 if cold-start >3s observed).
+  - **OQ-2C-3**: NO multi-region failover (single-region by design). Accept regional dependency (matches Cloud SQL + apps/api existing infra).
+  - **OQ-2C-5** ⚠ PARTIAL: Identity Platform audit log schema NOT documented. Mitigation: handler structured-logs `event.ipAddress` + email-hashed (blocking event includes `ipAddress` per Firebase docs). Function's own structured log is the forensic-grade signal; Identity Platform audit log is detection-only.
+  - **OQ-2C-6**: `beforeCreate` only on creation, NOT subsequent sign-ins. Existing users unaffected.
+  - **OQ-2C-7**: Accept gcip-cloud-functions@0.2.0 with **exact pin** (no caret) + renovate monitoring + ADR-NNN migration policy.
+  - **OQ-2C-8** ⚠ INCONCLUSIVE empíricamente: defensive design (early-return on `providerId !== 'google.com'`) is safe under both Case A (Admin SDK triggers, early-return) and Case B (Admin SDK doesn't trigger). Empirical verification deferred to `/plan` T0 sandbox spike.
+  - **OQ-2C-9**: NO Gen 1 deprecation announced. Accept Gen 1; monitor release notes quarterly.
+
+  All 9 formal blockers addressed sufficient para `/plan` proceed. OQ-2C-5 + OQ-2C-8 incorporated into `/plan` T0 as explicit empirical-verification tasks. Sprint 2c `/plan` can proceed pending only:
+  1. ADR-052 Status flip Proposed → Accepted (post Sprint-2b T13 canary success + 2h watch).
+  2. Mechanical CI gate `scripts/check-adr-status-accepted.ts` implementation in `/plan` T0.
