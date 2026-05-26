@@ -204,7 +204,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir test file.
 - **Spec trace**: §10 T-SIGNUP-1 happy path.
 
-### T9b: integration test `signup-request` fail-closed Redis + cloud-armor cascade (testcontainers)
+### T9b: integration test `signup-request` fail-closed Redis + cloud-armor cascade (testcontainers) [DONE 2026-05-26]
 
 - **Files**: `apps/api/test/integration/signup-request-fail-closed.integration.test.ts` (nuevo)
 - **LOC estimate**: ~70
