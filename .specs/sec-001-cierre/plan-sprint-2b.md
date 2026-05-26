@@ -255,7 +255,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: feature flag flip; no code revert necesario.
 - **Spec trace**: §3 SC-1.2.1, §7.5 rollback feature flag.
 
-### T11: Terraform `google_identity_platform_config` email/password OFF + IdP config doc
+### T11: Terraform `google_identity_platform_config` email/password OFF + IdP config doc [DONE 2026-05-26]
 
 - **Files**: `infrastructure/identity-platform.tf` (nuevo o modify si existe), `docs/qa/identity-platform-config.md` (nuevo)
 - **LOC estimate**: ~40
