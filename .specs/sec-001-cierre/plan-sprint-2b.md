@@ -59,7 +59,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir commit; middleware no wired aún (T3) → 0 impacto runtime.
 - **Spec trace**: §3 SC-1.3.1.
 
-### T2a: `is-demo-allowlist` scaffolding + audit doc inventory
+### T2a: `is-demo-allowlist` scaffolding + audit doc inventory [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/middleware/is-demo-allowlist.ts` (nuevo), `docs/qa/is-demo-enforcement-audit.md` (nuevo)
 - **LOC estimate**: ~60
