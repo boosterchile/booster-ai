@@ -172,7 +172,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: drizzle migration `down` (reverse SQL) + revertir schema.ts y domain file.
 - **Spec trace**: §3 SC-1.2.1.
 
-### T8: POST `/api/v1/signup-request` route + service + `rate-limit-signup` middleware + `/health/signup-flow` liveness + wire `server.ts` + unit tests
+### T8: POST `/api/v1/signup-request` route + service + `rate-limit-signup` middleware + `/health/signup-flow` liveness + wire `server.ts` + unit tests [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/routes/signup-request.ts` (nuevo), `apps/api/src/services/signup-request.ts` (nuevo), `apps/api/src/middleware/rate-limit-signup.ts` (nuevo — reuse pattern rate-limit-pin con scope `rl:signup-request:<ip>`), `apps/api/src/routes/health-signup-flow.ts` (nuevo — GET liveness endpoint para T13 uptime check fallback), `apps/api/src/server.ts` (modify — wire route + liveness + allowlist comment), `apps/api/src/routes/signup-request.test.ts` (nuevo unit), `apps/api/src/middleware/rate-limit-signup.test.ts` (nuevo unit)
 - **LOC estimate**: ~200 (waiver vs ≤100 — justificado: middleware clone (~80 LOC base rate-limit-pin.ts) + endpoint + service + liveness + 2 test files; precedent Sprint 2a T4 = 100 LOC fue solo service file, este incluye 4 source files + 2 test files)
