@@ -30,6 +30,7 @@ import { OnboardingRoute } from './routes/onboarding.js';
 import { PerfilRoute } from './routes/perfil.js';
 import { PlatformAdminMatchingRoute } from './routes/platform-admin-matching.js';
 import { PlatformAdminObservabilityRoute } from './routes/platform-admin-observability.js';
+import { PlatformAdminSignupRequestsRoute } from './routes/platform-admin-signup-requests.js';
 import { PlatformAdminSiteSettingsRoute } from './routes/platform-admin-site-settings.js';
 import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
@@ -257,6 +258,15 @@ const platformAdminObservabilityRoute = createRoute({
   component: PlatformAdminObservabilityRoute,
 });
 
+// T10 SEC-001 Sprint 2b — signup-requests admin dashboard (ADR-052 + SC-1.2.1).
+// Gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS). Feature flag
+// SIGNUP_REQUEST_FLOW_ACTIVATED → coming-soon UI si OFF.
+const platformAdminSignupRequestsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/signup-requests',
+  component: PlatformAdminSignupRequestsRoute,
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -381,6 +391,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
   platformAdminObservabilityRoute,
+  platformAdminSignupRequestsRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,

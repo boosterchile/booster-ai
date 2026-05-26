@@ -456,6 +456,29 @@ const apiEnvSchema = commonEnvSchema
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
     /**
+     * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
+     * rollback) — gating del flow signup-request → admin-approval.
+     *
+     * Cuando `true`: admin UI muestra la lista de signup-requests pendientes
+     * y los endpoints `POST /admin/signup-requests/:id/{approve,reject}`
+     * procesan normalmente.
+     *
+     * Cuando `false` (default): admin UI muestra "Coming soon" banner; los
+     * endpoints admin retornan `503 service_unavailable` con
+     * `code: signup_flow_disabled`. El endpoint público
+     * `POST /api/v1/signup-request` sigue aceptando solicitudes (NO se gate
+     * por este flag — las solicitudes se acumulan en `solicitudes_registro`
+     * pero no se procesan hasta flip ON).
+     *
+     * Rollback path per spec §7.5: si SC-1.2.1 falla post-deploy pero la
+     * Terraform IdP flip (T11) ya está aplicada, flip este flag a false
+     * inhabilita el approve flow; las solicitudes nuevas siguen siendo
+     * aceptadas (UX no-rota) pero quedan pending hasta fix + flip ON. SLA
+     * target fix: 4h.
+     */
+    SIGNUP_REQUEST_FLOW_ACTIVATED: booleanFlag(false),
+
+    /**
      * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
      * fail-closed startup cuando `runMigrations` falla.
      *
