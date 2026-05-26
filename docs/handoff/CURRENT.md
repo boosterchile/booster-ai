@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-25 (SEC-001 **Sprint 2a CERRADO** 12/12 — H1.1 recreate 4 UIDs ejecutado prod + retire-old-batch CERRÓ vector compromised passwords; window-of-overlap ~50min cumpliendo SLA 4h; T8 Redis fail-closed integration via testcontainers shipped)
+**Última actualización**: 2026-05-26 (SEC-001 **Sprint 2b H1.2 PR2 CERRADO** 9/9 — admin-approval signup gate end-to-end shipped + ADR-052 Proposed + Identity Platform `disabled_user_signup=true` applied prod + signup-probe monitoring activo + canary 30min Cloud Build sequence wired; drift `sql_database_instance.main.ipv4_enabled` discovered & reverted; ADR-052 Status flip Proposed→Accepted PENDIENTE post-canary success + 2h watch)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
 
@@ -159,24 +159,89 @@ Sprint 2a cubrió **H1.1 (post-disclosure account replacement per ADR-053 + NIST
 | **CI gating** integration tests (DB+Redis) | gate enforcement | ✅ T0+T0.5 |
 | **ADR lifecycle** post-disclosure replacement | ADR-053 Proposed→Accepted | ✅ T7a+T7b |
 
-### Sprint 2b — pendiente plan
+### Sprint 2b H1.2 PR2 CERRADO (2026-05-26) — 9/9 tasks shipped + 3 terraform applies prod
 
-Items remaining del Sprint 2 originally-scoped (no urgent — sub-sprint Sprint 2a cierra el vector activo):
+Sprint 2b cubrió **H1.2 (migración signup público → Admin SDK admin-approval gate)** end-to-end: ADR-052 + DB schema + endpoint público + admin UI + Terraform IdP flip + canary deploy infra + drift discovery & resolution. **10 PRs mergeados a `main` (9 features + 1 hotfix) en sesión single-day**:
 
-- **H1.2**: migración signup público `createUserWithEmailAndPassword` + `sendPasswordResetEmail` + Google provider a flow Admin SDK con admin-approval gate (O-1).
-- **H1.5**: forensia + audit logs filtering (round 4 P2-R4-2).
-- **H1.6**: reactivación demo (flag flip a true) + TTL claim + 90d monitoring.
+| Task | PR | Commit | Foco |
+|---|---|---|---|
+| T6 ADR-052 Proposed + signup-paths-audit | [#351](https://github.com/boosterchile/booster-ai/pull/351) | `dcfb588` | 14 Firebase Auth methods inventoried; alternatives + status-transition criteria |
+| T7 Drizzle migration solicitudes_registro + pgEnum + domain | [#352](https://github.com/boosterchile/booster-ai/pull/352) | `d634626` | 0039 migration + signupRequestSchema canónico |
+| T8 POST /api/v1/signup-request + rate-limit + liveness | [#353](https://github.com/boosterchile/booster-ai/pull/353) | `8f8b281` | 5/15min/IP + fail-closed 503 + email enumeration defense |
+| T9a integration happy + enumeration + rate-limit | [#354](https://github.com/boosterchile/booster-ai/pull/354) | `d8d8a52` | testcontainers Redis + TEST_DATABASE_URL |
+| T9b integration fail-closed Redis + cloud-armor cascade | [#355](https://github.com/boosterchile/booster-ai/pull/355) | `b85835b` | testcontainers stop mid-test + docs §signup-request layer |
+| T10 admin UI + approve/reject service + feature flag | [#356](https://github.com/boosterchile/booster-ai/pull/356) | `4854703` | Admin SDK createUser + flag gated 503 + 5-state UI |
+| T11 Terraform IdP self-signup OFF + doc | [#357](https://github.com/boosterchile/booster-ai/pull/357) | `7f5a563` | `client.permissions.disabled_user_signup` + Google residual tracked |
+| T9c negative matrix per-method (5 creation paths) | [#358](https://github.com/boosterchile/booster-ai/pull/358) | `e9f869e` | contract test scope-reduced per amendment A2 v3.4 |
+| T13 canary deploy + signup-probe + Terraform traffic ignore | [#359](https://github.com/boosterchile/booster-ai/pull/359) | `c54bcd6` | 5-step canary cloudbuild + uptime 60s + alert 2-consecutive |
+| Hotfix signup_probe alert aggregation reducer | [#360](https://github.com/boosterchile/booster-ai/pull/360) | `23e7554` | DOUBLE-typed metric incompatibility (live patch reconciliation) |
 
-H3 spec hermano (`sec-h3-dte-retention-lock`) requiere su propio `/plan` independiente.
+### Evidencia operacional Sprint 2b H1.2
+
+- **`terraform apply` 2026-05-26 19:42Z** — `google_identity_platform_config.default.client.permissions.disabled_user_signup: false → true`. Verified via Admin API curl:
+  ```json
+  { "client_permissions": { "disabledUserSignup": true } }
+  ```
+- **`terraform apply` 2026-05-26 19:55Z** — `google_monitoring_uptime_check_config.signup_probe` (60s sobre `/health/signup-flow`) + `google_monitoring_alert_policy.signup_probe_failure` (2 consecutive failures). Confirmed via Monitoring REST API.
+- **`terraform apply` 2026-05-26 20:25Z** — `google_sql_database_instance.main.settings.ipConfiguration.ipv4Enabled: true → false`. Reverted manual drift introduced 2026-05-25 20:13Z. Evidence: 0 conexiones desde public IPs en 7-day log scan (sólo `[local]`, `127.0.0.1`, `10.8.0.x` Cloud SQL Auth Proxy + VPC connector). PRIMARY IP `34.176.157.71` deallocated.
+- **`module.service_api` lifecycle update** — `terraform plan -target` post-drift-revert: **No changes. Your infrastructure matches the configuration.** El refactor del módulo cloud-run-service (dynamic traffic block + `ignore_changes = [..., traffic]`) es structurally no-op para state actual.
+- **Evidence ledger**: `.claude/ledger/2026-05-26_3796e944-c02a-4ba0-8de4-316149db2ddd.jsonl` (eventos `phase_enter`/`pre_build_articulation`/`artifact_produced`/`phase_exit`/`pr_opened`/`pr_merged`/`terraform_applied` para cada task).
+
+### Drift incident — `sql_database_instance.main.ipv4_enabled` (2026-05-26 investigation)
+
+Discovered durante `terraform plan` post-T11 apply. Investigation findings + resolution:
+
+| Aspecto | Detalle |
+|---|---|
+| Quién | `dev@boosterchile.com` (cuenta Felipe) |
+| Cuándo | 2026-05-25 20:13Z (6 PATCH operations en 5 min) |
+| Qué | enabled `ipv4Enabled: true` en prod via Cloud SQL Admin API directo |
+| Estado .tf | `infrastructure/data.tf:136` siempre fue `false` desde initial commit (verified via `git log -L`) |
+| Usage evidence | 0 conexiones desde public IPs en 7-day Cloud SQL connection log scan (filtered: only `[local]`, `127.0.0.1`, `10.8.0.x`) |
+| Authorized networks | `[]` vacío (sin allowlist; ninguna IP externa puede conectar aunque el bind esté activo) |
+| Resolution | Path C: investigated → no usage → reverted via `terraform apply -target` (42s, idempotente). Post-apply: 0 errors, conexiones internas continúan normales |
+
+### Sprint 2b H1.2 dimensiones cubiertas
+
+| Sub-fase | SCs | Status |
+|---|---|---|
+| **H1.2 SC-1.2.0** inventario exhaustivo Firebase Auth paths | SC-1.2.0 | ✅ T6 (signup-paths-audit.md) |
+| **H1.2 SC-1.2.1** signup-request endpoint + admin-approval gate + Admin SDK createUser | SC-1.2.1 | ✅ T7+T8+T10 |
+| **H1.2 SC-1.2.2 email/password leg** Identity Platform `disabled_user_signup=true` | SC-1.2.2 | ✅ T11 + applied prod |
+| **H1.2 SC-1.2.2 Google leg** TRACKED_RESIDUAL Sprint 2c | spec amendment A3 v3.4 | 🔲 Deferred → [`.specs/_followups/sprint-2c-google-blocking-function.md`](../../.specs/_followups/sprint-2c-google-blocking-function.md) |
+| **H1.2 SC-1.2.3** synthetic monitor signup-probe + canary 30min antes de full deploy | SC-1.2.3 | ✅ T13 + applied prod |
+| **H1.2 SC-1.2.4** integration tests negative matrix per-method (5 creation paths) | SC-1.2.4 (amendment A2 v3.4) | ✅ T9c |
+| **H1.2 SC-1.2.5** rate-limit + email enumeration defense + fail-closed + cascade docs | SC-1.2.5 | ✅ T8+T9a+T9b |
+| **ADR-052** signup migration Admin SDK gate | Proposed → Accepted pending T13 canary success + 2h watch | 🟡 Proposed |
+
+### Acciones pendientes para cerrar SEC-001 H1.2 completamente
+
+1. **Próximo deploy api real** corre canary sequence end-to-end (`deploy-canary --no-traffic → route-canary --to-tags=...=1 → canary-sleep 30min → canary-verify → deploy-api --to-latest`). Wall-clock ~32-35 min. Observar Cloud Build UI primer corrida.
+2. **Post-canary success + 2h watch** sin alertas `signup_probe_failure` → separate commit ADR-052 Status flip:
+   ```bash
+   # Edit docs/adr/052-signup-migration-admin-sdk-gate.md línea 3:
+   #   Proposed (2026-05-26; T6 Sprint 2b H1.2 PR2). ...
+   # → Accepted (post-canary run <CLOUDBUILD_BUILD_ID> + 2h watch <DATE>)
+   git commit -am "docs(adr-052): Accepted post-canary success cloudbuild run <BUILD_ID>"
+   ```
+3. **Flip `SIGNUP_REQUEST_FLOW_ACTIVATED=true`** post-Sprint-2b ship + canary verification (currently default `false` → admin UI shows "Coming soon"). Spec §7.5 rollback path.
+4. **Sprint 2c BlockingFunction** para cerrar Google leg residual (`signInWithPopup`). Stub: `.specs/_followups/sprint-2c-google-blocking-function.md`.
+
+### Items remaining del SEC-001 originally-scoped (no urgentes — vector primario cerrado)
+
+- **H1.5**: forensia + audit logs filtering (round 4 P2-R4-2). 14-day window scan + Cloud Logging filter + Pub/Sub topic + Cloud Function password-spray-incident-trigger.
+- **H1.6**: reactivación demo (flag flip `DEMO_MODE_ACTIVATED=true`) + TTL claim + 90d monitoring. Depende de `sec-h3-dte-retention-lock` mergeado (per SC-1.6.5).
+- **H3 spec hermano** (`sec-h3-dte-retention-lock`): plan independiente cuando PO esté listo.
 
 ### Próximo paso
 
-`/agent-rigor:plan plan-sprint-2b` cuando PO esté listo, o cierre operacional permanente del SEC-001 si Sprint 2b items se difieren a otro spec. Recomendado fresh session.
+`/agent-rigor:plan` para Sprint 2c (Google Blocking Function) cuando PO esté listo, O cierre operacional permanente del SEC-001 H1.2 una vez ADR-052 esté `Accepted`. Recomendado fresh session.
 
-Pendiente operacional post-Sprint 2a:
-- **Cosmetic drift residual**: `google_monitoring_dashboard.telemetry_overview` JSON formatter (heredado Sprint 1; sin impacto runtime).
+Pendiente operacional post-Sprint 2b:
+- **Cosmetic drift residual** (heredado Sprint 1): `google_monitoring_dashboard.telemetry_overview` JSON formatter (sin impacto runtime).
+- **Otros drifts no-aplicados** detectados durante T13 plan: `google_logging_metric.auth_is_demo_blocked` + `google_monitoring_alert_policy.auth_is_demo_blocked_anomaly` (H1.3 observability — probablemente shipped en main pero nunca `terraform apply`). Tracked como follow-up IaC reconciliation; no-bloqueante.
 - **#STAGING-ENV**: backlog tracking para crear segundo GCP project con infra paralela. Bloquea el flip prod de `STRICT_MIGRATION_ORDERING=true`.
-- **Silent-window guard alert** para `sec001/demo_uid_retired` (baseline ahora >0 post-T4): tracked como follow-up post-operational, evaluable Sprint 2b.
+- **Silent-window guard alert** para `sec001/demo_uid_retired` (baseline ahora >0 post-Sprint-2a T4): tracked como follow-up post-operational.
 - **TTL renovación próxima**: 2026-06-17 (cron T6a `demo-account-ttl-alert` debería emitir `demo.ttl_low` -7d).
 
 ---
