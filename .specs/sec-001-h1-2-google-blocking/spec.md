@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-26 (v2 redraft)
-- **Status**: Approved v2 (2026-05-26)
+- **Status**: **Umbrella — Split into 2c-A + 2c-B per G-14** (2026-05-26 23:50Z). Originally Approved v2 2026-05-26 21:50Z; split decision triggered por plan v2 DA review (5 P0 + 6 P1 + 5 P2 findings indicating spec too large for single sprint per skill §107).
 - **Linked**:
   - v1 historical: [`spec-v1.md`](./spec-v1.md) (INVALIDATED 2026-05-26 — architecture wrong per devils-advocate empirical findings; preserved for audit).
   - Review history: [`review.md`](./review.md) (DA pass over v1, 3 P0 + 5 P1 + 7 P2 findings).
@@ -459,3 +459,31 @@ Resolver OQ-2C-1 a OQ-2C-9 antes de cerrar `/plan` Sprint 2c (todas formal block
   All 9 formal blockers addressed sufficient para `/plan` proceed. OQ-2C-5 + OQ-2C-8 incorporated into `/plan` T0 as explicit empirical-verification tasks. Sprint 2c `/plan` can proceed pending only:
   1. ADR-052 Status flip Proposed → Accepted (post Sprint-2b T13 canary success + 2h watch).
   2. Mechanical CI gate `scripts/check-adr-status-accepted.ts` implementation in `/plan` T0.
+
+- **2026-05-26 22:49Z** — /plan v1 drafted (14 tasks, 309 LOC). Devils-advocate review v1 found 4 P0 + 7 P1 + 8 P2 (ver `plan-review.md`). /plan v1 INVALIDATED.
+
+- **2026-05-26 23:10Z** — /plan v2 redraft (16 tasks, 421 LOC) addresses 4 P0 + 7 P1 + key P2 from v1 DA findings.
+
+- **2026-05-26 23:40Z** — Devils-advocate review v2 returns **5 P0 + 6 P1 + 5 P2 new findings** (ver `plan-review.md` appended lines 464-973):
+  - G-01 (F-01 NOT fully fixed): regex too strict + 3 coexisting Status formats + `castellanizar-adr-headers.md` followup will silently break gate.
+  - G-02 (F-02 honor-system): T3b→T5b→T6→T7 dep is documentation-only; no mechanical check on handler completeness before deploy.
+  - G-03 (F-03 apply gap): T6 single PR doesn't prevent terraform apply / Cloud Build deploy half-failure.
+  - G-04 (F-04 spec contradiction): T7 plan baseline criteria drops OR-clause de SC-2C.4; structurally impossible at Booster's <10 signups/mo rate.
+  - G-05 NEW: T11 dependency claim factually wrong.
+  - Plus 6 P1 + 5 P2.
+
+  Critical empirical finding by DA v2: spec at skill §107 task-count threshold (16 ≥ 15) + recurring DA loop pattern indicates **spec genuinely too large for single sprint**. Natural split = Sprint 2c-A (handler-built, code-only) + Sprint 2c-B (handler-deployed, prod impact). Mirrors Sprint 2b ADR-052/053 precedent.
+
+- **2026-05-26 23:50Z** — **SPLIT DECISION** per G-14. PO confirmed Path B:
+  - **Sprint 2c-A** = handler implementation + tests + ghost user inventory script + emulator integration. **No prod impact**. Lands shipped to main.
+  - **Sprint 2c-B** = Cloud Function infra + Cloud Build deploy + IdP wire + smoke E2E + ghost inventory execution + runbook + 7d watch + ADR Status flip. **Prod impact via terraform apply**.
+
+  Umbrella spec retained as shared context (Constraints C1-C14, Alternatives §8, OQ-2C-1..9 resolution, R-2C-1..13). Sub-specs reference umbrella + enumerate scope-specific deltas.
+
+  Sub-specs:
+  - `.specs/sec-001-h1-2-google-blocking-a/spec.md` — Sprint 2c-A scope.
+  - `.specs/sec-001-h1-2-google-blocking-b/spec.md` — Sprint 2c-B scope.
+
+  Plan drafting deferred to next session per skill 11-spec-driven-development §145 (cooling-off para post-split rigor + DA pass on sub-specs).
+
+  `plan.md` v2 + `plan-v1.md` retained as historical reference; NOT executed.
