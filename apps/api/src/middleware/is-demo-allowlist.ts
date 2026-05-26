@@ -27,4 +27,33 @@ import type { IsDemoAllowlistEntry } from './is-demo-enforcement.js';
 
 export type { IsDemoAllowlistEntry } from './is-demo-enforcement.js';
 
-export const ALLOWLISTED_PATHS: IsDemoAllowlistEntry[] = [];
+export const ALLOWLISTED_PATHS: IsDemoAllowlistEntry[] = [
+  {
+    path: '/demo/login',
+    methods: ['POST'],
+    rationale:
+      'demo login endpoint mintea custom token Firebase para personas demo; sesión demo requiere este path por diseño (no auth previa, no claim is_demo)',
+    reviewBy: '2026-08-25',
+  },
+  {
+    path: '/api/v1/demo/cache-warm/:persona',
+    methods: ['POST'],
+    rationale:
+      'Sprint 2a T5 pre-warm cache fire-and-forget desde landing demo (rate-limited 10/min/IP, sin firebase auth, sin claim is_demo); preempty defense',
+    reviewBy: '2026-08-25',
+  },
+  {
+    path: '/feature-flags',
+    methods: ['GET'],
+    rationale:
+      'flags fetch read-only boot path para decidir UI (selector RUT vs email/password); público sin firebase auth, sin claim is_demo; preempty defense',
+    reviewBy: '2026-08-25',
+  },
+  {
+    path: '/api/v1/signup-request',
+    methods: ['POST'],
+    rationale:
+      'Sprint 2b T8 signup-request endpoint público sin auth previa (admin-approval flow ADR-052); sin claim is_demo, preempty defense para evitar 403 si wire global aplica',
+    reviewBy: '2026-08-25',
+  },
+];

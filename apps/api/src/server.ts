@@ -10,6 +10,8 @@ import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createDemoExpiresMiddleware } from './middleware/demo-expires.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
+import { ALLOWLISTED_PATHS } from './middleware/is-demo-allowlist.js';
+import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcement.js';
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
@@ -239,8 +241,23 @@ export function createServer(opts: CreateServerOptions): Hono {
       redis: redisForRateLimit,
       logger,
     });
-    app.use('/me', firebaseAuthMiddleware, demoExpiresMiddleware);
-    app.use('/me/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    // T3 SEC-001 Sprint 2b — is-demo-enforcement middleware. Defense-in-
+    // depth structural enforcement del claim is_demo. Chained post-
+    // firebase-auth + demo-expires en cada mount point auth-required.
+    // Mode requireNotDemo: GET/HEAD/OPTIONS passthrough; POST/PUT/PATCH/
+    // DELETE → 403 forbidden_demo si is_demo:true. Allowlist
+    // populated en is-demo-allowlist.ts es preempty defense para
+    // paths públicos (sin claim is_demo el middleware passthrough by
+    // design). Spec sec-001-cierre §3 SC-1.3.2 (v3.4 amendment A1
+    // 2026-05-25). Wire enumera 22 grupos per plan T3 acceptance +
+    // CI gate check-is-demo-wire-completeness.ts valida coverage.
+    const isDemoEnforcementMiddleware = createIsDemoEnforcementMiddleware({
+      mode: 'requireNotDemo',
+      allowlist: ALLOWLISTED_PATHS,
+      logger,
+    });
+    app.use('/me', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
+    app.use('/me/*', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
     // userContext requerido para /me/push-subscription (necesita user.id).
     // /me raíz queda con solo firebase auth (acepta users pre-onboarding).
     const userContextMiddlewareForMe = createUserContextMiddleware({
@@ -271,7 +288,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
     // Solo firebaseAuth (no userContext) porque el user todavía no existe
     // en la DB cuando llama acá.
-    app.use('/empresas/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/empresas/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.route('/empresas', createEmpresaRoutes({ db: opts.db, logger }));
 
     // Trip requests v2 (canonical) — Firebase auth + userContext porque
@@ -291,7 +313,12 @@ export function createServer(opts: CreateServerOptions): Hono {
       verifyBaseUrl: config.API_AUDIENCE[0] ?? 'https://api.boosterchile.com',
     };
 
-    app.use('/trip-requests-v2/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/trip-requests-v2/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/trip-requests-v2/*', userContextMiddleware);
     app.route(
       '/trip-requests-v2',
@@ -305,7 +332,12 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // Offers — endpoints carrier-side: GET mine + POST accept/reject.
     // Mismo chain firebaseAuth + userContext.
-    app.use('/offers/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/offers/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/offers/*', userContextMiddleware);
     app.route(
       '/offers',
@@ -352,7 +384,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (sin prefix adicional) para que ambos compartan /assignments. Las
     // rutas no chocan porque los paths internos son distintos
     // (/:id/confirmar-entrega vs /:id/messages*).
-    app.use('/assignments/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/assignments/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/assignments/*', userContextMiddleware);
     const assignmentsRouter = createAssignmentsRoutes({
       db: opts.db,
@@ -401,10 +438,25 @@ export function createServer(opts: CreateServerOptions): Hono {
       }
       return userContextMiddleware(c, next);
     });
+    // T3 SEC-001 Sprint 2b — is-demo-enforcement aplicado a /certificates/*.
+    // Para /verify path público, firebaseAuth ya hizo short-circuit a next()
+    // sin setear claims → middleware passthrough (isDemoTrueClaim retorna
+    // false cuando claims ausentes). Para paths auth-required, claims sí
+    // están seteadas → mode requireNotDemo enforces. No wrapper conditional
+    // necesario porque el middleware self-handles ambos casos.
+    // NOTE: pre-existing gap — demoExpiresMiddleware no está en este chain
+    // (line 429-440); follow-up Sprint 2c track-1 para alinear con otros
+    // mount points auth-required.
+    app.use('/certificates/*', isDemoEnforcementMiddleware);
     app.route('/certificates', createCertificatesRoutes({ db: opts.db, logger, certConfig }));
 
     // Admin: gestión de dispositivos Teltonika pendientes (open enrollment).
-    app.use('/admin/dispositivos-pendientes/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/dispositivos-pendientes/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/dispositivos-pendientes/*', userContextMiddleware);
     app.route(
       '/admin/dispositivos-pendientes',
@@ -414,20 +466,35 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
     // ADR-032). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist dentro
     // del handler (no por role de empresa).
-    app.use('/admin/cobra-hoy/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/cobra-hoy/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/cobra-hoy/*', userContextMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: CRUD de organizaciones stakeholder (ADR-034).
     // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
-    app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/stakeholder-orgs/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
     // y copy desde la PWA; demo/login/onboarding leen la versión
     // publicada via GET /public/site-settings (cache 5min).
-    app.use('/admin/site-settings/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/site-settings/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/site-settings/*', userContextMiddleware);
     app.route(
       '/admin/site-settings',
@@ -443,12 +510,22 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Admin platform-wide: re-emisión manual de DTEs Tipo 33 (ADR-024 +
     // ADR-031). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el
     // handler. Útil tras transient errors o tras configurar Sovos.
-    app.use('/admin/liquidaciones/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/liquidaciones/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/liquidaciones/*', userContextMiddleware);
     app.route('/admin/liquidaciones', createAdminLiquidacionesRoutes({ db: opts.db, logger }));
 
     // D1 — Admin seed demo (POST/DELETE). Auth platform-admin allowlist.
-    app.use('/admin/seed/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/seed/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/seed/*', userContextMiddleware);
     app.route(
       '/admin/seed',
@@ -456,7 +533,12 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
 
     // ADR-033 §8 — Admin matching backtest. Misma allowlist platform-admin.
-    app.use('/admin/matching/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/matching/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/matching/*', userContextMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
 
@@ -487,7 +569,12 @@ export function createServer(opts: CreateServerOptions): Hono {
       },
       logger,
     );
-    app.use('/admin/observability/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/admin/observability/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/admin/observability/*', userContextMiddleware);
     app.route(
       '/admin/observability',
@@ -498,18 +585,38 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
 
     // Vehículos de la empresa activa.
-    app.use('/vehiculos/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/vehiculos/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/vehiculos/*', userContextMiddleware);
-    app.use('/vehiculos', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/vehiculos',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/vehiculos', userContextMiddleware);
     app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
 
     // Conductores de la empresa activa (carrier). D8 — solo accesible
     // desde la interfaz transportista; el conductor mismo no consume estos
     // endpoints (su surface vive en D9 driver-only).
-    app.use('/conductores/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/conductores/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/conductores/*', userContextMiddleware);
-    app.use('/conductores', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/conductores',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/conductores', userContextMiddleware);
     app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
 
@@ -549,19 +656,44 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
 
     // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
-    app.use('/sucursales/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/sucursales/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/sucursales/*', userContextMiddleware);
-    app.use('/sucursales', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/sucursales',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/sucursales', userContextMiddleware);
     app.route('/sucursales', createSucursalesRoutes({ db: opts.db, logger }));
 
     // D6 — Compliance: documentos de vehículo + conductor + dashboard.
-    app.use('/documentos/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/documentos/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/documentos/*', userContextMiddleware);
     app.route('/documentos', createDocumentosRoutes({ db: opts.db, logger }));
-    app.use('/cumplimiento', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/cumplimiento',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/cumplimiento', userContextMiddleware);
-    app.use('/cumplimiento/*', firebaseAuthMiddleware, demoExpiresMiddleware);
+    app.use(
+      '/cumplimiento/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/cumplimiento/*', userContextMiddleware);
     app.route('/cumplimiento', createCumplimientoRoutes({ db: opts.db, logger }));
   } else {
