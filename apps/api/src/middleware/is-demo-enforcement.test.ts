@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FirebaseClaims } from './firebase-auth.js';
 import {
   type IsDemoAllowlistEntry,
@@ -272,6 +272,189 @@ describe('is-demo-enforcement middleware', () => {
           logger: noopLogger,
         }),
       ).not.toThrow();
+    });
+  });
+
+  /**
+   * T4 SEC-001 Sprint 2b — structured log emit on block (SC-1.3.7).
+   *
+   * Plan-sprint-2b §3 T4:
+   *   - Emit logger.warn({event:'auth.is_demo.blocked', correlationId,
+   *     uid, path, method, mode}) SOLO en branches que retornan 403
+   *     (no en passthrough).
+   *   - correlationId desde header X-Cloud-Trace-Context (Cloud Run
+   *     inyecta nativamente). Default 'unknown' si ausente.
+   *   - uid desde claims.uid (default 'unknown' si claim ausente —
+   *     edge case porque is_demo:true sin uid es claim malformado).
+   *   - Sin body, sin persona, sin email (devils-advocate P2-1
+   *     evitar admin role leak via persona).
+   */
+  describe('T4 structured log emit on block (SC-1.3.7)', () => {
+    function makeSpyLogger() {
+      const warn = vi.fn();
+      const spy = {
+        trace: noop,
+        debug: noop,
+        info: noop,
+        warn,
+        error: noop,
+        fatal: noop,
+        child: () => spy,
+      } as unknown as Logger & { warn: typeof warn };
+      return { logger: spy, warn };
+    }
+
+    it('requireNotDemo + is_demo:true + POST → logger.warn emit con shape correcto', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemo',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+
+      const res = await app.request('/me/profile', {
+        method: 'POST',
+        headers: { 'X-Cloud-Trace-Context': 'abc123def/456;o=1' },
+      });
+      expect(res.status).toBe(403);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [payload, message] = warn.mock.calls[0] ?? [];
+      expect(payload).toMatchObject({
+        event: 'auth.is_demo.blocked',
+        correlationId: 'abc123def',
+        uid: 'demo-uid-1',
+        path: '/me/profile',
+        method: 'POST',
+        mode: 'requireNotDemo',
+      });
+      expect(typeof message).toBe('string');
+      // No PII leak: persona, email, body NO presentes.
+      expect(payload).not.toHaveProperty('persona');
+      expect(payload).not.toHaveProperty('email');
+      expect(payload).not.toHaveProperty('body');
+    });
+
+    it('correlationId fallback = "unknown" cuando X-Cloud-Trace-Context ausente', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemo',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(403);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toMatchObject({
+        correlationId: 'unknown',
+      });
+    });
+
+    it('requireNotDemo + is_demo:true + GET (passthrough) → NO emit log', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemo',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+      const res = await app.request('/me', { method: 'GET' });
+      expect(res.status).toBe(200);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('claim ausente (no claims) → passthrough sin log emit', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemo',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(null, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('is_demo:false (cuenta real) → passthrough sin log emit', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemo',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(NON_DEMO_CLAIMS, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('requireNotDemoOrSandbox + stakeholder (passthrough) → NO emit log', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemoOrSandbox',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_STAKEHOLDER, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('requireNotDemoOrSandbox + persona!=stakeholder → 403 + log emit con mode correcto', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'requireNotDemoOrSandbox',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(403);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toMatchObject({
+        event: 'auth.is_demo.blocked',
+        mode: 'requireNotDemoOrSandbox',
+      });
+    });
+
+    it('explicitAllow + path no-match → 403 + log emit con mode correcto', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'explicitAllow',
+        allowlist: [],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+      const res = await app.request('/me/profile', { method: 'POST' });
+      expect(res.status).toBe(403);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toMatchObject({
+        event: 'auth.is_demo.blocked',
+        mode: 'explicitAllow',
+      });
+    });
+
+    it('explicitAllow + path match → passthrough sin log emit', async () => {
+      const { logger, warn } = makeSpyLogger();
+      const mw = createIsDemoEnforcementMiddleware({
+        mode: 'explicitAllow',
+        allowlist: [
+          {
+            path: '/demo/login',
+            methods: ['POST'],
+            rationale: 'fixture',
+            reviewBy: '2099-01-01',
+          },
+        ],
+        logger,
+      });
+      const app = makeAppWithClaims(DEMO_CLAIMS_SHIPPER, mw);
+      const res = await app.request('/demo/login', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 });
