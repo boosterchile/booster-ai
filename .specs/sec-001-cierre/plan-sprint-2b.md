@@ -156,7 +156,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir ambos archivos.
 - **Spec trace**: §3 SC-1.2.0.
 
-### T7: Drizzle migration `solicitudes_registro` + pgEnum + domain schema
+### T7: Drizzle migration `solicitudes_registro` + pgEnum + domain schema [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/db/schema.ts` (modify — agregar `estadoSolicitudRegistroEnum` pgEnum + `solicitudesRegistro` pgTable), `apps/api/drizzle/0039_solicitudes_registro.sql` (nuevo via `drizzle-kit generate`), `packages/shared-schemas/src/domain/signup-request.ts` (nuevo domain canónico)
 - **LOC estimate**: ~80

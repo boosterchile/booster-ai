@@ -446,6 +446,23 @@ export const personaDemoEnum = pgEnum('persona_demo', [
   'conductor',
 ]);
 
+/**
+ * SEC-001 Sprint 2b H1.2 — estado enum para solicitudes_registro
+ * (migration 0039). Signup público gated por admin-approval — ver
+ * docs/adr/052-signup-migration-admin-sdk-gate.md. Values Spanish per
+ * CLAUDE.md §Reglas naming bilingüe.
+ *
+ * Transiciones permitidas (service layer T10 enforced):
+ *   pendiente_aprobacion → aprobado   (admin approve)
+ *   pendiente_aprobacion → rechazado  (admin reject)
+ * Sin transiciones desde estados terminales.
+ */
+export const estadoSolicitudRegistroEnum = pgEnum('estado_solicitud_registro', [
+  'pendiente_aprobacion',
+  'aprobado',
+  'rechazado',
+]);
+
 // =============================================================================
 // BILLING / AUTH
 // =============================================================================
@@ -2180,6 +2197,35 @@ export const cuentasDemo = pgTable('cuentas_demo', {
 });
 
 // =============================================================================
+// SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
+// =============================================================================
+//
+// Tabla DB-driven que sustenta el flow signup-request → admin-approval gate
+// definido en docs/adr/052-signup-migration-admin-sdk-gate.md. POST
+// /api/v1/signup-request (T8) inserta row con estado=pendiente_aprobacion;
+// admin approve/reject (T10) actualiza estado + approver email + timestamp.
+//
+// Email enumeration defense (SC-1.2.5): la response del endpoint NO depende
+// de si el email ya existe en users o solicitudes_registro — el dedup vive
+// en service layer (T8) sin signal lateral.
+
+export const solicitudesRegistro = pgTable('solicitudes_registro', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 320 }).notNull(),
+  nombreCompleto: varchar('nombre_completo', { length: 200 }).notNull(),
+  estado: estadoSolicitudRegistroEnum('estado').notNull().default('pendiente_aprobacion'),
+  solicitadoEn: timestamp('solicitado_en', { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Email del admin que aprobó (o rechazó). NULL mientras pending. NOT NULL
+   * post-decision. La service layer (T10) garantiza la invariante; aquí no
+   * lo enforce-amos via CHECK porque la condición es bi-columnar
+   * (estado + aprobado_por NOT NULL) y service-layer es el único writer.
+   */
+  aprobadoPor: text('aprobado_por'),
+  aprobadoEn: timestamp('aprobado_en', { withTimezone: true }),
+});
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2256,3 +2302,7 @@ export type NewZonaStakeholderRow = typeof zonasStakeholder.$inferInsert;
 // SEC-001 Sprint 2a H1.1 — cuentas_demo (migration 0038)
 export type CuentaDemoRow = typeof cuentasDemo.$inferSelect;
 export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
+
+// SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
+export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
+export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;

@@ -65,3 +65,6 @@ export * from './aggregations/k-anonymity.js';
 
 // SEC-001 Sprint 2a H1.1 — cuentas demo DB-driven registry (ADR-053)
 export * from './domain/cuentas-demo.js';
+
+// SEC-001 Sprint 2b H1.2 — solicitudes de registro signup gate (ADR-052)
+export * from './domain/signup-request.js';
