@@ -41,7 +41,7 @@ PR3 discoveries deferred a Sprint 2c.
 
 ## 3. Tasks
 
-### T1: middleware `is-demo-enforcement` con 3 modos + unit tests
+### T1: middleware `is-demo-enforcement` con 3 modos + unit tests [DONE 2026-05-25]
 
 - **Files**: `apps/api/src/middleware/is-demo-enforcement.ts` (nuevo), `apps/api/src/middleware/is-demo-enforcement.test.ts` (nuevo)
 - **LOC estimate**: ~140 (waiver vs ≤100 — justificado: precedente `demo-expires.ts` 240 LOC, 3 modos + factory + 5 escenarios tests es realista 130-150 LOC. Re-split a T1a+T1b solo agrega ceremony sin valor; ambas mitad serían triviales separadas)
@@ -59,7 +59,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir commit; middleware no wired aún (T3) → 0 impacto runtime.
 - **Spec trace**: §3 SC-1.3.1.
 
-### T2a: `is-demo-allowlist` scaffolding + audit doc inventory
+### T2a: `is-demo-allowlist` scaffolding + audit doc inventory [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/middleware/is-demo-allowlist.ts` (nuevo), `docs/qa/is-demo-enforcement-audit.md` (nuevo)
 - **LOC estimate**: ~60
@@ -72,7 +72,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir ambos archivos.
 - **Spec trace**: §3 SC-1.3.3, SC-1.3.4.
 
-### T2b: CI lint scripts T6c (comment lint) + T6d (PR-modifies-allowlist guard)
+### T2b: CI lint scripts T6c (comment lint) + T6d (PR-modifies-allowlist guard) [DONE 2026-05-26]
 
 - **Files**: `apps/api/scripts/check-is-demo-allowlist-comments.ts` (nuevo), `apps/api/scripts/check-allowlist-pr-guard.ts` (nuevo), `.github/workflows/security.yml` (modify — 2 jobs)
 - **LOC estimate**: ~80
@@ -86,7 +86,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir workflow jobs + remover scripts.
 - **Spec trace**: §3 SC-1.3.6.
 
-### T3: wire per-group en `server.ts` + allowlist populated + integration tests T6 + T6b + audit-completeness CI gate
+### T3: wire per-group en `server.ts` + allowlist populated + integration tests T6 + T6b + audit-completeness CI gate [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/server.ts` (modify — agregar `isDemoEnforcementMiddleware` en cada chain `firebaseAuthMiddleware + demoExpiresMiddleware`), `apps/api/src/middleware/is-demo-allowlist.ts` (modify — populate), `apps/api/test/integration/is-demo-enforcement-sample.integration.test.ts` (nuevo), `apps/api/test/integration/is-demo-default-deny.integration.test.ts` (nuevo, fixture-pattern), `apps/api/scripts/check-is-demo-wire-completeness.ts` (nuevo — CI gate), `.github/workflows/security.yml` (modify — agregar job)
 - **LOC estimate**: ~150 (waiver vs ≤100 justificado: completeness gate + ~20 mount points wire + integration tests)
