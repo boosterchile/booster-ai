@@ -231,7 +231,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir test file. Si spec amendment v3.4 no aprobado por PO, este task fail spec gate.
 - **Spec trace**: §3 SC-1.2.4 _(con amendment proposed)_.
 
-### T10: admin signup-requests page + admin route + email notifications + feature flag
+### T10: admin signup-requests page + admin route + email notifications + feature flag [DONE 2026-05-26]
 
 - **Files**: `apps/web/src/routes/platform-admin-signup-requests.tsx` (nuevo single-file pattern), `apps/api/src/routes/admin-signup-requests.ts` (nuevo — list + approve + reject), `apps/api/src/services/signup-request.ts` (modify — agregar `approve()` + `reject()` con Admin SDK `auth.createUser`), `apps/api/src/services/notifications/signup-request-email.ts` (nuevo), `apps/api/src/server.ts` (modify — wire admin route), `apps/api/src/config.ts` (modify — agregar `SIGNUP_REQUEST_FLOW_ACTIVATED` via `booleanFlag(false)` helper + `BOOSTER_PLATFORM_ADMIN_EMAILS` string list)
 - **LOC estimate**: ~400 (waiver vs ≤100 EXPLICIT — justificado por precedent: `apps/web/src/routes/platform-admin-matching.tsx` = 1043 LOC para single admin UI page; este task ~30% density vs precedent + backend extension. PO decisión 2026-05-25: mantener monolítico vs split, UI pages son inherentemente bundled; waiver no escapa scope creep — es realidad arquitectónica del frontend Booster)

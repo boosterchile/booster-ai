@@ -22,6 +22,7 @@ import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js'
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
+import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
@@ -53,6 +54,7 @@ import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
+import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
@@ -514,6 +516,29 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+
+    // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
+    // Mismo middleware chain que stakeholder-orgs + allowlist check downstream.
+    // Feature flag SIGNUP_REQUEST_FLOW_ACTIVATED gate dentro del handler.
+    // Allowlist entries (GET /admin/signup-requests, POST approve, POST reject)
+    // en is-demo-allowlist.ts con rationale "admin-only mutation; role check
+    // upstream garantiza no-demo".
+    app.use(
+      '/admin/signup-requests/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
+    app.use('/admin/signup-requests/*', userContextMiddleware);
+    app.route(
+      '/admin/signup-requests',
+      createAdminSignupRequestsRoutes({
+        db: opts.db,
+        logger,
+        auth: opts.firebaseAuth,
+        notifier: new LoggingSignupRequestNotifier(logger),
+      }),
+    );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
     // y copy desde la PWA; demo/login/onboarding leen la versión

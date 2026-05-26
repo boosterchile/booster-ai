@@ -56,4 +56,18 @@ export const ALLOWLISTED_PATHS: IsDemoAllowlistEntry[] = [
       'Sprint 2b T8 signup-request endpoint público sin auth previa (admin-approval flow ADR-052); sin claim is_demo, preempty defense para evitar 403 si wire global aplica',
     reviewBy: '2026-08-25',
   },
+  {
+    path: '/admin/signup-requests/:id/approve',
+    methods: ['POST'],
+    rationale:
+      'Sprint 2b T10 admin-only mutation (signup-request approve via Admin SDK); role check downstream BOOSTER_PLATFORM_ADMIN_EMAILS garantiza no-demo (demo emails NUNCA en allowlist); allowlist permite que el role check sea la única gate',
+    reviewBy: '2026-08-26',
+  },
+  {
+    path: '/admin/signup-requests/:id/reject',
+    methods: ['POST'],
+    rationale:
+      'Sprint 2b T10 admin-only mutation (signup-request reject); role check downstream BOOSTER_PLATFORM_ADMIN_EMAILS garantiza no-demo (demo emails NUNCA en allowlist); allowlist permite que el role check sea la única gate',
+    reviewBy: '2026-08-26',
+  },
 ];
