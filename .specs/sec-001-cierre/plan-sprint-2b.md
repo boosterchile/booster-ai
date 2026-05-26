@@ -103,7 +103,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir cambios en server.ts (N-líneas de `isDemoEnforcementMiddleware` apply por grupo). Middleware file + allowlist + scripts permanecen safe.
 - **Spec trace**: §3 SC-1.3.2 _(con amendment)_, SC-1.3.5, SC-1.3.6 part 1, §10 T6 + T6b.
 
-### T4: observability `auth.is_demo.blocked` log-based metric + alert (conditional-counter pattern Sprint 2a)
+### T4: observability `auth.is_demo.blocked` log-based metric + alert (conditional-counter pattern Sprint 2a) [DONE 2026-05-26]
 
 - **Files**: `apps/api/src/middleware/is-demo-enforcement.ts` (modify — agregar structured log on block), `infrastructure/monitoring.tf` (modify — log-based metric + alert)
 - **LOC estimate**: ~80

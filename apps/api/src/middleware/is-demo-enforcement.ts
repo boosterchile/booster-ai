@@ -70,6 +70,14 @@ const FORBIDDEN_RESPONSE = { error: 'forbidden_demo', code: 'forbidden_demo' } a
 const IDEMPOTENT_SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
 const STAKEHOLDER_PERSONA = 'stakeholder';
 
+/**
+ * T4 SEC-001 Sprint 2b — log event name. Filtered by log-based metric
+ * `sec001/auth_is_demo_blocked` (infrastructure/monitoring.tf) +
+ * alert `auth_is_demo_blocked_anomaly` (count>0 sustained 5min,
+ * mismo pattern Sprint 2a T6a `audit.demo_uid_retired`).
+ */
+const BLOCKED_LOG_EVENT = 'auth.is_demo.blocked';
+
 function isDemoTrueClaim(claims: FirebaseClaims | undefined): boolean {
   if (!claims) {
     return false;
@@ -93,6 +101,20 @@ function isAllowlisted(allowlist: IsDemoAllowlistEntry[], path: string, method: 
   return false;
 }
 
+/**
+ * Extrae correlationId del header `X-Cloud-Trace-Context` (Cloud Run lo
+ * inyecta nativamente). Formato: `<trace_id>/<span_id>;o=<options>`. Sólo
+ * el trace_id es relevante para correlación cross-service en Cloud
+ * Logging. Default `'unknown'` para local/tests sin Cloud Run.
+ */
+function extractCorrelationId(headerValue: string | undefined): string {
+  if (!headerValue) {
+    return 'unknown';
+  }
+  const traceId = headerValue.split('/')[0];
+  return traceId && traceId.length > 0 ? traceId : 'unknown';
+}
+
 export function createIsDemoEnforcementMiddleware(
   opts: IsDemoEnforcementOptions,
 ): MiddlewareHandler {
@@ -109,12 +131,37 @@ export function createIsDemoEnforcementMiddleware(
     const method = c.req.method.toUpperCase();
     const path = c.req.path;
 
+    /**
+     * T4 SEC-001 — emit structured log warn solo en branches que
+     * retornan 403 (no en passthrough). Payload deliberadamente acotado
+     * a `{event, correlationId, uid, path, method, mode}` per
+     * devils-advocate P2-1 — sin persona/email/body para evitar admin
+     * role leak vía log aggregation. uid es Firebase UID (no Ley 19.628
+     * PII per spec §H4).
+     */
+    const emitBlocked = (): void => {
+      const correlationId = extractCorrelationId(c.req.header('x-cloud-trace-context'));
+      const uid = (claims as FirebaseClaims | undefined)?.uid ?? 'unknown';
+      opts.logger.warn(
+        {
+          event: BLOCKED_LOG_EVENT,
+          correlationId,
+          uid,
+          path,
+          method,
+          mode: opts.mode,
+        },
+        'is-demo enforcement blocked',
+      );
+    };
+
     switch (opts.mode) {
       case 'requireNotDemo': {
         if (IDEMPOTENT_SAFE_METHODS.has(method)) {
           await next();
           return;
         }
+        emitBlocked();
         return c.json(FORBIDDEN_RESPONSE, 403);
       }
       case 'requireNotDemoOrSandbox': {
@@ -123,6 +170,7 @@ export function createIsDemoEnforcementMiddleware(
           await next();
           return;
         }
+        emitBlocked();
         return c.json(FORBIDDEN_RESPONSE, 403);
       }
       case 'explicitAllow': {
@@ -130,6 +178,7 @@ export function createIsDemoEnforcementMiddleware(
           await next();
           return;
         }
+        emitBlocked();
         return c.json(FORBIDDEN_RESPONSE, 403);
       }
       default: {

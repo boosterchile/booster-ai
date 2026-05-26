@@ -332,3 +332,91 @@ resource "google_monitoring_alert_policy" "demo_ttl_low" {
 
   depends_on = [google_logging_metric.demo_ttl_low]
 }
+
+# -----------------------------------------------------------------------------
+# T4 SEC-001 Sprint 2b — Log-based metric auth.is_demo.blocked events
+# emitted by apps/api/src/middleware/is-demo-enforcement.ts cuando una
+# sesión con claim `is_demo:true` recibe 403 forbidden_demo en un mount
+# point auth-required. Conditional-counter pattern alineado con T6a
+# `demo_uid_retired`: solo se emite en branches que retornan 403, no
+# en passthrough (zero ruido baseline). Spec §3 H1.3 SC-1.3.7 +
+# plan-sprint-2b §3 T4.
+# -----------------------------------------------------------------------------
+resource "google_logging_metric" "auth_is_demo_blocked" {
+  name    = "sec001/auth_is_demo_blocked"
+  project = google_project.booster_ai.project_id
+
+  description = "is-demo enforcement bloqueó request (sesión demo con is_demo:true intentó POST/PUT/PATCH/DELETE auth-required). Counter DELTA — 0 events expected baseline (demo sessions read-only por design). Spec §3 H1.3 SC-1.3.7."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="auth.is_demo.blocked"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "is-demo enforcement blocked"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# T4 SEC-001 — Alert policy auth_is_demo_blocked_anomaly.
+# Pattern `count > 0 sustained 5min` (no 3σ — sin baseline día-0, mismo
+# enfoque que Sprint 2a `demo_ttl_low`). Auto-close 25h (mismo que T6a).
+# Follow-up tracked: upgrade a 3σ después de 1-2 semanas baseline real
+# en .specs/_followups/ (plan §3 T4).
+# -----------------------------------------------------------------------------
+resource "google_monitoring_alert_policy" "auth_is_demo_blocked_anomaly" {
+  display_name = "is-demo enforcement blocked (anomaly)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+
+  conditions {
+    display_name = "auth.is_demo.blocked events present > 5min"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.auth_is_demo_blocked.name}\" AND resource.type=\"cloud_run_revision\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+
+  alert_strategy {
+    # Auto-close 25h post-trigger: si demo session activa stops
+    # generating events, el alert se cierra sola.
+    auto_close = "90000s"
+  }
+
+  documentation {
+    content   = <<-EOT
+    is-demo enforcement bloqueó ≥1 request sustained 5min. Demo sessions
+    NO deberían generar writes contra mount points auth-required.
+
+    Causas posibles:
+      1. Demo UI bug — frontend está intentando POST/PUT/PATCH/DELETE
+         que no debería. Buscar `path` + `method` en logs.
+      2. Demo session siendo abusada — investigar `uid` + `correlationId`
+         en logs (Cloud Logging filter `jsonPayload.event=auth.is_demo.blocked`).
+      3. Wire de allowlist mal — endpoint legítimo demo está bloqueado
+         por error. Revisar `apps/api/src/middleware/is-demo-allowlist.ts`.
+
+    Investigar logs:
+      `jsonPayload.event=auth.is_demo.blocked` en Cloud Logging.
+
+    Ver `.specs/sec-001-cierre/spec.md` §3 H1.3 SC-1.3.7 + `plan-sprint-2b.md` §3 T4.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.auth_is_demo_blocked]
+}
