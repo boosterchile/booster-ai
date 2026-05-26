@@ -291,6 +291,14 @@ module "service_api" {
 
   secret_versions_ready = local.all_secret_versions_ready
 
+  # T13 SEC-001 Sprint 2b (SC-1.2.3 + ADR-052) — Cloud Build canary deploy
+  # gestiona traffic split entre revisiones (deploy-canary --no-traffic +
+  # route-canary --to-tags + canary-verify + deploy-api --to-latest). Sin
+  # este flag, `terraform apply` revierte el split y mata el canary mid-30min.
+  # Scope: solo `service_api`; los otros 8 services siguen con traffic
+  # gestionado por Terraform (default false).
+  traffic_managed_externally = true
+
   labels = { app = "api", env = var.environment }
 }
 

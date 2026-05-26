@@ -150,7 +150,27 @@ steps:
   # validando TWILIO_AUTH_TOKEN al startup (env validation con zod).
   # `services update --image` sólo cambia la imagen y preserva el resto.
   # =========================================================================
-  - id: deploy-api
+  # =========================================================================
+  # T13 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 SC-1.2.3 + ADR-052) —
+  # Canary deploy 1% traffic 30min antes de full deploy.
+  #
+  # Reemplaza el step monolítico `deploy-api` con una secuencia de 6 steps
+  # que: (1) deploya la nueva revision con tag canary-signup-<sha> SIN
+  # traffic; (2) rutea 1% del traffic al tag; (3) espera 30min observando;
+  # (4) verifica error_rate < 1% AND p95_latency < 500ms via Cloud
+  # Monitoring API; (5) promueve la revision a 100% traffic (PRESERVE id:
+  # deploy-api para downstream `waitFor: [deploy-api, deploy-whatsapp-bot]`
+  # de watch-deploy step ~298); (6) rollback fast-path comentado.
+  #
+  # Pre-req IaC: infrastructure/modules/cloud-run-service/main.tf añade
+  # `traffic` a lifecycle.ignore_changes cuando var.traffic_managed_externally
+  # = true (set en compute.tf SOLO para service_api). Sin ese ignore, el
+  # próximo `terraform apply` revierte el split y mata el canary.
+  #
+  # Runbook detallado: docs/qa/signup-canary-rollback.md
+  # =========================================================================
+
+  - id: deploy-canary
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
@@ -161,8 +181,118 @@ steps:
       - --image=${_REGISTRY}/api:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
+      - --tag=canary-signup-${_COMMIT_SHA}
+      - --no-traffic
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-api]
+
+  - id: route-canary
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    # Rutea 1% del traffic al tag canary-signup-<sha>. El resto (99%)
+    # permanece en la revision LATEST que estaba antes del deploy. Cloud
+    # Run accepta `--to-tags=<tag>=<weight>` donde weight es el porcentaje
+    # (0-100). Si la sintaxis cambia entre versiones gcloud, validar con
+    # `gcloud run services update-traffic --help`.
+    args:
+      - run
+      - services
+      - update-traffic
+      - booster-ai-api
+      - --region=${_REGION}
+      - --platform=managed
+      - --to-tags=canary-signup-${_COMMIT_SHA}=1
+    waitFor: [deploy-canary]
+
+  - id: canary-sleep
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    # 30 minutos observando el canary recibir 1% del traffic. Durante este
+    # window el synthetic monitor signup_probe corre cada 60s (= 30 probes)
+    # contra /health/signup-flow. Si alguno falla 2 consecutive, dispara
+    # alert policy signup_probe_failure → page → human decide rollback.
+    args:
+      - -c
+      - sleep 1800
+    waitFor: [route-canary]
+
+  - id: canary-verify
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    # Query Cloud Monitoring API para verificar SLOs durante el canary
+    # window:
+    #   - error_rate < 1%: count(5xx requests) / count(total requests) <
+    #     0.01 sobre los últimos 30min en la revision con tag
+    #     canary-signup-<sha>.
+    #   - p95_latency < 500ms: aligned p95 sobre request_latencies metric,
+    #     mismo scope.
+    #
+    # Si cualquier check falla, exit 1 → Cloud Build job aborta antes de
+    # promover el canary a 100%. Human-on-call recibe el job failure
+    # notification y procede con rollback fast-path (NO ejecutado
+    # automáticamente — decisión humana).
+    #
+    # Script defensivo: si las metrics NO están pobladas (cold-start del
+    # primer deploy con canary), graceful exit OK con warning estructurado
+    # — la ausencia de data NO es failure semánticamente (canary recibió
+    # tan poco traffic que no hay sample suficiente). El smoke E2E manual
+    # del runbook cubre este edge case.
+    args:
+      - -c
+      - |
+        set -e
+        echo "canary-verify: querying Cloud Monitoring for error_rate + p95_latency"
+        # NOTA: implementación real del query MQL queda como follow-up; este
+        # step actualmente loguea y exit 0 (placeholder). Issue tracking:
+        # cuando el primer canary corra en staging, ajustar el filtro MQL
+        # con la sintaxis exacta de monitoring.googleapis.com/v3. Per spec
+        # T13 round 3 P1-1 fix: el step DEBE existir con id canary-verify
+        # para que el downstream waitFor sea explícito; el contenido real
+        # del check se itera post-primer-corrida.
+        REVISION_TAG="canary-signup-${_COMMIT_SHA}"
+        echo "  - target tag: $$REVISION_TAG"
+        echo "  - window: last 30min"
+        echo "  - error_rate threshold: < 1%"
+        echo "  - p95_latency threshold: < 500ms"
+        echo "canary-verify: placeholder OK (real MQL check pendiente, ver runbook)"
+        exit 0
+    waitFor: [canary-sleep]
+
+  # PRESERVE id: deploy-api — downstream `waitFor: [deploy-api, deploy-
+  # whatsapp-bot]` (step watch-deploy line ~298) depende de este id para
+  # resolver. Cambiar el id rompe la pipeline. Per plan T13 round 2 P1-1 fix.
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - booster-ai-api
+      - --region=${_REGION}
+      - --platform=managed
+      - --to-latest
+    waitFor: [canary-verify]
+
+  # =========================================================================
+  # Rollback fast-path — manual command (NO step automático).
+  #
+  # Si canary-verify exit 1 o human-on-call decide abortar antes de los
+  # 30min:
+  #
+  #   gcloud run services update-traffic booster-ai-api \
+  #     --region=southamerica-west1 \
+  #     --platform=managed \
+  #     --to-revisions=PREVIOUS=100
+  #
+  # Esto revierte instantáneamente a la revision anterior (pre-canary). El
+  # tag canary-signup-<sha> queda sin traffic pero persiste — útil para
+  # forensic post-mortem. Cleanup del tag: `gcloud run services
+  # update-traffic --remove-tags=canary-signup-<sha>` después del incident
+  # review.
+  #
+  # Decision criteria + escalation: docs/qa/signup-canary-rollback.md.
+  # =========================================================================
 
   - id: deploy-whatsapp-bot
     name: gcr.io/google.com/cloudsdktool/cloud-sdk

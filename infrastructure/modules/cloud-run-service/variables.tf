@@ -111,3 +111,24 @@ variable "secret_versions_ready" {
   type        = list(string)
   default     = []
 }
+
+variable "traffic_managed_externally" {
+  description = <<-EOT
+    T13 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 SC-1.2.3 + ADR-052) — cuando `true`, el bloque
+    `traffic` del Cloud Run service se añade al `lifecycle.ignore_changes`. Esto permite que un
+    pipeline externo (Cloud Build canary deploy en `cloudbuild.production.yaml`) gestione el
+    traffic split entre revisiones SIN que Terraform lo revierta al siguiente apply.
+
+    **Scope**: SOLO el `service_api` lo activa (per spec §3 SC-1.2.3 + plan-sprint-2b T13 round
+    3 P0-1 fix). Los otros 8 servicios Cloud Run (web, matching-engine, telemetry-processor,
+    notification, sms-fallback, whatsapp-bot, document, etc.) mantienen `traffic_managed_externally
+    = false` (default) → Terraform sigue gestionando 100% del traffic a la latest revision para
+    ellos. Esto previene scope creep donde el canary pattern aplique unilateralmente.
+
+    **Cuándo poner `true`**: el service tiene un canary deploy step en Cloud Build que rutea
+    traffic vía `--tag` y `--to-tags` antes de promover `--to-latest`. Sin este flag, el siguiente
+    `terraform apply` revierte el split y mata el canary.
+  EOT
+  type        = bool
+  default     = false
+}

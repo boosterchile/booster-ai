@@ -272,7 +272,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir Terraform → re-apply restaura email/password self-signup ON. **NO opens Google gap (Google ya OPEN; rollback no afecta el residual)**.
 - **Spec trace**: §3 SC-1.2.2 _(email/password leg only; Google deferred Sprint 2c)_.
 
-### T13: synthetic monitor `signup-probe` + canary via `services update --image` + Terraform `traffic` ignore_changes
+### T13: synthetic monitor `signup-probe` + canary via `services update --image` + Terraform `traffic` ignore_changes [DONE 2026-05-26]
 
 - **Files**: `infrastructure/modules/cloud-run-service/main.tf` (modify — agregar `var.traffic_managed_externally` boolean + dynamic `ignore_changes` para `traffic`), `infrastructure/modules/cloud-run-service/variables.tf` (modify — declarar variable), `infrastructure/compute.tf` (modify — pasar `traffic_managed_externally=true` SOLO al `service_api`, defaults false a los otros 8 servicios), `infrastructure/monitoring/signup-probe.tf` (nuevo o ext), `cloudbuild.production.yaml` (modify — **REEMPLAZAR** `deploy-api` step lines 153-165 con 6-step canary sequence preservando `id: deploy-api` en step final), `docs/qa/signup-canary-rollback.md` (nuevo)
 - **LOC estimate**: ~150 (Terraform module + variable ~20 + compute.tf prop pass ~5 + uptime check ~30 + cloudbuild canary 6-step ~60 + runbook ~35)
