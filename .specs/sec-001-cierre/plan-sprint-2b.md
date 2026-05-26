@@ -190,7 +190,7 @@ PR3 discoveries deferred a Sprint 2c.
 - **Rollback**: revertir wire en `server.ts` (route 404); files permanecen para próximo intento.
 - **Spec trace**: §3 SC-1.2.1, SC-1.2.5.
 
-### T9a: integration tests `signup-request` happy path + enumeration + rate-limit
+### T9a: integration tests `signup-request` happy path + enumeration + rate-limit [DONE 2026-05-26]
 
 - **Files**: `apps/api/test/integration/signup-request.integration.test.ts` (nuevo)
 - **LOC estimate**: ~50
