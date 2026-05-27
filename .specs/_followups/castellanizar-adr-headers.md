@@ -44,10 +44,37 @@ Castellanizar los headers `**Status**` → `**Estado**` y `**Date**` → `**Fech
 - Todos los ADRs usan `**Estado**`/`**Fecha**` consistentemente.
 - CI verde (lint, typecheck, test pasan).
 
+## Exclusiones / coordinación con Sprint 2c
+
+**Trigger**: agregado 2026-05-27 por Sprint 2c-A T2a (mechanical CI gate `apps/api/scripts/check-adr-status-accepted.ts`). Bidirectional cross-ref: el script's doc-comment cita este file; este file declara la exclusión explícita.
+
+**Constraint**: ADR-052, ADR-053 y ADR-054 castellanization **MUST be done AFTER**:
+
+1. **Sprint 2c-B CERRADO** (deployment + IdP wire + 7d watch sin regressions + ADR-054 Status flip Accepted vía separate commit).
+2. **T2a regex updated** to también match `^- \*\*Estado\*\*:\s+Aceptado\b` (la forma post-castellanización).
+
+Equivalente: ejecutar batch atómico en el mismo PR que actualiza los 3 ADRs **AND** el regex en `apps/api/scripts/check-adr-status-accepted.ts`. NUNCA castellanizar ADR-052/053/054 antes que el gate sea actualizado — el gate fail-closes lo que rompe Sprint 2c-B deploy paths.
+
+**Cómo verificar antes de ejecutar este followup**:
+
+```bash
+# 1. Verificar Sprint 2c-B CERRADO (ADR-054 Status = Accepted)
+grep -c '^- \*\*Status\*\*: Accepted' docs/adr/054-google-blocking-function-signup-gate.md  # debe ser 1
+
+# 2. Si ya está Accepted, hacer el batch atómico:
+#    - sed sobre ADR-052/053/054 castellanizando headers
+#    - Update apps/api/scripts/check-adr-status-accepted.ts regex ACCEPTED_PATTERN
+#    - Update apps/api/test/scripts/check-adr-status-accepted.test.ts fixture (b) form
+#    - Single PR
+```
+
+**Si pasa >180 días sin Sprint 2c-B**: revisar si ADR-054 quedó Proposed-en-limbo; PO debe decidir flip directo o roll-back del approach.
+
 ## Riesgo / consideraciones
 
 - ADR-046 §1 puede objetarlo. Mitigación: documentar en el PR body que el cambio es FORMAT/CONVENTION (no decisional), respeta el principio §1 al no alterar la decisión histórica.
 - Algunos ADRs pueden tener variantes en el header (e.g., `Date: 2026-04-23` sin asteriscos). Script debe ser robusto.
+- **Sprint 2c gate dependency** (ver §Exclusiones / coordinación con Sprint 2c arriba): el orden de operaciones es no-negociable; saltar el orden rompe deploy gate.
 
 ## Prompt para sesión futura (copy/paste)
 
