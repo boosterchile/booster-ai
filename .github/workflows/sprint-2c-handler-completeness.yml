@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+# Sprint 2c-A T11 — Handler-completeness smoke check (NOT a semantic gate).
+#
+# Spec: .specs/sec-001-h1-2-google-blocking-a/plan.md v4 §T11.
+# Wired script: apps/api/scripts/check-handler-completeness.ts.
+#
+# **THIS IS A SMOKE CHECK, NOT A SEMANTIC GATE.** Catches the specific
+# regression of shipping T4-state handler skeleton (no DB lookup wired)
+# to Sprint 2c-B deploy paths. Does NOT verify call-site correctness —
+# semantic correctness lives in T7 unit tests + T10a + T10b integration
+# tests + code review.
+#
+# Path filter: identical to `sprint-2c-build-gate.yml` (T2b). Fires on
+# Sprint 2c-B deploy PRs only:
+#   - infrastructure/auth-blocking-functions.tf
+#   - infrastructure/identity-platform.tf
+#   - cloudbuild.production.yaml
+#
+# Escape-hatch:
+#   gh workflow run sprint-2c-handler-completeness.yml -f force=true
+#
+# Use when the gate has a bug or when an edit to these files is
+# unrelated to blocking-function deploy. Trace stays in Actions tab.
+# ---------------------------------------------------------------------------
+
+name: Sprint 2c-B handler-completeness smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infrastructure/auth-blocking-functions.tf'
+      - 'infrastructure/identity-platform.tf'
+      - 'cloudbuild.production.yaml'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass smoke check (escape-hatch). Use only if check has a bug or change unrelated to blocking-function deploy.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+concurrency:
+  group: sprint-2c-handler-completeness-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-handler-completeness:
+    name: Sprint 2c-B handler-completeness smoke (T4-state regression guard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Bypass smoke check (escape-hatch)
+        if: github.event_name == 'workflow_dispatch' && inputs.force == 'true'
+        run: |
+          echo "::warning::Sprint 2c-B handler-completeness smoke bypassed via workflow_dispatch force=true"
+          echo "Reason must be documented in the PR / commit that triggered this run."
+          exit 0
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.force != 'true')
+      - uses: pnpm/action-setup@v6
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.force != 'true')
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v6
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.force != 'true')
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.force != 'true')
+        run: pnpm install --frozen-lockfile
+      - name: Verify handler.ts contains required literals
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.force != 'true')
+        run: pnpm --filter @booster-ai/api exec tsx scripts/check-handler-completeness.ts
