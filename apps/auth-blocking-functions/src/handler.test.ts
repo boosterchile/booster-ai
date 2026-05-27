@@ -100,13 +100,15 @@ describe('beforeCreateCallback (T5 — email validation in Google branch)', () =
     });
   });
 
-  it('T5: Google + valid email reaches normalize call (placeholder throws pending T6-T7)', async () => {
+  it('T5+T6: Google + valid email reaches normalize + getDbPool (placeholder throws pending T7)', async () => {
     const user = buildUser([{ providerId: 'google.com', uid: 'g-uid' }]);
     user.email = 'foo@example.com';
-    // Placeholder throw (c8-ignored) is the sentinel for un-shipped T6-T7
-    // chain. Test verifies the normalize call line is reached.
+    // Placeholder throw (c8-ignored) is the sentinel for un-shipped T7
+    // chain. Test verifies the normalize + getDbPool call lines are
+    // reached (and getDbPool returns a pg.Pool without trying to
+    // connect — lazy until .query()).
     await expect(beforeCreateCallback(user, STUB_CONTEXT)).rejects.toThrow(
-      /handler T6-T7 logic not yet implemented/,
+      /handler T7 logic not yet implemented/,
     );
   });
 });
