@@ -8,6 +8,7 @@
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:emulator": "vitest run test/integration/firebase-emulator.test.ts",
+    "test:race": "vitest run test/integration/race-documents-invariant.test.ts",
     "build": "tsup src/index.ts --format cjs --clean --target node20"
   },
   "dependencies": {
