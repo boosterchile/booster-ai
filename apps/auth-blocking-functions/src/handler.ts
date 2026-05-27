@@ -1,26 +1,56 @@
+import { createHash } from 'node:crypto';
 import gcipCloudFunctions from 'gcip-cloud-functions';
 import { getDbPool } from './db.js';
 import { normalizeEmail } from './email-normalize.js';
+import { logger } from './logger.js';
 
 /**
- * Sprint 2c-A T4-T6 — handler with provider check + email normalize +
- * DB pool init (active) + c8-ignored placeholder for T7 query +
- * fail-closed + structured log.
+ * Sprint 2c-A T7 — admin-approval gate for Google federated signup
+ * (full flow active).
  *
- * **C8-ignore strategy** (per plan v4 H-A2 fix): each PR T4..T7 keeps
- * the `Test + Coverage (≥80%)` CI gate green by marking un-implemented
- * branches with `/* c8 ignore next *​/`. Each subsequent PR removes the
- * ignore comment + adds covering tests:
+ * Flow:
+ *   1. Provider check (T4). Non-Google → return `{}` (passthrough).
+ *   2. Email presence check (T5). Missing → throw HttpsError
+ *      `invalid-argument`.
+ *   3. Email normalize (T5). Canonical form for DB lookup
+ *      (lowercase + NFC + IDN punycode decode).
+ *   4. DB query (T7). `SELECT 1 FROM solicitudes_registro WHERE
+ *      LOWER(email) = $1 AND estado = 'aprobado' LIMIT 1`. Try/catch
+ *      isolates DB errors from the gate decision.
+ *   5. Decision (T7):
+ *      - DB error → log `signup.gate.db_error` (error) + throw
+ *        HttpsError `internal` with code `BLOCKED_CODE`. The IdP
+ *        propagates this to the client as an internal failure; the
+ *        signup is rejected (fail-closed).
+ *      - `rowCount === 0` → log `signup.blocked.google` (warn) + throw
+ *        HttpsError `permission-denied` with code `BLOCKED_CODE`.
+ *        Common cases: no admin approval row + non-aprobado estado
+ *        (query filters `estado = 'aprobado'` so rowCount is 0).
+ *      - `rowCount >= 1` → log `signup.allowed.google` (info) + return
+ *        `{}` (allow signup without modifications).
  *
- *   - T4 (shipped): provider check (return `{}` if non-Google).
- *   - T5 (shipped): email check + normalize.
- *   - T6 (this PR): `getDbPool()` reachable line added; query +
- *     rowCount check + fail-closed + structured log still c8-ignored.
- *   - T7: removes final c8-ignore + adds DB lookup + fail-closed +
- *     structured log + 4 new tests (T1+T2+T3+T7 per spec §10).
+ * **BLOCKED_CODE** is inlined per F-A4 option (a). Cross-source-of-
+ * truth obligation enforced via 2c-B spec §10 T-LITERALS integration
+ * test (added in this PR per G-A2 fix). 2c-B `apps/web/src/utils/
+ * translate-auth-error.ts` duplicates the literal with a code comment
+ * cross-referencing this file.
+ *
+ * **PII redaction** (Ley 19.628 + booster-stack-conventions): email
+ * appears only as `emailHashed` (SHA-256, first 16 hex chars) in logs.
+ * Plaintext email never logged. correlationId derives from
+ * `event.eventId` for trace correlation; `ipAddress` is from the event
+ * context, not PII per Booster IDOR audits scope.
  */
+
+const BLOCKED_CODE = 'BLOCKED_SIGNUP_PENDING_APPROVAL' as const;
+
+function hashEmail(email: string): string {
+  return createHash('sha256').update(email).digest('hex').slice(0, 16);
+}
+
 export const beforeCreateCallback: gcipCloudFunctions.BeforeCreateHandlerCallback = async (
   user,
+  context,
 ) => {
   const isGoogle = user.providerData?.some((p) => p.providerId === 'google.com') ?? false;
   if (!isGoogle) {
@@ -35,15 +65,44 @@ export const beforeCreateCallback: gcipCloudFunctions.BeforeCreateHandlerCallbac
   }
 
   const normalized = normalizeEmail(user.email);
-  const pool = getDbPool();
+  const emailHashed = hashEmail(normalized);
+  const correlationId = context.eventId;
+  const ipAddress = context.ipAddress;
 
-  // T7 logic ships in the next PR (query solicitudes_registro WHERE
-  // estado='aprobado' + permission-denied throw + structured log).
-  // The throw below is a sentinel: if it ever fires en prod it means
-  // handler was deployed without the rest of the chain. T2b path-gate
-  // + T11 handler-completeness smoke catch this at PR time.
-  /* c8 ignore next */
-  throw new Error(
-    `handler T7 logic not yet implemented (email=${normalized.length} chars, pool=${typeof pool})`,
-  );
+  let rowCount: number;
+  try {
+    const pool = getDbPool();
+    const result = await pool.query(
+      "SELECT 1 FROM solicitudes_registro WHERE LOWER(email) = $1 AND estado = 'aprobado' LIMIT 1",
+      [normalized],
+    );
+    rowCount = result.rowCount ?? 0;
+  } catch (err) {
+    logger.error({
+      event: 'signup.gate.db_error',
+      correlationId,
+      ipAddress,
+      emailHashed,
+      err: err instanceof Error ? err.message : 'unknown',
+    });
+    throw new gcipCloudFunctions.https.HttpsError('internal', BLOCKED_CODE);
+  }
+
+  if (rowCount === 0) {
+    logger.warn({
+      event: 'signup.blocked.google',
+      correlationId,
+      ipAddress,
+      emailHashed,
+    });
+    throw new gcipCloudFunctions.https.HttpsError('permission-denied', BLOCKED_CODE);
+  }
+
+  logger.info({
+    event: 'signup.allowed.google',
+    correlationId,
+    ipAddress,
+    emailHashed,
+  });
+  return {};
 };
