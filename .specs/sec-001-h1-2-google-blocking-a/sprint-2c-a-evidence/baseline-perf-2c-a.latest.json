@@ -1,0 +1,12 @@
+{
+  "commitSha": "e3f4c6f4516180fbc3eac2869718907988a6b288",
+  "generatedAt": "2026-05-27T15:34:55.190Z",
+  "runs": 10,
+  "timingsMs": [3.99, 3.545, 3.16, 2.919, 2.861, 2.256, 2.254, 1.994, 1.772, 2.003],
+  "p50Ms": 2.256,
+  "p95Ms": 3.99,
+  "p99Ms": 3.99,
+  "meanMs": 2.676,
+  "context": "handler-callback in-process; real pg.Pool attempts local connect with no DATABASE_URL → DB error path (HttpsError internal). Measures: JS exec + crypto + pool init + connection-refused + structured log + throw.",
+  "note": "NOT a pass/fail bar. Production p95 will be dominated by IdP JWT validation + Gen 1 cold start + Cloud SQL Auth Proxy round-trip — orders of magnitude higher than this floor. Real prod measurement defers to 2c-B post-deploy + 7-day watch (SC-2C.B.5 + SC-2C.B.7 per umbrella spec)."
+}
