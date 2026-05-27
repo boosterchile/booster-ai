@@ -1,35 +1,26 @@
-import type gcipCloudFunctions from 'gcip-cloud-functions';
+import gcipCloudFunctions from 'gcip-cloud-functions';
+import { normalizeEmail } from './email-normalize.js';
 
 /**
- * Sprint 2c-A T4 — handler skeleton with provider check (active) +
- * istanbul-ignored placeholder for T5-T7 logic.
+ * Sprint 2c-A T4-T5 — handler with provider check + email normalize
+ * (active) + c8-ignored placeholder for T6-T7 DB lookup + fail-closed.
  *
- * **Istanbul-ignore strategy** (per plan v4 H-A2 fix):
+ * **C8-ignore strategy** (per plan v4 H-A2 fix):
  *
- * T4 ships a minimal skeleton where the only active branch is the
- * provider check (return `{}` if signup is not Google federated). The
- * un-implemented T5-T7 logic (email normalize + DB lookup + fail-closed
- * + structured log) is replaced by a single istanbul-ignored throw line.
+ * Each PR T4..T7 keeps the `Test + Coverage (≥80%)` CI gate green by
+ * marking un-implemented branches with `/* c8 ignore next *​/`. Each
+ * subsequent PR removes the ignore comment + adds covering tests:
  *
- * Each subsequent PR removes the istanbul-ignore comment + adds the
- * covering test:
+ *   - T4 (shipped): provider check (return `{}` if non-Google).
+ *   - T5 (this PR): email check + normalize → covered by tests T5+T6;
+ *     remaining DB lookup + fail-closed marked c8-ignored.
+ *   - T6: DB pool initialization (still c8-ignored at query).
+ *   - T7: removes final c8-ignore + adds DB lookup + fail-closed +
+ *     structured log + 4 new tests (T1+T2+T3+T7 per spec §10).
  *
- *   - T5: removes istanbul-ignore + adds email normalize call + R-2C-9 test.
- *   - T6: extends with DB pool reference (still istanbul-ignored at query).
- *   - T7: removes final istanbul-ignore + adds DB lookup + fail-closed +
- *         structured log + 5 new tests (T1+T2+T3+T6+T7 per spec §10).
- *
- * This pattern keeps `Test + Coverage (≥80%)` CI gate **green on every
- * PR** instead of relying on transient waivers (plan v4 H-A2 rejected
- * "reviewer approves with explicit waiver in PR description" as the
- * rebranded honor-system anti-pattern).
- *
- * Plan deviation: original plan v4 §T4 code block envisioned the full
- * skeleton with dynamic imports of `./email-normalize` and `./db` modules
- * that don't yet exist (T5/T6 create them as NEW per plan). Those
- * imports would fail typecheck in T4. The simpler single-throw
- * placeholder satisfies the H-A2 spirit (coverage gate green per PR)
- * without requiring stub files outside T4 scope.
+ * Plan deviation: original plan v4 §T4 code block envisioned dynamic
+ * imports of `./email-normalize` and `./db`. Static imports adopted as
+ * each module ships (T5 here adds the email-normalize static import).
  */
 export const beforeCreateCallback: gcipCloudFunctions.BeforeCreateHandlerCallback = async (
   user,
@@ -39,11 +30,20 @@ export const beforeCreateCallback: gcipCloudFunctions.BeforeCreateHandlerCallbac
     return {};
   }
 
-  // T5-T7 logic ships in subsequent PRs (email normalize → DB lookup →
-  // fail-closed). The throw below is a sentinel: if it ever fires en
-  // prod it means T4 was deployed without the rest of the chain. T2b
-  // path-gate + T11 handler-completeness smoke catch this at PR time.
-  // vitest v8 provider respects `c8 ignore` (not `istanbul ignore`).
+  if (!user.email) {
+    throw new gcipCloudFunctions.https.HttpsError(
+      'invalid-argument',
+      'email required for Google federated signup',
+    );
+  }
+
+  const normalized = normalizeEmail(user.email);
+
+  // T6-T7 logic ships in subsequent PRs (DB pool → query →
+  // fail-closed → structured log). The throw below is a sentinel:
+  // if it ever fires en prod it means handler was deployed without the
+  // rest of the chain. T2b path-gate + T11 handler-completeness smoke
+  // catch this at PR time.
   /* c8 ignore next */
-  throw new Error('handler T5-T7 logic not yet implemented (Sprint 2c-A T4 ships skeleton only)');
+  throw new Error(`handler T6-T7 logic not yet implemented (email=${normalized.length} chars)`);
 };
