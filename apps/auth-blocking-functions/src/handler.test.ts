@@ -83,6 +83,34 @@ describe('beforeCreateCallback (T4 active branches)', () => {
   });
 });
 
+describe('beforeCreateCallback (T5 — email validation in Google branch)', () => {
+  it('T6: throws HttpsError invalid-argument when Google user has no email', async () => {
+    const user = buildUser([{ providerId: 'google.com', uid: 'g-uid' }]);
+    user.email = '' as unknown as string;
+    await expect(beforeCreateCallback(user, STUB_CONTEXT)).rejects.toMatchObject({
+      status: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('T6: throws HttpsError invalid-argument when email is undefined-coerced', async () => {
+    const user = buildUser([{ providerId: 'google.com', uid: 'g-uid' }]);
+    Reflect.deleteProperty(user, 'email');
+    await expect(beforeCreateCallback(user, STUB_CONTEXT)).rejects.toMatchObject({
+      status: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('T5: Google + valid email reaches normalize call (placeholder throws pending T6-T7)', async () => {
+    const user = buildUser([{ providerId: 'google.com', uid: 'g-uid' }]);
+    user.email = 'foo@example.com';
+    // Placeholder throw (c8-ignored) is the sentinel for un-shipped T6-T7
+    // chain. Test verifies the normalize call line is reached.
+    await expect(beforeCreateCallback(user, STUB_CONTEXT)).rejects.toThrow(
+      /handler T6-T7 logic not yet implemented/,
+    );
+  });
+});
+
 describe('beforeCreateCallback (structure smoke)', () => {
   it('is an async function', () => {
     expect(typeof beforeCreateCallback).toBe('function');

@@ -15,11 +15,13 @@
     "firebase-admin": "^13.7.0",
     "firebase-functions": "^6.6.0",
     "gcip-cloud-functions": "0.2.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "punycode": "^2.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/pg": "^8.11.10",
+    "@types/punycode": "^2.1.4",
     "@vitest/coverage-v8": "^4.0.18",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
