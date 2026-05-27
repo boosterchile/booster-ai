@@ -104,6 +104,7 @@ Subset of umbrella §10 reachable in 2c-B:
 - **SA email verification**: empirical gcloud call per SC-2C.B.9.
 - **Atomic deploy verification**: `gcloud functions describe` post-terraform-apply + pre-IdP-wire.
 - **CI gate path-filter test**: PR fixture toca solo 2c-B paths → check-adr-status-accepted fires + fails con Status: Proposed; flip Status: Accepted → passes. PR fixture toca solo 2c-A paths → gate NOT fires.
+- **T-LITERALS** _(cross-source-of-truth obligation added 2026-05-27 by Sprint 2c-A T7 PR per G-A2 plan v4 fix)_: integration test que asegura que el literal `BLOCKED_CODE` definido inline en `apps/auth-blocking-functions/src/handler.ts` (handler shipped en Sprint 2c-A T7) **MUST equal** el string mapeado en `apps/web/src/utils/translate-auth-error.ts` (path **estimated**; 2c-B plan-b draft debe verificar antes de lockear — si el file está ausente, T-LITERALS se convierte en "crear file + agregar mapping" en lugar de "extender existing"). Ambos literales deben igualar `BLOCKED_SIGNUP_PENDING_APPROVAL`. El test asserts equality leyendo ambos files vía test harness (grep + comparación) **O** importando ambas constantes + `expect(a).toBe(b)`. Rationale: handler.ts inlined per F-A4 option (a) trade-off; este test cierra la fuga de "drift if literals diverge" sin requerir `shared-schemas` export.
 
 ## 11. Rollout (sub-sprint scope)
 
