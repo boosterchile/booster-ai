@@ -1,0 +1,39 @@
+# Verified by Felipe Vicencio @ 2026-05-27T19:35:00Z for use in T4 var.identity_platform_sa_email
+# Plan T1 deviation declared (see below).
+service-469283083998@gcp-sa-identitytoolkit.iam.gserviceaccount.com
+
+# ─────────────────────────────────────────────────────────────────────
+# Plan T1 deviation — verification command corrected
+# ─────────────────────────────────────────────────────────────────────
+#
+# Plan v4 T1 acceptance prescribed:
+#   gcloud iam service-accounts list --project=booster-ai-494222 \
+#     --format='value(email)' | grep -E 'identitytoolkit\.iam\.gserviceaccount\.com$'
+#
+# This command returns ZERO matches because:
+#   - Identity Platform's invoker is a Google-managed *service agent*
+#     (auto-created on first API enablement), NOT a user-created SA.
+#   - Google service agents follow pattern
+#     `service-<PROJECT_NUMBER>@gcp-sa-<service>.iam.gserviceaccount.com`,
+#     NOT `<service>.iam.gserviceaccount.com`.
+#   - `gcloud iam service-accounts list` only enumerates user-created
+#     SAs; service agents are not returned.
+#
+# Canonical verification command (idempotent):
+#   gcloud beta services identity create \
+#     --service=identitytoolkit.googleapis.com \
+#     --project=booster-ai-494222
+#
+# Output verbatim 2026-05-27 19:34 UTC:
+#   Service identity created: service-469283083998@gcp-sa-identitytoolkit.iam.gserviceaccount.com
+#
+# Project number (lookup `gcloud projects describe booster-ai-494222
+# --format='value(projectNumber)'`): 469283083998
+#
+# Notes for T4 + T7b consumers:
+#   - This SA is the invoker that GCP grants `roles/cloudfunctions.invoker`
+#     on the deployed `beforeCreate` function (T4 IAM binding).
+#   - T4 `var.identity_platform_sa_email` MUST equal the email above
+#     verbatim (no quoting issues, no trailing whitespace).
+#   - T4 .tf reference: `google_cloudfunctions_function_iam_member.idp_invoker`
+#     with `member = "serviceAccount:${var.identity_platform_sa_email}"`.
