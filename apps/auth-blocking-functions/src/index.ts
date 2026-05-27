@@ -1,12 +1,18 @@
+import gcipCloudFunctions from 'gcip-cloud-functions';
+import { beforeCreateCallback } from './handler.js';
+
 /**
- * Sprint 2c-A T3 — bootstrap placeholder.
+ * Sprint 2c-A T4 — entrypoint deploy wrapper.
  *
- * Real handler wiring lands in T4 (per plan v4). This stub exists only
- * to satisfy tsc TS18003 ("No inputs were found in config file") so
- * `pnpm --filter @booster-ai/auth-blocking-functions typecheck` passes
- * on an otherwise-empty workspace.
+ * Replaces the T3 BOOTSTRAP_T3 placeholder with the actual gcip-cloud-
+ * functions `beforeCreate` Cloud Function Gen 1 export. `gcloud
+ * functions deploy beforeCreate` (Sprint 2c-B) picks up this export.
  *
- * T4 will replace this content with the
- * `gcipCloudFunctions.AuthFunction.beforeCreateHandler` import scaffold.
+ * The handler logic lives in `./handler.ts` (testable in isolation
+ * without the deploy machinery). This wrapper is excluded from
+ * coverage per `vitest.config.ts` (`exclude: ['src/**\/index.ts']`)
+ * because the gcip Auth instantiation has no testable surface.
  */
-export const BOOTSTRAP_T3 = 'placeholder; replaced in T4' as const;
+const auth = new gcipCloudFunctions.Auth();
+
+export const beforeCreate = auth.functions().beforeCreateHandler(beforeCreateCallback);
