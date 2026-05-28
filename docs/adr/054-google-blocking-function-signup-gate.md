@@ -79,7 +79,7 @@ Umbrella plan v2 alcanzó 5 P0 + 6 P1 + 5 P2 findings en DA. Plan threshold G-14
 
 **Rationale** (per plan v4 Alt-2c-A-Plan-III rejection + G-A2 mitigation):
 - Avoids adding package work to Sprint 2c-A scope (handler-only).
-- 2c-B `apps/web/src/utils/translate-auth-error.ts` duplicates the literal with cross-reference code comment.
+- 2c-B `apps/web/src/lib/translate-auth-error.ts` duplicates the literal with cross-reference code comment.
 - Sprint 2c-B T-LITERALS integration test (file-visible obligation added to 2c-B spec by Sprint 2c-A T7) ensures both copies match.
 
 Trade-off accepted: 2 source-of-truth locations, mitigated by test + file-visible cross-plan obligation.

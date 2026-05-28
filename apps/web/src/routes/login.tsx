@@ -13,6 +13,7 @@ import {
   useAuth,
 } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
+import { translateAuthError } from '../lib/translate-auth-error.js';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -98,11 +99,12 @@ export function LoginRoute() {
       void navigate({ to: '/app' });
     } catch (err) {
       const code = (err as FirebaseError).code;
+      const message = (err as FirebaseError).message;
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         return;
       }
       setError('root', {
-        message: translateAuthError(code) ?? 'No pudimos iniciar sesión con Google.',
+        message: translateAuthError(code, message) ?? 'No pudimos iniciar sesión con Google.',
       });
     }
   }
@@ -149,8 +151,9 @@ export function LoginRoute() {
       }
     } catch (err) {
       const code = (err as FirebaseError).code;
+      const message = (err as FirebaseError).message;
       setError('root', {
-        message: translateAuthError(code) ?? 'No pudimos completar la operación.',
+        message: translateAuthError(code, message) ?? 'No pudimos completar la operación.',
       });
     }
   }
@@ -372,35 +375,4 @@ export function LoginRoute() {
       </main>
     </div>
   );
-}
-
-/**
- * Mensajes en español para los códigos de error más comunes de Firebase
- * Auth. Si el código no está mapeado, devuelve null y el caller usa un
- * fallback genérico.
- */
-function translateAuthError(code: string | undefined): string | null {
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/invalid-login-credentials':
-      return 'Email o contraseña incorrectos.';
-    case 'auth/user-not-found':
-      return 'No existe una cuenta con ese email.';
-    case 'auth/wrong-password':
-      return 'Contraseña incorrecta.';
-    case 'auth/user-disabled':
-      return 'Esta cuenta está deshabilitada. Contacta a soporte@boosterchile.com.';
-    case 'auth/email-already-in-use':
-      return 'Ya existe una cuenta con ese email. Inicia sesión.';
-    case 'auth/weak-password':
-      return 'La contraseña es muy débil. Usa al menos 6 caracteres.';
-    case 'auth/invalid-email':
-      return 'El email no es válido.';
-    case 'auth/too-many-requests':
-      return 'Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.';
-    case 'auth/network-request-failed':
-      return 'Sin conexión a internet. Intenta de nuevo.';
-    default:
-      return null;
-  }
 }
