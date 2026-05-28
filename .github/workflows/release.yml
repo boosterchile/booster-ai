@@ -82,17 +82,17 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
       - name: Trigger Cloud Build (production)
-        # T13-fix (2026-05-28): pass both `_COMMIT_SHA` (full 40-char SHA
-        # for image tags + commit labels) AND `_COMMIT_SHA_SHORT` (12-char
-        # SHA for canary traffic tag — Cloud Run requires tag+service ≤ 46
-        # chars; full SHA exceeds the budget). gcloud builds submit rechaza
-        # substitutions no declaradas, así que ambas DEBEN existir en el
-        # bloque substitutions de cloudbuild.production.yaml con defaults.
+        # _COMMIT_SHA es la única substitution que pasamos — _REGION/_REGISTRY
+        # tienen defaults en cloudbuild.production.yaml, y _ENV no se usa.
+        # gcloud builds submit rechaza substitutions no declaradas (era el bug
+        # `_ENV no matched in template`).
+        # T13-fix (2026-05-28) NOTE: canary traffic tag short SHA derives
+        # inline from `${_COMMIT_SHA}` inside the cloudbuild canary steps
+        # (bash ${VAR:0:12} slice). No separate substitution needed.
         run: |
-          COMMIT_SHA_SHORT="$(echo ${{ github.sha }} | cut -c1-12)"
           gcloud builds submit --config=cloudbuild.production.yaml \
             --region=${{ env.GCP_REGION }} \
-            --substitutions=_COMMIT_SHA=${{ github.sha }},_COMMIT_SHA_SHORT=${COMMIT_SHA_SHORT}
+            --substitutions=_COMMIT_SHA=${{ github.sha }}
 
       # Post-deploy: smoke tests + notificación
       - name: Smoke test — API health
