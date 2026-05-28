@@ -59,16 +59,34 @@ resource "google_identity_platform_config" "default" {
     }
   }
 
+  # Sprint 2c-B T5 — wire `beforeCreate` blocking function (Google leg
+  # admin-approval gate). Per ADR-054 + plan v4 §T5 acceptance +
+  # F-B3 critical fix (removed `blocking_functions` from
+  # ignore_changes BEFORE adding this block — without that removal,
+  # terraform would silently no-op the new block).
+  #
+  # `function_uri` references the Cloud Function created in T4
+  # (auth-blocking-functions.tf). The function is deployed via Cloud
+  # Build (T3 cloudbuild step) AFTER the resource shell is created
+  # by terraform apply -target=google_cloudfunctions_function.before_create.
+  # T7b CI workflow enforces deploy-before-wire ordering.
+  blocking_functions {
+    triggers {
+      event_type   = "beforeCreate"
+      function_uri = google_cloudfunctions_function.before_create.https_trigger_url
+    }
+  }
+
   lifecycle {
     # No managed aquí:
     #   - authorized_domains: gestionado manualmente (incluye boosterchile.com
     #     y demo.boosterchile.com via console + DNS).
-    #   - blocking_functions: pre-empty para Sprint 2c BlockingFunction
-    #     `beforeCreate` (Google leg residual). Cuando ese spec se merge,
-    #     se removerá del ignore_changes.
+    # NOTE: `blocking_functions` REMOVED from ignore_changes per Sprint
+    # 2c-B T5 F-B3 fix — terraform now manages the trigger declaration
+    # above; gcloud functions deploy only manages the function source
+    # artifact (T4 lifecycle.ignore_changes covers that).
     ignore_changes = [
       authorized_domains,
-      blocking_functions,
     ]
   }
 }
