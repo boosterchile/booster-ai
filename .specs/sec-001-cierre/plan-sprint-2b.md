@@ -445,3 +445,54 @@ Sprint 2b devils-advocate round 1 reveló 3 amendments necesarios al spec v3.3 a
 - Drizzle migrations location: `apps/api/drizzle/`.
 - Cloud Run traffic ignore_changes: `infrastructure/modules/cloud-run-service/main.tf:97-110`.
 - Sprint 2c Google Blocking Function follow-up: [`.specs/_followups/sprint-2c-google-blocking-function.md`](../_followups/sprint-2c-google-blocking-function.md) _(crear en pre-build)_.
+
+## Amendment: T13-fix (regression hotfix, 2026-05-28)
+
+### Background
+
+T13 (DONE 2026-05-26) shipped the 5-step canary deploy sequence in `cloudbuild.production.yaml:173-187` per acceptance §283-289. The `deploy-canary` step constructs the Cloud Run traffic tag as `canary-signup-${_COMMIT_SHA}`, where `_COMMIT_SHA` is the full 40-char `${{ github.sha }}` propagated from `.github/workflows/release.yml:92`.
+
+Cloud Run enforces: **combined traffic tag + service name ≤ 46 characters**. With `booster-ai-api` (14 chars) + `canary-signup-` (14 chars) + 40-char SHA = 68 chars, the deploy fails:
+
+```
+ERROR: (gcloud.run.services.update) spec.traffic.tag: traffic tag
+'canary-signup-f744ef0db0b979f586b0c2ad6ce453e23be33447' and service name
+'booster-ai-api' together are too long. Combined traffic tag and service
+name cannot exceed 46 characters.
+```
+
+This was masked for 28h by the T3 syntax bug — Cloud Build cancelled `deploy-canary` along with every other step before it could run. Once T3-fix (PR #392) restored upstream execution, the next Cloud Build (`255e393e`, post-merge 2026-05-28 21:07Z) reached `deploy-canary` and failed at this constraint.
+
+### T13-fix: derive canary tag short SHA inline (option B, post DA v1)
+
+DA v1 (BLOCK_MERGE) flagged the original draft's `_COMMIT_SHA_SHORT: '0000000000aa'` placeholder as the same anti-pattern T3-fix DA v5 rejected: any operator who forgets to pass the override creates a garbage `canary-signup-0000000000aa` tag on prod. Adopted DA's option (b) — eliminate the substitution entirely; compute the 12-char short SHA inline from `${_COMMIT_SHA}` inside each canary step. Side effect: no `release.yml` change needed; no T6 runbook addition needed.
+
+- **Files**:
+  - `cloudbuild.production.yaml` (MODIFY, ~+15 LOC net): convert `deploy-canary` + `route-canary` from `entrypoint: gcloud` (args list) to `entrypoint: bash` (script). Each script computes `FULL_SHA='${_COMMIT_SHA}'; SHORT_SHA="$${FULL_SHA:0:12}"` (Cloud Build substitution + bash substring slice; the `$$` escapes Cloud Build's substitution at the bash position) and uses `$${SHORT_SHA}` in the tag. `canary-verify` already uses `entrypoint: bash` — just compute SHORT_SHA + use in `REVISION_TAG`. All other `${_COMMIT_SHA}` references (image tags, commit labels) unchanged — no length constraint there.
+  - `.github/workflows/release.yml`: **unchanged**. The original `_COMMIT_SHA=${{ github.sha }}` substitution is sufficient; short SHA derives inline.
+  - `docs/qa/google-blocking-function-runbook.md`: **unchanged**. The original T3-fix updated Step 2 invocation does not need a `_COMMIT_SHA_SHORT` addition.
+- **LOC estimate**: ~15.
+- **Depends on**: T13 merged ✅ (2026-05-26).
+- **Acceptance**:
+  - Next Cloud Build run on main: `deploy-canary` step SUCCEEDS — bash computes `SHORT_SHA` (12 chars from `_COMMIT_SHA`); `gcloud run services update` accepts the shorter tag. Cloud Run revision created with tag `canary-signup-<12-char-sha>`. Combined length 40 chars ≤ 46 verified.
+  - `route-canary` step SUCCEEDS — same inline computation; routes 1% traffic to the new tag.
+  - `canary-sleep` runs for 30 min. `canary-verify` runs (currently a placeholder per spec line 248-251) computing the same `SHORT_SHA` so `REVISION_TAG` matches deploy-canary.
+  - `deploy-api` final step routes 100% to latest.
+- **Rollback (forward-fix only — never revert)**: same rationale as T3-fix. Reverting reintroduces the canary deploy failure. If 12-char SHA budget needs adjustment (e.g., service name grows), ship a forward-fix commit reducing the slice (`:0:8`) or shortening the `canary-signup-` prefix.
+- **Verification path**: post-merge auto Cloud Build run on main observes `deploy-canary` SUCCESS. Same constraint as T3-fix (cloudbuild.production.yaml only runs on main, not PR branches). The previous failure signature is loud + dispositive (any green `deploy-canary` after 21:07Z 2026-05-28 = fix works).
+- **DA v1 findings closed**:
+  - P0 placeholder anti-pattern → eliminated by option (b); no substitution + no default.
+  - P1 release.yml shell expansion quoting → moot (no release.yml change).
+  - P1 amendment-vs-sub-spec rule violation (4 files vs ≤1) → acknowledged: T13-fix is the **second amendment in 48 h**, triggers the escalation clause in `.specs/_followups/cloudbuild-substitution-canonicalization.md` §43-45. With option (b), file count drops from 4 to 2 (cloudbuild + plan), still violates the ≤1-file rule. Documented as exception in updated followup (escalated P2 → P1; next session must produce process ADR before any third amendment).
+  - P1 tag accumulation → separate followup `.specs/_followups/cloud-run-canary-tag-cleanup.md`.
+- **DA v1 residual accepted**:
+  - P2 12-char SHA collision recovery → runbook addendum pending; until then, `gcloud --tag=` rejects collision loudly + manual `--remove-tags` recovers.
+  - P2 `canary-verify` placeholder still placeholder → out of scope; tracked separately.
+  - P2 Hyrum's Law on `${_COMMIT_SHA}` consumers → audit out of scope; commit labels still use full SHA so external label-filter queries are unaffected.
+- **Why amendment, not new sub-spec**: ~15 LOC repairing a defect in T13 (already DONE). Same precedent as T3-fix amendment for Sprint 2c-B. **Acknowledged DA v1 P1 amendment-rule violation**: see followup escalation.
+
+### Post-merge state
+
+- Canary deploy lane functional → next api Cloud Build runs canary 30 min → `canary-verify` placeholder exits 0 → `deploy-api` routes 100% → full deploy completes.
+- ADR-052 Status flip Proposed → Accepted becomes possible (per plan §4 out-of-band) once 2h watch elapses without `signup_probe_failure` alerts.
+- Sprint 2c-B T8 unblocked thereafter.

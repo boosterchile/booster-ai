@@ -2,7 +2,12 @@
 
 **Created**: 2026-05-28 (Sprint 2c-B T3-fix DA v5 residual)
 **Owner**: PO (Felipe Vicencio)
-**Priority**: P2
+**Priority**: **P1** (escalated 2026-05-28 by Sprint 2b T13-fix DA v1 P1 finding — second plan amendment in 48h triggered the escalation clause below)
+
+## Escalation log
+
+- 2026-05-28 — Sprint 2c-B T3-fix DA v5: original creation as P2 residual.
+- 2026-05-28 — Sprint 2b T13-fix DA v1: detected second amendment in same 48h window; T13-fix violates the ≤1-file rule (touches 2 files after option-B refactor; touched 4 in initial draft). Escalated to **P1**. Per §"Item 2" exception clause, the **third amendment is now blocked** until a process ADR is produced.
 
 ## Two unrelated items tracked in one stub
 

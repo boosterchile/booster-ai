@@ -86,6 +86,9 @@ jobs:
         # tienen defaults en cloudbuild.production.yaml, y _ENV no se usa.
         # gcloud builds submit rechaza substitutions no declaradas (era el bug
         # `_ENV no matched in template`).
+        # T13-fix (2026-05-28) NOTE: canary traffic tag short SHA derives
+        # inline from `${_COMMIT_SHA}` inside the cloudbuild canary steps
+        # (bash ${VAR:0:12} slice). No separate substitution needed.
         run: |
           gcloud builds submit --config=cloudbuild.production.yaml \
             --region=${{ env.GCP_REGION }} \
