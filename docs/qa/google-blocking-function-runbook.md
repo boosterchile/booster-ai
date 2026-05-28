@@ -36,9 +36,11 @@ terraform apply \
 # T3-fix (2026-05-28): the 3 auth-blocking steps default to SKIP on
 # every push-to-main build; this invocation must pass
 # `_AUTH_BLOCKING_DEPLOY=true` to actually run the lane.
+# T13-fix (2026-05-28): `_COMMIT_SHA_SHORT` (12 chars) is required for
+# the canary deploy step's traffic tag (Cloud Run constraint ≤46 chars).
 gcloud builds submit \
   --config=cloudbuild.production.yaml \
-  --substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD) \
+  --substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD),_COMMIT_SHA_SHORT=$(git rev-parse --short=12 HEAD) \
   --project=booster-ai-494222
 # This triggers build-auth-blocking → deploy-auth-blocking →
 # verify-auth-blocking-deployed. All other deploy steps in the

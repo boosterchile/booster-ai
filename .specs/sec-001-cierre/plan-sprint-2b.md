@@ -445,3 +445,43 @@ Sprint 2b devils-advocate round 1 reveló 3 amendments necesarios al spec v3.3 a
 - Drizzle migrations location: `apps/api/drizzle/`.
 - Cloud Run traffic ignore_changes: `infrastructure/modules/cloud-run-service/main.tf:97-110`.
 - Sprint 2c Google Blocking Function follow-up: [`.specs/_followups/sprint-2c-google-blocking-function.md`](../_followups/sprint-2c-google-blocking-function.md) _(crear en pre-build)_.
+
+## Amendment: T13-fix (regression hotfix, 2026-05-28)
+
+### Background
+
+T13 (DONE 2026-05-26) shipped the 5-step canary deploy sequence in `cloudbuild.production.yaml:173-187` per acceptance §283-289. The `deploy-canary` step constructs the Cloud Run traffic tag as `canary-signup-${_COMMIT_SHA}`, where `_COMMIT_SHA` is the full 40-char `${{ github.sha }}` propagated from `.github/workflows/release.yml:92`.
+
+Cloud Run enforces: **combined traffic tag + service name ≤ 46 characters**. With `booster-ai-api` (14 chars) + `canary-signup-` (14 chars) + 40-char SHA = 68 chars, the deploy fails:
+
+```
+ERROR: (gcloud.run.services.update) spec.traffic.tag: traffic tag
+'canary-signup-f744ef0db0b979f586b0c2ad6ce453e23be33447' and service name
+'booster-ai-api' together are too long. Combined traffic tag and service
+name cannot exceed 46 characters.
+```
+
+This was masked for 28h by the T3 syntax bug — Cloud Build cancelled `deploy-canary` along with every other step before it could run. Once T3-fix (PR #392) restored upstream execution, the next Cloud Build (`255e393e`, post-merge 2026-05-28 21:07Z) reached `deploy-canary` and failed at this constraint.
+
+### T13-fix: introduce `_COMMIT_SHA_SHORT` substitution for tag-length budget
+
+- **Files**:
+  - `cloudbuild.production.yaml` (MODIFY, ~+5 LOC): add `_COMMIT_SHA_SHORT: '0000000'` default substitution (placeholder; release.yml must pass real value); replace `${_COMMIT_SHA}` with `${_COMMIT_SHA_SHORT}` in 3 canary tag refs (line 184 `--tag=`, line 204 `--to-tags=`, line 252 bash `REVISION_TAG`). All other `${_COMMIT_SHA}` references (image tags, labels) remain unchanged — they have no length constraint.
+  - `.github/workflows/release.yml` (MODIFY, ~+1 LOC): extend `--substitutions=` to also pass `_COMMIT_SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-12)`. 12-char SHA chosen: tag becomes `canary-signup-` (14) + 12 = 26 chars; combined with `booster-ai-api` (14) = 40 chars total, 6 chars under the 46 limit. 12-char abbreviation is git-standard for collision-resistant uniqueness over Booster's deploy cadence.
+- **LOC estimate**: ~6.
+- **Depends on**: T13 merged ✅ (2026-05-26).
+- **Acceptance**:
+  - Next Cloud Build run on main: `deploy-canary` step SUCCEEDS — `gcloud run services update` accepts the shorter tag. Cloud Run revision created with tag `canary-signup-<12-char-sha>`. Combined length ≤ 46 verified.
+  - `route-canary` step SUCCEEDS — routes 1% traffic to the new tag.
+  - `canary-sleep` runs for 30 min. `canary-verify` runs (currently placeholder per spec line 248-251).
+  - `deploy-api` final step routes 100% to latest.
+  - T6 runbook `docs/qa/google-blocking-function-runbook.md` §2 Step 2 invocation must also pass `_COMMIT_SHA_SHORT=$(git rev-parse --short=12 HEAD)` when manually triggered; runbook updated.
+- **Rollback (forward-fix only — never revert)**: same rationale as T3-fix. Reverting reintroduces the canary deploy failure. If `_COMMIT_SHA_SHORT` budget needs adjustment (e.g., service name grows), ship a forward-fix commit reducing the short SHA further or shortening the `canary-signup-` prefix.
+- **Verification path**: post-merge auto Cloud Build run on main observes `deploy-canary` SUCCESS. Same constraint as T3-fix (cloudbuild.production.yaml only runs on main, not PR branches). The previous failure signature is loud + dispositive (any green `deploy-canary` after 21:07Z 2026-05-28 = fix works).
+- **Why amendment, not new sub-spec**: ~6 LOC repairing a defect in T13 (already DONE). Same precedent as T3-fix amendment for Sprint 2c-B; tracked exception in `.specs/_followups/cloudbuild-substitution-canonicalization.md`.
+
+### Post-merge state
+
+- Canary deploy lane functional → next api Cloud Build runs canary 30 min → `canary-verify` placeholder exits 0 → `deploy-api` routes 100% → full deploy completes.
+- ADR-052 Status flip Proposed → Accepted becomes possible (per plan §4 out-of-band) once 2h watch elapses without `signup_probe_failure` alerts.
+- Sprint 2c-B T8 unblocked thereafter.

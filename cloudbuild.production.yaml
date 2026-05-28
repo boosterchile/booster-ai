@@ -181,7 +181,14 @@ steps:
       - --image=${_REGISTRY}/api:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
-      - --tag=canary-signup-${_COMMIT_SHA}
+      # T13-fix (2026-05-28): traffic tag uses _COMMIT_SHA_SHORT (12 chars).
+      # Cloud Run limit: tag + service name ≤ 46 chars. With service name
+      # `booster-ai-api` (14 chars) + tag prefix `canary-signup-` (14 chars),
+      # SHA portion can be up to 18 chars; 12 leaves 6-char headroom for
+      # prefix changes. The full `_COMMIT_SHA` is still used in image tag +
+      # commit label (no length constraint there). release.yml passes both
+      # substitutions; T6 runbook §2 Step 2 invocation must also pass both.
+      - --tag=canary-signup-${_COMMIT_SHA_SHORT}
       - --no-traffic
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-api]
@@ -201,7 +208,8 @@ steps:
       - booster-ai-api
       - --region=${_REGION}
       - --platform=managed
-      - --to-tags=canary-signup-${_COMMIT_SHA}=1
+      # T13-fix (2026-05-28): _COMMIT_SHA_SHORT matches deploy-canary tag.
+      - --to-tags=canary-signup-${_COMMIT_SHA_SHORT}=1
     waitFor: [deploy-canary]
 
   - id: canary-sleep
@@ -249,7 +257,9 @@ steps:
         # T13 round 3 P1-1 fix: el step DEBE existir con id canary-verify
         # para que el downstream waitFor sea explícito; el contenido real
         # del check se itera post-primer-corrida.
-        REVISION_TAG="canary-signup-${_COMMIT_SHA}"
+        # T13-fix (2026-05-28): use _COMMIT_SHA_SHORT to match the
+        # actual revision tag created by deploy-canary step.
+        REVISION_TAG="canary-signup-${_COMMIT_SHA_SHORT}"
         echo "  - target tag: $$REVISION_TAG"
         echo "  - window: last 30min"
         echo "  - error_rate threshold: < 1%"
@@ -527,6 +537,16 @@ substitutions:
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
+
+  # Sprint 2b T13-fix (2026-05-28): 12-char SHA for canary traffic tag.
+  # Cloud Run limit: tag + service name ≤ 46 chars. Tag prefix
+  # `canary-signup-` (14) + service `booster-ai-api` (14) = 28 chars
+  # fixed → SHA portion ≤ 18 chars. 12 chosen for collision resistance
+  # while keeping a 6-char headroom. Placeholder default '0000000000aa'
+  # (12 chars, lexically valid). release.yml passes the real value
+  # `cut -c1-12` from github.sha; T6 runbook §2 Step 2 manual
+  # invocation must also pass `_COMMIT_SHA_SHORT=$(git rev-parse --short=12 HEAD)`.
+  _COMMIT_SHA_SHORT: '0000000000aa'
 
   # Sprint 2c-B T3-fix (2026-05-28): gate auth-blocking deploy lane.
   # Default 'false' = auto-triggered push-to-main builds skip the lane.
