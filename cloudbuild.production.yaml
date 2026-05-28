@@ -427,6 +427,70 @@ steps:
         exit 1
     waitFor: [deploy-api, deploy-whatsapp-bot]
 
+  # =========================================================================
+  # Sprint 2c-B T3 — Auth Blocking Function (Cloud Function Gen 1)
+  # =========================================================================
+  # Build the auth-blocking-functions workspace artifact via tsup (ESM
+  # workspace source → CommonJS dist/index.js + synthetic dist/package.json
+  # with runtime deps). Deploys via gcloud functions deploy --gen2=false
+  # targeting Identity Platform `beforeCreate` trigger. Per ADR-054 +
+  # Sprint 2c-B plan v4 T3 + DA G-03 atomic-deploy contract.
+  - id: build-auth-blocking
+    name: node:20-bookworm
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        corepack enable
+        corepack prepare pnpm@9.15.4 --activate
+        pnpm install --frozen-lockfile --filter='@booster-ai/auth-blocking-functions...'
+        pnpm --filter @booster-ai/auth-blocking-functions build
+        ls -la apps/auth-blocking-functions/dist
+    waitFor: ['-']
+
+  - id: deploy-auth-blocking
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        gcloud functions deploy beforeCreate \
+          --gen2=false \
+          --runtime=nodejs20 \
+          --source=apps/auth-blocking-functions/dist \
+          --entry-point=beforeCreate \
+          --region=us-east1 \
+          --no-allow-unauthenticated \
+          --max-instances=5 \
+          --min-instances=0 \
+          --trigger-http \
+          --project=booster-ai-494222
+    waitFor: [build-auth-blocking]
+
+  # DA v2 G-03 atomic-deploy fix: post-deploy verification — gcloud
+  # functions describe MUST return non-empty sourceArchiveUrl + status
+  # ACTIVE. Failure here blocks downstream IdP wire (T5 terraform apply
+  # checks this via T7b CI workflow before merging the wire PR).
+  - id: verify-auth-blocking-deployed
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        DESC=$$(gcloud functions describe beforeCreate \
+          --region=us-east1 \
+          --project=booster-ai-494222 \
+          --format=json)
+        SRC=$$(echo "$$DESC" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sourceArchiveUrl',''))")
+        ST=$$(echo "$$DESC" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
+        if [ -z "$$SRC" ]; then echo "FAIL: empty sourceArchiveUrl"; exit 1; fi
+        if [ "$$ST" != "ACTIVE" ]; then echo "FAIL: status=$$ST (expected ACTIVE)"; exit 1; fi
+        echo "OK: function ACTIVE with sourceArchiveUrl=$$SRC"
+    waitFor: [deploy-auth-blocking]
+
 substitutions:
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
