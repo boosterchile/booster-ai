@@ -32,13 +32,17 @@ terraform apply \
   -target=google_cloudfunctions_function_iam_member.idp_invoker
 # Output: 4 resources created with placeholder source.
 
-# Step 2 — Cloud Build deploy step replaces real source via gcloud
+# Step 2 — Cloud Build deploy step replaces real source via gcloud.
+# T3-fix (2026-05-28): the 3 auth-blocking steps default to SKIP on
+# every push-to-main build; this invocation must pass
+# `_AUTH_BLOCKING_DEPLOY=true` to actually run the lane.
 gcloud builds submit \
   --config=cloudbuild.production.yaml \
-  --substitutions=_COMMIT_SHA=$(git rev-parse HEAD) \
+  --substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD) \
   --project=booster-ai-494222
 # This triggers build-auth-blocking → deploy-auth-blocking →
-# verify-auth-blocking-deployed.
+# verify-auth-blocking-deployed. All other deploy steps in the
+# pipeline still run as part of this submission.
 
 # Step 3 — Verify function ACTIVE in prod (already done by cloudbuild
 # verify step; this is a defense-in-depth re-check)

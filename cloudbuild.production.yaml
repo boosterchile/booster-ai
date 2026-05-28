@@ -432,9 +432,15 @@ steps:
   # =========================================================================
   # Build the auth-blocking-functions workspace artifact via tsup (ESM
   # workspace source → CommonJS dist/index.js + synthetic dist/package.json
-  # with runtime deps). Deploys via gcloud functions deploy --gen2=false
+  # with runtime deps). Deploys via gcloud functions deploy --no-gen2
   # targeting Identity Platform `beforeCreate` trigger. Per ADR-054 +
   # Sprint 2c-B plan v4 T3 + DA G-03 atomic-deploy contract.
+  #
+  # T3-fix (2026-05-28): three steps gated behind _AUTH_BLOCKING_DEPLOY
+  # substitution (default 'false'). Per T6 runbook §2, this lane runs
+  # only when explicitly invoked as Step 2 of the T8 deploy procedure
+  # (gcloud builds submit --substitutions=_AUTH_BLOCKING_DEPLOY=true,...).
+  # Auto-triggered push-to-main builds skip the lane entirely.
   - id: build-auth-blocking
     name: node:20-bookworm
     entrypoint: bash
@@ -442,11 +448,17 @@ steps:
       - -c
       - |
         set -e
+        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
+          echo "SKIP build-auth-blocking: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false'). Invoke T6 runbook §2 with --substitutions=_AUTH_BLOCKING_DEPLOY=true to run."
+          exit 0
+        fi
         corepack enable
         corepack prepare pnpm@9.15.4 --activate
         pnpm install --frozen-lockfile --filter='@booster-ai/auth-blocking-functions...'
         pnpm --filter @booster-ai/auth-blocking-functions build
         ls -la apps/auth-blocking-functions/dist
+    env:
+      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: ['-']
 
   - id: deploy-auth-blocking
@@ -456,8 +468,12 @@ steps:
       - -c
       - |
         set -e
+        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
+          echo "SKIP deploy-auth-blocking: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false')."
+          exit 0
+        fi
         gcloud functions deploy beforeCreate \
-          --gen2=false \
+          --no-gen2 \
           --runtime=nodejs20 \
           --source=apps/auth-blocking-functions/dist \
           --entry-point=beforeCreate \
@@ -467,6 +483,8 @@ steps:
           --min-instances=0 \
           --trigger-http \
           --project=booster-ai-494222
+    env:
+      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: [build-auth-blocking]
 
   # DA v2 G-03 atomic-deploy fix: post-deploy verification — gcloud
@@ -480,6 +498,10 @@ steps:
       - -c
       - |
         set -e
+        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
+          echo "SKIP verify-auth-blocking-deployed: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false')."
+          exit 0
+        fi
         DESC=$$(gcloud functions describe beforeCreate \
           --region=us-east1 \
           --project=booster-ai-494222 \
@@ -489,12 +511,20 @@ steps:
         if [ -z "$$SRC" ]; then echo "FAIL: empty sourceArchiveUrl"; exit 1; fi
         if [ "$$ST" != "ACTIVE" ]; then echo "FAIL: status=$$ST (expected ACTIVE)"; exit 1; fi
         echo "OK: function ACTIVE with sourceArchiveUrl=$$SRC"
+    env:
+      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: [deploy-auth-blocking]
 
 substitutions:
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
+
+  # Sprint 2c-B T3-fix (2026-05-28): gate auth-blocking deploy lane.
+  # Default 'false' = auto-triggered push-to-main builds skip the lane.
+  # Override to 'true' only when invoking Step 2 of T8 deploy procedure
+  # per docs/qa/google-blocking-function-runbook.md §2.
+  _AUTH_BLOCKING_DEPLOY: 'false'
 
   # apps/web build-time vars — Firebase web config (públicas por diseño,
   # ver apps/web/Dockerfile para rationale). Estas claves viajan en el

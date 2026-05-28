@@ -438,3 +438,40 @@ Sprint 2c-B `/build` gated por ALL of:
 - **2026-05-27 18:30Z** — Plan v3 drafted addressing all N-B1..N-B5. DA v3 pass: REVISE (2 NEW P0: N-B6 IAM grant missing + N-B7 `--field-from-file` not real gh flag). v3 preserved.
 - **2026-05-27 19:00Z** — Plan v4 drafted with surgical fixes for N-B6 + N-B7. DA v4 pass: ACCEPT_WITH_RESIDUAL (2/2 fixes mechanically present; 1 P2 nit accepted). 
 - **2026-05-27 19:15Z** — PO approved (chose "Approve v4 + ship plan PR"). Plan-b v4 **Approved**. Next: phase_exit + commit + PR.
+- **2026-05-28 19:30Z** — Regression detected: 15 consecutive Cloud Build FAILURES since 2026-05-27 15:46Z due to T3 `--gen2=false` syntax bug + sequencing flaw (auth-blocking steps auto-run on every main merge instead of being gated to T8 procedure). Detected during T8 prep gcloud check. CI/CD blocked 28h. T3-fix amendment added below.
+
+## Amendment: T3-fix (regression hotfix, 2026-05-28)
+
+### Background
+
+T3 (PR #384, merged 2026-05-27 17:00Z) shipped 3 new Cloud Build steps (`build-auth-blocking`, `deploy-auth-blocking`, `verify-auth-blocking-deployed`) intended to be invoked **manually as Step 2 of the T8 deploy procedure** per the T6 runbook §2. Two defects shipped together:
+
+1. **Syntax bug**: `--gen2=false` is invalid gcloud syntax (boolean flags don't accept `=value`). Causes `deploy-auth-blocking` step to fail immediately with exit code 2 (`ERROR: (gcloud.functions.deploy) argument --gen2: ignored explicit argument 'false'`).
+2. **Sequencing flaw**: steps have `waitFor: ['-']` / `waitFor: [build-auth-blocking]` with no substitution gate, so they execute on every push-to-main Cloud Build trigger. Cloud Build cancels all in-flight steps when any step fails, which means the 3 auth-blocking steps blocked every api/web/whatsapp/telemetry deploy for 28h (15 consecutive build failures 2026-05-27 15:46Z → 2026-05-28 19:14Z).
+
+Per T6 runbook §2, the intended invocation pattern is `gcloud builds submit --config=cloudbuild.production.yaml --substitutions=_COMMIT_SHA=$(git rev-parse HEAD)` triggered manually as Step 2 of T8, **after** Step 1 (`terraform apply -target=google_cloudfunctions_function.before_create`) creates the function shell with placeholder source. T3 didn't implement the substitution gate the runbook implies.
+
+### T3-fix: cloudbuild substitution gate + syntax fix
+
+- **Files**:
+  - `cloudbuild.production.yaml` (MODIFY, ~+15 LOC): add `_AUTH_BLOCKING_DEPLOY: 'false'` substitution; wrap each of 3 auth-blocking steps' bash with early-exit `if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then echo "SKIP: ..."; exit 0; fi`; replace `--gen2=false` with `--no-gen2` at line 460; update inline comment at line 435.
+  - `apps/auth-blocking-functions/tsup.config.ts` (MODIFY, ~±2 LOC): update doc comment from `--gen2=false` to `--no-gen2`.
+  - `docs/qa/google-blocking-function-runbook.md` (MODIFY, ~+3 LOC): update §2 Step 2 `gcloud builds submit` invocation to include `--substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD)`.
+- **LOC estimate**: ~20.
+- **Depends on**: T3 merged ✅.
+- **Acceptance**:
+  - With `_AUTH_BLOCKING_DEPLOY=false` (default): all 3 auth-blocking steps echo `SKIP` + exit 0. Cloud Build proceeds to api/web/etc. deploys. **Empirically verified by this PR's own Cloud Build run going past the previously-failing step**.
+  - With `_AUTH_BLOCKING_DEPLOY=true` (T8 invocation): steps execute with corrected `--no-gen2` flag.
+  - Runbook §2 Step 2 reflects the substitution invocation.
+  - T6 runbook §2 deploy sequence unchanged (Step 1 terraform create → Step 2 cloudbuild submit with `_AUTH_BLOCKING_DEPLOY=true` → Step 3 verify → Step 4 wire).
+- **Rollback**: revert this PR. Reverts to T3 state (CI broken). Lower-risk than leaving the gate active during ramp; the substitution flag is the canonical control point.
+- **Verification path**: PR's own Cloud Build run = empirical proof. `gcloud builds describe <PR-build-id>` shows the 3 auth-blocking steps SUCCESS with skip-message; api/web/etc. deploys SUCCESS.
+
+### Why amendment, not new sub-spec
+
+T3-fix is scoped to ~20 LOC repairing a defect introduced 24h ago in this same sub-spec. Keeping it as a plan amendment preserves Sprint 2c-B traceability (the regression is part of the 2c-B story). A separate sub-spec would scatter the incident record across two dirs without analytic benefit.
+
+### Post-merge state
+
+- `_AUTH_BLOCKING_DEPLOY=false` default → auto-merge Cloud Builds skip the auth-blocking lane → api/web/etc. deploys resume → next api deploy runs the 5-step canary sequence → unblocks ADR-052 flip → unblocks T8.
+- T8 execution: per T6 runbook §2, invoke `gcloud builds submit --config=cloudbuild.production.yaml --substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD) ...` AFTER Step 1 terraform apply.
