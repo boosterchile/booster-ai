@@ -451,21 +451,32 @@ T3 (PR #384, merged 2026-05-27 17:00Z) shipped 3 new Cloud Build steps (`build-a
 
 Per T6 runbook §2, the intended invocation pattern is `gcloud builds submit --config=cloudbuild.production.yaml --substitutions=_COMMIT_SHA=$(git rev-parse HEAD)` triggered manually as Step 2 of T8, **after** Step 1 (`terraform apply -target=google_cloudfunctions_function.before_create`) creates the function shell with placeholder source. T3 didn't implement the substitution gate the runbook implies.
 
-### T3-fix: cloudbuild substitution gate + syntax fix
+### T3-fix: cloudbuild substitution gate + syntax fix + state-drift guard
 
 - **Files**:
-  - `cloudbuild.production.yaml` (MODIFY, ~+15 LOC): add `_AUTH_BLOCKING_DEPLOY: 'false'` substitution; wrap each of 3 auth-blocking steps' bash with early-exit `if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then echo "SKIP: ..."; exit 0; fi`; replace `--gen2=false` with `--no-gen2` at line 460; update inline comment at line 435.
+  - `cloudbuild.production.yaml` (MODIFY, ~+25 LOC): add `_AUTH_BLOCKING_DEPLOY: 'false'` substitution; wrap each of 3 auth-blocking steps' bash with early-exit `if [ "${_AUTH_BLOCKING_DEPLOY}" != "true" ]; then echo "SKIP: ..."; exit 0; fi` (Cloud Build substitution expanded at YAML parse time — see inline comment forbidding the `$$VAR` + `env:` block pattern); add state-drift guard in `deploy-auth-blocking` that `gcloud functions describe` MUST succeed before deploy (prevents gcloud from CREATE-ing a function outside terraform state); replace `--gen2=false` with `--no-gen2`; update inline comment.
   - `apps/auth-blocking-functions/tsup.config.ts` (MODIFY, ~±2 LOC): update doc comment from `--gen2=false` to `--no-gen2`.
   - `docs/qa/google-blocking-function-runbook.md` (MODIFY, ~+3 LOC): update §2 Step 2 `gcloud builds submit` invocation to include `--substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD)`.
-- **LOC estimate**: ~20.
+- **LOC estimate**: ~30.
 - **Depends on**: T3 merged ✅.
 - **Acceptance**:
-  - With `_AUTH_BLOCKING_DEPLOY=false` (default): all 3 auth-blocking steps echo `SKIP` + exit 0. Cloud Build proceeds to api/web/etc. deploys. **Empirically verified by this PR's own Cloud Build run going past the previously-failing step**.
-  - With `_AUTH_BLOCKING_DEPLOY=true` (T8 invocation): steps execute with corrected `--no-gen2` flag.
+  - With `_AUTH_BLOCKING_DEPLOY` unset OR set to anything other than the literal lowercase string `true` (default `'false'`): all 3 auth-blocking steps echo `SKIP` + exit 0. Cloud Build proceeds to api/web/etc. deploys.
+  - With `_AUTH_BLOCKING_DEPLOY=true` (T8 invocation): steps execute; deploy step ALSO asserts the Cloud Function already exists in GCP (created by T6 runbook §2 Step 1 terraform apply) and fails fast otherwise.
   - Runbook §2 Step 2 reflects the substitution invocation.
   - T6 runbook §2 deploy sequence unchanged (Step 1 terraform create → Step 2 cloudbuild submit with `_AUTH_BLOCKING_DEPLOY=true` → Step 3 verify → Step 4 wire).
-- **Rollback**: revert this PR. Reverts to T3 state (CI broken). Lower-risk than leaving the gate active during ramp; the substitution flag is the canonical control point.
-- **Verification path**: PR's own Cloud Build run = empirical proof. `gcloud builds describe <PR-build-id>` shows the 3 auth-blocking steps SUCCESS with skip-message; api/web/etc. deploys SUCCESS.
+- **Rollback (forward-fix only — never revert)**: this PR closes a 28h CI outage. Reverting it re-introduces the outage. If a follow-up defect is detected, ship a forward-fix commit (e.g., adjust the gate, add another guard). The substitution default `'false'` is the canonical kill-switch — leaving it at default keeps the lane skipped without needing a code change.
+- **Verification path** (DA v5 P0-2 resolution): `cloudbuild.production.yaml` is NOT auto-triggered on PR branches in this repo (production trigger fires only on push-to-main after `release.yml` approval). Empirical proof of the SKIP path therefore requires either: (a) merging then watching the first post-merge auto-triggered build print the three SKIP messages and proceed to deploy-api SUCCESS — accepted risk because every prior build for 28h failed at exactly the auth-blocking lane, so any green build is dispositive evidence; OR (b) `gcloud builds submit --config=cloudbuild.production.yaml --no-source --project=booster-ai-494222` from the branch with default substitutions, attaching the build-id to the PR before merge. Path (a) chosen given outage urgency + the trivially observable failure signature (any non-green build will still fail loudly at the same step).
+- **DA v5 findings closed by this fix**:
+  - P0-1 (gate semantics): switched to direct `${_AUTH_BLOCKING_DEPLOY}` Cloud Build substitution; removed `env:` blocks; added inline yaml comment forbidding the `$$` + `env:` pattern.
+  - P0-2 (verification claim): rewrote `Verification path` to reflect the production-trigger constraint + chosen path (a) rationale.
+  - P1-3 (brittle comparison): kept strict `!= "true"` but echo line now prints the received value verbatim AND the comment + runbook explicitly state "exact lowercase 'true' required" so operators see the contract.
+  - P1-4 (verify `--no-gen2` supported): `gcloud functions deploy --help` from local SDK (same version family as `gcr.io/cloud-builders/gcloud`) confirms `--gen2` boolean + `--no-gen2` documented behavior: "If disabled with --no-gen2, Cloud Functions (First generation) will be used." Output attached to PR description.
+  - P1-5 (state drift): added pre-deploy `gcloud functions describe` guard in `deploy-auth-blocking`; fail-fast if function doesn't exist.
+  - P1-6 (rollback claim): rewrote as "forward-fix only".
+  - P2-8 (cooling-off): waiver logged in session ledger 2026-05-28 with reason "P0 CI/CD broken 28h hotfix".
+- **DA v5 findings accepted as residual**:
+  - P1-3 still admits typo→SKIP attack surface (operator passes `True`/`1`/`yes` and walks away). Mitigation: comment + runbook + verbatim echo make the failure mode loud (operator who reads logs sees `_AUTH_BLOCKING_DEPLOY='True'`). Not closing now; tracked in `.specs/_followups/cloudbuild-substitution-canonicalization.md` (TODO this commit).
+  - P2-7 (skip-cycle drift): amendment-vs-sub-spec choice stands; documented as exception in same followup.
 
 ### Why amendment, not new sub-spec
 

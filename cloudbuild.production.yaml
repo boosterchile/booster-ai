@@ -437,10 +437,13 @@ steps:
   # Sprint 2c-B plan v4 T3 + DA G-03 atomic-deploy contract.
   #
   # T3-fix (2026-05-28): three steps gated behind _AUTH_BLOCKING_DEPLOY
-  # substitution (default 'false'). Per T6 runbook §2, this lane runs
-  # only when explicitly invoked as Step 2 of the T8 deploy procedure
-  # (gcloud builds submit --substitutions=_AUTH_BLOCKING_DEPLOY=true,...).
+  # substitution (default 'false', exact-match lowercase 'true' required).
+  # Per T6 runbook §2 this lane runs only as Step 2 of the T8 deploy
+  # procedure: `gcloud builds submit --substitutions=_AUTH_BLOCKING_DEPLOY=true,...`.
   # Auto-triggered push-to-main builds skip the lane entirely.
+  # `${_AUTH_BLOCKING_DEPLOY}` below is a Cloud Build substitution
+  # expanded at YAML parse time, not a bash variable — DO NOT change to
+  # `$$_AUTH_BLOCKING_DEPLOY` or wrap in an `env:` block.
   - id: build-auth-blocking
     name: node:20-bookworm
     entrypoint: bash
@@ -448,8 +451,8 @@ steps:
       - -c
       - |
         set -e
-        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
-          echo "SKIP build-auth-blocking: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false'). Invoke T6 runbook §2 with --substitutions=_AUTH_BLOCKING_DEPLOY=true to run."
+        if [ "${_AUTH_BLOCKING_DEPLOY}" != "true" ]; then
+          echo "SKIP build-auth-blocking: _AUTH_BLOCKING_DEPLOY='${_AUTH_BLOCKING_DEPLOY}' (default 'false'). Invoke T6 runbook §2 with --substitutions=_AUTH_BLOCKING_DEPLOY=true (exact lowercase) to run."
           exit 0
         fi
         corepack enable
@@ -457,8 +460,6 @@ steps:
         pnpm install --frozen-lockfile --filter='@booster-ai/auth-blocking-functions...'
         pnpm --filter @booster-ai/auth-blocking-functions build
         ls -la apps/auth-blocking-functions/dist
-    env:
-      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: ['-']
 
   - id: deploy-auth-blocking
@@ -468,9 +469,20 @@ steps:
       - -c
       - |
         set -e
-        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
-          echo "SKIP deploy-auth-blocking: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false')."
+        if [ "${_AUTH_BLOCKING_DEPLOY}" != "true" ]; then
+          echo "SKIP deploy-auth-blocking: _AUTH_BLOCKING_DEPLOY='${_AUTH_BLOCKING_DEPLOY}'."
           exit 0
+        fi
+        # T3-fix P1-5: guard against terraform state drift. Cloud Function
+        # MUST already exist (created by T6 runbook §2 Step 1 terraform apply
+        # -target=google_cloudfunctions_function.before_create). If it
+        # doesn't, gcloud would CREATE it outside terraform state.
+        if ! gcloud functions describe beforeCreate \
+              --region=us-east1 \
+              --project=booster-ai-494222 \
+              --format='value(name)' > /dev/null 2>&1; then
+          echo "FAIL: Cloud Function 'beforeCreate' does not exist in us-east1. Run T6 runbook §2 Step 1 (terraform apply -target=google_cloudfunctions_function.before_create) before invoking this step."
+          exit 1
         fi
         gcloud functions deploy beforeCreate \
           --no-gen2 \
@@ -483,8 +495,6 @@ steps:
           --min-instances=0 \
           --trigger-http \
           --project=booster-ai-494222
-    env:
-      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: [build-auth-blocking]
 
   # DA v2 G-03 atomic-deploy fix: post-deploy verification — gcloud
@@ -498,8 +508,8 @@ steps:
       - -c
       - |
         set -e
-        if [ "$$_AUTH_BLOCKING_DEPLOY" != "true" ]; then
-          echo "SKIP verify-auth-blocking-deployed: _AUTH_BLOCKING_DEPLOY=$$_AUTH_BLOCKING_DEPLOY (default 'false')."
+        if [ "${_AUTH_BLOCKING_DEPLOY}" != "true" ]; then
+          echo "SKIP verify-auth-blocking-deployed: _AUTH_BLOCKING_DEPLOY='${_AUTH_BLOCKING_DEPLOY}'."
           exit 0
         fi
         DESC=$$(gcloud functions describe beforeCreate \
@@ -511,8 +521,6 @@ steps:
         if [ -z "$$SRC" ]; then echo "FAIL: empty sourceArchiveUrl"; exit 1; fi
         if [ "$$ST" != "ACTIVE" ]; then echo "FAIL: status=$$ST (expected ACTIVE)"; exit 1; fi
         echo "OK: function ACTIVE with sourceArchiveUrl=$$SRC"
-    env:
-      - '_AUTH_BLOCKING_DEPLOY=${_AUTH_BLOCKING_DEPLOY}'
     waitFor: [deploy-auth-blocking]
 
 substitutions:
