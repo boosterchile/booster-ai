@@ -5,7 +5,7 @@ import sourcePkg from './package.json' with { type: 'json' };
 /**
  * Sprint 2c-B T3 — tsup build config for Cloud Function Gen 1 runtime.
  *
- * Gen 1 runtime (`gcloud functions deploy --gen2=false`) expects a
+ * Gen 1 runtime (`gcloud functions deploy --no-gen2`) expects a
  * CommonJS entrypoint at `index.js` (or `main` in deployed package.json)
  * inside the `--source` directory. Workspace source is ESM (`"type":
  * "module"` in apps/auth-blocking-functions/package.json); this tsup
