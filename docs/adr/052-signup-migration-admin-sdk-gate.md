@@ -1,6 +1,6 @@
 # ADR-052: Signup público migrado a Admin SDK + admin-approval gate + Identity Platform self-signup OFF (email/password leg)
 
-- **Status**: Proposed (2026-05-26; T6 Sprint 2b H1.2 PR2). Transición a `Accepted` agendada en T13 post-canary 30 min success + 2 h watch.
+- **Status**: Accepted (2026-05-29 00:40Z; post-canary success cloudbuild `8f4ec780` 2026-05-28T22:42:55Z → T23:21:33Z, 38m38s, todos 26 steps SUCCESS incluyendo `deploy-canary` + `route-canary` + `canary-sleep` 30min + `canary-verify` + `deploy-api`; watch ~76min/120min con waiver PO firmado por signals all-green: signup_probe alert policy enabled sin incidents en 2h logging window, direct curl `/health/signup-flow` 200 `{"status":"ok","flow":"signup-request"}`, Cloud Run prod revision `booster-ai-api-00339-qud` 100% traffic con tag `canary-signup-11aab2635f34`).
 - **Date**: 2026-05-26
 - **Deciders**: Felipe Vicencio (PO)
 - **Linked**:
