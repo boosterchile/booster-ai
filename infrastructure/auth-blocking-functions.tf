@@ -158,3 +158,22 @@ resource "google_cloudfunctions_function_iam_member" "idp_invoker" {
   role           = "roles/cloudfunctions.invoker"
   member         = "serviceAccount:${local.identitytoolkit_service_agent}"
 }
+
+# ---------------------------------------------------------------------------
+# Cloud Functions Gen 1 build SA — Compute Engine default SA needs
+# storage.objectViewer on `gcf-sources-<project_number>-<region>` to read
+# source archives during build. Standard GCP requirement (see
+# https://cloud.google.com/functions/docs/troubleshooting#build-service-account).
+# Surfaced during T8 Step 1 first apply 2026-05-29 ~01:00Z with error:
+#   "Access to bucket gcf-sources-469283083998-us-east1 denied. You must
+#    grant Storage Object Viewer permission to
+#    469283083998-compute@developer.gserviceaccount.com"
+# Project-level grant is the standard pattern (GCP auto-creates the
+# `gcf-sources-*` bucket on first function deploy; bucket-level grant
+# would race with bucket creation).
+# ---------------------------------------------------------------------------
+resource "google_project_iam_member" "compute_default_storage_viewer" {
+  project = google_project.booster_ai.project_id
+  role    = "roles/storage.objectViewer"
+  member  = "serviceAccount:${google_project.booster_ai.number}-compute@developer.gserviceaccount.com"
+}
