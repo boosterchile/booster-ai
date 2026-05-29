@@ -153,10 +153,10 @@ Todo input externo pasa por Zod **antes** de tocar lógica:
 
 ### Deploy
 
-- **Staging automático** vía Cloud Build trigger en merge a `main`.
-- **Producción**: manual approval en Cloud Build.
+- **No existe entorno staging** (backlog `#STAGING-ENV`: requiere un 2º GCP project con infra paralela). El `cloudbuild.staging.yaml` está inactivo; `release.yml` removió el job `deploy-staging`.
+- **Producción**: merge a `main` → `release.yml` (GitHub Actions vía Workload Identity Federation) → **requiere aprobación humana** en el GitHub Environment `production` (`required_reviewers`, enforced desde 2026-05-29) → Cloud Build `cloudbuild.production.yaml` canary (1% tráfico → 30 min → 100%). El step `canary-verify` es placeholder (`exit 0`): la promoción a 100% se observa/decide humanamente, no por verificación automática. Ver inventario `.specs/adr-vs-prod-inventory/inventory.md` finding #1.
 - **Monitoreo 2h post-deploy**: error rate, latency P95, logs limpios.
-- **NO deploy viernes después de las 16:00 hora Chile** sin waiver explícito + plan de sábado.
+- **Regla de horario de deploy eliminada 2026-05-29 por decisión del PO**: el control de riesgo de deploy se ejerce vía gate de aprobación (`required_reviewers` en el GitHub Environment `production`) + observación humana del canary, no vía restricción de calendario.
 - Detalles en skill `booster-deploy-cloud-run`.
 
 > **Recordatorio**: Estas reglas son la columna vertebral de "Cero deuda técnica desde day 0". Saltearlas requiere waiver explícito documentado en `.claude/ledger/`.
