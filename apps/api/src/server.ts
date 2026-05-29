@@ -325,7 +325,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.route('/empresas', createEmpresaRoutes({ db: opts.db, logger }));
+    app.route(
+      '/empresas',
+      createEmpresaRoutes({
+        db: opts.db,
+        logger,
+        selfOnboardingEnabled: config.EMPRESA_SELF_ONBOARDING_ENABLED,
+      }),
+    );
 
     // Trip requests v2 (canonical) — Firebase auth + userContext porque
     // el shipper ya tiene empresa onboardeada. activeMembership.empresa

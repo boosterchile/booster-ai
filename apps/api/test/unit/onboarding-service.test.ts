@@ -3,6 +3,7 @@ import {
   EmailAlreadyInUseError,
   EmpresaRutDuplicateError,
   PlanNotFoundError,
+  SelfOnboardingDisabledError,
   UserAlreadyExistsError,
   onboardEmpresa,
 } from '../../src/services/onboarding.js';
@@ -109,6 +110,8 @@ describe('onboardEmpresa', () => {
       logger: noopLogger,
       firebaseUid: FB_UID,
       firebaseEmail: FB_EMAIL,
+      authorizedBy: 'self_service',
+      selfServiceEnabled: true,
       input: VALID_INPUT,
     });
 
@@ -128,6 +131,8 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(UserAlreadyExistsError);
@@ -147,6 +152,8 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(EmailAlreadyInUseError);
@@ -167,6 +174,8 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(EmpresaRutDuplicateError);
@@ -188,6 +197,8 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(PlanNotFoundError);
@@ -209,6 +220,8 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(PlanNotFoundError);
@@ -225,6 +238,8 @@ describe('onboardEmpresa', () => {
       logger: noopLogger,
       firebaseUid: FB_UID,
       firebaseEmail: FB_EMAIL,
+      authorizedBy: 'self_service',
+      selfServiceEnabled: true,
       input: { ...VALID_INPUT, user: { ...VALID_INPUT.user, rut: null } },
     });
 
@@ -241,6 +256,8 @@ describe('onboardEmpresa', () => {
       logger: noopLogger,
       firebaseUid: FB_UID,
       firebaseEmail: FB_EMAIL,
+      authorizedBy: 'self_service',
+      selfServiceEnabled: true,
       input: {
         ...VALID_INPUT,
         empresa: {
@@ -263,8 +280,50 @@ describe('onboardEmpresa', () => {
         logger: noopLogger,
         firebaseUid: FB_UID,
         firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: true,
         input: VALID_INPUT,
       }),
     ).rejects.toThrow(/Insert user returned no row/);
+  });
+
+  // SEC-001 hotfix — SC-2b service-layer invariant (defense in depth).
+  it('throw SelfOnboardingDisabledError si authorizedBy=self_service y el flag está OFF — sin tocar la DB', async () => {
+    const db = makeDb();
+
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: FB_EMAIL,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: false,
+        input: VALID_INPUT,
+      }),
+    ).rejects.toThrow(SelfOnboardingDisabledError);
+
+    // El invariant rechaza ANTES de abrir transacción: cero escrituras.
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('admin_provisioned NO se ve afectado por el flag self-service OFF', async () => {
+    const db = makeDb({
+      selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
+      inserts: [[{ id: 'user-uuid' }], [{ id: 'empresa-uuid' }], [{ id: 'membership-uuid' }]],
+    });
+
+    const result = await onboardEmpresa({
+      db: db as never,
+      logger: noopLogger,
+      firebaseUid: FB_UID,
+      firebaseEmail: FB_EMAIL,
+      authorizedBy: 'admin_provisioned',
+      selfServiceEnabled: false,
+      input: VALID_INPUT,
+    });
+
+    expect(result.user.id).toBe('user-uuid');
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 });

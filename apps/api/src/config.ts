@@ -479,6 +479,29 @@ const apiEnvSchema = commonEnvSchema
     SIGNUP_REQUEST_FLOW_ACTIVATED: booleanFlag(false),
 
     /**
+     * SEC-001 hotfix (`.specs/sec-001-empresa-onboarding-gate-hotfix/`) —
+     * KILL SWITCH para self-service company onboarding.
+     *
+     * `POST /empresas/onboarding` permite a cualquier usuario Firebase
+     * autenticado crear users+empresa+membership `dueno` SIN gate de
+     * aprobación (vector de auto-promoción a dueño verificado vivo en prod
+     * 2026-05-29). Mientras el flujo aprobación→dueño se rediseña
+     * (`.specs/_followups/onboarding-flow-redesign.md`), este flag cierra
+     * el self-service.
+     *
+     * **Estado seguro = OFF (default false).** Flag-ON es INSEGURO en prod:
+     * reabre el agujero. No es un toggle operacional rutinario — solo el
+     * rediseño futuro lo activa deliberadamente una vez exista un camino
+     * gateado. Rollback de un bug en el gate = revert del PR, NO flag-ON.
+     * Alta de pilotos durante la ventana cerrada = provisioning manual.
+     *
+     * Defensa en profundidad: `onboardEmpresa` (service layer) también
+     * rechaza `authorizedBy='self_service'` cuando este flag está OFF, así
+     * un futuro caller no puede auto-provisionar saltándose el gate de ruta.
+     */
+    EMPRESA_SELF_ONBOARDING_ENABLED: booleanFlag(false),
+
+    /**
      * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
      * fail-closed startup cuando `runMigrations` falla.
      *

@@ -53,6 +53,29 @@ export class EmailAlreadyInUseError extends Error {
 }
 
 /**
+ * SEC-001 hotfix — self-service onboarding está deshabilitado
+ * (`EMPRESA_SELF_ONBOARDING_ENABLED=false`). Service-layer invariant:
+ * `onboardEmpresa` rechaza `authorizedBy='self_service'` cuando el flag
+ * está OFF, independiente del gate de ruta. Defensa en profundidad para
+ * que el futuro flujo aprobación→dueño no auto-provisione por accidente.
+ */
+export class SelfOnboardingDisabledError extends Error {
+  constructor() {
+    super('Self-service company onboarding is disabled (EMPRESA_SELF_ONBOARDING_ENABLED=false)');
+    this.name = 'SelfOnboardingDisabledError';
+  }
+}
+
+/**
+ * Quién autoriza la creación del dueño. `self_service` = el propio usuario
+ * vía `POST /empresas/onboarding` (gated por `EMPRESA_SELF_ONBOARDING_ENABLED`).
+ * `admin_provisioned` = un caller administrativo confiable (p.ej. el futuro
+ * flujo aprobación→dueño). Arg requerido (sin default) para forzar a todo
+ * caller a declarar explícitamente la base de autorización.
+ */
+export type OnboardingAuthorization = 'self_service' | 'admin_provisioned';
+
+/**
  * Onboarding atómico: crea user + empresa + membership en una transacción.
  *
  * Pre-condiciones (validadas dentro de la transacción para evitar TOCTOU):
@@ -70,8 +93,21 @@ export async function onboardEmpresa(opts: {
   firebaseUid: string;
   firebaseEmail: string;
   input: EmpresaOnboardingInput;
+  /** Base de autorización del caller (arg requerido — ver OnboardingAuthorization). */
+  authorizedBy: OnboardingAuthorization;
+  /** Valor del flag `EMPRESA_SELF_ONBOARDING_ENABLED`; consultado solo para `self_service`. */
+  selfServiceEnabled: boolean;
 }): Promise<OnboardingResult> {
-  const { db, logger, firebaseUid, firebaseEmail, input } = opts;
+  const { db, logger, firebaseUid, firebaseEmail, input, authorizedBy, selfServiceEnabled } = opts;
+
+  // SEC-001 hotfix — service-layer invariant (defensa en profundidad). El
+  // gate de ruta `/empresas/onboarding` ya rechaza self-service cuando el
+  // flag está OFF; este check garantiza que ningún caller (presente o
+  // futuro) pueda auto-provisionar saltándose ese gate. `admin_provisioned`
+  // no se ve afectado.
+  if (authorizedBy === 'self_service' && !selfServiceEnabled) {
+    throw new SelfOnboardingDisabledError();
+  }
 
   return await db.transaction(async (tx) => {
     // 1. Verificar user no existe (por firebase_uid).

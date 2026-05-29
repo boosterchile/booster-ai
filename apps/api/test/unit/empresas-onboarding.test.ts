@@ -43,6 +43,12 @@ vi.mock('../../src/services/onboarding.js', () => {
         this.name = 'PlanNotFoundError';
       }
     },
+    SelfOnboardingDisabledError: class SelfOnboardingDisabledError extends Error {
+      constructor() {
+        super('Self-service company onboarding is disabled');
+        this.name = 'SelfOnboardingDisabledError';
+      }
+    },
   };
 });
 
@@ -85,7 +91,7 @@ const validBody = {
   plan_slug: 'gratis',
 };
 
-async function buildApp() {
+async function buildApp(selfOnboardingEnabled = true) {
   const { createEmpresaRoutes } = await import('../../src/routes/empresas.js');
   const app = new Hono();
   app.use('/empresas/*', async (c, next) => {
@@ -107,7 +113,10 @@ async function buildApp() {
     }
     await next();
   });
-  app.route('/empresas', createEmpresaRoutes({ db: stubDb, logger: noopLogger }));
+  app.route(
+    '/empresas',
+    createEmpresaRoutes({ db: stubDb, logger: noopLogger, selfOnboardingEnabled }),
+  );
   return app;
 }
 
@@ -370,5 +379,110 @@ describe('POST /empresas/onboarding', () => {
     });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'invalid_plan', code: 'invalid_plan' });
+  });
+});
+
+// SEC-001 hotfix — SC-4 durable backstop: the gate, exercised behaviourally.
+// If a future PR deletes the route gate, these fail. This is the regression
+// guard the spec relies on (NOT a static route-wiring parser).
+describe('POST /empresas/onboarding — self-service gate (EMPRESA_SELF_ONBOARDING_ENABLED)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('flag OFF → 403 onboarding_disabled and onboardEmpresa NEVER called (no DB write path)', async () => {
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    const app = await buildApp(false); // self-onboarding disabled
+
+    const res = await app.request('/empresas/onboarding', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-claims': JSON.stringify({ uid: 'fb-attacker', email: 'unapproved@example.com' }),
+      },
+      body: JSON.stringify(validBody),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({
+      error: 'onboarding_disabled',
+      code: 'onboarding_disabled',
+    });
+    // The vector is closed BEFORE any provisioning: the service is never invoked.
+    expect(vi.mocked(onboardEmpresa)).not.toHaveBeenCalled();
+  });
+
+  it('flag ON → onboardEmpresa IS called with authorizedBy=self_service', async () => {
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    vi.mocked(onboardEmpresa).mockResolvedValueOnce({
+      // minimal shape; the route only reads ids/fields it echoes back
+      user: {
+        id: 'u1',
+        firebaseUid: 'fb-1',
+        email: 'felipe@boosterchile.com',
+        fullName: 'Felipe Vicencio',
+        phone: null,
+        whatsappE164: null,
+        rut: null,
+        status: 'activo',
+        isPlatformAdmin: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLoginAt: null,
+      },
+      empresa: {
+        id: 'e1',
+        legalName: 'X',
+        rut: '76.123.456-0',
+        contactEmail: 'c@x.cl',
+        contactPhone: '+56912345678',
+        addressStreet: 'A',
+        addressCity: 'S',
+        addressRegion: 'XIII',
+        addressPostalCode: null,
+        isGeneradorCarga: false,
+        isTransportista: true,
+        planId: 'p1',
+        status: 'pendiente_verificacion',
+        timezone: 'America/Santiago',
+        maxConcurrentOffersOverride: null,
+        carbonReductionTargetPct: null,
+        carbonReductionTargetYear: null,
+        priorCertifications: [],
+        requiredReportingStandards: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      membership: {
+        id: 'm1',
+        userId: 'u1',
+        empresaId: 'e1',
+        role: 'dueno',
+        status: 'activa',
+        invitedByUserId: null,
+        invitedAt: new Date(),
+        joinedAt: new Date(),
+        removedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    const app = await buildApp(true);
+    const res = await app.request('/empresas/onboarding', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-claims': JSON.stringify({ uid: 'fb-1', email: 'felipe@boosterchile.com' }),
+      },
+      body: JSON.stringify(validBody),
+    });
+
+    expect(res.status).toBe(201);
+    expect(vi.mocked(onboardEmpresa)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(onboardEmpresa).mock.calls[0]?.[0]).toMatchObject({
+      authorizedBy: 'self_service',
+      selfServiceEnabled: true,
+    });
   });
 });
