@@ -1,8 +1,92 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-26 (SEC-001 **Sprint 2b H1.2 PR2 CERRADO** 9/9 — admin-approval signup gate end-to-end shipped + ADR-052 Proposed + Identity Platform `disabled_user_signup=true` applied prod + signup-probe monitoring activo + canary 30min Cloud Build sequence wired; drift `sql_database_instance.main.ipv4_enabled` discovered & reverted; ADR-052 Status flip Proposed→Accepted PENDIENTE post-canary success + 2h watch)
+**Última actualización**: 2026-05-28 (SEC-001 **CI-CD outage 28h resolved** — T3-fix PR #392 `f744ef0` cloudbuild `--no-gen2` + auth-blocking substitution gate + state-drift guard; T13-fix PR #393 `11aab26` canary tag 46-char limit option-B inline short SHA; both fixes shipped after devils-advocate BLOCK_MERGE → P0+P1 closed; escape-hatch invocations × 2 tracked at `.specs/_followups/sprint-2c-b-gate-bypasses.md`; two new P1 followups created — substitution-canonicalization rule escalated P2→P1 + cloud-run-canary-tag-cleanup; Cloud Build `8f4ec780` running post-merge to verify canary lane end-to-end; ADR-052/054 still Proposed pending canary + 2h watch success)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-05-28 — CI/CD outage 28h resolved + canary lane unblocked
+
+### Descubrimiento
+
+T8 prep gcloud check (verificar `SIGNUP_REQUEST_FLOW_ACTIVATED` prod + canary status) reveló: 15 Cloud Build runs consecutivos FAILURE desde 2026-05-27 15:46Z hasta 2026-05-28 19:14Z (28 h, primer build fallido inmediatamente después de merge de T3 PR #384). Root cause: **dos defectos shipping juntos en T3** + un tercer defecto en T13 enmascarado.
+
+| Defecto | Quién shippeó | Cómo se manifestó | Fix |
+|---|---|---|---|
+| `cloudbuild.production.yaml:460` `--gen2=false` syntax inválida (gcloud boolean flags rechazan `=value`) | T3 PR #384 (2026-05-27 17:00Z) | `deploy-auth-blocking` exit code 2 → Cloud Build cancela todos los demás steps in-flight | T3-fix PR #392 — `--no-gen2` (forma documentada de force Gen 1) |
+| `cloudbuild.production.yaml` auth-blocking 3 steps sin substitution gate, ejecutan en cada merge a main | T3 PR #384 | Bloqueó api/web/whatsapp/telemetry deploys por 28 h | T3-fix PR #392 — gate `_AUTH_BLOCKING_DEPLOY: 'false'` default; T6 runbook §2 Step 2 pasa `=true` para T8 manual |
+| `cloudbuild.production.yaml:184` `canary-signup-${_COMMIT_SHA}` tag (14+40=54 chars) + service `booster-ai-api` (14) = 68 > 46 Cloud Run hard limit | T13 PR Sprint 2b (2026-05-26) — nunca corrió end-to-end por enmascaramiento de T3 | `deploy-canary` step error: `traffic tag ... and service name ... together are too long` | T13-fix PR #393 — option-B inline short SHA `${FULL_SHA:0:12}` en bash; sin substitución nueva, sin release.yml change |
+
+### PRs shipped (2 cycles compressed solo-dev en single session)
+
+| PR | Commit | Foco | DA verdict inicial | DA-resolved verdict |
+|---|---|---|---|---|
+| [#392](https://github.com/boosterchile/booster-ai/pull/392) | `f744ef0` | T3-fix cloudbuild `--no-gen2` + auth-blocking gate + state-drift guard (`gcloud functions describe \|\| exit 1` antes de deploy) | BLOCK_MERGE (2 P0 + 4 P1) | APPROVE post-resolutions commit `8ed4d8f` |
+| [#393](https://github.com/boosterchile/booster-ai/pull/393) | `11aab26` | T13-fix canary tag length — option-B inline 12-char short SHA en `entrypoint: bash` para `deploy-canary` + `route-canary` + `canary-verify` | BLOCK_MERGE (1 P0 + 3 P1) | APPROVE post-resolutions commit `6cb2345` |
+
+Ambos PRs:
+- Spec amendment a plan existente (T3-fix → `.specs/sec-001-h1-2-google-blocking-b/plan.md`; T13-fix → `.specs/sec-001-cierre/plan-sprint-2b.md`).
+- Squash merge a `main`.
+- Cooling-off solo-dev §6.1 waiver explícito en session ledger (justificación: P0 CI/CD broken 28h outage).
+- Build-gate (`Sprint 2c-B build gate (ADR-052 Accepted)`) bypassed vía documented escape-hatch (`gh workflow run sprint-2c-build-gate.yml -f force=true`) — circular dep: gate requiere ADR-052 Accepted, ADR-052 requiere canary, canary requiere estas fixes. Tracked en `.specs/_followups/sprint-2c-b-gate-bypasses.md`.
+
+### Devils-advocate hardening lessons (BOTH PRs blocked initial drafts)
+
+T3-fix DA v5 P0 findings que se materializaron en código:
+- `env:` block + `$$VAR` pattern era redundante → cambiado a direct `${_AUTH_BLOCKING_DEPLOY}` Cloud Build substitution con comentario inline prohibiendo reintroducir el pattern.
+- "PR's own Cloud Build = empirical proof" era ficción (cloudbuild.production.yaml solo corre en main, no PR branches) → rewrote verification path con (a) post-merge auto-build observation como única evidencia dispositive.
+- Rollback claim "revert this PR" era anti-rollback (reintroduce el 28h outage) → rewrote como "forward-fix only".
+- State-drift guard (`gcloud functions describe || exit 1`) ahora previene gcloud de CREATE outside terraform state si T8 Step 1 no corrió.
+
+T13-fix DA v1 P0 que se materializó en código:
+- Placeholder default `_COMMIT_SHA_SHORT: '0000000000aa'` era el mismo anti-pattern que T3-fix rechazó. Eliminado completamente vía option-B inline: cada canary step convertido a `entrypoint: bash`, computa `FULL_SHA='${_COMMIT_SHA}'; SHORT_SHA="$${FULL_SHA:0:12}"`, usa `$${SHORT_SHA}` en tag. No substitución nueva, no release.yml change, no T6 runbook addition.
+
+### Followups creados (2 P1 nuevos)
+
+| Followup | Priority | Trigger |
+|---|---|---|
+| [`.specs/_followups/cloudbuild-substitution-canonicalization.md`](../../.specs/_followups/cloudbuild-substitution-canonicalization.md) | Escalated P2 → **P1** | T13-fix segundo amendment en 48h (T3-fix fue primero). Rule violation: amendment >1 file. **Third amendment is now blocked** hasta producir process ADR. Tracking 2 items: (1) `_AUTH_BLOCKING_DEPLOY` strict-match brittleness (typo `True`/`1`/`yes` → silent SKIP); (2) amendment-vs-sub-spec exception note. |
+| [`.specs/_followups/cloud-run-canary-tag-cleanup.md`](../../.specs/_followups/cloud-run-canary-tag-cleanup.md) | **P1** | DA v1 P1 finding. Cloud Run retiene canary tags en revisions inactivas; cadencia daily deploys → quota hit (1000 revisions/service) en semanas. Tres opciones (A clean-up en deploy-api step; B scheduled job; C rotating stable tag). Triggering condition P0 documentada. |
+
+### Estado operacional post-session
+
+| Lane | Pre-session | Post-session |
+|---|---|---|
+| Cloud Build auto-trigger main | 100% FAILURE 28h | T3-fix verificado: 3 auth-blocking steps echo SKIP con verbatim `_AUTH_BLOCKING_DEPLOY='false'`, builds + pushes SUCCESS. T13-fix pending verification via build `8f4ec780` (WORKING al cierre de sesión). |
+| Sprint 2b T13 canary lane | DONE 2026-05-26 pero nunca corrió end-to-end por enmascaramiento | T13-fix mergeado; primer build `8f4ec780` post-merge debe ejecutar `deploy-canary` con tag `canary-signup-<12-char-sha>` (40 chars combined ≤ 46). Wall-clock ~35-40 min incluyendo 30-min canary-sleep. |
+| ADR-052 Status (Sprint 2b PR2) | Proposed | Proposed (sin cambio — flip requiere canary success + 2h watch) |
+| ADR-054 Status (Sprint 2c-B) | Proposed | Proposed (sin cambio — flip requiere 7d watch post-T13 ADR-054, separate de T13 Sprint 2b) |
+| `SIGNUP_REQUEST_FLOW_ACTIVATED` prod env | **Absent** (default `false`) | Sin cambio. Per amendment A3 v3.4 + plan §Pre-conditions, flip programado post-canary success. |
+| Sprint 2c-B T8 (terraform apply T4+T5) | Blocked on ADR-052 Accepted (circular dep via T3 syntax bug) | Unblocked en cuanto ADR-052 flippee post-canary success + 2h watch. |
+
+### Verification path pendiente
+
+1. Build `8f4ec780` `deploy-canary` SUCCESS (1-3 min después de start 22:42:55Z).
+2. `canary-sleep` 30 min.
+3. `canary-verify` placeholder exit 0 (real MQL pendiente, tracked separately).
+4. `deploy-api` routes 100% to latest.
+5. 2 h watch sin alertas `signup_probe_failure`.
+6. PO manual: `git commit -am "docs(adr-052): Accepted post-canary success cloudbuild run 8f4ec780"` (~2 LOC).
+7. T8 cloudbuild submit con `--substitutions=_AUTH_BLOCKING_DEPLOY=true,_COMMIT_SHA=$(git rev-parse HEAD)` — auth-blocking lane ahora ejecuta normalmente con state-drift guard activo.
+8. Sprint 2c-B T9 → T14c cierre operacional.
+
+### Drift incidents ledger
+
+| Item | Estado | Detalle |
+|---|---|---|
+| `sql_database_instance.main.ipv4_enabled` (heredado 2026-05-26) | Resolved 2026-05-26 | Reverted via `terraform apply -target` |
+| T3 PR #384 cloudbuild `--gen2=false` + missing gate | Resolved 2026-05-28 via PR #392 | Surfaced en T8 prep |
+| T13 canary tag 46-char limit | Resolved 2026-05-28 via PR #393 | Surfaced una vez T3-fix restauró ejecución downstream |
+| Two amendments en 48h activaron escalation clause | P1 active | `cloudbuild-substitution-canonicalization.md` ahora P1; tercer amendment blocked hasta process ADR |
+
+### Acciones pendientes (operacional)
+
+1. **Watch build `8f4ec780`** — esperar deploy-canary SUCCESS y full pipeline green.
+2. **2h watch post-canary** — observar Cloud Monitoring `signup_probe` sin alertas.
+3. **Flip ADR-052 Status → Accepted** — separate commit `~2 LOC` post-watch success (per plan-sprint-2b §4).
+4. **Sprint 2c-B T8 execution** — runbook `docs/qa/google-blocking-function-runbook.md` §2 Step 1 (`terraform apply -target=google_cloudfunctions_function.before_create`) → Step 2 (`gcloud builds submit ... _AUTH_BLOCKING_DEPLOY=true`) → Step 3 verify → Step 4 wire IdP.
+5. **No third amendment** — escalation rule activa.
 
 ---
 
