@@ -1,8 +1,62 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-28 (SEC-001 **CI-CD outage 28h resolved** — T3-fix PR #392 `f744ef0` cloudbuild `--no-gen2` + auth-blocking substitution gate + state-drift guard; T13-fix PR #393 `11aab26` canary tag 46-char limit option-B inline short SHA; both fixes shipped after devils-advocate BLOCK_MERGE → P0+P1 closed; escape-hatch invocations × 2 tracked at `.specs/_followups/sprint-2c-b-gate-bypasses.md`; two new P1 followups created — substitution-canonicalization rule escalated P2→P1 + cloud-run-canary-tag-cleanup; Cloud Build `8f4ec780` running post-merge to verify canary lane end-to-end; ADR-052/054 still Proposed pending canary + 2h watch success)
+**Última actualización**: 2026-05-29 (**Vector de auto-promoción a dueño CERRADO en prod** + **gate de aprobación de deploy creado** + **inventario ADR-vs-prod iniciado**. Sprint 2c blocking-function abandonado tras descubrir que el handler era deny-puro y el invariante ya vivía en el boundary; pero el boundary tenía un agujero: `/empresas/onboarding` auto-provisionaba dueño sin gate. Cerrado vía flag `EMPRESA_SELF_ONBOARDING_ENABLED=false` (PR #398 `afdb933`), promovido a prod por canary observado. Descubierto que merge→main auto-desplegaba a PROD sin approval (no existe staging) → gate `required_reviewers` creado en GitHub Environment `production` + §Deploy reconciliado (PR #399 `4edd3b1`). Inventario ADR-vs-prod arrancado: `.specs/adr-vs-prod-inventory/inventory.md` hasta ADR-002, cursor en ADR-004.)
 **Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-05-29 — Vector auto-onboarding cerrado en prod + gate de deploy + inventario ADR-vs-prod
+
+### Pivote: Sprint 2c (Google blocking function) ABANDONADO
+
+Sprint 2c-A/B/C construían una Identity Platform blocking function (`beforeCreate`) para gatear el self-signup Google. Quedó bloqueado (Gen 1 builds muertos por deprecación; Gen 2 requería un spike que muta prod). Durante la evaluación D-vs-G se verificó que el handler (`apps/auth-blocking-functions/src/handler.ts`) era **deny-puro** (sin provisioning, solo lectura de allowlist) → su invariante podía vivir en el boundary ADR-001. Specs marcados SUPERSEDED:
+- `.specs/sec-001-h1-2-google-blocking-c/spec.md` (migración Gen 2) → SUPERSEDED.
+- `.specs/sec-001-h1-2-google-boundary-closure/spec.md` → premisa corregida (ver abajo).
+- `.specs/sec-001-h1-2-google-blocking-c/alt-d-vs-g-comparison.md` (decisión PO: G + reaper).
+
+### 🔒 Vector de seguridad VIVO encontrado y CERRADO en prod
+
+Devils-advocate (sobre el spec boundary-closure) + verificación contra código revelaron: **`POST /empresas/onboarding` → `onboardEmpresa` (`services/onboarding.ts`) no tenía gate de aprobación** — cualquier usuario Firebase autenticado podía crear `users`+`empresa`+`membership rol='dueno' status='activa'`. Ruta sobre `firebaseAuthMiddleware` sin `userContext`; Google `signInWithPopup` vivo; blocking function nunca desplegada. **Cualquiera podía auto-promoverse a dueño activo sin aprobación.**
+
+**Forense prod read-only (2026-05-29):** `solicitudes_registro` vacía; los **7 dueños activos** (2 cuentas PO, piloto Van Oosterwyk, Barvan + Nova Qualitas [externas legítimas, PO confirmó mantener], 2 demo) se crearon 05-02→05-12, **antes** del flujo de aprobación (~05-26). **Cero explotación.**
+
+**Fix (PR [#398](https://github.com/boosterchile/booster-ai/pull/398) `afdb933`):**
+- Flag `EMPRESA_SELF_ONBOARDING_ENABLED` (`booleanFlag(false)` — kill switch, OFF es el estado seguro).
+- Gate de ruta: 403 `onboarding_disabled` **antes de cualquier escritura** cuando el flag está OFF.
+- Defensa en profundidad (service layer): `onboardEmpresa` requiere `authorizedBy: 'self_service' | 'admin_provisioned'` y rechaza self_service con flag OFF.
+- Backstop conductual (no parser estático — rechazado por DA como teatro): test flag-off→403 sin escrituras.
+- Los 7 dueños existentes intactos (no se re-onboardean; 409 intacto).
+
+**Promovido a prod por canary observado por el PO** (revisión `00355-beg` 100%; `signup_probe` 204/204 sano post-100%; smoke principal `/empresas/onboarding` sin auth → 401, binario nuevo vivo). El 403 autenticado quedó cubierto por integration tests + lectura de código + el 401 (la app usa RUT+clave numérica, no Google → token headless impráctico).
+
+### 🚪 Hallazgo de proceso: merge→main auto-desplegaba a PROD sin approval — GATE CREADO
+
+Al promover el fix se descubrió que **no existe staging** (solo servicios prod; `cloudbuild.staging.yaml` muerto; `release.yml` removió `deploy-staging`) y que **merge a `main` auto-disparaba el canary de PRODUCCIÓN sin gate de aprobación humana** (el GitHub Environment `production` tenía solo `branch_policy`, cero `required_reviewers`). Contradecía CLAUDE.md ("staging auto + prod manual approval"). Es el **finding #1** del inventario.
+
+**Cerrado (PR [#399](https://github.com/boosterchile/booster-ai/pull/399) `4edd3b1`):**
+- Aplicado `required_reviewers=boosterchile` (`prevent_self_review=false`) en GitHub Environment `production` (vía `gh api`, no es archivo de repo). **Verificado conductualmente**: el merge de #399 dejó `deploy-production` en "Waiting for approval", ya no auto-despliega.
+- CLAUDE.md §Deploy reconciliado con la realidad (no staging; merge→release.yml→aprobación→canary 1%→30min→100%; `canary-verify` es placebo `exit 0`, `signup_probe` es la única señal real).
+- Eliminada la regla de horario de viernes (decisión PO: riesgo vía gate + observación canary, no calendario).
+
+**Mecanismo de promoción observada usado** (el pipeline auto-avanza 1%→100% sin pausa nativa): aprobación humana en GitHub → `route-canary` 1% → **cancel del build para congelar** → observación `signup_probe` → GO 100% del PO → `update-traffic --to-latest` manual. Nota: solo la API se promovió (cancel fue antes de deploy-web/whatsapp/telemetry/sms; cambio es API-only). El run `deploy-production` en GitHub figura `failure` por el cancel intencional; prod SÍ está al 100% nuevo.
+
+### Inventario ADR-vs-prod iniciado (el "alto")
+
+`.specs/adr-vs-prod-inventory/inventory.md` — verificación empírica (no narrativa) de cada afirmación material de ADRs vs prod. Progreso:
+- **Finding #1** (pipeline deploy) 🔴 ALTO — **cerrado** esta sesión (gate).
+- **ADR-001** (stack): 8 🟢 (WIF sin keys, secrets en Secret Manager, OIDC s2s, Cloud Run x8, GKE prod+DR, Cloud SQL pg16, Redis 7.2, Pub/Sub) · 1 🟡 (Firestore/BigQuery no verificados) · **1 🔴 MEDIO**: bucket DTE `documents-prod` tiene CMEK + período 6 años pero **`retention_policy.isLocked=false`** → retención SII no inmutable (insider con `storage.buckets.update`). Trackeado en `.specs/sec-h3-dte-retention-lock/` (Draft); lock irreversible. No explotable externo.
+- **ADR-002**: superseded by ADR-049, supersesión verificada en el repo 🟢.
+- **Cursor: retomar desde ADR-004.** Orden estricto 001→050 + CURRENT.md.
+
+### Pendientes / parqueado para próximas sesiones
+
+1. **Continuar inventario ADR-vs-prod desde ADR-004** (cursor en el doc).
+2. **🔴 Retention Lock GCS DTE** (`sec-h3-dte-retention-lock` Draft) — decisión aparte (lock irreversible).
+3. **PR-2** del hotfix onboarding: route-audit doc (`evidence/route-boundary-audit.md`) + `forensic-blast-radius.md` + web 403-handling check (P2-6).
+4. **Followup `onboarding-flow-redesign`** (`.specs/_followups/`): conflicto 409 approve↔onboarding, email real, flip de flags, estrategia demo/app (*conocer Booster* vs *dueño operativo*).
+5. **🟡** Verificar Firestore + BigQuery (ADR-001). **2h watch** post-deploy del `signup_probe` si se desea cubrir formalmente.
+6. **Servicios no-API** (web/whatsapp/telemetry/sms) siguen en revisiones previas (el canary del fix solo promovió API; inocuo, cambio API-only) — re-desplegar en el próximo deploy normal.
 
 ---
 
