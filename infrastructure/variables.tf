@@ -352,6 +352,25 @@ variable "auth_universal_v1_activated" {
 }
 
 # ---------------------------------------------------------------------------
+# SEC-001 H1.2 Sprint 2c-B T8 pre-apply (ADR-052 Accepted) — admin-approval
+# signup-request flow
+# ---------------------------------------------------------------------------
+# Cuando `true`, activa el endpoint público POST /api/v1/signup-request +
+# admin UI /admin/signup-requests (Sprint 2b PR2 T8/T10 wired pero gated por
+# este flag). Cuando `false`, ambos retornan 503 "Coming soon" — no hay
+# destino UX para rechazos del Cloud Function blocking-function (Sprint 2c-B
+# T4+T5). Por eso este flag es hard precondition de T8 plan v4.
+#
+# Flip a `true` 2026-05-29 post ADR-052 Accepted + Sprint 2b T13 canary
+# success (cloudbuild 8f4ec780). Reversible: `terraform apply` con default
+# false revierte a "Coming soon" sin redeploy de código.
+variable "signup_request_flow_activated" {
+  description = "Activa POST /api/v1/signup-request + admin UI (SEC-001 H1.2 ADR-052)."
+  type        = bool
+  default     = true
+}
+
+# ---------------------------------------------------------------------------
 # ADR-036 Wave 5 — Wake-word "Oye Booster"
 # ---------------------------------------------------------------------------
 # Cuando `true`, la card "Activación por voz" en

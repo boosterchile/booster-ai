@@ -202,6 +202,15 @@ module "service_api" {
     # de tostring(false)). Apply falló con "Secret projects/.../secrets/false
     # was not found" en el primer Sprint 2a apply 2026-05-25T17:55Z.
     STRICT_MIGRATION_ORDERING = tostring(var.strict_migration_ordering)
+
+    # SEC-001 H1.2 Sprint 2c-B T8 pre-apply (2026-05-29) — activa el flow
+    # de admin-approval signup-request rate-limited. Default false en
+    # config (apps/api/src/config.ts:booleanFlag(false)); flip a true
+    # aquí post ADR-052 Accepted (Sprint 2b T13 canary success) para
+    # que el Cloud Function `beforeCreate` blocking-function tenga un
+    # destino UX válido cuando rechace signups Google ad-hoc. Sin esto,
+    # los rechazados ven "Coming soon" del admin UI sin path forward.
+    SIGNUP_REQUEST_FLOW_ACTIVATED = tostring(var.signup_request_flow_activated)
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
