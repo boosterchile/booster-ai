@@ -11,7 +11,8 @@ import { checkAdrFile, isAdrStatusAccepted } from '../../scripts/check-adr-statu
  * (c) ADR-014 `**Estado:** Aceptado` (colon-inside-bold) → exit 1 (out-of-scope by design).
  * (d) ADR file absent / malformed → exit 1.
  * (e) Integration test: open actual `docs/adr/052-signup-migration-admin-sdk-gate.md`
- *     → exit 1 (Proposed at time of T2a, will flip post-Sprint-2b T13).
+ *     → exit 0 (flipped Proposed → Accepted 2026-05-29 post-canary
+ *     success cloudbuild 8f4ec780; T2a sentinel updated in same commit).
  *
  * Plus negative fixtures covering the 6+ Status formats explicitly NOT
  * matched by design (per file-level doc-comment).
@@ -153,10 +154,10 @@ describe('check-adr-status-accepted: integration against real ADR-052 file', () 
     expect(existsSync(realPath)).toBe(true);
   });
 
-  it('fixture (e): real ADR-052 currently NOT Accepted (Proposed at time of T2a)', () => {
+  it('fixture (e): real ADR-052 IS Accepted (flipped 2026-05-29 post-canary cloudbuild 8f4ec780)', () => {
     const result = checkAdrFile(realPath);
-    expect(result.ok).toBe(false);
-    expect(result.reason).toMatch(/Status not Accepted/);
+    expect(result.ok).toBe(true);
+    expect(result.reason).toMatch(/matches ADR-052\/053\/054 lineage form/);
   });
 
   it('fixture (e): real ADR-052 line 3 starts with the lineage form', () => {
