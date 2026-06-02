@@ -1,6 +1,6 @@
 # Inventario ADR-vs-realidad-de-prod
 
-**Estado**: Iniciado 2026-05-29 con el hallazgo #1 (proceso de deploy). Barrido empírico ADR-por-ADR **en ejecución** (directiva PO): ADR-001, 002, 004, 005 verificados al 2026-06-02; cursor en **ADR-006** (ver §Cursor de progreso). Cada afirmación material se cruza contra evidencia verificada de prod (gcloud read-only) + repo.
+**Estado**: Iniciado 2026-05-29 con el hallazgo #1 (proceso de deploy). Barrido empírico ADR-por-ADR **en ejecución** (directiva PO): ADR-001, 002, 004, 005, 006, 007 verificados al 2026-06-02; cursor en **ADR-008** (ver §Cursor de progreso). Cada afirmación material se cruza contra evidencia verificada de prod (gcloud read-only) + repo.
 
 **Propósito**: cazar afirmaciones del sistema sobre sí mismo que no se sostienen contra prod. Gatillado porque esta sesión encontró 4 desfases narrativa-vs-realidad; el #4 (deploy) es de proceso y el más grave. Disciplina: evidencia-sobre-narrativa dirigida hacia adentro. Cada fila: afirmación (fuente) → realidad verificada → estado 🟢/🟡/🔴 → método de verificación.
 
@@ -110,12 +110,37 @@ Iniciado 2026-05-29. Leyenda: 🟢 VERDE (verificado vivo) · 🟡 AMBAR (parcia
 
 **Resumen ADR-005**: 3 🟢 (1 con nota naming) · 3 🟡 (DLQ naming, Redis TTL conductual, Routes API → ADR-038). **Cierra los 2 🟡 de ADR-001** (Firestore + BigQuery ahora verificados desplegados).
 
+### ADR-006 — WhatsApp Business Meta Cloud API como canal primario (Accepted)
+
+| Afirmación material | Realidad verificada | Estado | Método de verificación | Riesgo si falsa |
+|---|---|---|---|---|
+| `apps/whatsapp-bot` (Cloud Run webhook) + `packages/whatsapp-client` + NLU vía `packages/ai-provider` (Gemini) | Carpetas existen; `booster-ai-whatsapp-bot` vivo en Cloud Run sa-west1 | 🟢 | `ls apps/ packages/` + `gcloud run services list` | medio |
+| Pub/Sub topic `whatsapp-inbound-events` | Topic vivo en prod | 🟢 | `gcloud pubsub topics list` | bajo |
+| Secret Manager: `whatsapp-app-secret`, `whatsapp-access-token`, `whatsapp-phone-number-id`, `whatsapp-business-account-id` | Los 4 existen **+ extra** `whatsapp-webhook-verify-token` | 🟢 | `gcloud secrets list` | alto |
+| Meta Cloud API **directo, sin Twilio/intermediarios** | No re-verificado aquí; existe `booster-ai-sms-fallback-gateway` + MCP Twilio conectada (canal SMS distinto). La migración Twilio→Meta se decide en **ADR-025** — verificar allí | 🟡 | pendiente ADR-025 | medio |
+| Cloud Armor rate+geo (solo IPs Meta) · Cloud Scheduler rotación token · HMAC signature verify · NLU intents | No verificado conductualmente read-only este pase | 🟡 | pendiente: revisar `infrastructure/*.tf` (armor/scheduler) + `apps/whatsapp-bot` (HMAC) | medio |
+
+**Resumen ADR-006**: 3 🟢 · 2 🟡 (Twilio→Meta vía ADR-025; armor/scheduler/HMAC/NLU conductual). Sin 🔴.
+
+### ADR-007 — Gestión documental obligatoria Chile (DTE/SII) (Accepted)
+
+| Afirmación material | Realidad verificada | Estado | Método de verificación | Riesgo si falsa |
+|---|---|---|---|---|
+| `apps/document-service` + `packages/dte-provider`, `carta-porte-generator`, `document-indexer` | Carpetas existen; `booster-ai-document-service` vivo en Cloud Run sa-west1 | 🟢 | `ls apps/ packages/` + `gcloud run services list` | medio |
+| Pub/Sub `document-events` + bucket `documents-prod` con **CMEK** | `document-events` vivo; bucket con `default_kms_key = …/booster-ai-keyring/cryptoKeys/documents-cmek` ✓; keyring `booster-ai-keyring` existe | 🟢 | `gcloud pubsub topics list` + `gcloud storage buckets describe` + `gcloud kms keyrings list` | alto |
+| **Object Retention Lock de 6 años "no se puede eliminar ni siquiera por admin hasta expiración"** (ADR-007 §Retención, línea 189) | Bucket: `retentionPeriod = 189216000s = 6.0y` ✓ **pero `isLocked` vacío (= false)**. La promesa textual de inmutabilidad anti-admin es **falsa**: un principal con `storage.buckets.update` puede acortar/quitar la política. **Mismo 🔴 que ADR-001, re-confirmado con la afirmación más explícita.** | 🔴 | `gcloud storage buckets describe gs://…-documents-prod --format="value(retention_policy.isLocked,...)"` → isLocked vacío | **medio** (compliance SII; insider con storage.update; NO externo). Trackeado `.specs/sec-h3-dte-retention-lock/` (Draft) + `infrastructure/storage.tf` comentario "CAMBIAR A true MANUALMENTE". |
+| Provider DTE: **Bsale recomendado** ("decisión final pendiente de benchmarking") | Superseded por **ADR-024** (Sovos + multi-vendor). Verificar provider real allí | 🟡 | pendiente ADR-024 | medio |
+| Tabla `documents` (Postgres) · `document_events` (BigQuery) · Document AI Expense Parser · Cloud Function on-upload OCR | No verificado este pase (read-only; requiere inspección schema/Document AI processors/Functions) | 🟡 | pendiente: `gcloud functions list` + `gcloud documentai processors list` + schema | bajo |
+
+**Resumen ADR-007**: 2 🟢 · 2 🟡 (provider→ADR-024; documents/Document AI/Function) · **1 🔴** (retention-lock, mismo de ADR-001/H3, re-confirmado con la afirmación textual más fuerte).
+
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005** (004/005 en 2026-06-02).
-- **Siguiente: ADR-006.** Orden restante: 006, 007, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02).
+- **Siguiente: ADR-008.** Orden restante: 008, 009, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Verificaciones diferidas a su ADR:** Twilio→Meta (ADR-006 → **ADR-025**); provider DTE Bsale-vs-Sovos (ADR-007 → **ADR-024**); Routes API ADC (ADR-005 → **ADR-038**).
 - **Findings ROJO acumulados:** Finding #1 (pipeline deploy, **alto** — gate ya aplicado + reconciliado, vector cerrado) · ADR-001 retention-lock GCS (**medio**, trackeado H3 Draft, no externo) · **ADR-004 trip-state-machine stub + lógica inline en services** (**medio**, deuda arquitectónica narrativa-vs-realidad, no externo — NUEVO 2026-06-02).
 - **Cierres colaterales 2026-06-02:** los 2 🟡 de ADR-001 (Firestore + BigQuery) quedan **verificados desplegados** al pasar por ADR-005 (Firestore Native sa-east1 match exacto; BigQuery datasets vivos, dataset se llama `telemetry`).
 - **Sesión 2026-06-02** (multi-máquina; continúa desde Mac Mini, próxima desde MacBook Pro). gcloud reauth OK. Barrido 004/005 hecho; retomar desde **ADR-006**.
