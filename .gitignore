@@ -130,6 +130,10 @@ __pycache__/
 # Claude Code local settings
 .claude/
 
+# Clon de trabajo del plugin booster-skills (vive en boosterchile/booster-skills,
+# no debe embeberse en este repo). Ver ADR-049.
+booster-skills/
+
 # Playwright screenshots (UI verification debug artifacts)
 *.png
 !apps/**/*.png
