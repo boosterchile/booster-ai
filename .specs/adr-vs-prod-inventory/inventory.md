@@ -1,6 +1,6 @@
 # Inventario ADR-vs-realidad-de-prod
 
-**Estado**: Iniciado 2026-05-29 con el hallazgo #1 (proceso de deploy). El resto del inventario (cruce de ADR-001..050 + CURRENT.md contra evidencia verificada de prod) está **pendiente de su propio spec** — NO ejecutado todavía (directiva PO).
+**Estado**: Iniciado 2026-05-29 con el hallazgo #1 (proceso de deploy). Barrido empírico ADR-por-ADR **en ejecución** (directiva PO): ADR-001, 002, 004, 005 verificados al 2026-06-02; cursor en **ADR-006** (ver §Cursor de progreso). Cada afirmación material se cruza contra evidencia verificada de prod (gcloud read-only) + repo.
 
 **Propósito**: cazar afirmaciones del sistema sobre sí mismo que no se sostienen contra prod. Gatillado porque esta sesión encontró 4 desfases narrativa-vs-realidad; el #4 (deploy) es de proceso y el más grave. Disciplina: evidencia-sobre-narrativa dirigida hacia adentro. Cada fila: afirmación (fuente) → realidad verificada → estado 🟢/🟡/🔴 → método de verificación.
 
@@ -85,14 +85,40 @@ Iniciado 2026-05-29. Leyenda: 🟢 VERDE (verificado vivo) · 🟡 AMBAR (parcia
 
 **Resumen ADR-002**: 1 🟢 (supersesión verificada en el repo).
 
+### ADR-004 — Modelo Uber-like con 5 roles y matching carrier-based (Accepted v2)
+
+| Afirmación material | Realidad verificada | Estado | Método de verificación | Riesgo si falsa |
+|---|---|---|---|---|
+| Packages `trip-state-machine`, `matching-algorithm`, `pricing-engine`, `notification-fan-out` | Las 4 carpetas existen en `packages/` | 🟢 (existencia) | `ls packages/<pkg>` | bajo |
+| Apps `matching-engine`, `notification-service` (Cloud Run) | Existen en repo (`apps/`) + servicios `booster-ai-matching-engine`, `-notification-service` vivos en Cloud Run sa-west1 | 🟢 | `ls apps/` + `gcloud run services list` | medio |
+| Trip lifecycle como **máquina de estados XState** en `packages/trip-state-machine` (validation checklist: "El trip lifecycle es una máquina XState con transiciones verificables") | **`packages/trip-state-machine/src/index.ts` = stub de 7 líneas** (`TODO: implementar según ADRs relacionados`; export `PACKAGE_NAME`). **Cero XState** (`dependencies: {}`, 0 refs en src). La lógica de transiciones SÍ existe pero **dispersa inline en `apps/api/src/services/`** (`liquidar-trip.ts`, `asignar-conductor-a-assignment.ts`, `confirmar-entrega-viaje.ts`, `offer-actions.ts`, `reportar-incidente.ts`…) + `packages/shared-schemas/src/domain/trip.ts`/`trip-event.ts` | 🔴 | `wc -l + cat packages/trip-state-machine/src/index.ts`; `grep xstate` → 0; `grep -rlE 'offered_to_carrier\|driver_assigned\|...' apps packages` | **medio** (no es agujero de seguridad; es deuda arquitectónica + narrativa-vs-realidad: el package prometido es placeholder y la lógica vive inline en services, lo que **viola la regla de arquitectura de CLAUDE.md** "prohibido escribir lógica … inline en services" y el anti-patrón "flags ad-hoc en BD" que el propio ADR-004 dijo evitar). No externo. |
+| Eventos de trip → Pub/Sub topic `trip-events` | Topic `trip-events` vivo en prod; publicado/consumido desde múltiples services (`trip-requests-v2.ts`, `confirmar-entrega-viaje.ts`, `emitir-certificado-viaje.ts`…) | 🟢 | `gcloud pubsub topics list` + `grep -rl trip-events apps` | bajo |
+| 4 roles con UI diferenciada en `apps/web`; multi-rol (carrier unipersonal); matching ofrece a carriers no a drivers; tablas `SustainabilityStakeholder` + `ConsentGrant` + `stakeholder_access_log` | No verificado conductualmente este pase (read-only; requeriría ejercitar UI + inspección de schema/queries) | 🟡 | pendiente: revisar `apps/web` rutas por rol + `packages/shared-schemas/src/domain` stakeholder/consent | medio |
+
+**Resumen ADR-004**: 2 🟢 + 1 🟢(existencia) · 1 🟡 · **1 🔴** (trip-state-machine stub + lógica inline; medio, deuda arquitectónica no-externa).
+
+### ADR-005 — Telemetría IoT a escala (Accepted v2)
+
+| Afirmación material | Realidad verificada | Estado | Método de verificación | Riesgo si falsa |
+|---|---|---|---|---|
+| `apps/telemetry-tcp-gateway` (GKE Autopilot) + `apps/telemetry-processor` (Cloud Run) + `packages/codec8-parser` | Las 3 carpetas existen; `booster-ai-telemetry-processor` vivo en Cloud Run; clusters GKE `booster-ai-telemetry` + `-dr` RUNNING (verificado ADR-001) | 🟢 (modo Autopilot específico no re-confirmado) | `ls apps/ packages/` + `gcloud run/container` | medio |
+| Pub/Sub `telemetry-events` (+ DLQ `telemetry-events-dlq`) | `telemetry-events` vivo + 4 topics derivados (`-safety-p0`, `-security-p1`, `-trip-transitions`, `-eco-score`). **DLQ con nombre `telemetry-events-dlq` NO existe**; hay un `pubsub-dead-letter` genérico compartido | 🟡 | `gcloud pubsub topics list` | bajo (DLQ existe, nombre difiere del ADR) |
+| **Firestore** modo Native, región `southamerica-east1` (cierra 🟡 de ADR-001) | `projects/booster-ai-494222/databases/(default)` = `FIRESTORE_NATIVE`, `southamerica-east1`. **Match exacto** | 🟢 | `gcloud firestore databases list` | bajo |
+| **BigQuery** dataset `booster_telemetry` tabla `events` particionada por día (cierra 🟡 de ADR-001) | BigQuery desplegado: datasets `telemetry`, `esg_analytics`, `matching`, `audit`, `billing_export`, `observatory`. **Dataset existe pero se llama `telemetry`, no `booster_telemetry`** (partición/tabla `events` no inspeccionada este pase) | 🟢 (con nota de naming) | `bq ls` | bajo |
+| Redis `vehicle:{id}:position` TTL 5min (last-known position O(1)) | `booster-ai-redis` `REDIS_7_2` READY (ADR-001); comportamiento de la key/TTL no ejercitado read-only | 🟡 | `gcloud redis instances list` (infra) | bajo |
+| ETA vía **Routes API v2 OAuth ADC, no API key** | Diferido a **ADR-038** (Routes API ADC migration) — se verifica allí | 🟡 | pendiente ADR-038 | medio |
+
+**Resumen ADR-005**: 3 🟢 (1 con nota naming) · 3 🟡 (DLQ naming, Redis TTL conductual, Routes API → ADR-038). **Cierra los 2 🟡 de ADR-001** (Firestore + BigQuery ahora verificados desplegados).
+
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001 + ADR-002** (2026-05-29).
-- **Siguiente: ADR-004.** Orden restante: 004, 005, 006, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
-- **Findings ROJO acumulados:** Finding #1 (pipeline deploy, **alto** — gate ya aplicado + reconciliado, vector cerrado) · ADR-001 retention-lock GCS (**medio**, trackeado H3 Draft, no externo).
-- **Sesión 2026-05-29 agotándose** (sesión muy larga: hotfix vector + gate deploy + canary + arranque inventario). Retomar barrido desde ADR-004 en sesión fresca.
+- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005** (004/005 en 2026-06-02).
+- **Siguiente: ADR-006.** Orden restante: 006, 007, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Findings ROJO acumulados:** Finding #1 (pipeline deploy, **alto** — gate ya aplicado + reconciliado, vector cerrado) · ADR-001 retention-lock GCS (**medio**, trackeado H3 Draft, no externo) · **ADR-004 trip-state-machine stub + lógica inline en services** (**medio**, deuda arquitectónica narrativa-vs-realidad, no externo — NUEVO 2026-06-02).
+- **Cierres colaterales 2026-06-02:** los 2 🟡 de ADR-001 (Firestore + BigQuery) quedan **verificados desplegados** al pasar por ADR-005 (Firestore Native sa-east1 match exacto; BigQuery datasets vivos, dataset se llama `telemetry`).
+- **Sesión 2026-06-02** (multi-máquina; continúa desde Mac Mini, próxima desde MacBook Pro). gcloud reauth OK. Barrido 004/005 hecho; retomar desde **ADR-006**.
 
 ## Findings ya conocidos de la sesión (a confirmar en su ADR correspondiente)
 
