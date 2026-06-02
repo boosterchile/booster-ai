@@ -1,8 +1,92 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-29 (**Vector de auto-promoción a dueño CERRADO en prod** + **gate de aprobación de deploy creado** + **inventario ADR-vs-prod iniciado**. Sprint 2c blocking-function abandonado tras descubrir que el handler era deny-puro y el invariante ya vivía en el boundary; pero el boundary tenía un agujero: `/empresas/onboarding` auto-provisionaba dueño sin gate. Cerrado vía flag `EMPRESA_SELF_ONBOARDING_ENABLED=false` (PR #398 `afdb933`), promovido a prod por canary observado. Descubierto que merge→main auto-desplegaba a PROD sin approval (no existe staging) → gate `required_reviewers` creado en GitHub Environment `production` + §Deploy reconciliado (PR #399 `4edd3b1`). Inventario ADR-vs-prod arrancado: `.specs/adr-vs-prod-inventory/inventory.md` hasta ADR-002, cursor en ADR-004.)
-**Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
+**Última actualización**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo de hoy vive en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
+**Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-02 — Transición multi-máquina + higiene working tree + gitleaks + inventario ADR-004→007
+
+### 🔀 Adopción de workflow multi-máquina (origin = única fuente de verdad)
+
+A partir de esta sesión el PO deja de trabajar desde el Mac Mini (con el repo en el **pendrive** `/Volumes/Pendrive128GB`) y continúa desde el **MacBook Pro**. Decisión operativa:
+
+- **GitHub `origin` (`boosterchile/booster-ai`) es la única fuente de verdad.** El pendrive deja de ser el medio de trabajo.
+- **Cada máquina trabaja desde su propio clon** en disco interno (no en el pendrive).
+- **Disciplina**: `git pull` al empezar · **`git push` tras CADA avance** (no solo al cerrar). Nada de trabajo acumulado sin respaldo en origin.
+- El PR agrupado (higiene + inventario + lo que venga) se hará cuando el trabajo sustantivo esté completo, **para gastar una sola corrida de canary**. No mergear a `main` por avances parciales.
+
+### 🧹 Higiene de working tree (4 commits)
+
+El árbol tenía cambios sin commitear de sesiones previas. Diagnosticados y resueltos en commits atómicos (todos en la rama `chore/working-tree-hygiene`):
+
+| Commit | Cambio | Naturaleza |
+|---|---|---|
+| `83f2195` | `chore(infra): terraform fmt` en 4 `.tf` (crash-traces, messaging, networking, telemetry-monitoring) | Whitespace-only; `terraform fmt -check` ahora exit 0. Cero semántica. |
+| `231ff50` | `chore(repo): ignorar booster-skills/` | El clon embebido del plugin (repo propio) ya no contamina `git status`. |
+| `87ca24b` | `docs(inventory): versionar adr-vs-prod-inventory` | Trabajo activo antes untracked. |
+| `a38157f` | `docs(sec-001): audit trail specs google-blocking-c (SUPERSEDED) + boundary-closure` | Specs históricos retenidos como trazabilidad. |
+
+### 🔐 gitleaks instalado en el Mac Mini (NO viaja a otras máquinas)
+
+El pre-commit venía avisando `WARN: gitleaks no instalado` hace varias sesiones y **se saltaba el escaneo de secretos silenciosamente**. Instalado `gitleaks 8.30.1` vía Homebrew y **verificado activo** (commit de prueba: el WARN desapareció, el hook ahora corre `gitleaks protect --staged` de verdad — se ve "scanned ~X KB … no leaks found" en cada commit posterior).
+
+> ⚠️ **Esto es local al Mac Mini.** En el MacBook Pro hay que repetir `brew install gitleaks` (ver §SETUP MACBOOK), o el hook volverá a saltarse el escaneo silenciosamente.
+
+### 📋 Inventario ADR-vs-prod avanzado: ADR-004 → ADR-007 (gcloud read-only empírico)
+
+Retomado desde el cursor (ADR-004) con la misma disciplina: verificación empírica de cada afirmación material, prod read-only, 🟡 lo no verificable (no inventar 🟢), 🔴 lo afirmado-pero-falso. Detalle completo en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md). Resumen:
+
+| ADR | Resultado | Destacado |
+|---|---|---|
+| **004** Uber-like + 5 roles | 2🟢 +1🟢(existencia) · 1🟡 · **1 🔴** | **🔴 NUEVO**: `packages/trip-state-machine` es un **stub de 7 líneas** (`TODO: implementar`), **sin XState** — pese a que ADR-004/005 lo afirman como el lifecycle implementado. La lógica de estados SÍ existe pero **dispersa inline en `apps/api/src/services/`** (liquidar-trip, asignar-conductor, confirmar-entrega, offer-actions…), lo que **viola la regla de arquitectura de CLAUDE.md** ("prohibido lógica inline en services"). Medio, **no externo** (deuda arquitectónica, no agujero de seguridad). |
+| **005** Telemetría IoT | 3🟢 · 3🟡 | **Cierra los 2 🟡 de ADR-001**: Firestore `FIRESTORE_NATIVE` en `southamerica-east1` (match exacto) + BigQuery datasets vivos (dataset se llama `telemetry`, no `booster_telemetry`). DLQ existe como `pubsub-dead-letter` genérico (no `telemetry-events-dlq`). |
+| **006** WhatsApp Meta | 3🟢 · 2🟡 | whatsapp-bot/client + ai-provider + `whatsapp-inbound-events` + 4 secrets (+`verify-token` extra) vivos. Twilio→Meta diferido a **ADR-025**. |
+| **007** Gestión documental Chile | 2🟢 · 2🟡 · **1 🔴** | **🔴 re-confirma el retention-lock**: ADR-007 línea 189 promete textualmente "no se puede eliminar ni siquiera por admin", pero el bucket `documents-prod` tiene `isLocked=false` (la afirmación más explícita del mismo hallazgo de ADR-001). Provider DTE Bsale→**ADR-024** (Sovos). CMEK + keyring `booster-ai-keyring` ✓. |
+
+**Cursor del inventario: retomar desde ADR-008.** Orden estricto 008→050 + CURRENT.md. Verificaciones diferidas a su ADR: Twilio→Meta (ADR-025), provider DTE (ADR-024), Routes API ADC (ADR-038).
+
+**Findings 🔴 acumulados del inventario** (todos medios, ninguno externo/explotable):
+1. Finding #1 pipeline deploy (alto) — **ya cerrado** sesión 2026-05-29 (gate `required_reviewers`).
+2. Retention-lock GCS DTE (medio) — `isLocked=false`; trackeado `.specs/sec-h3-dte-retention-lock/` (Draft). Re-confirmado en ADR-007.
+3. **NUEVO** trip-state-machine stub + lógica inline (medio) — deuda arquitectónica narrativa-vs-realidad.
+
+### 🖥️ SETUP MACBOOK — configurar una sola vez en el MacBook Pro
+
+Para continuar el trabajo desde el MacBook Pro (disco interno, **NO** pendrive):
+
+1. **Clonar el repo a disco interno** (ej. `~/dev/booster-ai`, no `/Volumes/...`):
+   ```bash
+   git clone https://github.com/boosterchile/booster-ai.git ~/dev/booster-ai
+   cd ~/dev/booster-ai
+   git checkout chore/working-tree-hygiene   # rama con el trabajo de hoy
+   ```
+2. **Toolchain vía Homebrew**:
+   ```bash
+   brew install gitleaks node pnpm
+   # gitleaks: imprescindible o el pre-commit salta el escaneo de secretos en silencio
+   # node: respetar .nvmrc (v22) — usar nvm/fnm si se prefiere gestor de versiones
+   ```
+   Luego `pnpm install` en la raíz del monorepo.
+3. **GitHub CLI**: `gh auth login` (para PRs/merges/deploys; recordar: CI/CD canónico es GitHub, no GitLab).
+4. **Google Cloud — re-autenticar** (los comandos del inventario y queries prod lo necesitan):
+   ```bash
+   gcloud auth login                          # credenciales de usuario (gcloud CLI: run/sql/redis/storage/kms describe)
+   gcloud auth application-default login       # ADC (túnel psql headless + client libs)
+   gcloud config set project booster-ai-494222
+   ```
+5. **Re-autenticar las MCP de Google Cloud** (BigQuery + Compute Engine) en Claude Code — su auth no viaja entre máquinas.
+
+> Una vez configurado: `git pull` en `chore/working-tree-hygiene` trae higiene + inventario + este handoff, y se retoma el inventario desde **ADR-008**.
+
+### Estado de la rama `chore/working-tree-hygiene` (en origin)
+
+Commits al cierre de esta sesión (todos pusheados a `origin`, **sin mergear a `main`**):
+- `83f2195` `231ff50` `87ca24b` `a38157f` — higiene (fmt, gitignore, inventario inicial, specs SUPERSEDED).
+- `ed815ce` — inventario ADR-004 + 005.
+- `167ff51` — inventario ADR-006 + 007.
+- (+ este handoff CURRENT.md).
 
 ---
 
