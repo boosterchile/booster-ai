@@ -349,7 +349,7 @@ resource "google_monitoring_alert_policy" "pubsub_backlog_p2" {
 # instrumentemos OpenTelemetry en el gateway/processor.
 
 resource "google_monitoring_dashboard" "telemetry_overview" {
-  project        = google_project.booster_ai.project_id
+  project = google_project.booster_ai.project_id
   dashboard_json = jsonencode({
     displayName = "Booster Telemetría — Overview + Operations"
     mosaicLayout = {
@@ -366,7 +366,7 @@ resource "google_monitoring_dashboard" "telemetry_overview" {
               dataSets = [{
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter             = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.device_records_per_minute.name}\""
+                    filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.device_records_per_minute.name}\""
                     aggregation = {
                       alignmentPeriod    = "60s"
                       perSeriesAligner   = "ALIGN_RATE"

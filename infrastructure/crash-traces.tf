@@ -339,7 +339,7 @@ resource "google_monitoring_alert_policy" "crash_trace_persistence_failures" {
   notification_channels = [google_monitoring_notification_channel.email_alerts.id]
 
   documentation {
-    content = <<-EOT
+    content   = <<-EOT
       Crash Trace persistence failed in telemetry-processor.
 
       Investigación:
