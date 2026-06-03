@@ -167,12 +167,68 @@ Iniciado 2026-05-29. Leyenda: 🟢 VERDE (verificado vivo) · 🟡 AMBAR (parcia
 
 **Resumen ADR-009**: estrategia (mayoría fuera de scope). De las capacidades-diferenciador: 4 🟢 (matching, carbono, telemetría, DTE — packages reales) · 3 🟡 (certificados/retention→H3; stakeholder scope; observatorio→ADR-012) · **1 🔴** ("18 estados XState" — falso, re-confirma ADR-004 pero como **claim externo de pitch**, mayor exposición narrativa).
 
+### Barrido ADR-010 → ADR-025 (2026-06-03, 5 agentes paralelos read-only + spot-check de 🔴)
+
+> Verificación contra código + gcloud read-only (proyecto `booster-ai-494222`). Los 🔴 materiales (ADR-020, ADR-022, stubs) fueron spot-checked manualmente. Patrón dominante del tramo: **el núcleo técnico implementado coincide bien con sus ADRs (013-019, 021, 023); los gaps están en ADRs de producto/comercial aspiracional (010-012) y en componentes "a construir" (024-025), más 2 drifts graves de plataforma/factor (020, 022).**
+
+**ADR-010 — Landing comercial boosterchile.com** · **0🟢 · 1🟡 · 4🔴**
+100% aspiracional: **no existe** `apps/marketing` (cero deps Next.js), ni `packages/payment-provider` (Flow.cl/Stripe), ni `packages/mdx-content`, ni Cloud Run service `marketing`. Signup comercial autoservicio por rol no existe (el real es onboarding gated por aprobación admin). 🟡: el dominio `boosterchile.com` resuelve (34.36.187.195, misma GCLB que app./www.) pero apunta a la infra existente, no a una landing separada. Status=Accepted no refleja que nada se construyó.
+
+**ADR-011 — Panel admin (rol Admin)** · **1🟢 · 1🟡 · 7🔴**
+🟢 la decisión núcleo "admin dentro de `apps/web`" (rutas `platform-admin*` reales). 🔴 casi todos los módulos/features específicos: path real `/app/platform-admin/*` (no `/admin/*`); **no existen** impersonation, broadcasts, tabla `audit_log`, command palette (Cmd+K), package `admin-sdk`. Config NO en Firestore sino Postgres `configuracion_sitio` (superseded por ADR-039). Solo subset de módulos (matching, observability, signup-requests, site-settings, cobra-hoy).
+
+**ADR-012 — Observatorio Urbano + Gemelos Digitales + Eco-Routing** · **0🟢 · 1🟡 · 5🔴**
+Roadmap puro (el ADR lo marca fases Q3'26-Q3'27, pero Status=Accepted). **No existe** `apps/eco-routing-service`, ni `apps/digital-twin-simulator` (cero `.py` en repo), ni los 4 packages (traffic-condition-detector, route-alternatives-evaluator, urban-observatory-queries, digital-twin), ni tabla `route_suggestions`, ni rutas `observatory/*`. 🟡 lo único tangible: `services/eco-route-preview.ts` (feature distinta: preview de huella pre-aceptación, no eco-routing real-time) + `stakeholder-zonas.tsx` (skeleton autodeclarado con data mock, piloto Coquimbo).
+
+**ADR-013 — Acceso a DB en 3 capas** · **5🟢 · 0🟡 · 2🔴**
+🟢 Cloud SQL `ipv4_enabled=false` (privada), IAM auth `on`, módulos `cloud-run-job` + `iap-bastion` reales, jobs `merge-duplicate-users`/`backfill-certificados`. 🔴 **drift de self-reporting**: el ADR dice "bastion escrito pero NO instanciado" y "connect.sh pendiente IAP" — pero **ambos YA están hechos** (`db-bastion` RUNNING en prod sa-west1-a; `connect.sh` con flujo IAP completo). Decisiones correctas; estado stale.
+
+**ADR-014 — API Key Google Maps (Web PWA)** · **7🟢 · 0🟡 · 0🔴** — Totalmente verificado. Key `eb016256` con referrer `app.boosterchile.com/*` (33 apiTargets), código usa `VITE_GOOGLE_MAPS_API_KEY` vía `@vis.gl/react-google-maps` + fallback, inyectada por cloudbuild. (cross-ref hilo gitleaks: esta es la Maps key verificada.)
+
+**ADR-015 — KMS RSA PKCS#1 4096-SHA256 certificados carbono** · **9🟢 · 0🟡 · 1🔴**
+🟢 end-to-end: key `ASYMMETRIC_SIGN`/`RSA_SIGN_PKCS1_4096_SHA256` live en `booster-ai-keyring`, separada de `document-signing` (SHA512), IAM least-privilege, wrapper `firmar-kms.ts` con CRC32C, endpoint público `/verify`. 🔴 sólo cita de línea errónea (endpoint en `routes/certificates.ts:162`, no `server.ts:251-262`). Drift "RSA-PSS" en comentarios ya reconocido como follow-up #8 del ADR.
+
+**ADR-016 — Web Push W3C/VAPID** · **10🟢 · 3🟡 · 0🔴**
+🟢 funcional y desplegado: lib `web-push` (no FCM SDK), endpoint `POST /me/push-subscription`, tabla `push_subscriptions`, handlers SW push/notificationclick, VAPID en Secret Manager (2 versiones c/u) + env vars en Cloud Run api. **El path corre 100% en `apps/api`, NO en notification-service skeleton** (el cross-ref no aplica). 🟡 line-refs de schema obsoletas + ruta `/webpush/vapid-public-key` (no `/push/`).
+
+**ADR-017 — SSE para chat realtime** · **4🟢 · 3🟡 · 0🔴**
+🟢 núcleo real: endpoint `streamSSE` Hono `GET /assignments/:id/messages/stream`, auth Firebase vía `?auth=`, cliente `use-chat-stream.ts` con backoff exp. 🟡: heartbeat 25s (ADR dice 15s), label UI "En vivo" (no "Conectado"), **redacción del token `auth=` en query no garantizada** (el propio ADR lo marca "⏳ verificar" — vale seguimiento).
+
+**ADR-018 — Pub/Sub chat-messages + subs efímeras** · **7🟢 · 0🟡 · 0🔴**
+🟢 verificado en código + **live en prod**: topic `chat-messages` (retención 3600s), `publishChatMessage` fire-and-forget, subs efímeras `chat-sse-{id}-{uuid8}` (filter server-side, TTL 24h, cleanup onAbort), env `CHAT_PUBSUB_TOPIC=chat-messages`, DLQ `pubsub-dead-letter` existe.
+
+**ADR-019 — Workbox v7 + vite-plugin-pwa injectManifest** · **8🟢 · 0🟡 · 0🔴** — Verificado literalmente (cross-ref ADR-008): `strategies:'injectManifest'`, workbox 7.3 (6 pkgs), `src/sw.ts` con precache+runtime caching, skipWaiting/clientsClaim, manifest inline.
+
+**ADR-020 — CI/CD GitLab.com runners** · **1🟢 · 0🟡 · 5🔴** · 🔴🔴 **DRIFT MÁS GRAVE DEL TRAMO**
+El ADR afirma textual *"el repo se migró de GitHub a GitLab (`boosterchile-group/booster-ai`) en mayo 2026"* + *"Supersedes: GitHub Actions quedó inerte"* + pipeline en `.gitlab-ci.yml`. **REALIDAD: `origin = github.com/boosterchile/booster-ai`, NO existe `.gitlab-ci.yml`, y el CI corre 100% en GitHub Actions** (`.github/workflows/*` activos — verificado toda la sesión, incl. PR #401). La migración a GitLab **nunca ocurrió o se revirtió sin ADR que lo supersede**. 🟢 sólo el deploy Cloud Run + WIF (mencionado como fuera de scope). **Riesgo: medio** (no externo; confunde onboarding/operación — un dev seguiría instrucciones de un CI inexistente). **Candidato a ADR superseding urgente.**
+
+**ADR-021 — GLEC v3.0 + empty backhaul** · **7🟢 · 1🟡 · 0🔴**
+🟢 factores SEC-Chile-2024 coinciden bit-a-bit (diesel TTW 2.70/WTT 0.55/**WTW 3.25**, gasolina/glp/gnc/eléctrico/H₂, híbridos 70%), calibración α LDV/MDV/HDV, módulo `glec/empty-backhaul.ts` real, `versionGlec='v3.0'`. 🟡 "44 tests" desactualizado (hoy 69).
+
+**ADR-022 — Metodología emisiones + factor WTW diesel B5** · **1🟢 · 2🟡 · 5🔴**
+🔴 **el factor central 3.21 es FALSO**: el código computa **3.25** (2.70+0.55) y **ADR-021 también dice 3.25** → ADR-022 contradice al código Y al ADR hermano en el número que ambos pretenden gobernar. 🔴 además: ajuste B5 −0.5% no implementado; `methodology_version` semver para emisiones no existe (solo en pricing/factoring); `precision_method` está en `metricas_viaje` (no `trip_requests`); `is_backhaul_optimized` (regla anti-greenwashing) **no existe**. 🟢 sólo los 3 modos (`exacto_canbus`/`modelado`/`por_defecto`). **Riesgo: medio** (precisión de certificados de carbono auditables).
+
+**ADR-023 — Matching v1 greedy capacity-scoring** · **8🟢 · 2🟡 · 0🔴**
+🟢 coincide bit-a-bit: scoring `max(0,1−slackRatio·0.1)`, MAX_OFFERS=5/TTL=60, flujo greedy/online en tx (zona→activa→best-fit vehículo `ORDER BY capacityKg ASC LIMIT 1`), tiebreak `localeCompare`, `scoreToInt` [0,1000], backhaul factor separado (no llamado desde runMatching). v2 existe tras flag (ADR-033), v1 sigue default — consistente. 🟡 conteo tests + matching-engine placeholder.
+
+**ADR-024 — Proveedor SII Sovos + multi-vendor** · **3🟢 · 2🟡 · 2🔴**
+🟢 `SovosDteAdapter` real (HTTP+Bearer+mappers) + adapter-pattern `DteEmitter` + decisión Sovos-sobre-Bsale. 🔴 **de 6 adapters declarados solo existen 2** (sovos+mock; bsale/defontana/alanube/edicom no); **`carta-porte-generator` es placeholder de 7 líneas** (Carta Porte Ley 18.290 no implementada). 🟡 `DTE_PROVIDER` no cableado a runtime (`document-service` = skeleton); secrets DTE genéricos (no per-carrier multi-tenant del §4).
+
+**ADR-025 — WhatsApp Twilio→Meta + NLU Gemini** · **4🟢 · 0🟡 · 4🔴**
+🟢 el ADR diagnostica bien (estado actual = Twilio); cliente Meta (`graph.facebook.com/v20.0` + verifyMetaSignature) existe; FSM XState `conversationMachine` real; secrets Meta (5) + Twilio provisionados. 🔴 **`ai-provider` es placeholder de 7 líneas** → toda la arquitectura NLU/Gemini es vaporware; no existe feature flag `WHATSAPP_BSP_PROVIDER` (cutover sería code-change, no mecanizado); intents carrier (accept_offer/upload_pod) no implementados; `templates.ts` Meta no existe. Cliente Meta `sendText` existe pero **desconectado del bot** (corre solo Twilio).
+
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02) · **ADR-008, ADR-009** (2026-06-03).
-- **Siguiente: ADR-010.** Orden restante: 010, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02) · **ADR-008, ADR-009, ADR-010→ADR-025** (2026-06-03).
+- **Siguiente: ADR-026.** Orden restante: 026, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Findings 🔴 NUEVOS del tramo 010-025 (2026-06-03):**
+  - **ADR-020 GitLab-vs-realidad (medio, NO externo)**: el ADR describe una migración a GitLab + `.gitlab-ci.yml` + GitHub Actions "inerte" que NUNCA ocurrió — el CI real es 100% GitHub Actions, `origin`=GitHub, sin `.gitlab-ci.yml`. **Candidato a ADR superseding.**
+  - **ADR-022 factor diesel 3.21 (medio)**: contradice código (3.25) y ADR-021 (3.25). Afecta precisión de certificados de carbono. Además metodología B5/methodology_version/is_backhaul_optimized no implementadas.
+  - **ADR-010/011/012 aspiracionales (bajo, no externo)**: landing comercial (0 implementado), panel admin (solo "dentro de apps/web" real, módulos no), observatorio urbano (roadmap futuro). Status=Accepted no refleja no-ejecución.
+  - **Stubs/placeholders confirmados (7 líneas c/u)**: `trip-state-machine` (ADR-004), `ai-provider` (ADR-025 → NLU/Gemini vaporware), `carta-porte-generator` (ADR-024 → Carta Porte no existe). Skeletons: `document-service`, `notification-service`, `matching-engine`.
+- **Núcleo técnico SÓLIDO (narrativa≈realidad)**: ADR-013 (DB privada+IAM), 014 (Maps key), 015 (KMS carbono), 016 (Web Push desplegado), 017 (SSE), 018 (Pub/Sub chat live), 019 (Workbox), 021 (factores GLEC bit-a-bit), 023 (matching v1). Los 🔴 acá son drift de doc (line-refs, estado stale), no decisiones falsas.
 - **deploy web Cloud Run**: ✅ confirmado vivo (`booster-ai-web` sa-west1) tras reauth gcloud 2026-06-03 — cierra el 🟡 de ADR-008.
 - **Gaps ADR-008 (🟡, no externos):** axe-core declarado sin integrar (validación a11y automatizada inexistente; el job CI "Playwright + axe-core" no corre axe); web-push backend (`notification-service`) skeleton.
 - **ADR-009 (estratégico)**: capacidades-diferenciador mayormente reales (carbon-calculator 419 LOC, matching-algorithm 330 LOC). **🔴 "18 estados XState"** es FALSO (trip-state-machine stub) — mismo finding raíz que ADR-004 pero aquí como **claim externo de pitch** (mayor exposición narrativa). carbon/matching reales (NO son stubs como trip-state-machine).
