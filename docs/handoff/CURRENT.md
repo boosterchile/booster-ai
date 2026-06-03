@@ -44,9 +44,19 @@ Verificación empírica de las claves `AIza…` del repo (gcloud read-only, `ser
 - 🔴 **Firebase web key** (`2bcd204b`): `browserKeyRestrictions: {}` — **ninguna restricción a nivel de key**. Su seguridad depende de **App Check enforcement + Firebase Security Rules**, **AÚN NO verificadas en Firebase Console** (lo hace el PO).
 - ⏳ **Allowlist `.gitleaks.toml` de las `AIza…`: PENDIENTE** de esa verificación. Los **2 falsos positivos verdes** ya allowlisteados (fixtures logger `generate.mjs`+`adversarial-100.json` + región GCP en evidencia SEC-001) están en **`stash@{0}` sobre `chore/working-tree-hygiene`**, sin commitear, esperando cerrar la decisión Firebase para un solo commit limpio.
 
-### 📋 Inventario ADR-vs-prod — sigue PAUSADO en ADR-008
+### 📋 Inventario ADR-vs-prod — ✅ COMPLETO (2026-06-03)
 
-Sin avance esta sesión. **Cursor: retomar desde ADR-008** (orden estricto 008→050 + CURRENT.md). Detalle en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md).
+**Barrido completo ADR-001→054 + CURRENT.md** (008-054 esta sesión, vía agentes paralelos read-only + spot-check de los 🔴). 003 ausente; colisiones 028/034/035 ambas cubiertas; ADR-055 = dev-env DRAFT auto-escrito, N/A. Detalle en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md).
+
+**Veredicto global**: el núcleo técnico/transaccional implementado tiene **alta fidelidad** (infra, KMS, Pub/Sub, Web Push, SSE, pricing/factoring, matching v1/v2, RBAC, auth-universal, site-settings, ADC migrations — varias verificadas live en GCP; en pricing/auth el código va **por delante** del ADR). Los gaps son: features aspiracionales (010-012 landing/admin-modules/observatorio), componentes a-construir (NLU/Gemini, carta-porte), microservicios skeleton, y **3 drifts/residuales que valen acción**:
+
+| 🔴 | Tipo | Acción |
+|---|---|---|
+| **ADR-020** GitLab ficticio (CI real = GitHub Actions) | doc/contrato | follow-up → ADR superseding |
+| **ADR-049** `.claude/settings.json` inexistente (CLAUDE.md afirma que declara plugins) | doc/contrato | follow-up → crear archivo o corregir CLAUDE.md |
+| **ADR-052/054** signup: frontend no migrado (signup web roto vs `disabledUserSignup`) + blocking function Google **OFFLINE** (gate Google sin operar) | seguridad/operativo | **sin follow-up stub aún — decisión PO** |
+
+Stubs dejados: [`_followups/adr-020-supersede-gitlab-to-github-actions.md`](../../.specs/_followups/adr-020-supersede-gitlab-to-github-actions.md) · [`_followups/adr-049-claude-md-settings-json-reconcile.md`](../../.specs/_followups/adr-049-claude-md-settings-json-reconcile.md).
 
 ---
 

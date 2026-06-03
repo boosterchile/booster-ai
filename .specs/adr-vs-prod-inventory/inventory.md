@@ -249,12 +249,31 @@ ADR-040: **4🟡** device-side (FOTA/SMS al FMC150), no observable read-only; `w
 **Meta/proceso — ADR-043, 044, 045, 046, 049, 050**
 🟢 ADR-043: `drift-inventory.mjs` real (corre, reporta **10 divergencias vivas** bajo threshold; 🟡 solo en pre-commit, NO en CI). 🟢 ADR-044: journal guard real (test 7/7, no pre-commit como dice el ADR; journal 40/40 consistente). 🟢 ADR-045: `scripts/db/agent-query.sh` real (IAP+ADC+puerto 5436, coexiste con connect.sh). 🟢 ADR-046: colisiones 028/034/035 reales + `check-adr-numbering` con allowlist exacta en pre-commit. 🔴 **ADR-049: `.claude/settings.json` NO existe** y **nada en `.claude/` está versionado** — CLAUDE.md (§Estructura) y ADR-049 (Capa 3) afirman que el repo declara los plugins a project scope, pero **no lo hace**; los plugins vienen de config global/usuario (`~/.claude`). El cleanup de paths viejos (skills/, .claude/commands/, hooks/) **sí** se hizo (🟢). ADR-050: remapping documentado + cleanup real (🟢), "cero ediciones a ADRs viejos" no re-verificado (🟡).
 
+### Barrido ADR-051 → ADR-054 (2026-06-03, 2 agentes + spot-check) — CIERRE del inventario de ADRs
+
+**ADR-051 — PII redaction en `@booster-ai/logger`** · **8🟢 · 1🟡 · 0🔴**
+🟢 redaction real en `packages/logger/src/redaction.ts` (el ADR cita `value-redaction.ts`; el real es `redaction.ts`): redacta email/JWT/RUT(módulo-11)/phone-CL/sensitive-keys, **activo por default** (sin flag, cableado en `createLogger`), markers `[REDACTED:*]`, fixtures `legit-1000`/`adversarial-100` + thresholds FP≤1%/FN≤5% testeados (corren en CI vía test:coverage). 🟡 **el allowlist gitleaks de `generate.mjs`+`adversarial-100.json` está en `stash@{0}` sin commitear** (committed solo cubre los `.test.ts`) → cross-ref hilo gitleaks abierto.
+
+**ADR-052 — Signup → Admin SDK + admin-approval gate** · **7🟢 · 2🟡 · 2🔴** · 🔴 **alto impacto operativo**
+🟢 backend real: `POST /api/v1/signup-request` (202 anti-enumeration), service `submitSignupRequest`, tabla `solicitudes_registro` (migration 0039), approve vía Admin SDK `auth.createUser` en tx, flag `SIGNUP_REQUEST_FLOW_ACTIVATED` **ON en prod** (revision 00355-beg), IdP `disabledUserSignup=true` confirmado live. **El conflicto 409 (finding previo) SÍ se arregló** (shadow+202 idéntico). 🔴 **La decisión central NO se ejecutó**: `login.tsx:141-147` sigue llamando `signUpWithEmail` (createUser client-side) **sin gate ni llamada al endpoint nuevo** → con `disabledUserSignup=true`, el signup web queda **roto/huérfano** (`auth/operation-not-allowed`), no migrado. 🔴 **email sigue solo-logging** (`LoggingSignupRequestNotifier`) y el aviso a admins on-submit **ni se invoca** (finding previo NO resuelto).
+
+**ADR-053 — Post-disclosure account replacement (SEC-001 H1.1)** · **6🟢 · 1🟡 · 0🔴**
+🟢 verificado **contra Firebase live** (Identity Toolkit read-only): las 4 UIDs viejas `disabled=true`, 4 nuevas `demo-2026-*` activas, passwords en Secret Manager (`demo-account-password-*-2026`), scripts `harden-demo-accounts.ts` + middleware `demo-expires.ts` presentes, one-shot retire ejecutado. 🟡 crons/alertas TTL no verificados.
+
+**ADR-054 — Google blocking function signup gate** · **4🟢 · 2🟡 · 3🔴** · 🔴 **residual de seguridad reconfirmado**
+🟢 handler `beforeCreate` completo y mergeado (`apps/auth-blocking-functions/src/handler.ts`: provider check + normalize + lookup `solicitudes_registro estado='aprobado'` + fail-closed), SDK `gcip-cloud-functions@0.2.0`, CI gates sprint-2c presentes, Status=Proposed (honesto). 🔴 **el gate NO está operativo en prod**: la función `beforeCreate` está **OFFLINE** (no sirve tráfico) y la config Identity Platform tiene `blockingFunctions: {}` **vacío** → **el signup Google federated sigue SIN gate** (reconfirma y extiende el finding previo "Gen 1 muerto"; Sprint 2c-B nunca completó deploy+wire). 🔴 el ADR dice `firebase-functions@^3.x` pero el package pin es `^6.6.0` y el handler ni lo importa; 🟡 Gen1/Gen2 ambiguo.
+
+> **CURRENT.md (verificación final)**: sus afirmaciones materiales coinciden con el trabajo de esta sesión ya verificado en vivo (App Check PR #401 mergeado + deploy pendiente gate; gitleaks Maps verificada/Firebase pendiente; deploys Cloud Run; inventario). No requiere re-verificación independiente — es el handoff que refleja lo aquí inventariado.
+
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004→007** (2026-06-02) · **ADR-008, ADR-009, ADR-010→ADR-050** (2026-06-03). **Barrido de ADRs 001-050 COMPLETO** (003 ausente; colisiones 028/034/035 cubiertas ambas).
-- **Siguiente: ADR-051→054 + CURRENT.md.** (051 pii-redaction-logger, 052 signup-migration, 053 post-disclosure, 054 google-blocking — ADRs recientes de seguridad/sprint 2c. **ADR-055 = dev-env DRAFT auto-escrito esta sesión, N/A.**)
+- ✅ **INVENTARIO COMPLETO (2026-06-03)**: ADR-001, 002, 004→054 verificados + CURRENT.md. (003 ausente; colisiones 028/034/035 ambas cubiertas; **ADR-055 = dev-env DRAFT auto-escrito esta sesión, N/A**). Barrido 004-007 el 2026-06-02; 008-054 el 2026-06-03.
+- **Findings 🔴 de seguridad del cierre (051-054):**
+  - **ADR-052 (alto impacto operativo)**: la migración de frontend del signup NUNCA se hizo — `login.tsx` sigue con `signUpWithEmail` client-side sin gate; con `disabledUserSignup=true` en prod el signup web queda **roto/huérfano**. Email signup sigue solo-logging + aviso a admins no se invoca. (Backend + flag + IdP gate sí reales; 409 arreglado.)
+  - **ADR-054 (residual de seguridad)**: blocking function `beforeCreate` **OFFLINE** + Identity Platform `blockingFunctions: {}` vacío → **Google federated signup SIGUE sin gate**. Handler mergeado pero deploy+wire (Sprint 2c-B) nunca completó. ADR honesto (Status=Proposed).
+- **Follow-ups dejados (2026-06-03):** `.specs/_followups/adr-020-supersede-gitlab-to-github-actions.md` · `.specs/_followups/adr-049-claude-md-settings-json-reconcile.md`.
 - **Findings 🔴 NUEVOS del tramo 026-050 (2026-06-03):**
   - **ADR-049 settings.json (medio, contrato)**: `.claude/settings.json` NO existe y nada en `.claude/` está versionado; CLAUDE.md §Estructura + ADR-049 afirman que el repo declara los plugins a project scope — **falso** (vienen de `~/.claude` global/usuario). Discrepancia con el contrato del proyecto.
   - **ADR-041/042 geo-agg no cableada (medio)**: helpers k-anon + schema + migrations reales, pero NINGÚN endpoint los consume; garantías de privacidad (k-anon server-side, ventana 30d, comuna, gate `insufficient_data`) aspiracionales en runtime; surface stakeholder = mock. (Sin endpoint ⇒ sin leak activo.)
