@@ -29,6 +29,7 @@ vi.stubEnv('VITE_FIREBASE_AUTH_DOMAIN', 'test.firebaseapp.com');
 vi.stubEnv('VITE_FIREBASE_PROJECT_ID', 'booster-ai-test');
 vi.stubEnv('VITE_FIREBASE_APP_ID', '1:000:web:abc');
 vi.stubEnv('VITE_API_URL', 'https://api.test.boosterchile.com');
+vi.stubEnv('VITE_RECAPTCHA_SITE_KEY', 'test-recaptcha-site-key');
 
 afterEach(() => {
   cleanup();
