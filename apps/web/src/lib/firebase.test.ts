@@ -8,9 +8,19 @@ const setCustomParametersMock = vi.fn();
 function GoogleAuthProviderStub(this: { setCustomParameters: typeof setCustomParametersMock }) {
   this.setCustomParameters = setCustomParametersMock;
 }
+const initializeAppCheckMock = vi.fn(() => ({ name: 'app-check' }));
+const reCaptchaV3ProviderMock = vi.fn();
+function ReCaptchaV3ProviderStub(this: Record<string, never>, siteKey: string) {
+  reCaptchaV3ProviderMock(siteKey);
+}
 
 vi.mock('firebase/app', () => ({
   initializeApp: initializeAppMock,
+}));
+
+vi.mock('firebase/app-check', () => ({
+  initializeAppCheck: initializeAppCheckMock,
+  ReCaptchaV3Provider: ReCaptchaV3ProviderStub,
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -26,6 +36,8 @@ beforeEach(() => {
   getAuthMock.mockClear();
   setPersistenceMock.mockClear();
   setCustomParametersMock.mockClear();
+  initializeAppCheckMock.mockClear();
+  reCaptchaV3ProviderMock.mockClear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -62,5 +74,26 @@ describe('lib/firebase', () => {
     expect(setCustomParametersMock).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'select_account' }),
     );
+  });
+
+  it('inicializa App Check con ReCaptchaV3Provider e isTokenAutoRefresh', async () => {
+    const mod = await import('./firebase.js');
+    expect(mod.appCheck).toBeDefined();
+    expect(initializeAppCheckMock).toHaveBeenCalledTimes(1);
+    const [app, options] = initializeAppCheckMock.mock.calls[0] as unknown as [
+      unknown,
+      { provider: unknown; isTokenAutoRefreshEnabled: boolean },
+    ];
+    expect(app).toBe(mod.firebaseApp);
+    expect(options.isTokenAutoRefreshEnabled).toBe(true);
+    expect(options.provider).toBeInstanceOf(ReCaptchaV3ProviderStub);
+    expect(reCaptchaV3ProviderMock).toHaveBeenCalledWith('test-recaptcha-site-key');
+  });
+
+  it('inicializa App Check ANTES que getAuth', async () => {
+    await import('./firebase.js');
+    const appCheckOrder = initializeAppCheckMock.mock.invocationCallOrder.at(0) ?? Number.NaN;
+    const getAuthOrder = getAuthMock.mock.invocationCallOrder.at(0) ?? Number.NaN;
+    expect(appCheckOrder).toBeLessThan(getAuthOrder);
   });
 });
