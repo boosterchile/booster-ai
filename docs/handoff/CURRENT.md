@@ -54,9 +54,9 @@ Verificación empírica de las claves `AIza…` del repo (gcloud read-only, `ser
 |---|---|---|
 | **ADR-020** GitLab ficticio (CI real = GitHub Actions) | doc/contrato | follow-up → ADR superseding |
 | **ADR-049** `.claude/settings.json` inexistente (CLAUDE.md afirma que declara plugins) | doc/contrato | follow-up → crear archivo o corregir CLAUDE.md |
-| **ADR-052/054** signup: frontend no migrado (signup web roto vs `disabledUserSignup`) + blocking function Google **OFFLINE** (gate Google sin operar) | seguridad/operativo | **sin follow-up stub aún — decisión PO** |
+| **ADR-052/054** signup residual | seguridad/operativo — **YA trackeado** | vector cerrado (hotfix `EMPRESA_SELF_ONBOARDING_ENABLED=false`); blocking-fn OFFLINE es **por diseño** (PO eligió Alt G); abierto en `google-boundary-closure` (Draft) + `onboarding-flow-redesign` (P1) |
 
-Stubs dejados: [`_followups/adr-020-supersede-gitlab-to-github-actions.md`](../../.specs/_followups/adr-020-supersede-gitlab-to-github-actions.md) · [`_followups/adr-049-claude-md-settings-json-reconcile.md`](../../.specs/_followups/adr-049-claude-md-settings-json-reconcile.md).
+Stubs dejados: [`_followups/adr-020-supersede-gitlab-to-github-actions.md`](../../.specs/_followups/adr-020-supersede-gitlab-to-github-actions.md) · [`_followups/adr-049-claude-md-settings-json-reconcile.md`](../../.specs/_followups/adr-049-claude-md-settings-json-reconcile.md) · [`_followups/signup-residual-consolidation-adr-052-054.md`](../../.specs/_followups/signup-residual-consolidation-adr-052-054.md) (consolida + corrige el encuadre del residual signup).
 
 ---
 
