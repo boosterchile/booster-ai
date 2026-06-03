@@ -1,7 +1,7 @@
 # Follow-up — Reconciliar ADR-049 / CLAUDE.md (`.claude/settings.json` inexistente)
 
 **Origen**: inventario ADR-vs-prod 2026-06-03 (`.specs/adr-vs-prod-inventory/inventory.md`, finding 🔴 ADR-049).
-**Tipo**: deuda documental / contrato. **Riesgo**: medio (contrato; no externo). **Estado**: pendiente.
+**Tipo**: deuda documental / contrato. **Riesgo**: medio (contrato; no externo). **Estado**: ✅ **CERRADO 2026-06-03** vía **Opción 2 (corregir el contrato)**, decisión del PO: CLAUDE.md §Estructura corregido — la línea falsa `settings.json # declara plugins (project scope)` se reemplazó por una aclaración de que los plugins se instalan a nivel usuario/global (`~/.claude`) vía `/plugin install` y que NO existe `.claude/settings.json` versionado. (ADR-049 §Validación ya tenía ese ítem como checkbox `[ ]` sin marcar, así que el ADR no requirió cambio — el overclaim estaba solo en CLAUDE.md.)
 
 ## Problema
 

@@ -180,8 +180,10 @@ Booster-AI/
 ├── .nvmrc
 ├── .gitignore
 │
-├── .claude/                    # minimal post-PR-2 (ADR-049)
-│   ├── settings.json           # declara plugins (project scope)
+├── .claude/                    # minimal post-PR-2 (ADR-049). Los plugins NO se
+│   │                           # declaran acá: se instalan a nivel usuario/global
+│   │                           # (~/.claude) vía `/plugin install`. NO existe un
+│   │                           # `.claude/settings.json` versionado (corrección 2026-06-03).
 │   ├── settings.local.json     # permisos pre-autorizados (gitignored)
 │   ├── ledger/                 # sesiones agent-rigor (.jsonl per session)
 │   ├── worktrees/              # sesiones parallel
