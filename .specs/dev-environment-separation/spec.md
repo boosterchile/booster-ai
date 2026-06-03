@@ -70,8 +70,12 @@ revertido como mitigación; falta la solución estructural.
   `2bcd204b` (prod) tiene `browserKeyRestrictions: {}`; su seguridad depende de App Check +
   Security Rules **aún no verificadas**. Allowlist `AIza…` en `.gitleaks.toml` **pendiente**
   (verdes en `stash@{0}`). Ver ADR-055 §"Hilo gitleaks abierto".
-- **App Check** (`feat/app-check`): la integración de cliente ya está; el dev real de App Check
+- **App Check** (`feat/app-check`, PR #401): la integración de cliente ya está; el dev real de App Check
   necesitará la site key de dev (OQ-d).
+- **Debug token local de App Check — DIFERIDO a este epic** (decisión PO 2026-06-03, opción B):
+  generar/registrar el debug token requiere un `apps/web/.env.local` que bootee con config Firebase
+  válida. Se descartó apuntarlo a prod; se hará contra el proyecto Firebase de **dev** cuando exista.
+  Hasta entonces no se puede correr `vite dev` con App Check localmente. Este epic lo desbloquea.
 - **`#STAGING-ENV`**: el refactor Terraform de la OQ-b resuelve también la raíz de staging.
 
 ## 7. Criterios de éxito de esta fase DEFINE (cumplidos)
