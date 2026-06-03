@@ -1,8 +1,44 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo de hoy vive en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
+**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 integrado en `apps/web`** rama `feat/app-check` + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. Cero ejecución cloud esta sesión — ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
+**Anterior**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
 **Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-03 — App Check (feat/app-check) + DEFINE epic entorno dev + hilo gitleaks abierto
+
+> **Cero ejecución cloud en esta sesión salvo lecturas read-only de gcloud.** Se escribió código de App Check (en rama propia) y documentos de definición (ADR/spec). No se creó proyecto, no se tocó billing/IAM, no se refactorizó Terraform.
+
+### 🔐 Firebase App Check con reCAPTCHA v3 — rama `feat/app-check` (NO mergeada)
+
+Integrado en `apps/web` (Vite + SDK modular). Init de App Check entre `initializeApp` y `getAuth`, con `ReCaptchaV3Provider` + `isTokenAutoRefreshEnabled: true`. Site key vía `VITE_RECAPTCHA_SITE_KEY` (required, Zod en `env.ts`). Debug token gateado por `import.meta.env.DEV` (eliminado por tree-shaking en prod — verificado contra el bundle). Tests 6/6, typecheck + Biome limpios, build OK.
+
+- Commit `da4ac1a` en rama `feat/app-check` (branched de `main`). **Sin push, sin PR, sin merge** — pendiente revisión humana + cooling-off para REVIEW formal (devils-advocate/security-auditor).
+- Artefactos: `.specs/app-check-recaptcha/{spec,verify}.md`.
+- ⚠️ `apps/web/.env.local` (gitignored) quedó con **solo** la reCAPTCHA key + nota de pendiente; **revertido** de los valores de prod que se habían puesto por error.
+
+### 🏗️ DEFINE — Epic entorno de desarrollo separado (ADR-055 DRAFT + spec)
+
+Origen: al configurar el dev local de App Check se descubrió que `.env.local` apuntaba a **prod** (`booster-ai-494222` + `api.boosterchile.com`) → riesgo de tocar datos reales desde local. El PO eligió la dirección **proyecto Firebase/GCP de dev dedicado** (vs. emuladores, vs. no construir).
+
+- **ADR**: [`docs/adr/055-separate-development-environment.md`](../adr/055-separate-development-environment.md) — **DRAFT, NO Accepted**.
+- **Spec**: [`.specs/dev-environment-separation/spec.md`](../../.specs/dev-environment-separation/spec.md) — Draft.
+- **Estado verificado**: infra **flat single-project** (solo `booster-ai-494222`); **NO existen** `environments/{dev,staging,prod}/` ni workspaces → ⚠️ **discrepancia CLAUDE.md-vs-realidad** (CLAUDE.md los menciona; no existen). Org `boosterchile.com`, billing `019461-C73CDE-DCE377` (la misma de prod).
+- **4 decisiones ABIERTAS (sin resolver)**: (a) nombre/ID del proyecto (`booster-ai-dev`?); (b) estructura Terraform (módulo+environments vs. workspaces vs. tfvars); (c) alcance de réplica (todo prod vs. subset Auth+Firestore+API); (d) división de labor cloud + acciones gated (`gcloud projects create`, billing, Firebase/Identity Platform/APIs, IAM/org-policies, site key reCAPTCHA de dev) — **ninguna se ejecuta hasta sesión futura con autorización explícita**.
+
+### 🩹 Hilo gitleaks — ABIERTO, no perder (tema separado del entorno dev)
+
+Verificación empírica de las claves `AIza…` del repo (gcloud read-only, `services api-keys describe`):
+
+- ✅ **Maps key** (`eb016256`): **verificada** — referrer restringido a `https://app.boosterchile.com/*`. Segura para allowlist.
+- 🔴 **Firebase web key** (`2bcd204b`): `browserKeyRestrictions: {}` — **ninguna restricción a nivel de key**. Su seguridad depende de **App Check enforcement + Firebase Security Rules**, **AÚN NO verificadas en Firebase Console** (lo hace el PO).
+- ⏳ **Allowlist `.gitleaks.toml` de las `AIza…`: PENDIENTE** de esa verificación. Los **2 falsos positivos verdes** ya allowlisteados (fixtures logger `generate.mjs`+`adversarial-100.json` + región GCP en evidencia SEC-001) están en **`stash@{0}` sobre `chore/working-tree-hygiene`**, sin commitear, esperando cerrar la decisión Firebase para un solo commit limpio.
+
+### 📋 Inventario ADR-vs-prod — sigue PAUSADO en ADR-008
+
+Sin avance esta sesión. **Cursor: retomar desde ADR-008** (orden estricto 008→050 + CURRENT.md). Detalle en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md).
 
 ---
 
