@@ -1,7 +1,7 @@
 # Follow-up — Superseder ADR-020 (GitLab ficticio → GitHub Actions real)
 
 **Origen**: inventario ADR-vs-prod 2026-06-03 (`.specs/adr-vs-prod-inventory/inventory.md`, finding 🔴 ADR-020).
-**Tipo**: deuda documental / contrato. **Riesgo**: medio (no externo, no explotable). **Estado**: pendiente.
+**Tipo**: deuda documental / contrato. **Riesgo**: medio (no externo, no explotable). **Estado**: ✅ **RESUELTO 2026-06-03** — escrito [`docs/adr/056-cicd-github-actions-supersedes-gitlab.md`](../../docs/adr/056-cicd-github-actions-supersedes-gitlab.md) que supersede ADR-020. **Pendiente menor**: anotar ADR-020 con marcador `Superseded by ADR-056` (requiere OK del PO — editar `docs/adr/*.md` está restringido).
 
 ## Problema
 
