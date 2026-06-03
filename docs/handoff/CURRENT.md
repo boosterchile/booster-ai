@@ -52,6 +52,15 @@ Retomado desde el cursor (ADR-004) con la misma disciplina: verificación empír
 2. Retention-lock GCS DTE (medio) — `isLocked=false`; trackeado `.specs/sec-h3-dte-retention-lock/` (Draft). Re-confirmado en ADR-007.
 3. **NUEVO** trip-state-machine stub + lógica inline (medio) — deuda arquitectónica narrativa-vs-realidad.
 
+### 📝 Los dos 🔴 documentados como specs accionables (2026-06-02 — NO ejecutados)
+
+Ambos 🔴 quedan documentados como specs versionados para resolverse con tiempo desde el MacBook. **Ninguno se ejecutó; no se tocó prod ni infra — solo se escribieron specs.**
+
+| Finding | Spec (path) | Estado | Naturaleza |
+|---|---|---|---|
+| trip-state-machine stub + lógica inline | [`.specs/arch-trip-state-machine-refactor/spec.md`](../../.specs/arch-trip-state-machine-refactor/spec.md) | Draft — pendiente priorizar | Refactor de **ciclo completo** (extraer lógica inline de `apps/api/src/services/` → máquina XState en el package, según ADR-004). Estándar profesional, no parche. |
+| retention-lock DTE | [`.specs/sec-h3-dte-retention-lock/spec.md`](../../.specs/sec-h3-dte-retention-lock/spec.md) (**actualizado**, no nuevo) | Draft — **decisión PO pendiente** | Spec PREPARA la decisión (trade-off completo §0: gana cumplimiento SII inmutable; arriesga irreversibilidad). La decisión la toma el PO **fresco, fuera de presión**. NADA de tocar bucket/Terraform. |
+
 ### 🖥️ SETUP MACBOOK — configurar una sola vez en el MacBook Pro
 
 Para continuar el trabajo desde el MacBook Pro (disco interno, **NO** pendrive):
