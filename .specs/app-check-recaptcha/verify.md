@@ -26,9 +26,29 @@ Corregido: la opción real del SDK Firebase v12 es `isTokenAutoRefreshEnabled`, 
 - Las 4 ocurrencias del identificador en el bundle son **lecturas internas del propio SDK**
   Firebase App Check (consume el global si alguien lo setea); inofensivas en prod donde nunca se setea.
 
-## Pendiente (decisión del PO)
-- REVIEW formal (code-reviewer + devils-advocate + security-auditor) no ejecutado: la
-  regla solo-dev exige cooling-off de 30 min post-implementación. Se entrega diff para
-  revisión humana; el ciclo /review queda disponible con waiver si se quiere antes.
+## Re-verify post-REVIEW (2026-06-03, cooling-off 11 h)
+
+El REVIEW formal (code-reviewer + security-auditor + devils-advocate) encontró 1 bloqueante
+real + 3 fixes de calidad (ver `review.md`). Resueltos y re-verificados:
+
+### Bloqueante 🔴 resuelto — cableado prod de `VITE_RECAPTCHA_SITE_KEY`
+- `apps/web/Dockerfile`: + `ARG`/`ENV VITE_RECAPTCHA_SITE_KEY`.
+- `cloudbuild.production.yaml`: + `--build-arg` + substitution `_VITE_RECAPTCHA_SITE_KEY` (site key real de prod, pública).
+- **Verificación end-to-end**: `vite build` **con** la var → site key `6Lc5Bwot…` **inlineada en el bundle** ✓ (la PWA bootea en prod). Sin el fix, el bundle llevaba `undefined` → throw en runtime para todos los usuarios.
+
+> Corrección al REVIEW: los 3 agentes dijeron "el build revienta". Falso (verificado: `env -i … vite build` → EXIT 0). El mecanismo es **runtime**, no build-time. El fix es igualmente necesario. Ver `review.md` §Anexo.
+
+### Fixes de calidad 🟠 resueltos
+- `firebase.test.ts`: eliminado el `as unknown as` nuevo (mock tipado con firma explícita) — cumple CLAUDE.md zero-cast.
+- **Nuevo test del invariante**: con `import.meta.env.DEV=false` NO se setea `self.FIREBASE_APPCHECK_DEBUG_TOKEN`; con `true` SÍ.
+
+### Evidencia final (post-fix)
+- Tests: **8 passed (8)** (6 previos + 2 del invariante debug-token).
+- Typecheck `tsc --noEmit`: **0 errores** (resueltos `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess`).
+- Biome: **0 errores** sobre los archivos tocados.
+- Build con var → site key inlineada ✓. Debug flag: **0 escrituras** en prod (tree-shaking confirmado de nuevo).
+
+## Pendiente (decisión / acción del PO)
 - Registro del debug token en Firebase Console (manual, lo hace el PO).
-- Enforcement de App Check en consola (fuera de alcance por instrucción explícita).
+- Enforcement de App Check en consola — trackeado en [`.specs/_followups/app-check-enforcement-activation.md`](../_followups/app-check-enforcement-activation.md). NO activar hasta ver tráfico verificado post-deploy.
+- Merge del PR (decisión del PO) + gate de aprobación `production`.

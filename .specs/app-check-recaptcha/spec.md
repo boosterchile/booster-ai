@@ -83,11 +83,14 @@ debug no existe en el bundle de producción.
 | `apps/web/src/lib/firebase.ts` | + import `firebase/app-check`, init App Check entre `initializeApp` y `getAuth`, bloque debug DEV |
 | `apps/web/.env.example` | + `VITE_RECAPTCHA_SITE_KEY=your-recaptcha-v3-site-key` |
 | `apps/web/test/setup.ts` | + stub `VITE_RECAPTCHA_SITE_KEY` |
-| `apps/web/src/lib/firebase.test.ts` | + mock `firebase/app-check` + test de init y orden |
+| `apps/web/src/lib/firebase.test.ts` | + mock `firebase/app-check` + tests de init, orden y invariante debug-token |
+| `apps/web/Dockerfile` | **(post-review)** + `ARG`/`ENV VITE_RECAPTCHA_SITE_KEY` — la var es required, debe inyectarse a build-time |
+| `cloudbuild.production.yaml` | **(post-review)** + `--build-arg` + substitution `_VITE_RECAPTCHA_SITE_KEY` — sin esto la PWA no bootea en prod (runtime throw de env.ts) |
 
 ## 9. Lista de tests
 
-1. `initializeAppCheck` se llama 1 vez con `isTokenAutoRefresh: true` y un `ReCaptchaV3Provider`.
+1. `initializeAppCheck` se llama 1 vez con `isTokenAutoRefreshEnabled: true` y un `ReCaptchaV3Provider`.
 2. `ReCaptchaV3Provider` se construye con la site key de env.
 3. App Check se inicializa **antes** que `getAuth` (orden vía `invocationCallOrder`).
-4. (regresión) los 4 tests existentes de firebase.ts siguen pasando.
+4. **(post-review)** Invariante debug-token: con `import.meta.env.DEV=false` NO se setea `self.FIREBASE_APPCHECK_DEBUG_TOKEN`; con `DEV=true` SÍ.
+5. (regresión) los 4 tests existentes de firebase.ts siguen pasando.

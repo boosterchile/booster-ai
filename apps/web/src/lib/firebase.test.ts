@@ -8,7 +8,14 @@ const setCustomParametersMock = vi.fn();
 function GoogleAuthProviderStub(this: { setCustomParameters: typeof setCustomParametersMock }) {
   this.setCustomParameters = setCustomParametersMock;
 }
-const initializeAppCheckMock = vi.fn(() => ({ name: 'app-check' }));
+// Firmas tipadas para que `mock.calls[0]` se infiera sin `as unknown as`
+// (CLAUDE.md prohíbe el doble cast). El valor de retorno es irrelevante para
+// los asserts; solo importan los argumentos con los que se invoca.
+const initializeAppCheckMock = vi.fn(
+  (_app: unknown, _options: { provider: unknown; isTokenAutoRefreshEnabled: boolean }) => ({
+    name: 'app-check',
+  }),
+);
 const reCaptchaV3ProviderMock = vi.fn();
 function ReCaptchaV3ProviderStub(this: Record<string, never>, siteKey: string) {
   reCaptchaV3ProviderMock(siteKey);
@@ -38,6 +45,8 @@ beforeEach(() => {
   setCustomParametersMock.mockClear();
   initializeAppCheckMock.mockClear();
   reCaptchaV3ProviderMock.mockClear();
+  // Reset del flag global entre tests (lo setea el bloque DEV de firebase.ts).
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN = undefined;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -80,13 +89,12 @@ describe('lib/firebase', () => {
     const mod = await import('./firebase.js');
     expect(mod.appCheck).toBeDefined();
     expect(initializeAppCheckMock).toHaveBeenCalledTimes(1);
-    const [app, options] = initializeAppCheckMock.mock.calls[0] as unknown as [
-      unknown,
-      { provider: unknown; isTokenAutoRefreshEnabled: boolean },
-    ];
-    expect(app).toBe(mod.firebaseApp);
-    expect(options.isTokenAutoRefreshEnabled).toBe(true);
-    expect(options.provider).toBeInstanceOf(ReCaptchaV3ProviderStub);
+    expect(initializeAppCheckMock).toHaveBeenCalledWith(
+      mod.firebaseApp,
+      expect.objectContaining({ isTokenAutoRefreshEnabled: true }),
+    );
+    const options = initializeAppCheckMock.mock.calls.at(0)?.[1];
+    expect(options?.provider).toBeInstanceOf(ReCaptchaV3ProviderStub);
     expect(reCaptchaV3ProviderMock).toHaveBeenCalledWith('test-recaptcha-site-key');
   });
 
@@ -95,5 +103,22 @@ describe('lib/firebase', () => {
     const appCheckOrder = initializeAppCheckMock.mock.invocationCallOrder.at(0) ?? Number.NaN;
     const getAuthOrder = getAuthMock.mock.invocationCallOrder.at(0) ?? Number.NaN;
     expect(appCheckOrder).toBeLessThan(getAuthOrder);
+  });
+
+  // Invariante de seguridad (spec §3/§6.3): el debug token SOLO se activa en
+  // desarrollo. En prod `import.meta.env.DEV` es false y el bloque se elimina
+  // por tree-shaking; acá probamos el condicional a nivel de fuente (el DCE es
+  // a build-time, se verifica aparte grepeando el bundle).
+  it('NO setea FIREBASE_APPCHECK_DEBUG_TOKEN cuando no es DEV (prod)', async () => {
+    vi.stubEnv('DEV', false);
+    await import('./firebase.js');
+    expect(self.FIREBASE_APPCHECK_DEBUG_TOKEN).toBeUndefined();
+    vi.stubEnv('DEV', true); // restaurar default sin tocar los stubs VITE_* de setup.ts
+  });
+
+  it('SÍ setea FIREBASE_APPCHECK_DEBUG_TOKEN en DEV', async () => {
+    vi.stubEnv('DEV', true);
+    await import('./firebase.js');
+    expect(self.FIREBASE_APPCHECK_DEBUG_TOKEN).toBe(true);
   });
 });

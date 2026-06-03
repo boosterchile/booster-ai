@@ -15,7 +15,7 @@ declare global {
      * Flag de Firebase App Check para emitir un debug token en entornos sin
      * reCAPTCHA real (desarrollo/local). Solo se setea bajo `import.meta.env.DEV`.
      */
-    FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string;
+    FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string | undefined;
   }
 }
 
