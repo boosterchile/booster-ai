@@ -134,12 +134,30 @@ Iniciado 2026-05-29. Leyenda: 🟢 VERDE (verificado vivo) · 🟡 AMBAR (parcia
 
 **Resumen ADR-007**: 2 🟢 · 2 🟡 (provider→ADR-024; documents/Document AI/Function) · **1 🔴** (retention-lock, mismo de ADR-001/H3, re-confirmado con la afirmación textual más fuerte).
 
+### ADR-008 — PWA Multi-Rol en `apps/web` (Accepted)
+
+> Nota: ADR de **frontend** → verificación mayormente contra el código (no infra). gcloud expiró este pase → deploy no confirmado empíricamente.
+
+| Afirmación material | Realidad verificada | Estado | Método de verificación | Riesgo si falsa |
+|---|---|---|---|---|
+| **PWA robusta** (vite-plugin-pwa/Workbox + Service Worker + manifest + icons) | `vite-plugin-pwa@0.21.1` + `workbox-*@7.3` en `package.json`; `src/sw.ts` existe; `public/icons/`; manifest generado por VitePWA en `vite.config.ts`. Build muestra "PWA v0.21.2 injectManifest". | 🟢 | `grep vite-plugin-pwa vite.config.ts` + `ls src/sw.ts public/icons` | bajo |
+| Frontend consolidado en `apps/web`, **UI por rol** (5: shipper/carrier/driver/admin/stakeholder) | Una sola `apps/web` ✓. La estructura `src/roles/<rol>/` del ADR era **"Boceto"** — la realidad es **file-based router** (`src/routes/` plano: `conductor`, `flota`, `cargas`, `certificados`, `cumplimiento`, `admin-*`, etc.). Intención (UIs por rol) cumplida; layout difiere del sketch. | 🟢 | `ls src/ src/routes/` (no existe `src/roles/`) | bajo |
+| **TanStack Router** type-safe | `@tanstack/react-router@1.169.2` + `src/router.tsx`. | 🟢 | `grep @tanstack/react-router package.json` | bajo |
+| Design system: `packages/ui-tokens` + `packages/ui-components` | Ambos packages existen. | 🟢 | `ls packages/ui-tokens packages/ui-components` | bajo |
+| **A11y axe-core automatizado en E2E** ("fail si hay violaciones WCAG AA", Tests §) | `@axe-core/playwright@4.11.3` declarado como devDep **pero CERO uso** (sin `injectAxe`/`AxeBuilder`/`checkA11y` en `e2e/` ni `src/`). El job CI "Playwright + axe-core (a11y)" **no corre axe** y su único test (`perfil-validacion.spec.ts`) **se skipea sin `E2E_USER_*`**. Validación a11y automatizada **efectivamente inexistente**. | 🟡 | `grep -rE "injectAxe\|AxeBuilder\|@axe-core" e2e/ src/` → solo la línea del package.json | bajo (gap de validación, no externo). Cross-ref sesión 2026-06-03 (fix e2e webkit). Validación §300-309 son checkboxes `[ ]` sin marcar (aspiracional). |
+| **Web Push (VAPID)** vía `notification-service` | Cliente **parcial** existe (`src/lib/web-push.js` + `PushSubscribeBanner.tsx`, con guard "Server sin VAPID → suprimir banner"). Pero `apps/notification-service/src/main.ts` es **skeleton** (`"...starting (skeleton)"` + `TODO: implementar`). Backend de envío push **no implementado**. | 🟡 | `grep web-push/VAPID src/` + `head notification-service/src/main.ts` | bajo (feature no go-live-critical per ADR) |
+| Desplegado en prod (Cloud Run web) | **No verificable este pase**: `gcloud` pidió reauth (`Reauthentication failed`). Muy probable vivo (cloudbuild lo despliega + App Check PR #401 recién mergeado apunta a deploy), pero NO confirmado empíricamente. | 🟡 | pendiente: `gcloud auth login` + `gcloud run services list` | bajo |
+
+**Resumen ADR-008**: 4 🟢 (PWA stack + router + design system reales) · 3 🟡 (axe-core declarado sin integrar; web-push backend skeleton; deploy no verificado por gcloud expirado). **Sin 🔴** — gaps narrativa-vs-realidad de bajo riesgo, ninguno externo/explotable.
+
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02).
-- **Siguiente: ADR-008.** Orden restante: 008, 009, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02) · **ADR-008** (2026-06-03).
+- **Siguiente: ADR-009.** Orden restante: 009, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **Pendiente de re-verificar (gcloud expiró en pase ADR-008):** deploy del web en Cloud Run prod. Requiere `gcloud auth login` antes del próximo pase.
+- **Gaps ADR-008 (🟡, no externos):** axe-core declarado sin integrar (validación a11y automatizada inexistente; el job CI "Playwright + axe-core" no corre axe); web-push backend (`notification-service`) skeleton.
 - **Verificaciones diferidas a su ADR:** Twilio→Meta (ADR-006 → **ADR-025**); provider DTE Bsale-vs-Sovos (ADR-007 → **ADR-024**); Routes API ADC (ADR-005 → **ADR-038**).
 - **Findings ROJO acumulados:** Finding #1 (pipeline deploy, **alto** — gate ya aplicado + reconciliado, vector cerrado) · ADR-001 retention-lock GCS (**medio**, trackeado H3 Draft, no externo) · **ADR-004 trip-state-machine stub + lógica inline en services** (**medio**, deuda arquitectónica narrativa-vs-realidad, no externo — NUEVO 2026-06-02).
 - **Cierres colaterales 2026-06-02:** los 2 🟡 de ADR-001 (Firestore + BigQuery) quedan **verificados desplegados** al pasar por ADR-005 (Firestore Native sa-east1 match exacto; BigQuery datasets vivos, dataset se llama `telemetry`).
