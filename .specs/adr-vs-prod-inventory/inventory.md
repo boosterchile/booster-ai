@@ -146,18 +146,36 @@ Iniciado 2026-05-29. Leyenda: 🟢 VERDE (verificado vivo) · 🟡 AMBAR (parcia
 | Design system: `packages/ui-tokens` + `packages/ui-components` | Ambos packages existen. | 🟢 | `ls packages/ui-tokens packages/ui-components` | bajo |
 | **A11y axe-core automatizado en E2E** ("fail si hay violaciones WCAG AA", Tests §) | `@axe-core/playwright@4.11.3` declarado como devDep **pero CERO uso** (sin `injectAxe`/`AxeBuilder`/`checkA11y` en `e2e/` ni `src/`). El job CI "Playwright + axe-core (a11y)" **no corre axe** y su único test (`perfil-validacion.spec.ts`) **se skipea sin `E2E_USER_*`**. Validación a11y automatizada **efectivamente inexistente**. | 🟡 | `grep -rE "injectAxe\|AxeBuilder\|@axe-core" e2e/ src/` → solo la línea del package.json | bajo (gap de validación, no externo). Cross-ref sesión 2026-06-03 (fix e2e webkit). Validación §300-309 son checkboxes `[ ]` sin marcar (aspiracional). |
 | **Web Push (VAPID)** vía `notification-service` | Cliente **parcial** existe (`src/lib/web-push.js` + `PushSubscribeBanner.tsx`, con guard "Server sin VAPID → suprimir banner"). Pero `apps/notification-service/src/main.ts` es **skeleton** (`"...starting (skeleton)"` + `TODO: implementar`). Backend de envío push **no implementado**. | 🟡 | `grep web-push/VAPID src/` + `head notification-service/src/main.ts` | bajo (feature no go-live-critical per ADR) |
-| Desplegado en prod (Cloud Run web) | **No verificable este pase**: `gcloud` pidió reauth (`Reauthentication failed`). Muy probable vivo (cloudbuild lo despliega + App Check PR #401 recién mergeado apunta a deploy), pero NO confirmado empíricamente. | 🟡 | pendiente: `gcloud auth login` + `gcloud run services list` | bajo |
+| Desplegado en prod (Cloud Run web) | **Confirmado vivo** (post reauth gcloud 2026-06-03): `booster-ai-web` en `southamerica-west1` → `https://booster-ai-web-wbfevjot4q-tl.a.run.app`. | 🟢 | `gcloud run services list` | bajo |
 
-**Resumen ADR-008**: 4 🟢 (PWA stack + router + design system reales) · 3 🟡 (axe-core declarado sin integrar; web-push backend skeleton; deploy no verificado por gcloud expirado). **Sin 🔴** — gaps narrativa-vs-realidad de bajo riesgo, ninguno externo/explotable.
+**Resumen ADR-008**: 5 🟢 (PWA stack + router + design system + UI por rol + deploy web vivo) · 2 🟡 (axe-core declarado sin integrar; web-push backend skeleton). **Sin 🔴** — gaps narrativa-vs-realidad de bajo riesgo, ninguno externo/explotable.
+
+### ADR-009 — Análisis Competitivo y Diferenciadores (Accepted)
+
+> Nota: ADR **estratégico**. Datos de competidores (Tennders/Uber Freight/CargaRápido/Camiongo), mercado, GTM, volúmenes y posicionamiento **no son verificables contra prod** (fuera de scope del inventario). Lo que SÍ se verifica: la columna "Booster AI (propuesta)" reafirma **capacidades de producto como diferenciadores** → cruce narrativa-vs-realidad.
+
+| Diferenciador afirmado | Realidad verificada | Estado | Método | Riesgo si falsa |
+|---|---|---|---|---|
+| Trip lifecycle **"18 estados XState + Firestore real-time"** (matriz, línea 21) | `packages/trip-state-machine/src/index.ts` = **stub de 7 líneas, SIN XState** (`grep xstate/createMachine` → nada). Lógica de estados dispersa inline en services (per ADR-004). Firestore real-time sí existe (ADR-005). **"18 estados XState" es falso.** | 🔴 | `wc -l` + `grep -rE "xstate\|createMachine" packages/trip-state-machine/src` | **medio** — re-confirma 🔴 ADR-004, pero acá es **claim externo** (diferenciador competitivo / pitch CORFO-inversores). No explotable; es exposición narrativa. |
+| **Matching push automático** (Uber-like) | `packages/matching-algorithm` **real** (330 LOC: scoring, distance, factor-matching, v2/). Algoritmo existe. "Push real-time al carrier" (wiring) no verificado este pase. | 🟢 | `wc -l` + `grep score/distance` | bajo |
+| **Carbono GLEC v3.0 + GHG Protocol + ISO 14064 certificable** | `packages/carbon-calculator` **real** (419 LOC, refs GLEC/GHG/CO2/emission). Calculadora implementada, no stub. Certificación auditable end-to-end no auditada a fondo este pase. | 🟢 | `wc -l` + `grep glec/ghg/co2` | bajo |
+| **Teltonika Codec8 nativo** | Verificado en ADR-005 (codec8-parser + telemetry-tcp-gateway/processor vivos). "Escalable 10K+" no probado. | 🟢 | cross-ref ADR-005 | bajo |
+| **Certificados ESG: PDF firmado KMS + hash SHA-256 + retention 6 años** | KMS keyring `booster-ai-keyring` + CMEK ✓ (ADR-007); retention 6y ✓ **pero `isLocked=false`** (🔴 retention-lock, cross-ref ADR-001/007). Firma PDF + hash no verificados a fondo. | 🟡 | cross-ref ADR-007 | medio (compliance; ya trackeado en H3) |
+| **DTE SII + Carta Porte Ley 18.290 nativa** | `document-service` + packages existen (ADR-007 🟢 existencia); provider real → ADR-024. | 🟢 | cross-ref ADR-007 | bajo |
+| **Sustainability Stakeholder (5to rol) consent-based scope + audit trail** | Rol presente en rutas (`certificados`, `cumplimiento`). Consent-scope + audit trail no verificados a fondo este pase. | 🟡 | `ls src/routes` | bajo |
+| Observatorio urbano + gemelos digitales | Diferido a **ADR-012**. | 🟡 | pendiente ADR-012 | bajo |
+
+**Resumen ADR-009**: estrategia (mayoría fuera de scope). De las capacidades-diferenciador: 4 🟢 (matching, carbono, telemetría, DTE — packages reales) · 3 🟡 (certificados/retention→H3; stakeholder scope; observatorio→ADR-012) · **1 🔴** ("18 estados XState" — falso, re-confirma ADR-004 pero como **claim externo de pitch**, mayor exposición narrativa).
 
 ---
 
 ## Cursor de progreso
 
-- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02) · **ADR-008** (2026-06-03).
-- **Siguiente: ADR-009.** Orden restante: 009, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
-- **Pendiente de re-verificar (gcloud expiró en pase ADR-008):** deploy del web en Cloud Run prod. Requiere `gcloud auth login` antes del próximo pase.
+- **Últimos ADR verificados: ADR-001, ADR-002, ADR-004, ADR-005, ADR-006, ADR-007** (004→007 en 2026-06-02) · **ADR-008, ADR-009** (2026-06-03).
+- **Siguiente: ADR-010.** Orden restante: 010, …, 050, luego CURRENT.md. (Nota: **003 ausente**; colisiones 028/034/035 per ADR-046.)
+- **deploy web Cloud Run**: ✅ confirmado vivo (`booster-ai-web` sa-west1) tras reauth gcloud 2026-06-03 — cierra el 🟡 de ADR-008.
 - **Gaps ADR-008 (🟡, no externos):** axe-core declarado sin integrar (validación a11y automatizada inexistente; el job CI "Playwright + axe-core" no corre axe); web-push backend (`notification-service`) skeleton.
+- **ADR-009 (estratégico)**: capacidades-diferenciador mayormente reales (carbon-calculator 419 LOC, matching-algorithm 330 LOC). **🔴 "18 estados XState"** es FALSO (trip-state-machine stub) — mismo finding raíz que ADR-004 pero aquí como **claim externo de pitch** (mayor exposición narrativa). carbon/matching reales (NO son stubs como trip-state-machine).
 - **Verificaciones diferidas a su ADR:** Twilio→Meta (ADR-006 → **ADR-025**); provider DTE Bsale-vs-Sovos (ADR-007 → **ADR-024**); Routes API ADC (ADR-005 → **ADR-038**).
 - **Findings ROJO acumulados:** Finding #1 (pipeline deploy, **alto** — gate ya aplicado + reconciliado, vector cerrado) · ADR-001 retention-lock GCS (**medio**, trackeado H3 Draft, no externo) · **ADR-004 trip-state-machine stub + lógica inline en services** (**medio**, deuda arquitectónica narrativa-vs-realidad, no externo — NUEVO 2026-06-02).
 - **Cierres colaterales 2026-06-02:** los 2 🟡 de ADR-001 (Firestore + BigQuery) quedan **verificados desplegados** al pasar por ADR-005 (Firestore Native sa-east1 match exacto; BigQuery datasets vivos, dataset se llama `telemetry`).
