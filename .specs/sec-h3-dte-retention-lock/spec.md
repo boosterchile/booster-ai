@@ -1,14 +1,38 @@
 # Spec: sec-h3-dte-retention-lock
 
-- Author: Felipe Vicencio (with agent-rigor / Claude Opus 4.7)
-- Date: 2026-05-24
-- Status: **Draft**
+- Author: Felipe Vicencio (with agent-rigor / Claude Opus 4.7; trade-off ampliado 2026-06-02 con Opus 4.8)
+- Date: 2026-05-24 (trade-off + re-confirmación empírica: 2026-06-02)
+- Status: **Draft — decisión PO PENDIENTE (irreversible; se toma fresco, fuera de presión de tiempo, NO en la sesión que documenta)**
 - Linked:
   - Split de `.specs/sec-001-cierre/spec.md` H3 per decisión PO 2026-05-24 (devils-advocate O-5: H3 tiene risk class y stakeholder distintos, no debe bundle-arse con H1/H2)
   - Auditoría origen: `feat/security-blocking-hotfixes-2026-05-14:.specs/audit-2026-05-14/security.md` H3
   - Spec hermano: `.specs/sec-001-cierre/spec.md` — debe mergear ANTES del flip H1.6 final
   - CLAUDE.md §Reglas no-negociables del stack Booster
   - SII Chile DTE retention compliance (Ley sobre Facturación Electrónica)
+  - Re-confirmación empírica: `.specs/adr-vs-prod-inventory/inventory.md` §ADR-001 + §ADR-007 (finding 🔴 retention-lock, 2026-06-02)
+
+> ⚠️ **Este spec PREPARA la decisión; no la ejecuta ni la toma.** El lock es **irreversible**. La decisión (aplicar `is_locked=true` o mantenerlo false con monitoreo) la toma el PO **fresco, sin presión de tiempo, en una sesión dedicada** — NO en la sesión que documenta este spec. **NADA de tocar el bucket ni el Terraform** hasta esa decisión + la validación SC-4. Documentar ≠ decidir ≠ ejecutar.
+
+## 0. Trade-off de la decisión (resumen para el PO)
+
+**Realidad verificada (re-confirmada 2026-06-02, prod read-only):**
+- Bucket `gs://booster-ai-494222-documents-prod`: `retention_policy.retentionPeriod = 189216000s` (**6.0 años** ✓) + CMEK (`documents-cmek`) ✓ — **pero `retention_policy.isLocked` vacío (= false)**.
+- `infrastructure/storage.tf:144-145`: `retention_period = 189216000` / `is_locked = false   # CAMBIAR A true MANUALMENTE después de validar` (comentario **stale**, postergado desde el commit inicial).
+- **ADR-007 §Retención (línea 189) promete textualmente**: *"Retention Lock de 6 años (no se puede eliminar ni siquiera por admin hasta expiración)"* — esa promesa es **parcialmente falsa hoy**: la duración (6 años) está, pero la **inviolabilidad anti-admin NO** (cualquier principal con `storage.buckets.update` puede acortar la retención o borrar el bucket vía consola/API/Terraform).
+
+**Qué se GANA al poner `is_locked=true`:**
+- Cumplimiento SII **inmutable por contrato técnico**, no por intención: la retención DTE de 6 años (obligatoria por la Ley de Facturación Electrónica chilena) queda inviolable vía API.
+- **Ningún principal** —incluido el owner del proyecto y un `terraform apply` no revisado— puede acortar la retención ni borrar evidencia legal dentro de la ventana de 6 años.
+- La promesa de ADR-007 deja de ser falsa: se alinea narrativa con realidad.
+- Verificable por auditor SII con `gsutil retention get` (locked=true).
+
+**Qué se ARRIESGA (por qué es decisión de peso):**
+- **IRREVERSIBLE**: una vez `isLocked=true`, los 6 años quedan inamovibles para **todos, incluido el owner**. No hay "des-lock". La única salida técnica es esperar que cada objeto cumpla su retención (6 años por objeto).
+- No se puede **mover el bucket** entre proyectos/regiones antes de expiry (migración futura requiere correr en paralelo con el bucket viejo hasta que cada objeto expire).
+- Un **bug en el write path de DTEs descubierto post-lock** no se puede remediar acortando retención: obliga a crear un bucket nuevo y operar con el viejo 6 años (ver §7.2).
+- Por eso **SC-4 (validación 48h pre-lock) es no-negociable** y la decisión debe tomarse sin presión.
+
+**Estado del trade-off**: el riesgo de NO hacerlo (vector interno: insider/operador/terraform borra evidencia legal) es **medio, no externo**. El riesgo de hacerlo mal (lock prematuro sobre un write path con bug) es **alto e irreversible**. Por eso: documentar ahora, decidir + validar después.
 
 ## 1. Objective
 
@@ -113,3 +137,4 @@ Si post-lock se descubre un bug que requiere modificar la retention policy, las 
 
 - 2026-05-24 — Initial draft. Split de `.specs/sec-001-cierre/` H3 por decisión PO 2026-05-24 (devils-advocate O-5: scope cohesion violado al bundle-ar H3 irreversible con H1/H2 reversibles).
 - 2026-05-24 — Validation 48h pre-lock confirmada como no-negociable por irreversibility (SC-4).
+- 2026-06-02 — Trade-off completo agregado (§0) para preparar la decisión PO. Re-confirmación empírica prod read-only: bucket `documents-prod` con `isLocked=false` (inventario ADR-vs-prod §ADR-001/§ADR-007). Confirmado que ADR-007:189 promete inviolabilidad anti-admin que hoy es falsa. **Sigue Draft; decisión NO tomada — la toma el PO fresco fuera de presión de tiempo. Nada de prod ni Terraform tocado.**
