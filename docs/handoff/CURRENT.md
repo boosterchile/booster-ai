@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 integrado en `apps/web`** rama `feat/app-check` + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. Cero ejecución cloud esta sesión — ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
+**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 → PR #401 abierto** tras REVIEW formal que atrapó+arregló un bloqueante de deploy + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. Cero ejecución cloud esta sesión — ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
 **Anterior**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
 **Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
@@ -11,13 +11,17 @@
 
 > **Cero ejecución cloud en esta sesión salvo lecturas read-only de gcloud.** Se escribió código de App Check (en rama propia) y documentos de definición (ADR/spec). No se creó proyecto, no se tocó billing/IAM, no se refactorizó Terraform.
 
-### 🔐 Firebase App Check con reCAPTCHA v3 — rama `feat/app-check` (NO mergeada)
+### 🔐 Firebase App Check con reCAPTCHA v3 — **PR #401 ABIERTO** (`feat/app-check` → `main`, sin merge)
 
-Integrado en `apps/web` (Vite + SDK modular). Init de App Check entre `initializeApp` y `getAuth`, con `ReCaptchaV3Provider` + `isTokenAutoRefreshEnabled: true`. Site key vía `VITE_RECAPTCHA_SITE_KEY` (required, Zod en `env.ts`). Debug token gateado por `import.meta.env.DEV` (eliminado por tree-shaking en prod — verificado contra el bundle). Tests 6/6, typecheck + Biome limpios, build OK.
+Integrado en `apps/web` (Vite + SDK modular). Init de App Check entre `initializeApp` y `getAuth`, con `ReCaptchaV3Provider` + `isTokenAutoRefreshEnabled: true`. Site key vía `VITE_RECAPTCHA_SITE_KEY` (required, Zod en `env.ts`). Debug token gateado por `import.meta.env.DEV` (eliminado por tree-shaking en prod — verificado contra el bundle).
 
-- Commit `da4ac1a` en rama `feat/app-check` (branched de `main`). **Sin push, sin PR, sin merge** — pendiente revisión humana + cooling-off para REVIEW formal (devils-advocate/security-auditor).
-- Artefactos: `.specs/app-check-recaptcha/{spec,verify}.md`.
-- ⚠️ `apps/web/.env.local` (gitignored) quedó con **solo** la reCAPTCHA key + nota de pendiente; **revertido** de los valores de prod que se habían puesto por error.
+- 🔗 **PR**: https://github.com/boosterchile/booster-ai/pull/401 (2 commits: `da4ac1a` feat + `5cc9825` fix post-review). **Sin merge** — pendiente revisión del PO + gate de aprobación `production`.
+- **REVIEW formal ejecutado** (cooling-off 11 h): code-reviewer + security-auditor + devils-advocate. Encontraron **1 bloqueante real**: `VITE_RECAPTCHA_SITE_KEY` required pero **no cableada en el deploy** → el bundle de prod llevaba `undefined` → la PWA **no booteaba para ningún usuario** (mecanismo **runtime**, NO build-time como reportaron los 3 agentes; corregido empíricamente: `vite build` sin la var da EXIT 0). **Resuelto**: cableada en `Dockerfile` + `cloudbuild.production.yaml` (build-arg + substitution `_VITE_RECAPTCHA_SITE_KEY` = `6Lc5Bwot…`, pública). + 2 fixes de calidad (quitar `as unknown as`, test del invariante debug-token).
+- **Evidencia final**: 8/8 tests, typecheck + Biome limpios, build con var → site key inlineada en bundle ✓, debug flag 0 escrituras en prod.
+- Artefactos: `.specs/app-check-recaptcha/{spec,verify,review}.md`.
+- **Debug token local DIFERIDO al epic de dev** (decisión PO 2026-06-03, opción B): requiere `.env.local` que bootee con config Firebase; se descartó apuntar a prod → se hará contra el proyecto de dev cuando exista (ADR-055). Anotado en `dev-environment-separation §6`.
+- **Enforcement**: NO activar hasta ver tráfico verificado post-deploy. Trackeado en [`.specs/_followups/app-check-enforcement-activation.md`](../../.specs/_followups/app-check-enforcement-activation.md). *(Verificado esta sesión: métricas App Check en 0/0 **porque el código aún no está desplegado** — el reloj arranca post-merge+deploy.)*
+- ⚠️ `apps/web/.env.local` (gitignored) quedó con **solo** la reCAPTCHA key + placeholders; **revertido** de los valores de prod que se habían puesto por error.
 
 ### 🏗️ DEFINE — Epic entorno de desarrollo separado (ADR-055 DRAFT + spec)
 
