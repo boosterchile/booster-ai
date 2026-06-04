@@ -17,7 +17,8 @@
 
 ## Tasks
 
-### T1: Auditoría de boundary + fix de GAPs (SC-G1)
+### T1: Auditoría de boundary + fix de GAPs (SC-G1) — ✅ DONE 2026-06-04
+> **Resultado**: cero GAP sin mitigar (ver `route-boundary-audit.md`). Todas ENFORCED o GATED-CLOSED; ninguna requiere fix. Confirma el hallazgo del DA R2.
 - **Files**: `route-boundary-audit.md` (nuevo) + fixes puntuales en `server.ts`/`routes/*` si hay GAP.
 - **LOC**: ~40 (doc) + ≤30 si hay fix.
 - **Depends on**: none (read-only primero; gatea todo).
