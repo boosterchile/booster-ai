@@ -251,3 +251,27 @@ mis-matched-but-legitimate account (P2-2).
 Out of scope for this review: the correctness of the Gen1/Gen2 deprecation analysis
 (accepted as given); the web-side `use-auth.ts` Google surface (D-only concern); the
 email/password leg (closed Sprint 2b).
+
+---
+
+## Round 2 — 2026-06-04 (devils-advocate, sobre spec v2 re-centrado)
+
+**Veredicto: APPROVE_WITH_RESERVATIONS** (vs DO_NOT_APPROVE en R1). Verificado empíricamente contra código vivo + prod (`booster-ai-api`, sa-west1).
+
+### Por-finding (R1 → R2)
+- **P0-1 (onboarding auto-promueve) → RESUELTO.** Hotfix verificado: `config.ts:502` default-false; env var UNSET en prod; doble defensa (`empresas.ts:50-64` 403 + `onboarding.ts:108-110` `SelfOnboardingDisabledError`); **único caller de `onboardEmpresa` es `empresas.ts:69` hardcoded `self_service`** — NO existe path `admin_provisioned` (rama muerta). Rutas hermanas (`/me`, `/me/consents`, `/me/clave-numerica`) fail-closed por `firebase_uid` lookup (404). SC-G8→MET defendible.
+- **P0-2 → PARCIAL → objeción fuerte.** El "normalizeEmail único pinned" NO existe: `me.ts:66`/`onboarding.ts:127` crudo, `signup-request.ts:52` lowercase+trim, `email-normalize.ts:42` NFC+IDN sin dots/plus. `users.email` nunca canónico → buscar canónico = false-positive reap. T11 contradice la función que pinea. + coupling con package archivado. → **OQ-G6** + SC-G3 reframe + T11 corregido.
+- **P1-1 → PARCIAL → objeción fuerte.** El harness citado (`check-is-demo-wire-completeness.ts:43-80`) solo escanea `app.use`; NO ve `<router>.route()` sub-mounts (`server.ts:304,309` = `/me/consents`, `/me/clave-numerica`). → SC-G1b extendido a `app.route()` + sub-mounts.
+- **P1-2 → RESUELTO** (texto): grace atado a latencia observada; OQ-G1 con datos (gate /build).
+- **P1-3 → RESUELTO** (texto): per-env plan, state-rm vs destroy, IAM-reuse, archive.
+- **P2-1/P2-2 → RESUELTO** (texto): INTENTIONAL-OPEN definido; R-G7/R-G8; gate-onboarding en §8.
+
+### Findings nuevos
+- **N1 (Med)**: botón "Continuar con Google" (`login.tsx:289-293`) vivo en prod → repuebla cuentas inertes de continuo durante Stream A. No es escalada (boundary 404 + reaper), pero R-G6 ya no es "Low". → R-G6 re-rateado.
+- **N2 (Low)**: `ghost-users-dry-run.csv` está en dir superseded → SC-G2 regenera contra IdP actual en /plan.
+- **Wording**: `/me` NO es read-only (account-link + auto-provision admin por allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS` default-vacío) → GATED-CLOSED. SC-G1 corregido.
+
+### Residuales a aceptar/documentar
+Drift TF per-entorno (probable solo en /plan); arbitrariedad del grace para población sin-solicitud (OQ-G1 con datos).
+
+**Para /build**: resolver OQ-G6 (normalizador) + OQ-G1 (grace) + OQ-G3 (scope provider). Todos incorporados al spec v2.
