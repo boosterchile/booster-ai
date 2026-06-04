@@ -48,7 +48,8 @@
 - **Acceptance**: cuentas IdP **regeneradas contra el estado actual** (Admin SDK `listUsers`, NO el CSV viejo) y cruzadas vs `users` + `solicitudes_registro` → LEGITIMATE/PENDING/INERT; decisión PO por cada INERT, auditable (timestamp+rationale). `dev@boosterchile.com` nunca reapable.
 - **Rollback**: read-only; sin efecto.
 
-### T5: ADR supersede ADR-054 (SC-G6 — "ADR before code")
+### T5: ADR supersede ADR-054 (SC-G6 — "ADR before code") — ✅ DONE 2026-06-04
+> **Resultado**: `docs/adr/057-google-signup-boundary-and-reaper-supersedes-054.md` (nuevo, Accepted) registra blocking-fn abandonada (Gen1 deprecado/Gen2 no verificado), admisión en boundary ADR-001 + harness CI default-deny, reaper de higiene, decomiso, cross-ref lessons-learned. ADR-054 Status anotado `Superseded by ADR-057` (permiso PO 2026-06-04, precedente ADR-056). Verificado: ningún CI gate lee el Status de 054 (`check-adr-status-accepted.ts` solo lee 052).
 - **Files**: `docs/adr/057-*.md` (nuevo) + anotar `054` Status (con permiso PO, precedente ADR-056).
 - **LOC**: doc.
 - **Depends on**: none.

@@ -1,6 +1,7 @@
 # ADR-054: Google federated signup admin-approval gate via Identity Platform Blocking Function (Cloud Function Gen 1 + gcip-cloud-functions)
 
-- **Status**: Proposed (2026-05-27; Sprint 2c-A T1). Transición a `Accepted` agendada al cierre Sprint 2c-B post-launch + 7 días watch sin regressions (per acceptance criterion §6).
+- **Status**: ⚠️ **Superseded by [ADR-057](./057-google-signup-boundary-and-reaper-supersedes-054.md)** (2026-06-04) — la blocking function que este ADR propuso quedó **abandonada** (Gen 1 deprecado; Gen 2 no verificado/mutante-de-prod) y nunca llegó a prod. El leg Google se cierra por boundary ADR-001 + reaper (ver ADR-057). Contenido abajo conservado como registro histórico.
+- **Status original (histórico)**: Proposed (2026-05-27; Sprint 2c-A T1). Transición a `Accepted` agendada al cierre Sprint 2c-B post-launch + 7 días watch sin regressions (per acceptance criterion §6).
 - **Date**: 2026-05-27
 - **Deciders**: Felipe Vicencio (PO)
 - **Linked**:
