@@ -25,7 +25,8 @@
 - **Acceptance**: cada route group de `server.ts` (incl. `app.route()` y `<router>.route()` sub-mounts) clasificado ENFORCED / INTENTIONAL-OPEN / GATED-CLOSED / GAP con su cadena de middleware. `/empresas/onboarding`=GATED-CLOSED, `/me`=GATED-CLOSED (allowlist, NO read-only). Cero GAP sin fix. Mapea a **T8** del spec (404 por grupo).
 - **Rollback**: revertir el/los fix; el doc es inerte.
 
-### T2: Harness CI default-deny (SC-G1b — resuelve P1-1)
+### T2: Harness CI default-deny (SC-G1b — resuelve P1-1) — 🔶 DISEÑO DONE, harness pendiente
+> Diseño + enumeración completos en `t2-harness-design.md` (clasificar-por-factory, 36 factories + 3 router-mounts, mapa ROUTE_CLASSIFICATION del audit T1). Falta codear `check-route-default-deny.ts` + test (T15) + wire CI + verificar 6 mounts marcados. Chunk autónomo, ~100-120 LOC.
 - **Files**: `apps/api/scripts/check-route-default-deny.ts` (nuevo, extiende el patrón `check-is-demo-wire-completeness.ts`) + `ONBOARDING_OR_PUBLIC_ALLOWLIST` + wiring en `.github/workflows/ci.yml` (o el job de checks).
 - **LOC**: ~90.
 - **Depends on**: T1 (la allowlist sale de la auditoría).
