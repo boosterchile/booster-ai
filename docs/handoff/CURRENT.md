@@ -1,9 +1,45 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 → PR #401 MERGEADO a `main`**, deploy pendiente del gate `production` (release run #26903303075) + fix CI del e2e roto (webkit) + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. ⚠️ NO activar enforcement App Check hasta ver tráfico verificado post-deploy. Ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
-**Anterior**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
+**Última actualización**: 2026-06-04 (**App Check DESPLEGADO + VALID verificado en prod** (config arreglada: faltaba el secret key) · **gitleaks CERRADO** · **inventario ADR-001→054 COMPLETO** · **ADR-056** CI/CD GitHub Actions supersede ADR-020 GitLab + CLAUDE.md reconciliado · **Stream A sec-001-boundary-closure**: DEFINE+PLAN+T1+T3+T2-diseño en rama `feat/sec-001-boundary-closure`. ⚠️ NO activar enforcement App Check hasta que el poll confirme grueso VALID. Ver §Sesión 2026-06-04.)
+**Anterior**: 2026-06-03 (App Check PR #401 mergeado + epic entorno dev ADR-055 DRAFT — §Sesión 2026-06-03) · 2026-06-02 (multi-máquina + higiene + inventario→ADR-007 — §Sesión 2026-06-02). ⚠️ Multi-máquina: `git pull` + §SETUP MACBOOK.
 **Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-04 — App Check live+verificado · gitleaks cerrado · inventario completo · ADR-056 · Stream A (boundary-closure) hasta T2-diseño
+
+### 🔐 App Check reCAPTCHA v3 — DESPLEGADO y VALID verificado en prod
+- **PR #401 mergeado y desplegado**: `booster-ai-web` revisión `00312-x79`, App Check verificado en el bundle live (init + provider + site key inlineada). Cloud Build regional `4e48d918` SUCCESS.
+- **Config arreglada**: el exchange daba **403 "App attestation failed"** porque en App Check estaba registrada **solo la site key, faltaba el secret key** (diagnosticado vía Playwright headless + Firebase App Check Admin API: `siteSecretSet:false→true`). El PO agregó el secret → **`identitytoolkit` pasó a `security=VALID`** (verificado con re-login en incógnito; un browser logueado-403 queda throttled 24h).
+- **Enforcement**: TODOS los servicios `UNENFORCED` (verificado vía Admin API). **NO activar** hasta que el poll `verdict_count` confirme el grueso VALID. Maps **nunca** se enforcea por App Check (referrer). Followup: [`_followups/app-check-enforcement-activation.md`](../../.specs/_followups/app-check-enforcement-activation.md).
+- ⚠️ **Quirk de pipeline**: el release run figuró `cancelled` aunque el deploy fue exitoso (timeout del job 30m < canary 30m). Followup: [`_followups/release-deploy-job-timeout-vs-canary.md`](../../.specs/_followups/release-deploy-job-timeout-vs-canary.md).
+
+### 🩹 gitleaks — CERRADO
+Allowlist **acotado por valor exacto** de las 2 web keys verificadas-públicas (Firebase via App Check+Rules; Maps via referrer) — NO el patrón `AIza` genérico (así otras keys sensibles siguen detectadas). Tracked 100% limpio. (`.gitleaks.toml`, commit en `chore/working-tree-hygiene`.)
+
+### 📋 Inventario ADR-vs-prod — ✅ COMPLETO (001→054 + CURRENT.md)
+Ver §"Inventario ADR-vs-prod — ✅ COMPLETO" abajo (sección 2026-06-03, actualizada). Veredicto: núcleo técnico de alta fidelidad; drifts acotados (ADR-020 GitLab, ADR-049 settings.json — ambos cerrados; signup residual 052/054 → Stream A/B).
+
+### 🛠️ Correcciones de doc/contrato
+- **ADR-056** (CI/CD en GitHub Actions) **supersede ADR-020** (GitLab ficticio) + ADR-020 marcado `Superseded by ADR-056`.
+- **CLAUDE.md reconciliado**: `.claude/settings.json` no existe → corregida la afirmación (plugins se instalan a nivel usuario/global, no versionados).
+
+### 🏗️ Stream A — `sec-001-h1-2-google-boundary-closure` (rama `feat/sec-001-boundary-closure`)
+Cierre del residual SEC-001 H1.2 Google (boundary + reaper + decomiso). Progreso:
+- **DEFINE**: spec v2 re-centrado (P0-1 mitigado por hotfix, verificado en prod: `EMPRESA_SELF_ONBOARDING_ENABLED` default-false). **DA Round 2 = APPROVE_WITH_RESERVATIONS**.
+- **PLAN**: 11 tareas atómicas.
+- **BUILD**: **T1✅** (auditoría boundary — cero GAP), **T3✅** (OQs: `REAPER_GRACE_DAYS=30` [solicitudes_registro VACÍA en prod → flujo signup-request nunca usado], G6=match-degradado [T6 disuelta], G3=Google-only). **T2 diseñado** (`t2-harness-design.md`), falta codear el harness.
+- **Retomar**: BUILD de **T5** (ADR supersede ADR-054) + **T2** (codear `check-route-default-deny.ts` per el diseño). Gate /build: faltan T2(código)+T4+T5.
+- Decisiones congeladas: grace=30d · G6=match-degradado · G3=Google-only.
+
+### 🗂️ Estado de ramas
+- `feat/app-check` → **mergeada** (PR #401).
+- `feat/sec-001-boundary-closure` → **activa** (Stream A; spec/plan/audit/oq/t2-design).
+- `chore/working-tree-hygiene` → todo el resto (inventario, ADR-055/056, gitleaks, App Check docs, followups). **Sigue sin mergear a `main`.**
+
+### 📌 Hilos abiertos
+App Check enforcement (post-poll) · Stream A (T2→T11) · Stream B onboarding-redesign (signup web roto + 0 uso del flujo signup-request) · deploy-timeout · retention-lock DTE · entorno dev ADR-055.
 
 ---
 
