@@ -23,10 +23,10 @@ El check de referencia `check-is-demo-wire-completeness.ts` solo escanea `app.us
 
 > ⚠️ Al codear: **verificar el mount exacto** de los 6 marcados (auth-universal, driver-auth, demo-login, demo-cache-warm, public-tracking, webpush-public) — clasificados INTENTIONAL-OPEN por evidencia (login/demo/público) pero no auditados línea-a-línea en T1 (que fue group-level). No asumir; confirmar middleware chain.
 
-## Falta (chunk autónomo para implementar T2)
-1. `apps/api/scripts/check-route-default-deny.ts`: enumeración multi-línea + `ROUTE_CLASSIFICATION` (arriba) + exit 1 en no-clasificados. Exportar funciones puras.
-2. Test (spec **T15**): (a) `server.ts` actual → pasa (todos clasificados); (b) un factory ficticio montado sin clasificar → falla. + verificar los 6 mounts pendientes.
-3. Wire en CI (`.github/workflows/ci.yml` o el job de checks).
-4. Coverage ≥80% en las funciones puras (SC-G9).
+## Implementado (✅ DONE 2026-06-04)
+1. ✅ `apps/api/scripts/check-route-default-deny.ts`: enumeración multi-línea (`enumerateRouteMounts`) + `ROUTE_CLASSIFICATION` (40 entradas) + `evaluateRoutes` (agregación pura) + exit 1 en no-clasificados/stale/sin-rationale. Funciones puras exportadas.
+2. ✅ Test `check-route-default-deny.test.ts` (24 casos): (a) server.ts real → 0 sin clasificar / 0 stale; (b) factory ficticio + sub-mount `<router>.route()` ficticio → flagged (T15); (c) los 6 mounts marcados = INTENTIONAL-OPEN. Funciones puras 100% cubiertas.
+3. ✅ Wire en `.github/workflows/security.yml` job `route-default-deny` (espejo de `is-demo-wire-completeness`).
+4. ✅ SC-G9: las funciones puras están 100% cubiertas; `main()` (CLI glue) queda fuera del gate `coverage.include: ['src/**/*.ts']` — `scripts/` no se mide, igual que `check-is-demo-wire-completeness.ts` y `src/jobs/**`.
 
-Estimación: ~100-120 LOC harness + ~50 test. ≤2 commits.
+**Conteo final**: 40 mounts (no 39: el design estimó "36 factories + 3 router-mounts"; el código vivo tiene 37 factories directos en `.route()` + 3 router-vars `meRouter`/`assignmentsRouter`/`chatRouter`). Enumeración contra código vivo es la fuente de verdad.
