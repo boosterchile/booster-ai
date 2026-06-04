@@ -1,37 +1,52 @@
 # Gitleaks config para Booster AI.
 #
-# Hereda todas las reglas default de gitleaks (8.x) y añade allowlist para
-# las claves "públicas por diseño" hardcodeadas en cloudbuild.production.yaml:
+# Hereda las reglas default de gitleaks (8.x) y añade un allowlist ACOTADO.
 #
-#   - Firebase Web API Keys: protegidas por Firebase Security Rules + dominio
-#     autorizado en Firebase Auth Settings, no por confidencialidad de la key.
-#     https://firebase.google.com/docs/projects/api-keys#api-keys-for-firebase-are-different
-#   - Google Maps JS API Key: protegida por HTTP referrer restriction en GCP
-#     API Credentials (solo acepta requests desde app.boosterchile.com/*).
+# Principio: allowlistear SOLO las claves verificadas como "públicas por diseño"
+# por su VALOR EXACTO — NO por el patrón genérico `AIza[0-9A-Za-z_-]{35}` (que es
+# el formato de CUALQUIER Google API key). Así, claves realmente sensibles
+# (service accounts, OAuth secrets, o una futura key de Gemini/Maps distinta)
+# siguen siendo detectadas. Los secretos reales del backend viven en Secret
+# Manager, nunca en el repo.
 #
-# Ambas viajan en el bundle JavaScript al cliente — son inevitablemente
-# públicas. El rationale completo del por qué se hardcodean también está
-# documentado en apps/web/Dockerfile y en los comentarios de la sección
-# `substitutions` de cloudbuild.production.yaml.
+# Claves web públicas allowlisteadas (ambas viajan en el bundle JS al cliente):
 #
-# Sin este allowlist, gitleaks dispara la regla `gcp-api-key` (que matchea
-# `AIza[0-9A-Za-z_-]{35}` — formato estándar de cualquier Google API key) y
-# bloquea el merge. Los secretos reales del backend (service accounts, OAuth
-# client secrets, etc.) están en Secret Manager y nunca en este archivo, así
-# que excluir el archivo completo del scan es seguro.
+#   1. Firebase Web API key (AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk)
+#      — Pública por diseño: la autorización NO depende del secreto de la key,
+#        sino de Firebase App Check (reCAPTCHA v3, ADR-016 / PR #401) + Firebase
+#        Security Rules. Ambos VERIFICADOS en Firebase Console (2026-06-04).
+#        https://firebase.google.com/docs/projects/api-keys#api-keys-for-firebase-are-different
+#
+#   2. Google Maps JS API key (AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg)
+#      — Pública por diseño: restringida por HTTP referrer a
+#        https://app.boosterchile.com/* (VERIFICADO vía gcloud, ADR-014).
+#
+# Endurecimiento pendiente (consola GCP, no afecta este archivo): confirmar API
+# restrictions activas en ambas keys; si se usa Auth password, evaluar bajar la
+# cuota de identitytoolkit.
 
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Firebase + Google Maps web keys + JWT test fixtures (PII redaction T4 SEC-001)"
+description = "Claves web públicas por diseño (Firebase via App Check+Rules; Maps via referrer) acotadas por valor exacto + fixtures sintéticos de PII redaction"
+
+# Acotado al VALOR EXACTO de cada key pública (no al patrón AIza genérico).
+regexes = [
+  '''AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk''',
+  '''AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg''',
+]
+
 paths = [
-  '''cloudbuild\.production\.yaml''',
-  # Test fixtures con JWTs sintéticos para verificar PII redaction (T4 SEC-001).
-  # NO son JWTs reales — payload `{"sub":"user1"}` con signature placeholder
-  # (no firma real, no expira, no autoriza nada). Documentado en commit messages
-  # + PR #319. Sin esta allowlist gitleaks dispara la regla `jwt` sobre cualquier
-  # string `eyJ...\..*\..*` que estructuralmente es JWT shape.
+  # Test fixtures con JWTs/secretos SINTÉTICOS para verificar PII redaction
+  # (T4 SEC-001, PR #319). NO son credenciales reales (no firman, no expiran,
+  # no autorizan nada). gitleaks dispara `jwt` + `generic-api-key` sobre su shape.
   '''packages/logger/src/value-redaction\.test\.ts''',
   '''packages/logger/src/createLogger\.test\.ts''',
+  '''packages/logger/test/fixtures/generate\.mjs''',
+  '''packages/logger/test/fixtures/adversarial-100\.json''',
+  # Evidencia histórica del sprint SEC-001: la regla `generic-api-key` dispara
+  # sobre el comando `booster-ai-api --region=southamerica-west1` (nombre de
+  # servicio Cloud Run + región GCP), que NO es un secreto. Doc markdown.
+  '''\.specs/sec-001-cierre/sprint-1-evidence/README\.md''',
 ]
