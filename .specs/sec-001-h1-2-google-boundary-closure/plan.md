@@ -32,7 +32,8 @@
 - **Acceptance**: el harness enumera `app.use` + `app.route()` + `<router>.route()` sub-mounts (cubre `/me/consents`, `/me/clave-numerica`); asserta userContext-wired O en allowlist con rationale; **falla el build** ante un mount nuevo sin clasificar. Mapea a **T15** del spec.
 - **Rollback**: quitar el step de CI + el script (no bloquea otros checks).
 
-### T3: Resolución de OQs (OQ-G1, OQ-G3, OQ-G6) (gate /build)
+### T3: Resolución de OQs (OQ-G1, OQ-G3, OQ-G6) (gate /build) — ✅ DONE 2026-06-04
+> **Resultado** (`oq-resolution.md`, confirmado PO): G1 = `REAPER_GRACE_DAYS=30` (solicitudes_registro vacía → sin SLA, grace conservador justificado); G6 = **(b)** matchear forma degradada (lowercase+trim, inclusivo) — normalizador compartido+backfill → Stream B; G3 = **Google-only** + email-present + dual-match.
 - **Files**: `oq-resolution.md` (nuevo).
 - **LOC**: doc.
 - **Depends on**: none (decisión/research; OQ-G1 necesita datos de latencia de onboarding; OQ-G6/G3 decisión PO).
@@ -53,7 +54,10 @@
 - **Acceptance**: ADR nuevo registra: blocking function abandonada (Gen1 muerto/Gen2 no verificado), admisión en el boundary ADR-001, reaper de higiene; cross-ref lessons-learned. Mapea a **T10** del spec.
 - **Rollback**: ADRs no se editan retroactivamente; el nuevo se marca superseded si cambia.
 
-### T6: Normalizador compartido + backfill (SC-G3 — CONDICIONAL a OQ-G6=extract)
+### T6: Normalizador compartido + backfill — ❌ DISUELTA (OQ-G6=(b), 2026-06-04)
+> Por la decisión OQ-G6=(b) (matchear forma degradada), NO se extrae normalizador ni se hace backfill acá. La lógica de match lowercase+trim se absorbe en **T7**. El normalizador compartido real se difiere a Stream B. Texto original abajo (histórico, no ejecutar).
+
+#### ~~T6 (original, no ejecutar)~~: Normalizador compartido + backfill (SC-G3 — CONDICIONAL a OQ-G6=extract)
 - **Files**: `packages/<shared>/src/normalize-email.ts` + `.test.ts` + migración drizzle de backfill de `users.email`/`solicitudes`.
 - **LOC**: ~90.
 - **Depends on**: T3 (decisión). **Si OQ-G6 = matchear-degradado, esta task NO existe** (se absorbe en T7 con la forma lowercase+trim).
