@@ -138,6 +138,16 @@ describe('classify-google-idp-accounts — toMarkdownReport', () => {
     const md = toMarkdownReport([{ ...rows[0], displayName: 'A | B', firebaseUid: 'uid-3' }]);
     expect(md).not.toMatch(/A \| B/);
   });
+
+  it('escapa el backslash ANTES del pipe (CodeQL js/incomplete-sanitization)', () => {
+    // displayName/email son controlados por el usuario: un `\` no escapado dejaría
+    // el escaping de `|` reversible e inyectable. El backslash debe ir a `\\`.
+    const md = toMarkdownReport([{ ...rows[0], displayName: 'A\\|B', firebaseUid: 'uid-4' }]);
+    // El `\` se duplica y el `|` queda escapado por su propio backslash → 3 backslashes + `|`.
+    expect(md).toContain('A\\\\\\|B');
+    // No debe quedar la forma ambigua de 2 backslashes que producía el escaping incompleto.
+    expect(md).not.toContain('A\\\\|B');
+  });
 });
 
 describe('classify-google-idp-accounts — classifyGoogleIdpAccounts (IO paginado, P1-3)', () => {

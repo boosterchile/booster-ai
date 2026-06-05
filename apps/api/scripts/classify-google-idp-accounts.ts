@@ -186,7 +186,14 @@ export async function classifyGoogleIdpAccounts(
   return out;
 }
 
-const escapeCell = (value: string): string => value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+const escapeCell = (value: string): string =>
+  // Escapar el backslash PRIMERO: email/displayName son controlados por el usuario, y si un `\`
+  // del input no se escapa, el escaping de `|` queda reversible/ambiguo y se puede inyectar una
+  // columna en la tabla markdown del reporte (CodeQL js/incomplete-sanitization).
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\n/g, ' ');
 
 /** Genera el reporte markdown con conteo por categoría + columna de decisión PO para INERT. */
 export function toMarkdownReport(accounts: readonly ClassifiedAccount[]): string {
