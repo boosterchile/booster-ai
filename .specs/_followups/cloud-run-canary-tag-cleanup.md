@@ -37,3 +37,7 @@ Bump from P1 to P0 when either:
 - The service is within 100 of its 1000-revision quota.
 
 Monitor via `gcloud run revisions list --service=booster-ai-api --filter='-status.conditions.type=Active' --format='value(metadata.name)' | wc -l` weekly.
+
+## Medición 2026-06-05 (post-deploy SEC-001 boundary-closure)
+
+Observado en el traffic split de `booster-ai-api` (vía `gcloud run services describe`, región southamerica-west1): **10 revisiones con tag `canary-signup-<sha12>`** acumuladas (una por deploy, desde fines de mayo hasta `db0c00b`), todas en 0% salvo la última (`00367-jor`, 100%). Lejos aún del umbral P0 (>50), pero confirma la acumulación lineal: 10 tags a la fecha. Sigue P1; revisar el conteo en la cadencia semanal.
