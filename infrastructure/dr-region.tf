@@ -16,6 +16,13 @@
 # SLA: contratos B2B grandes piden 99.9% uptime. Sin DR, una caída de
 # southamerica-west1 (hubo 1 en 2024 y 1 en 2025) tira el producto.
 # Con DR, la caída es transparente.
+#
+# ESTADO ACTUAL (ADR-058, 2026-06-05): DR en modo **cold** pre-comercial.
+# El gateway DR está escalado a 0 (ver k8s/telemetry-tcp-gateway-dr.yaml);
+# subnet/IP/DNS/cluster se conservan latentes acá para reactivar con
+# `terraform apply` + scale-up (RTO 15-40 min). NO hay failover automático
+# mientras no existan contratos B2B con SLA. Al firmar el primer SLA, revertir
+# (reactivar gateway + Cloud SQL REGIONAL + idealmente read-replica cross-region).
 
 # =============================================================================
 # GKE AUTOPILOT en DR region

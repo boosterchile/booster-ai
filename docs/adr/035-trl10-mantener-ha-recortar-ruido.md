@@ -1,6 +1,8 @@
 # ADR 035 — TRL 10: mantener HA productiva, recortar solo ruido sin valor
 
-**Estado**: Aceptado
+> **Superseded by [ADR-058](./058-precomercial-rightsizing-disponibilidad-supersedes-035.md) (2026-06-05).** El objetivo del producto se reclasificó de TRL 10 a **pre-comercial** (≤10 camiones, sin contratos B2B con SLA). La premisa de este ADR (clientes B2B con 99.9% vigente) dejó de cumplirse, por lo que las palancas de HA/DR que aquí se rechazaron quedan habilitadas en ADR-058. Este ADR fue correcto bajo su premisa; se conserva como registro histórico, sin editar más allá de este marcador.
+
+**Estado**: Superseded por ADR-058 (era: Aceptado)
 **Fecha**: 2026-05-13
 **Autor**: Claude (Opus 4.7) + Felipe Vicencio
 **Extiende**: ADR-034 (right-sizing)

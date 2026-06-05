@@ -117,7 +117,7 @@ resource "google_sql_database_instance" "main" {
   settings {
     tier              = var.cloudsql_tier
     edition           = "ENTERPRISE" # ENTERPRISE_PLUS requiere tiers dedicados (db-perf-optimized-*); ENTERPRISE es el default comercial.
-    availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
+    availability_type = var.cloudsql_high_availability ? "REGIONAL" : "ZONAL"
     disk_type         = "PD_SSD"
     disk_size         = 50 # GB inicial
     disk_autoresize   = true
@@ -163,22 +163,16 @@ resource "google_sql_database_instance" "main" {
       value = "on"
     }
     database_flags {
-      name  = "log_connections"
-      value = "on"
-    }
-    database_flags {
-      name  = "log_disconnections"
-      value = "on"
-    }
-    database_flags {
       name  = "log_lock_waits"
       value = "on"
     }
     database_flags {
-      # 0 = log todos los archivos temporales (consultas que spillan a disk).
-      # >0 = solo logs si tamano excede ese valor (en KB).
+      # -1 = desactivado (no loguea spills a disco). >0 = solo si el spill excede
+      # ese tamano (KB). Bajado de "0" (loguear TODO spill) a "-1" en pre-comercial
+      # por costo de Cloud Logging; subir a un umbral en KB para investigar spills.
+      # Ver .specs/cost-optimization-precomercial.
       name  = "log_temp_files"
-      value = "0"
+      value = "-1"
     }
 
     insights_config {
