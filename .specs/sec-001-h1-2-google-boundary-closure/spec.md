@@ -5,7 +5,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-29 (v1) · **2026-06-04 (v2 re-centrado)**
-- **Status**: **Reviewed (2026-06-05)** — BUILD (T1–T11) + VERIFY + REVIEW completos. REVIEW: 0 BLOCKING, 7 findings fijados (A/C/D/E/G/B-limbo/J), residuales aceptados con review-by = gate de 1er run destructivo. Veredicto: **Approved for /ship (dry-run)**. Ver `review.md` §REVIEW phase. (Histórico: Draft v2 DA R2 APPROVE_WITH_RESERVATIONS 2026-06-04.)
+- **Status**: **Ship-ready — PR [#402](https://github.com/boosterchile/booster-ai/pull/402) abierto (2026-06-05)**, pendiente de: run verde de CI + merge PO + aprobación Environment `production` + `terraform apply` per-entorno. Transición a `Shipped` tras deploy+verificación. BUILD (T1–T11) + VERIFY + REVIEW + SHIP(`ship.md`) completos; reaper en dry-run + scheduler paused. (Histórico: Reviewed 2026-06-05; Draft v2 DA R2 2026-06-04.)
 - **Linked**:
   - Parent: [`.specs/sec-001-cierre/spec.md`](../sec-001-cierre/spec.md) §3 SC-1.2.2 (Google leg = `TRACKED_RESIDUAL` → este spec lo lleva a `MET`)
   - **Mitigación P0-1**: [`.specs/sec-001-empresa-onboarding-gate-hotfix/`](../sec-001-empresa-onboarding-gate-hotfix/) (self-serve onboarding OFF)
