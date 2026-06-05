@@ -426,20 +426,23 @@ resource "google_monitoring_alert_policy" "auth_is_demo_blocked_anomaly" {
 # =============================================================================
 # Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G4/§11 + ADR-057.
 # El runner (apps/api/src/jobs/reap-inert-idp-accounts.ts) emite structured log
-# `reaper.account.delete` por cada cuenta efectivamente borrada (solo en modo
-# destructivo). Este metric cuenta esos eventos → señal de volumen anómalo.
-# En dry-run el evento de borrado no se emite (solo `reaper.account.disable` con
-# destructive:false), así que el counter queda en 0 hasta el primer run destructivo.
+# `reaper.account.delete` por cada cuenta que CALIFICA para borrado. OJO: el log
+# se emite tanto en dry-run (destructive:false, would-be-delete) como en modo
+# destructivo (destructive:true, borrado real). Este counter filtra
+# `jsonPayload.destructive=true` para contar SOLO borrados reales — si no, la
+# alerta de volumen se dispararía durante el primer dry-run (donde la población
+# inerte es grande). REVIEW finding C.
 resource "google_logging_metric" "reaper_account_reaped" {
   name    = "sec001/reaper_account_reaped"
   project = google_project.booster_ai.project_id
 
-  description = "Cuentas IdP Google borradas por el reaper (event reaper.account.delete). Counter DELTA — señal de volumen anómalo de borrados."
+  description = "Cuentas IdP Google borradas REALMENTE por el reaper (event reaper.account.delete + destructive=true). Counter DELTA — señal de volumen anómalo de borrados."
 
   filter = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="booster-ai-api"
     jsonPayload.event="reaper.account.delete"
+    jsonPayload.destructive=true
   EOT
 
   metric_descriptor {

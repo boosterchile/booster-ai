@@ -53,6 +53,14 @@ export interface ReaperRunConfig {
   secondGraceDays: number;
   neverReapable: ReadonlySet<string>;
   now: Date;
+  /**
+   * Cap de borrados por corrida (REVIEW finding J). Acota el blast radius de un
+   * false-positive masivo y el consumo de quota de Identity Platform si un
+   * atacante infla la población (R-G6). Los excedentes se difieren al próximo
+   * tick (acción `wait`). El cap se evalúa también en dry-run para que el
+   * preview refleje lo que haría el modo destructivo.
+   */
+  maxDeletesPerRun: number;
 }
 
 interface UserRecordLike {
@@ -170,6 +178,7 @@ export async function reapInertIdpAccounts(
     scanned: 0,
     actions: { disable: 0, delete: 0, wait: 0, skip: 0 },
   };
+  let deletesPlanned = 0;
   const predicateCfg: ReaperConfig = {
     now: config.now,
     graceDays: config.graceDays,
@@ -198,12 +207,23 @@ export async function reapInertIdpAccounts(
       const facts = await deps.fetchFacts(account);
       const verdict = isReapable(account, facts, predicateCfg);
       const reaperDisabledAt = readReaperDisabledAt(u.customClaims);
-      const action = decideAction(
+      let action = decideAction(
         verdict.reapable,
         { disabled: Boolean(u.disabled), reaperDisabledAt },
         config.now,
         config.secondGraceDays,
       );
+
+      // J-cap (REVIEW): difiere borrados que excedan el cap al próximo tick.
+      let capped = false;
+      if (action === 'delete') {
+        if (deletesPlanned >= config.maxDeletesPerRun) {
+          action = 'wait';
+          capped = true;
+        } else {
+          deletesPlanned += 1;
+        }
+      }
       summary.actions[action] += 1;
 
       const emailHashed = hashEmailForLog(u.email as string);
@@ -211,17 +231,23 @@ export async function reapInertIdpAccounts(
         event: `reaper.account.${action}`,
         uid: u.uid,
         emailHashed,
-        reason: verdict.reason,
+        reason: capped
+          ? `delete diferido: cap ${config.maxDeletesPerRun}/run alcanzado`
+          : verdict.reason,
         destructive: config.destructive,
       };
 
       if (config.destructive) {
         if (action === 'disable') {
-          await deps.auth.updateUser(u.uid, { disabled: true });
+          // B-limbo (REVIEW): marcar reaperDisabledAt ANTES de disable. Si el
+          // proceso muere entre ambas, una cuenta disabled-sin-marker quedaría
+          // en limbo (wait para siempre). Marcar primero hace que el peor caso
+          // sea un marker sin disable (el próximo run la deshabilita).
           await deps.auth.setCustomUserClaims(u.uid, {
             ...(u.customClaims ?? {}),
             reaperDisabledAt: config.now.toISOString(),
           });
+          await deps.auth.updateUser(u.uid, { disabled: true });
         } else if (action === 'delete') {
           await deps.auth.deleteUser(u.uid);
         }
@@ -246,13 +272,21 @@ export async function reapInertIdpAccounts(
   return summary;
 }
 
+/** Default del cap de borrados por corrida (REVIEW finding J). */
+export const DEFAULT_MAX_DELETES_PER_RUN = 50;
+
+/**
+ * never-reapable = platform-admins (config) + CSV env + `dev@boosterchile.com`.
+ * DEBE coincidir con el set del endpoint (`admin-jobs.ts`) y del script de
+ * clasificación (REVIEW finding G — evitar que un path destructivo proteja
+ * menos cuentas que otro).
+ */
 function parseNeverReapable(csv: string | undefined): ReadonlySet<string> {
-  const raw = csv ?? 'dev@boosterchile.com';
+  const fromCsv = (csv ?? '').split(',').map((e) => normalizeReaperEmail(e));
   return new Set(
-    raw
-      .split(',')
-      .map((e) => normalizeReaperEmail(e))
-      .filter((e) => e.length > 0),
+    [...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS, ...fromCsv, 'dev@boosterchile.com'].filter(
+      (e) => e.length > 0,
+    ),
   );
 }
 
@@ -279,6 +313,7 @@ async function main(): Promise<void> {
     secondGraceDays: Number(process.env.REAPER_SECOND_GRACE_DAYS ?? DEFAULT_REAPER_GRACE_DAYS),
     neverReapable: parseNeverReapable(process.env.REAPER_NEVER_REAPABLE_EMAILS),
     now: new Date(),
+    maxDeletesPerRun: Number(process.env.REAPER_MAX_DELETES_PER_RUN ?? DEFAULT_MAX_DELETES_PER_RUN),
   };
 
   try {

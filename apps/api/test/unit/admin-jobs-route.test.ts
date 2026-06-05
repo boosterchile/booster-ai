@@ -21,6 +21,7 @@ vi.mock('../../src/services/reconciliar-dtes.js', () => ({
 vi.mock('../../src/jobs/reap-inert-idp-accounts.js', () => ({
   reapInertIdpAccounts: vi.fn(),
   fetchReaperFacts: vi.fn(),
+  DEFAULT_MAX_DELETES_PER_RUN: 50,
 }));
 
 const { procesarMensajesNoLeidos } = await import('../../src/services/chat-whatsapp-fallback.js');

@@ -185,17 +185,18 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
 };
 
 /**
- * Enumera todos los mounts `.route(path, factory|routerVar)` de un source.
- * Multi-línea (no line-based): el path y el factory pueden estar en líneas
- * distintas. Captura tanto `app.route(...)` como los sub-mounts
- * `<router>.route(...)`. El handler puede ser un factory `create*` o una
- * router-var `*Router` (`meRouter`, `assignmentsRouter`, `chatRouter`).
+ * Enumera todos los mounts `.route(path, <handler>)` de un source. Multi-línea
+ * (no line-based). Captura `app.route(...)` y los sub-mounts `<router>.route(...)`.
+ *
+ * REVIEW finding A: la `key` es **cualquier identificador** del 2º argumento (no
+ * solo `create*`/`*Router`). Antes el regex solo reconocía esas dos convenciones
+ * de naming → un mount con handler nombrado distinto (`billingRoutes`) NO se
+ * enumeraba → NO disparaba default-deny → pasaba el build sin clasificar (falsa
+ * cobertura). Ahora todo `.route(path, <id>)` se enumera; lo no clasificado falla.
+ * Para `createX(...)` captura `createX`; para `meRouter` captura `meRouter`.
  */
 export function enumerateRouteMounts(source: string): RouteMount[] {
-  // \.route\( <ws> '<path>' <ws> , <ws> (create… | …Router) \b
-  // [\s\S]*? no aplica: usamos \s* que ya matchea newlines.
-  const pattern =
-    /\.route\(\s*['"]([^'"]+)['"]\s*,\s*(create[A-Za-z0-9]+|[a-z][A-Za-z0-9]*Router)\b/g;
+  const pattern = /\.route\(\s*['"]([^'"]+)['"]\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)/g;
   const mounts: RouteMount[] = [];
   let match: RegExpExecArray | null = pattern.exec(source);
   while (match !== null) {
@@ -205,6 +206,24 @@ export function enumerateRouteMounts(source: string): RouteMount[] {
     match = pattern.exec(source);
   }
   return mounts;
+}
+
+/**
+ * Detecta rutas inline `app.<method>('path', …)` (get/post/put/patch/delete/
+ * options/head/all). REVIEW finding A: estas NO pasan por un factory clasificado,
+ * así que el default-deny por factory no las ve. Si aparece alguna, el build
+ * FALLA — toda ruta de negocio debe montarse vía un factory en ROUTE_CLASSIFICATION
+ * (o, si se decide permitir inline, clasificarla explícitamente acá primero).
+ */
+export function findInlineMethodRoutes(source: string): string[] {
+  const pattern = /\bapp\.(get|post|put|patch|delete|options|head|all)\(\s*['"]([^'"]+)['"]/g;
+  const found: string[] = [];
+  let match: RegExpExecArray | null = pattern.exec(source);
+  while (match !== null) {
+    found.push(`app.${match[1]}('${match[2]}')`);
+    match = pattern.exec(source);
+  }
+  return found;
 }
 
 /** Keys enumerados en server.ts que NO están en la clasificación (default-deny → fail). */
@@ -250,10 +269,11 @@ export interface RouteEvaluation {
   unclassified: string[];
   stale: string[];
   missingRationale: string[];
+  inlineRoutes: string[];
 }
 
 /**
- * Evalúa las 3 invariantes contra un source + clasificación. Pura (sin IO):
+ * Evalúa las 4 invariantes contra un source + clasificación. Pura (sin IO):
  * el grueso de la lógica del check, testeable sin tocar disco ni process.exit.
  */
 export function evaluateRoutes(
@@ -263,21 +283,39 @@ export function evaluateRoutes(
   const unclassified = findUnclassifiedMounts(source, classification);
   const stale = findStaleClassifications(source, classification);
   const missingRationale = findMissingRationale(classification);
+  const inlineRoutes = findInlineMethodRoutes(source);
   return {
-    ok: unclassified.length === 0 && stale.length === 0 && missingRationale.length === 0,
+    ok:
+      unclassified.length === 0 &&
+      stale.length === 0 &&
+      missingRationale.length === 0 &&
+      inlineRoutes.length === 0,
     totalMounts: enumerateRouteMounts(source).length,
     unclassified,
     stale,
     missingRationale,
+    inlineRoutes,
   };
 }
 
 function main(): void {
   const source = readFileSync(SERVER_FILE, 'utf-8');
-  const { ok, totalMounts, unclassified, stale, missingRationale } = evaluateRoutes(
+  const { ok, totalMounts, unclassified, stale, missingRationale, inlineRoutes } = evaluateRoutes(
     source,
     ROUTE_CLASSIFICATION,
   );
+
+  if (inlineRoutes.length > 0) {
+    console.error(
+      '\n[check-route-default-deny] FAIL — rutas inline app.<method>() sin pasar por un factory clasificado:',
+    );
+    for (const r of inlineRoutes) {
+      console.error(`  - ${r}`);
+    }
+    console.error(
+      '\nFix: montar la ruta vía un factory create*Routes y clasificarlo en ROUTE_CLASSIFICATION (el default-deny por factory no ve rutas inline).',
+    );
+  }
 
   if (unclassified.length > 0) {
     console.error('[check-route-default-deny] FAIL — mounts nuevos sin clasificar (default-deny):');

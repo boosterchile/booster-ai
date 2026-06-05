@@ -28,6 +28,7 @@ import type pg from 'pg';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
+  DEFAULT_MAX_DELETES_PER_RUN,
   type PoolLike,
   fetchReaperFacts,
   reapInertIdpAccounts,
@@ -187,6 +188,7 @@ export function createAdminJobsRoutes(opts: {
         secondGraceDays: DEFAULT_REAPER_GRACE_DAYS,
         neverReapable,
         now: new Date(),
+        maxDeletesPerRun: DEFAULT_MAX_DELETES_PER_RUN,
       },
     );
     return c.json({ ok: true, destructive: appConfig.REAPER_DESTRUCTIVE, ...summary });

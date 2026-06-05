@@ -30,6 +30,7 @@ const cfg = (overrides: Partial<ReaperRunConfig> = {}): ReaperRunConfig => ({
   secondGraceDays: 30,
   neverReapable: new Set(['dev@boosterchile.com']),
   now: NOW,
+  maxDeletesPerRun: 50,
   ...overrides,
 });
 
@@ -140,6 +141,46 @@ describe('reap-inert-idp-accounts — reapInertIdpAccounts', () => {
       expect.objectContaining({ reaperDisabledAt: expect.any(String) }),
     );
     expect(auth.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('B-limbo (REVIEW): setCustomUserClaims se llama ANTES de updateUser(disabled)', async () => {
+    const auth = fakeAuth([inertUser()]);
+    await reapInertIdpAccounts(deps(auth), cfg({ destructive: true }));
+    const claimsOrder = auth.setCustomUserClaims.mock.invocationCallOrder[0];
+    const updateOrder = auth.updateUser.mock.invocationCallOrder[0];
+    expect(claimsOrder).toBeDefined();
+    expect(updateOrder).toBeDefined();
+    expect(claimsOrder as number).toBeLessThan(updateOrder as number);
+  });
+
+  it('J-cap (REVIEW): borrados que exceden maxDeletesPerRun se difieren a wait', async () => {
+    const dels = [40, 41, 42].map((i) =>
+      inertUser({
+        uid: `u-${i}`,
+        email: `${i}@x.cl`,
+        disabled: true,
+        customClaims: { reaperDisabledAt: daysAgo(40) },
+      }),
+    );
+    const auth = fakeAuth(dels);
+    const summary = await reapInertIdpAccounts(
+      deps(auth),
+      cfg({ destructive: true, maxDeletesPerRun: 2 }),
+    );
+    expect(summary.actions.delete).toBe(2);
+    expect(summary.actions.wait).toBe(1); // el 3º diferido
+    expect(auth.deleteUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('C (REVIEW): en dry-run una cuenta delete-elegible logea event=delete con destructive:false', async () => {
+    const log = logger();
+    const u = inertUser({ disabled: true, customClaims: { reaperDisabledAt: daysAgo(40) } });
+    await reapInertIdpAccounts(deps(fakeAuth([u]), log), cfg({ destructive: false }));
+    const deleteLog = log.info.mock.calls.find(
+      (c) => (c[0] as { event?: string })?.event === 'reaper.account.delete',
+    );
+    expect(deleteLog).toBeDefined();
+    expect((deleteLog?.[0] as { destructive?: boolean }).destructive).toBe(false);
   });
 
   it('destructive: disabled-by-reaper + 2º grace pasado → delete', async () => {

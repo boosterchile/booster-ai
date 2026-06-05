@@ -199,6 +199,10 @@ export function toMarkdownReport(accounts: readonly ClassifiedAccount[]): string
   lines.push('# Clasificación de cuentas IdP Google existentes (T4 / SC-G2)');
   lines.push('');
   lines.push(
+    '> ⚠️ **CONTIENE PII (email + displayName, Ley 19.628) — NO COMMITEAR.** Este archivo `.generated.md` está en `.gitignore`. Revisar localmente para la decisión PO; no subir al repo.',
+  );
+  lines.push('');
+  lines.push(
     '> Generado por `apps/api/scripts/classify-google-idp-accounts.ts` (read-only) contra el estado IdP actual (Admin SDK `listUsers`). Scope OQ-G3 (Google-only + email). Match OQ-G6 (lowercase+trim).',
   );
   lines.push('');
@@ -246,20 +250,37 @@ async function main(): Promise<void> {
 
   try {
     console.log('[classify-google-idp-accounts] listando cuentas IdP Google…');
-    const accounts = await classifyGoogleIdpAccounts(auth, pool);
+    // never-reapable DEBE coincidir con el runtime del reaper (admin-jobs.ts) y
+    // con main() del runner: platform-admins + dev@. Si no, el reporte que el PO
+    // revisa podría marcar un platform-admin como INERT que el reaper nunca
+    // tocaría (REVIEW finding D). Se lee la env directo para no cargar el config
+    // Zod completo en un script CLI.
+    const platformAdmins = (process.env.BOOSTER_PLATFORM_ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((e) => normalizeEmailDegraded(e))
+      .filter((e) => e.length > 0);
+    const neverReapable = new Set<string>([...platformAdmins, ...NEVER_REAPABLE_EMAILS]);
+
+    const accounts = await classifyGoogleIdpAccounts(auth, pool, neverReapable);
     const inert = accounts.filter((a) => a.classification === 'INERT').length;
     console.log(
       `[classify-google-idp-accounts] ${accounts.length} cuentas Google; ${inert} INERT (candidatas reaper).`,
     );
 
     const md = toMarkdownReport(accounts);
+    // El reporte con datos reales contiene email + displayName (PII, Ley 19.628)
+    // → se escribe a un archivo `.generated.md` que está en .gitignore. NO se
+    // commitea con datos reales. El template versionado (sin datos) vive en
+    // `existing-google-accounts-classification.md` (REVIEW finding E).
     const outputPath = new URL(
-      '../../../.specs/sec-001-h1-2-google-boundary-closure/existing-google-accounts-classification.md',
+      '../../../.specs/sec-001-h1-2-google-boundary-closure/existing-google-accounts-classification.generated.md',
       import.meta.url,
     ).pathname;
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, md);
-    console.log(`[classify-google-idp-accounts] reporte escrito en ${outputPath}`);
+    console.log(
+      `[classify-google-idp-accounts] reporte (CON PII, NO COMMITEAR) escrito en ${outputPath}`,
+    );
   } finally {
     await pool.end();
   }

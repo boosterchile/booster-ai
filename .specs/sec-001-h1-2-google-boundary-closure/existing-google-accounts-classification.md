@@ -24,9 +24,13 @@ Scope OQ-G3: solo cuentas con provider `google.com` + email presente (excluye ph
 gcloud auth application-default login
 # IAP tunnel al db-bastion (ver memoria reference_prod_db_headless_query) → exportar DATABASE_URL
 export DATABASE_URL='postgresql://…@127.0.0.1:<puerto-tunel>/<db>?sslmode=require'
+export BOOSTER_PLATFORM_ADMIN_EMAILS='dev@boosterchile.com,...'  # mismos que prod (never-reapable)
 pnpm --filter @booster-ai/api exec tsx scripts/classify-google-idp-accounts.ts
-# sobrescribe este archivo con la tabla real
+# escribe el reporte CON PII a existing-google-accounts-classification.generated.md
+# (gitignored — NO COMMITEAR). Este archivo (sin datos) queda como template versionado.
 ```
+
+> **PII (REVIEW finding E)**: el reporte real (`*.generated.md`) contiene emails + nombres → está en `.gitignore`; revisarlo localmente, no subirlo. **never-reapable (finding D)**: el script usa `BOOSTER_PLATFORM_ADMIN_EMAILS` + `dev@boosterchile.com`, igual que el reaper en runtime.
 
 ## Resultados
 

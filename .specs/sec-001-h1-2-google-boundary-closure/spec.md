@@ -5,7 +5,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-29 (v1) · **2026-06-04 (v2 re-centrado)**
-- **Status**: **Draft v2 — DA Round 2 = APPROVE_WITH_RESERVATIONS (2026-06-04). Lista para `/plan`** con OQ-G1/G3/G6 como gates pre-`/build`. (Bloqueante P0-1 verificado cerrado en prod; P0-2/P1/P2 + 2 objeciones de R2 incorporadas como criterios.) Pendiente: confirmación PO para transición a PLAN.
+- **Status**: **Reviewed (2026-06-05)** — BUILD (T1–T11) + VERIFY + REVIEW completos. REVIEW: 0 BLOCKING, 7 findings fijados (A/C/D/E/G/B-limbo/J), residuales aceptados con review-by = gate de 1er run destructivo. Veredicto: **Approved for /ship (dry-run)**. Ver `review.md` §REVIEW phase. (Histórico: Draft v2 DA R2 APPROVE_WITH_RESERVATIONS 2026-06-04.)
 - **Linked**:
   - Parent: [`.specs/sec-001-cierre/spec.md`](../sec-001-cierre/spec.md) §3 SC-1.2.2 (Google leg = `TRACKED_RESIDUAL` → este spec lo lleva a `MET`)
   - **Mitigación P0-1**: [`.specs/sec-001-empresa-onboarding-gate-hotfix/`](../sec-001-empresa-onboarding-gate-hotfix/) (self-serve onboarding OFF)
@@ -135,7 +135,7 @@ El leg Google es el último vector abierto de SEC-001 H1.2. La blocking function
 - **Rollback**: disable del Cloud Scheduler (reaper para); decomiso es revert normal; cuentas disabled restaurables (`disabled:false`).
 - **Monitoring**: counter del reaper + alerta de volumen anómalo; review manual 24h post primer run destructivo.
 - **Gate `/build`**: SC-G1 audit + SC-G1b harness completos; SC-G2 + decisión PO; ADR escrito.
-- **Gate primer run destructivo**: dry-run revisado + sign-off PO.
+- **Gate primer run destructivo**: dry-run revisado + sign-off PO + **checklist de residuales REVIEW** (`review.md` §REVIEW): (a) F2 stale-claim — evaluar generation-counter o aceptar; (b) F-uid — confirmar retención de logs aceptable; (c) I-auth — binding `run.invoker` restrictivo + test "no-token→401"; (d) revisar `maxDeletesPerRun` para el volumen real observado en el dry-run; (e) `terraform plan` per-entorno limpio.
 
 ## 12. Open questions
 

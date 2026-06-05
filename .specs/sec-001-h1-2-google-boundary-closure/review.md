@@ -275,3 +275,59 @@ email/password leg (closed Sprint 2b).
 Drift TF per-entorno (probable solo en /plan); arbitrariedad del grace para población sin-solicitud (OQ-G1 con datos).
 
 **Para /build**: resolver OQ-G6 (normalizador) + OQ-G1 (grace) + OQ-G3 (scope provider). Todos incorporados al spec v2.
+
+---
+
+# REVIEW phase (code review) — 2026-06-05
+
+- Reviewer: Felipe Vicencio (PO) con agent-rigor
+- Cooling-off respetado: **Sí** (282 min desde el último write de fuente ≥ 30 min)
+- Diff revisado: **acotado a la feature** (`git diff 2689214..HEAD`, 69 archivos, net negativo por el decomiso). La rama arrastra ~25 commits previos NO relacionados (inventario ADR, ADR-055/056, App Check, migración CI) + main avanzó a App Check #401 — ver Residual R-SHIP.
+- Sub-agents: `code-reviewer`, `devils-advocate` (R3), `security-auditor`. UX N/A (sin UI); `test-engineer` ya corrió en VERIFY.
+
+## Five-axis (resumen propio)
+- **Correctness**: cada SC-G* tiene comportamiento + test verde (ver verify.md). El decomiso no deja refs colgantes (`terraform validate` Success). 1 bug de observabilidad encontrado (finding C) → fijado.
+- **Clarity**: naming bilingüe OK; funciones cortas, early-return. `reason` free-form (MINOR, aceptado).
+- **Complexity**: sin hallazgos; predicado/decideAction/harness puros y cortos; runner ~80 líneas loop lineal.
+- **Consistency**: Zod en boundaries, `@booster-ai/logger`, patrón `/admin/jobs/*`. Triple normalización de email documentada (OQ-G6 → Stream B). `console.*` solo en scripts CLI (consistente con el de referencia).
+- **Coverage**: ≥80% gated (verify.md); +20 tests agregados en REVIEW para los findings.
+
+## Sub-agent findings + disposición
+
+Veredicto unánime: **0 CRITICAL / 0 BLOCKING; APPROVE_WITH_RESERVATIONS**. El DA R3 confirmó que las reservas R2 (OQ-G6 normalizador, SC-G1b sub-mounts, grace sin SLA, decomiso per-entorno) están **genuinamente cerradas en código**, no en prosa.
+
+### Fijados en REVIEW (código + tests)
+
+| ID | Hallazgo (agente) | Fix |
+|---|---|---|
+| **A** | Harness era check de *naming convention*, no default-deny estructural: handlers no `create*`/`*Router` y rutas inline `app.<method>()` eran invisibles (falsa cobertura) — code-reviewer Coverage MAJOR, DA F1 STRONG, security #4 | `enumerateRouteMounts` ahora captura **cualquier** identificador 2º-arg → no-clasificado falla; nuevo `findInlineMethodRoutes` falla el build ante rutas inline. +5 tests. `check-route-default-deny.ts` |
+| **C** | El metric/alerta contaba would-be-deletes del **dry-run** → la alerta de volumen podía dispararse en el primer dry-run — code-reviewer MAJOR | filtro del log-based metric agrega `jsonPayload.destructive=true`; +test del log dry-run. `monitoring.tf`, runner |
+| **D** | `neverReapable` del script de clasificación (PO decision) ⊊ runtime → un platform-admin podía aparecer INERT en el reporte que el reaper nunca tocaría — code-reviewer MAJOR, security #1 | classify usa `BOOSTER_PLATFORM_ADMIN_EMAILS` + `dev@` (igual que runtime). `classify-google-idp-accounts.ts` |
+| **E** | El reporte de clasificación escribía email+displayName crudos a un archivo en el repo (PII a git) — security #3 HIGH | output a `*.generated.md` **gitignored** + warning NO-COMMITEAR en header + doc. `.gitignore`, script, template |
+| **G** | `main()` standalone del runner tenía allowlist más débil (sin platform-admins) — security #2 | `parseNeverReapable` incluye `BOOSTER_PLATFORM_ADMIN_EMAILS` + `dev@`. runner |
+| **B-limbo** | Si el proceso muere entre `updateUser(disabled)` y `setCustomUserClaims`, la cuenta queda disabled-sin-marker → wait para siempre — code-reviewer MINOR | stamp del claim **antes** de disable + test de orden. runner |
+| **J** | Sin cap de borrados/run → blast radius de un false-positive masivo + consumo de quota IdP (inflación R-G6) — security #7 | `maxDeletesPerRun` (default 50); excedentes → `wait` (diferidos); +test. runner, config |
+
+### Aceptados como residual (rationale + review-by = antes de habilitar `REAPER_DESTRUCTIVE=true`)
+
+| ID | Riesgo | Rationale de aceptación |
+|---|---|---|
+| **F2** (DA STRONG) | delete confía en `reaperDisabledAt` que podría quedar stale tras re-enable manual + re-disable externo → bypass del 2º grace | Cadena de baja probabilidad (requiere ops manual sobre una cuenta inerte + un re-disable no-reaper). Mitigado por: stamp-before-disable (fijado), enabled→disable re-estampa, dry-run default, **gate de sign-off PO + review manual 24h + alerta de volumen**. Endurecer con generation-counter en Stream B. **review-by: antes del 1er run destructivo.** |
+| **F-uid** (security HIGH) | `uid` crudo + `emailHashed` en misma línea de log → correlacionable con acceso IdP-admin | `uid` es el handle operacional necesario para el runbook de restore; la correlación requiere privilegio IdP-admin (ya alto). Documentar retención de logs. **review-by: 1er run destructivo.** |
+| **I-auth** (security HIGH) | El harness no verifica el wire de auth de `/admin/jobs`; Cloud Run `public=true` (preexistente) → única barrera es cronAuth | Wire correcto hoy (`server.ts:399`, fail-closed si falta `INTERNAL_CRON_CALLER_SA`); cronAuth criptográficamente sólido. Recomendado: binding `run.invoker` restrictivo + test integración "no-token→401". **review-by: 1er run destructivo.** |
+| **H-grace** (security LOW) | grace no tuneable por env en el path endpoint (solo `main()` muerto) | Cambiar grace = decisión deliberada que ya requiere redeploy; valor es constante auditable (30/30). Revisar cuando se active signup-request (OQ-G1). |
+| **DoS-pool** (security MEDIUM) | reaper comparte el `pg.Pool` del api; 2N queries seriales | Escala esperada baja; acotado por `maxDeletesPerRun`. Considerar pool dedicado / job aislado en Stream B. |
+| **least-priv** (security MEDIUM) | reaper corre con SA del api (`firebase.admin`) → RCE en api hereda borrado masivo | Trade-off del patrón B (elegido por PO); mitigado por dry-run default + grace doble + cap. Registrar en ADR-057; evaluar job aislado en Stream B. |
+| **R-SHIP** (review) | la rama arrastra commits no relacionados + main avanzó (#401) | El `/ship` debe rebasar sobre main y abrir PR acotado; o confirmar que esos commits ya pasaron su propio ciclo. **Acción de /ship.** |
+| triple-normalize, reason free-form, INTERNAL/MIXED vocab | drift menor | Aceptados (OQ-G6 difiere a Stream B / cosmético). |
+
+### Deferidos a gate operacional (ya gateados)
+- `terraform plan` per-entorno (dev/staging/prod) — confirmar cero destroys colaterales.
+- Rate-limit/Cloud Armor sobre el signup Google (R-G6, flujo web) — Stream B.
+
+## Final read-through
+Diff releído end-to-end como cambio coherente. El decomiso (net −) + el reaper (net +) + el harness forman una historia consistente: el boundary cierra el vector, el harness lo hace durable (ahora estructural, no por naming), el reaper es higiene gateada. Tests: suite completa 1407 passed | 2 skipped (ajenos). terraform validate Success.
+
+## Verdict
+
+**Approved for /ship (en dry-run).** 0 BLOCKING. Los 7 findings de mayor valor (A, C, D, E, G, B-limbo, J) fijados con tests. Los residuales (F2, F-uid, I-auth, DoS, least-priv) se aceptan con rationale y **se incorporan al checklist del gate de primer run destructivo** (dry-run revisado + sign-off PO), donde tienen su review-by. R-SHIP (rama divergida) es acción de `/ship`.

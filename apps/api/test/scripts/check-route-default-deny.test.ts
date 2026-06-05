@@ -4,6 +4,7 @@ import {
   ROUTE_CLASSIFICATION,
   enumerateRouteMounts,
   evaluateRoutes,
+  findInlineMethodRoutes,
   findMissingRationale,
   findStaleClassifications,
   findUnclassifiedMounts,
@@ -69,6 +70,34 @@ describe('check-route-default-deny — enumerateRouteMounts', () => {
     const mounts = enumerateRouteMounts("app.use('/me/*', firebaseAuthMiddleware);");
     expect(mounts).toEqual([]);
   });
+
+  it('A (REVIEW): handler con naming NO-conforme (no create*/Router) igual se enumera', () => {
+    const mounts = enumerateRouteMounts("app.route('/billing', billingRoutes);");
+    expect(mounts).toEqual([{ path: '/billing', key: 'billingRoutes' }]);
+  });
+});
+
+describe('check-route-default-deny — findInlineMethodRoutes (A REVIEW)', () => {
+  it('server.ts real → sin rutas inline app.<method>()', () => {
+    expect(findInlineMethodRoutes(REAL_SERVER_SOURCE)).toEqual([]);
+  });
+
+  it('detecta app.get/app.post inline (deben fallar el build)', () => {
+    const src = `
+      app.get('/admin/export', handler);
+      app.post('/backdoor', otroHandler);
+      app.use('/me/*', mw); // app.use NO es ruta inline
+    `;
+    expect(findInlineMethodRoutes(src)).toEqual([
+      "app.get('/admin/export')",
+      "app.post('/backdoor')",
+    ]);
+  });
+
+  it('NO confunde app.onError/app.notFound con rutas inline', () => {
+    const src = 'app.onError((e,c)=>c.json({},500)); app.notFound((c)=>c.json({},404));';
+    expect(findInlineMethodRoutes(src)).toEqual([]);
+  });
 });
 
 describe('check-route-default-deny — default-deny (T15)', () => {
@@ -98,6 +127,12 @@ describe('check-route-default-deny — default-deny (T15)', () => {
       app.route('/dup-prefix', createDupRoutes({ logger }));`;
     expect(findUnclassifiedMounts(source, {})).toEqual(['createDupRoutes']);
   });
+
+  it('A (REVIEW): handler con naming no-conforme sin clasificar → flagged (cierra el blind spot)', () => {
+    const tampered = `${REAL_SERVER_SOURCE}
+      app.route('/billing', billingRoutes);`;
+    expect(findUnclassifiedMounts(tampered, ROUTE_CLASSIFICATION)).toEqual(['billingRoutes']);
+  });
 });
 
 describe('check-route-default-deny — evaluateRoutes (agregación pura)', () => {
@@ -126,6 +161,14 @@ describe('check-route-default-deny — evaluateRoutes (agregación pura)', () =>
     const result = evaluateRoutes(REAL_SERVER_SOURCE, classificationWithGhost);
     expect(result.ok).toBe(false);
     expect(result.stale).toContain('createGhostRoutes');
+  });
+
+  it('A (REVIEW): ruta inline app.<method>() → ok=false con inlineRoutes poblado', () => {
+    const tampered = `${REAL_SERVER_SOURCE}
+      app.get('/admin/export', exportHandler);`;
+    const result = evaluateRoutes(tampered, ROUTE_CLASSIFICATION);
+    expect(result.ok).toBe(false);
+    expect(result.inlineRoutes).toContain("app.get('/admin/export')");
   });
 
   it('entrada no-ENFORCED sin rationale → ok=false con missingRationale poblado', () => {
