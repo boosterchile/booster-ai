@@ -5,7 +5,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-29 (v1) · **2026-06-04 (v2 re-centrado)**
-- **Status**: **Merged — PR [#402](https://github.com/boosterchile/booster-ai/pull/402) squash-merged a `main` (merge commit `d867bdf`, 2026-06-05 16:11 UTC, 20/20 checks verdes)**. Pendiente para `Shipped`: aprobación humana en Environment `production` (`release.yml` ya disparado) + `terraform apply` per-entorno (scheduler + metric + decomiso) + verificación post-deploy 24-48h. BUILD (T1–T11) + VERIFY + REVIEW + SHIP(`ship.md`) completos; reaper en dry-run + scheduler paused. (Histórico: Ship-ready/PR abierto 2026-06-05; Reviewed 2026-06-05; Draft v2 DA R2 2026-06-04.)
+- **Status**: **Shipped (2026-06-05)** — código en prod (canary→100%, rev sirviendo imagen `db0c00b` `sha256:77579e88…`) + `terraform apply` aplicado (reaper scheduler **paused** + log-metric `sec001/reaper_account_reaped` + alert policy de volumen) + 1er tick dry-run validado (`reaper.run.summary destructive=false, scanned=14, skip=14, disable=0, delete=0`). **SC-1.2.2 Google leg = MET**. El modo destructivo (`REAPER_DESTRUCTIVE=true`) queda detrás del **gate de 1er run destructivo** (`ship.md` §gate) — fuera del scope de este ship. (Histórico: Merged #402 `d867bdf` 2026-06-05 16:11 UTC, 20/20 checks; Ship-ready/PR abierto 2026-06-05; Reviewed 2026-06-05; Draft v2 DA R2 2026-06-04.)
 - **Linked**:
   - Parent: [`.specs/sec-001-cierre/spec.md`](../sec-001-cierre/spec.md) §3 SC-1.2.2 (Google leg = `TRACKED_RESIDUAL` → este spec lo lleva a `MET`)
   - **Mitigación P0-1**: [`.specs/sec-001-empresa-onboarding-gate-hotfix/`](../sec-001-empresa-onboarding-gate-hotfix/) (self-serve onboarding OFF)
