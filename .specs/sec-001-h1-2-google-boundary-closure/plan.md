@@ -1,0 +1,121 @@
+# Plan: sec-001-h1-2-google-boundary-closure
+
+- **Spec**: [`.specs/sec-001-h1-2-google-boundary-closure/spec.md`](./spec.md) (Draft v2 — DA R2 APPROVE_WITH_RESERVATIONS)
+- **Created**: 2026-06-04
+- **Status**: Active
+- **Branch sugerida**: `feat/sec-001-boundary-closure` (crear desde `main` al iniciar T1).
+
+## Módulos tocados (≤10 ✓)
+`apps/api/src/server.ts` · `apps/api/scripts/` (harness) · `apps/api/src/services|jobs/` (reaper) · `packages/<shared>/` (normalizer, condicional) · `apps/api/drizzle/` (backfill, condicional) · `infrastructure/*.tf` (scheduler + decomiso) · `cloudbuild.production.yaml` · `docs/adr/` · `apps/auth-blocking-functions/` (archivar) · `.specs/.../` (docs).
+
+## Gates
+- **Gate `/build`**: T1 + T2 + T3 + T4 + T5 completas (auditoría, harness, OQs resueltas, clasificación + decisión PO, ADR).
+- **Gate primer run destructivo del reaper**: dry-run revisado + **sign-off PO** (C-G2). El modo destructivo NO se habilita hasta entonces.
+- **Cross-cutting (SC-G9)**: ≥80% coverage en todo código nuevo; `@booster-ai/logger` + Zod + OTel.
+
+---
+
+## Tasks
+
+### T1: Auditoría de boundary + fix de GAPs (SC-G1) — ✅ DONE 2026-06-04
+> **Resultado**: cero GAP sin mitigar (ver `route-boundary-audit.md`). Todas ENFORCED o GATED-CLOSED; ninguna requiere fix. Confirma el hallazgo del DA R2.
+- **Files**: `route-boundary-audit.md` (nuevo) + fixes puntuales en `server.ts`/`routes/*` si hay GAP.
+- **LOC**: ~40 (doc) + ≤30 si hay fix.
+- **Depends on**: none (read-only primero; gatea todo).
+- **Acceptance**: cada route group de `server.ts` (incl. `app.route()` y `<router>.route()` sub-mounts) clasificado ENFORCED / INTENTIONAL-OPEN / GATED-CLOSED / GAP con su cadena de middleware. `/empresas/onboarding`=GATED-CLOSED, `/me`=GATED-CLOSED (allowlist, NO read-only). Cero GAP sin fix. Mapea a **T8** del spec (404 por grupo).
+- **Rollback**: revertir el/los fix; el doc es inerte.
+
+### T2: Harness CI default-deny (SC-G1b — resuelve P1-1) — ✅ DONE 2026-06-04
+> **Resultado**: `apps/api/scripts/check-route-default-deny.ts` (enumeración multi-línea de los **40 mounts** de server.ts — el design estimó 39 — vía regex `\.route(path, create*|*Router)`; `ROUTE_CLASSIFICATION` 40 entradas del audit T1). 3 invariantes: default-deny (no clasificado → exit 1, **T15**), no-stale, rationale obligatorio en no-ENFORCED. Test `check-route-default-deny.test.ts` (24 casos, funciones puras 100% cubiertas; `scripts/` fuera del gate de coverage por config, igual que el script de referencia). Los **6 mounts marcados** verificados línea-a-línea = INTENTIONAL-OPEN (sin app.use de auth precediéndolos). Wire en `security.yml` job `route-default-deny`. Lint + typecheck limpios.
+- **Files**: `apps/api/scripts/check-route-default-deny.ts` (nuevo, extiende el patrón `check-is-demo-wire-completeness.ts`) + `ONBOARDING_OR_PUBLIC_ALLOWLIST` + wiring en `.github/workflows/ci.yml` (o el job de checks).
+- **LOC**: ~90.
+- **Depends on**: T1 (la allowlist sale de la auditoría).
+- **Acceptance**: el harness enumera `app.use` + `app.route()` + `<router>.route()` sub-mounts (cubre `/me/consents`, `/me/clave-numerica`); asserta userContext-wired O en allowlist con rationale; **falla el build** ante un mount nuevo sin clasificar. Mapea a **T15** del spec.
+- **Rollback**: quitar el step de CI + el script (no bloquea otros checks).
+
+### T3: Resolución de OQs (OQ-G1, OQ-G3, OQ-G6) (gate /build) — ✅ DONE 2026-06-04
+> **Resultado** (`oq-resolution.md`, confirmado PO): G1 = `REAPER_GRACE_DAYS=30` (solicitudes_registro vacía → sin SLA, grace conservador justificado); G6 = **(b)** matchear forma degradada (lowercase+trim, inclusivo) — normalizador compartido+backfill → Stream B; G3 = **Google-only** + email-present + dual-match.
+- **Files**: `oq-resolution.md` (nuevo).
+- **LOC**: doc.
+- **Depends on**: none (decisión/research; OQ-G1 necesita datos de latencia de onboarding; OQ-G6/G3 decisión PO).
+- **Acceptance**: **OQ-G6** decidida (extraer normalizador+backfill **vs** matchear forma degradada guardada) con rationale + sign-off PO; **OQ-G3** decidida (Google-only vs email-present+dual-match); **OQ-G1** `REAPER_GRACE_DAYS` con valor atado a latencia observada (no SLA imaginada). Determina si T6 existe.
+- **Rollback**: doc; re-decidir.
+
+### T4: Clasificación de cuentas IdP existentes (SC-G2 — N2) — ✅ DONE (código) 2026-06-04 · ⏳ run operacional pendiente
+> **Resultado**: `apps/api/scripts/classify-google-idp-accounts.ts` (read-only): `listUsers` paginado contra estado actual (no CSV viejo) → filtra Google-only+email (OQ-G3) → dual-match `usuarios` (uid OR `LOWER(TRIM(email))`, OQ-G6 inclusivo) + `solicitudes_registro` (pendiente/aprobado) → LEGITIMATE/PENDING/INERT; `dev@boosterchile.com` never-reapable (`NEVER_REAPABLE_EMAILS`). Funciones puras testeadas (16 casos). Template `existing-google-accounts-classification.md` con metodología + protocolo de decisión PO. **Gate operacional pendiente** (como T10): correr contra prod (ADC + bastion) → PO decide por cada INERT (timestamp+rationale). Typecheck/biome limpios.
+- **Files**: `apps/api/scripts/classify-google-idp-accounts.ts` (read-only) + `existing-google-accounts-classification.md`.
+- **LOC**: ~80.
+- **Depends on**: T3 (normalizador de OQ-G6 + scope de OQ-G3 para el cross-ref).
+- **Acceptance**: cuentas IdP **regeneradas contra el estado actual** (Admin SDK `listUsers`, NO el CSV viejo) y cruzadas vs `users` + `solicitudes_registro` → LEGITIMATE/PENDING/INERT; decisión PO por cada INERT, auditable (timestamp+rationale). `dev@boosterchile.com` nunca reapable.
+- **Rollback**: read-only; sin efecto.
+
+### T5: ADR supersede ADR-054 (SC-G6 — "ADR before code") — ✅ DONE 2026-06-04
+> **Resultado**: `docs/adr/057-google-signup-boundary-and-reaper-supersedes-054.md` (nuevo, Accepted) registra blocking-fn abandonada (Gen1 deprecado/Gen2 no verificado), admisión en boundary ADR-001 + harness CI default-deny, reaper de higiene, decomiso, cross-ref lessons-learned. ADR-054 Status anotado `Superseded by ADR-057` (permiso PO 2026-06-04, precedente ADR-056). Verificado: ningún CI gate lee el Status de 054 (`check-adr-status-accepted.ts` solo lee 052).
+- **Files**: `docs/adr/057-*.md` (nuevo) + anotar `054` Status (con permiso PO, precedente ADR-056).
+- **LOC**: doc.
+- **Depends on**: none.
+- **Acceptance**: ADR nuevo registra: blocking function abandonada (Gen1 muerto/Gen2 no verificado), admisión en el boundary ADR-001, reaper de higiene; cross-ref lessons-learned. Mapea a **T10** del spec.
+- **Rollback**: ADRs no se editan retroactivamente; el nuevo se marca superseded si cambia.
+
+### T6: Normalizador compartido + backfill — ❌ DISUELTA (OQ-G6=(b), 2026-06-04)
+> Por la decisión OQ-G6=(b) (matchear forma degradada), NO se extrae normalizador ni se hace backfill acá. La lógica de match lowercase+trim se absorbe en **T7**. El normalizador compartido real se difiere a Stream B. Texto original abajo (histórico, no ejecutar).
+
+#### ~~T6 (original, no ejecutar)~~: Normalizador compartido + backfill (SC-G3 — CONDICIONAL a OQ-G6=extract)
+- **Files**: `packages/<shared>/src/normalize-email.ts` + `.test.ts` + migración drizzle de backfill de `users.email`/`solicitudes`.
+- **LOC**: ~90.
+- **Depends on**: T3 (decisión). **Si OQ-G6 = matchear-degradado, esta task NO existe** (se absorbe en T7 con la forma lowercase+trim).
+- **Acceptance**: **T11** del spec (cross-normalization) pasa contra el normalizador elegido; backfill aplicado → `users.email`/`solicitudes` consistentes con lo que el reaper busca; sin coupling con el package archivado (SC-G7).
+- **Rollback**: el backfill es idempotente; revertir el package no afecta runtime hasta que T7 lo use.
+
+### T7: Predicado del reaper (puro) + tests (SC-G3) — ✅ DONE 2026-06-04
+> **Resultado**: `apps/api/src/services/reaper-predicate.ts` — `isReapable(account, facts, cfg)` puro con salvaguardas en orden scope(OQ-G3) → never-reapable → dual-guard(uid+email degradado) → pipeline(solicitud) → grace(creation+lastSignIn, estricto `< cutoff`). `normalizeReaperEmail` lowercase+trim (OQ-G6, no canónico; sync con SQL T8 + script T4, normalizador real = Stream B). `DEFAULT_REAPER_GRACE_DAYS=30`. Tests del spec T1/T2/T2b/T3/T4/T5/T5b/T11 + scope/never-reapable/lastSignIn-ausente/boundary: 17 casos, **coverage 96.96%/95.83%/100%** (>80% SC-G9). Typecheck/biome limpios.
+- **Files**: `apps/api/src/services/reaper-predicate.ts` + `.test.ts`.
+- **LOC**: ~90.
+- **Depends on**: T3, T6 (normalizador).
+- **Acceptance**: predicado puro con dual-guard (uid + email), grace (creationTime + lastSignInTime), exclusión pending/aprobado. Tests del spec: **T1, T2, T2b, T3, T4, T5, T5b** (+ T11 vía T6). ≥80% coverage.
+- **Rollback**: código nuevo aislado; revertir el archivo.
+
+### T8: Runner del reaper — listado IdP paginado + dry-run + disable-before-delete + observabilidad (SC-G4) — ✅ DONE 2026-06-04
+> **Resultado**: `apps/api/src/jobs/reap-inert-idp-accounts.ts` — `reapInertIdpAccounts(deps, config)`: `listUsers` paginado (chunks 1000, T12) → `fetchReaperFacts` (dual-match `usuarios` + solicitud, SQL `LOWER(TRIM())` OQ-G6) → `isReapable` (T7) → `decideAction` puro (disable|delete|wait|skip). **dry-run default** (T6, no muta). **disable-before-delete**: disable + custom claim `reaperDisabledAt`; delete solo si disabled-por-reaper + 2º grace pasado. hard-guard vía predicado. logs con `hashEmailForLog` (PII, T7) + event `reaper.run.summary` (counter → log-based metric, wire T9). Deps inyectables (auth/fetchFacts/logger/now). 17 tests (T6/T7/T12 + disable/delete/wait/skip/hard-guard/scope). Typecheck/biome limpios; `src/jobs/**` fuera del coverage gate por config (CLI). **Gate primer run destructivo**: dry-run revisado + sign-off PO antes de `REAPER_DESTRUCTIVE=true`.
+- **Files**: `apps/api/src/jobs/reap-inert-idp-accounts.ts` + `.test.ts`.
+- **LOC**: ~100.
+- **Depends on**: T7.
+- **Acceptance**: lista vía Admin SDK `listUsers` **paginado** (test tenant >1000 = **T12**); **dry-run default**, flag explícito para destructivo; **disable-before-delete** (disable reversible + 2º grace antes de delete); hard-guard `users` por uid+email; logs con email **hasheado** (**T7** del spec) + counter Cloud Monitoring. **T6** del spec (dry-run no escribe).
+- **Rollback**: el job es invocable manual; mientras no se agenda (T9) no corre solo. Dry-run no muta.
+
+### T9: Scheduling del reaper (SC-G5) — ✅ DONE 2026-06-04 (patrón B: HTTP /admin/jobs, decisión PO)
+> **Resultado**: patrón demo-account-ttl-alerter (decisión PO). Handler `POST /admin/jobs/reap-inert-idp-accounts` en `createAdminJobsRoutes` (sub-route del mount INTERNAL ya clasificado → harness T2 sigue verde) que llama `reapInertIdpAccounts` con el pool + firebaseAuth del api; never-reapable = `BOOSTER_PLATFORM_ADMIN_EMAILS` + `dev@boosterchile.com`. **dry-run por defecto**: flag server-side `REAPER_DESTRUCTIVE` (config, default false — NO controlado por el request del scheduler). Cloud Scheduler `reap-inert-idp-accounts` diario 04:00 Santiago (`scheduling.tf`, reusa `internal-cron-invoker` OIDC). Counter + alerta de volumen anómalo (`monitoring.tf`: `google_logging_metric.reaper_account_reaped` sobre `reaper.account.delete` + alert >20/h). `terraform validate` Success; tests del handler (10, incl. 503-deps-missing/dry-run/destructive-flag); tsc/biome limpios. **Modo destructivo NO habilitado** hasta gate (dry-run + sign-off PO → setear `REAPER_DESTRUCTIVE=true` en compute.tf + redeploy).
+- **Files**: `infrastructure/scheduling.tf` + `infrastructure/monitoring.tf` + `apps/api/src/routes/admin-jobs.ts` + `config.ts` + `server.ts` + `admin-jobs-route.test.ts`.
+- **LOC**: ~60.
+- **Depends on**: T8 + **gate de primer run destructivo** (dry-run + sign-off PO antes de habilitar modo destructivo).
+- **Acceptance**: scheduler wired 100% IaC; `terraform plan` limpio; cadencia documentada. Arranca en dry-run.
+- **Rollback**: disable del Cloud Scheduler job (reaper para).
+
+### T10: Decomiso de la blocking function (SC-G7 — P1-3) — ✅ DONE 2026-06-04
+> **Resultado**: removidos `auth-blocking-functions.tf` + `-monitoring.tf` + wire `blocking_functions` en `identity-platform.tf` (fuera de `ignore_changes` → converge a trigger-ausente per-entorno) + 3 steps + substitution `_AUTH_BLOCKING_DEPLOY` en `cloudbuild.production.yaml` + binding huérfano `roles/cloudfunctions.viewer` en `iam.tf`. **Decomiso CI completo** (aprobado PO, evita deadlock del PR): 3 workflows `sprint-2c-*` + 4 scripts + 4 tests. `apps/auth-blocking-functions/` archivado vía `git rm` + tag `archive/auth-blocking-functions-2026-06-04` + puntero `docs/archive/auth-blocking-functions.md`. Runbook anotado decomisado. **`terraform validate` Success** (sin refs colgantes); lockfile actualizado; tests remanentes 55✅. Análisis state-rm-vs-destroy + IAM-reuse en `t10-decommission-analysis.md`. **Gate operacional pendiente**: `terraform plan` per-entorno + revisar branch-protection (acción PO).
+- **Files**: remover `infrastructure/auth-blocking-functions.tf` + `auth-blocking-functions-monitoring.tf` + wire `blocking_functions` en `identity-platform.tf` + deploy lane/`_AUTH_BLOCKING_DEPLOY` en `cloudbuild.production.yaml`; **archivar** `apps/auth-blocking-functions/` (tag/`docs/archive/`).
+- **LOC**: net negativo.
+- **Depends on**: T2 (no remover el backstop de referencia antes de que el harness haga durable la enforcement). Funcionalmente independiente del reaper.
+- **Acceptance**: **`terraform plan` limpio en dev/staging/prod** (per-entorno); enumerado `state rm` vs `destroy`; verificado que ningún IAM binding removido es referenciado por recurso no-blocking-function; fuente archivada. Mapea a **T9** del spec.
+- **Rollback**: revert del commit restaura los `.tf`; `apps/auth-blocking-functions` recuperable del archive/tag.
+
+### T11: Cierre del residual (SC-G8) — ✅ DONE 2026-06-04
+> **Resultado**: `sec-001-cierre` SC-1.2.2 Google leg `TRACKED_RESIDUAL → MET` (amendment A4: cierre por boundary ADR-001 + harness default-deny + reaper, no blocking function; ADR-057). Checkbox marcado [x]. Followup `_followups/sprint-2c-google-blocking-function.md` → Status Closed/Superseded con banner + puntero a Stream A. CURRENT.md tabla de estado actualizada (Google leg ✅ MET). SC-G8 marcado en este spec. Condiciones MET verificadas: self-serve OFF + audit cero GAP + harness activo + reaper desplegado (dry-run).
+- **Files**: `.specs/sec-001-cierre/spec.md` (SC-1.2.2 → MET) + cerrar `_followups/sprint-2c-google-blocking-function.md` + decision logs.
+- **LOC**: doc.
+- **Depends on**: T1, T2, T8 (+ self-serve OFF verificado).
+- **Acceptance**: SC-1.2.2 `TRACKED_RESIDUAL → MET` (boundary + reaper, no blocking function); consistente; followup cerrado con puntero. Mapea a **T10** del spec (doc check).
+- **Rollback**: revert del doc.
+
+## Orden de ejecución
+1. **T1, T3, T5** arrancables en paralelo (read-only / decisión / doc; ninguno depende de otro).
+2. **T2** tras T1; **T4** tras T3; **T6** tras T3 (si aplica).
+3. **T7** tras T3+T6; **T8** tras T7.
+4. **T10** en paralelo tras T2.
+5. **T9** tras T8 + gate destructivo; **T11** al final (tras T1/T2/T8).
+
+Highest-risk-early: T1 (audit, puede revelar GAPs reales) + T3/OQ-G6 (la decisión del normalizador, que el DA marcó como la trampa) van primero.
+
+## Out-of-band tasks
+- Resolver OQ-G1 requiere **datos de latencia de onboarding** (cuántos días entre solicitud y aprobación históricamente) — query a `solicitudes_registro` en T3.
+- Anotar ADR-054 con marcador superseded requiere **permiso PO** (docs/adr ask-first), como en ADR-020.

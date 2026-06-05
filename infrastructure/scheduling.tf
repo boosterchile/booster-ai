@@ -233,3 +233,70 @@ resource "google_cloud_scheduler_job" "demo_account_ttl_alert" {
     module.service_api,
   ]
 }
+
+# -----------------------------------------------------------------------------
+# T9 SEC-001 boundary-closure — Cloud Scheduler diario para el reaper IdP
+# -----------------------------------------------------------------------------
+# Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G5 + ADR-057.
+# Daily 04:00 America/Santiago (off-peak). POST /admin/jobs/reap-inert-idp-accounts.
+#
+# **Arranca en DRY-RUN**: el handler corre con `REAPER_DESTRUCTIVE=false`
+# (config server-side, default OFF) → solo loguea/cuenta lo que haría, NO muta.
+# El modo destructivo se habilita seteando la env `REAPER_DESTRUCTIVE=true` en
+# el Cloud Run del api (Terraform compute.tf) + redeploy, SOLO tras el gate de
+# primer run destructivo (dry-run revisado + sign-off PO). El scheduler no
+# controla el modo (una credencial filtrada no puede disparar mutaciones).
+#
+# Cadencia: diaria. El reaper es idempotente y skipea rápido cuando no hay
+# candidatos (la población es self-signup Google sin solicitud, baja). El grace
+# de 30 días + disable-before-delete + 2º grace hacen que correr diario sea
+# seguro (nada se borra antes de 2 grace windows).
+#
+# Output: structured logs `reaper.account.*` + `reaper.run.summary`, consumidos
+# por google_logging_metric.reaper_account_reaped (monitoring.tf).
+resource "google_cloud_scheduler_job" "reap_inert_idp_accounts" {
+  name        = "reap-inert-idp-accounts"
+  description = "Daily 04:00 Santiago: reaper de cuentas IdP Google inertes (dry-run hasta gate destructivo). SEC-001 boundary-closure SC-G5 / ADR-057."
+  project     = google_project.booster_ai.project_id
+
+  # SHIP REVIEW (devils-advocate STRONG-1): arranca **PAUSADO**. Aunque el modo
+  # es dry-run (no muta), un primer tick automático a las 04:00 sin supervisión
+  # consume quota IdP (listUsers) + 2N queries sobre el pool compartido del api.
+  # El PO corre el primer tick MANUAL y observado:
+  #   gcloud scheduler jobs run reap-inert-idp-accounts --location=southamerica-east1
+  # y recién tras revisar el `reaper.run.summary` lo despausa:
+  #   gcloud scheduler jobs resume reap-inert-idp-accounts --location=southamerica-east1
+  # (o set paused=false acá + apply). Dry-run y destructivo siguen gateados aparte
+  # por REAPER_DESTRUCTIVE.
+  paused = true
+
+  region    = "southamerica-east1"
+  schedule  = "0 4 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/reap-inert-idp-accounts"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}

@@ -408,6 +408,8 @@ export function createServer(opts: CreateServerOptions): Hono {
           // T6a SEC-001 Sprint 2a — TTL alerter wire (firebase + redis).
           firebaseAuth: opts.firebaseAuth ?? null,
           redis: redisForRateLimit,
+          // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
+          pool: opts.pool,
         }),
       );
     } else {

@@ -502,6 +502,21 @@ const apiEnvSchema = commonEnvSchema
     EMPRESA_SELF_ONBOARDING_ENABLED: booleanFlag(false),
 
     /**
+     * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
+     * reaper de cuentas IdP inertes.
+     *
+     * **Estado seguro = OFF (default false) = dry-run.** Con el flag OFF el job
+     * `/admin/jobs/reap-inert-idp-accounts` solo loguea/cuenta lo que haría; NO
+     * deshabilita ni borra cuentas. Flag-ON habilita disable-before-delete real.
+     *
+     * Control server-side a propósito (NO por el request del scheduler): una
+     * credencial filtrada del scheduler no puede disparar mutaciones. Activar
+     * requiere el **gate de primer run destructivo** (dry-run revisado +
+     * sign-off PO) y se setea vía env del Cloud Run (Terraform) + redeploy.
+     */
+    REAPER_DESTRUCTIVE: booleanFlag(false),
+
+    /**
      * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
      * fail-closed startup cuando `runMigrations` falla.
      *

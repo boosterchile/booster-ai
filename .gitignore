@@ -130,8 +130,17 @@ __pycache__/
 # Claude Code local settings
 .claude/
 
+# Clon de trabajo del plugin booster-skills (vive en boosterchile/booster-skills,
+# no debe embeberse en este repo). Ver ADR-049.
+booster-skills/
+
 # Playwright screenshots (UI verification debug artifacts)
 *.png
 !apps/**/*.png
 !packages/**/*.png
 
+
+# SEC-001 boundary-closure T4 (REVIEW finding E) — reporte de clasificación de
+# cuentas IdP CON PII (email + displayName, Ley 19.628). El template sin datos
+# (existing-google-accounts-classification.md) SÍ se versiona; el generado NO.
+.specs/sec-001-h1-2-google-boundary-closure/existing-google-accounts-classification.generated.md

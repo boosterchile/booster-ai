@@ -235,6 +235,32 @@ jobs:
         run: pnpm --filter @booster-ai/api exec tsx scripts/check-is-demo-wire-completeness.ts
 
   # ---------------------------------------------------------------------------
+  # SEC-001 boundary-closure T2 (SC-G1b) — harness CI default-deny.
+  # Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G1b + T15;
+  # ADR-057 (supersede ADR-054). Enumera CADA mount de server.ts (app.route()
+  # + sub-mounts <router>.route(), que check-is-demo-wire-completeness NO ve)
+  # y falla el build si aparece un factory/router sin clasificar en
+  # ROUTE_CLASSIFICATION. Reemplaza el backstop creation-time (blocking
+  # function) por una invariante de wiring durable.
+  # ---------------------------------------------------------------------------
+  route-default-deny:
+    name: route default-deny harness (SC-G1b T15)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify every server.ts route mount is classified (default-deny)
+        run: pnpm --filter @booster-ai/api exec tsx scripts/check-route-default-deny.ts
+
+  # ---------------------------------------------------------------------------
   # T2b SEC-001 Sprint 2b — PR-modifies guard del allowlist is-demo
   # Spec sec-001-cierre §3 SC-1.3.6 part 3 + plan-sprint-2b §3 T2b.
   # Si el PR-diff modifica `is-demo-allowlist.ts`, re-corre el validator

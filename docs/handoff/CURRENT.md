@@ -1,8 +1,155 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-05-29 (**Vector de auto-promoción a dueño CERRADO en prod** + **gate de aprobación de deploy creado** + **inventario ADR-vs-prod iniciado**. Sprint 2c blocking-function abandonado tras descubrir que el handler era deny-puro y el invariante ya vivía en el boundary; pero el boundary tenía un agujero: `/empresas/onboarding` auto-provisionaba dueño sin gate. Cerrado vía flag `EMPRESA_SELF_ONBOARDING_ENABLED=false` (PR #398 `afdb933`), promovido a prod por canary observado. Descubierto que merge→main auto-desplegaba a PROD sin approval (no existe staging) → gate `required_reviewers` creado en GitHub Environment `production` + §Deploy reconciliado (PR #399 `4edd3b1`). Inventario ADR-vs-prod arrancado: `.specs/adr-vs-prod-inventory/inventory.md` hasta ADR-002, cursor en ADR-004.)
-**Documento vivo**: este archivo refleja el estado en `main` al momento de la última actualización. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
+**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 → PR #401 MERGEADO a `main`**, deploy pendiente del gate `production` (release run #26903303075) + fix CI del e2e roto (webkit) + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. ⚠️ NO activar enforcement App Check hasta ver tráfico verificado post-deploy. Ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
+**Anterior**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
+**Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-03 — App Check (feat/app-check) + DEFINE epic entorno dev + hilo gitleaks abierto
+
+> **Cero ejecución cloud en esta sesión salvo lecturas read-only de gcloud.** Se escribió código de App Check (en rama propia) y documentos de definición (ADR/spec). No se creó proyecto, no se tocó billing/IAM, no se refactorizó Terraform.
+
+### 🔐 Firebase App Check con reCAPTCHA v3 — **PR #401 MERGEADO a `main`** · deploy pendiente gate de aprobación
+
+Integrado en `apps/web` (Vite + SDK modular). Init de App Check entre `initializeApp` y `getAuth`, con `ReCaptchaV3Provider` + `isTokenAutoRefreshEnabled: true`. Site key vía `VITE_RECAPTCHA_SITE_KEY` (required, Zod en `env.ts`). Debug token gateado por `import.meta.env.DEV` (eliminado por tree-shaking en prod — verificado contra el bundle).
+
+- 🔗 **PR #401 MERGEADO** (squash, 2026-06-03): https://github.com/boosterchile/booster-ai/pull/401. **`feat/app-check` borrada.**
+- ⏳ **Deploy pendiente del PO**: `release.yml` corrida **#26903303075** (`pending`) → frena en el GitHub Environment `production` (`required_reviewers`). **No avanza a canary hasta aprobación humana.** *(Aparte: corrida vieja #26661217929 del 2026-05-29 quedó en `waiting` sin accionar.)*
+- 🔴 **Orden crítico post-deploy**: aprobar gate → canary → dejar pasar tráfico real → ver en App Check → Métricas que el grueso aparezca **verificado** → **recién entonces** activar enforcement. Activarlo con métricas en 0/0 = outage. Ver `.specs/_followups/app-check-enforcement-activation.md`.
+- **REVIEW formal ejecutado** (cooling-off 11 h): code-reviewer + security-auditor + devils-advocate. Encontraron **1 bloqueante real**: `VITE_RECAPTCHA_SITE_KEY` required pero **no cableada en el deploy** → el bundle de prod llevaba `undefined` → la PWA **no booteaba para ningún usuario** (mecanismo **runtime**, NO build-time como reportaron los 3 agentes; corregido empíricamente: `vite build` sin la var da EXIT 0). **Resuelto**: cableada en `Dockerfile` + `cloudbuild.production.yaml` (build-arg + substitution `_VITE_RECAPTCHA_SITE_KEY` = `6Lc5Bwot…`, pública). + 2 fixes de calidad (quitar `as unknown as`, test del invariante debug-token).
+- **Fix CI incluido en el PR**: `e2e-staging.yml` corría `playwright install --with-deps chromium webkit` y **el install de webkit colgaba 30 min → timeout** (5+ noches de nightlies cancelados + el check rojo de #401). Movido a `container: mcr.microsoft.com/playwright:v1.59.1-noble` (browsers preinstalados). a11y verde + nightlies destrabados. NO se tocó `BASE_URL` (los e2e se skipean sin `E2E_USER_*` → verde por skip; apuntar a prod era innecesario).
+- **REVIEW formal ejecutado** (cooling-off 11 h): code-reviewer + security-auditor + devils-advocate. Encontraron **1 bloqueante real**: `VITE_RECAPTCHA_SITE_KEY` required pero **no cableada en el deploy** → el bundle de prod llevaba `undefined` → la PWA **no booteaba para ningún usuario** (mecanismo **runtime**, NO build-time como reportaron los 3 agentes; corregido empíricamente: `vite build` sin la var da EXIT 0). **Resuelto**: cableada en `Dockerfile` + `cloudbuild.production.yaml` (build-arg + substitution `_VITE_RECAPTCHA_SITE_KEY` = `6Lc5Bwot…`, pública). + 2 fixes de calidad (quitar `as unknown as`, test del invariante debug-token).
+- **Evidencia final**: 8/8 tests, typecheck + Biome limpios, build con var → site key inlineada en bundle ✓, debug flag 0 escrituras en prod.
+- Artefactos: `.specs/app-check-recaptcha/{spec,verify,review}.md`.
+- **Debug token local DIFERIDO al epic de dev** (decisión PO 2026-06-03, opción B): requiere `.env.local` que bootee con config Firebase; se descartó apuntar a prod → se hará contra el proyecto de dev cuando exista (ADR-055). Anotado en `dev-environment-separation §6`.
+- **Enforcement**: NO activar hasta ver tráfico verificado post-deploy. Trackeado en [`.specs/_followups/app-check-enforcement-activation.md`](../../.specs/_followups/app-check-enforcement-activation.md). *(Verificado esta sesión: métricas App Check en 0/0 **porque el código aún no está desplegado** — el reloj arranca post-merge+deploy.)*
+- ⚠️ `apps/web/.env.local` (gitignored) quedó con **solo** la reCAPTCHA key + placeholders; **revertido** de los valores de prod que se habían puesto por error.
+
+### 🏗️ DEFINE — Epic entorno de desarrollo separado (ADR-055 DRAFT + spec)
+
+Origen: al configurar el dev local de App Check se descubrió que `.env.local` apuntaba a **prod** (`booster-ai-494222` + `api.boosterchile.com`) → riesgo de tocar datos reales desde local. El PO eligió la dirección **proyecto Firebase/GCP de dev dedicado** (vs. emuladores, vs. no construir).
+
+- **ADR**: [`docs/adr/055-separate-development-environment.md`](../adr/055-separate-development-environment.md) — **DRAFT, NO Accepted**.
+- **Spec**: [`.specs/dev-environment-separation/spec.md`](../../.specs/dev-environment-separation/spec.md) — Draft.
+- **Estado verificado**: infra **flat single-project** (solo `booster-ai-494222`); **NO existen** `environments/{dev,staging,prod}/` ni workspaces → ⚠️ **discrepancia CLAUDE.md-vs-realidad** (CLAUDE.md los menciona; no existen). Org `boosterchile.com`, billing `019461-C73CDE-DCE377` (la misma de prod).
+- **4 decisiones ABIERTAS (sin resolver)**: (a) nombre/ID del proyecto (`booster-ai-dev`?); (b) estructura Terraform (módulo+environments vs. workspaces vs. tfvars); (c) alcance de réplica (todo prod vs. subset Auth+Firestore+API); (d) división de labor cloud + acciones gated (`gcloud projects create`, billing, Firebase/Identity Platform/APIs, IAM/org-policies, site key reCAPTCHA de dev) — **ninguna se ejecuta hasta sesión futura con autorización explícita**.
+
+### 🩹 Hilo gitleaks — ABIERTO, no perder (tema separado del entorno dev)
+
+Verificación empírica de las claves `AIza…` del repo (gcloud read-only, `services api-keys describe`):
+
+- ✅ **Maps key** (`eb016256`): **verificada** — referrer restringido a `https://app.boosterchile.com/*`. Segura para allowlist.
+- 🔴 **Firebase web key** (`2bcd204b`): `browserKeyRestrictions: {}` — **ninguna restricción a nivel de key**. Su seguridad depende de **App Check enforcement + Firebase Security Rules**, **AÚN NO verificadas en Firebase Console** (lo hace el PO).
+- ⏳ **Allowlist `.gitleaks.toml` de las `AIza…`: PENDIENTE** de esa verificación. Los **2 falsos positivos verdes** ya allowlisteados (fixtures logger `generate.mjs`+`adversarial-100.json` + región GCP en evidencia SEC-001) están en **`stash@{0}` sobre `chore/working-tree-hygiene`**, sin commitear, esperando cerrar la decisión Firebase para un solo commit limpio.
+
+### 📋 Inventario ADR-vs-prod — ✅ COMPLETO (2026-06-03)
+
+**Barrido completo ADR-001→054 + CURRENT.md** (008-054 esta sesión, vía agentes paralelos read-only + spot-check de los 🔴). 003 ausente; colisiones 028/034/035 ambas cubiertas; ADR-055 = dev-env DRAFT auto-escrito, N/A. Detalle en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md).
+
+**Veredicto global**: el núcleo técnico/transaccional implementado tiene **alta fidelidad** (infra, KMS, Pub/Sub, Web Push, SSE, pricing/factoring, matching v1/v2, RBAC, auth-universal, site-settings, ADC migrations — varias verificadas live en GCP; en pricing/auth el código va **por delante** del ADR). Los gaps son: features aspiracionales (010-012 landing/admin-modules/observatorio), componentes a-construir (NLU/Gemini, carta-porte), microservicios skeleton, y **3 drifts/residuales que valen acción**:
+
+| 🔴 | Tipo | Acción |
+|---|---|---|
+| **ADR-020** GitLab ficticio (CI real = GitHub Actions) | doc/contrato | follow-up → ADR superseding |
+| **ADR-049** `.claude/settings.json` inexistente (CLAUDE.md afirma que declara plugins) | doc/contrato | follow-up → crear archivo o corregir CLAUDE.md |
+| **ADR-052/054** signup residual | seguridad/operativo — **YA trackeado** | vector cerrado (hotfix `EMPRESA_SELF_ONBOARDING_ENABLED=false`); blocking-fn OFFLINE es **por diseño** (PO eligió Alt G); abierto en `google-boundary-closure` (Draft) + `onboarding-flow-redesign` (P1) |
+
+Stubs dejados: [`_followups/adr-020-supersede-gitlab-to-github-actions.md`](../../.specs/_followups/adr-020-supersede-gitlab-to-github-actions.md) · [`_followups/adr-049-claude-md-settings-json-reconcile.md`](../../.specs/_followups/adr-049-claude-md-settings-json-reconcile.md) · [`_followups/signup-residual-consolidation-adr-052-054.md`](../../.specs/_followups/signup-residual-consolidation-adr-052-054.md) (consolida + corrige el encuadre del residual signup).
+
+---
+
+## Sesión 2026-06-02 — Transición multi-máquina + higiene working tree + gitleaks + inventario ADR-004→007
+
+### 🔀 Adopción de workflow multi-máquina (origin = única fuente de verdad)
+
+A partir de esta sesión el PO deja de trabajar desde el Mac Mini (con el repo en el **pendrive** `/Volumes/Pendrive128GB`) y continúa desde el **MacBook Pro**. Decisión operativa:
+
+- **GitHub `origin` (`boosterchile/booster-ai`) es la única fuente de verdad.** El pendrive deja de ser el medio de trabajo.
+- **Cada máquina trabaja desde su propio clon** en disco interno (no en el pendrive).
+- **Disciplina**: `git pull` al empezar · **`git push` tras CADA avance** (no solo al cerrar). Nada de trabajo acumulado sin respaldo en origin.
+- El PR agrupado (higiene + inventario + lo que venga) se hará cuando el trabajo sustantivo esté completo, **para gastar una sola corrida de canary**. No mergear a `main` por avances parciales.
+
+### 🧹 Higiene de working tree (4 commits)
+
+El árbol tenía cambios sin commitear de sesiones previas. Diagnosticados y resueltos en commits atómicos (todos en la rama `chore/working-tree-hygiene`):
+
+| Commit | Cambio | Naturaleza |
+|---|---|---|
+| `83f2195` | `chore(infra): terraform fmt` en 4 `.tf` (crash-traces, messaging, networking, telemetry-monitoring) | Whitespace-only; `terraform fmt -check` ahora exit 0. Cero semántica. |
+| `231ff50` | `chore(repo): ignorar booster-skills/` | El clon embebido del plugin (repo propio) ya no contamina `git status`. |
+| `87ca24b` | `docs(inventory): versionar adr-vs-prod-inventory` | Trabajo activo antes untracked. |
+| `a38157f` | `docs(sec-001): audit trail specs google-blocking-c (SUPERSEDED) + boundary-closure` | Specs históricos retenidos como trazabilidad. |
+
+### 🔐 gitleaks instalado en el Mac Mini (NO viaja a otras máquinas)
+
+El pre-commit venía avisando `WARN: gitleaks no instalado` hace varias sesiones y **se saltaba el escaneo de secretos silenciosamente**. Instalado `gitleaks 8.30.1` vía Homebrew y **verificado activo** (commit de prueba: el WARN desapareció, el hook ahora corre `gitleaks protect --staged` de verdad — se ve "scanned ~X KB … no leaks found" en cada commit posterior).
+
+> ⚠️ **Esto es local al Mac Mini.** En el MacBook Pro hay que repetir `brew install gitleaks` (ver §SETUP MACBOOK), o el hook volverá a saltarse el escaneo silenciosamente.
+
+### 📋 Inventario ADR-vs-prod avanzado: ADR-004 → ADR-007 (gcloud read-only empírico)
+
+Retomado desde el cursor (ADR-004) con la misma disciplina: verificación empírica de cada afirmación material, prod read-only, 🟡 lo no verificable (no inventar 🟢), 🔴 lo afirmado-pero-falso. Detalle completo en [`.specs/adr-vs-prod-inventory/inventory.md`](../../.specs/adr-vs-prod-inventory/inventory.md). Resumen:
+
+| ADR | Resultado | Destacado |
+|---|---|---|
+| **004** Uber-like + 5 roles | 2🟢 +1🟢(existencia) · 1🟡 · **1 🔴** | **🔴 NUEVO**: `packages/trip-state-machine` es un **stub de 7 líneas** (`TODO: implementar`), **sin XState** — pese a que ADR-004/005 lo afirman como el lifecycle implementado. La lógica de estados SÍ existe pero **dispersa inline en `apps/api/src/services/`** (liquidar-trip, asignar-conductor, confirmar-entrega, offer-actions…), lo que **viola la regla de arquitectura de CLAUDE.md** ("prohibido lógica inline en services"). Medio, **no externo** (deuda arquitectónica, no agujero de seguridad). |
+| **005** Telemetría IoT | 3🟢 · 3🟡 | **Cierra los 2 🟡 de ADR-001**: Firestore `FIRESTORE_NATIVE` en `southamerica-east1` (match exacto) + BigQuery datasets vivos (dataset se llama `telemetry`, no `booster_telemetry`). DLQ existe como `pubsub-dead-letter` genérico (no `telemetry-events-dlq`). |
+| **006** WhatsApp Meta | 3🟢 · 2🟡 | whatsapp-bot/client + ai-provider + `whatsapp-inbound-events` + 4 secrets (+`verify-token` extra) vivos. Twilio→Meta diferido a **ADR-025**. |
+| **007** Gestión documental Chile | 2🟢 · 2🟡 · **1 🔴** | **🔴 re-confirma el retention-lock**: ADR-007 línea 189 promete textualmente "no se puede eliminar ni siquiera por admin", pero el bucket `documents-prod` tiene `isLocked=false` (la afirmación más explícita del mismo hallazgo de ADR-001). Provider DTE Bsale→**ADR-024** (Sovos). CMEK + keyring `booster-ai-keyring` ✓. |
+
+**Cursor del inventario: retomar desde ADR-008.** Orden estricto 008→050 + CURRENT.md. Verificaciones diferidas a su ADR: Twilio→Meta (ADR-025), provider DTE (ADR-024), Routes API ADC (ADR-038).
+
+**Findings 🔴 acumulados del inventario** (todos medios, ninguno externo/explotable):
+1. Finding #1 pipeline deploy (alto) — **ya cerrado** sesión 2026-05-29 (gate `required_reviewers`).
+2. Retention-lock GCS DTE (medio) — `isLocked=false`; trackeado `.specs/sec-h3-dte-retention-lock/` (Draft). Re-confirmado en ADR-007.
+3. **NUEVO** trip-state-machine stub + lógica inline (medio) — deuda arquitectónica narrativa-vs-realidad.
+
+### 📝 Los dos 🔴 documentados como specs accionables (2026-06-02 — NO ejecutados)
+
+Ambos 🔴 quedan documentados como specs versionados para resolverse con tiempo desde el MacBook. **Ninguno se ejecutó; no se tocó prod ni infra — solo se escribieron specs.**
+
+| Finding | Spec (path) | Estado | Naturaleza |
+|---|---|---|---|
+| trip-state-machine stub + lógica inline | [`.specs/arch-trip-state-machine-refactor/spec.md`](../../.specs/arch-trip-state-machine-refactor/spec.md) | Draft — pendiente priorizar | Refactor de **ciclo completo** (extraer lógica inline de `apps/api/src/services/` → máquina XState en el package, según ADR-004). Estándar profesional, no parche. |
+| retention-lock DTE | [`.specs/sec-h3-dte-retention-lock/spec.md`](../../.specs/sec-h3-dte-retention-lock/spec.md) (**actualizado**, no nuevo) | Draft — **decisión PO pendiente** | Spec PREPARA la decisión (trade-off completo §0: gana cumplimiento SII inmutable; arriesga irreversibilidad). La decisión la toma el PO **fresco, fuera de presión**. NADA de tocar bucket/Terraform. |
+
+### 🖥️ SETUP MACBOOK — configurar una sola vez en el MacBook Pro
+
+Para continuar el trabajo desde el MacBook Pro (disco interno, **NO** pendrive):
+
+1. **Clonar el repo a disco interno** (ej. `~/dev/booster-ai`, no `/Volumes/...`):
+   ```bash
+   git clone https://github.com/boosterchile/booster-ai.git ~/dev/booster-ai
+   cd ~/dev/booster-ai
+   git checkout chore/working-tree-hygiene   # rama con el trabajo de hoy
+   ```
+2. **Toolchain vía Homebrew**:
+   ```bash
+   brew install gitleaks node pnpm
+   # gitleaks: imprescindible o el pre-commit salta el escaneo de secretos en silencio
+   # node: respetar .nvmrc (v22) — usar nvm/fnm si se prefiere gestor de versiones
+   ```
+   Luego `pnpm install` en la raíz del monorepo.
+3. **GitHub CLI**: `gh auth login` (para PRs/merges/deploys; recordar: CI/CD canónico es GitHub, no GitLab).
+4. **Google Cloud — re-autenticar** (los comandos del inventario y queries prod lo necesitan):
+   ```bash
+   gcloud auth login                          # credenciales de usuario (gcloud CLI: run/sql/redis/storage/kms describe)
+   gcloud auth application-default login       # ADC (túnel psql headless + client libs)
+   gcloud config set project booster-ai-494222
+   ```
+5. **Re-autenticar las MCP de Google Cloud** (BigQuery + Compute Engine) en Claude Code — su auth no viaja entre máquinas.
+
+> Una vez configurado: `git pull` en `chore/working-tree-hygiene` trae higiene + inventario + este handoff, y se retoma el inventario desde **ADR-008**.
+
+### Estado de la rama `chore/working-tree-hygiene` (en origin)
+
+Commits al cierre de esta sesión (todos pusheados a `origin`, **sin mergear a `main`**):
+- `83f2195` `231ff50` `87ca24b` `a38157f` — higiene (fmt, gitignore, inventario inicial, specs SUPERSEDED).
+- `ed815ce` — inventario ADR-004 + 005.
+- `167ff51` — inventario ADR-006 + 007.
+- (+ este handoff CURRENT.md).
 
 ---
 
@@ -346,7 +493,7 @@ Discovered durante `terraform plan` post-T11 apply. Investigation findings + res
 | **H1.2 SC-1.2.0** inventario exhaustivo Firebase Auth paths | SC-1.2.0 | ✅ T6 (signup-paths-audit.md) |
 | **H1.2 SC-1.2.1** signup-request endpoint + admin-approval gate + Admin SDK createUser | SC-1.2.1 | ✅ T7+T8+T10 |
 | **H1.2 SC-1.2.2 email/password leg** Identity Platform `disabled_user_signup=true` | SC-1.2.2 | ✅ T11 + applied prod |
-| **H1.2 SC-1.2.2 Google leg** TRACKED_RESIDUAL Sprint 2c | spec amendment A3 v3.4 | 🔲 Deferred → [`.specs/_followups/sprint-2c-google-blocking-function.md`](../../.specs/_followups/sprint-2c-google-blocking-function.md) |
+| **H1.2 SC-1.2.2 Google leg** ~~TRACKED_RESIDUAL~~ → **MET** (boundary + reaper, ADR-057 supersede ADR-054) | spec amendment A4 2026-06-04 | ✅ boundary-closure Stream A (T1/T2/T7/T8/T9); followup cerrado/superseded. Gates operacionales: 1er run destructivo (`REAPER_DESTRUCTIVE=true` + sign-off PO), `terraform plan` per-env, decisión PO por INERT (T4) |
 | **H1.2 SC-1.2.3** synthetic monitor signup-probe + canary 30min antes de full deploy | SC-1.2.3 | ✅ T13 + applied prod |
 | **H1.2 SC-1.2.4** integration tests negative matrix per-method (5 creation paths) | SC-1.2.4 (amendment A2 v3.4) | ✅ T9c |
 | **H1.2 SC-1.2.5** rate-limit + email enumeration defense + fail-closed + cascade docs | SC-1.2.5 | ✅ T8+T9a+T9b |

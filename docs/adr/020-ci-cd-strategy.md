@@ -1,6 +1,6 @@
 # ADR-020 — Estrategia CI/CD: GitLab.com shared runners + criterio de migración a self-hosted
 
-**Status**: Accepted
+**Status**: ⚠️ **Superseded by [ADR-056](./056-cicd-github-actions-supersedes-gitlab.md)** (2026-06-03) — la migración a GitLab que este ADR documenta **fue revertida/abandonada**; el CI/CD real es **GitHub Actions** (repo en GitHub, sin `.gitlab-ci.yml`). El contenido abajo se conserva como registro histórico de una decisión que no se sostuvo. Ver ADR-056 para el estado vigente.
 **Date**: 2026-05-05
 **Decider**: Felipe Vicencio (Product Owner)
 **Technical contributor**: Claude (Cowork) actuando como arquitecto de software

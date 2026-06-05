@@ -56,8 +56,8 @@ locals {
     "api.${var.domain}",
     "app.${var.domain}",
     "demo.${var.domain}",
-    var.domain,           # apex (boosterchile.com) — landing comercial (redirect a app)
-    "www.${var.domain}",  # www  → redirect a app
+    var.domain,          # apex (boosterchile.com) — landing comercial (redirect a app)
+    "www.${var.domain}", # www  → redirect a app
   ]
 }
 
