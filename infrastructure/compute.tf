@@ -63,7 +63,10 @@ module "service_api" {
   service_name          = "booster-ai-api"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = var.environment == "prod" ? 1 : 0
+  # Pre-comercial (<=10 camiones): min=0 acepta cold starts de 5-10s tras
+  # inactividad a cambio de ~CLP 50k/mes. Volver a 1 al firmar B2B con SLA.
+  # Ver .specs/cost-optimization-precomercial.
+  min_instances = 0
   max_instances = 20
   cpu           = "1"
   memory        = "1Gi"

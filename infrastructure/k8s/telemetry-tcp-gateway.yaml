@@ -35,7 +35,7 @@ metadata:
   labels:
     app: telemetry-tcp-gateway
 spec:
-  replicas: 2 # HA — al menos 2 para rolling updates sin caída
+  replicas: 1 # pre-comercial (<=10 Teltonika); rolling update puede tener breve corte. Ver .specs/cost-optimization-precomercial
   selector:
     matchLabels:
       app: telemetry-tcp-gateway
@@ -245,7 +245,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: telemetry-tcp-gateway
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 20
   metrics:
     - type: Resource
