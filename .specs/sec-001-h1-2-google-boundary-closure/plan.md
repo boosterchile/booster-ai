@@ -75,7 +75,8 @@
 - **Acceptance**: predicado puro con dual-guard (uid + email), grace (creationTime + lastSignInTime), exclusión pending/aprobado. Tests del spec: **T1, T2, T2b, T3, T4, T5, T5b** (+ T11 vía T6). ≥80% coverage.
 - **Rollback**: código nuevo aislado; revertir el archivo.
 
-### T8: Runner del reaper — listado IdP paginado + dry-run + disable-before-delete + observabilidad (SC-G4)
+### T8: Runner del reaper — listado IdP paginado + dry-run + disable-before-delete + observabilidad (SC-G4) — ✅ DONE 2026-06-04
+> **Resultado**: `apps/api/src/jobs/reap-inert-idp-accounts.ts` — `reapInertIdpAccounts(deps, config)`: `listUsers` paginado (chunks 1000, T12) → `fetchReaperFacts` (dual-match `usuarios` + solicitud, SQL `LOWER(TRIM())` OQ-G6) → `isReapable` (T7) → `decideAction` puro (disable|delete|wait|skip). **dry-run default** (T6, no muta). **disable-before-delete**: disable + custom claim `reaperDisabledAt`; delete solo si disabled-por-reaper + 2º grace pasado. hard-guard vía predicado. logs con `hashEmailForLog` (PII, T7) + event `reaper.run.summary` (counter → log-based metric, wire T9). Deps inyectables (auth/fetchFacts/logger/now). 17 tests (T6/T7/T12 + disable/delete/wait/skip/hard-guard/scope). Typecheck/biome limpios; `src/jobs/**` fuera del coverage gate por config (CLI). **Gate primer run destructivo**: dry-run revisado + sign-off PO antes de `REAPER_DESTRUCTIVE=true`.
 - **Files**: `apps/api/src/jobs/reap-inert-idp-accounts.ts` + `.test.ts`.
 - **LOC**: ~100.
 - **Depends on**: T7.

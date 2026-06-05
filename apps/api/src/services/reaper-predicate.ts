@@ -73,7 +73,8 @@ export function normalizeReaperEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function isGoogleWithEmail(account: ReaperIdpAccount): boolean {
+/** OQ-G3: solo cuentas con provider `google.com` Y email presente entran al scope. */
+export function isGoogleWithEmail(account: ReaperIdpAccount): boolean {
   if (!account.email) {
     return false;
   }
