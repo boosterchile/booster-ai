@@ -259,6 +259,17 @@ resource "google_cloud_scheduler_job" "reap_inert_idp_accounts" {
   description = "Daily 04:00 Santiago: reaper de cuentas IdP Google inertes (dry-run hasta gate destructivo). SEC-001 boundary-closure SC-G5 / ADR-057."
   project     = google_project.booster_ai.project_id
 
+  # SHIP REVIEW (devils-advocate STRONG-1): arranca **PAUSADO**. Aunque el modo
+  # es dry-run (no muta), un primer tick automático a las 04:00 sin supervisión
+  # consume quota IdP (listUsers) + 2N queries sobre el pool compartido del api.
+  # El PO corre el primer tick MANUAL y observado:
+  #   gcloud scheduler jobs run reap-inert-idp-accounts --location=southamerica-east1
+  # y recién tras revisar el `reaper.run.summary` lo despausa:
+  #   gcloud scheduler jobs resume reap-inert-idp-accounts --location=southamerica-east1
+  # (o set paused=false acá + apply). Dry-run y destructivo siguen gateados aparte
+  # por REAPER_DESTRUCTIVE.
+  paused = true
+
   region    = "southamerica-east1"
   schedule  = "0 4 * * *"
   time_zone = "America/Santiago"
