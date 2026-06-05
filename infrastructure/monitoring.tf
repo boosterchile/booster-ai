@@ -420,3 +420,72 @@ resource "google_monitoring_alert_policy" "auth_is_demo_blocked_anomaly" {
 
   depends_on = [google_logging_metric.auth_is_demo_blocked]
 }
+
+# =============================================================================
+# T9 SEC-001 boundary-closure — counter del reaper IdP + alerta de volumen
+# =============================================================================
+# Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G4/§11 + ADR-057.
+# El runner (apps/api/src/jobs/reap-inert-idp-accounts.ts) emite structured log
+# `reaper.account.delete` por cada cuenta efectivamente borrada (solo en modo
+# destructivo). Este metric cuenta esos eventos → señal de volumen anómalo.
+# En dry-run el evento de borrado no se emite (solo `reaper.account.disable` con
+# destructive:false), así que el counter queda en 0 hasta el primer run destructivo.
+resource "google_logging_metric" "reaper_account_reaped" {
+  name    = "sec001/reaper_account_reaped"
+  project = google_project.booster_ai.project_id
+
+  description = "Cuentas IdP Google borradas por el reaper (event reaper.account.delete). Counter DELTA — señal de volumen anómalo de borrados."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="reaper.account.delete"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Reaper IdP accounts deleted"
+  }
+}
+
+resource "google_monitoring_alert_policy" "reaper_volume_anomaly" {
+  project      = google_project.booster_ai.project_id
+  display_name = "Reaper IdP — volumen de borrados anómalo"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "reaper.account.delete > 20 en 1h (bootstrap; re-tune post primer run destructivo)"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.reaper_account_reaped.name}\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 20
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "3600s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+
+  documentation {
+    content   = <<-EOT
+      El reaper borró > 20 cuentas IdP en 1h. Población esperada: self-signup
+      Google sin solicitud, baja. Un pico señala (a) backlog del primer run
+      destructivo (esperado una vez), o (b) un bug en el predicado matcheando
+      cuentas legítimas — revisar `jsonPayload.event=reaper.account.delete` +
+      `emailHashed` en Cloud Logging y el dual-guard (apps/api/src/services/reaper-predicate.ts).
+
+      Review manual 24h post primer run destructivo (spec §11). Re-tune el
+      threshold tras observar el volumen real del primer run.
+
+      ADR: docs/adr/057-google-signup-boundary-and-reaper-supersedes-054.md.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.reaper_account_reaped]
+}

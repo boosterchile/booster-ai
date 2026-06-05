@@ -83,8 +83,9 @@
 - **Acceptance**: lista vía Admin SDK `listUsers` **paginado** (test tenant >1000 = **T12**); **dry-run default**, flag explícito para destructivo; **disable-before-delete** (disable reversible + 2º grace antes de delete); hard-guard `users` por uid+email; logs con email **hasheado** (**T7** del spec) + counter Cloud Monitoring. **T6** del spec (dry-run no escribe).
 - **Rollback**: el job es invocable manual; mientras no se agenda (T9) no corre solo. Dry-run no muta.
 
-### T9: Scheduling del reaper (SC-G5)
-- **Files**: `infrastructure/<reaper>.tf` (Cloud Scheduler job + IAM, patrón `demo-account-ttl-alerter`).
+### T9: Scheduling del reaper (SC-G5) — ✅ DONE 2026-06-04 (patrón B: HTTP /admin/jobs, decisión PO)
+> **Resultado**: patrón demo-account-ttl-alerter (decisión PO). Handler `POST /admin/jobs/reap-inert-idp-accounts` en `createAdminJobsRoutes` (sub-route del mount INTERNAL ya clasificado → harness T2 sigue verde) que llama `reapInertIdpAccounts` con el pool + firebaseAuth del api; never-reapable = `BOOSTER_PLATFORM_ADMIN_EMAILS` + `dev@boosterchile.com`. **dry-run por defecto**: flag server-side `REAPER_DESTRUCTIVE` (config, default false — NO controlado por el request del scheduler). Cloud Scheduler `reap-inert-idp-accounts` diario 04:00 Santiago (`scheduling.tf`, reusa `internal-cron-invoker` OIDC). Counter + alerta de volumen anómalo (`monitoring.tf`: `google_logging_metric.reaper_account_reaped` sobre `reaper.account.delete` + alert >20/h). `terraform validate` Success; tests del handler (10, incl. 503-deps-missing/dry-run/destructive-flag); tsc/biome limpios. **Modo destructivo NO habilitado** hasta gate (dry-run + sign-off PO → setear `REAPER_DESTRUCTIVE=true` en compute.tf + redeploy).
+- **Files**: `infrastructure/scheduling.tf` + `infrastructure/monitoring.tf` + `apps/api/src/routes/admin-jobs.ts` + `config.ts` + `server.ts` + `admin-jobs-route.test.ts`.
 - **LOC**: ~60.
 - **Depends on**: T8 + **gate de primer run destructivo** (dry-run + sign-off PO antes de habilitar modo destructivo).
 - **Acceptance**: scheduler wired 100% IaC; `terraform plan` limpio; cadencia documentada. Arranca en dry-run.

@@ -24,11 +24,18 @@ import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type Redis from 'ioredis';
+import type pg from 'pg';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import {
+  type PoolLike,
+  fetchReaperFacts,
+  reapInertIdpAccounts,
+} from '../jobs/reap-inert-idp-accounts.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
+import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 import { reconciliarDtes } from '../services/reconciliar-dtes.js';
 
 export function createAdminJobsRoutes(opts: {
@@ -41,6 +48,8 @@ export function createAdminJobsRoutes(opts: {
   firebaseAuth?: Auth | null;
   /** T6a SEC-001 Sprint 2a — para dedup Redis del TTL alerter. */
   redis?: Redis | null;
+  /** T9 SEC-001 boundary-closure — pool pg para el reaper (fetchReaperFacts). Null en tests sin DB. */
+  pool?: pg.Pool | null;
 }) {
   const app = new Hono();
 
@@ -139,6 +148,48 @@ export function createAdminJobsRoutes(opts: {
       logger: opts.logger,
     });
     return c.json({ ok: true, ...result });
+  });
+
+  /**
+   * T9 SEC-001 boundary-closure (SC-G5, ADR-057) — reaper de cuentas IdP
+   * Google inertes. Cloud Scheduler invoca diariamente.
+   *
+   * **dry-run por defecto**: el modo destructivo está gateado por
+   * `REAPER_DESTRUCTIVE` (config server-side, NO por el request del
+   * scheduler). Con el flag OFF solo loguea/cuenta lo que haría.
+   *
+   * never-reapable = platform-admins (`BOOSTER_PLATFORM_ADMIN_EMAILS`) +
+   * `dev@boosterchile.com`. El hard-guard real (dual-match uid+email vs
+   * `usuarios`) vive en el predicado (T7).
+   *
+   * 503 skipped si faltan deps (firebaseAuth o pool) — Cloud Scheduler lo
+   * trata como no-error pero el log queda.
+   */
+  app.post('/reap-inert-idp-accounts', async (c) => {
+    if (!opts.firebaseAuth || !opts.pool) {
+      opts.logger.warn('reap-inert-idp-accounts: firebaseAuth o pool no inyectado, skip');
+      return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
+    }
+    const pool = opts.pool as unknown as PoolLike;
+    const neverReapable = new Set<string>([
+      ...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
+      'dev@boosterchile.com',
+    ]);
+    const summary = await reapInertIdpAccounts(
+      {
+        auth: opts.firebaseAuth,
+        fetchFacts: (account) => fetchReaperFacts(pool, account),
+        logger: opts.logger,
+      },
+      {
+        destructive: appConfig.REAPER_DESTRUCTIVE,
+        graceDays: DEFAULT_REAPER_GRACE_DAYS,
+        secondGraceDays: DEFAULT_REAPER_GRACE_DAYS,
+        neverReapable,
+        now: new Date(),
+      },
+    );
+    return c.json({ ok: true, destructive: appConfig.REAPER_DESTRUCTIVE, ...summary });
   });
 
   return app;

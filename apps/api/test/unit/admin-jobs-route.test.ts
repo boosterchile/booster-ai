@@ -18,7 +18,13 @@ vi.mock('../../src/services/reconciliar-dtes.js', () => ({
   reconciliarDtes: vi.fn(),
 }));
 
+vi.mock('../../src/jobs/reap-inert-idp-accounts.js', () => ({
+  reapInertIdpAccounts: vi.fn(),
+  fetchReaperFacts: vi.fn(),
+}));
+
 const { procesarMensajesNoLeidos } = await import('../../src/services/chat-whatsapp-fallback.js');
+const { reapInertIdpAccounts } = await import('../../src/jobs/reap-inert-idp-accounts.js');
 const { procesarCobranzaCobraHoy } = await import(
   '../../src/services/procesar-cobranza-cobra-hoy.js'
 );
@@ -36,7 +42,7 @@ const noopLogger = {
   child: () => noopLogger,
 } as never;
 
-async function buildApp() {
+async function buildApp(extra: { firebaseAuth?: unknown; pool?: unknown } = {}) {
   const { createAdminJobsRoutes } = await import('../../src/routes/admin-jobs.js');
   const app = new Hono();
   app.route(
@@ -47,6 +53,8 @@ async function buildApp() {
       twilioClient: null,
       contentSidChatUnread: null,
       webAppUrl: 'https://app.test',
+      firebaseAuth: (extra.firebaseAuth ?? null) as never,
+      pool: (extra.pool ?? null) as never,
     }),
   );
   return app;
@@ -195,5 +203,56 @@ describe('POST /admin/jobs/reconciliar-dtes', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { queried_status: number };
     expect(body.queried_status).toBe(0);
+  });
+});
+
+describe('POST /admin/jobs/reap-inert-idp-accounts (T9)', () => {
+  beforeEach(() => {
+    appConfig.REAPER_DESTRUCTIVE = false;
+  });
+
+  it('deps faltantes (sin firebaseAuth/pool) → 503 skipped, sin invocar el reaper', async () => {
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/reap-inert-idp-accounts', { method: 'POST' });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { ok: boolean; skipped: boolean; reason: string };
+    expect(body).toEqual({ ok: true, skipped: true, reason: 'deps_missing' });
+    expect(reapInertIdpAccounts).not.toHaveBeenCalled();
+  });
+
+  it('dry-run por defecto (REAPER_DESTRUCTIVE=false): 200 con summary + destructive:false', async () => {
+    (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 3,
+      actions: { disable: 1, delete: 0, wait: 0, skip: 2 },
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-inert-idp-accounts', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      destructive: boolean;
+      scanned: number;
+      actions: Record<string, number>;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.destructive).toBe(false);
+    expect(body.scanned).toBe(3);
+    // el flag destructive se pasa server-side desde config, no desde el request
+    const passedConfig = (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(passedConfig.destructive).toBe(false);
+    expect(passedConfig.neverReapable.has('dev@boosterchile.com')).toBe(true);
+  });
+
+  it('REAPER_DESTRUCTIVE=true → pasa destructive:true al runner', async () => {
+    appConfig.REAPER_DESTRUCTIVE = true;
+    (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 1,
+      actions: { disable: 1, delete: 0, wait: 0, skip: 0 },
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-inert-idp-accounts', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const passedConfig = (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(passedConfig.destructive).toBe(true);
   });
 });
