@@ -75,7 +75,9 @@ export function normalizeReaperEmail(email: string): string {
 
 /** OQ-G3: solo cuentas con provider `google.com` Y email presente entran al scope. */
 export function isGoogleWithEmail(account: ReaperIdpAccount): boolean {
-  if (!account.email) {
+  // Email ausente O solo-whitespace → fuera de scope (un email degradado vacío
+  // podría matchear espuriamente una fila con email vacío). Defensa P2-1.
+  if (!account.email || account.email.trim() === '') {
     return false;
   }
   return account.providerData.some((p) => p.providerId === 'google.com');

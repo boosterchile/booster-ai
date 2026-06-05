@@ -243,6 +243,25 @@ describe('POST /admin/jobs/reap-inert-idp-accounts (T9)', () => {
     expect(passedConfig.neverReapable.has('dev@boosterchile.com')).toBe(true);
   });
 
+  it('P1-4: un request con body/query destructive:true NO puede forzar el modo (C-G2)', async () => {
+    appConfig.REAPER_DESTRUCTIVE = false;
+    (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 0,
+      actions: { disable: 0, delete: 0, wait: 0, skip: 0 },
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-inert-idp-accounts?destructive=true', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destructive: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { destructive: boolean };
+    expect(body.destructive).toBe(false);
+    const passedConfig = (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(passedConfig.destructive).toBe(false);
+  });
+
   it('REAPER_DESTRUCTIVE=true → pasa destructive:true al runner', async () => {
     appConfig.REAPER_DESTRUCTIVE = true;
     (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

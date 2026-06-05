@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_REAPER_GRACE_DAYS, type ReaperFacts } from '../services/reaper-predicate.js';
+import {
+  DEFAULT_REAPER_GRACE_DAYS,
+  type ReaperFacts,
+  isReapable,
+} from '../services/reaper-predicate.js';
 import {
   type ReaperRunConfig,
   type ReaperRunDeps,
@@ -97,6 +101,16 @@ describe('reap-inert-idp-accounts — decideAction (puro)', () => {
       'wait',
     );
   });
+  it('límite EXACTO del 2º grace (30d) → delete (>=, P1-1)', () => {
+    expect(decideAction(true, { disabled: true, reaperDisabledAt: daysAgo(30) }, NOW, 30)).toBe(
+      'delete',
+    );
+  });
+  it('reaperDisabledAt con fecha inválida → wait (no borra, fail-safe)', () => {
+    expect(decideAction(true, { disabled: true, reaperDisabledAt: 'not-a-date' }, NOW, 30)).toBe(
+      'wait',
+    );
+  });
   it('reapable + disabled sin marker (lo deshabilitó otro) → wait (no borrar)', () => {
     expect(decideAction(true, { disabled: true, reaperDisabledAt: undefined }, NOW, 30)).toBe(
       'wait',
@@ -167,6 +181,31 @@ describe('reap-inert-idp-accounts — reapInertIdpAccounts', () => {
     expect(serialized).toContain(hashEmailForLog('inert@x.cl'));
   });
 
+  it('T7 (P0-1): los paths delete y wait también logean email hasheado, nunca crudo', async () => {
+    const log = logger();
+    const del = inertUser({
+      uid: 'u-del',
+      email: 'del@x.cl',
+      disabled: true,
+      customClaims: { reaperDisabledAt: daysAgo(40) },
+    });
+    const wait = inertUser({
+      uid: 'u-wait',
+      email: 'wait@x.cl',
+      disabled: true,
+      customClaims: { reaperDisabledAt: daysAgo(5) },
+    });
+    const auth = fakeAuth([del, wait]);
+    const summary = await reapInertIdpAccounts(deps(auth, log), cfg({ destructive: true }));
+    expect(summary.actions.delete).toBe(1);
+    expect(summary.actions.wait).toBe(1);
+    const serialized = JSON.stringify(log.info.mock.calls);
+    expect(serialized).not.toContain('del@x.cl');
+    expect(serialized).not.toContain('wait@x.cl');
+    expect(serialized).toContain(hashEmailForLog('del@x.cl'));
+    expect(serialized).toContain(hashEmailForLog('wait@x.cl'));
+  });
+
   it('T12: >1000 cuentas → listado paginado completo (sin orphans)', async () => {
     const users = Array.from({ length: 2500 }, (_, i) =>
       inertUser({ uid: `uid-${i}`, email: `u${i}@x.cl` }),
@@ -177,14 +216,25 @@ describe('reap-inert-idp-accounts — reapInertIdpAccounts', () => {
     expect(auth.listUsers).toHaveBeenCalledTimes(3); // 1000 + 1000 + 500
   });
 
-  it('emite un summary event con conteos (para el log-based metric / counter)', async () => {
+  it('emite un summary event con conteos correctos (para el log-based metric / counter)', async () => {
     const log = logger();
     const auth = fakeAuth([inertUser(), inertUser({ uid: 'u2', email: 'dev@boosterchile.com' })]);
     await reapInertIdpAccounts(deps(auth, log), cfg());
-    const summaryCall = log.info.mock.calls.find((c) =>
-      JSON.stringify(c).includes('reaper.run.summary'),
+    const summaryCall = log.info.mock.calls.find(
+      (c) => (c[0] as { event?: string })?.event === 'reaper.run.summary',
     );
     expect(summaryCall).toBeDefined();
+    const fields = summaryCall?.[0] as Record<string, unknown>;
+    // inert@x.cl → disable; dev@boosterchile.com (never-reapable) → skip
+    expect(fields).toMatchObject({
+      event: 'reaper.run.summary',
+      destructive: false,
+      scanned: 2,
+      disable: 1,
+      delete: 0,
+      wait: 0,
+      skip: 1,
+    });
   });
 
   it('cuenta fuera de scope (no Google) → skip', async () => {
@@ -217,6 +267,33 @@ describe('reap-inert-idp-accounts — fetchReaperFacts (SQL dual-match)', () => 
     // el email se pasa degradado (lowercase+trim) al SQL
     const usuariosCall = query.mock.calls.find((c) => c[0].includes('usuarios'));
     expect(usuariosCall?.[1]).toEqual(['uid-1', 'a@x.cl']);
+  });
+
+  it('P0-2: match por email con firebase_uid DISTINTO → usersRows mapeado + isReapable=false (T2b end-to-end)', async () => {
+    // La race de account-linking: la fila usuarios existe con un uid distinto
+    // al de la cuenta IdP, pero el email (degradado) matchea.
+    const query = vi.fn(async (sql: string, _params?: unknown[]) =>
+      sql.includes('usuarios')
+        ? { rows: [{ firebase_uid: 'uid-OTRO', email: 'inert@x.cl' }], rowCount: 1 }
+        : { rows: [], rowCount: 0 },
+    );
+    const account = {
+      uid: 'uid-inert',
+      email: 'inert@x.cl',
+      providerData: [{ providerId: 'google.com' }],
+      creationTime: daysAgo(90),
+      lastSignInTime: daysAgo(90),
+    };
+    const facts = await fetchReaperFacts({ query }, account);
+    expect(facts.usersRows).toEqual([{ firebaseUid: 'uid-OTRO', email: 'inert@x.cl' }]);
+    // El predicado debe rehusar reapear (hard-guard por email aunque el uid difiera).
+    const verdict = isReapable(account, facts, {
+      now: NOW,
+      graceDays: DEFAULT_REAPER_GRACE_DAYS,
+      neverReapable: new Set(),
+    });
+    expect(verdict.reapable).toBe(false);
+    expect(verdict.reason).toMatch(/email/i);
   });
 
   it('solicitud activa detectada', async () => {

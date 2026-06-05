@@ -54,7 +54,38 @@ describe('reaper-predicate — normalizeReaperEmail (OQ-G6)', () => {
 
 describe('reaper-predicate — isReapable', () => {
   it('T1: INERT + aged (creation+lastSignIn) + sin users + sin solicitud → reapable', () => {
-    expect(isReapable(agedAccount(), noMatch, cfg()).reapable).toBe(true);
+    const v = isReapable(agedAccount(), noMatch, cfg());
+    expect(v.reapable).toBe(true);
+    expect(v.reason).toMatch(/INERT/);
+  });
+
+  it('dual-guard: uid Y email matchean a la vez → no reapada, reason uid+email (P2-2)', () => {
+    const facts: ReaperFacts = {
+      usersRows: [{ firebaseUid: 'uid-inert', email: 'inert@x.cl' }],
+      solicitudActive: false,
+    };
+    const v = isReapable(agedAccount(), facts, cfg());
+    expect(v.reapable).toBe(false);
+    expect(v.reason).toMatch(/uid\+email/);
+  });
+
+  it('scope OQ-G3: email solo-whitespace → fuera de scope, no reapada (P2-1)', () => {
+    const acc = agedAccount({ email: '   ' });
+    expect(isReapable(acc, noMatch, cfg()).reapable).toBe(false);
+  });
+
+  it('graceDays=0 → cuenta añeja por 1 día es reapable (config explícita, P1-2)', () => {
+    const acc = agedAccount({ creationTime: daysAgo(1), lastSignInTime: daysAgo(1) });
+    expect(isReapable(acc, noMatch, cfg({ graceDays: 0 })).reapable).toBe(true);
+  });
+
+  it('graceDays=NaN (env corrupta) → fail-safe: no reapada (P1-2)', () => {
+    expect(isReapable(agedAccount(), noMatch, cfg({ graceDays: Number.NaN })).reapable).toBe(false);
+  });
+
+  it('creationTime con fecha inválida → fail-safe: no reapada', () => {
+    const acc = agedAccount({ creationTime: 'not-a-date' });
+    expect(isReapable(acc, noMatch, cfg()).reapable).toBe(false);
   });
 
   it('T2: fila users por uid → NUNCA reapada (hard-guard)', () => {

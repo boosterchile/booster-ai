@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   NEVER_REAPABLE_EMAILS,
   classifyAccount,
+  classifyGoogleIdpAccounts,
   isGoogleWithEmail,
   normalizeEmailDegraded,
   toMarkdownReport,
@@ -120,10 +121,11 @@ describe('classify-google-idp-accounts — toMarkdownReport', () => {
     },
   ];
 
-  it('incluye conteo por categoría', () => {
+  it('incluye conteo por categoría (celda exacta)', () => {
     const md = toMarkdownReport(rows);
-    expect(md).toMatch(/LEGITIMATE.*1/);
-    expect(md).toMatch(/INERT.*1/);
+    expect(md).toContain('| LEGITIMATE | 1 |');
+    expect(md).toContain('| INERT | 1 |');
+    expect(md).toContain('| **Total** | **2** |');
   });
 
   it('incluye una columna de decisión PO para los INERT', () => {
@@ -135,5 +137,77 @@ describe('classify-google-idp-accounts — toMarkdownReport', () => {
   it('escapa pipes en displayName para no romper la tabla markdown', () => {
     const md = toMarkdownReport([{ ...rows[0], displayName: 'A | B', firebaseUid: 'uid-3' }]);
     expect(md).not.toMatch(/A \| B/);
+  });
+});
+
+describe('classify-google-idp-accounts — classifyGoogleIdpAccounts (IO paginado, P1-3)', () => {
+  it('>1000 cuentas → listado paginado completo sin orphans + SQL con email degradado', async () => {
+    const users = Array.from({ length: 2500 }, (_, i) => ({
+      uid: `uid-${i}`,
+      email: `U${i}@X.cl`,
+      displayName: '',
+      providerData: [{ providerId: 'google.com' }],
+      metadata: { creationTime: '2026-01-01T00:00:00Z', lastSignInTime: '2026-01-01T00:00:00Z' },
+    }));
+    const listUsers = vi.fn(async (_max: number, pageToken?: string) => {
+      const start = pageToken ? Number(pageToken) : 0;
+      const slice = users.slice(start, start + 1000);
+      const next = start + 1000 < users.length ? String(start + 1000) : undefined;
+      return { users: slice, pageToken: next };
+    });
+    // Sin filas usuarios ni solicitud → todas INERT.
+    const query = vi.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [], rowCount: 0 }));
+
+    const result = await classifyGoogleIdpAccounts({ listUsers }, { query });
+
+    expect(result).toHaveLength(2500);
+    expect(result.every((r) => r.classification === 'INERT')).toBe(true);
+    expect(listUsers).toHaveBeenCalledTimes(3); // 1000 + 1000 + 500
+    // el email se pasa degradado (lowercase+trim) al SQL de usuarios
+    const usuariosCall = query.mock.calls.find((c) => c[0].includes('usuarios'));
+    expect(usuariosCall?.[1]).toEqual(['uid-0', 'u0@x.cl']);
+  });
+
+  it('cuenta con fila usuarios → LEGITIMATE (no INERT)', async () => {
+    const listUsers = vi.fn(async () => ({
+      users: [
+        {
+          uid: 'uid-leg',
+          email: 'leg@x.cl',
+          displayName: '',
+          providerData: [{ providerId: 'google.com' }],
+          metadata: {
+            creationTime: '2026-01-01T00:00:00Z',
+            lastSignInTime: '2026-01-01T00:00:00Z',
+          },
+        },
+      ],
+      pageToken: undefined,
+    }));
+    const query = vi.fn(async (sql: string) =>
+      sql.includes('usuarios')
+        ? { rows: [{ uid_match: false, email_match: true }], rowCount: 1 }
+        : { rows: [], rowCount: 0 },
+    );
+    const result = await classifyGoogleIdpAccounts({ listUsers }, { query });
+    expect(result[0].classification).toBe('LEGITIMATE');
+  });
+
+  it('cuenta no-Google (phone) → excluida del inventario (OQ-G3)', async () => {
+    const listUsers = vi.fn(async () => ({
+      users: [
+        {
+          uid: 'uid-phone',
+          email: 'p@x.cl',
+          displayName: '',
+          providerData: [{ providerId: 'phone' }],
+          metadata: { creationTime: '2026-01-01T00:00:00Z' },
+        },
+      ],
+      pageToken: undefined,
+    }));
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const result = await classifyGoogleIdpAccounts({ listUsers }, { query });
+    expect(result).toHaveLength(0);
   });
 });
