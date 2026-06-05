@@ -41,7 +41,8 @@
 - **Acceptance**: **OQ-G6** decidida (extraer normalizador+backfill **vs** matchear forma degradada guardada) con rationale + sign-off PO; **OQ-G3** decidida (Google-only vs email-present+dual-match); **OQ-G1** `REAPER_GRACE_DAYS` con valor atado a latencia observada (no SLA imaginada). Determina si T6 existe.
 - **Rollback**: doc; re-decidir.
 
-### T4: Clasificación de cuentas IdP existentes (SC-G2 — N2)
+### T4: Clasificación de cuentas IdP existentes (SC-G2 — N2) — ✅ DONE (código) 2026-06-04 · ⏳ run operacional pendiente
+> **Resultado**: `apps/api/scripts/classify-google-idp-accounts.ts` (read-only): `listUsers` paginado contra estado actual (no CSV viejo) → filtra Google-only+email (OQ-G3) → dual-match `usuarios` (uid OR `LOWER(TRIM(email))`, OQ-G6 inclusivo) + `solicitudes_registro` (pendiente/aprobado) → LEGITIMATE/PENDING/INERT; `dev@boosterchile.com` never-reapable (`NEVER_REAPABLE_EMAILS`). Funciones puras testeadas (16 casos). Template `existing-google-accounts-classification.md` con metodología + protocolo de decisión PO. **Gate operacional pendiente** (como T10): correr contra prod (ADC + bastion) → PO decide por cada INERT (timestamp+rationale). Typecheck/biome limpios.
 - **Files**: `apps/api/scripts/classify-google-idp-accounts.ts` (read-only) + `existing-google-accounts-classification.md`.
 - **LOC**: ~80.
 - **Depends on**: T3 (normalizador de OQ-G6 + scope de OQ-G3 para el cross-ref).
