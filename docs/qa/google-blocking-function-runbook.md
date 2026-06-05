@@ -1,5 +1,8 @@
 # Google Blocking Function — operational runbook
 
+> ⚠️ **DECOMISADO 2026-06-04 (SEC-001 boundary-closure T10, [ADR-057](../adr/057-google-signup-boundary-and-reaper-supersedes-054.md) supersede [ADR-054](../adr/054-google-blocking-function-signup-gate.md)).**
+> La blocking function y toda su infra/CI fueron removidas: `infrastructure/auth-blocking-functions.tf`, `auth-blocking-functions-monitoring.tf`, la wire `blocking_functions` en `identity-platform.tf`, los steps `*-auth-blocking*` de `cloudbuild.production.yaml` y los workflows `sprint-2c-*`. La fuente `apps/auth-blocking-functions/` está archivada en el tag `archive/auth-blocking-functions-2026-06-04`. El leg Google se cierra por el boundary ADR-001 + harness CI default-deny (SC-G1b) + reaper de higiene. **Este documento se conserva como registro histórico; los pasos abajo ya NO aplican.**
+
 > SEC-001 Sprint 2c-B (`.specs/sec-001-h1-2-google-blocking-b/plan.md` v4) · 2026-05-28
 > SC-2C.B.1..SC-2C.B.10 — Identity Platform `beforeCreate` admin-approval gate.
 > Terraform: `infrastructure/auth-blocking-functions.tf` (T4), `infrastructure/identity-platform.tf` (T5).

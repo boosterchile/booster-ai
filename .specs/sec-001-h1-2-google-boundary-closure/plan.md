@@ -87,7 +87,8 @@
 - **Acceptance**: scheduler wired 100% IaC; `terraform plan` limpio; cadencia documentada. Arranca en dry-run.
 - **Rollback**: disable del Cloud Scheduler job (reaper para).
 
-### T10: Decomiso de la blocking function (SC-G7 — P1-3) — independiente, puede paralelizar tras T2
+### T10: Decomiso de la blocking function (SC-G7 — P1-3) — ✅ DONE 2026-06-04
+> **Resultado**: removidos `auth-blocking-functions.tf` + `-monitoring.tf` + wire `blocking_functions` en `identity-platform.tf` (fuera de `ignore_changes` → converge a trigger-ausente per-entorno) + 3 steps + substitution `_AUTH_BLOCKING_DEPLOY` en `cloudbuild.production.yaml` + binding huérfano `roles/cloudfunctions.viewer` en `iam.tf`. **Decomiso CI completo** (aprobado PO, evita deadlock del PR): 3 workflows `sprint-2c-*` + 4 scripts + 4 tests. `apps/auth-blocking-functions/` archivado vía `git rm` + tag `archive/auth-blocking-functions-2026-06-04` + puntero `docs/archive/auth-blocking-functions.md`. Runbook anotado decomisado. **`terraform validate` Success** (sin refs colgantes); lockfile actualizado; tests remanentes 55✅. Análisis state-rm-vs-destroy + IAM-reuse en `t10-decommission-analysis.md`. **Gate operacional pendiente**: `terraform plan` per-entorno + revisar branch-protection (acción PO).
 - **Files**: remover `infrastructure/auth-blocking-functions.tf` + `auth-blocking-functions-monitoring.tf` + wire `blocking_functions` en `identity-platform.tf` + deploy lane/`_AUTH_BLOCKING_DEPLOY` en `cloudbuild.production.yaml`; **archivar** `apps/auth-blocking-functions/` (tag/`docs/archive/`).
 - **LOC**: net negativo.
 - **Depends on**: T2 (no remover el backstop de referencia antes de que el harness haga durable la enforcement). Funcionalmente independiente del reaper.

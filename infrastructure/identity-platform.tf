@@ -59,32 +59,23 @@ resource "google_identity_platform_config" "default" {
     }
   }
 
-  # Sprint 2c-B T5 — wire `beforeCreate` blocking function (Google leg
-  # admin-approval gate). Per ADR-054 + plan v4 §T5 acceptance +
-  # F-B3 critical fix (removed `blocking_functions` from
-  # ignore_changes BEFORE adding this block — without that removal,
-  # terraform would silently no-op the new block).
+  # SEC-001 boundary-closure T10 (SC-G7) — blocking function DECOMISADA
+  # (ADR-057 supersede ADR-054). El bloque `blocking_functions` se removió:
+  # la dirección Gen 1 quedó abandonada (deprecada) y Gen 2 no se verificó.
+  # El leg Google se cierra por el boundary ADR-001 + harness CI default-deny
+  # (SC-G1b) + reaper de higiene — no por un gate de creación.
   #
-  # `function_uri` references the Cloud Function created in T4
-  # (auth-blocking-functions.tf). The function is deployed via Cloud
-  # Build (T3 cloudbuild step) AFTER the resource shell is created
-  # by terraform apply -target=google_cloudfunctions_function.before_create.
-  # T7b CI workflow enforces deploy-before-wire ordering.
-  blocking_functions {
-    triggers {
-      event_type   = "beforeCreate"
-      function_uri = google_cloudfunctions_function.before_create.https_trigger_url
-    }
-  }
+  # `blocking_functions` se deja FUERA de `ignore_changes` a propósito: así
+  # terraform converge a "sin trigger beforeCreate" en CADA entorno y remueve
+  # cualquier drift per-entorno (la wire pudo aplicarse en un entorno y no en
+  # otro). Si estuviera en ignore_changes, un trigger driftado quedaría sin
+  # remover. Ver análisis state-rm-vs-destroy en
+  # `.specs/sec-001-h1-2-google-boundary-closure/t10-decommission-analysis.md`.
 
   lifecycle {
     # No managed aquí:
     #   - authorized_domains: gestionado manualmente (incluye boosterchile.com
     #     y demo.boosterchile.com via console + DNS).
-    # NOTE: `blocking_functions` REMOVED from ignore_changes per Sprint
-    # 2c-B T5 F-B3 fix — terraform now manages the trigger declaration
-    # above; gcloud functions deploy only manages the function source
-    # artifact (T4 lifecycle.ignore_changes covers that).
     ignore_changes = [
       authorized_domains,
     ]

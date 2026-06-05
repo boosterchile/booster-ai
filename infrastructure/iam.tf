@@ -184,12 +184,10 @@ locals {
     "roles/container.developer",               # Deploy a GKE (telemetry gateway)
     "roles/logging.viewer",                    # Leer logs de Cloud Build (gcloud builds submit los streamea)
     "roles/logging.logWriter",                 # Escribir logs del build a Cloud Logging
-    # Sprint 2c-B T7b — `.github/workflows/sprint-2c-b-deploy-gate.yml`
-    # runs `gcloud functions describe beforeCreate` against prod to
-    # assert ACTIVE + sourceArchiveUrl non-empty BEFORE T5 IdP wire PR
-    # can merge. Read-only on cloudfunctions; bound to the WIF service
-    # agent via the for_each pickup below.
-    "roles/cloudfunctions.viewer",
+    # SEC-001 boundary-closure T10 (SC-G7): `roles/cloudfunctions.viewer`
+    # REMOVIDO — existía solo para el workflow sprint-2c-b-deploy-gate.yml
+    # (gcloud functions describe beforeCreate), decomisado con la blocking
+    # function (ADR-057). No quedan Cloud Functions en el proyecto.
   ]
 }
 
