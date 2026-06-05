@@ -28,6 +28,16 @@
 2. **Async + poll**: `gcloud builds submit --async` + step que pollea el build por ID hasta completar (desacopla el stream del timeout). Más robusto ante reinicios del runner, más código.
 3. **Desacoplar el canary**: mover la observación de 30 min fuera del Cloud Build síncrono (ej. job/step separado o verificación posterior). Refactor mayor.
 
+## Segunda reproducción 2026-06-05 (SEC-001 boundary-closure, PR #402+#403)
+
+Patrón **reproducido idéntico** y ahora con duración medida que sustenta el fix #1:
+
+- Run `#27027572287` (`#437`, commit `db0c00b`): job `Deploy to production` corrió **17:02:32 → 17:32:47 = ~30m15s** → cortado por `timeout-minutes: 30`. Step `Trigger Cloud Build` = `cancelled`, `Smoke test` = `skipped`, run = `cancelled`.
+- Cloud Build regional `d61e54bc` (commit `db0c00b`) = **SUCCESS**, corrió 17:03:34 → **17:41:57 = ~38 min** (build + canary 30m + promote). El build **sobrevivió** al cancel del job de GHA y aplicó el deploy.
+- `booster-ai-api` → revisión `00367-jor` (tag `canary-signup-db0c00b29ddc`), **100% tráfico**. Verificación post-deploy sana (0 errores, 0 5xx).
+
+⇒ **Dato duro para el fix #1**: el job tarda ~38 min reales; `timeout-minutes: 30` es insuficiente por ~8 min. Subir a **~50 min** deja margen. Esto ya ocurrió 3 veces (2026-05-29, 2026-06-04, 2026-06-05) → el estado `cancelled` engañoso es sistemático, no anecdótico.
+
 ## Relación
 
 - Liga con el **finding #1 del inventario** (`canary-verify` placeholder `exit 0`) y con [`docs/adr/056-cicd-github-actions-supersedes-gitlab.md`](../../docs/adr/056-cicd-github-actions-supersedes-gitlab.md) (CI/CD vigente).

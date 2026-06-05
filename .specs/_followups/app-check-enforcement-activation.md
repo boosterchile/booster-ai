@@ -27,6 +27,14 @@ fuera del repo.
 - Sin kill-switch en runtime: el init de App Check es incondicional; revertir requiere redeploy.
   Evaluar si vale un flag de runtime para desactivar sin redeploy.
 
+## Corroboración 2026-06-05 (verificación post-deploy SEC-001 boundary-closure)
+
+Con `feat/app-check` ya en prod (#401 mergeado 2026-06-04), smoke read-only contra `https://app.boosterchile.com`:
+
+- **Confirmado que App Check NO está enforced server-side**: cero referencias a `appcheck`/`X-Firebase-AppCheck`/`verifyAppCheck` en `apps/api/src`; **cero HTTP 403 en `booster-ai-api`** en 3h de logs. La API acepta requests sin token App Check → el lado cliente no protege nada todavía (consistente con el origen de este stub).
+- El browser headless **sí** recibió un `403` de `content-firebaseappcheck.googleapis.com/.../exchangeRecaptchaV3Token` — es **detección de bot de reCAPTCHA v3** contra automatización, NO un fallo para usuarios reales (la página renderiza, los flujos responden 200).
+- Implica: el "reloj de observación" de métricas (paso 2) ya puede correr — el cliente está desplegado emitiendo tokens. Falta que el PO observe App Check → APIs → Métricas con tráfico real antes de activar enforcement.
+
 ## Estado
 
 Pendiente. No bloquea el merge del cliente; bloquea la activación de enforcement.
