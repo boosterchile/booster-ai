@@ -61,6 +61,7 @@ steps:
       - --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID}
       - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
       - --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY}
+      - --build-arg=VITE_RECAPTCHA_SITE_KEY=${_VITE_RECAPTCHA_SITE_KEY}
       - --tag=${_REGISTRY}/web:${_COMMIT_SHA}
       - --tag=${_REGISTRY}/web:latest
       - .
@@ -474,6 +475,13 @@ substitutions:
   # Sin esta substitution los mapas en /vehiculos/:id y /cargas/:id caen
   # al fallback "Mapa no disponible" del componente VehicleMap.
   _VITE_GOOGLE_MAPS_API_KEY: AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg
+  # reCAPTCHA v3 site key para Firebase App Check — pública por diseño (viaja
+  # en el bundle al cliente; el navegador la envía a Google). La protección
+  # real la da App Check enforcement + Firebase Security Rules, no el secreto
+  # de la key. Registrada para App Check en el proyecto prod booster-ai-494222.
+  # Sin esta substitution, env.ts (VITE_RECAPTCHA_SITE_KEY required) lanza en
+  # runtime y la PWA no bootea para ningún usuario.
+  _VITE_RECAPTCHA_SITE_KEY: 6Lc5BwotAAAAAM-FUGv52Fg9tSaJPaD_hLFpUsRw
 
 images:
   - ${_REGISTRY}/api:${_COMMIT_SHA}

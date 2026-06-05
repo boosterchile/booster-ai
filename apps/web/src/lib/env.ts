@@ -31,6 +31,14 @@ const envSchema = z.object({
    * caen al fallback "no configurado").
    */
   VITE_GOOGLE_MAPS_API_KEY: z.string().optional(),
+
+  /**
+   * reCAPTCHA v3 site key (pública) para Firebase App Check. Required: App
+   * Check es un control de seguridad, no opcional como los mapas — si falta,
+   * preferimos que el build/boot falle antes que shippear sin attestation.
+   * En dev se define en `.env.local`; en prod la inyecta cloudbuild como VITE_*.
+   */
+  VITE_RECAPTCHA_SITE_KEY: z.string().min(1, 'VITE_RECAPTCHA_SITE_KEY required'),
 });
 
 export type Env = z.infer<typeof envSchema>;
