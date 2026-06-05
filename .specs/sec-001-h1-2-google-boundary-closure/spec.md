@@ -5,7 +5,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-29 (v1) · **2026-06-04 (v2 re-centrado)**
-- **Status**: **Ship-ready — PR [#402](https://github.com/boosterchile/booster-ai/pull/402) abierto (2026-06-05)**, pendiente de: run verde de CI + merge PO + aprobación Environment `production` + `terraform apply` per-entorno. Transición a `Shipped` tras deploy+verificación. BUILD (T1–T11) + VERIFY + REVIEW + SHIP(`ship.md`) completos; reaper en dry-run + scheduler paused. (Histórico: Reviewed 2026-06-05; Draft v2 DA R2 2026-06-04.)
+- **Status**: **Merged — PR [#402](https://github.com/boosterchile/booster-ai/pull/402) squash-merged a `main` (merge commit `d867bdf`, 2026-06-05 16:11 UTC, 20/20 checks verdes)**. Pendiente para `Shipped`: aprobación humana en Environment `production` (`release.yml` ya disparado) + `terraform apply` per-entorno (scheduler + metric + decomiso) + verificación post-deploy 24-48h. BUILD (T1–T11) + VERIFY + REVIEW + SHIP(`ship.md`) completos; reaper en dry-run + scheduler paused. (Histórico: Ship-ready/PR abierto 2026-06-05; Reviewed 2026-06-05; Draft v2 DA R2 2026-06-04.)
 - **Linked**:
   - Parent: [`.specs/sec-001-cierre/spec.md`](../sec-001-cierre/spec.md) §3 SC-1.2.2 (Google leg = `TRACKED_RESIDUAL` → este spec lo lleva a `MET`)
   - **Mitigación P0-1**: [`.specs/sec-001-empresa-onboarding-gate-hotfix/`](../sec-001-empresa-onboarding-gate-hotfix/) (self-serve onboarding OFF)

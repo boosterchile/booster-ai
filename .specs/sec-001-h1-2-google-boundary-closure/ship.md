@@ -5,6 +5,7 @@
 - Date: 2026-06-05
 - Version: apps/api `0.0.0` (private, no publicado — deploy vía Cloud Build, no npm)
 - Modelo de release: **merge a `main` → `release.yml` → aprobación humana en GitHub Environment `production` → Cloud Build canary**. No hay tag manual.
+- **Merge confirmado**: PR #402 squash-merged a `main` el **2026-06-05 16:11 UTC** → merge commit **`d867bdf`** (20/20 checks verdes). `release.yml` disparado; **pendiente**: aprobación en Environment `production` + `terraform apply` per-entorno + verificación 24-48h → recién entonces `spec.md` → `Shipped`.
 
 ## R-SHIP (resuelto — decisión PO: merge main→rama + 1 PR delineado)
 
@@ -15,7 +16,7 @@ La rama era multi-sesión (25 commits previos de docs/housekeeping + el feature)
 
 ## Checklist (12 puntos)
 
-- [ ] **1. CI verde en el merge commit** — ⏳ **PENDIENTE de confirmar con el run de Actions sobre el head del PR** (devils-advocate SHIP: no marcar ✓ con evidencia local). Evidencia local: suite del feature (`@booster-ai/api`) **1407 passed | 2 skipped** (skips ajenos); `tsc` + Biome + `terraform validate` limpios. **Web**: 67 fallos LOCALES por App Check (`indexedDB is not defined` en jsdom), **preexistentes** — `git diff main HEAD -- apps/web` = **0** (web idéntico a main; #401 ya en main). Probabilidad de regresión web ≈ nula, pero **el gate del merge es el run verde de CI sobre el PR, no la corrida local** → el PO confirma el run antes de mergear.
+- [x] **1. CI verde en el merge commit** — ✅ **CONFIRMADO**: PR #402 con **20/20 checks en verde** sobre el head del PR (`6df10c3`), `mergeStateStatus: CLEAN`. Squash-merge a `main` el 2026-06-05 16:11 UTC → merge commit **`d867bdf`**. CodeQL pasó tras el fix `6df10c3` (alerta high `js/incomplete-sanitization` en `escapeCell` del reporte de clasificación → backslash escapado antes del pipe + test de regresión). Evidencia previa local: suite del feature (`@booster-ai/api`) **1407 passed | 2 skipped**; `tsc` + Biome + `terraform validate` limpios. Web idéntico a main (`git diff main HEAD -- apps/web` = 0; #401 ya en main).
 - [x] **2. Changelog** — N/A: monorepo con Changesets; `apps/api` privado `0.0.0` (no publicado). Cambio interno de seguridad/infra, documentado en ADR-057 + este ship.md + body del PR. CI no exige changeset.
 - [x] **3. Version bump** — N/A (paquete privado no versionado; deploy por imagen Cloud Build, no SemVer de consumidor).
 - [x] **4. Migration guides** — N/A: sin breaking de API pública. ADR-057 documenta el cambio de dirección (supersede ADR-054).
