@@ -67,7 +67,8 @@
 - **Acceptance**: **T11** del spec (cross-normalization) pasa contra el normalizador elegido; backfill aplicado → `users.email`/`solicitudes` consistentes con lo que el reaper busca; sin coupling con el package archivado (SC-G7).
 - **Rollback**: el backfill es idempotente; revertir el package no afecta runtime hasta que T7 lo use.
 
-### T7: Predicado del reaper (puro) + tests (SC-G3)
+### T7: Predicado del reaper (puro) + tests (SC-G3) — ✅ DONE 2026-06-04
+> **Resultado**: `apps/api/src/services/reaper-predicate.ts` — `isReapable(account, facts, cfg)` puro con salvaguardas en orden scope(OQ-G3) → never-reapable → dual-guard(uid+email degradado) → pipeline(solicitud) → grace(creation+lastSignIn, estricto `< cutoff`). `normalizeReaperEmail` lowercase+trim (OQ-G6, no canónico; sync con SQL T8 + script T4, normalizador real = Stream B). `DEFAULT_REAPER_GRACE_DAYS=30`. Tests del spec T1/T2/T2b/T3/T4/T5/T5b/T11 + scope/never-reapable/lastSignIn-ausente/boundary: 17 casos, **coverage 96.96%/95.83%/100%** (>80% SC-G9). Typecheck/biome limpios.
 - **Files**: `apps/api/src/services/reaper-predicate.ts` + `.test.ts`.
 - **LOC**: ~90.
 - **Depends on**: T3, T6 (normalizador).
