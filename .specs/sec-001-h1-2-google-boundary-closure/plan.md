@@ -99,7 +99,8 @@
 - **Acceptance**: **`terraform plan` limpio en dev/staging/prod** (per-entorno); enumerado `state rm` vs `destroy`; verificado que ningún IAM binding removido es referenciado por recurso no-blocking-function; fuente archivada. Mapea a **T9** del spec.
 - **Rollback**: revert del commit restaura los `.tf`; `apps/auth-blocking-functions` recuperable del archive/tag.
 
-### T11: Cierre del residual (SC-G8)
+### T11: Cierre del residual (SC-G8) — ✅ DONE 2026-06-04
+> **Resultado**: `sec-001-cierre` SC-1.2.2 Google leg `TRACKED_RESIDUAL → MET` (amendment A4: cierre por boundary ADR-001 + harness default-deny + reaper, no blocking function; ADR-057). Checkbox marcado [x]. Followup `_followups/sprint-2c-google-blocking-function.md` → Status Closed/Superseded con banner + puntero a Stream A. CURRENT.md tabla de estado actualizada (Google leg ✅ MET). SC-G8 marcado en este spec. Condiciones MET verificadas: self-serve OFF + audit cero GAP + harness activo + reaper desplegado (dry-run).
 - **Files**: `.specs/sec-001-cierre/spec.md` (SC-1.2.2 → MET) + cerrar `_followups/sprint-2c-google-blocking-function.md` + decision logs.
 - **LOC**: doc.
 - **Depends on**: T1, T2, T8 (+ self-serve OFF verificado).

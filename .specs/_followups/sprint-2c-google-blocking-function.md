@@ -1,6 +1,8 @@
 # Followup: SEC-001 Sprint 2c — Google sign-in Blocking Function (deferred from Sprint 2b)
 
-**Status**: Draft (stub, no ejecutar todavía)
+> ✅ **CERRADO 2026-06-04 — SUPERSEDED.** La dirección blocking function quedó **abandonada** (Gen 1 deprecado / Gen 2 no verificado-mutante-de-prod). El leg Google se cerró por **boundary ADR-001 + harness CI default-deny + reaper de higiene** ([ADR-057](../../docs/adr/057-google-signup-boundary-and-reaper-supersedes-054.md) supersede [ADR-054](../../docs/adr/054-google-blocking-function-signup-gate.md)). `sec-001-cierre` SC-1.2.2 Google leg transicionó `TRACKED_RESIDUAL → MET` (amendment A4). Trabajo en `.specs/sec-001-h1-2-google-boundary-closure/` (Stream A). El "Solution sketch" de abajo NO se ejecuta; se conserva como registro histórico de la dirección descartada.
+
+**Status**: Closed / Superseded (2026-06-04) — antes Draft (stub)
 **Created**: 2026-05-26
 **Triggered by**: Spec `.specs/sec-001-cierre/spec.md` v3.4 amendment A3 (2026-05-25) — SC-1.2.2 Google leg = `TRACKED_RESIDUAL`
 **Estimated effort**: ~3-5 días (Cloud Function nueva + ADR propio + integration tests + deploy IaC)

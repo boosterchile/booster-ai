@@ -493,7 +493,7 @@ Discovered durante `terraform plan` post-T11 apply. Investigation findings + res
 | **H1.2 SC-1.2.0** inventario exhaustivo Firebase Auth paths | SC-1.2.0 | ✅ T6 (signup-paths-audit.md) |
 | **H1.2 SC-1.2.1** signup-request endpoint + admin-approval gate + Admin SDK createUser | SC-1.2.1 | ✅ T7+T8+T10 |
 | **H1.2 SC-1.2.2 email/password leg** Identity Platform `disabled_user_signup=true` | SC-1.2.2 | ✅ T11 + applied prod |
-| **H1.2 SC-1.2.2 Google leg** TRACKED_RESIDUAL Sprint 2c | spec amendment A3 v3.4 | 🔲 Deferred → [`.specs/_followups/sprint-2c-google-blocking-function.md`](../../.specs/_followups/sprint-2c-google-blocking-function.md) |
+| **H1.2 SC-1.2.2 Google leg** ~~TRACKED_RESIDUAL~~ → **MET** (boundary + reaper, ADR-057 supersede ADR-054) | spec amendment A4 2026-06-04 | ✅ boundary-closure Stream A (T1/T2/T7/T8/T9); followup cerrado/superseded. Gates operacionales: 1er run destructivo (`REAPER_DESTRUCTIVE=true` + sign-off PO), `terraform plan` per-env, decisión PO por INERT (T4) |
 | **H1.2 SC-1.2.3** synthetic monitor signup-probe + canary 30min antes de full deploy | SC-1.2.3 | ✅ T13 + applied prod |
 | **H1.2 SC-1.2.4** integration tests negative matrix per-method (5 creation paths) | SC-1.2.4 (amendment A2 v3.4) | ✅ T9c |
 | **H1.2 SC-1.2.5** rate-limit + email enumeration defense + fail-closed + cascade docs | SC-1.2.5 | ✅ T8+T9a+T9b |
