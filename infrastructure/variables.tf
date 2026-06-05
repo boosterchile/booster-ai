@@ -155,13 +155,24 @@ variable "cloudsql_backup_retention_days" {
   default     = 30
 }
 
+variable "cloudsql_high_availability" {
+  description = "true = REGIONAL (HA con failover automático); false = ZONAL (single-zone)."
+  type        = bool
+  # Pre-comercial: ZONAL (sin standby; caída de zona = BD no disponible, RTO
+  # minutos-1h con backups + PITR). Volver a true al firmar B2B con SLA 99.9%.
+  # Ver .specs/cost-optimization-precomercial.
+  default = false
+}
+
 # -----------------------------------------------------------------------------
 # Memorystore Redis
 # -----------------------------------------------------------------------------
 variable "redis_tier" {
   description = "Redis tier: BASIC (single node) o STANDARD_HA (con failover)"
   type        = string
-  default     = "STANDARD_HA"
+  # Pre-comercial: BASIC (cache medido practicamente vacio). STANDARD_HA al
+  # firmar B2B con SLA. Ver .specs/cost-optimization-precomercial.
+  default = "BASIC"
 }
 
 variable "redis_memory_gb" {
