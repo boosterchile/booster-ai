@@ -16,11 +16,13 @@ steps:
   - -c
   - |
     set -euxo pipefail
-    # SIN --internal-ip: endpoint público allowlisted para el pool saw1.
-    # Misma región pool/cluster, a diferencia del check DR (cross-region).
+    # DNS-based control plane endpoint (--dns-endpoint): kubectl alcanza el master
+    # via DNS + IAM, sin depender de red/peering. El endpoint IP NO es alcanzable
+    # desde el pool. Requiere allow_external_traffic=true (compute.tf, ADR-059).
     gcloud container clusters get-credentials booster-ai-telemetry \
       --location=southamerica-west1 \
-      --project=booster-ai-494222
+      --project=booster-ai-494222 \
+      --dns-endpoint
     echo "--- nodes ---"
     kubectl get nodes
     echo "--- cert-manager status ---"

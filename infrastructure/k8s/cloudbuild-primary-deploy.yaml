@@ -3,12 +3,13 @@
 #
 # Por qué Cloud Build private worker pool y NO kubectl desde laptop:
 # El cluster primario tiene master_authorized_networks_config restringido
-# (privateEndpointEnforcement). El pool saw1 `booster-production-pool` YA ESTÁ
-# en la allowlist via `cloudbuild_pool_range` (ver infrastructure/compute.tf,
-# bloque master_authorized_networks_config del cluster booster-ai-telemetry).
-# A diferencia del DR, aquí pool y cluster están en la MISMA región (saw1),
-# así que NO aplica el límite cross-region documentado en el pipeline DR
-# (por eso NO usamos --internal-ip; vamos por el endpoint público allowlisted).
+# (privateEndpointEnforcement) y el endpoint IP NO es alcanzable desde el pool
+# (egress PUBLIC_EGRESS no está en el allowlist; VPC peering es no-transitivo
+# entre el pool y el master). Se usa el DNS-based control plane endpoint
+# (`--dns-endpoint`), habilitado en compute.tf via
+# control_plane_endpoints_config.dns_endpoint_config.allow_external_traffic=true
+# (ADR-059). kubectl alcanza el master via DNS + IAM (roles/container.developer),
+# sin depender de red/peering. Mismo mecanismo que el DR (ver dr-region.tf).
 #
 # Validar acceso ANTES con cloudbuild-primary-check.yaml (no mutante).
 #
@@ -37,7 +38,8 @@ steps:
     set -euxo pipefail
     gcloud container clusters get-credentials booster-ai-telemetry \
       --location=southamerica-west1 \
-      --project=booster-ai-494222
+      --project=booster-ai-494222 \
+      --dns-endpoint
     kubectl get nodes
 
 # ----------------------------------------------------------------------
