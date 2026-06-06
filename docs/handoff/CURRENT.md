@@ -1,9 +1,73 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-03 (**App Check reCAPTCHA v3 → PR #401 MERGEADO a `main`**, deploy pendiente del gate `production` (release run #26903303075) + fix CI del e2e roto (webkit) + **DEFINE epic entorno dev separado** ADR-055 DRAFT + spec + **hilo gitleaks abierto** Firebase key pendiente App Check/Rules. ⚠️ NO activar enforcement App Check hasta ver tráfico verificado post-deploy. Ver §Sesión 2026-06-03. Sesión previa 2026-06-02 abajo.)
-**Anterior**: 2026-06-02 (**transición multi-máquina Mac Mini → MacBook Pro** + **higiene de working tree** + **gitleaks instalado** + **inventario ADR-vs-prod avanzado a ADR-007**. Trabajo en la rama `chore/working-tree-hygiene` en **origin** (NO en `main` todavía) — ver §Sesión 2026-06-02. ⚠️ Para continuar en otra máquina: `git pull` de esa rama + ver §SETUP MACBOOK.)
-**Documento vivo**: este archivo refleja el estado del proyecto. ⚠️ **NOTA 2026-06-02**: el último avance (higiene + inventario ADR-004→007 + este handoff) está en la rama `chore/working-tree-hygiene` en origin, **aún no mergeado a `main`** (PR agrupado pendiente, para gastar una sola corrida de canary). Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
+**Última actualización**: 2026-06-06 (**Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4 metric/alert] + **IAM Owner drift resuelto** [phantom de tfvars local, NO swap a prod, #411] + **drift check de Terraform en CI live+verde** [SA dedicado read-only `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#413** mergeados a `main`. Ver §Sesión 2026-06-06. ⚠️ Único residual: un release/deploy run quedó `pending` en GitHub Actions — no-op infra-only, decisión humana.)
+**Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
+**Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-06 — Optimización de costos GCP (ADR-058) + DNS endpoint gateway (ADR-059) + reconciliación drift SEC-001/IAM + drift check CI
+
+> Sesión larga (06-05 tarde → 06-06). Ejecución cloud **real** con `terraform apply -target` por palanca, cada una aislada y verificada (health 200 + signup-flow 200 tras cada apply). **Cero impacto en SEC-001/IAM salvo donde fue intencional.** Cierre: `terraform plan` global = **No changes**.
+
+### 💰 Optimización de costos — 6/6 palancas aplicadas a prod (ADR-058)
+
+DEFINE→SHIP completo: spec + plan + ADR-058 (riesgos aceptados por el PO) + REVIEW (REQUEST_CHANGES resuelto: `tfvars.example` fix, verify fix, followup stub, nota dr-region). PRs **#406** (código costos) y **#407** (docs SEC-001). El verify reveló que el plan venía **contaminado** con 9 cambios no relacionados (drift prod-vs-main de SEC-001 boundary-closure + swap IAM humana) → se aislaron y resolvieron por separado (ver abajo). Palancas aplicadas una por una con `-target`:
+
+| Palanca | Cambio en prod | Método | Verificación |
+|---|---|---|---|
+| **A3** flags Cloud SQL | `log_temp_files 0→-1`, quita `log_connections/disconnections` | update in-place, sin downtime | REGIONAL intacto (D aislado vía `cloudsql_high_availability=true` en tfvars local) |
+| **A2** min instances API | `min_instance_count 1→0` | update API service | Redis aislado (pin STANDARD_HA en tfvars); health 200 |
+| **B1+C** gateway primary/DR a cold | deploy 1/1 + HPA minReplicas 1 (primary), deploy 0/0 + HPA eliminado (DR) | **bloqueado por red a clusters privados → ADR-059** (ver abajo) | kubectl vía `--dns-endpoint` |
+| **A1** Redis tier | `STANDARD_HA→BASIC` (**replace**, 6m5s) + 7 Cloud Run services con nuevo `REDIS_HOST` | ventana baja OK del PO | BASIC READY `172.25.0.3:6378`; api/health 200, signup-flow 200 (auth recuperada) |
+| **D** Cloud SQL disponibilidad | `REGIONAL→ZONAL` update in-place (5m35s restart) | backup on-demand pre-zonal SUCCESSFUL previo | ZONAL RUNNABLE, IP privada sin cambio; health 200 |
+| **A4** CUD (committed use) | **NO comprada** | 0 commitments activos verificados; Recommender API no habilitado | re-evaluar ~**2026-09** con baseline post-opt |
+
+Cierre: `ship.md` cost-opt → **6/6 palancas** (PR #409, 2026-06-06).
+
+### 🌐 ADR-059 — DNS endpoint del gateway primary (desbloqueo de B1/C)
+
+B1/C requerían `kubectl` contra clusters GKE **privados**; ni la laptop del PO ni el pool tenían IP autorizada. Resuelto habilitando `dns_endpoint_config.allow_external_traffic` en el cluster `telemetry` primary (apply in-place) → `kubectl --dns-endpoint` alcanza el master vía IAM. El cluster DR ya lo tenía (#194). PR **#408** (DNS endpoint + pipelines CD del gateway primary; aplica B1/C).
+
+### 🔧 Reconciliación drift SEC-001 (#410) — decomiso SC-G7 + T4
+
+El drift detectado en el verify se reconcilió con `terraform apply -target` (7 recursos, **IAM excluido**):
+- **Decomiso SC-G7**: Cloud Function `before_create` + buckets `auth_blocking` destruidos (residuales del leg Google ya cerrado por boundary en ADR-057).
+- **T4**: logging metric `auth_is_demo_blocked` + alert creados (antes ausentes → posible hueco).
+- **`helloTest`** (Cloud Function `us-east1`, FAILED, artefacto de debug `helloHttp`, no en TF ni repo) **eliminada**. Sin functions restantes.
+
+### 🔑 IAM Owner drift (#410/#411) — era un phantom, NO se mutó prod
+
+El plan mostraba un swap `human_owners group:admins@ → user:dev`. Investigación: en prod `roles/owner = group:admins@boosterchile.com` (único, correcto); el swap venía de un **valor stale en el `tfvars` local**. **Decisión (#411)**: corregir el tfvars local a `group:admins@` → `plan -target=human_owners = No changes`. Phantom eliminado **sin tocar prod**. Además se destruyeron **2 bindings no-Owner** residuales del decomiso (`compute_default_storage_viewer`, `github_deployer cloudfunctions.viewer`). Análisis documentado en PR #411 (precaución: NO aplicar el swap).
+
+> 🧠 Memoria actualizada: [[prod-drift-sec001-iam-2026-06]] — el patrón "drift en el plan = phantom de tfvars local, validar antes de aplicar" se confirmó aquí.
+
+### 🛡️ Drift check de Terraform en CI (#412/#413) — live + verde
+
+Para detectar drift prod-vs-main de forma continua se creó el workflow `.github/workflows/terraform-drift.yml` (cron diario 11:17 UTC + dispatch), corriendo `terraform plan -detailed-exitcode`. Trayectoria:
+1. **#412** (`e928295`): workflow + prereqs (var `TF_BILLING_ACCOUNT`, fix de diffs perpetuos: idp declares + dashboard `ignore_changes`). Primer run (`27072203124`) **falló (exit 1, NO drift real)**: `roles/viewer` insuficiente para `redis.instances.getAuthString` + IAP `getIamPolicy`, y la var billing no resolvía. La **lógica del workflow era correcta** (marcó fallo, no falso verde).
+2. **#413** (`2fce2df`, opción C): **SA dedicado read-only** `terraform-drift@` (viewer + securityReviewer + serviceUsageConsumer + **custom role** con `redis.getAuthString`/`iap`/`storage.getIamPolicy`). Revocado el `viewer` del deployer; `billing` con `ignore_changes`. Validado impersonando: plan completo = No changes exit 0.
+3. **Run `27073895910` = VERDE en CI real** (conclusion=success; plan exit 0 = No changes). **Drift check operativo end-to-end.**
+
+### Estado al cierre
+
+- ✅ `terraform plan` global = **No changes** (drift IAM/SEC-001/costos = limpio; solo 2 diffs perpetuos benignos idp+dashboard, gestionados con `ignore_changes`).
+- ✅ PRs **#406→#413** mergeados a `main`. ADRs **058** (right-sizing pre-comercial) y **059** (DNS endpoint).
+- ✅ Vector Google de SEC-001 H1.2 totalmente cerrado (boundary en #402-#405 + decomiso de residuales acá).
+- ⚠️ **Único residual (decisión humana)**: un release/deploy run (`27073359900`) quedó **`pending` ~21 min** en GitHub Actions (0 jobs, 0 Cloud Build) pese a aprobación registrada — issue de cola de runners / concurrency en `release.yml`, **no accionable por el agente** (403). El deploy es **no-op** (imagen idéntica, merge infra-only); la API está **sana (200)** en su revisión actual. Recomendado: revisar la UI de Actions y re-run o cancelar (no hay app que shipear).
+- 🌿 Rama de trabajo `ci/drift-dedicated-reader-sa` (`917f481`) ya integrada en `main` (#413 squash `2fce2df`); puede borrarse.
+
+---
+
+## Sesión 2026-06-05 — Cierre del leg Google de SEC-001 H1.2 por boundary + reaper (ADR-057)
+
+> DEFINE→SHIP completo del cierre del último vector pendiente de SEC-001 H1.2 (signup Google). **Deploy a prod SUCCESS.**
+
+- **Enfoque**: en vez de re-desplegar la blocking function Gen 2 (abandonada por deprecación, ver sesión 2026-05-29), se cierra el leg Google **por boundary + reaper** (ADR-057): el control vive en el boundary ADR-001 + un reaper que limpia cuentas Google huérfanas.
+- **Fix CodeQL incluido**: alerta `js/incomplete-sanitization` en `escapeCell` resuelta (de SHIP-prep volvió a BUILD para corregirla — disciplina de ciclo respetada).
+- **SHIP**: deploy prod **SUCCESS** + `terraform apply` (**reaper en `paused`** — no corre solo) + **dry-run validado** (`scanned=14`, **0 acciones** → no había huérfanas que limpiar). **SC-1.2.2 Google leg = MET.**
+- PRs **#402** (`d867bdf` cierre por boundary + reaper, ADR-057) → **#403** (spec → Merged) → **#404** (corrobora 3 follow-ups + nuevo `tfvars.example` stale post-deploy) → **#405** (spec → Shipped: deploy + apply + dry-run validado). Artefactos en `.specs/sec-001-h1-2-google-boundary-closure/`.
 
 ---
 
