@@ -6,23 +6,20 @@
 # `terraform plan -detailed-exitcode` periódicamente y FALLA si hay drift (exit 2),
 # para que aparezca en la pestaña Actions / notificaciones.
 #
-# ── PREREQUISITOS ──
-#  1. Repo VARIABLES ya existentes (las usa release.yml): vars.WIF_PROVIDER,
-#     vars.WIF_SERVICE_ACCOUNT_DEPLOY.  ✅
-#  2. ⬜ PENDIENTE (única acción manual restante): crear la repo variable
-#     vars.TF_BILLING_ACCOUNT = el billing account ID (única var sin default en
-#     variables.tf). Settings → Secrets and variables → Actions → Variables.
-#     (No es secreto sensible; se deja como var para no hardcodearlo.)
-#  3. ✅ PERMISOS de lectura: `roles/viewer` otorgado a github-deployer vía
-#     iam.tf (github_deployer_roles) — un `terraform plan` refresca TODOS los
-#     recursos. Aplicado 2026-06-06.
-#  4. ✅ RUIDO perpetuo resuelto: el plan completo da "No changes" tras declarar
-#     multi_tenant/phone_number en identity-platform.tf y ignore_changes del
-#     dashboard_json en telemetry-monitoring.tf. Baseline limpio = el check
-#     solo dispara ante drift REAL.
+# ── SETUP (todo en código/IaC; sin pasos manuales pendientes) ──
+#  - Auth: WIF (vars.WIF_PROVIDER, ya existente) impersonando un SA dedicado
+#    READ-ONLY `terraform-drift@` (iam.tf): roles/viewer + un custom role acotado
+#    (redis.getAuthString + iap.getIamPolicy, los 2 reads que viewer no incluye y
+#    que un plan completo necesita). NO se le da write. Email hardcodeado abajo
+#    (no es secreto). El binding workloadIdentityUser lo limita a este repo.
+#  - billing_account: `var.billing_account` es opcional para el check — el
+#    proyecto lo tiene en `ignore_changes` (project.tf), así que si la var está
+#    vacía no genera falso diff ni intenta desvincular billing.
+#  - Ruido perpetuo: resuelto (multi_tenant/phone_number declarados en
+#    identity-platform.tf + ignore_changes del dashboard_json). Plan = "No changes".
 #
-# Una vez creada vars.TF_BILLING_ACCOUNT (paso 2), este workflow corre verde
-# (estado actual: plan = "No changes"). Validar con un workflow_dispatch manual.
+# Estado: una vez aplicado el IaC del SA drift (iam.tf), el check corre verde
+# (plan = "No changes"). Disparable por cron diario o workflow_dispatch.
 
 name: Terraform Drift Check
 
@@ -49,7 +46,8 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
+          # SA dedicado read-only (iam.tf). Hardcodeado: un email de SA no es secreto.
+          service_account: terraform-drift@booster-ai-494222.iam.gserviceaccount.com
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v3

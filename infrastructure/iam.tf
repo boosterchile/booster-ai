@@ -184,7 +184,6 @@ locals {
     "roles/container.developer",               # Deploy a GKE (telemetry gateway)
     "roles/logging.viewer",                    # Leer logs de Cloud Build (gcloud builds submit los streamea)
     "roles/logging.logWriter",                 # Escribir logs del build a Cloud Logging
-    "roles/viewer",                            # Drift check CI (#412): `terraform plan` refresca TODOS los recursos → read-only project-wide. Trade-off aceptado: el deploy SA gana lectura amplia (ya tiene write potente via run.admin/storage.admin).
     # SEC-001 boundary-closure T10 (SC-G7): `roles/cloudfunctions.viewer`
     # REMOVIDO — existía solo para el workflow sprint-2c-b-deploy-gate.yml
     # (gcloud functions describe beforeCreate), decomisado con la blocking
@@ -309,6 +308,68 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 # Permitir que el WIF del repo asuma la identidad del github-deployer SA
 resource "google_service_account_iam_member" "wif_to_deployer" {
   service_account_id = google_service_account.github_deployer.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+}
+
+# -----------------------------------------------------------------------------
+# Terraform drift check — SA dedicado READ-ONLY (#412, issue #410 remediación #4)
+# -----------------------------------------------------------------------------
+# Least-privilege: corre `terraform plan -detailed-exitcode` en el workflow
+# terraform-drift.yml. NO se le da write. roles/viewer cubre la mayoría de los
+# reads; los 2 que viewer NO incluye (redis auth_string e IAP IAM policy) van en
+# un custom role acotado en vez de redis.editor/iap.admin (que darían write).
+resource "google_service_account" "terraform_drift" {
+  account_id   = "terraform-drift"
+  display_name = "Terraform drift check (read-only, #412)"
+  project      = google_project.booster_ai.project_id
+}
+
+resource "google_project_iam_custom_role" "drift_extra_reads" {
+  role_id     = "driftExtraReads"
+  title       = "Terraform Drift — extra reads"
+  description = "Reads sensibles que los roles read-only no incluyen, para refrescar el plan completo (drift check)."
+  project     = google_project.booster_ai.project_id
+  permissions = [
+    "redis.instances.getAuthString",    # refresca google_redis_instance.auth_string (no está en ningún rol read-only)
+    "iap.tunnelInstances.getIamPolicy", # refresca google_iap_tunnel_instance_iam_member (redundante con securityReviewer, defensivo)
+    "storage.buckets.getIamPolicy",     # refresca google_storage_bucket_iam_member (securityReviewer NO lo cubre para GCS)
+  ]
+}
+
+# Roles read-only del SA drift. Un `terraform plan` completo necesita:
+#   - viewer: get/list de recursos
+#   - iam.securityReviewer: *.getIamPolicy (buckets, SAs, iap, pubsub, kms, ...)
+#   - serviceusage.serviceUsageConsumer: serviceusage.services.use (API calls)
+# Ninguno otorga write.
+resource "google_project_iam_member" "terraform_drift_read_roles" {
+  for_each = toset([
+    "roles/viewer",
+    "roles/iam.securityReviewer",
+    "roles/serviceusage.serviceUsageConsumer",
+  ])
+  project = google_project.booster_ai.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.terraform_drift.email}"
+}
+
+resource "google_project_iam_member" "terraform_drift_extra_reads" {
+  project = google_project.booster_ai.project_id
+  role    = google_project_iam_custom_role.drift_extra_reads.id
+  member  = "serviceAccount:${google_service_account.terraform_drift.email}"
+}
+
+# Lectura del state remoto (backend GCS)
+resource "google_storage_bucket_iam_member" "terraform_drift_state" {
+  bucket = "booster-ai-tfstate-494222"
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.terraform_drift.email}"
+}
+
+# GitHub Actions del repo puede impersonar el drift SA via WIF (mismo principalSet
+# que el deployer, restringido al repo por attribute_condition del provider).
+resource "google_service_account_iam_member" "wif_to_drift" {
+  service_account_id = google_service_account.terraform_drift.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
 }
