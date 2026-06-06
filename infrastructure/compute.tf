@@ -652,6 +652,17 @@ resource "google_container_cluster" "telemetry" {
     }
   }
 
+  # DNS-based control plane endpoint (ADR-058 / CD del gateway). Habilita acceso
+  # al master via DNS + IAM (sin depender de red/VPC peering, que es no-transitivo
+  # entre el pool de Cloud Build y el master). Permite que el pool same-region y
+  # operadores con container.developer corran kubectl. master_authorized_networks
+  # (arriba) sigue protegiendo el endpoint IP; el DNS endpoint se gobierna por IAM.
+  control_plane_endpoints_config {
+    dns_endpoint_config {
+      allow_external_traffic = true
+    }
+  }
+
   private_cluster_config {
     enable_private_nodes    = true
     enable_private_endpoint = false
