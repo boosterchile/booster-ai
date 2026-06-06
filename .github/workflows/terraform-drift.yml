@@ -1,0 +1,93 @@
+# Terraform Drift Check — alerta cuando el estado real de GCP diverge de `main`.
+#
+# Origen: issue #410 (remediación #4, "antifrágil"). Lección: el `terraform apply
+# -target` enmascara estado; nadie corría un plan completo, así que el drift
+# (SEC-001 sin aplicar, etc.) pasó desapercibido por semanas. Este workflow corre
+# `terraform plan -detailed-exitcode` periódicamente y FALLA si hay drift (exit 2),
+# para que aparezca en la pestaña Actions / notificaciones.
+#
+# ── PREREQUISITOS (deben configurarse antes de habilitarlo; hoy fallaría) ──
+#  1. Repo VARIABLES ya existentes (las usa release.yml): vars.WIF_PROVIDER,
+#     vars.WIF_SERVICE_ACCOUNT_DEPLOY.
+#  2. NUEVA repo variable: vars.TF_BILLING_ACCOUNT = el billing account ID
+#     (única variable sin default en variables.tf). Settings → Secrets and
+#     variables → Actions → Variables. (No es secreto sensible, pero se deja
+#     como var para no hardcodearlo.)
+#  3. PERMISOS de lectura: un `terraform plan` refresca TODOS los recursos
+#     (compute, sql, redis, monitoring, iam, pubsub, kms, ...). El SA de WIF
+#     (github-deployer) NO tiene lectura project-wide → el plan fallaría en
+#     refresh. Hay que otorgarle `roles/viewer` (o crear un SA dedicado
+#     `terraform-drift@` con viewer + storage.objectViewer del bucket de state).
+#     Es un cambio IAM → decisión de un Owner (ver PR #411 / issue #410). NO se
+#     hace en este workflow.
+#  4. RUIDO conocido: hoy el plan reporta diffs perpetuos benignos en
+#     `google_identity_platform_config.default` y el dashboard
+#     `telemetry_overview` (normalización del API), más los 2 bindings IAM
+#     residuales del decomiso. Hasta resolverlos (ignore_changes o limpieza),
+#     el check saldrá en rojo por esos. Afinar antes de tratarlo como gate.
+#
+# Mientras (3) no esté, este workflow corre pero el step de plan fallará por
+# permisos — es deliberado que quede como PR hasta que el Owner habilite el SA.
+
+name: Terraform Drift Check
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # diario 11:17 UTC (08:17 Chile aprox), minuto off-peak
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # OIDC para Workload Identity Federation con GCP
+
+jobs:
+  drift:
+    name: terraform plan -detailed-exitcode
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth a GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT_DEPLOY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false -lock=false
+
+      - name: Terraform plan (detailed-exitcode)
+        id: plan
+        env:
+          TF_VAR_billing_account: ${{ vars.TF_BILLING_ACCOUNT }}
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -detailed-exitcode -no-color -out=drift.plan 2>&1 | tee plan.out
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Terraform drift check"
+            case "$code" in
+              0) echo "✅ Sin drift — el estado de GCP coincide con \`main\`." ;;
+              2) echo "⚠️ **DRIFT detectado** — el estado de GCP diverge de \`main\`. Revisar el diff abajo y reconciliar (con \`-target\` acotado; NO tocar IAM Owner sin revisión, ver #410/#411)." ;;
+              *) echo "❌ Error corriendo el plan (¿permisos del SA? ¿TF_VAR_billing_account?). Ver log." ;;
+            esac
+            echo ""
+            echo '```'
+            tail -c 60000 plan.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # exit 0 si no drift; exit 2 si drift (falla el job); exit 1 si error
+          [ "$code" = "0" ] && exit 0
+          exit "$code"
