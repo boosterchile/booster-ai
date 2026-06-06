@@ -350,6 +350,14 @@ resource "google_monitoring_alert_policy" "pubsub_backlog_p2" {
 
 resource "google_monitoring_dashboard" "telemetry_overview" {
   project = google_project.booster_ai.project_id
+
+  # GCP normaliza/reordena el JSON del dashboard → diff perpetuo en cada plan
+  # (#412). Ignorado para que el drift check no salga en rojo por ruido. Trade-off:
+  # terraform deja de gestionar el contenido del dashboard (se edita en consola).
+  lifecycle {
+    ignore_changes = [dashboard_json]
+  }
+
   dashboard_json = jsonencode({
     displayName = "Booster Telemetría — Overview + Operations"
     mosaicLayout = {

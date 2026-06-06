@@ -27,6 +27,17 @@ resource "google_identity_platform_config" "default" {
     # Defensa adicional: prevenir cuentas con email duplicado entre providers
     # (e.g., dos users con misma direccion pero diferente provider).
     allow_duplicate_emails = false
+    # Declarado para matchear el estado del API (phone auth OFF) y eliminar el
+    # diff perpetuo que reportaba el plan (#412). Sin cambio de comportamiento.
+    phone_number {
+      enabled = false
+    }
+  }
+
+  # Multi-tenancy OFF (single-tenant). Declarado para matchear el API y eliminar
+  # el diff perpetuo del plan (#412). Sin cambio de comportamiento.
+  multi_tenant {
+    allow_tenants = false
   }
 
   # ★ T11 SC-1.2.2 (email/password leg) ★ — disable client-side new-user
