@@ -7,6 +7,17 @@ name: Release + Deploy
 on:
   push:
     branches: [main]
+    # Pushes docs-only NO disparan deploy (era no-op + ensuciaba la lane de
+    # concurrency). Denylist: lo NO listado siempre despliega (falla seguro).
+    # NO agregar '**/*.md' acá: matchearía .changeset/*.md y rompería el
+    # release de versiones. '*.md' (un solo '*') es root-only. Ver
+    # .specs/ci-release-skip-docs-only/spec.md (R1/SC-3).
+    paths-ignore:
+      - 'docs/**'
+      - '.specs/**'
+      - 'references/**'
+      - 'playbooks/**'
+      - '*.md'
 
 concurrency:
   group: release-${{ github.workflow }}-main
