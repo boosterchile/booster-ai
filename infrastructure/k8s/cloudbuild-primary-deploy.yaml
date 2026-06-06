@@ -1,0 +1,155 @@
+# Cloud Build pipeline para deployar telemetry-tcp-gateway en el cluster
+# PRIMARIO (southamerica-west1). Espejo de cloudbuild-dr-deploy.yaml.
+#
+# Por qué Cloud Build private worker pool y NO kubectl desde laptop:
+# El cluster primario tiene master_authorized_networks_config restringido
+# (privateEndpointEnforcement). El pool saw1 `booster-production-pool` YA ESTÁ
+# en la allowlist via `cloudbuild_pool_range` (ver infrastructure/compute.tf,
+# bloque master_authorized_networks_config del cluster booster-ai-telemetry).
+# A diferencia del DR, aquí pool y cluster están en la MISMA región (saw1),
+# así que NO aplica el límite cross-region documentado en el pipeline DR
+# (por eso NO usamos --internal-ip; vamos por el endpoint público allowlisted).
+#
+# Validar acceso ANTES con cloudbuild-primary-check.yaml (no mutante).
+#
+# Run:
+#   gcloud builds submit --no-source \
+#     --config=infrastructure/k8s/cloudbuild-primary-deploy.yaml \
+#     --region=southamerica-west1 \
+#     --project=booster-ai-494222
+#
+# Pre-requisitos (idempotentes — el pipeline los verifica):
+#   - Imagen telemetry-tcp-gateway:bootstrap taggeada en Artifact Registry
+#   - cert-manager instalado en el cluster primario (si falta, install via helm)
+#   - ClusterIssuer letsencrypt-prod aplicado en el cluster primario
+
+steps:
+# ----------------------------------------------------------------------
+# 1. Get kubectl credentials del cluster primario (endpoint público
+#    allowlisted para el rango del pool saw1; misma región = sin cross-region)
+# ----------------------------------------------------------------------
+- id: get-credentials-primary
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    gcloud container clusters get-credentials booster-ai-telemetry \
+      --location=southamerica-west1 \
+      --project=booster-ai-494222
+    kubectl get nodes
+
+# ----------------------------------------------------------------------
+# 2. Verify cert-manager + install si falta (idempotente)
+# ----------------------------------------------------------------------
+- id: ensure-cert-manager
+  name: alpine/helm:3.16.3
+  entrypoint: sh
+  args:
+  - -c
+  - |
+    set -eux
+    cp -r /workspace/.kube ~/.kube 2>/dev/null || true
+    export KUBECONFIG=~/.kube/config
+
+    if kubectl get namespace cert-manager 2>/dev/null; then
+      echo "cert-manager namespace exists, checking deployment..."
+      if kubectl get deployment -n cert-manager cert-manager 2>/dev/null; then
+        echo "cert-manager already installed, skipping helm install"
+        exit 0
+      fi
+    fi
+
+    echo "Installing cert-manager via helm..."
+    helm repo add jetstack https://charts.jetstack.io
+    helm repo update
+    helm install cert-manager jetstack/cert-manager \
+      --namespace cert-manager --create-namespace \
+      --set crds.enabled=true \
+      --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"="cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com" \
+      --wait --timeout=5m
+
+    kubectl annotate serviceaccount cert-manager \
+      --namespace cert-manager \
+      iam.gke.io/gcp-service-account=cert-manager-cloud-dns@booster-ai-494222.iam.gserviceaccount.com \
+      --overwrite
+
+# ----------------------------------------------------------------------
+# 3. Apply ClusterIssuer (letsencrypt-prod) — pre-req del Certificate
+# ----------------------------------------------------------------------
+- id: apply-issuers
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    kubectl apply -f infrastructure/k8s/cert-manager-issuers.yaml
+    for i in $$(seq 1 30); do
+      if kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q True; then
+        echo "ClusterIssuer Ready"
+        break
+      fi
+      echo "Waiting for ClusterIssuer Ready... ($$i/30)"
+      sleep 5
+    done
+
+# ----------------------------------------------------------------------
+# 4. Apply Certificate (cert-primary.yaml) — cert-manager hace DNS-01 challenge
+# ----------------------------------------------------------------------
+- id: apply-cert-primary
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    kubectl create namespace telemetry --dry-run=client -o yaml | kubectl apply -f -
+    kubectl apply -f infrastructure/k8s/cert-primary.yaml
+    echo "Cert applied — DNS-01 challenge en curso (puede tomar ~2-5min)"
+
+# ----------------------------------------------------------------------
+# 5. Apply telemetry-tcp-gateway.yaml (Deployment + Service + SA)
+# ----------------------------------------------------------------------
+- id: apply-gateway-primary
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    kubectl apply -f infrastructure/k8s/telemetry-tcp-gateway.yaml
+    echo "Rollout watch (max 5min)..."
+    kubectl rollout status deployment/telemetry-tcp-gateway \
+      --namespace=telemetry --timeout=300s
+
+# ----------------------------------------------------------------------
+# 6. Verificar Service obtuvo el loadBalancerIP esperado del primario
+# ----------------------------------------------------------------------
+- id: verify-service
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    for i in $$(seq 1 30); do
+      IP=$$(kubectl get svc -n telemetry telemetry-tcp-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+      if [ "$$IP" = "34.176.238.106" ]; then
+        echo "Service LoadBalancer IP correcto: $$IP"
+        break
+      fi
+      echo "Waiting for LoadBalancer IP... current=$$IP expected=34.176.238.106 ($$i/30)"
+      sleep 10
+    done
+    kubectl get pods,svc,certificate -n telemetry
+
+options:
+  # Worker pool saw1 (MISMA región que el cluster primario). Allowlisted en
+  # master_authorized_networks_config del cluster via cloudbuild_pool_range.
+  pool:
+    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 900s
