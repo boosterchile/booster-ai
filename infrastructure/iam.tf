@@ -184,6 +184,7 @@ locals {
     "roles/container.developer",               # Deploy a GKE (telemetry gateway)
     "roles/logging.viewer",                    # Leer logs de Cloud Build (gcloud builds submit los streamea)
     "roles/logging.logWriter",                 # Escribir logs del build a Cloud Logging
+    "roles/viewer",                            # Drift check CI (#412): `terraform plan` refresca TODOS los recursos → read-only project-wide. Trade-off aceptado: el deploy SA gana lectura amplia (ya tiene write potente via run.admin/storage.admin).
     # SEC-001 boundary-closure T10 (SC-G7): `roles/cloudfunctions.viewer`
     # REMOVIDO — existía solo para el workflow sprint-2c-b-deploy-gate.yml
     # (gcloud functions describe beforeCreate), decomisado con la blocking

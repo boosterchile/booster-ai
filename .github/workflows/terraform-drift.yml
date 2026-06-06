@@ -6,28 +6,23 @@
 # `terraform plan -detailed-exitcode` periódicamente y FALLA si hay drift (exit 2),
 # para que aparezca en la pestaña Actions / notificaciones.
 #
-# ── PREREQUISITOS (deben configurarse antes de habilitarlo; hoy fallaría) ──
+# ── PREREQUISITOS ──
 #  1. Repo VARIABLES ya existentes (las usa release.yml): vars.WIF_PROVIDER,
-#     vars.WIF_SERVICE_ACCOUNT_DEPLOY.
-#  2. NUEVA repo variable: vars.TF_BILLING_ACCOUNT = el billing account ID
-#     (única variable sin default en variables.tf). Settings → Secrets and
-#     variables → Actions → Variables. (No es secreto sensible, pero se deja
-#     como var para no hardcodearlo.)
-#  3. PERMISOS de lectura: un `terraform plan` refresca TODOS los recursos
-#     (compute, sql, redis, monitoring, iam, pubsub, kms, ...). El SA de WIF
-#     (github-deployer) NO tiene lectura project-wide → el plan fallaría en
-#     refresh. Hay que otorgarle `roles/viewer` (o crear un SA dedicado
-#     `terraform-drift@` con viewer + storage.objectViewer del bucket de state).
-#     Es un cambio IAM → decisión de un Owner (ver PR #411 / issue #410). NO se
-#     hace en este workflow.
-#  4. RUIDO conocido: hoy el plan reporta diffs perpetuos benignos en
-#     `google_identity_platform_config.default` y el dashboard
-#     `telemetry_overview` (normalización del API), más los 2 bindings IAM
-#     residuales del decomiso. Hasta resolverlos (ignore_changes o limpieza),
-#     el check saldrá en rojo por esos. Afinar antes de tratarlo como gate.
+#     vars.WIF_SERVICE_ACCOUNT_DEPLOY.  ✅
+#  2. ⬜ PENDIENTE (única acción manual restante): crear la repo variable
+#     vars.TF_BILLING_ACCOUNT = el billing account ID (única var sin default en
+#     variables.tf). Settings → Secrets and variables → Actions → Variables.
+#     (No es secreto sensible; se deja como var para no hardcodearlo.)
+#  3. ✅ PERMISOS de lectura: `roles/viewer` otorgado a github-deployer vía
+#     iam.tf (github_deployer_roles) — un `terraform plan` refresca TODOS los
+#     recursos. Aplicado 2026-06-06.
+#  4. ✅ RUIDO perpetuo resuelto: el plan completo da "No changes" tras declarar
+#     multi_tenant/phone_number en identity-platform.tf y ignore_changes del
+#     dashboard_json en telemetry-monitoring.tf. Baseline limpio = el check
+#     solo dispara ante drift REAL.
 #
-# Mientras (3) no esté, este workflow corre pero el step de plan fallará por
-# permisos — es deliberado que quede como PR hasta que el Owner habilite el SA.
+# Una vez creada vars.TF_BILLING_ACCOUNT (paso 2), este workflow corre verde
+# (estado actual: plan = "No changes"). Validar con un workflow_dispatch manual.
 
 name: Terraform Drift Check
 
