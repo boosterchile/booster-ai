@@ -31,7 +31,10 @@ resource "google_project" "booster_ai" {
     prevent_destroy = true
     # auto_create_network es CREATE-time only — no aplicar drift
     # post-creacion. Trivy ve el atributo en codigo (alert closes).
-    ignore_changes = [auto_create_network]
+    # billing_account: gestionado una sola vez; se ignora para (a) que el drift
+    # check (#412) no falsee si var.billing_account no se provee, y (b) evitar el
+    # footgun de que una var vacía intente DESVINCULAR billing del proyecto.
+    ignore_changes = [auto_create_network, billing_account]
   }
 }
 
