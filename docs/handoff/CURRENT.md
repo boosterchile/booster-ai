@@ -217,8 +217,15 @@ Para continuar el trabajo desde el MacBook Pro (disco interno, **NO** pendrive):
    gcloud config set project booster-ai-494222
    ```
 5. **Re-autenticar las MCP de Google Cloud** (BigQuery + Compute Engine) en Claude Code — su auth no viaja entre máquinas.
+6. **Restaurar la memoria persistente de Claude** (no viaja por git — vive en `~/.claude/...`, fuera del repo). Respaldada en Drive `dev@boosterchile.com` → `Mi unidad/claude-memory/booster-ai/`, vía el script `~/.claude/sync-booster-memory.sh` (creado 2026-06-07).
+   ```bash
+   # con el Drive dev@boosterchile.com montado y sincronizado:
+   ~/.claude/sync-booster-memory.sh pull    # Drive -> ~/.claude/.../memory/
+   ```
+   - El script no viaja solo por git tampoco; copialo/recrealo en la máquina nueva (vive en `~/.claude/`).
+   - **Disciplina cross-máquina** (como `git push`/`pull`, pero para memorias): `…/sync-booster-memory.sh push` al **cerrar** sesión en una máquina, `pull` al **abrir** en otra. Aditivo por defecto (nunca borra); `--mirror` para espejo fiel. `status` para ver diffs.
 
-> Una vez configurado: `git pull` en `chore/working-tree-hygiene` trae higiene + inventario + este handoff, y se retoma el inventario desde **ADR-008**.
+> Una vez configurado: `git pull` de `main` trae todo el trabajo (el código vive 100% en `origin/main`); las memorias se restauran con el paso 6. La rama histórica `chore/working-tree-hygiene` ya está mergeada a `main`.
 
 ### Estado de la rama `chore/working-tree-hygiene` (en origin)
 
