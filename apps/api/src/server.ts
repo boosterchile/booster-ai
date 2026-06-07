@@ -1,3 +1,4 @@
+import { buildRedisTlsOptions } from '@booster-ai/config';
 import { type Logger, createLogger } from '@booster-ai/logger';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
@@ -124,12 +125,17 @@ export function createServer(opts: CreateServerOptions): Hono {
   // Conexión propia (no comparte pool con ObservabilityCache) para
   // aislar métricas y errores. lazyConnect=true evita crashear el
   // startup si Memorystore está unreachable; el middleware loguea el
-  // error y T10 introducirá el fail-closed 503.
+  // error y fail-closea con 503 (rate-limit-pin / rate-limit-signup).
+  const rateLimitRedisTls = buildRedisTlsOptions({
+    tls: config.REDIS_TLS,
+    caCert: config.REDIS_CA_CERT,
+    requireCa: config.NODE_ENV === 'production',
+  });
   const redisForRateLimit = new Redis({
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
     ...(config.REDIS_PASSWORD ? { password: config.REDIS_PASSWORD } : {}),
-    ...(config.REDIS_TLS ? { tls: {} } : {}),
+    ...(rateLimitRedisTls ? { tls: rateLimitRedisTls } : {}),
     maxRetriesPerRequest: 2,
     lazyConnect: true,
   });
@@ -614,6 +620,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         redisPort: config.REDIS_PORT,
         ...(config.REDIS_PASSWORD ? { redisPassword: config.REDIS_PASSWORD } : {}),
         redisTls: config.REDIS_TLS,
+        ...(config.REDIS_CA_CERT ? { redisCaCert: config.REDIS_CA_CERT } : {}),
         billingExportTable: config.BILLING_EXPORT_TABLE,
         gcpProjectId: config.GOOGLE_CLOUD_PROJECT ?? 'booster-ai-494222',
         ...(config.TWILIO_ACCOUNT_SID ? { twilioAccountSid: config.TWILIO_ACCOUNT_SID } : {}),

@@ -1,3 +1,4 @@
+import { buildRedisTlsOptions } from '@booster-ai/config';
 import type { Logger } from '@booster-ai/logger';
 import Redis from 'ioredis';
 
@@ -32,6 +33,8 @@ export interface ObservabilityCacheOpts {
   port: number;
   password?: string | undefined;
   tls?: boolean | undefined;
+  /** PEM del server CA de Memorystore. Ver apps/api/src/lib/redis-tls.ts. */
+  tlsCa?: string | undefined;
   logger: Logger;
 }
 
@@ -41,11 +44,12 @@ export class ObservabilityCache {
 
   constructor(opts: ObservabilityCacheOpts) {
     this.logger = opts.logger;
+    const tlsOptions = buildRedisTlsOptions({ tls: opts.tls ?? false, caCert: opts.tlsCa });
     this.redis = new Redis({
       host: opts.host,
       port: opts.port,
       ...(opts.password ? { password: opts.password } : {}),
-      ...(opts.tls ? { tls: {} } : {}),
+      ...(tlsOptions ? { tls: tlsOptions } : {}),
       // No reintentos infinitos — si Redis cae, el cache "miss" se vuelve
       // un fetch directo y seguimos. NO bloquear el endpoint.
       maxRetriesPerRequest: 2,
