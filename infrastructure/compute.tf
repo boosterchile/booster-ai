@@ -18,6 +18,11 @@ locals {
     REDIS_PORT     = tostring(google_redis_instance.main.port)
     REDIS_PASSWORD = google_redis_instance.main.auth_string
     REDIS_TLS      = "true"
+    # Server CA de Memorystore (SERVER_AUTHENTICATION): cert firmado por CA privada
+    # por-instancia que NO está en el bundle público del sistema. Sin pinnearla,
+    # ioredis falla con UNABLE_TO_VERIFY_LEAF_SIGNATURE (incidente 2026-06-07 tras
+    # el replace de la instancia en ADR-058). Ver apps/api/src/lib/redis-tls.ts.
+    REDIS_CA_CERT = google_redis_instance.main.server_ca_certs[0].cert
   }
 
   common_secrets = {

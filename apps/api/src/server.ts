@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import type pg from 'pg';
 import { config } from './config.js';
 import type { Db } from './db/client.js';
+import { buildRedisTlsOptions } from './lib/redis-tls.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createDemoExpiresMiddleware } from './middleware/demo-expires.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
@@ -125,11 +126,15 @@ export function createServer(opts: CreateServerOptions): Hono {
   // aislar métricas y errores. lazyConnect=true evita crashear el
   // startup si Memorystore está unreachable; el middleware loguea el
   // error y T10 introducirá el fail-closed 503.
+  const rateLimitRedisTls = buildRedisTlsOptions({
+    tls: config.REDIS_TLS,
+    caCert: config.REDIS_CA_CERT,
+  });
   const redisForRateLimit = new Redis({
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
     ...(config.REDIS_PASSWORD ? { password: config.REDIS_PASSWORD } : {}),
-    ...(config.REDIS_TLS ? { tls: {} } : {}),
+    ...(rateLimitRedisTls ? { tls: rateLimitRedisTls } : {}),
     maxRetriesPerRequest: 2,
     lazyConnect: true,
   });
@@ -614,6 +619,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         redisPort: config.REDIS_PORT,
         ...(config.REDIS_PASSWORD ? { redisPassword: config.REDIS_PASSWORD } : {}),
         redisTls: config.REDIS_TLS,
+        ...(config.REDIS_CA_CERT ? { redisCaCert: config.REDIS_CA_CERT } : {}),
         billingExportTable: config.BILLING_EXPORT_TABLE,
         gcpProjectId: config.GOOGLE_CLOUD_PROJECT ?? 'booster-ai-494222',
         ...(config.TWILIO_ACCOUNT_SID ? { twilioAccountSid: config.TWILIO_ACCOUNT_SID } : {}),
