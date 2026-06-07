@@ -79,10 +79,14 @@ en VPC `PRIVATE_SERVICE_ACCESS`. Patron documentado de Memorystore + TLS por IP.
 
 - R1: rotación de CA → re-incidente. Mitigado: se inyectan TODOS los `server_ca_certs`
   (devils-advocate P1-2), no solo `[0]`.
-- R2: deploy requiere code + `terraform apply` (env). Ninguno empeora prod por separado
-  (sin env el code devuelve `{}` en dev / lanza en prod por `requireCa`; sin code el env se
-  ignora). **Rollback**: revertir code+env juntos — revertir solo el env con el code nuevo
-  haría que `requireCa` lance al startup en prod (falla ruidosa, no silenciosa).
+- R2: deploy requiere code + `terraform apply` (env), **en orden**: el guard `requireCa` hace
+  que el código nuevo **lance al startup** en prod si falta `REDIS_CA_CERT`.
+  - **Orden correcto**: (1) `terraform apply` primero (añade la env; el código viejo en prod la
+    ignora → inocuo), (2) luego deploy del código nuevo (ya encuentra la env → conecta).
+  - Si se invirtiera (código antes que env), la revisión nueva crashea al startup; el canary la
+    detiene y prod sigue en la revisión vieja (degradada, no peor). Falla ruidosa, no silenciosa.
+  - **Rollback**: revertir el código primero (el código viejo ignora la env); la env puede
+    quedarse (es inerte para el código viejo).
 - R3: poner el PEM en env de Cloud Run — el cert es publico (no secreto). Aceptable.
 
 ## 7b. Residuales aceptados / follow-ups (de REVIEW)
