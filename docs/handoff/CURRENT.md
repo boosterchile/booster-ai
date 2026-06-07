@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-06 (**Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4 metric/alert] + **IAM Owner drift resuelto** [phantom de tfvars local, NO swap a prod, #411] + **drift check de Terraform en CI live+verde** [SA dedicado read-only `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#413** mergeados a `main`. Ver §Sesión 2026-06-06. ⚠️ Único residual: un release/deploy run quedó `pending` en GitHub Actions — no-op infra-only, decisión humana.)
+**Última actualización**: 2026-06-07 (**handoff al día (#414)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#415** mergeados a `main`. Ver §Sesión 2026-06-06.)
 **Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
 **Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
@@ -56,7 +56,18 @@ Para detectar drift prod-vs-main de forma continua se creó el workflow `.github
 - ✅ PRs **#406→#413** mergeados a `main`. ADRs **058** (right-sizing pre-comercial) y **059** (DNS endpoint).
 - ✅ Vector Google de SEC-001 H1.2 totalmente cerrado (boundary en #402-#405 + decomiso de residuales acá).
 - ⚠️ **Único residual (decisión humana)**: un release/deploy run (`27073359900`) quedó **`pending` ~21 min** en GitHub Actions (0 jobs, 0 Cloud Build) pese a aprobación registrada — issue de cola de runners / concurrency en `release.yml`, **no accionable por el agente** (403). El deploy es **no-op** (imagen idéntica, merge infra-only); la API está **sana (200)** en su revisión actual. Recomendado: revisar la UI de Actions y re-run o cancelar (no hay app que shipear).
-- 🌿 Rama de trabajo `ci/drift-dedicated-reader-sa` (`917f481`) ya integrada en `main` (#413 squash `2fce2df`); puede borrarse.
+- 🌿 Rama de trabajo `ci/drift-dedicated-reader-sa` (`917f481`) ya integrada en `main` (#413 squash `2fce2df`); borrada.
+
+### Cierre de jornada — handoff al día + `release.yml` deja de disparar en docs-only
+
+Trabajo de mantenimiento posterior al cierre de cost-opt/drift:
+
+- **Handoff actualizado (#414, `bf8e842`)**: `CURRENT.md` estaba 3 días atrás (llegaba al 06-03); reconstruido desde los ledgers 06-04→06-06 + `git log` (esta sección + §2026-06-05). Rama `ci/drift-dedicated-reader-sa` borrada (local + ref remota stale podada).
+- **🔧 `release.yml` ya no dispara deploy en pushes docs-only (#415, `6f88393`)** — ciclo DEFINE→SHIP completo (`.specs/ci-release-skip-docs-only/`). Se agregó `paths-ignore` (**denylist falla-seguro**: lo no listado siempre despliega) al trigger `on.push`: `docs/**`, `.specs/**`, `references/**`, `playbooks/**`, `*.md`.
+  - **Motivo**: cada merge docs-only (handoff, specs) disparaba un deploy **no-op** que se colgaba en `pending` por cola de runners y ensuciaba la lane de `concurrency` (`cancel-in-progress:false`). 4 de los últimos 5 runs de `release.yml` eran docs/infra-doc no-op.
+  - **⚠️ Clave**: NO se usa `**/*.md` a propósito — matchearía `.changeset/*.md` y rompería el release de Changesets. `*.md` (un solo `*`) es root-only y no cruza `/`.
+  - **REVIEW devils-advocate**: APPROVE_WITH_RESERVATIONS, **0 P0**. Reservas resueltas (strawman job-level, fila Changesets fase B, R3 reclasificado). Follow-up de verificación observacional post-merge: [`_followups/verify-release-paths-ignore-post-merge.md`](../../.specs/_followups/verify-release-paths-ignore-post-merge.md) (SC-1: 1er docs-only → 0 runs; SC-2 ya validado en vivo — el merge de #415 toca `.github/` y **sí** disparó).
+- **Runs no-op de release cancelados** (`27075451377` de #414, `27076264007` de #415) desde la UI de Actions. ⚠️ **Aprendizaje operativo**: cancelar runs de Actions **no es accionable** ni por el agente ni por el PAT de `gh` (ambos HTTP 403) — solo desde la UI web. Con el `paths-ignore` ya no debería ser necesario.
 
 ---
 
