@@ -34,10 +34,22 @@ Revertir el código primero (el código viejo ignora `REDIS_CA_CERT`); la env pu
 
 ## Checklist
 
-- [ ] `terraform plan` revisado (solo REDIS_CA_CERT)
-- [ ] `terraform apply`
-- [ ] PR mergeado + gate `production` aprobado
-- [ ] canary observado → 100%
-- [ ] SC-2 verificado (signup-request 202)
-- [ ] SC-3 verificado (logs limpios)
-- [ ] spec.md Status → Shipped
+- [x] `terraform plan` revisado (solo REDIS_CA_CERT — 7 services in-place, 0 add/destroy)
+- [x] `terraform apply` (plan post-apply = No changes)
+- [x] PR mergeado + gate `production` aprobado
+- [x] canary observado → 100% (rev `00374-loh`)
+- [x] SC-2 verificado (signup-request → 202)
+- [x] SC-3 verificado (0 cert errors post-deploy; rate-limit → 429, no fail-closed)
+- [x] spec.md Status → Shipped
+
+## Resultado del deploy (2026-06-07)
+
+- **Orden ejecutado**: `terraform apply` (env en 7 services) → merge #420 → gate `production`
+  aprobado por el PO → `deploy-production` canary → 100%.
+- **Nota de cola**: el run `release.yml` (27100872770, commit `d504811`) quedó ~15 min
+  `pending` con 0 jobs por el lock de concurrency que retenía un run viejo parado en SU gate;
+  el PO lo rechazó (Failure, sin desplegar) y eso liberó la cola. El run avanzó y el
+  `deploy-production` figura `cancelled` en GitHub (artefacto del patrón canary), pero prod
+  quedó **100% en `00374-loh`** con el fix — verificado por estado real, no por el status de GH.
+- **Verificación prod**: `signup-request` → 202; 0 `unable to verify the first certificate`;
+  rate-limit restaurado (429 tras 5/ventana, no 503).

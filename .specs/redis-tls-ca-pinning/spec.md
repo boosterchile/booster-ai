@@ -1,6 +1,6 @@
 # Spec — Redis TLS CA pinning (fix incidente 2026-06-07)
 
-**Status**: Approved (incident hotfix, rumbo A)
+**Status**: Shipped (2026-06-07 — PR #420 `d504811`, rev `00374-loh` 100%; SC-2/SC-3 verificados en prod)
 **Fecha**: 2026-06-07
 **Tipo**: bugfix de producción (security boundary — TLS)
 
