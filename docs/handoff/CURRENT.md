@@ -1,9 +1,43 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-07 (**handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
+**Última actualización**: 2026-06-07 (**🔴→✅ INCIDENTE Redis TLS resuelto en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429]. Endurecido también `whatsapp-bot` [quitado `rejectUnauthorized:false`, hallazgo del REVIEW]. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
 **Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
 **Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-07 (incidente) — Redis TLS roto por la rotación de CA del replace de cost-opt
+
+> Reporte del PO: "no puedo crear usuarios" en `app.boosterchile.com`. Resultó ser un incidente de infra, no un bug de la pantalla. Ciclo DEFINE→SHIP completo + deploy a prod verificado.
+
+### Diagnóstico (dos cosas distintas)
+
+1. **Self-registration cerrado por diseño** (SEC-001): no hay form público de registro; `/login` es solo login RUT+clave; `signup-request` flag OFF. **Rumbo A elegido por el PO**: dejarlo cerrado, arreglar solo Redis.
+2. **Regresión real**: `POST /api/v1/signup-request` → **503** (`Retry-After:30` = `rate-limit-signup` fail-closed). Logs: `rate-limit-pin: Redis error — "unable to verify the first certificate"` (Node `UNABLE_TO_VERIFY_LEAF_SIGNATURE`). **Causa raíz**: el replace de la instancia Memorystore en cost-opt (ADR-058, 06-06) rotó la **CA privada por-instancia**; ioredis conectaba con `tls:{}` (valida contra el bundle público del sistema, que NO la incluye) → handshake falla → **todos los paths Redis caen** (rate-limit-pin + rate-limit-signup + ObservabilityCache). Login NO usa Redis → seguía vivo. El handoff de cost-opt no lo vio porque solo chequeó `/health` (no toca Redis).
+
+### Fix (PR [#420](https://github.com/boosterchile/booster-ai/pull/420) `d504811`)
+
+- Helper compartido `buildRedisTlsOptions` en `@booster-ai/config`: pinea el server CA (`REDIS_CA_CERT`), mantiene validación de cadena, deshabilita `checkServerIdentity` (conexión por IP). **NUNCA** `rejectUnauthorized:false`. `requireCa` falla-ruidoso en prod.
+- API (server.ts + observability/{cache,factory}) usan el helper.
+- **`apps/whatsapp-bot`**: portado desde `tls:{rejectUnauthorized:false}` (MITM, mismo boundary) — hallazgo del REVIEW (devils-advocate P0 + security-auditor).
+- `infrastructure/compute.tf`: `REDIS_CA_CERT = join("\n", server_ca_certs[*].cert)` (TODOS los certs, robustez ante rotación) en `common_env_vars` → propaga a los 7 services.
+- **REVIEW**: devils-advocate (DO_NOT_APPROVE inicial → 2 P0 resueltos) + security-auditor (0 bloqueantes). 3 follow-ups: `redis-tls-integration-test`, `redis-tls-cn-pinning`, `redis-password-to-secret-manager`.
+
+### Deploy (orden obligatorio por el guard `requireCa`)
+
+1. `terraform apply` de `REDIS_CA_CERT` (7 services in-place, 0 add/destroy; plan post-apply = No changes).
+2. Merge #420 → `release.yml` → gate `production` aprobado por el PO → canary → 100%.
+- ⚠️ **Cola de release.yml otra vez**: el run (`27100872770`, `d504811`) quedó ~15 min `pending` con 0 jobs porque un run viejo parado en **su** gate de producción retenía el lock de `concurrency` (`cancel-in-progress:false`). El PO **rechazó** ese run viejo (Failure, sin desplegar) → liberó la cola → el nuestro avanzó. Cancelar runs sigue siendo **403** para el agente/PAT (solo UI). El `deploy-production` figura `cancelled` en GitHub (artefacto del patrón canary) pero **prod quedó 100% en `00374-loh`** con el fix.
+
+### Verificación en prod (rev `00374-loh` 100%)
+
+- **SC-2**: `signup-request` → **202** `{"ok":true}` (ya no 503).
+- **SC-3**: **0** `unable to verify the first certificate` post-deploy.
+- **Rate-limit restaurado**: 6 intentos seguidos → `202 202 429 429 429 429` (429, no 503 fail-closed → Redis OK + `incr` opera).
+- `terraform plan` global post-deploy = **No changes**.
+
+> 🧠 Memoria: [[redis-tls-ca-pinning-2026-06]] — cualquier replace/rotación de Memorystore re-rota la CA; pinear `server_ca_certs` y verificar una **op real de Redis** (no solo `/health`) tras tocar la instancia.
 
 ---
 
