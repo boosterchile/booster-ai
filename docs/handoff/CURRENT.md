@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-07 (**🔴→✅ INCIDENTE Redis TLS resuelto en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429]. Endurecido también `whatsapp-bot` [quitado `rejectUnauthorized:false`, hallazgo del REVIEW]. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
+**Última actualización**: 2026-06-07 (**🔴→✅ INCIDENTE Redis TLS resuelto y CERRADO en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429] + endurecido `whatsapp-bot` [quitado `rejectUnauthorized:false`]. Verificación E2E Playwright gateada [#422], cierre docs [#421], follow-up paths-ignore [#423]; gate no-op de #422 rechazado → lane de release libre. **PRs #420→#423 mergeados.** 4 follow-ups abiertos. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
 **Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
 **Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
@@ -36,6 +36,32 @@
 - **SC-3**: **0** `unable to verify the first certificate` post-deploy.
 - **Rate-limit restaurado**: 6 intentos seguidos → `202 202 429 429 429 429` (429, no 503 fail-closed → Redis OK + `incr` opera).
 - `terraform plan` global post-deploy = **No changes**.
+
+### Verificación E2E con Playwright (#422)
+
+A pedido del PO se verificó el path Redis desde el browser. El login universal RUT+clave
+(`/auth/login-rut`) **NO** usa Redis; el único path Redis observable es el `rate-limit-pin`
+de `/login/conductor` → `POST /auth/driver-activate`. Test chromium vs prod: **1 passed**;
+secuencia real `401×5 → 429` (`retry-after:900`, `x-ratelimit-scope:rut`) — el 429 solo sale
+del rate-limit funcionando sobre Redis. Commiteado **gateado** (`RUN_PROD_SMOKE=1`, no corre
+en CI porque pega a prod) en `apps/web/e2e/redis-ratelimit-smoke.spec.ts`.
+
+### Cierre del incidente
+
+- **PRs**: **#420** (fix `d504811`) → **#421** (cierre docs: spec Shipped + ship + handoff) →
+  **#422** (smoke Playwright gateado) → **#423** (follow-up paths-ignore). Todos mergeados a `main`.
+- ⚠️ **Efecto colateral de #422**: al ser un `.spec.ts` bajo `apps/web/e2e/` (no es docs), el
+  merge disparó un `release.yml` no-op (run `27103863227`) que quedó `waiting` en el gate. El PO
+  lo **rechazó** (Failure) → liberó el lock de `concurrency`. Lane de release **libre** (0 runs
+  activos). Trackeado en follow-up `release-paths-ignore-test-only-changes`.
+- **Estado final**: fix al 100% en prod y verificado (API + Playwright); `main` limpio;
+  `terraform plan` global = No changes; lane de release libre.
+- **Follow-ups abiertos (4)**: [`redis-tls-integration-test`](../../.specs/_followups/redis-tls-integration-test.md),
+  [`redis-tls-cn-pinning`](../../.specs/_followups/redis-tls-cn-pinning.md),
+  [`redis-password-to-secret-manager`](../../.specs/_followups/redis-password-to-secret-manager.md),
+  [`release-paths-ignore-test-only-changes`](../../.specs/_followups/release-paths-ignore-test-only-changes.md).
+- **Pendiente operativo**: whatsapp-bot toma el código nuevo (sin `rejectUnauthorized:false`) en
+  su próximo deploy normal — hoy sigue con imagen vieja + la env `REDIS_CA_CERT` ya presente.
 
 > 🧠 Memoria: [[redis-tls-ca-pinning-2026-06]] — cualquier replace/rotación de Memorystore re-rota la CA; pinear `server_ca_certs` y verificar una **op real de Redis** (no solo `/health`) tras tocar la instancia.
 
