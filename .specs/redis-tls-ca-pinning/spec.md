@@ -57,11 +57,17 @@ en VPC `PRIVATE_SERVICE_ACCESS`. Patron documentado de Memorystore + TLS por IP.
 ## 5. Boundaries tecnicos
 
 - `packages/config/src/schemas/redis.ts`: `REDIS_CA_CERT: z.string().optional()`.
-- `apps/api/src/lib/redis-tls.ts`: helper `buildRedisTlsOptions` (+ test).
-- `apps/api/src/server.ts`: cliente `redisForRateLimit` + config del factory observability.
+- `packages/config/src/redis-tls.ts`: helper compartido `buildRedisTlsOptions` (+ test).
+  Vive en el package (no en un app) para que TODOS los servicios con cliente Redis
+  compartan la misma postura TLS. Acepta `requireCa` (fail-loud en prod, §4).
+- `apps/api/src/server.ts`: cliente `redisForRateLimit` (`requireCa` en prod) + config del
+  factory observability.
 - `apps/api/src/services/observability/{cache,factory}.ts`: propagar `tlsCa`.
-- `infrastructure/compute.tf`: `REDIS_CA_CERT = google_redis_instance.main.server_ca_certs[0].cert`
-  en `local.common_env_vars` (propaga a todos los services via merge).
+- `apps/whatsapp-bot/src/main.ts`: reemplaza `tls: { rejectUnauthorized: false }` (MITM,
+  mismo boundary) por el helper. Hallazgo de REVIEW (devils-advocate P0-1 + security-auditor).
+- `infrastructure/compute.tf`: `REDIS_CA_CERT = join("\n", server_ca_certs[*].cert)` en
+  `local.common_env_vars` (TODOS los certs — robustez ante rotación; propaga a todos los
+  services via merge).
 
 ## 6. Fuera de alcance
 
@@ -71,11 +77,28 @@ en VPC `PRIVATE_SERVICE_ACCESS`. Patron documentado de Memorystore + TLS por IP.
 
 ## 7. Riesgos
 
-- R1: `server_ca_certs[0]` podria no ser el cert activo si hubiera multiples. Verificado:
-  la instancia expone 1 cert (sha1 `cbbc7d16...`, expira 2036). Bajo.
+- R1: rotación de CA → re-incidente. Mitigado: se inyectan TODOS los `server_ca_certs`
+  (devils-advocate P1-2), no solo `[0]`.
 - R2: deploy requiere code + `terraform apply` (env). Ninguno empeora prod por separado
-  (sin env el code devuelve `{}`; sin code el env se ignora). Sin orden-hazard.
+  (sin env el code devuelve `{}` en dev / lanza en prod por `requireCa`; sin code el env se
+  ignora). **Rollback**: revertir code+env juntos — revertir solo el env con el code nuevo
+  haría que `requireCa` lance al startup en prod (falla ruidosa, no silenciosa).
 - R3: poner el PEM en env de Cloud Run — el cert es publico (no secreto). Aceptable.
+
+## 7b. Residuales aceptados / follow-ups (de REVIEW)
+
+- **Residual aceptado — identidad de servidor (devils-advocate P1-1)**: `checkServerIdentity:
+  () => undefined` no verifica el CN (= UID de instancia), solo la cadena CA. security-auditor
+  lo evaluó **aceptable**: la CA es por-instancia (no hay "otro host" bajo la misma CA dentro
+  del VPC al que redirigir), AUTH habilitado, IP fija en `PRIVATE_SERVICE_ACCESS`. Hardening
+  opcional (pin CN contra UID por env) → follow-up `redis-tls-cn-pinning`.
+- **Follow-up — integration test TLS real (devils-advocate P0-2)**: la suite no ejercita el
+  handshake TLS (integration levanta Redis plaintext). Caso negativo (CA equivocada → falla)
+  pendiente → follow-up `redis-tls-integration-test`. Mitigación parcial entregada: `requireCa`
+  da cobertura de comportamiento (prod sin CA → throw, testeado).
+- **Follow-up — `REDIS_PASSWORD` a Secret Manager (security-auditor QUESTION)**: el `auth_string`
+  va como env plaintext en Cloud Run (predates, `b59ffe5`), contra CLAUDE.md §Seguridad →
+  follow-up `redis-password-to-secret-manager`.
 
 ## 8. Test list
 

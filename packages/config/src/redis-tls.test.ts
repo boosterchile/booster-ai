@@ -9,13 +9,24 @@ describe('buildRedisTlsOptions', () => {
     expect(buildRedisTlsOptions({ tls: false, caCert: FAKE_CA })).toBeUndefined();
   });
 
-  it('tls=true sin CA → {} (preserva validación contra bundle del sistema)', () => {
+  it('tls=true sin CA sin requireCa → {} (preserva validación contra bundle del sistema)', () => {
     expect(buildRedisTlsOptions({ tls: true })).toEqual({});
     expect(buildRedisTlsOptions({ tls: true, caCert: undefined })).toEqual({});
   });
 
+  it('tls=true sin CA con requireCa → throw (fail-loud en producción)', () => {
+    expect(() => buildRedisTlsOptions({ tls: true, requireCa: true })).toThrow(/REDIS_CA_CERT/);
+    expect(() => buildRedisTlsOptions({ tls: true, caCert: '', requireCa: true })).toThrow(
+      /REDIS_CA_CERT/,
+    );
+  });
+
+  it('tls=false con requireCa → undefined (no exige CA si no hay TLS)', () => {
+    expect(buildRedisTlsOptions({ tls: false, requireCa: true })).toBeUndefined();
+  });
+
   it('tls=true con CA → pinnea la CA y deshabilita el check de hostname', () => {
-    const opts = buildRedisTlsOptions({ tls: true, caCert: FAKE_CA });
+    const opts = buildRedisTlsOptions({ tls: true, caCert: FAKE_CA, requireCa: true });
     expect(opts).toBeDefined();
     expect(opts?.ca).toEqual([FAKE_CA]);
     // checkServerIdentity definido y retorna undefined (= identidad OK, conexión por IP)

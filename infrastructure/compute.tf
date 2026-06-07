@@ -21,8 +21,11 @@ locals {
     # Server CA de Memorystore (SERVER_AUTHENTICATION): cert firmado por CA privada
     # por-instancia que NO está en el bundle público del sistema. Sin pinnearla,
     # ioredis falla con UNABLE_TO_VERIFY_LEAF_SIGNATURE (incidente 2026-06-07 tras
-    # el replace de la instancia en ADR-058). Ver apps/api/src/lib/redis-tls.ts.
-    REDIS_CA_CERT = google_redis_instance.main.server_ca_certs[0].cert
+    # el replace de la instancia en ADR-058). Ver packages/config/src/redis-tls.ts.
+    # Se inyectan TODOS los server_ca_certs (no solo [0]) para sobrevivir una
+    # rotación de CA, durante la cual Memorystore expone el saliente + el entrante
+    # a la vez; Node parsea todos los PEM del string.
+    REDIS_CA_CERT = join("\n", google_redis_instance.main.server_ca_certs[*].cert)
   }
 
   common_secrets = {

@@ -1,6 +1,6 @@
+import { buildRedisTlsOptions } from '@booster-ai/config';
 import type { Logger } from '@booster-ai/logger';
 import Redis from 'ioredis';
-import { buildRedisTlsOptions } from '../../lib/redis-tls.js';
 
 /**
  * Wrapper Redis con TTL para cachear queries caras del Observability
