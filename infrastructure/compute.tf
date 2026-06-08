@@ -401,25 +401,20 @@ module "service_telemetry_processor" {
   service_name          = "booster-ai-telemetry-processor"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  # ⚠️ CORRECCIÓN 2026-06-08: este servicio NO es un push consumer. Las subscriptions
-  # `telemetry-events-processor-sub` y `crash-traces-processor-sub` no tienen
-  # pushConfig (son PULL); el código usa `subscription.on('message')` (StreamingPull
-  # dentro del container). El comentario previo ("Pub/Sub push... retry cubre el cold
-  # start") era factualmente falso y es la CAUSA LATENTE del incidente 2026-06-07:
-  # con `min_instances=0` + CPU throttling, al apagarse la instancia nadie tira de la
-  # cola → telemetría caída ~26h. Un consumer pull REQUIERE min_instances>=1 + CPU
-  # always-on (cpu_idle=false).
+  # Pub/Sub PULL consumer (StreamingPull dentro del container:
+  # apps/telemetry-processor/src/main.ts → `subscription.on('message')`). NO es push:
+  # las subscriptions `telemetry-events-processor-sub` y `crash-traces-processor-sub`
+  # no tienen pushConfig.
   #
-  # El fix de runtime ya está aplicado a mano (revisión 00312): min=1 + cpu_idle=false.
-  # Codificarlo en IaC es el follow-up `telemetry-processor-min-instances`: requiere
-  # (a) min_instances=1 acá y (b) exponer cpu_idle como variable del módulo
-  # cloud-run-service (hoy está hardcodeado `cpu_idle = true` en modules/.../main.tf:37).
-  # Mientras eso no entre, hay DRIFT (el drift-check lo marca) y un `terraform apply`
-  # manual REVERTIRÍA el fix → re-rompe la telemetría. El apply NO es automático en
-  # merge (terraform-drift.yml solo corre plan), así que mergear no revierte; el peligro
-  # es un apply manual. La alerta `telemetry_consumer_stalled_p1` detecta recurrencia ~35min.
-  min_instances = 0
+  # ⚠️ min_instances=1 + cpu_idle=false son OBLIGATORIOS, no optimización: el loop de
+  # pull NO es request-driven, así que con min=0 la instancia escala a cero (nadie
+  # consume) y con cpu_idle=true queda CPU-throttled entre requests (el pull se starvea).
+  # Causa del incidente 2026-06-07 (telemetría caída ~26h con la config previa min=0 +
+  # "push consumer"). La recurrencia ahora la detecta `telemetry_consumer_stalled_p1`
+  # (telemetry-monitoring.tf) en ~35min. Coincide con el fix de runtime (revisión 00312).
+  min_instances = 1
   max_instances = 50
+  cpu_idle      = false
   cpu           = "2"
   memory        = "1Gi"
   concurrency   = 10 # control de rate a Firestore/BigQuery

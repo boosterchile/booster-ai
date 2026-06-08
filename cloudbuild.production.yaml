@@ -337,7 +337,10 @@ steps:
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-web]
 
-  # apps/telemetry-processor — Cloud Run consumer Pub/Sub.
+  # apps/telemetry-processor — Cloud Run PULL consumer (StreamingPull).
+  # min-instances=1 + no-cpu-throttling son OBLIGATORIOS para un consumer pull
+  # (ver compute.tf / incidente 2026-06-07). Explícitos acá para idempotencia y
+  # auto-documentación, aunque `update --image` ya preserva la config existente.
   - id: deploy-telemetry-processor
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -349,6 +352,8 @@ steps:
       - --image=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
+      - --min-instances=1
+      - --no-cpu-throttling
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-telemetry-processor]
 
