@@ -75,8 +75,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - **Contrato lib (review T1.2)**: el route DEBE (a) validar el token como string vía Zod antes de pasarlo a `verifyOnboardingToken` (un no-string lanzaría en `.split`); (b) envolver `verifyOnboardingToken` en try/catch — un secreto débil/ausente **lanza** (fail-closed), que el route mapea a error de servidor genérico + métrica distinta, NO a la respuesta anti-enumeration; (c) **colapsar** `invalid`/`expired`/no-row/ya-consumido en UNA respuesta genérica (sin oráculo). El consumo atómico (T1.5a) localiza por `sid` FIRMADO, no por hash recomputado.
 - Rollback: flag OFF lo desactiva; revert del route.
 
-### T1.6 — Clasificación boundary-audit del route nuevo (ADR-057)
-- Files: `scripts/check-route-default-deny.ts` / allowlist + test
+### T1.6 — Clasificación boundary-audit del route nuevo (ADR-057) [DONE 2026-06-08]
+- Files: `scripts/check-route-default-deny.ts` + `test/scripts/check-route-default-deny.test.ts`
+- **Evidencia**: el harness es **mount-level** y `/empresas` (`createEmpresaRoutes`) ya estaba clasificado `GATED-CLOSED`, pero su rationale era **stale** (decía "no hay path admin_provisioned reachable" — T1.5b agregó exactamente ese path). Corregido: rationale ahora describe ambas sub-rutas (self-service OFF + admin-provisioned gateado por `ADMIN_PROVISIONED_ONBOARDING_ENABLED`+emailVerified+token one-shot, fail-closed). Regresión que fija `GATED-CLOSED` + keywords del gate (atrapa drift futuro). Harness test 31/31, **harness real OK** (40 mounts, cero sin clasificar/stale), biome ✓.
 - LOC: ~30
 - Depends: T1.5b
 - Acceptance (§6.5): route clasificado en el harness default-deny; CI pasa.

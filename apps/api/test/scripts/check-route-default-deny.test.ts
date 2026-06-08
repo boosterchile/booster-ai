@@ -206,6 +206,19 @@ describe('check-route-default-deny — integridad de la tabla', () => {
   it('toda entrada no-ENFORCED tiene rationale no vacío', () => {
     expect(findMissingRationale(ROUTE_CLASSIFICATION)).toEqual([]);
   });
+
+  // T1.6 — el route admin-provisioned (T1.5b) vive bajo el mount /empresas
+  // (createEmpresaRoutes). Como el harness es mount-level, la clasificación no
+  // gana una entrada nueva: el rationale DEBE describir el path admin-provisioned
+  // y su gate de token. Atrapa el drift previo (la entrada decía "no admin path").
+  it('createEmpresaRoutes: GATED-CLOSED y el rationale cubre el path admin-provisioned + token (T1.6)', () => {
+    const entry = ROUTE_CLASSIFICATION.createEmpresaRoutes;
+    expect(entry?.category).toBe('GATED-CLOSED');
+    const rationale = (entry?.rationale ?? '').toLowerCase();
+    expect(rationale).toContain('admin_provisioned');
+    expect(rationale).toContain('token');
+    expect(rationale).toContain('admin_provisioned_onboarding_enabled');
+  });
 });
 
 describe('check-route-default-deny — los 6 mounts verificados (INTENTIONAL-OPEN)', () => {
