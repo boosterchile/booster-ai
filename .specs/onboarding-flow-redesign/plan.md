@@ -32,8 +32,10 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance: columnas `token_hash`, `consumido_en`, `expira_en`, **`firebase_uid`** (nullable). Migración aplica; schema coincide (gate drift). El `firebase_uid` es lo que permite a T1.7 identificar el huérfano (review P0-5).
 - Rollback: revert (drop columnas).
 
-### T1.2 — Lib `onboarding-token` (firmar + verificar; expiración = control de acceso)
+### T1.2 — Lib `onboarding-token` (firmar + verificar; expiración = control de acceso) [DONE 2026-06-08]
 - Files: `services/onboarding-token.ts` + `.test`
+- **Decisión PO**: panel de diseño recomendó token opaco+sha256 sin secreto (95/100) vs HMAC firmado (58/100); **PO eligió HMAC firmado** con secreto env (respeta plan/spec aprobados + ADR-001). Registrado en ledger (`design_decision T1.2`).
+- **Evidencia**: `createOnboardingToken`/`verifyOnboardingToken`/`hashOnboardingToken` puras (secreto + `now` inyectados). Firma HMAC-SHA256 verificada ANTES de payload/exp; `timingSafeEqual`+length-guard; fail-closed si secreto <32 bytes; nunca lanza ante token atacante. TDD rojo→verde **15/15**, coverage 97.5%/94.44%/100% (>gates). typecheck+biome ✓. El env `ONBOARDING_TOKEN_SIGNING_SECRET` lo cablea T1.3.
 - LOC: ~90
 - Depends: none
 - Acceptance (SC2): `create`/`verify` (firma con nonce + `expira_en`); verify rechaza inválido/expirado. Unit puro. Firma con secret de Secret Manager. (La expiración acá es **rechazo de acceso**, distinta de la higiene del huérfano de T1.7 — review P1-3.)
