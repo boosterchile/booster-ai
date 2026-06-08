@@ -23,7 +23,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary', 'json'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.d.ts', 'src/**/index.ts', 'src/app/layout.tsx'],
+      // `src/app/**` (rutas, layouts, route handlers) es la capa de
+      // routing/SSR/contenido de Next: se cubre con e2e (staging), no con unit
+      // coverage. La lógica testeable vive en `src/lib/**` y `src/components/**`.
+      exclude: ['src/**/*.d.ts', 'src/**/index.ts', 'src/app/**'],
       thresholds: {
         lines: 80,
         functions: 75,
