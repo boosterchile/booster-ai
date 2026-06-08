@@ -217,22 +217,23 @@ el modo de falla del incidente del 2026-06-07 (processor escaló a cero ~26h).
 
 ## Telemetry ingress stopped
 
-**Alerta automática**: ⏳ PENDIENTE (follow-up `telemetry-gateway-liveness-alert`).
-Mientras ese follow-up no entregue la alerta, esta sección es un **playbook de
-diagnóstico manual**.
+**Métrica** (P1): `telemetry_gateway_down_p1` — `condition_absent` sobre
+`kubernetes.io/container/uptime` del container `gateway` (ns `telemetry`),
+agregado colapsando `pod_name`, ausente > 10 min.
 
-> Por qué la alerta queda en follow-up y no en este PR: detectar "no entra
-> telemetría" es detección por ausencia, y en GCP es sutil. La primera versión
-> (sobre `device_records_per_minute` en 0) se descartó en review porque (a) en un
-> apagón total las series por-IMEI desaparecen y `REDUCE_SUM`+missing-data podría
-> no disparar, y (b) con el fleet estacionado de noche la tasa puede bajar a 0
-> records legítimamente — ojo: los Network Pings Teltonika (0xFF) **no** cuentan
-> como records, sólo los AVL. El detector correcto es un liveness POSITIVO del pod
-> del gateway (`kubernetes.io/container/uptime`, serie única estable 24/7), pero
-> debe validarse parando el gateway en una prueba antes de confiar en él. Una
-> alerta de ingreso que no dispara es peor que ninguna.
+> ⚠️ Validación pendiente: es una alerta por ausencia; confirmar que dispara con un
+> **stop controlado del gateway** (~3 min, en horario de bajo tráfico). Los devices
+> Teltonika buffean y reenvían al reconectar → pérdida ≈ 0. Procedimiento de test al
+> final de esta sección.
+>
+> Diseño: se usa liveness POSITIVO del pod (uptime), NO `device_records` en 0,
+> porque (a) en un apagón total las series por-IMEI desaparecen y un REDUCE_SUM sin
+> inputs no se marca como ausente de forma confiable, y (b) con el fleet estacionado
+> de noche los records caen a 0 legítimamente (los Network Pings 0xFF no cuentan).
+> El uptime del pod es estable 24/7 y sólo desaparece si el pod muere. Se colapsa
+> `pod_name` para que un rolling restart no falsee.
 
-**Significado** (cuando se sospecha): **no llegan AVL records de ningún device**.
+**Significado**: **no llegan AVL records de ningún device**.
 Falla del lado de ingreso: pod del gateway caído, LB/DNS desalineado, cert TLS
 (5061) vencido, o todos los devices offline. (Distinto de "consumer stalled": acá
 los mensajes ni siquiera entran a Pub/Sub — el consumer-stall sí tiene alerta.)
@@ -258,6 +259,29 @@ los mensajes ni siquiera entran a Pub/Sub — el consumer-stall sí tiene alerta
 
 4. **Devices**: si gateway + LB + cert OK, revisar si los devices están online
    (operador móvil, energía). De madrugada con fleet estacionado puede ser normal.
+
+### Validación de la alerta (test controlado, correr 1 vez post-deploy)
+
+Confirmar que `telemetry_gateway_down_p1` realmente dispara. Hacerlo en **horario
+de bajo tráfico** (los devices buffean y reenvían → pérdida ≈ 0).
+
+```bash
+gcloud container clusters get-credentials booster-ai-telemetry --region=southamerica-west1
+# 1. Bajar el gateway a 0 réplicas
+kubectl scale deployment/telemetry-tcp-gateway -n telemetry --replicas=0
+# 2. Esperar > duration de la alerta (10 min) + margen de propagación (~5 min)
+#    Confirmar que la alerta abre: GCP Console → Monitoring → Alerting,
+#    o revisar el email del canal email_alerts.
+# 3. Restaurar
+kubectl scale deployment/telemetry-tcp-gateway -n telemetry --replicas=1
+kubectl rollout status deployment/telemetry-tcp-gateway -n telemetry
+```
+
+- **Si la alerta abrió** → validada; nada más que hacer.
+- **Si NO abrió tras ~15 min** → revisar la condición `condition_absent` (¿la
+  agregación produce serie?, ¿`duration`?). NO confiar en ella hasta que dispare.
+- Tras restaurar, verificar que la telemetría vuelve a fluir (ver §Telemetry
+  consumer stalled paso 3).
 
 ---
 

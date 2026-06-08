@@ -415,28 +415,64 @@ resource "google_monitoring_alert_policy" "telemetry_consumer_stalled_p1" {
   }
 }
 
-# P2 — Ingreso de telemetría detenido (gateway down): DIFERIDO a follow-up.
+# P1 — Gateway de telemetría CAÍDO (no hay capacidad de ingreso).
 #
-# La primera versión usaba `device_records_per_minute` (log-metric por-IMEI) con
-# REDUCE_SUM + evaluation_missing_data=ACTIVE para disparar en "0 records". El
-# review adversarial (.specs/telemetry-monitoring-observability) detectó dos
-# defectos que la harían poco confiable JUSTO en el apagón que busca cazar:
-#   1. En un apagón total TODAS las series por-IMEI desaparecen; una serie
-#      reducida (REDUCE_SUM) sin inputs no tiene identidad estable, así que
-#      evaluation_missing_data podría no marcarla como ausente → no dispara.
-#   2. Falso positivo nocturno: los Network Pings Teltonika (0xFF) NO incrementan
-#      device_records (sólo los AVL records sí); con el fleet estacionado la tasa
-#      puede caer legítimamente a 0.
+# Modo de falla complementario al consumer-stall: si el pod del gateway muere
+# (crash, OOM, evicción sin reschedule, config error) o el cluster lo pierde, NO
+# entra telemetría a Pub/Sub. El consumer-stall NO lo caza (sin mensajes nuevos,
+# oldest_unacked se queda en 0), así que esta es la ÚNICA alerta de ese modo.
 #
-# El detector correcto es un liveness POSITIVO del pod del gateway
-# (`kubernetes.io/container/uptime`, serie única estable 24/7 que sólo desaparece
-# si el pod muere — sin enmascaramiento nocturno). Requiere validación EMPÍRICA
-# (parar el gateway en una ventana de prueba y confirmar que la policy abre) antes
-# de confiar en ella, por eso no se incluye acá. Una alerta de ingreso que no
-# dispara es peor que ninguna. Follow-up: telemetry-gateway-liveness-alert.
+# Detector: liveness POSITIVO del pod vía `kubernetes.io/container/uptime`. Es una
+# serie estable 24/7 que existe mientras el container corre y DESAPARECE si el pod
+# muere — sin enmascaramiento nocturno (a diferencia de device_records, que cae a 0
+# legítimamente con el fleet estacionado; los Network Pings 0xFF no cuentan como
+# records). Verificado en vivo: serie continua, 0 huecos en 96h.
 #
-# NOTA: el incidente 2026-06-07 fue consumer-stall, no ingress — cubierto al 100%
-# por `telemetry_consumer_stalled_p1` arriba.
+# `condition_absent` + agregación que COLAPSA pod_name (REDUCE_COUNT por
+# cluster/namespace/container): así un rolling restart (pod_name nuevo) mantiene la
+# serie presente y NO falsea; sólo dispara si NO hay ningún pod del gateway por
+# `duration`. duration=600s (10min) > cualquier gap de restart normal (0 restarts
+# en 96h observados); el consumer-stall (30min) queda como backstop.
+#
+# ⚠️ PENDIENTE VALIDACIÓN EMPÍRICA: una alerta por ausencia no se confía sin verla
+# disparar. Validar con un stop controlado del gateway (~3min, los devices Teltonika
+# buffean y reenvían → pérdida ≈0). Ver runbook §Telemetry ingress stopped y
+# .specs/telemetry-gateway-liveness-alert.
+resource "google_monitoring_alert_policy" "telemetry_gateway_down_p1" {
+  display_name = "Telemetry gateway pod down — no ingress (P1)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = "ERROR"
+
+  conditions {
+    display_name = "no gateway container reporting uptime > 10 min"
+    condition_absent {
+      filter   = "resource.type=\"k8s_container\" AND resource.labels.cluster_name=\"booster-ai-telemetry\" AND resource.labels.namespace_name=\"telemetry\" AND resource.labels.container_name=\"gateway\" AND metric.type=\"kubernetes.io/container/uptime\""
+      duration = "600s"
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MEAN"
+        # Colapsar pod_name → "cuántos pods del gateway reportan". Sobrevive
+        # rolling restarts (el pod nuevo entra al mismo grupo); ausente sólo
+        # cuando NO hay ningún pod del gateway.
+        cross_series_reducer = "REDUCE_COUNT"
+        group_by_fields = [
+          "resource.label.cluster_name",
+          "resource.label.namespace_name",
+          "resource.label.container_name",
+        ]
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+
+  documentation {
+    content   = "El pod del gateway de telemetría no reporta hace >10min — no hay capacidad de ingreso (devices Teltonika no pueden conectar). Revisar pod (kubectl get pods -n telemetry), evicción/OOM, LB/DNS, cert TLS. Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-ingress-stopped"
+    mime_type = "text/markdown"
+  }
+}
 
 # =============================================================================
 # DASHBOARD — Telemetría Overview
