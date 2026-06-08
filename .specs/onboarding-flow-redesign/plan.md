@@ -58,8 +58,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance (SC1, T1): con flag ON, `approveSignupRequest` emite token, persiste `token_hash`+`expira_en`+**`firebase_uid`** del user Admin-SDK, marca `aprobado`, NO precrea `usuarios`, pasa token al notify. **Con flag OFF mantiene el comportamiento viejo** (precrea). Conserva `already_processed_race`.
 - Rollback: **flip de flag a OFF** (no revert). (cierra review P0-4/P1-4)
 
-### T1.5a — `onboardEmpresa` acepta + consume el token atómicamente (service core)
-- Files: `services/onboarding.ts` + `.test`
+### T1.5a — `onboardEmpresa` acepta + consume el token atómicamente (service core) [DONE 2026-06-08]
+- Files: `services/onboarding.ts` + `test/unit/onboarding-service.test.ts` + `test/integration/onboarding-token-consume.integration.test.ts`
+- **Evidencia**: nuevo opt `onboardingTokenConsumption{solicitudId,tokenHash}`. Como **paso 0** de la transacción, consume atómico `UPDATE solicitudes_registro SET consumido_en=now() WHERE id=? AND token_hash=? AND consumido_en IS NULL AND expira_en > now() RETURNING` — 0 filas ⇒ `OnboardingTokenNotConsumableError` ⇒ rollback total. `admin_provisioned` sin consumo ⇒ `OnboardingTokenRequiredError` (sin tocar DB). Localiza por **`sid` FIRMADO + `token_hash`** (review T1.2) + no-expirado (clock DB). Uniforme (sin oráculo). Unit **26/26** (consume/no-consumible/requerido/self_service-no-consume). **Concurrencia** (doble consumo → uno gana) + expirado + hash-mismatch en integration test (raw SQL, **corre en CI/testcontainers**; no ejecutable local: libpq sin server). typecheck (co-locados)+biome ✓. Suite unit completa 1441/0.
 - LOC: ~90
 - Depends: T1.1, T1.2
 - Acceptance (SC1/SC2, T2/T3c/d): nuevo parámetro de consumo; dentro de la transacción, consume el token con **`UPDATE solicitudes_registro SET consumido_en=now() WHERE id=? AND consumido_en IS NULL RETURNING`** (patrón atómico ya usado en approve) — si no actualiza fila, rechaza (token ya consumido). Negativos a nivel service: token consumido, token expirado. **Test de concurrencia** (doble consumo → uno gana). (cierra review P0-3 + P1-2)

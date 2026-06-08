@@ -1,6 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import type { EmpresaOnboardingInput } from '@booster-ai/shared-schemas';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   type EmpresaRow,
@@ -10,6 +10,7 @@ import {
   empresas,
   memberships,
   plans,
+  solicitudesRegistro,
   users,
 } from '../db/schema.js';
 
@@ -67,6 +68,30 @@ export class SelfOnboardingDisabledError extends Error {
 }
 
 /**
+ * onboarding-flow-redesign T1.5a — onboarding `admin_provisioned` requiere el
+ * token de consumo. Defensa: ningún caller `admin_provisioned` puede saltarse
+ * el gate del token one-shot.
+ */
+export class OnboardingTokenRequiredError extends Error {
+  constructor() {
+    super('admin_provisioned onboarding requires an onboarding token consumption');
+    this.name = 'OnboardingTokenRequiredError';
+  }
+}
+
+/**
+ * onboarding-flow-redesign T1.5a — el token de onboarding no es consumible: ya
+ * consumido, expirado, inexistente, o `token_hash` no coincide. Uniforme (sin
+ * oráculo): el route (T1.5b) lo colapsa en una respuesta genérica.
+ */
+export class OnboardingTokenNotConsumableError extends Error {
+  constructor() {
+    super('Onboarding token is not consumable (already consumed, expired, or not found)');
+    this.name = 'OnboardingTokenNotConsumableError';
+  }
+}
+
+/**
  * Quién autoriza la creación del dueño. `self_service` = el propio usuario
  * vía `POST /empresas/onboarding` (gated por `EMPRESA_SELF_ONBOARDING_ENABLED`).
  * `admin_provisioned` = un caller administrativo confiable (p.ej. el futuro
@@ -97,6 +122,14 @@ export async function onboardEmpresa(opts: {
   authorizedBy: OnboardingAuthorization;
   /** Valor del flag `EMPRESA_SELF_ONBOARDING_ENABLED`; consultado solo para `self_service`. */
   selfServiceEnabled: boolean;
+  /**
+   * onboarding-flow-redesign T1.5a — consumo del token one-shot. REQUERIDO
+   * cuando `authorizedBy='admin_provisioned'`. El route (T1.5b) verifica el
+   * token (firma+expiración) y pasa el `solicitudId` (sid FIRMADO) + el
+   * `tokenHash` (= sha256 del token canónico) para localizar y consumir la
+   * fila atómicamente dentro de la transacción.
+   */
+  onboardingTokenConsumption?: { solicitudId: string; tokenHash: string };
 }): Promise<OnboardingResult> {
   const { db, logger, firebaseUid, firebaseEmail, input, authorizedBy, selfServiceEnabled } = opts;
 
@@ -109,7 +142,38 @@ export async function onboardEmpresa(opts: {
     throw new SelfOnboardingDisabledError();
   }
 
+  // T1.5a — admin_provisioned exige el token de consumo (gate de autorización).
+  if (authorizedBy === 'admin_provisioned' && !opts.onboardingTokenConsumption) {
+    throw new OnboardingTokenRequiredError();
+  }
+
   return await db.transaction(async (tx) => {
+    // 0. (admin-provisioned) Consumir el token one-shot ATÓMICAMENTE. El
+    //    `WHERE consumido_en IS NULL` garantiza un solo consumo bajo concurrencia
+    //    (doble consumo → uno gana; el otro ve 0 filas). Localiza por el `sid`
+    //    FIRMADO + `token_hash` (defensa en profundidad) y exige no-expirado
+    //    (clock de la BD). 0 filas ⇒ no consumible ⇒ throw ⇒ rollback total
+    //    (no se crea user/empresa/membership). Uniforme: no distingue
+    //    consumido/expirado/inexistente/hash-mismatch (sin oráculo).
+    const consumption = opts.onboardingTokenConsumption;
+    if (consumption) {
+      const consumed = await tx
+        .update(solicitudesRegistro)
+        .set({ consumidoEn: new Date() })
+        .where(
+          and(
+            eq(solicitudesRegistro.id, consumption.solicitudId),
+            eq(solicitudesRegistro.tokenHash, consumption.tokenHash),
+            isNull(solicitudesRegistro.consumidoEn),
+            gt(solicitudesRegistro.expiraEn, sql`now()`),
+          ),
+        )
+        .returning({ id: solicitudesRegistro.id });
+      if (consumed.length === 0) {
+        throw new OnboardingTokenNotConsumableError();
+      }
+    }
+
     // 1. Verificar user no existe (por firebase_uid).
     const existingByUid = await tx
       .select()
