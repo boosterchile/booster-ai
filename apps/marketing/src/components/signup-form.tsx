@@ -1,24 +1,32 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { type SignupRequestBody, signupRequestBodySchema } from '../lib/signup-client.js';
+import {
+  type SignupOutcome,
+  type SignupRequestBody,
+  postSignupRequest,
+  signupRequestBodySchema,
+} from '../lib/signup-client.js';
+import { signupFeedback } from './signup-feedback.js';
 
 export interface SignupFormProps {
   /**
-   * Handler de envío válido. T4 deja el form en modo render + validación
-   * cliente; T5 pasa el handler real que llama `postSignupRequest` y mapea
-   * el resultado a estados de UI.
+   * Ejecutor del POST. Default = `postSignupRequest` (fetch real, lee la env).
+   * Inyectable para test.
    */
-  onSubmit?: (data: SignupRequestBody) => void | Promise<void>;
+  submitRequest?: (body: SignupRequestBody) => Promise<SignupOutcome>;
 }
 
 /**
  * Formulario mínimo de solicitud de acceso: solo `email` + `nombreCompleto`
  * (el modelo gateado no captura rol/empresa; eso se define en el onboarding
- * post-aprobación). Valida con el schema DERIVADO del dominio compartido.
+ * post-aprobación). Valida con el schema DERIVADO del dominio compartido y
+ * mapea el resultado del signup-request a estados de UI (T5).
  */
-export function SignupForm({ onSubmit }: SignupFormProps = {}) {
+export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProps = {}) {
+  const [outcome, setOutcome] = useState<SignupOutcome | null>(null);
   const {
     register,
     handleSubmit,
@@ -28,8 +36,21 @@ export function SignupForm({ onSubmit }: SignupFormProps = {}) {
   });
 
   const submit = handleSubmit(async (data) => {
-    await onSubmit?.(data);
+    setOutcome(await submitRequest(data));
   });
+
+  const feedback = outcome ? signupFeedback(outcome) : null;
+
+  // Éxito (202): reemplaza el form por la confirmación. El mensaje es idéntico
+  // para email nuevo vs existente (anti-enumeration) — no leemos el body.
+  if (feedback?.tone === 'success') {
+    return (
+      <main className="mx-auto max-w-md px-6 py-20">
+        <h1 className="font-bold text-2xl text-neutral-900">Solicitud enviada</h1>
+        <output className="mt-4 block text-neutral-700">{feedback.message}</output>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-md px-6 py-20">
@@ -78,6 +99,11 @@ export function SignupForm({ onSubmit }: SignupFormProps = {}) {
         >
           Solicitar acceso
         </button>
+        {feedback?.tone === 'error' ? (
+          <p role="alert" className="text-red-600 text-sm">
+            {feedback.message}
+          </p>
+        ) : null}
       </form>
     </main>
   );
