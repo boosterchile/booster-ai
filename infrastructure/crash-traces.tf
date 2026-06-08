@@ -295,7 +295,9 @@ resource "google_logging_metric" "crash_trace_persistence_failures" {
     resource.type="cloud_run_revision"
     resource.labels.service_name="booster-ai-telemetry-processor"
     severity>=ERROR
-    jsonPayload.msg="error persistiendo crash-trace, nack para reintento"
+    # Campo = jsonPayload.message (Pino messageKey='message'); ver nota en
+    # infrastructure/telemetry-monitoring.tf. Con `msg` matcheaba 0 (métrica muerta).
+    jsonPayload.message="error persistiendo crash-trace, nack para reintento"
   EOT
 
   metric_descriptor {
@@ -343,7 +345,7 @@ resource "google_monitoring_alert_policy" "crash_trace_persistence_failures" {
       Crash Trace persistence failed in telemetry-processor.
 
       Investigación:
-      1. Logs del processor con jsonPayload.msg="error persistiendo crash-trace" en
+      1. Logs del processor con jsonPayload.message="error persistiendo crash-trace" en
          Cloud Logging.
       2. Verificar bucket gs://${google_storage_bucket.crash_traces.name} (CMEK
          disponible? IAM correcto?).

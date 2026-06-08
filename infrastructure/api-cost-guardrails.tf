@@ -143,7 +143,7 @@ resource "google_monitoring_alert_policy" "gemini_api_rate" {
         4. Prompt injection forzando reintentos
 
       Mitigación inmediata:
-        - Revisar logs api con jsonPayload.msg="coaching persistido" — ¿mismo
+        - Revisar logs api con jsonPayload.message="coaching persistido" — ¿mismo
           tripId repetido?
         - El package coaching-generator tiene fallback a plantilla — apagar
           el genFn temporalmente seteando GEMINI_API_KEY a "" via secret rota
