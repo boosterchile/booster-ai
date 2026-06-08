@@ -502,6 +502,29 @@ const apiEnvSchema = commonEnvSchema
     EMPRESA_SELF_ONBOARDING_ENABLED: booleanFlag(false),
 
     /**
+     * onboarding-flow-redesign Fase 1 (T1.4) — KILL SWITCH del path de
+     * onboarding **provisionado por admin** (token one-shot).
+     *
+     * Gatea el camino NUEVO: prospecto solicita → admin aprueba (emite token) →
+     * el dueño completa `/empresas/onboarding-admin` consumiendo ese token.
+     * Distinto de `EMPRESA_SELF_ONBOARDING_ENABLED`, que gatea el path VIEJO
+     * self-service (auto-promoción a dueño sin gate) y debe quedar OFF para
+     * siempre (SEC-001). Son flags independientes a propósito: encender este
+     * NO enciende aquél.
+     *
+     * **Estado seguro = OFF (default false).** Con OFF: `approveSignupRequest`
+     * mantiene el comportamiento viejo (precrea el row, sin emitir token) y la
+     * ruta `/empresas/onboarding-admin` responde 403. Así cada commit de la
+     * Fase 1 es deployable sin dejar aprobados en limbo (review P0-4) y el
+     * rollback es flip-a-OFF, no revert coordinado.
+     *
+     * Flip a ON: solo cuando T1.1–T1.8 estén verdes + sign-off del
+     * security-auditor sobre el predicado/token. Se setea vía env del Cloud Run
+     * (Terraform) + redeploy.
+     */
+    ADMIN_PROVISIONED_ONBOARDING_ENABLED: booleanFlag(false),
+
+    /**
      * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
      * reaper de cuentas IdP inertes.
      *

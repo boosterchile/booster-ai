@@ -39,8 +39,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance (SC2): `create`/`verify` (firma con nonce + `expira_en`); verify rechaza inválido/expirado. Unit puro. Firma con secret de Secret Manager. (La expiración acá es **rechazo de acceso**, distinta de la higiene del huérfano de T1.7 — review P1-3.)
 - Rollback: eliminar lib.
 
-### T1.4 — Flag `ADMIN_PROVISIONED_ONBOARDING_ENABLED` (kill-switch, default OFF)
-- Files: `config.ts` + `.test`
+### T1.4 — Flag `ADMIN_PROVISIONED_ONBOARDING_ENABLED` (kill-switch, default OFF) [DONE 2026-06-08]
+- Files: `config.ts` + `test/unit/admin-provisioned-onboarding-flag.test.ts`
+- **Evidencia**: `booleanFlag(false)` junto a (pero independiente de) `EMPRESA_SELF_ONBOARDING_ENABLED`. TDD rojo→verde (4/4): default OFF, `=true`/`=false` por env, independiente del self-service viejo. typecheck ✓.
 - LOC: ~20
 - Depends: none
 - Acceptance (SC3): `booleanFlag(false)`, separado de `EMPRESA_SELF_ONBOARDING_ENABLED`. Va **antes** que T1.3 (que lo consume).
