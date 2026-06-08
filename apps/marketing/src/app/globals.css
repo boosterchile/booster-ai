@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@config '../../tailwind.config.ts';
+
+/* Accesibilidad — focus visible por teclado (WCAG 2.4.7). El `!important`
+   gana sobre las utilidades `focus:outline-none` de los inputs, garantizando
+   que el foco de teclado siempre sea visible. (apps/web lo resuelve con un
+   reset equivalente en styles.css; marketing lo replica acá.) */
+:focus-visible {
+  outline: 2px solid #1fa058 !important;
+  outline-offset: 2px;
+}
+
+/* Respeta prefers-reduced-motion (DESIGN.md §4, inviolable). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
