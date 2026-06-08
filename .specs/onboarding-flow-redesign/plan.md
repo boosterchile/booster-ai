@@ -92,8 +92,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance (riesgo huérfano, review P0-5): job que, para solicitudes con token `expira_en` vencido y `consumido_en IS NULL`, borra el Firebase user vía **`firebase_uid`** (de T1.1) + marca la solicitud. **Mecanismo de disparo declarado** (Cloud Scheduler/cron); si se shipea como script manual, se documenta como higiene operacional y el riesgo del huérfano queda **abierto** en §9 (no es mitigación de seguridad). Separado del rechazo-por-expiración (T1.2). (review P0-5 + P1-3)
 - Rollback: deshabilitar job.
 
-### T1.8 — Camino Google de `/me` (no auto-provisiona sin token)
-- Files: `routes/me.ts` test (+ ajuste si hace falta)
+### T1.8 — Camino Google de `/me` (no auto-provisiona sin token) [DONE 2026-06-08]
+- Files: `test/unit/me-onboarding-google-path.test.ts` (**sin cambio de código**: el comportamiento ya es correcto)
+- **Evidencia**: artefacto del gate T6. `/me` ya cae en `needs_onboarding` para un aprobado-Google sin fila `users` (account-linking por email no encuentra fila tras no-precrea T1.3 → no-op; admin no aplica). Test dedicado **3/3**: (A) aprobado-Google sin fila → `needs_onboarding=true` + **insert NO llamado + update NO llamado** (no auto-provisiona dueño; el alta va por el token route T1.5b); (B) `emailVerified=false` → no linkea aunque exista fila (anti-hijack); (C) fila existente por email + Google verificado → re-vincula (`needs_onboarding=false`, update 1x, insert 0) = linking ≠ provisioning. **Cierra review P1-1.**
 - LOC: ~50
 - Depends: T1.3, T1.5b
 - Acceptance (T6, review P1-1): test que demuestra que un aprobado que entra por Google (uid distinto, sin `users` row tras T1.3) cae en `needs_onboarding` y completa vía token; y que el account-linking de `/me` NO auto-provisiona un dueño sin token. Produce el artefacto del gate de cierre.
