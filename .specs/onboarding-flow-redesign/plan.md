@@ -35,7 +35,8 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 ### T1.2 — Lib `onboarding-token` (firmar + verificar; expiración = control de acceso) [DONE 2026-06-08]
 - Files: `services/onboarding-token.ts` + `.test`
 - **Decisión PO**: panel de diseño recomendó token opaco+sha256 sin secreto (95/100) vs HMAC firmado (58/100); **PO eligió HMAC firmado** con secreto env (respeta plan/spec aprobados + ADR-001). Registrado en ledger (`design_decision T1.2`).
-- **Evidencia**: `createOnboardingToken`/`verifyOnboardingToken`/`hashOnboardingToken` puras (secreto + `now` inyectados). Firma HMAC-SHA256 verificada ANTES de payload/exp; `timingSafeEqual`+length-guard; fail-closed si secreto <32 bytes; nunca lanza ante token atacante. TDD rojo→verde **15/15**, coverage 97.5%/94.44%/100% (>gates). typecheck+biome ✓. El env `ONBOARDING_TOKEN_SIGNING_SECRET` lo cablea T1.3.
+- **Evidencia**: `createOnboardingToken`/`verifyOnboardingToken`/`hashOnboardingToken` puras (secreto + `now` inyectados). Firma HMAC-SHA256 verificada ANTES de payload/exp; `timingSafeEqual`+length-guard; fail-closed si secreto <32 bytes; nunca lanza ante token atacante. El env `ONBOARDING_TOKEN_SIGNING_SECRET` lo cablea T1.3.
+- **Review adversarial** (3 agentes + triage, `wf_8db4795c-481`): veredicto go-with-fixes. Bloqueante real confirmado = **maleabilidad del tag base64url** (varias cadenas decodifican a los mismos bytes → `token_hash` no 1:1). Fixes aplicados: guard de canonicalidad (tag + payload), doc corregido (consumo por `sid` firmado, no por hash recomputado), + endurecimiento (cota de tamaño, `sid` uuid, boundary del secreto). TDD final **21/21**, coverage 97.87%/**100%**/100%. Rechazados 3 falsos positivos (maleabilidad no es bypass vivo bajo consumo-por-sid; "caller sin escribir" = layering correcto; split expired/invalid = señal del reaper).
 - LOC: ~90
 - Depends: none
 - Acceptance (SC2): `create`/`verify` (firma con nonce + `expira_en`); verify rechaza inválido/expirado. Unit puro. Firma con secret de Secret Manager. (La expiración acá es **rechazo de acceso**, distinta de la higiene del huérfano de T1.7 — review P1-3.)
@@ -68,6 +69,7 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - LOC: ~90
 - Depends: T1.5a, T1.3, T1.4
 - Acceptance (SC1/SC2/SC3, T3a/b/T4/T5): route que exige `ADMIN_PROVISIONED_ONBOARDING_ENABLED` (sino 403), `emailVerified=true` (T5), verifica el token (T1.2) y delega a `onboardEmpresa(admin_provisioned, token)`. Negativos a nivel route: sin token (T3a), Google sign-in con email aprobado sin token (T3b).
+- **Contrato lib (review T1.2)**: el route DEBE (a) validar el token como string vía Zod antes de pasarlo a `verifyOnboardingToken` (un no-string lanzaría en `.split`); (b) envolver `verifyOnboardingToken` en try/catch — un secreto débil/ausente **lanza** (fail-closed), que el route mapea a error de servidor genérico + métrica distinta, NO a la respuesta anti-enumeration; (c) **colapsar** `invalid`/`expired`/no-row/ya-consumido en UNA respuesta genérica (sin oráculo). El consumo atómico (T1.5a) localiza por `sid` FIRMADO, no por hash recomputado.
 - Rollback: flag OFF lo desactiva; revert del route.
 
 ### T1.6 — Clasificación boundary-audit del route nuevo (ADR-057)

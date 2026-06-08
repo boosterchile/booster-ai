@@ -50,9 +50,16 @@ const MIN_SECRET_BYTES = 32;
 const HMAC_ALG = 'sha256';
 const SEPARATOR = '.';
 
+/**
+ * Cota superior barata del tamaño del token aceptado por verify. Rechaza antes
+ * de computar el HMAC, evitando gastar un HMAC sobre un payload gigante de un
+ * atacante (defensa-en-profundidad; el token real ronda ~200 chars).
+ */
+const MAX_TOKEN_LENGTH = 4096;
+
 const payloadSchema = z.object({
   /** `solicitudes_registro.id` (uuid) de la solicitud aprobada. */
-  sid: z.string().min(1),
+  sid: z.string().uuid(),
   /** Expiración como epoch ms. */
   exp: z.number().int().positive(),
   /** Nonce aleatorio base64url — dos tokens de la misma solicitud difieren. */
@@ -61,7 +68,7 @@ const payloadSchema = z.object({
 type TokenPayload = z.infer<typeof payloadSchema>;
 
 const createOptsSchema = z.object({
-  solicitudId: z.string().min(1),
+  solicitudId: z.string().uuid(),
   ttlMs: z.number().int().positive().finite(),
 });
 
@@ -88,10 +95,14 @@ function sign(payloadB64: string, secret: string): Buffer {
 }
 
 /**
- * Hash sha256 (hex) del token completo. Se persiste en
- * `solicitudes_registro.token_hash` (T1.3) y se recomputa desde el token de la
- * URL para localizar la fila en el consumo atómico (T1.5a). NUNCA se guarda el
- * token en claro. Mismo primitivo que `signup-request.ts`.
+ * Hash sha256 (hex) del token completo, persistido en
+ * `solicitudes_registro.token_hash` (T1.3). Es **defensa en profundidad** vía el
+ * índice único parcial — NO el localizador de la fila. El consumo atómico (T1.5a)
+ * localiza la fila por el `sid` FIRMADO (`UPDATE ... WHERE id = solicitudId AND
+ * consumido_en IS NULL RETURNING`), nunca recomputando el hash desde el token de
+ * la URL; opcionalmente puede ligar `AND token_hash = ?` como defensa adicional.
+ * Esto es robusto a la canonicalización (ver el guard de canonicalidad en verify).
+ * NUNCA se guarda el token en claro. Mismo primitivo que `signup-request.ts`.
  */
 export function hashOnboardingToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -142,6 +153,11 @@ export function verifyOnboardingToken(opts: {
   assertStrongSecret(opts.secret);
   const invalid = { ok: false, reason: 'invalid' } as const;
 
+  // Cota de tamaño barata antes de gastar un HMAC (defensa-en-profundidad).
+  if (opts.token.length > MAX_TOKEN_LENGTH) {
+    return invalid;
+  }
+
   const parts = opts.token.split(SEPARATOR);
   if (parts.length !== 2) {
     return invalid;
@@ -162,12 +178,24 @@ export function verifyOnboardingToken(opts: {
   if (!timingSafeEqual(presentedTag, expectedTag)) {
     return invalid;
   }
+  // Canonicalidad del tag: base64url NO es canónico (los bits sobrantes del
+  // último char hacen que varias cadenas decodifiquen a los mismos bytes). Tras
+  // confirmar la firma, exigimos que el tag presentado SEA la codificación
+  // canónica, así cada token emitido tiene exactamente una representación y
+  // `token_hash` es 1:1 con un token verificable. (review adversarial T1.2)
+  if (presentedTag.toString('base64url') !== tagB64) {
+    return invalid;
+  }
 
-  // 2) Firma válida → decodificar + validar payload (defensivo).
+  // 2) Firma válida → decodificar + validar payload (defensivo). También exigimos
+  //    canonicalidad del payload (misma razón que el tag).
+  const payloadBytes = Buffer.from(payloadB64, 'base64url');
+  if (payloadBytes.toString('base64url') !== payloadB64) {
+    return invalid;
+  }
   let parsed: TokenPayload;
   try {
-    const json = Buffer.from(payloadB64, 'base64url').toString('utf8');
-    parsed = payloadSchema.parse(JSON.parse(json));
+    parsed = payloadSchema.parse(JSON.parse(payloadBytes.toString('utf8')));
   } catch {
     return invalid;
   }
