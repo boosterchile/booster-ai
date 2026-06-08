@@ -42,6 +42,20 @@ variable "cpu" {
   default = "1"
 }
 
+variable "cpu_idle" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Cloud Run CPU allocation. `true` (default) = "CPU only during request
+    processing" — correcto para servicios request/push-driven (la mayoría),
+    ahorra costo al permitir scale-to-zero efectivo. `false` = "CPU always
+    allocated" — REQUERIDO para servicios con trabajo de fondo continuo, p.ej.
+    un consumidor Pub/Sub StreamingPull dentro del container (el loop de pull
+    NO es request-driven, así que con cpu_idle=true queda CPU-throttled entre
+    requests y deja de consumir). Usar junto con min_instances>=1.
+  EOT
+}
+
 variable "memory" {
   type    = string
   default = "512Mi"
