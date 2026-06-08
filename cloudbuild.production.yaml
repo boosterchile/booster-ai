@@ -12,8 +12,9 @@
 #     apps/document-service quedan en placeholder mientras sigan siendo
 #     skeletons (main.ts solo loguea "starting (skeleton)" y exit). Al
 #     implementarlos se agrega el Dockerfile + step build/push/deploy.
-#   - apps/marketing queda con imagen placeholder hasta que el directorio
-#     exista (no hay source).
+#   - apps/marketing ya tiene source (Next.js) pero NO se despliega aún: no
+#     hay Dockerfile ni step build/push/deploy. El deploy + DNS se agregan al
+#     habilitar el sitio (ADR-060 / spec §11). Hasta entonces, sin imagen.
 #
 # apps/web requiere VITE_* substitutions (las claves Firebase web son
 # públicas por diseño — viajan en el bundle al cliente). Setear via

@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (con agent-rigor)
 - Date: 2026-06-08
-- Status: Reviewed
+- Status: Shipped (gateado) — 2026-06-08, PR a `main`; deploy/encendido pendiente (§11)
 - Linked: ADR-010 (landing comercial), ADR-052 (signup admin-approval gate), `.specs/_followups/onboarding-flow-redesign.md`, diagnóstico de reconciliación `wf_6f246ce3-0c4` (rama abandonada `feat/contratacion-y-alta-cuentas`)
 
 ---

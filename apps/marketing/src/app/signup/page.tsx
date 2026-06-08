@@ -10,13 +10,17 @@ export const metadata: Metadata = {
 
 /**
  * Code-split: el chunk del form solo se descarga (cliente) cuando el gate lo
- * monta. Con el kill-switch off, el form no se renderiza (defensa nivel 1).
+ * monta. Con el kill-switch `NEXT_PUBLIC_SIGNUP_ENABLED` off (build-time), el
+ * form no se renderiza — el SITIO no muestra captación.
  *
- * La defensa real contra captación es de DOBLE NIVEL: (1) `NEXT_PUBLIC_SIGNUP_
- * ENABLED` off y (2) ausencia de `www.boosterchile.com` en `CORS_ALLOWED_
- * ORIGINS` del api — aunque alguien forzara el submit, el POST cross-origin
- * fallaría. Un `NEXT_PUBLIC_*` es client-side y débil por sí solo. Ver
- * `.specs/marketing-site-signup-request/spec.md` §SC8/§9 y review O2/O3.
+ * IMPORTANTE (review P0-1): esto NO "cierra" el registro. El endpoint
+ * `POST /api/v1/signup-request` es anónimo y ya está montado en producción
+ * (ADR-052); CORS solo bloquea el navegador cross-origin, NO un POST no-browser
+ * (curl/script). El kill-switch controla únicamente que este sitio muestre el
+ * form. Que una solicitud prematura sea inocua hoy se debe al downstream
+ * gateado (admin UI 503, sin notifier real, bug 409 approve→onboarding).
+ * Encender el form exige el readiness de §11. Ver ADR-060 §"Aclaración de
+ * seguridad".
  */
 const SignupForm = dynamic(() =>
   import('../../components/signup-form.js').then((m) => m.SignupForm),
