@@ -163,8 +163,15 @@ export async function onboardEmpresa(opts: {
         .where(
           and(
             eq(solicitudesRegistro.id, consumption.solicitudId),
+            // `estado='aprobado'` explícito (defensa en profundidad, review
+            // emit+consume): hoy `token_hash IS NOT NULL ⇒ estado='aprobado'`
+            // por construcción, pero esto blinda contra un futuro revoke
+            // (aprobado→rechazado) que dejaría un token vivo consumible.
+            eq(solicitudesRegistro.estado, 'aprobado'),
             eq(solicitudesRegistro.tokenHash, consumption.tokenHash),
             isNull(solicitudesRegistro.consumidoEn),
+            // Expiración por el clock de la BD (autoritativo); el `exp` firmado
+            // que verifica el route (T1.5b) es un pre-gate barato.
             gt(solicitudesRegistro.expiraEn, sql`now()`),
           ),
         )

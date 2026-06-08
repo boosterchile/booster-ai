@@ -29,6 +29,7 @@ const CONSUME_SQL = `
   UPDATE solicitudes_registro
      SET consumido_en = now()
    WHERE id = $1
+     AND estado = 'aprobado'
      AND token_hash = $2
      AND consumido_en IS NULL
      AND expira_en > now()
@@ -52,19 +53,29 @@ describe('integration: onboarding token atomic consume (T1.5a)', () => {
     await handle.pool.query('DELETE FROM solicitudes_registro');
   });
 
-  /** Inserta una solicitud aprobada con token vivo. Devuelve el id. */
+  /** Inserta una solicitud con token vivo. Devuelve el id. `estado` default aprobado. */
   async function insertApprovedWithToken(opts: {
     tokenHash?: string;
     expiresInterval?: string; // p.ej. "1 hour" o "-1 hour" (vencido)
+    estado?: string; // default 'aprobado'
   }): Promise<string> {
     const tokenHash = opts.tokenHash ?? TOKEN_HASH;
     const interval = opts.expiresInterval ?? '1 hour';
+    const estado = opts.estado ?? 'aprobado';
     const res = await handle.pool.query<{ id: string }>(
       `INSERT INTO solicitudes_registro
          (email, nombre_completo, estado, aprobado_por, aprobado_en, token_hash, expira_en, firebase_uid)
-       VALUES ($1, $2, 'aprobado', $3, now(), $4, now() + ($5)::interval, $6)
+       VALUES ($1, $2, $3, $4, now(), $5, now() + ($6)::interval, $7)
        RETURNING id`,
-      ['dueno@empresa.cl', 'Dueño Real', 'admin@booster.cl', tokenHash, interval, FIREBASE_UID],
+      [
+        'dueno@empresa.cl',
+        'Dueño Real',
+        estado,
+        'admin@booster.cl',
+        tokenHash,
+        interval,
+        FIREBASE_UID,
+      ],
     );
     return res.rows[0].id;
   }
@@ -108,6 +119,14 @@ describe('integration: onboarding token atomic consume (T1.5a)', () => {
   test('token_hash que no coincide → 0 filas', async () => {
     const id = await insertApprovedWithToken({});
     const res = await handle.pool.query<{ id: string }>(CONSUME_SQL, [id, 'b'.repeat(64)]);
+    expect(res.rows).toHaveLength(0);
+  });
+
+  test('fila con token pero estado != aprobado → 0 filas (guard estado, defensa ante revoke futuro)', async () => {
+    // Estado no alcanzable hoy por construcción; blinda contra un futuro
+    // aprobado→rechazado que dejaría un token vivo. (review emit+consume)
+    const id = await insertApprovedWithToken({ estado: 'rechazado' });
+    const res = await handle.pool.query<{ id: string }>(CONSUME_SQL, [id, TOKEN_HASH]);
     expect(res.rows).toHaveLength(0);
   });
 });

@@ -98,6 +98,12 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 ### Cierre Fase 1 — flip de flags
 Cuando T1.1–T1.8 verde: flip `ADMIN_PROVISIONED_ONBOARDING_ENABLED=ON` + `SIGNUP_REQUEST_FLOW_ACTIVATED=ON`. (gate de SHIP de la fase, con security-auditor sobre el predicado/token).
 
+**Condiciones go-with-fixes ANTES del flip** (verificación adversarial emit+consume `wf_c46ee72a-a75`, veredicto GO / SEC-001 no reabierto):
+1. **T1.7 desplegado** con mecanismo de disparo declarado (Cloud Scheduler) **y** fix del guard del reaper: el reaper vivo protege `aprobado` (reaper-predicate.ts:124-129), así que un huérfano Firebase de un token expirado-no-consumido no se recolecta hoy → T1.7 debe borrarlo vía `firebase_uid` (`expira_en<now() AND consumido_en IS NULL`) o sacar la fila de `aprobado`. Mientras el flag está OFF no se acumulan huérfanos.
+2. **`ONBOARDING_TOKEN_SIGNING_SECRET` cableado** en Secret Manager + Cloud Run (Terraform): ≥32 bytes CSPRNG, NO reusado de otro subsistema. (Hoy fail-closed: flag ON sin secreto → 503.)
+3. **TTL (OQ1) ratificado** (default actual 72h).
+4. **Sign-off del security-auditor sobre el modelo bearer-token** (token entregado por email = trust anchor; residual: link interceptado dentro del TTL). Mantener el TTL corto.
+
 ---
 
 ## FASES 2-5 (perfiladas; descomposición + devils-advocate al llegar)
@@ -111,6 +117,8 @@ Cuando T1.1–T1.8 verde: flip `ADMIN_PROVISIONED_ONBOARDING_ENABLED=ON` + `SIGN
 - Mecanismo de disparo del job T1.7 (Cloud Scheduler) — decisión infra.
 - Proveedor de email (OQ4) antes de Fase 2.
 - Secret para la firma del token (Secret Manager).
+- **(hardening diferido, review emit+consume)** CHECK parcial en migración futura: `token_hash IS NULL OR expira_en IS NOT NULL` (hoy el código siempre setea ambos juntos; el consume falla-cerrado si `expira_en` fuera NULL). No-bloqueante.
+- **(nota review)** Expiración multi-clock: el `expira_en` se computa con el clock JS al emitir y se gatea con `now()` de la BD al consumir (autoritativo). Sin bypass; depende de NTP de GCP (default). Documentado en `onboarding.ts`.
 
 ## Riesgo residual que el plan NO cierra (documentado)
 El estado creado por un exploit del route (user+empresa con RUT arbitrario) requiere data-cleanup manual, no revert. El kill-switch previene nuevos pero no limpia existentes. El token + los negativos + el flag default-OFF lo minimizan; el cleanup operacional queda como runbook de SHIP.
