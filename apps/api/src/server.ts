@@ -337,6 +337,8 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         selfOnboardingEnabled: config.EMPRESA_SELF_ONBOARDING_ENABLED,
+        adminProvisionedOnboardingEnabled: config.ADMIN_PROVISIONED_ONBOARDING_ENABLED,
+        onboardingTokenSecret: config.ONBOARDING_TOKEN_SIGNING_SECRET,
       }),
     );
 
