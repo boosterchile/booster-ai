@@ -131,12 +131,33 @@ export function createAdminSignupRequestsRoutes(opts: {
       const { id } = c.req.valid('param');
       const body = c.req.valid('json');
 
+      // T1.3/T1.4 — modo admin-provisioned. Fail-closed: flag ON sin secreto
+      // configurado => 503 (no caer silenciosamente al precreate viejo).
+      if (
+        appConfig.ADMIN_PROVISIONED_ONBOARDING_ENABLED &&
+        !appConfig.ONBOARDING_TOKEN_SIGNING_SECRET
+      ) {
+        opts.logger.error(
+          { correlationId, requestId: id },
+          'admin-signup-requests.approve: ADMIN_PROVISIONED_ONBOARDING_ENABLED ON pero ONBOARDING_TOKEN_SIGNING_SECRET ausente (fail-closed)',
+        );
+        return c.json({ error: 'service_unavailable', code: 'onboarding_misconfigured' }, 503);
+      }
+      const adminProvisionedOnboarding =
+        appConfig.ADMIN_PROVISIONED_ONBOARDING_ENABLED && appConfig.ONBOARDING_TOKEN_SIGNING_SECRET
+          ? {
+              signingSecret: appConfig.ONBOARDING_TOKEN_SIGNING_SECRET,
+              ttlMs: appConfig.ONBOARDING_TOKEN_TTL_HOURS * 60 * 60 * 1000,
+            }
+          : undefined;
+
       try {
         const result = await approveSignupRequest(opts.db, opts.logger, opts.auth, opts.notifier, {
           id,
           approverEmail: auth.adminEmail,
           loginLinkUrl: body.loginLinkUrl ?? DEFAULT_LOGIN_LINK_URL,
           correlationId,
+          ...(adminProvisionedOnboarding ? { adminProvisionedOnboarding } : {}),
         });
         if (result.outcome === 'not_found') {
           return c.json({ error: 'not_found', code: 'signup_request_not_found' }, 404);

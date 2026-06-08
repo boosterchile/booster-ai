@@ -42,6 +42,12 @@ export interface SignupRequestNotifier {
     userEmail: string;
     loginLinkUrl: string;
     correlationId: string;
+    /**
+     * Token one-shot de onboarding (modo admin-provisioned, T1.3). La
+     * implementación real (Fase 2) lo embebe en el link enviado al usuario.
+     * NUNCA debe loguearse en claro (es un bearer credential).
+     */
+    onboardingToken?: string;
   }): Promise<void>;
 
   /** Envía notif al user de que su solicitud fue rechazada (opcional reason). */
@@ -83,6 +89,7 @@ export class LoggingSignupRequestNotifier implements SignupRequestNotifier {
     userEmail: string;
     loginLinkUrl: string;
     correlationId: string;
+    onboardingToken?: string;
   }): Promise<void> {
     this.logger.info(
       {
@@ -91,6 +98,9 @@ export class LoggingSignupRequestNotifier implements SignupRequestNotifier {
         requestId: opts.requestId,
         userEmail: opts.userEmail,
         loginLinkUrl: opts.loginLinkUrl,
+        // REDACTADO: nunca logueamos el token en claro (bearer credential).
+        // Solo registramos que se emitió, para correlación/observabilidad.
+        onboardingTokenIssued: opts.onboardingToken != null,
       },
       'signup-request: notify user of approval (logging stub — real email infra pending)',
     );

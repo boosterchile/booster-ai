@@ -50,8 +50,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance (SC3): `booleanFlag(false)`, separado de `EMPRESA_SELF_ONBOARDING_ENABLED`. Va **antes** que T1.3 (que lo consume).
 - Rollback: revert.
 
-### T1.3 — `approve`: token + `firebase_uid` + no-precrea, **gateado por el flag**
-- Files: `services/signup-request.ts` + `.test`
+### T1.3 — `approve`: token + `firebase_uid` + no-precrea, **gateado por el flag** [DONE 2026-06-08]
+- Files: `services/signup-request.ts` + `.test` (+ wiring: `config.ts`, `notifications/signup-request-email.ts`, `routes/admin-signup-requests.ts`)
+- **Evidencia**: `approveSignupRequest` recibe opcional `adminProvisionedOnboarding{signingSecret,ttlMs}`. **Presente (flag ON)**: emite token, UPDATE `estado=aprobado`+`token_hash`+`expira_en`+`firebase_uid`, **NO precrea `users`**, pasa token al notify, `return {approved, firebaseUid, userId:null, onboardingToken}`. **Ausente (flag OFF)**: comportamiento viejo (precrea). Conserva `already_processed` (race). Config: `ONBOARDING_TOKEN_SIGNING_SECRET` (opcional, `min(32)`) + `ONBOARDING_TOKEN_TTL_HOURS` (default 72, OQ1 ratificable). Notifier: `onboardingToken` **redactado en logs** (`onboardingTokenIssued` bool). Route: wiring fail-closed (flag ON sin secreto → 503), token **nunca** en la respuesta al admin. TDD servicio **6/6** + route test sin regresión (17/17 combinado), typecheck+biome ✓.
 - LOC: ~95
 - Depends: T1.1, T1.2, T1.4
 - Acceptance (SC1, T1): con flag ON, `approveSignupRequest` emite token, persiste `token_hash`+`expira_en`+**`firebase_uid`** del user Admin-SDK, marca `aprobado`, NO precrea `usuarios`, pasa token al notify. **Con flag OFF mantiene el comportamiento viejo** (precrea). Conserva `already_processed_race`.

@@ -525,6 +525,25 @@ const apiEnvSchema = commonEnvSchema
     ADMIN_PROVISIONED_ONBOARDING_ENABLED: booleanFlag(false),
 
     /**
+     * onboarding-flow-redesign T1.3 — secreto de firma HMAC del token one-shot
+     * de onboarding (lib `services/onboarding-token.ts`). Viene de Secret Manager
+     * (env en Cloud Run). **Opcional**: solo se requiere cuando
+     * `ADMIN_PROVISIONED_ONBOARDING_ENABLED` está ON; con el flag OFF no se emite
+     * ningún token. La lib exige >=32 bytes (fail-closed): un secreto ausente/débil
+     * hace que el approve gateado falle en vez de emitir tokens forjables.
+     */
+    ONBOARDING_TOKEN_SIGNING_SECRET: z.string().min(32).optional(),
+
+    /**
+     * onboarding-flow-redesign T1.3 — TTL del token one-shot, en horas. Default
+     * 72h (3 días) como valor inicial razonable; el valor definitivo (OQ1) se
+     * ratifica en el gate de Cierre Fase 1 con el security-auditor. Tunable por
+     * env sin tocar código. TTL más corto = ventana de replay menor; más largo =
+     * mejor UX si la aprobación del admin tarda.
+     */
+    ONBOARDING_TOKEN_TTL_HOURS: z.coerce.number().int().positive().default(72),
+
+    /**
      * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
      * reaper de cuentas IdP inertes.
      *
