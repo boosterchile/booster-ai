@@ -117,7 +117,7 @@ del parser, cambio de protocolo del device, o tráfico malicioso.
 1. **Identificar IMEIs** en logs:
    ```
    resource.type="k8s_container"
-   jsonPayload.msg="parse error, ack 0 + cerramos"
+   jsonPayload.message="parse error, ack 0 + cerramos"
    ```
 
 2. **Si todos los errores son del mismo IMEI**: device problemático,
@@ -165,6 +165,100 @@ bug en el handler.
 
 ---
 
+## Telemetry consumer stalled
+
+**Métrica** (P1): `telemetry_consumer_stalled_p1` — `oldest_unacked_message_age`
+de `telemetry-events-processor-sub` (o `crash-traces-processor-sub`) > 30 min.
+
+**Significado**: el `telemetry-processor` **dejó de consumir** Pub/Sub. Los
+mensajes envejecen sin ack → no se escribe nada en `telemetria_puntos`. Este es
+el modo de falla del incidente del 2026-06-07 (processor escaló a cero ~26h).
+
+> Por qué esta alerta y no el backlog por conteo: `oldest_unacked_message_age`
+> sube +60s/min apenas muere el consumer, **independiente del volumen**, así que
+> dispara también de madrugada (fleet estacionado). El conteo (`pubsub_backlog_p2`)
+> de noche tardó 14h en cruzar 1000 — es solo señal secundaria.
+
+### Pasos
+
+1. **¿Hay instancias del processor corriendo?**
+   ```bash
+   gcloud run services describe booster-ai-telemetry-processor \
+     --region=southamerica-west1 \
+     --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'], spec.template.metadata.annotations['run.googleapis.com/cpu-throttling'])"
+   ```
+   El processor es un **consumer Pub/Sub pull** (StreamingPull dentro del
+   container). Requiere `min-instances>=1` **y** `cpu-throttling=false` (CPU
+   always-on); si no, escala a cero cuando no hay requests HTTP y deja de tirar
+   de la cola.
+
+2. **Fix inmediato** si está en `min=0` / throttled:
+   ```bash
+   gcloud run services update booster-ai-telemetry-processor \
+     --region=southamerica-west1 --min-instances=1 --no-cpu-throttling
+   ```
+   La instancia levanta, drena el backlog acumulado (Pub/Sub retiene 7 días,
+   no se pierde nada) y la ingesta vuelve.
+
+3. **Verificar recuperación**: el backlog (`num_undelivered_messages`) baja a ~0
+   y `telemetria_puntos` recibe escrituras nuevas (último `timestamp_recibido_en`
+   en segundos).
+
+4. **Errores en el handler** (si hay instancia viva pero igual no drena): logs
+   del processor `severity>=ERROR` — DB caída, Redis (dedup) inalcanzable, etc.
+   Tras 5 fallos por mensaje, va al DLQ (`pubsub-dead-letter`).
+
+5. **Permanente**: que el `min-instances=1` + CPU always-on quede en IaC (no solo
+   aplicado a mano) para que un deploy/terraform apply no lo revierta.
+
+---
+
+## Telemetry ingress stopped
+
+**Alerta automática**: ⏳ PENDIENTE (follow-up `telemetry-gateway-liveness-alert`).
+Mientras ese follow-up no entregue la alerta, esta sección es un **playbook de
+diagnóstico manual**.
+
+> Por qué la alerta queda en follow-up y no en este PR: detectar "no entra
+> telemetría" es detección por ausencia, y en GCP es sutil. La primera versión
+> (sobre `device_records_per_minute` en 0) se descartó en review porque (a) en un
+> apagón total las series por-IMEI desaparecen y `REDUCE_SUM`+missing-data podría
+> no disparar, y (b) con el fleet estacionado de noche la tasa puede bajar a 0
+> records legítimamente — ojo: los Network Pings Teltonika (0xFF) **no** cuentan
+> como records, sólo los AVL. El detector correcto es un liveness POSITIVO del pod
+> del gateway (`kubernetes.io/container/uptime`, serie única estable 24/7), pero
+> debe validarse parando el gateway en una prueba antes de confiar en él. Una
+> alerta de ingreso que no dispara es peor que ninguna.
+
+**Significado** (cuando se sospecha): **no llegan AVL records de ningún device**.
+Falla del lado de ingreso: pod del gateway caído, LB/DNS desalineado, cert TLS
+(5061) vencido, o todos los devices offline. (Distinto de "consumer stalled": acá
+los mensajes ni siquiera entran a Pub/Sub — el consumer-stall sí tiene alerta.)
+
+### Pasos
+
+1. **Pod del gateway** (single replica, GKE):
+   ```bash
+   gcloud container clusters get-credentials booster-ai-telemetry --region=southamerica-west1
+   kubectl get pods -n telemetry
+   kubectl logs -n telemetry deploy/telemetry-tcp-gateway --tail=50
+   ```
+   Si el control plane no es alcanzable desde la laptop (master authorized
+   networks), usar Cloud Logging: `resource.labels.container_name="gateway"`.
+
+2. **LB / DNS**: `telemetry.boosterchile.com` (plain 5027) y
+   `telemetry-tls.boosterchile.com` (TLS 5061) deben resolver a las IP estáticas
+   del Service (ver `infrastructure/k8s/telemetry-tcp-gateway.yaml`). Outage
+   2026-05-07 fue por IP efímera vs estática.
+
+3. **Cert TLS** (si los devices usan 5061): `kubectl get certificate -n telemetry`
+   + `openssl s_client -connect telemetry-tls.boosterchile.com:5061` (¿vencido?).
+
+4. **Devices**: si gateway + LB + cert OK, revisar si los devices están online
+   (operador móvil, energía). De madrugada con fleet estacionado puede ser normal.
+
+---
+
 ## Crash trace persistence failed (P0)
 
 **Métrica**: `crash_trace_persistence_failures > 0`.
@@ -178,7 +272,7 @@ o BigQuery. Cada falla = evidencia forense potencialmente perdida.
    ```
    resource.type="cloud_run_revision"
    resource.labels.service_name="booster-ai-telemetry-processor"
-   jsonPayload.msg="error persistiendo crash-trace, nack para reintento"
+   jsonPayload.message="error persistiendo crash-trace, nack para reintento"
    ```
 
 2. **Identificar la causa del error** (`err.message`):
