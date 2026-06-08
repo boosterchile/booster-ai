@@ -57,6 +57,9 @@ Objeciones P1 (cerradas antes del push):
 
 Residuales: comentario obsoleto en `cloudbuild.production.yaml:15` (corregido); revert incluye lockfile (caveat en §Rollback); F2 (flag mal seteado al desplegar) gobernado por §11.
 
-## Postmortem 24h
+## Postmortem (inmediato; revisable a 24h)
 
-_(pendiente: 3 líneas — qué funcionó, qué sorprendió, qué haría distinto.)_
+- **Qué funcionó**: el ciclo adversarial atrapó cosas reales que el verde no — el `main` 239 commits stale (que invalidó el feature previo), el claim de seguridad CORS falso (devils REVIEW + SHIP), y 4 BLOCKING de a11y. El kill-switch fail-closed + ship gateado permitió entregar valor (SEO) sin el downstream listo.
+- **Qué sorprendió**: el mismo claim falso ("defensa CORS de doble nivel") sobrevivió en DOS lugares — lo corregí en el ADR en REVIEW pero el comentario del código siguió mintiendo hasta que el devils SHIP lo cazó. Fix de doc incompleto.
+- **Qué haría distinto**: (1) verificar frescura del `main` vs remoto al inicio de sesión (ahora en memoria); (2) al corregir una afirmación, hacer `grep` de todas sus apariciones (ADR + código + spec), no solo la primera.
+- **PR**: #426 (a `main`, gateado).
