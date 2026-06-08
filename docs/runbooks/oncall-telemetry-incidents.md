@@ -168,7 +168,9 @@ bug en el handler.
 ## Telemetry consumer stalled
 
 **Métrica** (P1): `telemetry_consumer_stalled_p1` — `oldest_unacked_message_age`
-de `telemetry-events-processor-sub` (o `crash-traces-processor-sub`) > 30 min.
+de `telemetry-events-processor-sub` > 30 min. (La sub `crash-traces-processor-sub`
+NO está en esta alerta: es bursty y un único crash-trace lento podría flapearla; su
+stall lo cubren `pubsub_dlq` + `crash_trace_persistence_failures`.)
 
 **Significado**: el `telemetry-processor` **dejó de consumir** Pub/Sub. Los
 mensajes envejecen sin ack → no se escribe nada en `telemetria_puntos`. Este es
