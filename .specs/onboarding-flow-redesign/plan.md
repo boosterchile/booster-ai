@@ -83,8 +83,10 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 - Acceptance (§6.5): route clasificado en el harness default-deny; CI pasa.
 - Rollback: revert.
 
-### T1.7 — Limpieza del huérfano (higiene; usa `firebase_uid`)
-- Files: job + `.test`
+### T1.7 — Limpieza del huérfano (higiene; usa `firebase_uid`) [DONE 2026-06-08]
+- Files: `jobs/reap-orphan-onboarding-firebase.ts` + `.test` + integration (`onboarding-token-consume`) + `jobs/README.md`
+- **Evidencia**: job dedicado (mirror del reap-inert-idp-accounts: core puro con deps inyectables + `main()` + dry-run default + cap). `listOnboardingOrphans` = `SELECT WHERE estado='aprobado' AND token_hash NOT NULL AND consumido_en IS NULL AND expira_en<now() AND firebase_uid NOT NULL`; por huérfano: `auth.deleteUser(firebase_uid)` + `markReaped` (nulea `firebase_uid`, idempotente); `auth/user-not-found`→marca igual; otro error→retry. Flag PROPIO `ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE` (default dry-run). Unit **8/8** (dry-run/destructive/cap/alreadyGone/error/vacío/mappers) + integration del predicado real (CI). **Cierra review P0-5** (T1.7 borra el huérfano vía `firebase_uid`; el inert-reaper ya no lo encuentra tras el borrado → no hace falta tocar su guard).
+- **Trigger MANUAL** (tsx) ⇒ higiene operacional, NO mitigación automática. **Riesgo huérfano (spec §9) ABIERTO** hasta Cloud Scheduler; cableado = gate del flip (ya en Cierre).
 - LOC: ~90
 - Depends: T1.1, T1.5a
 - Acceptance (riesgo huérfano, review P0-5): job que, para solicitudes con token `expira_en` vencido y `consumido_en IS NULL`, borra el Firebase user vía **`firebase_uid`** (de T1.1) + marca la solicitud. **Mecanismo de disparo declarado** (Cloud Scheduler/cron); si se shipea como script manual, se documenta como higiene operacional y el riesgo del huérfano queda **abierto** en §9 (no es mitigación de seguridad). Separado del rechazo-por-expiración (T1.2). (review P0-5 + P1-3)

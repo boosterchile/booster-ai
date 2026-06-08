@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { listOnboardingOrphans } from '../../src/jobs/reap-orphan-onboarding-firebase.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
@@ -128,5 +129,36 @@ describe('integration: onboarding token atomic consume (T1.5a)', () => {
     const id = await insertApprovedWithToken({ estado: 'rechazado' });
     const res = await handle.pool.query<{ id: string }>(CONSUME_SQL, [id, TOKEN_HASH]);
     expect(res.rows).toHaveLength(0);
+  });
+
+  // T1.7 — el predicado del reaper de huérfanos contra Postgres real.
+  test('listOnboardingOrphans: solo aprobados con token vencido + sin consumir + firebase_uid', async () => {
+    // (a) HUÉRFANO: vencido, no consumido, con firebase_uid.
+    const orphanId = await insertApprovedWithToken({
+      tokenHash: 'a'.repeat(64),
+      expiresInterval: '-1 hour',
+    });
+    // (b) consumido (no es huérfano) — token distinto por el índice único.
+    const consumedId = await insertApprovedWithToken({
+      tokenHash: 'b'.repeat(64),
+      expiresInterval: '-1 hour',
+    });
+    await handle.pool.query('UPDATE solicitudes_registro SET consumido_en = now() WHERE id = $1', [
+      consumedId,
+    ]);
+    // (c) no vencido (token vivo).
+    await insertApprovedWithToken({ tokenHash: 'c'.repeat(64), expiresInterval: '1 hour' });
+    // (d) sin firebase_uid (ya recolectado / sin orphan).
+    const noUidId = await insertApprovedWithToken({
+      tokenHash: 'd'.repeat(64),
+      expiresInterval: '-1 hour',
+    });
+    await handle.pool.query('UPDATE solicitudes_registro SET firebase_uid = NULL WHERE id = $1', [
+      noUidId,
+    ]);
+
+    const orphans = await listOnboardingOrphans(handle.pool);
+    expect(orphans.map((o) => o.id)).toEqual([orphanId]);
+    expect(orphans[0]?.firebaseUid).toBe('fb-consume-uid');
   });
 });
