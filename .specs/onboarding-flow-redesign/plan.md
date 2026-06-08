@@ -24,8 +24,9 @@ Todo el comportamiento nuevo de Fase 1 vive detrás del flag **`ADMIN_PROVISIONE
 
 ## FASE 1 — Núcleo dueño (destraba el 409; prerrequisito de todo)
 
-### T1.1 — Migración: estado de token + `firebase_uid` en `solicitudes_registro`
-- Files: `drizzle/NNNN_*.sql`, `meta/_journal.json`, `db/schema.ts`
+### T1.1 — Migración: estado de token + `firebase_uid` en `solicitudes_registro` [DONE 2026-06-08]
+- Files: `drizzle/0040_solicitudes_onboarding_token.sql`, `meta/_journal.json`, `db/schema.ts`
+- **Evidencia**: columnas `token_hash`/`consumido_en`/`expira_en`/`firebase_uid` (todas nullable) + índice único parcial `solicitudes_registro_token_hash_uq WHERE token_hash IS NOT NULL`. typecheck ✓; biome ✓; unit test importando schema ✓ (Drizzle construye tabla+índice en import). **Apply contra Postgres real: NO ejecutable localmente** (libpq sin binario `postgres`, sin docker) → se valida en CI integration (testcontainers) + al startup vía `migrator.ts`. SQL aditiva, estructuralmente idéntica a 0039.
 - LOC: ~70 — **waiver: SQL+schema**.
 - Depends: none
 - Acceptance: columnas `token_hash`, `consumido_en`, `expira_en`, **`firebase_uid`** (nullable). Migración aplica; schema coincide (gate drift). El `firebase_uid` es lo que permite a T1.7 identificar el huérfano (review P0-5).
