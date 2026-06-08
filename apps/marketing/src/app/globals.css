@@ -1,12 +1,13 @@
 @import "tailwindcss";
 @config '../../tailwind.config.ts';
 
-/* Accesibilidad — focus visible por teclado (WCAG 2.4.7). El `!important`
-   gana sobre las utilidades `focus:outline-none` de los inputs, garantizando
-   que el foco de teclado siempre sea visible. (apps/web lo resuelve con un
-   reset equivalente en styles.css; marketing lo replica acá.) */
+/* Accesibilidad — focus visible por teclado (WCAG 2.4.7 / 2.4.11). El anillo
+   es neutral oscuro (= ui-tokens neutral-900 #1A1917), NO el verde de marca:
+   un anillo verde sobre el botón primario verde daba 1.48:1 (review a11y-2).
+   Oscuro cumple ≥3:1 sobre blanco y sobre primary-600. El `!important` gana
+   sobre las utilidades `focus:outline-none`. */
 :focus-visible {
-  outline: 2px solid #1fa058 !important;
+  outline: 3px solid #1a1917 !important;
   outline-offset: 2px;
 }
 

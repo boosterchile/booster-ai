@@ -6,7 +6,7 @@ describe('signupFeedback', () => {
   it('submitted → success (mensaje idéntico, sin pista de enumeration)', () => {
     expect(signupFeedback('submitted')).toEqual({
       tone: 'success',
-      message: 'Recibimos tu solicitud. Te contactaremos para activar tu cuenta.',
+      message: 'Recibimos tu solicitud. La revisaremos antes de habilitar tu acceso.',
     });
   });
 

@@ -15,9 +15,11 @@ export interface SignupFeedback {
 export function signupFeedback(outcome: SignupOutcome): SignupFeedback {
   switch (outcome) {
     case 'submitted':
+      // Sin promesa de contacto proactivo: el notifier email real aún no
+      // existe (review P1-2). El modelo es aprobación admin antes de habilitar.
       return {
         tone: 'success',
-        message: 'Recibimos tu solicitud. Te contactaremos para activar tu cuenta.',
+        message: 'Recibimos tu solicitud. La revisaremos antes de habilitar tu acceso.',
       };
     case 'rate_limited':
       return {

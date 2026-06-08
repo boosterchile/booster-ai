@@ -15,7 +15,6 @@
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/ui-tokens": "workspace:*",
     "@hookform/resolvers": "^3.10.0",
-    "lucide-react": "^0.469.0",
     "next": "^15.1.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

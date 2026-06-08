@@ -29,7 +29,9 @@ Se construye `apps/marketing` siguiendo el **stack, estructura, SEO y separació
 2. **§"Checkout y pagos" → descartado del sitio.** Sin Flow.cl/Stripe, sin rutas de checkout, sin emisión de DTE en marketing. Un test estructural (`no-checkout.test.ts`) lo hace cumplir. La contratación de planes pagos se coordina fuera de línea al activar la cuenta.
 3. **Sin Firebase client-side en marketing.** El signup-request es anónimo; el sitio no necesita el SDK de auth (menos superficie que el diseño original de ADR-010).
 
-**Kill-switch + defensa de doble nivel.** El `/signup` funcional vive detrás de `NEXT_PUBLIC_SIGNUP_ENABLED` (default `false` → "próximamente"; el chunk del form se code-splittea). La defensa real contra captación prematura es de **doble nivel**: (1) flag off **y** (2) ausencia de `www.boosterchile.com` en `CORS_ALLOWED_ORIGINS` del api — aunque se forzara el submit, el POST cross-origin falla. La habilitación (flip + CORS + deploy) requiere el readiness del downstream (notifier real + cierre del bug 409 approve↔onboarding).
+**Kill-switch del form (build-time).** El `/signup` funcional vive detrás de `NEXT_PUBLIC_SIGNUP_ENABLED` (default `false` → "próximamente"; el chunk del form se code-splittea). Es una var `NEXT_PUBLIC_*`: **se inlina en build time**, así que habilitar el form = **rebuild + redeploy** con la var en `true`, NO un toggle de runtime en Cloud Run (review P1-1).
+
+**Aclaración de seguridad (review P0-1): CORS NO es una defensa general de captación.** El endpoint `POST /api/v1/signup-request` es **anónimo y ya está montado en producción** (por diseño de ADR-052, solo rate-limited; `apps/api/src/server.ts`). Cualquier cliente no-browser (curl/script) puede postear; CORS solo bloquea el navegador cross-origin. Por tanto el kill-switch del marketing controla únicamente que **el sitio** muestre el form — no "cierra" el endpoint. Que una solicitud prematura no haga daño hoy se debe a que el **downstream está gateado**: la UI admin de aprobación responde 503 (`SIGNUP_REQUEST_FLOW_ACTIVATED=false`), el notifier solo loguea (no envía), y el bug 409 approve→onboarding deja la solicitud como fila inerte. Encender el form (§11) exige cerrar ese downstream + CORS + privacidad — no es solo un flip de flag.
 
 **Lo que de ADR-010 NO se supersede** y sigue vigente: la decisión de dos apps separadas (marketing vs producto) con auth compartido, el stack, la estructura de rutas de contenido, los objetivos de SEO/performance/accesibilidad y el modelo de pricing como contenido informativo.
 
@@ -49,7 +51,9 @@ Se construye `apps/marketing` siguiendo el **stack, estructura, SEO y separació
 ### Riesgo residual
 
 - **Buzón muerto si se habilita antes de tiempo**: aprobar una solicitud hoy produce un usuario zombie (bug 409 approve↔onboarding activo; notifier solo loguea). Mitigado por el kill-switch + el gate §11; el cierre vive en `onboarding-flow-redesign`.
-- **Contrato del 202 sin red compartida**: el front depende del shape `{email, nombreCompleto}`; mitigado derivando el schema cliente vía `signupRequestSchema.pick(...)` de `@booster-ai/shared-schemas`.
+- **Contrato sin red compartida real** (review P1-3): el front deriva el schema de *request* vía `signupRequestSchema.pick(...)` de `@booster-ai/shared-schemas`, pero el handler valida con un schema **duplicado** propio (`routes/signup-request.ts`, no-`strict`). El `.pick()` cubre solo el shape de request contra el schema de dominio — **no** el contrato del 202 (response) ni el schema real del handler. Acoplamiento por convención; residual aceptado (no se toca el backend).
+- **Compliance Ley 19.628 al flip** (review security): el form capta PII (email + nombre) pero `/legal/privacidad` es stub y el form no tiene consentimiento/finalidad. Gap solo al **encender** el form; condición de §11 antes del flip.
+- **`no-checkout.test` es denylist** (review P2-1): garantiza ausencia de los PSP/DTE catalogados, no de cualquier PSP futuro. La lista debe crecer si se agrega un PSP al monorepo.
 
 ## Alternativas consideradas
 

@@ -19,11 +19,17 @@ export interface SignupFormProps {
   submitRequest?: (body: SignupRequestBody) => Promise<SignupOutcome>;
 }
 
+const INPUT_CLASS = 'mt-1 w-full rounded-lg border border-neutral-500 px-3 py-2 text-sm';
+
 /**
  * Formulario mínimo de solicitud de acceso: solo `email` + `nombreCompleto`
  * (el modelo gateado no captura rol/empresa; eso se define en el onboarding
  * post-aprobación). Valida con el schema DERIVADO del dominio compartido y
  * mapea el resultado del signup-request a estados de UI (T5).
+ *
+ * NOTA copy (review P1-2): no promete "te contactaremos" — el notifier real
+ * aún no está cableado. Encender este form (NEXT_PUBLIC_SIGNUP_ENABLED) exige
+ * el readiness del downstream (spec §11), incluyendo el notifier.
  */
 export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProps = {}) {
   const [outcome, setOutcome] = useState<SignupOutcome | null>(null);
@@ -56,7 +62,7 @@ export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProp
     <main className="mx-auto max-w-md px-6 py-20">
       <h1 className="font-bold text-2xl text-neutral-900">Solicitar acceso</h1>
       <p className="mt-2 text-neutral-600 text-sm">
-        Déjanos tus datos. Revisamos cada solicitud y te contactamos para activar tu cuenta.
+        Déjanos tus datos. Revisamos cada solicitud antes de habilitar el acceso.
       </p>
       <form className="mt-8 space-y-4" onSubmit={submit} noValidate>
         <div>
@@ -67,11 +73,13 @@ export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProp
             id="email"
             type="email"
             autoComplete="email"
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={errors.email ? 'email-error' : undefined}
             {...register('email')}
-            className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            className={INPUT_CLASS}
           />
           {errors.email ? (
-            <p role="alert" className="mt-1 text-red-600 text-sm">
+            <p id="email-error" role="alert" className="mt-1 text-danger-600 text-sm">
               Ingresa un email válido.
             </p>
           ) : null}
@@ -83,11 +91,13 @@ export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProp
           <input
             id="nombreCompleto"
             autoComplete="name"
+            aria-invalid={errors.nombreCompleto ? true : undefined}
+            aria-describedby={errors.nombreCompleto ? 'nombre-error' : undefined}
             {...register('nombreCompleto')}
-            className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            className={INPUT_CLASS}
           />
           {errors.nombreCompleto ? (
-            <p role="alert" className="mt-1 text-red-600 text-sm">
+            <p id="nombre-error" role="alert" className="mt-1 text-danger-600 text-sm">
               Ingresa tu nombre completo.
             </p>
           ) : null}
@@ -95,12 +105,13 @@ export function SignupForm({ submitRequest = postSignupRequest }: SignupFormProp
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-lg bg-primary-600 px-5 py-3 font-semibold text-sm text-white transition hover:bg-primary-700 disabled:opacity-60"
+          aria-busy={isSubmitting}
+          className="w-full cursor-pointer rounded-lg bg-primary-600 px-5 py-3 font-semibold text-sm text-white transition hover:bg-primary-700 disabled:opacity-60"
         >
-          Solicitar acceso
+          {isSubmitting ? 'Enviando…' : 'Solicitar acceso'}
         </button>
         {feedback?.tone === 'error' ? (
-          <p role="alert" className="text-red-600 text-sm">
+          <p role="alert" className="text-danger-600 text-sm">
             {feedback.message}
           </p>
         ) : null}

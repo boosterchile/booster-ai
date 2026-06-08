@@ -39,6 +39,17 @@ describe('SignupForm (render + validación cliente, T4)', () => {
     expect(await screen.findByText(/ingresa un email válido/i)).toBeTruthy();
     expect(submitRequest).not.toHaveBeenCalled();
   });
+
+  // review a11y-1: el error debe asociarse al input (aria-invalid +
+  // aria-describedby) para que el lector de pantalla lo anuncie al enfocar.
+  it('asocia el error al input con aria-invalid + aria-describedby (a11y)', async () => {
+    render(<SignupForm submitRequest={stub('submitted')} />);
+    await userEvent.click(screen.getByRole('button', { name: /solicitar acceso/i }));
+    await screen.findByText(/ingresa un email válido/i);
+    const email = screen.getByLabelText('Email');
+    expect(email.getAttribute('aria-invalid')).toBe('true');
+    expect(email.getAttribute('aria-describedby')).toBe('email-error');
+  });
 });
 
 describe('SignupForm — submit + mapeo de resultado (T5)', () => {
@@ -90,5 +101,22 @@ describe('SignupForm — submit + mapeo de resultado (T5)', () => {
     const alert = await screen.findByText(re);
     expect(alert).toBeTruthy();
     expect(screen.getByLabelText('Email')).toBeTruthy();
+  });
+
+  // review a11y-4: loading state perceptible (texto + aria-busy) durante el POST.
+  it('muestra "Enviando…" y aria-busy mientras el submit está en vuelo', async () => {
+    let resolve: (o: SignupOutcome) => void = () => {};
+    const submitRequest = vi.fn(
+      () =>
+        new Promise<SignupOutcome>((r) => {
+          resolve = r;
+        }),
+    );
+    render(<SignupForm submitRequest={submitRequest} />);
+    await fillAndSubmit();
+    const busyBtn = await screen.findByRole('button', { name: /enviando/i });
+    expect(busyBtn.getAttribute('aria-busy')).toBe('true');
+    resolve('submitted');
+    await screen.findByRole('status');
   });
 });

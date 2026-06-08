@@ -15,6 +15,9 @@ import type { NextConfig } from 'next';
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Bundle standalone para la imagen Docker de Cloud Run (ADR-010 §Infra,
+  // vigente; review BLOCKING-1). Genera `.next/standalone`.
+  output: 'standalone',
   transpilePackages: ['@booster-ai/ui-tokens', '@booster-ai/shared-schemas'],
   outputFileTracingRoot: path.join(import.meta.dirname, '../..'),
   webpack: (config) => {

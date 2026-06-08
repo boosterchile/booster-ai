@@ -52,3 +52,52 @@ Sub-agent `agent-rigor:devils-advocate` contra `plan.md` v1 + código vivo. Vere
 | P2-4 | P2 | Rate-limit por IP compartido | Residual aceptado (form gateado); vive en rediseño de rate-limit |
 
 **No objetado:** coherencia de seguridad (reusar `signup-request` no reabre alta directa), trazabilidad nominal SC→T, reversibilidad (app aislada).
+
+---
+
+## REVIEW (fase) — 2026-06-08
+
+Diff: 12 commits sobre `main` (~2414 ins, todo `apps/marketing/` + ADR-060 + lockfile). Sub-agents: code-reviewer + devils-advocate (obligatorios) + security-auditor + ux-designer.
+
+### Hallazgos BLOCKING — resueltos (código)
+
+| # | Fuente | Hallazgo | Resolución |
+|---|---|---|---|
+| B1 | code-reviewer | Falta `output: 'standalone'` (ADR-010 §Infra vigente, Cloud Run) | **Fix**: `next.config.ts` `output:'standalone'`; build genera `.next/standalone` (verificado). |
+| B2 | code-reviewer | `vitest.config` `functions:75` ≠ gate del proyecto (80) | **Fix**: threshold → 80. |
+| a11y-1 | ux-designer | Errores no asociados al input (sin `aria-describedby`/`aria-invalid`) | **Fix**: `aria-invalid` + `aria-describedby` + `id` en mensajes; test nuevo. |
+| a11y-2 | ux-designer | Focus ring verde sobre botón verde = 1.48:1 (<3:1) | **Fix**: anillo neutral-900 oscuro en `globals.css` (≥3:1 sobre blanco y primary-600). |
+| a11y-3 | ux-designer | Borde de input `neutral-300` = 1.52:1 (<3:1) | **Fix**: `border-neutral-500` (#73706A ≈ 5:1). |
+| a11y-4 | ux-designer | Submit sin loading state perceptible | **Fix**: botón "Enviando…" + `aria-busy`; test nuevo. |
+| P0-1 | devils-advocate | ADR/`page.tsx` afirmaban "defensa CORS de doble nivel" — FALSO: el endpoint público ya está montado sin gate; CORS no frena un POST no-browser | **Fix (doc)**: ADR-060 §kill-switch reescrito — CORS no es defensa general; la inocuidad viene del downstream gateado. Comentario de `page.tsx` ya documentaba el doble nivel; el ADR ahora lo corrige. |
+| P1-2 | devils-advocate + ux | Copy "te contactaremos" promete contacto sin notifier | **Fix**: copy del form + éxito sin promesa de contacto proactivo. |
+
+### Resueltos (documentación)
+
+| # | Hallazgo | Resolución |
+|---|---|---|
+| P1-1 | Flag build-time vendido como "flip" de runtime | ADR-060 + spec §11: documentado que habilitar = rebuild+redeploy. |
+| P1-3 | ADR sobrevendía `.pick()` como mitigación del contrato 202 | ADR §residual corregido: `.pick()` cubre shape de request vs schema de dominio, no el 202 ni el schema duplicado del handler. |
+| Ley 19.628 (security) | `/legal/privacidad` stub + form sin consentimiento | **Condición de §11 (BLOCKING para el flip, no para este SHIP gateado)**: política publicada + consentimiento/finalidad antes de captar PII. |
+| CORS-before-flag (security) | Encender flag sin CORS = captación fallida silenciosa | §11: CORS + preflight OPTIONS verificado ANTES del flag-on. |
+| code-reviewer suggestions | `lucide-react` dep muerta; T9/Lighthouse vs verify.md | **Fix**: removido `lucide-react`; verify.md/T9 ya documentan "sin cambios ci.yml + Lighthouse diferido". |
+
+### Residuales aceptados (documentados)
+
+- **400/2xx-no-202 → `unavailable`**: el endpoint responde contractualmente 202/422/429/503; cualquier otro status cae en "intenta más tarde". Aceptable; testeado para 4xx (403/401).
+- **Foco al desmontar el form en éxito** (ux QUESTION): el `<output>` (role=status) anuncia a SR vía live region; mover foco es mejora menor diferida.
+- **Sin nav/header/footer/skip-link** (ux): el sitio es shell de contenido; landmarks de navegación quedan como deuda de UX antes de exponer (no bloquea SHIP gateado).
+- **`no-checkout` es denylist** (devils P2-1): garantiza ausencia de PSP/DTE catalogados; ampliar la lista si aparece un PSP nuevo.
+- **`postcss` moderate transitiva de Next** (security): build-time, CI gatea solo HIGH/CRITICAL; residual aceptado.
+
+### Flagged repo-level (fuera de scope del feature)
+
+- **`pnpm` ignora `pnpm.overrides`** del root package.json (warning en `pnpm install`/`audit`): los overrides de seguridad (crypto-js, etc.) podrían no aplicarse. Spawneado como tarea separada (verificar + migrar a `pnpm-workspace.yaml`). No introducido por este feature.
+
+### No objetado (sólido, verificado)
+
+Kill-switch fail-closed (`v==='true'`), 202 no lee body (anti-enumeration, con spies), form sin rol/empresa, sin Firebase/checkout en bundle, body explícito de 2 claves, on-path del kill-switch testeado, sin secretos (gitleaks limpio), sin XSS/SSRF, sin `console.*`/PII en logs, ADR-060 bien formado.
+
+### Veredicto
+
+**Approved for /ship** (SHIP **gateado**: contenido/SEO desplegable + `/signup` en "próximamente" con kill-switch off). 0 BLOCKING pendientes tras la remediación. Evidencia post-fix: **61/61 tests, coverage 100% (líneas/branches/funcs/stmts), build standalone OK, biome 0, tsc 0**. Las condiciones de §11 gobiernan el flip futuro a captación (CORS + downstream + Ley 19.628 + E2E/Lighthouse) — fuera de este SHIP.

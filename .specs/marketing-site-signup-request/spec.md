@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (con agent-rigor)
 - Date: 2026-06-08
-- Status: Approved
+- Status: Reviewed
 - Linked: ADR-010 (landing comercial), ADR-052 (signup admin-approval gate), `.specs/_followups/onboarding-flow-redesign.md`, diagnóstico de reconciliación `wf_6f246ce3-0c4` (rama abandonada `feat/contratacion-y-alta-cuentas`)
 
 ---
@@ -114,7 +114,14 @@ Nueva app `apps/marketing` (Next.js 15, App Router, build standalone para Cloud 
 
 ## 11. Rollout
 
-- **Gate en dos niveles:** (a) el **contenido/SEO** es desplegable a Cloud Run + DNS en cuanto pase CI (entrega valor sin depender del downstream); (b) el **`/signup` funcional** queda detrás de `NEXT_PUBLIC_SIGNUP_ENABLED=false` (default) → "próximamente". Flip a `true` solo cuando: (1) `www.boosterchile.com` en `CORS_ALLOWED_ORIGINS`; (2) `SIGNUP_REQUEST_FLOW_ACTIVATED=true` + bug 409 approve↔onboarding cerrado + notifier email real (follow-up `onboarding-flow-redesign`); (3) E2E de signup en staging (incl. preflight OPTIONS); (4) Lighthouse en verde.
+- **Gate en dos niveles:** (a) el **contenido/SEO** es desplegable a Cloud Run + DNS en cuanto pase CI (entrega valor sin depender del downstream); (b) el **`/signup` funcional** queda detrás de `NEXT_PUBLIC_SIGNUP_ENABLED=false` (default) → "próximamente".
+- **El flag es build-time** (var `NEXT_PUBLIC_*` inlinada en build): habilitar el form = **rebuild + redeploy** con la var en `true`, NO un toggle de runtime. El pipeline de prod debe hornear `false` por default. (review P1-1)
+- **Condiciones del flip a `true`** (todas, en orden — CORS verificado ANTES del flag-on, review security):
+  1. `www.boosterchile.com` en `CORS_ALLOWED_ORIGINS` del api **+ preflight OPTIONS verificado en staging**.
+  2. `SIGNUP_REQUEST_FLOW_ACTIVATED=true` + bug 409 approve↔onboarding cerrado + notifier email real (follow-up `onboarding-flow-redesign`).
+  3. **Ley 19.628**: `/legal/privacidad` con política definitiva publicada **+ consentimiento/finalidad en el form** (checkbox + link a privacidad). El form NO debe captar PII sin esto. (review security, BLOCKING para el flip)
+  4. E2E de signup en staging + Lighthouse en verde (follow-up `marketing-lighthouse-blocking`).
+- **Recordatorio (review P0-1)**: el endpoint `POST /api/v1/signup-request` ya es público (ADR-052); el flag/CORS controlan el form del sitio, no el endpoint. La inocuidad actual depende del downstream gateado.
 - **Migration:** ninguna en este slice (no toca DB).
 - **Rollback:** como no se expone a tráfico, "rollback" = no activar el deploy/DNS; revertir el merge del app si fuese necesario (app aislada, sin efectos en api/web).
 - **Monitoring (cuando se habilite):** tasa de 202/429/503 del signup-request, `signup_email_sent` (cuando exista), Lighthouse CI.
