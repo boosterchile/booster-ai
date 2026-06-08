@@ -8,8 +8,10 @@ import { defineConfig } from 'vitest/config';
  *   - `layout.tsx` raíz: renderiza <html>/<body>, no es unit-testeable en
  *     jsdom; se cubre con e2e (staging).
  *   - `*.d.ts` e `index.ts` (barrels): sin lógica.
- * Las páginas (`app/**\/page.tsx`) SÍ se incluyen y se cubren con render +
- * metadata tests (cada ruta trae su test). Umbrales del repo (CLAUDE.md):
+ * `src/app/**` (rutas/layouts/SSR) NO se mide con unit coverage: el render de
+ * cada página lo garantiza `next build` (prerender SSG, gate de CI) y los tests
+ * de ruta (gate de /signup, redirect de /ingresar, metadata). La lógica
+ * testeable vive en `src/lib/**` y `src/components/**`. Umbrales (CLAUDE.md):
  * 80% lines/statements, 75% functions/branches.
  */
 export default defineConfig({

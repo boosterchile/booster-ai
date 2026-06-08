@@ -26,6 +26,19 @@ describe('SignupForm (render + validación cliente, T4)', () => {
     expect(alerts.length).toBeGreaterThanOrEqual(2);
     expect(submitRequest).not.toHaveBeenCalled();
   });
+
+  // ALTA-2 (test-engineer): email malformado (no solo vacío) → hace
+  // load-bearing el .email() del schema derivado. Sin esto, degradar el
+  // resolver a z.string() quedaría verde.
+  it('email malformado bloquea el submit y NO llama submitRequest', async () => {
+    const submitRequest = stub('submitted');
+    render(<SignupForm submitRequest={submitRequest} />);
+    await userEvent.type(screen.getByLabelText('Email'), 'ana');
+    await userEvent.type(screen.getByLabelText('Nombre completo'), 'Ana Díaz');
+    await userEvent.click(screen.getByRole('button', { name: /solicitar acceso/i }));
+    expect(await screen.findByText(/ingresa un email válido/i)).toBeTruthy();
+    expect(submitRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe('SignupForm — submit + mapeo de resultado (T5)', () => {

@@ -7,12 +7,20 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('SignupPage — kill-switch gate (off-path)', () => {
-  it('con NEXT_PUBLIC_SIGNUP_ENABLED off renderiza "próximamente" sin form', () => {
+describe('SignupPage — kill-switch gate', () => {
+  it('off → "próximamente" sin form', () => {
     vi.stubEnv('NEXT_PUBLIC_SIGNUP_ENABLED', 'false');
     render(<SignupPage />);
-    // Estado coming-soon: hay un canal de contacto y NO hay campo de email.
     expect(screen.getByRole('link', { name: /soporte@boosterchile\.com/i })).toBeTruthy();
     expect(screen.queryByLabelText('Email')).toBeNull();
+  });
+
+  // ALTA-1 (test-engineer): la rama POSITIVA del gate es el control de seguridad
+  // central. Sin este test, invertir `if (!isSignupEnabled())` queda verde.
+  it('on → monta el form (Email presente) y NO ComingSoon', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SIGNUP_ENABLED', 'true');
+    render(<SignupPage />);
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /soporte@boosterchile\.com/i })).toBeNull();
   });
 });

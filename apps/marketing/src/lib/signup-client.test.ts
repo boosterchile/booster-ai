@@ -48,10 +48,15 @@ describe('postSignupRequest', () => {
     [429, 'rate_limited'],
     [503, 'unavailable'],
     [500, 'unavailable'],
-  ] as const)('status %i → %s', async (status, expected) => {
-    const out = await postSignupRequest(VALID, { apiUrl: API, fetchImpl: mockFetch(status) });
-    expect(out).toBe(expected);
-  });
+    [403, 'unavailable'],
+    [401, 'unavailable'],
+  ] as const)(
+    'status %i → %s (4xx/5xx no mapeado cae en unavailable)',
+    async (status, expected) => {
+      const out = await postSignupRequest(VALID, { apiUrl: API, fetchImpl: mockFetch(status) });
+      expect(out).toBe(expected);
+    },
+  );
 
   it('fetch lanza (red / bloqueo CORS) → network_error', async () => {
     const fetchImpl = vi.fn(async () => {
