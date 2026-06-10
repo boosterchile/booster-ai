@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { KeyManagementServiceClient } from '@google-cloud/kms';
+import { crc32c } from './crc32c.js';
 
 let cachedClient: KeyManagementServiceClient | null = null;
 
@@ -21,7 +22,7 @@ function getClient(): KeyManagementServiceClient {
 }
 
 export interface ResultadoFirmaKms {
-  /** Firma raw en bytes (RSA-PSS 4096 SHA-256 → 512 bytes). */
+  /** Firma raw en bytes (RSA PKCS#1 v1.5 4096 SHA-256 → 512 bytes, ADR-015). */
   signature: Buffer;
   /** Versión de la key usada (e.g. "1", "2"). Para persistir + verify. */
   keyVersion: string;
@@ -35,8 +36,15 @@ export interface ResultadoFirmaKms {
 /**
  * Firma `data` con la version PRIMARY de la KMS key.
  *
- * KMS RSA-PSS necesita el digest pre-calculado (no acepta los bytes
- * raw): le mandamos `sha256(data)` y él lo firma con PSS padding.
+ * KMS asymmetric sign necesita el digest pre-calculado (no acepta los
+ * bytes raw): le mandamos `sha256(data)` y él firma con PKCS#1 v1.5
+ * (RSA_SIGN_PKCS1_4096_SHA256, ADR-015).
+ *
+ * Integridad de transporte (requerido por la semántica de KMS): el
+ * request DEBE incluir `digestCrc32c` — sin él, KMS responde
+ * `verifiedDigestCrc32c=false` y la firma no es confiable. La respuesta
+ * se valida en 3 puntos: verified_digest_crc32c, name, y
+ * signature_crc32c contra el CRC local de la firma recibida.
  *
  * @param kmsKeyId Resource ID de la key (sin :versions).
  * @param data Bytes a firmar (no el hash — lo calculamos acá).
@@ -57,9 +65,14 @@ export async function firmarConKms(
   // que hardcodear "/cryptoKeyVersions/1", lo que rompe cuando rote.
   const primaryVersion = await resolverVersionPrimaria(client, kmsKeyId);
 
+  const digestCrc = crc32c(digest);
+
   const [response] = await client.asymmetricSign({
     name: primaryVersion,
     digest: { sha256: digest },
+    // Int64Value wrapper — protobuf JSON mapping del SDK. Sin este campo
+    // KMS responde verifiedDigestCrc32c=false y el check de abajo lanza.
+    digestCrc32c: { value: String(digestCrc) },
   });
 
   if (!response.signature) {
@@ -72,11 +85,24 @@ export async function firmarConKms(
     ? response.signature
     : Buffer.from(response.signature);
 
-  // Validamos la integridad del transporte: KMS devuelve un CRC32C que
-  // debe matchear lo que recibimos. Sin esto, un bit-flip en la red
-  // podría producir un PDF "firmado" pero inválido al verificar.
-  if (response.verifiedDigestCrc32c === false) {
-    throw new Error('KMS reportó CRC32C inválido en el digest enviado');
+  // Validación de integridad end-to-end según la doc de AsymmetricSign:
+  // (1) el server confirmó el CRC del digest que enviamos; (2) firmó con
+  // la key/version que pedimos (detecta corrupción del request); (3) la
+  // firma llegó íntegra (CRC local vs el que reporta el server). Sin
+  // esto, un bit-flip en la red produce un PDF "firmado" pero inválido.
+  if (response.verifiedDigestCrc32c !== true) {
+    throw new Error('KMS no confirmó la integridad del digest enviado (verifiedDigestCrc32c)');
+  }
+  if (response.name && response.name !== primaryVersion) {
+    throw new Error(
+      `KMS firmó con una key distinta a la solicitada: ${response.name} != ${primaryVersion}`,
+    );
+  }
+  const signatureCrcRemote = extractInt64(response.signatureCrc32c);
+  if (signatureCrcRemote !== null && signatureCrcRemote !== crc32c(signatureBuf)) {
+    throw new Error(
+      'KMS signatureCrc32c no coincide con la firma recibida (corrupción en tránsito)',
+    );
   }
 
   // Extraemos la versión "1", "2", etc. del resource name completo.
@@ -120,6 +146,27 @@ export async function obtenerPublicKeyPem(kmsKeyId: string): Promise<{
     keyVersion: versionMatch[1] ?? '',
     keyVersionName: versionName,
   };
+}
+
+/**
+ * Normaliza el Int64Value de protobuf (`{ value: string|number|Long }` o
+ * scalar directo según versión del SDK) a number, o null si ausente.
+ */
+function extractInt64(v: unknown): number | null {
+  if (v === null || v === undefined) {
+    return null;
+  }
+  if (typeof v === 'number' || typeof v === 'string') {
+    return Number(v);
+  }
+  if (typeof v === 'object' && 'value' in v) {
+    const inner = (v as { value: unknown }).value;
+    if (inner === null || inner === undefined) {
+      return null;
+    }
+    return Number(inner);
+  }
+  return null;
 }
 
 /**

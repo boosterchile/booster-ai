@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { crc32c } from './crc32c.js';
 
 const { asymmetricSignMock, getPublicKeyMock, listCryptoKeyVersionsMock } = vi.hoisted(() => ({
   asymmetricSignMock: vi.fn(),
@@ -48,6 +50,70 @@ describe('firmarConKms', () => {
     expect(args.digest.sha256).toHaveLength(32);
   });
 
+  it('envía digestCrc32c con el CRC32C correcto del digest sha256 (Int64Value)', async () => {
+    withVersions([{ name: V1 }]);
+    asymmetricSignMock.mockResolvedValue([
+      { signature: Buffer.from([1]), verifiedDigestCrc32c: true },
+    ]);
+
+    await firmarConKms(KEY_ID, Buffer.from('hola'));
+
+    const args = asymmetricSignMock.mock.calls[0]?.[0];
+    const expectedDigest = createHash('sha256').update(Buffer.from('hola')).digest();
+    expect(args.digestCrc32c).toEqual({ value: String(crc32c(expectedDigest)) });
+  });
+
+  it('throw si verifiedDigestCrc32c viene undefined (server no confirmó integridad)', async () => {
+    withVersions([{ name: V1 }]);
+    asymmetricSignMock.mockResolvedValue([{ signature: Buffer.from([1]) }]);
+    await expect(firmarConKms(KEY_ID, Buffer.from('x'))).rejects.toThrow(/verifiedDigestCrc32c/);
+  });
+
+  it('throw si signatureCrc32c no coincide con la firma recibida', async () => {
+    withVersions([{ name: V1 }]);
+    asymmetricSignMock.mockResolvedValue([
+      {
+        signature: Buffer.from([1, 2, 3]),
+        verifiedDigestCrc32c: true,
+        signatureCrc32c: { value: '12345' }, // CRC incorrecto a propósito
+      },
+    ]);
+    await expect(firmarConKms(KEY_ID, Buffer.from('x'))).rejects.toThrow(
+      /signatureCrc32c no coincide/,
+    );
+  });
+
+  it('throw si KMS responde con un name distinto a la versión solicitada', async () => {
+    withVersions([{ name: V1 }]);
+    asymmetricSignMock.mockResolvedValue([
+      {
+        signature: Buffer.from([1]),
+        verifiedDigestCrc32c: true,
+        name: `${KEY_ID}/cryptoKeyVersions/99`,
+      },
+    ]);
+    await expect(firmarConKms(KEY_ID, Buffer.from('x'))).rejects.toThrow(
+      /key distinta a la solicitada/,
+    );
+  });
+
+  it('happy path completo: CRCs y name consistentes', async () => {
+    withVersions([{ name: V1 }, { name: V2 }]);
+    const signature = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    asymmetricSignMock.mockResolvedValue([
+      {
+        signature,
+        verifiedDigestCrc32c: true,
+        name: V2,
+        signatureCrc32c: { value: String(crc32c(signature)) },
+      },
+    ]);
+
+    const out = await firmarConKms(KEY_ID, Buffer.from('hola'));
+    expect(out.signature.equals(signature)).toBe(true);
+    expect(out.keyVersion).toBe('2');
+  });
+
   it('acepta Uint8Array y normaliza a Buffer antes de hashear', async () => {
     withVersions([{ name: V1 }]);
     asymmetricSignMock.mockResolvedValue([
@@ -69,7 +135,7 @@ describe('firmarConKms', () => {
     asymmetricSignMock.mockResolvedValue([
       { signature: Buffer.from([1]), verifiedDigestCrc32c: false },
     ]);
-    await expect(firmarConKms(KEY_ID, Buffer.from('x'))).rejects.toThrow(/CRC32C/);
+    await expect(firmarConKms(KEY_ID, Buffer.from('x'))).rejects.toThrow(/verifiedDigestCrc32c/);
   });
 
   it('throw si no hay versions ENABLED', async () => {
