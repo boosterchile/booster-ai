@@ -55,12 +55,21 @@ export interface RateLimitPinOptions {
   limitPerRut?: number;
   limitPerIp?: number;
   windowSeconds?: number;
+  /**
+   * Prefijos de keys Redis. Defaults = counters de /driver-activate.
+   * Otros endpoints RUT-based (ej. /login-rut, ADR-035) pasan prefijos
+   * propios para no compartir ventana de intentos con el PIN driver.
+   */
+  keyPrefix?: string;
+  ipKeyPrefix?: string;
 }
 
 export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): MiddlewareHandler {
   const rutLimit = opts.limitPerRut ?? DEFAULT_LIMIT_PER_RUT;
   const ipLimit = opts.limitPerIp ?? DEFAULT_LIMIT_PER_IP;
   const window = opts.windowSeconds ?? DEFAULT_WINDOW_SECONDS;
+  const keyPrefix = opts.keyPrefix ?? KEY_PREFIX;
+  const ipKeyPrefix = opts.ipKeyPrefix ?? IP_KEY_PREFIX;
 
   return async function rateLimitPin(c, next) {
     let body: unknown;
@@ -86,9 +95,9 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
     }
     const normRut = parsed.data;
 
-    const rutKey = `${KEY_PREFIX}${normRut}`;
+    const rutKey = `${keyPrefix}${normRut}`;
     const ip = extractClientIp(c.req.header('x-forwarded-for'));
-    const ipKey = `${IP_KEY_PREFIX}${ip}`;
+    const ipKey = `${ipKeyPrefix}${ip}`;
 
     let rutCount: number;
     let ipCount: number;

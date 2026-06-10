@@ -108,6 +108,27 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     expect(calls.expireCalled.length).toBe(2);
   });
 
+  it('keyPrefix/ipKeyPrefix custom → counters propios sin tocar los de pin-activate', async () => {
+    const { redis, calls } = makeRedis([1, 1]);
+    const mw = createRateLimitPinMiddleware({
+      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
+      redis: redis as any,
+      logger: noopLogger,
+      keyPrefix: 'rl:login-rut:',
+      ipKeyPrefix: 'rl:login-rut:ip:',
+    });
+    const app = makeApp(mw);
+    const res = await app.request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls.incrCalled).toEqual(['rl:login-rut:12345678-5', 'rl:login-rut:ip:1.2.3.4']);
+    // Ningún counter con el prefijo del PIN driver.
+    expect(calls.incrCalled.some((k) => k.startsWith(KEY_PREFIX))).toBe(false);
+  });
+
   it('5º intento OK (counter=5 ≤ limit)', async () => {
     const { redis } = makeRedis([5, 1]);
     const mw = createRateLimitPinMiddleware({
