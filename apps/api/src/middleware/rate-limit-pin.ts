@@ -55,12 +55,21 @@ export interface RateLimitPinOptions {
   limitPerRut?: number;
   limitPerIp?: number;
   windowSeconds?: number;
+  /**
+   * Prefijos de keys Redis. Defaults = counters de /driver-activate.
+   * Otros endpoints RUT-based (ej. /login-rut, ADR-035) pasan prefijos
+   * propios para no compartir ventana de intentos con el PIN driver.
+   */
+  keyPrefix?: string;
+  ipKeyPrefix?: string;
 }
 
 export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): MiddlewareHandler {
   const rutLimit = opts.limitPerRut ?? DEFAULT_LIMIT_PER_RUT;
   const ipLimit = opts.limitPerIp ?? DEFAULT_LIMIT_PER_IP;
   const window = opts.windowSeconds ?? DEFAULT_WINDOW_SECONDS;
+  const keyPrefix = opts.keyPrefix ?? KEY_PREFIX;
+  const ipKeyPrefix = opts.ipKeyPrefix ?? IP_KEY_PREFIX;
 
   return async function rateLimitPin(c, next) {
     let body: unknown;
@@ -86,9 +95,9 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
     }
     const normRut = parsed.data;
 
-    const rutKey = `${KEY_PREFIX}${normRut}`;
+    const rutKey = `${keyPrefix}${normRut}`;
     const ip = extractClientIp(c.req.header('x-forwarded-for'));
-    const ipKey = `${IP_KEY_PREFIX}${ip}`;
+    const ipKey = `${ipKeyPrefix}${ip}`;
 
     let rutCount: number;
     let ipCount: number;
@@ -106,7 +115,7 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
       // T10 SC-H2.1b — fail-closed loudly. No silent fail-open: rate-limit
       // es defensa de seguridad, debe estar UP o el endpoint se bloquea.
       opts.logger.error(
-        { err, rutNormalizado: normRut, ip },
+        { err, rutNormalizado: normRut, ip, keyPrefix },
         'rate-limit-pin: Redis pipeline failed; fail-closed con 503',
       );
       c.header('Retry-After', String(FAIL_CLOSED_RETRY_AFTER_SECONDS));
@@ -118,7 +127,7 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
     // si RUT también excede.
     if (ipCount > ipLimit) {
       opts.logger.warn(
-        { ip, ipCount, ipLimit, windowSeconds: window },
+        { ip, ipCount, ipLimit, windowSeconds: window, keyPrefix },
         'rate-limit-pin: 429 too_many_attempts scope=ip',
       );
       c.header('Retry-After', String(window));
@@ -128,7 +137,7 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
 
     if (rutCount > rutLimit) {
       opts.logger.warn(
-        { rutNormalizado: normRut, rutCount, rutLimit, windowSeconds: window },
+        { rutNormalizado: normRut, rutCount, rutLimit, windowSeconds: window, keyPrefix },
         'rate-limit-pin: 429 too_many_attempts scope=rut',
       );
       c.header('Retry-After', String(window));
@@ -145,17 +154,29 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Extrae el primer IP del header `X-Forwarded-For` (el LB en prod
- * pone el client IP como primero, separado por comas si hubo más
- * hops). Si el header está ausente, devolvemos `'unknown'` que
- * comparte bucket — aceptable en dev local sin LB; en prod Cloud
- * Armor filtra antes de que llegue al middleware (ver
- * docs/qa/rate-limit-cascade.md §Trust boundary).
+ * Extrae la IP cliente confiable del header `X-Forwarded-For`.
+ *
+ * Detrás del GCLB external (networking.tf) el LB APPENDEA
+ * `<client-ip>, <lb-ip>` a lo que el cliente haya enviado: la primera
+ * entry es 100% controlada por el atacante (review security 2026-06-10:
+ * tomar `[0]` permitía rotar IPs falsas y anular el counter per-IP).
+ * La IP que el LB realmente vio es la PENÚLTIMA entry.
+ *
+ * Con una sola entry (dev local sin LB, o llamada directa) usamos esa.
+ * Header ausente → `'unknown'` (bucket compartido; aceptable en dev,
+ * en prod el LB siempre appendea).
  */
 function extractClientIp(xff: string | undefined): string {
   if (!xff) {
     return 'unknown';
   }
-  const first = xff.split(',')[0]?.trim();
-  return first && first.length > 0 ? first : 'unknown';
+  const entries = xff
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0);
+  if (entries.length === 0) {
+    return 'unknown';
+  }
+  const trusted = entries.length >= 2 ? entries[entries.length - 2] : entries[0];
+  return trusted ?? 'unknown';
 }

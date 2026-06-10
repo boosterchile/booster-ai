@@ -720,9 +720,23 @@ export function createServer(opts: CreateServerOptions): Hono {
     // que mint el custom token que el cliente usa para signInWithCustomToken).
     // Live siempre — el frontend decide cuándo usarlo según
     // `AUTH_UNIVERSAL_V1_ACTIVATED`. Coexiste con `/auth/driver-activate`.
+    // Rate-limit propio (prefijos rl:login-rut, spec sec-rate-limit-login-rut):
+    // la clave de 6 dígitos exige brute-force protection per ADR-035 Alt-3;
+    // counters separados de driver-activate, misma conexión Redis.
+    const rateLimitLogin = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+      keyPrefix: 'rl:login-rut:',
+      ipKeyPrefix: 'rl:login-rut:ip:',
+    });
     app.route(
       '/auth',
-      createAuthUniversalRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+      createAuthUniversalRoutes({
+        db: opts.db,
+        firebaseAuth: opts.firebaseAuth,
+        logger,
+        rateLimitLogin,
+      }),
     );
 
     // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
