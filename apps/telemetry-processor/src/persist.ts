@@ -51,10 +51,13 @@ export interface PersistResult {
  * Persiste un AVL record en `telemetria_puntos` con dedup natural via
  * UNIQUE (imei, timestamp_device).
  *
- * Si vehicleId es null (device pendiente de aprobación), igual loggeamos
- * el evento pero NO insertamos en telemetria_puntos (no hay FK válido).
- * El admin verá el device en el panel y al asociar, las próximas
- * telemetrías se persisten.
+ * Si vehicleId es null intentamos resolverlo acá por IMEI contra
+ * `vehiculos.teltonika_imei`: el sms-fallback-gateway publica SIEMPRE
+ * vehicleId null (no tiene conexión a DB por diseño) y sin este lookup
+ * cada evento panic que entra por SMS se perdía en silencio
+ * (auditoría 2026-06-09). Si el IMEI tampoco está registrado (device
+ * pendiente de aprobación), descartamos con warn: el admin verá el
+ * device en el panel y al asociar, las próximas telemetrías persisten.
  */
 export async function persistRecord(opts: {
   db: NodePgDatabase<Record<string, unknown>>;
@@ -63,12 +66,24 @@ export async function persistRecord(opts: {
 }): Promise<PersistResult> {
   const { db, logger, msg } = opts;
 
-  if (!msg.vehicleId) {
-    logger.debug(
-      { imei: msg.imei, timestampMs: msg.record.timestampMs },
-      'record sin vehicleId (device pendiente), descartando',
-    );
-    return { inserted: false, isFirstPointForVehicle: false };
+  let vehicleId = msg.vehicleId;
+  if (!vehicleId) {
+    const lookup = await db.execute<{ id: string }>(sql`
+      SELECT id FROM vehiculos WHERE teltonika_imei = ${msg.imei} LIMIT 1
+    `);
+    vehicleId = lookup.rows[0]?.id ?? null;
+    if (vehicleId) {
+      logger.info(
+        { imei: msg.imei, vehicleId, timestampMs: msg.record.timestampMs },
+        'vehicleId resuelto por lookup IMEI en processor (publisher sin resolución, ej. sms-fallback)',
+      );
+    } else {
+      logger.warn(
+        { imei: msg.imei, timestampMs: msg.record.timestampMs },
+        'record sin vehicleId e IMEI no registrado en vehiculos, descartando',
+      );
+      return { inserted: false, isFirstPointForVehicle: false };
+    }
   }
 
   // Construir el dict { id: value } para io_data desde entries.
@@ -88,7 +103,7 @@ export async function persistRecord(opts: {
       longitud, latitud, altitud_m, rumbo_deg, satelites, velocidad_kmh,
       event_io_id, io_data
     ) VALUES (
-      ${msg.vehicleId}::uuid,
+      ${vehicleId}::uuid,
       ${msg.imei},
       ${tsDate.toISOString()}::timestamptz,
       ${msg.record.priority},
@@ -111,12 +126,17 @@ export async function persistRecord(opts: {
     return { inserted: false, isFirstPointForVehicle: false };
   }
 
-  // Chequear si fue el primer punto (count = 1 ahora).
-  const countRes = await db.execute<{ count: string }>(sql`
-    SELECT COUNT(*)::text as count FROM telemetria_puntos
-    WHERE vehiculo_id = ${msg.vehicleId}::uuid
+  // Chequear si fue el primer punto del vehículo. LIMIT 2 en vez de
+  // COUNT(*): el COUNT recorría TODO el histórico indexado del vehículo
+  // en cada insert (O(n) por insert, agregado cuadrático sin purga —
+  // auditoría 2026-06-09). Con LIMIT 2 leemos máximo 2 entradas del
+  // índice: exactamente 1 fila ⇒ la recién insertada es la primera.
+  const firstCheck = await db.execute<{ ok: number }>(sql`
+    SELECT 1 as ok FROM telemetria_puntos
+    WHERE vehiculo_id = ${vehicleId}::uuid
+    LIMIT 2
   `);
-  const isFirstPointForVehicle = countRes.rows[0]?.count === '1';
+  const isFirstPointForVehicle = (firstCheck.rows?.length ?? 0) === 1;
 
   return { inserted: true, isFirstPointForVehicle };
 }
