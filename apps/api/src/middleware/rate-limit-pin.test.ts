@@ -129,6 +129,31 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     expect(calls.incrCalled.some((k) => k.startsWith(KEY_PREFIX))).toBe(false);
   });
 
+  it('XFF spoofeado (múltiples entries) → usa la PENÚLTIMA (la IP que vio el LB)', async () => {
+    const { redis, calls } = makeRedis([1, 1]);
+    const mw = createRateLimitPinMiddleware({
+      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
+      redis: redis as any,
+      logger: noopLogger,
+    });
+    const app = makeApp(mw);
+    const res = await app.request('/x', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        // El atacante envía '6.6.6.6'; el GCLB appendea su IP real
+        // (198.51.100.7) y la del LB (35.1.1.1). La confiable es la penúltima.
+        'x-forwarded-for': '6.6.6.6, 198.51.100.7, 35.1.1.1',
+      },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+    const ipKeys = calls.incrCalled.filter((k) => k.includes(':ip:'));
+    expect(ipKeys).toEqual([`${KEY_PREFIX}ip:198.51.100.7`]);
+    // La entry controlada por el atacante NO es la key.
+    expect(calls.incrCalled.some((k) => k.includes('6.6.6.6'))).toBe(false);
+  });
+
   it('5º intento OK (counter=5 ≤ limit)', async () => {
     const { redis } = makeRedis([5, 1]);
     const mw = createRateLimitPinMiddleware({

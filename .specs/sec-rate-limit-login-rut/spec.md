@@ -51,8 +51,10 @@ Agregar `keyPrefix`/`ipKeyPrefix` opcionales a `RateLimitPinOptions` (defaults =
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Falso positivo bloquea usuarios legítimos compartiendo IP (oficina) | L | M | Límite IP 30/15min es 6× el por-RUT; scope=rut protege el caso común |
-| Redis caído bloquea TODO login universal (fail-closed) | L | H | Decisión deliberada del repo (SC-H2.1b); alerta de Redis ya existe; flag AUTH_UNIVERSAL permite fallback a email/password en el front |
+| Redis caído bloquea TODO login universal (fail-closed) | L | H | Decisión deliberada del repo (SC-H2.1b); alerta de Redis ya existe. El path alternativo (email/password) corre client-side contra identitytoolkit de Google con sus propias cuotas — no pasa por este backend ni por Redis |
 | Counters de login comparten ventana con pin-activate | — | — | Eliminado por diseño: prefijos propios |
+| XFF spoofeable anula el counter per-IP | M | H | IMPLEMENTADO (review 2026-06-10): extractClientIp toma la PENÚLTIMA entry (la que vio el GCLB), no la primera (100% controlada por el cliente). Mismo fix pendiente en rate-limit-signup y demo-cache-warm → `.specs/_followups/xff-trust-boundary-resto-endpoints.md` |
+| DoS por-RUT dirigido (bloquear a una víctima con 5 requests basura) | M | M | Residual aceptado en este ciclo: el counter no distingue intento fallido/exitoso. Mitigación futura (reset-on-success o counter solo-fallos) anotada en el follow-up XFF |
 
 ## 10. Test list
 
@@ -76,3 +78,4 @@ None as of 2026-06-10.
 ## 13. Decision log
 
 - 2026-06-10 — Draft + aprobación del PO vía "ejecutar lo propuesto en el punto 6". Opt requerido (no opcional) por default-deny.
+- 2026-06-10 — REVIEW (security ALTO + code-reviewer bloqueante): (1) extractClientIp tomaba XFF[0] — spoofeable bajo GCLB que appendea la IP real como penúltima → corregido con test del caso spoofeado; (2) los logs 429/503 no distinguían endpoint → keyPrefix agregado a los fields; (3) la mitigación §9 del fail-closed citaba un fallback del front sin evidencia → corregida (email/password es client-side contra identitytoolkit). Residuales documentados: DoS por-RUT dirigido y X-RateLimit-Scope como información operacional (estándar de la industria, se mantiene por UX de clientes legítimos).
