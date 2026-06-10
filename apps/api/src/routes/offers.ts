@@ -16,6 +16,7 @@ import {
   OfferNotFoundError,
   OfferNotOwnedError,
   OfferNotPendingError,
+  TripNotAcceptableError,
   acceptOffer,
   rejectOffer,
 } from '../services/offer-actions.js';
@@ -170,6 +171,16 @@ export function createOfferRoutes(opts: {
       }
       if (err instanceof OfferExpiredError) {
         return c.json({ error: 'offer_expired', code: 'offer_expired' }, 409);
+      }
+      if (err instanceof TripNotAcceptableError) {
+        return c.json(
+          {
+            error: 'trip_not_acceptable',
+            code: 'trip_not_acceptable',
+            trip_status: err.tripStatus,
+          },
+          409,
+        );
       }
       const errMsg = err instanceof Error ? err.message : String(err);
       if (errMsg.toLowerCase().includes('unique') || errMsg.toLowerCase().includes('duplicate')) {

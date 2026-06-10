@@ -10,6 +10,7 @@ import type { Db } from '../db/client.js';
 import {
   assignments,
   empresas as empresasTable,
+  offers,
   telemetryPoints,
   tripEvents,
   tripMetrics,
@@ -518,55 +519,90 @@ export function createTripRequestsV2Routes(opts: {
     const empresaId = auth.activeMembership.empresa.id;
     const userId = auth.userContext.user.id;
 
-    // Verificar ownership + leer status actual.
-    const [trip] = await opts.db
-      .select({ id: trips.id, status: trips.status, trackingCode: trips.trackingCode })
-      .from(trips)
-      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-      .limit(1);
+    // Transacción con lock de fila: serializa contra acceptOffer (que
+    // también toma FOR UPDATE sobre el trip). Sin esto, un accept
+    // concurrente podía quedar pisado por el cancel (o viceversa) y las
+    // ofertas pendientes quedaban aceptables post-cancelación
+    // (race de la auditoría 2026-06-09, riesgo alto #2).
+    const result = await opts.db.transaction(async (tx) => {
+      const tripRows = await tx
+        .select({ id: trips.id, status: trips.status, trackingCode: trips.trackingCode })
+        .from(trips)
+        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+        .for('update')
+        .limit(1);
+      const trip = tripRows[0];
 
-    if (!trip) {
+      if (!trip) {
+        return { kind: 'not_found' as const };
+      }
+
+      // Re-check post-lock: si un accept concurrente ganó la carrera,
+      // acá vemos 'asignado' y abortamos con 409.
+      if (!CANCELLABLE_STATUSES.has(trip.status)) {
+        return { kind: 'not_cancellable' as const, currentStatus: trip.status };
+      }
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(trips)
+        .set({ status: 'cancelado', updatedAt: now })
+        .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
+        .returning();
+
+      if (!updated) {
+        return { kind: 'not_found' as const };
+      }
+
+      // Invalidar ofertas pendientes del trip: sin esto quedaban
+      // aceptables hasta su TTL y podían resucitar el viaje cancelado.
+      const invalidated = await tx
+        .update(offers)
+        .set({ status: 'expirada', updatedAt: now })
+        .where(and(eq(offers.tripId, id), eq(offers.status, 'pendiente')))
+        .returning({ id: offers.id });
+
+      await tx.insert(tripEvents).values({
+        tripId: id,
+        eventType: 'cancelado',
+        source: 'web',
+        recordedByUserId: userId,
+        payload: {
+          actor: 'generador_carga',
+          previous_status: trip.status,
+          invalidated_offers: invalidated.length,
+          ...(body.reason ? { reason: body.reason } : {}),
+        },
+      });
+
+      return {
+        kind: 'ok' as const,
+        trip,
+        updated,
+        invalidatedCount: invalidated.length,
+      };
+    });
+
+    if (result.kind === 'not_found') {
       return c.json({ error: 'trip_not_found' }, 404);
     }
-
-    if (!CANCELLABLE_STATUSES.has(trip.status)) {
+    if (result.kind === 'not_cancellable') {
       return c.json(
         {
           error: 'trip_not_cancellable',
           code: 'trip_not_cancellable',
-          current_status: trip.status,
+          current_status: result.currentStatus,
         },
         409,
       );
     }
 
-    const [updated] = await opts.db
-      .update(trips)
-      .set({ status: 'cancelado', updatedAt: new Date() })
-      .where(and(eq(trips.id, id), eq(trips.generadorCargaEmpresaId, empresaId)))
-      .returning();
-
-    if (!updated) {
-      return c.json({ error: 'trip_not_found' }, 404);
-    }
-
-    await opts.db.insert(tripEvents).values({
-      tripId: id,
-      eventType: 'cancelado',
-      source: 'web',
-      recordedByUserId: userId,
-      payload: {
-        actor: 'generador_carga',
-        previous_status: trip.status,
-        ...(body.reason ? { reason: body.reason } : {}),
-      },
-    });
-
     opts.logger.info(
       {
         tripId: id,
-        trackingCode: trip.trackingCode,
-        previousStatus: trip.status,
+        trackingCode: result.trip.trackingCode,
+        previousStatus: result.trip.status,
+        invalidatedOffers: result.invalidatedCount,
         empresaId,
         userId,
       },
@@ -575,9 +611,9 @@ export function createTripRequestsV2Routes(opts: {
 
     return c.json({
       trip_request: {
-        id: updated.id,
-        tracking_code: updated.trackingCode,
-        status: updated.status,
+        id: result.updated.id,
+        tracking_code: result.updated.trackingCode,
+        status: result.updated.status,
       },
     });
   });

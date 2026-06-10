@@ -4,6 +4,7 @@ import {
   OfferNotFoundError,
   OfferNotOwnedError,
   OfferNotPendingError,
+  TripNotAcceptableError,
   acceptOffer,
   rejectOffer,
 } from '../../src/services/offer-actions.js';
@@ -48,6 +49,8 @@ function makeDb(queues: DbQueues = {}) {
     const chain: Record<string, unknown> = {
       from: vi.fn(() => chain),
       where: vi.fn(() => chain),
+      // row lock del trip en acceptOffer (SELECT ... FOR UPDATE)
+      for: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
     };
     chain.then = (resolve: (v: unknown) => unknown) => {
@@ -107,6 +110,10 @@ const VALID_OFFER = {
   suggestedVehicleId: 'veh-uuid-1',
   expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1h en futuro
 };
+
+// Estado aceptable del trip (guard anti accept-post-cancel): el accept
+// hace un segundo SELECT (FOR UPDATE) del trip tras validar la oferta.
+const VALID_TRIP = { id: TRIP_ID, status: 'ofertas_enviadas' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -174,9 +181,56 @@ describe('acceptOffer', () => {
     ).rejects.toThrow(OfferExpiredError);
   });
 
+  it('throw TripNotAcceptableError si el trip está cancelado (race accept-post-cancel)', async () => {
+    const db = makeDb({
+      selects: [[VALID_OFFER], [{ id: TRIP_ID, status: 'cancelado' }]],
+    });
+    await expect(
+      acceptOffer({
+        db: db as never,
+        logger: noopLogger,
+        offerId: OFFER_ID,
+        empresaId: EMPRESA_ID,
+        userId: USER_ID,
+      }),
+    ).rejects.toThrow(TripNotAcceptableError);
+  });
+
+  it('throw TripNotAcceptableError si el trip ya está asignado o expirado', async () => {
+    for (const status of ['asignado', 'expirado']) {
+      const db = makeDb({
+        selects: [[VALID_OFFER], [{ id: TRIP_ID, status }]],
+      });
+      await expect(
+        acceptOffer({
+          db: db as never,
+          logger: noopLogger,
+          offerId: OFFER_ID,
+          empresaId: EMPRESA_ID,
+          userId: USER_ID,
+        }),
+      ).rejects.toThrow(TripNotAcceptableError);
+    }
+  });
+
+  it('throw TripNotAcceptableError(missing) si la fila del trip no existe', async () => {
+    const db = makeDb({
+      selects: [[VALID_OFFER], []],
+    });
+    const promise = acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+    });
+    await expect(promise).rejects.toThrow(TripNotAcceptableError);
+    await expect(promise).rejects.toThrow(/missing/);
+  });
+
   it('happy path: accept con 0 supersededOffers + assignment creado', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER]],
+      selects: [[VALID_OFFER], [VALID_TRIP]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }], // UPDATE offer
         [], // UPDATE supersededed (vacío, era la única)
@@ -200,7 +254,7 @@ describe('acceptOffer', () => {
 
   it('happy path: accept con N supersededOffers (otras offers pendientes del mismo trip)', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER]],
+      selects: [[VALID_OFFER], [VALID_TRIP]],
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }],
         [{ id: 'o2' }, { id: 'o3' }, { id: 'o4' }], // 3 supersededOffers
@@ -220,7 +274,7 @@ describe('acceptOffer', () => {
 
   it('UPDATE offer retorna empty → throw "Update offer returned no row"', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER]],
+      selects: [[VALID_OFFER], [VALID_TRIP]],
       updates: [[]], // UPDATE retorna vacío
     });
     await expect(
@@ -236,7 +290,7 @@ describe('acceptOffer', () => {
 
   it('INSERT assignment retorna empty → throw', async () => {
     const db = makeDb({
-      selects: [[VALID_OFFER]],
+      selects: [[VALID_OFFER], [VALID_TRIP]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }]],
       inserts: [[]], // INSERT assignment vacío
     });
@@ -253,7 +307,7 @@ describe('acceptOffer', () => {
 
   it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
     const db = makeDb({
-      selects: [[{ ...VALID_OFFER, suggestedVehicleId: null }]],
+      selects: [[{ ...VALID_OFFER, suggestedVehicleId: null }], [VALID_TRIP]],
       updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], []],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: '' }], []],
     });
