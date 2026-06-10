@@ -1,11 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { adelantosCarrier } from '../db/schema.js';
+import { adelantosCarrier, shipperCreditDecisions } from '../db/schema.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -178,6 +178,8 @@ export function createAdminCobraHoyRoutes(opts: { db: Db; logger: Logger }) {
       .select({
         id: adelantosCarrier.id,
         status: adelantosCarrier.status,
+        empresaShipperId: adelantosCarrier.empresaShipperId,
+        montoAdelantadoClp: adelantosCarrier.montoAdelantadoClp,
       })
       // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
       .from(adelantosCarrier)
@@ -218,20 +220,69 @@ export function createAdminCobraHoyRoutes(opts: { db: Db; logger: Logger }) {
       updates.notasAdmin = sql`coalesce(${adelantosCarrier.notasAdmin} || E'\n', '') || ${`${tag} ${body.notas}`}`;
     }
 
-    // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
-    const updated = await opts.db
-      .update(adelantosCarrier)
-      .set(updates)
-      .where(eq(adelantosCarrier.id, adelantoId))
-      .returning({
-        id: adelantosCarrier.id,
-        status: adelantosCarrier.status,
-        desembolsadoEn: adelantosCarrier.desembolsadoEn,
-        cobradoAShipperEn: adelantosCarrier.cobradoAShipperEn,
-      });
-    const after = updated[0];
+    // Transacción: cambio de estado + tracking de exposición crediticia
+    // (ADR-029 §3, spec fix-factoring-exposicion-y-flag). `desembolsado`
+    // consume cupo del shipper; `cobrado_a_shipper` lo libera (piso 0).
+    // Sin esto, cobraHoy() validaba el límite contra un contador que
+    // nunca se movía (auditoría 2026-06-09, riesgo alto #4).
+    const txResult = await opts.db.transaction(async (tx) => {
+      // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+      const updated = await tx
+        .update(adelantosCarrier)
+        .set(updates)
+        .where(eq(adelantosCarrier.id, adelantoId))
+        .returning({
+          id: adelantosCarrier.id,
+          status: adelantosCarrier.status,
+          desembolsadoEn: adelantosCarrier.desembolsadoEn,
+          cobradoAShipperEn: adelantosCarrier.cobradoAShipperEn,
+        });
+      const after = updated[0];
+      if (!after) {
+        return { after: null, exposureUpdated: null };
+      }
+
+      let exposureUpdated: boolean | null = null;
+      if (body.target_status === 'desembolsado' || body.target_status === 'cobrado_a_shipper') {
+        const delta =
+          body.target_status === 'desembolsado'
+            ? sql`${shipperCreditDecisions.currentExposureClp} + ${current.montoAdelantadoClp}`
+            : sql`GREATEST(0, ${shipperCreditDecisions.currentExposureClp} - ${current.montoAdelantadoClp})`;
+        // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+        const decisionRows = await tx
+          .update(shipperCreditDecisions)
+          .set({ currentExposureClp: delta, updatedAt: now })
+          .where(
+            and(
+              eq(shipperCreditDecisions.empresaShipperId, current.empresaShipperId),
+              eq(shipperCreditDecisions.approved, true),
+              gt(shipperCreditDecisions.expiresAt, sql`now()`),
+            ),
+          )
+          .returning({ id: shipperCreditDecisions.id });
+        exposureUpdated = decisionRows.length > 0;
+      }
+
+      return { after, exposureUpdated };
+    });
+
+    const after = txResult.after;
     if (!after) {
       return c.json({ error: 'update_failed' }, 500);
+    }
+
+    if (txResult.exposureUpdated === false) {
+      // El dinero ya se movió por decisión humana — no bloqueamos la
+      // transición, pero el cupo del shipper quedó sin reflejar.
+      opts.logger.warn(
+        {
+          adelantoId,
+          empresaShipperId: current.empresaShipperId,
+          targetStatus: body.target_status,
+          montoAdelantadoClp: current.montoAdelantadoClp,
+        },
+        'admin cobra-hoy: transición sin decisión crediticia vigente; exposición NO actualizada',
+      );
     }
 
     opts.logger.info(

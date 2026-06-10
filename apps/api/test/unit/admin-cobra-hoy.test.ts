@@ -49,15 +49,25 @@ function makeApp(opts: {
   email?: string;
   selectRows?: Array<Record<string, unknown>>;
   updateRows?: Array<Record<string, unknown>>;
+  /**
+   * Cola para múltiples updates en el mismo request (transición +
+   * exposición crediticia). Tiene precedencia sobre updateRows.
+   */
+  updateRowsSeq?: Array<Array<Record<string, unknown>>>;
 }) {
   const selectQueue: Array<Array<Record<string, unknown>>> = [];
   if (opts.selectRows) {
     selectQueue.push(opts.selectRows);
   }
   const updateQueue: Array<Array<Record<string, unknown>>> = [];
-  if (opts.updateRows) {
+  if (opts.updateRowsSeq) {
+    updateQueue.push(...opts.updateRowsSeq);
+  } else if (opts.updateRows) {
     updateQueue.push(opts.updateRows);
   }
+
+  // Captura los args de cada .set() para asertar el update de exposición.
+  const updateSetCalls: Array<Record<string, unknown>> = [];
 
   const selectChain: Record<string, unknown> = {
     from: vi.fn(() => selectChain),
@@ -66,16 +76,27 @@ function makeApp(opts: {
     limit: vi.fn(async () => selectQueue.shift() ?? []),
   };
   const updateChain = {
-    set: vi.fn(() => ({
-      where: vi.fn(() => ({
-        returning: vi.fn(async () => updateQueue.shift() ?? []),
-      })),
-    })),
+    set: vi.fn((args: Record<string, unknown>) => {
+      updateSetCalls.push(args);
+      return {
+        where: vi.fn(() => ({
+          returning: vi.fn(async () => updateQueue.shift() ?? []),
+        })),
+      };
+    }),
   };
+  const updateFn = vi.fn(() => updateChain);
   const db = {
     select: vi.fn(() => selectChain),
-    update: vi.fn(() => updateChain),
+    update: updateFn,
+    // La transición corre dentro de db.transaction(tx => ...).
+    transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) =>
+      cb({ select: vi.fn(() => selectChain), update: updateFn }),
+    ),
   };
+
+  const warnSpy = vi.fn();
+  const logger = { ...(noopLogger as Record<string, unknown>), warn: warnSpy } as never;
 
   const app = new Hono();
   app.use('*', async (c, next) => {
@@ -84,8 +105,8 @@ function makeApp(opts: {
     }
     await next();
   });
-  app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: db as never, logger: noopLogger }));
-  return { app, db };
+  app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: db as never, logger }));
+  return { app, db, updateSetCalls, warnSpy };
 }
 
 beforeEach(() => {
@@ -261,9 +282,12 @@ describe('POST /admin/cobra-hoy/adelantos/:id/transicionar', () => {
     const now = new Date('2026-05-10T12:00:00Z');
     const { app } = makeApp({
       withContext: true,
-      selectRows: [{ id: 'a1', status: 'aprobado' }],
-      updateRows: [
-        { id: 'a1', status: 'desembolsado', desembolsadoEn: now, cobradoAShipperEn: null },
+      selectRows: [
+        { id: 'a1', status: 'aprobado', empresaShipperId: 'shp-1', montoAdelantadoClp: 100000 },
+      ],
+      updateRowsSeq: [
+        [{ id: 'a1', status: 'desembolsado', desembolsadoEn: now, cobradoAShipperEn: null }],
+        [{ id: 'dec-1' }], // decisión vigente actualizada
       ],
     });
     const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
@@ -288,14 +312,19 @@ describe('POST /admin/cobra-hoy/adelantos/:id/transicionar', () => {
     const now = new Date('2026-06-10T12:00:00Z');
     const { app } = makeApp({
       withContext: true,
-      selectRows: [{ id: 'a1', status: 'desembolsado' }],
-      updateRows: [
-        {
-          id: 'a1',
-          status: 'cobrado_a_shipper',
-          desembolsadoEn: null,
-          cobradoAShipperEn: now,
-        },
+      selectRows: [
+        { id: 'a1', status: 'desembolsado', empresaShipperId: 'shp-1', montoAdelantadoClp: 100000 },
+      ],
+      updateRowsSeq: [
+        [
+          {
+            id: 'a1',
+            status: 'cobrado_a_shipper',
+            desembolsadoEn: null,
+            cobradoAShipperEn: now,
+          },
+        ],
+        [{ id: 'dec-1' }],
       ],
     });
     const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
@@ -308,11 +337,102 @@ describe('POST /admin/cobra-hoy/adelantos/:id/transicionar', () => {
     expect(body.cobrado_a_shipper_en).toBe(now.toISOString());
   });
 
+  it('desembolsado → actualiza exposición crediticia de la decisión vigente (2º update)', async () => {
+    const now = new Date('2026-05-10T12:00:00Z');
+    const { app, db, updateSetCalls } = makeApp({
+      withContext: true,
+      selectRows: [
+        { id: 'a1', status: 'aprobado', empresaShipperId: 'shp-1', montoAdelantadoClp: 250000 },
+      ],
+      updateRowsSeq: [
+        [{ id: 'a1', status: 'desembolsado', desembolsadoEn: now, cobradoAShipperEn: null }],
+        [{ id: 'dec-1' }],
+      ],
+    });
+    const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target_status: 'desembolsado' }),
+    });
+    expect(res.status).toBe(200);
+    // Dos updates: adelanto + shipper_credit_decisions, dentro de la tx.
+    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(updateSetCalls[1]).toHaveProperty('currentExposureClp');
+  });
+
+  it('cobrado_a_shipper → decrementa exposición (2º update con GREATEST piso 0)', async () => {
+    const now = new Date('2026-06-10T12:00:00Z');
+    const { app, db, updateSetCalls } = makeApp({
+      withContext: true,
+      selectRows: [
+        { id: 'a1', status: 'desembolsado', empresaShipperId: 'shp-1', montoAdelantadoClp: 250000 },
+      ],
+      updateRowsSeq: [
+        [{ id: 'a1', status: 'cobrado_a_shipper', desembolsadoEn: null, cobradoAShipperEn: now }],
+        [{ id: 'dec-1' }],
+      ],
+    });
+    const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target_status: 'cobrado_a_shipper' }),
+    });
+    expect(res.status).toBe(200);
+    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(updateSetCalls[1]).toHaveProperty('currentExposureClp');
+  });
+
+  it('desembolsado sin decisión vigente → transición OK + warn (exposición no actualizada)', async () => {
+    const now = new Date('2026-05-10T12:00:00Z');
+    const { app, warnSpy } = makeApp({
+      withContext: true,
+      selectRows: [
+        { id: 'a1', status: 'aprobado', empresaShipperId: 'shp-1', montoAdelantadoClp: 250000 },
+      ],
+      updateRowsSeq: [
+        [{ id: 'a1', status: 'desembolsado', desembolsadoEn: now, cobradoAShipperEn: null }],
+        [], // sin decisión vigente
+      ],
+    });
+    const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target_status: 'desembolsado' }),
+    });
+    expect(res.status).toBe(200);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ adelantoId: 'a1', targetStatus: 'desembolsado' }),
+      expect.stringContaining('exposición NO actualizada'),
+    );
+  });
+
+  it('transición no-monetaria (solicitado → aprobado) NO toca exposición (1 update)', async () => {
+    const { app, db } = makeApp({
+      withContext: true,
+      selectRows: [
+        { id: 'a1', status: 'solicitado', empresaShipperId: 'shp-1', montoAdelantadoClp: 250000 },
+      ],
+      updateRowsSeq: [
+        [{ id: 'a1', status: 'aprobado', desembolsadoEn: null, cobradoAShipperEn: null }],
+      ],
+    });
+    const res = await app.request('/admin/cobra-hoy/adelantos/a1/transicionar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target_status: 'aprobado' }),
+    });
+    expect(res.status).toBe(200);
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
   it('transición legal mora → cobrado_a_shipper (rescate)', async () => {
     const now = new Date('2026-07-10T12:00:00Z');
     const { app } = makeApp({
       withContext: true,
-      selectRows: [{ id: 'a1', status: 'mora' }],
+      selectRows: [
+        { id: 'a1', status: 'mora', empresaShipperId: 'shp-1', montoAdelantadoClp: 100000 },
+      ],
       updateRows: [
         {
           id: 'a1',
