@@ -1,3 +1,15 @@
+---
+archived_at: 2026-06-10
+archived_in: docs(runbooks) correcciones staleness post-auditoría 2026-06-09
+superseded_by:
+  - infrastructure/variables.tf (sender +19383365293 registrado 2026-04-29, WABA 874993441667738, default productivo)
+archived_reason: |
+  Registro del sender ejecutado el 2026-04-29; el header quedó en "Pendiente.
+  Sandbox como workaround" pese a estar productivo. La sección Rollback
+  conserva valor de referencia histórica.
+status: archived
+---
+
 # Runbook: Registrar +1 938-336-5293 como Twilio WhatsApp Sender
 
 **Fecha:** 2026-04-29
