@@ -45,12 +45,16 @@ function makeDb(queues: DbQueues = {}) {
   const updates = [...(queues.updates ?? [])];
   const inserts = [...(queues.inserts ?? [])];
 
+  const forSpy = vi.fn();
   const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
       from: vi.fn(() => chain),
       where: vi.fn(() => chain),
       // row lock del trip en acceptOffer (SELECT ... FOR UPDATE)
-      for: vi.fn(() => chain),
+      for: vi.fn((mode: string) => {
+        forSpy(mode);
+        return chain;
+      }),
       limit: vi.fn(async () => selects.shift() ?? []),
     };
     chain.then = (resolve: (v: unknown) => unknown) => {
@@ -93,6 +97,7 @@ function makeDb(queues: DbQueues = {}) {
     select: tx.select,
     update: tx.update,
     insert: tx.insert,
+    forSpy,
   };
 }
 
@@ -250,6 +255,9 @@ describe('acceptOffer', () => {
     });
     expect(result.assignment.id).toBe('assign-1');
     expect(result.supersededOfferIds).toEqual([]);
+    // El guard del trip DEBE tomar el row lock: si alguien borra el
+    // .for('update'), este assert rompe (la serialización es el fix).
+    expect(db.forSpy).toHaveBeenCalledWith('update');
   });
 
   it('happy path: accept con N supersededOffers (otras offers pendientes del mismo trip)', async () => {

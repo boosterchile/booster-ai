@@ -79,3 +79,4 @@ None as of 2026-06-10.
 ## 13. Decision log
 
 - 2026-06-10 — Draft + aprobación del PO vía "ejecutar lo propuesto en el punto 6". Invalidación usa `expirada` (sin migración).
+- 2026-06-10 — REVIEW: (1) bloqueante code-reviewer — el guard interceptaba el race dos-carriers que el web traduce como `trip_already_assigned`; el route ahora remapea `tripStatus==='asignado'` a ese código (contrato preservado, test agregado); (2) assert explícito de que el guard toma FOR UPDATE (si alguien borra el lock, la suite rompe); (3) riesgo residual aceptado (devils-advocate): runMatching es un TERCER escritor sin guard de status en sus UPDATEs — ventana mínima (solo durante el matching síncrono post-creación), cierre definitivo en `.specs/arch-trip-state-machine-refactor/`; (4) test de concurrencia real con Postgres (integration) anotado como deuda del refactor TSM, no de este fix táctico.
