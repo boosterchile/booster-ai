@@ -32,7 +32,7 @@ Ninguno (tooling de operador). La rotación de la Maps key tiene procedimiento v
 ## 6. Constraints
 
 1. No editar docs/adr/014 (ADRs inmutables); la corrección vive en el runbook con referencia cruzada.
-2. El sub-flujo GKE del script ya está cubierto por scripts/deploy-telemetry-gateway.sh.
+2. El sub-flujo de DEPLOY de imagen GKE está cubierto por scripts/deploy-telemetry-gateway.sh; el sub-flujo de BOOTSTRAP (secret K8s, WI binding, grant Artifact Registry) NO estaba en ningún otro lado → extraído a docs/runbooks/bootstrap-gke-telemetry-gateway.md (corrección del review 2026-06-10; la constraint original era falsa).
 
 ## 7. Approach
 
@@ -69,3 +69,4 @@ None as of 2026-06-10 (gating IAM de builds submit anotado como follow-up en §5
 ## 13. Decision log
 
 - 2026-06-10 — Draft + aprobación del PO vía "ejecutar lo propuesto en el punto 6". Eliminación total (no degradación), ver §8.
+- 2026-06-10 — REVIEW (devils-advocate, objeción fuerte): el script borrado era el ÚNICO lugar con el bootstrap del cluster GKE (secret telemetry-gateway-secrets, WI binding, artifactregistry.reader del compute SA). Sin eso, un cluster nuevo / reactivación DR queda en ImagePullBackOff. Extraído a docs/runbooks/bootstrap-gke-telemetry-gateway.md ANTES de cerrar el branch — la constraint §6.2 original ("ya cubierto por deploy-telemetry-gateway.sh") era falsa para el bootstrap.
