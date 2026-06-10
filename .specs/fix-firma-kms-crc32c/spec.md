@@ -76,3 +76,4 @@ None as of 2026-06-10 (la verificación contra KMS real queda como paso manual p
 ## 13. Decision log
 
 - 2026-06-10 — Draft + aprobación del PO vía instrucción "ejecutar lo propuesto en el punto 6" (registrada en ledger).
+- 2026-06-10 — REVIEW (security-auditor BLOQUEANTE + devils-advocate): los checks de `name` y `signatureCrc32c` eran fail-open ante campo ausente (moldeados por los mocks viejos — exactamente al revés) y `extractInt64` retornaba null ante shapes Long → se saltaba la verificación. Reescrito fail-closed: campo ausente o formato no reconocido = throw; soporte explícito de Long (`toNumber`) y `{value: Long}`. Mocks reescritos con helper `okSignResponse` (respuesta completa y consistente). La verificación manual contra KMS real (§11) sigue siendo paso obligatorio post-merge.

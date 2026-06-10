@@ -85,21 +85,22 @@ export async function firmarConKms(
     ? response.signature
     : Buffer.from(response.signature);
 
-  // Validación de integridad end-to-end según la doc de AsymmetricSign:
-  // (1) el server confirmó el CRC del digest que enviamos; (2) firmó con
-  // la key/version que pedimos (detecta corrupción del request); (3) la
-  // firma llegó íntegra (CRC local vs el que reporta el server). Sin
-  // esto, un bit-flip en la red produce un PDF "firmado" pero inválido.
+  // Validación de integridad end-to-end según la doc de AsymmetricSign,
+  // TODA fail-closed (review security 2026-06-10): KMS real SIEMPRE
+  // puebla estos campos — un campo ausente es respuesta corrupta o
+  // proxy hostil, no un caso a tolerar. Sin esto, un bit-flip en la red
+  // produce un PDF "firmado" pero inválido; estos PDFs son documentos
+  // con retención legal SII.
   if (response.verifiedDigestCrc32c !== true) {
     throw new Error('KMS no confirmó la integridad del digest enviado (verifiedDigestCrc32c)');
   }
-  if (response.name && response.name !== primaryVersion) {
+  if (response.name !== primaryVersion) {
     throw new Error(
-      `KMS firmó con una key distinta a la solicitada: ${response.name} != ${primaryVersion}`,
+      `KMS respondió con name distinto a la versión solicitada: ${response.name ?? '(ausente)'} != ${primaryVersion}`,
     );
   }
-  const signatureCrcRemote = extractInt64(response.signatureCrc32c);
-  if (signatureCrcRemote !== null && signatureCrcRemote !== crc32c(signatureBuf)) {
+  const signatureCrcRemote = extractCrc32c(response.signatureCrc32c);
+  if (signatureCrcRemote !== crc32c(signatureBuf)) {
     throw new Error(
       'KMS signatureCrc32c no coincide con la firma recibida (corrupción en tránsito)',
     );
@@ -149,22 +150,44 @@ export async function obtenerPublicKeyPem(kmsKeyId: string): Promise<{
 }
 
 /**
- * Normaliza el Int64Value de protobuf (`{ value: string|number|Long }` o
- * scalar directo según versión del SDK) a number, o null si ausente.
+ * Normaliza el Int64Value/Long del CRC32C de la respuesta KMS a number.
+ * Shapes según versión del SDK: scalar (number|string), Int64Value
+ * wrapper `{ value }`, o `Long` de protobufjs (objeto con `toNumber()`).
+ *
+ * Fail-closed (review security 2026-06-10): ausente o no-parseable es
+ * respuesta corrupta → throw. Devolver null acá significaba "saltarse
+ * la verificación de integridad de la firma" — inaceptable para
+ * documentos con retención legal.
  */
-function extractInt64(v: unknown): number | null {
+function extractCrc32c(v: unknown): number {
   if (v === null || v === undefined) {
-    return null;
+    throw new Error('KMS no devolvió signatureCrc32c — respuesta incompleta, firma no confiable');
   }
+  const parsed = crc32cToNumber(v);
+  if (parsed === null || !Number.isFinite(parsed)) {
+    throw new Error(
+      `KMS signatureCrc32c con formato no reconocido (${typeof v}) — firma no confiable`,
+    );
+  }
+  return parsed;
+}
+
+function crc32cToNumber(v: unknown): number | null {
   if (typeof v === 'number' || typeof v === 'string') {
     return Number(v);
   }
-  if (typeof v === 'object' && 'value' in v) {
-    const inner = (v as { value: unknown }).value;
-    if (inner === null || inner === undefined) {
-      return null;
+  if (typeof v === 'object' && v !== null) {
+    // Long de protobufjs (también cubre {value: Long} vía recursión).
+    if ('toNumber' in v && typeof (v as { toNumber: unknown }).toNumber === 'function') {
+      return (v as { toNumber: () => number }).toNumber();
     }
-    return Number(inner);
+    if ('value' in v) {
+      const inner = (v as { value: unknown }).value;
+      if (inner === null || inner === undefined) {
+        return null;
+      }
+      return crc32cToNumber(inner);
+    }
   }
   return null;
 }
