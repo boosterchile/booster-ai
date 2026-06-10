@@ -305,9 +305,12 @@ const apiEnvSchema = commonEnvSchema
 
     /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
-     * (ADR-029 + ADR-032). Default por entorno:
-     *   - production → `true`
-     *   - dev/test/staging → `false`
+     * (ADR-029 + ADR-032). Default `false` en TODOS los entornos
+     * (vuelve al default seguro de ADR-030 §1; decisión PO 2026-06-10,
+     * spec fix-factoring-exposicion-y-flag): mover dinero requiere
+     * opt-in explícito del operador — `FACTORING_V1_ACTIVATED=true` en
+     * el env del Cloud Run `api` (vía infrastructure/compute.tf), no
+     * activación implícita por NODE_ENV.
      *
      * Cuando es `false`:
      *   - `cobraHoy()` retorna `skipped_flag_disabled`.
@@ -322,7 +325,7 @@ const apiEnvSchema = commonEnvSchema
      *     queda diferido — adelantos quedan en `solicitado` hasta
      *     integración del partner.
      */
-    FACTORING_V1_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
+    FACTORING_V1_ACTIVATED: booleanFlag(false),
 
     /**
      * Allowlist de emails con acceso a endpoints `/admin/cobra-hoy/*`
