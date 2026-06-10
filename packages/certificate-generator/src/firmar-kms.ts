@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { KeyManagementServiceClient } from '@google-cloud/kms';
+import { crc32c } from './crc32c.js';
 
 let cachedClient: KeyManagementServiceClient | null = null;
 
@@ -21,7 +22,7 @@ function getClient(): KeyManagementServiceClient {
 }
 
 export interface ResultadoFirmaKms {
-  /** Firma raw en bytes (RSA-PSS 4096 SHA-256 → 512 bytes). */
+  /** Firma raw en bytes (RSA PKCS#1 v1.5 4096 SHA-256 → 512 bytes, ADR-015). */
   signature: Buffer;
   /** Versión de la key usada (e.g. "1", "2"). Para persistir + verify. */
   keyVersion: string;
@@ -35,8 +36,15 @@ export interface ResultadoFirmaKms {
 /**
  * Firma `data` con la version PRIMARY de la KMS key.
  *
- * KMS RSA-PSS necesita el digest pre-calculado (no acepta los bytes
- * raw): le mandamos `sha256(data)` y él lo firma con PSS padding.
+ * KMS asymmetric sign necesita el digest pre-calculado (no acepta los
+ * bytes raw): le mandamos `sha256(data)` y él firma con PKCS#1 v1.5
+ * (RSA_SIGN_PKCS1_4096_SHA256, ADR-015).
+ *
+ * Integridad de transporte (requerido por la semántica de KMS): el
+ * request DEBE incluir `digestCrc32c` — sin él, KMS responde
+ * `verifiedDigestCrc32c=false` y la firma no es confiable. La respuesta
+ * se valida en 3 puntos: verified_digest_crc32c, name, y
+ * signature_crc32c contra el CRC local de la firma recibida.
  *
  * @param kmsKeyId Resource ID de la key (sin :versions).
  * @param data Bytes a firmar (no el hash — lo calculamos acá).
@@ -57,9 +65,14 @@ export async function firmarConKms(
   // que hardcodear "/cryptoKeyVersions/1", lo que rompe cuando rote.
   const primaryVersion = await resolverVersionPrimaria(client, kmsKeyId);
 
+  const digestCrc = crc32c(digest);
+
   const [response] = await client.asymmetricSign({
     name: primaryVersion,
     digest: { sha256: digest },
+    // Int64Value wrapper — protobuf JSON mapping del SDK. Sin este campo
+    // KMS responde verifiedDigestCrc32c=false y el check de abajo lanza.
+    digestCrc32c: { value: String(digestCrc) },
   });
 
   if (!response.signature) {
@@ -72,11 +85,25 @@ export async function firmarConKms(
     ? response.signature
     : Buffer.from(response.signature);
 
-  // Validamos la integridad del transporte: KMS devuelve un CRC32C que
-  // debe matchear lo que recibimos. Sin esto, un bit-flip en la red
-  // podría producir un PDF "firmado" pero inválido al verificar.
-  if (response.verifiedDigestCrc32c === false) {
-    throw new Error('KMS reportó CRC32C inválido en el digest enviado');
+  // Validación de integridad end-to-end según la doc de AsymmetricSign,
+  // TODA fail-closed (review security 2026-06-10): KMS real SIEMPRE
+  // puebla estos campos — un campo ausente es respuesta corrupta o
+  // proxy hostil, no un caso a tolerar. Sin esto, un bit-flip en la red
+  // produce un PDF "firmado" pero inválido; estos PDFs son documentos
+  // con retención legal SII.
+  if (response.verifiedDigestCrc32c !== true) {
+    throw new Error('KMS no confirmó la integridad del digest enviado (verifiedDigestCrc32c)');
+  }
+  if (response.name !== primaryVersion) {
+    throw new Error(
+      `KMS respondió con name distinto a la versión solicitada: ${response.name ?? '(ausente)'} != ${primaryVersion}`,
+    );
+  }
+  const signatureCrcRemote = extractCrc32c(response.signatureCrc32c);
+  if (signatureCrcRemote !== crc32c(signatureBuf)) {
+    throw new Error(
+      'KMS signatureCrc32c no coincide con la firma recibida (corrupción en tránsito)',
+    );
   }
 
   // Extraemos la versión "1", "2", etc. del resource name completo.
@@ -120,6 +147,49 @@ export async function obtenerPublicKeyPem(kmsKeyId: string): Promise<{
     keyVersion: versionMatch[1] ?? '',
     keyVersionName: versionName,
   };
+}
+
+/**
+ * Normaliza el Int64Value/Long del CRC32C de la respuesta KMS a number.
+ * Shapes según versión del SDK: scalar (number|string), Int64Value
+ * wrapper `{ value }`, o `Long` de protobufjs (objeto con `toNumber()`).
+ *
+ * Fail-closed (review security 2026-06-10): ausente o no-parseable es
+ * respuesta corrupta → throw. Devolver null acá significaba "saltarse
+ * la verificación de integridad de la firma" — inaceptable para
+ * documentos con retención legal.
+ */
+function extractCrc32c(v: unknown): number {
+  if (v === null || v === undefined) {
+    throw new Error('KMS no devolvió signatureCrc32c — respuesta incompleta, firma no confiable');
+  }
+  const parsed = crc32cToNumber(v);
+  if (parsed === null || !Number.isFinite(parsed)) {
+    throw new Error(
+      `KMS signatureCrc32c con formato no reconocido (${typeof v}) — firma no confiable`,
+    );
+  }
+  return parsed;
+}
+
+function crc32cToNumber(v: unknown): number | null {
+  if (typeof v === 'number' || typeof v === 'string') {
+    return Number(v);
+  }
+  if (typeof v === 'object' && v !== null) {
+    // Long de protobufjs (también cubre {value: Long} vía recursión).
+    if ('toNumber' in v && typeof (v as { toNumber: unknown }).toNumber === 'function') {
+      return (v as { toNumber: () => number }).toNumber();
+    }
+    if ('value' in v) {
+      const inner = (v as { value: unknown }).value;
+      if (inner === null || inner === undefined) {
+        return null;
+      }
+      return crc32cToNumber(inner);
+    }
+  }
+  return null;
 }
 
 /**

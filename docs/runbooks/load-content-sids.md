@@ -113,7 +113,7 @@ gcloud run services update booster-ai-api \
 # Verificar que el api lee el nuevo SID:
 gcloud logging read 'resource.type="cloud_run_revision"
   resource.labels.service_name="booster-ai-api"
-  jsonPayload.msg=~"oferta enviada"' \
+  jsonPayload.message=~"oferta enviada"' \
   --limit=5 --project=booster-ai-494222
 ```
 

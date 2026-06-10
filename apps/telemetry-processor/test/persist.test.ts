@@ -5,8 +5,8 @@ const noop = (): void => undefined;
 const noopLogger = {
   trace: noop,
   debug: vi.fn(),
-  info: noop,
-  warn: noop,
+  info: vi.fn(),
+  warn: vi.fn(),
   error: noop,
   fatal: noop,
   child: () => noopLogger,
@@ -86,21 +86,41 @@ describe('recordMessageSchema', () => {
 });
 
 describe('persistRecord', () => {
-  it('vehicleId null → skip insert, retorna inserted=false', async () => {
-    const db = makeDb([]);
+  it('vehicleId null + IMEI no registrado → lookup, descarta con warn, sin INSERT', async () => {
+    const db = makeDb([
+      { rows: [] }, // SELECT vehiculos por IMEI: sin match
+    ]);
     const result = await persistRecord({
       db: db as never,
       logger: noopLogger,
       msg: { ...VALID_MSG, vehicleId: null },
     });
     expect(result).toEqual({ inserted: false, isFirstPointForVehicle: false });
-    expect(db.execute).not.toHaveBeenCalled();
+    // Solo el lookup; ningún INSERT.
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect((noopLogger as { warn: ReturnType<typeof vi.fn> }).warn).toHaveBeenCalled();
   });
 
-  it('insert exitoso con primer punto del vehículo retorna isFirstPointForVehicle=true', async () => {
+  it('vehicleId null + IMEI registrado → resuelve y persiste (caso sms-fallback)', async () => {
+    const resolvedId = '99999999-8888-7777-6666-555555555555';
+    const db = makeDb([
+      { rows: [{ id: resolvedId }] }, // SELECT vehiculos por IMEI: match
+      { rows: [{ id: 'punto-uuid-9' }] }, // INSERT returning
+      { rows: [{ ok: 1 }, { ok: 1 }] }, // first-check: 2 filas → no es primero
+    ]);
+    const result = await persistRecord({
+      db: db as never,
+      logger: noopLogger,
+      msg: { ...VALID_MSG, vehicleId: null },
+    });
+    expect(result).toEqual({ inserted: true, isFirstPointForVehicle: false });
+    expect(db.execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('vehicleId presente → cero lookups extra (2 executes: insert + first-check)', async () => {
     const db = makeDb([
       { rows: [{ id: 'punto-uuid-1' }] }, // INSERT returning
-      { rows: [{ count: '1' }] }, // SELECT count
+      { rows: [{ ok: 1 }] }, // first-check: 1 fila → primero
     ]);
     const result = await persistRecord({
       db: db as never,
@@ -111,8 +131,8 @@ describe('persistRecord', () => {
     expect(db.execute).toHaveBeenCalledTimes(2);
   });
 
-  it('insert exitoso pero NO primer punto → isFirstPointForVehicle=false', async () => {
-    const db = makeDb([{ rows: [{ id: 'punto-uuid-2' }] }, { rows: [{ count: '500' }] }]);
+  it('insert exitoso pero NO primer punto (LIMIT 2 retorna 2 filas) → false', async () => {
+    const db = makeDb([{ rows: [{ id: 'punto-uuid-2' }] }, { rows: [{ ok: 1 }, { ok: 1 }] }]);
     const result = await persistRecord({
       db: db as never,
       logger: noopLogger,
@@ -121,7 +141,7 @@ describe('persistRecord', () => {
     expect(result).toEqual({ inserted: true, isFirstPointForVehicle: false });
   });
 
-  it('duplicado (RETURNING vacío) → inserted=false, no consulta count', async () => {
+  it('duplicado (RETURNING vacío) → inserted=false, no consulta first-check', async () => {
     const db = makeDb([{ rows: [] }]);
     const result = await persistRecord({
       db: db as never,
@@ -132,10 +152,10 @@ describe('persistRecord', () => {
     expect(db.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('count count=0 (raro/inconsistente) → isFirstPointForVehicle=false', async () => {
+  it('first-check 0 filas (raro/inconsistente) → isFirstPointForVehicle=false', async () => {
     const db = makeDb([
       { rows: [{ id: 'punto' }] },
-      { rows: [{ count: '0' }] }, // raro pero defensivo
+      { rows: [] }, // raro pero defensivo
     ]);
     const result = await persistRecord({
       db: db as never,
