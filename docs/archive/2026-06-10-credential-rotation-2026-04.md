@@ -1,3 +1,16 @@
+---
+archived_at: 2026-06-10
+archived_in: docs(runbooks) correcciones staleness post-auditoría 2026-06-09
+superseded_by:
+  - infrastructure/security-hotfixes-2026-05-14.tf (patrón vigente de rotación post-disclosure)
+  - docs/runbooks/secret-init-runbook.md
+archived_reason: |
+  Runbook de evento puntual (exposición en chat 2026-04-29) ya superado: el
+  patrón vigente es placeholder REPLACE_ME + init script idempotente + CI
+  gate. Asumía además el bot en sandbox (productivo desde 2026-04-29).
+status: archived
+---
+
 # Runbook: Rotación de credenciales expuestas (Sesión 2026-04-29)
 
 **Fecha:** 2026-04-29

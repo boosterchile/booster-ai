@@ -85,7 +85,7 @@ Cloud Run mountea la version `latest` al startup. Para tomar la nueva version si
 
 ```bash
 gcloud run services update booster-ai-api \
-  --region=us-central1 \
+  --region=southamerica-west1 \
   --project=booster-ai-494222
 ```
 
@@ -122,7 +122,7 @@ openssl rand -base64 32 | gcloud secrets versions add demo-seed-password \
   --project=booster-ai-494222 --data-file=-
 
 # 2. Restart Cloud Run para que tome la nueva latest
-gcloud run services update booster-ai-api --region=us-central1 --project=booster-ai-494222
+gcloud run services update booster-ai-api --region=southamerica-west1 --project=booster-ai-494222
 
 # 3. Verificar que el nuevo cold-start funciona, luego deshabilitar la version anterior
 gcloud secrets versions disable <previous-version-number> \
