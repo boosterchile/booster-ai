@@ -1,3 +1,15 @@
+---
+archived_at: 2026-06-10
+archived_in: docs(runbooks) correcciones staleness post-auditoría 2026-06-09
+superseded_by:
+  - infrastructure/networking.tf (zona Cloud DNS viva, DNSSEC on)
+archived_reason: |
+  Migración ejecutada y completada el 2026-04-30 (su propia Fase 7 documenta
+  TTL bump y smoke test, commit 8ed82f2). El header decía "Pendiente" por
+  falta del paso de archivado.
+status: archived
+---
+
 # Runbook: Migración DNS boosterchile.com de GoDaddy a Google Cloud DNS
 
 **Fecha:** 2026-04-29
