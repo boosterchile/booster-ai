@@ -15,10 +15,11 @@ El flag estaba activo por defecto en prod con el límite crediticio inoperante: 
 
 ## 3. Success criteria
 
-- [ ] Transición admin a `desembolsado` incrementa `current_exposure_clp` de la decisión vigente del shipper en `monto_adelantado_clp`, en la misma transacción del cambio de estado.
-- [ ] Transición a `cobrado_a_shipper` decrementa el mismo monto con piso 0 (`GREATEST(0, ...)`).
-- [ ] Transición sin decisión vigente del shipper → la transición procede (el dinero ya se movió por decisión humana) con `logger.warn` visible.
-- [ ] `FACTORING_V1_ACTIVATED` default `false` en TODOS los entornos; activación solo por env var explícita.
+- [ ] Transición admin a `desembolsado` incrementa `current_exposure_clp` de la decisión vigente del shipper en `monto_adelantado_clp`, en la misma transacción del cambio de estado, con la fila del adelanto y la de la decisión bloqueadas (`FOR UPDATE`) y CAS por status — dos requests concurrentes no aplican el delta dos veces.
+- [ ] `desembolsado` sin decisión vigente → 422 `shipper_sin_decision_vigente` (fail-hard: consumir crédito sin decisión = desembolso sin tope).
+- [ ] Transición a `cobrado_a_shipper` decrementa el mismo monto con piso 0; si el piso recorta (decisión rotada entre desembolso y cobro), `logger.warn` con before/after — el clamp nunca es silencioso.
+- [ ] `cobrado_a_shipper` sin decisión vigente → procede con warn (el dinero volvió igual).
+- [ ] `FACTORING_V1_ACTIVATED` default `false` en TODOS los entornos; activación solo por env var explícita; test que rompe ante un revert del default.
 
 ## 4. User-visible behaviour
 
@@ -50,9 +51,9 @@ En `admin-cobra-hoy.ts`: el SELECT inicial suma `empresaShipperId` y `montoAdela
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Decisión vigente distinta entre desembolso y cobro | L | M | Piso GREATEST(0,...) evita negativos; warn cuando no hay vigente; auditable vía notas_admin |
-| Flip del default apaga factoring en prod sin aviso | — | L | Es la intención del PO; documentado en docstring + PR; reactivación = 1 env var |
-| Doble click del operador genera doble incremento | L | M | TRANSICIONES_VALIDAS ya bloquea re-transición (desembolsado→desembolsado no es válida) y el estado se relee dentro de la tx |
+| Decisión vigente distinta entre desembolso y cobro | L | M | Piso 0 con warn explícito before/after cuando recorta (clamp nunca silencioso); auditable vía logs + notas_admin |
+| Flip del default apaga factoring en prod sin aviso | — | L | Es la intención del PO; documentado en docstring + PR. **Precondición de deploy en §11** |
+| Doble click / requests concurrentes duplican el delta | L | H | IMPLEMENTADO (review 2026-06-10): SELECT FOR UPDATE del adelanto + validación de transición POST-lock + CAS por status en el WHERE; la decisión también se lee FOR UPDATE. Orden de locks adelanto→decisión sin camino inverso (sin deadlock) |
 
 ## 10. Test list
 
@@ -66,8 +67,9 @@ En `admin-cobra-hoy.ts`: el SELECT inicial suma `empresaShipperId` y `montoAdela
 
 - Feature-flagged? El propio cambio ajusta el flag: default false; activación por `FACTORING_V1_ACTIVATED=true` en Cloud Run (Terraform compute.tf cuando el PO decida).
 - Migration needed? No.
-- Rollback plan: revert del commit. Nota: si hubiera adelantos desembolsados pre-fix, su exposición no está contada — backfill manual documentado en el PR si aplica (hoy: 0 adelantos reales).
-- Monitoring: log warn 'sin decisión crediticia vigente' + revisión de current_exposure_clp en las transiciones de prueba.
+- Rollback plan: revert del commit. Nota: si hubiera adelantos desembolsados pre-fix, su exposición no está contada — backfill manual documentado en el PR si aplica.
+- **Precondición de deploy (review 2026-06-10)**: verificar en prod `SELECT count(*) FROM adelantos_carrier WHERE status NOT IN ('cobrado_a_shipper','cancelado','rechazado')` = 0 ANTES del flip — con flag false los endpoints admin devuelven 503 y un adelanto in-flight quedaría sin lifecycle hasta setear la env var. Si hay filas, coordinar el flip con su cierre o setear la env var en el mismo deploy.
+- Monitoring: warns 'sin decisión crediticia vigente' / 'RECORTADO por piso 0' + revisión de current_exposure_clp en las transiciones de prueba.
 
 ## 12. Open questions
 
@@ -77,3 +79,4 @@ None as of 2026-06-10 (semántica write-off anotada como decisión en §13).
 
 - 2026-06-10 — Draft + decisión PO "Ambas cosas" vía AskUserQuestion.
 - 2026-06-10 — `mora → cancelado` NO decrementa exposición (conservador: un write-off no libera cupo). Revisar al integrar el partner; alternativa SUM-on-the-fly anotada.
+- 2026-06-10 — REVIEW (devils-advocate + security-auditor + code-reviewer, 3 bloqueantes): (1) la primera implementación validaba la transición FUERA de la tx (doble-click duplicaba el delta) → reescrita con FOR UPDATE + CAS; (2) desembolso sin decisión vigente pasaba con warn → ahora 422 fail-hard; (3) clamp del piso 0 era silencioso → warn con before/after; (4) T5 sin test → test/unit/config-flags.test.ts; (5) asserts de exposición pasaron de shape a valor exacto (el signo del delta es el comportamiento). Semántica confirmada: el consumo de cupo ocurre en desembolso (no en solicitud); backstop de pipeline-stuffing = admin humano + 422. Unicidad de decisión vigente garantizada por unique parcial uq_shipper_credit_decisions_vigente.
