@@ -32,6 +32,10 @@ status: archived
 | `2026-05-17-audit.md` | `AUDIT.md` (raíz, 2026-05-01) | `.specs/audit-2026-05-14/inventory.md` |
 | `2026-05-17-plan-phase-0.md` | `PLAN-PHASE-0.md` (raíz, greenfield init) | `.specs/production-readiness/spec.md+roadmap.md`, ADR-042, ADR-043, `CLAUDE.md §"Reglas de naming bilingüe"` |
 | `2026-05-17-design.md` | `DESIGN.md` (raíz, 2026-04-30) | `packages/ui-tokens/`, `design-system/MASTER.md` (futuro) |
+| `2026-06-10-wave-2-3-deploy.md` | `docs/runbooks/wave-2-3-deploy.md` | `cloudbuild.production.yaml`, ADR-059, `scripts/deploy-telemetry-gateway.sh` |
+| `2026-06-10-dns-migration-godaddy-to-cloud-dns.md` | `docs/runbooks/dns-migration-godaddy-to-cloud-dns.md` | `infrastructure/networking.tf` (zona Cloud DNS) |
+| `2026-06-10-twilio-sender-registration.md` | `docs/runbooks/twilio-sender-registration.md` | `infrastructure/variables.tf` (sender registrado) |
+| `2026-06-10-credential-rotation-2026-04.md` | `docs/runbooks/credential-rotation-2026-04.md` | `infrastructure/security-hotfixes-2026-05-14.tf`, `docs/runbooks/secret-init-runbook.md` |
 
 ## No-goals
 

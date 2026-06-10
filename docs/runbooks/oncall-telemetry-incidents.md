@@ -4,10 +4,10 @@ Procedimientos para responder alertas del sistema de telemetría
 Booster (gateway + processor + apps consumer de eventos AVL).
 
 **Cuando recibas una alerta**:
-1. Acusá recibo en Slack/PagerDuty (no resolver hasta validar fix).
+1. Acusá recibo (canal real hoy: email a dev@boosterchile.com — único notification channel, `infrastructure/monitoring.tf:8-18`; no hay Slack/PagerDuty configurado).
 2. Ubicá la sección correspondiente abajo.
 3. Seguí los pasos en orden — no saltar.
-4. Si no podés resolver en 30 min, escalá a ingeniería backend.
+4. Si no podés resolver en 30 min, registrá el estado en docs/handoff/CURRENT.md antes de seguir (operador único — no existe escalamiento a otro equipo).
 
 ---
 
@@ -52,6 +52,13 @@ processor lo guardó en GCS + BigQuery.
 
 ## Unplug event (P0)
 
+> **⚠️ ALERTA HOY INOPERANTE**: la métrica `unplug_events` depende de
+> `jsonPayload.eventName` que ningún servicio emite todavía
+> (notification-service es skeleton — `infrastructure/telemetry-monitoring.tf:139-144`
+> lo documenta). Esta alerta NO puede disparar: no hay cobertura
+> automática anti-tamper. El procedimiento de abajo aplica solo si el
+> evento se detecta por otra vía (revisión manual de io_data AVL 252).
+
 **Métrica**: `telemetry/unplug_events` incrementó.
 
 **Significado**: el device perdió alimentación externa (cable
@@ -79,6 +86,11 @@ device.
 ---
 
 ## GNSS Jamming critical (P0)
+
+> **⚠️ ALERTA HOY INOPERANTE**: misma causa que Unplug — la métrica
+> depende de `jsonPayload.eventName` sin emisor
+> (`infrastructure/telemetry-monitoring.tf:166-169`). Sin cobertura
+> automática anti-jamming hasta implementar el consumer de eventos.
 
 **Métrica**: `telemetry/gnss_jamming_critical_events` incrementó.
 

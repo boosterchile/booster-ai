@@ -35,6 +35,12 @@ description = "Claves web públicas por diseño (Firebase via App Check+Rules; M
 regexes = [
   '''AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk''',
   '''AIzaSyAVy84hArL08alVL2JEGfNCgTSqu4eTyNg''',
+  # Falso positivo recurrente de `generic-api-key`: el "secreto" detectado
+  # es el nombre de la región GCP (alta entropía aparente, cero secreto;
+  # gitleaks matchea las regexes contra el secret detectado). Mismo caso ya
+  # allowlisteado por path para sprint-1-evidence; esto cubre runbooks que
+  # documentan comandos gcloud con la región (ej. secret-init).
+  '''^southamerica-west1$''',
 ]
 
 paths = [
