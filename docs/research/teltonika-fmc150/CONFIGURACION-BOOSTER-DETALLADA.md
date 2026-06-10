@@ -341,5 +341,5 @@ firmware version.
 - Catálogo IDs en código:
   - `packages/shared-schemas/src/avl-ids/low-priority.ts` (14 Low Priority).
   - `packages/shared-schemas/src/avl-ids/high-panic.ts` (10 eventuales).
-- Runbook deploy Wave 2/3: `docs/runbooks/wave-2-3-deploy.md`.
+- Runbook deploy Wave 2/3 (archivado 2026-06-10): `docs/archive/2026-06-10-wave-2-3-deploy.md`. Pipeline vigente: `cloudbuild.production.yaml` + ADR-059.
 - ADR 005 telemetry-iot: `docs/adr/005-telemetry-iot.md`.
