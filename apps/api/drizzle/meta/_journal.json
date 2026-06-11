@@ -281,6 +281,13 @@
       "when": 1780876800003,
       "tag": "0039_solicitudes_registro",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780876800004,
+      "tag": "0040_integridad_indices",
+      "breakpoints": true
     }
   ]
 }
