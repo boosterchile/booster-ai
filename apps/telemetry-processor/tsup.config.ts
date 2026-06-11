@@ -21,6 +21,7 @@ export default defineConfig({
   // Dependencias runtime que SÍ deben quedar como externals (existen en
   // node_modules del container porque están en package.json de la app).
   external: [
+    'import-in-the-middle',
     '@opentelemetry/semantic-conventions',
     '@opentelemetry/sdk-trace-base',
     '@opentelemetry/sdk-node',

@@ -78,24 +78,27 @@ export function createLogger(options: LoggerOptions): Logger {
     // (auditoría 2026-06-09). Con un span activo, cada log lleva
     // trace_id/span_id + los campos especiales que Cloud Logging usa
     // para agrupar logs por trace en la consola. Sin span: cero ruido.
-    mixin: () => {
-      const span = trace.getActiveSpan();
-      if (!span) {
-        return {};
-      }
-      const ctx = span.spanContext();
+    mixin: (() => {
+      // Resuelto una vez a la creación (no por log emitido).
       const projectId = gcpProjectId ?? process.env.GOOGLE_CLOUD_PROJECT;
-      return {
-        trace_id: ctx.traceId,
-        span_id: ctx.spanId,
-        ...(projectId
-          ? {
-              'logging.googleapis.com/trace': `projects/${projectId}/traces/${ctx.traceId}`,
-              'logging.googleapis.com/spanId': ctx.spanId,
-            }
-          : {}),
+      return () => {
+        const span = trace.getActiveSpan();
+        if (!span) {
+          return {};
+        }
+        const ctx = span.spanContext();
+        return {
+          trace_id: ctx.traceId,
+          span_id: ctx.spanId,
+          ...(projectId
+            ? {
+                'logging.googleapis.com/trace': `projects/${projectId}/traces/${ctx.traceId}`,
+                'logging.googleapis.com/spanId': ctx.spanId,
+              }
+            : {}),
+        };
       };
-    },
+    })(),
   };
 
   if (pretty) {

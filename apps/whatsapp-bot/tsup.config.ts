@@ -12,6 +12,7 @@ export default defineConfig({
   target: 'node22',
   noExternal: [/^@booster-ai\//],
   external: [
+    'import-in-the-middle',
     '@opentelemetry/semantic-conventions',
     '@opentelemetry/sdk-trace-base',
     '@opentelemetry/sdk-node',
