@@ -17,6 +17,14 @@
  * SUPUESTO TOPOLÓGICO: exactamente un proxy confiable (el GCLB) delante
  * del servicio. Si algún día se agrega otro hop (CDN, proxy), la IP
  * confiable pasa a ser len-3 — actualizar acá y en los tests.
+ *
+ * ⚠️ MODO DE FALLO INVERSO (review security 2026-06-11): si el servicio
+ * se vuelve alcanzable DIRECTO por su URL *.run.app (hoy el ingress
+ * default lo permite aunque el LB sea el camino esperado), un atacante
+ * que pegue directo controla TODO el header salvo la última entry que
+ * appendea Cloud Run — y la penúltima vuelve a ser forjable. El cierre
+ * real es restringir ingress a internal-and-cloud-load-balancing:
+ * .specs/_followups/cloud-run-ingress-internal-lb.md (ALTO).
  */
 export function extractClientIp(xff: string | undefined): string {
   if (!xff) {
