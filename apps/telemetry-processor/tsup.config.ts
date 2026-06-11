@@ -12,7 +12,7 @@ import { defineConfig } from 'tsup';
  * Mismo patrón que apps/api/tsup.config.ts.
  */
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: ['src/main.ts', 'src/instrumentation.ts'],
   format: ['esm'],
   clean: true,
   sourcemap: true,
@@ -20,5 +20,19 @@ export default defineConfig({
   noExternal: [/^@booster-ai\//],
   // Dependencias runtime que SÍ deben quedar como externals (existen en
   // node_modules del container porque están en package.json de la app).
-  external: ['pg', 'drizzle-orm', 'pino', 'pino-pretty', 'zod', '@google-cloud/pubsub'],
+  external: [
+    '@opentelemetry/semantic-conventions',
+    '@opentelemetry/sdk-trace-base',
+    '@opentelemetry/sdk-node',
+    '@opentelemetry/resources',
+    '@opentelemetry/auto-instrumentations-node',
+    '@opentelemetry/api',
+    '@google-cloud/opentelemetry-cloud-trace-exporter',
+    'pg',
+    'drizzle-orm',
+    'pino',
+    'pino-pretty',
+    'zod',
+    '@google-cloud/pubsub',
+  ],
 });

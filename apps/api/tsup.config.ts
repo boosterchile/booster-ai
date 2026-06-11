@@ -15,6 +15,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: [
     'src/main.ts',
+    'src/instrumentation.ts',
     'src/jobs/merge-duplicate-users.ts',
     // T4 SEC-001 Sprint 2a — service module consumido por
     // apps/api/scripts/harden-demo-accounts.mjs CLI wrapper.
@@ -28,6 +29,8 @@ export default defineConfig({
   // Dependencias runtime que SÍ deben quedar como externals (existen en
   // node_modules del container porque están en package.json de la app).
   external: [
+    '@opentelemetry/sdk-trace-base',
+    '@google-cloud/opentelemetry-cloud-trace-exporter',
     'pg',
     'hono',
     '@hono/node-server',
