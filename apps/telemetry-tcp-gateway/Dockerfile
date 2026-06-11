@@ -54,4 +54,5 @@ EXPOSE 5027
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('net').connect(5027,'127.0.0.1').on('connect',function(){this.end();process.exit(0)}).on('error',()=>process.exit(1))"
 
-CMD ["node", "dist/main.js"]
+# --import carga la instrumentación OTel ANTES de main (ESM; spec feat-otel-bootstrap)
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]
