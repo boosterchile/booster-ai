@@ -52,12 +52,11 @@ processor lo guardó en GCS + BigQuery.
 
 ## Unplug event (P0)
 
-> **⚠️ ALERTA HOY INOPERANTE**: la métrica `unplug_events` depende de
-> `jsonPayload.eventName` que ningún servicio emite todavía
-> (notification-service es skeleton — `infrastructure/telemetry-monitoring.tf:139-144`
-> lo documenta). Esta alerta NO puede disparar: no hay cobertura
-> automática anti-tamper. El procedimiento de abajo aplica solo si el
-> evento se detecta por otra vía (revisión manual de io_data AVL 252).
+> **✅ ALERTA OPERATIVA desde 2026-06-11**: el telemetry-processor emite
+> `eventName=Unplug` al detectar el IO 252 en cualquier record (incluido
+> el path SMS fallback) — `apps/telemetry-processor/src/panic-events.ts`.
+> Mientras la condición persista, cada record re-emite el log (la policy
+> agrega por ventana).
 
 **Métrica**: `telemetry/unplug_events` incrementó.
 
@@ -87,10 +86,10 @@ device.
 
 ## GNSS Jamming critical (P0)
 
-> **⚠️ ALERTA HOY INOPERANTE**: misma causa que Unplug — la métrica
-> depende de `jsonPayload.eventName` sin emisor
-> (`infrastructure/telemetry-monitoring.tf:166-169`). Sin cobertura
-> automática anti-jamming hasta implementar el consumer de eventos.
+> **✅ ALERTA OPERATIVA desde 2026-06-11**: el telemetry-processor emite
+> `eventName=GnssJamming` con `rawValue` (la métrica filtra valor 2 =
+> crítico; valor 1 = warning queda en logs) —
+> `apps/telemetry-processor/src/panic-events.ts`.
 
 **Métrica**: `telemetry/gnss_jamming_critical_events` incrementó.
 
