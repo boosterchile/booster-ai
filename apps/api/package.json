@@ -31,6 +31,7 @@
     "@booster-ai/otel-bootstrap": "workspace:*",
     "@booster-ai/pricing-engine": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
+    "@booster-ai/trip-state-machine": "workspace:*",
     "@booster-ai/whatsapp-client": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
     "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",

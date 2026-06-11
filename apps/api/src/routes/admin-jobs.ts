@@ -36,6 +36,7 @@ import {
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
+import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 import { reconciliarDtes } from '../services/reconciliar-dtes.js';
 
@@ -103,6 +104,11 @@ export function createAdminJobsRoutes(opts: {
       retried: result.retried,
       retried_ok: result.retriedOk,
     });
+  });
+
+  app.post('/purgar-posiciones-movil', async (c) => {
+    const result = await purgarPosicionesMovil({ db: opts.db, logger: opts.logger });
+    return c.json({ ok: true, deleted: result.deleted, retention_days: result.retentionDays });
   });
 
   app.post('/cobra-hoy-cobranza', async (c) => {

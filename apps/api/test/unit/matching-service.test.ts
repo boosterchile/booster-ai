@@ -48,7 +48,14 @@ function makeDb(queues: DbQueues = {}) {
   const buildUpdateChain = () => {
     const chain: Record<string, unknown> = {
       set: vi.fn(() => chain),
-      where: vi.fn(async () => updates.shift() ?? []),
+      where: vi.fn(() => chain),
+      // CAS de estado (ADR-061): default fila-presente para happy paths;
+      // un test puede encolar [] en `updates` para simular el cancel
+      // concurrente (0 filas → TripRequestNotMatchableError).
+      returning: vi.fn(async () => updates.shift() ?? [{ id: 'cas-ok' }]),
+    };
+    chain.then = (resolve: (v: unknown) => unknown) => {
+      return Promise.resolve(resolve(updates.shift() ?? [{ id: 'cas-ok' }]));
     };
     return chain;
   };
@@ -113,6 +120,20 @@ describe('runMatching', () => {
     ).rejects.toThrow(TripRequestNotMatchableError);
   });
 
+  it('CAS 0 filas en →emparejando (cancel concurrente) → TripRequestNotMatchableError (SC-4)', async () => {
+    // El SELECT ve esperando_match, pero entre el SELECT y el UPDATE un
+    // cancel concurrente ganó: el CAS (WHERE status='esperando_match')
+    // retorna 0 filas y la tx aborta — antes, el matching pisaba el
+    // 'cancelado' y resucitaba el trip (residual review #436).
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, status: 'esperando_match' }]],
+      updates: [[]], // CAS → 0 filas
+    });
+    await expect(
+      runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID }),
+    ).rejects.toThrow(TripRequestNotMatchableError);
+  });
+
   it('throw TripRequestNotMatchableError si trip no tiene originRegionCode', async () => {
     const db = makeDb({
       selects: [[{ ...TRIP_BASE, originRegionCode: null }]],
@@ -128,7 +149,6 @@ describe('runMatching', () => {
         [TRIP_BASE], // load trip
         [], // zones (vacío)
       ],
-      updates: [[], []], // UPDATE emparejando + UPDATE expirado
       inserts: [[], []], // matching_iniciado + oferta_expirada
     });
     const result = await runMatching({
@@ -148,7 +168,6 @@ describe('runMatching', () => {
         [{ empresaId: 'emp-1' }, { empresaId: 'emp-2' }], // zonas
         [], // empresas activas (vacío)
       ],
-      updates: [[], []],
       inserts: [[], []],
     });
     const result = await runMatching({
@@ -168,7 +187,6 @@ describe('runMatching', () => {
         [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
         [], // vehicles para emp-1: vacío
       ],
-      updates: [[], []],
       inserts: [[], []],
     });
     const result = await runMatching({
@@ -197,7 +215,6 @@ describe('runMatching', () => {
         [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
         [{ id: 'veh-1', empresaId: 'emp-1', capacityKg: 5500, vehicleStatus: 'activo' }],
       ],
-      updates: [[], []], // emparejando + ofertas_enviadas
       inserts: [
         [], // matching_iniciado event
         [offer], // INSERT offers returning
@@ -234,7 +251,6 @@ describe('runMatching', () => {
         [{ id: 'v2', empresaId: 'emp-2', capacityKg: 5800 }],
         [{ id: 'v3', empresaId: 'emp-3', capacityKg: 12000 }],
       ],
-      updates: [[], []],
       inserts: [[], offers, []],
     });
     const result = await runMatching({
@@ -254,7 +270,6 @@ describe('runMatching', () => {
         [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
         [{ id: 'v1', empresaId: 'emp-1', capacityKg: 1000 }],
       ],
-      updates: [[], []],
       inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
     });
     const result = await runMatching({
@@ -273,7 +288,6 @@ describe('runMatching', () => {
         [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
         [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
       ],
-      updates: [[], []],
       inserts: [[], [{ id: 'o1', empresaId: 'emp-1', proposedPriceClp: 0 }], []],
     });
     const result = await runMatching({
@@ -297,7 +311,6 @@ describe('runMatching', () => {
         [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         [{ id: 'v2', empresaId: 'emp-2', capacityKg: 7000 }],
       ],
-      updates: [[], []],
       inserts: [
         [],
         [
@@ -324,7 +337,6 @@ describe('runMatching', () => {
     };
     const db = makeDb({
       selects: [[TRIP_BASE], []],
-      updates: [[], []],
       inserts: [[], []],
     });
     await runMatching({

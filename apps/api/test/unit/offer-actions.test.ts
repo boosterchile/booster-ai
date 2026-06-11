@@ -239,7 +239,7 @@ describe('acceptOffer', () => {
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }], // UPDATE offer
         [], // UPDATE supersededed (vacío, era la única)
-        [], // UPDATE trip status
+        [{ id: TRIP_ID }], // UPDATE trip status (CAS retorna la fila)
       ],
       inserts: [
         [{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1', agreedPriceClp: 250000 }], // INSERT assignment
@@ -266,7 +266,7 @@ describe('acceptOffer', () => {
       updates: [
         [{ ...VALID_OFFER, status: 'aceptada' }],
         [{ id: 'o2' }, { id: 'o3' }, { id: 'o4' }], // 3 supersededOffers
-        [],
+        [{ id: TRIP_ID }], // CAS trip → asignado
       ],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
     });
@@ -316,7 +316,7 @@ describe('acceptOffer', () => {
   it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
     const db = makeDb({
       selects: [[{ ...VALID_OFFER, suggestedVehicleId: null }], [VALID_TRIP]],
-      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], []],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
       inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: '' }], []],
     });
     const result = await acceptOffer({

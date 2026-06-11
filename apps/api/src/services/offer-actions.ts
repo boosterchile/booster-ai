@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
+import { esAceptableOferta, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, eq, ne } from 'drizzle-orm';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -136,7 +137,9 @@ export async function acceptOffer(opts: {
       if (!trip) {
         throw new TripNotAcceptableError(offer.tripId, 'missing');
       }
-      if (trip.status !== 'ofertas_enviadas') {
+      // Legalidad: tabla del package (ADR-061). Equivale al check
+      // histórico status==='ofertas_enviadas'.
+      if (!esEstadoViaje(trip.status) || !esAceptableOferta(trip.status)) {
         throw new TripNotAcceptableError(offer.tripId, trip.status);
       }
 
@@ -191,11 +194,17 @@ export async function acceptOffer(opts: {
         )
         .returning({ id: offers.id });
 
-      // 5. trip → asignado.
-      await tx
+      // 5. trip → asignado. CAS por estado: redundante con el FOR UPDATE
+      // de arriba, pero deja el invariante en el SQL (defensa si alguien
+      // quita el lock — mismo patrón que admin-cobra-hoy).
+      const aAsignado = await tx
         .update(trips)
         .set({ status: 'asignado', updatedAt: now })
-        .where(eq(trips.id, offer.tripId));
+        .where(and(eq(trips.id, offer.tripId), eq(trips.status, 'ofertas_enviadas')))
+        .returning({ id: trips.id });
+      if (!aAsignado[0]) {
+        throw new TripNotAcceptableError(offer.tripId, 'status_changed_concurrently');
+      }
 
       // 6. Audit events.
       await tx.insert(tripEvents).values([
