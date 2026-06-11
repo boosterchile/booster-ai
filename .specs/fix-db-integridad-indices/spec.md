@@ -79,3 +79,8 @@ None as of 2026-06-11.
 
 - 2026-06-11 — Draft + mandato PO. Unique parcial (no NULLS NOT DISTINCT), fallo-ruidoso (no DELETE silencioso).
 - 2026-06-11 — REVIEW: bloqueante de cobertura resuelto (integration test T2/T3 con tests negativos + el caso dos-orgs-distintas que justifica el parcial); checklist pre-merge del PO agregado a §11 (huérfanos/duplicados/STRICT real — la sesión no tiene autorización para queries adicionales a prod).
+
+
+## 14. Corrección post-CI (2026-06-11)
+
+El integration test de CI reveló que el unique parcial de membresías stakeholder **ya existía** (0031_memberships_stakeholder_org.sql:39, semántica idéntica) — el hallazgo de la auditoría era FALSO y la recreación en 0040 fallaba con 42P07. Statement retirado de 0040; el alcance real de la migración queda: FK documentos_conductor + DROP de 4 índices redundantes. El integration test T3 se mantiene como test de regresión de la constraint de 0031 (antes no tenía ninguno). Lección anotada: sin Docker local, la cadena de migraciones solo se valida en CI — correr el PR ANTES de declarar verify.

@@ -3,11 +3,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
- * Spec fix-db-integridad-indices §10 T2/T3 (review 2026-06-11,
- * bloqueante): las DOS constraints nuevas de la migración 0040 con tests
- * negativos contra Postgres real — incluida la semántica fina que
- * justificó el unique PARCIAL sobre NULLS NOT DISTINCT (§8.A): mismo
- * user en organizaciones DISTINTAS sigue permitido.
+ * Spec fix-db-integridad-indices §10 T2/T3: tests negativos contra
+ * Postgres real. T2 = la FK nueva de 0040. T3 = el unique parcial de
+ * membresías stakeholder, que resultó existir desde 0031 (spec §14: el
+ * hallazgo de la auditoría era falso; 0040 ya no lo recrea) — este test
+ * queda como SU test de regresión, que no tenía: duplicado exacto
+ * rechazado, mismo user en organizaciones DISTINTAS permitido.
  */
 describe('integration: constraints de la migración 0040', () => {
   let handle: TestDbHandle;

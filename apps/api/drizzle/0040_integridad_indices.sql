@@ -13,16 +13,13 @@ ALTER TABLE "documentos_conductor"
   FOREIGN KEY ("conductor_id") REFERENCES "conductores"("id") ON DELETE RESTRICT;
 --> statement-breakpoint
 
--- (2) Unique parcial para memberships stakeholder: el UNIQUE existente
---     (usuario_id, empresa_id) no cubre filas con empresa_id NULL
---     (NULL≠NULL en Postgres) — un user podía tener N memberships
---     duplicadas en la MISMA organización stakeholder. Parcial (no
---     NULLS NOT DISTINCT) para no bloquear memberships del mismo user
---     en organizaciones distintas.
-CREATE UNIQUE INDEX "uq_membresias_usuario_org_stakeholder"
-  ON "membresias"("usuario_id", "organizacion_stakeholder_id")
-  WHERE "organizacion_stakeholder_id" IS NOT NULL;
---> statement-breakpoint
+-- (2) [RETIRADO en review de CI 2026-06-11] El unique parcial
+--     uq_membresias_usuario_org_stakeholder YA EXISTE desde la migración
+--     0031_memberships_stakeholder_org.sql:39 con semántica idéntica —
+--     el hallazgo de la auditoría era falso y recrearlo daba 42P07.
+--     La constraint queda cubierta por 0031; el integration test
+--     integridad-0040 la valida como regresión (da igual qué migración
+--     la creó).
 
 -- (3) Índices redundantes (telemetria_puntos pagaba 5 estructuras por
 --     INSERT a ~2.16M filas/mes). Equality/prefijo quedan cubiertos por
