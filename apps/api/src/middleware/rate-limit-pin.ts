@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { rutSchema } from '@booster-ai/shared-schemas';
 import type { MiddlewareHandler } from 'hono';
 import type Redis from 'ioredis';
+import { extractClientIp } from './client-ip.js';
 
 /**
  * T9 + T10 SEC-001 (sec-001-cierre §3 H2 SC-H2.1, SC-H2.1b, SC-H2.1c,
@@ -151,32 +152,4 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
-}
-
-/**
- * Extrae la IP cliente confiable del header `X-Forwarded-For`.
- *
- * Detrás del GCLB external (networking.tf) el LB APPENDEA
- * `<client-ip>, <lb-ip>` a lo que el cliente haya enviado: la primera
- * entry es 100% controlada por el atacante (review security 2026-06-10:
- * tomar `[0]` permitía rotar IPs falsas y anular el counter per-IP).
- * La IP que el LB realmente vio es la PENÚLTIMA entry.
- *
- * Con una sola entry (dev local sin LB, o llamada directa) usamos esa.
- * Header ausente → `'unknown'` (bucket compartido; aceptable en dev,
- * en prod el LB siempre appendea).
- */
-function extractClientIp(xff: string | undefined): string {
-  if (!xff) {
-    return 'unknown';
-  }
-  const entries = xff
-    .split(',')
-    .map((e) => e.trim())
-    .filter((e) => e.length > 0);
-  if (entries.length === 0) {
-    return 'unknown';
-  }
-  const trusted = entries.length >= 2 ? entries[entries.length - 2] : entries[0];
-  return trusted ?? 'unknown';
 }
