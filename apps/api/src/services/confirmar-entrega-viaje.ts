@@ -29,6 +29,7 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { esConfirmableEntrega, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, eq } from 'drizzle-orm';
 // `appConfig` (no `config`) para no chocar con el `config` de cert que
 // recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
@@ -45,12 +46,9 @@ import {
 import { generarCoachingViaje } from './generar-coaching-viaje.js';
 import { liquidarTrip } from './liquidar-trip.js';
 
-/**
- * Status del trip en los que es válido confirmar entrega. Si está
- * 'entregado' ya, es idempotente (devolvemos alreadyDelivered=true). Si
- * está 'cancelado' o 'expirado', rechazamos.
- */
-const STATUS_CONFIRMABLE = new Set(['asignado', 'en_proceso']);
+// El guard de estados confirmables vive en @booster-ai/trip-state-machine
+// (esConfirmableEntrega: asignado|en_proceso — ADR-061). 'entregado' es
+// idempotente (alreadyDelivered=true); cancelado/expirado rechazan.
 
 export type ConfirmarEntregaSource = 'shipper' | 'carrier';
 
@@ -136,8 +134,8 @@ export async function confirmarEntregaViaje(opts: {
       };
     }
 
-    // (5) Validar transición — solo asignado/en_proceso pueden ir a entregado.
-    if (!STATUS_CONFIRMABLE.has(trip.status)) {
+    // (5) Validar transición — la tabla del package decide (ADR-061).
+    if (!esEstadoViaje(trip.status) || !esConfirmableEntrega(trip.status)) {
       return {
         ok: false as const,
         code: 'invalid_status' as const,
