@@ -262,10 +262,23 @@ steps:
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
-        echo "canary-verify: tag=$$REVISION_TAG window=30min thresholds: error_rate<1%, p95<500ms"
+        MIN_REQUESTS='${_CANARY_MIN_REQUESTS}'
+        echo "canary-verify: tag=$$REVISION_TAG window=30min thresholds: error_rate<1%, p95<500ms, min_requests=$$MIN_REQUESTS"
 
-        REVISION=$$(gcloud run services describe booster-ai-api \
-          --region='${_REGION}' --platform=managed --format=json \
+        # Retry x3: un transitorio de gcloud/API no debe bloquear un deploy
+        # legítimo (review 2026-06-11).
+        describe_with_retry() {
+          for attempt in 1 2 3; do
+            if OUT=$$(gcloud run services describe booster-ai-api \
+              --region='${_REGION}' --platform=managed --format=json); then
+              echo "$$OUT"; return 0
+            fi
+            echo "canary-verify: describe intento $$attempt falló, reintentando..." >&2
+            sleep 10
+          done
+          return 1
+        }
+        REVISION=$$(describe_with_retry \
           | python3 -c "import sys,json; s=json.load(sys.stdin); print(next((t.get('revisionName','') for t in s.get('status',{}).get('traffic',[]) if t.get('tag')=='$$REVISION_TAG'), ''))")
         if [ -z "$$REVISION" ]; then
           echo "canary-verify: WARN no se encontró revision con tag $$REVISION_TAG — sin gate automático, decisión humana"
@@ -274,7 +287,7 @@ steps:
         echo "canary-verify: revision=$$REVISION"
 
         TOKEN=$$(gcloud auth print-access-token)
-        export TOKEN REVISION
+        export TOKEN REVISION MIN_REQUESTS
         python3 <<'PYCHECK'
         import json, os, sys, urllib.parse, urllib.request
         from datetime import datetime, timedelta, timezone
@@ -282,6 +295,7 @@ steps:
         project = '$PROJECT_ID'
         revision = os.environ['REVISION']
         token = os.environ['TOKEN']
+        min_requests = int(os.environ.get('MIN_REQUESTS', '0') or '0')
         end = datetime.now(timezone.utc)
         start = end - timedelta(minutes=30)
 
@@ -314,8 +328,19 @@ steps:
                 v = pt.get('value', {})
                 counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
         total = sum(counts.values())
-        if total == 0:
-            print('canary-verify: WARN 0 requests en la ventana — sin muestra, decisión humana')
+        # Gate de muestra (review 2026-06-11): con _CANARY_MIN_REQUESTS=0
+        # (default actual, API pre-comercial con ~0 tráfico de canary al
+        # 1%) la falta de muestra promueve con WARN — igual que el
+        # comportamiento histórico, pero ahora es una DECISIÓN
+        # parametrizada: al crecer el tráfico, subir la substitution en
+        # release.yml hace que muestra insuficiente ABORTE (exit 1) y la
+        # promoción exija decisión humana. Sin el parámetro, el gate del
+        # canary sería papel mojado en el caso típico actual.
+        if total < max(min_requests, 1):
+            if min_requests > 0:
+                print(f'canary-verify: FAIL muestra insuficiente ({total} < {min_requests}) — promoción requiere decisión humana')
+                sys.exit(1)
+            print('canary-verify: WARN 0 requests en la ventana — sin muestra (min_requests=0), promoviendo; subir _CANARY_MIN_REQUESTS cuando haya tráfico real')
             sys.exit(0)
         err = counts.get('5xx', 0)
         rate = err / total
@@ -525,6 +550,7 @@ steps:
   # boundary ADR-001 + harness CI default-deny + reaper, no por Cloud Function.
 
 substitutions:
+  _CANARY_MIN_REQUESTS: '0' # >0 = muestra insuficiente aborta (ver canary-verify)
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual

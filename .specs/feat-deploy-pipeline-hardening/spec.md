@@ -65,6 +65,10 @@ Inline python en el step (urllib + Monitoring API v3, ALIGN_SUM/REDUCE_SUM por r
 - El PRÓXIMO deploy a prod es la validación e2e: el PO observa el step canary-verify con datos reales antes de confiar en él (si falla por plumbing, el fallback es revert de este PR — la promoción vuelve a ser manual, no peor que hoy).
 - Webhook: el PO genera la URL → `terraform apply -var sre_webhook_url=...` (o tfvars) → disparar alerta de prueba.
 
+## 11bis. Nota operativa (review 2026-06-11)
+
+Merges rápidos consecutivos a main: la concurrency de ci.yml cancela el CI del primer SHA → su release aborta en el gate "Esperar CI Success" con conclusion=cancelled. Benigno: el deploy del SEGUNDO merge lleva ambos cambios; no re-runear el primero. (No existe runbook canary dedicado; si se crea, mover esta nota ahí.)
+
 ## 12. Open questions
 
 None as of 2026-06-11 (la URL del webhook es insumo pendiente del PO, desacoplado por diseño).
