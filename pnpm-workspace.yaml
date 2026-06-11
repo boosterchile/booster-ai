@@ -3,3 +3,21 @@ packages:
   - "packages/*"
   - "scripts/load-test"
   - "scripts/repo-checks"
+
+# DUPLICADO DELIBERADO de package.json `pnpm.overrides` (mantener en sync):
+# el repo pinea pnpm@9.15.4 (packageManager + CI), que lee package.json;
+# pnpm 10 lee ESTE archivo e ignora package.json con warning. Tener ambos
+# evita que un install local con pnpm 10 genere un lockfile SIN los
+# overrides de seguridad en silencio — exactamente lo que pasó hasta
+# 2026-06-11 (lockfile sin settings.overrides; crypto-js 3.3.0 y
+# @grpc/grpc-js vulnerables resueltos pese a los overrides históricos).
+overrides:
+  "crypto-js@<4.2.0": ">=4.2.0"
+  "fast-xml-builder@<1.1.7": ">=1.1.7"
+  "http-proxy-agent@<7.0.0": ">=7.0.0"
+  "uuid@<11.1.1": ">=11.1.1"
+  "@grpc/grpc-js@<1.14.4": ">=1.14.4"
+
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - esbuild
