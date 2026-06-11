@@ -15,6 +15,7 @@ import {
   users,
   vehicles,
 } from '../db/schema.js';
+import { extractClientIp } from '../middleware/client-ip.js';
 import type { FirebaseClaims } from '../middleware/firebase-auth.js';
 
 /**
@@ -564,8 +565,11 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
     }
 
     const now = new Date();
-    const ip =
-      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
+    // IP confiable (penúltima entry del XFF bajo GCLB — middleware/client-ip):
+    // es evidencia de consentimiento Ley 19.628; XFF[0] era falsificable
+    // por el propio cliente (spec fix-xff-trust-boundary).
+    const trustedIp = extractClientIp(c.req.header('x-forwarded-for'));
+    const ip = trustedIp === 'unknown' ? null : trustedIp;
     const userAgent = c.req.header('user-agent') ?? null;
 
     await opts.db

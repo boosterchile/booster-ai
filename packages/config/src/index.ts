@@ -8,6 +8,7 @@
  *   - Sin defaults silenciosos: explicitamos requeridos vs opcionales.
  */
 
+export { booleanFlag } from './booleanFlag.js';
 export { parseEnv, type EnvSchema } from './parseEnv.js';
 export { commonEnvSchema, type CommonEnv } from './schemas/common.js';
 export { gcpEnvSchema, type GcpEnv } from './schemas/gcp.js';

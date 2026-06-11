@@ -22,17 +22,14 @@ import * as offer from './domain/offer.js';
 import * as orgStakeholder from './domain/organizacion-stakeholder.js';
 import * as plan from './domain/plan.js';
 import * as stakeholder from './domain/stakeholder.js';
-import * as telemetry from './domain/telemetry.js';
 import * as transportista from './domain/transportista.js';
 import * as tripEvent from './domain/trip-event.js';
 import * as tripMetrics from './domain/trip-metrics.js';
-import * as trip from './domain/trip.js';
 import * as user from './domain/user.js';
 import * as vehicle from './domain/vehicle.js';
 import * as zonaStakeholder from './domain/zona-stakeholder.js';
 import * as zone from './domain/zone.js';
-import * as telemetryEvents from './events/telemetry-events.js';
-import * as tripEvents from './events/trip-events.js';
+import * as telemetryRecord from './events/telemetry-record.js';
 import * as onboarding from './onboarding.js';
 import * as chile from './primitives/chile.js';
 import * as geo from './primitives/geo.js';
@@ -418,11 +415,9 @@ describe('domain modules — importables sin errores (schemas executados al impo
     'organizacion-stakeholder': orgStakeholder,
     plan,
     stakeholder,
-    telemetry,
     transportista,
     'trip-event': tripEvent,
     'trip-metrics': tripMetrics,
-    trip,
     user,
     vehicle,
     'zona-stakeholder': zonaStakeholder,
@@ -436,11 +431,8 @@ describe('domain modules — importables sin errores (schemas executados al impo
 });
 
 describe('events', () => {
-  it('telemetry-events exports', () => {
-    expect(Object.keys(telemetryEvents).length).toBeGreaterThan(0);
-  });
-  it('trip-events exports', () => {
-    expect(Object.keys(tripEvents).length).toBeGreaterThan(0);
+  it('telemetry-record (contrato canónico del wire) exports', () => {
+    expect(Object.keys(telemetryRecord).length).toBeGreaterThan(0);
   });
 });
 
