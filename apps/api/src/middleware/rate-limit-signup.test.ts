@@ -84,6 +84,29 @@ describe('rate-limit-signup middleware (SC-1.2.5)', () => {
     expect(calls.expireCalled[0]?.[1]).toBe(900);
   });
 
+  it('XFF spoofeado (multi-entry) → counter de la IP que vio el LB, no la del atacante', async () => {
+    const { redis, calls } = makeRedis([1]);
+    const middleware = createRateLimitSignupMiddleware({
+      redis: redis as never,
+      logger: noopLogger,
+    });
+    const app = makeApp(middleware);
+
+    const res = await app.request('/api/v1/signup-request', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        // El atacante envía '6.6.6.6'; el GCLB appendea su IP real y la
+        // del LB. La key debe ser la penúltima (middleware/client-ip).
+        'x-forwarded-for': '6.6.6.6, 198.51.100.7, 35.1.1.1',
+      },
+      body: JSON.stringify({ email: 'a@b.cl', nombreCompleto: 'X' }),
+    });
+    expect(res.status).toBe(202);
+    expect(calls.incrCalled).toEqual([`${KEY_PREFIX}198.51.100.7`]);
+    expect(calls.incrCalled.some((k) => k.includes('6.6.6.6'))).toBe(false);
+  });
+
   it('5 requests passthrough, 6º → 429 con Retry-After:900 + X-RateLimit-Scope:ip', async () => {
     const { redis } = makeRedis([1, 2, 3, 4, 5, 6]);
     const middleware = createRateLimitSignupMiddleware({
@@ -172,7 +195,10 @@ describe('rate-limit-signup middleware (SC-1.2.5)', () => {
     expect(calls.incrCalled).toEqual([`${KEY_PREFIX}unknown`]);
   });
 
-  it('multi-hop X-Forwarded-For: usa el primer IP (client real)', async () => {
+  it('multi-hop X-Forwarded-For: usa la PENÚLTIMA entry (la que vio el LB)', async () => {
+    // El contrato anterior ("usa el primer IP") codificaba el bug: bajo
+    // GCLB la primera entry es 100% controlada por el cliente
+    // (middleware/client-ip.ts, spec fix-xff-trust-boundary).
     const { redis, calls } = makeRedis([1]);
     const middleware = createRateLimitSignupMiddleware({
       redis: redis as never,
@@ -189,6 +215,6 @@ describe('rate-limit-signup middleware (SC-1.2.5)', () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(202);
-    expect(calls.incrCalled).toEqual([`${KEY_PREFIX}5.5.5.5`]);
+    expect(calls.incrCalled).toEqual([`${KEY_PREFIX}10.0.0.1`]);
   });
 });
