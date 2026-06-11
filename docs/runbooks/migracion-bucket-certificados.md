@@ -22,9 +22,11 @@ terraform apply -target=google_storage_bucket.certificates
 gcloud storage cp -r "${OLD}/certificates/*" "${NEW}/certificates/" 2>/dev/null || echo "(sin certificados previos)"
 gcloud storage cp -r "${OLD}/certs/*" "${NEW}/certs/" 2>/dev/null || echo "(sin certs X.509 cacheados)"
 
-# 3. Verificar paridad de conteo
-gcloud storage ls -r "${OLD}/certificates/**" | wc -l
-gcloud storage ls -r "${NEW}/certificates/**" | wc -l
+# 3. Verificar paridad por CHECKSUM (no solo conteo — son artefactos
+#    firmados; review 2026-06-11): rsync -c compara hashes y reporta
+#    diferencias sin copiar de nuevo.
+gcloud storage rsync -r -c --dry-run "${OLD}/certificates/" "${NEW}/certificates/"
+# (output vacío = paridad; cualquier línea = objeto faltante o distinto)
 
 # 4. Apply completo (flip de CERTIFICATES_BUCKET en el servicio api)
 terraform apply

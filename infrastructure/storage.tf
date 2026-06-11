@@ -223,6 +223,20 @@ resource "google_storage_bucket" "certificates" {
     }
   }
 
+  # Las re-emisiones sobrescriben el path → cada una deja una versión
+  # noncurrent que con versioning quedaría PARA SIEMPRE (review security
+  # 2026-06-11). Se conservan las 3 más recientes 90 días (forense de
+  # re-emisiones) y después se purgan.
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 3
+      days_since_noncurrent_time = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
   labels = {
     env        = var.environment
     managed_by = "terraform"
