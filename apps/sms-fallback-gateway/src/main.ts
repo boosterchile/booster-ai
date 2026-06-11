@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { loadConfig } from './config.js';
 import { parseSmsFallback } from './parser.js';
 import { validateTwilioSignature } from './twilio-signature.js';
+import { buildWireFromBstr } from './wire.js';
 
 /**
  * sms-fallback-gateway: HTTP Cloud Run service que recibe webhooks de
@@ -102,34 +103,8 @@ async function main(): Promise<void> {
 
     const { payload } = parseResult;
 
-    // 4. Publicar al topic telemetry-events.
-    const messageBody = {
-      imei: payload.imei,
-      vehicleId: null, // resuelto downstream por el processor (lookup en DB)
-      record: {
-        timestampMs: String(payload.timestampMs),
-        priority: 2, // panic — siempre, los SMS solo se mandan para Panic events
-        gps: {
-          longitude: payload.longitude,
-          latitude: payload.latitude,
-          altitude: 0,
-          angle: 0,
-          satellites: 0,
-          speedKmh: payload.speedKmh,
-        },
-        io: {
-          eventIoId: payload.avlId,
-          totalIo: 1,
-          entries: [
-            {
-              id: payload.avlId,
-              value: payload.rawValue,
-              byteSize: 1,
-            },
-          ],
-        },
-      },
-    };
+    // 4. Publicar al topic telemetry-events (contrato canónico — ver wire.ts).
+    const messageBody = buildWireFromBstr(payload);
 
     try {
       const publishedId = await topic.publishMessage({
