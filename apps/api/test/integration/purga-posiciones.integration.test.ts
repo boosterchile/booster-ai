@@ -29,6 +29,24 @@ describe('integration: purga de posiciones_movil_conductor', () => {
   async function fixture() {
     const { db } = handle;
     const suffix = randomUUID().slice(0, 8);
+    // empresas.plan_id es NOT NULL sin default (CI lo reveló: 23502) —
+    // las migraciones no seedean planes en la BD de test.
+    const [plan] = await db
+      .insert(schema.plans)
+      .values({
+        slug: 'gratis',
+        name: `Plan Purga ${suffix}`,
+        description: 'plan de fixture para integration tests',
+        monthlyPriceClp: 0,
+        features: {},
+      })
+      .onConflictDoNothing({ target: schema.plans.slug })
+      .returning({ id: schema.plans.id });
+    const planId =
+      plan?.id ?? (await db.select({ id: schema.plans.id }).from(schema.plans).limit(1)).at(0)?.id;
+    if (!planId) {
+      throw new Error('fixture: plan no disponible');
+    }
     const [user] = await db
       .insert(schema.users)
       .values({
@@ -48,6 +66,7 @@ describe('integration: purga de posiciones_movil_conductor', () => {
         addressCity: 'Santiago',
         addressRegion: 'RM',
         isTransportista: true,
+        planId,
       })
       .returning({ id: schema.empresas.id });
     if (!user || !empresa) {
