@@ -235,7 +235,7 @@ resource "google_monitoring_alert_policy" "crash_event_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "Vehículo Booster sufrió un crash. Investigación: docs/runbooks/oncall-telemetry-incidents.md#crash-event"
@@ -265,7 +265,7 @@ resource "google_monitoring_alert_policy" "unplug_event_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "Device unplug — posible tamper. Investigación: docs/runbooks/oncall-telemetry-incidents.md#unplug-event"
@@ -295,7 +295,7 @@ resource "google_monitoring_alert_policy" "gnss_jamming_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "GPS jammer detectado en vehículo Booster — probable intento robo. Investigación: docs/runbooks/oncall-telemetry-incidents.md#gnss-jamming"
@@ -325,7 +325,7 @@ resource "google_monitoring_alert_policy" "parser_errors_p1" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "El gateway está rechazando packets con parser error. Posible cambio de protocolo del device o bug. Runbook: docs/runbooks/oncall-telemetry-incidents.md#parser-errors"
@@ -355,7 +355,7 @@ resource "google_monitoring_alert_policy" "pubsub_backlog_p2" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "Backlog (conteo) en subscription telemetría. Señal SECUNDARIA: el conteo depende del volumen y de noche (fleet estacionado, poco tráfico) tarda horas en cruzar 1000 → enmascara un consumer caído. El detector PRIMARIO de consumer detenido es `telemetry_consumer_stalled_p1` (oldest_unacked_message_age). Ver runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-consumer-stalled"
@@ -407,7 +407,7 @@ resource "google_monitoring_alert_policy" "telemetry_consumer_stalled_p1" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "El telemetry-processor no está consumiendo Pub/Sub (mensajes envejeciendo sin ack). Causa típica: el Cloud Run escaló a cero (es un consumer PULL/StreamingPull — necesita min-instances>=1 + CPU always-on). Cubre 'consumer muerto', NO 'consumer vivo pero fallando el write' (ese es pubsub_dlq + crash_trace_persistence_failures). Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-consumer-stalled"
@@ -466,7 +466,7 @@ resource "google_monitoring_alert_policy" "telemetry_gateway_down_p1" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "El pod del gateway de telemetría no reporta hace >10min — no hay capacidad de ingreso (devices Teltonika no pueden conectar). Revisar pod (kubectl get pods -n telemetry), evicción/OOM, LB/DNS, cert TLS. Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-ingress-stopped"
