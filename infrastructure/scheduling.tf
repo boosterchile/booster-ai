@@ -151,6 +151,40 @@ resource "google_cloud_scheduler_job" "cobra_hoy_cobranza" {
 #      >5 min).
 #
 # Skip silencioso si PRICING_V2_ACTIVATED=false o sin adapter activo.
+# Purga diaria de posiciones GPS de browser (retención 30d, preservando la
+# última posición por vehículo — spec feat-retencion-posiciones-movil).
+# La tabla crecía sin límite (auditoría 2026-06-09, seguimiento BD).
+resource "google_cloud_scheduler_job" "purgar_posiciones_movil" {
+  name        = "purgar-posiciones-movil"
+  description = "Daily: retención 30d de posiciones_movil_conductor (preserva última por vehículo)."
+  project     = google_project.booster_ai.project_id
+
+  region    = "southamerica-east1"
+  schedule  = "30 4 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 2
+    min_backoff_duration = "120s"
+    max_backoff_duration = "600s"
+    max_doublings        = 1
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/purgar-posiciones-movil"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+}
+
 resource "google_cloud_scheduler_job" "reconciliar_dtes" {
   name        = "reconciliar-dtes"
   description = "Hourly: queryStatus de facturas DTE en_proceso + retry de transient errors."

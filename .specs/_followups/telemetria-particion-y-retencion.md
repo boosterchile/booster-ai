@@ -18,6 +18,13 @@ Nota: el COUNT(*) por insert ya fue eliminado (fix/telemetry-persist, 2026-06-10
 - Reescribir `/flota` como LATERAL o tabla `ultima_posicion_vehiculo` con UPSERT desde el processor.
 - `log_acceso_stakeholder`: partición por `accedido_en` + sink BigQuery real ANTES de abrir el portal stakeholder.
 
-## Estado
+## Estado (actualizado 2026-06-11)
 
-Pendiente. Requiere ventana de mantenimiento para la migración de partición (tabla viva).
+Parcialmente ejecutado en la ola 2:
+- ✅ Índices redundantes dropeados (migración 0040, PR fix/db-integridad-indices).
+- ✅ Retención de posiciones_movil_conductor: cron diario 30d preservando la última por vehículo (feat-retencion-posiciones-movil).
+
+Pendiente con condición de reapertura:
+- /flota LATERAL (o tabla ultima_posicion_vehiculo): REABRIR al superar 50 devices o si P95 de GET /flota > 300ms — decisión deliberada de no tocar el endpoint más visible de la PWA al cierre de una ola larga (decision log de feat-retencion-posiciones-movil §13).
+- Partición de telemetria_puntos + sink BigQuery: requiere ventana de mantenimiento del PO (tabla viva).
+- log_acceso_stakeholder: partición + sink ANTES de abrir el portal stakeholder.
