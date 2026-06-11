@@ -25,6 +25,41 @@ export interface RecordMessage {
   record: AvlRecord;
 }
 
+/**
+ * Construye el body del wire (pre-JSON.stringify) serializando BigInt y
+ * Buffer a string. El shape resultante DEBE parsear con
+ * `telemetryRecordMessageSchema` de @booster-ai/shared-schemas — el
+ * contrato canónico que valida el processor al consumir. El test de
+ * contrato (pubsub-publisher.test) hace exactamente esa aserción: un
+ * drift acá se vuelve test rojo, no descarte silencioso en prod
+ * (auditoría 2026-06-09, riesgo alto).
+ */
+export function buildWireRecordMessage(msg: RecordMessage) {
+  return {
+    imei: msg.imei,
+    vehicleId: msg.vehicleId,
+    record: {
+      timestampMs: msg.record.timestampMs.toString(),
+      priority: msg.record.priority,
+      gps: msg.record.gps,
+      io: {
+        eventIoId: msg.record.io.eventIoId,
+        totalIo: msg.record.io.totalIo,
+        entries: msg.record.io.entries.map((e) => ({
+          id: e.id,
+          value:
+            typeof e.value === 'bigint'
+              ? e.value.toString()
+              : Buffer.isBuffer(e.value)
+                ? e.value.toString('base64')
+                : e.value,
+          byteSize: e.byteSize,
+        })),
+      },
+    },
+  };
+}
+
 export class TelemetryPublisher {
   private readonly topic: Topic;
 
@@ -45,29 +80,7 @@ export class TelemetryPublisher {
   }
 
   async publishRecord(msg: RecordMessage): Promise<string> {
-    const body = {
-      imei: msg.imei,
-      vehicleId: msg.vehicleId,
-      record: {
-        timestampMs: msg.record.timestampMs.toString(),
-        priority: msg.record.priority,
-        gps: msg.record.gps,
-        io: {
-          eventIoId: msg.record.io.eventIoId,
-          totalIo: msg.record.io.totalIo,
-          entries: msg.record.io.entries.map((e) => ({
-            id: e.id,
-            value:
-              typeof e.value === 'bigint'
-                ? e.value.toString()
-                : Buffer.isBuffer(e.value)
-                  ? e.value.toString('base64')
-                  : e.value,
-            byteSize: e.byteSize,
-          })),
-        },
-      },
-    };
+    const body = buildWireRecordMessage(msg);
 
     const messageId = await this.topic.publishMessage({
       data: Buffer.from(JSON.stringify(body)),
