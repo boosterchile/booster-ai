@@ -119,9 +119,11 @@ module "service_api" {
     # KMS key para firmar certificados de huella de carbono (RSA-PSS 4096
     # SHA256). El servicio emitirCertificadoViaje hace asymmetricSign con
     # esta key cuando un viaje pasa a entregado. Bucket de almacenamiento
-    # del PDF firmado: gs://${documents_bucket}/certificates/.
+    # del PDF firmado: gs://${certificates_bucket}/certificates/. Bucket
+    # PROPIO sin retention SII desde 2026-06-11 (sec-h3 §14.1.b): la
+    # re-emisión sobrescribe paths y chocaba con la retención de documents.
     CERTIFICATE_SIGNING_KEY_ID = google_kms_crypto_key.certificate_carbono_signing.id
-    CERTIFICATES_BUCKET        = google_storage_bucket.documents.name
+    CERTIFICATES_BUCKET        = google_storage_bucket.certificates.name
 
     # P3.b — chat SSE realtime. El api publica al topic post-INSERT de
     # mensaje, y los GET /:id/messages/stream crean subscriptions

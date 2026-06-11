@@ -169,3 +169,7 @@ La auditoría propuso inicialmente lockear también el bucket forense `{project}
 ## 13bis. Decision log (continuación)
 
 - 2026-06-10 — Addendum §14: prerequisito de re-emisión de certificados detectado (bloquea el lock); crash-traces excluido del lock por conflicto con derecho de supresión Ley 19.628. La decisión del PO ahora incluye elegir 14.1(a) vs 14.1(b). Sigue Draft; nada de prod ni Terraform tocado.
+
+## 14bis. Estado del prerequisito 14.1 (2026-06-11)
+
+**RESUELTO con la opción (b)** — decisión PO 2026-06-11 vía AskUserQuestion: bucket propio `{project}-certificates-{env}` sin retention policy (PR del ciclo `feat-certificados-bucket-propio`; migración operativa en `docs/runbooks/migracion-bucket-certificados.md`). Tras ejecutar esa migración, `documents` queda 100% DTE/mandato SII y el plan §14.3 continúa en el paso 2 (validación SC-4) — la decisión del lock sigue siendo del PO en sesión dedicada.

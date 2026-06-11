@@ -37,7 +37,13 @@ function makeDb(queues: DbQueues = {}) {
     const chain: Record<string, unknown> = {
       from: vi.fn(() => chain),
       where: vi.fn(() => chain),
-      limit: vi.fn(async () => selects.shift() ?? []),
+      // .limit() debe seguir encadenable: el SELECT del trip ahora
+      // termina en .for('update') (review 2026-06-11).
+      limit: vi.fn(() => chain),
+      for: vi.fn(async () => selects.shift() ?? []),
+    };
+    chain.then = (resolve: (v: unknown) => unknown) => {
+      return Promise.resolve(resolve(selects.shift() ?? []));
     };
     return chain;
   };
@@ -45,7 +51,13 @@ function makeDb(queues: DbQueues = {}) {
   const buildUpdateChain = () => {
     const chain: Record<string, unknown> = {
       set: vi.fn(() => chain),
-      where: vi.fn(async () => updates.shift() ?? []),
+      where: vi.fn(() => chain),
+      // CAS de estado: el UPDATE del trip usa .returning() — default
+      // fila-presente; encolar [] simula el CAS perdido.
+      returning: vi.fn(async () => updates.shift() ?? [{ id: 'cas-ok' }]),
+    };
+    chain.then = (resolve: (v: unknown) => unknown) => {
+      return Promise.resolve(resolve(updates.shift() ?? [{ id: 'cas-ok' }]));
     };
     return chain;
   };
@@ -211,10 +223,28 @@ describe('confirmarEntregaViaje', () => {
     });
   });
 
+  it('CAS perdido (confirmación concurrente ganó entre guard y UPDATE) → invalid_status', async () => {
+    // Review 2026-06-11: dos confirmaciones simultáneas (shipper+carrier)
+    // pasaban ambas el guard JS; el CAS en el WHERE hace que la segunda
+    // vea 0 filas y NO ejecute liquidación/certificado por segunda vez.
+    const db = makeDb({
+      selects: [[TRIP_BASE], [ASSIGNMENT_BASE]],
+      updates: [[]], // CAS → 0 filas
+    });
+    const result = await confirmarEntregaViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'shipper',
+      actor: { empresaId: SHIPPER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+    expect(result).toEqual({ ok: false, code: 'invalid_status', currentStatus: 'asignado' });
+  });
+
   it('shipper happy path: status asignado → entregado, UPDATEs + audit', async () => {
     const db = makeDb({
       selects: [[TRIP_BASE], [ASSIGNMENT_BASE]],
-      updates: [[], []], // UPDATE trip + UPDATE assignment
       inserts: [[]], // INSERT tripEvent
     });
     const result = await confirmarEntregaViaje({
@@ -235,7 +265,6 @@ describe('confirmarEntregaViaje', () => {
   it('carrier happy path: status en_proceso → entregado', async () => {
     const db = makeDb({
       selects: [[{ ...TRIP_BASE, status: 'en_proceso' }], [ASSIGNMENT_BASE]],
-      updates: [[], []],
       inserts: [[]],
     });
     const result = await confirmarEntregaViaje({
