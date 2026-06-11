@@ -65,6 +65,11 @@ Ninguno. INSERTs de telemetría ~20% menos estructuras de índice; integridad re
 - Migración: sí (0040, al startup del api con advisory lock).
 - Rollback: migración inversa documentada en el comentario (DROP CONSTRAINT / DROP INDEX / CREATE INDEX originales).
 - Monitoring: log del migrator al aplicar; el integration test de CI ya valida la cadena completa.
+- **CHECKLIST PRE-MERGE (PO, review 2026-06-11 — queries read-only vía scripts/db/agent-query.sh; esta sesión no tiene autorización para correrlas):**
+  1. Huérfanos: `SELECT count(*) FROM documentos_conductor dc LEFT JOIN conductores c ON c.id=dc.conductor_id WHERE c.id IS NULL;` → debe ser 0 (si no, resolver antes: la FK fallaría al aplicar).
+  2. Duplicados stakeholder: `SELECT count(*) FROM (SELECT usuario_id, organizacion_stakeholder_id FROM membresias WHERE organizacion_stakeholder_id IS NOT NULL GROUP BY 1,2 HAVING count(*)>1) t;` → debe ser 0.
+  3. Confirmar el valor REAL de STRICT_MIGRATION_ORDERING en el Cloud Run api (si fuera true, un fallo de 0040 crash-loopea el startup; con false, fallo ruidoso en logs y 0041+ quedan bloqueadas hasta resolver).
+  4. Nota operativa: los DROP INDEX toman ACCESS EXCLUSIVE breve sobre telemetria_puntos al aplicar (stall de escritura de segundos durante el startup del primer pod nuevo).
 
 ## 12. Open questions
 
@@ -73,3 +78,4 @@ None as of 2026-06-11.
 ## 13. Decision log
 
 - 2026-06-11 — Draft + mandato PO. Unique parcial (no NULLS NOT DISTINCT), fallo-ruidoso (no DELETE silencioso).
+- 2026-06-11 — REVIEW: bloqueante de cobertura resuelto (integration test T2/T3 con tests negativos + el caso dos-orgs-distintas que justifica el parcial); checklist pre-merge del PO agregado a §11 (huérfanos/duplicados/STRICT real — la sesión no tiene autorización para queries adicionales a prod).
