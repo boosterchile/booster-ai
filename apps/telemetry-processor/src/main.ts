@@ -11,6 +11,7 @@ import {
   createBigQueryCrashTraceIndexer,
   createGcsCrashTraceUploader,
 } from './crash-trace-adapters.js';
+import { logPanicEvents } from './panic-events.js';
 import { crashTraceMessageSchema, persistCrashTrace } from './persist-crash-trace.js';
 import { persistGreenDrivingFromRecord } from './persist-green-driving.js';
 import { persistRecord, recordMessageSchema } from './persist.js';
@@ -88,6 +89,12 @@ async function main(): Promise<void> {
         message.ack();
         return;
       }
+
+      // Alertas P0 de seguridad física (Unplug/GnssJamming): el warn con
+      // eventName alimenta los log-metrics de telemetry-monitoring.tf.
+      // ANTES del persist a propósito: el evento alerta aunque el device
+      // esté pendiente o el insert falle (spec fix-telemetry-panic-event-alerts).
+      logPanicEvents({ logger, msg: parsed.data, messageId: message.id });
 
       const result = await persistRecord({ db, logger, msg: parsed.data });
 

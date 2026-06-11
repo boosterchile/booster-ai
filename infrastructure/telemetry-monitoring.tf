@@ -14,7 +14,7 @@
 # crash_events, sms_fallback_received, y crash_trace_persistence_failures en
 # crash-traces.tf) estuvieron MUERTOS desde su creación.
 # (unplug_events y gnss_jamming_critical_events están muertos por OTRA razón:
-# dependen de jsonPayload.eventName que nadie emite todavía — ver sus notas.)
+# de eventName las emite telemetry-processor/src/panic-events.ts desde 2026-06-11.)
 # Corregido 2026-06-08 (.specs/telemetry-monitoring-observability).
 
 # =============================================================================
@@ -133,15 +133,11 @@ resource "google_logging_metric" "crash_events" {
   }
 }
 
-# Unplug events — derivado del log del notification-service cuando
-# rutea un evento safety-p0 con eventName=Unplug.
-#
-# ⚠️ BLOQUEADO: este filtro depende de `jsonPayload.eventName`, pero NINGÚN
-# servicio lo emite todavía — el `notification-service` es un skeleton
-# (apps/notification-service/src/main.ts). La métrica produce 0 series y la
-# alerta `unplug_event_p0` no puede disparar hasta implementar el ruteo de
-# eventos. NO es un bug de campo (no se arregla con msg→message). Se deja el
-# filtro con el campo final esperado. Desbloqueo: follow-up notification-service.
+# Unplug events (AVL 252) — emitido por telemetry-processor
+# (src/panic-events.ts) al detectar el IO en cualquier record, incluidos
+# los del path SMS fallback. DESBLOQUEADO 2026-06-11 (antes dependía del
+# notification-service skeleton y producía 0 series — auditoría 2026-06-09).
+# Los literales eventName/rawValue son CONTRATO con panic-events.ts.
 resource "google_logging_metric" "unplug_events" {
   name    = "telemetry/unplug_events"
   project = google_project.booster_ai.project_id
@@ -162,11 +158,9 @@ resource "google_logging_metric" "unplug_events" {
   }
 }
 
-# GNSS Jamming critical — AVL 318 con valor=2.
-#
-# ⚠️ BLOQUEADO igual que `unplug_events`: depende de `jsonPayload.eventName`
-# (+ `jsonPayload.rawValue`) que aún nadie emite (notification-service skeleton).
-# La alerta `gnss_jamming_p0` no dispara hasta implementar el ruteo de eventos.
+# GNSS Jamming critical — AVL 318 con valor=2 (1=warning queda en logs sin
+# disparar P0). Emitido por telemetry-processor (src/panic-events.ts).
+# DESBLOQUEADO 2026-06-11; literales = contrato con panic-events.ts.
 resource "google_logging_metric" "gnss_jamming_critical_events" {
   name    = "telemetry/gnss_jamming_critical_events"
   project = google_project.booster_ai.project_id
