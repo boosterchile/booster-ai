@@ -1,44 +1,16 @@
 import type { Logger } from '@booster-ai/logger';
 import { sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { z } from 'zod';
 
 /**
- * Schema del mensaje publicado por el gateway. Espejo de RecordMessage
- * en apps/telemetry-tcp-gateway/src/pubsub-publisher.ts.
- *
- * Validación con zod al consumir (defensa en depth: si por bug del
- * gateway llega data malformada, ack OK + log + skip vs corromper la DB).
+ * Contrato del mensaje: ÚNICA definición en @booster-ai/shared-schemas
+ * (events/telemetry-record.ts) — el espejo local duplicado fue eliminado
+ * (auditoría 2026-06-09, riesgo alto: drift = descarte silencioso).
+ * Re-export para compat de los consumidores internos (main, tests).
  */
-export const recordMessageSchema = z.object({
-  imei: z.string().min(8).max(20),
-  vehicleId: z.string().uuid().nullable(),
-  record: z.object({
-    timestampMs: z.string(), // BigInt serializado como string
-    priority: z.union([z.literal(0), z.literal(1), z.literal(2)]),
-    gps: z.object({
-      longitude: z.number(),
-      latitude: z.number(),
-      altitude: z.number(),
-      angle: z.number(),
-      satellites: z.number(),
-      speedKmh: z.number(),
-    }),
-    io: z.object({
-      eventIoId: z.number(),
-      totalIo: z.number(),
-      entries: z.array(
-        z.object({
-          id: z.number(),
-          value: z.union([z.number(), z.string()]),
-          byteSize: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.null()]),
-        }),
-      ),
-    }),
-  }),
-});
-
-export type RecordMessage = z.infer<typeof recordMessageSchema>;
+import type { TelemetryRecordMessage as RecordMessage } from '@booster-ai/shared-schemas';
+export { telemetryRecordMessageSchema as recordMessageSchema } from '@booster-ai/shared-schemas';
+export type { TelemetryRecordMessage as RecordMessage } from '@booster-ai/shared-schemas';
 
 export interface PersistResult {
   /** True si insertó, false si fue duplicado (ON CONFLICT DO NOTHING). */

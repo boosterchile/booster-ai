@@ -30,12 +30,9 @@ export * from './domain/transportista.js';
 export * from './domain/driver.js';
 export * from './domain/vehicle.js';
 export * from './domain/cargo-request.js';
-export * from './domain/trip.js';
-export * from './domain/telemetry.js';
 
 // Events (Pub/Sub payloads)
-export * from './events/trip-events.js';
-export * from './events/telemetry-events.js';
+export * from './events/telemetry-record.js';
 
 // Thin slice (Fase 6) — WhatsApp intake flow
 export * from './common.js';
