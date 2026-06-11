@@ -30,7 +30,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { esConfirmableEntrega, esEstadoViaje } from '@booster-ai/trip-state-machine';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 // `appConfig` (no `config`) para no chocar con el `config` de cert que
 // recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
 import { config as appConfig } from '../config.js';
@@ -86,7 +86,12 @@ export async function confirmarEntregaViaje(opts: {
       })
       .from(trips)
       .where(eq(trips.id, tripId))
-      .limit(1);
+      .limit(1)
+      // Review 2026-06-11: serializa contra la confirmación concurrente
+      // shipper+carrier — sin el lock ambas pasaban el guard JS y los
+      // side-effects del bloque (7+) corrían DOS veces (doble liquidación,
+      // doble certificado). Mismo patrón que offer-actions/cancel (#436).
+      .for('update');
     const trip = tripRows[0];
     if (!trip) {
       return { ok: false as const, code: 'trip_not_found' as const };
@@ -152,7 +157,16 @@ export async function confirmarEntregaViaje(opts: {
 
     // (7) UPDATEs en el orden esperado por el lifecycle.
     const now = new Date();
-    await tx.update(trips).set({ status: 'entregado' }).where(eq(trips.id, tripId));
+    // CAS por estado: el invariante queda en el SQL (defensa si alguien
+    // quita el FOR UPDATE) — mismo patrón que offer-actions.
+    const aEntregado = await tx
+      .update(trips)
+      .set({ status: 'entregado' })
+      .where(and(eq(trips.id, tripId), inArray(trips.status, ['asignado', 'en_proceso'])))
+      .returning({ id: trips.id });
+    if (!aEntregado[0]) {
+      return { ok: false as const, code: 'invalid_status' as const, currentStatus: trip.status };
+    }
     await tx
       .update(assignments)
       .set({

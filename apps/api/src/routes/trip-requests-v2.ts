@@ -500,7 +500,7 @@ export function createTripRequestsV2Routes(opts: {
   // ---------------------------------------------------------------------
   // PATCH /:id/cancelar — cancel pre-asignación.
   //
-  // Solo permite cancelar si status ∈ CANCELLABLE_STATUSES. Una vez
+  // Solo permite cancelar si la tabla de transiciones lo autoriza (esCancelablePorShipper). Una vez
   // `asignado` o posterior, el shipper debe coordinar la cancelación con
   // el transportista (fuera del scope de este endpoint).
   // ---------------------------------------------------------------------
