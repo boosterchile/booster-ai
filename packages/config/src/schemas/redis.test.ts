@@ -15,10 +15,19 @@ describe('redisEnvSchema', () => {
     expect(env.REDIS_PORT).toBe(6380);
   });
 
-  it('coerce REDIS_TLS desde string (boolean-coerce)', () => {
-    // z.coerce.boolean trata cualquier truthy string como true
+  it('REDIS_TLS="true" → true (booleanFlag)', () => {
     const env = redisEnvSchema.parse({ REDIS_HOST: 'h', REDIS_TLS: 'true' });
     expect(env.REDIS_TLS).toBe(true);
+  });
+
+  it('REDIS_TLS="false" → false (el footgun de z.coerce.boolean lo volvía true)', () => {
+    const env = redisEnvSchema.parse({ REDIS_HOST: 'h', REDIS_TLS: 'false' });
+    expect(env.REDIS_TLS).toBe(false);
+  });
+
+  it('REDIS_TLS="0" → false', () => {
+    const env = redisEnvSchema.parse({ REDIS_HOST: 'h', REDIS_TLS: '0' });
+    expect(env.REDIS_TLS).toBe(false);
   });
 
   it('acepta REDIS_PASSWORD opcional', () => {
