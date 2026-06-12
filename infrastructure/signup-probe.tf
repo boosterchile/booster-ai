@@ -102,7 +102,7 @@ resource "google_monitoring_alert_policy" "signup_probe_failure" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = <<-EOT

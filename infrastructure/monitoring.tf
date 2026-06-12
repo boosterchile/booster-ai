@@ -5,6 +5,30 @@
 # NOTIFICATION CHANNELS
 # =============================================================================
 
+# Webhook SRE (segundo canal — count-gated: sin URL no se crea nada y
+# todo sigue solo-email). Poblar var.sre_webhook_url y aplicar.
+resource "google_monitoring_notification_channel" "sre_webhook" {
+  count        = var.sre_webhook_url != "" ? 1 : 0
+  display_name = "SRE webhook (Slack/Chat)"
+  project      = google_project.booster_ai.project_id
+  type         = "webhook_tokenauth"
+
+  labels = {
+    url = var.sre_webhook_url
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Lista única de canales: TODAS las alert policies referencian este local
+# (sed global 2026-06-11) — agregar un canal nuevo = tocar solo esto.
+locals {
+  alert_channel_ids = concat(
+    [google_monitoring_notification_channel.email_alerts.id],
+    google_monitoring_notification_channel.sre_webhook[*].id,
+  )
+}
+
 resource "google_monitoring_notification_channel" "email_alerts" {
   display_name = "Email alerts"
   project      = google_project.booster_ai.project_id
@@ -100,7 +124,7 @@ resource "google_monitoring_alert_policy" "api_error_rate" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "1800s"
@@ -131,7 +155,7 @@ resource "google_monitoring_alert_policy" "api_latency_p95" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "1800s"
@@ -163,7 +187,7 @@ resource "google_monitoring_alert_policy" "uptime_failures" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # Pub/Sub dead-letter queue no vacía → algo se rompió
@@ -187,7 +211,7 @@ resource "google_monitoring_alert_policy" "pubsub_dlq" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # Cloud SQL storage > 80%
@@ -211,7 +235,7 @@ resource "google_monitoring_alert_policy" "cloudsql_storage" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # =============================================================================
@@ -310,7 +334,7 @@ resource "google_monitoring_alert_policy" "demo_ttl_low" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     # Auto-close 25h post-trigger: el cron diario corre 06:00; si TTL
@@ -389,7 +413,7 @@ resource "google_monitoring_alert_policy" "auth_is_demo_blocked_anomaly" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     # Auto-close 25h post-trigger: si demo session activa stops
@@ -472,7 +496,7 @@ resource "google_monitoring_alert_policy" "reaper_volume_anomaly" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = <<-EOT

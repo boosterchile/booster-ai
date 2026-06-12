@@ -340,7 +340,7 @@ resource "google_monitoring_alert_policy" "crash_trace_persistence_failures" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = <<-EOT

@@ -66,3 +66,7 @@ redis_memory_gb = 1
 
 monthly_budget_usd = 500
 alert_email        = "dev@boosterchile.com"
+
+# Segundo canal de alertas (Slack incoming webhook o Google Chat space
+# webhook). Vacío = solo email. Ver variables.tf:sre_webhook_url.
+# sre_webhook_url = "https://hooks.slack.com/services/XXX/YYY/ZZZ"
