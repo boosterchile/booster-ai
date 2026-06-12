@@ -78,7 +78,13 @@ jobs:
     name: Deploy to production
     needs: version-or-publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 75 y no 30 (fix 2026-06-12): el canary duerme 30 min DENTRO de Cloud
+    # Build mientras este job streamea `gcloud builds submit` — con 30 el
+    # job moría SIEMPRE cancelado a mitad del canary (el build seguía y
+    # completaba server-side, pero el run quedaba 'cancelled' y el smoke
+    # final nunca corría). Presupuesto: gate CI ~10 + build/push ~15 +
+    # canary 30 + verify/promoción ~10 + smoke.
+    timeout-minutes: 75
     environment:
       name: production  # Requires manual approval via GitHub Environments
       url: ${{ vars.PRODUCTION_URL }}
