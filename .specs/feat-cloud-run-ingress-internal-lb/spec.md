@@ -17,7 +17,7 @@ Es el hallazgo de mayor severidad que quedó abierto tras la remediación de la 
 
 - [ ] SC-1: el módulo `cloud-run-service` expone una variable `ingress` (default `"INGRESS_TRAFFIC_ALL"`) → aplicarla sin override es CERO cambio de comportamiento para los 8 servicios (refactor seguro, mergeable solo).
 - [ ] SC-2: `web` queda en `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` — su run.app deja de ser alcanzable directo; el tráfico legítimo (browsers → app/marketing domain → GCLB) sigue 200.
-- [ ] SC-3: `api` queda en `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`; tras el apply, los 9 Cloud Scheduler jobs y el caller whatsapp-bot→api siguen funcionando (validación empírica obligatoria en §11; rollback de 1 línea si falla).
+- [ ] SC-3: `api` queda en `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`; los 9 Cloud Scheduler jobs siguen entrando por run.app (tráfico interno del proyecto — sin cambio) y el caller **whatsapp-bot→api se re-apunta al GCLB** (`public_api_url`) porque su path service-to-service por run.app dejaría de contar como interno (egress PRIVATE_RANGES_ONLY). Validación empírica obligatoria en §11; rollback si falla.
 - [ ] SC-4: `sms-fallback-gateway` queda EXPLÍCITAMENTE en `INGRESS_TRAFFIC_ALL` (Twilio postea directo a su run.app — NO tiene NEG en el GCLB; restringirlo rompería la ingesta SMS) — documentado, no omisión.
 - [ ] SC-5: el comentario erróneo de `networking.tf:696` ("Por defecto Cloud Run acepta internal-and-cloud-load-balancing") se corrige al default real (`INGRESS_TRAFFIC_ALL`).
 - [ ] SC-6: ADR del posture de ingress (qué servicio, por qué, qué queda en ALL y por qué).
@@ -48,7 +48,7 @@ Variable `ingress` en `modules/cloud-run-service/{variables.tf,main.tf}` (campo 
 ## 8. Alternatives considered
 
 - **A. `INGRESS_TRAFFIC_INTERNAL_ONLY` (sin LB)** — Rechazada: el api/web SE sirven públicamente vía GCLB; `internal-only` rechaza al propio GCLB (lo dice el comentario de networking.tf:696). El valor `internal-and-cloud-load-balancing` es justamente "interno del proyecto + Application LB".
-- **B. Re-rutear los 9 schedulers + bot→api al GCLB (`public_api_url`)** — Rechazada: la regla ALLOW de Cloud Armor solo exime `/webhooks/*` (networking.tf:22); `/admin/jobs/*` quedaría bajo evaluación OWASP (xss/sqli/rce/lfi/scannerdetection). El JWT OIDC en el header + 9 jobs nuevos bajo WAF = superficie de falsos-positivos que hoy no existe. Mantener los schedulers en run.app y confiar en que el ingress interno permite Cloud Scheduler (mismo proyecto) es menos invasivo; si la validación §11 falla, esta alternativa queda como fallback documentado (con su ALLOW rule de /admin).
+- **B. Re-rutear los 9 schedulers al GCLB (`public_api_url`)** — Rechazada, pero NO por el WAF (corrección del review 2026-06-14): existe una regla ALLOW priority-390 en Cloud Armor que bypassa TODO el WAF para `host==api.boosterchile.com` (networking.tf:198-225), así que `/admin/jobs/*` por el GCLB NO caería bajo OWASP. Se rechaza por un motivo más simple: **los Cloud Scheduler jobs del mismo proyecto ya alcanzan el ingress interno** (es tráfico interno, confirmado por la doc GCP y por ambos revisores) → no necesitan cambio. Dejarlos en run.app es lo menos invasivo. (El caso del **bot→api SÍ se re-rutea** al GCLB — ver §7 y ADR-062 fila api: el bot es service-to-service con egress PRIVATE_RANGES_ONLY, su path run.app NO cuenta como interno, así que debe ir por el LB.)
 - **C. Aplicar a TODOS los servicios de una** — Rechazada: sms-fallback rompe (Twilio directo sin GCLB); los privados necesitan análisis de Pub/Sub. Staged + per-service es el patrón seguro que el followup pidió.
 
 ## 9. Risks and mitigations
@@ -56,7 +56,7 @@ Variable `ingress` en `modules/cloud-run-service/{variables.tf,main.tf}` (campo 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Cloud Scheduler→api NO funciona con ingress interno (semántica GCP) → 9 crons caen | M | H | Canary web primero (valida el path GCLB); api en ventana del PO con validación empírica inmediata (`gcloud scheduler jobs run reconciliar-dtes` → 200); rollback = revertir ingress del api a ALL (1 línea, ~30s) |
-| whatsapp-bot→api (service-to-service run.app) rechazado por ingress interno | M | M | Mismo gate de validación; si falla, el bot se re-apunta a public_api_url (audience ya aceptado) o se le da VPC egress — decisión en la ventana |
+| whatsapp-bot→api roto por ingress interno (egress PRIVATE_RANGES_ONLY → run.app no cuenta como interno) | ~~M~~ resuelto en el PR | H | **Fix incluido**: el bot se re-apunta a `public_api_url` (GCLB) — el api ve tráfico originado en el LB (aceptado por internal-and-cloud-LB) independiente del egress del bot. Audience ya aceptado; WAF bypassed para el host api (priority-390). Validación §11 confirma 200. |
 | El plan recrea el servicio (downtime) en vez de update in-place | L | H | SC-7: revisar el plan ANTES de aplicar; `ingress` es un campo mutable de v2 service → update in-place esperado |
 | Romper el GCLB→Cloud Run al restringir | L | H | networking.tf:696 confirma que el LB invoca con su SA y que internal-and-cloud-LB lo permite; web es el canary que lo prueba en un servicio no transaccional |
 | sms-fallback queda olvidado en el endurecimiento futuro y alguien lo rompe | L | M | Override EXPLÍCITO a ALL + comentario en compute.tf y ADR-062 (no es omisión, es decisión) |
@@ -68,20 +68,22 @@ Variable `ingress` en `modules/cloud-run-service/{variables.tf,main.tf}` (campo 
 - T3: revisión manual de que ningún otro consumidor del módulo rompe (los 8 modules siguen compilando; default preserva ALL).
 - T4 (post-apply, PO — §11): smoke de los paths legítimos + rechazo del path directo run.app.
 
-## 11. Rollout (staged — ejecuta el PO)
+## 11. Rollout (staged con `-target` OBLIGATORIO — ejecuta el PO)
 
-**Etapa 1 — refactor + canary web:**
-1. `terraform apply` con la variable nueva. Plan esperado: `~ ingress` en web (→ internal-and-cloud-LB) y api. Si el PO quiere separar, puede `-target=module.service_web` primero.
-2. Validar web: `curl https://app.boosterchile.com/` → 200; `curl https://booster-ai-web-<n>.<region>.run.app/` desde fuera → 403/404 de red.
+Primero revisar el plan completo y confirmar **update in-place** (`~ ingress`), CERO `-/+` recreación (SC-7). Luego aplicar por etapas con `-target` (NO de una — el rollback debe ser aislable por servicio, review R4):
 
-**Etapa 2 — api (ventana, con rollback armado):**
-3. Confirmado web OK, aplicar api (si se separó). Validación INMEDIATA:
-   - `gcloud scheduler jobs run reconciliar-dtes --location=southamerica-east1` → el job corre y el api responde 200 (revisar logs del job).
-   - Un mensaje de WhatsApp de prueba o trigger del bot→api → 200.
-   - `curl https://booster-ai-api-<n>.<region>.run.app/health` desde fuera → rechazado; `curl https://api.boosterchile.com/health` → 200.
-4. **Rollback** si cualquier validación falla: revertir el `ingress` del api a `"INGRESS_TRAFFIC_ALL"` y `terraform apply` (~30s) → estado previo restaurado. Sin pérdida de datos (cambio de red puro).
+**Etapa 1 — canary web:**
+1. `terraform apply -target=module.service_web` (+ el módulo, que es el refactor de la variable).
+2. Validar: `curl https://app.boosterchile.com/` → 200; `curl https://booster-ai-web-<n>.<region>.run.app/` desde fuera → rechazado a nivel de red.
 
-- Monitoring: error rate del api en la ventana; logs de los scheduler jobs (success/failure).
+**Etapa 2 — api (ventana, rollback armado):**
+3. Confirmado web OK, `terraform apply -target=module.service_api`. Validación INMEDIATA y medible (no esperar a degradación):
+   - **Schedulers**: `gcloud scheduler jobs run reconciliar-dtes --location=southamerica-east1` → 200 en logs del job.
+   - **bot→api (re-apuntado al GCLB)**: `gcloud scheduler jobs run chat-whatsapp-fallback --location=southamerica-east1` (ese cron ejercita el path bot→api) → verificar 200 en logs del bot y del api. NO confiar en que un mensaje real lo revele (no hay uptime check del bot — review R3).
+   - **Bypass cerrado**: `curl https://booster-ai-api-<n>.<region>.run.app/health` desde fuera → rechazado; `curl https://api.boosterchile.com/health` → 200.
+4. **Rollback** si algo falla: revertir el `ingress` del servicio afectado a `"INGRESS_TRAFFIC_ALL"` + `terraform apply -target=<ese módulo>` (~30s, aislado). Sin pérdida de datos (cambio de red puro).
+
+- Monitoring durante la ventana: error rate del api + logs success/failure de los scheduler jobs y del bot.
 
 ## 12. Open questions
 

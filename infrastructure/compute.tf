@@ -556,17 +556,19 @@ module "service_whatsapp_bot" {
   # networking.tf).
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME = "booster-ai-whatsapp-bot"
-    # Tráfico interno bot → api: usar *.run.app directo (NO el LB público).
-    # Razones:
-    #   1. El LB tiene Cloud Armor con scannerdetection-v33-stable que falsea
-    #      positivo con bodies del api (contienen JSON con identifiers que el
-    #      WAF confunde con scanner output) → 403 desde el WAF.
-    #   2. *.run.app es el canal canónico Cloud Run-to-Cloud Run, autenticado
-    #      via OIDC token con audience = URL del service. Cero hops adicionales,
-    #      cero costo de LB, cero falsos positivos del WAF.
-    # Solo Twilio (caller externo, no controlado) entra por el LB público.
-    API_URL           = local.cloud_run_api_url
-    API_OIDC_AUDIENCE = local.cloud_run_api_url
+    # bot → api vía el LB público (api.boosterchile.com), NO el *.run.app.
+    # Cambiado 2026-06-14 (ADR-062): el api pasa a ingress
+    # INTERNAL_LOAD_BALANCER, por lo que su *.run.app deja de ser alcanzable
+    # como service-to-service (el egress del bot es PRIVATE_RANGES_ONLY → el
+    # run.app es IP pública → saldría a internet y el ingress interno lo
+    # rechaza). El LB SÍ es un origen aceptado por internal-and-cloud-LB.
+    # El motivo histórico de usar run.app (evitar el falso positivo de
+    # scannerdetection del WAF) ya NO aplica: la regla ALLOW priority-390 de
+    # Cloud Armor (networking.tf) bypassa el WAF para host==api.boosterchile.com.
+    # El api valida ambos audiences (API_AUDIENCE, compute.tf:95). Trade-off:
+    # un hop de LB (~ms) — aceptable por el endurecimiento de red del api.
+    API_URL           = local.public_api_url
+    API_OIDC_AUDIENCE = local.public_api_url
     # TWILIO_FROM_NUMBER: variable porque cambia entre sandbox y producción.
     # Sandbox compartido (+14155238886) hasta que +19383365293 esté
     # registrado como WhatsApp Sender via Meta business verification (runbook

@@ -16,4 +16,8 @@
 
 ## Estado
 
-Pendiente. Sin asignar a ciclo (requiere validación cuidadosa de los callers internos).
+**RESUELTO PARCIALMENTE — ADR-062 / ciclo feat-cloud-run-ingress-internal-lb (2026-06-14)**: api y web pasan a INTERNAL_LOAD_BALANCER; el módulo gana `var.ingress` (default ALL); bot→api re-apuntado al GCLB; comentario errado corregido. El `terraform apply` lo ejecuta el PO (staged web→api, spec §11).
+
+Residuos derivados (stubs nuevos):
+- `whatsapp-bot-ingress-verify-twilio-url.md` — endurecer el ingress del bot (inbound Twilio).
+- `private-services-ingress.md` — endurecer matching/processor/notification/document a INTERNAL_ONLY.
