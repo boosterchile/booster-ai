@@ -19,4 +19,4 @@ La URL real que Twilio usa para postear el webhook vive en la **consola de Twili
 4. Smoke: mensaje de WhatsApp real → 200; `curl` directo al run.app del bot desde fuera → rechazado.
 
 ## Estado
-Pendiente.
+**RESUELTO (código) — ADR-063 / feat-ingress-posture-round-2 (2026-06-14)**: `service_whatsapp_bot` → INTERNAL_LOAD_BALANCER en compute.tf. Falta solo la confirmación empírica del PO en la ventana (enviar un WhatsApp real → 200; el run.app del bot rechazado). Evidencia indirecta de que Twilio usa el dominio GCLB: la firma X-Twilio-Signature ya valida contra TWILIO_WEBHOOK_URL=api.boosterchile.com en prod.

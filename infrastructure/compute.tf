@@ -399,6 +399,13 @@ module "service_matching_engine" {
 
   public = false
 
+  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
+  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
+  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
+  # run.app a nivel de red → un token de invoker robado deja de ser explotable
+  # desde internet (contención de blast-radius; IAM era la única barrera).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "matching-engine", env = var.environment }
@@ -447,6 +454,13 @@ module "service_telemetry_processor" {
 
   public = false
 
+  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
+  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
+  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
+  # run.app a nivel de red → un token de invoker robado deja de ser explotable
+  # desde internet (contención de blast-radius; IAM era la única barrera).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "telemetry-processor", env = var.environment }
@@ -473,6 +487,13 @@ module "service_notification" {
   })
 
   public = false
+
+  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
+  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
+  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
+  # run.app a nivel de red → un token de invoker robado deja de ser explotable
+  # desde internet (contención de blast-radius; IAM era la única barrera).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -594,6 +615,12 @@ module "service_whatsapp_bot" {
 
   public = true # webhook público — Twilio postea sin IAM; el bot valida X-Twilio-Signature
 
+  # ADR-063 (completa ADR-062): el webhook de Twilio entra por el GCLB
+  # (api.boosterchile.com/webhooks/whatsapp → backend del bot, ALLOW
+  # priority-400 en Cloud Armor). INTERNAL_LOAD_BALANCER cierra el run.app
+  # directo del bot manteniendo ese path. NO INTERNAL_ONLY: rechazaría el LB.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "whatsapp-bot", env = var.environment }
@@ -624,6 +651,13 @@ module "service_document" {
   })
 
   public = false
+
+  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
+  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
+  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
+  # run.app a nivel de red → un token de invoker robado deja de ser explotable
+  # desde internet (contención de blast-radius; IAM era la única barrera).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready
 
