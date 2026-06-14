@@ -13,6 +13,15 @@ vi.mock('../lib/firebase.js', () => ({
   },
 }));
 
+// fix-sse-ticket-x-empresa: el hook lee la empresa activa de api-client para
+// mandarla como X-Empresa-Id en el POST del ticket (users multi-empresa).
+const { getActiveEmpresaIdMock } = vi.hoisted(() => ({
+  getActiveEmpresaIdMock: vi.fn((): string | null => null),
+}));
+vi.mock('../lib/api-client.js', () => ({
+  getActiveEmpresaId: getActiveEmpresaIdMock,
+}));
+
 const { useChatStream } = await import('./use-chat-stream.js');
 
 interface FakeEventSource {
@@ -68,6 +77,8 @@ beforeEach(() => {
   currentUserState.value = { getIdToken: getIdTokenMock };
   getIdTokenMock.mockClear();
   fetchMock.mockClear();
+  getActiveEmpresaIdMock.mockReset();
+  getActiveEmpresaIdMock.mockReturnValue(null);
   (globalThis as any).EventSource = StubEventSource;
   (globalThis as any).fetch = fetchMock;
 });
@@ -127,6 +138,36 @@ describe('useChatStream', () => {
 
     lastEventSource?.emit('message', { message_id: 'm1', assignment_id: 'a1' });
     expect(onMessage).toHaveBeenCalledWith({ message_id: 'm1', assignment_id: 'a1' });
+  });
+
+  it('multi-empresa: manda X-Empresa-Id (empresa activa) en el POST del ticket — SC-1', async () => {
+    getActiveEmpresaIdMock.mockReturnValue('emp-no-default');
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/assignments/a1/messages/stream-ticket'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-id-token', 'X-Empresa-Id': 'emp-no-default' },
+      }),
+    );
+    // El id de empresa NO viaja en la URL del stream (solo el ticket efímero).
+    expect(lastEventSource?.url).not.toContain('emp-no-default');
+  });
+
+  it('sin empresa activa → el POST del ticket NO lleva X-Empresa-Id — SC-1', async () => {
+    getActiveEmpresaIdMock.mockReturnValue(null);
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    // headers EXACTAMENTE { authorization } → la deep-equality falla si
+    // X-Empresa-Id estuviera presente, así que esto prueba su ausencia.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/assignments/a1/messages/stream-ticket'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-id-token' },
+      }),
+    );
   });
 
   it('fallo al obtener el ticket → no abre EventSource + onDisconnect (reconnect)', async () => {

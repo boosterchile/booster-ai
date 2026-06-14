@@ -16,12 +16,16 @@
  * Cloud Run que ningún scrubbing de app alcanza). En su lugar:
  *   1. POST /assignments/:id/messages/stream-ticket con el Bearer header
  *      (autenticación normal, sin exponer el token en la URL) → {ticket}.
+ *      El POST también manda `X-Empresa-Id` (empresa activa de la PWA, misma
+ *      fuente que el api-client) para que `resolveChatAccess` resuelva la
+ *      empresa correcta en users multi-empresa (fix-sse-ticket-x-empresa).
  *   2. EventSource a `...?ticket=<ticket>`. El ticket es de UN SOLO USO,
  *      TTL ~60s, scoped al assignment → su filtrado post-consumo es inocuo.
  * Cada reconnect pide un ticket nuevo (son single-use).
  */
 
 import { useEffect, useRef } from 'react';
+import { getActiveEmpresaId } from '../lib/api-client.js';
 import { env } from '../lib/env.js';
 import { firebaseAuth } from '../lib/firebase.js';
 import { logger } from '../lib/logger.js';
@@ -91,11 +95,20 @@ export function useChatStream(opts: UseChatStreamOptions): void {
         // sin caer al backoff de reconnect.
         const abort = new AbortController();
         const timeout = setTimeout(() => abort.abort(), 10_000);
+        // X-Empresa-Id: la empresa activa de la PWA (misma fuente que el
+        // api-client). Necesario para users multi-empresa cuyo chat NO está en
+        // su membership default — sin esto resolveChatAccess da 403 y el ticket
+        // no se emite (follow-up sse-realtime-multi-empresa).
+        const activeEmpresaId = getActiveEmpresaId();
+        const ticketHeaders: Record<string, string> = {
+          authorization: `Bearer ${token}`,
+          ...(activeEmpresaId ? { 'X-Empresa-Id': activeEmpresaId } : {}),
+        };
         let res: Response;
         try {
           res = await fetch(
             `${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream-ticket`,
-            { method: 'POST', headers: { authorization: `Bearer ${token}` }, signal: abort.signal },
+            { method: 'POST', headers: ticketHeaders, signal: abort.signal },
           );
         } finally {
           clearTimeout(timeout);
