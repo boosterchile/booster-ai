@@ -99,15 +99,11 @@ Si una regla de `superpowers` entra en conflicto con una regla específica Boost
 
 ### Capas adicionales locales del proyecto
 
-El repo Booster mantiene 3 archivos en `agents/` raíz como **sub-agents Booster locales**:
+**Ya no hay overrides locales en `agents/`** (directorio eliminado). Los 3 sub-agents Booster que vivían ahí fueron **consolidados en `booster-skills@0.3.0`** ([ADR-064](docs/adr/064-consolidate-local-subagents-into-booster-skills.md)):
 
-| Archivo | Rol | Nota |
-|---|---|---|
-| `agents/code-reviewer.md` | Code review Booster con disciplina ADR + anti-rationalizations Booster | Antes "extendía" a agent-rigor; ahora es standalone. Claude Code lo resuelve vía `subagent_type: code-reviewer`. |
-| `agents/security-auditor.md` | Compliance Chile: Ley 19.628 (privacy), SII/DTE (retención 6 años), modelo Uber-like + Sustainability Stakeholder (ADR-004, ADR-034) | Standalone. |
-| `agents/sre-oncall.md` | SLOs, observabilidad GCP, capacity planning | Único; sin equivalente en plugins. |
-
-> **Nota post-ADR-060**: estos 3 sub-agents ya no "extienden" a agent-rigor (retirado). Funcionan como sub-agents Booster autónomos. Su consolidación en `booster-skills` sigue siendo un follow-up tracked en [`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`](.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md) (actualizar ese stub: el objetivo ya no es "migrar desde agent-rigor" sino consolidar estos overrides locales).
+- `security-auditor` → plegado en `booster-skills:security-scanner` (módulo compliance Chile: Ley 19.628, SII/DTE retención 6 años, RBAC por rol shipper/carrier/driver/admin/stakeholder, consent ESG; ADR-004/007/034).
+- `sre-oncall` → nuevo sub-agent `booster-skills:sre-oncall` (revisor SRE *pre-merge*: observabilidad, rollback, SLO, capacity, costos).
+- `code-reviewer` → retirado; su único bit (ADR-compliance) plegado en `booster-skills:booster-stack-conventions` (paso 7). El review genérico lo provee `superpowers` (subagent-driven-development).
 
 Para resolver referencias a paths antiguos (`skills/`, `.claude/commands/`, etc.) que aparezcan en ADRs históricos (≤ ADR-048): ver [ADR-050 path-remapping](docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md).
 
@@ -196,11 +192,6 @@ Booster-AI/
 │   ├── worktrees/              # worktrees parallel (superpowers:using-git-worktrees)
 │   └── staging/                # (gitignored) workaround pattern audit-session
 │
-├── agents/                     # 3 sub-agents Booster locales (ver §Capas adicionales)
-│   ├── code-reviewer.md        # code review Booster (standalone post-ADR-060)
-│   ├── security-auditor.md     # + compliance Chile (Ley 19.628, SII/DTE)
-│   └── sre-oncall.md           # único: SLOs + observabilidad GCP
-│
 ├── references/                 # checklists Booster (code-review, security, IDOR audits)
 ├── playbooks/                  # decisiones de producto/negocio
 │
@@ -247,7 +238,7 @@ Booster-AI/
 Cambios v2→v3 (post-PR-2 / ADR-049):
 
 - **Eliminados**: `skills/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `hooks/` — funcionalidad migrada a plugins.
-- **Conservados**: `agents/` (3 sub-agents Booster), `references/`, `playbooks/`.
+- **Conservados**: `references/`, `playbooks/`. (`agents/` eliminado en ADR-064: los 3 overlays locales se consolidaron en `booster-skills@0.3.0`.)
 
 Cambios post-ADR-060:
 
