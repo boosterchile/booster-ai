@@ -65,6 +65,24 @@ jobs:
         run: pnpm format:check
 
   # ---------------------------------------------------------------------------
+  # Terraform fmt — gate que faltaba: el drift de alineación de #449
+  # (storage.tf) llegó a main porque ningún check de CI corría `fmt -check`.
+  # No necesita GCP/WIF (es puro formateo), corre en cada PR. El drift de
+  # ESTADO real (plan) lo cubre terraform-drift.yml (cron + WIF) por separado.
+  # ---------------------------------------------------------------------------
+  terraform-fmt:
+    name: Terraform fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive infrastructure/
+
+  # ---------------------------------------------------------------------------
   # Typecheck — tsc --noEmit por workspace (Turborepo paraleliza)
   # ---------------------------------------------------------------------------
   typecheck:
@@ -223,13 +241,14 @@ jobs:
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, integration-tests, build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs succeeded
         run: |
           if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.terraform-fmt.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \

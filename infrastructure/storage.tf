@@ -229,7 +229,7 @@ resource "google_storage_bucket" "certificates" {
   # re-emisiones) y después se purgan.
   lifecycle_rule {
     condition {
-      num_newer_versions = 3
+      num_newer_versions         = 3
       days_since_noncurrent_time = 90
     }
     action {
