@@ -5,6 +5,17 @@
 # requerir cambios en código (los logs estructurados Pino ya tienen los
 # campos necesarios). Lo que requiere instrumentation OpenTelemetry
 # (latency p99) queda como TODO en docs/runbooks/oncall-telemetry-incidents.md.
+#
+# ⚠️ CAMPO DEL MENSAJE = `jsonPayload.message` (no `jsonPayload.msg`).
+# El logger Booster configura Pino con `messageKey: 'message'`
+# (packages/logger/src/createLogger.ts). Los filtros originales usaban
+# `jsonPayload.msg=...` → matcheaban 0 entradas → los log-metrics que SÍ se
+# emiten (device_records_per_minute, tcp_connection_resets, parser_errors,
+# crash_events, sms_fallback_received, y crash_trace_persistence_failures en
+# crash-traces.tf) estuvieron MUERTOS desde su creación.
+# (unplug_events y gnss_jamming_critical_events están muertos por OTRA razón:
+# de eventName las emite telemetry-processor/src/panic-events.ts desde 2026-06-11.)
+# Corregido 2026-06-08 (.specs/telemetry-monitoring-observability).
 
 # =============================================================================
 # LOGGING METRICS — derivadas de logs estructurados
@@ -21,7 +32,7 @@ resource "google_logging_metric" "device_records_per_minute" {
   filter = <<-EOT
     resource.type="k8s_container"
     resource.labels.container_name="gateway"
-    jsonPayload.msg="avl packet procesado"
+    jsonPayload.message="avl packet procesado"
   EOT
 
   metric_descriptor {
@@ -53,7 +64,7 @@ resource "google_logging_metric" "tcp_connection_resets" {
     resource.type="k8s_container"
     resource.labels.container_name="gateway"
     severity>=WARNING
-    (jsonPayload.msg=~"preamble inesperado" OR jsonPayload.msg=~"CRC inválido")
+    (jsonPayload.message=~"preamble inesperado" OR jsonPayload.message=~"CRC inválido")
   EOT
 
   metric_descriptor {
@@ -74,7 +85,7 @@ resource "google_logging_metric" "parser_errors" {
   filter = <<-EOT
     resource.type="k8s_container"
     resource.labels.container_name="gateway"
-    jsonPayload.msg="parse error, ack 0 + cerramos"
+    jsonPayload.message="parse error, ack 0 + cerramos"
   EOT
 
   metric_descriptor {
@@ -96,7 +107,7 @@ resource "google_logging_metric" "crash_events" {
   filter = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="booster-ai-telemetry-processor"
-    jsonPayload.msg="crash-trace persistido"
+    jsonPayload.message="crash-trace persistido"
   EOT
 
   metric_descriptor {
@@ -122,8 +133,11 @@ resource "google_logging_metric" "crash_events" {
   }
 }
 
-# Unplug events — derivado del log del notification-service cuando
-# rutea un evento safety-p0 con eventName=Unplug.
+# Unplug events (AVL 252) — emitido por telemetry-processor
+# (src/panic-events.ts) al detectar el IO en cualquier record, incluidos
+# los del path SMS fallback. DESBLOQUEADO 2026-06-11 (antes dependía del
+# notification-service skeleton y producía 0 series — auditoría 2026-06-09).
+# Los literales eventName/rawValue son CONTRATO con panic-events.ts.
 resource "google_logging_metric" "unplug_events" {
   name    = "telemetry/unplug_events"
   project = google_project.booster_ai.project_id
@@ -144,7 +158,9 @@ resource "google_logging_metric" "unplug_events" {
   }
 }
 
-# GNSS Jamming critical — AVL 318 con valor=2.
+# GNSS Jamming critical — AVL 318 con valor=2 (1=warning queda en logs sin
+# disparar P0). Emitido por telemetry-processor (src/panic-events.ts).
+# DESBLOQUEADO 2026-06-11; literales = contrato con panic-events.ts.
 resource "google_logging_metric" "gnss_jamming_critical_events" {
   name    = "telemetry/gnss_jamming_critical_events"
   project = google_project.booster_ai.project_id
@@ -176,7 +192,7 @@ resource "google_logging_metric" "sms_fallback_received" {
   filter = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="booster-ai-sms-fallback-gateway"
-    jsonPayload.msg=~"sms fallback procesado"
+    jsonPayload.message=~"sms fallback procesado"
   EOT
 
   metric_descriptor {
@@ -213,7 +229,7 @@ resource "google_monitoring_alert_policy" "crash_event_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "Vehículo Booster sufrió un crash. Investigación: docs/runbooks/oncall-telemetry-incidents.md#crash-event"
@@ -243,7 +259,7 @@ resource "google_monitoring_alert_policy" "unplug_event_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "Device unplug — posible tamper. Investigación: docs/runbooks/oncall-telemetry-incidents.md#unplug-event"
@@ -273,7 +289,7 @@ resource "google_monitoring_alert_policy" "gnss_jamming_p0" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "GPS jammer detectado en vehículo Booster — probable intento robo. Investigación: docs/runbooks/oncall-telemetry-incidents.md#gnss-jamming"
@@ -303,7 +319,7 @@ resource "google_monitoring_alert_policy" "parser_errors_p1" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
     content   = "El gateway está rechazando packets con parser error. Posible cambio de protocolo del device o bug. Runbook: docs/runbooks/oncall-telemetry-incidents.md#parser-errors"
@@ -333,10 +349,121 @@ resource "google_monitoring_alert_policy" "pubsub_backlog_p2" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   documentation {
-    content   = "Backlog en subscription telemetría. Verificar processor health, ver runbook."
+    content   = "Backlog (conteo) en subscription telemetría. Señal SECUNDARIA: el conteo depende del volumen y de noche (fleet estacionado, poco tráfico) tarda horas en cruzar 1000 → enmascara un consumer caído. El detector PRIMARIO de consumer detenido es `telemetry_consumer_stalled_p1` (oldest_unacked_message_age). Ver runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-consumer-stalled"
+    mime_type = "text/markdown"
+  }
+}
+
+# P1 — Consumer de telemetría DETENIDO (el modo de falla del incidente
+# 2026-06-07: el telemetry-processor escaló a cero y dejó de consumir ~26h).
+#
+# Detector: `oldest_unacked_message_age` — la antigüedad del mensaje más viejo
+# sin ack. Sube +60s/min apenas muere el consumer, INDEPENDIENTE del volumen, así
+# que cruza el umbral incluso de madrugada con poco tráfico (a diferencia del
+# conteo de backlog, que de noche tardó 14h en cruzar 1000).
+#
+# Evidencia (incidente real, verificada en vivo): durante el corte con el Cloud
+# Run en CERO instancias, esta métrica subió linealmente 0.8h→25.6h (no se volvió
+# sparse ni desapareció), y su baseline sano post-fix es 0s. Por eso es threshold
+# positivo (GT 1800), no detección por ausencia. Umbral 30min + 5min sostenido →
+# dispara a ~35min del inicio.
+#
+# Sólo `telemetry-events-processor-sub` (el stream de alto volumen, que es el
+# incidente). NO incluye `crash-traces-processor-sub`: es bursty/raro y un único
+# crash-trace lento (upload GCS + insert BQ con retries) podría envejecer >30min y
+# flapear sin outage real. El stall del consumer de crash-traces ya está cubierto
+# por `pubsub_dlq` (monitoring.tf) + `crash_trace_persistence_failures` (crash-traces.tf).
+resource "google_monitoring_alert_policy" "telemetry_consumer_stalled_p1" {
+  display_name = "Telemetry consumer stalled — oldest unacked > 30min (P1)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = "ERROR"
+
+  conditions {
+    display_name = "oldest unacked message age > 30 min"
+    condition_threshold {
+      filter          = "resource.type=\"pubsub_subscription\" AND resource.labels.subscription_id=\"telemetry-events-processor-sub\" AND metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1800 # 30 min
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = "El telemetry-processor no está consumiendo Pub/Sub (mensajes envejeciendo sin ack). Causa típica: el Cloud Run escaló a cero (es un consumer PULL/StreamingPull — necesita min-instances>=1 + CPU always-on). Cubre 'consumer muerto', NO 'consumer vivo pero fallando el write' (ese es pubsub_dlq + crash_trace_persistence_failures). Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-consumer-stalled"
+    mime_type = "text/markdown"
+  }
+}
+
+# P1 — Gateway de telemetría CAÍDO (no hay capacidad de ingreso).
+#
+# Modo de falla complementario al consumer-stall: si el pod del gateway muere
+# (crash, OOM, evicción sin reschedule, config error) o el cluster lo pierde, NO
+# entra telemetría a Pub/Sub. El consumer-stall NO lo caza (sin mensajes nuevos,
+# oldest_unacked se queda en 0), así que esta es la ÚNICA alerta de ese modo.
+#
+# Detector: liveness POSITIVO del pod vía `kubernetes.io/container/uptime`. Es una
+# serie estable 24/7 que existe mientras el container corre y DESAPARECE si el pod
+# muere — sin enmascaramiento nocturno (a diferencia de device_records, que cae a 0
+# legítimamente con el fleet estacionado; los Network Pings 0xFF no cuentan como
+# records). Verificado en vivo: serie continua, 0 huecos en 96h.
+#
+# `condition_absent` + agregación que COLAPSA pod_name (REDUCE_COUNT por
+# cluster/namespace/container): así un rolling restart (pod_name nuevo) mantiene la
+# serie presente y NO falsea; sólo dispara si NO hay ningún pod del gateway por
+# `duration`. duration=600s (10min) > cualquier gap de restart normal (0 restarts
+# en 96h observados); el consumer-stall (30min) queda como backstop.
+#
+# ⚠️ PENDIENTE VALIDACIÓN EMPÍRICA: una alerta por ausencia no se confía sin verla
+# disparar. Validar con un stop controlado del gateway (~3min, los devices Teltonika
+# buffean y reenvían → pérdida ≈0). Ver runbook §Telemetry ingress stopped y
+# .specs/telemetry-gateway-liveness-alert.
+resource "google_monitoring_alert_policy" "telemetry_gateway_down_p1" {
+  display_name = "Telemetry gateway pod down — no ingress (P1)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = "ERROR"
+
+  conditions {
+    display_name = "no gateway container reporting uptime > 10 min"
+    condition_absent {
+      filter   = "resource.type=\"k8s_container\" AND resource.labels.cluster_name=\"booster-ai-telemetry\" AND resource.labels.namespace_name=\"telemetry\" AND resource.labels.container_name=\"gateway\" AND metric.type=\"kubernetes.io/container/uptime\""
+      duration = "600s"
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MEAN"
+        # Colapsar pod_name → "cuántos pods del gateway reportan". Sobrevive
+        # rolling restarts (el pod nuevo entra al mismo grupo); ausente sólo
+        # cuando NO hay ningún pod del gateway.
+        cross_series_reducer = "REDUCE_COUNT"
+        group_by_fields = [
+          "resource.label.cluster_name",
+          "resource.label.namespace_name",
+          "resource.label.container_name",
+        ]
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = "El pod del gateway de telemetría no reporta hace >10min — no hay capacidad de ingreso (devices Teltonika no pueden conectar). Revisar pod (kubectl get pods -n telemetry), evicción/OOM, LB/DNS, cert TLS. Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-ingress-stopped"
     mime_type = "text/markdown"
   }
 }

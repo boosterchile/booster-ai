@@ -32,10 +32,12 @@ import { and, desc, eq, isNull, lt, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import type { Redis } from 'ioredis';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { assignments, chatMessages, trips, users as usersTable } from '../db/schema.js';
 import { createEphemeralChatSubscription, publishChatMessage } from '../services/chat-pubsub.js';
+import { mintStreamTicket } from '../services/sse-ticket.js';
 import { notifyChatMessageViaPush } from '../services/web-push.js';
 
 let cachedStorage: Storage | null = null;
@@ -107,6 +109,13 @@ export function createChatRoutes(opts: {
    * payload de Web Push (P3.c). Sin esto, no se manda push.
    */
   webAppUrl?: string;
+  /**
+   * Redis para emitir tickets efímeros del SSE (fix-sse-ticket-auth). Sin
+   * esto, POST /:id/messages/stream-ticket responde 503: el cliente no puede
+   * abrir el stream (realtime degrada a polling). El SSE valida el ticket
+   * con el mismo Redis vía el sseTicketStore inyectado en firebaseAuth.
+   */
+  redis?: Redis;
 }) {
   const app = new Hono();
 
@@ -392,6 +401,48 @@ export function createChatRoutes(opts: {
   });
 
   // -------------------------------------------------------------------------
+  // POST /:id/messages/stream-ticket — emite un ticket efímero para el SSE
+  // -------------------------------------------------------------------------
+  // Autenticado por el chain normal (Bearer header → firebaseAuth →
+  // userContext) + resolveChatAccess. Devuelve un ticket de un solo uso que
+  // el cliente pone en la URL del EventSource (?ticket=) en vez del Firebase
+  // ID token — que se filtraba a Cloud Trace/Logging (fix-sse-ticket-auth).
+  // -------------------------------------------------------------------------
+  app.post('/:id/messages/stream-ticket', async (c) => {
+    const assignmentId = c.req.param('id');
+    const access = await resolveChatAccess(c, assignmentId);
+    if (!access.ok) {
+      return access.response;
+    }
+    if (!opts.redis) {
+      return c.json({ error: 'realtime_disabled', code: 'realtime_disabled' }, 503);
+    }
+    const userContext = c.get('userContext');
+    if (!userContext) {
+      opts.logger.error({ path: c.req.path }, 'stream-ticket without userContext');
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    // Restituimos is_demo en el ticket para que el SSE corra demoExpires igual
+    // que un request por header (review 2026-06-14). Acá ya pasó demoExpires,
+    // así que una demo expirada ni siquiera llega a mintear.
+    const claims = c.get('firebaseClaims') as { custom?: Record<string, unknown> } | undefined;
+    const isDemo = claims?.custom?.is_demo === true;
+    try {
+      const { ticket, expiresInSec } = await mintStreamTicket({
+        redis: opts.redis,
+        uid: userContext.user.firebaseUid,
+        assignmentId,
+        isDemo,
+      });
+      return c.json({ ticket, expires_in_sec: expiresInSec });
+    } catch (err) {
+      // Redis caído al persistir → fail-closed 503 (sin ticket no hay stream;
+      // el realtime degrada a polling). Contrato documentado en spec §6.2.
+      opts.logger.warn({ err, assignmentId }, 'stream-ticket: Redis error al mintear');
+      return c.json({ error: 'realtime_disabled', code: 'realtime_disabled' }, 503);
+    }
+  });
+
   // GET /:id/messages/stream — SSE realtime (P3.b)
   // -------------------------------------------------------------------------
   // El cliente abre EventSource a este endpoint. El servidor:

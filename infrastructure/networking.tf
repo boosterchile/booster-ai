@@ -691,6 +691,13 @@ resource "google_dns_record_set" "dkim_google" {
 # No se requiere IAM binding explícito: con un backend service HTTPS serverless,
 # el LB invoca el Cloud Run con su propia identidad interna.
 #
-# IMPORTANTE: este patrón solo funciona si NO hay Ingress del Cloud Run restringido.
-# Por defecto Cloud Run acepta "internal-and-cloud-load-balancing" que permite LB invocation
-# sin allUsers. Si alguien cambia ingress a "internal" puro, el LB no puede entrar.
+# IMPORTANTE (corregido 2026-06-14, ADR-062): el DEFAULT real de Cloud Run v2
+# es "INGRESS_TRAFFIC_ALL" (NO "internal-and-cloud-load-balancing", como decía
+# antes esta nota) — por eso, hasta el endurecimiento, las URLs *.run.app eran
+# alcanzables directo desde internet salteando este LB y Cloud Armor.
+# api y web ahora usan "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER" (compute.tf):
+# ese valor SÍ permite la invocación por este LB (Google Frontend) + callers
+# internos del proyecto, y bloquea el acceso directo al run.app. NO usar
+# "INGRESS_TRAFFIC_INTERNAL_ONLY" en servicios servidos por este LB: rechaza
+# al propio LB. sms-fallback-gateway sigue en ALL (Twilio postea directo, sin
+# NEG acá). Ver ADR-062 para el posture completo por servicio.

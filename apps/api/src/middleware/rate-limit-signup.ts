@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import type { MiddlewareHandler } from 'hono';
 import type Redis from 'ioredis';
+import { extractClientIp } from './client-ip.js';
 
 /**
  * T8 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 SC-1.2.5) — middleware Hono
@@ -76,12 +77,4 @@ export function createRateLimitSignupMiddleware(opts: RateLimitSignupOptions): M
 
     return next();
   };
-}
-
-function extractClientIp(xff: string | undefined): string {
-  if (!xff) {
-    return 'unknown';
-  }
-  const first = xff.split(',')[0]?.trim();
-  return first && first.length > 0 ? first : 'unknown';
 }

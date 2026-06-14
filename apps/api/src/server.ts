@@ -15,6 +15,7 @@ import { ALLOWLISTED_PATHS } from './middleware/is-demo-allowlist.js';
 import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcement.js';
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
+import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
@@ -59,6 +60,7 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush } from './services/web-push.js';
 
 export interface CreateServerOptions {
@@ -266,6 +268,10 @@ export function createServer(opts: CreateServerOptions): Hono {
     const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
       auth: opts.firebaseAuth,
       logger,
+      // SSE de chat: se autentica con ticket efímero por query (no el Firebase
+      // ID token, que se filtraba a Cloud Trace/Logging — fix-sse-ticket-auth).
+      sseTicketStore: (ticket, assignmentId) =>
+        consumeStreamTicket({ redis: redisForRateLimit, ticket, assignmentId }),
     });
     // T5 SEC-001 Sprint 2a — demo-expires middleware. Aplicado DESPUÉS
     // de firebase-auth en cada path: lee firebaseClaims del context y
@@ -450,6 +456,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       webAppUrl: config.WEB_APP_URL,
+      // Redis para emitir los tickets efímeros del SSE (fix-sse-ticket-auth).
+      redis: redisForRateLimit,
       ...(config.CHAT_ATTACHMENTS_BUCKET
         ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
         : {}),
@@ -471,28 +479,20 @@ export function createServer(opts: CreateServerOptions): Hono {
     // del check es 1 regex por request (despreciable) y mantiene la URL
     // elegante /certificates/:tracking/verify (en vez de algo como
     // /public/verify-cert/:tracking).
-    const skipAuthForVerify = /\/certificates\/[^/]+\/verify$/;
-    app.use('/certificates/*', async (c, next) => {
-      if (c.req.method === 'GET' && skipAuthForVerify.test(c.req.path)) {
-        return next();
-      }
-      return firebaseAuthMiddleware(c, next);
-    });
-    app.use('/certificates/*', async (c, next) => {
-      if (c.req.method === 'GET' && skipAuthForVerify.test(c.req.path)) {
-        return next();
-      }
-      return userContextMiddleware(c, next);
-    });
+    // skipPublicVerify (middleware/skip-public-verify.ts, testeado) aplica
+    // el short-circuit del path público GET /verify a cada middleware del
+    // chain. demoExpires cierra el gap Sprint 2c track-1 (auditoría
+    // 2026-06-09): una sesión demo expirada podía seguir listando
+    // certificados en este mount.
+    app.use('/certificates/*', skipPublicVerify(firebaseAuthMiddleware));
+    app.use('/certificates/*', skipPublicVerify(demoExpiresMiddleware));
+    app.use('/certificates/*', skipPublicVerify(userContextMiddleware));
     // T3 SEC-001 Sprint 2b — is-demo-enforcement aplicado a /certificates/*.
     // Para /verify path público, firebaseAuth ya hizo short-circuit a next()
     // sin setear claims → middleware passthrough (isDemoTrueClaim retorna
     // false cuando claims ausentes). Para paths auth-required, claims sí
     // están seteadas → mode requireNotDemo enforces. No wrapper conditional
     // necesario porque el middleware self-handles ambos casos.
-    // NOTE: pre-existing gap — demoExpiresMiddleware no está en este chain
-    // (line 429-440); follow-up Sprint 2c track-1 para alinear con otros
-    // mount points auth-required.
     app.use('/certificates/*', isDemoEnforcementMiddleware);
     app.route('/certificates', createCertificatesRoutes({ db: opts.db, logger, certConfig }));
 
@@ -720,9 +720,23 @@ export function createServer(opts: CreateServerOptions): Hono {
     // que mint el custom token que el cliente usa para signInWithCustomToken).
     // Live siempre — el frontend decide cuándo usarlo según
     // `AUTH_UNIVERSAL_V1_ACTIVATED`. Coexiste con `/auth/driver-activate`.
+    // Rate-limit propio (prefijos rl:login-rut, spec sec-rate-limit-login-rut):
+    // la clave de 6 dígitos exige brute-force protection per ADR-035 Alt-3;
+    // counters separados de driver-activate, misma conexión Redis.
+    const rateLimitLogin = createRateLimitPinMiddleware({
+      redis: redisForRateLimit,
+      logger,
+      keyPrefix: 'rl:login-rut:',
+      ipKeyPrefix: 'rl:login-rut:ip:',
+    });
     app.route(
       '/auth',
-      createAuthUniversalRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
+      createAuthUniversalRoutes({
+        db: opts.db,
+        firebaseAuth: opts.firebaseAuth,
+        logger,
+        rateLimitLogin,
+      }),
     );
 
     // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.

@@ -76,7 +76,14 @@ function makeDb(queues: DbQueues = {}) {
   const buildUpdateChain = () => {
     const chain: Record<string, unknown> = {
       set: vi.fn(() => chain),
-      where: vi.fn(async () => updates.shift() ?? []),
+      where: vi.fn(() => chain),
+      // CAS de estado (ADR-061): default fila-presente para happy paths;
+      // un test puede encolar [] en `updates` para simular el cancel
+      // concurrente (0 filas → TripRequestNotMatchableError).
+      returning: vi.fn(async () => updates.shift() ?? [{ id: 'cas-ok' }]),
+    };
+    chain.then = (resolve: (v: unknown) => unknown) => {
+      return Promise.resolve(resolve(updates.shift() ?? [{ id: 'cas-ok' }]));
     };
     return chain;
   };
@@ -169,7 +176,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -187,7 +193,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -219,7 +224,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -250,7 +254,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -271,7 +274,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -312,7 +314,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -363,7 +364,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 5100 }], // capacity ajustado a 5000kg cargo
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -419,7 +419,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'vB', empresaId: 'emp-B', capacityKg: 5100 }],
           [{ id: 'vC', empresaId: 'emp-C', capacityKg: 5100 }],
         ],
-        updates: [[], []],
         inserts: [
           [],
           [
@@ -457,7 +456,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
           [{ id: 'v2', empresaId: 'emp-2', capacityKg: 6000 }],
         ],
-        updates: [[], []],
         inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
       });
 
@@ -483,7 +481,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
           [], // no vehículo apto
         ],
-        updates: [[], []],
         inserts: [[], []],
       });
 
@@ -504,7 +501,6 @@ describe('runMatching — wire v2 (ADR-033)', () => {
           [{ empresaId: 'emp-1' }],
           [], // 0 empresas activas
         ],
-        updates: [[], []],
         inserts: [[], []],
       });
 

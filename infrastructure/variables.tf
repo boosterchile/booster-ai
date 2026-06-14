@@ -489,3 +489,18 @@ variable "google_workspace_price_per_seat_usd_enterprise" {
   type        = number
   default     = 30
 }
+
+variable "sre_webhook_url" {
+  description = <<-EOT
+    URL del incoming webhook para el segundo canal de alertas (Slack
+    "Incoming Webhooks" o Google Chat space → Apps → Webhooks). Vacío =
+    solo email (estado actual). Al poblarla, TODAS las alert policies
+    notifican a ambos canales. Sensitive: la URL del webhook es un
+    secreto de facto (quien la tenga puede postear al canal).
+    Auditoría 2026-06-09: email único a dev@ era riesgo medio
+    ("un email no leído de madrugada = incidente sin atender").
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
