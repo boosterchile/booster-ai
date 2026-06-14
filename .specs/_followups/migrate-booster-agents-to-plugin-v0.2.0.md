@@ -7,6 +7,13 @@
 
 ---
 
+> **Actualización post-ADR-060 (2026-06-14)**: `agent-rigor` fue retirado del proyecto ([ADR-060](../../docs/adr/060-superpowers-replaces-agent-rigor.md)). En consecuencia:
+> - Los 3 archivos en `agents/` ya **no son overrides que extienden a agent-rigor**; son **sub-agents Booster standalone**. El objetivo de este followup deja de ser "migrar desde agent-rigor" y pasa a ser **consolidar estos overrides locales en `booster-skills`** (eliminar la capa local).
+> - `booster-skills` **ya fue bumpeado a 0.2.0** por ADR-060 (release con las skills `definicion-de-terminado` y `tdd-dominio-critico`). El nombre/objetivo "v0.2.0" de este stub quedó **desfasado**: la consolidación de los 3 agents debe apuntar a una **minor futura (≥ 0.3.0)**, ya que 0.2.0 está ocupada. El PO debe re-evaluar versión destino al retomar.
+> - El resto del procedimiento (coverage diff, validación strict-spec, borrar overrides locales) sigue vigente.
+
+---
+
 ## Objetivo
 
 Migrar el contenido específico Booster de `agents/code-reviewer.md`, `agents/security-auditor.md`, `agents/sre-oncall.md` al plugin `booster-skills` v0.2.0 para eliminar los últimos overrides locales y consolidar el source-of-truth en el plugin.
@@ -33,7 +40,7 @@ Iniciar esta migración cuando ocurra cualquiera de:
 
 1. **Clonar y branch**: clonar `boosterchile/booster-skills` localmente y crear branch `feat/v0.2.0-chile-compliance-overrides`.
 2. **Diseño**: crear nuevo sub-agent `booster-skills:chile-compliance-auditor` que absorba contenido Ley 19.628 + SII/DTE + roles Uber-like + Sustainability Stakeholder. O alternativamente expandir `booster-skills:security-scanner` con esos modules (decisión arquitecto-maestro).
-3. **Decisión sre-oncall**: crear nuevo agent `booster-skills:sre-oncall` (no tiene equivalente en agent-rigor) o expandir skill `booster-deploy-cloud-run` con su contenido SRE.
+3. **Decisión sre-oncall**: crear nuevo agent `booster-skills:sre-oncall` (no tiene equivalente en superpowers ni en booster-skills) o expandir skill `booster-deploy-cloud-run` con su contenido SRE.
 4. **Strict-spec validation**: `claude plugin validate .` + PyYAML para frontmatters + `json.loads` para manifests.
 5. **CHANGELOG + version bump**: `version` en `plugin.json` y `marketplace.json` → `0.2.0`; CHANGELOG con notes detalladas.
 6. **Release**: tag `v0.2.0` + `gh release create`.
