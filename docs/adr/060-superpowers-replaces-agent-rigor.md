@@ -1,6 +1,6 @@
 # ADR-060 — Reemplazo de agent-rigor por superpowers como capa de disciplina genérica
 
-**Estado**: Proposed
+**Estado**: Accepted
 **Fecha**: 2026-06-14
 **Decider**: Felipe Vicencio (Product Owner)
 **Supersedes**: [ADR-049](./049-claude-code-plugin-system-adoption.md) (parcialmente — solo la Capa 1)
