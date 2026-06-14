@@ -153,7 +153,7 @@ Todo input externo pasa por Zod **antes** de tocar lógica:
 
 ### Deploy
 
-- **No existe entorno staging** (backlog `#STAGING-ENV`: requiere un 2º GCP project con infra paralela). El `cloudbuild.staging.yaml` está inactivo; `release.yml` removió el job `deploy-staging`.
+- **No existe entorno staging** (backlog `#STAGING-ENV`: requiere un 2º GCP project con infra paralela). El `cloudbuild.staging.yaml` fue eliminado (#445, higiene tooling); `release.yml` removió el job `deploy-staging`. El nightly `e2e-staging.yml` corre Playwright contra **producción** (`PRODUCTION_URL`; `STAGING_URL` solo aplicaría en PR, que no existe) por falta de staging — decisión deliberada **pendiente de re-firma del PO** o de priorizar `#STAGING-ENV`.
 - **Producción**: merge a `main` → `release.yml` (GitHub Actions vía Workload Identity Federation) → **requiere aprobación humana** en el GitHub Environment `production` (`required_reviewers`, enforced desde 2026-05-29) → Cloud Build `cloudbuild.production.yaml` canary (1% tráfico → 30 min → 100%). El step `canary-verify` es placeholder (`exit 0`): la promoción a 100% se observa/decide humanamente, no por verificación automática. Ver inventario `.specs/adr-vs-prod-inventory/inventory.md` finding #1.
 - **Monitoreo 2h post-deploy**: error rate, latency P95, logs limpios.
 - **Regla de horario de deploy eliminada 2026-05-29 por decisión del PO**: el control de riesgo de deploy se ejerce vía gate de aprobación (`required_reviewers` en el GitHub Environment `production`) + observación humana del canary, no vía restricción de calendario.
@@ -217,12 +217,13 @@ Booster-AI/
 │   ├── whatsapp-bot/           # Webhook Meta + NLU
 │   └── document-service/       # DTE + Carta Porte + OCR
 │
-├── packages/                   # ~21 packages compartidos
-│   # shared-schemas, logger, ai-provider, config,
-│   # trip-state-machine, codec8-parser, pricing-engine,
-│   # matching-algorithm, carbon-calculator, whatsapp-client,
-│   # dte-provider, carta-porte-generator, document-indexer,
-│   # notification-fan-out, ui-tokens, ui-components, etc.
+├── packages/                   # 21 packages compartidos
+│   # ai-provider, carbon-calculator, carta-porte-generator,
+│   # certificate-generator, coaching-generator, codec8-parser, config,
+│   # document-indexer, driver-scoring, dte-provider, factoring-engine,
+│   # logger, matching-algorithm, notification-fan-out, otel-bootstrap,
+│   # pricing-engine, shared-schemas, trip-state-machine, ui-components,
+│   # ui-tokens, whatsapp-client
 │
 ├── infrastructure/             # Terraform 100% IaC (incluye IAM humana)
 │   ├── main.tf
@@ -233,7 +234,7 @@ Booster-AI/
     ├── ci.yml                  # lint + test + coverage + build
     ├── security.yml            # gitleaks + npm audit + CodeQL
     ├── release.yml             # Changesets + Cloud Build
-    └── e2e-staging.yml         # Playwright contra staging
+    └── e2e-staging.yml         # Playwright; nightly pega a PRODUCCIÓN (no hay staging, #STAGING-ENV)
 ```
 
 Cambios v2→v3 (post-PR-2 / ADR-049):
