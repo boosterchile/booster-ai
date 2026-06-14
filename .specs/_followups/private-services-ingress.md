@@ -25,4 +25,4 @@ Validar los callers de cada uno antes de flipear:
 3. Smoke por servicio: el caller legítimo sigue 200; el run.app directo desde fuera → rechazado.
 
 ## Estado
-Pendiente.
+**RESUELTO — ADR-063 / feat-ingress-posture-round-2 (2026-06-14)**: matching-engine, telemetry-processor, notification, document → INTERNAL_ONLY en compute.tf. Verificado: ninguno recibe inbound HTTP (0 NEG, 0 scheduler, 0 service-to-service, 0 Eventarc, 0 push). telemetry-processor es pull ACTIVO (saliente); los otros 3 son SKELETONS (~13 líneas, sin consumir aún) → INTERNAL_ONLY es secure-by-default, a re-evaluar al implementarlos si agregan inbound (ADR-063 §Re-evaluación). Apply staged por el PO (spec §11).
