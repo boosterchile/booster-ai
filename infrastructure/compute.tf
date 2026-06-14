@@ -311,6 +311,13 @@ module "service_api" {
   # policy en org-policies.tf permite allUsers a nivel proyecto.
   public = true
 
+  # ADR-062: solo alcanzable vía GCLB (+ Cloud Armor) y callers internos del
+  # proyecto (Cloud Scheduler /admin/jobs, whatsapp-bot→api). Cierra el
+  # bypass directo del *.run.app que hacía forjable el XFF (review ola 2).
+  # `public=true` se mantiene: el GCLB reenvía tráfico anónimo (preflight
+  # CORS, browsers) y el ingress es la barrera de RED, complementaria al IAM.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   # T13 SEC-001 Sprint 2b (SC-1.2.3 + ADR-052) — Cloud Build canary deploy
@@ -349,6 +356,10 @@ module "service_web" {
   # El override de org policy en org-policies.tf permite allUsers a nivel
   # proyecto, así que la binding está autorizada.
   public = true
+
+  # ADR-062: servida 100% vía GCLB (app/demo/marketing domain). Sin callers
+  # directos al run.app → canary seguro del posture internal-and-cloud-LB.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -506,6 +517,12 @@ module "service_sms_fallback_gateway" {
   # public=true porque Twilio postea desde su infra al webhook. La
   # firma HMAC es la barrera de seguridad (no IAM/OIDC).
   public = true
+
+  # ADR-062: SE MANTIENE en ALL a propósito (NO endurecer). Twilio postea
+  # directo a su URL *.run.app y este servicio NO tiene NEG en el GCLB —
+  # restringir el ingress rompería la ingesta de SMS de respaldo. Decisión
+  # explícita, no omisión. Endurecer requiere primero frontear con GCLB.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   secret_versions_ready = local.all_secret_versions_ready
 

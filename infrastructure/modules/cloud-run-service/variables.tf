@@ -146,3 +146,36 @@ variable "traffic_managed_externally" {
   type        = bool
   default     = false
 }
+
+variable "ingress" {
+  description = <<-EOT
+    Ingress de red del Cloud Run service (qué orígenes pueden alcanzarlo a
+    nivel de red, ANTES de IAM). Default `INGRESS_TRAFFIC_ALL` = el default
+    real de Cloud Run v2 → preserva el comportamiento histórico de los 8
+    servicios cuando no se override.
+
+    Valores:
+      - INGRESS_TRAFFIC_ALL: alcanzable directo por su URL *.run.app desde
+        internet. NECESARIO para servicios que reciben webhooks externos
+        directo al run.app sin pasar por el GCLB (ej. sms-fallback-gateway:
+        Twilio postea sin NEG en el LB).
+      - INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER: solo tráfico interno del
+        proyecto (VPC, Cloud Scheduler/Tasks/Pub-Sub mismo proyecto,
+        service-to-service) + el Application LB (GCLB + Cloud Armor). El
+        *.run.app deja de ser alcanzable directo desde internet. Es el
+        posture endurecido para servicios servidos vía GCLB (ADR-062).
+      - INGRESS_TRAFFIC_INTERNAL_ONLY: solo interno, SIN LB — no usar en
+        servicios públicos (rechaza al propio GCLB).
+  EOT
+  type        = string
+  default     = "INGRESS_TRAFFIC_ALL"
+
+  validation {
+    condition = contains([
+      "INGRESS_TRAFFIC_ALL",
+      "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER",
+      "INGRESS_TRAFFIC_INTERNAL_ONLY",
+    ], var.ingress)
+    error_message = "ingress debe ser INGRESS_TRAFFIC_ALL, INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER o INGRESS_TRAFFIC_INTERNAL_ONLY."
+  }
+}
