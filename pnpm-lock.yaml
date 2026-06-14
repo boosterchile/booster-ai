@@ -10,6 +10,7 @@ overrides:
   http-proxy-agent@<7.0.0: '>=7.0.0'
   uuid@<11.1.1: '>=11.1.1'
   '@grpc/grpc-js@<1.14.4': '>=1.14.4'
+  tmp@<0.2.6: '>=0.2.6'
 
 importers:
 
@@ -101,10 +102,10 @@ importers:
         version: 7.19.0
       '@hono/node-server':
         specifier: ^1.13.7
-        version: 1.19.14(hono@4.12.18)
+        version: 1.19.14(hono@4.12.25)
       '@hono/zod-validator':
         specifier: ^0.7.6
-        version: 0.7.6(hono@4.12.18)(zod@3.25.76)
+        version: 0.7.6(hono@4.12.25)(zod@3.25.76)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -145,8 +146,8 @@ importers:
         specifier: ^171.4.0
         version: 171.4.0
       hono:
-        specifier: ^4.12.18
-        version: 4.12.18
+        specifier: ^4.12.25
+        version: 4.12.25
       import-in-the-middle:
         specifier: ^1.13.0
         version: 1.15.0
@@ -321,10 +322,10 @@ importers:
         version: 4.11.0
       '@hono/node-server':
         specifier: ^1.13.7
-        version: 1.19.14(hono@4.12.18)
+        version: 1.19.14(hono@4.12.25)
       '@hono/zod-validator':
         specifier: ^0.7.6
-        version: 0.7.6(hono@4.12.18)(zod@3.25.76)
+        version: 0.7.6(hono@4.12.25)(zod@3.25.76)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -344,8 +345,8 @@ importers:
         specifier: ^1.36.0
         version: 1.40.0
       hono:
-        specifier: ^4.12.18
-        version: 4.12.18
+        specifier: ^4.12.25
+        version: 4.12.25
       import-in-the-middle:
         specifier: ^1.13.0
         version: 1.15.0
@@ -688,7 +689,7 @@ importers:
         version: 3.0.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))
       '@hono/node-server':
         specifier: ^1.13.7
-        version: 1.19.14(hono@4.12.18)
+        version: 1.19.14(hono@4.12.25)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
@@ -711,8 +712,8 @@ importers:
         specifier: ^9.15.0
         version: 9.15.1
       hono:
-        specifier: ^4.12.18
-        version: 4.12.18
+        specifier: ^4.12.25
+        version: 4.12.25
       import-in-the-middle:
         specifier: ^1.13.0
         version: 1.15.0
@@ -5239,8 +5240,8 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  hono@4.12.18:
-    resolution: {integrity: sha512-RWzP96k/yv0PQfyXnWjs6zot20TqfpfsNXhOnev8d1InAxubW93L11/oNUc3tQqn2G0bSdAOBpX+2uDFHV7kdQ==}
+  hono@4.12.25:
+    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@4.0.0:
@@ -6468,6 +6469,7 @@ packages:
   recharts@2.15.4:
     resolution: {integrity: sha512-UT/q6fwS3c1dHbXv2uFgYJ9BMFHu3fwnd7AYZaEQhXuYQ4hgsxLvsUXzGdKeZrW5xopzDCvuA2N41WJ88I7zIw==}
     engines: {node: '>=14'}
+    deprecated: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
     peerDependencies:
       react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -6972,8 +6974,8 @@ packages:
     resolution: {integrity: sha512-WMi/OQ2axVTf/ykqCQgXiIct+mSQDFdH2fkwhPwgEwvJ1kSzZRiinb0zF2Xb8u4+OqPChmyI6MEu4EezNJz+FQ==}
     hasBin: true
 
-  tmp@0.2.5:
-    resolution: {integrity: sha512-voyz6MApa1rQGUxT3E+BK7/ROe8itEx7vD8/HEvt4xwXucvQ5G5oeEiHkmHZJuBO21RpOf+YYm9MOivj709jow==}
+  tmp@0.2.7:
+    resolution: {integrity: sha512-e0votIpp4Uo2AJYSzVHV6xCcawuiez3DzqDAbrTc3YxBkplN6e+dM13ZeIcZnDg/QpSuU2zfZ3rzwY8ukEnaXw==}
     engines: {node: '>=14.14'}
 
   to-regex-range@5.0.1:
@@ -9246,13 +9248,13 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@hono/node-server@1.19.14(hono@4.12.18)':
+  '@hono/node-server@1.19.14(hono@4.12.25)':
     dependencies:
-      hono: 4.12.18
+      hono: 4.12.25
 
-  '@hono/zod-validator@0.7.6(hono@4.12.18)(zod@3.25.76)':
+  '@hono/zod-validator@0.7.6(hono@4.12.25)(zod@3.25.76)':
     dependencies:
-      hono: 4.12.18
+      hono: 4.12.25
       zod: 3.25.76
 
   '@hookform/resolvers@3.10.0(react-hook-form@7.75.0(react@18.3.1))':
@@ -12187,7 +12189,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.18: {}
+  hono@4.12.25: {}
 
   html-encoding-sniffer@4.0.0:
     dependencies:
@@ -13969,7 +13971,7 @@ snapshots:
       properties-reader: 3.0.1
       ssh-remote-port-forward: 1.0.4
       tar-fs: 3.1.2
-      tmp: 0.2.5
+      tmp: 0.2.7
       undici: 7.26.0
     transitivePeerDependencies:
       - bare-abort-controller
@@ -14027,7 +14029,7 @@ snapshots:
     dependencies:
       tldts-core: 6.1.86
 
-  tmp@0.2.5: {}
+  tmp@0.2.7: {}
 
   to-regex-range@5.0.1:
     dependencies:
