@@ -14,4 +14,5 @@
 
 ## Estado
 
-Pendiente de aprobación del PO para los puntos 1-3; el punto técnico es ejecutable en cualquier ciclo.
+- **Puntos 1-3 RESUELTOS 2026-06-14** (PR `docs/followups-stale-refs-y-retention-gate`, aprobación PO explícita en sesión): §Deploy corregida (cloudbuild.staging.yaml eliminado en #445; e2e nightly pega a PRODUCCIÓN documentado); §Estructura packages 21 exacto + lista al día; comentario de `e2e-staging.yml` corregido. **Sub-decisión abierta del punto 3**: la re-firma del PO de "e2e nightly contra producción" vs priorizar `#STAGING-ENV` sigue siendo decisión del PO (ahora documentada en CLAUDE.md, no resuelta).
+- **Ítem técnico (`booleanFlag` en `apps/api/src/config.ts`)**: PENDIENTE — ejecutable en cualquier ciclo (sin tocar CLAUDE.md). Incluye la decisión de contrato fail-closed (error Zod al startup) vs default silencioso.

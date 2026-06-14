@@ -173,3 +173,20 @@ La auditoría propuso inicialmente lockear también el bucket forense `{project}
 ## 14bis. Estado del prerequisito 14.1 (2026-06-11)
 
 **RESUELTO con la opción (b)** — decisión PO 2026-06-11 vía AskUserQuestion: bucket propio `{project}-certificates-{env}` sin retention policy (PR del ciclo `feat-certificados-bucket-propio`; migración operativa en `docs/runbooks/migracion-bucket-certificados.md`). Tras ejecutar esa migración, `documents` queda 100% DTE/mandato SII y el plan §14.3 continúa en el paso 2 (validación SC-4) — la decisión del lock sigue siendo del PO en sesión dedicada.
+
+## 15. Estado 2026-06-14 — lock DIFERIDO (SC-4 insatisfacible hoy)
+
+Verificación read-only en prod (gcloud, credenciales vivas):
+
+- Bucket `gs://booster-ai-494222-documents-prod`: `retentionPeriod=189216000` (6 años) ✓, **`isLocked` ausente (= false)** — sin cambios desde 2026-06-02.
+- **El bucket está VACÍO (0 objetos)** y **no hay actividad DTE en prod** (0 writes en logs de 7 días). El producto aún no emite DTEs reales; `document-service` deployado pero ocioso.
+
+**Conclusión**: **SC-4 (corrida 48h del write/read/lifecycle de DTEs reales) es insatisfacible hoy** — no hay DTEs que validar. Aplicar `is_locked=true` ahora sería exactamente el peor escenario que §0 advierte: lock irreversible de 6 años sobre un write path **nunca ejercido en prod**, sin la validación no-negociable. **El lock se DIFIERE.**
+
+**Trigger para retomar** (todas las condiciones): (1) emisión real de DTEs en prod operando; (2) SC-4 ejecutada 48h contra ese tráfico real con evidencia en `validation-48h-evidence.md`; (3) decisión PO en frío. Mientras tanto `is_locked=false` es **deliberado, no postergación** — el comentario de `infrastructure/storage.tf` se actualizó para reflejar este gate (antes decía "CAMBIAR A true MANUALMENTE", stale).
+
+Pendiente de readiness (opcional, no urgente; se puede preparar antes del trigger): smoke script `scripts/dte-write-read-smoke.ts` (T1) y el ADR de SC-3 (lock documents / no-lock crash-traces). No se escriben aún para no anticipar una decisión diferida.
+
+## 14ter. Decision log (continuación)
+
+- 2026-06-14 — Lock DIFERIDO. Evidencia prod read-only: bucket `documents-prod` vacío, 0 tráfico DTE → SC-4 insatisfacible. No se toca el bucket ni el Terraform funcional (solo el comentario stale de storage.tf). Sigue Draft; la decisión irreversible queda gateada por la emisión real de DTEs + SC-4 + decisión PO en frío.
