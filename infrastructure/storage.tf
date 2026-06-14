@@ -139,10 +139,15 @@ resource "google_storage_bucket" "documents" {
     log_object_prefix = "documents/"
   }
 
-  # Retention Lock 6 años (SII Chile)
+  # Retention Lock 6 años (SII Chile). is_locked se mantiene FALSE de forma
+  # DELIBERADA: el lock es IRREVERSIBLE (6 años por objeto, sin des-lock).
+  # Gate para pasarlo a true (.specs/sec-h3-dte-retention-lock §3):
+  #   (a) emisión real de DTEs en prod, (b) validación SC-4 (48h write/read sin
+  #   issues), (c) decisión PO en frío. 2026-06-14: bucket vacío / 0 tráfico DTE
+  #   → SC-4 insatisfacible; se mantiene false. NO cambiar sin cumplir el gate.
   retention_policy {
     retention_period = 189216000 # 6 años en segundos = 6 * 365.25 * 24 * 3600
-    is_locked        = false     # CAMBIAR A true MANUALMENTE después de validar
+    is_locked        = false
   }
 
   lifecycle_rule {
