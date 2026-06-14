@@ -84,14 +84,13 @@ module "service_api" {
     FIREBASE_PROJECT_ID = var.project_id
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
-    #   - cloud_run_api_url (*.run.app): tráfico interno Cloud Run-to-Cloud Run
-    #     (bot → api). Es el camino canónico — bypass del LB, sin Cloud Armor.
-    #   - public_api_url (api.boosterchile.com): por si un caller futuro entra
-    #     vía LB y necesita autenticarse con OIDC contra el api (ej. backend
-    #     externo que solo conoce la URL pública).
-    # Hoy en producción solo el bot llama, y va por *.run.app. La pública
-    # queda aceptada defensivamente — su costo es 0 y abre la opción sin
-    # tener que modificar el middleware después.
+    #   - public_api_url (api.boosterchile.com): el bot → api va por acá
+    #     desde ADR-062 (el api pasó a ingress INTERNAL_LOAD_BALANCER, así
+    #     que el bot ya no puede usar el *.run.app como service-to-service).
+    #   - cloud_run_api_url (*.run.app): aceptada para los 9 Cloud Scheduler
+    #     jobs, que entran por el run.app del api como tráfico interno del
+    #     proyecto (no se re-rutearon — siguen funcionando con ingress interno).
+    # Ambas se mantienen aceptadas; su costo es 0.
     API_AUDIENCE      = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
