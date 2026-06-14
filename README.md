@@ -112,9 +112,8 @@ packages/
 └── ui-components/           # shadcn/ui + componentes Booster
 
 infrastructure/              # Terraform (GCP)
-agents/                      # 3 overrides Booster (ver §Capas adicionales en CLAUDE.md)
 .claude/                     # Plugins config + ledger + worktrees (post-ADR-049/060)
-docs/adr/                    # Architecture Decision Records (001..060)
+docs/adr/                    # Architecture Decision Records (001..064)
 ```
 
 ## Desarrollo con agentes de IA

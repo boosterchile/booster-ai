@@ -1,9 +1,23 @@
 # Followup: migrate-booster-agents-to-plugin-v0.2.0
 
-**Status**: Draft (stub, no ejecutar todavía)
+**Status**: ✅ **Done (2026-06-14)** — consolidado en `booster-skills@0.3.0`
 **Created**: 2026-05-20
 **Triggered by**: ADR-049 (PR-2 cierra cleanup local pero deja overrides Booster en `agents/` raíz)
 **Estimated effort**: 1-2 días (depende de magnitud del coverage diff)
+
+---
+
+> ## ✅ Cierre (2026-06-14)
+>
+> Ejecutado vía [`.specs/consolidate-agents-v0.3.0/spec.md`](../consolidate-agents-v0.3.0/spec.md) y registrado en **[ADR-064](../../docs/adr/064-consolidate-local-subagents-into-booster-skills.md)**.
+>
+> - `security-auditor` → plegado en `booster-skills:security-scanner` (compliance Chile, secciones 13–16).
+> - `sre-oncall` → nuevo sub-agent `booster-skills:sre-oncall` (revisor SRE pre-merge).
+> - `code-reviewer` → retirado; ADR-compliance plegado en `booster-skills:booster-stack-conventions` (paso 7).
+> - Release: **PR `boosterchile/booster-skills#2`** mergeado → tag/release **`v0.3.0`**.
+> - `agents/` raíz de este repo **eliminado**; CLAUDE.md §Capas adicionales actualizado.
+>
+> El procedimiento original abajo queda como **registro histórico** (el plan real ejecutado fue el de `consolidate-agents-v0.3.0`, que difiere: se decidió extender `security-scanner` en vez de crear `chile-compliance-auditor`, y retirar `code-reviewer` en vez de portarlo).
 
 ---
 
