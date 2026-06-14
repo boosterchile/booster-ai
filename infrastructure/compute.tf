@@ -84,14 +84,13 @@ module "service_api" {
     FIREBASE_PROJECT_ID = var.project_id
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
-    #   - cloud_run_api_url (*.run.app): tráfico interno Cloud Run-to-Cloud Run
-    #     (bot → api). Es el camino canónico — bypass del LB, sin Cloud Armor.
-    #   - public_api_url (api.boosterchile.com): por si un caller futuro entra
-    #     vía LB y necesita autenticarse con OIDC contra el api (ej. backend
-    #     externo que solo conoce la URL pública).
-    # Hoy en producción solo el bot llama, y va por *.run.app. La pública
-    # queda aceptada defensivamente — su costo es 0 y abre la opción sin
-    # tener que modificar el middleware después.
+    #   - public_api_url (api.boosterchile.com): el bot → api va por acá
+    #     desde ADR-062 (el api pasó a ingress INTERNAL_LOAD_BALANCER, así
+    #     que el bot ya no puede usar el *.run.app como service-to-service).
+    #   - cloud_run_api_url (*.run.app): aceptada para los 9 Cloud Scheduler
+    #     jobs, que entran por el run.app del api como tráfico interno del
+    #     proyecto (no se re-rutearon — siguen funcionando con ingress interno).
+    # Ambas se mantienen aceptadas; su costo es 0.
     API_AUDIENCE      = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
@@ -311,6 +310,13 @@ module "service_api" {
   # policy en org-policies.tf permite allUsers a nivel proyecto.
   public = true
 
+  # ADR-062: solo alcanzable vía GCLB (+ Cloud Armor) y callers internos del
+  # proyecto (Cloud Scheduler /admin/jobs, whatsapp-bot→api). Cierra el
+  # bypass directo del *.run.app que hacía forjable el XFF (review ola 2).
+  # `public=true` se mantiene: el GCLB reenvía tráfico anónimo (preflight
+  # CORS, browsers) y el ingress es la barrera de RED, complementaria al IAM.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   # T13 SEC-001 Sprint 2b (SC-1.2.3 + ADR-052) — Cloud Build canary deploy
@@ -349,6 +355,10 @@ module "service_web" {
   # El override de org policy en org-policies.tf permite allUsers a nivel
   # proyecto, así que la binding está autorizada.
   public = true
+
+  # ADR-062: servida 100% vía GCLB (app/demo/marketing domain). Sin callers
+  # directos al run.app → canary seguro del posture internal-and-cloud-LB.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -507,6 +517,12 @@ module "service_sms_fallback_gateway" {
   # firma HMAC es la barrera de seguridad (no IAM/OIDC).
   public = true
 
+  # ADR-062: SE MANTIENE en ALL a propósito (NO endurecer). Twilio postea
+  # directo a su URL *.run.app y este servicio NO tiene NEG en el GCLB —
+  # restringir el ingress rompería la ingesta de SMS de respaldo. Decisión
+  # explícita, no omisión. Endurecer requiere primero frontear con GCLB.
+  ingress = "INGRESS_TRAFFIC_ALL"
+
   secret_versions_ready = local.all_secret_versions_ready
 
   labels = { app = "sms-fallback-gateway", env = var.environment, wave = "2" }
@@ -539,17 +555,19 @@ module "service_whatsapp_bot" {
   # networking.tf).
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME = "booster-ai-whatsapp-bot"
-    # Tráfico interno bot → api: usar *.run.app directo (NO el LB público).
-    # Razones:
-    #   1. El LB tiene Cloud Armor con scannerdetection-v33-stable que falsea
-    #      positivo con bodies del api (contienen JSON con identifiers que el
-    #      WAF confunde con scanner output) → 403 desde el WAF.
-    #   2. *.run.app es el canal canónico Cloud Run-to-Cloud Run, autenticado
-    #      via OIDC token con audience = URL del service. Cero hops adicionales,
-    #      cero costo de LB, cero falsos positivos del WAF.
-    # Solo Twilio (caller externo, no controlado) entra por el LB público.
-    API_URL           = local.cloud_run_api_url
-    API_OIDC_AUDIENCE = local.cloud_run_api_url
+    # bot → api vía el LB público (api.boosterchile.com), NO el *.run.app.
+    # Cambiado 2026-06-14 (ADR-062): el api pasa a ingress
+    # INTERNAL_LOAD_BALANCER, por lo que su *.run.app deja de ser alcanzable
+    # como service-to-service (el egress del bot es PRIVATE_RANGES_ONLY → el
+    # run.app es IP pública → saldría a internet y el ingress interno lo
+    # rechaza). El LB SÍ es un origen aceptado por internal-and-cloud-LB.
+    # El motivo histórico de usar run.app (evitar el falso positivo de
+    # scannerdetection del WAF) ya NO aplica: la regla ALLOW priority-390 de
+    # Cloud Armor (networking.tf) bypassa el WAF para host==api.boosterchile.com.
+    # El api valida ambos audiences (API_AUDIENCE, compute.tf:95). Trade-off:
+    # un hop de LB (~ms) — aceptable por el endurecimiento de red del api.
+    API_URL           = local.public_api_url
+    API_OIDC_AUDIENCE = local.public_api_url
     # TWILIO_FROM_NUMBER: variable porque cambia entre sandbox y producción.
     # Sandbox compartido (+14155238886) hasta que +19383365293 esté
     # registrado como WhatsApp Sender via Meta business verification (runbook

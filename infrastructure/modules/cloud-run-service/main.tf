@@ -3,6 +3,10 @@ resource "google_cloud_run_v2_service" "service" {
   project  = var.project_id
   location = var.region
 
+  # Ingress de red (ADR-062). Default ALL preserva el comportamiento; los
+  # servicios servidos vía GCLB lo restringen a internal-and-cloud-LB.
+  ingress = var.ingress
+
   deletion_protection = var.deletion_protection
 
   template {
