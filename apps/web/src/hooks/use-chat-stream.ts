@@ -10,17 +10,15 @@
  *     falla. EventSource ya hace reconnect nativo pero podemos perderlo
  *     en errores transitorios — agregamos backoff manual.
  *
- * Auth: el endpoint SSE requiere Firebase ID token. EventSource NO
- * soporta headers custom, así que el token va como query param. El
- * server lee ?auth=<token> en el middleware especial. Trade-off: el
- * token aparece en logs server. Mitigado por:
- *   - Tokens Firebase tienen TTL 1h.
- *   - URL es HTTPS only.
- *   - El uso es interno (no compartido).
- *
- * Si en el futuro queremos eliminar este trade-off, migrar a WebSocket
- * (donde sí podemos mandar headers en el handshake) o a fetch streaming
- * con ReadableStream (no soportado en todos los browsers).
+ * Auth (fix-sse-ticket-auth): EventSource NO soporta headers custom, así
+ * que el auth viaja en la URL. NO mandamos el Firebase ID token — se
+ * filtraba EN CRUDO a Cloud Trace/Logging (telemetría de plataforma de
+ * Cloud Run que ningún scrubbing de app alcanza). En su lugar:
+ *   1. POST /assignments/:id/messages/stream-ticket con el Bearer header
+ *      (autenticación normal, sin exponer el token en la URL) → {ticket}.
+ *   2. EventSource a `...?ticket=<ticket>`. El ticket es de UN SOLO USO,
+ *      TTL ~60s, scoped al assignment → su filtrado post-consumo es inocuo.
+ * Cada reconnect pide un ticket nuevo (son single-use).
  */
 
 import { useEffect, useRef } from 'react';
@@ -75,8 +73,6 @@ export function useChatStream(opts: UseChatStreamOptions): void {
         return;
       }
 
-      // Firebase token para auth — va como query param porque EventSource
-      // no soporta headers.
       const user = firebaseAuth.currentUser;
       if (!user) {
         // Sin user, no hay auth posible. Reintentamos en un rato (puede
@@ -84,10 +80,40 @@ export function useChatStream(opts: UseChatStreamOptions): void {
         reconnectTimer = setTimeout(connect, 2000);
         return;
       }
-      const token = await user.getIdToken();
 
+      // 1. Pedir un ticket efímero con el Bearer header (el token NO va en la
+      //    URL — fix-sse-ticket-auth). single-use, así que se pide en cada
+      //    connect/reconnect.
+      let ticket: string;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream-ticket`,
+          { method: 'POST', headers: { authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) {
+          throw new Error(`stream-ticket ${res.status}`);
+        }
+        ticket = ((await res.json()) as { ticket: string }).ticket;
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        // Sin ticket no hay stream — reconnect con backoff (el realtime es
+        // no-crítico; el cliente sigue refrescando por polling/useQuery).
+        logger.warn({ err }, 'useChatStream: no se pudo obtener stream-ticket');
+        onDisconnectRef.current?.();
+        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+        reconnectTimer = setTimeout(connect, backoff);
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+
+      // 2. Abrir el EventSource con el ticket en la URL.
       const url = new URL(`${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream`);
-      url.searchParams.set('auth', token);
+      url.searchParams.set('ticket', ticket);
 
       eventSource = new EventSource(url.toString());
 

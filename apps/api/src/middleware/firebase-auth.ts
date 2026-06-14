@@ -33,6 +33,15 @@ export interface FirebaseClaims {
  * Ambos usan Bearer token pero las claims son distintas (Firebase: uid +
  * email + custom; OIDC SA: aud + email-of-SA + iss=accounts.google.com).
  */
+/**
+ * Resuelve un ticket efímero del SSE → uid. Inyectado desde server.ts
+ * (consumeStreamTicket sobre Redis). Devuelve el uid si el ticket es válido,
+ * de un solo uso, no expiró y coincide con el assignment del path; null si no.
+ */
+export type SseTicketStore = (ticket: string, assignmentId: string) => Promise<string | null>;
+
+const STREAM_PATH_RE = /^\/assignments\/([^/]+)\/messages\/stream$/;
+
 export function createFirebaseAuthMiddleware(opts: {
   /**
    * Instancia de firebase-admin Auth. Inyectable para tests (stub
@@ -40,26 +49,47 @@ export function createFirebaseAuthMiddleware(opts: {
    */
   auth: Auth;
   logger: Logger;
+  /**
+   * Store de tickets del SSE (fix-sse-ticket-auth). Si está presente, el
+   * GET del stream se autentica con `?ticket=<efímero>` en vez de un Firebase
+   * ID token en la URL — que se filtraba a Cloud Trace/Logging. Sin store,
+   * el stream no tiene vía de auth por query (devuelve 401).
+   */
+  sseTicketStore?: SseTicketStore;
 }): MiddlewareHandler {
   return async (c, next) => {
-    // Path normal: token en header Authorization. Cubre 99% de los casos.
+    // SSE: EventSource no soporta headers. En vez del Firebase ID token en la
+    // URL (se filtraba EN CRUDO a Cloud Trace/Logging — fix-sse-ticket-auth),
+    // el GET del stream se autentica con un ticket efímero de un solo uso.
+    const streamMatch = STREAM_PATH_RE.exec(c.req.path);
+    if (c.req.method === 'GET' && streamMatch && !c.req.header('authorization')) {
+      const assignmentId = streamMatch[1] as string;
+      const ticket = c.req.query('ticket');
+      const uid =
+        ticket && opts.sseTicketStore ? await opts.sseTicketStore(ticket, assignmentId) : null;
+      if (!uid) {
+        opts.logger.warn({ path: c.req.path }, 'SSE ticket inválido/ausente');
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+      // El ticket prueba la identidad; userContextMiddleware resuelve el user
+      // por uid (solo necesita claims.uid). El resto del chain queda intacto.
+      c.set('firebaseClaims', {
+        uid,
+        email: undefined,
+        emailVerified: false,
+        name: undefined,
+        picture: undefined,
+        custom: {},
+      } satisfies FirebaseClaims);
+      await next();
+      return;
+    }
+
+    // Path normal: token en header Authorization.
     const authHeader = c.req.header('authorization');
     let token: string | null = null;
     if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.slice('Bearer '.length).trim();
-    } else if (
-      // Fallback: token en query param `?auth=...`. Solo para endpoints
-      // SSE (EventSource del browser no soporta headers custom). Estricto:
-      // solo aceptamos query auth en paths que terminan en `/stream` y
-      // método GET. Cualquier otro endpoint con `?auth=` lo ignoramos —
-      // si no hay header, devolvemos 401.
-      c.req.method === 'GET' &&
-      c.req.path.endsWith('/stream')
-    ) {
-      const queryAuth = c.req.query('auth');
-      if (queryAuth) {
-        token = queryAuth;
-      }
     }
 
     if (!token) {
