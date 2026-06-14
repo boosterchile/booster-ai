@@ -60,6 +60,7 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush } from './services/web-push.js';
 
 export interface CreateServerOptions {
@@ -267,6 +268,10 @@ export function createServer(opts: CreateServerOptions): Hono {
     const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
       auth: opts.firebaseAuth,
       logger,
+      // SSE de chat: se autentica con ticket efímero por query (no el Firebase
+      // ID token, que se filtraba a Cloud Trace/Logging — fix-sse-ticket-auth).
+      sseTicketStore: (ticket, assignmentId) =>
+        consumeStreamTicket({ redis: redisForRateLimit, ticket, assignmentId }),
     });
     // T5 SEC-001 Sprint 2a — demo-expires middleware. Aplicado DESPUÉS
     // de firebase-auth en cada path: lee firebaseClaims del context y
@@ -451,6 +456,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       webAppUrl: config.WEB_APP_URL,
+      // Redis para emitir los tickets efímeros del SSE (fix-sse-ticket-auth).
+      redis: redisForRateLimit,
       ...(config.CHAT_ATTACHMENTS_BUCKET
         ? { attachmentsBucket: config.CHAT_ATTACHMENTS_BUCKET }
         : {}),
