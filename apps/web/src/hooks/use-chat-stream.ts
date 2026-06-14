@@ -87,10 +87,19 @@ export function useChatStream(opts: UseChatStreamOptions): void {
       let ticket: string;
       try {
         const token = await user.getIdToken();
-        const res = await fetch(
-          `${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream-ticket`,
-          { method: 'POST', headers: { authorization: `Bearer ${token}` } },
-        );
+        // Timeout duro: si Redis/el api cuelga, no dejamos el connect colgado
+        // sin caer al backoff de reconnect.
+        const abort = new AbortController();
+        const timeout = setTimeout(() => abort.abort(), 10_000);
+        let res: Response;
+        try {
+          res = await fetch(
+            `${env.VITE_API_URL}/assignments/${opts.assignmentId}/messages/stream-ticket`,
+            { method: 'POST', headers: { authorization: `Bearer ${token}` }, signal: abort.signal },
+          );
+        } finally {
+          clearTimeout(timeout);
+        }
         if (!res.ok) {
           throw new Error(`stream-ticket ${res.status}`);
         }

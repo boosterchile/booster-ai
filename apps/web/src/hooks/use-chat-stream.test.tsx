@@ -55,11 +55,13 @@ class StubEventSource implements FakeEventSource {
 
 // fix-sse-ticket-auth: el hook ahora hace POST /stream-ticket (Bearer) y abre
 // el EventSource con ?ticket=. Mock del fetch del ticket.
-const fetchMock = vi.fn(async () => ({
-  ok: true,
-  status: 200,
-  json: async () => ({ ticket: 'ticket-xyz', expires_in_sec: 60 }),
-}));
+const fetchMock = vi.fn(
+  async (): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ticket: 'ticket-xyz', expires_in_sec: 60 }),
+  }),
+);
 
 beforeEach(() => {
   lastEventSource = null;
@@ -163,6 +165,16 @@ describe('useChatStream', () => {
     first?.onerror?.();
     expect(onDisconnect).toHaveBeenCalled();
     expect(first?.closed).toBe(true);
+  });
+
+  it('reconnect tras onerror pide un ticket NUEVO (single-use) — SC-4', async () => {
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(1); // primer mint
+    lastEventSource?.onerror?.();
+    // El backoff reagenda connect → debe pedir OTRO ticket (el anterior ya se
+    // consumió). Esperamos a que el segundo mint ocurra.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
   });
 
   it('cleanup en unmount → close + cancela reconnect timer', async () => {

@@ -32,6 +32,7 @@ describe('sse-ticket', () => {
       redis,
       uid: UID,
       assignmentId: ASSIGNMENT,
+      isDemo: false,
     });
     expect(ticket).toMatch(/^[0-9a-f]{64}$/); // 32 bytes hex = 256 bits
     expect(expiresInSec).toBe(60);
@@ -40,9 +41,17 @@ describe('sse-ticket', () => {
 
   it('consume válido → uid, y es SINGLE-USE (segundo consumo → null)', async () => {
     const redis = makeRedis();
-    const { ticket } = await mintStreamTicket({ redis, uid: UID, assignmentId: ASSIGNMENT });
+    const { ticket } = await mintStreamTicket({
+      redis,
+      uid: UID,
+      assignmentId: ASSIGNMENT,
+      isDemo: false,
+    });
 
-    expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toBe(UID);
+    expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toEqual({
+      uid: UID,
+      isDemo: false,
+    });
     // Segundo consumo: ya fue borrado (GETDEL) → replay imposible.
     expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toBeNull();
   });
@@ -57,10 +66,38 @@ describe('sse-ticket', () => {
 
   it('ticket de OTRO assignment → null (y se consume igual, no queda colgado)', async () => {
     const redis = makeRedis();
-    const { ticket } = await mintStreamTicket({ redis, uid: UID, assignmentId: ASSIGNMENT });
+    const { ticket } = await mintStreamTicket({
+      redis,
+      uid: UID,
+      assignmentId: ASSIGNMENT,
+      isDemo: false,
+    });
     expect(
       await consumeStreamTicket({ redis, ticket, assignmentId: 'otro-assignment' }),
     ).toBeNull();
+  });
+
+  it('preserva isDemo=true en el round-trip (demo enforcement del SSE)', async () => {
+    const redis = makeRedis();
+    const { ticket } = await mintStreamTicket({
+      redis,
+      uid: UID,
+      assignmentId: ASSIGNMENT,
+      isDemo: true,
+    });
+    expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toEqual({
+      uid: UID,
+      isDemo: true,
+    });
+  });
+
+  it('Redis caído en consume → null (fail-closed, no throw)', async () => {
+    const redis = {
+      async getdel() {
+        throw new Error('ECONNREFUSED');
+      },
+    } as never;
+    expect(await consumeStreamTicket({ redis, ticket: 'x', assignmentId: ASSIGNMENT })).toBeNull();
   });
 
   it('valor corrupto en Redis → null (no throw)', async () => {

@@ -21,6 +21,7 @@ Es un secreto bearer vivo filtrándose a logs/trazas en cada conexión de chat. 
 - [ ] SC-4: el cliente (`apps/web/src/hooks/use-chat-stream.ts`) pide el ticket (POST con Bearer) y abre `EventSource(...?ticket=<ticket>)`. En reconnect pide un ticket nuevo (son single-use).
 - [ ] SC-5: tests (api): mint requiere auth (401 sin Bearer); ticket single-use (segundo consumo → 401); TTL (expirado → 401); ticket de otro assignment → 401; SSE con ticket válido resuelve el user y conecta; SSE sin ticket ni Bearer → 401; `?auth=<jwt>` ya NO autentica. coverage ≥80 en el código nuevo.
 - [ ] SC-6: el `RedactingSpanExporter` (#451) se MANTIENE como defensa en profundidad (no se revierte).
+- [ ] SC-7 (review 2026-06-14): la sesión por-ticket preserva el enforcement de demo — el ticket lleva `is_demo` y el SSE lo restituye en `firebaseClaims.custom` → demoExpires/isDemoEnforcement corren igual que por header.
 
 ## 4. User-visible behaviour
 
@@ -61,6 +62,8 @@ Ninguno para el usuario: el chat sigue funcionando igual (el cliente hace un POS
 | Redis caído → no se puede abrir el stream | L | M | Fail-closed explícito (sin ticket no hay stream); el chat realtime es no-crítico (degrada a polling/refetch del cliente); mismo patrón que rate-limit |
 | Ticket replay si no es single-use | L | H | GETDEL atómico (un solo consumo); TTL 60s; scoped a assignment+uid |
 | Un caller abusa del mint para generar tickets | L | L | El mint requiere auth completa (Bearer + userContext + resolveChatAccess) — misma barrera que el resto del chat |
+| La sesión por-ticket se salta demoExpires (custom vacío) | M | M | RESUELTO (review): el ticket lleva `is_demo`; el SSE lo restituye → demoExpires enforca por uid igual que por header. Además el mint ya pasa demoExpires (una demo expirada no mintea) |
+| Redis caído → mint 500 en vez del 503 documentado / fetch del cliente colgado | L | L | RESUELTO (review): mint con try/catch → 503; consume fail-closed → 401; el cliente usa AbortController (10s) |
 
 ## 10. Test list
 
@@ -73,7 +76,7 @@ Ninguno para el usuario: el chat sigue funcionando igual (el cliente hace un POS
 ## 11. Rollout
 
 - Flag: no (cambio acoplado api+web; deben ir juntos). Deploy normal por el pipeline (merge a main → release). El api acepta SOLO ticket tras el deploy → el web debe deployar a la par (mismo release del monorepo).
-- Orden: como api y web se buildean/deployan del mismo release, no hay ventana de incompatibilidad si se mergea junto. (Si el api deployara antes que el web, los clientes viejos con `?auth=` romperían el chat realtime hasta que el web actualice — aceptable: realtime no-crítico, y el deploy del monorepo es atómico por release.)
+- Orden / ventana (corregido en review 2026-06-14): api y web son Cloud Run SEPARADOS — el deploy NO es atómico. Además una PWA YA ABIERTA sigue con el bundle viejo (`?auth=`) hasta que el usuario recargue. En ambos casos el chat REALTIME de esas sesiones cae (401 al abrir el SSE) y degrada a polling/refetch hasta el reload — los mensajes NO se pierden (el POST/GET de mensajes va por header, sin cambio). Aceptable: realtime no-crítico, autocorrige al recargar. No se mantiene el `?auth=` como compat porque reintroduciría el leak (es el objetivo del cambio).
 - Post-deploy: repetir el spot-check sintético (`?ticket=` aparece en la URL, NO un token; un `?auth=<jwt>` da 401) + un chat real conecta.
 - Rollback: revert del PR.
 

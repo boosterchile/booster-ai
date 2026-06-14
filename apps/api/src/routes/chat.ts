@@ -422,12 +422,25 @@ export function createChatRoutes(opts: {
       opts.logger.error({ path: c.req.path }, 'stream-ticket without userContext');
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    const { ticket, expiresInSec } = await mintStreamTicket({
-      redis: opts.redis,
-      uid: userContext.user.firebaseUid,
-      assignmentId,
-    });
-    return c.json({ ticket, expires_in_sec: expiresInSec });
+    // Restituimos is_demo en el ticket para que el SSE corra demoExpires igual
+    // que un request por header (review 2026-06-14). Acá ya pasó demoExpires,
+    // así que una demo expirada ni siquiera llega a mintear.
+    const claims = c.get('firebaseClaims') as { custom?: Record<string, unknown> } | undefined;
+    const isDemo = claims?.custom?.is_demo === true;
+    try {
+      const { ticket, expiresInSec } = await mintStreamTicket({
+        redis: opts.redis,
+        uid: userContext.user.firebaseUid,
+        assignmentId,
+        isDemo,
+      });
+      return c.json({ ticket, expires_in_sec: expiresInSec });
+    } catch (err) {
+      // Redis caído al persistir → fail-closed 503 (sin ticket no hay stream;
+      // el realtime degrada a polling). Contrato documentado en spec §6.2.
+      opts.logger.warn({ err, assignmentId }, 'stream-ticket: Redis error al mintear');
+      return c.json({ error: 'realtime_disabled', code: 'realtime_disabled' }, 503);
+    }
   });
 
   // GET /:id/messages/stream — SSE realtime (P3.b)

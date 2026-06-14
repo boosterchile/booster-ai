@@ -157,7 +157,10 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
 
   async function buildStreamApp(opts: {
     auth: Auth;
-    sseTicketStore?: (ticket: string, assignmentId: string) => Promise<string | null>;
+    sseTicketStore?: (
+      ticket: string,
+      assignmentId: string,
+    ) => Promise<{ uid: string; isDemo: boolean } | null>;
   }): Promise<Hono> {
     const { createFirebaseAuthMiddleware } = await import('../../src/middleware/firebase-auth.js');
     const app = new Hono();
@@ -170,21 +173,35 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
       }),
     );
     app.get('/assignments/:id/messages/stream', (c) => {
-      const claims = c.get('firebaseClaims') as { uid: string } | undefined;
-      return c.json({ ok: true, uid: claims?.uid });
+      const claims = c.get('firebaseClaims') as
+        | { uid: string; custom: Record<string, unknown> }
+        | undefined;
+      return c.json({ ok: true, uid: claims?.uid, isDemo: claims?.custom?.is_demo });
     });
     return app;
   }
 
   it('ticket válido → resuelve uid del store y NO llama verifyIdToken', async () => {
     const auth = stubFirebaseAuth({ succeed: {} });
-    const store = vi.fn(async () => 'uid-from-ticket');
+    const store = vi.fn(async () => ({ uid: 'uid-from-ticket', isDemo: false }));
     const app = await buildStreamApp({ auth, sseTicketStore: store });
     const res = await app.request(`${STREAM_PATH}?ticket=abc123`);
     expect(res.status).toBe(200);
-    expect((await res.json()).uid).toBe('uid-from-ticket');
+    const body = (await res.json()) as { uid: string; isDemo: boolean };
+    expect(body.uid).toBe('uid-from-ticket');
+    expect(body.isDemo).toBe(false);
     expect(store).toHaveBeenCalledWith('abc123', ASSIGNMENT);
     expect(auth.verifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it('restituye is_demo del ticket en firebaseClaims.custom (demo enforcement del SSE)', async () => {
+    const app = await buildStreamApp({
+      auth: stubFirebaseAuth({ succeed: {} }),
+      sseTicketStore: async () => ({ uid: 'demo-uid', isDemo: true }),
+    });
+    const res = await app.request(`${STREAM_PATH}?ticket=demo-ticket`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).isDemo).toBe(true);
   });
 
   it('ticket inválido/expirado (store → null) → 401', async () => {

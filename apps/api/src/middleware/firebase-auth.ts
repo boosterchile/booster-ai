@@ -38,7 +38,10 @@ export interface FirebaseClaims {
  * (consumeStreamTicket sobre Redis). Devuelve el uid si el ticket es válido,
  * de un solo uso, no expiró y coincide con el assignment del path; null si no.
  */
-export type SseTicketStore = (ticket: string, assignmentId: string) => Promise<string | null>;
+export type SseTicketStore = (
+  ticket: string,
+  assignmentId: string,
+) => Promise<{ uid: string; isDemo: boolean } | null>;
 
 const STREAM_PATH_RE = /^\/assignments\/([^/]+)\/messages\/stream$/;
 
@@ -65,21 +68,23 @@ export function createFirebaseAuthMiddleware(opts: {
     if (c.req.method === 'GET' && streamMatch && !c.req.header('authorization')) {
       const assignmentId = streamMatch[1] as string;
       const ticket = c.req.query('ticket');
-      const uid =
+      const consumed =
         ticket && opts.sseTicketStore ? await opts.sseTicketStore(ticket, assignmentId) : null;
-      if (!uid) {
+      if (!consumed) {
         opts.logger.warn({ path: c.req.path }, 'SSE ticket inválido/ausente');
         return c.json({ error: 'Unauthorized' }, 401);
       }
       // El ticket prueba la identidad; userContextMiddleware resuelve el user
-      // por uid (solo necesita claims.uid). El resto del chain queda intacto.
+      // por uid (solo necesita claims.uid). Restituimos `is_demo` para que
+      // demoExpires/isDemoEnforcement enforquen igual que en un request por
+      // header (sin esto, el stream se saltaba el demo-expiry — review 2026-06-14).
       c.set('firebaseClaims', {
-        uid,
+        uid: consumed.uid,
         email: undefined,
         emailVerified: false,
         name: undefined,
         picture: undefined,
-        custom: {},
+        custom: { is_demo: consumed.isDemo },
       } satisfies FirebaseClaims);
       await next();
       return;
