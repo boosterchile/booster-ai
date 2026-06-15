@@ -6,6 +6,7 @@ import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { buildCrashSafetyEvent } from './build-crash-safety-event.js';
 import { loadConfig } from './config.js';
 import {
   createBigQueryCrashTraceIndexer,
@@ -222,6 +223,16 @@ async function main(): Promise<void> {
           bucketName: config.GCS_CRASH_TRACES_BUCKET,
           bigQueryDatasetId: config.BIGQUERY_CRASH_DATASET,
           bigQueryTableId: config.BIGQUERY_CRASH_TABLE,
+          logger,
+        });
+
+        void publishSafetyEvent({
+          topicName: config.SAFETY_EVENTS_TOPIC,
+          event: buildCrashSafetyEvent({
+            imei: parsed.data.imei,
+            vehicleId: parsed.data.vehicleId,
+            occurredAtMs: Number(trace.crashTimestampMs),
+          }),
           logger,
         });
 
