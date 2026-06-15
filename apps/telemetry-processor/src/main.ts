@@ -6,15 +6,17 @@ import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { buildCrashSafetyEvent } from './build-crash-safety-event.js';
 import { loadConfig } from './config.js';
 import {
   createBigQueryCrashTraceIndexer,
   createGcsCrashTraceUploader,
 } from './crash-trace-adapters.js';
-import { logPanicEvents } from './panic-events.js';
+import { logPanicEvents, publishPanicEvents } from './panic-events.js';
 import { crashTraceMessageSchema, persistCrashTrace } from './persist-crash-trace.js';
 import { persistGreenDrivingFromRecord } from './persist-green-driving.js';
 import { persistRecord, recordMessageSchema } from './persist.js';
+import { publishSafetyEvent } from './publish-safety-events.js';
 
 /**
  * telemetry-processor: consumer Pub/Sub de dos topics:
@@ -95,6 +97,12 @@ async function main(): Promise<void> {
       // ANTES del persist a propósito: el evento alerta aunque el device
       // esté pendiente o el insert falle (spec fix-telemetry-panic-event-alerts).
       logPanicEvents({ logger, msg: parsed.data, messageId: message.id });
+      void publishPanicEvents({
+        msg: parsed.data,
+        topicName: config.SAFETY_EVENTS_TOPIC,
+        logger,
+        publish: (a) => publishSafetyEvent(a),
+      });
 
       const result = await persistRecord({ db, logger, msg: parsed.data });
 
@@ -215,6 +223,16 @@ async function main(): Promise<void> {
           bucketName: config.GCS_CRASH_TRACES_BUCKET,
           bigQueryDatasetId: config.BIGQUERY_CRASH_DATASET,
           bigQueryTableId: config.BIGQUERY_CRASH_TABLE,
+          logger,
+        });
+
+        void publishSafetyEvent({
+          topicName: config.SAFETY_EVENTS_TOPIC,
+          event: buildCrashSafetyEvent({
+            imei: parsed.data.imei,
+            vehicleId: parsed.data.vehicleId,
+            occurredAtMs: Number(trace.crashTimestampMs),
+          }),
           logger,
         });
 

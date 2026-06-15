@@ -93,6 +93,9 @@ module "service_api" {
     # Ambas se mantienen aceptadas; su costo es 0.
     API_AUDIENCE      = "${local.public_api_url},${local.cloud_run_api_url}"
     ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
+    # Safety fan-out (P0-G): el endpoint /internal/safety-events valida que el
+    # OIDC entrante (push subscription safety-p0) venga de este SA.
+    SAFETY_PUSH_CALLER_SA = google_service_account.safety_push_invoker.email
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
@@ -447,6 +450,8 @@ module "service_telemetry_processor" {
     BIGQUERY_CRASH_DATASET           = google_bigquery_dataset.telemetry.dataset_id
     BIGQUERY_CRASH_TABLE             = google_bigquery_table.crash_events.table_id
     PUBSUB_SUBSCRIPTION_CRASH_TRACES = google_pubsub_subscription.crash_traces_processor.name
+    # Safety fan-out (P0-G): topic al que el processor publica crash/unplug/jamming.
+    SAFETY_EVENTS_TOPIC = google_pubsub_topic.telemetry_events_safety_p0.name
   })
   secrets = local.common_secrets
 
