@@ -609,3 +609,90 @@ resource "google_monitoring_dashboard" "telemetry_overview" {
     }
   })
 }
+
+# ──────────────────────────────────────────────────────────────────────────
+# P1-A (audit 2026-06-14) — Backlog/stall de las 4 subscriptions Wave 2.
+#
+# Contexto (P0-G): notification-service, matching-engine y trip-state-machine
+# son hoy servicios skeleton; sus subscriptions Wave 2 están creadas y
+# acumulan mensajes sin consumidor. `oldest_unacked_message_age` es el detector
+# PRIMARIO de "consumer detenido": sube +60s/min apenas el consumer deja de
+# ack-ear, INDEPENDIENTE del volumen (a diferencia del conteo de backlog, que
+# de noche tarda horas en cruzar un umbral y enmascara un consumer caído).
+# Mismo patrón que `telemetry_consumer_stalled_p1`.
+#
+# Sin estas alertas, un consumer caído (o el skeleton que nunca consume) pasa
+# desapercibido hasta que los mensajes mueren por retención (hasta 7 días en
+# safety-p0). Umbrales diferenciados por criticidad del stream.
+#
+# NOTA safety-p0: la DETECCIÓN del evento panic (crash/unplug/jamming) ya la
+# cubren crash_event_p0 / unplug_event_p0 / gnss_jamming_p0. Esta alerta es
+# complementaria: detecta que el FAN-OUT al transportista (SMS/push/WhatsApp)
+# no se está entregando.
+locals {
+  wave2_stall_alerts = {
+    safety_p0 = {
+      subscription_id = "telemetry-events-safety-p0-notification-sub"
+      threshold_s     = 600 # 10 min — fan-out de eventos panic, debe ackear en <30s
+      severity        = "CRITICAL"
+      consumer        = "notification-service"
+      detail          = "El fan-out de eventos panic (crash/unplug/jamming) al transportista (SMS/push/WhatsApp) está detenido. La detección del evento en sí ya la cubre crash_event_p0/unplug_event_p0/gnss_jamming_p0; esta alerta es que la NOTIFICACIÓN no se entrega."
+    }
+    security_p1 = {
+      subscription_id = "telemetry-events-security-p1-notification-sub"
+      threshold_s     = 1800 # 30 min
+      severity        = "ERROR"
+      consumer        = "notification-service"
+      detail          = "El consumer de eventos de seguridad P1 no está ackeando."
+    }
+    eco_score = {
+      subscription_id = "telemetry-events-eco-score-matching-sub"
+      threshold_s     = 3600 # 1 h — agregación batch, ack relajado (120s), retención 1 día
+      severity        = "WARNING"
+      consumer        = "matching-engine"
+      detail          = "El consumer de eco-score (agregación batch para matching) no está ackeando."
+    }
+    trip_transitions = {
+      subscription_id = "telemetry-events-trip-transitions-sub"
+      threshold_s     = 1800 # 30 min
+      severity        = "ERROR"
+      consumer        = "trip-state-machine"
+      detail          = "El consumer de trip-transitions no está ackeando."
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "wave2_consumer_stalled" {
+  for_each = local.wave2_stall_alerts
+
+  display_name = "Wave2 ${each.key} consumer stalled — oldest unacked > ${floor(each.value.threshold_s / 60)}min (${each.value.severity})"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = each.value.severity
+
+  conditions {
+    display_name = "oldest unacked message age > ${floor(each.value.threshold_s / 60)} min"
+    condition_threshold {
+      filter          = "resource.type=\"pubsub_subscription\" AND resource.labels.subscription_id=\"${each.value.subscription_id}\" AND metric.type=\"pubsub.googleapis.com/subscription/oldest_unacked_message_age\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = each.value.threshold_s
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = "${each.value.detail} Consumer: ${each.value.consumer} (subscription ${each.value.subscription_id}). oldest_unacked_message_age sube +60s/min al morir el consumer, independiente del volumen. Mismo patrón que telemetry_consumer_stalled_p1. Contexto: audit 2026-06-14 P0-G/P1-A (servicios Wave 2 skeleton). Runbook: docs/runbooks/oncall-telemetry-incidents.md#telemetry-consumer-stalled"
+    mime_type = "text/markdown"
+  }
+}
