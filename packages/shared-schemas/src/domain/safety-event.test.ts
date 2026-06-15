@@ -17,10 +17,22 @@ describe('safetyEventSchema', () => {
     expect(() =>
       safetyEventSchema.parse({
         eventType: 'foo',
-        imei: '1',
+        imei: '863238075489155',
         occurredAt: '2026-06-15T14:32:00.000Z',
       }),
     ).toThrow();
+  });
+
+  it('rechaza imei no-numérico o de largo inválido', () => {
+    for (const imei of ['x', '1', '12345678901234567', 'abc']) {
+      expect(() =>
+        safetyEventSchema.parse({
+          eventType: 'crash',
+          imei,
+          occurredAt: '2026-06-15T14:32:00.000Z',
+        }),
+      ).toThrow();
+    }
   });
 
   it('imei es obligatorio; vehicleId es opcional', () => {
