@@ -268,6 +268,30 @@ const apiEnvSchema = commonEnvSchema
       .optional(),
 
     /**
+     * Content SID del template Twilio `safety_alert_v1` (fan-out de eventos de
+     * seguridad al transportista). Vacío → WhatsApp se skipea y la alerta sale
+     * solo por push (la feature no depende de la aprobación de Meta).
+     */
+    CONTENT_SID_SAFETY_ALERT: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
+     * SA email que firma el OIDC de la push subscription de safety-events
+     * (Pub/Sub → POST /internal/safety-events). El endpoint valida
+     * claims.email === este valor. Optional en dev (sin él, el endpoint
+     * rechaza todo por falta de caller autorizado).
+     */
+    SAFETY_PUSH_CALLER_SA: z
+      .string()
+      .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido')
+      .optional(),
+
+    /**
      * GCP project ID — Cloud Run lo setea automáticamente en runtime.
      * Usado para:
      *   - Vertex AI Gemini endpoint (ADR-037, coaching IA post-entrega).
