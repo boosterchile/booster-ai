@@ -40,6 +40,7 @@ import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
 import { createHealthSignupFlowRouter } from './routes/health-signup-flow.js';
 import { createHealthRouter } from './routes/health.js';
+import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
@@ -260,6 +261,29 @@ export function createServer(opts: CreateServerOptions): Hono {
 
   app.use('/trip-requests/*', authMiddleware);
   app.route('/trip-requests', createTripRequestsRoutes({ db: opts.db, logger }));
+
+  // Endpoint interno: POST /internal/safety-events (Task 10).
+  // Auth propia vía OIDC (Pub/Sub push SA). NO usa firebaseAuthMiddleware.
+  // Excluido del CI gate `check-is-demo-wire-completeness` (no requiere is_demo).
+  const safetyTwilioClient = opts.notify?.twilioClient ?? null;
+  app.route(
+    '/internal/safety-events',
+    createInternalSafetyEventsRoutes({
+      db: opts.db,
+      redis: redisForRateLimit,
+      logger,
+      config: {
+        safetyPushCallerSa: config.SAFETY_PUSH_CALLER_SA,
+        apiAudience: config.API_AUDIENCE,
+        contentSidSafetyAlert: config.CONTENT_SID_SAFETY_ALERT,
+      },
+      sendWhatsapp: safetyTwilioClient
+        ? (a) => safetyTwilioClient.sendContent(a)
+        : async (a) => {
+            logger.warn({ to: a.to }, 'internal-safety-events: whatsapp no configurado, skip');
+          },
+    }),
+  );
 
   // End-user routes (Firebase ID token required). /me es especial: no usa
   // userContext middleware porque el user puede no existir aún en la DB
