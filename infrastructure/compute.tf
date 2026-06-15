@@ -250,6 +250,12 @@ module "service_api" {
     # Meta apruebe (submitted 2026-05-10, SID HXac1ef21ed9423258a2c38dad02f31e41),
     # el secret mantiene placeholder y notify-tracking-link skipea con warn.
     CONTENT_SID_TRACKING = google_secret_manager_secret.secrets["content-sid-tracking"].secret_id
+    # Safety fan-out (P0-G) — template `safety_alert` al transportista ante
+    # crash/unplug/jamming. `safety_alert_v1` rechazado por Meta; reenviado
+    # como `copy_of_safety_alert_v1` (SID HX80819b02ce9a546b855d09ada1aac944,
+    # en revisión 2026-06-15). Mientras el secret esté en placeholder el
+    # fan-out sale solo por push (config.ts CONTENT_SID_SAFETY_ALERT opcional).
+    CONTENT_SID_SAFETY_ALERT = google_secret_manager_secret.secrets["content-sid-safety-alert"].secret_id
 
     # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
     # Authorization header al push service del browser). La pública se
