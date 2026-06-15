@@ -299,6 +299,17 @@ Al cerrar una tarea, genero un bloque de evidencia con:
 
 Esto es coherente con `superpowers:verification-before-completion`: no declaro nada "terminado" sin evidencia fresca de la verificación corrida en el momento.
 
+## Punto de control post-tarea: commit + push (regla permanente)
+
+Al terminar CADA tarea (cuando se cumple la Definición de Terminado de `booster-skills:definicion-de-terminado`), antes de pasar a la siguiente o de cerrar la sesión, el agente DEBE:
+
+1. Identificar explícitamente que la tarea quedó terminada y que hay cambios sin persistir.
+2. Commitear con Conventional Commits con scope, incluyendo los cambios en `.specs/` (el spec/plan es parte del entregable, no solo el código).
+3. Hacer `git push` de la rama feature — respaldo en GitHub; commit local ≠ guardado.
+4. NUNCA pushear directo a `main` — `main` exige PR + squash merge (ver §Deploy).
+
+Si al cerrar el turno hay cambios sin commitear o commits sin pushear, el agente debe decirlo explícitamente y proponer el commit/push — no dejarlo pendiente en silencio. "Lo commiteo después" es drift (ver `definicion-de-terminado`).
+
 ## Escalation
 
 Si encuentro un problema que no puedo resolver con skills + principios:
