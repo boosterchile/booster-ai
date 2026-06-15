@@ -621,8 +621,13 @@ export function createServer(opts: CreateServerOptions): Hono {
         ...(config.REDIS_PASSWORD ? { redisPassword: config.REDIS_PASSWORD } : {}),
         redisTls: config.REDIS_TLS,
         ...(config.REDIS_CA_CERT ? { redisCaCert: config.REDIS_CA_CERT } : {}),
-        billingExportTable: config.BILLING_EXPORT_TABLE,
-        gcpProjectId: config.GOOGLE_CLOUD_PROJECT ?? 'booster-ai-494222',
+        // audit 2026-06-14 P0-D: sin fallback a un project/billing de prod
+        // hardcodeado. Cuando OBSERVABILITY_DASHBOARD_ACTIVATED=true, el
+        // superRefine de config.ts garantiza que ambos estén presentes; el ''
+        // solo aplica con el dashboard apagado (las rutas devuelven 503 y los
+        // services nunca consultan).
+        billingExportTable: config.BILLING_EXPORT_TABLE ?? '',
+        gcpProjectId: config.GOOGLE_CLOUD_PROJECT ?? '',
         ...(config.TWILIO_ACCOUNT_SID ? { twilioAccountSid: config.TWILIO_ACCOUNT_SID } : {}),
         ...(config.TWILIO_AUTH_TOKEN ? { twilioAuthToken: config.TWILIO_AUTH_TOKEN } : {}),
         workspaceDomain: config.GOOGLE_WORKSPACE_DOMAIN,

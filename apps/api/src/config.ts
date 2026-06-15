@@ -6,6 +6,7 @@ import {
   redisEnvSchema,
 } from '@booster-ai/config';
 import { z } from 'zod';
+import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
 /**
  * Parsea env var boolean correctamente. `z.coerce.boolean()` es un footgun
@@ -560,10 +561,13 @@ const apiEnvSchema = commonEnvSchema
      *
      * Habilitado 2026-05-13 vía consola Cloud Billing → Export. Datos
      * empiezan a propagar ~24-48h post-habilitación.
+     *
+     * Sin default (audit 2026-06-14 P0-D): el valor contiene el billing
+     * account id real y NO debe vivir en el repo. Se inyecta por env var
+     * desde Terraform. Required cuando OBSERVABILITY_DASHBOARD_ACTIVATED=true
+     * (ver superRefine al final del schema).
      */
-    BILLING_EXPORT_TABLE: z
-      .string()
-      .default('booster-ai-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377'),
+    BILLING_EXPORT_TABLE: z.string().min(1).optional(),
 
     /**
      * Dominio Google Workspace gestionado por Booster. Usado por el
@@ -642,6 +646,20 @@ const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
+  })
+  // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
+  // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
+  // las necesita, fallando rápido en el startup en vez de apuntar a prod.
+  .superRefine((env, ctx) => {
+    const errors = checkGcpConfigInvariants({
+      nodeEnv: env.NODE_ENV,
+      observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
+      googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+      billingExportTable: env.BILLING_EXPORT_TABLE,
+    });
+    for (const message of errors) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
