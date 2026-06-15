@@ -130,12 +130,13 @@ resource "google_cloud_run_v2_service" "service" {
     ignore_changes = [
       # Dejar que Cloud Build gestione las revisions/traffic después del primer apply
       template[0].containers[0].image,
-      # El nombre de la revisión lo asigna Cloud Build en cada deploy (gcloud run
-      # update / canary sequence). Terraform no lo gestiona, pero al refrescar el
-      # estado lo veía seteado y quería desclavarlo (`revision -> null`), drift que
-      # un apply convertía en una revisión nueva del service en vivo. Igual que
-      # `image` arriba: lo gestiona el pipeline, no Terraform (audit 2026-06-14).
-      template[0].revision,
+      # NOTA: `template[0].revision` NO va en ignore_changes. Pinearlo (#472)
+      # hacía que terraform reusara el nombre de la revisión viva al actualizar
+      # config (ej. sumar un env) → Error 409 "revision already exists with
+      # different configuration". Sin pinearlo, terraform manda revision vacío y
+      # Cloud Run auto-nombra la nueva revisión (audit 2026-06-15, fix del apply
+      # de safety fan-out). El `revision` queda como computed; el nombre real lo
+      # pone Cloud Run/Cloud Build en cada deploy.
       # GCP/gcloud auto-injectan labels (commit, goog-terraform-provisioned) y
       # annotations (operation-id, run.googleapis.com/*) durante deploys que TF
       # no controla. Sin ignore_changes acá, cada `terraform plan` mostraba
