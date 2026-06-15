@@ -65,3 +65,6 @@ export * from './domain/cuentas-demo.js';
 
 // SEC-001 Sprint 2b H1.2 — solicitudes de registro signup gate (ADR-052)
 export * from './domain/signup-request.js';
+
+// Safety events — Pub/Sub payload para topic safety-p0 (feat/safety-event-fanout)
+export * from './domain/safety-event.js';
