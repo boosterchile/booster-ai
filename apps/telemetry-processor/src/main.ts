@@ -11,10 +11,11 @@ import {
   createBigQueryCrashTraceIndexer,
   createGcsCrashTraceUploader,
 } from './crash-trace-adapters.js';
-import { logPanicEvents } from './panic-events.js';
+import { logPanicEvents, publishPanicEvents } from './panic-events.js';
 import { crashTraceMessageSchema, persistCrashTrace } from './persist-crash-trace.js';
 import { persistGreenDrivingFromRecord } from './persist-green-driving.js';
 import { persistRecord, recordMessageSchema } from './persist.js';
+import { publishSafetyEvent } from './publish-safety-events.js';
 
 /**
  * telemetry-processor: consumer Pub/Sub de dos topics:
@@ -95,6 +96,12 @@ async function main(): Promise<void> {
       // ANTES del persist a propósito: el evento alerta aunque el device
       // esté pendiente o el insert falle (spec fix-telemetry-panic-event-alerts).
       logPanicEvents({ logger, msg: parsed.data, messageId: message.id });
+      void publishPanicEvents({
+        msg: parsed.data,
+        topicName: config.SAFETY_EVENTS_TOPIC,
+        logger,
+        publish: (a) => publishSafetyEvent(a),
+      });
 
       const result = await persistRecord({ db, logger, msg: parsed.data });
 

@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import type { SafetyEvent } from '@booster-ai/shared-schemas';
 import type { RecordMessage } from './persist.js';
 
 /**
@@ -43,6 +44,30 @@ export function detectPanicEvents(msg: RecordMessage): PanicEvent[] {
     }
   }
   return events;
+}
+
+const EVENT_NAME_TO_TYPE: Record<'Unplug' | 'GnssJamming', SafetyEvent['eventType']> = {
+  Unplug: 'unplug',
+  GnssJamming: 'jamming',
+};
+
+/** Publica un SafetyEvent por cada panic detectado. `publish` inyectable para tests. */
+export async function publishPanicEvents(opts: {
+  msg: RecordMessage;
+  topicName: string;
+  logger: Logger;
+  publish: (a: { topicName: string; event: SafetyEvent; logger: Logger }) => Promise<void>;
+}): Promise<void> {
+  const events = detectPanicEvents(opts.msg);
+  for (const e of events) {
+    const event: SafetyEvent = {
+      eventType: EVENT_NAME_TO_TYPE[e.eventName],
+      imei: opts.msg.imei,
+      occurredAt: new Date(Number(opts.msg.record.timestampMs)).toISOString(),
+      rawValue: e.rawValue,
+    };
+    await opts.publish({ topicName: opts.topicName, event, logger: opts.logger });
+  }
 }
 
 /**
