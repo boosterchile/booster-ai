@@ -1,8 +1,12 @@
 # Cloud Build pipeline — production
 #
 # Triggered desde GitHub Actions release.yml tras manual approval en el environment
-# `production`. Sin canary/split traffic por ahora (post-staging environment real,
-# task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
+# `production`. El deploy de apps/api usa canary: despliega la nueva revisión
+# con tag canary-signup-<sha> al 1% del tráfico, observa 30 min (step
+# canary-sleep) + verifica error_rate/p95 (canary-verify) y recién entonces
+# promueve a 100% (step deploy-api: update-traffic --to-latest). Ver T13
+# SEC-001 más abajo (~línea 154) y el runbook docs/qa/signup-canary-rollback.md.
+# El timeout global debe cubrir el sleep de 30 min — ver `timeout` al final.
 #
 # Scope:
 #   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
