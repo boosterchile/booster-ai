@@ -803,7 +803,22 @@ export const vehicles = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_vehiculos_empresa').on(table.empresaId),
+    // Índice compuesto del hot path de matching (runMatching → best-fit de
+    // vehículos aptos): WHERE empresa_id IN (...) AND estado_vehiculo='activo'
+    // AND capacidad_kg >= X  ORDER BY capacidad_kg, id. Las columnas en este
+    // orden permiten: igualdad sobre empresa_id (IN) + estado_vehiculo, rango
+    // sobre capacidad_kg, y entregan el orden (capacidad_kg, id) que hace el
+    // best-fit determinista (skill empty-leg-matching §7). Creado en 0041.
+    empresaEstadoCapacidadIdx: index('idx_vehiculos_empresa_estado_capacidad').on(
+      table.empresaId,
+      table.vehicleStatus,
+      table.capacityKg,
+      table.id,
+    ),
+    // idx_vehiculos_empresa (single-column) dropeado en 0041: el compuesto de
+    // arriba lo cubre como prefijo (empresa_id es su columna líder), así que
+    // toda query por empresa_id solo —incl. el check del FK a empresas— sigue
+    // indexada. Mismo criterio anti-redundancia que 0040.
     typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
     // idx_vehiculos_teltonika_imei dropeado en 0040: duplicaba el UNIQUE
