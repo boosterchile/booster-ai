@@ -188,20 +188,35 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
       const candidatesV1: ScoredCandidate[] = [];
       const candidatesV2: ScoredCandidateV2[] = [];
 
-      for (const emp of candidateEmpresas) {
-        const vehs = await tx
-          .select()
-          .from(vehicles)
-          .where(
-            and(
-              eq(vehicles.empresaId, emp.id),
-              eq(vehicles.vehicleStatus, 'activo'),
-              gte(vehicles.capacityKg, cargoWeight),
+      // Vehículos aptos de TODAS las empresas candidatas en una sola query
+      // (evita N+1: antes era 1 SELECT por empresa en el loop). El orden
+      // (capacityKg, id) hace el best-fit determinista ante empates de
+      // capacidad — requerimiento de auditabilidad del matching
+      // (skill empty-leg-matching §7). Se agrupa quedándose con el primero
+      // por empresa = menor capacidad apta (best-fit), desempate estable por id.
+      const aptVehicles = await tx
+        .select()
+        .from(vehicles)
+        .where(
+          and(
+            inArray(
+              vehicles.empresaId,
+              candidateEmpresas.map((e) => e.id),
             ),
-          )
-          .orderBy(vehicles.capacityKg)
-          .limit(1);
-        const veh = vehs[0];
+            eq(vehicles.vehicleStatus, 'activo'),
+            gte(vehicles.capacityKg, cargoWeight),
+          ),
+        )
+        .orderBy(vehicles.capacityKg, vehicles.id);
+      const bestVehicleByEmpresa = new Map<string, (typeof aptVehicles)[number]>();
+      for (const veh of aptVehicles) {
+        if (!bestVehicleByEmpresa.has(veh.empresaId)) {
+          bestVehicleByEmpresa.set(veh.empresaId, veh);
+        }
+      }
+
+      for (const emp of candidateEmpresas) {
+        const veh = bestVehicleByEmpresa.get(emp.id);
         if (!veh) {
           continue;
         }

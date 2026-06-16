@@ -288,6 +288,13 @@
       "when": 1780876800004,
       "tag": "0040_integridad_indices",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780876800005,
+      "tag": "0041_matching_vehiculos_index",
+      "breakpoints": true
     }
   ]
 }
