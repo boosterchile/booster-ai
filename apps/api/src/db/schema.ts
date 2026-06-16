@@ -1225,7 +1225,18 @@ export const assignments = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_asignaciones_empresa').on(table.empresaId),
+    // Índice compuesto del histórico 7d de matching v2 (lookupCarriersForV2 →
+    // agregación por empresa, matching-v2-lookups.ts): WHERE empresa_id IN (...)
+    // AND entregado_en >= now() - interval '7 days' GROUP BY empresa_id.
+    // empresa_id (igualdad/IN) + entregado_en (rango) → index range scan por
+    // empresa sin escanear asignaciones viejas. Creado en 0042 (audit P1-K).
+    empresaEntregadoIdx: index('idx_asignaciones_empresa_entregado').on(
+      table.empresaId,
+      table.deliveredAt,
+    ),
+    // idx_asignaciones_empresa (single-column) dropeado en 0042: el compuesto
+    // de arriba lo cubre como prefijo (empresa_id es su columna líder), incl.
+    // el check del FK a empresas. Mismo criterio anti-redundancia que 0040/0041.
     statusIdx: index('idx_asignaciones_estado').on(table.status),
     driverIdx: index('idx_asignaciones_conductor').on(table.driverUserId),
   }),
