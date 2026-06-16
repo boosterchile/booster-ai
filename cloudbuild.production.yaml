@@ -1,8 +1,12 @@
 # Cloud Build pipeline — production
 #
 # Triggered desde GitHub Actions release.yml tras manual approval en el environment
-# `production`. Sin canary/split traffic por ahora (post-staging environment real,
-# task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
+# `production`. El deploy de apps/api usa canary: despliega la nueva revisión
+# con tag canary-signup-<sha> al 1% del tráfico, observa 30 min (step
+# canary-sleep) + verifica error_rate/p95 (canary-verify) y recién entonces
+# promueve a 100% (step deploy-api: update-traffic --to-latest). Ver T13
+# SEC-001 más abajo (~línea 154) y el runbook docs/qa/signup-canary-rollback.md.
+# El timeout global debe cubrir el sleep de 30 min — ver `timeout` al final.
 #
 # Scope:
 #   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
@@ -621,4 +625,11 @@ options:
   pool:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
-timeout: 2400s
+# Timeout global del build. DEBE acomodar el `canary-sleep` de 1800s (30 min,
+# step id: canary-sleep) MÁS el build+push de las 6 imágenes Docker + deploy
+# canary + verify + promoción. Con 2400s el presupuesto no-sleep era de solo
+# 600s (10 min) y un build frío (~11 min hasta route-canary) lo excedía →
+# TIMEOUT durante el sleep, la promoción a 100% nunca corría y el canary
+# quedaba stuck al 1% (incidente 2026-06-16, build aca4641f, deploy de a6bf14a).
+# 3600s deja ~1800s (30 min) de presupuesto no-sleep = ~3x el build observado.
+timeout: 3600s
