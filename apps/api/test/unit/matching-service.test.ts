@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { vehicles } from '../../src/db/schema.js';
 import {
   TripRequestNotFoundError,
   TripRequestNotMatchableError,
@@ -31,11 +32,22 @@ function makeDb(queues: DbQueues = {}) {
   const updates = [...(queues.updates ?? [])];
   const inserts = [...(queues.inserts ?? [])];
 
+  // Trazas para aserciones de forma de acceso a DB (N+1, orden determinista).
+  const fromCalls: unknown[] = [];
+  const orderByCalls: unknown[][] = [];
+  const insertValues: unknown[] = [];
+
   const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
-      from: vi.fn(() => chain),
+      from: vi.fn((table?: unknown) => {
+        fromCalls.push(table);
+        return chain;
+      }),
       where: vi.fn(() => chain),
-      orderBy: vi.fn(() => chain),
+      orderBy: vi.fn((...cols: unknown[]) => {
+        orderByCalls.push(cols);
+        return chain;
+      }),
       innerJoin: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
     };
@@ -62,7 +74,10 @@ function makeDb(queues: DbQueues = {}) {
 
   const buildInsertChain = () => {
     const chain: Record<string, unknown> = {
-      values: vi.fn(() => chain),
+      values: vi.fn((rows?: unknown) => {
+        insertValues.push(rows);
+        return chain;
+      }),
       returning: vi.fn(async () => inserts.shift() ?? []),
     };
     chain.then = (resolve: (v: unknown) => unknown) => {
@@ -82,6 +97,9 @@ function makeDb(queues: DbQueues = {}) {
     select: tx.select,
     update: tx.update,
     insert: tx.insert,
+    __fromCalls: fromCalls,
+    __orderByCalls: orderByCalls,
+    __insertValues: insertValues,
   };
 }
 
@@ -247,9 +265,12 @@ describe('runMatching', () => {
           { id: 'emp-2', isTransportista: true, status: 'activa' },
           { id: 'emp-3', isTransportista: true, status: 'activa' },
         ],
-        [{ id: 'v1', empresaId: 'emp-1', capacityKg: 5200 }],
-        [{ id: 'v2', empresaId: 'emp-2', capacityKg: 5800 }],
-        [{ id: 'v3', empresaId: 'emp-3', capacityKg: 12000 }],
+        // Una sola query batch de vehículos para las 3 empresas (post N+1 fix).
+        [
+          { id: 'v1', empresaId: 'emp-1', capacityKg: 5200 },
+          { id: 'v2', empresaId: 'emp-2', capacityKg: 5800 },
+          { id: 'v3', empresaId: 'emp-3', capacityKg: 12000 },
+        ],
       ],
       inserts: [[], offers, []],
     });
@@ -260,6 +281,71 @@ describe('runMatching', () => {
     });
     expect(result.candidatesEvaluated).toBe(3);
     expect(result.offersCreated).toBe(3);
+  });
+
+  it('N+1 fix: consulta la tabla vehicles UNA sola vez para N empresas candidatas', async () => {
+    const offerRows = [
+      { id: 'o1', empresaId: 'emp-1' },
+      { id: 'o2', empresaId: 'emp-2' },
+    ];
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ empresaId: 'emp-1' }, { empresaId: 'emp-2' }], // zonas
+        [
+          { id: 'emp-1', isTransportista: true, status: 'activa' },
+          { id: 'emp-2', isTransportista: true, status: 'activa' },
+        ],
+        // Batch único: ambos vehículos en una sola respuesta.
+        [
+          { id: 'v1', empresaId: 'emp-1', capacityKg: 5200 },
+          { id: 'v2', empresaId: 'emp-2', capacityKg: 5800 },
+        ],
+      ],
+      inserts: [[], offerRows, []],
+    });
+    const result = await runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID });
+
+    // Ambas empresas reciben oferta: el batch agrupa por empresa correctamente.
+    expect(result.candidatesEvaluated).toBe(2);
+    expect(result.offersCreated).toBe(2);
+
+    // El corazón del fix: la tabla vehicles se consulta EXACTAMENTE una vez,
+    // no una por empresa candidata (antes: N queries).
+    const vehicleQueries = (db.__fromCalls as unknown[]).filter((t) => t === vehicles);
+    expect(vehicleQueries).toHaveLength(1);
+
+    // Determinismo (skill empty-leg-matching §7): el batch ordena por
+    // (capacityKg, id) para que el best-fit sea estable ante empates.
+    const vehicleOrderBy = (db.__orderByCalls as unknown[][]).find(
+      (cols) => cols.includes(vehicles.capacityKg) && cols.includes(vehicles.id),
+    );
+    expect(vehicleOrderBy).toBeDefined();
+  });
+
+  it('best-fit por empresa: con 2 vehículos aptos elige el primero del orden SQL (menor capacidad)', async () => {
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ empresaId: 'emp-1' }],
+        [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
+        // El orden lo garantiza el orderBy(capacityKg, id) en SQL; el mock
+        // lo respeta entregando el menor primero. El grouping toma el primero.
+        [
+          { id: 'veh-small', empresaId: 'emp-1', capacityKg: 5200 },
+          { id: 'veh-big', empresaId: 'emp-1', capacityKg: 9000 },
+        ],
+      ],
+      inserts: [[], [{ id: 'o1', empresaId: 'emp-1' }], []],
+    });
+    await runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID });
+
+    // La offer insertada sugiere el vehículo best-fit (menor capacidad apta).
+    const offerInsert = (db.__insertValues as unknown[]).find(
+      (rows): rows is Array<{ suggestedVehicleId?: string }> =>
+        Array.isArray(rows) && rows.length > 0 && 'suggestedVehicleId' in (rows[0] ?? {}),
+    );
+    expect(offerInsert?.[0]?.suggestedVehicleId).toBe('veh-small');
   });
 
   it('cargo_weight null → trata como 0, sigue matching', async () => {
@@ -308,8 +394,11 @@ describe('runMatching', () => {
           { id: 'emp-1', isTransportista: true, status: 'activa' },
           { id: 'emp-2', isTransportista: true, status: 'activa' },
         ],
-        [{ id: 'v1', empresaId: 'emp-1', capacityKg: 6000 }],
-        [{ id: 'v2', empresaId: 'emp-2', capacityKg: 7000 }],
+        // Batch único de vehículos para ambas empresas (post N+1 fix).
+        [
+          { id: 'v1', empresaId: 'emp-1', capacityKg: 6000 },
+          { id: 'v2', empresaId: 'emp-2', capacityKg: 7000 },
+        ],
       ],
       inserts: [
         [],
