@@ -12,6 +12,7 @@ Template del fan-out de seguridad (P0-G): notifica al transportista ante eventos
 |---|---|---|
 | `safety_alert_v1` | `HX0d6363fd0162c2d71519ed4e3afe2e3d` | **rejected** por Meta |
 | `copy_of_safety_alert_v1` | `HX80819b02ce9a546b855d09ada1aac944` | **rejected** por Meta |
+| `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` | **pending** (creado y submiteado 2026-06-15T23:01Z; en revisión Meta) |
 
 Razón de Meta (`subCode 2388293`):
 
@@ -70,7 +71,7 @@ Se podría agregar un **botón URL dinámico** (`Ver vehículo` → `https://app
 Meta devuelve (vía Twilio) el estado `approved` para el Content SID. Cargarlo en el secret `content-sid-safety-alert` (wiring de infra ya existe desde #476) y redeploy del api:
 
 ```bash
-echo -n "HX<sid-de-v2>" | gcloud secrets versions add content-sid-safety-alert --data-file=- --project=booster-ai-494222
+echo -n "HX48d541ad8f2cab4e4f65165cb26489b1" | gcloud secrets versions add content-sid-safety-alert --data-file=- --project=booster-ai-494222
 gcloud run services update booster-ai-api --region=southamerica-west1 \
   --update-secrets=CONTENT_SID_SAFETY_ALERT=content-sid-safety-alert:latest --project=booster-ai-494222
 ```
@@ -79,7 +80,7 @@ Hasta entonces el código skipea WhatsApp y notifica **solo por push** (sin romp
 
 ## Checklist de submit
 
-- [ ] Correr `scripts/create-safety-alert-template.sh` (o crear a mano en Content Editor con name `safety_alert_v2`, category UTILITY, language `es`, body de arriba, 4 sample values).
-- [ ] Anotar el Content SID nuevo (`HX...`).
-- [ ] Vigilar aprobación (`ApprovalRequests`, típico 24-48h).
+- [x] Correr `scripts/create-safety-alert-template.sh` (o crear a mano en Content Editor con name `safety_alert_v2`, category UTILITY, language `es`, body de arriba, 4 sample values). — hecho 2026-06-15.
+- [x] Anotar el Content SID nuevo: `HX48d541ad8f2cab4e4f65165cb26489b1`.
+- [ ] Vigilar aprobación (`ApprovalRequests`, típico 24-48h). — en curso; status `pending` al 2026-06-16.
 - [ ] Al aprobar: cargar el SID en `content-sid-safety-alert` + redeploy (comandos arriba).
