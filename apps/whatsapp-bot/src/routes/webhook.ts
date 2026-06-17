@@ -34,9 +34,27 @@ export function createWebhookRoutes(opts: {
   redis: Redis;
   authToken: string;
   webhookUrl: string;
+  /**
+   * URL exacta con la que Twilio firma el **status callback** (P1-6). Twilio
+   * calcula el HMAC sobre la URL configurada en su Console → Status callback
+   * URL, que puede diferir del inbound webhook (otro dominio/path/trailing
+   * slash). Si se omite, se deriva de `webhookUrl` cambiando el path a
+   * `/webhooks/twilio-status` (default backwards-compat). Cablear vía
+   * `TWILIO_STATUS_CALLBACK_URL` cuando la Console use una URL distinta.
+   */
+  statusWebhookUrl?: string | undefined;
   logger: Logger;
 }) {
-  const { store, whatsAppClient, apiClient, redis, authToken, webhookUrl, logger } = opts;
+  const {
+    store,
+    whatsAppClient,
+    apiClient,
+    redis,
+    authToken,
+    webhookUrl,
+    statusWebhookUrl,
+    logger,
+  } = opts;
   const app = new Hono();
 
   // Twilio no usa GET handshake. Si pinguean GET, devolvemos 200 vacío para health-check
@@ -146,14 +164,19 @@ export function createWebhookRoutes(opts: {
       params[key] = value;
     }
 
-    // Twilio firma con la URL configurada en Twilio console — necesita ser la
-    // URL del status callback, no la del inbound webhook. Aceptamos ambas
-    // para flexibilidad (si admin configura status callback en una URL
-    // distinta, debe setear STATUS_WEBHOOK_URL env var; default = webhookUrl
-    // con path /twilio-status).
-    const statusWebhookUrl = `${webhookUrl.replace(/\/webhooks\/whatsapp$/, '')}/webhooks/twilio-status`;
+    // Twilio firma con la URL EXACTA configurada en su Console → Status
+    // callback URL, que puede no coincidir con el inbound webhook (otro
+    // dominio/path/trailing slash). P1-6: si está cableada
+    // `TWILIO_STATUS_CALLBACK_URL` (→ opts.statusWebhookUrl) se usa esa;
+    // si no, se deriva de `webhookUrl` cambiando el path (default
+    // backwards-compat). Antes la env var se documentaba pero NUNCA se leía:
+    // el HMAC se validaba siempre contra la derivada → rechazaba callbacks
+    // legítimos cuando la Console usaba otra URL.
+    const resolvedStatusUrl =
+      statusWebhookUrl ??
+      `${webhookUrl.replace(/\/webhooks\/whatsapp$/, '')}/webhooks/twilio-status`;
 
-    if (!verifyTwilioSignature(authToken, signatureHeader, statusWebhookUrl, params)) {
+    if (!verifyTwilioSignature(authToken, signatureHeader, resolvedStatusUrl, params)) {
       logger.warn(
         { signatureProvided: !!signatureHeader },
         'Twilio status callback signature invalid',
