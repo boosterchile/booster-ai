@@ -101,6 +101,30 @@ spec:
               value: "crash-traces"
             - name: IDLE_TIMEOUT_SEC
               value: "300"
+            # Rate limiting in-memory per-pod (audit P1-L). Declarados aquí
+            # explícitamente (no solo defaults del schema Zod) para que el valor
+            # ACTIVO en prod sea legible/auditable desde el repo y tuneable sin
+            # leer el código.
+            #
+            # MAX_CONCURRENT_CONNECTIONS: cap concurrente por pod → protege FDs/
+            # memoria. Presupuesto: el pod tiene memory limit 1Gi y un socket TCP
+            # (buffers user+kernel) cuesta ~150–200KB → ~5000 conns ≈ ~1GB, en el
+            # borde del OOM. 5000 es holgado para el piloto (10 Teltonika, ~500×)
+            # pero queda cerca del techo de memoria: si se observa presión de
+            # memoria con flota mayor, BAJARLO (el cap debe disparar ANTES del OOM
+            # para cumplir su función). Re-calibrar con datos de carga reales.
+            - name: MAX_CONCURRENT_CONNECTIONS
+              value: "5000"
+            # ENROLLMENT_RATE_MAX/_WINDOW_SEC: techo de IMEIs nuevos por ventana
+            # → acota crecimiento de dispositivos_pendientes ante flood. 30/60s:
+            # un instalador enrola un puñado; 10 devices piloto están muy por
+            # debajo. Un rechazo con flota real = flood o burst de instalación
+            # anómalo → vigilado por la alerta gateway_enrollment_rate_limited
+            # (infrastructure/telemetry-monitoring.tf).
+            - name: ENROLLMENT_RATE_MAX
+              value: "30"
+            - name: ENROLLMENT_RATE_WINDOW_SEC
+              value: "60"
             - name: LOG_LEVEL
               value: "info"
             - name: NODE_ENV

@@ -696,3 +696,149 @@ resource "google_monitoring_alert_policy" "wave2_consumer_stalled" {
     mime_type = "text/markdown"
   }
 }
+
+# ──────────────────────────────────────────────────────────────────────────
+# P1-L (audit 2026-06-14) — Observabilidad de la barrera DoS del gateway.
+#
+# El rate limiting del open enrollment (PR #489) rechaza conexiones/enrollments
+# en memoria. Sin observabilidad, un rechazo es INVISIBLE: o un atacante floodea
+# sin que nadie se entere, o el limiter está mal calibrado y descarta devices
+# legítimos en silencio (no aparecen en el panel) → el primer síntoma sería una
+# llamada del instalador, no una alerta. Review SRE pre-merge de #489 (P1-A).
+#
+# El gateway no tiene MeterProvider OTel (otel-bootstrap solo cablea tracing →
+# un counter OTel iría al no-op provider y nunca llegaría a Cloud Monitoring).
+# Se usa el patrón log-from-metric del resto de este archivo: los logs WARN ya
+# llevan los campos (imei/sourceIp). Literales de `message` = CONTRATO con
+# apps/telemetry-tcp-gateway/src/{imei-auth,main}.ts. ⚠️ messageKey='message'.
+# =============================================================================
+
+# Enrollments rechazados por rate limit — el IMEI desconocido se descartó SIN
+# escribir en dispositivos_pendientes. Con flota real (10 Teltonika << 30/60s),
+# un rechazo sostenido = flood de IMEIs falsos O un burst de instalación anómalo
+# que está tirando devices legítimos. En ambos casos el operador debe mirar.
+resource "google_logging_metric" "gateway_enrollment_rate_limited" {
+  name    = "telemetry/gateway_enrollment_rate_limited"
+  project = google_project.booster_ai.project_id
+
+  description = "Enrollments de IMEI desconocido descartados por rate limit (P1-L). >0 sostenido → flood o limiter mal calibrado tirando devices legítimos."
+
+  filter = <<-EOT
+    resource.type="k8s_container"
+    resource.labels.container_name="gateway"
+    severity>=WARNING
+    jsonPayload.message=~"enrollment rate limit excedido"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Gateway enrollment rate-limited"
+    labels {
+      key         = "source_ip"
+      value_type  = "STRING"
+      description = "IP origen del enrollment rechazado (externalTrafficPolicy: Local preserva la IP cliente)"
+    }
+  }
+
+  label_extractors = {
+    "source_ip" = "EXTRACT(jsonPayload.sourceIp)"
+  }
+}
+
+# Conexiones TCP rechazadas por el cap concurrente — el pod alcanzó
+# MAX_CONCURRENT_CONNECTIONS y destruyó la conexión sin tocar DB/buffers. En
+# pre-comercial (10 devices, cap 5000) esto es altamente anómalo: señala un
+# flood de conexiones o un cap mal calibrado (demasiado bajo).
+resource "google_logging_metric" "gateway_connection_cap_reached" {
+  name    = "telemetry/gateway_connection_cap_reached"
+  project = google_project.booster_ai.project_id
+
+  description = "Conexiones TCP rechazadas por el cap concurrente del pod (P1-L). >0 → flood de conexiones o cap mal calibrado."
+
+  filter = <<-EOT
+    resource.type="k8s_container"
+    resource.labels.container_name="gateway"
+    severity>=WARNING
+    jsonPayload.message=~"cap de conexiones concurrentes alcanzado"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Gateway connection cap reached"
+    labels {
+      key         = "source_ip"
+      value_type  = "STRING"
+      description = "IP origen de la conexión rechazada"
+    }
+  }
+
+  label_extractors = {
+    "source_ip" = "EXTRACT(jsonPayload.sourceIp)"
+  }
+}
+
+# P1 — Enrollment rate limit activo sostenido. threshold 0 + duration 300s con
+# ALIGN_DELTA: dispara solo si hay rechazos sostenidos por 5min (filtra un
+# rechazo aislado). Severidad ERROR: puede estar tirando devices legítimos.
+resource "google_monitoring_alert_policy" "gateway_enrollment_rate_limited_p1" {
+  display_name = "Gateway enrollment rate-limited sostenido (P1)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = "ERROR"
+
+  conditions {
+    display_name = "enrollment rejections sustained > 5 min"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.gateway_enrollment_rate_limited.name}\" AND resource.type=\"k8s_container\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = "El gateway está rechazando enrollments de IMEI nuevos (rate limit P1-L). Con la flota piloto (<<30/60s) esto NO debería pasar: o es un flood de IMEIs falsos, o el limiter está descartando devices legítimos en una instalación (no aparecen en panel). Revisar source_ip de la métrica: una sola IP → flood; muchas → revisar si hay una instalación masiva legítima y subir ENROLLMENT_RATE_MAX. Runbook: docs/runbooks/oncall-telemetry-incidents.md"
+    mime_type = "text/markdown"
+  }
+}
+
+# P2 — Cap de conexiones concurrentes alcanzado. Anómalo en pre-comercial.
+resource "google_monitoring_alert_policy" "gateway_connection_cap_reached_p2" {
+  display_name = "Gateway connection cap alcanzado (P2)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+  severity     = "WARNING"
+
+  conditions {
+    display_name = "connection cap rejections sustained > 5 min"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.gateway_connection_cap_reached.name}\" AND resource.type=\"k8s_container\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = "El pod del gateway está rechazando conexiones TCP por alcanzar MAX_CONCURRENT_CONNECTIONS (cap 5000). Con 10 devices piloto esto es altamente anómalo: flood de conexiones (revisar source_ip) o cap mal calibrado. Si es flota real creciendo, evaluar subir el cap (ojo presupuesto memoria 1Gi ≈ ~5000 conns) o escalar pods (HPA max 20). Runbook: docs/runbooks/oncall-telemetry-incidents.md"
+    mime_type = "text/markdown"
+  }
+}

@@ -12,6 +12,7 @@ import type { Logger } from '@booster-ai/logger';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { resolveImei } from './imei-auth.js';
 import type { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
+import type { RateLimiter } from './rate-limiter.js';
 
 /**
  * Lifecycle de una conexión TCP de un device Teltonika:
@@ -73,6 +74,8 @@ export interface ConnectionDeps {
   crashPublisher: CrashTracePublisher | null;
   logger: Logger;
   idleTimeoutSec: number;
+  /** Rate limiter del open enrollment (P1-L). Se pasa a resolveImei. */
+  enrollmentLimiter: RateLimiter;
 }
 
 interface ConnectionState {
@@ -86,7 +89,7 @@ interface ConnectionState {
 }
 
 export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
-  const { db, publisher, crashPublisher, logger, idleTimeoutSec } = deps;
+  const { db, publisher, crashPublisher, logger, idleTimeoutSec, enrollmentLimiter } = deps;
   const sourceIp = socket.remoteAddress ?? null;
   const childLogger = logger.child({
     component: 'connection-handler',
@@ -133,6 +136,7 @@ export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
       crashPublisher,
       logger: childLogger,
       sourceIp,
+      enrollmentLimiter,
     }).catch((err) => {
       childLogger.error({ err }, 'error procesando buffer, cerrando conexión');
       socket.destroy();
@@ -148,8 +152,10 @@ async function processBuffer(opts: {
   crashPublisher: CrashTracePublisher | null;
   logger: Logger;
   sourceIp: string | null;
+  enrollmentLimiter: RateLimiter;
 }): Promise<void> {
-  const { state, socket, db, publisher, crashPublisher, logger, sourceIp } = opts;
+  const { state, socket, db, publisher, crashPublisher, logger, sourceIp, enrollmentLimiter } =
+    opts;
 
   // Fase 1: handshake IMEI.
   if (!state.receivedFirstHandshake) {
@@ -166,7 +172,7 @@ async function processBuffer(opts: {
       state.imei = imei;
       state.buffer = state.buffer.subarray(2 + declaredLen);
 
-      const resolution = await resolveImei({ db, logger, imei, sourceIp });
+      const resolution = await resolveImei({ db, logger, imei, sourceIp, enrollmentLimiter });
       state.vehicleId = resolution.vehicleId;
       state.pendingDeviceId = resolution.pendingDeviceId;
       state.receivedFirstHandshake = true;
