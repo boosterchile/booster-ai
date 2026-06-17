@@ -1,4 +1,4 @@
-# ADR-060 — Sitio de marketing alineado al registro gateado: supersede ADR-010 §signup y §checkout
+# ADR-067 — Sitio de marketing alineado al registro gateado: supersede ADR-010 §signup y §checkout
 
 - **Status**: Accepted (2026-06-08 — SHIP gateado: el sitio se mergea a `main` con `/signup` en "próximamente"; el flip a captación lo gobierna §11 del spec)
 - **Date**: 2026-06-08

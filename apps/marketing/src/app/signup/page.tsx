@@ -19,7 +19,7 @@ export const metadata: Metadata = {
  * (curl/script). El kill-switch controla únicamente que este sitio muestre el
  * form. Que una solicitud prematura sea inocua hoy se debe al downstream
  * gateado (admin UI 503, sin notifier real, bug 409 approve→onboarding).
- * Encender el form exige el readiness de §11. Ver ADR-060 §"Aclaración de
+ * Encender el form exige el readiness de §11. Ver ADR-067 §"Aclaración de
  * seguridad".
  */
 const SignupForm = dynamic(() =>

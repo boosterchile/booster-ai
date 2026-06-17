@@ -77,7 +77,7 @@ Nueva app `apps/marketing` (Next.js 15, App Router, build standalone para Cloud 
 - **Gate enforced (no prosa):** el kill-switch es un mecanismo técnico — un test verifica que con el flag off la ruta no monta formulario. Habilitar `/signup` en prod requiere flip explícito del flag, que a su vez requiere el readiness de §11. Esto desacopla el valor SEO (desplegable ya) del riesgo de captar leads sin downstream.
 - **Páginas de contenido** estáticas (SSG) con `metadata` por ruta para SEO. Las páginas de solución por segmento (`transportistas`/`generadores`/`stakeholders-esg`) son material comercial que enlaza al mismo `/signup`; el segmento NO viaja al backend (el endpoint solo acepta `{email, nombreCompleto}`).
 - **Gate CI** (re-portado): test estructural "no checkout / no PSP/DTE import" + job Lighthouse/SEO.
-- **ADR-060** (a crear en SHIP): supersede ADR-010 §signup/§onboarding y §checkout, alineando el sitio al modelo gateado de ADR-052.
+- **ADR-067** (a crear en SHIP): supersede ADR-010 §signup/§onboarding y §checkout, alineando el sitio al modelo gateado de ADR-052.
 - **Rubber-duck (por qué así):** (a) reusar el endpoint revisado por seguridad evita reintroducir el vector que SEC-001 cerró; (b) separar la captación (este slice) del onboarding post-aprobación (follow-up) entrega valor SEO/lead-capture sin esperar el rediseño completo; (c) eliminar Firebase del marketing reduce superficie y complejidad.
 
 ## 8. Alternatives considered (rejected)
@@ -131,7 +131,7 @@ Nueva app `apps/marketing` (Next.js 15, App Router, build standalone para Cloud 
 - OQ1 — ¿Capturar el segmento (transportista/generador/stakeholder) en la solicitud? **Recomendación: NO** en este slice (no tocar el endpoint gateado); si se quiere, va como spec/ADR propio que amplíe `solicitudes_registro`.
 - OQ2 — El copy "próximamente"/"te contactaremos": ¿promete contacto por email o por WhatsApp/teléfono? Importa porque el notifier email real aún no existe — el copy no debe prometer un canal que no funciona. **Recomendación:** canal de contacto directo (mailto soporte / WhatsApp) en el estado "próximamente".
 - OQ3 — **RESUELTA** (objeción devils-advocate O2): se construye **contenido + SEO desplegable** + el form `/signup` **gateado por kill-switch off por defecto**. No se capta tráfico de registro hasta que el downstream cierre. Esto entrega el valor SEO ya y elimina el riesgo de buzón muerto.
-- OQ4 — Confirmar número de ADR (próximo libre = 060) y que supersede ADR-010 §signup/§onboarding + §checkout. (Trámite; se cierra en SHIP.)
+- OQ4 — Confirmar número de ADR (próximo libre = 067) y que supersede ADR-010 §signup/§onboarding + §checkout. (Trámite; se cierra en SHIP.)
 
 ## 13. Devils-advocate pass
 

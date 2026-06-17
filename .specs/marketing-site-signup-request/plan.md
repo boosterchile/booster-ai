@@ -9,7 +9,7 @@
 
 1. `apps/marketing/` (nuevo) — app, config, rutas, componentes, libs, tests
 2. `.github/workflows/ci.yml` — wiring del nuevo workspace + Lighthouse
-3. `docs/adr/060-*.md` (nuevo) — supersede ADR-010 §signup/§checkout
+3. `docs/adr/067-*.md` (nuevo) — supersede ADR-010 §signup/§checkout
 4. `packages/shared-schemas` — **solo import** (derivar schema cliente, no editar)
 
 Sin tocar el backend (`apps/api`), `apps/web`, DB. El sitio consume `POST /api/v1/signup-request` tal cual.
@@ -85,8 +85,8 @@ Sin tocar el backend (`apps/api`), `apps/web`, DB. El sitio consume `POST /api/v
 - Acceptance: CI corre lint/type/test/coverage de `@booster-ai/marketing` (SC7); job Lighthouse en modo reporte. Se crea follow-up stub `.specs/_followups/marketing-lighthouse-blocking.md` con criterio concreto de activación bloqueante (fix P2-2 — no dejar "no bloqueante" sin ticket).
 - Rollback: revertir `ci.yml`.
 
-### T10: ADR-060 + `.env.example`
-- Files: `docs/adr/060-marketing-site-signup-request-gated.md`, `apps/marketing/.env.example`
+### T10: ADR-067 + `.env.example`
+- Files: `docs/adr/067-marketing-site-signup-request-gated.md`, `apps/marketing/.env.example`
 - LOC estimate: docs (~120, exento)
 - Depends on: none (Status Accepted al mergear en SHIP)
 - Acceptance: cierra OQ4; supersede ADR-010 §signup/§onboarding + §checkout; documenta el modelo gateado + kill-switch doble nivel; `.env.example` lista las 2 `NEXT_PUBLIC_*`.

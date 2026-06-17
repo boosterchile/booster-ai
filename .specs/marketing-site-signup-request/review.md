@@ -57,7 +57,7 @@ Sub-agent `agent-rigor:devils-advocate` contra `plan.md` v1 + código vivo. Vere
 
 ## REVIEW (fase) — 2026-06-08
 
-Diff: 12 commits sobre `main` (~2414 ins, todo `apps/marketing/` + ADR-060 + lockfile). Sub-agents: code-reviewer + devils-advocate (obligatorios) + security-auditor + ux-designer.
+Diff: 12 commits sobre `main` (~2414 ins, todo `apps/marketing/` + ADR-067 + lockfile). Sub-agents: code-reviewer + devils-advocate (obligatorios) + security-auditor + ux-designer.
 
 ### Hallazgos BLOCKING — resueltos (código)
 
@@ -69,14 +69,14 @@ Diff: 12 commits sobre `main` (~2414 ins, todo `apps/marketing/` + ADR-060 + loc
 | a11y-2 | ux-designer | Focus ring verde sobre botón verde = 1.48:1 (<3:1) | **Fix**: anillo neutral-900 oscuro en `globals.css` (≥3:1 sobre blanco y primary-600). |
 | a11y-3 | ux-designer | Borde de input `neutral-300` = 1.52:1 (<3:1) | **Fix**: `border-neutral-500` (#73706A ≈ 5:1). |
 | a11y-4 | ux-designer | Submit sin loading state perceptible | **Fix**: botón "Enviando…" + `aria-busy`; test nuevo. |
-| P0-1 | devils-advocate | ADR/`page.tsx` afirmaban "defensa CORS de doble nivel" — FALSO: el endpoint público ya está montado sin gate; CORS no frena un POST no-browser | **Fix (doc)**: ADR-060 §kill-switch reescrito **+ comentario de `page.tsx` corregido** (cerrado en SHIP P1-A) — CORS no es defensa general; la inocuidad viene del downstream gateado. |
+| P0-1 | devils-advocate | ADR/`page.tsx` afirmaban "defensa CORS de doble nivel" — FALSO: el endpoint público ya está montado sin gate; CORS no frena un POST no-browser | **Fix (doc)**: ADR-067 §kill-switch reescrito **+ comentario de `page.tsx` corregido** (cerrado en SHIP P1-A) — CORS no es defensa general; la inocuidad viene del downstream gateado. |
 | P1-2 | devils-advocate + ux | Copy "te contactaremos" promete contacto sin notifier | **Fix**: copy del form + éxito sin promesa de contacto proactivo. |
 
 ### Resueltos (documentación)
 
 | # | Hallazgo | Resolución |
 |---|---|---|
-| P1-1 | Flag build-time vendido como "flip" de runtime | ADR-060 + spec §11: documentado que habilitar = rebuild+redeploy. |
+| P1-1 | Flag build-time vendido como "flip" de runtime | ADR-067 + spec §11: documentado que habilitar = rebuild+redeploy. |
 | P1-3 | ADR sobrevendía `.pick()` como mitigación del contrato 202 | ADR §residual corregido: `.pick()` cubre shape de request vs schema de dominio, no el 202 ni el schema duplicado del handler. |
 | Ley 19.628 (security) | `/legal/privacidad` stub + form sin consentimiento | **Condición de §11 (BLOCKING para el flip, no para este SHIP gateado)**: política publicada + consentimiento/finalidad antes de captar PII. |
 | CORS-before-flag (security) | Encender flag sin CORS = captación fallida silenciosa | §11: CORS + preflight OPTIONS verificado ANTES del flag-on. |
@@ -96,7 +96,7 @@ Diff: 12 commits sobre `main` (~2414 ins, todo `apps/marketing/` + ADR-060 + loc
 
 ### No objetado (sólido, verificado)
 
-Kill-switch fail-closed (`v==='true'`), 202 no lee body (anti-enumeration, con spies), form sin rol/empresa, sin Firebase/checkout en bundle, body explícito de 2 claves, on-path del kill-switch testeado, sin secretos (gitleaks limpio), sin XSS/SSRF, sin `console.*`/PII en logs, ADR-060 bien formado.
+Kill-switch fail-closed (`v==='true'`), 202 no lee body (anti-enumeration, con spies), form sin rol/empresa, sin Firebase/checkout en bundle, body explícito de 2 claves, on-path del kill-switch testeado, sin secretos (gitleaks limpio), sin XSS/SSRF, sin `console.*`/PII en logs, ADR-067 bien formado.
 
 ### Veredicto
 
