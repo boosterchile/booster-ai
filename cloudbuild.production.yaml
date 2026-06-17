@@ -473,35 +473,35 @@ steps:
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   #
-  # NOTA OPERACIONAL (2026-05-09): el deploy a GKE NO se hace desde Cloud
-  # Build private pool. El pool y el GKE control plane usan service
-  # networking peerings independientes que no propagan rutas entre si
-  # (limitacion VPC peering no-transitivo). kubectl desde el pool al
-  # master interno (172.16.0.2) hace timeout.
+  # ADR-065 (2026-06-16): deploy AUTOMÁTICO desde Cloud Build vía DNS endpoint
+  # del control plane (ADR-059), reemplaza el stdout-only manual (audit P0-I).
+  # El SA github-deployer (roles/container.developer) hace `kubectl set image`
+  # al SHA buildeado y verifica el rollout, gateado por IAM — sin depender del
+  # VPC peering (la NOTA stale 2026-05-09 era previa a ADR-059).
   #
-  # Cloud Build SOLO buildea + pushea la imagen :${_COMMIT_SHA} a
-  # Artifact Registry. El operador deploya manualmente desde su laptop
-  # (autorizado en master_authorized_networks_config) o via IAP TCP:
-  #
-  #   ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}
-  #
-  # El script hace `kubectl set image` al SHA buildeado. Output del
-  # build incluye el SHA para facilitar copy-paste.
-  - id: gke-deploy-instructions
-    name: gcr.io/cloud-builders/curl
+  # Ordenamiento `waitFor: [deploy-api, ...]`: corre DESPUÉS de que el API se
+  # promovió a 100%. Si el rollout del gateway falla, el build falla SIN poner
+  # en riesgo el canary del API (que ya está a salvo). Fail-loud: un rollout
+  # fallido o que no converge alerta al operador → no más drift silencioso.
+  # Break-glass: scripts/deploy-telemetry-gateway.sh sigue disponible desde una
+  # laptop autorizada si la ruta de Cloud Build falla.
+  - id: gke-deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
+    env:
+      - USE_GKE_GCLOUD_AUTH_PLUGIN=True
     args:
       - -c
       - |
-        echo "=========================================="
-        echo "  GKE deploy MANUAL pendiente"
-        echo "=========================================="
-        echo "  Imagen lista: ${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}"
-        echo ""
-        echo "  Para deployar al gateway, ejecutar desde laptop autorizado:"
-        echo "    ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}"
-        echo "=========================================="
-    waitFor: [push-telemetry-tcp-gateway]
+        set -euo pipefail
+        gcloud container clusters get-credentials booster-ai-telemetry \
+          --region=${_REGION} --project=$PROJECT_ID --dns-endpoint
+        kubectl set image deployment/telemetry-tcp-gateway \
+          gateway=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA} \
+          -n telemetry
+        kubectl rollout status deployment/telemetry-tcp-gateway \
+          -n telemetry --timeout=300s
+    waitFor: [deploy-api, push-telemetry-tcp-gateway]
 
   # =========================================================================
   # Smoke test — ping al webhook Twilio via la URL pública canonical.
