@@ -1,8 +1,12 @@
 # Cloud Build pipeline — production
 #
 # Triggered desde GitHub Actions release.yml tras manual approval en el environment
-# `production`. Sin canary/split traffic por ahora (post-staging environment real,
-# task backlog #43). Al desplegar, el tráfico va 100% a la nueva revisión.
+# `production`. El deploy de apps/api usa canary: despliega la nueva revisión
+# con tag canary-signup-<sha> al 1% del tráfico, observa 30 min (step
+# canary-sleep) + verifica error_rate/p95 (canary-verify) y recién entonces
+# promueve a 100% (step deploy-api: update-traffic --to-latest). Ver T13
+# SEC-001 más abajo (~línea 154) y el runbook docs/qa/signup-canary-rollback.md.
+# El timeout global debe cubrir el sleep de 30 min — ver `timeout` al final.
 #
 # Scope:
 #   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
@@ -252,26 +256,122 @@ steps:
     args:
       - -c
       - |
-        set -e
-        echo "canary-verify: querying Cloud Monitoring for error_rate + p95_latency"
-        # NOTA: implementación real del query MQL queda como follow-up; este
-        # step actualmente loguea y exit 0 (placeholder). Issue tracking:
-        # cuando el primer canary corra en staging, ajustar el filtro MQL
-        # con la sintaxis exacta de monitoring.googleapis.com/v3. Per spec
-        # T13 round 3 P1-1 fix: el step DEBE existir con id canary-verify
-        # para que el downstream waitFor sea explícito; el contenido real
-        # del check se itera post-primer-corrida.
-        # T13-fix (2026-05-28): inline short-SHA derivation matches the
-        # actual revision tag created by deploy-canary step.
+        set -euo pipefail
+        # Check REAL contra Cloud Monitoring (2026-06-11; antes placeholder
+        # exit 0 — auditoría 2026-06-09 riesgo alto: la promoción a 100% no
+        # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms en la
+        # ventana del canary → exit 1 y el build aborta SIN promover.
+        # Defensivo: sin tráfico/sin revision con tag → warn + exit 0 (la
+        # ausencia de muestra no es failure; el humano decide — runbook
+        # signup-canary-rollback).
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
-        echo "  - target tag: $$REVISION_TAG"
-        echo "  - window: last 30min"
-        echo "  - error_rate threshold: < 1%"
-        echo "  - p95_latency threshold: < 500ms"
-        echo "canary-verify: placeholder OK (real MQL check pendiente, ver runbook)"
-        exit 0
+        MIN_REQUESTS='${_CANARY_MIN_REQUESTS}'
+        echo "canary-verify: tag=$$REVISION_TAG window=30min thresholds: error_rate<1%, p95<500ms, min_requests=$$MIN_REQUESTS"
+
+        # Retry x3: un transitorio de gcloud/API no debe bloquear un deploy
+        # legítimo (review 2026-06-11).
+        describe_with_retry() {
+          for attempt in 1 2 3; do
+            if OUT=$$(gcloud run services describe booster-ai-api \
+              --region='${_REGION}' --platform=managed --format=json); then
+              echo "$$OUT"; return 0
+            fi
+            echo "canary-verify: describe intento $$attempt falló, reintentando..." >&2
+            sleep 10
+          done
+          return 1
+        }
+        REVISION=$$(describe_with_retry \
+          | python3 -c "import sys,json; s=json.load(sys.stdin); print(next((t.get('revisionName','') for t in s.get('status',{}).get('traffic',[]) if t.get('tag')=='$$REVISION_TAG'), ''))")
+        if [ -z "$$REVISION" ]; then
+          echo "canary-verify: WARN no se encontró revision con tag $$REVISION_TAG — sin gate automático, decisión humana"
+          exit 0
+        fi
+        echo "canary-verify: revision=$$REVISION"
+
+        TOKEN=$$(gcloud auth print-access-token)
+        export TOKEN REVISION MIN_REQUESTS
+        python3 <<'PYCHECK'
+        import json, os, sys, urllib.parse, urllib.request
+        from datetime import datetime, timedelta, timezone
+
+        project = '$PROJECT_ID'
+        revision = os.environ['REVISION']
+        token = os.environ['TOKEN']
+        min_requests = int(os.environ.get('MIN_REQUESTS', '0') or '0')
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(minutes=30)
+
+        def ts(filter_, aligner, reducer, group_by=None):
+            params = {
+                'filter': filter_,
+                'interval.startTime': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'interval.endTime': end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'aggregation.alignmentPeriod': '1800s',
+                'aggregation.perSeriesAligner': aligner,
+                'aggregation.crossSeriesReducer': reducer,
+            }
+            qs = urllib.parse.urlencode(params)
+            if group_by:
+                qs += ''.join(f'&aggregation.groupByFields={urllib.parse.quote(g)}' for g in group_by)
+            req = urllib.request.Request(
+                f'https://monitoring.googleapis.com/v3/projects/{project}/timeSeries?{qs}',
+                headers={'Authorization': f'Bearer {token}'})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.load(r).get('timeSeries', [])
+
+        base = (f'metric.type="run.googleapis.com/request_count" '
+                f'AND resource.labels.service_name="booster-ai-api" '
+                f'AND resource.labels.revision_name="{revision}"')
+        series = ts(base, 'ALIGN_SUM', 'REDUCE_SUM', ['metric.labels.response_code_class'])
+        counts = {}
+        for s_ in series:
+            klass = s_.get('metric', {}).get('labels', {}).get('response_code_class', '?')
+            for pt in s_.get('points', []):
+                v = pt.get('value', {})
+                counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
+        total = sum(counts.values())
+        # Gate de muestra (review 2026-06-11): con _CANARY_MIN_REQUESTS=0
+        # (default actual, API pre-comercial con ~0 tráfico de canary al
+        # 1%) la falta de muestra promueve con WARN — igual que el
+        # comportamiento histórico, pero ahora es una DECISIÓN
+        # parametrizada: al crecer el tráfico, subir la substitution en
+        # release.yml hace que muestra insuficiente ABORTE (exit 1) y la
+        # promoción exija decisión humana. Sin el parámetro, el gate del
+        # canary sería papel mojado en el caso típico actual.
+        if total < max(min_requests, 1):
+            if min_requests > 0:
+                print(f'canary-verify: FAIL muestra insuficiente ({total} < {min_requests}) — promoción requiere decisión humana')
+                sys.exit(1)
+            print('canary-verify: WARN 0 requests en la ventana — sin muestra (min_requests=0), promoviendo; subir _CANARY_MIN_REQUESTS cuando haya tráfico real')
+            sys.exit(0)
+        err = counts.get('5xx', 0)
+        rate = err / total
+        print(f'canary-verify: requests={total} 5xx={err} error_rate={rate:.4f}')
+        if rate >= 0.01:
+            print(f'canary-verify: FAIL error_rate {rate:.2%} >= 1% — NO promover')
+            sys.exit(1)
+
+        lat = (f'metric.type="run.googleapis.com/request_latencies" '
+               f'AND resource.labels.service_name="booster-ai-api" '
+               f'AND resource.labels.revision_name="{revision}"')
+        p95s = []
+        for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+            for pt in s_.get('points', []):
+                v = pt.get('value', {})
+                p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
+        if p95s:
+            worst = max(p95s)
+            print(f'canary-verify: p95_max={worst:.0f}ms')
+            if worst >= 500:
+                print(f'canary-verify: FAIL p95 {worst:.0f}ms >= 500ms — NO promover')
+                sys.exit(1)
+        else:
+            print('canary-verify: WARN sin serie de latencias — solo gate de error_rate aplicado')
+        print('canary-verify: OK — promoviendo a 100%')
+        PYCHECK
     waitFor: [canary-sleep]
 
   # PRESERVE id: deploy-api — downstream `waitFor: [deploy-api, deploy-
@@ -338,7 +438,10 @@ steps:
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-web]
 
-  # apps/telemetry-processor — Cloud Run consumer Pub/Sub.
+  # apps/telemetry-processor — Cloud Run PULL consumer (StreamingPull).
+  # min-instances=1 + no-cpu-throttling son OBLIGATORIOS para un consumer pull
+  # (ver compute.tf / incidente 2026-06-07). Explícitos acá para idempotencia y
+  # auto-documentación, aunque `update --image` ya preserva la config existente.
   - id: deploy-telemetry-processor
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -350,6 +453,8 @@ steps:
       - --image=${_REGISTRY}/telemetry-processor:${_COMMIT_SHA}
       - --region=${_REGION}
       - --platform=managed
+      - --min-instances=1
+      - --no-cpu-throttling
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-telemetry-processor]
 
@@ -369,35 +474,35 @@ steps:
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   #
-  # NOTA OPERACIONAL (2026-05-09): el deploy a GKE NO se hace desde Cloud
-  # Build private pool. El pool y el GKE control plane usan service
-  # networking peerings independientes que no propagan rutas entre si
-  # (limitacion VPC peering no-transitivo). kubectl desde el pool al
-  # master interno (172.16.0.2) hace timeout.
+  # ADR-065 (2026-06-16): deploy AUTOMÁTICO desde Cloud Build vía DNS endpoint
+  # del control plane (ADR-059), reemplaza el stdout-only manual (audit P0-I).
+  # El SA github-deployer (roles/container.developer) hace `kubectl set image`
+  # al SHA buildeado y verifica el rollout, gateado por IAM — sin depender del
+  # VPC peering (la NOTA stale 2026-05-09 era previa a ADR-059).
   #
-  # Cloud Build SOLO buildea + pushea la imagen :${_COMMIT_SHA} a
-  # Artifact Registry. El operador deploya manualmente desde su laptop
-  # (autorizado en master_authorized_networks_config) o via IAP TCP:
-  #
-  #   ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}
-  #
-  # El script hace `kubectl set image` al SHA buildeado. Output del
-  # build incluye el SHA para facilitar copy-paste.
-  - id: gke-deploy-instructions
-    name: gcr.io/cloud-builders/curl
+  # Ordenamiento `waitFor: [deploy-api, ...]`: corre DESPUÉS de que el API se
+  # promovió a 100%. Si el rollout del gateway falla, el build falla SIN poner
+  # en riesgo el canary del API (que ya está a salvo). Fail-loud: un rollout
+  # fallido o que no converge alerta al operador → no más drift silencioso.
+  # Break-glass: scripts/deploy-telemetry-gateway.sh sigue disponible desde una
+  # laptop autorizada si la ruta de Cloud Build falla.
+  - id: gke-deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
+    env:
+      - USE_GKE_GCLOUD_AUTH_PLUGIN=True
     args:
       - -c
       - |
-        echo "=========================================="
-        echo "  GKE deploy MANUAL pendiente"
-        echo "=========================================="
-        echo "  Imagen lista: ${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA}"
-        echo ""
-        echo "  Para deployar al gateway, ejecutar desde laptop autorizado:"
-        echo "    ./scripts/deploy-telemetry-gateway.sh ${_COMMIT_SHA}"
-        echo "=========================================="
-    waitFor: [push-telemetry-tcp-gateway]
+        set -euo pipefail
+        gcloud container clusters get-credentials booster-ai-telemetry \
+          --region=${_REGION} --project=$PROJECT_ID --dns-endpoint
+        kubectl set image deployment/telemetry-tcp-gateway \
+          gateway=${_REGISTRY}/telemetry-tcp-gateway:${_COMMIT_SHA} \
+          -n telemetry
+        kubectl rollout status deployment/telemetry-tcp-gateway \
+          -n telemetry --timeout=300s
+    waitFor: [deploy-api, push-telemetry-tcp-gateway]
 
   # =========================================================================
   # Smoke test — ping al webhook Twilio via la URL pública canonical.
@@ -450,6 +555,7 @@ steps:
   # boundary ADR-001 + harness CI default-deny + reaper, no por Cloud Function.
 
 substitutions:
+  _CANARY_MIN_REQUESTS: '0' # >0 = muestra insuficiente aborta (ver canary-verify)
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
@@ -520,4 +626,11 @@ options:
   pool:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
-timeout: 2400s
+# Timeout global del build. DEBE acomodar el `canary-sleep` de 1800s (30 min,
+# step id: canary-sleep) MÁS el build+push de las 6 imágenes Docker + deploy
+# canary + verify + promoción. Con 2400s el presupuesto no-sleep era de solo
+# 600s (10 min) y un build frío (~11 min hasta route-canary) lo excedía →
+# TIMEOUT durante el sleep, la promoción a 100% nunca corría y el canary
+# quedaba stuck al 1% (incidente 2026-06-16, build aca4641f, deploy de a6bf14a).
+# 3600s deja ~1800s (30 min) de presupuesto no-sleep = ~3x el build observado.
+timeout: 3600s

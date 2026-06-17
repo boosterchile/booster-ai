@@ -33,9 +33,10 @@ app.use(
 `;
 
 const SPLIT_USE_BLOCKS = `
-// Pattern: firebaseAuth + isDemo en use blocks separados (válido pq se
-// suman en la chain del path).
+// Pattern: firebaseAuth + demoExpires + isDemo en use blocks separados
+// (válido pq se suman en la chain del path).
 app.use('/certificates/*', async (c, next) => firebaseAuthMiddleware(c, next));
+app.use('/certificates/*', async (c, next) => demoExpiresMiddleware(c, next));
 app.use('/certificates/*', isDemoEnforcementMiddleware);
 `;
 
@@ -85,9 +86,18 @@ describe('check-is-demo-wire-completeness — findMissingEnforcement', () => {
     expect(missing).toEqual([]);
   });
 
-  it('path con firebase pero sin isDemo → flagged', () => {
+  it('path con firebase pero sin isDemo → flagged (formato con middleware faltante)', () => {
     const missing = findMissingEnforcement(MISSING_ENFORCEMENT);
-    expect(missing).toEqual(['/empresas/*']);
+    expect(missing).toEqual(['/empresas/* (falta isDemoEnforcementMiddleware)']);
+  });
+
+  it('path con firebase pero sin demoExpires → flagged (review 2026-06-11)', () => {
+    const sinExpires = `
+app.use('/vehiculos/*', firebaseAuthMiddleware, isDemoEnforcementMiddleware);
+`;
+    expect(findMissingEnforcement(sinExpires)).toEqual([
+      '/vehiculos/* (falta demoExpiresMiddleware)',
+    ]);
   });
 
   it('split use-blocks con firebase + isDemo en distintos statements → 0 missing', () => {

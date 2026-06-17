@@ -147,3 +147,86 @@ describe('firebase auth middleware', () => {
     expect(auth.verifyIdToken).toHaveBeenCalledWith('t', true);
   });
 });
+
+// fix-sse-ticket-auth: el SSE del chat se autentica con un ticket efímero por
+// query (?ticket=), NO con el Firebase ID token (que se filtraba a Cloud
+// Trace/Logging). El fallback `?auth=<token>` quedó ELIMINADO.
+describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => {
+  const ASSIGNMENT = 'a1111111-2222-3333-4444-555555555555';
+  const STREAM_PATH = `/assignments/${ASSIGNMENT}/messages/stream`;
+
+  async function buildStreamApp(opts: {
+    auth: Auth;
+    sseTicketStore?: (
+      ticket: string,
+      assignmentId: string,
+    ) => Promise<{ uid: string; isDemo: boolean } | null>;
+  }): Promise<Hono> {
+    const { createFirebaseAuthMiddleware } = await import('../../src/middleware/firebase-auth.js');
+    const app = new Hono();
+    app.use(
+      '/assignments/*',
+      createFirebaseAuthMiddleware({
+        auth: opts.auth,
+        logger: noopLogger,
+        ...(opts.sseTicketStore ? { sseTicketStore: opts.sseTicketStore } : {}),
+      }),
+    );
+    app.get('/assignments/:id/messages/stream', (c) => {
+      const claims = c.get('firebaseClaims') as
+        | { uid: string; custom: Record<string, unknown> }
+        | undefined;
+      return c.json({ ok: true, uid: claims?.uid, isDemo: claims?.custom?.is_demo });
+    });
+    return app;
+  }
+
+  it('ticket válido → resuelve uid del store y NO llama verifyIdToken', async () => {
+    const auth = stubFirebaseAuth({ succeed: {} });
+    const store = vi.fn(async () => ({ uid: 'uid-from-ticket', isDemo: false }));
+    const app = await buildStreamApp({ auth, sseTicketStore: store });
+    const res = await app.request(`${STREAM_PATH}?ticket=abc123`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { uid: string; isDemo: boolean };
+    expect(body.uid).toBe('uid-from-ticket');
+    expect(body.isDemo).toBe(false);
+    expect(store).toHaveBeenCalledWith('abc123', ASSIGNMENT);
+    expect(auth.verifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it('restituye is_demo del ticket en firebaseClaims.custom (demo enforcement del SSE)', async () => {
+    const app = await buildStreamApp({
+      auth: stubFirebaseAuth({ succeed: {} }),
+      sseTicketStore: async () => ({ uid: 'demo-uid', isDemo: true }),
+    });
+    const res = await app.request(`${STREAM_PATH}?ticket=demo-ticket`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).isDemo).toBe(true);
+  });
+
+  it('ticket inválido/expirado (store → null) → 401', async () => {
+    const app = await buildStreamApp({
+      auth: stubFirebaseAuth({ succeed: {} }),
+      sseTicketStore: async () => null,
+    });
+    const res = await app.request(`${STREAM_PATH}?ticket=expired`);
+    expect(res.status).toBe(401);
+  });
+
+  it('sin ticket ni Bearer → 401', async () => {
+    const app = await buildStreamApp({
+      auth: stubFirebaseAuth({ succeed: {} }),
+      sseTicketStore: async () => 'x',
+    });
+    const res = await app.request(STREAM_PATH);
+    expect(res.status).toBe(401);
+  });
+
+  it('el viejo ?auth=<jwt> ya NO autentica el stream (401, sin verifyIdToken)', async () => {
+    const auth = stubFirebaseAuth({ succeed: { uid: 'should-not-happen' } });
+    const app = await buildStreamApp({ auth, sseTicketStore: async () => null });
+    const res = await app.request(`${STREAM_PATH}?auth=eyJfake.jwt.token`);
+    expect(res.status).toBe(401);
+    expect(auth.verifyIdToken).not.toHaveBeenCalled();
+  });
+});

@@ -11,11 +11,25 @@ import { defineConfig } from 'tsup';
  * Node no puede strippear types desde archivos en node_modules.
  */
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: ['src/main.ts', 'src/instrumentation.ts'],
   format: ['esm'],
   clean: true,
   sourcemap: true,
   target: 'node22',
   noExternal: [/^@booster-ai\//],
-  external: ['hono', '@hono/node-server', '@google-cloud/pubsub', 'pino', 'zod'],
+  external: [
+    'import-in-the-middle',
+    '@opentelemetry/semantic-conventions',
+    '@opentelemetry/sdk-trace-base',
+    '@opentelemetry/sdk-node',
+    '@opentelemetry/resources',
+    '@opentelemetry/auto-instrumentations-node',
+    '@opentelemetry/api',
+    '@google-cloud/opentelemetry-cloud-trace-exporter',
+    'hono',
+    '@hono/node-server',
+    '@google-cloud/pubsub',
+    'pino',
+    'zod',
+  ],
 });

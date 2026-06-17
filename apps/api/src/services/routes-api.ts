@@ -102,6 +102,7 @@ export class RoutesApiError extends Error {
       | 'auth_error'
       | 'quota_exceeded'
       | 'network_error'
+      | 'timeout'
       | 'unknown',
     public readonly httpStatus: number | null,
   ) {
@@ -111,6 +112,13 @@ export class RoutesApiError extends Error {
 }
 
 const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+/**
+ * Timeout duro de la llamada HTTP a Routes API. Sin esto, una degradación
+ * del upstream cuelga el slot de concurrencia del Cloud Run indefinidamente
+ * (audit 2026-06-14 P0-H). Mismo patrón que gemini-client.ts.
+ */
+export const ROUTES_API_TIMEOUT_MS = 10_000;
 
 /**
  * Llama al Routes API y devuelve las rutas normalizadas.
@@ -174,6 +182,11 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
     throw new RoutesApiError('ADC returned no access token for Routes API', 'auth_error', null);
   }
 
+  // AbortController: timeout duro para no colgar el slot de concurrencia del
+  // Cloud Run si Routes API se degrada (audit 2026-06-14 P0-H).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ROUTES_API_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetchImpl(ROUTES_API_URL, {
@@ -185,14 +198,28 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
         'X-Goog-FieldMask': fieldMask,
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      logger?.error(
+        { origin, destination, timeoutMs: ROUTES_API_TIMEOUT_MS },
+        'Routes API timeout',
+      );
+      throw new RoutesApiError(
+        `Routes API timed out after ${ROUTES_API_TIMEOUT_MS}ms`,
+        'timeout',
+        null,
+      );
+    }
     logger?.error({ err, origin, destination }, 'Routes API network error');
     throw new RoutesApiError(
       `Network error calling Routes API: ${err instanceof Error ? err.message : 'unknown'}`,
       'network_error',
       null,
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {

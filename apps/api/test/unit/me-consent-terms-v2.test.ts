@@ -174,7 +174,11 @@ describe('POST /me/consent/terms-v2', () => {
     expect(db.update).toHaveBeenCalled();
   });
 
-  it('x-forwarded-for con múltiples IPs → captura solo la primera', async () => {
+  it('x-forwarded-for con múltiples IPs → captura la PENÚLTIMA (la que vio el LB)', async () => {
+    // El contrato anterior ("solo la primera") codificaba el bug: bajo
+    // GCLB la primera entry es 100% controlada por el cliente — y esta IP
+    // es EVIDENCIA de consentimiento Ley 19.628 (middleware/client-ip.ts,
+    // spec fix-xff-trust-boundary).
     const setSpy = vi.fn(() => ({ where: vi.fn(async () => []) }));
     const db = {
       select: vi.fn(() => {
@@ -201,7 +205,7 @@ describe('POST /me/consent/terms-v2', () => {
         'x-forwarded-for': '1.2.3.4, 5.6.7.8, 9.10.11.12',
       },
     });
-    expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ consentTermsV2Ip: '1.2.3.4' }));
+    expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ consentTermsV2Ip: '5.6.7.8' }));
   });
 });
 

@@ -1,4 +1,4 @@
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import { type TwilioWhatsAppClient, verifyTwilioSignature } from '@booster-ai/whatsapp-client';
 import type Redis from 'ioredis';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationStore } from '../conversation/store.js';
@@ -55,6 +55,7 @@ function makeApp(opts?: {
   whatsAppClient?: TwilioWhatsAppClient;
   apiClient?: ApiClient;
   redis?: RedisStub;
+  statusWebhookUrl?: string;
 }) {
   const redis = opts?.redis ?? makeRedisStub();
   const store =
@@ -72,6 +73,7 @@ function makeApp(opts?: {
     redis: redis as unknown as Redis,
     authToken: 'test_token',
     webhookUrl: 'https://example.test/webhooks/whatsapp',
+    statusWebhookUrl: opts?.statusWebhookUrl,
     logger: noopLogger,
   });
 
@@ -294,5 +296,44 @@ describe('POST /webhooks/twilio-status', () => {
     });
     expect(res.status).toBe(200);
     expect(noopLogger.error).toHaveBeenCalled();
+  });
+
+  // P1-6: el HMAC del status callback debe validarse contra la URL EXACTA con
+  // la que Twilio firma (la configurada en su Console → Status callback URL),
+  // no contra una derivada del inbound webhook que puede no coincidir.
+  it('valida la firma contra TWILIO_STATUS_CALLBACK_URL cuando está configurada', async () => {
+    const { app } = makeApp({ statusWebhookUrl: 'https://callbacks.test/twilio/status' });
+    await app.request('/webhooks/twilio-status', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-twilio-signature': 'fakesig',
+      },
+      body: form({ MessageSid: 'SMd', MessageStatus: 'delivered' }),
+    });
+    expect(vi.mocked(verifyTwilioSignature)).toHaveBeenCalledWith(
+      'test_token',
+      'fakesig',
+      'https://callbacks.test/twilio/status',
+      expect.anything(),
+    );
+  });
+
+  it('sin TWILIO_STATUS_CALLBACK_URL deriva la URL del status callback desde webhookUrl', async () => {
+    const { app } = makeApp();
+    await app.request('/webhooks/twilio-status', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-twilio-signature': 'fakesig',
+      },
+      body: form({ MessageSid: 'SMe', MessageStatus: 'delivered' }),
+    });
+    expect(vi.mocked(verifyTwilioSignature)).toHaveBeenCalledWith(
+      'test_token',
+      'fakesig',
+      'https://example.test/webhooks/twilio-status',
+      expect.anything(),
+    );
   });
 });

@@ -1,9 +1,77 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-07 (**🔴→✅ INCIDENTE Redis TLS resuelto y CERRADO en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429] + endurecido `whatsapp-bot` [quitado `rejectUnauthorized:false`]. Verificación E2E Playwright gateada [#422], cierre docs [#421], follow-up paths-ignore [#423]; gate no-op de #422 rechazado → lane de release libre. **PRs #420→#423 mergeados.** 4 follow-ups abiertos. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
+**Última actualización**: 2026-06-14 (**🧩 CONSOLIDACIÓN de los 3 sub-agents locales → `booster-skills@0.3.0`** [ADR-064, Accepted]: tras el retiro de agent-rigor (ADR-060) los 3 archivos en `agents/` quedaron huérfanos. Resueltos sin duplicar lo que superpowers/booster-skills ya cubren — `security-auditor`→módulo compliance Chile en `booster-skills:security-scanner`; `sre-oncall`→nuevo sub-agent SRE pre-merge; `code-reviewer`→retirado (ADR-check plegado en `booster-stack-conventions` paso 7; review genérico=superpowers). `booster-skills` 6→7 sub-agents, **release [`v0.3.0`](https://github.com/boosterchile/booster-skills/releases/tag/v0.3.0)** [PR booster-skills#2]. En `booster-ai`: `agents/` **eliminado**, CLAUDE.md §Capas adicionales actualizado, stub `migrate-booster-agents` cerrado (Done), **ADR-064** (número confirmado por el guard — la cadena ADR del día fue 051→060→064 por colisiones). PyYAML cazó un bug que `claude plugin validate` no vio (colon-space en la description de sre-oncall). **PR [#466](https://github.com/boosterchile/booster-ai/pull/466) mergeado** [squash `768a4cc`]. Solo governance/tooling. Ver §Sesión 2026-06-14 (cont.).) **Antes (mismo día)**: (**🔧 MIGRACIÓN capa de disciplina: `agent-rigor` → `superpowers`** [ADR-060, Accepted]: se retira el plugin bespoke `agent-rigor` (motor bash sin tests, gate de enforcement no operativo de facto) y se adopta `superpowers` (`obra/superpowers`, MIT, marketplace oficial) como Capa 1 de disciplina genérica. `booster-skills` se mantiene como Capa 2 y **ya está en 0.2.0** con los mecanismos rescatables convertidos en skills [`definicion-de-terminado`, `tdd-dominio-critico`] + ledger observacional sin gates. Docs vivos actualizados: `CLAUDE.md`, `AGENTS.md`, `README.md` y el stub `migrate-booster-agents`. ⚠️ El ADR se preparó como "051" pero ese número ya estaba ocupado [`051-pii-redaction-logger`] → el guard `check-adr-numbering` bloqueó la colisión → renumerado al siguiente libre **060** (el repo iba por 059, no por 050 como sugería la estructura del CLAUDE.md). **PR [#464](https://github.com/boosterchile/booster-ai/pull/464) mergeado** [squash `91eccb1`, 21/21 checks SUCCESS]. Solo docs/governance — sin cambios de código/runtime/CI/deploy. Ver §Sesión 2026-06-14.) **Antes [2026-06-07]**: (**🔴→✅ INCIDENTE Redis TLS resuelto y CERRADO en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429] + endurecido `whatsapp-bot` [quitado `rejectUnauthorized:false`]. Verificación E2E Playwright gateada [#422], cierre docs [#421], follow-up paths-ignore [#423]; gate no-op de #422 rechazado → lane de release libre. **PRs #420→#423 mergeados.** 4 follow-ups abiertos. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
 **Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
 **Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-06-14 (cont.) — Consolidación de los 3 sub-agents locales → booster-skills@0.3.0 (ADR-064)
+
+> Continuación directa de la migración a superpowers. ADR-060 retiró `agent-rigor`, dejando huérfanos los 3 archivos en `agents/` raíz (antes "extendían" agent-rigor). Esta sesión los consolidó en el plugin de dominio y los borró del repo. Ejecución del spec `.specs/consolidate-agents-v0.3.0/spec.md` (decisiones del PO).
+
+### Decisiones del PO (2026-06-14) y destino de cada override
+
+| Override local | Destino | Razón |
+|---|---|---|
+| `security-auditor` | **Extender `booster-skills:security-scanner`** (módulo compliance Chile, secciones 13–16) | OWASP/secrets/SQLi ya estaban en security-scanner; lo único valioso = Ley 19.628, SII/DTE, RBAC por rol, consent ESG. Un solo agente de seguridad. |
+| `sre-oncall` | **Nuevo sub-agent `booster-skills:sre-oncall`** | Lente SRE *pre-merge* (observabilidad, rollback, SLO, capacity). Distinto de la skill `incident-response` (*durante* incidente). Sin equivalente. |
+| `code-reviewer` | **Retirado.** ADR-compliance plegado en `booster-skills:booster-stack-conventions` (paso 7) | Review genérico ya lo da `superpowers`. Único bit único = ADR-compliance. |
+
+`booster-skills`: 6 → **7 sub-agents**; skills siguen en 9 (booster-stack-conventions enriquecido).
+
+### Parte A — `booster-skills` v0.3.0 (shippeada)
+
+- **PR [`boosterchile/booster-skills#2`](https://github.com/boosterchile/booster-skills/pull/2)** mergeado (squash `a065bab`) → tag + **[release `v0.3.0`](https://github.com/boosterchile/booster-skills/releases/tag/v0.3.0)**.
+- `security-scanner` extendido (compliance Chile + anti-rationalizations + refs), nuevo `sre-oncall`, paso 7 ADR-compliance en `booster-stack-conventions`, manifests 0.2.0→0.3.0, CHANGELOG `[0.3.0]`, README reframe `agent-rigor`→`superpowers` (+ conteos corregidos a 9 skills/7 sub-agents — estaban stale desde v0.2.0).
+- **Validación**: `claude plugin validate .` ✔ + PyYAML sobre frontmatters (7 agents, 9 skills). ⚠️ **PyYAML cazó un bug real** que `claude plugin validate` NO detectó: la `description` de `sre-oncall` traía `incident-response: este` (colon-space) → rompía el parseo YAML → entrecomillada (texto sin cambios).
+
+### Parte B — `booster-ai` (este repo)
+
+- **PR [#466](https://github.com/boosterchile/booster-ai/pull/466)** mergeado (squash `768a4cc`).
+- Borrados `agents/{code-reviewer,security-auditor,sre-oncall}.md` (directorio `agents/` eliminado).
+- `CLAUDE.md` §Capas adicionales: tabla de 3 overrides → nota de consolidación; árbol de estructura y "Conservados" sin `agents/`.
+- **[ADR-064](../adr/064-consolidate-local-subagents-into-booster-skills.md)** (Accepted) registra la consolidación. **Número confirmado por el guard `check-adr-numbering`, no hardcodeado** — el repo iba por 063 (la cadena ADR del día fue 051→060→064 por colisiones de numeración).
+- Stub `migrate-booster-agents-to-plugin-v0.2.0.md` cerrado (**Status = Done**).
+- `README.md`: quita `agents/` del árbol; rango ADR `001..064`.
+
+### Scope guard respetado
+
+No se recreó `code-reviewer` como sub-agent; no se tocaron ADRs históricos ni otras `.specs/`; no se duplicó contenido OWASP/secrets; no se creó un agente de compliance separado. Único trabajo fuera de la lista literal del spec (reportado al PO): actualizar los dos `README.md` (plugin + repo) que el cambio dejaba incoherentes/colgando.
+
+---
+
+## Sesión 2026-06-14 — Migración de la capa de disciplina: agent-rigor → superpowers (ADR-060)
+
+> Cambio de **governance/tooling**, sin código de producto. El PO había swapeado los plugins (`/plugin list` ya mostraba `superpowers` + `booster-skills@0.2.0`, sin `agent-rigor`) y dejó preparados un nuevo `CLAUDE.md` y un ADR en `~/Claude/Projects/Agentes/migracion-superpowers/`. Esta sesión materializó la migración en el repo y la mergeó.
+
+### Contexto
+
+ADR-049 había adoptado una arquitectura de 3 capas con `agent-rigor` como Capa 1 (disciplina genérica). Una auditoría 2026-06-14 encontró que su enforcement era **ficción de facto** (gate "leíste CLAUDE.md" = código muerto por `PostToolUse` solo cableado a Write/Edit nunca Read; escape-valve anti-drift en deadlock; 3 listas de vocabulario divergentes; ~520 líneas de bash sin tests). Se reemplaza por `superpowers` (moldeo conductual + auto-triggering + subagent-driven-development con review de dos etapas) y se rescatan los mecanismos con valor real como **contenido de skill** en `booster-skills`, no como motor bash.
+
+### Discrepancias encontradas antes de ejecutar (ambas resueltas)
+
+1. **Los `cp`/`git checkout -b`/`git add` que se habían tipeado NO surtieron efecto**: el repo estaba en `main`, limpio, sin staged, sin ADR nuevo, y `CLAUDE.md` seguía 100% en agent-rigor. La premisa "ya se hizo en CLAUDE.md" no se cumplía → se hizo la migración completa desde cero (no solo AGENTS.md/README.md).
+2. **Colisión de numeración ADR**: el ADR venía como "051" pero `051-pii-redaction-logger.md` (Accepted, 2026-05-24) ya lo ocupaba. El guard de pre-commit `check-adr-numbering` bloqueó el commit (correcto). El repo va por **ADR-059** (no 050 como sugería la estructura del CLAUDE.md). Renumerado al siguiente libre = **ADR-060**, actualizando ~15 referencias en los 4 archivos. Las colisiones legacy toleradas siguen siendo solo 028/034/035 (ADR-046).
+
+### Cambios (5 archivos, solo docs/governance)
+
+| Archivo | Cambio |
+|---|---|
+| **`docs/adr/060-superpowers-replaces-agent-rigor.md`** | Nuevo ADR (**Accepted**) — supersede **parcialmente** ADR-049 (solo Capa 1). Contexto (4 defectos de agent-rigor), decisión, consecuencias, criterios de validación |
+| **`CLAUDE.md`** | Capa 1 = superpowers; booster-skills 0.2.0 (9 skills); tabla de responsabilidades; los 3 sub-agents `agents/` pasan de "extienden agent-rigor" a **standalone** |
+| **`AGENTS.md`** | Plugin recomendado `agent-rigor` → `superpowers` |
+| **`README.md`** | Plugins `agent-rigor` → `superpowers`; rango ADR `001..060` |
+| **`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`** | Nota post-ADR-060: agent-rigor retirado, agents standalone, y `booster-skills@0.2.0` **ya está ocupada** → la consolidación futura debe apuntar a **≥ 0.3.0** (el PO re-evalúa versión destino) |
+
+**Fuera de scope (deliberado, por instrucción del PO)**: no se tocaron ADRs históricos (incl. ADR-049, que solo se referencia — convención "se supersede, no se edita") ni otras specs en `.specs/`. ⚠️ **Residual conocido**: otros docs no-vivos (`docs/handoff/` históricos, `docs/ci-cd.md`, `docs/lessons-learned/`, `docs/plans/`, `docs/plugins/REPORTE-…`) aún mencionan `agent-rigor` como **registro histórico** y se dejan intactos a propósito.
+
+### Cierre
+
+- **PR [#464](https://github.com/boosterchile/booster-ai/pull/464) mergeado** a `main` (squash `91eccb1`), 2 commits (migración + flip `Proposed`→`Accepted`). Rama `chore/adr-051-superpowers-migration` borrada (conservó el nombre "051" por trazabilidad pese a que el ADR es 060).
+- **Evidencia**: pre-commit verde (gitleaks, Biome, **check-adr-numbering OK**, spec-drift) + **21/21 checks de CI/Security SUCCESS** sobre el merge commit actualizado. `main` local sincronizado.
+- **Sin impacto operacional**: cero cambios de código, runtime, CI de producto o deploy. No toca la lane de `release.yml` (cambio docs/governance; `paths-ignore` cubre `docs/**`, `.specs/**`, `*.md`).
 
 ---
 

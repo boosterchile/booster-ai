@@ -139,10 +139,15 @@ resource "google_storage_bucket" "documents" {
     log_object_prefix = "documents/"
   }
 
-  # Retention Lock 6 años (SII Chile)
+  # Retention Lock 6 años (SII Chile). is_locked se mantiene FALSE de forma
+  # DELIBERADA: el lock es IRREVERSIBLE (6 años por objeto, sin des-lock).
+  # Gate para pasarlo a true (.specs/sec-h3-dte-retention-lock §3):
+  #   (a) emisión real de DTEs en prod, (b) validación SC-4 (48h write/read sin
+  #   issues), (c) decisión PO en frío. 2026-06-14: bucket vacío / 0 tráfico DTE
+  #   → SC-4 insatisfacible; se mantiene false. NO cambiar sin cumplir el gate.
   retention_policy {
     retention_period = 189216000 # 6 años en segundos = 6 * 365.25 * 24 * 3600
-    is_locked        = false     # CAMBIAR A true MANUALMENTE después de validar
+    is_locked        = false
   }
 
   lifecycle_rule {
@@ -172,6 +177,78 @@ resource "google_storage_bucket" "documents" {
   }
 
   depends_on = [google_kms_crypto_key_iam_member.gcs_encrypter]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Certificados de huella de carbono — bucket PROPIO, separado de `documents`
+# (sec-h3 §14.1 opción (b), decisión PO 2026-06-11; spec
+# .specs/feat-certificados-bucket-propio/):
+#   - La inmutabilidad/verificabilidad la da la FIRMA KMS (PAdES + sidecar
+#     verificable offline), NO la retención del bucket.
+#   - Los certificados son RE-EMITIBLES (sobrescriben su path): la retention
+#     policy SII de `documents` rompía la re-emisión con 403 (lock o no).
+#   - `documents` queda 100% DTE/mandato legal puro → listo para
+#     `is_locked = true` (decisión PO en frío, .specs/sec-h3-dte-retention-lock).
+# Migración de objetos: docs/runbooks/migracion-bucket-certificados.md
+# (apply -target → copiar → apply completo; NO aplicar de una).
+resource "google_storage_bucket" "certificates" {
+  name          = "${var.project_id}-certificates-${var.environment}"
+  project       = google_project.booster_ai.project_id
+  location      = var.region
+  storage_class = "STANDARD"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+
+  versioning {
+    enabled = true
+  }
+
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_operational.id
+  }
+
+  logging {
+    log_bucket        = google_storage_bucket.access_logs.name
+    log_object_prefix = "certificates/"
+  }
+
+  # SIN retention_policy a propósito (ver header). Lifecycle: los PDFs se
+  # leen vía signed URL al descargarlos; acceso esporádico tras el 1er año.
+  lifecycle_rule {
+    condition {
+      age = 365
+    }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "NEARLINE"
+    }
+  }
+
+  # Las re-emisiones sobrescriben el path → cada una deja una versión
+  # noncurrent que con versioning quedaría PARA SIEMPRE (review security
+  # 2026-06-11). Se conservan las 3 más recientes 90 días (forense de
+  # re-emisiones) y después se purgan.
+  lifecycle_rule {
+    condition {
+      num_newer_versions         = 3
+      days_since_noncurrent_time = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    proposito  = "certificados-carbono"
+  }
+
+  depends_on = [google_kms_crypto_key_iam_member.gcs_encrypter_operational]
 
   lifecycle {
     prevent_destroy = true

@@ -51,6 +51,15 @@ vi.mock('../../src/services/offer-actions.js', () => {
         this.name = 'OfferExpiredError';
       }
     },
+    TripNotAcceptableError: class extends Error {
+      constructor(
+        public readonly tripId: string,
+        public readonly tripStatus: string,
+      ) {
+        super(`Trip ${tripId} status=${tripStatus}`);
+        this.name = 'TripNotAcceptableError';
+      }
+    },
   };
 });
 
@@ -328,6 +337,45 @@ describe('POST /offers/:id/accept', () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(409);
+  });
+
+  it('409 trip_already_assigned si el guard ve el trip ya asignado (contrato web preservado)', async () => {
+    const actions = await import('../../src/services/offer-actions.js');
+    vi.mocked(actions.acceptOffer).mockRejectedValueOnce(
+      new actions.TripNotAcceptableError('trip-a', 'asignado'),
+    );
+    const app = await buildAppWith({
+      db: makeStubDbForList([]),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/offers/off-a/accept', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('trip_already_assigned');
+  });
+
+  it('409 trip_not_acceptable si el trip está cancelado (TripNotAcceptableError)', async () => {
+    const actions = await import('../../src/services/offer-actions.js');
+    vi.mocked(actions.acceptOffer).mockRejectedValueOnce(
+      new actions.TripNotAcceptableError('trip-c', 'cancelado'),
+    );
+    const app = await buildAppWith({
+      db: makeStubDbForList([]),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/offers/off-c/accept', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; trip_status: string };
+    expect(body.code).toBe('trip_not_acceptable');
+    expect(body.trip_status).toBe('cancelado');
   });
 
   it('409 trip_already_assigned por race condition (UNIQUE)', async () => {

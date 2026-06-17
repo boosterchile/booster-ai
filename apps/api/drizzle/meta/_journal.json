@@ -281,6 +281,27 @@
       "when": 1780876800003,
       "tag": "0039_solicitudes_registro",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780876800004,
+      "tag": "0040_integridad_indices",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780876800005,
+      "tag": "0041_matching_vehiculos_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780876800006,
+      "tag": "0042_matching_asignaciones_index",
+      "breakpoints": true
     }
   ]
 }

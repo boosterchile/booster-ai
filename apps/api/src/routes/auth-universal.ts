@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import type { Db } from '../db/client.js';
 import { users } from '../db/schema.js';
 import { verifyClaveNumerica } from '../services/clave-numerica.js';
@@ -52,10 +53,17 @@ export function createAuthUniversalRoutes(opts: {
   db: Db;
   firebaseAuth: Auth;
   logger: Logger;
+  /**
+   * Rate-limit Redis fail-closed (spec sec-rate-limit-login-rut). La
+   * clave es de 6 dígitos (10^6): ADR-035 Alt-3 la justifica SOLO con
+   * rate limiting presente. Requerido a propósito — montar este route
+   * sin defensa no debe compilar.
+   */
+  rateLimitLogin: MiddlewareHandler;
 }) {
   const app = new Hono();
 
-  app.post('/login-rut', zValidator('json', loginRutSchema), async (c) => {
+  app.post('/login-rut', opts.rateLimitLogin, zValidator('json', loginRutSchema), async (c) => {
     const body = c.req.valid('json');
     const rut = body.rut;
     const tipoHint = body.tipo ?? null;
