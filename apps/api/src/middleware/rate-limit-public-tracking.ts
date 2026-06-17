@@ -57,6 +57,15 @@ export function createRateLimitPublicTrackingMiddleware(
 
   return async function rateLimitPublicTracking(c, next) {
     const ip = extractClientIp(c.req.header('x-forwarded-for'));
+    // Bucket "unknown" (XFF ausente): en prod detrás del GCLB Cloud Run SIEMPRE
+    // appendea el client IP al XFF, así que el tráfico legítimo nunca cae acá —
+    // solo requests anómalas sin XFF (acceso directo a *.run.app). Que ese
+    // bucket compartido se bloquee es fail-SAFE deliberado (un control de
+    // seguridad debe fallar cerrando, no abriendo: NO se hace skip-en-unknown
+    // porque sería un bypass para quien pueda strippear el XFF). El cierre
+    // sistémico es restringir el ingress a internal-and-cloud-load-balancing:
+    // .specs/_followups/cloud-run-ingress-internal-lb.md (ALTO, compartido con
+    // rate-limit-pin/signup).
     const ipKey = `${KEY_PREFIX}${ip}`;
 
     let ipCount: number;

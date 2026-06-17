@@ -210,4 +210,24 @@ describe('rate-limit-public-tracking middleware (P1-4)', () => {
     expect((await get(app, 't', '4.4.4.4')).status).toBe(200);
     expect((await get(app, 't', '4.4.4.4')).status).toBe(429);
   });
+
+  it('bucket "unknown" al límite → 429 (fail-safe: bloquea, NO bypass)', async () => {
+    // Review seguridad #490 P1-A: las requests sin XFF comparten el bucket
+    // `rl:public-tracking:unknown`. Si se supera el límite, se bloquea (no se
+    // hace skip): un control de seguridad debe fallar cerrando. En prod el
+    // tráfico legítimo nunca cae acá (Cloud Run appendea XFF tras el GCLB).
+    const { redis } = makeRedis([1, 2, 3]);
+    const middleware = createRateLimitPublicTrackingMiddleware({
+      redis: redis as never,
+      logger: noopLogger,
+      limitPerIp: 2,
+    });
+    const app = makeApp(middleware);
+
+    expect((await get(app, 't')).status).toBe(200);
+    expect((await get(app, 't')).status).toBe(200);
+    const over = await get(app, 't');
+    expect(over.status).toBe(429);
+    expect(over.headers.get('X-RateLimit-Scope')).toBe('ip');
+  });
 });
