@@ -113,7 +113,7 @@ packages/
 
 infrastructure/              # Terraform (GCP)
 .claude/                     # Plugins config + ledger + worktrees (post-ADR-049/060)
-docs/adr/                    # Architecture Decision Records (001..064)
+docs/adr/                    # Architecture Decision Records (001..065)
 ```
 
 ## Desarrollo con agentes de IA

@@ -1,5 +1,7 @@
 # P0-I — Deploy del telemetry-tcp-gateway (GKE) es manual
 
+> ✅ **RESUELTO (2026-06-16)** — [ADR-065](../../docs/adr/065-automate-gke-gateway-deploy-via-dns-endpoint.md). Se automatizó el deploy (Opción B, no el gate de la Opción A): el step `gke-deploy` de `cloudbuild.production.yaml` hace `kubectl set image` + `rollout status` vía DNS endpoint (ADR-059), gateado por IAM (SA `github-deployer` con `roles/container.developer`, ambos validados live). Corre tras `deploy-api` (API a salvo al 100%) y falla-ruidoso si el rollout no converge → fin del drift silencioso. Validación de reachability del worker pool → DNS endpoint pendiente del primer release real (residual documentado en el ADR; break-glass = script manual).
+
 **Dimensión**: sre · **Esfuerzo**: M (gate corto plazo) / L (VPC largo plazo)
 **Fuente**: audit 2026-06-14
 
