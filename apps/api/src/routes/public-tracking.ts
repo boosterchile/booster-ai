@@ -10,10 +10,12 @@
  *   - Precio
  *   - Telemetría histórica más vieja que 30 min
  *
- * **Rate limiting**: TODO post-deploy con Cloud Armor o middleware
- * propio. Por ahora confiamos en la opacidad UUID + el threshold de
- * tokens enumerables (122 bits). Pre-MVP es aceptable; antes de
- * publicarlo masivamente metemos cap (ej. 60 req/min por IP por token).
+ * **Rate limiting** (P1-4, audit 2026-06-14): cap per-IP de 60 req/60s
+ * aplicado por el middleware `rate-limit-public-tracking` en server.ts
+ * (montado en `/public/tracking/*` antes de estas rutas). Defense-in-depth
+ * sobre la opacidad del token (122 bits): acota enumeración / agotamiento
+ * desde un origen. El flood distribuido de un mismo token queda para Cloud
+ * Armor (cascade, docs/qa/rate-limit-cascade.md).
  */
 
 import type { Logger } from '@booster-ai/logger';
