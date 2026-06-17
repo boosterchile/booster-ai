@@ -235,6 +235,15 @@ locals {
     # usuario). SID Twilio creado: HXac1ef21ed9423258a2c38dad02f31e41
     # (submitted to Meta 2026-05-10, approval ~24-48h).
     "content-sid-tracking",
+    # Safety fan-out (P0-G) — template `safety_alert` para avisar al
+    # transportista de eventos crash/unplug/jamming detectados por el
+    # telemetry-processor. Categoría Meta: Utility. `safety_alert_v1`
+    # (HX0d6363fd0162c2d71519ed4e3afe2e3d) fue rechazado por Meta; se
+    # reenvió como `copy_of_safety_alert_v1`
+    # (HX80819b02ce9a546b855d09ada1aac944, en revisión 2026-06-15). El
+    # código degrada a solo-push si el secret está en placeholder, así
+    # que la feature no bloquea por la aprobación de Meta.
+    "content-sid-safety-alert",
 
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
     # post-deploy y subidas con `gcloud secrets versions add`. La pública se

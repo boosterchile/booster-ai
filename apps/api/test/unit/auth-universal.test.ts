@@ -58,6 +58,7 @@ function makeDbStub(opts: {
     db: { select, update } as unknown as Parameters<
       typeof import('../../src/routes/auth-universal.js').createAuthUniversalRoutes
     >[0]['db'],
+    selectSpy: select,
   };
 }
 
@@ -82,19 +83,48 @@ function makeFirebaseStub() {
   };
 }
 
+// Passthrough para tests del handler: el comportamiento real del
+// rate-limit se cubre en src/middleware/rate-limit-pin.test.ts y el
+// wiring en el test "aplica el rate-limit" de este archivo.
+const passthroughRateLimit: Parameters<
+  typeof import('../../src/routes/auth-universal.js').createAuthUniversalRoutes
+>[0]['rateLimitLogin'] = async (_c, next) => next();
+
 async function buildApp(
   db: Parameters<
     typeof import('../../src/routes/auth-universal.js').createAuthUniversalRoutes
   >[0]['db'],
   firebaseAuth: Auth,
+  rateLimitLogin = passthroughRateLimit,
 ) {
   const { createAuthUniversalRoutes } = await import('../../src/routes/auth-universal.js');
   const app = new Hono();
-  app.route('/auth', createAuthUniversalRoutes({ db, firebaseAuth, logger: noopLogger }));
+  app.route(
+    '/auth',
+    createAuthUniversalRoutes({ db, firebaseAuth, logger: noopLogger, rateLimitLogin }),
+  );
   return app;
 }
 
 describe('POST /auth/login-rut (ADR-035)', () => {
+  it('aplica el rate-limit ANTES del handler (429 corta el request)', async () => {
+    const { db, selectSpy } = makeDbStub({ userRow: null });
+    const fb = makeFirebaseStub();
+    const blockingRateLimit: typeof passthroughRateLimit = async (c) =>
+      c.json({ error: 'too_many_attempts', code: 'too_many_attempts' }, 429);
+    const app = await buildApp(db, fb.auth, blockingRateLimit);
+
+    const res = await app.request('/auth/login-rut', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: '12345678-5', clave: '123456' }),
+    });
+
+    expect(res.status).toBe(429);
+    // El handler nunca corre: ni siquiera consulta la DB.
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+
   it('RUT no existe → 401 invalid_credentials', async () => {
     const { db } = makeDbStub({ userRow: null });
     const fb = makeFirebaseStub();

@@ -6,6 +6,7 @@ import {
   redisEnvSchema,
 } from '@booster-ai/config';
 import { z } from 'zod';
+import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
 /**
  * Parsea env var boolean correctamente. `z.coerce.boolean()` es un footgun
@@ -267,6 +268,30 @@ const apiEnvSchema = commonEnvSchema
       .optional(),
 
     /**
+     * Content SID del template Twilio `safety_alert_v1` (fan-out de eventos de
+     * seguridad al transportista). Vacío → WhatsApp se skipea y la alerta sale
+     * solo por push (la feature no depende de la aprobación de Meta).
+     */
+    CONTENT_SID_SAFETY_ALERT: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
+     * SA email que firma el OIDC de la push subscription de safety-events
+     * (Pub/Sub → POST /internal/safety-events). El endpoint valida
+     * claims.email === este valor. Optional en dev (sin él, el endpoint
+     * rechaza todo por falta de caller autorizado).
+     */
+    SAFETY_PUSH_CALLER_SA: z
+      .string()
+      .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido')
+      .optional(),
+
+    /**
      * GCP project ID — Cloud Run lo setea automáticamente en runtime.
      * Usado para:
      *   - Vertex AI Gemini endpoint (ADR-037, coaching IA post-entrega).
@@ -305,9 +330,12 @@ const apiEnvSchema = commonEnvSchema
 
     /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
-     * (ADR-029 + ADR-032). Default por entorno:
-     *   - production → `true`
-     *   - dev/test/staging → `false`
+     * (ADR-029 + ADR-032). Default `false` en TODOS los entornos
+     * (vuelve al default seguro de ADR-030 §1; decisión PO 2026-06-10,
+     * spec fix-factoring-exposicion-y-flag): mover dinero requiere
+     * opt-in explícito del operador — `FACTORING_V1_ACTIVATED=true` en
+     * el env del Cloud Run `api` (vía infrastructure/compute.tf), no
+     * activación implícita por NODE_ENV.
      *
      * Cuando es `false`:
      *   - `cobraHoy()` retorna `skipped_flag_disabled`.
@@ -322,7 +350,7 @@ const apiEnvSchema = commonEnvSchema
      *     queda diferido — adelantos quedan en `solicitado` hasta
      *     integración del partner.
      */
-    FACTORING_V1_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
+    FACTORING_V1_ACTIVATED: booleanFlag(false),
 
     /**
      * Allowlist de emails con acceso a endpoints `/admin/cobra-hoy/*`
@@ -599,10 +627,13 @@ const apiEnvSchema = commonEnvSchema
      *
      * Habilitado 2026-05-13 vía consola Cloud Billing → Export. Datos
      * empiezan a propagar ~24-48h post-habilitación.
+     *
+     * Sin default (audit 2026-06-14 P0-D): el valor contiene el billing
+     * account id real y NO debe vivir en el repo. Se inyecta por env var
+     * desde Terraform. Required cuando OBSERVABILITY_DASHBOARD_ACTIVATED=true
+     * (ver superRefine al final del schema).
      */
-    BILLING_EXPORT_TABLE: z
-      .string()
-      .default('booster-ai-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377'),
+    BILLING_EXPORT_TABLE: z.string().min(1).optional(),
 
     /**
      * Dominio Google Workspace gestionado por Booster. Usado por el
@@ -681,6 +712,20 @@ const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
+  })
+  // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
+  // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
+  // las necesita, fallando rápido en el startup en vez de apuntar a prod.
+  .superRefine((env, ctx) => {
+    const errors = checkGcpConfigInvariants({
+      nodeEnv: env.NODE_ENV,
+      observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
+      googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+      billingExportTable: env.BILLING_EXPORT_TABLE,
+    });
+    for (const message of errors) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

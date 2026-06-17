@@ -34,6 +34,10 @@ import { fileURLToPath } from 'node:url';
 const SERVER_FILE = new URL('../src/server.ts', import.meta.url).pathname;
 const FIREBASE_AUTH_IDENTIFIER = 'firebaseAuthMiddleware';
 const IS_DEMO_ENFORCEMENT_IDENTIFIER = 'isDemoEnforcementMiddleware';
+// Review 2026-06-11 (gap /certificates, Sprint 2c track-1): demo-expires
+// también es REQUERIDO en todo mount auth-required — el gap original
+// existió porque ningún gate lo exigía.
+const DEMO_EXPIRES_IDENTIFIER = 'demoExpiresMiddleware';
 
 /**
  * Map path → list de middleware identifiers mencionados en sus app.use
@@ -106,9 +110,14 @@ export function findMissingEnforcement(source: string): string[] {
   const missing: string[] = [];
   for (const [path, middlewares] of map.entries()) {
     const hasFirebase = middlewares.includes(FIREBASE_AUTH_IDENTIFIER);
-    const hasEnforcement = middlewares.includes(IS_DEMO_ENFORCEMENT_IDENTIFIER);
-    if (hasFirebase && !hasEnforcement) {
-      missing.push(path);
+    if (!hasFirebase) {
+      continue;
+    }
+    if (!middlewares.includes(IS_DEMO_ENFORCEMENT_IDENTIFIER)) {
+      missing.push(`${path} (falta ${IS_DEMO_ENFORCEMENT_IDENTIFIER})`);
+    }
+    if (!middlewares.includes(DEMO_EXPIRES_IDENTIFIER)) {
+      missing.push(`${path} (falta ${DEMO_EXPIRES_IDENTIFIER})`);
     }
   }
   return missing;
@@ -120,19 +129,19 @@ function main(): void {
 
   if (missing.length > 0) {
     console.error(
-      '[check-is-demo-wire-completeness] FAIL — auth-required mount points sin isDemoEnforcementMiddleware:',
+      '[check-is-demo-wire-completeness] FAIL — auth-required mount points con middleware demo faltante:',
     );
     for (const path of missing) {
       console.error(`  - ${path}`);
     }
     console.error(
-      `\n${missing.length} coverage gap(s) en ${SERVER_FILE}. Fix: agregar isDemoEnforcementMiddleware al chain (per-group, post-firebase-auth).`,
+      `\n${missing.length} coverage gap(s) en ${SERVER_FILE}. Fix: agregar el middleware faltante al chain (per-group, post-firebase-auth).`,
     );
     process.exit(1);
   }
 
   console.log(
-    '[check-is-demo-wire-completeness] OK — todos los mount points auth-required en server.ts tienen isDemoEnforcementMiddleware wired.',
+    '[check-is-demo-wire-completeness] OK — todos los mount points auth-required en server.ts tienen isDemoEnforcement + demoExpires wired.',
   );
 }
 

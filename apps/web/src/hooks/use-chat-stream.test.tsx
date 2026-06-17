@@ -13,6 +13,15 @@ vi.mock('../lib/firebase.js', () => ({
   },
 }));
 
+// fix-sse-ticket-x-empresa: el hook lee la empresa activa de api-client para
+// mandarla como X-Empresa-Id en el POST del ticket (users multi-empresa).
+const { getActiveEmpresaIdMock } = vi.hoisted(() => ({
+  getActiveEmpresaIdMock: vi.fn((): string | null => null),
+}));
+vi.mock('../lib/api-client.js', () => ({
+  getActiveEmpresaId: getActiveEmpresaIdMock,
+}));
+
 const { useChatStream } = await import('./use-chat-stream.js');
 
 interface FakeEventSource {
@@ -53,17 +62,32 @@ class StubEventSource implements FakeEventSource {
   }
 }
 
+// fix-sse-ticket-auth: el hook ahora hace POST /stream-ticket (Bearer) y abre
+// el EventSource con ?ticket=. Mock del fetch del ticket.
+const fetchMock = vi.fn(
+  async (): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ticket: 'ticket-xyz', expires_in_sec: 60 }),
+  }),
+);
+
 beforeEach(() => {
   lastEventSource = null;
   currentUserState.value = { getIdToken: getIdTokenMock };
   getIdTokenMock.mockClear();
+  fetchMock.mockClear();
+  getActiveEmpresaIdMock.mockReset();
+  getActiveEmpresaIdMock.mockReturnValue(null);
   (globalThis as any).EventSource = StubEventSource;
+  (globalThis as any).fetch = fetchMock;
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   Reflect.deleteProperty(globalThis as any, 'EventSource');
+  Reflect.deleteProperty(globalThis as any, 'fetch');
 });
 
 async function flushPromises() {
@@ -96,13 +120,66 @@ describe('useChatStream', () => {
     renderHook(() => useChatStream({ assignmentId: 'a1', onMessage, onConnect }));
     await waitFor(() => expect(lastEventSource).not.toBeNull());
     expect(lastEventSource?.url).toContain('/assignments/a1/messages/stream');
-    expect(lastEventSource?.url).toContain('auth=firebase-id-token');
+    // El token NUNCA va en la URL — solo el ticket efímero (fix-sse-ticket-auth).
+    expect(lastEventSource?.url).toContain('ticket=ticket-xyz');
+    expect(lastEventSource?.url).not.toContain('auth=');
+    expect(lastEventSource?.url).not.toContain('firebase-id-token');
+    // El ticket se pidió por POST con Bearer header (token NO en la URL).
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/assignments/a1/messages/stream-ticket'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-id-token' },
+      }),
+    );
 
     lastEventSource?.emit('connected');
     expect(onConnect).toHaveBeenCalled();
 
     lastEventSource?.emit('message', { message_id: 'm1', assignment_id: 'a1' });
     expect(onMessage).toHaveBeenCalledWith({ message_id: 'm1', assignment_id: 'a1' });
+  });
+
+  it('multi-empresa: manda X-Empresa-Id (empresa activa) en el POST del ticket — SC-1', async () => {
+    getActiveEmpresaIdMock.mockReturnValue('emp-no-default');
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/assignments/a1/messages/stream-ticket'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-id-token', 'X-Empresa-Id': 'emp-no-default' },
+      }),
+    );
+    // El id de empresa NO viaja en la URL del stream (solo el ticket efímero).
+    expect(lastEventSource?.url).not.toContain('emp-no-default');
+  });
+
+  it('sin empresa activa → el POST del ticket NO lleva X-Empresa-Id — SC-1', async () => {
+    getActiveEmpresaIdMock.mockReturnValue(null);
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    // headers EXACTAMENTE { authorization } → la deep-equality falla si
+    // X-Empresa-Id estuviera presente, así que esto prueba su ausencia.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/assignments/a1/messages/stream-ticket'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-id-token' },
+      }),
+    );
+  });
+
+  it('fallo al obtener el ticket → no abre EventSource + onDisconnect (reconnect)', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'realtime_disabled' }),
+    });
+    const onDisconnect = vi.fn();
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn(), onDisconnect }));
+    await waitFor(() => expect(onDisconnect).toHaveBeenCalled());
+    expect(lastEventSource).toBeNull();
   });
 
   it('payload no-JSON → log warn, no crash, no callback', async () => {
@@ -129,6 +206,16 @@ describe('useChatStream', () => {
     first?.onerror?.();
     expect(onDisconnect).toHaveBeenCalled();
     expect(first?.closed).toBe(true);
+  });
+
+  it('reconnect tras onerror pide un ticket NUEVO (single-use) — SC-4', async () => {
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    expect(fetchMock).toHaveBeenCalledTimes(1); // primer mint
+    lastEventSource?.onerror?.();
+    // El backoff reagenda connect → debe pedir OTRO ticket (el anterior ya se
+    // consumió). Esperamos a que el segundo mint ocurra.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
   });
 
   it('cleanup en unmount → close + cancela reconnect timer', async () => {

@@ -37,4 +37,5 @@ EXPOSE 8080
 # Trivy IaC AVD-DS-0026: HEALTHCHECK requerido (#8).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-CMD ["node", "dist/main.js"]
+# --import carga la instrumentación OTel ANTES de main (ESM; spec feat-otel-bootstrap)
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]

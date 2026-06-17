@@ -735,6 +735,9 @@ export const memberships = pgTable(
   },
   (table) => ({
     userEmpresaUnique: unique('uq_membresias_usuario_empresa').on(table.userId, table.empresaId),
+    // SQL-only (0040): uq_membresias_usuario_org_stakeholder — unique
+    // parcial (usuario_id, organizacion_stakeholder_id) WHERE org IS NOT
+    // NULL. Drizzle no representa índices parciales; convención del repo.
     userIdx: index('idx_membresias_usuario').on(table.userId),
     empresaIdx: index('idx_membresias_empresa').on(table.empresaId),
     orgStakeholderIdx: index('idx_membresias_org_stakeholder').on(table.organizacionStakeholderId),
@@ -801,10 +804,26 @@ export const vehicles = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_vehiculos_empresa').on(table.empresaId),
+    // Índice compuesto del hot path de matching (runMatching → best-fit de
+    // vehículos aptos): WHERE empresa_id IN (...) AND estado_vehiculo='activo'
+    // AND capacidad_kg >= X  ORDER BY capacidad_kg, id. Las columnas en este
+    // orden permiten: igualdad sobre empresa_id (IN) + estado_vehiculo, rango
+    // sobre capacidad_kg, y entregan el orden (capacidad_kg, id) que hace el
+    // best-fit determinista (skill empty-leg-matching §7). Creado en 0041.
+    empresaEstadoCapacidadIdx: index('idx_vehiculos_empresa_estado_capacidad').on(
+      table.empresaId,
+      table.vehicleStatus,
+      table.capacityKg,
+      table.id,
+    ),
+    // idx_vehiculos_empresa (single-column) dropeado en 0041: el compuesto de
+    // arriba lo cubre como prefijo (empresa_id es su columna líder), así que
+    // toda query por empresa_id solo —incl. el check del FK a empresas— sigue
+    // indexada. Mismo criterio anti-redundancia que 0040.
     typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
-    teltonikaImeiIdx: index('idx_vehiculos_teltonika_imei').on(table.teltonikaImei),
+    // idx_vehiculos_teltonika_imei dropeado en 0040: duplicaba el UNIQUE
+    // implícito de .unique() en la columna.
   }),
 );
 
@@ -909,7 +928,9 @@ export const documentosConductor = pgTable(
   'documentos_conductor',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    conductorId: uuid('conductor_id').notNull(),
+    conductorId: uuid('conductor_id')
+      .notNull()
+      .references(() => conductores.id, { onDelete: 'restrict' }),
     tipo: documentoConductorTipoEnum('tipo').notNull(),
     archivoUrl: text('archivo_url'),
     fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
@@ -1205,7 +1226,18 @@ export const assignments = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_asignaciones_empresa').on(table.empresaId),
+    // Índice compuesto del histórico 7d de matching v2 (lookupCarriersForV2 →
+    // agregación por empresa, matching-v2-lookups.ts): WHERE empresa_id IN (...)
+    // AND entregado_en >= now() - interval '7 days' GROUP BY empresa_id.
+    // empresa_id (igualdad/IN) + entregado_en (rango) → index range scan por
+    // empresa sin escanear asignaciones viejas. Creado en 0042 (audit P1-K).
+    empresaEntregadoIdx: index('idx_asignaciones_empresa_entregado').on(
+      table.empresaId,
+      table.deliveredAt,
+    ),
+    // idx_asignaciones_empresa (single-column) dropeado en 0042: el compuesto
+    // de arriba lo cubre como prefijo (empresa_id es su columna líder), incl.
+    // el check del FK a empresas. Mismo criterio anti-redundancia que 0040/0041.
     statusIdx: index('idx_asignaciones_estado').on(table.status),
     driverIdx: index('idx_asignaciones_conductor').on(table.driverUserId),
   }),
@@ -1576,11 +1608,9 @@ export const telemetryPoints = pgTable(
   (table) => ({
     imeiTsUnique: unique('uq_telemetria_imei_ts').on(table.imei, table.timestampDevice),
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
-    imeiTsIdx: index('idx_telemetria_imei_ts').on(table.imei, table.timestampDevice),
-    vehicleReceivedIdx: index('idx_telemetria_vehiculo_recibido').on(
-      table.vehicleId,
-      table.timestampReceivedAt,
-    ),
+    // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
+    // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
+    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );
@@ -1641,11 +1671,8 @@ export const greenDrivingEvents = pgTable(
       table.timestampDevice,
       table.type,
     ),
-    // Index para queries de scoring por (vehículo, ventana de trip).
-    vehicleTsIdx: index('idx_eventos_conduccion_vehiculo_ts').on(
-      table.vehicleId,
-      table.timestampDevice,
-    ),
+    // idx_eventos_conduccion_vehiculo_ts dropeado en 0040: era prefijo del
+    // UNIQUE (vehiculo, ts, tipo) que cubre las queries de scoring.
     typeTsIdx: index('idx_eventos_conduccion_tipo_ts').on(table.type, table.timestampDevice),
   }),
 );

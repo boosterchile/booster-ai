@@ -182,6 +182,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'INTERNAL',
     rationale: 'cron: Cloud Scheduler OIDC (cronAuthMiddleware, INTERNAL_CRON_CALLER_SA).',
   },
+  createInternalSafetyEventsRoutes: {
+    category: 'INTERNAL',
+    rationale:
+      'Pub/Sub push: OIDC SA auth inline (SAFETY_PUSH_CALLER_SA); fail-closed si SA no configurado. No usa firebaseAuthMiddleware ni userContext.',
+  },
 };
 
 /**

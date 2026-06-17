@@ -55,6 +55,42 @@ const envSchema = z.object({
     .pipe(z.number().int().min(30).max(3600)),
 
   // -------------------------------------------------------------------------
+  // Rate limiting (audit P1-L) — protección DoS del open enrollment.
+  // In-memory per-pod; no depende de IP cliente (el LB TCP la enmascara).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Cap de conexiones TCP concurrentes por pod. Acota agotamiento de FDs/
+   * memoria ante un flood. Default 5000 = holgado para flota real (10 devices
+   * piloto, miles a escala) pero muy por debajo del límite de FDs del pod.
+   * Conexiones por encima del cap se rechazan inmediatamente (destroy).
+   */
+  MAX_CONCURRENT_CONNECTIONS: z
+    .string()
+    .default('5000')
+    .transform((s) => Number.parseInt(s, 10))
+    .pipe(z.number().int().min(10).max(100000)),
+
+  /**
+   * Máximo de IMEIs nuevos (enrollments) admitidos por ventana, por pod.
+   * Excedido → el IMEI desconocido se descarta sin escribir en
+   * dispositivos_pendientes (acota crecimiento de tabla por flood). Default 30
+   * por 60s: un instalador enrola un puñado; un atacante hace miles/seg.
+   */
+  ENROLLMENT_RATE_MAX: z
+    .string()
+    .default('30')
+    .transform((s) => Number.parseInt(s, 10))
+    .pipe(z.number().int().min(1).max(100000)),
+
+  /** Ventana del rate limit de enrollment, en segundos. */
+  ENROLLMENT_RATE_WINDOW_SEC: z
+    .string()
+    .default('60')
+    .transform((s) => Number.parseInt(s, 10))
+    .pipe(z.number().int().min(1).max(3600)),
+
+  // -------------------------------------------------------------------------
   // Wave 3 — TLS endpoint (Track D3)
   // -------------------------------------------------------------------------
 

@@ -96,6 +96,7 @@ app.route(
     redis,
     authToken: config.TWILIO_AUTH_TOKEN,
     webhookUrl: config.TWILIO_WEBHOOK_URL,
+    statusWebhookUrl: config.TWILIO_STATUS_CALLBACK_URL,
     logger,
   }),
 );

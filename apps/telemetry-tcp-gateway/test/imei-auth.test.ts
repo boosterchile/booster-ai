@@ -59,4 +59,47 @@ describe('resolveImei', () => {
     });
     expect(result.pendingDeviceId).toBe('pending-uuid-789');
   });
+
+  // P1-L: open enrollment con rate limiting.
+  it('NO enrolla (skip del upsert) si el rate limiter de enrollment rechaza', async () => {
+    const db = makeMockDb({}); // sin match de vehículo → iría al enrollment
+    const enrollmentLimiter = { tryConsume: vi.fn(() => false) };
+    const result = await resolveImei({
+      db,
+      logger: noopLogger,
+      imei: '888888888888888',
+      sourceIp: '9.9.9.9',
+      enrollmentLimiter,
+    });
+    expect(result.vehicleId).toBeNull();
+    expect(result.pendingDeviceId).toBeNull();
+    expect(enrollmentLimiter.tryConsume).toHaveBeenCalledTimes(1);
+    // Solo corre la query de lookup de vehículo; el INSERT del upsert NO.
+    expect(db.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('un IMEI conocido nunca consulta el rate limiter de enrollment', async () => {
+    const db = makeMockDb({ vehicleRow: { id: 'veh-1' } });
+    const enrollmentLimiter = { tryConsume: vi.fn(() => false) };
+    const result = await resolveImei({
+      db,
+      logger: noopLogger,
+      imei: '356307042441013',
+      sourceIp: '1.2.3.4',
+      enrollmentLimiter,
+    });
+    expect(result.vehicleId).toBe('veh-1');
+    expect(enrollmentLimiter.tryConsume).not.toHaveBeenCalled();
+  });
+
+  it('sin enrollmentLimiter (opcional) enrolla normal — backwards-compat', async () => {
+    const db = makeMockDb({ upsertedRow: { id: 'pending-uuid-xyz' } });
+    const result = await resolveImei({
+      db,
+      logger: noopLogger,
+      imei: '222222222222222',
+      sourceIp: '8.8.8.8',
+    });
+    expect(result.pendingDeviceId).toBe('pending-uuid-xyz');
+  });
 });

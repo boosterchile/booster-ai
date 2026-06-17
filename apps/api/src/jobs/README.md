@@ -41,7 +41,7 @@ pnpm --filter @booster-ai/api exec tsx src/jobs/backfill-certificados.ts --concu
 Env vars requeridas:
 - `DATABASE_URL` — apuntando al Cloud SQL Auth Proxy
 - `CERTIFICATE_SIGNING_KEY_ID` — resource ID de la KMS key
-- `CERTIFICATES_BUCKET` — `booster-ai-documents`
+- `CERTIFICATES_BUCKET` — `{project}-certificates-{env}` (bucket PROPIO desde 2026-06-11; NO usar documents — su retención SII rompe la re-emisión)
 - `GOOGLE_APPLICATION_CREDENTIALS` — o `gcloud auth application-default login`
 - `VERIFY_BASE_URL` (opcional) — default `https://api.boosterchile.com`
 

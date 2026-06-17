@@ -134,6 +134,8 @@ function makeDeps(opts?: { crashPublisher?: CrashStub | null }) {
     crashPublisher: opts?.crashPublisher === undefined ? null : opts.crashPublisher,
     logger: noopLogger,
     idleTimeoutSec: 60,
+    // Limiter permisivo: los tests del handler no ejercitan el rate limit (P1-L).
+    enrollmentLimiter: { tryConsume: () => true },
   };
 }
 

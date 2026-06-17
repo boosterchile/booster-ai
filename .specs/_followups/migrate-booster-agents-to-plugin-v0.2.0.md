@@ -1,9 +1,30 @@
 # Followup: migrate-booster-agents-to-plugin-v0.2.0
 
-**Status**: Draft (stub, no ejecutar todavía)
+**Status**: ✅ **Done (2026-06-14)** — consolidado en `booster-skills@0.3.0`
 **Created**: 2026-05-20
 **Triggered by**: ADR-049 (PR-2 cierra cleanup local pero deja overrides Booster en `agents/` raíz)
 **Estimated effort**: 1-2 días (depende de magnitud del coverage diff)
+
+---
+
+> ## ✅ Cierre (2026-06-14)
+>
+> Ejecutado vía [`.specs/consolidate-agents-v0.3.0/spec.md`](../consolidate-agents-v0.3.0/spec.md) y registrado en **[ADR-064](../../docs/adr/064-consolidate-local-subagents-into-booster-skills.md)**.
+>
+> - `security-auditor` → plegado en `booster-skills:security-scanner` (compliance Chile, secciones 13–16).
+> - `sre-oncall` → nuevo sub-agent `booster-skills:sre-oncall` (revisor SRE pre-merge).
+> - `code-reviewer` → retirado; ADR-compliance plegado en `booster-skills:booster-stack-conventions` (paso 7).
+> - Release: **PR `boosterchile/booster-skills#2`** mergeado → tag/release **`v0.3.0`**.
+> - `agents/` raíz de este repo **eliminado**; CLAUDE.md §Capas adicionales actualizado.
+>
+> El procedimiento original abajo queda como **registro histórico** (el plan real ejecutado fue el de `consolidate-agents-v0.3.0`, que difiere: se decidió extender `security-scanner` en vez de crear `chile-compliance-auditor`, y retirar `code-reviewer` en vez de portarlo).
+
+---
+
+> **Actualización post-ADR-060 (2026-06-14)**: `agent-rigor` fue retirado del proyecto ([ADR-060](../../docs/adr/060-superpowers-replaces-agent-rigor.md)). En consecuencia:
+> - Los 3 archivos en `agents/` ya **no son overrides que extienden a agent-rigor**; son **sub-agents Booster standalone**. El objetivo de este followup deja de ser "migrar desde agent-rigor" y pasa a ser **consolidar estos overrides locales en `booster-skills`** (eliminar la capa local).
+> - `booster-skills` **ya fue bumpeado a 0.2.0** por ADR-060 (release con las skills `definicion-de-terminado` y `tdd-dominio-critico`). El nombre/objetivo "v0.2.0" de este stub quedó **desfasado**: la consolidación de los 3 agents debe apuntar a una **minor futura (≥ 0.3.0)**, ya que 0.2.0 está ocupada. El PO debe re-evaluar versión destino al retomar.
+> - El resto del procedimiento (coverage diff, validación strict-spec, borrar overrides locales) sigue vigente.
 
 ---
 
@@ -33,7 +54,7 @@ Iniciar esta migración cuando ocurra cualquiera de:
 
 1. **Clonar y branch**: clonar `boosterchile/booster-skills` localmente y crear branch `feat/v0.2.0-chile-compliance-overrides`.
 2. **Diseño**: crear nuevo sub-agent `booster-skills:chile-compliance-auditor` que absorba contenido Ley 19.628 + SII/DTE + roles Uber-like + Sustainability Stakeholder. O alternativamente expandir `booster-skills:security-scanner` con esos modules (decisión arquitecto-maestro).
-3. **Decisión sre-oncall**: crear nuevo agent `booster-skills:sre-oncall` (no tiene equivalente en agent-rigor) o expandir skill `booster-deploy-cloud-run` con su contenido SRE.
+3. **Decisión sre-oncall**: crear nuevo agent `booster-skills:sre-oncall` (no tiene equivalente en superpowers ni en booster-skills) o expandir skill `booster-deploy-cloud-run` con su contenido SRE.
 4. **Strict-spec validation**: `claude plugin validate .` + PyYAML para frontmatters + `json.loads` para manifests.
 5. **CHANGELOG + version bump**: `version` en `plugin.json` y `marketplace.json` → `0.2.0`; CHANGELOG con notes detalladas.
 6. **Release**: tag `v0.2.0` + `gh release create`.
