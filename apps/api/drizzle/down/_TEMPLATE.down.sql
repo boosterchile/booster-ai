@@ -1,0 +1,24 @@
+-- =============================================================================
+-- REVERSE-SQL MANUAL — último recurso (ADR-066)
+-- =============================================================================
+-- ⚠️ MANUAL-APPLY-ONLY. El auto-migrator (src/db/migrator.ts) es forward-only y
+--    NO lee este directorio. Esto NO es un down-migration auto-aplicado.
+--
+-- Antes de escribir un reverse, leé docs/runbooks/db-migration-rollback.md:
+-- casi siempre el camino correcto es rollback de código (si la migración era
+-- aditiva), un forward-fix, o PITR clone — NO este archivo.
+--
+-- Usar SOLO para reversiones limpias y data-safe (p.ej. sacar un CREATE INDEX).
+--
+-- Convención de nombre: NNNN_name.down.sql  (mismo NNNN que la migración forward).
+--
+-- Aplicar a mano vía bastion en modo password (DDL):
+--   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/NNNN_name.down.sql
+--
+-- ⚠️ Esto NO actualiza drizzle.__drizzle_migrations: si la migración forward sigue
+--    en el repo, el próximo startup la re-aplica. Es un parche puente, no un undo
+--    permanente — coordiná con un forward-fix o PITR.
+-- =============================================================================
+
+-- Reverse statements acá. Ejemplo (sacar un índice agregado por la forward):
+-- DROP INDEX IF EXISTS "idx_ejemplo";
