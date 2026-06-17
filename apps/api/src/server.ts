@@ -14,6 +14,7 @@ import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
 import { ALLOWLISTED_PATHS } from './middleware/is-demo-allowlist.js';
 import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcement.js';
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
+import { createRateLimitPublicTrackingMiddleware } from './middleware/rate-limit-public-tracking.js';
 import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
@@ -243,6 +244,17 @@ export function createServer(opts: CreateServerOptions): Hono {
   // de API key — el SA del runtime se autentica via workload identity, y
   // el projectId va en X-Goog-User-Project. Si la env var está ausente,
   // fallback transparente al ETA al centroide regional (PR-L2b).
+  //
+  // P1-4 (audit 2026-06-14): rate-limit per-IP (60/60s, fail-closed 503 si
+  // Redis down) ANTES del handler — el endpoint es público sin auth y sin cap
+  // un atacante podía enumerar tokens o agotar recursos (lookup DB + Routes
+  // API por hit). Mismo patrón que signup-request. Cloud Armor cascade actúa
+  // como pre-filtro upstream — docs/qa/rate-limit-cascade.md.
+  const rateLimitPublicTracking = createRateLimitPublicTrackingMiddleware({
+    redis: redisForRateLimit,
+    logger,
+  });
+  app.use('/public/tracking/*', rateLimitPublicTracking);
   app.route(
     '/public/tracking',
     createPublicTrackingRoutes({
