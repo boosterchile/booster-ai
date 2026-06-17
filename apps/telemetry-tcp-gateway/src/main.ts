@@ -8,6 +8,7 @@ import pg from 'pg';
 import { loadConfig } from './config.js';
 import { handleConnection } from './connection-handler.js';
 import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
+import { createConnectionGuard, createSlidingWindowLimiter } from './rate-limiter.js';
 
 /**
  * Entry point del telemetry-tcp-gateway.
@@ -68,21 +69,49 @@ async function main(): Promise<void> {
     logger.warn('PUBSUB_TOPIC_CRASH_TRACES no configurado — Crash Trace publish DESHABILITADO');
   }
 
+  // Rate limiting in-memory per-pod (audit P1-L). El guard acota conexiones
+  // concurrentes (FDs/memoria); el limiter acota enrollments de IMEIs nuevos
+  // (crecimiento de dispositivos_pendientes).
+  const connectionGuard = createConnectionGuard(config.MAX_CONCURRENT_CONNECTIONS);
+  const enrollmentLimiter = createSlidingWindowLimiter({
+    maxEvents: config.ENROLLMENT_RATE_MAX,
+    windowMs: config.ENROLLMENT_RATE_WINDOW_SEC * 1000,
+  });
+
   const connectionDeps = {
     db,
     publisher,
     crashPublisher,
     logger,
     idleTimeoutSec: config.IDLE_TIMEOUT_SEC,
+    enrollmentLimiter,
+  };
+
+  // Acepta una conexión bajo el cap concurrente: si está lleno, rechaza
+  // inmediatamente (destroy) sin tocar la DB ni asignar buffers. Libera el slot
+  // al cerrarse el socket. Compartido por el plain y el TLS server.
+  const acceptConnection = (socket: net.Socket): void => {
+    if (!connectionGuard.tryAcquire()) {
+      logger.warn(
+        {
+          active: connectionGuard.active,
+          max: config.MAX_CONCURRENT_CONNECTIONS,
+          sourceIp: socket.remoteAddress ?? null,
+        },
+        'cap de conexiones concurrentes alcanzado — rechazando conexión (P1-L)',
+      );
+      socket.destroy();
+      return;
+    }
+    socket.once('close', () => connectionGuard.release());
+    handleConnection(socket, connectionDeps);
   };
 
   // -------------------------------------------------------------------------
   // SERVIDOR 1: TCP plain port 5027 (existente)
   // -------------------------------------------------------------------------
 
-  const plainServer = net.createServer((socket) => {
-    handleConnection(socket, connectionDeps);
-  });
+  const plainServer = net.createServer(acceptConnection);
   plainServer.on('error', (err) => {
     logger.error({ err, port: config.PORT }, 'plain server error');
   });
@@ -126,8 +155,8 @@ async function main(): Promise<void> {
       },
       (socket) => {
         // tls.TLSSocket extiende net.Socket — pasable directamente al
-        // handler que ya espera net.Socket.
-        handleConnection(socket, connectionDeps);
+        // acceptConnection (cap concurrente + handler).
+        acceptConnection(socket);
       },
     );
     tlsServer.on('error', (err) => {
