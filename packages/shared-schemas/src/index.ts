@@ -30,12 +30,9 @@ export * from './domain/transportista.js';
 export * from './domain/driver.js';
 export * from './domain/vehicle.js';
 export * from './domain/cargo-request.js';
-export * from './domain/trip.js';
-export * from './domain/telemetry.js';
 
 // Events (Pub/Sub payloads)
-export * from './events/trip-events.js';
-export * from './events/telemetry-events.js';
+export * from './events/telemetry-record.js';
 
 // Thin slice (Fase 6) — WhatsApp intake flow
 export * from './common.js';
@@ -68,3 +65,6 @@ export * from './domain/cuentas-demo.js';
 
 // SEC-001 Sprint 2b H1.2 — solicitudes de registro signup gate (ADR-052)
 export * from './domain/signup-request.js';
+
+// Safety events — Pub/Sub payload para topic safety-p0 (feat/safety-event-fanout)
+export * from './domain/safety-event.js';

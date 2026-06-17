@@ -18,6 +18,10 @@ vi.mock('../../src/services/reconciliar-dtes.js', () => ({
   reconciliarDtes: vi.fn(),
 }));
 
+vi.mock('../../src/services/purgar-posiciones-movil.js', () => ({
+  purgarPosicionesMovil: vi.fn(),
+}));
+
 vi.mock('../../src/jobs/reap-inert-idp-accounts.js', () => ({
   reapInertIdpAccounts: vi.fn(),
   fetchReaperFacts: vi.fn(),
@@ -30,6 +34,7 @@ const { procesarCobranzaCobraHoy } = await import(
   '../../src/services/procesar-cobranza-cobra-hoy.js'
 );
 const { reconciliarDtes } = await import('../../src/services/reconciliar-dtes.js');
+const { purgarPosicionesMovil } = await import('../../src/services/purgar-posiciones-movil.js');
 const { config: appConfig } = await import('../../src/config.js');
 
 const noop = (): void => undefined;
@@ -169,6 +174,20 @@ describe('POST /admin/jobs/cobra-hoy-cobranza', () => {
     const body = (await res.json()) as { moras_creadas: number; adelantos: unknown[] };
     expect(body.moras_creadas).toBe(0);
     expect(body.adelantos).toEqual([]);
+  });
+});
+
+describe('POST /admin/jobs/purgar-posiciones-movil', () => {
+  it('happy path: 200 con deleted + retention_days (spec feat-retencion T3)', async () => {
+    (purgarPosicionesMovil as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      deleted: 42,
+      retentionDays: 30,
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/purgar-posiciones-movil', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, deleted: 42, retention_days: 30 });
+    expect(purgarPosicionesMovil).toHaveBeenCalledOnce();
   });
 });
 

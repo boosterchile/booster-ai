@@ -77,15 +77,15 @@ Respuesta (guarda esto — el PIN no se vuelve a mostrar):
   "ok": true,
   "credentials": {
     "shipper_owner": {
-      "email": "demo-shipper@boosterchile.com",
+      "email": "demo-2026-shipper@boosterchile.com",
       "password": "<DEMO_SEED_PASSWORD>"
     },
     "carrier_owner": {
-      "email": "demo-carrier@boosterchile.com",
+      "email": "demo-2026-carrier@boosterchile.com",
       "password": "<DEMO_SEED_PASSWORD>"
     },
     "stakeholder": {
-      "email": "demo-stakeholder@boosterchile.com",
+      "email": "demo-2026-stakeholder@boosterchile.com",
       "password": "<DEMO_SEED_PASSWORD>"
     },
     "conductor": {
@@ -110,9 +110,9 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 
 | Usuario | Identificador | Credencial | Empresa | Rol |
 |---|---|---|---|---|
-| Dueño Andina Demo | demo-shipper@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Andina Demo S.A. (RUT 76999111-1) | dueno (shipper) |
-| Dueño Transportes Demo Sur | demo-carrier@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Transportes Demo Sur S.A. (RUT 77888222-K) | dueno (carrier) |
-| Stakeholder Demo | demo-stakeholder@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Transportes Demo Sur (auditoría externa) | stakeholder_sostenibilidad |
+| Dueño Andina Demo | demo-2026-shipper@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Andina Demo S.A. (RUT 76999111-1) | dueno (shipper) |
+| Dueño Transportes Demo Sur | demo-2026-carrier@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Transportes Demo Sur S.A. (RUT 77888222-K) | dueno (carrier) |
+| Stakeholder Demo | demo-2026-stakeholder@boosterchile.com | password leído de Secret Manager (`demo-seed-password`) | Transportes Demo Sur (auditoría externa) | stakeholder_sostenibilidad |
 | Pedro González | RUT `12345678-5` | PIN 6 dígitos (del seed response) | Transportes Demo Sur | conductor |
 
 **Nota sobre RUT**: el sistema acepta RUT con o sin puntos al tipear, pero siempre persiste en formato canónico **sin puntos** (`12345678-5`). Los inputs de la UI muestran placeholder y hint indicando "Sin puntos, con guión".
@@ -140,7 +140,7 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 
 ## 4. Walkthrough paso a paso
 
-### A. Como shipper — `demo-shipper@boosterchile.com`
+### A. Como shipper — `demo-2026-shipper@boosterchile.com`
 
 1. **Login**: `https://app.boosterchile.com/login` → email + password.
 2. **Dashboard `/app`**: vas a ver cards para "Crear carga", "Mis cargas", **"Sucursales"** (D7b), **"Certificados de huella de carbono"** (D5).
@@ -151,7 +151,7 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 4. **Click en "Crear carga"** → publica una oferta. Origen Bodega Maipú, destino CD Quilicura por ejemplo (demuestra el caso "transporte entre sucursales").
 5. **Click en "Certificados"** → al pie, ves el card "Cómo calculamos la huella de carbono" con la metodología GLEC v3 + ejemplo Santiago → Concepción (D5).
 
-### B. Como carrier — `demo-carrier@boosterchile.com`
+### B. Como carrier — `demo-2026-carrier@boosterchile.com`
 
 1. **Login**: mismo `/login`, email + password.
 2. **Dashboard `/app`**: cards para transportista:
@@ -211,7 +211,7 @@ El seed es **idempotente** — corriéndolo de nuevo no duplica entidades, sólo
 - La data del IMEI 863238075489155 fluye normalmente a Van Oosterwyk AND simultáneamente se refleja en el vehículo DEMO01 del carrier demo (via columna `teltonika_imei_espejo`).
 - **Cero contaminación** — Van Oosterwyk no ve nada del demo.
 
-### E. Como stakeholder — `demo-stakeholder@boosterchile.com`
+### E. Como stakeholder — `demo-2026-stakeholder@boosterchile.com`
 
 1. **Login**: `https://app.boosterchile.com/login` → email + password leído de Secret Manager (`demo-seed-password`).
 2. **Surface guard**: si entra a `/app` se redirige automáticamente a `/app/stakeholder/zonas` (su único hub útil).

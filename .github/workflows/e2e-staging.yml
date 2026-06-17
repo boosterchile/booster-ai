@@ -22,6 +22,11 @@ permissions:
 jobs:
   playwright:
     name: Playwright + axe-core (a11y)
+    # Guard (auditoría 2026-06-09): en PRs, si STAGING_URL no está seteada
+    # (staging no existe — #STAGING-ENV), el job se SALTA en vez de caer al
+    # fallback PRODUCTION_URL y pegarle a prod con data real desde un PR.
+    # El nightly (schedule) sigue corriendo contra producción a propósito.
+    if: github.event_name != 'pull_request' || vars.STAGING_URL != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Browsers preinstalados en la imagen oficial de Playwright, pin EXACTO a

@@ -11,6 +11,7 @@ import {
   selectTopNCandidates,
   selectTopNCandidatesV2,
 } from '@booster-ai/matching-algorithm';
+import { esEstadoViaje, puedeTransicionar } from '@booster-ai/trip-state-machine';
 import { and, eq, gte, inArray } from 'drizzle-orm';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -93,18 +94,28 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
       if (!trip) {
         throw new TripRequestNotFoundError(tripId);
       }
-      if (trip.status !== 'esperando_match') {
+      // Legalidad de la transición: la decide la tabla del package
+      // (ADR-061); el service solo orquesta. Equivale al check histórico
+      // status==='esperando_match' (única transición hacia 'emparejando').
+      if (!esEstadoViaje(trip.status) || !puedeTransicionar(trip.status, 'emparejando')) {
         throw new TripRequestNotMatchableError(tripId, trip.status);
       }
       if (!trip.originRegionCode) {
         throw new TripRequestNotMatchableError(tripId, 'missing_origin_region');
       }
 
-      // Cambiar status a 'emparejando' antes de empezar.
-      await tx
+      // Cambiar status a 'emparejando' — CAS por estado (spec SC-4,
+      // residual del review #436): si un cancel concurrente ganó entre el
+      // SELECT y este UPDATE, 0 filas → abortamos la tx (sin esto, el
+      // matching era un tercer escritor capaz de resucitar un cancelado).
+      const aEmparejando = await tx
         .update(trips)
         .set({ status: 'emparejando', updatedAt: new Date() })
-        .where(eq(trips.id, tripId));
+        .where(and(eq(trips.id, tripId), eq(trips.status, 'esperando_match')))
+        .returning({ id: trips.id });
+      if (!aEmparejando[0]) {
+        throw new TripRequestNotMatchableError(tripId, 'status_changed_concurrently');
+      }
 
       // Audit: matching empezó.
       await tx.insert(tripEvents).values({
@@ -177,20 +188,35 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
       const candidatesV1: ScoredCandidate[] = [];
       const candidatesV2: ScoredCandidateV2[] = [];
 
-      for (const emp of candidateEmpresas) {
-        const vehs = await tx
-          .select()
-          .from(vehicles)
-          .where(
-            and(
-              eq(vehicles.empresaId, emp.id),
-              eq(vehicles.vehicleStatus, 'activo'),
-              gte(vehicles.capacityKg, cargoWeight),
+      // Vehículos aptos de TODAS las empresas candidatas en una sola query
+      // (evita N+1: antes era 1 SELECT por empresa en el loop). El orden
+      // (capacityKg, id) hace el best-fit determinista ante empates de
+      // capacidad — requerimiento de auditabilidad del matching
+      // (skill empty-leg-matching §7). Se agrupa quedándose con el primero
+      // por empresa = menor capacidad apta (best-fit), desempate estable por id.
+      const aptVehicles = await tx
+        .select()
+        .from(vehicles)
+        .where(
+          and(
+            inArray(
+              vehicles.empresaId,
+              candidateEmpresas.map((e) => e.id),
             ),
-          )
-          .orderBy(vehicles.capacityKg)
-          .limit(1);
-        const veh = vehs[0];
+            eq(vehicles.vehicleStatus, 'activo'),
+            gte(vehicles.capacityKg, cargoWeight),
+          ),
+        )
+        .orderBy(vehicles.capacityKg, vehicles.id);
+      const bestVehicleByEmpresa = new Map<string, (typeof aptVehicles)[number]>();
+      for (const veh of aptVehicles) {
+        if (!bestVehicleByEmpresa.has(veh.empresaId)) {
+          bestVehicleByEmpresa.set(veh.empresaId, veh);
+        }
+      }
+
+      for (const emp of candidateEmpresas) {
+        const veh = bestVehicleByEmpresa.get(emp.id);
         if (!veh) {
           continue;
         }
@@ -291,11 +317,17 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
         );
       }
 
-      // 6. Cambiar trip a ofertas_enviadas.
-      await tx
+      // 6. Cambiar trip a ofertas_enviadas — CAS por estado (SC-4). Si el
+      // estado ya no es 'emparejando' (cancel concurrente), la tx aborta
+      // y las offers insertadas arriba se revierten con ella.
+      const aOfertas = await tx
         .update(trips)
         .set({ status: 'ofertas_enviadas', updatedAt: new Date() })
-        .where(eq(trips.id, trip.id));
+        .where(and(eq(trips.id, trip.id), eq(trips.status, 'emparejando')))
+        .returning({ id: trips.id });
+      if (!aOfertas[0]) {
+        throw new TripRequestNotMatchableError(trip.id, 'status_changed_concurrently');
+      }
 
       // 7. Audit: ofertas enviadas.
       await tx.insert(tripEvents).values({
@@ -362,10 +394,17 @@ async function finalizeNoCandidates(
   tripId: string,
   reason: NoCandidatesReason,
 ): Promise<MatchingResult> {
-  await tx
+  // CAS por estado (SC-4): mismo racional que las otras transiciones del
+  // matching — si el shipper canceló mientras evaluábamos candidatos, el
+  // terminal correcto es 'cancelado', no 'expirado'.
+  const aExpirado = await tx
     .update(trips)
     .set({ status: 'expirado', updatedAt: new Date() })
-    .where(eq(trips.id, tripId));
+    .where(and(eq(trips.id, tripId), eq(trips.status, 'emparejando')))
+    .returning({ id: trips.id });
+  if (!aExpirado[0]) {
+    throw new TripRequestNotMatchableError(tripId, 'status_changed_concurrently');
+  }
   await tx.insert(tripEvents).values({
     tripId,
     eventType: 'oferta_expirada',

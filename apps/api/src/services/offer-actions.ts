@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@booster-ai/logger';
+import { esAceptableOferta, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { and, eq, ne } from 'drizzle-orm';
 import { config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -55,6 +56,22 @@ export class OfferExpiredError extends Error {
   }
 }
 
+/**
+ * El trip de la oferta no está en un estado aceptable. Cubre el race
+ * accept-post-cancel (auditoría 2026-06-09): sin este guard, aceptar una
+ * oferta pendiente de un trip cancelado lo "resucitaba" a asignado.
+ * `tripStatus === 'missing'` si la fila del trip no existe.
+ */
+export class TripNotAcceptableError extends Error {
+  constructor(
+    public readonly tripId: string,
+    public readonly tripStatus: string,
+  ) {
+    super(`Trip ${tripId} is in status ${tripStatus}, offers are not acceptable`);
+    this.name = 'TripNotAcceptableError';
+  }
+}
+
 export interface AcceptOfferResult {
   offer: OfferRow;
   assignment: AssignmentRow;
@@ -104,6 +121,26 @@ export async function acceptOffer(opts: {
       }
       if (offer.expiresAt.getTime() < Date.now()) {
         throw new OfferExpiredError(offerId);
+      }
+
+      // 1b. Guard del trip con lock de fila: serializa contra la
+      // cancelación del shipper (que también toma FOR UPDATE sobre el
+      // trip). Solo 'ofertas_enviadas' es aceptable — un trip cancelado,
+      // expirado o ya asignado rechaza el accept con 409 en el route.
+      const tripRows = await tx
+        .select({ id: trips.id, status: trips.status })
+        .from(trips)
+        .where(eq(trips.id, offer.tripId))
+        .for('update')
+        .limit(1);
+      const trip = tripRows[0];
+      if (!trip) {
+        throw new TripNotAcceptableError(offer.tripId, 'missing');
+      }
+      // Legalidad: tabla del package (ADR-061). Equivale al check
+      // histórico status==='ofertas_enviadas'.
+      if (!esEstadoViaje(trip.status) || !esAceptableOferta(trip.status)) {
+        throw new TripNotAcceptableError(offer.tripId, trip.status);
       }
 
       const now = new Date();
@@ -157,11 +194,17 @@ export async function acceptOffer(opts: {
         )
         .returning({ id: offers.id });
 
-      // 5. trip → asignado.
-      await tx
+      // 5. trip → asignado. CAS por estado: redundante con el FOR UPDATE
+      // de arriba, pero deja el invariante en el SQL (defensa si alguien
+      // quita el lock — mismo patrón que admin-cobra-hoy).
+      const aAsignado = await tx
         .update(trips)
         .set({ status: 'asignado', updatedAt: now })
-        .where(eq(trips.id, offer.tripId));
+        .where(and(eq(trips.id, offer.tripId), eq(trips.status, 'ofertas_enviadas')))
+        .returning({ id: trips.id });
+      if (!aAsignado[0]) {
+        throw new TripNotAcceptableError(offer.tripId, 'status_changed_concurrently');
+      }
 
       // 6. Audit events.
       await tx.insert(tripEvents).values([

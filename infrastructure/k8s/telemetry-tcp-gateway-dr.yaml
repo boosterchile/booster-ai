@@ -99,6 +99,16 @@ spec:
               value: "crash-traces"
             - name: IDLE_TIMEOUT_SEC
               value: "300"
+            # Rate limiting in-memory per-pod (audit P1-L) — debe espejar el
+            # manifest primary para que el failover a DR mantenga la misma
+            # barrera DoS. Ver telemetry-tcp-gateway.yaml para el detalle del
+            # presupuesto de memoria (1Gi ≈ ~5000 conns) y de la calibración.
+            - name: MAX_CONCURRENT_CONNECTIONS
+              value: "5000"
+            - name: ENROLLMENT_RATE_MAX
+              value: "30"
+            - name: ENROLLMENT_RATE_WINDOW_SEC
+              value: "60"
             - name: LOG_LEVEL
               value: "info"
             - name: NODE_ENV

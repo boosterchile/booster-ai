@@ -21,9 +21,9 @@
  *   # Asegurarte que tu shell tiene:
  *   #   - DATABASE_URL apuntando al Cloud SQL Auth Proxy local (ver scripts/db/connect.sh)
  *   #   - GOOGLE_APPLICATION_CREDENTIALS apuntando a una SA con cloudkms.signer + storage.objectUser
- *   #     sobre el bucket documents (en local: usar `gcloud auth application-default login`)
+ *   #     sobre el bucket de certificados (en local: `gcloud auth application-default login`)
  *   #   - CERTIFICATE_SIGNING_KEY_ID = projects/.../keyRings/.../cryptoKeys/certificate-carbono-signing
- *   #   - CERTIFICATES_BUCKET = booster-ai-documents
+ *   #   - CERTIFICATES_BUCKET = {project}-certificates-{env} (bucket propio 2026-06-11)
  *   #   - VERIFY_BASE_URL (opcional, default https://api.boosterchile.com)
  *
  *   pnpm --filter @booster-ai/api exec tsx src/jobs/backfill-certificados.ts
