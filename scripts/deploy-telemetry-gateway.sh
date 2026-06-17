@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#
+# ⚠️ VÍA EN DEPRECACIÓN PARCIAL (ADR-059, 2026-06-06): el deploy canónico a
+# GKE son los pipelines cloudbuild-primary-{deploy,check}.yaml vía DNS
+# endpoint. Este script queda como vía manual de respaldo mientras esos
+# pipelines terminan de validarse end-to-end; al validarlos, archivar este
+# script (.specs/_followups/deploy-telemetry-gateway-repo-root-bug.md).
+# El bootstrap de un cluster nuevo NO está acá:
+# docs/runbooks/bootstrap-gke-telemetry-gateway.md.
 # Deploy manual del telemetry-tcp-gateway al GKE Autopilot.
 #
 # Por que manual y no automatico via Cloud Build:
@@ -59,7 +67,10 @@ echo ""
 echo "--- Checking deployment state ---"
 if ! kubectl get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" > /dev/null 2>&1; then
   echo "Primer deploy — apply manifests completos"
-  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(realpath "$0")")/.."
+  # REPO_ROOT: toplevel de git directo (el "/.." anterior apuntaba al PADRE
+  # del repo y rompía el primer deploy — auditoría 2026-06-09); fallback
+  # sin git = padre del directorio scripts/.
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$(realpath "$0")")")"
   kubectl apply -f "${REPO_ROOT}/infrastructure/k8s/telemetry-tcp-gateway.yaml"
 fi
 

@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import type Redis from 'ioredis';
 import type { Db } from '../db/client.js';
 import { cuentasDemo } from '../db/schema.js';
+import { extractClientIp } from '../middleware/client-ip.js';
 
 /**
  * T5 SEC-001 Sprint 2a — demo-cache-warm public endpoint.
@@ -56,23 +57,12 @@ interface CachedUserSnapshot {
   customClaims: Record<string, unknown>;
 }
 
-function extractClientIp(c: import('hono').Context): string {
-  // X-Forwarded-For mismo patrón que rate-limit-pin (ADR-009 trust
-  // boundary: Cloud Run LB setea el header en prod). En dev sin LB,
-  // caemos al string 'unknown' que comparte bucket — aceptable.
-  const xff = c.req.header('x-forwarded-for');
-  if (xff) {
-    return xff.split(',')[0]?.trim() ?? 'unknown';
-  }
-  return 'unknown';
-}
-
 export function createDemoCacheWarmRoutes(opts: DemoCacheWarmOptions): Hono {
   const app = new Hono();
 
   app.get('/cache-warm/:persona', async (c) => {
     // 1. IP rate-limit pre-check (10/min/IP).
-    const ip = extractClientIp(c);
+    const ip = extractClientIp(c.req.header('x-forwarded-for'));
     const rlKey = `${IP_RL_KEY_PREFIX}${ip}`;
     try {
       const pipeline = opts.redis.multi();

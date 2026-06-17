@@ -249,12 +249,24 @@ resource "google_pubsub_subscription" "telemetry_events_safety_p0_notification" 
   # deberían disparar en < 5s, ack en < 30s con margen.
   ack_deadline_seconds = 30
 
-  # 7 días: si el notification-service está caído, no perdemos eventos
-  # críticos por retención corta.
+  # 7 días: si el consumer está caído, no perdemos eventos críticos por
+  # retención corta.
   message_retention_duration = "604800s"
 
-  expiration_policy {
-    ttl = ""
+  # PUSH → apps/api (safety fan-out P0-G). El consumer NO es notification-service
+  # (skeleton, se retira en el cleanup de demo) sino el endpoint OIDC en el api.
+  #
+  # Endpoint = public_api_url (api.boosterchile.com), NO el run.app: el api corre
+  # con ingress=INTERNAL_LOAD_BALANCER (ADR-062), así que el push entra por el LB.
+  # audience DEBE coincidir con una entrada de API_AUDIENCE (compute.tf) o el
+  # endpoint da 401 a cada mensaje — acá usamos public_api_url, que está en
+  # API_AUDIENCE. El endpoint además valida email==SAFETY_PUSH_CALLER_SA.
+  push_config {
+    push_endpoint = "${local.public_api_url}/internal/safety-events"
+    oidc_token {
+      service_account_email = google_service_account.safety_push_invoker.email
+      audience              = local.public_api_url
+    }
   }
 
   dead_letter_policy {
@@ -271,10 +283,44 @@ resource "google_pubsub_subscription" "telemetry_events_safety_p0_notification" 
   labels = {
     env        = var.environment
     managed_by = "terraform"
-    consumer   = "notification-service"
+    consumer   = "api-safety-fanout"
     wave       = "2"
     priority   = "panic"
   }
+
+  depends_on = [google_service_account_iam_member.pubsub_safety_push_token_creator]
+}
+
+# SA dedicado con el que Pub/Sub firma el OIDC token de la push subscription
+# safety-p0. Identidad distinta y de mínimo privilegio (least privilege): el
+# endpoint del api valida `claims.email == SAFETY_PUSH_CALLER_SA` (= este email,
+# inyectado en compute.tf).
+resource "google_service_account" "safety_push_invoker" {
+  account_id   = "safety-push-invoker"
+  display_name = "Safety events push invoker"
+  description  = "SA con el que Pub/Sub firma el OIDC de la push subscription telemetry-events-safety-p0 → POST /internal/safety-events del api (safety fan-out P0-G)."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+# Para emitir tokens OIDC como `safety_push_invoker`, el service agent de Pub/Sub
+# necesita Token Creator sobre ese SA. Requisito de GCP para push + oidc_token.
+resource "google_service_account_iam_member" "pubsub_safety_push_token_creator" {
+  service_account_id = google_service_account.safety_push_invoker.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+# Permitir que el SA invoque booster-ai-api. El api ya es public=true (allUsers
+# para CORS preflight); este binding explícito documenta la intención y protege
+# si en el futuro se restringe el invoker. Mismo patrón que scheduler_invoker_api.
+resource "google_cloud_run_v2_service_iam_member" "safety_push_invoker_api" {
+  project    = google_project.booster_ai.project_id
+  location   = var.region
+  name       = "booster-ai-api"
+  role       = "roles/run.invoker"
+  member     = "serviceAccount:${google_service_account.safety_push_invoker.email}"
+  depends_on = [module.service_api]
 }
 
 resource "google_pubsub_subscription" "telemetry_events_security_p1_notification" {

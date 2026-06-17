@@ -65,6 +65,24 @@ jobs:
         run: pnpm format:check
 
   # ---------------------------------------------------------------------------
+  # Terraform fmt — gate que faltaba: el drift de alineación de #449
+  # (storage.tf) llegó a main porque ningún check de CI corría `fmt -check`.
+  # No necesita GCP/WIF (es puro formateo), corre en cada PR. El drift de
+  # ESTADO real (plan) lo cubre terraform-drift.yml (cron + WIF) por separado.
+  # ---------------------------------------------------------------------------
+  terraform-fmt:
+    name: Terraform fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive infrastructure/
+
+  # ---------------------------------------------------------------------------
   # Typecheck — tsc --noEmit por workspace (Turborepo paraleliza)
   # ---------------------------------------------------------------------------
   typecheck:
@@ -190,6 +208,39 @@ jobs:
         run: pnpm --filter @booster-ai/api test:integration
 
   # ---------------------------------------------------------------------------
+  # Migration safety (audit P1-H, ADR-066) — bloquea migraciones Drizzle nuevas
+  # con DDL destructivo (rompe expand/contract → rollback de código deja de ser
+  # seguro) salvo que declaren `-- contract-phase: <ref>`. Solo chequea los .sql
+  # AÑADIDOS en el PR, nunca las migraciones ya aplicadas. No necesita deps.
+  # ---------------------------------------------------------------------------
+  migration-safety:
+    name: Migration safety (expand/contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Unit test del guard
+        run: node --test scripts/repo-checks/check-migration-safety.test.mjs
+      - name: Guard sobre migraciones añadidas en el PR
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE='${{ github.event.pull_request.base.sha }}'
+          ADDED=$(git diff --name-only --diff-filter=A "$BASE" HEAD -- apps/api/drizzle \
+            | grep -E '^apps/api/drizzle/[0-9]{4}_.*\.sql$' || true)
+          if [ -z "$ADDED" ]; then
+            echo "Sin migraciones nuevas en este PR — nada que chequear."
+            exit 0
+          fi
+          echo "Migraciones nuevas:"; echo "$ADDED"
+          # shellcheck disable=SC2086
+          node scripts/repo-checks/check-migration-safety.mjs $ADDED
+
+  # ---------------------------------------------------------------------------
   # Build — cada app y package compila a producción
   # ---------------------------------------------------------------------------
   build:
@@ -223,16 +274,18 @@ jobs:
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, integration-tests, build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs succeeded
         run: |
           if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.terraform-fmt.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
+             [ "${{ needs.migration-safety.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1

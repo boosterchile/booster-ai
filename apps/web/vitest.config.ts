@@ -39,6 +39,11 @@ export default defineConfig({
         // demostrativa; cubierta por smoke E2E del subdominio (manual
         // pre-Corfo). Excluida para no bloquear coverage 80%/75%.
         'src/routes/demo.tsx',
+        // Wiring declarativo del router (árbol de rutas + imports lazy
+        // `() => import('./routes/x')` de lazyRouteComponent, audit P1-J). No
+        // tiene lógica unit-testeable; los imports diferidos se verifican por
+        // typecheck + build (chunks emitidos), no por unidad.
+        'src/router.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
       // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable

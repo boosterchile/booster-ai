@@ -4,7 +4,7 @@
 **Origen**: refinamiento de los 5 planes iniciales tras la sesión de ejecución real (`#166` + `#226` + `#227` mergeados con `/goal` + intervención).
 **Audiencia**: Felipe Vicencio (solo dev), agentes Claude operando bajo `agent-rigor`.
 
-`/goal` es ideal cuando la condición de cierre es **objetivamente verificable desde la transcripción** y el trabajo NO requiere decisiones de producto. Estas plantillas asumen que `.claude/settings.json` (local) ya tiene la allowlist amplia aplicada — sin eso, cada `/goal` se atasca en prompts de autorización.
+`/goal` es ideal cuando la condición de cierre es **objetivamente verificable desde la transcripción** y el trabajo NO requiere decisiones de producto. Estas plantillas asumen que `.claude/settings.local.json` ya tiene la allowlist amplia aplicada — sin eso, cada `/goal` se atasca en prompts de autorización.
 
 ---
 
@@ -26,7 +26,7 @@ Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder litera
 
 ### Pre-flight obligatorio (primer turno del agente, post-sanity check)
 
-1. Leer `/Users/fvicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md` y escribir `skill_read` al ledger antes de cualquier `Write`/`Edit`. Sin esto, el primer `Write` se bloquea por `PreToolUse`.
+1. Leer `/Users/felipevicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md` y escribir `skill_read` al ledger antes de cualquier `Write`/`Edit`. Sin esto, el primer `Write` se bloquea por `PreToolUse`.
 2. Declarar `phase_enter` (con feature slug) **o** `skip-cycle` con justificación, también al ledger.
 3. Verificar la premisa antes de actuar (lección hoy: el `/goal` inicial afirmó "colisión ADR-033 entre #164 y #166" sin abrir los archivos; era falso). Usar `gh pr view --json files` + leer el contenido real, no inferir de títulos/body.
 
@@ -64,7 +64,7 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 ```
 Actualizar docs/handoff/CURRENT.md para reflejar el estado real de main hoy.
 
-Pre-flight: leer /Users/fvicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md y escribir skill_read al ledger. Declarar skip-cycle (snapshot documental sin código de producción).
+Pre-flight: leer /Users/felipevicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md y escribir skill_read al ledger. Declarar skip-cycle (snapshot documental sin código de producción).
 
 Steps:
 1. `git fetch github main` y crear branch `chore/current-md-update-YYYY-MM-DD` desde github/main.

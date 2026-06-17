@@ -78,12 +78,37 @@ jobs:
     name: Deploy to production
     needs: version-or-publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 75 y no 30 (fix 2026-06-12): el canary duerme 30 min DENTRO de Cloud
+    # Build mientras este job streamea `gcloud builds submit` — con 30 el
+    # job moría SIEMPRE cancelado a mitad del canary (el build seguía y
+    # completaba server-side, pero el run quedaba 'cancelled' y el smoke
+    # final nunca corría). Presupuesto: gate CI ~10 + build/push ~15 +
+    # canary 30 + verify/promoción ~10 + smoke.
+    timeout-minutes: 75
     environment:
       name: production  # Requires manual approval via GitHub Environments
       url: ${{ vars.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@v4
+      # Gate real de CI (auditoría 2026-06-09, riesgo medio): release.yml y
+      # ci.yml se disparan EN PARALELO en push a main — el comentario
+      # "después de CI verde" no se cumplía mecánicamente. Este step espera
+      # el check "CI Success" del MISMO sha; falla el deploy si CI falla.
+      - name: Esperar CI Success del mismo SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 40); do
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success"               --jq '.check_runs[0].conclusion // "pending"')
+            status=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success"               --jq '.check_runs[0].status // "queued"')
+            echo "poll $i/40: status=$status conclusion=$conclusion"
+            if [ "$conclusion" = "success" ]; then exit 0; fi
+            if [ "$conclusion" != "pending" ] && [ "$conclusion" != "null" ] && [ "$status" = "completed" ]; then
+              echo "::error::CI Success terminó en '$conclusion' — deploy abortado"; exit 1
+            fi
+            sleep 45
+          done
+          echo "::error::timeout esperando CI Success (30 min)"; exit 1
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:

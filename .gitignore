@@ -9,6 +9,10 @@
 # en docs/handoff/ o docs/compliance/ con conteos agregados.
 .private/
 
+# Estudio de Mercado/ — material de investigación comercial local (benchmarks,
+# estudios). No se versiona; vive solo en el working dir del PO.
+Estudio de Mercado/
+
 # -------- Credenciales y secretos (CRÍTICO) --------
 # Service accounts GCP / Firebase
 *service-account*.json

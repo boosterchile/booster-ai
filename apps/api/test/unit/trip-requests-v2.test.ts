@@ -395,6 +395,9 @@ function makeQueryDb(opts: {
   limitRows?: Array<Record<string, unknown>[]>;
   // Respuesta de `update().set().where().returning()`
   updateRows?: Record<string, unknown>[];
+  // Cola de respuestas para múltiples updates en el mismo request
+  // (PATCH cancelar: trips → offers). Tiene precedencia sobre updateRows.
+  updateRowsSeq?: Array<Record<string, unknown>[]>;
   // Spy del .insert
   insertSpy?: ReturnType<typeof vi.fn>;
 }): Db {
@@ -425,25 +428,40 @@ function makeQueryDb(opts: {
     leftJoin: leftJoinFn,
     where: vi.fn(() => ({ limit: limitFn, orderBy: orderByFn })),
   }));
-  const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+  // `.for('update')` (row lock en PATCH cancelar) es chainable a limit.
+  const whereFn = vi.fn(() => ({
+    limit: limitFn,
+    orderBy: orderByFn,
+    for: vi.fn(() => ({ limit: limitFn })),
+  }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
     leftJoin: leftJoinFn,
   }));
   const selectFn = vi.fn(() => ({ from: fromFn }));
 
-  const updateReturning = vi.fn().mockResolvedValue(opts.updateRows ?? []);
+  const updateQueue = opts.updateRowsSeq ? [...opts.updateRowsSeq] : null;
+  const updateReturning = vi.fn(() =>
+    Promise.resolve(updateQueue ? (updateQueue.shift() ?? []) : (opts.updateRows ?? [])),
+  );
   const updateWhere = vi.fn(() => ({ returning: updateReturning }));
   const updateSet = vi.fn(() => ({ where: updateWhere }));
   const updateFn = vi.fn(() => ({ set: updateSet }));
 
   const insertFn = opts.insertSpy ?? vi.fn(() => ({ values: vi.fn().mockResolvedValue([]) }));
 
-  return {
+  const dbLike = {
     select: selectFn,
     update: updateFn,
     insert: insertFn,
-  } as unknown as Db;
+    // PATCH cancelar corre dentro de db.transaction(tx => ...): el tx
+    // comparte los mismos stubs que el db plano.
+    transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) =>
+      cb({ select: selectFn, update: updateFn, insert: insertFn }),
+    ),
+  };
+
+  return dbLike as unknown as Db;
 }
 
 describe('GET /trip-requests-v2', () => {
@@ -657,5 +675,39 @@ describe('PATCH /trip-requests-v2/:id/cancelar', () => {
     const body = (await res.json()) as { trip_request: { status: string } };
     expect(body.trip_request.status).toBe('cancelado');
     expect(insertSpy).toHaveBeenCalled();
+  });
+
+  it('200 cancela con ofertas pendientes → las invalida y registra invalidated_offers', async () => {
+    const insertValues = vi.fn().mockResolvedValue([]);
+    const insertSpy = vi.fn(() => ({ values: insertValues }));
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [[{ id: 'trip-1', status: 'ofertas_enviadas', trackingCode: 'BOO-ZZZ' }]],
+        updateRowsSeq: [
+          // 1º update: trips → cancelado
+          [{ id: 'trip-1', trackingCode: 'BOO-ZZZ', status: 'cancelado' }],
+          // 2º update: offers pendiente → expirada (2 invalidadas)
+          [{ id: 'offer-1' }, { id: 'offer-2' }],
+        ],
+        insertSpy,
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1/cancelar', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trip_request: { status: string } };
+    expect(body.trip_request.status).toBe('cancelado');
+
+    // El evento de auditoría registra cuántas ofertas se invalidaron.
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'cancelado',
+        payload: expect.objectContaining({ invalidated_offers: 2 }),
+      }),
+    );
   });
 });

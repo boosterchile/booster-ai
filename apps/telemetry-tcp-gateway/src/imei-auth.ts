@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { RateLimiter } from './rate-limiter.js';
 
 /**
  * Resolución de IMEI → vehículo, con open enrollment fallback.
@@ -34,8 +35,16 @@ export async function resolveImei(opts: {
   logger: Logger;
   imei: string;
   sourceIp: string | null;
+  /**
+   * Rate limiter del enrollment (P1-L). Solo se consulta cuando el IMEI es
+   * DESCONOCIDO (a punto de enrollar) — los devices autorizados nunca se
+   * limitan. Si rechaza, se omite el upsert (no se escribe en
+   * `dispositivos_pendientes`): acota el crecimiento de la tabla ante un flood
+   * de IMEIs falsos. Opcional para backwards-compat / tests.
+   */
+  enrollmentLimiter?: RateLimiter;
 }): Promise<ImeiResolution> {
-  const { db, logger, imei, sourceIp } = opts;
+  const { db, logger, imei, sourceIp, enrollmentLimiter } = opts;
 
   // 1. Lookup en vehículos.
   const vehMatch = await db.execute<{ id: string }>(
@@ -44,6 +53,18 @@ export async function resolveImei(opts: {
   if (vehMatch.rows[0]) {
     logger.debug({ imei, vehicleId: vehMatch.rows[0].id }, 'imei autorizado');
     return { vehicleId: vehMatch.rows[0].id, pendingDeviceId: null };
+  }
+
+  // 1b. Rate limit del open enrollment (P1-L): si se excede la tasa de IMEIs
+  // nuevos, NO escribimos en dispositivos_pendientes (evita que un flood infle
+  // la tabla). El device autorizado ya retornó arriba, así que esto solo afecta
+  // a IMEIs desconocidos.
+  if (enrollmentLimiter && !enrollmentLimiter.tryConsume()) {
+    logger.warn(
+      { imei, sourceIp },
+      'enrollment rate limit excedido — IMEI desconocido descartado sin upsert (P1-L)',
+    );
+    return { vehicleId: null, pendingDeviceId: null };
   }
 
   // 2. Upsert en dispositivos_pendientes.

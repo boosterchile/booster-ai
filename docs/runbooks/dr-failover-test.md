@@ -1,5 +1,24 @@
 # Runbook — DR failover test (Wave 3 D4)
 
+> ## ⛔ NO EJECUTAR — OBSOLETO POST-ADR-058 (2026-06-05)
+>
+> Este runbook fue escrito para DR **caliente** (réplicas activas en
+> us-central1). Desde ADR-058 el DR es **cold**: el deployment DR está en
+> `replicas: 0` (`infrastructure/k8s/telemetry-tcp-gateway-dr.yaml:45`) y
+> el primary corre con `replicas: 1` (no 2, como asume el paso de
+> restauración).
+>
+> **Ejecutar el Test 1 hoy (scale primary a 0) corta el 100% de la
+> ingesta de telemetría: no hay backup que tome el tráfico.**
+>
+> Fuente vigente de reactivación DR: `infrastructure/dr-region.tf:20-25`
+> (procedimiento manual, RTO 15–40 min: terraform apply + scale-up del
+> deployment DR + redireccionar devices a telemetry-dr.boosterchile.com
+> vía SMS-MT) y ADR-058. El runbook nuevo de failover cold se escribirá
+> con el rehearsal DR que agende el PO (condición de reapertura,
+> `.specs/docs-runbooks-staleness/spec.md §8.B`).
+
+
 Procedimiento para validar el failover del telemetry-tcp-gateway
 desde primary (southamerica-west1) al DR (us-central1) y de vuelta.
 

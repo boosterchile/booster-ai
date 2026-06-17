@@ -112,9 +112,8 @@ packages/
 └── ui-components/           # shadcn/ui + componentes Booster
 
 infrastructure/              # Terraform (GCP)
-agents/                      # 3 overrides Booster (ver §Capas adicionales en CLAUDE.md)
-.claude/                     # Plugins config + ledger + worktrees (post-ADR-049)
-docs/adr/                    # Architecture Decision Records (001..050)
+.claude/                     # Plugins config + ledger + worktrees (post-ADR-049/060)
+docs/adr/                    # Architecture Decision Records (001..065)
 ```
 
 ## Desarrollo con agentes de IA
@@ -123,7 +122,7 @@ Este repo está diseñado para ser trabajado con Claude como agente principal:
 
 - [`CLAUDE.md`](./CLAUDE.md) — contrato de trabajo detallado
 - [`AGENTS.md`](./AGENTS.md) — subconjunto cross-tool (Copilot, Cursor, etc.)
-- Plugins `agent-rigor` + `booster-skills` — workflows estructurados como plugins de Claude Code (ver [ADR-049](./docs/adr/049-claude-code-plugin-system-adoption.md))
+- Plugins `superpowers` + `booster-skills` — disciplina de ingeniería y dominio Booster como plugins de Claude Code (ver [ADR-049](./docs/adr/049-claude-code-plugin-system-adoption.md) y [ADR-060](./docs/adr/060-superpowers-replaces-agent-rigor.md))
 
 ## Comandos canónicos
 
