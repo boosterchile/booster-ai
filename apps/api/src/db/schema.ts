@@ -1948,7 +1948,16 @@ export const liquidaciones = pgTable(
     totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
     pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
     status: text('status').notNull(),
+    /**
+     * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
+     * Columna legacy: conserva datos históricos, ya no se escribe. No DROP
+     * (O-2: deprecación sin migración destructiva).
+     */
     dteFacturaBoosterFolio: text('dte_factura_booster_folio'),
+    /**
+     * @deprecated ADR-069 — ver `dteFacturaBoosterFolio`. Legacy, sin
+     * escritura, sin DROP.
+     */
     dteFacturaBoosterEmitidoEn: timestamp('dte_factura_booster_emitido_en', {
       withTimezone: true,
     }),
@@ -1960,6 +1969,11 @@ export const liquidaciones = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    // `dte_emitido` es un valor LEGACY del enum (ADR-069): Booster dejó de
+    // emitir DTE (remoción Sovos), por lo que el flujo ya no transiciona a
+    // este status. Se conserva en el CHECK para no invalidar filas
+    // históricas que quedaron en `dte_emitido` (O-2: sin migración
+    // destructiva).
     statusCheck: check(
       'chk_liquidaciones_status',
       sql`${table.status} IN ('pending_consent','lista_para_dte','dte_emitido','pagada_al_carrier','disputa')`,
@@ -1995,17 +2009,25 @@ export const facturasBoosterClp = pgTable(
     subtotalClp: integer('subtotal_clp').notNull(),
     ivaClp: integer('iva_clp').notNull(),
     totalClp: integer('total_clp').notNull(),
+    /**
+     * @deprecated ADR-069 — columnas DTE legacy. Booster dejó de emitir
+     * DTE (remoción Sovos): existían por la emisión vía proveedor SII, que
+     * fue removida. Conservan datos históricos, ya no se escriben. NO DROP
+     * (O-2: deprecación sin migración destructiva; la migración 0019 y el
+     * índice `idx_facturas_dte_status` quedan inertes).
+     */
     dteTipo: integer('dte_tipo').notNull().default(33),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteFolio: text('dte_folio'),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteEmitidaEn: timestamp('dte_emitida_en', { withTimezone: true }),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dtePdfGcsUri: text('dte_pdf_gcs_uri'),
-    // ADR-024 wire — provider que emitió el DTE ('sovos'|'mock'|'bsale'|...).
-    // Permite reconciliar histórico cuando rotamos provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProvider: text('dte_provider'),
-    // ID opaco del provider (track_id Sovos, etc.) para soporte y auditoría.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProviderTrackId: text('dte_provider_track_id'),
-    // Status SII canónico: `aceptado|rechazado|reparable|en_proceso|anulado`.
-    // Cron de reconciliación lo lee para queryStatus contra el provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteStatus: text('dte_status'),
     status: text('status').notNull(),
     venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),

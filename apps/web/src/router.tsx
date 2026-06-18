@@ -349,7 +349,7 @@ const legalCobraHoyRoute = createRoute({
 });
 
 // ADR-031 §4.1 — Listado de liquidaciones del carrier activo. Surface
-// dedicada bajo /app con DTE Tipo 33 descargable cuando esté emitido.
+// dedicada bajo /app. (DTE removido — ADR-069: Booster no emite DTE.)
 const liquidacionesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/liquidaciones',

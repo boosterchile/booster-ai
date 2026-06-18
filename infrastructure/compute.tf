@@ -656,10 +656,11 @@ module "service_document" {
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
   })
-  secrets = merge(local.common_secrets, {
-    DTE_PROVIDER_API_KEY       = google_secret_manager_secret.secrets["dte-provider-api-key"].secret_id
-    DTE_PROVIDER_CLIENT_SECRET = google_secret_manager_secret.secrets["dte-provider-client-secret"].secret_id
-  })
+  # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
+  # document-service nunca leyó estos secretos; se elimina el binding para
+  # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
+  # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
+  secrets = local.common_secrets
 
   public = false
 

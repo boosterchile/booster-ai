@@ -10,7 +10,6 @@ locals {
     "notification-events",               # fan-out notificaciones
     "vehicle-availability-events",       # vehículos disponibles para matching
     "traffic-condition-events",          # congestión detectada → eco-routing
-    "document-events",                   # emisiones DTE, OCR requests
     "telemetry-events-safety-p0",        # Wave 2: Crash/Unplug/GNSS Jamming → notification
     "telemetry-events-security-p1",      # Wave 2: Tow/Auto Geofence → notification
     "telemetry-events-eco-score",        # Wave 2: Idling/Green/Speed → matching-algorithm
@@ -80,15 +79,8 @@ resource "google_pubsub_topic" "traffic_condition" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_pubsub_topic" "document_events" {
-  name    = "document-events"
-  project = google_project.booster_ai.project_id
-  labels = {
-    env        = var.environment
-    managed_by = "terraform"
-  }
-  depends_on = [google_project_service.apis]
-}
+# Topic `document-events` removido (ADR-069, O-8): era huérfano (0
+# publishers, 0 subscriptions) tras la remoción de la emisión DTE/Sovos.
 
 # Chat shipper↔transportista (P3.b). Cada vez que se inserta un mensaje
 # en la tabla mensajes_chat, el api publica acá con atributo

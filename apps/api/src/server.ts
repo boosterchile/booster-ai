@@ -21,7 +21,6 @@ import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
-import { createAdminLiquidacionesRoutes } from './routes/admin-liquidaciones.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminSeedRoutes } from './routes/admin-seed.js';
@@ -611,18 +610,6 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
-
-    // Admin platform-wide: re-emisión manual de DTEs Tipo 33 (ADR-024 +
-    // ADR-031). Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el
-    // handler. Útil tras transient errors o tras configurar Sovos.
-    app.use(
-      '/admin/liquidaciones/*',
-      firebaseAuthMiddleware,
-      demoExpiresMiddleware,
-      isDemoEnforcementMiddleware,
-    );
-    app.use('/admin/liquidaciones/*', userContextMiddleware);
-    app.route('/admin/liquidaciones', createAdminLiquidacionesRoutes({ db: opts.db, logger }));
 
     // D1 — Admin seed demo (POST/DELETE). Auth platform-admin allowlist.
     app.use(
