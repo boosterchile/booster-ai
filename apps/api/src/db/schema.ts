@@ -1442,6 +1442,12 @@ export const consents = pgTable(
     expiresAt: timestamp('expira_en', { withTimezone: true }),
     revokedAt: timestamp('revocado_en', { withTimezone: true }),
     consentDocumentUrl: text('documento_consentimiento_url').notNull(),
+    // Evidencia verificable Ley 21.719 (versión del aviso vigente + IP/UA del
+    // otorgamiento). Nullable sin default: los consents existentes no tienen
+    // evidencia retroactiva y no se backfillean. Ver ADR-068 + migración 0043.
+    noticeVersion: varchar('version_aviso', { length: 20 }),
+    grantIp: text('ip_otorgamiento'),
+    grantUserAgent: text('user_agent_otorgamiento'),
   },
   (table) => ({
     stakeholderIdx: index('idx_consentimientos_stakeholder').on(table.stakeholderId),

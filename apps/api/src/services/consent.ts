@@ -146,6 +146,13 @@ export interface GrantOpts {
   dataCategories: DataCategory[];
   expiresAt?: Date | null;
   consentDocumentUrl: string;
+  /**
+   * Evidencia verificable Ley 21.719 (todas nullable mientras el flujo de
+   * captura F1b no esté vivo). Las persiste `grantConsent` en el INSERT.
+   */
+  noticeVersion?: string | null;
+  grantIp?: string | null;
+  grantUserAgent?: string | null;
 }
 
 export interface GrantResult {
@@ -177,6 +184,9 @@ export async function grantConsent(opts: GrantOpts): Promise<GrantResult> {
       dataCategories: opts.dataCategories,
       expiresAt: opts.expiresAt ?? null,
       consentDocumentUrl: opts.consentDocumentUrl,
+      noticeVersion: opts.noticeVersion ?? null,
+      grantIp: opts.grantIp ?? null,
+      grantUserAgent: opts.grantUserAgent ?? null,
     })
     .returning({ id: consents.id });
 
