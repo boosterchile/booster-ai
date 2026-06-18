@@ -1,11 +1,10 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Download, FileText, Receipt } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { EmptyState, emptyStateActionClass } from '../components/EmptyState.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import {
-  type DteStatusValue,
   type LiquidacionRow,
   type LiquidacionStatus,
   useLiquidaciones,
@@ -20,8 +19,8 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * viajes entregados (ADR-031 §4.1).
  *
  * Cada fila muestra trip, monto bruto, comisión Booster, neto al
- * carrier, IVA y status de la liquidación. Si tiene DTE emitido,
- * muestra folio + descarga del PDF.
+ * carrier, IVA y status de la liquidación. Booster ya no emite DTE
+ * (ADR-069): la columna/celda DTE fue removida.
  *
  * Flag-gated por backend (503 → banner). Acceso restringido a
  * empresas con `is_transportista` (403 → mensaje claro).
@@ -69,7 +68,7 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Liquidaciones</h1>
           <p className="mt-1 text-neutral-600 text-sm">
             Cada viaje entregado genera una liquidación con monto bruto, comisión Booster, IVA y
-            neto al transportista. Cuando el SII acepta el DTE, podrás descargar la factura.
+            neto al transportista.
           </p>
         </div>
       </header>
@@ -96,7 +95,7 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
           <EmptyState
             icon={<FileText className="h-10 w-10" aria-hidden />}
             title="Aún no tienes liquidaciones"
-            description="Cuando un viaje entregado se procese, la liquidación aparecerá aquí con el desglose y el DTE Tipo 33 de la comisión Booster."
+            description="Cuando un viaje entregado se procese, la liquidación aparecerá aquí con el desglose de la comisión Booster."
             action={
               <Link to="/app/ofertas" className={emptyStateActionClass}>
                 Ver ofertas activas
@@ -130,7 +129,6 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
                   <Th className="text-right">Comisión</Th>
                   <Th className="text-right">Neto</Th>
                   <Th>Estado</Th>
-                  <Th>DTE</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 bg-white">
@@ -156,9 +154,6 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
                     <Td>
                       <StatusBadge status={l.status} />
                     </Td>
-                    <Td>
-                      <DteCell row={l} />
-                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -174,31 +169,6 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
         </>
       )}
     </Layout>
-  );
-}
-
-function DteCell({ row }: { row: LiquidacionRow }) {
-  if (!row.dte_folio) {
-    return <span className="text-neutral-400 text-xs">—</span>;
-  }
-  return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-neutral-900 text-xs">{row.dte_folio}</span>
-        <DteStatusBadge status={row.dte_status} />
-      </div>
-      {row.dte_pdf_url && (
-        <a
-          href={row.dte_pdf_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex w-fit items-center gap-1 rounded-md border border-neutral-300 px-2 py-0.5 font-medium text-primary-700 text-xs transition hover:bg-primary-50"
-        >
-          <Download className="h-3 w-3" aria-hidden />
-          PDF
-        </a>
-      )}
-    </div>
   );
 }
 
@@ -245,27 +215,6 @@ function StatusBadge({ status }: { status: LiquidacionStatus }) {
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs ${v.className}`}
-    >
-      {v.label}
-    </span>
-  );
-}
-
-function DteStatusBadge({ status }: { status: DteStatusValue | null }) {
-  if (!status) {
-    return null;
-  }
-  const map: Record<DteStatusValue, { label: string; className: string }> = {
-    en_proceso: { label: 'SII en proceso', className: 'bg-neutral-100 text-neutral-600' },
-    aceptado: { label: 'SII aceptado', className: 'bg-success-50 text-success-700' },
-    reparable: { label: 'SII reparable', className: 'bg-amber-50 text-amber-700' },
-    rechazado: { label: 'SII rechazado', className: 'bg-danger-50 text-danger-700' },
-    anulado: { label: 'Anulado', className: 'bg-neutral-100 text-neutral-500' },
-  };
-  const v = map[status];
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-1.5 py-0 font-medium text-[10px] ${v.className}`}
     >
       {v.label}
     </span>

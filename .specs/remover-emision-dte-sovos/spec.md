@@ -33,7 +33,7 @@ Remover la integración Sovos / emisión de DTE real de Booster, dejando el sist
 - [ ] Suite api verde **sin** los tests de emisión; los tests no-DTE de `admin-jobs`/`liquidar-trip` siguen verdes.
 - [ ] `infrastructure/scheduling.tf` sin `reconciliar_dtes`; `infrastructure/messaging.tf` sin `document-events`. `terraform validate`/`fmt` OK; `terraform plan` muestra solo destrucción del cron + topic (sin cambios colaterales inesperados).
 - [ ] `facturas_booster_clp` y `liquidaciones` **intactas en datos**; columnas `dte_*` marcadas `@deprecated` en `schema.ts`, sin escritura desde services, **sin migración destructiva** (guard expand/contract no se viola — no hay DROP).
-- [ ] `GET /me/liquidaciones` deja de proyectar `dte_*` **y** el consumidor en `apps/web` fue ajustado (o se confirma que tolera su ausencia) — ver §4.
+- [ ] `apps/web` deja de consumir `dte_*` (sin `DteCell`); `GET /me/liquidaciones` **mantiene** los 5 campos `dte_*` como `null`/deprecated en el response (no los remueve del schema) — ver §4 / O-7.
 - [ ] ADR-069 mergeado (supersede ADR-024, modifica ADR-007, P0-A "no aplica").
 
 ## 4. User-visible behaviour
@@ -42,9 +42,9 @@ Remover la integración Sovos / emisión de DTE real de Booster, dejando el sist
 |---|---|---|
 | Admin plataforma | `POST /admin/liquidaciones/:id/emitir-dte` (re-emisión manual) | Endpoint **eliminado** (404) |
 | Operador GCP | Cron horario `reconciliar-dtes` corriendo | Cron eliminado |
-| **Carrier (PWA)** | `GET /me/liquidaciones` devuelve `dte_folio`/`dte_status`/`dte_pdf_url`/`dte_provider`/`dte_emitido_en` | **Esos campos desaparecen del payload** |
+| **Carrier (PWA)** | `/me/liquidaciones` devuelve `dte_*` + la UI muestra `DteCell` | Los 5 `dte_*` se **mantienen en el payload como `null`** (deprecated); la UI ya no muestra `DteCell` |
 
-⚠️ **Contrato público (hallazgo #2 — CONFIRMADO por verificación adversarial)**: el consumidor existe y usa los campos activamente — `apps/web/src/hooks/use-liquidaciones.ts:33-37` (tipo `LiquidacionRow`) y `apps/web/src/routes/liquidaciones.tsx:180-202` (componente `DteCell`: `if(!row.dte_folio)`, render de `dte_status`/`dte_pdf_url`). Quitar los campos del backend SIN tocar el front **rompe la PWA**. → **O-7 es bloqueante de merge** (§11): la remoción de F3 DEBE incluir el cambio coordinado de `apps/web` (o mantener los 5 campos como `null` por backward-compat).
+✅ **Contrato público (hallazgo #2 — resuelto con deprecación escalonada, decisión PO)**: único consumidor confirmado = `apps/web` (`hooks/use-liquidaciones.ts:44` + `routes/liquidaciones.tsx:180-202` `DteCell`); **sin clientes externos** (no hay app móvil ni API pública/SDK que exponga el endpoint — verificado 2026-06-18). Estrategia: **(1)** `apps/web` deja de consumir `dte_*` (se quita `DteCell` y los campos del tipo/hook); **(2)** el backend deja de **poblar** `dte_*` pero los **mantiene en el response como `null`/deprecated** (NO se remueven del schema JSON) — backward-compat para PWAs en vuelo/caché; **(3)** la eliminación del contrato es **fase posterior**, tras confirmar cero consumidores. Documentado en ADR-069.
 
 ## 5. Out of scope
 
@@ -76,7 +76,7 @@ Rama propia. Orden sugerido (PR único o 2 PRs: código + infra):
    - Eliminar tests de emisión; podar casos DTE de `admin-jobs-route.test.ts` y `liquidar-trip.test.ts`.
 2. **Package**: eliminar `packages/dte-provider/` completo + su entrada en workspace.
 3. **Deprecación (sin DROP)** en `schema.ts`: marcar `@deprecated` las columnas `dte_*` de `facturas_booster_clp` (`:1992-2003`) y `liquidaciones` (`:1945-1948`); dejar de poblarlas. Conservar el valor `'dte_emitido'` en `chk_liquidaciones_status` (`:1957-1960`) como legacy.
-4. **API web**: `me-liquidaciones.ts:57-64,89-93` deja de proyectar `dte_*` + simplificar el `leftJoin`. Coordinar con `apps/web` (§4 / O-7).
+4. **Contrato `/me/liquidaciones` (deprecación escalonada, O-7)**: `apps/web` quita `DteCell` + los `dte_*` del tipo `LiquidacionRow`/hook (`use-liquidaciones.ts`, `liquidaciones.tsx`). Backend `me-liquidaciones.ts:57-64,89-93`: deja de poblar `dte_*` (quitar el `leftJoin` a `facturas_booster_clp` si solo servía para eso) pero **mantener los 5 campos en el JSON devolviendo `null`** (deprecated). **NO removerlos** del response schema (fase posterior).
 5. **Infra**: eliminar `scheduling.tf:154-189` (cron) y `messaging.tf:13,83-91` (`document-events`, hallazgo #1). `terraform plan` → solo 1 destroy de cron + 1 de topic.
 6. **ADR-069** (§8) + actualizar narrativa de retención del bucket (P0-A "no aplica").
 7. Secretos `dte-provider-*` y bucket `documents`: marcar para revisión en F4 (no remover en F3).
@@ -112,7 +112,7 @@ Subagents: `sre-oncall` pre-merge (infra: cron/topic destroy, rollback). `securi
 
 ## 11. Open questions
 
-- **O-7 (contrato público — BLOQUEANTE, confirmado)**: `apps/web` SÍ consume los `dte_*` activamente (`hooks/use-liquidaciones.ts:33-37` + `routes/liquidaciones.tsx:180-202` `DteCell`). Quitar los campos del backend sin tocar el front rompe la PWA. **Decisión PO**: **(a)** mantener los 5 campos en el JSON como `null` (backward-compat; deja contrato muerto pero no rompe), o **(b)** actualizar `apps/web` primero (quitar `DteCell` / campos opcionales) y luego el backend, todo en el PR de F3. **Recomendado (b)** (contrato limpio, cambio coordinado front+back).
+- **O-7 (RESUELTA — PO 2026-06-18): deprecación escalonada.** Único consumidor confirmado = `apps/web` (sin clientes externos — verificado). (1) `apps/web` deja de consumir `dte_*` (quitar `DteCell` + campos del tipo `LiquidacionRow`/hook); (2) backend deja de poblar `dte_*` pero los **mantiene como `null`/deprecated en el response** (no se remueven del schema JSON); (3) eliminación del contrato en fase posterior tras confirmar cero consumidores. Documentar en ADR-069. Reemplaza las opciones (a)/(b) previas con la postura conservadora de contrato.
 - **O-8**: `document-events` — ¿F3 lo absorbe (recomendado, ya que está huérfano en `main`) o se deja al PR #493 sin mergear? Si #493 mergea primero, F3 no lo toca. Default: F3 lo remueve.
 - **O-9 (a F4)**: secretos `dte-provider-api-key`/`-client-secret` y bucket `documents` — ¿se reusan para recepción de DTE de terceros (F4) o se remueven? No bloquea F3.
 

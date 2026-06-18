@@ -9,14 +9,15 @@ import { ApiError, api } from '../lib/api-client.js';
  * activa no es transportista (403), la página avisa "sin permisos".
  */
 
+// `lista_para_dte` y `dte_emitido` se conservan como valores legacy del enum
+// (ADR-069: Booster dejó de emitir DTE). El flujo nuevo no transiciona a
+// `dte_emitido`, pero filas históricas pueden tenerlo.
 export type LiquidacionStatus =
   | 'pending_consent'
   | 'lista_para_dte'
   | 'dte_emitido'
   | 'pagada_al_carrier'
   | 'disputa';
-
-export type DteStatusValue = 'en_proceso' | 'aceptado' | 'rechazado' | 'reparable' | 'anulado';
 
 export interface LiquidacionRow {
   liquidacion_id: string;
@@ -30,11 +31,6 @@ export interface LiquidacionRow {
   total_factura_booster_clp: number;
   pricing_methodology_version: string;
   status: LiquidacionStatus;
-  dte_folio: string | null;
-  dte_emitido_en: string | null;
-  dte_status: DteStatusValue | null;
-  dte_pdf_url: string | null;
-  dte_provider: string | null;
   creado_en: string;
 }
 

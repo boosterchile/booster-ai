@@ -111,7 +111,7 @@ describe('GET /me/liquidaciones — lista', () => {
     expect(await res.json()).toEqual({ liquidaciones: [] });
   });
 
-  it('lista con liquidación sin DTE → row sin folio', async () => {
+  it('lista con liquidación → row con importes + status', async () => {
     const created = new Date('2026-05-10T11:00:00Z');
     const app = buildApp({
       withContext: true,
@@ -127,13 +127,7 @@ describe('GET /me/liquidaciones — lista', () => {
           totalFacturaBoosterClp: 28560,
           pricingMethodologyVersion: 'pricing-v2.0-cl-2026.06',
           status: 'lista_para_dte',
-          dteFolio: null,
-          dteEmitidoEn: null,
           createdAt: created,
-          facturaId: null,
-          dteStatus: null,
-          dtePdfUrl: null,
-          dteProvider: null,
           trackingCode: 'TRK-001',
         },
       ]),
@@ -149,14 +143,14 @@ describe('GET /me/liquidaciones — lista', () => {
       comision_pct: 12,
       monto_neto_carrier_clp: 176000,
       status: 'lista_para_dte',
-      dte_folio: null,
-      dte_status: null,
     });
   });
 
-  it('lista con liquidación DTE emitido → folio + pdf_url + dte_status', async () => {
+  // ADR-069 / O-7: Booster ya no emite DTE. Los 5 campos `dte_*` se
+  // mantienen en el response (deprecación escalonada) devolviendo `null`,
+  // sin importar el status de la liquidación.
+  it('dte_* deprecados → siempre null en el response', async () => {
     const created = new Date('2026-05-10T11:00:00Z');
-    const emitido = new Date('2026-05-10T11:01:00Z');
     const app = buildApp({
       withContext: true,
       db: makeDb([
@@ -171,13 +165,7 @@ describe('GET /me/liquidaciones — lista', () => {
           totalFacturaBoosterClp: 28560,
           pricingMethodologyVersion: 'pricing-v2.0-cl-2026.06',
           status: 'dte_emitido',
-          dteFolio: '1234',
-          dteEmitidoEn: emitido,
           createdAt: created,
-          facturaId: 'fact-1',
-          dteStatus: 'aceptado',
-          dtePdfUrl: 'https://mock.dte/1234.pdf',
-          dteProvider: 'mock',
           trackingCode: 'TRK-001',
         },
       ]),
@@ -185,11 +173,11 @@ describe('GET /me/liquidaciones — lista', () => {
     const res = await app.request('/me/liquidaciones');
     const body = (await res.json()) as { liquidaciones: Array<Record<string, unknown>> };
     expect(body.liquidaciones[0]).toMatchObject({
-      dte_folio: '1234',
-      dte_emitido_en: emitido.toISOString(),
-      dte_status: 'aceptado',
-      dte_pdf_url: 'https://mock.dte/1234.pdf',
-      dte_provider: 'mock',
+      dte_folio: null,
+      dte_emitido_en: null,
+      dte_status: null,
+      dte_pdf_url: null,
+      dte_provider: null,
     });
   });
 });

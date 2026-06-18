@@ -68,7 +68,9 @@ function renderRoute() {
   );
 }
 
-const LIQ_SIN_DTE = {
+// ADR-069 / O-7: Booster ya no emite DTE; la columna/celda DTE fue
+// removida de la UI y los campos `dte_*` del tipo `LiquidacionRow`.
+const LIQ = {
   liquidacion_id: 'liq-1',
   asignacion_id: 'asg-1',
   tracking_code: 'TRK-001',
@@ -80,22 +82,7 @@ const LIQ_SIN_DTE = {
   total_factura_booster_clp: 28560,
   pricing_methodology_version: 'pricing-v2.0-cl-2026.06',
   status: 'lista_para_dte' as const,
-  dte_folio: null,
-  dte_emitido_en: null,
-  dte_status: null,
-  dte_pdf_url: null,
-  dte_provider: null,
   creado_en: '2026-05-10T11:00:00Z',
-};
-
-const LIQ_DTE_EMITIDO = {
-  ...LIQ_SIN_DTE,
-  status: 'dte_emitido' as const,
-  dte_folio: '1234',
-  dte_emitido_en: '2026-05-10T11:01:00Z',
-  dte_status: 'aceptado' as const,
-  dte_pdf_url: 'https://mock.dte/1234.pdf',
-  dte_provider: 'mock',
 };
 
 beforeEach(() => {
@@ -145,45 +132,28 @@ describe('LiquidacionesRoute — lista', () => {
     expect(await screen.findByText(/Aún no tienes liquidaciones/i)).toBeInTheDocument();
   });
 
-  it('liquidación sin DTE → tabla con "—" en columna DTE', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ liquidaciones: [LIQ_SIN_DTE] });
+  it('liquidación → fila con tracking, comisión y status (sin columna DTE)', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ liquidaciones: [LIQ] });
     renderRoute();
     expect(await screen.findByText('Lista para DTE')).toBeInTheDocument();
     expect(screen.getByText('TRK-001')).toBeInTheDocument();
     expect(screen.getByText(/12\.00%/)).toBeInTheDocument();
-    // Sin folio.
-    expect(screen.queryByText('1234')).not.toBeInTheDocument();
-  });
-
-  it('liquidación con DTE aceptado → folio + badge SII aceptado + link PDF', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ liquidaciones: [LIQ_DTE_EMITIDO] });
-    renderRoute();
-    expect(await screen.findByText('1234')).toBeInTheDocument();
-    expect(screen.getByText('SII aceptado')).toBeInTheDocument();
-    const pdfLink = screen.getByRole('link', { name: /PDF/i });
-    expect(pdfLink).toHaveAttribute('href', 'https://mock.dte/1234.pdf');
-    expect(pdfLink).toHaveAttribute('target', '_blank');
+    // La columna/celda DTE fue removida (ADR-069).
+    expect(screen.queryByText('DTE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /PDF/i })).not.toBeInTheDocument();
   });
 
   it('summary cards: cuenta + bruto + neto', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
-      liquidaciones: [LIQ_DTE_EMITIDO, { ...LIQ_SIN_DTE, liquidacion_id: 'liq-2' }],
+      liquidaciones: [LIQ, { ...LIQ, liquidacion_id: 'liq-2' }],
     });
     renderRoute();
     // Wait until row content visible (esperando la fila — más específico
     // que el h1 que está pre-load).
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(await screen.findAllByText('TRK-001')).toHaveLength(2);
     // 2 entries × monto_bruto_clp 200000.
     expect(screen.getByText('$ 400.000')).toBeInTheDocument();
     // 2 entries × neto 176000.
     expect(screen.getByText('$ 352.000')).toBeInTheDocument();
-  });
-
-  it('liquidación rechazada por SII → badge danger', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      liquidaciones: [{ ...LIQ_DTE_EMITIDO, dte_status: 'rechazado' as const }],
-    });
-    renderRoute();
-    expect(await screen.findByText('SII rechazado')).toBeInTheDocument();
   });
 });
