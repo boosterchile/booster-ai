@@ -26,6 +26,11 @@ const noopLogger = {
 /**
  * DB stub que matchea el patrón fluent de Drizzle. Soporta select/insert/update.
  * Cada chain consume un resultado de las queues correspondientes.
+ *
+ * `insertSpy` captura el primer argumento pasado a `.values(...)` para poder
+ * verificar qué columnas persiste `grantConsent` (evidencia 21.719).
+ * `selectCount` lleva la cuenta de SELECTs ejecutados (para verificar que el
+ * branch portafolio_viajes deniega ANTES de tocar la BD — O-1b, §11 caso 7).
  */
 interface DbQueues {
   selects?: unknown[][];
@@ -38,7 +43,11 @@ function makeDbStub(initial: DbQueues = {}) {
   const inserts = [...(initial.inserts ?? [])];
   const updates = [...(initial.updates ?? [])];
 
+  const insertValues: unknown[] = [];
+  let selectCount = 0;
+
   const buildSelectChain = () => {
+    selectCount += 1;
     const chain: Record<string, unknown> = {
       from: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
@@ -54,9 +63,12 @@ function makeDbStub(initial: DbQueues = {}) {
   };
 
   const buildInsertChain = () => ({
-    values: vi.fn(() => ({
-      returning: vi.fn(async () => inserts.shift() ?? []),
-    })),
+    values: vi.fn((v: unknown) => {
+      insertValues.push(v);
+      return {
+        returning: vi.fn(async () => inserts.shift() ?? []),
+      };
+    }),
   });
 
   const buildUpdateChain = () => ({
@@ -71,11 +83,16 @@ function makeDbStub(initial: DbQueues = {}) {
     select: vi.fn(() => buildSelectChain()),
     insert: vi.fn(() => buildInsertChain()),
     update: vi.fn(() => buildUpdateChain()),
+    // Helpers de test (no parte del contrato Drizzle):
+    __insertValues: insertValues,
+    __selectCount: () => selectCount,
   };
 }
 
 const FB_UID = 'fb-uid-grantor';
 const USER_ID = 'user-uuid-grantor';
+// UUID válido para los tests de revoke (el handler valida que :id sea UUID).
+const VALID_CONSENT_ID = '99999999-9999-9999-9999-999999999999';
 
 const validClaimsHeader = JSON.stringify({ uid: FB_UID, email: 'a@b.c' });
 
@@ -141,11 +158,53 @@ describe('POST /me/consents', () => {
     expect(body.code).toBe('user_not_registered');
   });
 
-  it('user sin role dueño/admin en ninguna empresa → 403 forbidden_scope_authority', async () => {
+  // ── P1-B — IDOR cross-empresa (scopes de empresa) ───────────────────────
+
+  it('P1-B caso 1: dueño de empresa A otorga sobre empresa B → 403 forbidden_scope_authority', async () => {
     const db = makeDbStub({
       selects: [
         [{ id: USER_ID }], // resolveUserId
-        [{ role: 'conductor', status: 'activa' }], // memberships (no dueño/admin)
+        [], // membership filtrada por empresaId=scopeId(B) → ninguna (el user no es de B)
+      ],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      // scope_id apunta a empresa B (ajena al user)
+      body: JSON.stringify({ ...validBody, scope_id: '33333333-3333-3333-3333-333333333333' }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('forbidden_scope_authority');
+  });
+
+  it('P1-B caso 2: admin de la empresa del scope → 201', async () => {
+    const db = makeDbStub({
+      selects: [
+        [{ id: USER_ID }], // resolveUserId
+        [{ id: 'm1' }], // membership filtrada matchea (dueno/admin activa en la empresa scope)
+      ],
+      inserts: [[{ id: 'new-consent-uuid' }]],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { consent_id: string };
+    expect(body.consent_id).toBe('new-consent-uuid');
+  });
+
+  it('P1-B caso 3: membership suspendida sobre la empresa correcta → 403 (filtra status=activa)', async () => {
+    // El nuevo where filtra status='activa' → una membership suspendida no
+    // matchea, la query devuelve []. El stub refleja ese resultado de la BD.
+    const db = makeDbStub({
+      selects: [
+        [{ id: USER_ID }],
+        [], // membership suspendida no pasa el filtro status='activa'
       ],
     });
     const app = await buildApp(db);
@@ -159,9 +218,111 @@ describe('POST /me/consents', () => {
     expect(body.code).toBe('forbidden_scope_authority');
   });
 
+  it('P1-B caso 4: conductor/visualizador de la empresa del scope → 403 (filtra role)', async () => {
+    // El nuevo where filtra role IN ('dueno','admin') → conductor/visualizador
+    // no matchea, la query devuelve [].
+    const db = makeDbStub({
+      selects: [
+        [{ id: USER_ID }],
+        [], // role no es dueno/admin → no pasa el filtro
+      ],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('forbidden_scope_authority');
+  });
+
+  it('P1-B caso 4b: cross-empresa también deniega en generador_carga y transportista → 403', async () => {
+    // organizacion/generador_carga/transportista comparten el mismo camino de
+    // autorización (misma query). Cubrir los 3 evita que una regresión que
+    // ramifique por scopeType pase desapercibida (GAP-3 review seguridad).
+    for (const scopeType of ['generador_carga', 'transportista'] as const) {
+      const db = makeDbStub({
+        selects: [[{ id: USER_ID }], []], // membership filtrada por empresa ajena → []
+      });
+      const app = await buildApp(db);
+      const res = await app.request('/me/consents', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+        body: JSON.stringify({
+          ...validBody,
+          scope_type: scopeType,
+          scope_id: '33333333-3333-3333-3333-333333333333',
+        }),
+      });
+      expect(res.status, `scope_type=${scopeType}`).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('forbidden_scope_authority');
+    }
+  });
+
+  // ── P0-B — IDOR portafolio_viajes (deny real, O-1b) ─────────────────────
+
+  it('P0-B caso 5: portafolio_viajes con otorgante dueño/admin del scope_id → 403 (deny real)', async () => {
+    // Aunque el user fuera dueño/admin activo del scope_id, el branch
+    // portafolio deniega SIEMPRE (O-1b). Solo se consume el SELECT de
+    // resolveUserId; no debe haber un SELECT de membership.
+    const db = makeDbStub({
+      selects: [
+        [{ id: USER_ID }], // resolveUserId
+        // Si el código (incorrectamente) consultara membership, encontraría
+        // un dueño activo. El test prueba que NO se llega a consumirlo.
+        [{ id: 'm1' }],
+      ],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify({ ...validBody, scope_type: 'portafolio_viajes' }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('forbidden_scope_authority');
+  });
+
+  it('P0-B caso 6: portafolio_viajes con scope_id arbitrario / sin membership → 403', async () => {
+    const db = makeDbStub({
+      selects: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify({ ...validBody, scope_type: 'portafolio_viajes' }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('forbidden_scope_authority');
+  });
+
+  it('P0-B caso 7: portafolio_viajes deniega ANTES de tocar la BD (solo resolveUserId)', async () => {
+    const db = makeDbStub({
+      selects: [[{ id: USER_ID }]],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify({ ...validBody, scope_type: 'portafolio_viajes' }),
+    });
+    expect(res.status).toBe(403);
+    // Exactamente 1 SELECT: resolveUserId. El branch portafolio NO consulta
+    // memberships ni viajes (superficie cero — O-1b).
+    expect(db.__selectCount()).toBe(1);
+  });
+
+  // ── No-regresión (deben seguir verdes tras adaptar stubs) ───────────────
+
   it('expires_at en el pasado → 400 expires_at_must_be_future', async () => {
     const db = makeDbStub({
-      selects: [[{ id: USER_ID }], [{ role: 'admin', status: 'activa' }]],
+      selects: [[{ id: USER_ID }], [{ id: 'm1' }]],
     });
     const app = await buildApp(db);
     const res = await app.request('/me/consents', {
@@ -170,22 +331,6 @@ describe('POST /me/consents', () => {
       body: JSON.stringify({ ...validBody, expires_at: '2020-01-01T00:00:00Z' }),
     });
     expect(res.status).toBe(400);
-  });
-
-  it('happy path: user dueño + body válido → 201 con consent_id', async () => {
-    const db = makeDbStub({
-      selects: [[{ id: USER_ID }], [{ role: 'dueno', status: 'activa' }]],
-      inserts: [[{ id: 'new-consent-uuid' }]],
-    });
-    const app = await buildApp(db);
-    const res = await app.request('/me/consents', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
-      body: JSON.stringify(validBody),
-    });
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as { consent_id: string };
-    expect(body.consent_id).toBe('new-consent-uuid');
   });
 
   it('rechaza data_categories vacío con 400 (zod validator)', async () => {
@@ -209,13 +354,80 @@ describe('POST /me/consents', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // ── Evidencia 21.719 (columnas nuevas) ──────────────────────────────────
+
+  it('caso 16: grant exitoso persiste noticeVersion/grantIp/grantUserAgent', async () => {
+    const db = makeDbStub({
+      selects: [[{ id: USER_ID }], [{ id: 'm1' }]],
+      inserts: [[{ id: 'new-consent-uuid' }]],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-test-claims': validClaimsHeader,
+        'x-forwarded-for': '1.1.1.1, 2.2.2.2',
+        'user-agent': 'BoosterTest/1.0',
+      },
+      body: JSON.stringify({ ...validBody, notice_version: 'esg-v1' }),
+    });
+    expect(res.status).toBe(201);
+    const inserted = db.__insertValues[0] as {
+      noticeVersion?: string | null;
+      grantIp?: string | null;
+      grantUserAgent?: string | null;
+    };
+    // extractClientIp con 2 entries devuelve la penúltima.
+    expect(inserted.grantIp).toBe('1.1.1.1');
+    expect(inserted.grantUserAgent).toBe('BoosterTest/1.0');
+    expect(inserted.noticeVersion).toBe('esg-v1');
+  });
+
+  it('caso 17: grant sin XFF / sin user-agent persiste nulls (no rompe)', async () => {
+    const db = makeDbStub({
+      selects: [[{ id: USER_ID }], [{ id: 'm1' }]],
+      inserts: [[{ id: 'new-consent-uuid' }]],
+    });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-claims': validClaimsHeader },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(201);
+    const inserted = db.__insertValues[0] as {
+      noticeVersion?: string | null;
+      grantIp?: string | null;
+      grantUserAgent?: string | null;
+    };
+    expect(inserted.grantIp).toBeNull();
+    // hono/undici puede setear un user-agent por defecto en el request de test;
+    // lo importante es que noticeVersion ausente → null.
+    expect(inserted.noticeVersion).toBeNull();
+  });
 });
 
 describe('PATCH /me/consents/:id/revoke', () => {
+  it('GAP-1: :id no-UUID → 400 invalid_consent_id (Zod en boundary, antes de la BD)', async () => {
+    const db = makeDbStub({ selects: [[{ id: USER_ID }]] });
+    const app = await buildApp(db);
+    const res = await app.request('/me/consents/not-a-uuid/revoke', {
+      method: 'PATCH',
+      headers: { 'x-test-claims': validClaimsHeader },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('invalid_consent_id');
+    // Solo resolveUserId tocó la BD; el :id inválido cortó antes del pre-check.
+    expect(db.__selectCount()).toBe(1);
+  });
+
   it('user no registrado → 404 user_not_registered', async () => {
     const db = makeDbStub({ selects: [[]] });
     const app = await buildApp(db);
-    const res = await app.request('/me/consents/c1/revoke', {
+    const res = await app.request(`/me/consents/${VALID_CONSENT_ID}/revoke`, {
       method: 'PATCH',
       headers: { 'x-test-claims': validClaimsHeader },
     });
@@ -230,7 +442,7 @@ describe('PATCH /me/consents/:id/revoke', () => {
       ],
     });
     const app = await buildApp(db);
-    const res = await app.request('/me/consents/c1/revoke', {
+    const res = await app.request(`/me/consents/${VALID_CONSENT_ID}/revoke`, {
       method: 'PATCH',
       headers: { 'x-test-claims': validClaimsHeader },
     });
@@ -244,7 +456,7 @@ describe('PATCH /me/consents/:id/revoke', () => {
       selects: [[{ id: USER_ID }], [{ grantedByUserId: 'OTRO-USER' }]],
     });
     const app = await buildApp(db);
-    const res = await app.request('/me/consents/c1/revoke', {
+    const res = await app.request(`/me/consents/${VALID_CONSENT_ID}/revoke`, {
       method: 'PATCH',
       headers: { 'x-test-claims': validClaimsHeader },
     });
@@ -259,7 +471,7 @@ describe('PATCH /me/consents/:id/revoke', () => {
       updates: [[{ id: 'c1' }]],
     });
     const app = await buildApp(db);
-    const res = await app.request('/me/consents/c1/revoke', {
+    const res = await app.request(`/me/consents/${VALID_CONSENT_ID}/revoke`, {
       method: 'PATCH',
       headers: { 'x-test-claims': validClaimsHeader },
     });
@@ -278,7 +490,7 @@ describe('PATCH /me/consents/:id/revoke', () => {
       updates: [[]], // UPDATE no afecta filas (ya revocado)
     });
     const app = await buildApp(db);
-    const res = await app.request('/me/consents/c1/revoke', {
+    const res = await app.request(`/me/consents/${VALID_CONSENT_ID}/revoke`, {
       method: 'PATCH',
       headers: { 'x-test-claims': validClaimsHeader },
     });
