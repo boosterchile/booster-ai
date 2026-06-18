@@ -35,7 +35,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 // recibe la función como opt parameter (`opts.config: Partial<EmitirCertificadoConfig>`).
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { assignments, tripEvents, trips } from '../db/schema.js';
+import { assignments, transportDocuments, tripEvents, trips } from '../db/schema.js';
 import { actualizarFactorMatchingViaje } from './actualizar-factor-matching.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
 import { calcularScoreConduccionViaje } from './calcular-score-conduccion-viaje.js';
@@ -45,6 +45,11 @@ import {
 } from './emitir-certificado-viaje.js';
 import { generarCoachingViaje } from './generar-coaching-viaje.js';
 import { liquidarTrip } from './liquidar-trip.js';
+import {
+  type DocumentoParaCierre,
+  type FlagsCierreDocumental,
+  puedeCerrarConDocumentos,
+} from './puede-cerrar-con-documentos.js';
 
 // El guard de estados confirmables vive en @booster-ai/trip-state-machine
 // (esConfirmableEntrega: asignado|en_proceso — ADR-061). 'entregado' es
@@ -57,9 +62,22 @@ export type ConfirmarEntregaResult =
   | { ok: true; alreadyDelivered: true; deliveredAt: Date }
   | {
       ok: false;
-      code: 'trip_not_found' | 'no_assignment' | 'forbidden_owner_mismatch' | 'invalid_status';
+      code:
+        | 'trip_not_found'
+        | 'no_assignment'
+        | 'forbidden_owner_mismatch'
+        | 'invalid_status'
+        | 'documento_requerido';
       currentStatus?: string;
     };
+
+/**
+ * Política de cierre flexible documental (ADR-070, frente F4-4a). Inyectada
+ * por el wire desde las env vars (`booleanFlag`) para mantener el guard
+ * testeable. Si no se provee, el cierre NO aplica precondición documental
+ * (backward-compat: equivalente a `requireDocumentToClose=false`).
+ */
+export interface DocumentClosePolicy extends FlagsCierreDocumental {}
 
 export async function confirmarEntregaViaje(opts: {
   db: Db;
@@ -72,8 +90,14 @@ export async function confirmarEntregaViaje(opts: {
     userId: string;
   };
   config: Partial<EmitirCertificadoConfig>;
+  /**
+   * Política de cierre flexible documental (ADR-070, F4-4a). Si se provee y
+   * `requireDocumentToClose=true`, la orden requiere ≥1 documento subido para
+   * cerrar (según fecha de corte). Ausente → sin precondición documental.
+   */
+  documentClosePolicy?: DocumentClosePolicy;
 }): Promise<ConfirmarEntregaResult> {
-  const { db, logger, tripId, source, actor, config } = opts;
+  const { db, logger, tripId, source, actor, config, documentClosePolicy } = opts;
 
   // Tx de escritura — todo o nada para mantener consistencia.
   const txResult = await db.transaction(async (tx) => {
@@ -82,6 +106,7 @@ export async function confirmarEntregaViaje(opts: {
       .select({
         id: trips.id,
         status: trips.status,
+        createdAt: trips.createdAt,
         generadorCargaEmpresaId: trips.generadorCargaEmpresaId,
       })
       .from(trips)
@@ -153,6 +178,33 @@ export async function confirmarEntregaViaje(opts: {
     // assignment row borrado por algún proceso externo.
     if (!assignment) {
       return { ok: false as const, code: 'no_assignment' as const };
+    }
+
+    // (6.5) Cierre flexible documental (ADR-070, F4-4a). Precondición de
+    // negocio (NO toca la tabla de transiciones): si el flag está ON y la
+    // orden fue creada en/después de la fecha de corte, exige ≥1 documento
+    // subido. La semántica vive en la función pura `puedeCerrarConDocumentos`.
+    // Las órdenes legacy (creadas antes del corte) quedan exentas.
+    if (documentClosePolicy?.requireDocumentToClose) {
+      const docRows = await tx
+        .select({ extractionStatus: transportDocuments.extractionStatus })
+        .from(transportDocuments)
+        .where(eq(transportDocuments.viajeId, tripId));
+      const documentos: DocumentoParaCierre[] = docRows.map((r) => ({
+        extractionStatus: r.extractionStatus,
+      }));
+      const decision = puedeCerrarConDocumentos({
+        flags: documentClosePolicy,
+        tripCreatedAt: trip.createdAt,
+        documentos,
+      });
+      if (!decision.puedeCerrar) {
+        logger.info(
+          { tripId, razon: decision.razon, docs: documentos.length },
+          'cierre rechazado por precondición documental (F4)',
+        );
+        return { ok: false as const, code: 'documento_requerido' as const };
+      }
     }
 
     // (7) UPDATEs en el orden esperado por el lifecycle.

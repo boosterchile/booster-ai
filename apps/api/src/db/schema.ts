@@ -6,6 +6,7 @@ import {
   char,
   check,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -2281,6 +2282,87 @@ export const solicitudesRegistro = pgTable('solicitudes_registro', {
 });
 
 // =============================================================================
+// REPOSITORIO DOCUMENTAL DE TRANSPORTE (ADR-070, frente F4 — migration 0044)
+// =============================================================================
+// Booster RECIBE y ARCHIVA documentos tributarios de terceros (Guía de
+// Despacho DTE 52, Factura 33, etc.) que amparan la carga de una orden. NO
+// emite DTE ni se integra con el SII (ADR-069). El worker (4b) decodifica el
+// TED PDF417 best-effort; el cierre flexible exige ≥1 documento subido.
+//
+// Naming bilingüe: tabla `documentos_transporte`; los valores de `doc_type`
+// son códigos literales del SII (no se traducen); los demás enums en español.
+
+/** Códigos de tipo de documento del SII + `other` para tipos no esperados. */
+export const docTypeEnum = pgEnum('tipo_documento_transporte', [
+  '33',
+  '34',
+  '52',
+  '56',
+  '61',
+  'other',
+]);
+
+/** Estado de extracción del TED (lo mueve el worker 4b / manual-entry). */
+export const extractionStatusEnum = pgEnum('estado_extraccion', [
+  'pendiente',
+  'procesando',
+  'decodificado',
+  'ingreso_manual',
+  'fallido',
+]);
+
+/** Origen del documento. `xml_intercambio` reservado para el stub de 4c. */
+export const documentSourceEnum = pgEnum('origen_documento', [
+  'pdf_upload',
+  'photo_upload',
+  'xml_intercambio',
+]);
+
+export const transportDocuments = pgTable(
+  'documentos_transporte',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // FK a `viajes`. `restrict`: NO cascada al borrar/cerrar la orden — la
+    // retención legal (6a) prohíbe borrar un documento dentro del período.
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    // Objeto GCS (no URI completa; el bucket viene de env). Prefijo
+    // `transport-documents/{viajeId}/{uuid}.{ext}`.
+    filePath: text('file_path').notNull(),
+    fileMime: text('file_mime').notNull(),
+    docType: docTypeEnum('doc_type').notNull(),
+    // Campos del `<DD>` del TED — nullable hasta decodificar / manual-entry.
+    folio: text('folio'),
+    rutEmisor: text('rut_emisor'),
+    razonSocialEmisor: text('razon_social_emisor'),
+    rutReceptor: text('rut_receptor'),
+    razonSocialReceptor: text('razon_social_receptor'),
+    // `<DD><FE>` — insumo del cálculo de `retention_until`.
+    fechaEmision: date('fecha_emision'),
+    // `<DD><MNT>` — CLP entero; scale 2 por defensa.
+    montoTotal: numeric('monto_total', { precision: 14, scale: 2 }),
+    // XML crudo del `<TED>` decodificado (4b). Nullable.
+    tedRaw: text('ted_raw'),
+    // NULL = firma no validada (flag off); true/false = validada (4b).
+    tedSignatureValid: boolean('ted_signature_valid'),
+    extractionStatus: extractionStatusEnum('extraction_status').notNull().default('pendiente'),
+    source: documentSourceEnum('source').notNull(),
+    // Política de custodia del archivador (ADR-070): fecha_emision + 6a
+    // (fallback created_at + 6a). Sin purga automática en F4.
+    retentionUntil: date('retention_until'),
+    uploadedBy: uuid('subido_por').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeIdx: index('idx_documentos_transporte_viaje').on(table.viajeId),
+    // Para el worker/listados que filtran por estado de extracción.
+    estadoIdx: index('idx_documentos_transporte_estado').on(table.extractionStatus),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2361,3 +2443,7 @@ export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
 // SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
 export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
 export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
+
+// Repositorio documental de transporte — documentos_transporte (migration 0044)
+export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
+export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;

@@ -14,6 +14,7 @@ locals {
     "telemetry-events-security-p1",      # Wave 2: Tow/Auto Geofence → notification
     "telemetry-events-eco-score",        # Wave 2: Idling/Green/Speed → matching-algorithm
     "telemetry-events-trip-transitions", # Wave 2: Trip start-end/Geofence → trip-state-machine
+    "document.uploaded",                 # F4-4a: api → worker TED (document-service, 4b)
   ]
 }
 
@@ -101,6 +102,23 @@ resource "google_pubsub_topic" "chat_messages" {
     managed_by = "terraform"
   }
   message_retention_duration = "3600s" # 1h
+  depends_on                 = [google_project_service.apis]
+}
+
+# Repositorio documental de transporte (ADR-070, frente F4). El api publica acá
+# tras persistir una fila `pendiente` en `documentos_transporte` (endpoint de
+# subida, 4a). El worker TED (apps/document-service, sub-fase 4b) lo consume,
+# decodifica el TED PDF417 y actualiza la fila. El consumer NO existe aún en 4a.
+resource "google_pubsub_topic" "document_uploaded" {
+  name    = "document.uploaded"
+  project = google_project.booster_ai.project_id
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "document-service"
+  }
+  # 7 días: documentos tributarios no se pueden perder si el worker está caído.
+  message_retention_duration = "604800s"
   depends_on                 = [google_project_service.apis]
 }
 
@@ -225,6 +243,45 @@ resource "google_pubsub_subscription" "telemetry_events_processor" {
     env        = var.environment
     managed_by = "terraform"
     consumer   = "telemetry-processor"
+  }
+}
+
+# F4-4a — Subscription pull dedicada del worker TED (apps/document-service, 4b).
+# Patrón idéntico a telemetry_events_processor: pull, DLQ tras 5 nack/timeout,
+# retry exponencial. El consumer se implementa en 4b; la infra se provisiona
+# acá (4a) para que el endpoint de subida ya pueda publicar al topic.
+resource "google_pubsub_subscription" "document_uploaded_processor" {
+  name    = "document-uploaded-processor-sub"
+  topic   = google_pubsub_topic.document_uploaded.name
+  project = google_project.booster_ai.project_id
+
+  # 120s: rasterizar PDF + decodificar PDF417 + parsear TED puede tardar.
+  ack_deadline_seconds = 120
+
+  # 7 días de retención en el broker para tolerar downtime del worker.
+  message_retention_duration = "604800s"
+
+  # Subscription perpetua — el worker no debería borrarse sin update aquí.
+  expiration_policy {
+    ttl = ""
+  }
+
+  # DLQ: tras 5 nack/timeout, el mensaje va a pubsub-dead-letter.
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 5
+  }
+
+  # Retry exponencial entre 10s y 600s.
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "document-service"
   }
 }
 
