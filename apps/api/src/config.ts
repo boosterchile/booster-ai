@@ -42,7 +42,7 @@ function booleanFlag(defaultValue: boolean) {
     .default(defaultValue);
 }
 
-const apiEnvSchema = commonEnvSchema
+export const apiEnvSchema = commonEnvSchema
   .merge(databaseEnvSchema)
   .merge(redisEnvSchema)
   .merge(gcpEnvSchema)
@@ -632,6 +632,35 @@ const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
+
+    /**
+     * F2 P0-C (`.specs/p0c-uids-demo-secret-manager/spec.md`) — CSV de los
+     * Firebase UIDs demo viejos a retirar vía `--retire-old-batch` (ADR-053).
+     *
+     * Antes eran 4 literales hardcoded (PII / Ley 19.628) en
+     * `services/harden-demo-accounts.ts`. Se extrajeron a esta env validada.
+     *
+     * Cada entrada debe matchear `/^[A-Za-z0-9]{20,128}$/` (formato Firebase
+     * UID). Ausente/"" → `[]` (el batch es no-op seguro). Malformada → el
+     * startup del API rehúsa arrancar (fail-fast `parseEnv`), defensa en
+     * profundidad: un solo lugar documentado para el formato.
+     *
+     * Hoy solo el CLI standalone consume estos UIDs (lee `DEMO_OLD_UIDS`
+     * directo, sin importar este config). El runtime del API NO llama
+     * `retireOldBatch`; se declara acá para evitar drift si alguna ruta/cron
+     * futura lo necesitara (inyectaría `config.DEMO_OLD_UIDS` como
+     * `opts.oldUids`). No se setea en el env del Cloud Run (queda `[]`).
+     */
+    DEMO_OLD_UIDS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        (s ?? '')
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.string().regex(/^[A-Za-z0-9]{20,128}$/, 'Firebase UID inválido'))),
   })
   // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
   // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
