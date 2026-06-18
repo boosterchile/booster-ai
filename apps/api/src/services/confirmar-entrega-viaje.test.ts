@@ -71,8 +71,7 @@ function makeDb(opts: {
       chain.from = vi.fn((t: unknown) => {
         let name: string | undefined;
         try {
-          // biome-ignore lint/suspicious/noExplicitAny: drizzle table runtime introspection en test.
-          name = getTableName(t as any);
+          name = getTableName(t as Parameters<typeof getTableName>[0]);
         } catch {
           name = undefined;
         }

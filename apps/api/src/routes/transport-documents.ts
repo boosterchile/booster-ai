@@ -144,6 +144,8 @@ async function publishDocumentUploaded(opts: {
       filePath,
       fileMime,
     });
+    // rls-allowlist: publishMessage de Pub/Sub (document.uploaded); no es query Drizzle —
+    // el linter interpreta el `data` de .publishMessage({ data }) como nombre de tabla (falso positivo).
     await getPubSub()
       .topic(topicName)
       .publishMessage({ data: Buffer.from(data) });
@@ -409,6 +411,8 @@ export function createTransportDocumentsRoutes(opts: {
       });
 
       try {
+        // rls-allowlist: autorización por tenant vía authorizeOverTrip (el viaje pertenece al tenant);
+        // documentos_transporte es hija de viajes, sin empresa_id propia para filtrar.
         await opts.db
           .update(transportDocuments)
           .set({
