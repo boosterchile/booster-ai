@@ -440,7 +440,9 @@ describe('cuentaDemoSchema (SEC-001 Sprint 2a H1.1)', () => {
   const VALID_CUENTA = {
     persona: 'generador_carga' as const,
     email: 'demo-2026-shipper@boosterchile.com',
-    firebase_uid: 'nQSqGqVCHGUn8yrU21uFtnLvaCK2',
+    // UID sintético (P0-C): un fixture no necesita un Firebase UID real. El
+    // round-trip solo verifica que el schema acepta una string alfanumérica.
+    firebase_uid: 'demoShipperUidSintetico00000',
     creado_en: VALID_DATE,
     deshabilitado_en: null,
   };
