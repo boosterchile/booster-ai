@@ -54,6 +54,27 @@ export type ParseTedResult =
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * `true` si `s` es un ISO date AAAA-MM-DD que además es un día de calendario
+ * REAL. El regex por sí solo acepta imposibles (`2026-02-31`, `2026-13-01`,
+ * `2026-02-29` en año no bisiesto) que pasarían como `fecha_emision` y harían
+ * `THROW` al castear `::date` en el UPDATE de `persistDecoded` (Postgres:
+ * "date/time field value out of range") → nack → DLQ (poison pill), violando
+ * el contrato best-effort del gate C-7 §7. Validamos el día real con `Date.UTC`
+ * y round-trip de los componentes (sin tocar timezone: solo aritmética UTC).
+ */
+function isRealIsoDate(s: string): boolean {
+  if (!ISO_DATE_RE.test(s)) {
+    return false;
+  }
+  const [y, m, d] = s.split('-').map((p) => Number.parseInt(p, 10)) as [number, number, number];
+  if (m < 1 || m > 12 || d < 1 || d > 31) {
+    return false;
+  }
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/**
  * Detecta una declaración DOCTYPE o ENTITY en el XML crudo. El TED del SII es
  * XML simple (sin DOCTYPE ni entidades custom): un payload con `<!DOCTYPE>` o
  * `<!ENTITY>` solo puede ser un intento de XXE / entity-expansion (billion
@@ -136,8 +157,11 @@ export function parseTedDd(xml: string): ParseTedResult {
     return { ok: false, reason: 'no_dd' };
   }
 
+  // Solo aceptamos un <FE> que sea un día de calendario REAL (no solo
+  // ISO-formado): un día imposible se trata como FE ausente → ruta fallback,
+  // nunca se propaga a un `::date` que haría THROW (poison pill → DLQ).
   const feRaw = tagToString(dd.FE);
-  const fechaEmision = feRaw && ISO_DATE_RE.test(feRaw) ? feRaw : null;
+  const fechaEmision = feRaw && isRealIsoDate(feRaw) ? feRaw : null;
 
   const fields: TedFields = {
     rutEmisor: tagToString(dd.RE),

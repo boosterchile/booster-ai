@@ -1,15 +1,31 @@
 import type { IngestResult } from '@booster-ai/transport-documents';
+import { PGlite } from '@electric-sql/pglite';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrizzleDocumentStore } from './document-store.js';
 
 /**
- * Test directo de la capa SQL del worker TED (dominio crítico: retención legal
- * SII 6 años, O-3). No levanta Postgres: stubea `db.execute` capturando el
- * objeto `sql` de Drizzle y lo compila con `PgDialect` para inspeccionar el SQL
- * generado y sus binds. El foco es la INVARIANTE O-3: `persistDecoded` NUNCA
- * acorta una retención ya fijada.
+ * Test de la capa SQL del worker TED (dominio crítico: retención legal SII
+ * 6 años, O-3). Dos niveles:
+ *
+ *  1. ESTRUCTURAL: stubea `db.execute` capturando el objeto `sql` de Drizzle y
+ *     lo compila con `PgDialect` para inspeccionar el SQL generado y sus binds.
+ *     Pinea la FORMA del UPDATE (ancla estricta por CASE, sin GREATEST).
+ *  2. BEHAVIORAL (pglite): ejecuta el SQL real contra un Postgres en proceso
+ *     (WASM) y verifica el VALOR final de `retention_until`/`fecha_emision`.
+ *     Prueba la invariante O-3 contra la semántica real de Postgres, no solo
+ *     contra la forma del SQL.
+ *
+ * Regla de anclaje (decisión del PO, ADR-070 / O-3):
+ *   - `fecha_emision` válida  → `retention_until = fecha_emision + 6a`.
+ *   - sin `fecha_emision`     → fallback `created_at + 6a`.
+ *   - Recalcular al decodificar SOLO si el valor previo estaba en fallback
+ *     (la fila aún NO tiene `fecha_emision`). NUNCA pisar hacia abajo una
+ *     retención ya anclada a una `fecha_emision` válida.
+ *   Discriminante: el valor PREVIO de la columna `fecha_emision` (Postgres
+ *   evalúa el RHS de un UPDATE contra la fila pre-update) — IS NULL ⇒ era
+ *   fallback/sin anclar ⇒ se recalcula; IS NOT NULL ⇒ anclada ⇒ se preserva.
  */
 
 const dialect = new PgDialect();
@@ -109,60 +125,27 @@ describe('createDrizzleDocumentStore — capa SQL del worker TED', () => {
     });
   });
 
-  describe('persistDecoded — invariante O-3: NUNCA acortar la retención', () => {
-    it('usa GREATEST(COALESCE(retention_until, nuevo), nuevo) — el plazo solo se mantiene o extiende', async () => {
+  describe('persistDecoded — forma del UPDATE (ancla estricta, sin GREATEST)', () => {
+    it('ancla fecha_emision y retention_until vía CASE WHEN fecha_emision IS NULL — nunca GREATEST/COALESCE', async () => {
       const { db, calls } = makeDbStub([{ rows: [] }]);
       const store = createDrizzleDocumentStore({ db, logger });
       await store.persistDecoded(DOC_ID, decoded('2026-06-11', '2032-06-11'));
-      const q = calls[0];
-      expect(q?.sql).toContain('GREATEST');
-      expect(q?.sql).toContain('COALESCE(retention_until,');
-      // El valor nuevo se cast a ::date (la columna es date, el bind es text).
-      expect(q?.sql).toMatch(
-        /GREATEST\(\s*COALESCE\(retention_until,\s*\$\d+::date\),\s*\$\d+::date\s*\)/,
+      const sqlNorm = (calls[0]?.sql ?? '').replace(/\s+/g, ' ');
+      // El discriminante es el valor PREVIO de fecha_emision (pre-update).
+      expect(sqlNorm).toMatch(
+        /fecha_emision = CASE WHEN fecha_emision IS NULL THEN \$\d+::date ELSE fecha_emision END/,
       );
-    });
-
-    it('(a) fallback created_at+6a YA fijado + TED con fecha_emision anterior → NO se acorta (GREATEST conserva el mayor)', async () => {
-      // El nuevo cálculo (fecha_emision 2020 + 6a = 2026) sería MENOR que el
-      // fallback ya persistido (created_at 2026 + 6a = 2032). GREATEST garantiza
-      // que el plazo persistido (2032) gana → no se acorta.
-      const { db, calls } = makeDbStub([{ rows: [] }]);
-      const store = createDrizzleDocumentStore({ db, logger });
-      const nuevoCalculo = '2026-01-15'; // fecha_emision 2020 + 6a (más corto)
-      await store.persistDecoded(DOC_ID, decoded('2020-01-15', nuevoCalculo));
-      const q = calls[0];
-      // Ambos operandos de GREATEST/COALESCE son el MISMO nuevo cálculo; el
-      // existente (retention_until columna) entra vía COALESCE → max(existente, nuevo).
-      expect(q?.sql).toContain('GREATEST');
-      // El bind del nuevo cálculo aparece (dos veces por COALESCE + GREATEST).
-      expect(q?.params.filter((p) => p === nuevoCalculo).length).toBe(2);
-      // Crucialmente NO hay un set incondicional `retention_until = $n` plano.
-      expect(q?.sql).not.toMatch(/retention_until = \$\d+::date,/);
-    });
-
-    it('(b) retention_until NULL + fecha_emision → COALESCE lo fija al nuevo (fecha_emision+6a)', async () => {
-      const { db, calls } = makeDbStub([{ rows: [] }]);
-      const store = createDrizzleDocumentStore({ db, logger });
-      await store.persistDecoded(DOC_ID, decoded('2026-06-11', '2032-06-11'));
-      const q = calls[0];
-      // COALESCE(NULL, nuevo) = nuevo; GREATEST(nuevo, nuevo) = nuevo. El bind
-      // del nuevo plazo está presente.
-      expect(q?.params).toContain('2032-06-11');
-      expect(q?.sql).toContain("extraction_status = 'decodificado'");
-    });
-
-    it('(c) sin fecha_emision (fallback) → mismo GREATEST/COALESCE, conserva el existente si es mayor', async () => {
-      const { db, calls } = makeDbStub([{ rows: [] }]);
-      const store = createDrizzleDocumentStore({ db, logger });
-      // retentionUntil aquí es el fallback created_at+6a (needsReview=true).
-      await store.persistDecoded(DOC_ID, decoded(null, '2032-06-18'));
-      const q = calls[0];
-      // fecha_emision se persiste como NULL (no había), pero la retención usa
-      // la MISMA expresión que nunca acorta.
-      expect(q?.sql).toContain('GREATEST');
-      expect(q?.sql).toContain('COALESCE(retention_until,');
-      expect(q?.params).toContain('2032-06-18');
+      expect(sqlNorm).toMatch(
+        /retention_until = CASE WHEN fecha_emision IS NULL THEN \$\d+::date ELSE retention_until END/,
+      );
+      // El enfoque GREATEST/COALESCE (que retendría de más anclando a created_at+6a) queda PROHIBIDO.
+      expect(sqlNorm).not.toContain('GREATEST');
+      expect(sqlNorm).not.toContain('COALESCE');
+      // Ni un set incondicional plano que pisaría una retención ya anclada.
+      expect(sqlNorm).not.toMatch(/retention_until = \$\d+::date ,/);
+      // El valor nuevo (fecha + retención) viaja como bind.
+      expect(calls[0]?.params).toContain('2026-06-11');
+      expect(calls[0]?.params).toContain('2032-06-11');
     });
 
     it('mapea los campos del <DD> a sus columnas (RE→rut_emisor, RR→rut_receptor, RSR→razon_social_receptor)', async () => {
@@ -174,6 +157,7 @@ describe('createDrizzleDocumentStore — capa SQL del worker TED', () => {
       expect(params).toContain('12345678-5'); // rut_receptor
       expect(params).toContain('Comprador S.A.'); // razon_social_receptor
       expect(params).toContain('24365'); // monto_total
+      expect(calls[0]?.sql).toContain("extraction_status = 'decodificado'");
     });
   });
 
@@ -184,6 +168,125 @@ describe('createDrizzleDocumentStore — capa SQL del worker TED', () => {
       await store.markFailed(DOC_ID, 'no_pdf417_found');
       expect(calls[0]?.sql).toContain("SET extraction_status = 'fallido'");
       expect(calls[0]?.params).toContain(DOC_ID);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // BEHAVIORAL — Postgres real (pglite, en proceso) ejecuta el UPDATE de
+  // persistDecoded y verificamos el VALOR final de la columna. Cubre los 3
+  // casos que pidió el PO: (a) ancla a fecha_emision+6a; (b) fallback
+  // created_at+6a; (c) re-decode NO acorta una retención ya anclada.
+  // ---------------------------------------------------------------------------
+  describe('persistDecoded — comportamiento contra Postgres real (pglite, invariante O-3)', () => {
+    let pg: PGlite;
+
+    /** db `NodePgDatabase`-shaped que ejecuta el SQL real de Drizzle en pglite. */
+    function makePgliteDb(): NodePgDatabase {
+      const execute = async (query: unknown): Promise<{ rows: unknown[] }> => {
+        const built = dialect.sqlToQuery(query as Parameters<typeof dialect.sqlToQuery>[0]);
+        const res = await pg.query(built.sql, built.params as unknown[]);
+        return { rows: res.rows };
+      };
+      return { execute } as unknown as NodePgDatabase;
+    }
+
+    /** Lee fecha_emision/retention_until como ISO date (YYYY-MM-DD) o null. */
+    async function readDates(
+      id: string,
+    ): Promise<{ fecha: string | null; retention: string | null }> {
+      const res = await pg.query<{ fecha: string | null; retention: string | null }>(
+        `SELECT to_char(fecha_emision, 'YYYY-MM-DD') AS fecha,
+                to_char(retention_until, 'YYYY-MM-DD') AS retention
+         FROM documentos_transporte WHERE id = $1`,
+        [id],
+      );
+      const row = res.rows[0];
+      return { fecha: row?.fecha ?? null, retention: row?.retention ?? null };
+    }
+
+    beforeEach(async () => {
+      pg = new PGlite();
+      // Tabla mínima con los tipos que importan a la retención (date) y texto
+      // para el resto (evita recrear los enums; el foco es la semántica de
+      // fecha_emision/retention_until, no las constraints de enum).
+      await pg.exec(`
+        CREATE TABLE documentos_transporte (
+          id text PRIMARY KEY,
+          extraction_status text,
+          doc_type text,
+          folio text,
+          rut_emisor text,
+          rut_receptor text,
+          razon_social_receptor text,
+          monto_total numeric,
+          ted_raw text,
+          fecha_emision date,
+          retention_until date,
+          actualizado_en timestamptz
+        );
+      `);
+    });
+
+    afterEach(async () => {
+      await pg.close();
+    });
+
+    it('(a) fila en fallback (fecha_emision NULL, retención = created_at+6a) + FE válida → ancla a fecha_emision+6a aunque sea MENOR que el fallback', async () => {
+      // Estado previo: retención conservadora created_at+6a (2032-12-31), SIN
+      // fecha_emision (fallback no anclado).
+      await pg.exec(
+        `INSERT INTO documentos_transporte (id, extraction_status, fecha_emision, retention_until)
+         VALUES ('${DOC_ID}', 'pendiente', NULL, DATE '2032-12-31');`,
+      );
+      const store = createDrizzleDocumentStore({ db: makePgliteDb(), logger });
+      // Decode con FE válida 2026-06-11 → FE+6a = 2032-06-11 (MENOR que 2032-12-31).
+      await store.persistDecoded(DOC_ID, decoded('2026-06-11', '2032-06-11'));
+      const { fecha, retention } = await readDates(DOC_ID);
+      // La regla del PO: en fallback SE recalcula a la base legal (emisión),
+      // aunque eso reduzca un fallback conservador. GREATEST habría dejado 2032-12-31.
+      expect(retention).toBe('2032-06-11');
+      expect(fecha).toBe('2026-06-11');
+    });
+
+    it('(b) decode SIN fecha_emision → fallback created_at+6a; fecha_emision queda NULL', async () => {
+      await pg.exec(
+        `INSERT INTO documentos_transporte (id, extraction_status, fecha_emision, retention_until)
+         VALUES ('${DOC_ID}', 'pendiente', NULL, NULL);`,
+      );
+      const store = createDrizzleDocumentStore({ db: makePgliteDb(), logger });
+      // TED decodificado pero sin <FE>: el ingestor entrega el fallback created_at+6a.
+      await store.persistDecoded(DOC_ID, decoded(null, '2032-06-18'));
+      const { fecha, retention } = await readDates(DOC_ID);
+      expect(retention).toBe('2032-06-18');
+      expect(fecha).toBeNull();
+    });
+
+    it('(c) re-decode de una fila YA anclada a una fecha_emision válida → NO acorta (ni retención ni fecha)', async () => {
+      // Fila anclada: fecha_emision 2020-01-15 → retención 2026-01-15.
+      await pg.exec(
+        `INSERT INTO documentos_transporte (id, extraction_status, fecha_emision, retention_until)
+         VALUES ('${DOC_ID}', 'decodificado', DATE '2020-01-15', DATE '2026-01-15');`,
+      );
+      const store = createDrizzleDocumentStore({ db: makePgliteDb(), logger });
+      // Re-decode con FE ANTERIOR (2019-01-01 → 2025-01-01) que acortaría.
+      await store.persistDecoded(DOC_ID, decoded('2019-01-01', '2025-01-01'));
+      const { fecha, retention } = await readDates(DOC_ID);
+      // Preservadas: la retención anclada nunca se pisa hacia abajo.
+      expect(retention).toBe('2026-01-15');
+      expect(fecha).toBe('2020-01-15');
+    });
+
+    it('(c-bis) re-decode con FE POSTERIOR tampoco re-ancla una fila ya anclada (idempotente, no extiende)', async () => {
+      await pg.exec(
+        `INSERT INTO documentos_transporte (id, extraction_status, fecha_emision, retention_until)
+         VALUES ('${DOC_ID}', 'decodificado', DATE '2020-01-15', DATE '2026-01-15');`,
+      );
+      const store = createDrizzleDocumentStore({ db: makePgliteDb(), logger });
+      // FE posterior (2021 → 2027): la regla del PO es preservar lo anclado, no extender.
+      await store.persistDecoded(DOC_ID, decoded('2021-06-01', '2027-06-01'));
+      const { fecha, retention } = await readDates(DOC_ID);
+      expect(retention).toBe('2026-01-15');
+      expect(fecha).toBe('2020-01-15');
     });
   });
 });

@@ -11,13 +11,22 @@
  * (re-intento válido). Una fila ya `procesando`/`decodificado`/`ingreso_manual`
  * NO se reclama → el consumer ack-skip sin reprocesar destructivamente.
  *
- * NUNCA acorta una retención ya fijada (invariante O-3 / gate C-7 §4):
- * `persistDecoded` fija `retention_until` con `GREATEST(COALESCE(retention_until,
- * nuevo), nuevo)` — el MAYOR entre el valor ya persistido (p.ej. el fallback
- * `created_at + 6a` de 4a) y el nuevo cálculo (`fecha_emision + 6a` o el mismo
- * fallback). Así jamás se reduce un plazo ya escrito, aunque la `fecha_emision`
- * del TED resultara anterior a `created_at` (caso anómalo). En el caso normal
- * `fecha_emision <= created_at`, GREATEST conserva el fallback — correcto.
+ * Anclaje de la retención (invariante O-3 / gate C-7 §4 / decisión del PO):
+ * el ancla legal cuenta desde la EMISIÓN del documento (Código Tributario
+ * DL 830 Art. 17/200), no desde la subida. `persistDecoded` por tanto fija
+ * `retention_until = fecha_emision + 6a` cuando el TED trae `<FE>`, y usa el
+ * fallback `created_at + 6a` SOLO cuando no hay fecha. "Nunca acortar" se
+ * preserva de forma quirúrgica: el plazo se recalcula al decodificar SOLO si
+ * la fila aún NO estaba anclada a una `fecha_emision` válida (estaba en
+ * fallback). Una retención YA anclada a una `fecha_emision` válida jamás se
+ * pisa hacia abajo (ni se re-ancla hacia arriba): es idempotente.
+ *
+ * Discriminante: el valor PREVIO de la columna `fecha_emision`. En Postgres el
+ * RHS de un `UPDATE` se evalúa contra la fila pre-update, así que el `CASE WHEN
+ * fecha_emision IS NULL` lee la fecha ANTERIOR aunque la misma sentencia
+ * también la escriba. `IS NULL` ⇒ fallback/sin anclar ⇒ se recalcula al nuevo
+ * cálculo; `IS NOT NULL` ⇒ anclada ⇒ se preserva. (Se descartó `GREATEST`: en
+ * fallback retenía de más anclando a `created_at+6a` en vez de a la emisión.)
  */
 
 import type { Logger } from '@booster-ai/logger';
@@ -59,13 +68,14 @@ export function createDrizzleDocumentStore(opts: {
 
     async persistDecoded(documentId: string, decoded: DecodedResult): Promise<void> {
       const { fields, tedRaw, retentionUntil } = decoded;
-      // NUNCA acortar la retención ya fijada (invariante O-3 / C-7 §4). El
-      // valor nuevo (`retentionUntil`) es `fecha_emision + 6a` cuando el TED
-      // trae fecha, o el fallback `created_at + 6a` cuando no. Usamos GREATEST
-      // entre el valor ya persistido (que pudo fijarlo 4a como fallback) y el
-      // nuevo: el plazo solo puede MANTENERSE o EXTENDERSE, jamás reducirse.
-      // COALESCE cubre el caso `retention_until` NULL (lo fija al valor nuevo).
-      // Cast a ::date porque la columna es `date` y el bind param es text.
+      // Anclar a la EMISIÓN, sin pisar una retención ya anclada (invariante
+      // O-3 / C-7 §4 / decisión del PO). `retentionUntil` es `fecha_emision+6a`
+      // cuando el TED trae fecha, o el fallback `created_at+6a` cuando no.
+      // El CASE recalcula `fecha_emision`/`retention_until` SOLO si la fila aún
+      // NO estaba anclada (su `fecha_emision` PREVIA, leída por Postgres contra
+      // la fila pre-update, es NULL). Si ya estaba anclada a una fecha válida,
+      // ambas columnas se preservan: nunca se acorta ni se re-ancla (idempotente).
+      // Cast a ::date porque las columnas son `date` y los binds son text.
       // rls-allowlist: worker server-side sin tenant; UPDATE por id (uuid). La
       // tenancy la fijó 4a al subir; documentos_transporte es hija de viajes.
       await db.execute(sql`
@@ -77,13 +87,16 @@ export function createDrizzleDocumentStore(opts: {
           rut_emisor = ${fields.rutEmisor},
           rut_receptor = ${fields.rutReceptor},
           razon_social_receptor = ${fields.razonSocialReceptor},
-          fecha_emision = ${fields.fechaEmision},
           monto_total = ${fields.montoTotal},
           ted_raw = ${tedRaw},
-          retention_until = GREATEST(
-            COALESCE(retention_until, ${retentionUntil}::date),
-            ${retentionUntil}::date
-          ),
+          fecha_emision = CASE
+            WHEN fecha_emision IS NULL THEN ${fields.fechaEmision}::date
+            ELSE fecha_emision
+          END,
+          retention_until = CASE
+            WHEN fecha_emision IS NULL THEN ${retentionUntil}::date
+            ELSE retention_until
+          END,
           actualizado_en = now()
         WHERE id = ${documentId}
       `);

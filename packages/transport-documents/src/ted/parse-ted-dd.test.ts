@@ -124,6 +124,50 @@ describe('parseTedDd — mapeo <DD> → documentos_transporte (gate C-7)', () =>
     expect(result.fields.fechaEmision).toBeNull();
   });
 
+  // Un <FE> con FORMATO ISO válido pero día de calendario IMPOSIBLE (2026-02-31,
+  // 2026-13-01, …) no debe propagarse: al castear `::date` en el UPDATE de
+  // persistDecoded, Postgres lanza "date/time field value out of range" →
+  // nack → DLQ (poison pill), violando el contrato best-effort del C-7 §7. Se
+  // trata como FE ausente → fechaEmision null → ruta fallback created_at+6a.
+  it.each([
+    ['día inexistente del mes', '2026-02-31'],
+    ['mes 13', '2026-13-01'],
+    ['mes 00', '2026-00-10'],
+    ['día 00', '2026-06-00'],
+    ['31 de abril', '2026-04-31'],
+  ])(
+    'un <FE> ISO-válido pero imposible (%s: %s) → fechaEmision null (no poison pill)',
+    (_label, fe) => {
+      const ted = TED_FIXTURE.replace('<FE>2026-06-11</FE>', `<FE>${fe}</FE>`);
+      const result = parseTedDd(ted);
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        return;
+      }
+      expect(result.fields.fechaEmision).toBeNull();
+    },
+  );
+
+  it('acepta un 29 de febrero REAL de año bisiesto (2024-02-29)', () => {
+    const ted = TED_FIXTURE.replace('<FE>2026-06-11</FE>', '<FE>2024-02-29</FE>');
+    const result = parseTedDd(ted);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.fields.fechaEmision).toBe('2024-02-29');
+  });
+
+  it('rechaza el 29 de febrero de un año NO bisiesto (2026-02-29) → fechaEmision null', () => {
+    const ted = TED_FIXTURE.replace('<FE>2026-06-11</FE>', '<FE>2026-02-29</FE>');
+    const result = parseTedDd(ted);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.fields.fechaEmision).toBeNull();
+  });
+
   /**
    * Defensa XXE / billion-laughs (entity expansion DoS). El TED del SII es XML
    * simple sin DOCTYPE ni entidades custom: un `<!DOCTYPE>` o `<!ENTITY>` en el
