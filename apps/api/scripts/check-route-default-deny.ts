@@ -89,6 +89,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // Router-vars montados bajo /assignments (userContext en app.use('/assignments/*', …)).
   assignmentsRouter: { category: 'ENFORCED', rationale: '' },
   chatRouter: { category: 'ENFORCED', rationale: '' },
+  // Repositorio documental de transporte (ADR-070, F4-4a): firebaseAuth +
+  // userContext preceden el mount vía app.use('/transport-orders/*', …) y
+  // app.use('/documents/*', …); la autorización por tenant (shipper-owner |
+  // carrier-assigned) la resuelve cada handler.
+  transportDocsRouter: { category: 'ENFORCED', rationale: '' },
 
   // --- GATED-CLOSED (bare firebaseAuth, gate in-handler) ---
   meRouter: {

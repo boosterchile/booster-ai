@@ -193,6 +193,55 @@ export const apiEnvSchema = commonEnvSchema
     CHAT_PUBSUB_TOPIC: z.string().min(1).optional(),
 
     /**
+     * Repositorio documental de transporte (ADR-070, frente F4-4a).
+     *
+     * TRANSPORT_DOCUMENTS_BUCKET: bucket GCS donde se archivan los documentos
+     *   tributarios de terceros (Guía/Factura) bajo prefijo
+     *   `transport-documents/{viajeId}/{uuid}.{ext}`. Reusa el bucket
+     *   `documents` (storage.tf, retención SII 6a). Optional: si está ausente,
+     *   el endpoint de subida devuelve 503 (sin GCS no se puede archivar).
+     */
+    TRANSPORT_DOCUMENTS_BUCKET: z.string().min(1).optional(),
+
+    /**
+     * Pub/Sub topic name del evento `document.uploaded` (creado en
+     * messaging.tf). El endpoint de subida publica acá tras persistir la fila
+     * `pendiente`; el worker TED (sub-fase 4b) lo consume. Optional: si está
+     * ausente, el endpoint persiste + responde 202 igual (el worker llega en
+     * 4b), solo no publica el evento.
+     */
+    DOCUMENT_UPLOADED_TOPIC: z.string().min(1).optional(),
+
+    /**
+     * Cierre flexible (ADR-070 / spec O-7). Si `true`, una orden requiere ≥1
+     * documento subido para transicionar a `entregado` (independiente del
+     * estado de extracción). Solo aplica a órdenes creadas en/después de
+     * `REQUIRE_DOCUMENT_TO_CLOSE_SINCE`; las legacy/en-curso quedan exentas.
+     * Default `true` (O-7 resuelta 2026-06-18). `booleanFlag` (no
+     * `z.coerce.boolean()` — footgun, memoria Redis TLS 2026-06).
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE: booleanFlag(true),
+
+    /**
+     * Fecha de corte ISO (YYYY-MM-DD) del cierre flexible: el guard de
+     * `REQUIRE_DOCUMENT_TO_CLOSE` solo aplica a órdenes con `creado_en >=`
+     * esta fecha. Sin esta var, el guard NO se aplica (las órdenes quedan
+     * exentas) aunque el flag esté ON — defensa contra bloquear viajes en
+     * ruta antes de definir el corte del rollout.
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE_SINCE: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'REQUIRE_DOCUMENT_TO_CLOSE_SINCE debe ser ISO date YYYY-MM-DD')
+      .optional(),
+
+    /**
+     * Si `true`, el cierre exige al menos un documento `decodificado` (no solo
+     * subido). Default `false` (spec invariante): el TED es enriquecimiento, no
+     * condición de cierre. El worker decodificador llega en 4b.
+     */
+    REQUIRE_TED_DECODE: booleanFlag(false),
+
+    /**
      * VAPID keys para Web Push (P3.c). Generadas con
      * `npx web-push generate-vapid-keys` post-deploy y subidas a Secret
      * Manager. La pública se sirve via GET /webpush/vapid-public-key

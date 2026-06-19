@@ -16,6 +16,7 @@ import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcem
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createRateLimitPublicTrackingMiddleware } from './middleware/rate-limit-public-tracking.js';
 import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
+import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-limit-transport-documents.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
@@ -53,6 +54,7 @@ import {
   createSiteSettingsRoutes,
 } from './routes/site-settings.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
+import { createTransportDocumentsRoutes } from './routes/transport-documents.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
@@ -398,6 +400,19 @@ export function createServer(opts: CreateServerOptions): Hono {
       verifyBaseUrl: config.API_AUDIENCE[0] ?? 'https://api.boosterchile.com',
     };
 
+    // Política de cierre flexible documental (ADR-070, F4-4a). Compartida por
+    // los dos endpoints de cierre (shipper confirmar-recepcion + carrier POD).
+    // `requireDocumentSince` parsea la env ISO date a Date UTC; si está ausente
+    // queda null y el guard NO aplica precondición aunque el flag esté ON
+    // (defensa contra bloquear viajes en ruta antes de definir el corte).
+    const documentClosePolicy = {
+      requireDocumentToClose: config.REQUIRE_DOCUMENT_TO_CLOSE,
+      requireTedDecode: config.REQUIRE_TED_DECODE,
+      requireDocumentSince: config.REQUIRE_DOCUMENT_TO_CLOSE_SINCE
+        ? new Date(`${config.REQUIRE_DOCUMENT_TO_CLOSE_SINCE}T00:00:00.000Z`)
+        : null,
+    };
+
     app.use(
       '/trip-requests-v2/*',
       firebaseAuthMiddleware,
@@ -411,6 +426,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         db: opts.db,
         logger,
         certConfig,
+        documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
       }),
     );
@@ -432,6 +448,38 @@ export function createServer(opts: CreateServerOptions): Hono {
         ...(opts.notifyTrackingLink ? { notifyTrackingLink: opts.notifyTrackingLink } : {}),
       }),
     );
+
+    // Repositorio documental de transporte (ADR-070, frente F4-4a). Mismo
+    // chain firebaseAuth + userContext: el generador de carga (dueño) o el
+    // transportista asignado suben/listan/corrigen/descargan documentos
+    // tributarios de terceros que amparan la carga de una orden. La
+    // autorización por tenant (shipper-owner | carrier-assigned) la resuelve
+    // el handler contra `viajes`/`asignaciones`. El worker decodificador del
+    // TED es de la sub-fase 4b.
+    const transportDocsRouter = createTransportDocumentsRoutes({
+      db: opts.db,
+      logger,
+      ...(config.TRANSPORT_DOCUMENTS_BUCKET
+        ? { transportDocumentsBucket: config.TRANSPORT_DOCUMENTS_BUCKET }
+        : {}),
+      ...(config.DOCUMENT_UPLOADED_TOPIC
+        ? { documentUploadedTopic: config.DOCUMENT_UPLOADED_TOPIC }
+        : {}),
+    });
+    // Review F4-4a finding 5 — rate-limit per-user (uid) / fallback-IP de las
+    // ESCRITURAS (POST), fail-closed 503 si Redis down. Se monta DESPUÉS de
+    // firebaseAuth (necesita `firebaseClaims.uid`) y antes del handler. Las
+    // lecturas (GET) lo atraviesan sin consumir cuota. 20 escrituras/60s.
+    const rateLimitTransportDocs = createRateLimitTransportDocumentsMiddleware({
+      redis: redisForRateLimit,
+      logger,
+    });
+    for (const prefix of ['/transport-orders/*', '/documents/*']) {
+      app.use(prefix, firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
+      app.use(prefix, rateLimitTransportDocs);
+      app.use(prefix, userContextMiddleware);
+    }
+    app.route('/', transportDocsRouter);
 
     // Admin jobs — endpoints internos disparados por Cloud Scheduler
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
@@ -482,6 +530,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       db: opts.db,
       logger,
       certConfig,
+      // Cierre flexible documental (ADR-070, F4-4a) en el POD del carrier.
+      documentClosePolicy,
       // ADR-038: Routes API via ADC. GOOGLE_CLOUD_PROJECT va como
       // X-Goog-User-Project. Sin él, GET /assignments/:id/eco-route
       // devuelve polyline_encoded=null con status='no_routes_api_key'.
