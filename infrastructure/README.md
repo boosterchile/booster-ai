@@ -135,8 +135,7 @@ Terraform crea los shells vacíos. Los valores reales se agregan via gcloud (nun
 # Ejemplo — para cada secret, agregar su valor real:
 echo -n "<valor_real>" | gcloud secrets versions add gemini-api-key --data-file=-
 echo -n "<valor_real>" | gcloud secrets versions add whatsapp-access-token --data-file=-
-echo -n "<valor_real>" | gcloud secrets versions add dte-provider-api-key --data-file=-
-# ... etc para los 15 secrets
+# ... etc para el resto de secrets
 ```
 
 Lista completa de secrets a poblar:
@@ -151,8 +150,6 @@ Lista completa de secrets a poblar:
 - `whatsapp-access-token` — Meta (token de larga duración)
 - `whatsapp-phone-number-id` — Meta
 - `whatsapp-business-account-id` — Meta
-- `dte-provider-api-key` — Bsale (u otro DTE provider chileno)
-- `dte-provider-client-secret` — mismo provider
 - `flow-api-key` — [Flow.cl](https://www.flow.cl/docs/api.html)
 - `flow-secret-key` — Flow
 - `jwt-signing-key` — `openssl rand -base64 64` local

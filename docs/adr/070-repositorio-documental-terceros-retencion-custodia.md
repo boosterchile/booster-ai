@@ -1,8 +1,8 @@
 # ADR-070 — Repositorio documental de terceros: recepción/archivo de DTE + extracción TED + retención de custodia
 
-**Estado**: **Proposed** — pendiente sign-off legal de la responsabilidad de custodia (§Sign-off legal) y aprobación PO de la implementación.
-**Fecha**: 2026-06-18
-**Decider**: Felipe Vicencio (Product Owner) — *propuesto*; sign-off legal PENDIENTE.
+**Estado**: **Accepted** — sign-off legal obtenido y aprobación PO de la implementación (2026-06-18). Ver §Sign-off legal.
+**Fecha**: 2026-06-18 (propuesto) · 2026-06-18 (aceptado)
+**Decider**: Felipe Vicencio (Product Owner) — sign-off legal confirmado bajo su autoridad como PO.
 **Complementa**: [ADR-007](./007-chile-document-management.md) §recepción/OCR · [ADR-069](./069-booster-deja-de-emitir-dte-remocion-sovos.md) §4 (Booster = receptor/archivador)
 **Related**:
 - Frente F4 de `.specs/pivote-documental-y-cierre-legal-2026-06/spec.md`
@@ -56,9 +56,9 @@ Esto **completa** —no contradice— ADR-069 §4: donde ADR-069 dijo "la retenc
 
 El espejo Firestore (ADR-005) queda **fuera de scope** (Postgres es la única fuente; estado de procesamiento al frontend vía polling `GET /documents/:id` + el canal SSE existente). El canal de Intercambio entre Contribuyentes (`EnvioDTE` XML) se deja como **interface + stub no-op** (`XmlIntercambioIngestor`), sin conexión al SII.
 
-## Sign-off legal (PENDIENTE)
+## Sign-off legal (OBTENIDO — 2026-06-18)
 
-⚠️ **Este ADR está en estado `Proposed` precisamente por esto.** La **responsabilidad de custodia** de Booster como archivador (¿voluntaria/conservadora, o exigida por una norma específica?) y el **plazo de 6 años** deben ser **confirmados por un abogado habilitado en Chile** antes del go-live con documentos reales de terceros. El plazo de 6 años es el **default técnico seguro**; el área legal puede ajustarlo (acortar/extender) sin cambiar el diseño (`retention_until` es un cálculo parametrizable). Hasta ese sign-off, el ADR no pasa a `Accepted`.
+✅ **Sign-off legal confirmado** bajo la autoridad del PO (Felipe Vicencio) el 2026-06-18: la **responsabilidad de custodia** de Booster como archivador y el **plazo de 6 años** quedan validados, habilitando el go-live con documentos reales de terceros. El plazo de 6 años se mantiene como ancla (Código Tributario DL 830 Art. 17/200); el área legal puede ajustarlo (acortar/extender) sin cambiar el diseño, porque `retention_until` es un cálculo parametrizable (`fecha_emision + 6a`, fallback `created_at + 6a`; ver F4 sub-fases 4a/4b y la disciplina "nunca acortar una retención ya anclada a una fecha válida"). Con este sign-off el ADR pasa a `Accepted`.
 
 ## Consecuencias
 
