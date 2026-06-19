@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsup src/main.ts --format esm --clean",
+    "build": "tsup",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -14,10 +14,20 @@
   "dependencies": {
     "@booster-ai/config": "workspace:*",
     "@booster-ai/logger": "workspace:*",
-    "@booster-ai/shared-schemas": "workspace:*"
+    "@booster-ai/otel-bootstrap": "workspace:*",
+    "@booster-ai/shared-schemas": "workspace:*",
+    "@booster-ai/transport-documents": "workspace:*",
+    "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",
+    "@google-cloud/pubsub": "^4.10.0",
+    "@google-cloud/storage": "^7.13.0",
+    "drizzle-orm": "^0.45.2",
+    "import-in-the-middle": "^1.13.0",
+    "pg": "^8.13.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.11.10",
     "@vitest/coverage-v8": "^4.0.18",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
