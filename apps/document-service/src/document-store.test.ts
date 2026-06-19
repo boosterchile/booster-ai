@@ -2,7 +2,7 @@ import type { IngestResult } from '@booster-ai/transport-documents';
 import { PGlite } from '@electric-sql/pglite';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrizzleDocumentStore } from './document-store.js';
 
 /**
@@ -204,7 +204,12 @@ describe('createDrizzleDocumentStore — capa SQL del worker TED', () => {
       return { fecha: row?.fecha ?? null, retention: row?.retention ?? null };
     }
 
-    beforeEach(async () => {
+    // PGlite arranca un Postgres WASM en proceso: la PRIMERA init (carga del
+    // .wasm + bootstrap del cluster) es cara y, en runners de CI cargados,
+    // rozaba el hookTimeout default de 10s si se hacía por test (beforeEach) →
+    // flaky "Hook timed out". La pagamos UNA sola vez en beforeAll (con timeout
+    // holgado) y limpiamos filas por test con un DELETE barato.
+    beforeAll(async () => {
       pg = new PGlite();
       // Tabla mínima con los tipos que importan a la retención (date) y texto
       // para el resto (evita recrear los enums; el foco es la semántica de
@@ -225,10 +230,14 @@ describe('createDrizzleDocumentStore — capa SQL del worker TED', () => {
           actualizado_en timestamptz
         );
       `);
+    }, 30000);
+
+    afterAll(async () => {
+      await pg.close();
     });
 
-    afterEach(async () => {
-      await pg.close();
+    beforeEach(async () => {
+      await pg.exec('DELETE FROM documentos_transporte;');
     });
 
     it('(a) fila en fallback (fecha_emision NULL, retención = created_at+6a) + FE válida → ancla a fecha_emision+6a aunque sea MENOR que el fallback', async () => {

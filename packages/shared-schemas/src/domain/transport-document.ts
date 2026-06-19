@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoCalendarDateSchema } from '../primitives/dates.js';
 import { tripRequestIdSchema, userIdSchema, uuidSchema } from '../primitives/ids.js';
 
 /**
@@ -95,11 +96,12 @@ export const transportDocumentManualEntryInputSchema = z
     razon_social_emisor: z.string().min(1).max(200).optional(),
     rut_receptor: z.string().min(1).max(20).optional(),
     razon_social_receptor: z.string().min(1).max(200).optional(),
-    /** ISO date YYYY-MM-DD. */
-    fecha_emision: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'fecha_emision debe ser ISO date YYYY-MM-DD')
-      .optional(),
+    /**
+     * ISO date YYYY-MM-DD que debe ser un día de calendario REAL: un día
+     * imposible (2026-02-31, 2026-13-01, 29-feb no bisiesto) haría THROW al
+     * castear `::date` en el UPDATE (500) en vez de un 400 limpio.
+     */
+    fecha_emision: isoCalendarDateSchema.optional(),
     /** Monto total como string decimal. */
     monto_total: z
       .string()

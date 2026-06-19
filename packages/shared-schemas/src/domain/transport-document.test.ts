@@ -124,6 +124,18 @@ describe('transportDocumentManualEntryInputSchema', () => {
     ).toThrow();
   });
 
+  it.each(['2026-02-31', '2026-13-01', '2026-00-10', '2026-06-00', '2026-04-31', '2026-02-29'])(
+    'rechaza fecha_emision ISO-válida pero día imposible (%s) — evita el 500/poison pill',
+    (fe) => {
+      expect(() => transportDocumentManualEntryInputSchema.parse({ fecha_emision: fe })).toThrow();
+    },
+  );
+
+  it('acepta un 29 de febrero REAL de año bisiesto (2024-02-29)', () => {
+    const parsed = transportDocumentManualEntryInputSchema.parse({ fecha_emision: '2024-02-29' });
+    expect(parsed.fecha_emision).toBe('2024-02-29');
+  });
+
   it('rechaza monto_total con más de 2 decimales', () => {
     expect(() =>
       transportDocumentManualEntryInputSchema.parse({ monto_total: '1000.999' }),
