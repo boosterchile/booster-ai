@@ -457,6 +457,73 @@ describe('POST /documents/:id/manual-entry', () => {
     expect(json.retention_until).toBe('2032-06-18');
   });
 
+  it('O-3: sin fecha sobre fila YA anclada (fecha_emision válida) → NO acorta ni pisa retention_until', async () => {
+    // Fila anclada por el worker: fecha_emision 2020-01-15 → retención 2026-01-15.
+    // createdAt 2019-01-01 → el fallback created_at+6a sería 2025-01-01 (MENOR):
+    // el bug original lo escribía y ACORTABA la retención anclada.
+    const db = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      doc: docRow({
+        createdAt: new Date('2019-01-01T00:00:00.000Z'),
+        fechaEmision: '2020-01-15',
+        retentionUntil: '2026-01-15',
+        extractionStatus: 'decodificado',
+      }),
+    });
+    const app = buildApp(db, SHIPPER_EMP);
+    const res = await app.request(`/documents/${DOC_ID}/manual-entry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ folio: '999' }), // corrige otro campo, SIN fecha
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { retention_until: string };
+    // La retención anclada se preserva intacta (no se pisa con el fallback).
+    expect(json.retention_until).toBe('2026-01-15');
+    const setArg = updateSetSpy.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setArg).not.toHaveProperty('retentionUntil');
+    expect(setArg).not.toHaveProperty('fechaEmision');
+    expect(setArg).toMatchObject({ folio: '999', extractionStatus: 'ingreso_manual' });
+  });
+
+  it('O-3: fecha_emision con día imposible (2026-02-31) → 400 (no poison pill), sin UPDATE', async () => {
+    const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, doc: docRow() });
+    const app = buildApp(db, SHIPPER_EMP);
+    const res = await app.request(`/documents/${DOC_ID}/manual-entry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fecha_emision: '2026-02-31' }),
+    });
+    expect(res.status).toBe(400);
+    expect(updateSetSpy).not.toHaveBeenCalled();
+  });
+
+  it('O-3: corrección humana de fecha válida re-ancla retention (autoritativa, puede mover hacia abajo)', async () => {
+    // Fila anclada a 2020-06-15 (retención 2026-06-15). El operador corrige la
+    // fecha a una ANTERIOR válida (2019-01-10): la corrección humana es
+    // autoritativa → retención se re-ancla a 2025-01-10 (decisión PO).
+    const db = makeDb({
+      trip: { generadorCargaEmpresaId: SHIPPER_EMP },
+      doc: docRow({
+        fechaEmision: '2020-06-15',
+        retentionUntil: '2026-06-15',
+        extractionStatus: 'decodificado',
+      }),
+    });
+    const app = buildApp(db, SHIPPER_EMP);
+    const res = await app.request(`/documents/${DOC_ID}/manual-entry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fecha_emision: '2019-01-10' }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { retention_until: string };
+    expect(json.retention_until).toBe('2025-01-10');
+    expect(updateSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ fechaEmision: '2019-01-10', retentionUntil: '2025-01-10' }),
+    );
+  });
+
   it('body vacío → 400 (Zod refine)', async () => {
     const db = makeDb({ trip: { generadorCargaEmpresaId: SHIPPER_EMP }, doc: docRow() });
     const app = buildApp(db, SHIPPER_EMP);

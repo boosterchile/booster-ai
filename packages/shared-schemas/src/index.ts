@@ -9,6 +9,7 @@
 export * from './primitives/ids.js';
 export * from './primitives/chile.js';
 export * from './primitives/geo.js';
+export * from './primitives/dates.js';
 
 // Dominio — multi-tenant + ops (slice B pre-launch)
 export * from './domain/stakeholder.js';

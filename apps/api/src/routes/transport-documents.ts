@@ -389,6 +389,11 @@ export function createTransportDocumentsRoutes(opts: {
           id: transportDocuments.id,
           viajeId: transportDocuments.viajeId,
           createdAt: transportDocuments.createdAt,
+          // Estado de anclaje de la retención (invariante O-3): si la fila ya
+          // tiene una fecha_emision válida, su retention_until está anclada a
+          // la emisión y NO debe pisarse al corregir otros campos.
+          fechaEmision: transportDocuments.fechaEmision,
+          retentionUntil: transportDocuments.retentionUntil,
         })
         .from(transportDocuments)
         .where(eq(transportDocuments.id, documentId))
@@ -403,12 +408,34 @@ export function createTransportDocumentsRoutes(opts: {
         return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
       }
 
-      // Recalcula retention_until: con fecha_emision provista → +6a; si no,
-      // fallback created_at + 6a (marca de revisión).
-      const retention = calcularRetentionUntil({
-        fechaEmision: body.fecha_emision ?? null,
-        createdAt: doc.createdAt,
-      });
+      // Anclaje de retención (invariante O-3 / ADR-070). El ancla legal cuenta
+      // desde la EMISIÓN del documento, no desde la subida:
+      //  - fecha_emision provista y válida → corrección humana AUTORITATIVA:
+      //    se ancla retention_until = fecha+6a (puede mover hacia arriba o
+      //    hacia abajo; el operador asume la fecha real del documento).
+      //  - SIN fecha provista → NUNCA pisar una retención ya anclada a una
+      //    fecha_emision válida (corregir otro campo no debe tocar la
+      //    retención). Solo si la fila aún NO está anclada y no tiene retención,
+      //    se fija el fallback conservador created_at+6a.
+      // (El schema Zod ya garantiza que body.fecha_emision, si viene, es un día
+      // de calendario REAL → no hay throw al castear ::date.)
+      const fechaUpdate =
+        body.fecha_emision !== undefined ? { fechaEmision: body.fecha_emision } : undefined;
+      let retentionUpdate: { retentionUntil: string } | undefined;
+      let effectiveRetention = doc.retentionUntil;
+      if (body.fecha_emision !== undefined) {
+        const r = calcularRetentionUntil({
+          fechaEmision: body.fecha_emision,
+          createdAt: doc.createdAt,
+        });
+        retentionUpdate = { retentionUntil: r.retentionUntil };
+        effectiveRetention = r.retentionUntil;
+      } else if (doc.fechaEmision === null && doc.retentionUntil === null) {
+        // Fila sin anclar y sin retención previa: fija el fallback conservador.
+        const r = calcularRetentionUntil({ fechaEmision: null, createdAt: doc.createdAt });
+        retentionUpdate = { retentionUntil: r.retentionUntil };
+        effectiveRetention = r.retentionUntil;
+      }
 
       try {
         // rls-allowlist: autorización por tenant vía authorizeOverTrip (el viaje pertenece al tenant);
@@ -426,10 +453,10 @@ export function createTransportDocumentsRoutes(opts: {
             ...(body.razon_social_receptor !== undefined
               ? { razonSocialReceptor: body.razon_social_receptor }
               : {}),
-            ...(body.fecha_emision !== undefined ? { fechaEmision: body.fecha_emision } : {}),
             ...(body.monto_total !== undefined ? { montoTotal: body.monto_total } : {}),
+            ...(fechaUpdate ?? {}),
+            ...(retentionUpdate ?? {}),
             extractionStatus: 'ingreso_manual',
-            retentionUntil: retention.retentionUntil,
             updatedAt: new Date(),
           })
           .where(eq(transportDocuments.id, documentId));
@@ -439,7 +466,7 @@ export function createTransportDocumentsRoutes(opts: {
       }
 
       opts.logger.info(
-        { documentId, needsReview: retention.needsReview },
+        { documentId, retentionRecalculada: retentionUpdate !== undefined },
         'transport-document manual-entry → ingreso_manual',
       );
 
@@ -447,7 +474,7 @@ export function createTransportDocumentsRoutes(opts: {
         ok: true,
         document_id: documentId,
         extraction_status: 'ingreso_manual',
-        retention_until: retention.retentionUntil,
+        retention_until: effectiveRetention,
       });
     },
   );
