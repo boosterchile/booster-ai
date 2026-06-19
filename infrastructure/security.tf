@@ -195,9 +195,10 @@ locals {
     "whatsapp-phone-number-id",
     "whatsapp-business-account-id",
 
-    # DTE provider (Bsale u otros, ADR-007)
-    "dte-provider-api-key",
-    "dte-provider-client-secret",
+    # DTE provider (Bsale u otros) — RETIRADO. Booster dejó de emitir DTE
+    # (ADR-069) y el endpoint/servicio se removió (F3). Estos secretos quedaron
+    # huérfanos; se eliminan del archivador. `terraform apply` destruirá las
+    # secret versions + el secret en Secret Manager (irreversible).
 
     # Flow.cl (pagos, ADR-010)
     "flow-api-key",
