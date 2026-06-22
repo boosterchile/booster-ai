@@ -17,6 +17,57 @@ El **núcleo del marketplace está construido y funcional**: ~200K LOC, 7/9 apps
 
 ---
 
+## Estado de resolución (reconciliado 2026-06-22)
+
+> Tras el goal "resolver todos los gaps 🔴/🟡", se reconcilió cada ítem contra el **código vivo** + los PRs de esta sesión (#509-#527) y merged (#495/#496). **Hallazgo: la mayoría de los gaps de compliance/infra/seguridad YA estaban resueltos** — el inventario base se apoyó en gap-docs stale. El resto **no es agent-resolvable en sesión** (decisión de negocio, feature-producto futura, o bloqueo externo) y se etiqueta con su acción de owner. No se construyen features-producto enteras unilateralmente.
+
+### ✅ Ya resueltos (merged o PR abierto de esta sesión)
+| Gap | Resuelto en |
+|---|---|
+| REDIS_PASSWORD → Secret Manager (G) | #520 |
+| XFF trust boundary + reset-on-success login (G) | #512 |
+| IDOR consent P0-B / P0-C (G) | #510 (#495/#496 merged) |
+| SSE auth/reconnect chat (G) | #513 |
+| Secret Manager hardening (placeholder no tumba boot) (G) | #526 |
+| Fan-out safety P0-G (consumer real en apps/api, no skeleton) (F) | #511 |
+| Topic huérfano `document-events` (P1-F) | #493 |
+| Audit ESG P2-7 | #494 |
+| Retention-lock DTE P0-A → MOOT por pivote | #517 / ADR-069 |
+| Down-migration strategy (P1-H) | ADR-066 + `drizzle/down/_TEMPLATE.down.sql` |
+| canary-verify MQL (error_rate/p95/min_requests reales; `exit 0` = fallback defensivo) | cloudbuild.production.yaml |
+| Marketing gateado + /signup (A4 parcial) | #426 (ADR-067) |
+| Onboarding admin-gated (A4) | #428 |
+| Placeholder `packages/ai-provider` (C) | **este PR — removido (typecheck 31/31 ok)** |
+
+### 🔵 NO agent-resolvable — decisión de negocio (código listo, PO activa el flag)
+| Gap | Acción del owner |
+|---|---|
+| Matching v2 backhaul (B1) | flip `MATCHING_ALGORITHM_V2_ACTIVATED` (hoy false) cuando haya señal |
+| Factoring v1 a escala (B4) | flip `FACTORING_V1_ACTIVATED` + wire partner real (externo) |
+| Pricing v2 cobro recurrente (B5) | flip `PRICING_V2_ACTIVATED` + activar cron al 1er carrier de pago |
+
+### 🔵 NO agent-resolvable — feature-producto futura (PO + ADR, fuera de fase)
+El roadmap S8-S13 se **despriorizó deliberadamente** por seguridad/compliance/costos. Construir esto es decisión de producto del PO, no un "fix":
+- Eco-routing realtime (A1), Observatorio urbano (A2), Gemelos digitales (A3) — ADR-012, fases Q3'26–Q3'27.
+- Módulos Admin avanzados (A5) — impersonation, broadcasts, Cmd+K, `audit_log`.
+- Endurecimiento S8-S10: load test a escala, DR drill, SLOs formales, runbooks, on-call.
+
+### 🔵 NO agent-resolvable — bloqueo externo / owner-ops
+| Gap | Bloqueador |
+|---|---|
+| Wake-word "Oye Booster" (D) | approval del vendor Picovoice (sin ETA) |
+| Pentest externo · cert GLEC externa · cliente piloto · sign-off legal (F) | terceros (lead time) |
+| Staging real #STAGING-ENV (F) | 2º proyecto GCP (infra + costo — owner) |
+| App Check enforcement server-side (G) | consola Firebase (PO, tras observar tráfico) |
+| `terraform apply` de los PRs de infra (#520/#526/ingress) | ops de prod (owner) |
+
+### 🟡 Abierto — requiere spec/decisión antes de tocar (no un fix suelto)
+- **Geo-aggregations stakeholder endpoint** (B2): el servicio k-anon existe, pero exponerlo es feature con contrato público + privacidad → amerita spec/ADR.
+- **Trivy gate bloqueante** (F): cambiar `exit-code` es quality-gate (`.github/workflows`) → CLAUDE.md exige justificación PO; puede romper CI con findings existentes.
+- **`document-indexer` / `carta-porte-generator`** (C): referenciados en specs del pivote F4 → fate incierto; no se borran hasta decidir 4c.
+
+---
+
 ## A. Funciones del plan NUNCA construidas (ADR aceptado, ~0 código vivo) — los gaps reales
 
 | # | Función | ADR | Estado | Evidencia |
