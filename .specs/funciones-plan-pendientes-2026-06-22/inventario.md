@@ -32,6 +32,9 @@ Producidos como PRs validados (owner aplica/decide; no se flipean flags ni se ap
 | Trivy gate bloqueante HIGH/CRITICAL (F/P2-3) — 0 findings verificado | #532 |
 | 4 alertas CodeQL/high (PIN sesgado + URL substring + log password + regex) | #533 |
 | Remueve placeholder `ai-provider` (C) | #528 |
+| Cron mensual membership fees pricing v2 (B5) — TDD, pago stub, scheduler pausado | #535 |
+| Runbooks por servicio (SC-21) — 9 runbooks + índice | #534 |
+| Matching v2 activation | MOOT — ADR-033 ya documenta criterios+backtest; resta solo el flip del PO |
 
 ### ✅ Ya resueltos (merged o PR abierto de esta sesión)
 | Gap | Resuelto en |
