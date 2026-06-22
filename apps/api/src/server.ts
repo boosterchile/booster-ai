@@ -505,6 +505,9 @@ export function createServer(opts: CreateServerOptions): Hono {
           redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
+          // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
+          // dinero). Cuando exista `payment-provider`, inyectar el real acá.
         }),
       );
     } else {
