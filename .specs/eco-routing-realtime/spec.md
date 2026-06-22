@@ -71,7 +71,7 @@ Ciclo de vida de cada sugerencia. Campos (naming bilingüe SQL español):
                                   PWA: CoachingVoicePlayer habla (opt-in) + alternativa en mapa
 ```
 
-**Punto de integración a resolver en el plan**: cómo el servicio recibe la posición del PWA. Hoy `driver-position-reporter` (cliente) reporta al api; la posición Teltonika va a `telemetry-events`. El servicio event-driven necesita una **señal de posición unificada**. Opciones (decidir en plan): (a) publicar la posición del PWA al mismo topic de posición que el servicio consume; (b) el servicio lee last-known-position de Redis (ya poblado por telemetría) en un tick por viaje activo. Preferencia: (a) para mantener el carácter event-driven.
+**Fuente de posición (DECIDIDO — vía topic, event-driven puro)**: la posición del PWA (`driver-position-reporter`) se **publica a un topic de posición** que el `eco-routing-service` consume; la posición Teltonika ya va a `telemetry-events`. El servicio consume ambas señales como un stream unificado. El plan detalla el endpoint/worker que publica la posición del PWA al topic (hoy reporta solo al api).
 
 **ETA baseline**: se calcula al inicio del viaje (al pasar a `en_proceso`) con `routes-api.ts` para la ruta planificada (`ecoRoutePolylineEncoded` ya se persiste en el trip).
 
@@ -84,7 +84,7 @@ Ciclo de vida de cada sugerencia. Campos (naming bilingüe SQL español):
 - **Cooldown** por viaje: no más de 1 sugerencia cada N min; dedupe de la misma alternativa.
 
 ## 6. Consent / seguridad
-- **Opt-in** mute-by-default (mismo patrón que coaching-voice, playbook 002). La voz de eco-routing respeta el opt-in de coaching-voice (o un toggle propio dentro del mismo).
+- **Opt-in** mute-by-default — **el mismo toggle que coaching-voice** (decisión PO: una sola activación de voz para coaching + eco-routing; patrón playbook 002).
 - Voz = hands-free → seguro mientras maneja. **Cero interacción táctil requerida** (advisory puro).
 - Frecuencia limitada (cooldown) para no saturar/distraer.
 
@@ -103,7 +103,7 @@ Ciclo de vida de cada sugerencia. Campos (naming bilingüe SQL español):
 
 **En este build (la feature definitiva, sin atajos):**
 - `apps/eco-routing-service` + los 2 packages + consumo de posición + Routes API alternativas + evaluación emisiones-con-guardrail + entrega por voz anticipatoria + tabla `sugerencias_ruta` + opt-in/cooldown + observabilidad (OTel/logs) + deploy (Dockerfile/Cloud Build/monitoreo) + runbook.
-- Medición de adopción (¿se desvió a la alternativa? → kgCO₂e ahorrados) — vía correlación telemetría vs `sugerencias_ruta.polyline_alternativa`.
+- **`adoption-resolver`** (componente propio, INCLUIDO): job post-viaje que correlaciona la telemetría real del trip vs `sugerencias_ruta.polyline_alternativa` → resuelve `sugerencias_ruta.adoptada` + kgCO₂e ahorrado. La prueba de impacto del moat. Testeable aislado.
 
 **Fuera (v2 / fases siguientes ADR-012):**
 - Sugerencias de "parada temporal" (esperar a que aclare) — ADR-012 las menciona; v2.
@@ -125,7 +125,9 @@ A fijar con datos reales / en el plan: umbral de "degradación material" (% ETA)
 
 ---
 
-## Preguntas abiertas para tu review
-1. ¿El opt-in de eco-routing es el mismo toggle que coaching-voice, o uno separado?
-2. ¿La medición de adopción (¿se desvió?) entra en este build o es un fast-follow?
-3. ¿El servicio consume posición vía topic (preferido) o tick sobre Redis last-position? (afecta el plan de integración del §4).
+## Decisiones resueltas (review del PO, 2026-06-22)
+1. **Opt-in**: el **mismo** toggle que coaching-voice (una sola activación de voz para coaching + eco-routing). → §6.
+2. **Medición de adopción**: **INCLUIDA** en este build, como componente propio `adoption-resolver` (job post-viaje que correlaciona la telemetría real del trip vs `sugerencias_ruta.polyline_alternativa` → resuelve `adoptada` + kgCO₂e ahorrado). Es la prueba del moat, testeable aparte. → §9.
+3. **Fuente de posición**: vía **topic** (event-driven puro, coherente con arquitectura B). La posición del PWA se **publica a un topic de posición**; Teltonika ya va por `telemetry-events`; el servicio consume ambos. → §4.
+
+**Requisito enfatizado por el PO — Google Maps es fundamental**: el servicio de **Google Maps Routes API v2** es la fuente **FUNDAMENTAL** de información de ruta (tráfico en vivo, rutas alternativas, ETA con tráfico, consumo de combustible) — central a toda la feature, no un fallback. Ya integrado en `routes-api.ts`; este build lo explota de punta a punta. Ver §3.3/§4/§10.
