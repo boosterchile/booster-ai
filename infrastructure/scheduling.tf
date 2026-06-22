@@ -255,6 +255,69 @@ resource "google_cloud_scheduler_job" "reap_inert_idp_accounts" {
   ]
 }
 
+# -----------------------------------------------------------------------------
+# Gap B5 (ADR-030 §7 + ADR-031) — Cloud Scheduler MENSUAL para cobro de membresías
+# -----------------------------------------------------------------------------
+# Tick mensual el día 1 a las 08:00 America/Santiago. POST
+# /admin/jobs/cobrar-memberships-mensual. El handler:
+#   - Si PRICING_V2_ACTIVATED=false → 200 skipped:true sin tocar BD.
+#   - SELECT memberships activas en tier pagado (Standard/Pro/Premium).
+#   - Crea la factura del periodo (idempotente vía unique parcial empresa+mes) +
+#     invoca el MembershipPaymentGateway, y aplica el dunning (≤3 reintentos).
+#
+# ⚠️ EL RAIL DE PAGO ESTÁ STUBEADO. El gateway default no-op NO mueve dinero:
+# deja las facturas en `pending_payment_provider`. Mientras siga stubeado, este
+# cron es de bajo riesgo (solo materializa facturas devengadas + dunning), pero
+# arranca **PAUSADO** por ser un cron financiero: el PO corre el primer tick
+# MANUAL y observado antes de despausar:
+#   gcloud scheduler jobs run cobrar-memberships-mensual --location=southamerica-east1
+#   gcloud scheduler jobs resume cobrar-memberships-mensual --location=southamerica-east1
+# (o set paused=false acá + apply). Cuando exista `payment-provider` real,
+# inyectar el gateway real en server.ts antes de despausar.
+#
+# Cadencia mensual: como un tick procesa todo el backlog del periodo y reintenta
+# el dunning de facturas pendientes, también puede correrse más seguido (ej.
+# diario) si se quieren reintentos más densos. Mensual cubre el caso base de
+# emitir la cuota del mes.
+resource "google_cloud_scheduler_job" "cobrar_memberships_mensual" {
+  name        = "cobrar-memberships-mensual"
+  description = "Mensual día 1 08:00 Santiago: factura las cuotas de membresía de carriers en tier pagado + dunning. ⚠️ rail de pago STUBEADO (no mueve dinero). Gap B5 / ADR-030 §7 / ADR-031."
+  project     = google_project.booster_ai.project_id
+
+  # Arranca PAUSADO (cron financiero): primer tick manual + observado por el PO.
+  paused = true
+
+  region    = "southamerica-east1"
+  schedule  = "0 8 1 * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/cobrar-memberships-mensual"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}
+
 # Purga diaria de posiciones GPS de browser (retención 30d, preservando la
 # última posición por vehículo — spec feat-retencion-posiciones-movil).
 # La tabla crecía sin límite (auditoría 2026-06-09, seguimiento BD).
