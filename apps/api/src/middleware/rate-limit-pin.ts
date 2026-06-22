@@ -146,7 +146,26 @@ export function createRateLimitPinMiddleware(opts: RateLimitPinOptions): Middlew
       return c.json({ error: 'too_many_attempts', code: 'too_many_attempts' }, 429);
     }
 
-    return next();
+    await next();
+
+    // Reset-on-success per-RUT (XFF follow-up parte 2): un auth EXITOSO (2xx)
+    // limpia el counter per-RUT. Motivo: el counter incrementa pre-handler en
+    // CADA intento, así que sin esto >5 logins legítimos/ventana bloquean al
+    // usuario, y alguien con un RUT conocido acumula intentos contra la víctima.
+    // Solo se resetea en éxito real (fallo=401 → el counter persiste, mantiene la
+    // protección anti-brute-force). El per-IP NO se resetea: un éxito puntual no
+    // debe perdonar el abuso cross-RUT desde la misma IP. Best-effort: si el DEL
+    // falla, el TTL de la ventana limpia igual; no rompemos la respuesta exitosa.
+    if (c.res.status >= 200 && c.res.status < 300) {
+      try {
+        await opts.redis.del(rutKey);
+      } catch (err) {
+        opts.logger.warn(
+          { err, rutNormalizado: normRut, keyPrefix },
+          'rate-limit-pin: reset-on-success DEL falló (no bloqueante; el TTL limpia igual)',
+        );
+      }
+    }
   };
 }
 
