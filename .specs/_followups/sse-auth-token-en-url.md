@@ -30,4 +30,12 @@ Tocaría: `apps/api` (mint + validate ticket, middleware del SSE), `apps/web` (`
 Ninguna a nivel app. Las palancas de infra (bajar sampling de Cloud Trace, desactivar request logging del path) son toscas y con pérdida — no se recomiendan; ir directo al fix real.
 
 ## Estado
-Pendiente — decisión del PO sobre si se encara el ciclo del ticket SSE.
+✅ **RESUELTO** (verificado en `main`, 2026-06-22). El ciclo del ticket SSE está
+implementado: `apps/api/src/routes/chat.ts:411` expone `POST /:id/messages/stream-ticket`
+(autenticado por Bearer + userContext + `resolveChatAccess`) que mintea un ticket
+efímero single-use vía `mintStreamTicket` (`services/sse-ticket.ts`, Redis, TTL ~60s,
+scoped al assignment+uid). `apps/web/src/hooks/use-chat-stream.ts:88-138` ya pide el
+ticket con el Bearer header y abre el `EventSource` con `?ticket=` — el Firebase ID
+token **ya no viaja en la URL** → su filtrado a Cloud Trace/Logging quedó cerrado. El
+`RedactingSpanExporter` (#451) se mantiene como defensa en profundidad. (commit
+"fix-sse-ticket-auth").
