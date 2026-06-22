@@ -33,6 +33,9 @@
  */
 
 import crypto from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import admin from 'firebase-admin';
 
 // ----------------------------------------------------------------------------
@@ -78,6 +81,29 @@ function fail(label, err) {
   console.error(`\n❌  ${label}`);
   console.error(err);
   process.exit(1);
+}
+
+/**
+ * Escribe las credenciales del seed demo a un archivo con permisos 0600
+ * (solo el dueño puede leerlo) y devuelve la ruta. NUNCA se loguean los
+ * secretos (password / PIN) a stdout: los logs los captura la terminal, CI
+ * o quien mire por encima del hombro (CodeQL js/clear-text-logging). El
+ * operador lee el archivo out-of-band para obtener las credenciales.
+ */
+function writeCredentialsFile(creds) {
+  const filePath = path.join(os.tmpdir(), `booster-demo-creds-${Date.now()}.txt`);
+  const lines = [
+    '# Credenciales demo Booster — generadas por demo-dry-run.mjs',
+    '# Archivo con permisos 0600. Borralo cuando termines la demo.',
+    '',
+    `shipper:     ${creds.shipper_owner.email} / ${creds.shipper_owner.password}`,
+    `carrier:     ${creds.carrier_owner.email} / ${creds.carrier_owner.password}`,
+    `stakeholder: ${creds.stakeholder.email} / ${creds.stakeholder.password}`,
+    `conductor:   RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ?? '(ya activado)'}`,
+    '',
+  ];
+  writeFileSync(filePath, lines.join('\n'), { encoding: 'utf8', mode: 0o600 });
+  return filePath;
 }
 
 async function exchangeCustomTokenForIdToken(customToken) {
@@ -398,16 +424,18 @@ async function main() {
   const creds = await runSeed(adminToken);
 
   if (SEED_ONLY) {
+    const credsFile = writeCredentialsFile(creds);
     log('🎉', 'seed-only: entidades base creadas, listo para demo en vivo');
     log('', '', '');
-    log('🔑', 'Credenciales (anotá el PIN ahora, no se vuelve a mostrar):');
-    log('  shipper:', `${creds.shipper_owner.email} / ${creds.shipper_owner.password}`);
-    log('  carrier:', `${creds.carrier_owner.email} / ${creds.carrier_owner.password}`);
-    log('  stakeholder:', `${creds.stakeholder.email} / ${creds.stakeholder.password}`);
+    log('🔑', 'Credenciales escritas a archivo (no se imprimen por seguridad):', credsFile);
+    log('  shipper:', `${creds.shipper_owner.email} / [redacted]`);
+    log('  carrier:', `${creds.carrier_owner.email} / [redacted]`);
+    log('  stakeholder:', `${creds.stakeholder.email} / [redacted]`);
     log(
       '  conductor:',
-      `RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ?? '(ya activado)'}`,
+      `RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ? '[redacted]' : '(ya activado)'}`,
     );
+    log('  →', `cat ${credsFile}   # leé el PIN/passwords acá`);
     log('', '', '');
     log('ℹ️ ', 'Ahora podés navegar la UI manualmente:');
     log('  •', 'Login shipper → publica un viaje desde /app/cargas/nuevo');
@@ -526,15 +554,17 @@ async function main() {
   log('  •', `Assignment ID: ${assignment?.id ?? '?'}`);
   log('  •', `Carrier empresa: ${creds.carrier_empresa_id}`);
   log('  •', `Shipper empresa: ${creds.shipper_empresa_id}`);
+  const credsFile = writeCredentialsFile(creds);
   log('', '', '');
-  log('🔑', 'Credenciales para navegar manualmente:');
-  log('  shipper:', `${creds.shipper_owner.email} / ${creds.shipper_owner.password}`);
-  log('  carrier:', `${creds.carrier_owner.email} / ${creds.carrier_owner.password}`);
-  log('  stakeholder:', `${creds.stakeholder.email} / ${creds.stakeholder.password}`);
+  log('🔑', 'Credenciales escritas a archivo (no se imprimen por seguridad):', credsFile);
+  log('  shipper:', `${creds.shipper_owner.email} / [redacted]`);
+  log('  carrier:', `${creds.carrier_owner.email} / [redacted]`);
+  log('  stakeholder:', `${creds.stakeholder.email} / [redacted]`);
   log(
     '  conductor:',
-    `RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ?? '(ya activado)'}`,
+    `RUT ${creds.conductor.rut} / PIN ${creds.conductor.activation_pin ? '[redacted]' : '(ya activado)'}`,
   );
+  log('  →', `cat ${credsFile}   # leé el PIN/passwords acá`);
 
   if (!KEEP_DATA) {
     log('', '', '');
