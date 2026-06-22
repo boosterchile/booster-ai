@@ -37,12 +37,13 @@ El **núcleo del marketplace está construido y funcional**: ~200K LOC, 7/9 apps
 | canary-verify MQL (error_rate/p95/min_requests reales; `exit 0` = fallback defensivo) | cloudbuild.production.yaml |
 | Marketing gateado + /signup (A4 parcial) | #426 (ADR-067) |
 | Onboarding admin-gated (A4) | #428 |
-| Placeholder `packages/ai-provider` (C) | **este PR — removido (typecheck 31/31 ok)** |
+| Placeholder `packages/ai-provider` (C) | #528 (removido, typecheck 31/31 ok) |
+| **Endpoint geo k-anon stakeholder (B2)** — cablea el servicio dormido | **#529 (ruta + TDD 8 tests, gate dataset-level + filtro comuna + k-anon)** |
 
 ### 🔵 NO agent-resolvable — decisión de negocio (código listo, PO activa el flag)
 | Gap | Acción del owner |
 |---|---|
-| Matching v2 backhaul (B1) | flip `MATCHING_ALGORITHM_V2_ACTIVATED` (hoy false) cuando haya señal |
+| Matching v2 backhaul (B1) — **confirmado completo** (449+202 LOC, cero stubs/TODOs) | flip `MATCHING_ALGORITHM_V2_ACTIVATED` (hoy false) cuando haya señal |
 | Factoring v1 a escala (B4) | flip `FACTORING_V1_ACTIVATED` + wire partner real (externo) |
 | Pricing v2 cobro recurrente (B5) | flip `PRICING_V2_ACTIVATED` + activar cron al 1er carrier de pago |
 
@@ -62,9 +63,9 @@ El roadmap S8-S13 se **despriorizó deliberadamente** por seguridad/compliance/c
 | `terraform apply` de los PRs de infra (#520/#526/ingress) | ops de prod (owner) |
 
 ### 🟡 Abierto — requiere spec/decisión antes de tocar (no un fix suelto)
-- **Geo-aggregations stakeholder endpoint** (B2): el servicio k-anon existe, pero exponerlo es feature con contrato público + privacidad → amerita spec/ADR.
-- **Trivy gate bloqueante** (F): cambiar `exit-code` es quality-gate (`.github/workflows`) → CLAUDE.md exige justificación PO; puede romper CI con findings existentes.
+- **Trivy gate bloqueante** (F): cambiar `exit-code` es quality-gate (`.github/workflows`) → CLAUDE.md exige justificación PO; trivy no está instalado local → no se puede verificar si rompe CI con findings existentes → no se flipea a ciegas.
 - **`document-indexer` / `carta-porte-generator`** (C): referenciados en specs del pivote F4 → fate incierto; no se borran hasta decidir 4c.
+- **consent-scope + audit del endpoint geo** (B2 residual): el endpoint #529 quedó con RBAC-rol + k-anon (privacidad de individuos garantizada); el consent-scope (qué stakeholder ve qué zona) NO es expresable en ADR-028 → decisión Producto/ADR. Ver `.specs/_followups/stakeholder-zonas-consent-scope-y-audit.md`.
 
 ---
 
