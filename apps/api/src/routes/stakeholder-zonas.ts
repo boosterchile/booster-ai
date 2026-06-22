@@ -149,6 +149,7 @@ export function createStakeholderZonasRoutes(opts: { db: Db; logger: Logger }) {
         carbonEmissionsKgco2eActual: tripMetrics.carbonEmissionsKgco2eActual,
         carbonEmissionsKgco2eEstimated: tripMetrics.carbonEmissionsKgco2eEstimated,
       })
+      // rls-allowlist: agregación k-anon cross-empresa de zonas públicas (ADR-041/042) — agrega viajes de TODOS los carriers en una zona geográfica pública con gate dataset-level k≥5; sin tenant isolation por diseño (es el propósito de la feature).
       .from(trips)
       .innerJoin(assignments, eq(assignments.tripId, trips.id))
       .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
