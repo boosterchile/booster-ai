@@ -15,4 +15,12 @@
 
 ## Estado
 
-Pendiente. Sin asignar a ciclo.
+✅ **RESUELTO** (verificado en `main`, 2026-06-22).
+
+1. El bug `REPO_ROOT` está corregido: `scripts/deploy-telemetry-gateway.sh:73` usa
+   `git rev-parse --show-toplevel` directo (sin el `/..` que apuntaba al padre);
+   el branch de primer deploy ya referencia el manifiesto correcto.
+2. El banner de deprecación ya existe (`deploy-telemetry-gateway.sh:3-9`): apunta a
+   los pipelines `cloudbuild-primary-{deploy,check}.yaml` (ADR-059/ADR-065) como vía
+   canónica y deja este script como **break-glass** manual. Consistente con P0-I
+   (deploy GKE automatizado).
