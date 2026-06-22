@@ -309,7 +309,7 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
       </section>
 
       <section className="mt-10 rounded-lg border border-neutral-200 bg-white p-5">
-        <h2 className="font-semibold text-neutral-900 text-lg">Metodología</h2>
+        <h2 className="font-semibold text-lg text-neutral-900">Metodología</h2>
         <ul className="mt-3 space-y-2 text-neutral-700 text-sm">
           <li className="flex items-start gap-2">
             <Shield className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden />

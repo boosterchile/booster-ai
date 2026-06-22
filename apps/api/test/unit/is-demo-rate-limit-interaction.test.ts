@@ -131,7 +131,6 @@ function makeAppWithCanonicalChain(claims: FirebaseClaims | null) {
   app.use(
     '*',
     createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis pattern existente
       redis: redis as any,
       logger: noopLogger,
     }),

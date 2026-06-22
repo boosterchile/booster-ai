@@ -26,7 +26,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
     c.on('state', (s) => states.push(s));
     const errors: string[] = [];
     c.on('error', (e) => errors.push(e.message));
-    await c.init({ accessKey: '', modelPath: '', onWake: () => {} });
+    await c.init({ accessKey: '', modelPath: '', onWake: () => undefined });
     expect(c.state).toBe('unavailable');
     expect(states).toContain('unavailable');
     expect(errors.length).toBe(1);
@@ -38,7 +38,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
     await c.init({
       accessKey: 'pico-key-123',
       modelPath: '/wake-word/oye-booster-cl.ppn',
-      onWake: () => {},
+      onWake: () => undefined,
     });
     // Stub no implementa Porcupine wire todavía — resolve unavailable
     // hasta Wave 5 PR 2. El test futuro a invertir: esperar 'listening'.
@@ -47,7 +47,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
 
   it('enable() es no-op cuando state=unavailable', async () => {
     const c = createWakeWordController();
-    await c.init({ accessKey: '', modelPath: '', onWake: () => {} });
+    await c.init({ accessKey: '', modelPath: '', onWake: () => undefined });
     c.enable();
     expect(c.state).toBe('unavailable');
   });
@@ -58,7 +58,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
     const b: WakeWordState[] = [];
     const unsubA = c.on('state', (s) => a.push(s));
     c.on('state', (s) => b.push(s));
-    await c.init({ accessKey: '', modelPath: '', onWake: () => {} });
+    await c.init({ accessKey: '', modelPath: '', onWake: () => undefined });
     expect(a).toEqual(['unavailable']);
     expect(b).toEqual(['unavailable']);
     unsubA();
@@ -72,7 +72,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
     const c = createWakeWordController();
     const states: WakeWordState[] = [];
     c.on('state', (s) => states.push(s));
-    await c.init({ accessKey: '', modelPath: '', onWake: () => {} });
+    await c.init({ accessKey: '', modelPath: '', onWake: () => undefined });
     await c.destroy();
     expect(c.state).toBe('idle');
   });
@@ -84,7 +84,7 @@ describe('WakeWordController (stub Wave 5 PR 1)', () => {
       throw new Error('boom');
     });
     c.on('state', (s) => ok.push(s));
-    await c.init({ accessKey: '', modelPath: '', onWake: () => {} });
+    await c.init({ accessKey: '', modelPath: '', onWake: () => undefined });
     // El segundo listener debe haber recibido el estado.
     expect(ok).toContain('unavailable');
   });
