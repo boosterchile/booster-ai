@@ -1,22 +1,35 @@
 #!/usr/bin/env bash
 #
-# create-safety-alert-template.sh — crea el template WhatsApp `safety_alert_v2`
+# create-safety-alert-template.sh — crea el template WhatsApp `safety_alert_v3`
 # vía Twilio Content API y lo submitea a Meta para aprobación.
 #
 # CONTEXTO
 #   El fan-out de seguridad (P0-G) notifica al transportista ante eventos
 #   crash/unplug/jamming. El canal WhatsApp usa un template Twilio cuyo Content
 #   SID se carga en el secret `content-sid-safety-alert` (ver
-#   docs/runbooks/load-content-sids.md). El wiring de infra ya existe (#476);
-#   este script genera el template que falta.
+#   docs/runbooks/load-content-sids.md). El wiring de infra ya existe (#476).
 #
-#   Historia: `safety_alert_v1` (HX0d6363fd0162c2d71519ed4e3afe2e3d) y su copia
-#   `copy_of_safety_alert_v1` (HX80819b02ce9a546b855d09ada1aac944) fueron
-#   RECHAZADOS por Meta con subCode 2388293: "This template has too many
-#   variables for its length. Reduce the number of variables or increase the
-#   message length." Este script usa un body MÁS LARGO (más texto fijo por
-#   variable) manteniendo las mismas 4 variables {{1}}..{{4}} en el mismo orden,
-#   así `apps/api/src/services/dispatch-safety-notification.ts` no cambia.
+#   Historia de aprobación (Meta):
+#     v1            HX0d6363fd0162c2d71519ed4e3afe2e3d  REJECTED (subCode 2388293:
+#                   "too many variables for its length")
+#     copy_of_v1    HX80819b02ce9a546b855d09ada1aac944  REJECTED (mismo subCode)
+#     v2            HX48d541ad8f2cab4e4f65165cb26489b1  PENDING >7 días (anómalo;
+#                   el típico es 5min–48h). v2 pasó los auto-checks (no fue
+#                   rejected) pero su contenido —contactos de emergencia 131/133,
+#                   tono alarmista, líneas en blanco— probablemente lo ruteó a
+#                   revisión humana, que quedó atascada.
+#
+#   v3 (este script) de-riesga el contenido para volver a un path auto-aprobable:
+#     (a) sin la instrucción de servicios de emergencia (esos contactos viven en
+#         la app / push, no en el template);
+#     (b) sin líneas en blanco (\n\n → \n; regla de whitespace de Meta);
+#     (c) tono claramente transaccional, sin emojis de alarma.
+#   Mantiene las MISMAS 4 variables {{1}}..{{4}} en el mismo orden → cero cambios
+#   en apps/api/src/services/dispatch-safety-notification.ts ni en sus tests.
+#
+#   Si preferís destrabar v2 en vez de reemplazarlo: Meta documenta que un
+#   template >48h en pending se escala abriendo un Twilio support ticket con el
+#   nombre (`safety_alert_v2`) y el SID. Ver .specs/safety-event-fanout/whatsapp-template.md.
 #
 # VARIABLES (las arma el código, ver dispatch-safety-notification.ts:121-126)
 #   {{1}} patente del vehículo        (vehicleLabel = vehicle.plate)
@@ -34,30 +47,28 @@
 set -euo pipefail
 
 PROJ="booster-ai-494222"
-NAME="safety_alert_v2"
+NAME="safety_alert_v3"
 
 echo "→ Leyendo credenciales Twilio desde Secret Manager (proyecto $PROJ)…"
 TW_SID="$(gcloud secrets versions access latest --secret=twilio-account-sid --project="$PROJ")"
 TW_TOK="$(gcloud secrets versions access latest --secret=twilio-auth-token  --project="$PROJ")"
 
-# Payload de creación: python3 arma el JSON para escapar bien newlines, emoji y
-# acentos del body. El body es body-only (twilio/text); el deep-link al vehículo
-# va por push, no por el template (evita una variable extra que alarga la
-# revisión de Meta — ver la nota "variante con botón" en el spec).
+# Payload de creación: python3 arma el JSON para escapar bien newlines y acentos
+# del body. El body es body-only (twilio/text); el deep-link al vehículo y los
+# contactos de ayuda van por push / la app, no por el template.
 CREATE_PAYLOAD="$(python3 - "$NAME" <<'PY'
 import json, sys
 name = sys.argv[1]
 body = (
-    "🚨 Alerta de seguridad Booster AI\n\n"
-    "Detectamos un evento en uno de tus vehículos que requiere tu atención.\n\n"
-    "🚚 Vehículo (patente): {{1}}\n"
-    "⚠️ Evento detectado: {{2}}\n"
-    "🕐 Hora (Chile): {{3}}\n"
-    "📍 Viaje asociado: {{4}}\n\n"
-    "Por favor verifica cuanto antes el estado del conductor y de la carga. "
-    "Si se trata de una emergencia, llama a los servicios de emergencia "
-    "(131 ambulancia · 133 Carabineros) y luego avísanos por este mismo chat. "
-    "Si fue una falsa alarma, responde OK para que quede registrado."
+    "Hola, te escribe el sistema de Booster AI. Detectamos un evento en uno de "
+    "tus vehículos que necesita tu atención.\n"
+    "Vehículo (patente): {{1}}\n"
+    "Evento detectado: {{2}}\n"
+    "Hora (Chile): {{3}}\n"
+    "Viaje asociado: {{4}}\n"
+    "Revisa cuanto antes el estado del vehículo y de la carga, y respóndenos por "
+    "este chat para confirmar que recibiste este aviso. Encontrarás el detalle y "
+    "los contactos de ayuda en la app de Booster AI."
 )
 print(json.dumps({
     "friendly_name": name,
@@ -100,7 +111,8 @@ Próximos pasos (detalle completo en docs/runbooks/load-content-sids.md):
      este Content SID (${CONTENT_SID}) hasta que whatsapp.status == "approved".
      El comando exacto (curl autenticado) está en el runbook.
 
-  2. Al aprobar, cargar el SID en el secret + redeploy del api:
+  2. Al aprobar, cargar el SID como nueva versión del secret (el env var ya está
+     montado en prod desde #476, así que basta agregar la versión + redeploy):
        echo -n "${CONTENT_SID}" | gcloud secrets versions add content-sid-safety-alert --data-file=- --project=${PROJ}
        gcloud run services update booster-ai-api --region=southamerica-west1 \\
          --update-secrets=CONTENT_SID_SAFETY_ALERT=content-sid-safety-alert:latest --project=${PROJ}
