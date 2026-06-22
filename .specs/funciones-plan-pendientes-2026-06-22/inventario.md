@@ -21,6 +21,18 @@ El **núcleo del marketplace está construido y funcional**: ~200K LOC, 7/9 apps
 
 > Tras el goal "resolver todos los gaps 🔴/🟡", se reconcilió cada ítem contra el **código vivo** + los PRs de esta sesión (#509-#527) y merged (#495/#496). **Hallazgo: la mayoría de los gaps de compliance/infra/seguridad YA estaban resueltos** — el inventario base se apoyó en gap-docs stale. El resto **no es agent-resolvable en sesión** (decisión de negocio, feature-producto futura, o bloqueo externo) y se etiqueta con su acción de owner. No se construyen features-producto enteras unilateralmente.
 
+### ✅ Ronda 2 — goal "resolver gaps rojo/amarillo" (2026-06-22)
+Producidos como PRs validados (owner aplica/decide; no se flipean flags ni se aplica prod):
+| Gap | PR |
+|---|---|
+| Endpoint geo k-anon stakeholder (B2) — cablea servicio dormido + TDD | #529 |
+| SLOs formales + burn-rate alerts (F-13/SC-20) — `terraform validate` OK | #530 |
+| DLQ sms-fallback (F-10) | N/A — es webhook HTTP, el consumidor real ya tiene DLQ |
+| Spans OTel de negocio (F-09) — helper + 9 operaciones | #531 |
+| Trivy gate bloqueante HIGH/CRITICAL (F/P2-3) — 0 findings verificado | #532 |
+| 4 alertas CodeQL/high (PIN sesgado + URL substring + log password + regex) | #533 |
+| Remueve placeholder `ai-provider` (C) | #528 |
+
 ### ✅ Ya resueltos (merged o PR abierto de esta sesión)
 | Gap | Resuelto en |
 |---|---|
