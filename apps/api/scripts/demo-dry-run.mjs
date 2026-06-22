@@ -26,6 +26,7 @@
  *   node apps/api/scripts/demo-dry-run.mjs                # ejecuta flujo
  *   node apps/api/scripts/demo-dry-run.mjs --cleanup      # solo limpia
  *   node apps/api/scripts/demo-dry-run.mjs --keep-data    # no limpia al final
+ *   node apps/api/scripts/demo-dry-run.mjs --seed-only    # solo entidades base (no corre el flujo)
  *
  * Default behavior: ejecuta el flujo completo y NO limpia al final
  * (deja datos cargados para que el operador pueda navegar la UI con
