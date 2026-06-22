@@ -34,7 +34,12 @@ import {
   reapInertIdpAccounts,
 } from '../jobs/reap-inert-idp-accounts.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
+import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
+import {
+  type MembershipPaymentGateway,
+  noopMembershipPaymentGateway,
+} from '../services/membership-payment-gateway.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
@@ -51,6 +56,12 @@ export function createAdminJobsRoutes(opts: {
   redis?: Redis | null;
   /** T9 SEC-001 boundary-closure — pool pg para el reaper (fetchReaperFacts). Null en tests sin DB. */
   pool?: pg.Pool | null;
+  /**
+   * Gap B5 — gateway de pago para el cron de membresías. ⚠️ STUBEADO: por
+   * default es `noopMembershipPaymentGateway` (NO mueve dinero). Inyectable para
+   * tests y para enchufar el provider real cuando exista `payment-provider`.
+   */
+  membershipPaymentGateway?: MembershipPaymentGateway;
 }) {
   const app = new Hono();
 
@@ -102,6 +113,50 @@ export function createAdminJobsRoutes(opts: {
         empresa_shipper_id: a.empresaShipperId,
         dias_vencidos: a.diasVencidos,
       })),
+    });
+  });
+
+  /**
+   * Gap B5 (ADR-030 §7 + ADR-031) — tick MENSUAL del cobro de cuotas de
+   * membresía de los carriers en tier pagado (Standard/Pro/Premium).
+   *
+   * ⚠️ EL RAIL DE PAGO ESTÁ STUBEADO. El gateway default
+   * (`noopMembershipPaymentGateway`) NO mueve dinero: factura, deja la
+   * factura en `pending_payment_provider` y aplica el dunning (hasta 3
+   * reintentos; al agotarlos → `morosa`). El cobro real llega cuando exista
+   * `payment-provider` y se inyecte un gateway real.
+   *
+   * Gating: si `PRICING_V2_ACTIVATED=false`, 200 con `skipped:true` (no es
+   * error correr el cron con la feature off — Cloud Scheduler lo trata como
+   * success). Idempotente: re-correr el tick no cobra dos veces el mismo ciclo.
+   */
+  app.post('/cobrar-memberships-mensual', async (c) => {
+    if (!appConfig.PRICING_V2_ACTIVATED) {
+      opts.logger.debug('cobrar-memberships-mensual: PRICING_V2_ACTIVATED=false, skip');
+      return c.json({ ok: true, skipped: true, reason: 'feature_disabled' });
+    }
+    const gateway = opts.membershipPaymentGateway ?? noopMembershipPaymentGateway(opts.logger);
+    const result = await cobrarMembershipsMensual({
+      db: opts.db,
+      logger: opts.logger,
+      gateway,
+      pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+    });
+    if (result.status === 'skipped_flag_disabled') {
+      return c.json({ ok: true, skipped: true, reason: 'feature_disabled' });
+    }
+    return c.json({
+      ok: true,
+      periodo_mes: result.periodoMes,
+      evaluadas: result.evaluadas,
+      facturas_creadas: result.facturasCreadas,
+      reintentos: result.reintentos,
+      pending_provider: result.pendingProvider,
+      cobradas: result.cobradas,
+      morosas: result.morosas,
+      ya_facturadas: result.yaFacturadas,
+      // Recordatorio explícito en la respuesta: el cobro real está stubeado.
+      payment_rail_stubbed: true,
     });
   });
 
