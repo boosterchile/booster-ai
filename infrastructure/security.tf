@@ -174,6 +174,10 @@ locals {
     # Database
     "database-url",
 
+    # Memorystore Redis auth_string — movido de plaintext env a Secret Manager
+    # (redis-password-to-secret-manager). La version se auto-deriva del recurso.
+    "redis-auth",
+
     # AI providers
     # NOTA: gemini-api-key eliminada en ADR-037 — el backend ahora usa
     # Vertex AI Gemini con ADC (workload identity del SA cloud_run_runtime).
