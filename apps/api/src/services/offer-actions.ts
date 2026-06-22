@@ -12,6 +12,7 @@ import {
   tripEvents,
   trips,
 } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularMetricasEstimadas } from './calcular-metricas-viaje.js';
 import {
   type NotifyTrackingLinkDeps,
@@ -90,7 +91,7 @@ export interface AcceptOfferResult {
  *   5. trip.estado = 'asignado'.
  *   6. Insert eventos_viaje: asignacion_creada + oferta_aceptada.
  */
-export async function acceptOffer(opts: {
+interface AcceptOfferOptions {
   db: Db;
   logger: Logger;
   offerId: string;
@@ -102,7 +103,32 @@ export async function acceptOffer(opts: {
    * el envío (dev local, tests).
    */
   notifyTrackingLink?: NotifyTrackingLinkDeps;
-}): Promise<AcceptOfferResult> {
+}
+
+export async function acceptOffer(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
+  return await withBusinessSpan(
+    {
+      name: 'offer.accept',
+      attributes: {
+        'booster.offer_id': opts.offerId,
+        'booster.empresa_id': opts.empresaId,
+        'booster.user_id': opts.userId,
+      },
+    },
+    async (span) => {
+      const result = await acceptOfferInner(opts);
+      setResultAttributes(span, {
+        'booster.trip_id': result.assignment.tripId,
+        'booster.assignment_id': result.assignment.id,
+        'booster.offer.superseded_count': result.supersededOfferIds.length,
+        'booster.offer.agreed_price_clp': result.assignment.agreedPriceClp ?? undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferResult> {
   const { db, logger, offerId, empresaId, userId, notifyTrackingLink } = opts;
 
   return await db
@@ -335,14 +361,40 @@ export async function acceptOffer(opts: {
  * Si todas las offers terminan en rechazada/expirada sin assignment, un
  * job posterior marca el trip como `expirado`.
  */
-export async function rejectOffer(opts: {
+interface RejectOfferOptions {
   db: Db;
   logger: Logger;
   offerId: string;
   empresaId: string;
   userId: string;
   reason: string | undefined;
-}): Promise<OfferRow> {
+}
+
+export async function rejectOffer(opts: RejectOfferOptions): Promise<OfferRow> {
+  return await withBusinessSpan(
+    {
+      name: 'offer.reject',
+      attributes: {
+        'booster.offer_id': opts.offerId,
+        'booster.empresa_id': opts.empresaId,
+        'booster.user_id': opts.userId,
+        // El motivo es texto libre del carrier → solo registramos si vino,
+        // no el contenido (evita PII/datos libres en el atributo).
+        'booster.offer.has_reason': opts.reason !== undefined,
+      },
+    },
+    async (span) => {
+      const rejected = await rejectOfferInner(opts);
+      setResultAttributes(span, {
+        'booster.trip_id': rejected.tripId,
+        'booster.offer.status': rejected.status,
+      });
+      return rejected;
+    },
+  );
+}
+
+async function rejectOfferInner(opts: RejectOfferOptions): Promise<OfferRow> {
   const { db, logger, offerId, empresaId, userId, reason } = opts;
 
   return await db.transaction(async (tx) => {
