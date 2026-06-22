@@ -36,6 +36,15 @@ Producidos como PRs validados (owner aplica/decide; no se flipean flags ni se ap
 | Runbooks por servicio (SC-21) — 9 runbooks + índice | #534 |
 | Matching v2 activation | MOOT — ADR-033 ya documenta criterios+backtest; resta solo el flip del PO |
 
+### ♻️ "Gaps" que resultaron YA hechos (docs stale — verificado vs código vivo 2026-06-22)
+El inventario base sobrecontaba por gap-docs viejas. Estos NO eran gaps:
+| "Gap" del doc | Realidad en código |
+|---|---|
+| SSE auth token single-use (G, ALTO) | **Hecho** — `mintStreamTicket`/`sse-ticket.ts`, el EventSource usa `?ticket=` single-use (fix-sse-ticket-auth); el follow-up `sse-auth-token-en-url.md` quedó stale |
+| Coaching por voz/TTS (D, "en cola") | **Hecho** — `apps/web/src/components/scoring/CoachingVoicePlayer.tsx` + `services/coaching-voice.ts` + tests |
+| k6 load-test scripts (F) | **Existen** — `scripts/load-test/telemetry-gateway.ts` (correrlos a escala objetivo es owner/entorno) |
+| telemetry-tcp-gateway README `SKELETON` | **Corregido** — el gateway está live; README stale arreglado (#536) |
+
 ### ✅ Ya resueltos (merged o PR abierto de esta sesión)
 | Gap | Resuelto en |
 |---|---|
