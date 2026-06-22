@@ -1,7 +1,7 @@
 # Follow-up — `release.yml` deploy-production: timeout (30m) < canary (30m) → run "cancelled" engañoso
 
 **Origen**: deploy de App Check (PR #401) 2026-06-04 — el GHA run figuró `cancelled` pero el deploy fue exitoso.
-**Tipo**: CI/CD reliability / observabilidad. **Riesgo**: medio (no rompe el deploy, pero el estado MIENTE → riesgo de re-lanzar innecesariamente o creer que falló). **Estado**: pendiente.
+**Tipo**: CI/CD reliability / observabilidad. **Riesgo**: medio (no rompe el deploy, pero el estado MIENTE → riesgo de re-lanzar innecesariamente o creer que falló). **Estado**: ✅ **RESUELTO** — `release.yml:87` ya tiene `timeout-minutes: 75` (fix 2026-06-12, opción #1 con margen: gate ~10 + build ~15 + canary 30 + verify/promoción ~10 + smoke). El run ya refleja el estado real y el smoke final corre.
 
 ## Problema (causa raíz confirmada)
 
