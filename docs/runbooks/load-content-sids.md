@@ -8,7 +8,7 @@ WhatsApp aprobados por Meta. Los secrets viven en Secret Manager:
 | `content-sid-offer-new` | Notificar carrier de nueva oferta (B.8) | `offer_new_v1` | `HXa30e82ea818a72d08bb12a4214610a86` |
 | `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` | _pending Meta_ |
 | `content-sid-tracking` | Link público de tracking al shipper al asignar (Phase 5 PR-L3) | `tracking_link_v1` | `HXac1ef21ed9423258a2c38dad02f31e41` (submitted Meta 2026-05-10) |
-| `content-sid-safety-alert` | Alerta de seguridad al transportista (crash/unplug/jamming, P0-G) | `safety_alert_v3` (de-riesgado) | v2 `HX48d541ad8f2cab4e4f65165cb26489b1` quedó **pending >7d** (atascado en revisión humana de Meta); v1 `HX0d6363fd0162c2d71519ed4e3afe2e3d` y copy_of_v1 `HX80819b02ce9a546b855d09ada1aac944` fueron **rechazados** (subCode 2388293). Resolución (v3 vía script, o support ticket para v2): ver [`.specs/safety-event-fanout/whatsapp-template.md`](../../.specs/safety-event-fanout/whatsapp-template.md) |
+| `content-sid-safety-alert` | Alerta de seguridad al transportista (crash/unplug/jamming, P0-G) | `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` **approved + live** ✅ (aprobado tras ~7d de revisión humana; entregando en prod 2026-06-22). v1 `HX0d…3d` y copy_of_v1 `HX80…44` fueron **rechazados** (subCode 2388293). Fallback de-riesgado `safety_alert_v3` listo si Meta pausa v2: ver [`.specs/safety-event-fanout/whatsapp-template.md`](../../.specs/safety-event-fanout/whatsapp-template.md) |
 
 ### Body de `tracking_link_v1` (creado vía Twilio Content API 2026-05-10)
 
@@ -88,17 +88,16 @@ echo -n "HXabcdef0123456789abcdef0123456789" \
       --data-file=- \
       --project=booster-ai-494222
 
-# Para safety_alert: v2 (HX48d541…) quedó pending >7d en Meta. Recomendado:
-# correr scripts/create-safety-alert-template.sh (crea safety_alert_v3 de-riesgado)
-# y cargar el SID que imprime. Detalle + camino alternativo (support ticket v2):
-# .specs/safety-event-fanout/whatsapp-template.md
-echo -n "HX<sid-aprobado-v3-o-v2>" \
+# Para safety_alert: v2 (HX48d541…) ya está APPROVED + cargado + live en prod.
+# Este bloque solo aplica para ROTAR el template (p.ej. si Meta pausa v2 → crear
+# el fallback v3 con scripts/create-safety-alert-template.sh y cargar su SID):
+echo -n "HX<sid-del-template-approved>" \
   | gcloud secrets versions add content-sid-safety-alert \
       --data-file=- \
       --project=booster-ai-494222
 # Luego redeploy con --update-secrets=CONTENT_SID_SAFETY_ALERT=content-sid-safety-alert:latest
-# El env var ya está montado (#476/#526); mientras el SID cargado no sea de un
-# template approved, el fan-out de safety sale solo por push (no bloquea).
+# El env var ya está montado (#476/#526); si el SID cargado no fuera de un
+# template approved, el fan-out de safety degradaría a solo push (no bloquea).
 ```
 
 ### 3. Forzar re-deploy del api Cloud Run para tomar el nuevo valor

@@ -9,27 +9,23 @@
 #   SID se carga en el secret `content-sid-safety-alert` (ver
 #   docs/runbooks/load-content-sids.md). El wiring de infra ya existe (#476).
 #
+#   ESTADO (2026-06-22): `safety_alert_v2` (HX48d541ad8f2cab4e4f65165cb26489b1)
+#   está APPROVED por Meta y LIVE en prod — el canal WhatsApp de safety funciona.
+#   ESTE SCRIPT NO ES NECESARIO en condiciones normales; solo se corre como
+#   FALLBACK si Meta llegara a pausar/deshabilitar v2 (por feedback negativo).
+#
 #   Historia de aprobación (Meta):
-#     v1            HX0d6363fd0162c2d71519ed4e3afe2e3d  REJECTED (subCode 2388293:
-#                   "too many variables for its length")
+#     v1            HX0d6363fd0162c2d71519ed4e3afe2e3d  REJECTED (subCode 2388293)
 #     copy_of_v1    HX80819b02ce9a546b855d09ada1aac944  REJECTED (mismo subCode)
-#     v2            HX48d541ad8f2cab4e4f65165cb26489b1  PENDING >7 días (anómalo;
-#                   el típico es 5min–48h). v2 pasó los auto-checks (no fue
-#                   rejected) pero su contenido —contactos de emergencia 131/133,
-#                   tono alarmista, líneas en blanco— probablemente lo ruteó a
-#                   revisión humana, que quedó atascada.
+#     v2            HX48d541ad8f2cab4e4f65165cb26489b1  APPROVED + LIVE (tardó ~7d
+#                   en revisión humana por su contenido sensible, pero se aprobó).
 #
-#   v3 (este script) de-riesga el contenido para volver a un path auto-aprobable:
-#     (a) sin la instrucción de servicios de emergencia (esos contactos viven en
-#         la app / push, no en el template);
-#     (b) sin líneas en blanco (\n\n → \n; regla de whitespace de Meta);
-#     (c) tono claramente transaccional, sin emojis de alarma.
-#   Mantiene las MISMAS 4 variables {{1}}..{{4}} en el mismo orden → cero cambios
-#   en apps/api/src/services/dispatch-safety-notification.ts ni en sus tests.
-#
-#   Si preferís destrabar v2 en vez de reemplazarlo: Meta documenta que un
-#   template >48h en pending se escala abriendo un Twilio support ticket con el
-#   nombre (`safety_alert_v2`) y el SID. Ver .specs/safety-event-fanout/whatsapp-template.md.
+#   El fallback v3 que crea este script de-riesga el contenido para auto-aprobar
+#   rápido si v2 cae: (a) sin la instrucción de servicios de emergencia (van por
+#   app/push); (b) sin líneas en blanco (\n\n → \n); (c) tono transaccional sin
+#   emojis. Mantiene las MISMAS 4 variables {{1}}..{{4}} en el mismo orden → cero
+#   cambios en dispatch-safety-notification.ts. Ver el spec para el flujo de rotación:
+#   .specs/safety-event-fanout/whatsapp-template.md
 #
 # VARIABLES (las arma el código, ver dispatch-safety-notification.ts:121-126)
 #   {{1}} patente del vehículo        (vehicleLabel = vehicle.plate)
