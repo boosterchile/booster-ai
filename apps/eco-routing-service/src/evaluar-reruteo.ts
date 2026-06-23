@@ -175,7 +175,7 @@ export async function evaluarReruteo(
 
       span.setAttribute('recomendo', evalResult.tipo === 'recomendada');
 
-      if (evalResult.tipo === 'ninguna_mejor') {
+      if (evalResult.tipo !== 'recomendada') {
         logger.debug({ viajeId }, 'evaluar-reruteo: ninguna_mejor, skip');
         return null;
       }
@@ -186,6 +186,14 @@ export async function evaluarReruteo(
       span.setAttribute('deltaCo2e', deltaCo2eKg);
 
       // 7. Persist to sugerencias_ruta
+      if (!Number.isFinite(deltaCo2eKg) || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        logger.error(
+          { viajeId, deltaCo2eKg, lat, lng },
+          'evaluar-reruteo: valor no finito en INSERT (NaN/Infinity), skip',
+        );
+        return null;
+      }
+
       try {
         await db.execute(sql`
           INSERT INTO sugerencias_ruta (
@@ -194,8 +202,8 @@ export async function evaluarReruteo(
             posicion_lat, posicion_lng
           ) VALUES (
             ${viajeId}, NOW(), ${polyline},
-            ${deltaEtaSegundos}, ${String(deltaCo2eKg)}::numeric, ${etaBaselineSegundos},
-            ${String(lat)}::numeric, ${String(lng)}::numeric
+            ${deltaEtaSegundos}, ${deltaCo2eKg}, ${etaBaselineSegundos},
+            ${lat}, ${lng}
           )
         `);
       } catch (err) {
