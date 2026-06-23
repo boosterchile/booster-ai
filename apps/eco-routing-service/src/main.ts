@@ -4,11 +4,9 @@
  * Consume posiciones de conductores desde Pub/Sub (driver-positions +
  * telemetry-events), mantiene estado por viaje (TripStateStore), y en cada
  * update significativo orquesta la evaluación de ruta alternativa con menor
- * emisión (Tasks 6+).
+ * emisión.
  *
- * Este task (Task 5) cubre el scaffold + store + consumer + baseline ETA.
- * La lógica de evaluación (traffic-condition-detector + route-alternatives-evaluator)
- * se conecta en Task 6.
+ * Task 6: conecta DB (Postgres) para readTripData + INSERT sugerencias_ruta.
  *
  * Health probe HTTP /health para Cloud Run liveness.
  */
@@ -16,6 +14,8 @@
 import http from 'node:http';
 import { createLogger } from '@booster-ai/logger';
 import { PubSub, type Subscription } from '@google-cloud/pubsub';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 import { loadConfig } from './config.js';
 import { createPositionConsumer } from './position-consumer.js';
 import { createInMemoryTripStateStore } from './trip-state-store.js';
@@ -42,8 +42,15 @@ async function main(): Promise<void> {
   );
 
   // -------------------------------------------------------------------------
-  // Store de estado por viaje (in-memory con TTL — ver trip-state-store.ts
-  // para la justificación Redis vs in-memory)
+  // DB pool (Postgres via drizzle-orm + pg)
+  // Patrón: igual que telemetry-processor (NodePgDatabase, max: 5)
+  // -------------------------------------------------------------------------
+
+  const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 });
+  const db = drizzle(pool);
+
+  // -------------------------------------------------------------------------
+  // Store de estado por viaje (in-memory con TTL)
   // -------------------------------------------------------------------------
 
   const store = createInMemoryTripStateStore({ ttlMs: 4 * 60 * 60 * 1000 }); // TTL 4h
@@ -61,10 +68,12 @@ async function main(): Promise<void> {
 
   const driverPositionsConsumer = createPositionConsumer({
     store,
+    db,
     logger,
     projectId: config.GOOGLE_CLOUD_PROJECT,
     source: 'driver-positions',
     evaluationDebounceMs: config.EVALUATION_DEBOUNCE_MS,
+    cooldownSegundos: config.SUGGESTION_COOLDOWN_SEGUNDOS,
   });
 
   driverPositionsSub.on('message', (m) => void driverPositionsConsumer.handleMessage(m));
@@ -86,10 +95,12 @@ async function main(): Promise<void> {
 
   const telemetryEventsConsumer = createPositionConsumer({
     store,
+    db,
     logger,
     projectId: config.GOOGLE_CLOUD_PROJECT,
     source: 'telemetry-events',
     evaluationDebounceMs: config.EVALUATION_DEBOUNCE_MS,
+    cooldownSegundos: config.SUGGESTION_COOLDOWN_SEGUNDOS,
   });
 
   telemetryEventsSub.on('message', (m) => void telemetryEventsConsumer.handleMessage(m));
@@ -135,6 +146,12 @@ async function main(): Promise<void> {
       }
     }
     healthServer.close();
+    try {
+      await pool.end();
+      logger.info('DB pool cerrado');
+    } catch (e) {
+      logger.error({ err: e }, 'error cerrando DB pool');
+    }
     process.exit(0);
   };
 

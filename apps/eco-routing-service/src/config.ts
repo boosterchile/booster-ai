@@ -59,6 +59,12 @@ const envSchema = z.object({
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
+
+  /**
+   * Connection string para Postgres (Cloud SQL / local dev).
+   * En Cloud Run se obtiene vía Cloud SQL Auth Proxy o conexión directa.
+   */
+  DATABASE_URL: z.string().min(1),
 });
 
 export type Config = z.infer<typeof envSchema>;
