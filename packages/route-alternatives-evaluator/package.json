@@ -1,0 +1,25 @@
+{
+  "name": "@booster-ai/route-alternatives-evaluator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests"
+  },
+  "dependencies": {
+    "@booster-ai/carbon-calculator": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18",
+    "zod": "^3.25.76"
+  }
+}
