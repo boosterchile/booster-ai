@@ -292,6 +292,79 @@ importers:
         specifier: ^4.0.18
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.18)(@vitest/coverage-v8@4.1.5)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.18)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.4))
 
+  apps/eco-routing-service:
+    dependencies:
+      '@booster-ai/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@booster-ai/logger':
+        specifier: workspace:*
+        version: link:../../packages/logger
+      '@booster-ai/otel-bootstrap':
+        specifier: workspace:*
+        version: link:../../packages/otel-bootstrap
+      '@booster-ai/route-alternatives-evaluator':
+        specifier: workspace:*
+        version: link:../../packages/route-alternatives-evaluator
+      '@booster-ai/routes-api-client':
+        specifier: workspace:*
+        version: link:../../packages/routes-api-client
+      '@booster-ai/shared-schemas':
+        specifier: workspace:*
+        version: link:../../packages/shared-schemas
+      '@booster-ai/traffic-condition-detector':
+        specifier: workspace:*
+        version: link:../../packages/traffic-condition-detector
+      '@google-cloud/opentelemetry-cloud-trace-exporter':
+        specifier: ^3.0.0
+        version: 3.0.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
+      '@google-cloud/pubsub':
+        specifier: ^4.10.0
+        version: 4.11.0
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      '@opentelemetry/auto-instrumentations-node':
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))
+      '@opentelemetry/resources':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-node':
+        specifier: ^0.219.0
+        version: 0.219.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions':
+        specifier: ^1.36.0
+        version: 1.40.0
+      import-in-the-middle:
+        specifier: ^1.13.0
+        version: 1.15.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.19.18
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.18)(@vitest/coverage-v8@4.1.5)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.18)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.4))
+
   apps/matching-engine:
     dependencies:
       '@booster-ai/config':

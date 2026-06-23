@@ -1,0 +1,41 @@
+{
+  "name": "@booster-ai/eco-routing-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage --passWithNoTests"
+  },
+  "dependencies": {
+    "@booster-ai/config": "workspace:*",
+    "@booster-ai/logger": "workspace:*",
+    "@booster-ai/otel-bootstrap": "workspace:*",
+    "@booster-ai/route-alternatives-evaluator": "workspace:*",
+    "@booster-ai/routes-api-client": "workspace:*",
+    "@booster-ai/shared-schemas": "workspace:*",
+    "@booster-ai/traffic-condition-detector": "workspace:*",
+    "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",
+    "@google-cloud/pubsub": "^4.10.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.77.0",
+    "@opentelemetry/resources": "^2.0.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
+    "@opentelemetry/sdk-trace-base": "^2.0.0",
+    "@opentelemetry/semantic-conventions": "^1.36.0",
+    "import-in-the-middle": "^1.13.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
+  }
+}
