@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
+    "@booster-ai/routes-api-client": "workspace:*",
     "@booster-ai/certificate-generator": "workspace:*",
     "@booster-ai/coaching-generator": "workspace:*",
     "@booster-ai/config": "workspace:*",

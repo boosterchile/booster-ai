@@ -9,13 +9,13 @@ import {
   derivarNivelCertificacion,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
+import { type VehicleEmissionType, computeRoutes } from '@booster-ai/routes-api-client';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularCobertura } from './calcular-cobertura-telemetria.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
-import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
 /**
  * Calcular y persistir métricas ESG de un viaje, usando el carbon-calculator

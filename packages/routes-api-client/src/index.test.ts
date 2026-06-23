@@ -17,7 +17,7 @@ vi.mock('google-auth-library', () => ({
   },
 }));
 
-import { ROUTES_API_TIMEOUT_MS, computeRoutes } from './routes-api.js';
+import { ROUTES_API_TIMEOUT_MS, computeRoutes } from './index.js';
 
 /** Response mínima que satisface el subset de la interfaz Response que usa computeRoutes. */
 function fakeResponse(init: {

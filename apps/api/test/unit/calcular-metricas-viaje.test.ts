@@ -5,14 +5,14 @@ import {
   recalcularNivelPostEntrega,
 } from '../../src/services/calcular-metricas-viaje.js';
 
-vi.mock('../../src/services/routes-api.js', () => ({
+vi.mock('@booster-ai/routes-api-client', () => ({
   computeRoutes: vi.fn(),
 }));
 vi.mock('../../src/services/calcular-cobertura-telemetria.js', () => ({
   calcularCobertura: vi.fn(),
 }));
 
-const { computeRoutes } = await import('../../src/services/routes-api.js');
+const { computeRoutes } = await import('@booster-ai/routes-api-client');
 const { calcularCobertura } = await import('../../src/services/calcular-cobertura-telemetria.js');
 
 const noop = (): void => undefined;

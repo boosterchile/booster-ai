@@ -5,11 +5,11 @@ import {
   generarEcoPreview,
 } from '../../src/services/eco-route-preview.js';
 
-vi.mock('../../src/services/routes-api.js', () => ({
+vi.mock('@booster-ai/routes-api-client', () => ({
   computeRoutes: vi.fn(),
 }));
 
-const { computeRoutes } = await import('../../src/services/routes-api.js');
+const { computeRoutes } = await import('@booster-ai/routes-api-client');
 
 const noop = (): void => undefined;
 const noopLogger = {

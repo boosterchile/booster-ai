@@ -82,6 +82,9 @@ importers:
       '@booster-ai/pricing-engine':
         specifier: workspace:*
         version: link:../../packages/pricing-engine
+      '@booster-ai/routes-api-client':
+        specifier: workspace:*
+        version: link:../../packages/routes-api-client
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
@@ -1067,6 +1070,25 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+    devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.1.5(vitest@4.1.5)
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.18)(@vitest/coverage-v8@4.1.5)(jsdom@26.1.0)(vite@6.4.2(@types/node@22.19.18)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.8.4))
+
+  packages/routes-api-client:
+    dependencies:
+      '@booster-ai/logger':
+        specifier: workspace:*
+        version: link:../logger
+      google-auth-library:
+        specifier: ^10.6.2
+        version: 10.6.2
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^4.0.18

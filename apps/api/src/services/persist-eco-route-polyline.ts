@@ -22,10 +22,10 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import { RoutesApiError, computeRoutes } from '@booster-ai/routes-api-client';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, trips } from '../db/schema.js';
-import { RoutesApiError, computeRoutes } from './routes-api.js';
 
 export interface PersistEcoRoutePolylineResult {
   /** Si la operación intentó algo (false = no había key configurada o assignment missing). */

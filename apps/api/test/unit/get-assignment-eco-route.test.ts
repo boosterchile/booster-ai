@@ -25,7 +25,7 @@ const noopLogger = {
   child: () => noopLogger,
 };
 
-vi.mock('../../src/services/routes-api.js', () => ({
+vi.mock('@booster-ai/routes-api-client', () => ({
   RoutesApiError: class RoutesApiError extends Error {
     code: string;
     httpStatus: number | null;
@@ -38,7 +38,7 @@ vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
 }));
 
-const { computeRoutes, RoutesApiError } = await import('../../src/services/routes-api.js');
+const { computeRoutes, RoutesApiError } = await import('@booster-ai/routes-api-client');
 const { getAssignmentEcoRoute } = await import('../../src/services/get-assignment-eco-route.js');
 
 const ASSIGNMENT_ID = '00000000-0000-0000-0000-000000000a01';

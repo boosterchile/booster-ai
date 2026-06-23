@@ -36,7 +36,7 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { RoutesApiError, computeRoutes } from './routes-api.js';
+import { RoutesApiError, computeRoutes } from '@booster-ai/routes-api-client';
 
 /**
  * Entrada a `computeRouteEta`. Recibe el ETA fallback ya calculado por

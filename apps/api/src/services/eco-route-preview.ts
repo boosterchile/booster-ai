@@ -4,11 +4,15 @@ import {
   calcularEmisionesViaje,
 } from '@booster-ai/carbon-calculator';
 import type { Logger } from '@booster-ai/logger';
+import {
+  type RouteSuggestion,
+  type VehicleEmissionType,
+  computeRoutes,
+} from '@booster-ai/routes-api-client';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { offers, trips, vehicles } from '../db/schema.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
-import { type RouteSuggestion, type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
 /**
  * Eco-route preview (Phase 1 PR-H3) — computa la huella de carbono
