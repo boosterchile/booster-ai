@@ -9,6 +9,7 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
+import type { PubSub } from '@google-cloud/pubsub';
 import { describe, expect, it, vi } from 'vitest';
 import { publishDriverPosition } from './publish-driver-position.js';
 
@@ -34,7 +35,7 @@ describe('publishDriverPosition', () => {
       topicName: 'driver-positions',
       payload: validPayload,
       logger,
-      pubsub: { topic } as never,
+      pubsub: { topic } as Pick<PubSub, 'topic'>,
     });
 
     expect(topic).toHaveBeenCalledWith('driver-positions');
@@ -66,11 +67,14 @@ describe('publishDriverPosition', () => {
         topicName: 'driver-positions',
         payload: validPayload,
         logger,
-        pubsub: { topic } as never,
+        pubsub: { topic } as Pick<PubSub, 'topic'>,
       }),
     ).resolves.toBeUndefined();
 
-    expect(logger.error).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ viajeId: validPayload.viajeId }),
+      expect.any(String),
+    );
   });
 
   it('no publica si topicName está vacío', async () => {
@@ -81,7 +85,7 @@ describe('publishDriverPosition', () => {
       topicName: '',
       payload: validPayload,
       logger,
-      pubsub: { topic } as never,
+      pubsub: { topic } as Pick<PubSub, 'topic'>,
     });
 
     expect(topic).not.toHaveBeenCalled();
@@ -96,7 +100,7 @@ describe('publishDriverPosition', () => {
       topicName: 'driver-positions',
       payload: { ...validPayload, lat: 999 }, // fuera de rango WGS84
       logger,
-      pubsub: { topic } as never,
+      pubsub: { topic } as Pick<PubSub, 'topic'>,
     });
 
     expect(publishMessage).not.toHaveBeenCalled();

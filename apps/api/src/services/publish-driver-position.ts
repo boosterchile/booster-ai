@@ -1,22 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
+import { type DriverPositionEvent, driverPositionEventSchema } from '@booster-ai/shared-schemas';
 import { PubSub } from '@google-cloud/pubsub';
-import { z } from 'zod';
 
-/**
- * Schema del payload publicado al topic `driver-positions`.
- *
- * Forma canónica compartida con el consumer eco-routing-service (Task 5).
- * Extiende positionSchema de shared-schemas/geo con viajeId + vehiculoId.
- */
-export const driverPositionEventSchema = z.object({
-  viajeId: z.string().uuid(),
-  vehiculoId: z.string().uuid(),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  registradoEn: z.string().datetime(),
-});
-
-export type DriverPositionEvent = z.infer<typeof driverPositionEventSchema>;
+export type { DriverPositionEvent };
 
 let cached: PubSub | null = null;
 function defaultClient(): PubSub {

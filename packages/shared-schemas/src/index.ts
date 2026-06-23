@@ -77,3 +77,7 @@ export * from './domain/transport-document.js';
 // Eco-routing realtime — sugerencias de ruta eco-óptima emitidas en tiempo real
 // por el eco-routing-service; persistidas para trazabilidad del ciclo de vida.
 export * from './domain/route-suggestion.js';
+
+// Driver position event — payload canónico del topic Pub/Sub `driver-positions`.
+// Compartido entre el publisher (apps/api) y el consumer (eco-routing-service).
+export * from './domain/driver-position-event.js';
