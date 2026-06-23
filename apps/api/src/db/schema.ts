@@ -2391,6 +2391,84 @@ export const transportDocuments = pgTable(
 );
 
 // =============================================================================
+// ECO-ROUTING REALTIME — sugerencias_ruta (migration 0046)
+// =============================================================================
+
+/**
+ * Sugerencias de ruta eco-óptima emitidas en tiempo real por el
+ * eco-routing-service (Task 6) y resueltas por el adoption-resolver (Task 8).
+ * Persiste el ciclo de vida completo: emitida → entregada → evaluada.
+ *
+ * Paridad 1:1 con `packages/shared-schemas/src/domain/route-suggestion.ts`.
+ * Naming bilingüe: tabla SQL `sugerencias_ruta`, export TS `routeSuggestions`.
+ */
+export const routeSuggestions = pgTable(
+  'sugerencias_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** FK a `viajes`. CASCADE DELETE: si el viaje se elimina, sus sugerencias también. */
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    /** Timestamp de emisión de la sugerencia por el eco-routing-service. */
+    emitidaEn: timestamp('emitida_en', { withTimezone: true }).notNull(),
+    /** Polyline codificado de la ruta alternativa sugerida (Google Polyline format). */
+    polylineAlternativa: text('polyline_alternativa').notNull(),
+    /**
+     * Diferencia de ETA en segundos vs. la ruta baseline.
+     * Negativo = la ruta alternativa es más rápida.
+     */
+    deltaEtaSegundos: integer('delta_eta_segundos').notNull(),
+    /**
+     * Diferencia de emisiones CO2e en kg vs. la ruta baseline.
+     * Negativo = la ruta alternativa emite menos CO2.
+     * numeric(10,3): hasta 9.999.999 kg con 3 decimales de precisión.
+     */
+    deltaCo2eKg: numeric('delta_co2e_kg', { precision: 10, scale: 3 }).notNull(),
+    /**
+     * ETA de la ruta baseline en segundos (punto de referencia para el delta).
+     * Siempre >= 0.
+     */
+    etaBaselineSegundos: integer('eta_baseline_segundos').notNull(),
+    /**
+     * Latitud del vehículo en el momento de emitir la sugerencia.
+     * numeric(9,6): ±DDD.DDDDDD con 6 decimales (~11 cm de precisión).
+     */
+    posicionLat: numeric('posicion_lat', { precision: 9, scale: 6 }).notNull(),
+    /**
+     * Longitud del vehículo en el momento de emitir la sugerencia.
+     * numeric(9,6): ±DDD.DDDDDD con 6 decimales (~11 cm de precisión).
+     */
+    posicionLng: numeric('posicion_lng', { precision: 9, scale: 6 }).notNull(),
+    /**
+     * true = entregada al conductor vía WebSocket/push.
+     * false (default) = pendiente de entrega.
+     */
+    entregada: boolean('entregada').notNull().default(false),
+    /**
+     * true = adoptada, false = rechazada, null = pendiente de evaluación.
+     * Lo resuelve el adoption-resolver (Task 8).
+     */
+    adoptada: boolean('adoptada'),
+    /** Timestamp en que se evaluó la adopción (o rechazo). Null si pendiente. */
+    evaluadaAdopcionEn: timestamp('evaluada_adopcion_en', { withTimezone: true }),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    /** Índice principal: consultas por viaje en curso. */
+    viajeIdx: index('idx_sugerencias_ruta_viaje').on(table.viajeId),
+    /**
+     * Índice parcial: adoption-resolver consulta solo las sugerencias
+     * pendientes de evaluación (adoptada IS NULL) — evita scan full-table.
+     */
+    adopcionPendienteIdx: index('idx_sugerencias_ruta_adopcion_pendiente')
+      .on(table.viajeId)
+      .where(sql`adoptada IS NULL`),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2475,3 +2553,7 @@ export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
 // Repositorio documental de transporte — documentos_transporte (migration 0044)
 export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
 export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;
+
+// Eco-routing realtime — sugerencias_ruta (migration 0046)
+export type RouteSuggestionRow = typeof routeSuggestions.$inferSelect;
+export type NewRouteSuggestionRow = typeof routeSuggestions.$inferInsert;

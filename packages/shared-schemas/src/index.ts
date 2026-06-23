@@ -73,3 +73,7 @@ export * from './domain/safety-event.js';
 // Repositorio documental de transporte — recepción/archivo de DTE de terceros
 // (ADR-070, frente F4). Booster NO emite DTE (ADR-069), solo recibe/archiva.
 export * from './domain/transport-document.js';
+
+// Eco-routing realtime — sugerencias de ruta eco-óptima emitidas en tiempo real
+// por el eco-routing-service; persistidas para trazabilidad del ciclo de vida.
+export * from './domain/route-suggestion.js';
