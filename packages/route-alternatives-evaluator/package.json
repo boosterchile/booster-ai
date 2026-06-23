@@ -14,12 +14,12 @@
     "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
-    "@booster-ai/carbon-calculator": "workspace:*"
+    "@booster-ai/carbon-calculator": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.8.2",
-    "vitest": "^4.0.18",
-    "zod": "^3.25.76"
+    "vitest": "^4.0.18"
   }
 }
