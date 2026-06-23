@@ -36,9 +36,25 @@ vi.mock('@booster-ai/routes-api-client', () => ({
   },
 }));
 
+// Mock readTripData — por defecto retorna un trip en_proceso (happy path)
+vi.mock('./trip-data-reader.js', () => ({
+  readTripData: vi.fn().mockResolvedValue({
+    destinoAddressRaw: 'Av. Providencia 1234, Santiago',
+    ecoRoutePolylineEncoded: null,
+    estado: 'en_proceso',
+    fuelType: 'diesel',
+  }),
+}));
+
+// Mock evaluarReruteo — no necesitamos probar su lógica interna aquí
+vi.mock('./evaluar-reruteo.js', () => ({
+  evaluarReruteo: vi.fn().mockResolvedValue(null),
+}));
+
 // Importar DESPUÉS del mock para que Vitest lo intercepte
 import { computeRoutes } from '@booster-ai/routes-api-client';
 import type { RouteSuggestion } from '@booster-ai/routes-api-client';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /** Construye un Message mock de Pub/Sub */
 function buildMessage(data: unknown, overrides?: Partial<Message>): Message {
@@ -117,6 +133,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0, // sin debounce en tests
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage(validPayload);
@@ -150,6 +168,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage(validPayload);
@@ -178,6 +198,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       // Primera posición
@@ -202,6 +224,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg: Message = {
@@ -235,6 +259,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       // Payload sin viajeId y con lat inválida
@@ -259,6 +285,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage({ ...validPayload, lat: 200 }); // lat inválida
@@ -283,6 +311,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage(validPayload);
@@ -313,6 +343,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'driver-positions',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage(validPayload);
@@ -345,6 +377,8 @@ describe('createPositionConsumer', () => {
         projectId: 'test-project',
         source: 'telemetry-events',
         evaluationDebounceMs: 0,
+        db: {} as unknown as NodePgDatabase<Record<string, unknown>>,
+        cooldownSegundos: 300,
       });
 
       const msg = buildMessage(validPayload);
