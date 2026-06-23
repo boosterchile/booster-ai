@@ -43,4 +43,31 @@ describe('detectarDegradacion', () => {
       ).degradado,
     ).toBe(true);
   });
+  it('NO degradado si baseline es cero (guard baseline≤0)', () => {
+    expect(
+      detectarDegradacion({
+        etaEnVivoSegundos: 1000,
+        etaBaselineSegundos: 0,
+        segundosHastaProximaDivergencia: 300,
+      }),
+    ).toEqual({ degradado: false });
+  });
+  it('NO degradado si baseline es negativo (guard baseline≤0)', () => {
+    expect(
+      detectarDegradacion({
+        etaEnVivoSegundos: 1000,
+        etaBaselineSegundos: -1,
+        segundosHastaProximaDivergencia: 300,
+      }),
+    ).toEqual({ degradado: false });
+  });
+  it('NO degradado en umbral exacto (> estricto, 15% exacto no degrada)', () => {
+    expect(
+      detectarDegradacion({
+        etaEnVivoSegundos: 1150,
+        etaBaselineSegundos: 1000,
+        segundosHastaProximaDivergencia: 300,
+      }),
+    ).toEqual({ degradado: false });
+  });
 });
