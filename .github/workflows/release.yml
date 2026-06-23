@@ -26,7 +26,12 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: release-${{ github.workflow }}-main
+  # Grupo renombrado 2026-06-22 (era `release-${{ github.workflow }}-main`)
+  # para RESETEAR un lock de concurrency que quedó trabado tras la cascada de
+  # merges rápidos: TODO release run colgaba en `pending, 0 jobs` sin despachar
+  # (push y workflow_dispatch por igual). Un namespace de lock nuevo arranca
+  # limpio. Ver memoria ci-release-paths-ignore-2026-06.
+  group: release-deploy-${{ github.ref_name }}
   cancel-in-progress: false  # No cancelar deploys en progreso
 
 permissions:
