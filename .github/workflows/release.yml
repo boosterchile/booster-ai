@@ -18,6 +18,12 @@ on:
       - 'references/**'
       - 'playbooks/**'
       - '*.md'
+  # Trigger manual: re-disparar el deploy de `main` sin depender de un push.
+  # Agregado tras el footgun 2026-06-22 (merges rápidos a main trabaron la
+  # lane de concurrency `cancel-in-progress:false` y la única vía de
+  # re-trigger era pushear). Uso: `gh workflow run release.yml --ref main`
+  # o Actions → Release + Deploy → Run workflow.
+  workflow_dispatch: {}
 
 concurrency:
   group: release-${{ github.workflow }}-main
