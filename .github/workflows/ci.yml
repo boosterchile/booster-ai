@@ -306,12 +306,23 @@ jobs:
           cache-to: type=gha,mode=max,scope=docker-api
       - name: Smoke — los imports resuelven en el runtime (cacha ERR_MODULE_NOT_FOUND)
         run: |
-          # Corre el contenedor cargando los dos entrypoints. Si una dep externa
-          # de un workspace package bundleado falta en el flat node_modules del
-          # runtime, Node tira ERR_MODULE_NOT_FOUND al resolver el grafo (ANTES
-          # del config/DB) → este check falla. Otros errores (config/DB por
-          # falta de env) NO cuentan: significan que los módulos sí resolvieron.
-          docker run --rm booster-ai-api:ci node -e "Promise.allSettled([import('./dist/instrumentation.js'),import('./dist/main.js')]).then(rs=>{const m=rs.filter(r=>r.status==='rejected'&&r.reason&&r.reason.code==='ERR_MODULE_NOT_FOUND');if(m.length){m.forEach(x=>console.error('FALTA MODULO EN RUNTIME:',x.reason.message));process.exit(1)}console.log('OK: todos los imports resuelven en el runtime del contenedor');process.exit(0)})"
+          # Corre el entrypoint REAL del contenedor. El api hace process.exit(1)
+          # por env/config faltante (esperado en CI, sin env seteado) — eso NO
+          # importa. Lo que importa: si una dep externa de un workspace package
+          # bundleado falta en el flat node_modules del runtime, Node tira
+          # ERR_MODULE_NOT_FOUND al resolver el grafo de módulos ANTES de que
+          # corra el config. Por eso ignoramos el exit code (el config-exit lo
+          # dispara) y grepeamos la salida por esa firma exacta.
+          docker run --rm booster-ai-api:ci \
+            node --import ./dist/instrumentation.js dist/main.js > /tmp/api-boot.log 2>&1 || true
+          echo "--- salida del arranque del contenedor ---"
+          cat /tmp/api-boot.log
+          echo "------------------------------------------"
+          if grep -q "ERR_MODULE_NOT_FOUND" /tmp/api-boot.log; then
+            echo "::error::Falta una dep en el runtime del contenedor (ERR_MODULE_NOT_FOUND) — ver memoria api-bundled-pkg-runtime-deps"
+            exit 1
+          fi
+          echo "✓ Sin ERR_MODULE_NOT_FOUND — los módulos resuelven en runtime (el exit por config/env sin setear es esperado)"
 
   # ---------------------------------------------------------------------------
   # Final gate — todos los jobs previos deben pasar
