@@ -270,11 +270,55 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # Docker build + smoke del api — gate que faltaba (2026-06-22).
+  #
+  # El job `build` de arriba corre `pnpm build` con node_modules COMPLETO, así
+  # que tsup/esbuild resuelve todo y pasa. Pero el Dockerfile del api hace un
+  # `pnpm install` PARCIAL (solo los package.json COPY'd en el deps-stage) y
+  # luego `pnpm deploy --prod` para el runtime. Un cambio que rompe ese build/
+  # runtime del contenedor pasaba CI verde y solo fallaba en el deploy a prod.
+  # Causó 2 deploys de producción fallidos seguidos:
+  #   1. Build: esbuild "Could not resolve" (deps de un workspace package
+  #      bundleado que no estaban en el COPY del deps-stage). Fix PR #540.
+  #   2. Runtime: ERR_MODULE_NOT_FOUND al startup (esas deps no eran deps
+  #      DIRECTAS del api → pnpm deploy --prod no las metía). Fix PR #541.
+  # Este job reproduce el build real del contenedor (cacha #1) y verifica que
+  # los imports resuelven en el runtime (cacha #2). Patrón completo en la
+  # memoria api-bundled-pkg-runtime-deps-2026-06. Extensible a las otras apps
+  # con Dockerfile (web, whatsapp-bot, telemetry-*) vía matrix — follow-up.
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build + smoke (api)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build imagen del api (reproduce el build de prod, install parcial)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          tags: booster-ai-api:ci
+          load: true
+          cache-from: type=gha,scope=docker-api
+          cache-to: type=gha,mode=max,scope=docker-api
+      - name: Smoke — los imports resuelven en el runtime (cacha ERR_MODULE_NOT_FOUND)
+        run: |
+          # Corre el contenedor cargando los dos entrypoints. Si una dep externa
+          # de un workspace package bundleado falta en el flat node_modules del
+          # runtime, Node tira ERR_MODULE_NOT_FOUND al resolver el grafo (ANTES
+          # del config/DB) → este check falla. Otros errores (config/DB por
+          # falta de env) NO cuentan: significan que los módulos sí resolvieron.
+          docker run --rm booster-ai-api:ci node -e "Promise.allSettled([import('./dist/instrumentation.js'),import('./dist/main.js')]).then(rs=>{const m=rs.filter(r=>r.status==='rejected'&&r.reason&&r.reason.code==='ERR_MODULE_NOT_FOUND');if(m.length){m.forEach(x=>console.error('FALTA MODULO EN RUNTIME:',x.reason.message));process.exit(1)}console.log('OK: todos los imports resuelven en el runtime del contenedor');process.exit(0)})"
+
+  # ---------------------------------------------------------------------------
   # Final gate — todos los jobs previos deben pasar
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -286,7 +330,8 @@ jobs:
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.migration-safety.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ]; then
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.docker-build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
           fi
