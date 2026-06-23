@@ -465,3 +465,62 @@ resource "google_pubsub_subscription" "telemetry_events_trip_transitions" {
     wave       = "2"
   }
 }
+
+# =============================================================================
+# Eco-routing realtime — posiciones del conductor PWA (feat/eco-routing-realtime)
+# =============================================================================
+# El api publica acá desde POST /assignments/:id/driver-position (D2 browser GPS)
+# tras persistir en posiciones_movil_conductor, solo si el viaje está activo.
+# El consumer eco-routing-service (Task 5) lo consume vía pull para calcular
+# sugerencias de ruta eco-óptima en tiempo real.
+#
+# Retention 1h: posiciones en tiempo real son efímeras. Si el eco-routing-service
+# está caído >1h, las posiciones perdidas son aceptables (el conductor ya avanzó
+# y una sugerencia de ruta stale sería incorrecta). Igual que telemetry-events.
+
+resource "google_pubsub_topic" "driver_positions" {
+  name    = "driver-positions"
+  project = google_project.booster_ai.project_id
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "eco-routing-service"
+  }
+  message_retention_duration = "3600s" # 1h — posiciones en tiempo real son efímeras
+  depends_on                 = [google_project_service.apis]
+}
+
+resource "google_pubsub_subscription" "driver_positions_eco_routing" {
+  name    = "driver-positions-eco-routing-sub"
+  topic   = google_pubsub_topic.driver_positions.name
+  project = google_project.booster_ai.project_id
+
+  # 30s: el eco-routing-service debe calcular y emitir sugerencia rápido.
+  ack_deadline_seconds = 30
+
+  # 1h — alineado con la retención del topic: posiciones stale no tienen valor.
+  message_retention_duration = "3600s"
+
+  # Subscription perpetua — el servicio no debería borrarse sin update aquí.
+  expiration_policy {
+    ttl = ""
+  }
+
+  # DLQ: tras 5 nack/timeout, el mensaje va a pubsub-dead-letter.
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 5
+  }
+
+  # Retry moderado — posiciones tienen ventana corta de utilidad.
+  retry_policy {
+    minimum_backoff = "5s"
+    maximum_backoff = "60s"
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "eco-routing-service"
+  }
+}

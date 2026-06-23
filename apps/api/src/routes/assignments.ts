@@ -45,6 +45,7 @@ import {
 } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
+import { publishDriverPosition } from '../services/publish-driver-position.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
 
 export function createAssignmentsRoutes(opts: {
@@ -64,6 +65,13 @@ export function createAssignmentsRoutes(opts: {
    * status: 'no_routes_api_key' } sin error.
    */
   routesProjectId?: string | undefined;
+  /**
+   * Pub/Sub topic name del evento `driver-positions` (eco-routing realtime).
+   * Si está presente, el handler POST /:id/driver-position publica al topic
+   * tras persistir, solo si el assignment está activo (asignado o recogido).
+   * Optional: si ausente, solo persiste en DB (comportamiento anterior).
+   */
+  driverPositionsTopic?: string | undefined;
 }) {
   const app = new Hono();
 
@@ -423,6 +431,7 @@ export function createAssignmentsRoutes(opts: {
         id: assignments.id,
         driverUserId: assignments.driverUserId,
         vehicleId: assignments.vehicleId,
+        tripId: assignments.tripId,
         status: assignments.status,
       })
       .from(assignments)
@@ -451,6 +460,23 @@ export function createAssignmentsRoutes(opts: {
       headingDeg: body.heading_deg != null ? Math.round(body.heading_deg) : null,
       source: 'browser',
     });
+
+    // Eco-routing realtime: publicar posición al topic solo si el viaje
+    // está activo (asignado o recogido). Fire-and-forget — si falla,
+    // publishDriverPosition lo loguea internamente sin lanzar.
+    if (opts.driverPositionsTopic && assignment.tripId) {
+      void publishDriverPosition({
+        topicName: opts.driverPositionsTopic,
+        payload: {
+          viajeId: assignment.tripId,
+          vehiculoId: assignment.vehicleId,
+          lat: body.latitude,
+          lng: body.longitude,
+          registradoEn: body.timestamp_device,
+        },
+        logger: opts.logger,
+      });
+    }
 
     return c.json({ ok: true });
   });

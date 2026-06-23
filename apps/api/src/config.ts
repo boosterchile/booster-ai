@@ -213,6 +213,17 @@ export const apiEnvSchema = commonEnvSchema
     DOCUMENT_UPLOADED_TOPIC: z.string().min(1).optional(),
 
     /**
+     * Pub/Sub topic name del evento `driver-positions` (eco-routing realtime).
+     *
+     * El endpoint POST /assignments/:id/driver-position publica acá tras
+     * persistir la posición en DB, solo si el viaje está activo (asignado o
+     * recogido). El consumer eco-routing-service (Task 5) lo consume para
+     * calcular sugerencias de ruta en tiempo real. Optional: si está ausente,
+     * el endpoint persiste + responde igual, sin publicar al topic.
+     */
+    DRIVER_POSITIONS_TOPIC: z.string().min(1).optional(),
+
+    /**
      * Cierre flexible (ADR-070 / spec O-7). Si `true`, una orden requiere ≥1
      * documento subido para transicionar a `entregado` (independiente del
      * estado de extracción). Solo aplica a órdenes creadas en/después de

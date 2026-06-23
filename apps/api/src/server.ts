@@ -545,6 +545,10 @@ export function createServer(opts: CreateServerOptions): Hono {
       // X-Goog-User-Project. Sin él, GET /assignments/:id/eco-route
       // devuelve polyline_encoded=null con status='no_routes_api_key'.
       ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
+      // Eco-routing realtime: topic para posiciones del conductor PWA.
+      ...(config.DRIVER_POSITIONS_TOPIC
+        ? { driverPositionsTopic: config.DRIVER_POSITIONS_TOPIC }
+        : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
