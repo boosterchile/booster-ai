@@ -2,7 +2,7 @@
 
 **Fecha**: 2026-05-16
 **Origen**: refinamiento de los 5 planes iniciales tras la sesión de ejecución real (`#166` + `#226` + `#227` mergeados con `/goal` + intervención).
-**Audiencia**: Felipe Vicencio (solo dev), agentes Claude operando bajo `agent-rigor`.
+**Audiencia**: Felipe Vicencio (solo dev), agentes Claude.
 
 `/goal` es ideal cuando la condición de cierre es **objetivamente verificable desde la transcripción** y el trabajo NO requiere decisiones de producto. Estas plantillas asumen que `.claude/settings.local.json` ya tiene la allowlist amplia aplicada — sin eso, cada `/goal` se atasca en prompts de autorización.
 
@@ -24,11 +24,9 @@ El Stop hook de `/goal` re-invoca al agente cada turno mientras la condición de
 
 Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable. El sanity check zero previno todos los efectos secundarios (no ledger writes, no branches, no PRs falsos) pero el harness siguió bucleando — la regla "terse post-abort" reduce el costo de ese bucle de ~16k tokens a ~4k tokens.
 
-### Pre-flight obligatorio (primer turno del agente, post-sanity check)
+### Verificación obligatoria (primer turno)
 
-1. Leer `/Users/felipevicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md` y escribir `skill_read` al ledger antes de cualquier `Write`/`Edit`. Sin esto, el primer `Write` se bloquea por `PreToolUse`.
-2. Declarar `phase_enter` (con feature slug) **o** `skip-cycle` con justificación, también al ledger.
-3. Verificar la premisa antes de actuar (lección hoy: el `/goal` inicial afirmó "colisión ADR-033 entre #164 y #166" sin abrir los archivos; era falso). Usar `gh pr view --json files` + leer el contenido real, no inferir de títulos/body.
+1. Verificar la premisa antes de actuar (lección hoy: el `/goal` inicial afirmó "colisión ADR-033 entre #164 y #166" sin abrir los archivos; era falso). Usar `gh pr view --json files` + leer el contenido real, no inferir de títulos/body.
 
 ### Patrones operativos canónicos
 
@@ -44,7 +42,6 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 
 - Cualquier Edit que pida tocar `CLAUDE.md`, `docs/adr/**`, `infrastructure/**`, `.github/workflows/**` (denied por config — caída en bucle).
 - Un test falla **2 reintentos consecutivos** sin diagnóstico nuevo entre intentos.
-- Vocabulario drift (las palabras listadas en agent-rigor `CLAUDE.md` §4, e.g. <quote>MVP</quote>, <quote>for now</quote>, <quote>quick fix</quote>) aparece en código generado.
 - La condición de cierre requiere una decisión de producto que solo el PO puede tomar (numeración ADR, breaking change, schema BD).
 - Placeholder literal sin sustituir en el goal (`<PR>`, `<feature>`, `<from>`, `<to>`) — ver "Sanity check zero" arriba.
 - Recurso requerido ausente (PR inexistente, `plan.md` inexistente, branch inexistente) — ver "Sanity check zero" arriba.
@@ -63,8 +60,6 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 
 ```
 Actualizar docs/handoff/CURRENT.md para reflejar el estado real de main hoy.
-
-Pre-flight: leer /Users/felipevicencio/.claude/plugins/cache/agent-rigor/agent-rigor/0.2.0/CLAUDE.md y escribir skill_read al ledger. Declarar skip-cycle (snapshot documental sin código de producción).
 
 Steps:
 1. `git fetch github main` y crear branch `chore/current-md-update-YYYY-MM-DD` desde github/main.
@@ -97,7 +92,7 @@ Condición de cierre: pegar en chat (a) URL del PR mergeado, (b) commit SHA en m
 ```
 Llevar todos los packages a coverage ≥80% en statements, branches, functions y lines.
 
-Pre-flight: leer agent-rigor CLAUDE.md + skill_read. phase_enter "coverage-audit" (sin feature slug, es housekeeping). Leer skills 31-test-driven-development y 41-debugging-and-error-recovery antes de escribir tests.
+Pre-flight: leer skills 31-test-driven-development y 41-debugging-and-error-recovery antes de escribir tests.
 
 Steps:
 1. `pnpm test --coverage` en root, capturar tabla por package.
@@ -137,8 +132,6 @@ Cerrar PR #<PR> en main con CI 100% verde.
 Sanity check zero: si <PR> sigue siendo placeholder literal o `gh pr list --state open --json number --jq length` retorna 0, ABORTAR y reportar antes del pre-flight. NO invocar hooks ni ledger writes para un goal insatisfacible.
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
-
-Pre-flight: leer agent-rigor CLAUDE.md + skill_read. skip-cycle si es solo docs/rebase, phase_enter si toca código.
 
 Steps:
 1. `gh pr view <PR> --json files,headRefName,mergeStateStatus,statusCheckRollup` — capturar nombre de branch y estado. Si el comando falla (PR no existe), ABORTAR.
@@ -184,7 +177,7 @@ Sanity check zero: si <from> o <to> siguen siendo placeholders literales, o `rg 
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
-Pre-flight: leer agent-rigor CLAUDE.md + skill_read. phase_enter "refactor-<from>-to-<to>". Leer skill 51-code-simplification.
+Pre-flight: leer skill 51-code-simplification.
 
 Steps:
 1. `rg "<from>" --type ts -l > /tmp/refactor-files.txt`. Mostrar conteo en chat.
@@ -226,7 +219,7 @@ Sanity check zero: si <feature> sigue siendo placeholder literal, o `.specs/<fea
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
-Pre-flight: leer agent-rigor CLAUDE.md + skill_read. phase_enter "<feature>" phase "build". Leer skill 30-incremental-implementation y 32-context-engineering. Si plan.md tiene tareas UI, leer también 34-frontend-ui-engineering y design-system/MASTER.md.
+Pre-flight: leer skill 30-incremental-implementation y 32-context-engineering. Si plan.md tiene tareas UI, leer también 34-frontend-ui-engineering y design-system/MASTER.md.
 
 Por cada tarea Ti del plan:
 1. Leer la entrada de plan.md correspondiente. Articular en chat: qué hace, por qué este approach, qué podría salir mal (pre_build_articulation al ledger).
@@ -247,7 +240,6 @@ Condición de cierre: pegar en chat (a) commits creados con `git log main..HEAD 
 Abort si:
 - Una Ti revela que el spec o plan tienen un gap (ej. casos no contemplados). Reportar y esperar — modificar el plan a mid-build es señal de que faltó refinamiento previo.
 - Un test falla 2 reintentos consecutivos. Diagnosticar antes que parchar.
-- Vocabulario drift aparece (ver agent-rigor §4 para la lista canónica).
 - Cualquier Ti toca >150 LOC. El plan estaba mal granulado, abortar y re-plan.
 ```
 
@@ -269,13 +261,11 @@ Cambios concretos respecto a las plantillas iniciales propuestas el 2026-05-16 a
 | Polling custom con bash | `gh pr checks --watch --interval 15` | Mi awk falló por multi-word check names |
 | Sin abort triggers | Triggers explícitos por plan | Evita bucles dañinos |
 | Commit message sin constraint | Subject ≤72, body ≤95, footer ≤100 | Commitlint bloqueó hoy |
-| Sin pre-flight ledger | skill_read + skip-cycle/phase_enter explícito | Hook bloqueó el primer Write hoy |
 
 ---
 
 ## Follow-ups detectados (no aplicados aquí)
 
-1. **SessionStart hook** para pre-cargar agent-rigor CLAUDE.md + escribir `skill_read` automático. Requiere parche a agent-rigor (el hook necesita conocer session-id para el path del ledger). Sin esto, cada sesión paga 1-2 turnos al primer Write.
-2. **Cleanup `.claude/settings.local.json`**: tiene ~20 entradas one-off que ya están cubiertas por `.claude/settings.json` con patterns. Limpieza opcional.
-3. **Decidir si `.claude/settings.json` se comparte con equipo**: hoy está gitignored. Si se quiere PR-able, ajustar `.gitignore` para excluir solo `ledger/` y `settings.local.json`.
-4. **ADR del proceso `/goal`**: si `/goal` se vuelve un patrón recurrente en Booster AI, merece un ADR formalizando cuándo se usa, qué requiere, y cómo se mide su éxito.
+1. **Cleanup `.claude/settings.local.json`**: tiene ~20 entradas one-off que ya están cubiertas por `.claude/settings.json` con patterns. Limpieza opcional.
+2. **Decidir si `.claude/settings.json` se comparte con equipo**: hoy está gitignored. Si se quiere PR-able, ajustar `.gitignore` para excluir solo `ledger/` y `settings.local.json`.
+3. **ADR del proceso `/goal`**: si `/goal` se vuelve un patrón recurrente en Booster AI, merece un ADR formalizando cuándo se usa, qué requiere, y cómo se mide su éxito.
