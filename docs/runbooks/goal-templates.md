@@ -16,13 +16,13 @@ Estos requisitos están implícitos en cada plantilla; cada `/goal` los incluye 
 
 El Stop hook de `/goal` re-invoca al agente cada turno mientras la condición de cierre no se cumpla. Si la condición es **estructuralmente insatisfacible**, el agente entra en bucle infinito y la única salida es que el PO tipee `/goal clear`. Para evitarlo, el agente DEBE validar antes del pre-flight:
 
-1. **Placeholders sin sustituir**: si el texto del goal contiene `<[A-Z]+>` (ej. `<PR>`, `<feature>`, `<from>`, `<to>`), reportar al chat *"Goal no satisfacible: placeholder `<X>` sin sustituir. Reformular con valor concreto."* y terminar SIN llamar hooks ni invocar el pre-flight ledger.
+1. **Placeholders sin sustituir**: si el texto del goal contiene `<[A-Z]+>` (ej. `<PR>`, `<feature>`, `<from>`, `<to>`), reportar al chat *"Goal no satisfacible: placeholder `<X>` sin sustituir. Reformular con valor concreto."* y terminar SIN llamar hooks.
 2. **Recursos requeridos ausentes**: si la condición depende de un recurso que no existe (ej. plantilla "cerrar PR" pero `gh pr list --state open --json number --jq length` retorna 0; plantilla BUILD pero `.specs/<feature>/plan.md` no existe), reportar y terminar.
 3. **Cancelación explícita del PO**: si el PO ya respondió "cancelar" a una pregunta del agente, NO seguir re-evaluando — terminar y dejar mensaje *"Esperando /goal clear del PO."* una sola vez.
 
 **Terse post-abort**: el harness de `/goal` no entiende "abort permanent" como estado terminal — sigue re-invocando al agente en cada Stop hook hasta que el PO tipee `/goal clear`. En esas re-invocaciones, el agente DEBE responder solo con `.` (un punto) sin re-explicar el abort. Razón: la primera declaración de abort ya contiene el diagnóstico completo; repetirlo en cada re-invocación desperdicia ~2k tokens por turno (observado: ~16k tokens en 8 re-invocaciones tras un abort, todos diciendo lo mismo). El PO ve el `.` en chat y sabe que está esperando su `/goal clear`.
 
-Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable. El sanity check zero previno todos los efectos secundarios (no ledger writes, no branches, no PRs falsos) pero el harness siguió bucleando — la regla "terse post-abort" reduce el costo de ese bucle de ~16k tokens a ~4k tokens.
+Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder literal, 0 PRs abiertos) consumió 10+ turnos del Stop hook pidiendo `/goal clear` repetidamente antes de que el PO interviniera. Costo evitable. El sanity check zero previno todos los efectos secundarios (no branches, no PRs falsos) pero el harness siguió bucleando — la regla "terse post-abort" reduce el costo de ese bucle de ~16k tokens a ~4k tokens.
 
 ### Verificación obligatoria (primer turno)
 
@@ -32,9 +32,9 @@ Lección observada el 2026-05-16: un `/goal Cerrar PR #<PR>` (placeholder litera
 
 - **Esperar CI**: siempre `gh pr checks <n> --watch --interval 15`. No reinventar polling (mi `awk $2=="pending"` falló hoy con multi-word check names).
 - **Merge**: nunca asumir `gh pr merge --auto` disponible (la repo lo deshabilitó mid-sesión hoy). Patrón seguro: `gh pr checks <n> --watch && gh pr merge <n> --squash --delete-branch`.
-- **Push a feature branch**: `git push github <branch> --force-with-lease` (nunca `--force` directo, y nunca a `main`).
+- **Push a feature branch**: `git push "$REMOTE" <branch> --force-with-lease` (nunca `--force` directo, y nunca a `main`).
 - **Commit messages**: subject ≤72 chars, body wrap a 95 chars, footer ≤100 chars (commitlint lo bloquea). Templates al final de cada plantilla.
-- **Remote canónico**: siempre `github`, nunca `origin` (gitlab es mirror semi-roto).
+- **Remote**: no asumir un nombre fijo. Detectar el remote del upstream una vez y reusarlo: `REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null | cut -d/ -f1 || git rev-parse --abbrev-ref main@{u} 2>/dev/null | cut -d/ -f1 || git remote | head -n1)` (upstream de la rama → upstream de `main` → único remote; cubre ramas nuevas sin upstream). Usar `"$REMOTE"` en todo push/fetch. (Histórico: antes se asumía `github`; el mirror gitlab ya no existe y el remote real es `origin`.)
 
 ### Abort triggers universales
 
@@ -54,7 +54,7 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 
 **Pre-conditions**:
 - Worktree limpio (`git status` sin cambios uncommitted).
-- Estás en un branch tracking `github/main` o vas a crear uno nuevo.
+- Estás en un branch tracking el `main` del remote del upstream (`$REMOTE`, ver Preamble) o vas a crear uno nuevo.
 
 **`/goal`**:
 
@@ -62,15 +62,15 @@ El agente DEBE abortar `/goal` y reportar en chat si:
 Actualizar docs/handoff/CURRENT.md para reflejar el estado real de main hoy.
 
 Steps:
-1. `git fetch github main` y crear branch `chore/current-md-update-YYYY-MM-DD` desde github/main.
+1. `git fetch "$REMOTE" main` y crear branch `chore/current-md-update-YYYY-MM-DD` desde `"$REMOTE"/main`.
 2. Verificar contenido REAL (no inferir): `gh pr list --state merged --limit 20 --json number,title,mergedAt,mergeCommit`, `gh pr list --state open --json number,title,headRefName`. Para cada PR abierto, `gh pr view <n> --json files,statusCheckRollup` y leer al menos un archivo si menciona ADRs/migrations.
 3. Editar CURRENT.md con: (a) waves recién mergeadas con commit SHA, (b) tabla de PRs abiertos con CI status real, (c) blockers vigentes verificados (no copiar del anterior CURRENT.md sin re-confirmar).
-4. Commit con subject ≤72 chars, body wrap a 95 chars. Push a github.
+4. Commit con subject ≤72 chars, body wrap a 95 chars. Push a `"$REMOTE"`.
 5. `gh pr create --base main` con body que incluya test plan ejecutado.
 6. `gh pr checks <n> --watch --interval 15` (NO polling custom).
 7. `gh pr merge <n> --squash --delete-branch` cuando watch retorne exit 0.
 
-Condición de cierre: pegar en chat (a) URL del PR mergeado, (b) commit SHA en main vía `git fetch github main && git log github/main -1 --oneline`, (c) `gh pr list --state open` confirmando que CURRENT.md NO se autoreferencia como abierto.
+Condición de cierre: pegar en chat (a) URL del PR mergeado, (b) commit SHA en main vía `git fetch "$REMOTE" main && git log "$REMOTE"/main -1 --oneline`, (c) `gh pr list --state open` confirmando que CURRENT.md NO se autoreferencia como abierto.
 ```
 
 **Pitfalls observados hoy**:
@@ -129,7 +129,7 @@ Abort si: un test que escribo falla 2 reintentos consecutivos sin que el código
 ```
 Cerrar PR #<PR> en main con CI 100% verde.
 
-Sanity check zero: si <PR> sigue siendo placeholder literal o `gh pr list --state open --json number --jq length` retorna 0, ABORTAR y reportar antes del pre-flight. NO invocar hooks ni ledger writes para un goal insatisfacible.
+Sanity check zero: si <PR> sigue siendo placeholder literal o `gh pr list --state open --json number --jq length` retorna 0, ABORTAR y reportar antes del pre-flight. NO invocar hooks para un goal insatisfacible.
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
@@ -137,14 +137,14 @@ Steps:
 1. `gh pr view <PR> --json files,headRefName,mergeStateStatus,statusCheckRollup` — capturar nombre de branch y estado. Si el comando falla (PR no existe), ABORTAR.
 2. Si mergeStateStatus = BEHIND o UNSTABLE por checks de seguridad, hacer rebase:
    a. Identificar worktree del branch con `git worktree list | grep <headRefName>`. Si no existe, NO crear uno nuevo — pedir al PO. (Evita worktree proliferation.)
-   b. En el worktree: `git fetch github main && git rebase github/main`.
+   b. En el worktree: `git fetch "$REMOTE" main && git rebase "$REMOTE"/main`.
    c. Si hay conflictos: ABORTAR y reportar — conflict resolution requiere decisión humana.
-   d. `git push github <branch> --force-with-lease`.
+   d. `git push "$REMOTE" <branch> --force-with-lease`.
 3. Si el PR título/body menciona ADR-<N> y `docs/adr/<N>-*.md` ya existe en main con OTRO nombre, sugerir el siguiente número libre vía `ls docs/adr/ | grep -E "^[0-9]+" | sort -un | tail -1`. APLICAR rename + actualizar referencias internas + actualizar título/body con `gh pr edit`. Amend del commit con --no-edit + force-with-lease.
 4. `gh pr checks <PR> --watch --interval 15`.
 5. `gh pr merge <PR> --squash --delete-branch`.
 
-Condición de cierre: pegar en chat (a) `gh pr view <PR> --json state,mergedAt,mergeCommit` mostrando MERGED, (b) `git fetch github main && git log github/main -1 --oneline` mostrando el squash commit en HEAD.
+Condición de cierre: pegar en chat (a) `gh pr view <PR> --json state,mergedAt,mergeCommit` mostrando MERGED, (b) `git fetch "$REMOTE" main && git log "$REMOTE"/main -1 --oneline` mostrando el squash commit en HEAD.
 
 Abort si: el rebase produce >5 archivos en conflicto, o cualquier check de seguridad (gitleaks, npm audit, CodeQL, Trivy) reporta nuevo finding tras el rebase.
 ```
@@ -173,7 +173,7 @@ Reemplazar TODO uso de `<from>` por `<to>` en código, excluyendo:
 - Commits previos (git log/blame no se modifica).
 - Cualquier string dentro de tests que valida que el campo legacy todavía es aceptado.
 
-Sanity check zero: si <from> o <to> siguen siendo placeholders literales, o `rg "<from>" --type ts -l | wc -l` retorna 0, ABORTAR antes del pre-flight. NO invocar hooks ni ledger writes ni Edits.
+Sanity check zero: si <from> o <to> siguen siendo placeholders literales, o `rg "<from>" --type ts -l | wc -l` retorna 0, ABORTAR antes del pre-flight. NO invocar hooks ni Edits.
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
@@ -215,14 +215,14 @@ Abort si: typecheck rompe en >3 archivos (señal de que el rename no era seguro)
 ```
 Ejecutar BUILD de .specs/<feature>/plan.md tareas T1 hasta Tn en orden.
 
-Sanity check zero: si <feature> sigue siendo placeholder literal, o `.specs/<feature>/plan.md` no existe, o `.specs/<feature>/spec.md` no existe, ABORTAR antes del pre-flight. NO invocar hooks ni ledger writes.
+Sanity check zero: si <feature> sigue siendo placeholder literal, o `.specs/<feature>/plan.md` no existe, o `.specs/<feature>/spec.md` no existe, ABORTAR antes del pre-flight. NO invocar hooks.
 
 Post-abort terse: si este sanity check dispara ABORT, en TODA re-invocación siguiente del Stop hook responder ÚNICAMENTE con un punto literal `.` (1 carácter, sin texto, sin código, sin `/goal clear` como sugerencia). NO re-explicar el abort. El PO ve el `.` en chat y sabe que está esperando su `/goal clear` manual.
 
 Pre-flight: leer skill 30-incremental-implementation y 32-context-engineering. Si plan.md tiene tareas UI, leer también 34-frontend-ui-engineering y design-system/MASTER.md.
 
 Por cada tarea Ti del plan:
-1. Leer la entrada de plan.md correspondiente. Articular en chat: qué hace, por qué este approach, qué podría salir mal (pre_build_articulation al ledger).
+1. Leer la entrada de plan.md correspondiente. Articular en chat: qué hace, por qué este approach, qué podría salir mal.
 2. Si es nuevo comportamiento, escribir test FIRST (TDD). Watch el test fallar antes de implementar.
 3. Implementar el mínimo código que hace pasar el test.
 4. Refactor si necesario, manteniendo tests verdes.
@@ -231,7 +231,7 @@ Por cada tarea Ti del plan:
 7. Marcar Ti como [done] en plan.md y commitearlo.
 
 Al completar todas las tareas:
-- Push branch al remote github.
+- Push branch al remote del upstream (`$REMOTE`).
 - Abrir PR con body que liste tareas completadas + outputs de tests + typecheck.
 - NO mergear — el merge requiere /review humano con cooling-off de 30 min.
 
