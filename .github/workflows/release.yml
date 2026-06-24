@@ -12,11 +12,17 @@ on:
     # NO agregar '**/*.md' acá: matchearía .changeset/*.md y rompería el
     # release de versiones. '*.md' (un solo '*') es root-only. Ver
     # .specs/ci-release-skip-docs-only/spec.md (R1/SC-3).
+    # 'scripts/**': tooling/dev no-desplegable. Verificado 2026-06-24: ningún
+    # script bajo scripts/ es ejecutado por el deploy (ni release.yml ni
+    # cloudbuild.production.yaml — deploy-telemetry-gateway.sh es manual/
+    # break-glass, ADR-065). ci.yml/security.yml igual los validan (corren sin
+    # paths-ignore). Footgun visto en #545.
     paths-ignore:
       - 'docs/**'
       - '.specs/**'
       - 'references/**'
       - 'playbooks/**'
+      - 'scripts/**'
       - '*.md'
   # Trigger manual: re-disparar el deploy de `main` sin depender de un push.
   # Agregado tras el footgun 2026-06-22 (merges rápidos a main trabaron la
