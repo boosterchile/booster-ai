@@ -22,7 +22,7 @@ El reconocimiento del código vivo (2026-06-24) estableció el estado actual:
 - **Peso de carga:** la fuente persistida es `trips.cargoWeightKg` (`carga_peso_kg`, **nullable**, [schema.ts:1100](apps/api/src/db/schema.ts:1100)), alimentada por un DTO que lo exige `>0` ([trip-request-create.ts:56](packages/shared-schemas/src/trip-request-create.ts:56)). Cuando es NULL (WhatsApp anónimo, legacy, insert directo), tres servicios productivos lo silencian a `0` con `?? 0`: [matching.ts:195](apps/api/src/services/matching.ts:195), [eco-route-preview.ts:158](apps/api/src/services/eco-route-preview.ts:158), [calcular-metricas-viaje.ts:235](apps/api/src/services/calcular-metricas-viaje.ts:235) — contaminando emisiones y matching sin alerta.
 - **Distancia del cálculo de CO2: ESTIMADA.** [`calcular-metricas-viaje.ts:244-272`](apps/api/src/services/calcular-metricas-viaje.ts:244) alimenta `calcularEmisionesViaje` con `distanciaKm` estimada (Routes API o tabla Chile). Los campos para datos reales `tripMetrics.distanceKmActual` (`distancia_km_real`) y `carbonEmissionsKgco2eActual` (`emisiones_kgco2e_reales`) ([schema.ts:1286,1291](apps/api/src/db/schema.ts:1286)) **existen pero ningún `.set()` los popula**.
 - **Telemetría GPS: a un paso.** El pipeline Teltonika persiste pings en `telemetria_puntos`. [`calcularCoberturaPura`](apps/api/src/services/calcular-cobertura-telemetria.ts:88) ya **acumula distancia real** (`kmCubiertos += haversineKm(...)`) sobre la ventana, pero **descarta** ese valor (retorna solo `coverage_pct`) y ancla la ventana a `pickup_window_start` planificado, no al pickup real.
-- **Posición dual ya existe pero desconectada.** Además de Teltonika, el browser del conductor reporta posición vía `navigator.geolocation.watchPosition` → `postDriverPosition` ([use-driver-position-reporter.ts](apps/web/src/hooks/use-driver-position-reporter.ts)) → tabla `posicionesMovilConductor` (`posiciones_movil_conductor`, con `assignmentId`, [schema.ts:959](apps/api/src/db/schema.ts:959)). Los endpoints `/vehiculos/:id/ubicacion` y `/vehiculos/flota` **ya mergean ambos streams** ([schema.ts:953](apps/api/src/db/schema.ts:953)), pero `get-public-tracking` y `calcular-cobertura-telemetria` leen **solo Teltonika**.
+- **Posición dual ya existe y se popula (verificado).** Además de Teltonika, el browser del conductor reporta posición vía `navigator.geolocation.watchPosition` → `postDriverPosition` ([driver-position.ts](apps/web/src/services/driver-position.ts), [use-driver-position-reporter.ts](apps/web/src/hooks/use-driver-position-reporter.ts)) → **`POST /assignments/:id/driver-position`**, cuyo handler hace `insert(posicionesMovilConductor)` con `source:'browser'` ([assignments.ts:442](apps/api/src/routes/assignments.ts:442)) sobre la tabla `posiciones_movil_conductor` (con `assignmentId`, [schema.ts:959](apps/api/src/db/schema.ts:959)). **Hay productor real en producción** — la tabla no está vacía por diseño. Los endpoints lectores `/vehiculos/flota` y `/vehiculos/:id/ubicacion` **no mergean** los streams: **enrutan por tipo de vehículo** (con Teltonika → `telemetria_puntos`; sin Teltonika → `posiciones_movil_conductor`), [vehiculos.ts:195-294](apps/api/src/routes/vehiculos.ts:195). En cambio `get-public-tracking` y `calcular-cobertura-telemetria` leen **solo Teltonika**.
 
 **Problema a resolver:** falta el handler de recogida (apertura de ventana) y la conexión telemetría→huella, para medir la huella sobre el segmento real con distancia GPS real, sobre cualquiera de las dos fuentes de posición.
 
@@ -35,7 +35,7 @@ Entregar la **medición de huella sobre el segmento real**: abrir la ventana en 
 ### Dentro de scope (este spec) — F1 + F2
 
 - **F1 — Apertura de ventana:** handler de recogida híbrido (geofence sugiere + tap confirma) que setea `en_proceso` + `recogido` + `pickedUpAt` + evento `recogida_confirmada`.
-- **F2 — Huella real:** unificación de fuente de posición, distancia GPS real sobre el segmento, persistencia en campos `*Actual`, manejo de cobertura parcial, huella opt-in y degradación por peso ausente.
+- **F2 — Huella real:** enrutamiento de fuente de posición por tipo de vehículo (Teltonika o browser), distancia GPS real sobre el segmento, persistencia en campos `*Actual`, manejo de cobertura parcial, huella opt-in y degradación por peso ausente.
 
 ### Fuera de scope (spec hermano "tracking Uber", depende de F1)
 
@@ -82,7 +82,7 @@ Entregar la **medición de huella sobre el segmento real**: abrir la ventana en 
 ### Disparo híbrido
 
 1. El conductor en ruta al origen reporta posición (Teltonika y/o browser).
-2. Un **detector de geofence** evalúa la posición unificada contra el polígono del origen (radio default 150 m).
+2. Un **detector de geofence** evalúa la posición del vehículo (de su fuente según routing: Teltonika o browser) contra el polígono del origen (radio default 150 m).
 3. Al entrar al radio, la PWA **sugiere** confirmar la recogida (instante candidato = timestamp del cruce).
 4. El conductor **confirma con un tap** → `pickedUpAt` = instante candidato del geofence.
 5. **Fallback:** si no hubo geofence (sin GPS, vehículo sin device ni permiso de browser), el tap manual puro setea `pickedUpAt` = instante del tap. La recogida **nunca se bloquea** por falta de señal.
@@ -95,16 +95,20 @@ Entregar la **medición de huella sobre el segmento real**: abrir la ventana en 
 
 ## 5. Arquitectura F2 — Medición sobre el segmento
 
-### Fuente de posición unificada
+### Fuente de posición por tipo de vehículo (routing, no merge)
 
-- **Nuevo módulo de lectura unificada de posición** que mergea `telemetria_puntos` (Teltonika) + `posiciones_movil_conductor` (browser) en una ventana temporal, **reusando el patrón ya existente** en `/vehiculos/:id/ubicacion` y `/vehiculos/flota`.
-- Consumidores que migran a esta fuente unificada: la cobertura/distancia del segmento (F2) y —en el spec hermano— el tracking público.
+- La lectura de posición **no une** los dos streams: **enruta por tipo de vehículo**, reusando el patrón ya existente en [vehiculos.ts:195-294](apps/api/src/routes/vehiculos.ts:195), que particiona los vehículos en tres grupos y cada uno consulta **una sola** fuente determinísticamente:
+  - `withOwnDevice` (tiene `teltonika_imei`) → `telemetryPoints` (`telemetria_puntos`).
+  - `withMirrorImei` (solo espejo) → `telemetryPoints` por `imei`.
+  - `withoutDevice` (sin Teltonika) → `posicionesMovilConductor` (`posiciones_movil_conductor`, browser).
+- **F2 reusa ese routing**, no construye un módulo de merge. Esto lo **simplifica**: como un viaje nunca usa ambas fuentes a la vez, **no hay dedup ni resolución de conflictos** entre streams — basta resolver la fuente del vehículo y leer de la tabla correspondiente.
+- Consumidores que adoptan este routing para el segmento: la cobertura/distancia (F2) y —en el spec hermano— el tracking público (que hoy lee solo Teltonika).
 
 ### Distancia real
 
 - Adaptar [`calcularCoberturaPura`](apps/api/src/services/calcular-cobertura-telemetria.ts:88) (o un servicio derivado) para:
   - (a) anclar la ventana a `pickedUpAt` **real** (no `pickup_window_start`),
-  - (b) leer de la **fuente unificada** (no solo Teltonika),
+  - (b) leer de la **fuente del vehículo según routing** (Teltonika o browser), no solo Teltonika,
   - (c) **retornar `kmCubiertos`** (distancia real acumulada) además de `coverage_pct`.
 
 ### Cómputo de huella sobre el segmento (umbral binario ~80%)
@@ -119,6 +123,14 @@ Entregar la **medición de huella sobre el segmento real**: abrir la ventana en 
 - **Huella opt-in por cliente/empresa** (flag nuevo, override por viaje). Si **inactiva** → no se computan métricas de huella para ese viaje.
 - **Activa + peso presente** → mide normalmente con `cargoWeightKg`.
 - **Activa + peso ausente (NULL)** → **no computar** `carbonEmissionsKgco2eActual` (queda null), emitir métrica de data-quality, degradar nivel de certificación. **Nunca `0`.** En el punto de activación/creación, exigir el peso cuando la huella esté activa.
+
+### Dependencia causal F1 → F2 (hecho de datos, no solo orden de implementación)
+
+La captura de posición browser está **gated por estado**: el handler `POST /assignments/:id/driver-position` solo acepta posiciones cuando `assignment.status ∈ {'asignado','recogido'}` ([assignments.ts:438](apps/api/src/routes/assignments.ts:438)).
+
+- Como **`'recogido'` nunca se setea hoy** (es exactamente el gap que F1 cierra), la captura browser **hoy solo cubre el tramo camino-al-origen** (`status='asignado'`), **no** el segmento recogida→entrega que F2 mide.
+- El allowlist **ya incluye `'recogido'`**, así que cuando F1 active ese estado, la captura browser cubrirá el segmento de medición **sin tocar el endpoint**.
+- **Implicación:** F1 no es solo un prerequisito de orden — es lo que **genera los datos** sobre los que F2 mide para vehículos **sin Teltonika**. Sin F1, esos viajes no tienen filas browser dentro de la ventana `[pickedUpAt, deliveredAt]`.
 
 ---
 
@@ -162,7 +174,8 @@ Tres cortes, todos con **degradación explícita** (nunca fallo silencioso ni `0
 Caminos críticos (carbono/GLEC, máquina de estados, migraciones) → **TDD obligatorio** (`tdd-dominio-critico`, `superpowers:test-driven-development`). Cobertura ≥ 80% en código nuevo.
 
 - **Handler de recogida:** transición legal/ilegal, CAS bajo concurrencia, idempotencia, emisión de evento, fallback manual.
-- **Fuente unificada de posición:** merge Teltonika+browser, orden temporal, dedup, ventana `[pickedUpAt, deliveredAt]`.
+- **Routing de fuente de posición:** resolución de fuente por tipo de vehículo (Teltonika vs browser), orden temporal, ventana `[pickedUpAt, deliveredAt]`. (No hay merge → no se testea dedup entre streams.)
+- **Dependencia F1→F2 en datos (anti-falso-verde):** un test de F2 sobre un vehículo **browser** que **no** haya pasado por el handler de recogida de F1 mediría sobre **cero filas** dentro de la ventana y daría un **FALSO VERDE** de "fallback a estimada correcto". Por tanto, los tests de F2 sobre vehículos **sin Teltonika** deben **ejercer primero el handler de F1** (activar `'recogido'`) y reportar posiciones browser dentro del segmento **antes** de evaluar la distancia real.
 - **Distancia real:** haversine sobre ventana, retorno de `kmCubiertos`, umbral binario (≥ y <), anclaje al pickup real.
 - **Peso opt-in/degradación:** huella inactiva (no mide), activa+peso, activa+NULL (degrada, no 0).
 - **Persistencia:** poblar `*Actual` solo cuando corresponde; coexistencia con `*Estimated`.
@@ -173,7 +186,7 @@ Caminos críticos (carbono/GLEC, máquina de estados, migraciones) → **TDD obl
 
 - Handler de recogida en producción seteando `en_proceso`+`recogido`+`pickedUpAt`+evento, con disparo híbrido y fallback manual.
 - Huella real del segmento poblando `*Actual` cuando cobertura ≥ umbral; degradación explícita en los 3 cortes.
-- Fuente de posición unificada (Teltonika + browser) alimentando la medición.
+- Fuente de posición enrutada por tipo de vehículo (Teltonika o browser) alimentando la medición.
 - Opt-in de huella respetado; peso ausente nunca produce `0`.
 - Tests (TDD) verdes + cobertura ≥ 80% + lint + typecheck + build. Sección `## Evidencia` en el PR.
 - Sin deuda silenciosa: cualquier corte se declara explícito con plan/issue.
@@ -201,5 +214,5 @@ Caminos críticos (carbono/GLEC, máquina de estados, migraciones) → **TDD obl
 - Recogida modelada sin handler: [`transiciones.ts:14`](packages/trip-state-machine/src/transiciones.ts:14), [schema.ts:240](apps/api/src/db/schema.ts:240), [schema.ts:1203](apps/api/src/db/schema.ts:1203), [schema.ts:268](apps/api/src/db/schema.ts:268)
 - Peso: [schema.ts:1100](apps/api/src/db/schema.ts:1100), [trip-request-create.ts:56](packages/shared-schemas/src/trip-request-create.ts:56), hardcodeos `?? 0` en [matching.ts:195](apps/api/src/services/matching.ts:195) / [eco-route-preview.ts:158](apps/api/src/services/eco-route-preview.ts:158) / [calcular-metricas-viaje.ts:235](apps/api/src/services/calcular-metricas-viaje.ts:235)
 - Distancia: cómputo estimado [`calcular-metricas-viaje.ts:244-272`](apps/api/src/services/calcular-metricas-viaje.ts:244); campos `*Actual` vacíos [schema.ts:1286,1291](apps/api/src/db/schema.ts:1286); haversine que descarta `kmCubiertos` [`calcular-cobertura-telemetria.ts:88-110`](apps/api/src/services/calcular-cobertura-telemetria.ts:88)
-- Posición dual: [`use-driver-position-reporter.ts`](apps/web/src/hooks/use-driver-position-reporter.ts), tabla `posicionesMovilConductor` [schema.ts:959](apps/api/src/db/schema.ts:959), merge existente [schema.ts:953](apps/api/src/db/schema.ts:953)
+- Posición browser — **productor real**: `POST /assignments/:id/driver-position` → `insert(posicionesMovilConductor)` [assignments.ts:442](apps/api/src/routes/assignments.ts:442), con guard de estado `{'asignado','recogido'}` en [assignments.ts:438](apps/api/src/routes/assignments.ts:438); cliente [`driver-position.ts`](apps/web/src/services/driver-position.ts) / [`use-driver-position-reporter.ts`](apps/web/src/hooks/use-driver-position-reporter.ts); tabla `posicionesMovilConductor` [schema.ts:959](apps/api/src/db/schema.ts:959). **Lectura por routing** (no merge): [vehiculos.ts:195-294](apps/api/src/routes/vehiculos.ts:195)
 - Tracking + ETA existentes: [get-public-tracking.ts](apps/api/src/services/get-public-tracking.ts), [compute-route-eta.ts](apps/api/src/services/compute-route-eta.ts), [use-public-tracking.ts:52](apps/web/src/hooks/use-public-tracking.ts:52)
