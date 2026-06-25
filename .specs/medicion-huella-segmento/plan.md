@@ -1,4 +1,4 @@
-# Medición de huella sobre el segmento real (F1+F2) — Plan de implementación
+q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementación
 
 > **Para workers agénticos:** SUB-SKILL REQUERIDA: usar `superpowers:subagent-driven-development` (recomendado) o `superpowers:executing-plans` para ejecutar tarea por tarea. Los pasos usan checkbox (`- [ ]`). Ejecutable por `/goal` (BUILD) tarea a tarea, en orden.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints (verbatim del spec / CLAUDE.md — aplican a TODA tarea)
 
-- **Naming bilingüe:** TS identifiers en inglés camelCase ↔ SQL columnas en español snake_case sin tildes. Drizzle: `export const x = pgTable('tabla_es', { campoTs: tipo('campo_es') })`.
+- **Naming inglés total (decisión PO, Opción A):** columnas NUEVAS en inglés en ambos lados — TS camelCase ⇄ SQL snake_case inglés. Las columnas LEGADAS en español (es_generador_carga, posiciones_movil_conductor, etc.) NO se migran; la asimetría es deliberada (ver "Columnas nuevas propuestas", L226)..
 - **TDD obligatorio** en dominio crítico: carbono/GLEC, migraciones, máquina de estados. Test-first (rojo → verde → refactor).
 - **Degradación explícita, NUNCA `0` ni fallo silencioso** en los 3 cortes (sin geofence, cobertura baja, peso ausente).
 - **Zero `any` / `@ts-ignore` / `console.*`**; Zod en boundaries; structured log con `trace_id` + span OTel + métrica de negocio por endpoint nuevo; coverage ≥ 80% en código nuevo.
@@ -56,7 +56,7 @@
 **Pasos:**
 - [ ] Test (rojo): tras aplicar la migración, `empresas.carbon_measurement_enabled` existe (`boolean NOT NULL DEFAULT false`) y `trips.carbon_measurement_override` existe (`boolean` nullable). Verificar `check-migration-safety` (expand-only, sin `NOT NULL` sin default sobre tabla con datos).
 - [ ] Drizzle: `empresas` → `carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false)`; `trips` → `carbonMeasurementOverride: boolean('carbon_measurement_override')`.
-- [ ] Generar migración Drizzle (`pnpm --filter @booster-ai/api db:generate`), revisar SQL expand-safe.
+- [ ] Escribir la migración SQL a mano (el repo congela el snapshot en `0000` y NO usa `db:generate`; seguir la convención de la migración anterior: header en prosa + `ALTER TABLE` + `--> statement-breakpoint`), y actualizar `meta/_journal.json` (idx, when monotónico, tag==filename). Revisar SQL expand-safe.
 - [ ] Verde: migración aplica en DB local; schema coincide.
 - [ ] Commit `feat(carbon): columnas opt-in de huella (empresa + override viaje)`.
 **Criterio de hecho:** columnas presentes con tipos exactos; `Migration safety` CI verde.
