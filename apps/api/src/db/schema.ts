@@ -512,6 +512,14 @@ export const empresas = pgTable(
      * `compliance_requested_by_shipper_at` (futuro).
      */
     complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
+    /**
+     * Opt-in de la empresa para medir la huella de carbono de sus viajes
+     * (Task 1, plan medicion-huella-segmento). Default false: la medición se
+     * activa explícitamente por cliente; un viaje puede overridear vía
+     * `trips.carbon_measurement_override`. Naming inglés total (decisión PO):
+     * columna en inglés, divergiendo a propósito de las legadas en español.
+     */
+    carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -1114,6 +1122,13 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    /**
+     * Override por viaje del opt-in de medición de huella. NULL = heredar el
+     * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
+     * fuerza/desactiva la medición para este viaje (Task 1, plan
+     * medicion-huella-segmento). Naming inglés total (decisión PO).
+     */
+    carbonMeasurementOverride: boolean('carbon_measurement_override'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
