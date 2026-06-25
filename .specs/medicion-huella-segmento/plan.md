@@ -54,8 +54,8 @@
 **TDD:** SÍ (migración — dominio crítico).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): tras aplicar la migración, `empresas.medir_huella` existe (`boolean NOT NULL DEFAULT false`) y `trips.medir_huella_override` existe (`boolean` nullable). Verificar `check-migration-safety` (expand-only, sin `NOT NULL` sin default sobre tabla con datos).
-- [ ] Drizzle: `empresas` → `carbonMeasurementEnabled: boolean('medir_huella').notNull().default(false)`; `trips` → `carbonMeasurementOverride: boolean('medir_huella_override')`.
+- [ ] Test (rojo): tras aplicar la migración, `empresas.carbon_measurement_enabled` existe (`boolean NOT NULL DEFAULT false`) y `trips.carbon_measurement_override` existe (`boolean` nullable). Verificar `check-migration-safety` (expand-only, sin `NOT NULL` sin default sobre tabla con datos).
+- [ ] Drizzle: `empresas` → `carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false)`; `trips` → `carbonMeasurementOverride: boolean('carbon_measurement_override')`.
 - [ ] Generar migración Drizzle (`pnpm --filter @booster-ai/api db:generate`), revisar SQL expand-safe.
 - [ ] Verde: migración aplica en DB local; schema coincide.
 - [ ] Commit `feat(carbon): columnas opt-in de huella (empresa + override viaje)`.
@@ -67,8 +67,8 @@
 **TDD:** SÍ (migración).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `trips.origen_latitud` y `trips.origen_longitud` existen como `numeric(10,7)` nullable. Expand-safe.
-- [ ] Drizzle: `originLatitude: numeric('origen_latitud', { precision: 10, scale: 7 })`, `originLongitude: numeric('origen_longitud', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
+- [ ] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
+- [ ] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
 - [ ] Generar + revisar migración.
 - [ ] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
 **Criterio de hecho:** columnas presentes nullable `numeric(10,7)`; CI migración verde.
@@ -80,14 +80,14 @@
 **Depende de:** Task 1.
 **Pasos:**
 - [ ] Test (rojo), 7 casos:
-  - `{ tripOverride: true, generadorMedirHuella: false, transportistaMedirHuella: false }` → `true` (override gana)
-  - `{ tripOverride: false, generadorMedirHuella: true, transportistaMedirHuella: true }` → `false` (override gana)
-  - `{ tripOverride: null, generadorMedirHuella: true, transportistaMedirHuella: false }` → `true` (OR: generador)
-  - `{ tripOverride: null, generadorMedirHuella: false, transportistaMedirHuella: true }` → `true` (OR: transportista)
-  - `{ tripOverride: null, generadorMedirHuella: false, transportistaMedirHuella: false }` → `false`
-  - `{ tripOverride: null, generadorMedirHuella: null, transportistaMedirHuella: true }` → `true` (generador null → false, OR transportista)
-  - `{ tripOverride: null, generadorMedirHuella: null, transportistaMedirHuella: null }` → `false` (todo null → false)
-- [ ] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorMedirHuella: boolean | null; transportistaMedirHuella: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorMedirHuella ?? false) || (o.transportistaMedirHuella ?? false)); }`
+  - `{ tripOverride: true, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `true` (override gana)
+  - `{ tripOverride: false, generadorCarbonEnabled: true, transportistaCarbonEnabled: true }` → `false` (override gana)
+  - `{ tripOverride: null, generadorCarbonEnabled: true, transportistaCarbonEnabled: false }` → `true` (OR: generador)
+  - `{ tripOverride: null, generadorCarbonEnabled: false, transportistaCarbonEnabled: true }` → `true` (OR: transportista)
+  - `{ tripOverride: null, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `false`
+  - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: true }` → `true` (generador null → false, OR transportista)
+  - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: null }` → `false` (todo null → false)
+- [ ] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
 - [ ] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
 **Criterio de hecho:** 7 casos verdes; sin acceso a DB (pura); consignee excluido por diseño (no es empresa consultable); generador nullable manejado.
 
@@ -97,9 +97,9 @@
 **TDD:** SÍ (tests required; degradación es crítica).
 **Depende de:** Task 2.
 **Pasos:**
-- [ ] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origen_latitud/longitud`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
+- [ ] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
 - [ ] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
-- [ ] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origen_latitud/longitud`. Structured log + span OTel.
+- [ ] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
 - [ ] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
 **Criterio de hecho:** trip nuevo tiene lat/lng del origen; fallo de geocoding no bloquea creación y emite métrica.
 
@@ -193,7 +193,7 @@
 **TDD:** SÍ (carbono/GLEC).
 **Depende de:** Task 3, Task 11.
 **Pasos:**
-- [ ] Cargar los inputs del opt-in y resolver: `trips.medir_huella_override`, flag del generador (`trips.generadorCargaEmpresaId` → `empresas.medir_huella`, null-safe si no hay empresa) y del transportista (`assignments.empresaId` → `empresas.medir_huella`); pasar a `resolverOptInHuella` (Task 3). Si el resultado es false → no medir (no tocar `*Actual`).
+- [ ] Cargar los inputs del opt-in y resolver: `trips.carbon_measurement_override`, flag del generador (`trips.generadorCargaEmpresaId` → `empresas.carbon_measurement_enabled`, null-safe si no hay empresa) y del transportista (`assignments.empresaId` → `empresas.carbon_measurement_enabled`); pasar a `resolverOptInHuella` (Task 3). Si el resultado es false → no medir (no tocar `*Actual`).
 - [ ] Test (rojo) cobertura alta: huella activa + cobertura ≥ umbral → `distanceKmActual` = `kmCubiertos`, `carbonEmissionsKgco2eActual` poblado (GLEC), nivel primario.
 - [ ] Test (rojo) cobertura baja: huella activa + cobertura < umbral → `*Actual` con distancia estimada, nivel secundario; métrica de degradación emitida.
 - [ ] Test (rojo) huella inactiva: opt-in efectivo false → no se computan `*Actual` (siguen null), no se llama carbon-calculator.
@@ -218,12 +218,12 @@
 
 | Propósito | TS (Drizzle) | SQL (columna) | Tipo | Tabla |
 |---|---|---|---|---|
-| Opt-in huella (cliente) | `carbonMeasurementEnabled` | `medir_huella` | `boolean NOT NULL DEFAULT false` | `empresas` |
-| Override por viaje | `carbonMeasurementOverride` | `medir_huella_override` | `boolean` (nullable; `null` = heredar de empresa) | `trips` |
-| Latitud del origen | `originLatitude` | `origen_latitud` | `numeric(10,7)` (nullable) | `trips` |
-| Longitud del origen | `originLongitude` | `origen_longitud` | `numeric(10,7)` (nullable) | `trips` |
+| Opt-in huella (cliente) | `carbonMeasurementEnabled` | `carbon_measurement_enabled` | `boolean NOT NULL DEFAULT false` | `empresas` |
+| Override por viaje | `carbonMeasurementOverride` | `carbon_measurement_override` | `boolean` (nullable; `null` = heredar de empresa) | `trips` |
+| Latitud del origen | `originLatitude` | `origin_latitude` | `numeric(10,7)` (nullable) | `trips` |
+| Longitud del origen | `originLongitude` | `origin_longitude` | `numeric(10,7)` (nullable) | `trips` |
 
-Justificación de naming: `empresas` ya usa booleanos `es_*`/default false (`isGeneradorCarga`/`es_generador_carga`); `trips` usa `origin*` (TS) ↔ `origen_*` (SQL) para el origen (`originAddressRaw`/`origen_direccion_raw`); `numeric(10,7)` iguala la precisión de `posicionesMovilConductor.latitud/longitud`. **Opt-in efectivo** (Task 3): `tripOverride ?? (generadorEmpresa.medirHuella OR transportistaEmpresa.medirHuella)`. No requiere columna nueva: ambas empresas participantes leen el mismo `empresas.medir_huella` (generador vía `trips.generadorCargaEmpresaId`, transportista vía `assignments.empresaId`); el consignee no aporta (no es empresa).
+Decisión de naming (PO — **Opción A, inglés total**): las columnas **nuevas** usan inglés en AMBOS lados (camelCase TS ↔ snake_case SQL, los dos en inglés): `carbonMeasurementEnabled`↔`carbon_measurement_enabled`, `carbonMeasurementOverride`↔`carbon_measurement_override`, `originLatitude`↔`origin_latitude`, `originLongitude`↔`origin_longitude`. Se acepta **deliberadamente la asimetría** con columnas legadas en español (`es_generador_carga`, `posiciones_movil_conductor.latitud`) a favor de un naming profesional consistente hacia adelante; las legadas NO se migran. `numeric(10,7)` para lat/lng (misma precisión que la telemetría existente). **Opt-in efectivo** (Task 3): `tripOverride ?? (generadorEmpresa.carbonMeasurementEnabled OR transportistaEmpresa.carbonMeasurementEnabled)`. Ambas empresas leen el mismo `empresas.carbon_measurement_enabled` (generador vía `trips.generadorCargaEmpresaId`, transportista vía `assignments.empresaId`); el consignee no aporta (no es empresa).
 
 ---
 
