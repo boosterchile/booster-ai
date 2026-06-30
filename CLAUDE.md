@@ -183,10 +183,10 @@ Booster-AI/
 ├── .nvmrc
 ├── .gitignore
 │
-├── .claude/                    # minimal. Los plugins NO se declaran acá: se
-│   │                           # instalan a nivel usuario/global (~/.claude) vía
-│   │                           # `/plugin install`. NO existe un
-│   │                           # `.claude/settings.json` versionado.
+├── .claude/                    # Los plugins se instalan a nivel usuario/global
+│   │                           # (~/.claude) vía `/plugin install`. El
+│   │                           # `.claude/settings.json` versionado habilita
+│   │                           # `booster-skills` (enabledPlugins).
 │   ├── settings.local.json     # permisos pre-autorizados (gitignored)
 │   ├── ledger/                 # ledger observacional de booster-skills (.jsonl per session)
 │   ├── worktrees/              # worktrees parallel (superpowers:using-git-worktrees)
@@ -205,7 +205,7 @@ Booster-AI/
 │   ├── _followups/             # follow-up stubs no urgentes
 │   └── <feature-slug>/         # specs activas por feature
 │
-├── apps/                       # 8 apps
+├── apps/                       # 9 apps
 │   ├── api/                    # Backend principal (Hono)
 │   ├── web/                    # PWA multi-rol (shipper/carrier/driver/admin/stakeholder)
 │   ├── matching-engine/        # Matching carrier-based
@@ -213,15 +213,16 @@ Booster-AI/
 │   ├── telemetry-processor/    # Dedup + enrich + write
 │   ├── notification-service/   # Fan-out notificaciones
 │   ├── whatsapp-bot/           # Webhook Meta + NLU
-│   └── document-service/       # DTE + Carta Porte + OCR
+│   ├── document-service/       # DTE + Carta Porte + OCR
+│   └── sms-fallback-gateway/   # Fallback SMS (Cloud Run)
 │
-├── packages/                   # 21 packages compartidos
-│   # ai-provider, carbon-calculator, carta-porte-generator,
+├── packages/                   # 20 packages compartidos
+│   # carbon-calculator, carta-porte-generator,
 │   # certificate-generator, coaching-generator, codec8-parser, config,
-│   # document-indexer, driver-scoring, dte-provider, factoring-engine,
+│   # document-indexer, driver-scoring, factoring-engine,
 │   # logger, matching-algorithm, notification-fan-out, otel-bootstrap,
-│   # pricing-engine, shared-schemas, trip-state-machine, ui-components,
-│   # ui-tokens, whatsapp-client
+│   # pricing-engine, shared-schemas, transport-documents, trip-state-machine,
+│   # ui-components, ui-tokens, whatsapp-client
 │
 ├── infrastructure/             # Terraform 100% IaC (incluye IAM humana)
 │   ├── main.tf
