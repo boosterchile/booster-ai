@@ -19,4 +19,19 @@ Dos contratos núcleo tienen doble fuente de verdad:
 
 ## Estado
 
-Pendiente. Sin asignar a ciclo.
+✅ **RESUELTO en los 2 contratos núcleo** (verificado en `main`, 2026-06-22).
+
+- **Wire format telemetry-events**: ya hay fuente única canónica
+  `packages/shared-schemas/src/events/telemetry-record.ts` (`telemetryRecordMessageSchema`);
+  el espejo Zod copiado a mano se eliminó (desde 2026-06-11). Gateway (tipo) y
+  processor (validación) la consumen.
+- **Estados de viaje**: `packages/trip-state-machine/src/estados.ts` (9 estados
+  español) == `tripStatusEnum` (`apps/api/src/db/schema.ts`), garantizado por
+  `trip-state-machine-parity.test.ts`. El vocabulario muerto ADR-004 (17 estados
+  inglés, cero consumidores) se eliminó (ADR-061).
+
+**Residual menor (no bloqueante)**: el sub-ítem "~18 de 38 tablas sin schema
+domain" es una aspiración de cobertura del CLAUDE.md, no un contrato duplicado
+activo. No es un bug; se cierra/ajusta cuando se priorice la cobertura domain (o se
+ajuste la regla del CLAUDE.md a la realidad deliberada). Los dos riesgos ALTOS que
+originaron este follow-up (doble fuente de verdad) están cerrados.

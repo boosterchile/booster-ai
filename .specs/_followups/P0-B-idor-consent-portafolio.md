@@ -1,5 +1,13 @@
 # P0-B 🔒 — IDOR en consent ESG `portafolio_viajes`
 
+> ✅ **RESUELTO en [#495](https://github.com/boosterchile/booster-ai/pull/495)** (`dad32ae`, merged). `userCanGrantOnScope` en
+> `apps/api/src/routes/me-consents.ts:91-128` exige `empresaId === scopeId` +
+> rol `dueno`/`admin` **activo** sobre la empresa específica del scope; el scope
+> `portafolio_viajes` se **deniega siempre** (decisión PO O-1b 2026-06-17: el
+> modelo de portafolio no existe — sin tabla, FK ni call sites). Cubre también
+> **P1-B**. Spec: `.specs/consent-idor-y-modelo-19628-21719/`. Verificado en vivo
+> contra el código de `main` (2026-06-22).
+
 **Dimensión**: security · **Estado**: requiere revisión legal (consentimiento sobre datos de terceros).
 **Fuente**: audit 2026-06-14
 

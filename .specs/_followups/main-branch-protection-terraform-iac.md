@@ -45,3 +45,18 @@ GitHub Terraform provider NO está en uso en `infrastructure/versions.tf` (solo 
 ## Recommendation
 
 Defer hasta Sprint 3+ o hasta que entre segundo developer al proyecto (cuando audit trail Terraform IaC empieza a tener valor real para coordinación). Priority P2 — non-blocking para SEC-001 cierre.
+
+## Estado actual verificado (2026-06-22) — insumo para encodear cuando se ejecute
+
+`gh api` (read-only) capturó la config viva de `main`, lista para traducir a
+`github_branch_protection` cuando el owner provea el PAT + agregue el provider GitHub:
+
+- **Merge methods (repo)**: `allow_squash_merge=true`, `allow_merge_commit=false`,
+  `allow_rebase_merge=false` (squash-only — ver [[github-branch-protection-squash]]).
+- **Branch protection `main`**: `enforce_admins=true`; `required_status_checks.contexts=["CI Success"]`;
+  `required_pull_request_reviews` con `required_approving_review_count=0`,
+  `dismiss_stale_reviews=false`, `require_code_owner_reviews=false`, `require_last_push_approval=false`.
+
+Sigue **owner-gated**: requiere provider `integrations/github` + PAT con scope admin (secreto
+del owner) + `terraform import` de la protección existente. El agente no puede aportar el PAT
+ni crear el provider; el snapshot de arriba es el insumo para hacerlo seguro sin loosen la protección.
