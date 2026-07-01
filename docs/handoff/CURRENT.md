@@ -1,9 +1,130 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-06-19 (**🚚 F4 repositorio documental de terceros — sub-fases 4a/4b shippeadas + INC-2026-06-19 resuelto + ADR-070 Accepted**: cerró el frente F4 del pivote documental. Booster **recibe/archiva** DTE de terceros (Guía de Despacho 52 / Factura 33), extrae el TED (PDF417→`<DD>`) **best-effort**, retiene 6a desde `fecha_emision`. **4b worker TED** [PR [#501](https://github.com/boosterchile/booster-ai/pull/501)] con ancla **estricta** de retención [`retention_until = CASE WHEN fecha_emision IS NULL THEN <nuevo>::date ELSE retention_until END` — sin `GREATEST`; `created_at` solo fallback; nunca acorta lo ya anclado] + fix poison-pill de fecha-imposible en `parseTedDd` [valida día real, no solo regex]. **manual-entry O-3** [#502] deja de pisar una retención anclada cuando no se envía fecha + valida día de calendario real [nuevo primitivo `isoCalendarDateSchema`]. **Infra** [#503] cablea `TRANSPORT_DOCUMENTS_BUCKET` en `service_api` + **retira los secretos DTE huérfanos** [ADR-069] + **ADR-070 → Accepted** [sign-off legal de custodia por el PO]. **🔴→✅ INCIDENTE INC-2026-06-19** [SEV-2, **sin impacto a usuarios**]: el `terraform apply` de #503 creó el secret `content-sid-safety-alert` con su placeholder `ROTATE_ME_*` y lo montó en `service_api` → el api rechaza el arranque [`CONTENT_SID_SAFETY_ALERT` valida `^HX[a-fA-F0-9]+$`]; Cloud Run mantuvo la revisión sana [00407] sirviendo y bloqueó deploys. **Recovery por el PO** [pobló v2 con el SID real + redeploy → rev `00365-9x9` sana, 100% tráfico]. **Preflight check** `scripts/repo-checks/check-validated-secret-placeholders.mjs` [#504, + post-mortem] que ataja el patrón antes del apply. **Gate C-7 validado** [#505] contra `formato_dte_202602.pdf` **v2.5 2026-02** [provisto por el owner, byte-idéntico al validado] — mapeo del `<DD>` tag-por-tag sin discrepancias [catálogo `<TD>` 33/34/52/56/61 sin cambios; emisor/receptor correctos]. ✅ `terraform plan` desde `main` = **No changes** [drift main↔prod cerrado]. **PRs [#501](https://github.com/boosterchile/booster-ai/pull/501)→[#505](https://github.com/boosterchile/booster-ai/pull/505) mergeados.** Ver §Sesión 2026-06-19.) **Antes [2026-06-14]**: (**🧩 CONSOLIDACIÓN de los 3 sub-agents locales → `booster-skills@0.3.0`** [ADR-064, Accepted]: tras el retiro de agent-rigor (ADR-060) los 3 archivos en `agents/` quedaron huérfanos. Resueltos sin duplicar lo que superpowers/booster-skills ya cubren — `security-auditor`→módulo compliance Chile en `booster-skills:security-scanner`; `sre-oncall`→nuevo sub-agent SRE pre-merge; `code-reviewer`→retirado (ADR-check plegado en `booster-stack-conventions` paso 7; review genérico=superpowers). `booster-skills` 6→7 sub-agents, **release [`v0.3.0`](https://github.com/boosterchile/booster-skills/releases/tag/v0.3.0)** [PR booster-skills#2]. En `booster-ai`: `agents/` **eliminado**, CLAUDE.md §Capas adicionales actualizado, stub `migrate-booster-agents` cerrado (Done), **ADR-064** (número confirmado por el guard — la cadena ADR del día fue 051→060→064 por colisiones). PyYAML cazó un bug que `claude plugin validate` no vio (colon-space en la description de sre-oncall). **PR [#466](https://github.com/boosterchile/booster-ai/pull/466) mergeado** [squash `768a4cc`]. Solo governance/tooling. Ver §Sesión 2026-06-14 (cont.).) **Antes (mismo día)**: (**🔧 MIGRACIÓN capa de disciplina: `agent-rigor` → `superpowers`** [ADR-060, Accepted]: se retira el plugin bespoke `agent-rigor` (motor bash sin tests, gate de enforcement no operativo de facto) y se adopta `superpowers` (`obra/superpowers`, MIT, marketplace oficial) como Capa 1 de disciplina genérica. `booster-skills` se mantiene como Capa 2 y **ya está en 0.2.0** con los mecanismos rescatables convertidos en skills [`definicion-de-terminado`, `tdd-dominio-critico`] + ledger observacional sin gates. Docs vivos actualizados: `CLAUDE.md`, `AGENTS.md`, `README.md` y el stub `migrate-booster-agents`. ⚠️ El ADR se preparó como "051" pero ese número ya estaba ocupado [`051-pii-redaction-logger`] → el guard `check-adr-numbering` bloqueó la colisión → renumerado al siguiente libre **060** (el repo iba por 059, no por 050 como sugería la estructura del CLAUDE.md). **PR [#464](https://github.com/boosterchile/booster-ai/pull/464) mergeado** [squash `91eccb1`, 21/21 checks SUCCESS]. Solo docs/governance — sin cambios de código/runtime/CI/deploy. Ver §Sesión 2026-06-14.) **Antes [2026-06-07]**: (**🔴→✅ INCIDENTE Redis TLS resuelto y CERRADO en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429] + endurecido `whatsapp-bot` [quitado `rejectUnauthorized:false`]. Verificación E2E Playwright gateada [#422], cierre docs [#421], follow-up paths-ignore [#423]; gate no-op de #422 rechazado → lane de release libre. **PRs #420→#423 mergeados.** 4 follow-ups abiertos. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
+**Última actualización**: 2026-07-01 (**📊 Datadog en GKE (infra+logs, sin APM) + limpieza de la lane de release**: se agregó observabilidad Datadog al único workload GKE (`telemetry-tcp-gateway`) con alcance **infra + logs**, **sin APM Datadog** — decisión del PO [ADR-071, Decisión 1 = C]. Motivo: `ddtrace` por SSI exportaría spans **fuera** del `RedactingSpanExporter` [fuga de credenciales bearer del stream Teltonika] y duplicaría la auto-instrumentación OTel; los traces del gateway **se quedan en OTel→Cloud Trace**. Manifests consistentes con ADR-065 [CR versionado + `kubectl`, no provider TF k8s]; secret `datadog-api-key` en GSM [source-of-truth, contenedor en `security.tf`, versión la puebla el owner], **no montado en Cloud Run** → no toca el preflight de INC-2026-06-19. `setup-datadog.sh` reescrito como runbook que lee la key de GSM y no reinicia el gateway. **PR [#554](https://github.com/boosterchile/booster-ai/pull/554) mergeado** [squash `79ad26c`; 21 checks verdes; terraform fmt/validate OK]. **Activación real = cloud-ops del owner** [`terraform apply` del contenedor → poblar `datadog-api-key` → correr `setup-datadog.sh`], NO pasa por release.yml. **Limpieza de la lane de release**: se rechazaron 3 gates de `production` no-op vía API pending_deployments [#554 `79ad26c`, #552 `11fd1a4`, y un **zombie de #496 `796c0c3` colgado en `waiting` desde 2026-06-18 ~13d**] → lane **100% limpia** [0 waiting/in_progress/queued]. Lección: los gates zombie se apilan por semanas; barrer `--status waiting` y rechazar los no-op. `infrastructure/**` NO está en `paths-ignore`. Ver §Sesión 2026-07-01. ℹ️ **Nota de continuidad**: el hueco 2026-06-20→06-30 [stale desde el 06-19] quedó **reconstruido** desde `git log` + memorias en §Ventana 2026-06-22→06-30 [24 PRs #528–#551 mergeados]. ⚠️ **Cluster abierto sin mergear**: el batch del barrido `_followups` **#509–#527** [19 PRs del 06-22] + #425–#428 + #493–#494 **siguen ABIERTOS** hoy — verificar vs código vivo antes de re-trabajar [muchos ya-hechos]. #552/#553 [versionado de plugins, 07-01 pre-sesión] también en main. Ver [[followups-sweep-2026-06-22]], [[claude-md-merge-conflict-automerge-2026-07]].) **Antes [2026-06-19]**: (**🚚 F4 repositorio documental de terceros — sub-fases 4a/4b shippeadas + INC-2026-06-19 resuelto + ADR-070 Accepted**: cerró el frente F4 del pivote documental. Booster **recibe/archiva** DTE de terceros (Guía de Despacho 52 / Factura 33), extrae el TED (PDF417→`<DD>`) **best-effort**, retiene 6a desde `fecha_emision`. **4b worker TED** [PR [#501](https://github.com/boosterchile/booster-ai/pull/501)] con ancla **estricta** de retención [`retention_until = CASE WHEN fecha_emision IS NULL THEN <nuevo>::date ELSE retention_until END` — sin `GREATEST`; `created_at` solo fallback; nunca acorta lo ya anclado] + fix poison-pill de fecha-imposible en `parseTedDd` [valida día real, no solo regex]. **manual-entry O-3** [#502] deja de pisar una retención anclada cuando no se envía fecha + valida día de calendario real [nuevo primitivo `isoCalendarDateSchema`]. **Infra** [#503] cablea `TRANSPORT_DOCUMENTS_BUCKET` en `service_api` + **retira los secretos DTE huérfanos** [ADR-069] + **ADR-070 → Accepted** [sign-off legal de custodia por el PO]. **🔴→✅ INCIDENTE INC-2026-06-19** [SEV-2, **sin impacto a usuarios**]: el `terraform apply` de #503 creó el secret `content-sid-safety-alert` con su placeholder `ROTATE_ME_*` y lo montó en `service_api` → el api rechaza el arranque [`CONTENT_SID_SAFETY_ALERT` valida `^HX[a-fA-F0-9]+$`]; Cloud Run mantuvo la revisión sana [00407] sirviendo y bloqueó deploys. **Recovery por el PO** [pobló v2 con el SID real + redeploy → rev `00365-9x9` sana, 100% tráfico]. **Preflight check** `scripts/repo-checks/check-validated-secret-placeholders.mjs` [#504, + post-mortem] que ataja el patrón antes del apply. **Gate C-7 validado** [#505] contra `formato_dte_202602.pdf` **v2.5 2026-02** [provisto por el owner, byte-idéntico al validado] — mapeo del `<DD>` tag-por-tag sin discrepancias [catálogo `<TD>` 33/34/52/56/61 sin cambios; emisor/receptor correctos]. ✅ `terraform plan` desde `main` = **No changes** [drift main↔prod cerrado]. **PRs [#501](https://github.com/boosterchile/booster-ai/pull/501)→[#505](https://github.com/boosterchile/booster-ai/pull/505) mergeados.** Ver §Sesión 2026-06-19.) **Antes [2026-06-14]**: (**🧩 CONSOLIDACIÓN de los 3 sub-agents locales → `booster-skills@0.3.0`** [ADR-064, Accepted]: tras el retiro de agent-rigor (ADR-060) los 3 archivos en `agents/` quedaron huérfanos. Resueltos sin duplicar lo que superpowers/booster-skills ya cubren — `security-auditor`→módulo compliance Chile en `booster-skills:security-scanner`; `sre-oncall`→nuevo sub-agent SRE pre-merge; `code-reviewer`→retirado (ADR-check plegado en `booster-stack-conventions` paso 7; review genérico=superpowers). `booster-skills` 6→7 sub-agents, **release [`v0.3.0`](https://github.com/boosterchile/booster-skills/releases/tag/v0.3.0)** [PR booster-skills#2]. En `booster-ai`: `agents/` **eliminado**, CLAUDE.md §Capas adicionales actualizado, stub `migrate-booster-agents` cerrado (Done), **ADR-064** (número confirmado por el guard — la cadena ADR del día fue 051→060→064 por colisiones). PyYAML cazó un bug que `claude plugin validate` no vio (colon-space en la description de sre-oncall). **PR [#466](https://github.com/boosterchile/booster-ai/pull/466) mergeado** [squash `768a4cc`]. Solo governance/tooling. Ver §Sesión 2026-06-14 (cont.).) **Antes (mismo día)**: (**🔧 MIGRACIÓN capa de disciplina: `agent-rigor` → `superpowers`** [ADR-060, Accepted]: se retira el plugin bespoke `agent-rigor` (motor bash sin tests, gate de enforcement no operativo de facto) y se adopta `superpowers` (`obra/superpowers`, MIT, marketplace oficial) como Capa 1 de disciplina genérica. `booster-skills` se mantiene como Capa 2 y **ya está en 0.2.0** con los mecanismos rescatables convertidos en skills [`definicion-de-terminado`, `tdd-dominio-critico`] + ledger observacional sin gates. Docs vivos actualizados: `CLAUDE.md`, `AGENTS.md`, `README.md` y el stub `migrate-booster-agents`. ⚠️ El ADR se preparó como "051" pero ese número ya estaba ocupado [`051-pii-redaction-logger`] → el guard `check-adr-numbering` bloqueó la colisión → renumerado al siguiente libre **060** (el repo iba por 059, no por 050 como sugería la estructura del CLAUDE.md). **PR [#464](https://github.com/boosterchile/booster-ai/pull/464) mergeado** [squash `91eccb1`, 21/21 checks SUCCESS]. Solo docs/governance — sin cambios de código/runtime/CI/deploy. Ver §Sesión 2026-06-14.) **Antes [2026-06-07]**: (**🔴→✅ INCIDENTE Redis TLS resuelto y CERRADO en prod**: signup-request daba 503 / rate-limit fail-closed porque el replace de Memorystore en cost-opt [ADR-058] rotó la CA y rompió el handshake TLS — ioredis usaba `tls:{}` sin pinnear la CA. **Fix CA-pinning shippeado** [PR #420 `d504811`, rev `00374-loh` 100%; verificados SC-2 signup→202, SC-3 logs limpios, rate-limit→429] + endurecido `whatsapp-bot` [quitado `rejectUnauthorized:false`]. Verificación E2E Playwright gateada [#422], cierre docs [#421], follow-up paths-ignore [#423]; gate no-op de #422 rechazado → lane de release libre. **PRs #420→#423 mergeados.** 4 follow-ups abiertos. Ver §Sesión 2026-06-07 incidente. Antes hoy: **handoff al día (#414, #416)** + **`release.yml` deja de disparar deploy en pushes docs-only** [`paths-ignore` denylist falla-seguro, #415] — **filtro validado end-to-end** [SC-1 docs-only→0 runs por #416; SC-2 código→dispara por #415; follow-up cerrado #417]. Antes [2026-06-06]: **Optimización de costos GCP cerrada 100% — 6/6 palancas aplicadas a prod** [ADR-058] + **DNS endpoint del gateway primary** [ADR-059] + **drift SEC-001 reconciliado** [decomiso SC-G7 + T4] + **IAM Owner drift resuelto** [phantom de tfvars, NO swap, #411] + **drift check de Terraform en CI live+verde** [SA dedicado `terraform-drift@`, #412/#413]. ✅ `terraform plan` global = **No changes**. PRs **#406→#417** mergeados a `main`. Ver §Sesión 2026-06-06.)
 **Anterior**: 2026-06-05 (**Cierre del leg Google de SEC-001 H1.2 por boundary + reaper** [ADR-057] — deploy prod SUCCESS + `terraform apply` [reaper paused] + dry-run validado [scanned=14, 0 acciones]; **SC-1.2.2 Google leg = MET**; fix CodeQL `js/incomplete-sanitization` en `escapeCell`. PRs **#402→#405**. Ver §Sesión 2026-06-05.) · **2026-06-03**: App Check reCAPTCHA v3 PR #401 mergeado (⚠️ NO activar enforcement hasta ver tráfico verificado post-deploy) + DEFINE epic entorno dev ADR-055 DRAFT + hilo gitleaks abierto — ver §Sesión 2026-06-03.
 **Documento vivo**: este archivo refleja el estado del proyecto. ✅ **NOTA 2026-06-06**: todo el trabajo de las sesiones 06-04→06-06 está **mergeado a `main`** (PRs #402→#413); la rama de la última sesión (`ci/drift-dedicated-reader-sa`, #413 squasheado como `2fce2df`) ya está integrada y puede borrarse. Para snapshots históricos ver `docs/handoff/YYYY-MM-DD-*.md`.
 **Plan de referencia**: [`.specs/production-readiness/roadmap.md`](../../.specs/production-readiness/roadmap.md) (S0 cerrado, S1a Bloque A cerrado, pickup S1b) + [`docs/plans/2026-05-12-identidad-universal-y-dashboard-conductor.md`](../plans/2026-05-12-identidad-universal-y-dashboard-conductor.md) (plan histórico waves 1-6)
+
+---
+
+## Sesión 2026-07-01 — Datadog en GKE (infra+logs, sin APM · ADR-071) + limpieza de la lane de release
+
+> Se recuperó trabajo sin commitear de observabilidad Datadog para el gateway GKE (stash sobre una rama ya mergeada). Se resolvió la decisión crítica con el PO, se ajustó el diseño a la realidad del repo, se mergeó, y se dejó la lane de release limpia. **PR #554 mergeado a `main`.**
+
+### Decisión del PO (ADR-071, Decisión 1 = C)
+
+Datadog en el cluster `booster-ai-telemetry` (único workload GKE) con alcance **infra + logs**, **sin APM Datadog**. No se inyecta `ddtrace` por Single Step Instrumentation:
+
+- **Seguridad**: `ddtrace` exporta a Datadog **fuera** del `RedactingSpanExporter` que redacta credenciales bearer de los spans del stream Teltonika antes de ir a Cloud Trace → reintroduce el riesgo de fuga que ese exporter existe para tapar.
+- **Doble instrumentación**: OTel + ddtrace monkey-patchean las mismas libs → spans rotos/duplicados.
+- Los traces del gateway **se quedan en OTel → `RedactingSpanExporter` → Cloud Trace**. Si algún día se quieren en Datadog, la vía es dual-export **OTLP** desde el mismo SDK (mantiene el redactor), nunca ddtrace/SSI.
+
+### Correcciones de diseño vs. el borrador del ADR
+
+- **IaC (Dec. 2)**: el repo **no tiene provider TF de Helm/Kubernetes** ni ESO; sus workloads GKE (incluido el gateway) se aplican por `kubectl`/Cloud Build (ADR-065), no por Terraform. Se descartó portar Datadog a `helm_release`/`kubernetes_manifest` (superficie de auth contra cluster privado + inconsistente). El CR queda como **manifest versionado** (`datadog-agent.yaml`, `apm.instrumentation.enabled: false`); el Operator se instala por Helm en bootstrap. Solo el **contenedor del secret** va en Terraform.
+- **Secreto (Dec. 3)**: `datadog-api-key` en GSM (`security.tf`, `local.secret_names`, placeholder; el owner rota el valor real). El Secret k8s se materializa en el bootstrap leyendo de GSM, no de una env var. **No se monta en ningún Cloud Run** → no interactúa con el preflight de placeholders validados (INC-2026-06-19). ESO diferido.
+
+### Qué shippeó (PR [#554](https://github.com/boosterchile/booster-ai/pull/554), squash `79ad26c`)
+
+| Archivo | Cambio |
+|---|---|
+| `infrastructure/k8s/datadog-agent.yaml` | `apm.instrumentation.enabled: false`; infra + logs + tags |
+| `infrastructure/security.tf` | contenedor GSM `datadog-api-key` |
+| `infrastructure/k8s/setup-datadog.sh` | runbook: lee la key de GSM, sin `rollout restart` |
+| `infrastructure/k8s/README.md` | sección Datadog al alcance C; ESO diferido |
+| `infrastructure/k8s/telemetry-tcp-gateway{,-dr}.yaml` | labels/annotations solo de log + tags |
+| `docs/adr/071-…md` | **Accepted**; Dec. 1=C, Dec. 2/3 corregidas |
+
+**Evidencia**: `terraform fmt` limpio · `terraform validate` Success · `bash -n` OK · YAML válido · pre-commit verde (gitleaks 0 leaks, Biome, check-adr-numbering, spec-drift) · 21 checks de CI/Security verdes en el PR.
+
+### Higiene de rama
+
+El trabajo estaba stasheado sobre `chore/node24-docs-alias-ai-provider` (rama de #551, ya squash-mergeada). Se movió a `feat/datadog-gke-observability` fresca desde `main`. `.specs/medicion-huella-segmento/plan.md.save` (autosave de editor) se dejó sin trackear, no se commiteó ni borró.
+
+### Activación pendiente (cloud-ops del owner — NO pasa por release.yml)
+
+1. `terraform apply` → crea el contenedor `datadog-api-key` en Secret Manager.
+2. `echo -n "<dd-api-key>" | gcloud secrets versions add datadog-api-key --data-file=-`
+3. `bash infrastructure/k8s/setup-datadog.sh` contra el cluster.
+4. Verificar infra + logs en Datadog; revisar costo a 24h.
+
+### Limpieza de la lane de release (3 gates zombie rechazados)
+
+Al mergear #554 (que dispara release.yml porque `infrastructure/**` **no** está en `paths-ignore`) la lane arrastraba varios release runs `waiting` en el gate `production` sin resolver:
+
+| Run | SHA | Qué era | Acción |
+|---|---|---|---|
+| `28551172103` | `79ad26c` | #554 Datadog (infra-only, deploy no-op de app) | rechazado |
+| `28531346212` | `11fd1a4` | #552 versionado de plugins | rechazado |
+| `27772000792` | `796c0c3` | **#496 (F2/P0-C), zombie `waiting` desde 2026-06-18 (~13d)** | rechazado |
+
+Todos rechazados vía API `pending_deployments` (`environment_ids` **entero** en JSON body; `-f` da 422). El reject deja el run `completed/failure` (artefacto normal, no un fallo). **Lane final: 0 waiting / 0 in_progress / 0 queued.** Memoria: [[ci-release-paths-ignore-2026-06]] (variante 2026-07-01), [[datadog-gke-infra-logs-no-apm-2026-07]].
+
+> 🧠 Memoria nueva: [[datadog-gke-infra-logs-no-apm-2026-07]] — NO revivir APM/ddtrace en el gateway (bypasea el redactor); traces en OTel→Cloud Trace; secret en GSM; workloads GKE por kubectl no TF.
+
+---
+
+## Ventana 2026-06-22 → 06-30 — reconstrucción del hueco (24 PRs #528–#551 mergeados)
+
+> ⚠️ **Reconstruido a posteriori** desde `git log` de `main` + memorias (no desde un log de sesión vivo). El detalle fino del *porqué* de cada PR está en las memorias enlazadas; acá va el mapa de lo que **aterrizó en `main`**. El handoff no cubría este tramo (venía stale en 06-19).
+
+### 2026-06-22 — cierre de gaps rojo/amarillo (batch #528–#536 mergeado)
+
+Barrido de cierre de brechas de la auditoría/inventario. **Todos mergeados a `main`:**
+
+| PR | Qué |
+|---|---|
+| #528 | chore(repo): cierre gaps rojo/amarillo — inventario + triage + remueve `ai-provider` |
+| #529 | feat(stakeholder): endpoint k-anon de agregaciones geo de zonas (cierra B2) |
+| #530 | feat(infra): SLOs formales + burn-rate alerts (F-13/SC-20); DLQ sms-fallback N/A (F-10) |
+| #531 | feat(observability): spans OTel de negocio en operaciones de dominio del api |
+| #532 | ci(security): Trivy gate **bloqueante** en HIGH/CRITICAL |
+| #533 | fix(security): resuelve 4 alertas CodeQL high de code-scanning |
+| #534 | docs(runbooks): runbooks operacionales por servicio (SC-21) |
+| #535 | feat(pricing): cron mensual de cobro de membership fees v2 (gap B5) |
+| #536 | docs: corrige cabos sueltos (gateway README stale + usage demo-dry-run) |
+
+> ⚠️ **Batch distinto que NO mergeó**: el barrido de `_followups` **#509–#527** (19 PRs, mismo 06-22) sigue **ABIERTO** hoy (07-01). No confundir con #528–#536. Detalle en [[followups-sweep-2026-06-22]] (~30 de 47 stubs cerrados por PR/ya-hecho/moot; el tail es no-agent-resolvable: Docker, cloud-ops del owner, legal/PO).
+
+### 2026-06-22→23 — crisis de la lane de release + deploy de transport-documents
+
+| PR | Qué |
+|---|---|
+| #537 / #538 | ci(release): `workflow_dispatch` para re-disparar deploy manual (#538 re-hace #537) |
+| #539 | ci(release): **resetea la concurrency group** para destrabar la lane (dead-lock) |
+| #540 / #541 | fix(api): deps runtime de `transport-documents` en Docker build + `pnpm deploy` |
+| #542 | ci: docker build + smoke del api (cacha fallos de contenedor pre-merge) |
+
+- **Dead-lock de la lane** (memoria [[ci-release-paths-ignore-2026-06]]): el lock trabado **no** se liberó cancelando/re-disparando; el fix real fue **renombrar la concurrency group** (#539). Quedó `workflow_dispatch` en `main` (#537/#538) para re-disparar deploy sin push.
+- **transport-documents** (memoria [[api-bundled-pkg-runtime-deps-2026-06]]): el api bundlea workspace packages; sus deps externas van en 3 lugares o el deploy rompe en capas. Costó 2 fixes (#540/#541); CI no corría el docker build → #542 lo agregó como gate pre-merge.
+
+### 2026-06-24 — tooling SDD / ledger de retoma
+
+| PR | Qué |
+|---|---|
+| #543 | chore(goal): remover referencias a `agent-rigor` del runbook |
+| #544 | chore(sdd): anclar el ledger de retoma en `docs/sdd` vía symlink |
+| #545 | chore(goal): ledger robusto en worktrees (`--git-common-dir`) + limpieza |
+| #546 | ci(release): excluir `scripts/` de `paths-ignore` (no dispara deploy) |
+
+> #546 corrige el gotcha de la memoria: `scripts/` **no** estaba en `paths-ignore` → merges de scripts disparaban release runs que colgaban el gate.
+
+### 2026-06-25 — medición de huella sobre el segmento real (F1+F2)
+
+| PR | Qué |
+|---|---|
+| #547 | docs(spec): medición de huella de carbono sobre el segmento real (F1+F2) |
+| #548 | docs(plan): plan de implementación (F1+F2) |
+| #549 | feat(carbon): columnas opt-in de huella (empresa + override viaje), Task 1 |
+| #550 | docs(plan): L13 a inglés total + migración hand-written |
+
+Arranca el epic de medición de huella; #549 es la primera tarea de implementación (columnas opt-in). Spec/plan en `.specs/medicion-huella-segmento/` (ahí quedó el autosave `plan.md.save` que esta sesión dejó sin trackear).
+
+### 2026-06-30 — #551
+
+`chore(repo): alinear docs a Node 24 y quitar alias muerto ai-provider` — cierre de higiene de docs (memoria [[node-version-pin-24-jsdom-2026-06]]: el repo fija Node 24).
+
+> 🧠 Memorias de esta ventana: [[followups-sweep-2026-06-22]], [[ci-release-paths-ignore-2026-06]], [[api-bundled-pkg-runtime-deps-2026-06]], [[safety-alert-template-2026-06]], [[node-version-pin-24-jsdom-2026-06]].
 
 ---
 

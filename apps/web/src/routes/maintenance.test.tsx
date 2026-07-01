@@ -25,7 +25,9 @@ describe('MaintenanceRoute', () => {
 
   it('expone CTA a producción app.boosterchile.com', () => {
     render(<MaintenanceRoute />, { wrapper });
-    const cta = screen.getByRole('link', { name: /app\.boosterchile\.com/i });
+    // Regex anclada (^...$): matchea el nombre accesible exacto del CTA, no
+    // un substring arbitrario (CodeQL js/regex/missing-regexp-anchor).
+    const cta = screen.getByRole('link', { name: /^Ir a app\.boosterchile\.com$/i });
     expect(cta).toHaveAttribute('href', 'https://app.boosterchile.com');
   });
 
