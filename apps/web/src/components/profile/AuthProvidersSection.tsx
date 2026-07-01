@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { FirebaseError } from 'firebase/app';
-import type { User } from 'firebase/auth';
+import { EmailAuthProvider, GoogleAuthProvider, type User } from 'firebase/auth';
 import { Check, KeyRound, Mail, Plus, Shield, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -48,8 +48,14 @@ function AuthProvidersBody({ user }: { user: User }) {
   const [version, setVersion] = useState(0);
   const refresh = () => setVersion((v) => v + 1);
   const providers = getLinkedProviders(user);
-  const hasGoogle = providers.includes('google.com');
-  const hasPassword = providers.includes('password');
+  // Comparamos contra los providerId canónicos del SDK de Firebase
+  // (`GoogleAuthProvider.PROVIDER_ID` === 'google.com',
+  // `EmailAuthProvider.PROVIDER_ID` === 'password'), NO contra substrings de
+  // una URL. `Array.includes` hace igualdad exacta de elemento, así que no
+  // hay riesgo de que un host arbitrario matchee (CodeQL
+  // js/incomplete-url-substring-sanitization).
+  const hasGoogle = providers.includes(GoogleAuthProvider.PROVIDER_ID);
+  const hasPassword = providers.includes(EmailAuthProvider.PROVIDER_ID);
 
   return (
     <section className="mt-10">
@@ -72,7 +78,7 @@ function AuthProvidersBody({ user }: { user: User }) {
             refresh();
           }}
           onRemove={async () => {
-            await unlinkProvider(user, 'google.com');
+            await unlinkProvider(user, GoogleAuthProvider.PROVIDER_ID);
             await user.reload();
             refresh();
           }}
@@ -87,7 +93,7 @@ function AuthProvidersBody({ user }: { user: User }) {
               status="linked"
               canRemove={providers.length > 1}
               onRemove={async () => {
-                await unlinkProvider(user, 'password');
+                await unlinkProvider(user, EmailAuthProvider.PROVIDER_ID);
                 await user.reload();
                 refresh();
               }}
