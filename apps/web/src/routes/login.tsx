@@ -43,7 +43,7 @@ const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
  */
 export function LoginRoute() {
   const { user, loading } = useAuth();
-  const { flags } = useFeatureFlags();
+  const { flags, isLoading: flagsLoading } = useFeatureFlags();
   // biome-ignore lint/suspicious/noExplicitAny: search params del legacy escape hatch sin type strict.
   const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string };
   const navigate = useNavigate();
@@ -86,6 +86,18 @@ export function LoginRoute() {
   const isDemoHost = host === 'demo.boosterchile.com' || host === 'demo.localhost';
   if (isDemoHost) {
     return <Navigate to="/demo" />;
+  }
+
+  // Esperar a que los feature flags resuelvan antes de elegir el flujo. Sin
+  // esto, el form legacy (email/password) parpadea ~2s antes de que llegue
+  // `auth_universal_v1_activated` y conmute al flujo universal (RUT + clave
+  // numérica). El default OFF durante la carga causaba ese flash.
+  if (flagsLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
+        <output className="text-neutral-600 text-sm">Cargando…</output>
+      </div>
+    );
   }
 
   if (useUniversalFlow) {
