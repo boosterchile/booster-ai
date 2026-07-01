@@ -339,3 +339,117 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     expect(calls.incrCalled).toEqual([]);
   });
 });
+
+// XFF follow-up parte 2 (.specs/_followups/xff-trust-boundary-resto-endpoints.md):
+// reset-on-success del counter per-RUT. Un auth EXITOSO (2xx) limpia el counter
+// per-RUT para que un login legítimo no cuente para el lockout (y reduce el DoS
+// dirigido: alguien con un RUT conocido ya no acumula intentos contra la víctima
+// en cada login exitoso de esta). El per-IP NUNCA se resetea (un éxito puntual no
+// perdona el abuso cross-RUT desde la misma IP).
+describe('createRateLimitPinMiddleware — reset-on-success per-RUT', () => {
+  function makeRedisWithDel(rutCount: number, ipCount: number) {
+    const delCalled: string[] = [];
+    const pipeline = {
+      incr() {
+        return this;
+      },
+      expire() {
+        return this;
+      },
+      async exec(): Promise<unknown[]> {
+        return [
+          [null, rutCount],
+          [null, 1],
+          [null, ipCount],
+          [null, 1],
+        ];
+      },
+    };
+    const redis = {
+      multi: () => pipeline,
+      del: async (key: string): Promise<number> => {
+        delCalled.push(key);
+        return 1;
+      },
+    };
+    return { redis, delCalled };
+  }
+
+  function makeAppWithStatus(
+    mw: ReturnType<typeof createRateLimitPinMiddleware>,
+    status: 200 | 401,
+  ) {
+    const app = new Hono();
+    app.use('/x', mw);
+    app.post('/x', (c) => c.json({ ok: status < 400 }, status));
+    return app;
+  }
+
+  it('auth exitoso (2xx) → DEL del counter per-RUT, NO del per-IP', async () => {
+    const { redis, delCalled } = makeRedisWithDel(1, 1);
+    const mw = createRateLimitPinMiddleware({ redis: redis as never, logger: noopLogger });
+    const res = await makeAppWithStatus(mw, 200).request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(delCalled).toEqual([`${KEY_PREFIX}12345678-5`]);
+  });
+
+  it('auth fallido (401) → NO resetea el counter per-RUT', async () => {
+    const { redis, delCalled } = makeRedisWithDel(1, 1);
+    const mw = createRateLimitPinMiddleware({ redis: redis as never, logger: noopLogger });
+    const res = await makeAppWithStatus(mw, 401).request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(401);
+    expect(delCalled).toEqual([]);
+  });
+
+  it('429 (rate-limited) → NO resetea (el handler no corre)', async () => {
+    const { redis, delCalled } = makeRedisWithDel(6, 1); // rutCount 6 > limit 5
+    const mw = createRateLimitPinMiddleware({ redis: redis as never, logger: noopLogger });
+    const res = await makeAppWithStatus(mw, 200).request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(429);
+    expect(delCalled).toEqual([]);
+  });
+
+  it('DEL falla en éxito → la respuesta exitosa no se rompe (best-effort)', async () => {
+    const pipeline = {
+      incr() {
+        return this;
+      },
+      expire() {
+        return this;
+      },
+      async exec(): Promise<unknown[]> {
+        return [
+          [null, 1],
+          [null, 1],
+          [null, 1],
+          [null, 1],
+        ];
+      },
+    };
+    const redis = {
+      multi: () => pipeline,
+      del: async (): Promise<number> => {
+        throw new Error('redis del boom');
+      },
+    };
+    const mw = createRateLimitPinMiddleware({ redis: redis as never, logger: noopLogger });
+    const res = await makeAppWithStatus(mw, 200).request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+  });
+});

@@ -239,4 +239,53 @@ describe('useChatStream', () => {
     await waitFor(() => expect(lastEventSource?.url).toContain('/assignments/a2/'));
     expect(first?.closed).toBe(true);
   });
+
+  // use-chat-stream-hardening #1: cortar reconnect en errores PERMANENTES.
+  // Fake timers: el reconnect se reagenda con backoff (≥2000ms tras el 1er
+  // error). Avanzamos timers para probar de forma determinística que un 403/401
+  // NO reintenta y un 503 SÍ.
+  it('mint 403 (permanente) → onDisconnect SIN reconnect', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({ error: 'forbidden' }),
+    });
+    const onDisconnect = vi.fn();
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn(), onDisconnect }));
+    await vi.advanceTimersByTimeAsync(50); // corre el connect inicial (getIdToken + fetch)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onDisconnect).toHaveBeenCalled();
+    expect(lastEventSource).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000); // muy pasado cualquier backoff
+    expect(fetchMock).toHaveBeenCalledTimes(1); // sin reconnect
+  });
+
+  it('mint 401 (permanente) → SIN reconnect', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'unauthorized' }),
+    });
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mint 503 (transitorio) → reconnect (segundo mint)', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'realtime_disabled' }),
+    });
+    renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2100); // pasa el backoff (2000ms) → reconnect
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
 });
