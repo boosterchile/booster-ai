@@ -9,6 +9,7 @@ import {
   shipperCreditDecisions,
   trips,
 } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Service orquestador de "Booster Cobra Hoy" (ADR-029 + ADR-032).
@@ -147,6 +148,29 @@ export async function cotizarCobraHoy(input: CotizacionInput): Promise<Cotizacio
  * tablas en cascada de validación.
  */
 export async function cobraHoy(input: CobraHoyInput): Promise<CobraHoyResult> {
+  return await withBusinessSpan(
+    {
+      name: 'factoring.cobra_hoy',
+      attributes: {
+        'booster.assignment_id': input.asignacionId,
+        'booster.empresa_id': input.empresaCarrierId,
+        'booster.factoring.flag_activated': input.factoringV1Activated,
+      },
+    },
+    async (span) => {
+      const result = await cobraHoyInner(input);
+      setResultAttributes(span, {
+        'booster.factoring.status': result.status,
+        'booster.factoring.adelanto_id': 'adelantoId' in result ? result.adelantoId : undefined,
+        'booster.factoring.monto_adelantado_clp':
+          'montoAdelantadoClp' in result ? result.montoAdelantadoClp : undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function cobraHoyInner(input: CobraHoyInput): Promise<CobraHoyResult> {
   const { db, logger, asignacionId, empresaCarrierId, factoringV1Activated } = input;
 
   if (!factoringV1Activated) {

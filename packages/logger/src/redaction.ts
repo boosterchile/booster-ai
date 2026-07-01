@@ -34,6 +34,14 @@ export const redactionPaths: string[] = [
   '*.phoneNumber',
   '*.phone_number',
   '*.rut',
+  // Variantes de RUT en documentos tributarios de transporte (review F4-4a
+  // finding 6): emisor/receptor en camelCase (manual-entry body) y snake_case
+  // (payloads/rows DB). Defensa en profundidad — la value-based redaction ya
+  // cubre RUTs en strings, esto los redacta también por path.
+  '*.rutEmisor',
+  '*.rut_emisor',
+  '*.rutReceptor',
+  '*.rut_receptor',
   '*.dni',
   '*.passport',
   '*.ssn',

@@ -19,7 +19,10 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
-import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
+import {
+  type DocumentClosePolicy,
+  confirmarEntregaViaje,
+} from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
@@ -66,6 +69,12 @@ export function createTripRequestsV2Routes(opts: {
    * warn en el wire fire-and-forget). Útil para dev sin KMS.
    */
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Política de cierre flexible documental (ADR-070, F4-4a). Si se provee y el
+   * flag está ON, confirmar-recepcion exige ≥1 documento subido (según fecha
+   * de corte). Ausente → sin precondición documental.
+   */
+  documentClosePolicy?: DocumentClosePolicy | undefined;
 }) {
   const app = new Hono();
 
@@ -469,6 +478,7 @@ export function createTripRequestsV2Routes(opts: {
         userId: auth.userContext.user.id,
       },
       config: opts.certConfig ?? {},
+      ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
     if (!result.ok) {
