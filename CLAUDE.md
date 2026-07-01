@@ -44,7 +44,7 @@ Contenido relevante:
 
 > **Prioridad**: `superpowers:using-superpowers` declara explícitamente que las instrucciones del usuario (este `CLAUDE.md`, `AGENTS.md`) tienen **prioridad máxima** sobre las skills. Este archivo manda.
 
-### Plugin 2: `booster-skills` 0.2.0+ (dominio + estándar Booster)
+### Plugin 2: `booster-skills` 0.4.0+ (dominio + estándar Booster)
 
 Provee el **dominio + stack + auditoría + estándar de disciplina específicos de Booster AI**.
 
@@ -67,7 +67,7 @@ Contenido:
 Tras instalar ambos plugins, una sesión nueva de Claude Code debe reportar (vía `/plugin list`):
 
 - `superpowers` ✓ enabled
-- `booster-skills@booster-skills` v0.2.0 ✓ enabled
+- `booster-skills@booster-skills` v0.4.0 ✓ enabled
 - `agent-rigor` ❌ ausente (retirado por ADR-060)
 
 Test de aceptación de superpowers: sesión limpia + "hagamos una lista de tareas en React" → debe auto-disparar `brainstorming` antes de escribir código.
@@ -185,8 +185,10 @@ Booster-AI/
 │
 ├── .claude/                    # Los plugins se instalan a nivel usuario/global
 │   │                           # (~/.claude) vía `/plugin install`. El
-│   │                           # `.claude/settings.json` versionado habilita
-│   │                           # `booster-skills` (enabledPlugins).
+│   │                           # `.claude/settings.json` versionado declara
+│   │                           # `superpowers` + `booster-skills`
+│   │                           # (enabledPlugins + extraKnownMarketplaces);
+│   │                           # el resto de .claude/ sigue gitignored.
 │   ├── settings.local.json     # permisos pre-autorizados (gitignored)
 │   ├── ledger/                 # ledger observacional de booster-skills (.jsonl per session)
 │   ├── worktrees/              # worktrees parallel (superpowers:using-git-worktrees)
