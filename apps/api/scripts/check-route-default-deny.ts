@@ -78,7 +78,6 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSignupRequestsRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
-  createAdminLiquidacionesRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSeedRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
@@ -90,6 +89,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // Router-vars montados bajo /assignments (userContext en app.use('/assignments/*', …)).
   assignmentsRouter: { category: 'ENFORCED', rationale: '' },
   chatRouter: { category: 'ENFORCED', rationale: '' },
+  // Repositorio documental de transporte (ADR-070, F4-4a): firebaseAuth +
+  // userContext preceden el mount vía app.use('/transport-orders/*', …) y
+  // app.use('/documents/*', …); la autorización por tenant (shipper-owner |
+  // carrier-assigned) la resuelve cada handler.
+  transportDocsRouter: { category: 'ENFORCED', rationale: '' },
 
   // --- GATED-CLOSED (bare firebaseAuth, gate in-handler) ---
   meRouter: {
@@ -101,6 +105,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'GATED-CLOSED',
     rationale:
       'sub-mount /me/consents: resuelve userId por firebase_uid → 404 si no hay fila users.',
+  },
+  createStakeholderZonasRoutes: {
+    category: 'GATED-CLOSED',
+    rationale:
+      'sub-mount /me/stakeholder (geo aggregations, gap B2/D11): resuelve userId por firebase_uid → 404 si no hay fila; exige membership rol stakeholder_sostenibilidad activa → 403; gate k-anon dataset-level (total<5 → insufficient_data). TODO consent-scope (ADR-028 no modela zona).',
   },
   createMeClaveNumericaRoutes: {
     category: 'GATED-CLOSED',

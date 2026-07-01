@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { assignments, facturasBoosterClp, liquidaciones, trips } from '../db/schema.js';
+import { assignments, liquidaciones, trips } from '../db/schema.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -15,9 +15,14 @@ import type { UserContext } from '../services/user-context.js';
  *   - Importes: monto bruto, comisión, IVA, neto carrier, total factura
  *     Booster.
  *   - Status: `pending_consent`|`lista_para_dte`|`dte_emitido`|
- *     `pagada_al_carrier`|`disputa`.
- *   - DTE meta (cuando aplica): folio, emitido_en, dte_status SII,
- *     pdf_url para descarga, provider que emitió.
+ *     `pagada_al_carrier`|`disputa` (`dte_emitido` es legacy — ADR-069).
+ *
+ * **DTE deprecado (ADR-069, O-7 deprecación escalonada)**: Booster dejó
+ * de emitir DTE (remoción Sovos). Los 5 campos `dte_*` se **mantienen en
+ * el response como `null`** para backward-compat de PWAs en vuelo/caché,
+ * pero ya no se pueblan (no se hace join a `facturas_booster_clp`). La
+ * eliminación del contrato es una fase posterior tras confirmar cero
+ * consumidores.
  *
  * Skip silencioso (200 con lista vacía) si `PRICING_V2_ACTIVATED=false`:
  * en entornos no-prod no hay liquidaciones, el carrier ve un mensaje
@@ -54,19 +59,11 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
         totalFacturaBoosterClp: liquidaciones.totalFacturaBoosterClp,
         pricingMethodologyVersion: liquidaciones.pricingMethodologyVersion,
         status: liquidaciones.status,
-        dteFolio: liquidaciones.dteFacturaBoosterFolio,
-        dteEmitidoEn: liquidaciones.dteFacturaBoosterEmitidoEn,
         createdAt: liquidaciones.createdAt,
-        // Meta del DTE viene de `facturas_booster_clp` (tabla canónica).
-        facturaId: facturasBoosterClp.id,
-        dteStatus: facturasBoosterClp.dteStatus,
-        dtePdfUrl: facturasBoosterClp.dtePdfGcsUri,
-        dteProvider: facturasBoosterClp.dteProvider,
         // Trip info para que el carrier identifique la liquidación.
         trackingCode: trips.trackingCode,
       })
       .from(liquidaciones)
-      .leftJoin(facturasBoosterClp, eq(facturasBoosterClp.liquidacionId, liquidaciones.id))
       .innerJoin(assignments, eq(assignments.id, liquidaciones.asignacionId))
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .where(eq(liquidaciones.empresaCarrierId, empresaCarrierId))
@@ -86,11 +83,15 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
         total_factura_booster_clp: r.totalFacturaBoosterClp,
         pricing_methodology_version: r.pricingMethodologyVersion,
         status: r.status,
-        dte_folio: r.dteFolio,
-        dte_emitido_en: r.dteEmitidoEn?.toISOString() ?? null,
-        dte_status: r.dteStatus,
-        dte_pdf_url: r.dtePdfUrl,
-        dte_provider: r.dteProvider,
+        // @deprecated ADR-069 / O-7 — Booster ya no emite DTE. Estos 5
+        // campos se mantienen en el response devolviendo `null` para
+        // backward-compat de PWAs en vuelo/caché; se removerán del schema
+        // JSON en una fase posterior tras confirmar cero consumidores.
+        dte_folio: null,
+        dte_emitido_en: null,
+        dte_status: null,
+        dte_pdf_url: null,
+        dte_provider: null,
         creado_en: r.createdAt.toISOString(),
       })),
     });

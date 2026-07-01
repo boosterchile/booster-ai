@@ -1,0 +1,9 @@
+{
+  "extraKnownMarketplaces": {
+    "booster-skills": { "source": { "source": "github", "repo": "boosterchile/booster-skills" } }
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "booster-skills@booster-skills": true
+  }
+}

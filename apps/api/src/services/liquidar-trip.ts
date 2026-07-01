@@ -7,7 +7,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, carrierMemberships, liquidaciones, membershipTiers } from '../db/schema.js';
-import { emitirDteLiquidacion } from './emitir-dte-liquidacion.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Service orquestador de liquidación del trip (ADR-030 §8).
@@ -28,11 +28,13 @@ import { emitirDteLiquidacion } from './emitir-dte-liquidacion.js';
  *   - carrier sin membership activa → skip (carrier nunca aceptó T&Cs v2)
  *   - membership activa pero `consent_terms_v2_aceptado_en IS NULL` →
  *     INSERT liquidación con `status='pending_consent'` (pendiente de
- *     consent; emisión DTE bloqueada)
+ *     consent del carrier)
  *   - todo OK → calcular + INSERT con `status='lista_para_dte'`
  *
- * NO emite DTE directamente — un job separado `emitir-dte-pendientes`
- * lee las liquidaciones en `lista_para_dte` y llama Sovos.
+ * Booster **no emite DTE** (ADR-069 supersede ADR-024): la emisión vía
+ * Sovos fue removida. La liquidación cierra contablemente al INSERT; el
+ * status `lista_para_dte` se conserva como valor legacy del enum pero ya
+ * no dispara ninguna emisión. Las columnas `dte_*` quedan deprecadas.
  */
 
 export interface LiquidarTripInput {
@@ -71,6 +73,26 @@ export class TierNotFoundError extends Error {
 }
 
 export async function liquidarTrip(input: LiquidarTripInput): Promise<LiquidarTripResult> {
+  return await withBusinessSpan(
+    {
+      name: 'pricing.liquidar_trip',
+      attributes: {
+        'booster.assignment_id': input.assignmentId,
+        'booster.pricing.flag_activated': input.pricingV2Activated,
+      },
+    },
+    async (span) => {
+      const result = await liquidarTripInner(input);
+      setResultAttributes(span, {
+        'booster.pricing.status': result.status,
+        'booster.liquidacion_id': 'liquidacionId' in result ? result.liquidacionId : undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTripResult> {
   const { db, logger, assignmentId, pricingV2Activated } = input;
 
   if (!pricingV2Activated) {
@@ -185,26 +207,9 @@ export async function liquidarTrip(input: LiquidarTripInput): Promise<LiquidarTr
       'liquidarTrip: liquidación creada',
     );
 
-    // ADR-024 wire — emisión fire-and-forget del DTE Tipo 33. Solo
-    // si la liquidación está `lista_para_dte` (con consent v2 firmado).
-    // Si el provider no está configurado, el service skipea con warn
-    // y la liquidación queda en `lista_para_dte` para el cron de
-    // reemisión futuro. NUNCA bloquea el cierre del trip.
-    if (status === 'lista_para_dte') {
-      try {
-        const dteResult = await emitirDteLiquidacion({ db, logger, liquidacionId });
-        logger.info(
-          { liquidacionId, dteStatus: dteResult.status },
-          'liquidarTrip: emitirDteLiquidacion completado',
-        );
-      } catch (err) {
-        logger.error(
-          { err, liquidacionId },
-          'liquidarTrip: emitirDteLiquidacion threw — liquidación queda lista_para_dte',
-        );
-      }
-    }
-
+    // ADR-069: Booster ya no emite DTE. La liquidación cierra acá; el
+    // status `lista_para_dte` queda como estado contable final (legacy),
+    // sin wire de emisión.
     return status === 'pending_consent'
       ? { status: 'pending_consent', liquidacionId }
       : { status: 'liquidacion_creada', liquidacionId };

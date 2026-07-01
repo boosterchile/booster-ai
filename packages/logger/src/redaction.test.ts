@@ -30,6 +30,13 @@ describe('redactionPaths', () => {
     expect(redactionPaths).toContain('*.credit_card');
   });
 
+  it('incluye RUTs de documentos tributarios de transporte (emisor/receptor, ambas convenciones)', () => {
+    expect(redactionPaths).toContain('*.rutEmisor');
+    expect(redactionPaths).toContain('*.rut_emisor');
+    expect(redactionPaths).toContain('*.rutReceptor');
+    expect(redactionPaths).toContain('*.rut_receptor');
+  });
+
   it('incluye datos de pago (creditCard, cvv, cvc)', () => {
     expect(redactionPaths).toContain('*.creditCard');
     expect(redactionPaths).toContain('*.cvv');

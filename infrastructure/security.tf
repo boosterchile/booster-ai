@@ -195,9 +195,10 @@ locals {
     "whatsapp-phone-number-id",
     "whatsapp-business-account-id",
 
-    # DTE provider (Bsale u otros, ADR-007)
-    "dte-provider-api-key",
-    "dte-provider-client-secret",
+    # DTE provider (Bsale u otros) — RETIRADO. Booster dejó de emitir DTE
+    # (ADR-069) y el endpoint/servicio se removió (F3). Estos secretos quedaron
+    # huérfanos; se eliminan del archivador. `terraform apply` destruirá las
+    # secret versions + el secret en Secret Manager (irreversible).
 
     # Flow.cl (pagos, ADR-010)
     "flow-api-key",
@@ -208,6 +209,14 @@ locals {
 
     # Observability
     "sentry-dsn", # opcional
+
+    # Datadog API key (ADR-071) — Agent en GKE (infra + logs, sin APM). NO se
+    # monta en ningún Cloud Run service; el Secret k8s `datadog-secret` se
+    # materializa desde aquí en el bootstrap del cluster (setup-datadog.sh lee
+    # `gcloud secrets versions access latest --secret=datadog-api-key`). GSM es
+    # el source-of-truth; el owner rota el placeholder con la key real:
+    #   echo -n "<dd-api-key>" | gcloud secrets versions add datadog-api-key --data-file=-
+    "datadog-api-key",
 
     # Verify token Meta webhook handshake (DEPRECATED en Fase 6.4 junto al
     # resto). REVIEW: 2026-10-30 (mismo gate que los otros 4 secrets Meta).

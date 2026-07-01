@@ -82,6 +82,10 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
+    # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
+    # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
+    # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
+    TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -656,10 +660,11 @@ module "service_document" {
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
   })
-  secrets = merge(local.common_secrets, {
-    DTE_PROVIDER_API_KEY       = google_secret_manager_secret.secrets["dte-provider-api-key"].secret_id
-    DTE_PROVIDER_CLIENT_SECRET = google_secret_manager_secret.secrets["dte-provider-client-secret"].secret_id
-  })
+  # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
+  # document-service nunca leyó estos secretos; se elimina el binding para
+  # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
+  # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
+  secrets = local.common_secrets
 
   public = false
 
