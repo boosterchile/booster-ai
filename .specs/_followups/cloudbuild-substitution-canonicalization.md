@@ -4,6 +4,17 @@
 **Owner**: PO (Felipe Vicencio)
 **Priority**: **P1** (escalated 2026-05-28 by Sprint 2b T13-fix DA v1 P1 finding — second plan amendment in 48h triggered the escalation clause below)
 
+> ✅ **CERRADO (2026-06-22)**:
+> - **Item 1 (`_AUTH_BLOCKING_DEPLOY` strict-match) → MOOT**: la lane auth-blocking
+>   completa **se removió** del pipeline con el decomiso de la blocking function
+>   (`cloudbuild.production.yaml:551-552` lo documenta; ADR-057 cerró el leg Google por
+>   boundary+reaper en vez de re-desplegar la blocking function). No queda substitution
+>   ni steps gateados por `_AUTH_BLOCKING_DEPLOY` que canonicalizar.
+> - **Item 2 (plan-amendment exception note) → DOCUMENTADO**: es una decisión de
+>   governance ya registrada (excepción puntual de T3-fix + regla "≤10 LOC/≤1 archivo o
+>   sub-spec"). No es una acción de código; su cláusula de escalación queda como trigger
+>   futuro (3ª enmienda → ADR de proceso). Sin pendiente accionable.
+
 ## Escalation log
 
 - 2026-05-28 — Sprint 2c-B T3-fix DA v5: original creation as P2 residual.
