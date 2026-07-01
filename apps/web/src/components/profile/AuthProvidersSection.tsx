@@ -15,6 +15,7 @@ import {
   useAuth,
 } from '../../hooks/use-auth.js';
 import { passwordPolicySchema } from '../../lib/password.js';
+import { translateProviderAuthError } from '../../lib/translate-auth-error.js';
 import { FormField, inputClass } from '../FormField.js';
 
 /**
@@ -148,7 +149,7 @@ function ProviderRow({
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         setError(null);
       } else {
-        setError(translateAuthError(code) ?? `No pudimos ${label}.`);
+        setError(translateProviderAuthError(code) ?? `No pudimos ${label}.`);
       }
     } finally {
       setBusy(false);
@@ -271,7 +272,7 @@ function PasswordLinkForm({
         });
       } else {
         setError('root', {
-          message: translateAuthError(code) ?? 'No pudimos vincular email + contraseña.',
+          message: translateProviderAuthError(code) ?? 'No pudimos vincular email + contraseña.',
         });
       }
     }
@@ -289,7 +290,9 @@ function PasswordLinkForm({
       closeAndReset();
     } catch (err) {
       const code = (err as FirebaseError).code;
-      setError('root', { message: translateAuthError(code) ?? 'No pudimos re-autenticar.' });
+      setError('root', {
+        message: translateProviderAuthError(code) ?? 'No pudimos re-autenticar.',
+      });
     }
   }
 
@@ -469,7 +472,7 @@ function ChangePasswordForm({ user }: { user: User }) {
         setError('newPassword', { message: 'Contraseña muy débil para Firebase.' });
       } else {
         setError('root', {
-          message: translateAuthError(code) ?? 'No pudimos cambiar la contraseña.',
+          message: translateProviderAuthError(code) ?? 'No pudimos cambiar la contraseña.',
         });
       }
     }
@@ -597,31 +600,6 @@ function ChangePasswordForm({ user }: { user: User }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-function translateAuthError(code: string | undefined): string | null {
-  switch (code) {
-    case 'auth/credential-already-in-use':
-    case 'auth/email-already-in-use':
-      return 'Esa cuenta ya pertenece a otro usuario de Booster. Cerrá sesión y entrá con esa cuenta directamente.';
-    case 'auth/provider-already-linked':
-      return 'Este proveedor ya está vinculado a tu cuenta.';
-    case 'auth/weak-password':
-      return 'La contraseña es muy débil. Usá al menos 6 caracteres.';
-    case 'auth/invalid-email':
-      return 'El email no es válido.';
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Email o contraseña incorrectos.';
-    case 'auth/popup-blocked':
-      return 'El navegador bloqueó el popup. Permite popups para app.boosterchile.com.';
-    case 'auth/no-such-provider':
-      return 'No puedes quitar este proveedor porque es el único que tienes.';
-    case 'auth/network-request-failed':
-      return 'Sin conexión a internet. Inténtalo de nuevo.';
-    default:
-      return null;
-  }
-}
+// El mapeo de errores de provider-linking vive ahora en
+// `../../lib/translate-auth-error.ts` (translateProviderAuthError) — colocado
+// junto al de login pero como función separada (copy diferenciado por dominio).
