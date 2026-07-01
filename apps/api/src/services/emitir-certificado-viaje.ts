@@ -31,6 +31,7 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 export interface EmitirCertificadoConfig {
   /** Resource ID de la KMS key (sin :versions). */
@@ -66,12 +67,37 @@ export type EmitirResult =
       pdfBytes: number;
     };
 
-export async function emitirCertificadoViaje(opts: {
+interface EmitirCertificadoViajeOptions {
   db: Db;
   logger: Logger;
   tripId: string;
   config: Partial<EmitirCertificadoConfig>;
-}): Promise<EmitirResult> {
+}
+
+export async function emitirCertificadoViaje(
+  opts: EmitirCertificadoViajeOptions,
+): Promise<EmitirResult> {
+  return await withBusinessSpan(
+    {
+      name: 'certificate.emitir',
+      attributes: { 'booster.trip_id': opts.tripId },
+    },
+    async (span) => {
+      const result = await emitirCertificadoViajeInner(opts);
+      setResultAttributes(span, {
+        'booster.certificate.skipped': result.skipped,
+        'booster.certificate.reason': result.skipped ? result.reason : undefined,
+        'booster.certificate.pdf_bytes': result.skipped ? undefined : result.pdfBytes,
+        'booster.certificate.kms_key_version': result.skipped ? undefined : result.kmsKeyVersion,
+      });
+      return result;
+    },
+  );
+}
+
+async function emitirCertificadoViajeInner(
+  opts: EmitirCertificadoViajeOptions,
+): Promise<EmitirResult> {
   const { db, logger, tripId, config } = opts;
 
   // (1) Config — sin esto no podemos firmar. En dev con env vars vacías

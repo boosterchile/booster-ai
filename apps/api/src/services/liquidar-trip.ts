@@ -7,6 +7,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, carrierMemberships, liquidaciones, membershipTiers } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Service orquestador de liquidación del trip (ADR-030 §8).
@@ -72,6 +73,26 @@ export class TierNotFoundError extends Error {
 }
 
 export async function liquidarTrip(input: LiquidarTripInput): Promise<LiquidarTripResult> {
+  return await withBusinessSpan(
+    {
+      name: 'pricing.liquidar_trip',
+      attributes: {
+        'booster.assignment_id': input.assignmentId,
+        'booster.pricing.flag_activated': input.pricingV2Activated,
+      },
+    },
+    async (span) => {
+      const result = await liquidarTripInner(input);
+      setResultAttributes(span, {
+        'booster.pricing.status': result.status,
+        'booster.liquidacion_id': 'liquidacionId' in result ? result.liquidacionId : undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTripResult> {
   const { db, logger, assignmentId, pricingV2Activated } = input;
 
   if (!pricingV2Activated) {

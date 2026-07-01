@@ -1,0 +1,42 @@
+# Booster AI — Datadog Agent (GKE Autopilot, southamerica-west1)
+#
+# Instala el Datadog Operator + DatadogAgent CR en el namespace `datadog`.
+# Habilita: Infrastructure Monitoring + Log Collection.
+#
+# ⛔ SIN APM Datadog (SSI/ddtrace). Los traces del gateway siguen por OTel →
+#    RedactingSpanExporter → Cloud Trace (ADR-001, ADR-071 Decisión 1 = C). El
+#    tracer ddtrace exportaría FUERA del redactor de credenciales → se descarta.
+#
+# Pre-requisito: ejecutar setup-datadog.sh o seguir los pasos de README.md § Datadog.
+#
+# Cluster: booster-ai-telemetry
+# Site:    us5.datadoghq.com
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog
+  namespace: datadog
+spec:
+  global:
+    clusterName: booster-ai-telemetry
+    site: us5.datadoghq.com
+    tags:
+      - "env:production"
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+  features:
+    orchestratorExplorer:
+      enabled: true
+    clusterChecks:
+      enabled: true
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+    # APM deshabilitado a propósito (ADR-071 Decisión 1 = C). No inyectar
+    # ddtrace por SSI: duplicaría la instrumentación OTel del gateway y
+    # exportaría spans fuera del RedactingSpanExporter (fuga de credenciales).
+    apm:
+      instrumentation:
+        enabled: false
