@@ -51,6 +51,10 @@ spec:
       labels:
         app: telemetry-tcp-gateway
         role: disaster-recovery
+        tags.datadoghq.com/env: "production"
+        tags.datadoghq.com/service: "telemetry-tcp-gateway"
+      annotations:
+        ad.datadoghq.com/gateway.logs: '[{"source":"nodejs","service":"telemetry-tcp-gateway"}]'
     spec:
       serviceAccountName: telemetry-gateway-sa
       # Trivy IaC hardening: pod-level security defaults.
