@@ -51,7 +51,7 @@ Ver ADRs completos en [`docs/adr/`](./docs/adr/).
 
 ### Prerequisites
 
-- Node.js 22 LTS (`.nvmrc` pin). Usa `nvm use` si tienes nvm.
+- Node.js 24 (`.nvmrc` pin). Usa `nvm use` si tienes nvm.
 - pnpm 9+ (`corepack enable && corepack prepare pnpm@latest --activate`)
 - Docker Desktop (para Postgres + Redis locales)
 - `gcloud` CLI (opcional para ambientes GCP)
