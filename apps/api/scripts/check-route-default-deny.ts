@@ -106,6 +106,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     rationale:
       'sub-mount /me/consents: resuelve userId por firebase_uid → 404 si no hay fila users.',
   },
+  createStakeholderZonasRoutes: {
+    category: 'GATED-CLOSED',
+    rationale:
+      'sub-mount /me/stakeholder (geo aggregations, gap B2/D11): resuelve userId por firebase_uid → 404 si no hay fila; exige membership rol stakeholder_sostenibilidad activa → 403; gate k-anon dataset-level (total<5 → insufficient_data). TODO consent-scope (ADR-028 no modela zona).',
+  },
   createMeClaveNumericaRoutes: {
     category: 'GATED-CLOSED',
     rationale:
