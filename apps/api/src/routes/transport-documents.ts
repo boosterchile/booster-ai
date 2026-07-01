@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { assignments, transportDocuments, trips } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularRetentionUntil } from '../services/calcular-retention-until.js';
 
 /**
@@ -259,6 +260,9 @@ export function createTransportDocumentsRoutes(opts: {
       opts.logger.error({ tripId }, 'TRANSPORT_DOCUMENTS_BUCKET ausente — no se puede archivar');
       return c.json({ error: 'storage_unavailable', code: 'storage_unavailable' }, 503);
     }
+    // Capturamos el bucket ya narrowed: el guard de arriba no se propaga al
+    // closure del span (TS pierde el narrowing a través del callback).
+    const transportDocumentsBucket = opts.transportDocumentsBucket;
 
     const authz = await authorizeOverTrip(tripId, auth.empresaId);
     if (!authz.exists) {
@@ -311,63 +315,87 @@ export function createTransportDocumentsRoutes(opts: {
 
     const objectName = `transport-documents/${tripId}/${randomUUID()}.${extForMime(allowedMime)}`;
 
-    try {
-      await getStorage()
-        .bucket(opts.transportDocumentsBucket)
-        .file(objectName)
-        .save(buffer, {
-          contentType: allowedMime,
-          metadata: { cacheControl: 'private, max-age=3600' },
+    // Span de negocio del archivado documental (GCS save → INSERT → publish).
+    // El request entrante ya tiene span HTTP de la auto-instrumentación; este
+    // span marca la operación de DOMINIO "documento archivado" como unidad,
+    // con el outcome real (id, mime, si se publicó el evento).
+    return await withBusinessSpan(
+      {
+        name: 'documents.upload_transport',
+        attributes: {
+          'booster.trip_id': tripId,
+          'booster.document.mime': allowedMime,
+          'booster.document.size_bytes': file.size,
+        },
+      },
+      async (span) => {
+        try {
+          await getStorage()
+            .bucket(transportDocumentsBucket)
+            .file(objectName)
+            .save(buffer, {
+              contentType: allowedMime,
+              metadata: { cacheControl: 'private, max-age=3600' },
+            });
+        } catch (err) {
+          opts.logger.error({ err, objectName, tripId }, 'transport-document GCS upload failed');
+          setResultAttributes(span, { 'booster.document.outcome': 'upload_failed' });
+          return c.json({ error: 'upload_failed', code: 'upload_failed' }, 500);
+        }
+
+        let documentId: string;
+        try {
+          const inserted = await opts.db
+            .insert(transportDocuments)
+            .values({
+              viajeId: tripId,
+              filePath: objectName,
+              fileMime: allowedMime,
+              // doc_type real lo determina el TED (4b) o manual-entry. Defaulteamos
+              // a 'other' hasta entonces (el enum lo exige notNull).
+              docType: 'other',
+              extractionStatus: 'pendiente',
+              source: sourceForMime(allowedMime),
+              uploadedBy: auth.userContext.user.id,
+            })
+            .returning({ id: transportDocuments.id });
+          const row = inserted[0];
+          if (!row) {
+            throw new Error('insert returned no row');
+          }
+          documentId = row.id;
+        } catch (err) {
+          opts.logger.error({ err, objectName, tripId }, 'transport-document INSERT failed');
+          setResultAttributes(span, { 'booster.document.outcome': 'persist_failed' });
+          return c.json({ error: 'persist_failed', code: 'persist_failed' }, 500);
+        }
+
+        opts.logger.info(
+          { documentId, tripId, mime: allowedMime, source: sourceForMime(allowedMime) },
+          'transport-document subido (pendiente)',
+        );
+
+        // Publish fire-and-forget. El consumer (worker TED) llega en 4b.
+        const published = opts.documentUploadedTopic !== undefined;
+        if (opts.documentUploadedTopic) {
+          await publishDocumentUploaded({
+            topicName: opts.documentUploadedTopic,
+            logger: opts.logger,
+            documentId,
+            viajeId: tripId,
+            filePath: objectName,
+            fileMime: allowedMime,
+          });
+        }
+
+        setResultAttributes(span, {
+          'booster.document_id': documentId,
+          'booster.document.outcome': 'archived',
+          'booster.document.event_published': published,
         });
-    } catch (err) {
-      opts.logger.error({ err, objectName, tripId }, 'transport-document GCS upload failed');
-      return c.json({ error: 'upload_failed', code: 'upload_failed' }, 500);
-    }
-
-    let documentId: string;
-    try {
-      const inserted = await opts.db
-        .insert(transportDocuments)
-        .values({
-          viajeId: tripId,
-          filePath: objectName,
-          fileMime: allowedMime,
-          // doc_type real lo determina el TED (4b) o manual-entry. Defaulteamos
-          // a 'other' hasta entonces (el enum lo exige notNull).
-          docType: 'other',
-          extractionStatus: 'pendiente',
-          source: sourceForMime(allowedMime),
-          uploadedBy: auth.userContext.user.id,
-        })
-        .returning({ id: transportDocuments.id });
-      const row = inserted[0];
-      if (!row) {
-        throw new Error('insert returned no row');
-      }
-      documentId = row.id;
-    } catch (err) {
-      opts.logger.error({ err, objectName, tripId }, 'transport-document INSERT failed');
-      return c.json({ error: 'persist_failed', code: 'persist_failed' }, 500);
-    }
-
-    opts.logger.info(
-      { documentId, tripId, mime: allowedMime, source: sourceForMime(allowedMime) },
-      'transport-document subido (pendiente)',
+        return c.json({ document_id: documentId, extraction_status: 'pendiente' }, 202);
+      },
     );
-
-    // Publish fire-and-forget. El consumer (worker TED) llega en 4b.
-    if (opts.documentUploadedTopic) {
-      await publishDocumentUploaded({
-        topicName: opts.documentUploadedTopic,
-        logger: opts.logger,
-        documentId,
-        viajeId: tripId,
-        filePath: objectName,
-        fileMime: allowedMime,
-      });
-    }
-
-    return c.json({ document_id: documentId, extraction_status: 'pendiente' }, 202);
   });
 
   // ---------------------------------------------------------------------

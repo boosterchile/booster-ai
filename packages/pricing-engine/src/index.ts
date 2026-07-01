@@ -10,6 +10,8 @@
  *     según el tier (Free skip).
  *   - `periodoMesDesde(date)`: helper para construir slug `YYYY-MM` en
  *     zona Chile.
+ *   - `decidirSiguienteDunning(input)`: máquina de estados de reintentos
+ *     de cobro de membresía (hasta 3 reintentos, ADR-031).
  *
  * Tipos:
  *   - `TierSlug`, `MembershipTier`, `SEED_MEMBERSHIP_TIERS` (los 4
@@ -28,6 +30,15 @@ export {
   PRICING_METHODOLOGY_VERSION,
 } from './liquidacion.js';
 export { calcularCobroMembership, periodoMesDesde } from './cobro-membership.js';
+export {
+  DUNNING_BACKOFF_DIAS,
+  DUNNING_MAX_INTENTOS,
+  decidirSiguienteDunning,
+  type CobroEstadoDunning,
+  type DecidirDunningInput,
+  type DecidirDunningOutput,
+  type ResultadoGatewayPago,
+} from './dunning-membership.js';
 export {
   SEED_MEMBERSHIP_TIERS,
   TIER_SLUGS,
