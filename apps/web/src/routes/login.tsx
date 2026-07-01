@@ -13,7 +13,7 @@ import {
   useAuth,
 } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
-import { translateAuthError } from '../lib/translate-auth-error.js';
+import { translateLoginAuthError } from '../lib/translate-auth-error.js';
 
 type Mode = 'sign-in' | 'sign-up' | 'reset';
 
@@ -116,7 +116,7 @@ export function LoginRoute() {
         return;
       }
       setError('root', {
-        message: translateAuthError(code, message) ?? 'No pudimos iniciar sesión con Google.',
+        message: translateLoginAuthError(code, message) ?? 'No pudimos iniciar sesión con Google.',
       });
     }
   }
@@ -165,7 +165,7 @@ export function LoginRoute() {
       const code = (err as FirebaseError).code;
       const message = (err as FirebaseError).message;
       setError('root', {
-        message: translateAuthError(code, message) ?? 'No pudimos completar la operación.',
+        message: translateLoginAuthError(code, message) ?? 'No pudimos completar la operación.',
       });
     }
   }
