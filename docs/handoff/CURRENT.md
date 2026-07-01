@@ -62,6 +62,29 @@ Todos rechazados vía API `pending_deployments` (`environment_ids` **entero** en
 
 > 🧠 Memoria nueva: [[datadog-gke-infra-logs-no-apm-2026-07]] — NO revivir APM/ddtrace en el gateway (bypasea el redactor); traces en OTel→Cloud Trace; secret en GSM; workloads GKE por kubectl no TF.
 
+### Triage del cluster de PRs abiertos (#425–#428, #493–#494, #509–#527)
+
+Al cerrar los handoffs quedaron ~25 PRs abiertos sin mergear. Se triagearon con **5 agentes read-only en paralelo**, verificando cada diff **contra el código vivo en `main`** (la memoria [[followups-sweep-2026-06-22]] avisa: muchos stubs "abiertos" ya estaban resueltos). Clasificación:
+
+**❌ Cerrados (3):**
+- **#493** — ya hecho en `main` (topic `document-events` removido por ADR-069/#498).
+- **#512** — redundante (su diff de `rate-limit-pin` es subconjunto exacto de #513).
+- **#494** — **claim falso**: afirmaba que P2-7 es moot ("no hay endpoint ESG de stakeholder"), pero `GET /me/stakeholder/zonas/:slug/agregaciones` (`stakeholder-zonas.ts`, montado `server.ts:359`) sí sirve agregaciones ESG y **no** llama `recordStakeholderAccess` (TODO deliberado en `stakeholder-zonas.ts:191-196`). El gap **ya está trackeado** en `.specs/_followups/stakeholder-zonas-consent-scope-y-audit.md` (P2 — k-anon≥5 ya protege individuos; audit diferido hasta que Producto defina consent-scope). No se creó stub duplicado.
+
+**✅ Merge low-risk (12)** — verificados no-landed y premisa correcta:
+- docs/config (7, no disparan release): #510, #514, #519, #523, #524, #525, #527.
+- código self-contained + tests (4): #425 (polyfill jsdom), #427 (flash login), #518 (translate-auth-error), #522 (test TLS Redis).
+- infra tfvars.example (1, no aplicado): #517.
+- ⚠️ **Mecánica**: `main` tiene `strict_up_to_date:true` → cada uno necesita `update-branch`→CI verde→merge **secuencial** (cada merge deja al resto BEHIND). Sin auto-merge; 0 aprobaciones requeridas.
+
+**🔧 Rebase antes de decidir (4, CONFLICTING):** #426 (marketing, +gate PO al flip), #428 (onboarding, **colisión migración 0040**→renumerar, +gate PO), #515 (paths-ignore test-only; `release.yml` divergió, #546 solo agregó `scripts/`), #516 (dedup `booleanFlag`; `config.ts` divergió).
+
+**🛠️ Merge con verificación cloud del owner / pase dedicado (6):** #509 (lint 62→0; colisiona con #513 en `rate-limit-pin.test.ts`), #511 (`telemetry-monitoring.tf` apuntaba al service equivocado → `terraform apply`), #513 (reconnect SSE + trae el cambio de #512), #520 (`REDIS_PASSWORD`→Secret Manager → `terraform apply`), #521 (GC tags canary → se ejercita en el próximo canary), #526 (**hardening INC-2026-06-19** A5/A6/A7 mount condicional; toca infra+workflows → sign-off + `terraform apply` confirma "No changes").
+
+> **Nota de colisión**: #509/#512/#513 tocan `rate-limit-pin.test.ts`. Plan: #512 cerrado; mergear #513 (superset); #509 hace update-branch después.
+
+**Resumen: 3 cerrados · 12 a mergear (low-risk) · 4 a rebasear · 6 a pases dedicados.**
+
 ---
 
 ## Ventana 2026-06-22 → 06-30 — reconstrucción del hueco (24 PRs #528–#551 mergeados)
