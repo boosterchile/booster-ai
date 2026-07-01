@@ -24,6 +24,13 @@ COPY packages/whatsapp-client/package.json ./packages/whatsapp-client/
 #       (noExternal: /^@booster-ai\//). Sin este COPY, pnpm install no
 #       sabe de las deps y esbuild revienta con "Could not resolve".
 COPY packages/certificate-generator/package.json ./packages/certificate-generator/
+# F4 — apps/api importa @booster-ai/transport-documents (server.ts → rutas +
+#       middleware de rate-limit). Bundleado por noExternal /^@booster-ai\//;
+#       sus deps nativas/wasm (sharp, @hyzyla/pdfium, zxing-wasm,
+#       fast-xml-parser) van como external en tsup.config.ts y deben instalarse
+#       acá para que `pnpm deploy --prod` las incluya en el runtime. Sin este
+#       COPY, esbuild revienta con "Could not resolve". Igual que el de arriba.
+COPY packages/transport-documents/package.json ./packages/transport-documents/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---

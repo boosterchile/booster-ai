@@ -43,8 +43,6 @@
       "@booster-ai/shared-schemas/*": ["./packages/shared-schemas/src/*"],
       "@booster-ai/logger": ["./packages/logger/src"],
       "@booster-ai/logger/*": ["./packages/logger/src/*"],
-      "@booster-ai/ai-provider": ["./packages/ai-provider/src"],
-      "@booster-ai/ai-provider/*": ["./packages/ai-provider/src/*"],
       "@booster-ai/config": ["./packages/config/src"],
       "@booster-ai/config/*": ["./packages/config/src/*"],
       "@booster-ai/transport-documents": ["./packages/transport-documents/src"],

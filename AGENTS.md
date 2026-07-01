@@ -16,7 +16,7 @@ Ver [`CLAUDE.md`](./CLAUDE.md) sección "Estructura del repo" para el mapa compl
 
 ## Stack fijo (ADR-001)
 
-- **Runtime**: Node.js 22 LTS, pnpm + Turborepo
+- **Runtime**: Node.js 24, pnpm + Turborepo
 - **Backend**: Hono + Drizzle ORM + PostgreSQL + Redis
 - **Frontend**: Vite + React 18 + TanStack Router + Tailwind + shadcn/ui
 - **Shared**: Zod schemas en `packages/shared-schemas`
