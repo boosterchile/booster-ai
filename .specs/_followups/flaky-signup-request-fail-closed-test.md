@@ -81,6 +81,24 @@ Hasta investigar:
 2. **NO marcar el test como `.skip`** — perdería SC-1.2.5 coverage.
 3. **NO añadir retry intrínseco** al test (vitest `retry: 1`) — ocultaría el problema sin resolverlo.
 
+## Diagnóstico 2026-06-22 (narrowing estático sin Docker — descarta candidatos)
+
+No se pudo reproducir (los integration tests exigen Docker/testcontainers, ausente en el
+entorno), pero la revisión estática del setup **descarta dos hipótesis**:
+
+- **DESCARTADO — contaminación entre archivos**: `vitest.integration.config.ts` fuerza
+  `fileParallelism: false` + `sequence.concurrent: false` → los archivos corren
+  **serialmente, uno a la vez, un solo worker**. Aunque `createTestDb()` use una BD
+  compartida (`TEST_DATABASE_URL`) y el `beforeEach` haga `DELETE ... LIKE 'integration-%'`,
+  la ejecución serial impide que el cleanup de otro archivo borre filas mid-test.
+- **DESCARTADO — handler responde antes del commit**: `signup-request.ts:43-46` hace
+  `await submitSignupRequest(...)` ANTES del `return 202`; el `SELECT count` usa conexión
+  fresca del pool (READ COMMITTED ve lo commiteado) → el row ES durable al volver 202.
+- **Frontera real (requiere Docker)**: el timing del `container.stop()` mid-test en el
+  Scenario 1 (ventana entre 202 → stop del container → 503) o el pool `max: 2` bajo el stop.
+  Reproducir con `--repeat=20` + Docker y observar si el `count` falla a 0 (insert no visible)
+  vs 2 (2º insert pese al 503). El fix depende de cuál sea — sin reproducir es una adivinanza.
+
 ## Referencias
 
 - Test file: `apps/api/test/integration/signup-request-fail-closed.integration.test.ts`

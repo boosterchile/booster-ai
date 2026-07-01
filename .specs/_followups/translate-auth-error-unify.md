@@ -1,8 +1,20 @@
 # Followup: translate-auth-error-unify
 
-**Status**: Draft (stub; not urgent)
+**Status**: ✅ **RESUELTO (2026-06-22)** vía **Opción B** (colocación, copy verbatim).
 **Created**: 2026-05-27 by Sprint 2c-B T2 PR (per plan v4 F-B1 acceptance — option (a) login-domain-only extraction; AuthProvidersSection.tsx untouched).
-**Estimated effort**: 60-90 min (reconcile + tests + UX review).
+
+## Resolución (Opción B, sin cambio de UX)
+
+`apps/web/src/lib/translate-auth-error.ts` ahora exporta **dos** funciones en el
+mismo módulo: `translateLoginAuthError` (rename de la de login, `+message`) y
+`translateProviderAuthError` (extraída **verbatim** desde `AuthProvidersSection.tsx`).
+El componente importa la segunda y borró su función inline; `login.tsx` usa la primera.
+**Copy preservado byte a byte** → sin reconciliación UX necesaria (la divergencia por
+dominio es intencional y queda fijada por tests, incl. un invariante explícito de que
+`auth/email-already-in-use` produce copy distinto en cada dominio). Resuelto antes de
+"Post-Sprint-2c-B" porque es un refactor de comportamiento idéntico (riesgo nulo para
+el sprint). Evidencia (node 24): web 110 files/1047 passed (47 del módulo), typecheck 0,
+biome 0. **La sub-decisión fail-closed NO aplica a este finding** (era de booleanFlag).
 
 ---
 
