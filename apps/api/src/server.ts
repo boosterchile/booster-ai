@@ -53,6 +53,7 @@ import {
   createPublicSiteSettingsRoutes,
   createSiteSettingsRoutes,
 } from './routes/site-settings.js';
+import { createStakeholderZonasRoutes } from './routes/stakeholder-zonas.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTransportDocumentsRoutes } from './routes/transport-documents.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
@@ -351,6 +352,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Stakeholder consent grants (ADR-028 §"Acciones derivadas §7"). Sólo
     // requiere firebaseAuth — el handler resuelve userId vía firebase_uid.
     meRouter.route('/consents', createMeConsentsRoutes({ db: opts.db, logger }));
+    // Stakeholder geo aggregations k-anonimizadas (gap B2 / D11, ADR-041 +
+    // ADR-042). GET /me/stakeholder/zonas/:slug/agregaciones. Sólo requiere
+    // firebaseAuth — el handler resuelve userId vía firebase_uid y enforce
+    // RBAC rol stakeholder_sostenibilidad + gate k-anon dataset-level.
+    meRouter.route('/stakeholder', createStakeholderZonasRoutes({ db: opts.db, logger }));
     // ADR-035 Wave 4 PR 3 — setear/rotar clave numérica del usuario.
     // Solo firebaseAuth (no userContext) porque el handler resuelve
     // userId vía firebase_uid; aplica a cualquier usuario logueado,
@@ -505,6 +511,9 @@ export function createServer(opts: CreateServerOptions): Hono {
           redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
+          // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
+          // dinero). Cuando exista `payment-provider`, inyectar el real acá.
         }),
       );
     } else {

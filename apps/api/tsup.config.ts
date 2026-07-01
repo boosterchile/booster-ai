@@ -63,5 +63,15 @@ export default defineConfig({
     '@signpdf/utils',
     'node-forge',
     'pdf-lib',
+    // F4 — @booster-ai/transport-documents (bundleado vía noExternal) importa
+    // estas deps nativas/wasm: sharp (libvips native), @hyzyla/pdfium y
+    // zxing-wasm (WASM), fast-xml-parser. Bundlearlas rompe (native bindings /
+    // dynamic require en ESM). External = Node las carga del flat node_modules
+    // que `pnpm deploy --prod` arma. Requiere COPY de su package.json en el
+    // Dockerfile (deps stage) para que queden instaladas.
+    'sharp',
+    '@hyzyla/pdfium',
+    'zxing-wasm',
+    'fast-xml-parser',
   ],
 });

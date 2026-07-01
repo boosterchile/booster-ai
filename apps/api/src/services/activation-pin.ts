@@ -28,17 +28,44 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 const KEY_LEN = 64;
 const SCRYPT_OPTS = { N: 2 ** 14, r: 8, p: 1 } as const;
 
+/** Cantidad de dígitos del PIN. 10^6 = 1M combinaciones. */
+const PIN_DIGITS = 6;
+const PIN_MODULUS = 10 ** PIN_DIGITS; // 1_000_000
+
 /**
- * Genera un PIN de 6 dígitos numéricos cryptographically random.
- * Repite hasta tener exactamente 6 caracteres (rejection sampling para
- * evitar bias del módulo).
+ * Mayor múltiplo de `PIN_MODULUS` que cabe en el rango de un uint32
+ * (`randomBytes(4)` → [0, 2^32)). Cualquier sample `>=` este umbral cae en
+ * el bloque parcial superior que el módulo sobre-representaría, así que se
+ * descarta y se re-muestrea (rejection sampling). Con esto cada uno de los
+ * 10^6 valores es exactamente equiprobable — sin el sesgo que marcaba
+ * CodeQL `js/biased-cryptographic-random`.
+ *
+ * 2^32 = 4_294_967_296 → floor(2^32 / 1_000_000) * 1_000_000 = 4_294_000_000.
+ * La probabilidad de rechazo es ~0.0225% (967_296 / 2^32), así que el loop
+ * casi siempre termina en la primera iteración.
  */
-export function generateActivationPin(): string {
-  // 3 bytes = 0..16M, módulo 10^6 con bias <0.001% — aceptable para PIN
-  // de un solo uso. Si fuera multi-uso usaríamos rejection sampling.
-  const buf = randomBytes(4);
-  const n = buf.readUInt32BE(0) % 1_000_000;
-  return n.toString().padStart(6, '0');
+const UINT32_RANGE = 2 ** 32; // 4_294_967_296
+const REJECTION_THRESHOLD = Math.floor(UINT32_RANGE / PIN_MODULUS) * PIN_MODULUS; // 4_294_000_000
+
+/** Fuente de bytes aleatorios. Inyectable para tests deterministas. */
+export type RandomSource = (size: number) => Buffer;
+
+/**
+ * Genera un PIN de 6 dígitos numéricos cryptographically random y
+ * **uniforme**. Usa rejection sampling: descarta el bloque parcial superior
+ * del rango de bytes (>= REJECTION_THRESHOLD) que causaría sesgo del módulo,
+ * re-muestreando hasta obtener un valor en el rango uniforme.
+ *
+ * @param randomSource fuente de bytes; por defecto `crypto.randomBytes`.
+ *   Solo se inyecta en tests para controlar el muestreo.
+ */
+export function generateActivationPin(randomSource: RandomSource = randomBytes): string {
+  let sample: number;
+  do {
+    sample = randomSource(4).readUInt32BE(0);
+  } while (sample >= REJECTION_THRESHOLD);
+  const n = sample % PIN_MODULUS;
+  return n.toString().padStart(PIN_DIGITS, '0');
 }
 
 /**
