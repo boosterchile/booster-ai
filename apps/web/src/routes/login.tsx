@@ -44,7 +44,6 @@ const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
 export function LoginRoute() {
   const { user, loading } = useAuth();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  // biome-ignore lint/suspicious/noExplicitAny: search params del legacy escape hatch sin type strict.
   const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string };
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>('sign-in');
