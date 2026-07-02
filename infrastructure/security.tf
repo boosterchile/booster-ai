@@ -305,11 +305,18 @@ resource "google_secret_manager_secret" "secrets" {
 #   gcloud secrets versions access latest --secret=<name>
 # Si devuelve "ROTATE_ME_..." el valor real aún no se puso.
 #
-# Excepción: database-url se gestiona en data.tf con el password real (Cloud SQL crea la cuenta).
+# Excepción: database-url y redis-auth tienen su version REAL gestionada aparte en
+# data.tf (password de Cloud SQL / auth_string de Memorystore). NO crearles también
+# un placeholder ROTATE_ME: el mount de Cloud Run usa version="latest"
+# (modules/cloud-run-service/main.tf) y, con dos versiones creadas en el mismo apply,
+# "latest" es no determinista → podría montar el placeholder y romper la auth. En
+# redis-auth eso deja REDIS_PASSWORD=ROTATE_ME_… en los 7 services (Redis AUTH rota:
+# rate-limit fail-closed, conversation store, OIDC cache). Ver incidente 2026-06-07.
 resource "google_secret_manager_secret_version" "placeholder" {
   for_each = toset([
     for name in local.secret_names : name
-    if name != "database-url" # database-url se setea en data.tf con password generado
+    # database-url → version real en data.tf; redis-auth → version real `redis_auth` en data.tf
+    if name != "database-url" && name != "redis-auth"
   ])
 
   secret      = google_secret_manager_secret.secrets[each.value].id
