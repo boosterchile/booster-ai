@@ -17,6 +17,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -2308,21 +2309,46 @@ export const cuentasDemo = pgTable('cuentas_demo', {
 // de si el email ya existe en users o solicitudes_registro — el dedup vive
 // en service layer (T8) sin signal lateral.
 
-export const solicitudesRegistro = pgTable('solicitudes_registro', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: varchar('email', { length: 320 }).notNull(),
-  nombreCompleto: varchar('nombre_completo', { length: 200 }).notNull(),
-  estado: estadoSolicitudRegistroEnum('estado').notNull().default('pendiente_aprobacion'),
-  solicitadoEn: timestamp('solicitado_en', { withTimezone: true }).notNull().defaultNow(),
-  /**
-   * Email del admin que aprobó (o rechazó). NULL mientras pending. NOT NULL
-   * post-decision. La service layer (T10) garantiza la invariante; aquí no
-   * lo enforce-amos via CHECK porque la condición es bi-columnar
-   * (estado + aprobado_por NOT NULL) y service-layer es el único writer.
-   */
-  aprobadoPor: text('aprobado_por'),
-  aprobadoEn: timestamp('aprobado_en', { withTimezone: true }),
-});
+export const solicitudesRegistro = pgTable(
+  'solicitudes_registro',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: varchar('email', { length: 320 }).notNull(),
+    nombreCompleto: varchar('nombre_completo', { length: 200 }).notNull(),
+    estado: estadoSolicitudRegistroEnum('estado').notNull().default('pendiente_aprobacion'),
+    solicitadoEn: timestamp('solicitado_en', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Email del admin que aprobó (o rechazó). NULL mientras pending. NOT NULL
+     * post-decision. La service layer (T10) garantiza la invariante; aquí no
+     * lo enforce-amos via CHECK porque la condición es bi-columnar
+     * (estado + aprobado_por NOT NULL) y service-layer es el único writer.
+     */
+    aprobadoPor: text('aprobado_por'),
+    aprobadoEn: timestamp('aprobado_en', { withTimezone: true }),
+    // ---------------------------------------------------------------------------
+    // onboarding-flow-redesign Fase 1 (migration 0040) — estado del token one-shot
+    // que autoriza el onboarding admin-provisioned SIN reabrir SEC-001. El predicado
+    // NO es por email: es este token (emitido en el approve, consumido atómicamente
+    // en onboardEmpresa). Todas NULLABLE: con ADMIN_PROVISIONED_ONBOARDING_ENABLED
+    // en OFF (default), approve no las escribe → deployable commit-a-commit.
+    // ---------------------------------------------------------------------------
+    /** Hash del token one-shot (NO el token en claro). NULL = sin token emitido. */
+    tokenHash: text('token_hash'),
+    /** Consumo atómico del token (UPDATE WHERE consumido_en IS NULL). NULL = no consumido. */
+    consumidoEn: timestamp('consumido_en', { withTimezone: true }),
+    /** Expiración del token (TTL): vencido => verify rechaza (T1.2) + limpieza huérfano (T1.7). */
+    expiraEn: timestamp('expira_en', { withTimezone: true }),
+    /** uid Firebase creado en el approve; permite a T1.7 borrar el huérfano (review P0-5). */
+    firebaseUid: text('firebase_uid'),
+  },
+  (table) => ({
+    // Integridad one-shot: un token_hash emitido es único. Parcial WHERE NOT NULL
+    // para no colisionar con las múltiples filas que legítimamente lo tienen NULL.
+    tokenHashUq: uniqueIndex('solicitudes_registro_token_hash_uq')
+      .on(table.tokenHash)
+      .where(sql`${table.tokenHash} IS NOT NULL`),
+  }),
+);
 
 // =============================================================================
 // REPOSITORIO DOCUMENTAL DE TRANSPORTE (ADR-070, frente F4 — migration 0044)

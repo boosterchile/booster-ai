@@ -119,7 +119,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createEmpresaRoutes: {
     category: 'GATED-CLOSED',
     rationale:
-      'self-serve OFF: flag EMPRESA_SELF_ONBOARDING_ENABLED default-false unset en prod → 403 + invariante SelfOnboardingDisabledError. Único caller usa authorizedBy=self_service; no hay path admin_provisioned reachable.',
+      'mount /empresas, dos sub-rutas ambas GATED-CLOSED default-OFF: (1) POST /onboarding self-service gateado por EMPRESA_SELF_ONBOARDING_ENABLED (default-false → 403 + invariante SelfOnboardingDisabledError); (2) POST /onboarding-admin (T1.5b, authorizedBy=admin_provisioned) gateado por ADMIN_PROVISIONED_ONBOARDING_ENABLED (default-false → 403) + emailVerified + token one-shot verificado (secreto ausente → 503 fail-closed) + consumo atómico (T1.5a) que exige token válido/no-consumido/no-expirado. Ningún path crea dueño sin approval + token.',
   },
 
   // --- INTENTIONAL-OPEN (público por diseño; verificado línea-a-línea al codear T2) ---

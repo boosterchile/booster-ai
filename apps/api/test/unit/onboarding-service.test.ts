@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   EmailAlreadyInUseError,
   EmpresaRutDuplicateError,
+  OnboardingTokenNotConsumableError,
+  OnboardingTokenRequiredError,
   PlanNotFoundError,
   SelfOnboardingDisabledError,
   UserAlreadyExistsError,
@@ -22,11 +24,13 @@ const noopLogger = {
 interface DbQueues {
   selects?: unknown[][];
   inserts?: unknown[][];
+  updates?: unknown[][];
 }
 
 function makeDb(opts: DbQueues = {}) {
   const selects = [...(opts.selects ?? [])];
   const inserts = [...(opts.inserts ?? [])];
+  const updates = [...(opts.updates ?? [])];
 
   const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
@@ -43,9 +47,18 @@ function makeDb(opts: DbQueues = {}) {
     })),
   });
 
+  const buildUpdateChain = () => ({
+    set: vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: vi.fn(async () => updates.shift() ?? []),
+      })),
+    })),
+  });
+
   const tx = {
     select: vi.fn(() => buildSelectChain()),
     insert: vi.fn(() => buildInsertChain()),
+    update: vi.fn(() => buildUpdateChain()),
   };
 
   return {
@@ -307,8 +320,16 @@ describe('onboardEmpresa', () => {
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
-  it('admin_provisioned NO se ve afectado por el flag self-service OFF', async () => {
+  // T1.5a — admin_provisioned: no lo bloquea el flag self-service, PERO ahora
+  // exige consumir el token one-shot (paso 0 atómico).
+  const CONSUMPTION = {
+    solicitudId: '11111111-1111-4111-8111-111111111111',
+    tokenHash: 'a'.repeat(64),
+  };
+
+  it('admin_provisioned NO se ve afectado por el flag self-service OFF y consume el token', async () => {
     const db = makeDb({
+      updates: [[{ id: 'sig-uuid' }]], // consume del token OK (1 fila)
       selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
       inserts: [[{ id: 'user-uuid' }], [{ id: 'empresa-uuid' }], [{ id: 'membership-uuid' }]],
     });
@@ -321,9 +342,44 @@ describe('onboardEmpresa', () => {
       authorizedBy: 'admin_provisioned',
       selfServiceEnabled: false,
       input: VALID_INPUT,
+      onboardingTokenConsumption: CONSUMPTION,
     });
 
     expect(result.user.id).toBe('user-uuid');
     expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(db.update).toHaveBeenCalledTimes(1); // consumió el token (paso 0)
+  });
+
+  it('admin_provisioned con token NO consumible (UPDATE 0 filas) => OnboardingTokenNotConsumableError, sin crear user', async () => {
+    const db = makeDb({ updates: [[]] }); // 0 filas: consumido / expirado / no existe / hash-mismatch
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: FB_EMAIL,
+        authorizedBy: 'admin_provisioned',
+        selfServiceEnabled: false,
+        input: VALID_INPUT,
+        onboardingTokenConsumption: CONSUMPTION,
+      }),
+    ).rejects.toThrow(OnboardingTokenNotConsumableError);
+    expect(db.insert).not.toHaveBeenCalled(); // rollback: no creó user/empresa/membership
+  });
+
+  it('admin_provisioned SIN token de consumo => OnboardingTokenRequiredError (sin tocar la DB)', async () => {
+    const db = makeDb();
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: FB_EMAIL,
+        authorizedBy: 'admin_provisioned',
+        selfServiceEnabled: false,
+        input: VALID_INPUT,
+      }),
+    ).rejects.toThrow(OnboardingTokenRequiredError);
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });

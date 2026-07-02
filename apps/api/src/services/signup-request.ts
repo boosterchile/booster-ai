@@ -5,6 +5,7 @@ import type { Auth } from 'firebase-admin/auth';
 import type { Db } from '../db/client.js';
 import { solicitudesRegistro, users } from '../db/schema.js';
 import type { SignupRequestNotifier } from './notifications/signup-request-email.js';
+import { createOnboardingToken } from './onboarding-token.js';
 
 /**
  * T8 SEC-001 Sprint 2b — service para `POST /api/v1/signup-request`
@@ -140,7 +141,14 @@ export async function listPendingSignupRequests(db: Db): Promise<SignupRequestSu
 }
 
 export type ApproveSignupRequestResult =
-  | { outcome: 'approved'; firebaseUid: string; userId: string }
+  | {
+      outcome: 'approved';
+      firebaseUid: string;
+      /** `null` en modo admin-provisioned (no se precrea users; lo crea el onboarding). */
+      userId: string | null;
+      /** Token one-shot emitido (solo modo admin-provisioned). NUNCA exponerlo al admin. */
+      onboardingToken?: string;
+    }
   | { outcome: 'not_found' }
   | { outcome: 'already_processed' }
   | { outcome: 'firebase_user_already_exists' };
@@ -166,7 +174,19 @@ export async function approveSignupRequest(
   logger: Logger,
   auth: Auth,
   notifier: SignupRequestNotifier,
-  opts: { id: string; approverEmail: string; loginLinkUrl: string; correlationId: string },
+  opts: {
+    id: string;
+    approverEmail: string;
+    loginLinkUrl: string;
+    correlationId: string;
+    /**
+     * Presente ⇔ `ADMIN_PROVISIONED_ONBOARDING_ENABLED` ON (T1.3/T1.4). Cuando
+     * está, el approve emite el token one-shot, persiste `token_hash`/`expira_en`/
+     * `firebase_uid` y NO precrea el row `users` (el dueño completa el onboarding
+     * consumiendo el token, T1.5a). Ausente ⇒ comportamiento viejo (precrea).
+     */
+    adminProvisionedOnboarding?: { signingSecret: string; ttlMs: number };
+  },
 ): Promise<ApproveSignupRequestResult> {
   const foundRows = await db
     .select()
@@ -219,7 +239,77 @@ export async function approveSignupRequest(
     throw err;
   }
 
-  // INSERT users + UPDATE solicitudes_registro en transacción.
+  // Modo admin-provisioned (flag ON): emite token one-shot, persiste
+  // token_hash/expira_en/firebase_uid y NO precrea users (destraba el 409
+  // approve→onboarding). El dueño consume el token en T1.5a. Un solo UPDATE
+  // atómico — el WHERE estado=pendiente_aprobacion conserva el race-guard.
+  const adminProvisioned = opts.adminProvisionedOnboarding;
+  if (adminProvisioned) {
+    const { token, tokenHash, expiraEn } = createOnboardingToken({
+      solicitudId: opts.id,
+      ttlMs: adminProvisioned.ttlMs,
+      secret: adminProvisioned.signingSecret,
+    });
+
+    let raced = false;
+    try {
+      const updated = await db
+        .update(solicitudesRegistro)
+        .set({
+          estado: 'aprobado',
+          aprobadoPor: opts.approverEmail,
+          aprobadoEn: new Date(),
+          tokenHash,
+          expiraEn,
+          firebaseUid,
+        })
+        .where(
+          and(
+            eq(solicitudesRegistro.id, opts.id),
+            eq(solicitudesRegistro.estado, 'pendiente_aprobacion'),
+          ),
+        )
+        .returning({ id: solicitudesRegistro.id });
+      raced = updated.length === 0;
+    } catch (err) {
+      logger.error(
+        { err, correlationId: opts.correlationId, requestId: opts.id, firebaseUid },
+        'signup-request.approve: DB update failed post-Firebase-createUser (admin-provisioned)',
+      );
+      throw err;
+    }
+    if (raced) {
+      // Otro admin aprobó entre el SELECT y el UPDATE. Firebase user huérfano
+      // (cleanup vía T1.7 usando firebase_uid). NO se emite el token al usuario.
+      logger.warn(
+        { correlationId: opts.correlationId, requestId: opts.id, firebaseUid },
+        'signup-request.approve: already_processed (race post-Firebase-createUser; orphan Firebase user)',
+      );
+      return { outcome: 'already_processed' };
+    }
+
+    await notifier.notifyUserOfApproval({
+      requestId: opts.id,
+      userEmail: request.email,
+      loginLinkUrl: opts.loginLinkUrl,
+      correlationId: opts.correlationId,
+      onboardingToken: token,
+    });
+
+    logger.info(
+      {
+        correlationId: opts.correlationId,
+        requestId: opts.id,
+        firebaseUid,
+        approverEmail: opts.approverEmail,
+        mode: 'admin_provisioned',
+      },
+      'signup-request.approve: success (admin-provisioned; token issued, no user precreated)',
+    );
+    return { outcome: 'approved', firebaseUid, userId: null, onboardingToken: token };
+  }
+
+  // Modo viejo (flag OFF): INSERT users + UPDATE solicitudes_registro en transacción.
   let userId: string;
   try {
     const result = await db.transaction(async (tx) => {

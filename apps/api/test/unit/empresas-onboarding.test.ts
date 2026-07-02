@@ -49,6 +49,18 @@ vi.mock('../../src/services/onboarding.js', () => {
         this.name = 'SelfOnboardingDisabledError';
       }
     },
+    OnboardingTokenRequiredError: class OnboardingTokenRequiredError extends Error {
+      constructor() {
+        super('admin_provisioned onboarding requires an onboarding token consumption');
+        this.name = 'OnboardingTokenRequiredError';
+      }
+    },
+    OnboardingTokenNotConsumableError: class OnboardingTokenNotConsumableError extends Error {
+      constructor() {
+        super('Onboarding token is not consumable');
+        this.name = 'OnboardingTokenNotConsumableError';
+      }
+    },
   };
 });
 
@@ -91,7 +103,10 @@ const validBody = {
   plan_slug: 'gratis',
 };
 
-async function buildApp(selfOnboardingEnabled = true) {
+async function buildApp(
+  selfOnboardingEnabled = true,
+  adminOpts: { enabled?: boolean; secret?: string } = {},
+) {
   const { createEmpresaRoutes } = await import('../../src/routes/empresas.js');
   const app = new Hono();
   app.use('/empresas/*', async (c, next) => {
@@ -115,7 +130,13 @@ async function buildApp(selfOnboardingEnabled = true) {
   });
   app.route(
     '/empresas',
-    createEmpresaRoutes({ db: stubDb, logger: noopLogger, selfOnboardingEnabled }),
+    createEmpresaRoutes({
+      db: stubDb,
+      logger: noopLogger,
+      selfOnboardingEnabled,
+      adminProvisionedOnboardingEnabled: adminOpts.enabled ?? false,
+      onboardingTokenSecret: adminOpts.secret,
+    }),
   );
   return app;
 }
@@ -483,6 +504,171 @@ describe('POST /empresas/onboarding — self-service gate (EMPRESA_SELF_ONBOARDI
     expect(vi.mocked(onboardEmpresa).mock.calls[0]?.[0]).toMatchObject({
       authorizedBy: 'self_service',
       selfServiceEnabled: true,
+    });
+  });
+});
+
+describe('POST /empresas/onboarding-admin (T1.5b)', () => {
+  const ADMIN_SECRET = 'a-test-signing-secret-with-enough-bytes-xx'; // >= 32 bytes
+  const SID = '11111111-1111-4111-8111-111111111111';
+  const VERIFIED_CLAIMS = JSON.stringify({
+    uid: 'fb-1',
+    email: 'dueno@empresa.cl',
+    emailVerified: true,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function mintToken(opts: { secret?: string; now?: Date; ttlMs?: number } = {}) {
+    const { createOnboardingToken } = await import('../../src/services/onboarding-token.js');
+    return createOnboardingToken({
+      solicitudId: SID,
+      ttlMs: opts.ttlMs ?? 3_600_000,
+      secret: opts.secret ?? ADMIN_SECRET,
+      ...(opts.now ? { now: opts.now } : {}),
+    }).token;
+  }
+
+  function req(app: Hono, headers: Record<string, string>) {
+    return app.request('/empresas/onboarding-admin', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(validBody),
+    });
+  }
+
+  it('flag OFF → 403 onboarding_disabled (sin token)', async () => {
+    const app = await buildApp(false, { enabled: false });
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'onboarding_disabled', code: 'onboarding_disabled' });
+  });
+
+  it('flag ON sin secreto → 503 onboarding_misconfigured (fail-closed)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: undefined });
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS, 'x-onboarding-token': 'x' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: 'service_unavailable',
+      code: 'onboarding_misconfigured',
+    });
+  });
+
+  it('emailVerified=false → 403 email_not_verified (T5)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken();
+    const res = await req(app, {
+      'x-test-claims': JSON.stringify({
+        uid: 'fb-1',
+        email: 'dueno@empresa.cl',
+        emailVerified: false,
+      }),
+      'x-onboarding-token': token,
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'email_not_verified', code: 'email_not_verified' });
+  });
+
+  it('sin token header → 401 onboarding_token_required (T3a)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: 'onboarding_token_required',
+      code: 'onboarding_token_required',
+    });
+  });
+
+  it('token inválido (firmado con otro secreto) → 403 onboarding_token_invalid (T3b)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken({ secret: 'a-DIFFERENT-secret-with-enough-bytes-zzz' });
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS, 'x-onboarding-token': token });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'onboarding_token_invalid',
+      code: 'onboarding_token_invalid',
+    });
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    expect(vi.mocked(onboardEmpresa)).not.toHaveBeenCalled();
+  });
+
+  it('token expirado → 403 onboarding_token_invalid (colapso)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken({ now: new Date('2020-01-01T00:00:00Z'), ttlMs: 1000 });
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS, 'x-onboarding-token': token });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'onboarding_token_invalid',
+      code: 'onboarding_token_invalid',
+    });
+  });
+
+  it('secreto débil en el server → 503 (verify lanza, fail-closed)', async () => {
+    const app = await buildApp(false, { enabled: true, secret: 'short' });
+    const res = await req(app, {
+      'x-test-claims': VERIFIED_CLAIMS,
+      'x-onboarding-token': 'whatever',
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: 'service_unavailable',
+      code: 'onboarding_misconfigured',
+    });
+  });
+
+  it('token válido → 201 + delega onboardEmpresa(admin_provisioned, consumption sid+tokenHash)', async () => {
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    const { hashOnboardingToken } = await import('../../src/services/onboarding-token.js');
+    vi.mocked(onboardEmpresa).mockResolvedValueOnce({
+      user: {
+        id: 'u1',
+        email: 'dueno@empresa.cl',
+        fullName: 'Dueño',
+        phone: '+56912345678',
+        rut: null,
+        isPlatformAdmin: false,
+        status: 'activo',
+      },
+      empresa: {
+        id: 'e1',
+        legalName: 'Empresa',
+        rut: '76.123.456-0',
+        isGeneradorCarga: false,
+        isTransportista: true,
+        status: 'pendiente_verificacion',
+      },
+      membership: { id: 'm1', role: 'dueno', status: 'activa' },
+    } as never);
+
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken();
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS, 'x-onboarding-token': token });
+
+    expect(res.status).toBe(201);
+    const call = vi.mocked(onboardEmpresa).mock.calls[0]?.[0];
+    expect(call).toMatchObject({ authorizedBy: 'admin_provisioned' });
+    expect(call?.onboardingTokenConsumption).toEqual({
+      solicitudId: SID,
+      tokenHash: hashOnboardingToken(token),
+    });
+  });
+
+  it('token válido pero no consumible → 403 onboarding_token_invalid (colapso con verify-fail)', async () => {
+    const { onboardEmpresa, OnboardingTokenNotConsumableError } = await import(
+      '../../src/services/onboarding.js'
+    );
+    vi.mocked(onboardEmpresa).mockRejectedValueOnce(new OnboardingTokenNotConsumableError());
+
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken();
+    const res = await req(app, { 'x-test-claims': VERIFIED_CLAIMS, 'x-onboarding-token': token });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'onboarding_token_invalid',
+      code: 'onboarding_token_invalid',
     });
   });
 });
