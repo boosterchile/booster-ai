@@ -22,4 +22,18 @@ Mover `auth_string` a Secret Manager y montarlo vía `common_secrets` (igual que
 en `compute.tf:29`). Aplica a todos los services que usan Redis (api, whatsapp-bot, …).
 
 ## Estado
-Pendiente de priorizar.
+✅ **TF ESCRITO (2026-06-22)** — espejo exacto de `DATABASE_URL`, pendiente `terraform apply` del owner:
+
+- `security.tf`: `redis-auth` agregado a `local.secret_names` (crea el secret).
+- `data.tf`: `google_secret_manager_secret_version "redis_auth"` con
+  `secret_data = google_redis_instance.main.auth_string` (**auto-derivado**, NO
+  placeholder → sin el modo de falla de INC-2026-06-19).
+- `compute.tf`: `REDIS_PASSWORD` movido de `common_env_vars` (plaintext) a
+  `common_secrets` (secret-mount) + agregado a `all_secret_versions_ready`.
+- IAM: el runtime SA ya tiene `secretmanager.secretAccessor` a **nivel proyecto**
+  (`security.tf:312`) → los 7 services lo leen sin binding extra.
+
+`terraform validate` ✔ + `fmt` ✔. **No pude `terraform apply`** (read-only/ADC): el
+owner aplica + verifica que los 7 services arranquen sanos (conectividad Redis) en
+el apply, como con cualquier cambio de infra (patrón #511/#420). Riesgo bajo: replica
+un secret-mount que ya funciona (DATABASE_URL) con valor real.
