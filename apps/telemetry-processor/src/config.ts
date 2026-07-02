@@ -28,6 +28,13 @@ const envSchema = z.object({
   BIGQUERY_CRASH_TABLE: z.string().default('crash_events'),
 
   /**
+   * Topic Pub/Sub de eventos de seguridad (safety-p0). El processor publica
+   * crash/unplug/jamming acá para el fan-out al transportista. Vacío = no
+   * publica (dev/test sin topic configurado).
+   */
+  SAFETY_EVENTS_TOPIC: z.string().default(''),
+
+  /**
    * Mensajes a procesar en paralelo. Pub/Sub flow control. Más alto
    * = más throughput pero más memoria y carga DB. 50-100 es balance OK
    * para piloto.

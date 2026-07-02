@@ -1,0 +1,43 @@
+# Cloud Build pipeline minimal: verificar acceso al cluster PRIMARIO + estado
+# cert-manager. SOLO LECTURA — no aplica ningún manifest. Es el GATE del Paso 2:
+# si pasa, cloudbuild-primary-deploy.yaml tiene acceso para el deploy real.
+#
+# Run:
+#   gcloud builds submit --no-source \
+#     --config=infrastructure/k8s/cloudbuild-primary-check.yaml \
+#     --region=southamerica-west1 \
+#     --project=booster-ai-494222
+
+steps:
+- id: check
+  name: gcr.io/cloud-builders/kubectl
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -euxo pipefail
+    # DNS-based control plane endpoint (--dns-endpoint): kubectl alcanza el master
+    # via DNS + IAM, sin depender de red/peering. El endpoint IP NO es alcanzable
+    # desde el pool. Requiere allow_external_traffic=true (compute.tf, ADR-059).
+    gcloud container clusters get-credentials booster-ai-telemetry \
+      --location=southamerica-west1 \
+      --project=booster-ai-494222 \
+      --dns-endpoint
+    echo "--- nodes ---"
+    kubectl get nodes
+    echo "--- cert-manager status ---"
+    kubectl get ns cert-manager 2>&1 || echo "(cert-manager namespace NOT FOUND)"
+    kubectl get deployment -n cert-manager cert-manager 2>&1 || echo "(cert-manager deployment NOT FOUND)"
+    echo "--- existing namespaces ---"
+    kubectl get ns
+    echo "--- existing clusterissuers ---"
+    kubectl get clusterissuer 2>&1 || echo "(no clusterissuers)"
+    echo "--- telemetry workloads (estado actual del gateway) ---"
+    kubectl get deploy,svc -n telemetry 2>&1 || echo "(namespace telemetry NOT FOUND)"
+
+options:
+  pool:
+    name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 300s

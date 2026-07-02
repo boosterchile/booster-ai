@@ -1,3 +1,4 @@
+import { buildRedisTlsOptions } from '@booster-ai/config';
 import { createLogger } from '@booster-ai/logger';
 import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
@@ -21,16 +22,20 @@ const logger = createLogger({
 // dedup de mensajes Twilio, etc.). Modo lazy connect para que el startup probe
 // del Cloud Run no se bloquee si Redis arranca lento.
 //
-// `rejectUnauthorized: false` en TLS: Memorystore presenta cert firmado por
-// CA interna de Google que no está en el trust store de Node. La conexión
-// sigue encriptada (TLS) pero saltamos la validación del issuer. Es seguro
-// porque Memorystore vive en VPC privado y solo es alcanzable via el
-// connector — no hay MITM possible.
+// TLS: Memorystore (SERVER_AUTHENTICATION) presenta cert firmado por una CA
+// privada por-instancia. `buildRedisTlsOptions` pinnea esa CA (REDIS_CA_CERT) y
+// mantiene la validación de cadena — NO se usa rejectUnauthorized:false. Misma
+// postura que apps/api. Ver packages/config/src/redis-tls.ts.
+const redisTls = buildRedisTlsOptions({
+  tls: config.REDIS_TLS,
+  caCert: config.REDIS_CA_CERT,
+  requireCa: config.NODE_ENV === 'production',
+});
 const redis = new Redis({
   host: config.REDIS_HOST,
   port: config.REDIS_PORT,
   password: config.REDIS_PASSWORD,
-  tls: config.REDIS_TLS ? { rejectUnauthorized: false } : undefined,
+  ...(redisTls ? { tls: redisTls } : {}),
   // Reintentar conexión con backoff exponencial — sin esto, una caída de Redis
   // tira el proceso entero.
   retryStrategy: (times) => Math.min(times * 200, 2000),
@@ -91,6 +96,7 @@ app.route(
     redis,
     authToken: config.TWILIO_AUTH_TOKEN,
     webhookUrl: config.TWILIO_WEBHOOK_URL,
+    statusWebhookUrl: config.TWILIO_STATUS_CALLBACK_URL,
     logger,
   }),
 );

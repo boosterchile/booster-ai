@@ -42,6 +42,20 @@ variable "cpu" {
   default = "1"
 }
 
+variable "cpu_idle" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Cloud Run CPU allocation. `true` (default) = "CPU only during request
+    processing" — correcto para servicios request/push-driven (la mayoría),
+    ahorra costo al permitir scale-to-zero efectivo. `false` = "CPU always
+    allocated" — REQUERIDO para servicios con trabajo de fondo continuo, p.ej.
+    un consumidor Pub/Sub StreamingPull dentro del container (el loop de pull
+    NO es request-driven, así que con cpu_idle=true queda CPU-throttled entre
+    requests y deja de consumir). Usar junto con min_instances>=1.
+  EOT
+}
+
 variable "memory" {
   type    = string
   default = "512Mi"
@@ -110,4 +124,58 @@ variable "secret_versions_ready" {
   EOT
   type        = list(string)
   default     = []
+}
+
+variable "traffic_managed_externally" {
+  description = <<-EOT
+    T13 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 SC-1.2.3 + ADR-052) — cuando `true`, el bloque
+    `traffic` del Cloud Run service se añade al `lifecycle.ignore_changes`. Esto permite que un
+    pipeline externo (Cloud Build canary deploy en `cloudbuild.production.yaml`) gestione el
+    traffic split entre revisiones SIN que Terraform lo revierta al siguiente apply.
+
+    **Scope**: SOLO el `service_api` lo activa (per spec §3 SC-1.2.3 + plan-sprint-2b T13 round
+    3 P0-1 fix). Los otros 8 servicios Cloud Run (web, matching-engine, telemetry-processor,
+    notification, sms-fallback, whatsapp-bot, document, etc.) mantienen `traffic_managed_externally
+    = false` (default) → Terraform sigue gestionando 100% del traffic a la latest revision para
+    ellos. Esto previene scope creep donde el canary pattern aplique unilateralmente.
+
+    **Cuándo poner `true`**: el service tiene un canary deploy step en Cloud Build que rutea
+    traffic vía `--tag` y `--to-tags` antes de promover `--to-latest`. Sin este flag, el siguiente
+    `terraform apply` revierte el split y mata el canary.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "ingress" {
+  description = <<-EOT
+    Ingress de red del Cloud Run service (qué orígenes pueden alcanzarlo a
+    nivel de red, ANTES de IAM). Default `INGRESS_TRAFFIC_ALL` = el default
+    real de Cloud Run v2 → preserva el comportamiento histórico de los 8
+    servicios cuando no se override.
+
+    Valores:
+      - INGRESS_TRAFFIC_ALL: alcanzable directo por su URL *.run.app desde
+        internet. NECESARIO para servicios que reciben webhooks externos
+        directo al run.app sin pasar por el GCLB (ej. sms-fallback-gateway:
+        Twilio postea sin NEG en el LB).
+      - INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER: solo tráfico interno del
+        proyecto (VPC, Cloud Scheduler/Tasks/Pub-Sub mismo proyecto,
+        service-to-service) + el Application LB (GCLB + Cloud Armor). El
+        *.run.app deja de ser alcanzable directo desde internet. Es el
+        posture endurecido para servicios servidos vía GCLB (ADR-062).
+      - INGRESS_TRAFFIC_INTERNAL_ONLY: solo interno, SIN LB — no usar en
+        servicios públicos (rechaza al propio GCLB).
+  EOT
+  type        = string
+  default     = "INGRESS_TRAFFIC_ALL"
+
+  validation {
+    condition = contains([
+      "INGRESS_TRAFFIC_ALL",
+      "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER",
+      "INGRESS_TRAFFIC_INTERNAL_ONLY",
+    ], var.ingress)
+    error_message = "ingress debe ser INGRESS_TRAFFIC_ALL, INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER o INGRESS_TRAFFIC_INTERNAL_ONLY."
+  }
 }

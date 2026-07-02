@@ -5,6 +5,30 @@
 # NOTIFICATION CHANNELS
 # =============================================================================
 
+# Webhook SRE (segundo canal — count-gated: sin URL no se crea nada y
+# todo sigue solo-email). Poblar var.sre_webhook_url y aplicar.
+resource "google_monitoring_notification_channel" "sre_webhook" {
+  count        = var.sre_webhook_url != "" ? 1 : 0
+  display_name = "SRE webhook (Slack/Chat)"
+  project      = google_project.booster_ai.project_id
+  type         = "webhook_tokenauth"
+
+  labels = {
+    url = var.sre_webhook_url
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Lista única de canales: TODAS las alert policies referencian este local
+# (sed global 2026-06-11) — agregar un canal nuevo = tocar solo esto.
+locals {
+  alert_channel_ids = concat(
+    [google_monitoring_notification_channel.email_alerts.id],
+    google_monitoring_notification_channel.sre_webhook[*].id,
+  )
+}
+
 resource "google_monitoring_notification_channel" "email_alerts" {
   display_name = "Email alerts"
   project      = google_project.booster_ai.project_id
@@ -100,7 +124,7 @@ resource "google_monitoring_alert_policy" "api_error_rate" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "1800s"
@@ -131,7 +155,7 @@ resource "google_monitoring_alert_policy" "api_latency_p95" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "1800s"
@@ -163,7 +187,7 @@ resource "google_monitoring_alert_policy" "uptime_failures" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # Pub/Sub dead-letter queue no vacía → algo se rompió
@@ -187,7 +211,7 @@ resource "google_monitoring_alert_policy" "pubsub_dlq" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # Cloud SQL storage > 80%
@@ -211,7 +235,7 @@ resource "google_monitoring_alert_policy" "cloudsql_storage" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 }
 
 # =============================================================================
@@ -310,7 +334,7 @@ resource "google_monitoring_alert_policy" "demo_ttl_low" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     # Auto-close 25h post-trigger: el cron diario corre 06:00; si TTL
@@ -331,4 +355,164 @@ resource "google_monitoring_alert_policy" "demo_ttl_low" {
   }
 
   depends_on = [google_logging_metric.demo_ttl_low]
+}
+
+# -----------------------------------------------------------------------------
+# T4 SEC-001 Sprint 2b — Log-based metric auth.is_demo.blocked events
+# emitted by apps/api/src/middleware/is-demo-enforcement.ts cuando una
+# sesión con claim `is_demo:true` recibe 403 forbidden_demo en un mount
+# point auth-required. Conditional-counter pattern alineado con T6a
+# `demo_uid_retired`: solo se emite en branches que retornan 403, no
+# en passthrough (zero ruido baseline). Spec §3 H1.3 SC-1.3.7 +
+# plan-sprint-2b §3 T4.
+# -----------------------------------------------------------------------------
+resource "google_logging_metric" "auth_is_demo_blocked" {
+  name    = "sec001/auth_is_demo_blocked"
+  project = google_project.booster_ai.project_id
+
+  description = "is-demo enforcement bloqueó request (sesión demo con is_demo:true intentó POST/PUT/PATCH/DELETE auth-required). Counter DELTA — 0 events expected baseline (demo sessions read-only por design). Spec §3 H1.3 SC-1.3.7."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="auth.is_demo.blocked"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "is-demo enforcement blocked"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# T4 SEC-001 — Alert policy auth_is_demo_blocked_anomaly.
+# Pattern `count > 0 sustained 5min` (no 3σ — sin baseline día-0, mismo
+# enfoque que Sprint 2a `demo_ttl_low`). Auto-close 25h (mismo que T6a).
+# Follow-up tracked: upgrade a 3σ después de 1-2 semanas baseline real
+# en .specs/_followups/ (plan §3 T4).
+# -----------------------------------------------------------------------------
+resource "google_monitoring_alert_policy" "auth_is_demo_blocked_anomaly" {
+  display_name = "is-demo enforcement blocked (anomaly)"
+  project      = google_project.booster_ai.project_id
+  combiner     = "OR"
+
+  conditions {
+    display_name = "auth.is_demo.blocked events present > 5min"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.auth_is_demo_blocked.name}\" AND resource.type=\"cloud_run_revision\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  alert_strategy {
+    # Auto-close 25h post-trigger: si demo session activa stops
+    # generating events, el alert se cierra sola.
+    auto_close = "90000s"
+  }
+
+  documentation {
+    content   = <<-EOT
+    is-demo enforcement bloqueó ≥1 request sustained 5min. Demo sessions
+    NO deberían generar writes contra mount points auth-required.
+
+    Causas posibles:
+      1. Demo UI bug — frontend está intentando POST/PUT/PATCH/DELETE
+         que no debería. Buscar `path` + `method` en logs.
+      2. Demo session siendo abusada — investigar `uid` + `correlationId`
+         en logs (Cloud Logging filter `jsonPayload.event=auth.is_demo.blocked`).
+      3. Wire de allowlist mal — endpoint legítimo demo está bloqueado
+         por error. Revisar `apps/api/src/middleware/is-demo-allowlist.ts`.
+
+    Investigar logs:
+      `jsonPayload.event=auth.is_demo.blocked` en Cloud Logging.
+
+    Ver `.specs/sec-001-cierre/spec.md` §3 H1.3 SC-1.3.7 + `plan-sprint-2b.md` §3 T4.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.auth_is_demo_blocked]
+}
+
+# =============================================================================
+# T9 SEC-001 boundary-closure — counter del reaper IdP + alerta de volumen
+# =============================================================================
+# Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G4/§11 + ADR-057.
+# El runner (apps/api/src/jobs/reap-inert-idp-accounts.ts) emite structured log
+# `reaper.account.delete` por cada cuenta que CALIFICA para borrado. OJO: el log
+# se emite tanto en dry-run (destructive:false, would-be-delete) como en modo
+# destructivo (destructive:true, borrado real). Este counter filtra
+# `jsonPayload.destructive=true` para contar SOLO borrados reales — si no, la
+# alerta de volumen se dispararía durante el primer dry-run (donde la población
+# inerte es grande). REVIEW finding C.
+resource "google_logging_metric" "reaper_account_reaped" {
+  name    = "sec001/reaper_account_reaped"
+  project = google_project.booster_ai.project_id
+
+  description = "Cuentas IdP Google borradas REALMENTE por el reaper (event reaper.account.delete + destructive=true). Counter DELTA — señal de volumen anómalo de borrados."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="reaper.account.delete"
+    jsonPayload.destructive=true
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Reaper IdP accounts deleted"
+  }
+}
+
+resource "google_monitoring_alert_policy" "reaper_volume_anomaly" {
+  project      = google_project.booster_ai.project_id
+  display_name = "Reaper IdP — volumen de borrados anómalo"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "reaper.account.delete > 20 en 1h (bootstrap; re-tune post primer run destructivo)"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.reaper_account_reaped.name}\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 20
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "3600s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = <<-EOT
+      El reaper borró > 20 cuentas IdP en 1h. Población esperada: self-signup
+      Google sin solicitud, baja. Un pico señala (a) backlog del primer run
+      destructivo (esperado una vez), o (b) un bug en el predicado matcheando
+      cuentas legítimas — revisar `jsonPayload.event=reaper.account.delete` +
+      `emailHashed` en Cloud Logging y el dual-guard (apps/api/src/services/reaper-predicate.ts).
+
+      Review manual 24h post primer run destructivo (spec §11). Re-tune el
+      threshold tras observar el volumen real del primer run.
+
+      ADR: docs/adr/057-google-signup-boundary-and-reaper-supersedes-054.md.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.reaper_account_reaped]
 }

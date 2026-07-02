@@ -7,9 +7,45 @@ name: Release + Deploy
 on:
   push:
     branches: [main]
+    # Pushes docs-only NO disparan deploy (era no-op + ensuciaba la lane de
+    # concurrency). Denylist: lo NO listado siempre despliega (falla seguro).
+    # NO agregar '**/*.md' acá: matchearía .changeset/*.md y rompería el
+    # release de versiones. '*.md' (un solo '*') es root-only. Ver
+    # .specs/ci-release-skip-docs-only/spec.md (R1/SC-3).
+    # 'scripts/**': tooling/dev no-desplegable. Verificado 2026-06-24: ningún
+    # script bajo scripts/ es ejecutado por el deploy (ni release.yml ni
+    # cloudbuild.production.yaml — deploy-telemetry-gateway.sh es manual/
+    # break-glass, ADR-065). ci.yml/security.yml igual los validan (corren sin
+    # paths-ignore). Footgun visto en #545.
+    paths-ignore:
+      - 'docs/**'
+      - '.specs/**'
+      - 'references/**'
+      - 'playbooks/**'
+      - 'scripts/**'
+      - '*.md'
+      # Cambios test-only no van en ningún bundle de runtime → no deben
+      # disparar un deploy no-op que encola la lane de concurrency (#422 lo
+      # hizo, hubo que rechazar el run). Igual que arriba: skipea solo si TODO
+      # el push matchea (código+test mezclado SÍ despliega). No hay .spec.ts
+      # fuera de e2e (verificado). Ver _followups/release-paths-ignore-test-only-changes.
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - 'apps/**/e2e/**'
+  # Trigger manual: re-disparar el deploy de `main` sin depender de un push.
+  # Agregado tras el footgun 2026-06-22 (merges rápidos a main trabaron la
+  # lane de concurrency `cancel-in-progress:false` y la única vía de
+  # re-trigger era pushear). Uso: `gh workflow run release.yml --ref main`
+  # o Actions → Release + Deploy → Run workflow.
+  workflow_dispatch: {}
 
 concurrency:
-  group: release-${{ github.workflow }}-main
+  # Grupo renombrado 2026-06-22 (era `release-${{ github.workflow }}-main`)
+  # para RESETEAR un lock de concurrency que quedó trabado tras la cascada de
+  # merges rápidos: TODO release run colgaba en `pending, 0 jobs` sin despachar
+  # (push y workflow_dispatch por igual). Un namespace de lock nuevo arranca
+  # limpio. Ver memoria ci-release-paths-ignore-2026-06.
+  group: release-deploy-${{ github.ref_name }}
   cancel-in-progress: false  # No cancelar deploys en progreso
 
 permissions:
@@ -67,12 +103,37 @@ jobs:
     name: Deploy to production
     needs: version-or-publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 75 y no 30 (fix 2026-06-12): el canary duerme 30 min DENTRO de Cloud
+    # Build mientras este job streamea `gcloud builds submit` — con 30 el
+    # job moría SIEMPRE cancelado a mitad del canary (el build seguía y
+    # completaba server-side, pero el run quedaba 'cancelled' y el smoke
+    # final nunca corría). Presupuesto: gate CI ~10 + build/push ~15 +
+    # canary 30 + verify/promoción ~10 + smoke.
+    timeout-minutes: 75
     environment:
       name: production  # Requires manual approval via GitHub Environments
       url: ${{ vars.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@v4
+      # Gate real de CI (auditoría 2026-06-09, riesgo medio): release.yml y
+      # ci.yml se disparan EN PARALELO en push a main — el comentario
+      # "después de CI verde" no se cumplía mecánicamente. Este step espera
+      # el check "CI Success" del MISMO sha; falla el deploy si CI falla.
+      - name: Esperar CI Success del mismo SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 40); do
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success"               --jq '.check_runs[0].conclusion // "pending"')
+            status=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success"               --jq '.check_runs[0].status // "queued"')
+            echo "poll $i/40: status=$status conclusion=$conclusion"
+            if [ "$conclusion" = "success" ]; then exit 0; fi
+            if [ "$conclusion" != "pending" ] && [ "$conclusion" != "null" ] && [ "$status" = "completed" ]; then
+              echo "::error::CI Success terminó en '$conclusion' — deploy abortado"; exit 1
+            fi
+            sleep 45
+          done
+          echo "::error::timeout esperando CI Success (30 min)"; exit 1
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -86,6 +147,9 @@ jobs:
         # tienen defaults en cloudbuild.production.yaml, y _ENV no se usa.
         # gcloud builds submit rechaza substitutions no declaradas (era el bug
         # `_ENV no matched in template`).
+        # T13-fix (2026-05-28) NOTE: canary traffic tag short SHA derives
+        # inline from `${_COMMIT_SHA}` inside the cloudbuild canary steps
+        # (bash ${VAR:0:12} slice). No separate substitution needed.
         run: |
           gcloud builds submit --config=cloudbuild.production.yaml \
             --region=${{ env.GCP_REGION }} \

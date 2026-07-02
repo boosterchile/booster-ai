@@ -10,11 +10,11 @@ locals {
     "notification-events",               # fan-out notificaciones
     "vehicle-availability-events",       # vehículos disponibles para matching
     "traffic-condition-events",          # congestión detectada → eco-routing
-    "document-events",                   # emisiones DTE, OCR requests
     "telemetry-events-safety-p0",        # Wave 2: Crash/Unplug/GNSS Jamming → notification
     "telemetry-events-security-p1",      # Wave 2: Tow/Auto Geofence → notification
     "telemetry-events-eco-score",        # Wave 2: Idling/Green/Speed → matching-algorithm
     "telemetry-events-trip-transitions", # Wave 2: Trip start-end/Geofence → trip-state-machine
+    "document.uploaded",                 # F4-4a: api → worker TED (document-service, 4b)
   ]
 }
 
@@ -80,15 +80,8 @@ resource "google_pubsub_topic" "traffic_condition" {
   depends_on = [google_project_service.apis]
 }
 
-resource "google_pubsub_topic" "document_events" {
-  name    = "document-events"
-  project = google_project.booster_ai.project_id
-  labels = {
-    env        = var.environment
-    managed_by = "terraform"
-  }
-  depends_on = [google_project_service.apis]
-}
+# Topic `document-events` removido (ADR-069, O-8): era huérfano (0
+# publishers, 0 subscriptions) tras la remoción de la emisión DTE/Sovos.
 
 # Chat shipper↔transportista (P3.b). Cada vez que se inserta un mensaje
 # en la tabla mensajes_chat, el api publica acá con atributo
@@ -109,6 +102,23 @@ resource "google_pubsub_topic" "chat_messages" {
     managed_by = "terraform"
   }
   message_retention_duration = "3600s" # 1h
+  depends_on                 = [google_project_service.apis]
+}
+
+# Repositorio documental de transporte (ADR-070, frente F4). El api publica acá
+# tras persistir una fila `pendiente` en `documentos_transporte` (endpoint de
+# subida, 4a). El worker TED (apps/document-service, sub-fase 4b) lo consume,
+# decodifica el TED PDF417 y actualiza la fila. El consumer NO existe aún en 4a.
+resource "google_pubsub_topic" "document_uploaded" {
+  name    = "document.uploaded"
+  project = google_project.booster_ai.project_id
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "document-service"
+  }
+  # 7 días: documentos tributarios no se pueden perder si el worker está caído.
+  message_retention_duration = "604800s"
   depends_on                 = [google_project_service.apis]
 }
 
@@ -236,6 +246,45 @@ resource "google_pubsub_subscription" "telemetry_events_processor" {
   }
 }
 
+# F4-4a — Subscription pull dedicada del worker TED (apps/document-service, 4b).
+# Patrón idéntico a telemetry_events_processor: pull, DLQ tras 5 nack/timeout,
+# retry exponencial. El consumer se implementa en 4b; la infra se provisiona
+# acá (4a) para que el endpoint de subida ya pueda publicar al topic.
+resource "google_pubsub_subscription" "document_uploaded_processor" {
+  name    = "document-uploaded-processor-sub"
+  topic   = google_pubsub_topic.document_uploaded.name
+  project = google_project.booster_ai.project_id
+
+  # 120s: rasterizar PDF + decodificar PDF417 + parsear TED puede tardar.
+  ack_deadline_seconds = 120
+
+  # 7 días de retención en el broker para tolerar downtime del worker.
+  message_retention_duration = "604800s"
+
+  # Subscription perpetua — el worker no debería borrarse sin update aquí.
+  expiration_policy {
+    ttl = ""
+  }
+
+  # DLQ: tras 5 nack/timeout, el mensaje va a pubsub-dead-letter.
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 5
+  }
+
+  # Retry exponencial entre 10s y 600s.
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "document-service"
+  }
+}
+
 # Wave 2 — Subscriptions para los 4 topics de eventos AVL eventuales.
 # Pull-based: el consumer (notification-service / matching-engine /
 # trip-state-machine) crea conexión streaming pull al startup.
@@ -249,12 +298,24 @@ resource "google_pubsub_subscription" "telemetry_events_safety_p0_notification" 
   # deberían disparar en < 5s, ack en < 30s con margen.
   ack_deadline_seconds = 30
 
-  # 7 días: si el notification-service está caído, no perdemos eventos
-  # críticos por retención corta.
+  # 7 días: si el consumer está caído, no perdemos eventos críticos por
+  # retención corta.
   message_retention_duration = "604800s"
 
-  expiration_policy {
-    ttl = ""
+  # PUSH → apps/api (safety fan-out P0-G). El consumer NO es notification-service
+  # (skeleton, se retira en el cleanup de demo) sino el endpoint OIDC en el api.
+  #
+  # Endpoint = public_api_url (api.boosterchile.com), NO el run.app: el api corre
+  # con ingress=INTERNAL_LOAD_BALANCER (ADR-062), así que el push entra por el LB.
+  # audience DEBE coincidir con una entrada de API_AUDIENCE (compute.tf) o el
+  # endpoint da 401 a cada mensaje — acá usamos public_api_url, que está en
+  # API_AUDIENCE. El endpoint además valida email==SAFETY_PUSH_CALLER_SA.
+  push_config {
+    push_endpoint = "${local.public_api_url}/internal/safety-events"
+    oidc_token {
+      service_account_email = google_service_account.safety_push_invoker.email
+      audience              = local.public_api_url
+    }
   }
 
   dead_letter_policy {
@@ -271,10 +332,44 @@ resource "google_pubsub_subscription" "telemetry_events_safety_p0_notification" 
   labels = {
     env        = var.environment
     managed_by = "terraform"
-    consumer   = "notification-service"
+    consumer   = "api-safety-fanout"
     wave       = "2"
     priority   = "panic"
   }
+
+  depends_on = [google_service_account_iam_member.pubsub_safety_push_token_creator]
+}
+
+# SA dedicado con el que Pub/Sub firma el OIDC token de la push subscription
+# safety-p0. Identidad distinta y de mínimo privilegio (least privilege): el
+# endpoint del api valida `claims.email == SAFETY_PUSH_CALLER_SA` (= este email,
+# inyectado en compute.tf).
+resource "google_service_account" "safety_push_invoker" {
+  account_id   = "safety-push-invoker"
+  display_name = "Safety events push invoker"
+  description  = "SA con el que Pub/Sub firma el OIDC de la push subscription telemetry-events-safety-p0 → POST /internal/safety-events del api (safety fan-out P0-G)."
+  project      = google_project.booster_ai.project_id
+  depends_on   = [google_project_service.apis]
+}
+
+# Para emitir tokens OIDC como `safety_push_invoker`, el service agent de Pub/Sub
+# necesita Token Creator sobre ese SA. Requisito de GCP para push + oidc_token.
+resource "google_service_account_iam_member" "pubsub_safety_push_token_creator" {
+  service_account_id = google_service_account.safety_push_invoker.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${google_project.booster_ai.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
+# Permitir que el SA invoque booster-ai-api. El api ya es public=true (allUsers
+# para CORS preflight); este binding explícito documenta la intención y protege
+# si en el futuro se restringe el invoker. Mismo patrón que scheduler_invoker_api.
+resource "google_cloud_run_v2_service_iam_member" "safety_push_invoker_api" {
+  project    = google_project.booster_ai.project_id
+  location   = var.region
+  name       = "booster-ai-api"
+  role       = "roles/run.invoker"
+  member     = "serviceAccount:${google_service_account.safety_push_invoker.email}"
+  depends_on = [module.service_api]
 }
 
 resource "google_pubsub_subscription" "telemetry_events_security_p1_notification" {
@@ -322,7 +417,7 @@ resource "google_pubsub_subscription" "telemetry_events_eco_score_matching" {
   }
 
   dead_letter_policy {
-    dead_letter_topic     = google_pubsub_topic.dlq.id
+    dead_letter_topic = google_pubsub_topic.dlq.id
     # Pub/Sub mínimo 5 — incrementado de 3 tras API 400 al apply 2026-05-07.
     max_delivery_attempts = 5
   }

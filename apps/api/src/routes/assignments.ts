@@ -39,7 +39,10 @@ import {
   DriverNotInCarrierError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
-import { confirmarEntregaViaje } from '../services/confirmar-entrega-viaje.js';
+import {
+  type DocumentClosePolicy,
+  confirmarEntregaViaje,
+} from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
@@ -48,6 +51,12 @@ export function createAssignmentsRoutes(opts: {
   db: Db;
   logger: Logger;
   certConfig?: Partial<EmitirCertificadoConfig>;
+  /**
+   * Política de cierre flexible documental (ADR-070, F4-4a). Si se provee y el
+   * flag está ON, el cierre POD del carrier exige ≥1 documento subido (según
+   * fecha de corte). Ausente → sin precondición documental.
+   */
+  documentClosePolicy?: DocumentClosePolicy | undefined;
   /**
    * GCP project ID — usado como X-Goog-User-Project en Routes API (ADR-038).
    * Si está presente, el endpoint /assignments/:id/eco-route fetches polyline
@@ -330,6 +339,7 @@ export function createAssignmentsRoutes(opts: {
         userId: auth.userContext.user.id,
       },
       config: opts.certConfig ?? {},
+      ...(opts.documentClosePolicy ? { documentClosePolicy: opts.documentClosePolicy } : {}),
     });
 
     if (!result.ok) {

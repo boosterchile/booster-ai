@@ -3,6 +3,10 @@ resource "google_cloud_run_v2_service" "service" {
   project  = var.project_id
   location = var.region
 
+  # Ingress de red (ADR-062). Default ALL preserva el comportamiento; los
+  # servicios servidos vía GCLB lo restringen a internal-and-cloud-LB.
+  ingress = var.ingress
+
   deletion_protection = var.deletion_protection
 
   template {
@@ -34,7 +38,7 @@ resource "google_cloud_run_v2_service" "service" {
           cpu    = var.cpu
           memory = var.memory
         }
-        cpu_idle          = true
+        cpu_idle          = var.cpu_idle
         startup_cpu_boost = true
       }
 
@@ -94,15 +98,45 @@ resource "google_cloud_run_v2_service" "service" {
     }
   }
 
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
+  # T13 SEC-001 Sprint 2b (SC-1.2.3 + ADR-052) — bloque `traffic` dinámico:
+  # - var.traffic_managed_externally=false (default, 8 servicios): el block
+  #   se declara con TYPE_LATEST 100%. Terraform lo setea en el create
+  #   inicial. Cloud Build subsequent deploys via `gcloud run services
+  #   update --image` mueven traffic vía default Cloud Run behavior;
+  #   ignore_changes abajo previene drift cosmético en applies posteriores.
+  # - var.traffic_managed_externally=true (solo service_api): el block NO
+  #   se declara. Cloud Build canary sequence (deploy-canary --no-traffic
+  #   + route-canary --to-tags + deploy-api --to-latest) gestiona el split
+  #   sin que Terraform intervenga. El primer create del recurso usa el
+  #   default de Cloud Run API (100% latest), que es safe.
+  dynamic "traffic" {
+    for_each = var.traffic_managed_externally ? [] : [1]
+    content {
+      type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+      percent = 100
+    }
   }
 
+  # `ignore_changes` SIEMPRE incluye `traffic`. Terraform no soporta
+  # ignore_changes condicional via `concat` (requiere static list expr).
+  # El control real del scoping de traffic management vive en el dynamic
+  # block `traffic` arriba — cuando traffic_managed_externally=true, ese
+  # block no se declara, y siempre-ignored evita any drift signal en
+  # plans posteriores. Para los 8 services con var=false, traffic se
+  # crea una vez en el create inicial y Cloud Build deploys lo updatean
+  # via gcloud (default Cloud Run behavior — single-revision deploys
+  # mueven traffic implícitamente al latest).
   lifecycle {
     ignore_changes = [
       # Dejar que Cloud Build gestione las revisions/traffic después del primer apply
       template[0].containers[0].image,
+      # NOTA: `template[0].revision` NO va en ignore_changes. Pinearlo (#472)
+      # hacía que terraform reusara el nombre de la revisión viva al actualizar
+      # config (ej. sumar un env) → Error 409 "revision already exists with
+      # different configuration". Sin pinearlo, terraform manda revision vacío y
+      # Cloud Run auto-nombra la nueva revisión (audit 2026-06-15, fix del apply
+      # de safety fan-out). El `revision` queda como computed; el nombre real lo
+      # pone Cloud Run/Cloud Build en cada deploy.
       # GCP/gcloud auto-injectan labels (commit, goog-terraform-provisioned) y
       # annotations (operation-id, run.googleapis.com/*) durante deploys que TF
       # no controla. Sin ignore_changes acá, cada `terraform plan` mostraba
@@ -118,6 +152,8 @@ resource "google_cloud_run_v2_service" "service" {
       scaling,
       client,
       client_version,
+      # T13: traffic siempre ignorado (ver comment del dynamic traffic block).
+      traffic,
     ]
   }
 

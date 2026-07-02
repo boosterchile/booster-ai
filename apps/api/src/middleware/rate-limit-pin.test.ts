@@ -92,7 +92,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('1er intento → next() (counter=1)', async () => {
     const { redis, calls } = makeRedis([1, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -108,10 +107,53 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     expect(calls.expireCalled.length).toBe(2);
   });
 
+  it('keyPrefix/ipKeyPrefix custom → counters propios sin tocar los de pin-activate', async () => {
+    const { redis, calls } = makeRedis([1, 1]);
+    const mw = createRateLimitPinMiddleware({
+      redis: redis as any,
+      logger: noopLogger,
+      keyPrefix: 'rl:login-rut:',
+      ipKeyPrefix: 'rl:login-rut:ip:',
+    });
+    const app = makeApp(mw);
+    const res = await app.request('/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4' },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls.incrCalled).toEqual(['rl:login-rut:12345678-5', 'rl:login-rut:ip:1.2.3.4']);
+    // Ningún counter con el prefijo del PIN driver.
+    expect(calls.incrCalled.some((k) => k.startsWith(KEY_PREFIX))).toBe(false);
+  });
+
+  it('XFF spoofeado (múltiples entries) → usa la PENÚLTIMA (la IP que vio el LB)', async () => {
+    const { redis, calls } = makeRedis([1, 1]);
+    const mw = createRateLimitPinMiddleware({
+      redis: redis as any,
+      logger: noopLogger,
+    });
+    const app = makeApp(mw);
+    const res = await app.request('/x', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        // El atacante envía '6.6.6.6'; el GCLB appendea su IP real
+        // (198.51.100.7) y la del LB (35.1.1.1). La confiable es la penúltima.
+        'x-forwarded-for': '6.6.6.6, 198.51.100.7, 35.1.1.1',
+      },
+      body: JSON.stringify({ rut: '12345678-5' }),
+    });
+    expect(res.status).toBe(200);
+    const ipKeys = calls.incrCalled.filter((k) => k.includes(':ip:'));
+    expect(ipKeys).toEqual([`${KEY_PREFIX}ip:198.51.100.7`]);
+    // La entry controlada por el atacante NO es la key.
+    expect(calls.incrCalled.some((k) => k.includes('6.6.6.6'))).toBe(false);
+  });
+
   it('5º intento OK (counter=5 ≤ limit)', async () => {
     const { redis } = makeRedis([5, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -127,7 +169,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('6º intento → 429 + Retry-After:900 + X-RateLimit-Scope:rut (SC-H2.1)', async () => {
     const { redis } = makeRedis([6, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -149,7 +190,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     // hasta 31. La response del 31º request debe ser 429 scope=ip.
     const { redis } = makeRedis([1, 31]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -170,7 +210,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('SC-H2.1b — Redis unreachable → 503 + Retry-After:30 (fail-closed loudly)', async () => {
     const { redis } = makeRedis({ throwOnExec: new Error('ECONNREFUSED') });
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -193,7 +232,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     // ronda tropieza ambos.
     const { redis } = makeRedis([6, 31]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -219,7 +257,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
     // canónico via la transform del schema.
     const { redis, calls } = makeRedis([1, 1, 2, 2]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -243,7 +280,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('body sin campo rut → skip (no incrementa counter)', async () => {
     const { redis, calls } = makeRedis([1, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -260,7 +296,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('body no-JSON → skip (handler downstream maneja el error)', async () => {
     const { redis, calls } = makeRedis([1, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });
@@ -279,7 +314,6 @@ describe('createRateLimitPinMiddleware (T9 SEC-001)', () => {
   it('RUT con formato inválido → skip (no oracle de RUTs válidos)', async () => {
     const { redis, calls } = makeRedis([1, 1]);
     const mw = createRateLimitPinMiddleware({
-      // biome-ignore lint/suspicious/noExplicitAny: mock Redis
       redis: redis as any,
       logger: noopLogger,
     });

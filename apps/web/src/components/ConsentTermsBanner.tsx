@@ -40,8 +40,8 @@ export function ConsentTermsBanner() {
             Necesitamos tu aceptación de Términos de Servicio v2
           </p>
           <p className="mt-0.5 text-amber-800">
-            Para liquidar tus viajes (cálculo de comisión + emisión de DTE) necesitamos que aceptes
-            los nuevos Términos de Servicio.
+            Para liquidar tus viajes (cálculo de comisión) necesitamos que aceptes los nuevos
+            Términos de Servicio.
           </p>
           <Link
             to="/legal/terminos"

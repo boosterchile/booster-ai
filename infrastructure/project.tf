@@ -31,7 +31,10 @@ resource "google_project" "booster_ai" {
     prevent_destroy = true
     # auto_create_network es CREATE-time only — no aplicar drift
     # post-creacion. Trivy ve el atributo en codigo (alert closes).
-    ignore_changes = [auto_create_network]
+    # billing_account: gestionado una sola vez; se ignora para (a) que el drift
+    # check (#412) no falsee si var.billing_account no se provee, y (b) evitar el
+    # footgun de que una var vacía intente DESVINCULAR billing del proyecto.
+    ignore_changes = [auto_create_network, billing_account]
   }
 }
 
@@ -71,25 +74,26 @@ resource "google_project_iam_audit_config" "all_services" {
 locals {
   required_apis = [
     # Core compute
-    "run.googleapis.com",                 # Cloud Run
-    "cloudbuild.googleapis.com",          # Cloud Build
-    "artifactregistry.googleapis.com",    # Docker images
-    "container.googleapis.com",           # GKE (telemetry-tcp-gateway)
+    "run.googleapis.com",              # Cloud Run
+    "cloudbuild.googleapis.com",       # Cloud Build
+    "artifactregistry.googleapis.com", # Docker images
+    "container.googleapis.com",        # GKE (telemetry-tcp-gateway)
+    "cloudfunctions.googleapis.com",   # Cloud Functions Gen 1 (Sprint 2c-B `beforeCreate`)
 
     # Data
-    "sqladmin.googleapis.com",            # Cloud SQL
-    "redis.googleapis.com",               # Memorystore
-    "firestore.googleapis.com",           # Firestore
-    "bigquery.googleapis.com",            # BigQuery
-    "pubsub.googleapis.com",              # Pub/Sub
-    "storage.googleapis.com",             # Cloud Storage
+    "sqladmin.googleapis.com",  # Cloud SQL
+    "redis.googleapis.com",     # Memorystore
+    "firestore.googleapis.com", # Firestore
+    "bigquery.googleapis.com",  # BigQuery
+    "pubsub.googleapis.com",    # Pub/Sub
+    "storage.googleapis.com",   # Cloud Storage
 
     # Security
-    "secretmanager.googleapis.com",       # Secret Manager
-    "cloudkms.googleapis.com",            # KMS
-    "iam.googleapis.com",                 # IAM
-    "iamcredentials.googleapis.com",      # WIF
-    "sts.googleapis.com",                 # WIF Security Token Service
+    "secretmanager.googleapis.com",  # Secret Manager
+    "cloudkms.googleapis.com",       # KMS
+    "iam.googleapis.com",            # IAM
+    "iamcredentials.googleapis.com", # WIF
+    "sts.googleapis.com",            # WIF Security Token Service
 
     # Observability
     "logging.googleapis.com",             # Cloud Logging
@@ -111,23 +115,23 @@ locals {
     "places.googleapis.com",
 
     # AI
-    "generativelanguage.googleapis.com",  # Gemini
-    "aiplatform.googleapis.com",          # Vertex AI
-    "documentai.googleapis.com",          # Document AI (OCR, ADR-007)
+    "generativelanguage.googleapis.com", # Gemini
+    "aiplatform.googleapis.com",         # Vertex AI
+    "documentai.googleapis.com",         # Document AI (OCR, ADR-007)
 
     # Firebase (para auth end-user)
     "firebase.googleapis.com",
-    "identitytoolkit.googleapis.com",     # Firebase Auth
-    "fcm.googleapis.com",                 # FCM push notifications
+    "identitytoolkit.googleapis.com", # Firebase Auth
+    "fcm.googleapis.com",             # FCM push notifications
 
     # Networking
-    "compute.googleapis.com",             # VPC, Load Balancer
-    "servicenetworking.googleapis.com",   # VPC peering Cloud SQL
-    "vpcaccess.googleapis.com",           # Serverless VPC Access
-    "dns.googleapis.com",                 # Cloud DNS
-    "iap.googleapis.com",                 # IAP TCP forwarding (ADR-013 bastion)
-    "oslogin.googleapis.com",             # OS Login (auth SSH del bastion via IAM)
-    "cloudscheduler.googleapis.com",      # Cloud Scheduler (P3.d chat-whatsapp-fallback cron)
+    "compute.googleapis.com",           # VPC, Load Balancer
+    "servicenetworking.googleapis.com", # VPC peering Cloud SQL
+    "vpcaccess.googleapis.com",         # Serverless VPC Access
+    "dns.googleapis.com",               # Cloud DNS
+    "iap.googleapis.com",               # IAP TCP forwarding (ADR-013 bastion)
+    "oslogin.googleapis.com",           # OS Login (auth SSH del bastion via IAM)
+    "cloudscheduler.googleapis.com",    # Cloud Scheduler (P3.d chat-whatsapp-fallback cron)
 
     # Billing
     "cloudbilling.googleapis.com",

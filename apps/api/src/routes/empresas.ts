@@ -7,19 +7,31 @@ import {
   EmailAlreadyInUseError,
   EmpresaRutDuplicateError,
   PlanNotFoundError,
+  SelfOnboardingDisabledError,
   UserAlreadyExistsError,
   onboardEmpresa,
 } from '../services/onboarding.js';
 
 /**
- * Routes para gestión de empresas. Solo monta `/onboarding` por ahora —
- * los CRUD adicionales (update profile, list members, billing) vienen en
- * slices posteriores.
+ * Routes para gestión de empresas. Monta `/onboarding`; los CRUD
+ * adicionales (update profile, list members, billing) viven en slices
+ * posteriores.
  *
  * La ruta `/onboarding` usa SOLO firebaseAuth (no userContext) porque el
  * user todavía no existe en la DB cuando llama acá.
+ *
+ * SEC-001 hotfix: el self-service onboarding está gateado por
+ * `selfOnboardingEnabled` (= config `EMPRESA_SELF_ONBOARDING_ENABLED`,
+ * default false). El flag se INYECTA (no se importa el módulo config) para
+ * testability. Con el flag OFF, `/onboarding` retorna 403 `onboarding_disabled`
+ * ANTES de cualquier escritura a DB. Ver
+ * `.specs/sec-001-empresa-onboarding-gate-hotfix/spec.md`.
  */
-export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
+export function createEmpresaRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  selfOnboardingEnabled: boolean;
+}) {
   const app = new Hono();
 
   app.post('/onboarding', zValidator('json', empresaOnboardingInputSchema), async (c) => {
@@ -32,6 +44,25 @@ export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
       return c.json({ error: 'firebase_email_missing', code: 'firebase_email_missing' }, 400);
     }
 
+    // SEC-001 hotfix — gate de ruta (fail-closed ANTES de cualquier
+    // escritura). Con el flag OFF, self-service onboarding queda cerrado
+    // pendiente del rediseño del flujo aprobación→dueño.
+    if (!opts.selfOnboardingEnabled) {
+      opts.logger.warn(
+        { firebaseUid: claims.uid, path: c.req.path },
+        'self-service onboarding blocked (EMPRESA_SELF_ONBOARDING_ENABLED=false)',
+      );
+      return c.json(
+        {
+          error: 'onboarding_disabled',
+          code: 'onboarding_disabled',
+          message:
+            'El alta de empresas por autoservicio está cerrada. Escribe a soporte@boosterchile.com para solicitar acceso.',
+        },
+        403,
+      );
+    }
+
     const input = c.req.valid('json');
 
     try {
@@ -41,6 +72,8 @@ export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
         firebaseUid: claims.uid,
         firebaseEmail: claims.email,
         input,
+        authorizedBy: 'self_service',
+        selfServiceEnabled: opts.selfOnboardingEnabled,
       });
 
       return c.json(
@@ -71,6 +104,12 @@ export function createEmpresaRoutes(opts: { db: Db; logger: Logger }) {
         201,
       );
     } catch (err) {
+      if (err instanceof SelfOnboardingDisabledError) {
+        // Defensa en profundidad: el gate de ruta arriba ya cubre este caso;
+        // si se alcanza aquí, el service-layer invariant rechazó igual.
+        opts.logger.warn({ path: c.req.path }, 'onboardEmpresa rejected self_service (flag off)');
+        return c.json({ error: 'onboarding_disabled', code: 'onboarding_disabled' }, 403);
+      }
       if (err instanceof UserAlreadyExistsError) {
         return c.json({ error: 'user_already_registered', code: 'user_already_registered' }, 409);
       }

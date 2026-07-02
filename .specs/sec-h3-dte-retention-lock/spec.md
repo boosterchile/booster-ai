@@ -1,14 +1,38 @@
 # Spec: sec-h3-dte-retention-lock
 
-- Author: Felipe Vicencio (with agent-rigor / Claude Opus 4.7)
-- Date: 2026-05-24
-- Status: **Draft**
+- Author: Felipe Vicencio (with agent-rigor / Claude Opus 4.7; trade-off ampliado 2026-06-02 con Opus 4.8)
+- Date: 2026-05-24 (trade-off + re-confirmación empírica: 2026-06-02)
+- Status: **Draft — decisión PO PENDIENTE (irreversible; se toma fresco, fuera de presión de tiempo, NO en la sesión que documenta)**
 - Linked:
   - Split de `.specs/sec-001-cierre/spec.md` H3 per decisión PO 2026-05-24 (devils-advocate O-5: H3 tiene risk class y stakeholder distintos, no debe bundle-arse con H1/H2)
   - Auditoría origen: `feat/security-blocking-hotfixes-2026-05-14:.specs/audit-2026-05-14/security.md` H3
   - Spec hermano: `.specs/sec-001-cierre/spec.md` — debe mergear ANTES del flip H1.6 final
   - CLAUDE.md §Reglas no-negociables del stack Booster
   - SII Chile DTE retention compliance (Ley sobre Facturación Electrónica)
+  - Re-confirmación empírica: `.specs/adr-vs-prod-inventory/inventory.md` §ADR-001 + §ADR-007 (finding 🔴 retention-lock, 2026-06-02)
+
+> ⚠️ **Este spec PREPARA la decisión; no la ejecuta ni la toma.** El lock es **irreversible**. La decisión (aplicar `is_locked=true` o mantenerlo false con monitoreo) la toma el PO **fresco, sin presión de tiempo, en una sesión dedicada** — NO en la sesión que documenta este spec. **NADA de tocar el bucket ni el Terraform** hasta esa decisión + la validación SC-4. Documentar ≠ decidir ≠ ejecutar.
+
+## 0. Trade-off de la decisión (resumen para el PO)
+
+**Realidad verificada (re-confirmada 2026-06-02, prod read-only):**
+- Bucket `gs://booster-ai-494222-documents-prod`: `retention_policy.retentionPeriod = 189216000s` (**6.0 años** ✓) + CMEK (`documents-cmek`) ✓ — **pero `retention_policy.isLocked` vacío (= false)**.
+- `infrastructure/storage.tf:144-145`: `retention_period = 189216000` / `is_locked = false   # CAMBIAR A true MANUALMENTE después de validar` (comentario **stale**, postergado desde el commit inicial).
+- **ADR-007 §Retención (línea 189) promete textualmente**: *"Retention Lock de 6 años (no se puede eliminar ni siquiera por admin hasta expiración)"* — esa promesa es **parcialmente falsa hoy**: la duración (6 años) está, pero la **inviolabilidad anti-admin NO** (cualquier principal con `storage.buckets.update` puede acortar la retención o borrar el bucket vía consola/API/Terraform).
+
+**Qué se GANA al poner `is_locked=true`:**
+- Cumplimiento SII **inmutable por contrato técnico**, no por intención: la retención DTE de 6 años (obligatoria por la Ley de Facturación Electrónica chilena) queda inviolable vía API.
+- **Ningún principal** —incluido el owner del proyecto y un `terraform apply` no revisado— puede acortar la retención ni borrar evidencia legal dentro de la ventana de 6 años.
+- La promesa de ADR-007 deja de ser falsa: se alinea narrativa con realidad.
+- Verificable por auditor SII con `gsutil retention get` (locked=true).
+
+**Qué se ARRIESGA (por qué es decisión de peso):**
+- **IRREVERSIBLE**: una vez `isLocked=true`, los 6 años quedan inamovibles para **todos, incluido el owner**. No hay "des-lock". La única salida técnica es esperar que cada objeto cumpla su retención (6 años por objeto).
+- No se puede **mover el bucket** entre proyectos/regiones antes de expiry (migración futura requiere correr en paralelo con el bucket viejo hasta que cada objeto expire).
+- Un **bug en el write path de DTEs descubierto post-lock** no se puede remediar acortando retención: obliga a crear un bucket nuevo y operar con el viejo 6 años (ver §7.2).
+- Por eso **SC-4 (validación 48h pre-lock) es no-negociable** y la decisión debe tomarse sin presión.
+
+**Estado del trade-off**: el riesgo de NO hacerlo (vector interno: insider/operador/terraform borra evidencia legal) es **medio, no externo**. El riesgo de hacerlo mal (lock prematuro sobre un write path con bug) es **alto e irreversible**. Por eso: documentar ahora, decidir + validar después.
 
 ## 1. Objective
 
@@ -113,3 +137,56 @@ Si post-lock se descubre un bug que requiere modificar la retention policy, las 
 
 - 2026-05-24 — Initial draft. Split de `.specs/sec-001-cierre/` H3 por decisión PO 2026-05-24 (devils-advocate O-5: scope cohesion violado al bundle-ar H3 irreversible con H1/H2 reversibles).
 - 2026-05-24 — Validation 48h pre-lock confirmada como no-negociable por irreversibility (SC-4).
+- 2026-06-02 — Trade-off completo agregado (§0) para preparar la decisión PO. Re-confirmación empírica prod read-only: bucket `documents-prod` con `isLocked=false` (inventario ADR-vs-prod §ADR-001/§ADR-007). Confirmado que ADR-007:189 promete inviolabilidad anti-admin que hoy es falsa. **Sigue Draft; decisión NO tomada — la toma el PO fresco fuera de presión de tiempo. Nada de prod ni Terraform tocado.**
+
+---
+
+## 14. Addendum 2026-06-10 — hallazgos de la auditoría arquitectónica que cambian el plan
+
+> Origen: auditoría arquitectónica 2026-06-09 (workflow multi-agente, informe en sesión) + instrucción del PO 2026-06-10 "buscar la mejor solución" al ejecutar la remediación del punto 6. Este addendum NO ejecuta nada: agrega dos restricciones nuevas a la decisión pendiente.
+
+### 14.1. Prerequisito técnico nuevo: re-emisión de certificados de carbono
+
+Los certificados de huella de carbono comparten el bucket `documents` (`CERTIFICATES_BUCKET = google_storage_bucket.documents.name`, `infrastructure/compute.tf:124`) y `packages/certificate-generator/src/storage.ts:60-61` asume que una re-emisión **sobrescribe** el mismo path `certificates/{empresaId}/{trackingCode}.pdf`. GCS prohíbe reemplazar objetos que no cumplieron la edad de retención **incluso con el lock sin activar** — la re-emisión ya está rota hoy, y con lock sería irremediable por 6 años.
+
+**Prerequisito antes del lock (cualquiera de los dos):**
+- (a) versionar los paths de certificados (`.../{trackingCode}/v{n}.pdf` o timestamp), con el endpoint público `/verify` resolviendo la versión vigente; o
+- (b) separar los certificados a un bucket propio sin retention SII (los certificados no son DTEs; su inmutabilidad la da la firma KMS, no la retención del bucket).
+
+La opción (b) es más limpia conceptualmente: deja `documents` 100% DTE/SII (mandato legal puro) y los certificados con su propio lifecycle. Requiere migración de objetos + cambio de env var. Decisión del PO en el mismo paquete que el lock.
+
+### 14.2. NO lockear `crash-traces` — conflicto Ley 19.628
+
+La auditoría propuso inicialmente lockear también el bucket forense `{project}-crash-traces` (7 años, CMEK). **Análisis posterior lo descarta**: los crash traces contienen PII de conductores (GPS, acelerómetro a 100Hz, IO snapshots vinculables a persona vía vehículo/asignación) y su retención de 7 años es una **elección forense de Booster, no un mandato legal**. Un lock irreversible haría técnicamente imposible honrar una solicitud de supresión bajo Ley 19.628 — para los DTE el mandato SII prevalece sobre la supresión; para los crash traces no existe ese amparo. El bucket queda con la retention policy **sin lock** (deliberado, no pendiente), y el comentario de `infrastructure/crash-traces.tf:84-87` debe actualizarse para reflejar que es decisión, no postergación (incluir en el PR del lock de documents).
+
+### 14.3. Plan revisado (reemplaza la secuencia implícita de §0)
+
+1. PO decide entre 14.1(a) y 14.1(b) → ciclo propio (spec + código/infra + migración si aplica).
+2. Validación SC-4 (48h) sobre el write path de DTEs — sin cambios.
+3. Lock de `documents` (`is_locked=true`) en sesión dedicada del PO — sin cambios.
+4. En el mismo PR del lock: comentario de crash-traces.tf actualizado a "sin lock por diseño (Ley 19.628)" + ADR corto que registre ambas decisiones (lock documents / no-lock crash-traces).
+
+## 13bis. Decision log (continuación)
+
+- 2026-06-10 — Addendum §14: prerequisito de re-emisión de certificados detectado (bloquea el lock); crash-traces excluido del lock por conflicto con derecho de supresión Ley 19.628. La decisión del PO ahora incluye elegir 14.1(a) vs 14.1(b). Sigue Draft; nada de prod ni Terraform tocado.
+
+## 14bis. Estado del prerequisito 14.1 (2026-06-11)
+
+**RESUELTO con la opción (b)** — decisión PO 2026-06-11 vía AskUserQuestion: bucket propio `{project}-certificates-{env}` sin retention policy (PR del ciclo `feat-certificados-bucket-propio`; migración operativa en `docs/runbooks/migracion-bucket-certificados.md`). Tras ejecutar esa migración, `documents` queda 100% DTE/mandato SII y el plan §14.3 continúa en el paso 2 (validación SC-4) — la decisión del lock sigue siendo del PO en sesión dedicada.
+
+## 15. Estado 2026-06-14 — lock DIFERIDO (SC-4 insatisfacible hoy)
+
+Verificación read-only en prod (gcloud, credenciales vivas):
+
+- Bucket `gs://booster-ai-494222-documents-prod`: `retentionPeriod=189216000` (6 años) ✓, **`isLocked` ausente (= false)** — sin cambios desde 2026-06-02.
+- **El bucket está VACÍO (0 objetos)** y **no hay actividad DTE en prod** (0 writes en logs de 7 días). El producto aún no emite DTEs reales; `document-service` deployado pero ocioso.
+
+**Conclusión**: **SC-4 (corrida 48h del write/read/lifecycle de DTEs reales) es insatisfacible hoy** — no hay DTEs que validar. Aplicar `is_locked=true` ahora sería exactamente el peor escenario que §0 advierte: lock irreversible de 6 años sobre un write path **nunca ejercido en prod**, sin la validación no-negociable. **El lock se DIFIERE.**
+
+**Trigger para retomar** (todas las condiciones): (1) emisión real de DTEs en prod operando; (2) SC-4 ejecutada 48h contra ese tráfico real con evidencia en `validation-48h-evidence.md`; (3) decisión PO en frío. Mientras tanto `is_locked=false` es **deliberado, no postergación** — el comentario de `infrastructure/storage.tf` se actualizó para reflejar este gate (antes decía "CAMBIAR A true MANUALMENTE", stale).
+
+Pendiente de readiness (opcional, no urgente; se puede preparar antes del trigger): smoke script `scripts/dte-write-read-smoke.ts` (T1) y el ADR de SC-3 (lock documents / no-lock crash-traces). No se escriben aún para no anticipar una decisión diferida.
+
+## 14ter. Decision log (continuación)
+
+- 2026-06-14 — Lock DIFERIDO. Evidencia prod read-only: bucket `documents-prod` vacío, 0 tráfico DTE → SC-4 insatisfacible. No se toca el bucket ni el Terraform funcional (solo el comentario stale de storage.tf). Sigue Draft; la decisión irreversible queda gateada por la emisión real de DTEs + SC-4 + decisión PO en frío.

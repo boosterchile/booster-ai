@@ -22,6 +22,8 @@ interface DbStub {
   select: ReturnType<typeof vi.fn>;
   insert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  /** Captura del primer arg pasado a `.values(...)` en cada INSERT. */
+  __insertValues: unknown[];
 }
 
 /**
@@ -38,6 +40,7 @@ function makeDb(opts: {
   const selectQueue = [...(opts.selectResults ?? [])];
   const insertQueue = [...(opts.insertResults ?? [])];
   const updateQueue = [...(opts.updateResults ?? [])];
+  const insertValues: unknown[] = [];
 
   const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
@@ -58,7 +61,10 @@ function makeDb(opts: {
 
   const buildInsertChain = () => {
     const chain: Record<string, unknown> = {
-      values: vi.fn(() => chain),
+      values: vi.fn((v: unknown) => {
+        insertValues.push(v);
+        return chain;
+      }),
       returning: vi.fn(async () => insertQueue.shift() ?? []),
     };
     return chain;
@@ -77,6 +83,7 @@ function makeDb(opts: {
     select: vi.fn(() => buildSelectChain()),
     insert: vi.fn(() => buildInsertChain()),
     update: vi.fn(() => buildUpdateChain()),
+    __insertValues: insertValues,
   };
 }
 
@@ -269,6 +276,45 @@ describe('grantConsent', () => {
       logger: noopLogger,
     });
     expect(db.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('persiste evidencia 21.719: noticeVersion/grantIp/grantUserAgent en el INSERT', async () => {
+    const db = makeDb({ insertResults: [[{ id: 'c1' }]] });
+    await grantConsent({
+      ...baseOpts,
+      dataCategories: [...baseOpts.dataCategories],
+      noticeVersion: 'esg-v1',
+      grantIp: '1.1.1.1',
+      grantUserAgent: 'BoosterTest/1.0',
+      db: db as never,
+      logger: noopLogger,
+    });
+    const inserted = db.__insertValues[0] as {
+      noticeVersion?: string | null;
+      grantIp?: string | null;
+      grantUserAgent?: string | null;
+    };
+    expect(inserted.noticeVersion).toBe('esg-v1');
+    expect(inserted.grantIp).toBe('1.1.1.1');
+    expect(inserted.grantUserAgent).toBe('BoosterTest/1.0');
+  });
+
+  it('evidencia 21.719 ausente → INSERT con nulls (sin romper)', async () => {
+    const db = makeDb({ insertResults: [[{ id: 'c1' }]] });
+    await grantConsent({
+      ...baseOpts,
+      dataCategories: [...baseOpts.dataCategories],
+      db: db as never,
+      logger: noopLogger,
+    });
+    const inserted = db.__insertValues[0] as {
+      noticeVersion?: string | null;
+      grantIp?: string | null;
+      grantUserAgent?: string | null;
+    };
+    expect(inserted.noticeVersion).toBeNull();
+    expect(inserted.grantIp).toBeNull();
+    expect(inserted.grantUserAgent).toBeNull();
   });
 });
 

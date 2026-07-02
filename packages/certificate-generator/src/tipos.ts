@@ -115,7 +115,8 @@ export interface DatosTransportistaCertificado {
 export interface ConfigInfra {
   /**
    * Resource ID completo de la KMS key (sin :versions). Ejemplo:
-   *   projects/booster-ai-494222/locations/southamerica-west1/keyRings/booster-ai-keyring/cryptoKeys/certificate-carbono-signing
+   *   projects/<PROJECT_ID>/locations/<LOCATION>/keyRings/<KEYRING>/cryptoKeys/certificate-carbono-signing
+   *   (el valor real se inyecta por env var CERTIFICATE_SIGNING_KEY_ID desde Terraform)
    *
    * El emisor pinea internamente la versión activa cuando llama a sign
    * (ver `firmar-pades.ts`); persistir la versión específica permite

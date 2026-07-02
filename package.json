@@ -5,7 +5,7 @@
   "description": "Booster AI — Marketplace B2B de logística sostenible con IA, arquitectura cloud-native sobre GCP.",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=24.0.0",
     "pnpm": ">=9.0.0"
   },
   "packageManager": "pnpm@9.15.4",
@@ -45,7 +45,15 @@
       "crypto-js@<4.2.0": ">=4.2.0",
       "fast-xml-builder@<1.1.7": ">=1.1.7",
       "http-proxy-agent@<7.0.0": ">=7.0.0",
-      "uuid@<11.1.1": ">=11.1.1"
+      "uuid@<11.1.1": ">=11.1.1",
+      "@grpc/grpc-js@<1.14.4": ">=1.14.4",
+      "tmp@<0.2.6": ">=0.2.6",
+      "form-data@<2.5.6": ">=2.5.6",
+      "protobufjs@<7.6.3": ">=7.6.3 <8",
+      "qs@>=6.11.1 <6.15.2": ">=6.15.2",
+      "@opentelemetry/core@<2.8.0": ">=2.8.0",
+      "@opentelemetry/resources@<2.8.0": ">=2.8.0",
+      "@opentelemetry/sdk-trace-base@<2.8.0": ">=2.8.0"
     }
   }
 }

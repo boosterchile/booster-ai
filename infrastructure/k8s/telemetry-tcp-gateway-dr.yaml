@@ -39,7 +39,10 @@ metadata:
     app: telemetry-tcp-gateway
     role: disaster-recovery
 spec:
-  replicas: 2
+  # DR "cold" pre-comercial: 0 pods corriendo. Reactivación = scale-up + apply
+  # (RTO 15-40 min, runbook). El cluster y la base de red DR siguen declarados
+  # (dr-region.tf, deletion_protection=true). Ver .specs/cost-optimization-precomercial.
+  replicas: 0
   selector:
     matchLabels:
       app: telemetry-tcp-gateway
@@ -48,6 +51,10 @@ spec:
       labels:
         app: telemetry-tcp-gateway
         role: disaster-recovery
+        tags.datadoghq.com/env: "production"
+        tags.datadoghq.com/service: "telemetry-tcp-gateway"
+      annotations:
+        ad.datadoghq.com/gateway.logs: '[{"source":"nodejs","service":"telemetry-tcp-gateway"}]'
     spec:
       serviceAccountName: telemetry-gateway-sa
       # Trivy IaC hardening: pod-level security defaults.
@@ -96,6 +103,16 @@ spec:
               value: "crash-traces"
             - name: IDLE_TIMEOUT_SEC
               value: "300"
+            # Rate limiting in-memory per-pod (audit P1-L) — debe espejar el
+            # manifest primary para que el failover a DR mantenga la misma
+            # barrera DoS. Ver telemetry-tcp-gateway.yaml para el detalle del
+            # presupuesto de memoria (1Gi ≈ ~5000 conns) y de la calibración.
+            - name: MAX_CONCURRENT_CONNECTIONS
+              value: "5000"
+            - name: ENROLLMENT_RATE_MAX
+              value: "30"
+            - name: ENROLLMENT_RATE_WINDOW_SEC
+              value: "60"
             - name: LOG_LEVEL
               value: "info"
             - name: NODE_ENV
@@ -187,23 +204,8 @@ spec:
       protocol: TCP
       port: 5061
       targetPort: teltonika-tls
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: telemetry-tcp-gateway
-  namespace: telemetry
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: telemetry-tcp-gateway
-  minReplicas: 2
-  maxReplicas: 20
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
+# NOTA: el HorizontalPodAutoscaler del gateway DR se eliminó deliberadamente.
+# DR "cold" mantiene el Deployment en replicas: 0; un HPA estándar no admite
+# minReplicas: 0 (requiere HPAScaleToZero, no disponible en GKE Autopilot) y
+# pelearía por subir a 1, reactivando el gasto. Reactivar DR = recrear este HPA
+# + scale-up. Ver .specs/cost-optimization-precomercial.

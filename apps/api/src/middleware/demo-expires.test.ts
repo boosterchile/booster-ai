@@ -68,7 +68,7 @@ function makeAuthStub(
     }
     if (opts.hangForever) {
       // Promise que nunca resuelve — exercise el timeout race.
-      return new Promise<UserRecord>(() => {});
+      return new Promise<UserRecord>(() => undefined);
     }
     return (opts.user ?? {}) as UserRecord;
   });

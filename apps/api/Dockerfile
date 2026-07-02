@@ -24,6 +24,13 @@ COPY packages/whatsapp-client/package.json ./packages/whatsapp-client/
 #       (noExternal: /^@booster-ai\//). Sin este COPY, pnpm install no
 #       sabe de las deps y esbuild revienta con "Could not resolve".
 COPY packages/certificate-generator/package.json ./packages/certificate-generator/
+# F4 — apps/api importa @booster-ai/transport-documents (server.ts → rutas +
+#       middleware de rate-limit). Bundleado por noExternal /^@booster-ai\//;
+#       sus deps nativas/wasm (sharp, @hyzyla/pdfium, zxing-wasm,
+#       fast-xml-parser) van como external en tsup.config.ts y deben instalarse
+#       acá para que `pnpm deploy --prod` las incluya en el runtime. Sin este
+#       COPY, esbuild revienta con "Could not resolve". Igual que el de arriba.
+COPY packages/transport-documents/package.json ./packages/transport-documents/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---
@@ -51,4 +58,5 @@ EXPOSE 8080
 # Trivy IaC AVD-DS-0026: HEALTHCHECK requerido (#7).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-CMD ["node", "dist/main.js"]
+# --import carga la instrumentación OTel ANTES de main (ESM; spec feat-otel-bootstrap)
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]

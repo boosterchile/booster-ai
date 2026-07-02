@@ -142,52 +142,6 @@ resource "google_cloud_scheduler_job" "cobra_hoy_cobranza" {
 }
 
 # -----------------------------------------------------------------------------
-# ADR-024 — Cron de reconciliación DTE
-# -----------------------------------------------------------------------------
-# Cada hora. El handler:
-#   1. queryStatus sobre facturas con dte_status='en_proceso' (>1 min de
-#      antigüedad para evitar race) — actualiza dte_status según SII.
-#   2. Retry de facturas con transient error (sin folio, status pending_dte,
-#      >5 min).
-#
-# Skip silencioso si PRICING_V2_ACTIVATED=false o sin adapter activo.
-resource "google_cloud_scheduler_job" "reconciliar_dtes" {
-  name        = "reconciliar-dtes"
-  description = "Hourly: queryStatus de facturas DTE en_proceso + retry de transient errors."
-  project     = google_project.booster_ai.project_id
-
-  region    = "southamerica-east1"
-  schedule  = "0 * * * *"
-  time_zone = "America/Santiago"
-
-  retry_config {
-    retry_count          = 3
-    min_backoff_duration = "60s"
-    max_backoff_duration = "300s"
-    max_doublings        = 2
-  }
-
-  http_target {
-    http_method = "POST"
-    uri         = "${local.cloud_run_api_url}/admin/jobs/reconciliar-dtes"
-    body        = base64encode("{}")
-    headers = {
-      "Content-Type" = "application/json"
-    }
-
-    oidc_token {
-      service_account_email = google_service_account.internal_cron_invoker.email
-      audience              = local.cloud_run_api_url
-    }
-  }
-
-  depends_on = [
-    google_project_service.apis,
-    module.service_api,
-  ]
-}
-
-# -----------------------------------------------------------------------------
 # T6a SEC-001 Sprint 2a — Cloud Scheduler diario para TTL alerter
 # -----------------------------------------------------------------------------
 # Per spec sec-001-cierre §3 H1.1 SC-1.1.6 + plan-sprint-2a T6a.
@@ -232,4 +186,170 @@ resource "google_cloud_scheduler_job" "demo_account_ttl_alert" {
     google_project_service.apis,
     module.service_api,
   ]
+}
+
+# -----------------------------------------------------------------------------
+# T9 SEC-001 boundary-closure — Cloud Scheduler diario para el reaper IdP
+# -----------------------------------------------------------------------------
+# Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G5 + ADR-057.
+# Daily 04:00 America/Santiago (off-peak). POST /admin/jobs/reap-inert-idp-accounts.
+#
+# **Arranca en DRY-RUN**: el handler corre con `REAPER_DESTRUCTIVE=false`
+# (config server-side, default OFF) → solo loguea/cuenta lo que haría, NO muta.
+# El modo destructivo se habilita seteando la env `REAPER_DESTRUCTIVE=true` en
+# el Cloud Run del api (Terraform compute.tf) + redeploy, SOLO tras el gate de
+# primer run destructivo (dry-run revisado + sign-off PO). El scheduler no
+# controla el modo (una credencial filtrada no puede disparar mutaciones).
+#
+# Cadencia: diaria. El reaper es idempotente y skipea rápido cuando no hay
+# candidatos (la población es self-signup Google sin solicitud, baja). El grace
+# de 30 días + disable-before-delete + 2º grace hacen que correr diario sea
+# seguro (nada se borra antes de 2 grace windows).
+#
+# Output: structured logs `reaper.account.*` + `reaper.run.summary`, consumidos
+# por google_logging_metric.reaper_account_reaped (monitoring.tf).
+resource "google_cloud_scheduler_job" "reap_inert_idp_accounts" {
+  name        = "reap-inert-idp-accounts"
+  description = "Daily 04:00 Santiago: reaper de cuentas IdP Google inertes (dry-run hasta gate destructivo). SEC-001 boundary-closure SC-G5 / ADR-057."
+  project     = google_project.booster_ai.project_id
+
+  # SHIP REVIEW (devils-advocate STRONG-1): arranca **PAUSADO**. Aunque el modo
+  # es dry-run (no muta), un primer tick automático a las 04:00 sin supervisión
+  # consume quota IdP (listUsers) + 2N queries sobre el pool compartido del api.
+  # El PO corre el primer tick MANUAL y observado:
+  #   gcloud scheduler jobs run reap-inert-idp-accounts --location=southamerica-east1
+  # y recién tras revisar el `reaper.run.summary` lo despausa:
+  #   gcloud scheduler jobs resume reap-inert-idp-accounts --location=southamerica-east1
+  # (o set paused=false acá + apply). Dry-run y destructivo siguen gateados aparte
+  # por REAPER_DESTRUCTIVE.
+  paused = true
+
+  region    = "southamerica-east1"
+  schedule  = "0 4 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/reap-inert-idp-accounts"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# Gap B5 (ADR-030 §7 + ADR-031) — Cloud Scheduler MENSUAL para cobro de membresías
+# -----------------------------------------------------------------------------
+# Tick mensual el día 1 a las 08:00 America/Santiago. POST
+# /admin/jobs/cobrar-memberships-mensual. El handler:
+#   - Si PRICING_V2_ACTIVATED=false → 200 skipped:true sin tocar BD.
+#   - SELECT memberships activas en tier pagado (Standard/Pro/Premium).
+#   - Crea la factura del periodo (idempotente vía unique parcial empresa+mes) +
+#     invoca el MembershipPaymentGateway, y aplica el dunning (≤3 reintentos).
+#
+# ⚠️ EL RAIL DE PAGO ESTÁ STUBEADO. El gateway default no-op NO mueve dinero:
+# deja las facturas en `pending_payment_provider`. Mientras siga stubeado, este
+# cron es de bajo riesgo (solo materializa facturas devengadas + dunning), pero
+# arranca **PAUSADO** por ser un cron financiero: el PO corre el primer tick
+# MANUAL y observado antes de despausar:
+#   gcloud scheduler jobs run cobrar-memberships-mensual --location=southamerica-east1
+#   gcloud scheduler jobs resume cobrar-memberships-mensual --location=southamerica-east1
+# (o set paused=false acá + apply). Cuando exista `payment-provider` real,
+# inyectar el gateway real en server.ts antes de despausar.
+#
+# Cadencia mensual: como un tick procesa todo el backlog del periodo y reintenta
+# el dunning de facturas pendientes, también puede correrse más seguido (ej.
+# diario) si se quieren reintentos más densos. Mensual cubre el caso base de
+# emitir la cuota del mes.
+resource "google_cloud_scheduler_job" "cobrar_memberships_mensual" {
+  name        = "cobrar-memberships-mensual"
+  description = "Mensual día 1 08:00 Santiago: factura las cuotas de membresía de carriers en tier pagado + dunning. ⚠️ rail de pago STUBEADO (no mueve dinero). Gap B5 / ADR-030 §7 / ADR-031."
+  project     = google_project.booster_ai.project_id
+
+  # Arranca PAUSADO (cron financiero): primer tick manual + observado por el PO.
+  paused = true
+
+  region    = "southamerica-east1"
+  schedule  = "0 8 1 * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/cobrar-memberships-mensual"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}
+
+# Purga diaria de posiciones GPS de browser (retención 30d, preservando la
+# última posición por vehículo — spec feat-retencion-posiciones-movil).
+# La tabla crecía sin límite (auditoría 2026-06-09, seguimiento BD).
+resource "google_cloud_scheduler_job" "purgar_posiciones_movil" {
+  name        = "purgar-posiciones-movil"
+  description = "Daily: retención 30d de posiciones_movil_conductor (preserva última por vehículo)."
+  project     = google_project.booster_ai.project_id
+
+  region    = "southamerica-east1"
+  schedule  = "30 4 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 2
+    min_backoff_duration = "120s"
+    max_backoff_duration = "600s"
+    max_doublings        = 1
+  }
+
+  depends_on = [google_project_service.apis, module.service_api]
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/purgar-posiciones-movil"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
 }

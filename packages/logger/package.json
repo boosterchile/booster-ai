@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@booster-ai/shared-schemas": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
     "pino": "^9.5.0"
   },
   "devDependencies": {

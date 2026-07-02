@@ -16,7 +16,7 @@ Ver [`CLAUDE.md`](./CLAUDE.md) sección "Estructura del repo" para el mapa compl
 
 ## Stack fijo (ADR-001)
 
-- **Runtime**: Node.js 22 LTS, pnpm + Turborepo
+- **Runtime**: Node.js 24, pnpm + Turborepo
 - **Backend**: Hono + Drizzle ORM + PostgreSQL + Redis
 - **Frontend**: Vite + React 18 + TanStack Router + Tailwind + shadcn/ui
 - **Shared**: Zod schemas en `packages/shared-schemas`
@@ -50,7 +50,7 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
-- Antes de una tarea compleja: consultar los plugins `agent-rigor` y `booster-skills` (vía `/plugin list`) — puede haber un workflow definido.
+- Antes de una tarea compleja: consultar los plugins `superpowers` y `booster-skills` (vía `/plugin list`) — puede haber una skill o workflow definido.
 - Antes de introducir una dependencia nueva: crear ADR.
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 

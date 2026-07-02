@@ -65,6 +65,24 @@ jobs:
         run: pnpm format:check
 
   # ---------------------------------------------------------------------------
+  # Terraform fmt — gate que faltaba: el drift de alineación de #449
+  # (storage.tf) llegó a main porque ningún check de CI corría `fmt -check`.
+  # No necesita GCP/WIF (es puro formateo), corre en cada PR. El drift de
+  # ESTADO real (plan) lo cubre terraform-drift.yml (cron + WIF) por separado.
+  # ---------------------------------------------------------------------------
+  terraform-fmt:
+    name: Terraform fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive infrastructure/
+
+  # ---------------------------------------------------------------------------
   # Typecheck — tsc --noEmit por workspace (Turborepo paraleliza)
   # ---------------------------------------------------------------------------
   typecheck:
@@ -190,6 +208,39 @@ jobs:
         run: pnpm --filter @booster-ai/api test:integration
 
   # ---------------------------------------------------------------------------
+  # Migration safety (audit P1-H, ADR-066) — bloquea migraciones Drizzle nuevas
+  # con DDL destructivo (rompe expand/contract → rollback de código deja de ser
+  # seguro) salvo que declaren `-- contract-phase: <ref>`. Solo chequea los .sql
+  # AÑADIDOS en el PR, nunca las migraciones ya aplicadas. No necesita deps.
+  # ---------------------------------------------------------------------------
+  migration-safety:
+    name: Migration safety (expand/contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Unit test del guard
+        run: node --test scripts/repo-checks/check-migration-safety.test.mjs
+      - name: Guard sobre migraciones añadidas en el PR
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE='${{ github.event.pull_request.base.sha }}'
+          ADDED=$(git diff --name-only --diff-filter=A "$BASE" HEAD -- apps/api/drizzle \
+            | grep -E '^apps/api/drizzle/[0-9]{4}_.*\.sql$' || true)
+          if [ -z "$ADDED" ]; then
+            echo "Sin migraciones nuevas en este PR — nada que chequear."
+            exit 0
+          fi
+          echo "Migraciones nuevas:"; echo "$ADDED"
+          # shellcheck disable=SC2086
+          node scripts/repo-checks/check-migration-safety.mjs $ADDED
+
+  # ---------------------------------------------------------------------------
   # Build — cada app y package compila a producción
   # ---------------------------------------------------------------------------
   build:
@@ -219,21 +270,79 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
+  # Docker build + smoke del api — gate que faltaba (2026-06-22).
+  #
+  # El job `build` de arriba corre `pnpm build` con node_modules COMPLETO, así
+  # que tsup/esbuild resuelve todo y pasa. Pero el Dockerfile del api hace un
+  # `pnpm install` PARCIAL (solo los package.json COPY'd en el deps-stage) y
+  # luego `pnpm deploy --prod` para el runtime. Un cambio que rompe ese build/
+  # runtime del contenedor pasaba CI verde y solo fallaba en el deploy a prod.
+  # Causó 2 deploys de producción fallidos seguidos:
+  #   1. Build: esbuild "Could not resolve" (deps de un workspace package
+  #      bundleado que no estaban en el COPY del deps-stage). Fix PR #540.
+  #   2. Runtime: ERR_MODULE_NOT_FOUND al startup (esas deps no eran deps
+  #      DIRECTAS del api → pnpm deploy --prod no las metía). Fix PR #541.
+  # Este job reproduce el build real del contenedor (cacha #1) y verifica que
+  # los imports resuelven en el runtime (cacha #2). Patrón completo en la
+  # memoria api-bundled-pkg-runtime-deps-2026-06. Extensible a las otras apps
+  # con Dockerfile (web, whatsapp-bot, telemetry-*) vía matrix — follow-up.
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build + smoke (api)
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build imagen del api (reproduce el build de prod, install parcial)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          tags: booster-ai-api:ci
+          load: true
+          cache-from: type=gha,scope=docker-api
+          cache-to: type=gha,mode=max,scope=docker-api
+      - name: Smoke — los imports resuelven en el runtime (cacha ERR_MODULE_NOT_FOUND)
+        run: |
+          # Corre el entrypoint REAL del contenedor. El api hace process.exit(1)
+          # por env/config faltante (esperado en CI, sin env seteado) — eso NO
+          # importa. Lo que importa: si una dep externa de un workspace package
+          # bundleado falta en el flat node_modules del runtime, Node tira
+          # ERR_MODULE_NOT_FOUND al resolver el grafo de módulos ANTES de que
+          # corra el config. Por eso ignoramos el exit code (el config-exit lo
+          # dispara) y grepeamos la salida por esa firma exacta.
+          docker run --rm booster-ai-api:ci \
+            node --import ./dist/instrumentation.js dist/main.js > /tmp/api-boot.log 2>&1 || true
+          echo "--- salida del arranque del contenedor ---"
+          cat /tmp/api-boot.log
+          echo "------------------------------------------"
+          if grep -q "ERR_MODULE_NOT_FOUND" /tmp/api-boot.log; then
+            echo "::error::Falta una dep en el runtime del contenedor (ERR_MODULE_NOT_FOUND) — ver memoria api-bundled-pkg-runtime-deps"
+            exit 1
+          fi
+          echo "✓ Sin ERR_MODULE_NOT_FOUND — los módulos resuelven en runtime (el exit por config/env sin setear es esperado)"
+
+  # ---------------------------------------------------------------------------
   # Final gate — todos los jobs previos deben pasar
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, typecheck, test, integration-tests, build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs succeeded
         run: |
           if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.terraform-fmt.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ]; then
+             [ "${{ needs.migration-safety.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.docker-build.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
           fi

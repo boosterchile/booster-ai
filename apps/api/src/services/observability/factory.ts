@@ -27,6 +27,8 @@ export interface ObservabilityFactoryConfig {
   redisPort: number;
   redisPassword?: string;
   redisTls: boolean;
+  /** PEM del server CA de Memorystore. Ver apps/api/src/lib/redis-tls.ts. */
+  redisCaCert?: string;
   billingExportTable: string;
   gcpProjectId: string;
   twilioAccountSid?: string;
@@ -67,6 +69,7 @@ export function buildObservabilityServices(
     port: config.redisPort,
     password: config.redisPassword,
     tls: config.redisTls,
+    tlsCa: config.redisCaCert,
     logger,
   });
 

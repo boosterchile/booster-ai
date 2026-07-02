@@ -3,8 +3,8 @@
 Este documento es el **contrato de trabajo** entre Felipe Vicencio (Product Owner) y Claude (agente de desarrollo principal). Fija cómo trabaja el agente en este repo, qué decisiones puede tomar solo, cuándo pregunta, cómo documenta y cómo se valida su trabajo.
 
 **Fecha de adopción**: 2026-04-23
-**Última actualización**: 2026-05-20 (ADR-049 plugin system)
-**Marco de referencia**: plugins de Claude Code `agent-rigor` + `booster-skills` (ver §Integración con plugins de Claude Code).
+**Última actualización**: 2026-06-14 (ADR-060: capa de disciplina migrada de agent-rigor a superpowers)
+**Marco de referencia**: plugins de Claude Code `superpowers` + `booster-skills` (ver §Integración con plugins de Claude Code).
 
 ---
 
@@ -19,88 +19,91 @@ Este documento es el **contrato de trabajo** entre Felipe Vicencio (Product Owne
 
 ## Integración con plugins de Claude Code
 
-Este proyecto se opera bajo Claude Code (CLI) y consume **dos plugins** que en conjunto forman el sistema operativo de desarrollo. Decisión arquitectónica documentada en [ADR-049](docs/adr/049-claude-code-plugin-system-adoption.md).
+Este proyecto se opera bajo Claude Code (CLI) y consume **dos plugins** que en conjunto forman el sistema operativo de desarrollo. Decisión arquitectónica documentada en [ADR-049](docs/adr/049-claude-code-plugin-system-adoption.md) y actualizada por [ADR-060](docs/adr/060-superpowers-replaces-agent-rigor.md).
 
-### Plugin 1: `agent-rigor` 0.2.0+
+### Plugin 1: `superpowers` (capa de disciplina genérica)
 
-Provee la **disciplina senior-engineering generalista**: ciclo no-negociable, hooks de enforcement, sub-agents del ciclo, session ledger, benchmark.
+Provee la **disciplina senior-engineering generalista**: brainstorming antes de código, spec/plan, TDD iron-law, verificación antes de declarar terminado, y subagent-driven-development (subagentes frescos que implementan y revisan cada tarea en dos etapas: cumplimiento de spec y calidad de código).
 
-Repo: [`boosterchile/best-skill-claude`](https://github.com/boosterchile/best-skill-claude)
+Repo: [`obra/superpowers`](https://github.com/obra/superpowers) (MIT). Reemplaza a `agent-rigor` (ver ADR-060: el motor bash de agent-rigor no enforced de verdad y se retiró).
 
-Instalación:
-```bash
-/plugin marketplace add boosterchile/best-skill-claude
-/plugin install agent-rigor@agent-rigor
+Instalación (dentro de una sesión de Claude Code, no en zsh):
+```
+/plugin install superpowers@claude-plugins-official
+```
+O vía el marketplace de obra:
+```
+/plugin marketplace add obra/superpowers-marketplace
+/plugin install superpowers@superpowers-marketplace
 ```
 
 Contenido relevante:
-- **Ciclo no-negociable**: `/agent-rigor:spec` → `/agent-rigor:plan` → `/agent-rigor:build` → `/agent-rigor:test` → `/agent-rigor:review` → `/agent-rigor:ship`.
-- **Comandos adicionales**: `/agent-rigor:design`, `/agent-rigor:code-simplify`, `/agent-rigor:benchmark`.
-- **Sub-agents**: `code-reviewer`, `devils-advocate` (mandatory en solo-dev mode), `security-auditor`, `test-engineer`, `ux-designer`.
-- **22 skills numeradas**: `00-using-this-pack` a `64-shipping-and-launch`.
-- **Hooks enforcement**: PreToolUse anti-racionalización (vocabulario drift catalogado en `agent-rigor/CLAUDE.md §4`) + ciclo forzado (no `Write/Edit` sin spec previa).
-- **Session ledger**: `.claude/ledger/<sessionId>.jsonl` con todas las decisiones, skips, waivers.
+- **Skills de proceso auto-disparadas**: `brainstorming`, `writing-plans`, `executing-plans`, `subagent-driven-development`, `test-driven-development`, `systematic-debugging`, `verification-before-completion`, `requesting-code-review`, `receiving-code-review`, `using-git-worktrees`, entre otras.
+- **Enforcement por moldeo conductual** (no por bloqueo bash): las skills rígidas (TDD, verificación) interceptan la *racionalización* ("skip just this once", "should work") con tablas de Red Flags y refutaciones. Es el mecanismo que ataca el modo de falla real (hacer lo mínimo / parchear / declarar listo sin evidencia), no un grep de vocabulario.
+- **Bootstrap automático**: el hook `SessionStart` inyecta `using-superpowers`; las skills se activan solas cuando aplican.
 
-**Path canónico de specs**: `.specs/<feature-slug>/{idea,spec,plan,verify,review,ship}.md`. Definido por agent-rigor. No usar `docs/specs/`.
+> **Prioridad**: `superpowers:using-superpowers` declara explícitamente que las instrucciones del usuario (este `CLAUDE.md`, `AGENTS.md`) tienen **prioridad máxima** sobre las skills. Este archivo manda.
 
-### Plugin 2: `booster-skills` 0.1.0+
+### Plugin 2: `booster-skills` 0.4.0+ (dominio + estándar Booster)
 
-Provee el **dominio + stack + auditoría específicos de Booster AI**.
+Provee el **dominio + stack + auditoría + estándar de disciplina específicos de Booster AI**.
 
 Repo: [`boosterchile/booster-skills`](https://github.com/boosterchile/booster-skills)
 
 Instalación:
-```bash
+```
 /plugin marketplace add boosterchile/booster-skills
 /plugin install booster-skills@booster-skills
 ```
 
 Contenido:
 
-- **7 skills**: `arquitecto-maestro`, `adding-cloud-run-service`, `carbon-calculation-glec`, `empty-leg-matching`, `incident-response`, `booster-stack-conventions`, `booster-deploy-cloud-run`.
+- **9 skills**: `arquitecto-maestro`, `adding-cloud-run-service`, `carbon-calculation-glec`, `empty-leg-matching`, `incident-response`, `booster-stack-conventions`, `booster-deploy-cloud-run`, **`definicion-de-terminado`** (Definición de Terminado anti-parches; rescatada de agent-rigor como estándar verificable), **`tdd-dominio-critico`** (TDD obligatorio para DTE/SII, factoring, pricing, GLEC, matching, migraciones, auth).
 - **6 sub-agents** de auditoría arquitectónica: `dependency-auditor`, `explore-architecture`, `performance-analyzer`, `refactor-advisor`, `security-scanner`, `tech-debt-detector`.
+- **Ledger observacional + scorecard semanal** (rescate del mecanismo #2 de agent-rigor): hooks `SessionStart`/`PostToolUse`/`Stop` que registran artefactos por tipo, ratio test:source, invocaciones de subagentes y lecturas de skills. **Sin gates** (ningún hook bloquea). Reporte vía `benchmark/score-week.sh`.
 
 ### Verificación
 
 Tras instalar ambos plugins, una sesión nueva de Claude Code debe reportar (vía `/plugin list`):
 
-- `agent-rigor@agent-rigor` ✓ enabled
-- `booster-skills@booster-skills` ✓ enabled
+- `superpowers` ✓ enabled
+- `booster-skills@booster-skills` v0.4.0 ✓ enabled
+- `agent-rigor` ❌ ausente (retirado por ADR-060)
+
+Test de aceptación de superpowers: sesión limpia + "hagamos una lista de tareas en React" → debe auto-disparar `brainstorming` antes de escribir código.
 
 ### Distribución de responsabilidades
 
 | Responsabilidad | Plugin |
 |---|---|
-| Ciclo Define → Plan → Build → Verify → Review → Ship | `agent-rigor` |
-| Anti-racionalización + waivers + cooling-off | `agent-rigor` |
-| Sub-agents del ciclo (5) | `agent-rigor` |
-| Session ledger + benchmark | `agent-rigor` |
+| Brainstorming → spec → plan → build → verify → review | `superpowers` |
+| TDD iron-law + verificación antes de declarar terminado | `superpowers` |
+| Subagent-driven-development (review de spec + calidad por tarea) | `superpowers` |
+| Estándar de Terminado anti-parches (Definición de Terminado) | `booster-skills` (skill `definicion-de-terminado`) |
+| TDD obligatorio en dominio crítico (DTE, factoring, pricing…) | `booster-skills` (skill `tdd-dominio-critico`) |
 | Stack Booster (Zod, Biome, Logger, OTel, coverage) | `booster-skills` (skill `booster-stack-conventions`) |
 | Deploy Booster (Cloud Run + Cloud Build + monitoreo 2h) | `booster-skills` (skill `booster-deploy-cloud-run`) |
 | Dominio Booster (carbon GLEC, empty-leg matching) | `booster-skills` |
 | Auditoría arquitectónica del codebase | `booster-skills` (6 sub-agents) |
+| Ledger observacional + scorecard | `booster-skills` (hooks) |
 | Reglas específicas del proyecto (stack, naming, ADRs Booster) | este CLAUDE.md |
 
 ### Precedencia en conflicto
 
-Si una regla de agent-rigor entra en conflicto con una regla específica Booster declarada en este CLAUDE.md o en una skill de booster-skills, **gana la regla Booster** para este proyecto. Ejemplos:
+Si una regla de `superpowers` entra en conflicto con una regla específica Booster declarada en este CLAUDE.md o en una skill de booster-skills, **gana la regla Booster** para este proyecto (y superpowers lo respeta por diseño: las instrucciones del usuario tienen prioridad máxima). Ejemplos:
 
-- agent-rigor sugiere convención de naming en inglés; este CLAUDE.md declara naming bilingüe Booster → gana Booster.
-- agent-rigor `64-shipping-and-launch` da checklist de 12 puntos; `booster-deploy-cloud-run` agrega 4 pasos específicos GCP → ambos aplican, los específicos no reemplazan los generales.
+- superpowers sugiere convención de naming en inglés; este CLAUDE.md declara naming bilingüe Booster → gana Booster.
+- superpowers usa `docs/plans/` para planes; Booster conserva `.specs/<feature-slug>/` como convención del proyecto → gana Booster (ver abajo).
+
+**Path canónico de specs**: `.specs/<feature-slug>/{spec,plan,verify,review,ship}.md`. Es **convención del proyecto Booster** (se conserva como documentación viva; ya no la impone un hook). No usar `docs/specs/`.
 
 ### Capas adicionales locales del proyecto
 
-Además de los plugins, el repo Booster mantiene 3 archivos en `agents/` raíz como **overrides locales Booster** del agent-rigor genérico:
+**Ya no hay overrides locales en `agents/`** (directorio eliminado). Los 3 sub-agents Booster que vivían ahí fueron **consolidados en `booster-skills@0.3.0`** ([ADR-064](docs/adr/064-consolidate-local-subagents-into-booster-skills.md)):
 
-| Archivo | Qué extiende | Por qué override local Booster |
-|---|---|---|
-| `agents/code-reviewer.md` | `agent-rigor:code-reviewer` | Añade disciplina ADR Booster + anti-rationalizations Booster específicas |
-| `agents/security-auditor.md` | `agent-rigor:security-auditor` | Añade compliance Chile: Ley 19.628 (privacy), SII/DTE (retention 6 años), modelo Uber-like + Sustainability Stakeholder (ADR-004, ADR-034) |
-| `agents/sre-oncall.md` | — (sin equivalente en plugins) | Único: SLOs, observabilidad GCP, capacity planning específico |
-
-Cuando agent-rigor invoca `subagent_type: code-reviewer` o `security-auditor` en este repo, Claude Code resuelve al override local en lugar del genérico del plugin. Es comportamiento deliberado.
-
-Migración futura de este contenido al plugin `booster-skills` (v0.2.0+ con compliance Chile) tracked en [`.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md`](.specs/_followups/migrate-booster-agents-to-plugin-v0.2.0.md).
+- `security-auditor` → plegado en `booster-skills:security-scanner` (módulo compliance Chile: Ley 19.628, SII/DTE retención 6 años, RBAC por rol shipper/carrier/driver/admin/stakeholder, consent ESG; ADR-004/007/034).
+- `sre-oncall` → nuevo sub-agent `booster-skills:sre-oncall` (revisor SRE *pre-merge*: observabilidad, rollback, SLO, capacity, costos).
+- `code-reviewer` → retirado; su único bit (ADR-compliance) plegado en `booster-skills:booster-stack-conventions` (paso 7). El review genérico lo provee `superpowers` (subagent-driven-development).
 
 Para resolver referencias a paths antiguos (`skills/`, `.claude/commands/`, etc.) que aparezcan en ADRs históricos (≤ ADR-048): ver [ADR-050 path-remapping](docs/adr/050-skills-and-commands-path-remapping-post-plugin-adoption.md).
 
@@ -141,7 +144,7 @@ Todo input externo pasa por Zod **antes** de tocar lógica:
 - **Unit tests**: `*.test.ts` al lado del archivo (`src/foo.ts` → `src/foo.test.ts`).
 - **Integration tests**: `test/integration/` por workspace. Levantan DB Postgres local.
 - **E2E tests**: `pnpm --filter @booster-ai/web test:e2e`. Playwright. Solo flujos críticos.
-- **Tests existen ANTES del commit del feature**, no después.
+- **Tests existen ANTES del commit del feature**, no después. Para dominio crítico (DTE, factoring, pricing, GLEC, matching, migraciones, auth) TDD es obligatorio — ver skill `booster-skills:tdd-dominio-critico`.
 
 ### Commits y PRs
 
@@ -153,17 +156,17 @@ Todo input externo pasa por Zod **antes** de tocar lógica:
 
 ### Deploy
 
-- **Staging automático** vía Cloud Build trigger en merge a `main`.
-- **Producción**: manual approval en Cloud Build.
+- **No existe entorno staging** (backlog `#STAGING-ENV`: requiere un 2º GCP project con infra paralela). El `cloudbuild.staging.yaml` fue eliminado (#445, higiene tooling); `release.yml` removió el job `deploy-staging`. El nightly `e2e-staging.yml` corre Playwright contra **producción** (`PRODUCTION_URL`; `STAGING_URL` solo aplicaría en PR, que no existe) por falta de staging — decisión deliberada **pendiente de re-firma del PO** o de priorizar `#STAGING-ENV`.
+- **Producción**: merge a `main` → `release.yml` (GitHub Actions vía Workload Identity Federation) → **requiere aprobación humana** en el GitHub Environment `production` (`required_reviewers`, enforced desde 2026-05-29) → Cloud Build `cloudbuild.production.yaml` canary (1% tráfico → 30 min → 100%). El step `canary-verify` es placeholder (`exit 0`): la promoción a 100% se observa/decide humanamente, no por verificación automática. Ver inventario `.specs/adr-vs-prod-inventory/inventory.md` finding #1.
 - **Monitoreo 2h post-deploy**: error rate, latency P95, logs limpios.
-- **NO deploy viernes después de las 16:00 hora Chile** sin waiver explícito + plan de sábado.
+- **Regla de horario de deploy eliminada 2026-05-29 por decisión del PO**: el control de riesgo de deploy se ejerce vía gate de aprobación (`required_reviewers` en el GitHub Environment `production`) + observación humana del canary, no vía restricción de calendario.
 - Detalles en skill `booster-deploy-cloud-run`.
 
-> **Recordatorio**: Estas reglas son la columna vertebral de "Cero deuda técnica desde day 0". Saltearlas requiere waiver explícito documentado en `.claude/ledger/`.
+> **Recordatorio**: Estas reglas son la columna vertebral de "Cero deuda técnica desde day 0". El estándar de cuándo algo está terminado (y cuándo un corte es deuda explícita aceptable vs. parche silencioso prohibido) está definido en `booster-skills:definicion-de-terminado` — verificable, no un tabú de vocabulario. Tomar deuda deliberada exige declararla explícitamente con plan/issue, nunca en silencio.
 
 ---
 
-## Estructura del repo (v3 — tras ADR-049)
+## Estructura del repo (v3 — tras ADR-049, actualizada por ADR-060)
 
 ```
 Booster-AI/
@@ -180,32 +183,31 @@ Booster-AI/
 ├── .nvmrc
 ├── .gitignore
 │
-├── .claude/                    # minimal post-PR-2 (ADR-049)
-│   ├── settings.json           # declara plugins (project scope)
+├── .claude/                    # Los plugins se instalan a nivel usuario/global
+│   │                           # (~/.claude) vía `/plugin install`. El
+│   │                           # `.claude/settings.json` versionado declara
+│   │                           # `superpowers` + `booster-skills`
+│   │                           # (enabledPlugins + extraKnownMarketplaces);
+│   │                           # el resto de .claude/ sigue gitignored.
 │   ├── settings.local.json     # permisos pre-autorizados (gitignored)
-│   ├── ledger/                 # sesiones agent-rigor (.jsonl per session)
-│   ├── worktrees/              # sesiones parallel
+│   ├── ledger/                 # ledger observacional de booster-skills (.jsonl per session)
+│   ├── worktrees/              # worktrees parallel (superpowers:using-git-worktrees)
 │   └── staging/                # (gitignored) workaround pattern audit-session
-│
-├── agents/                     # 3 overrides Booster locales (ver §Capas adicionales)
-│   ├── code-reviewer.md        # extiende agent-rigor:code-reviewer
-│   ├── security-auditor.md     # + compliance Chile (Ley 19.628, SII/DTE)
-│   └── sre-oncall.md           # único: SLOs + observabilidad GCP
 │
 ├── references/                 # checklists Booster (code-review, security, IDOR audits)
 ├── playbooks/                  # decisiones de producto/negocio
 │
 ├── docs/
-│   ├── adr/                    # ADRs (049 al cierre de PR-2; incluye ADR-049 plugin system)
+│   ├── adr/                    # ADRs (incluye ADR-049 plugin system, ADR-060 superpowers)
 │   ├── plugins/                # REPORTE-migracion-booster-skills-v0.1.0.md (replicabilidad)
 │   ├── handoff/                # CURRENT.md + handoffs históricos fechados
 │   └── ... (otros sub-dirs Booster)
 │
-├── .specs/                     # path canónico agent-rigor: <feature-slug>/{spec,plan,verify,review,ship}.md
+├── .specs/                     # convención Booster: <feature-slug>/{spec,plan,verify,review,ship}.md
 │   ├── _followups/             # follow-up stubs no urgentes
 │   └── <feature-slug>/         # specs activas por feature
 │
-├── apps/                       # 8 apps
+├── apps/                       # 9 apps
 │   ├── api/                    # Backend principal (Hono)
 │   ├── web/                    # PWA multi-rol (shipper/carrier/driver/admin/stakeholder)
 │   ├── matching-engine/        # Matching carrier-based
@@ -213,14 +215,16 @@ Booster-AI/
 │   ├── telemetry-processor/    # Dedup + enrich + write
 │   ├── notification-service/   # Fan-out notificaciones
 │   ├── whatsapp-bot/           # Webhook Meta + NLU
-│   └── document-service/       # DTE + Carta Porte + OCR
+│   ├── document-service/       # DTE + Carta Porte + OCR
+│   └── sms-fallback-gateway/   # Fallback SMS (Cloud Run)
 │
-├── packages/                   # ~21 packages compartidos
-│   # shared-schemas, logger, ai-provider, config,
-│   # trip-state-machine, codec8-parser, pricing-engine,
-│   # matching-algorithm, carbon-calculator, whatsapp-client,
-│   # dte-provider, carta-porte-generator, document-indexer,
-│   # notification-fan-out, ui-tokens, ui-components, etc.
+├── packages/                   # 20 packages compartidos
+│   # carbon-calculator, carta-porte-generator,
+│   # certificate-generator, coaching-generator, codec8-parser, config,
+│   # document-indexer, driver-scoring, factoring-engine,
+│   # logger, matching-algorithm, notification-fan-out, otel-bootstrap,
+│   # pricing-engine, shared-schemas, transport-documents, trip-state-machine,
+│   # ui-components, ui-tokens, whatsapp-client
 │
 ├── infrastructure/             # Terraform 100% IaC (incluye IAM humana)
 │   ├── main.tf
@@ -231,19 +235,23 @@ Booster-AI/
     ├── ci.yml                  # lint + test + coverage + build
     ├── security.yml            # gitleaks + npm audit + CodeQL
     ├── release.yml             # Changesets + Cloud Build
-    └── e2e-staging.yml         # Playwright contra staging
+    └── e2e-staging.yml         # Playwright; nightly pega a PRODUCCIÓN (no hay staging, #STAGING-ENV)
 ```
 
 Cambios v2→v3 (post-PR-2 / ADR-049):
 
-- **Eliminados**: `skills/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `hooks/` — funcionalidad migrada a plugins (`agent-rigor` + `booster-skills`).
-- **Conservados**: `agents/` (3 overrides Booster documentados), `references/`, `playbooks/`.
-- **Añadidos**: `.claude/staging/` (workaround pattern audit-session), `docs/plugins/` (REPORTE replicabilidad), `.specs/_followups/`.
+- **Eliminados**: `skills/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `hooks/` — funcionalidad migrada a plugins.
+- **Conservados**: `references/`, `playbooks/`. (`agents/` eliminado en ADR-064: los 3 overlays locales se consolidaron en `booster-skills@0.3.0`.)
+
+Cambios post-ADR-060:
+
+- **Capa 1 de disciplina**: `agent-rigor` (bespoke, retirado) → `superpowers` (oficial).
+- **`.claude/ledger/`**: ahora lo produce el ledger observacional de `booster-skills` (sin gates), no agent-rigor.
 
 ## Cómo decido cuándo preguntar vs ejecutar
 
 **Ejecuto sin preguntar** cuando:
-- La tarea tiene una skill definida (en `agent-rigor:*` o `booster-skills:*`) que la cubre end-to-end.
+- La tarea tiene una skill definida (en `superpowers:*` o `booster-skills:*`) que la cubre end-to-end.
 - Es un cambio mecánico de aplicación directa (ej. renombrar una variable, añadir un comentario).
 - Es trabajo de limpieza/refactor que no altera contratos públicos ni comportamiento externo.
 - El usuario lo instruyó explícitamente sin ambigüedad.
@@ -291,6 +299,19 @@ Al cerrar una tarea, genero un bloque de evidencia con:
 - **Build**: output de `pnpm build` (éxito)
 - **Manual verification** (si aplica): screenshot, curl output, trace
 ```
+
+Esto es coherente con `superpowers:verification-before-completion`: no declaro nada "terminado" sin evidencia fresca de la verificación corrida en el momento.
+
+## Punto de control post-tarea: commit + push (regla permanente)
+
+Al terminar CADA tarea (cuando se cumple la Definición de Terminado de `booster-skills:definicion-de-terminado`), antes de pasar a la siguiente o de cerrar la sesión, el agente DEBE:
+
+1. Identificar explícitamente que la tarea quedó terminada y que hay cambios sin persistir.
+2. Commitear con Conventional Commits con scope, incluyendo los cambios en `.specs/` (el spec/plan es parte del entregable, no solo el código).
+3. Hacer `git push` de la rama feature — respaldo en GitHub; commit local ≠ guardado.
+4. NUNCA pushear directo a `main` — `main` exige PR + squash merge (ver §Deploy).
+
+Si al cerrar el turno hay cambios sin commitear o commits sin pushear, el agente debe decirlo explícitamente y proponer el commit/push — no dejarlo pendiente en silencio. "Lo commiteo después" es drift (ver `definicion-de-terminado`).
 
 ## Escalation
 

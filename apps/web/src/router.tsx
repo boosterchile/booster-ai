@@ -1,50 +1,18 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { RootComponent } from './routes/__root.js';
-import { AdminCobraHoyRoute } from './routes/admin-cobra-hoy.js';
-import { AdminDispositivosRoute } from './routes/admin-dispositivos.js';
-import { AppRoute } from './routes/app.js';
-import { AsignacionDetalleRoute } from './routes/asignacion-detalle.js';
-import { CargaTrackRoute } from './routes/carga-track.js';
-import { CargasDetalleRoute, CargasListRoute, CargasNuevoRoute } from './routes/cargas.js';
-import { CertificadosRoute } from './routes/certificados.js';
-import { CobraHoyHistorialRoute } from './routes/cobra-hoy-historial.js';
-import { ConductorConfiguracionRoute } from './routes/conductor-configuracion.js';
-import { ConductorDashboardRoute } from './routes/conductor.js';
 import {
-  ConductoresDetalleRoute,
-  ConductoresListRoute,
-  ConductoresNuevoRoute,
-} from './routes/conductores.js';
-import { CumplimientoRoute } from './routes/cumplimiento.js';
-import { DemoRoute } from './routes/demo.js';
-import { FlotaRoute } from './routes/flota.js';
+  createRootRoute,
+  createRoute,
+  createRouter,
+  lazyRouteComponent,
+} from '@tanstack/react-router';
+import { RouteFallback } from './components/RouteFallback.js';
+import { RootComponent } from './routes/__root.js';
+// Rutas EAGER (primer-paint público): no se code-splittean, para evitar un
+// flash de carga en landing / login / login conductor / link de tracking
+// externo. El resto se carga lazy vía lazyRouteComponent (audit P1-J).
 import { IndexRoute } from './routes/index.js';
-import { LegalCobraHoyRoute } from './routes/legal-cobra-hoy.js';
-import { LegalTerminosRoute } from './routes/legal-terminos.js';
-import { LiquidacionesRoute } from './routes/liquidaciones.js';
 import { LoginConductorRoute } from './routes/login-conductor.js';
 import { LoginRoute } from './routes/login.js';
-import { MaintenanceRoute } from './routes/maintenance.js';
-import { OfertasRoute } from './routes/ofertas.js';
-import { OnboardingRoute } from './routes/onboarding.js';
-import { PerfilRoute } from './routes/perfil.js';
-import { PlatformAdminMatchingRoute } from './routes/platform-admin-matching.js';
-import { PlatformAdminObservabilityRoute } from './routes/platform-admin-observability.js';
-import { PlatformAdminSiteSettingsRoute } from './routes/platform-admin-site-settings.js';
-import { PlatformAdminRoute } from './routes/platform-admin.js';
 import { PublicTrackingRoute } from './routes/public-tracking.js';
-import { StakeholderZonasRoute } from './routes/stakeholder-zonas.js';
-import {
-  SucursalesDetalleRoute,
-  SucursalesListRoute,
-  SucursalesNuevaRoute,
-} from './routes/sucursales.js';
-import { VehiculoLiveRoute } from './routes/vehiculo-live.js';
-import {
-  VehiculosDetalleRoute,
-  VehiculosListRoute,
-  VehiculosNuevoRoute,
-} from './routes/vehiculos.js';
 
 /**
  * Router programático de TanStack Router. Cada ruta se declara con
@@ -76,7 +44,7 @@ const loginRoute = createRoute({
 const demoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/demo',
-  component: DemoRoute,
+  component: lazyRouteComponent(() => import('./routes/demo.js'), 'DemoRoute'),
 });
 
 // SC-INT-1 (sec-001-cierre): página de mantenimiento renderizada por
@@ -86,7 +54,7 @@ const demoRoute = createRoute({
 const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/maintenance',
-  component: MaintenanceRoute,
+  component: lazyRouteComponent(() => import('./routes/maintenance.js'), 'MaintenanceRoute'),
 });
 
 // D9 — Surface dedicada de login para conductores. Acepta RUT + PIN
@@ -101,25 +69,25 @@ const loginConductorRoute = createRoute({
 const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/onboarding',
-  component: OnboardingRoute,
+  component: lazyRouteComponent(() => import('./routes/onboarding.js'), 'OnboardingRoute'),
 });
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app',
-  component: AppRoute,
+  component: lazyRouteComponent(() => import('./routes/app.js'), 'AppRoute'),
 });
 
 const ofertasRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/ofertas',
-  component: OfertasRoute,
+  component: lazyRouteComponent(() => import('./routes/ofertas.js'), 'OfertasRoute'),
 });
 
 const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
-  component: PerfilRoute,
+  component: lazyRouteComponent(() => import('./routes/perfil.js'), 'PerfilRoute'),
 });
 
 // Dashboard del conductor — vista principal post-login del conductor
@@ -129,7 +97,7 @@ const perfilRoute = createRoute({
 const conductorDashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductor',
-  component: ConductorDashboardRoute,
+  component: lazyRouteComponent(() => import('./routes/conductor.js'), 'ConductorDashboardRoute'),
 });
 
 // Configuración del Modo Conductor — solo permisos del navegador, audio
@@ -139,13 +107,19 @@ const conductorDashboardRoute = createRoute({
 const conductorConfiguracionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductor/configuracion',
-  component: ConductorConfiguracionRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/conductor-configuracion.js'),
+    'ConductorConfiguracionRoute',
+  ),
 });
 
 const adminDispositivosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/admin/dispositivos',
-  component: AdminDispositivosRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/admin-dispositivos.js'),
+    'AdminDispositivosRoute',
+  ),
 });
 
 // ADR-029 v1 / ADR-032 — admin platform-wide Cobra Hoy. Auth real está
@@ -154,13 +128,13 @@ const adminDispositivosRoute = createRoute({
 const adminCobraHoyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/admin/cobra-hoy',
-  component: AdminCobraHoyRoute,
+  component: lazyRouteComponent(() => import('./routes/admin-cobra-hoy.js'), 'AdminCobraHoyRoute'),
 });
 
 const vehiculosListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos',
-  component: VehiculosListRoute,
+  component: lazyRouteComponent(() => import('./routes/vehiculos.js'), 'VehiculosListRoute'),
 });
 
 // D3 — Surface dedicada de seguimiento de flota. Reemplaza el patrón
@@ -169,7 +143,7 @@ const vehiculosListRoute = createRoute({
 const flotaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/flota',
-  component: FlotaRoute,
+  component: lazyRouteComponent(() => import('./routes/flota.js'), 'FlotaRoute'),
 });
 
 // D8 — CRUD de conductores del carrier. Solo accesible desde la interfaz
@@ -178,34 +152,34 @@ const flotaRoute = createRoute({
 const conductoresListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductores',
-  component: ConductoresListRoute,
+  component: lazyRouteComponent(() => import('./routes/conductores.js'), 'ConductoresListRoute'),
 });
 const conductoresNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductores/nuevo',
-  component: ConductoresNuevoRoute,
+  component: lazyRouteComponent(() => import('./routes/conductores.js'), 'ConductoresNuevoRoute'),
 });
 const conductoresDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductores/$id',
-  component: ConductoresDetalleRoute,
+  component: lazyRouteComponent(() => import('./routes/conductores.js'), 'ConductoresDetalleRoute'),
 });
 
 // D7b — Sucursales del shipper. Puntos físicos de origen/destino.
 const sucursalesListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/sucursales',
-  component: SucursalesListRoute,
+  component: lazyRouteComponent(() => import('./routes/sucursales.js'), 'SucursalesListRoute'),
 });
 const sucursalesNuevaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/sucursales/nueva',
-  component: SucursalesNuevaRoute,
+  component: lazyRouteComponent(() => import('./routes/sucursales.js'), 'SucursalesNuevaRoute'),
 });
 const sucursalesDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/sucursales/$id',
-  component: SucursalesDetalleRoute,
+  component: lazyRouteComponent(() => import('./routes/sucursales.js'), 'SucursalesDetalleRoute'),
 });
 
 // D11 — Stakeholder geo dashboard. Surface restringida a rol
@@ -214,7 +188,10 @@ const sucursalesDetalleRoute = createRoute({
 const stakeholderZonasRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/stakeholder/zonas',
-  component: StakeholderZonasRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/stakeholder-zonas.js'),
+    'StakeholderZonasRoute',
+  ),
 });
 
 // D6 — Dashboard de cumplimiento: documentos vencidos o por vencer.
@@ -222,7 +199,7 @@ const stakeholderZonasRoute = createRoute({
 const cumplimientoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cumplimiento',
-  component: CumplimientoRoute,
+  component: lazyRouteComponent(() => import('./routes/cumplimiento.js'), 'CumplimientoRoute'),
 });
 
 // Platform admin — operaciones internas (init/clean seed demo, etc.).
@@ -231,14 +208,17 @@ const cumplimientoRoute = createRoute({
 const platformAdminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin',
-  component: PlatformAdminRoute,
+  component: lazyRouteComponent(() => import('./routes/platform-admin.js'), 'PlatformAdminRoute'),
 });
 
 // ADR-033 §8 — Matching engine v2 backtest UI. Misma gate platform-admin.
 const platformAdminMatchingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/matching',
-  component: PlatformAdminMatchingRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-matching.js'),
+    'PlatformAdminMatchingRoute',
+  ),
 });
 
 // ADR-039 — Site Settings Editor. Editar marca + copy del demo sin
@@ -246,7 +226,10 @@ const platformAdminMatchingRoute = createRoute({
 const platformAdminSiteSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/site-settings',
-  component: PlatformAdminSiteSettingsRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-site-settings.js'),
+    'PlatformAdminSiteSettingsRoute',
+  ),
 });
 
 // Spec 2026-05-13 — Observability dashboard (costos GCP + Twilio +
@@ -254,61 +237,79 @@ const platformAdminSiteSettingsRoute = createRoute({
 const platformAdminObservabilityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/observability',
-  component: PlatformAdminObservabilityRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-observability.js'),
+    'PlatformAdminObservabilityRoute',
+  ),
+});
+
+// T10 SEC-001 Sprint 2b — signup-requests admin dashboard (ADR-052 + SC-1.2.1).
+// Gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS). Feature flag
+// SIGNUP_REQUEST_FLOW_ACTIVATED → coming-soon UI si OFF.
+const platformAdminSignupRequestsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/signup-requests',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-signup-requests.js'),
+    'PlatformAdminSignupRequestsRoute',
+  ),
 });
 
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
-  component: VehiculosNuevoRoute,
+  component: lazyRouteComponent(() => import('./routes/vehiculos.js'), 'VehiculosNuevoRoute'),
 });
 
 const vehiculosDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/$id',
-  component: VehiculosDetalleRoute,
+  component: lazyRouteComponent(() => import('./routes/vehiculos.js'), 'VehiculosDetalleRoute'),
 });
 
 const cargasListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas',
-  component: CargasListRoute,
+  component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasListRoute'),
 });
 
 const cargasNuevaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas/nueva',
-  component: CargasNuevoRoute,
+  component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasNuevoRoute'),
 });
 
 const cargasDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas/$id',
-  component: CargasDetalleRoute,
+  component: lazyRouteComponent(() => import('./routes/cargas.js'), 'CargasDetalleRoute'),
 });
 
 const vehiculoLiveRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/$id/live',
-  component: VehiculoLiveRoute,
+  component: lazyRouteComponent(() => import('./routes/vehiculo-live.js'), 'VehiculoLiveRoute'),
 });
 
 const cargaTrackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas/$id/track',
-  component: CargaTrackRoute,
+  component: lazyRouteComponent(() => import('./routes/carga-track.js'), 'CargaTrackRoute'),
 });
 
 const certificadosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/certificados',
-  component: CertificadosRoute,
+  component: lazyRouteComponent(() => import('./routes/certificados.js'), 'CertificadosRoute'),
 });
 
 const asignacionDetalleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/asignaciones/$id',
-  component: AsignacionDetalleRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/asignacion-detalle.js'),
+    'AsignacionDetalleRoute',
+  ),
 });
 
 // Phase 5 PR-L4 — Surface pública del consignee/shipper con un link
@@ -324,7 +325,7 @@ const publicTrackingRoute = createRoute({
 const legalTerminosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/legal/terminos',
-  component: LegalTerminosRoute,
+  component: lazyRouteComponent(() => import('./routes/legal-terminos.js'), 'LegalTerminosRoute'),
 });
 
 // ADR-029 v1 / ADR-032 — Listado de adelantos solicitados por el
@@ -333,7 +334,10 @@ const legalTerminosRoute = createRoute({
 const cobraHoyHistorialRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cobra-hoy/historial',
-  component: CobraHoyHistorialRoute,
+  component: lazyRouteComponent(
+    () => import('./routes/cobra-hoy-historial.js'),
+    'CobraHoyHistorialRoute',
+  ),
 });
 
 // Adendum de T&Cs específico para el producto "Cobra Hoy". Pública,
@@ -341,15 +345,15 @@ const cobraHoyHistorialRoute = createRoute({
 const legalCobraHoyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/legal/cobra-hoy',
-  component: LegalCobraHoyRoute,
+  component: lazyRouteComponent(() => import('./routes/legal-cobra-hoy.js'), 'LegalCobraHoyRoute'),
 });
 
 // ADR-031 §4.1 — Listado de liquidaciones del carrier activo. Surface
-// dedicada bajo /app con DTE Tipo 33 descargable cuando esté emitido.
+// dedicada bajo /app. (DTE removido — ADR-069: Booster no emite DTE.)
 const liquidacionesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/liquidaciones',
-  component: LiquidacionesRoute,
+  component: lazyRouteComponent(() => import('./routes/liquidaciones.js'), 'LiquidacionesRoute'),
 });
 
 const routeTree = rootRoute.addChildren([
@@ -381,6 +385,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
   platformAdminObservabilityRoute,
+  platformAdminSignupRequestsRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
@@ -398,6 +403,7 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
+  defaultPendingComponent: RouteFallback,
   defaultPreload: 'intent', // prefetch on link hover
 });
 

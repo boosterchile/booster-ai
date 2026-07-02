@@ -65,7 +65,7 @@ resource "google_monitoring_alert_policy" "routes_api_rate" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "3600s" # 1h — la API rate es un signal lento
@@ -124,7 +124,7 @@ resource "google_monitoring_alert_policy" "gemini_api_rate" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "3600s"
@@ -143,7 +143,7 @@ resource "google_monitoring_alert_policy" "gemini_api_rate" {
         4. Prompt injection forzando reintentos
 
       Mitigación inmediata:
-        - Revisar logs api con jsonPayload.msg="coaching persistido" — ¿mismo
+        - Revisar logs api con jsonPayload.message="coaching persistido" — ¿mismo
           tripId repetido?
         - El package coaching-generator tiene fallback a plantilla — apagar
           el genFn temporalmente seteando GEMINI_API_KEY a "" via secret rota
@@ -187,7 +187,7 @@ resource "google_monitoring_alert_policy" "routes_api_daily_volume" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email_alerts.id]
+  notification_channels = local.alert_channel_ids
 
   alert_strategy {
     auto_close = "86400s"

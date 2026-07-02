@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api';
 import { type Logger as PinoLogger, type LoggerOptions as PinoOptions, pino } from 'pino';
 import { redactObjectValues, redactValue, redactionPaths } from './redaction.js';
 
@@ -14,6 +15,13 @@ export interface LoggerOptions {
   pretty?: boolean;
   /** Redaction paths adicionales específicos del servicio */
   additionalRedactionPaths?: string[];
+  /**
+   * Project ID de GCP para la correlación nativa log↔trace en Cloud
+   * Logging (`logging.googleapis.com/trace`). Default:
+   * GOOGLE_CLOUD_PROJECT del env — los 5 servicios la tienen en prod,
+   * así que la correlación funciona sin tocar los call-sites.
+   */
+  gcpProjectId?: string;
 }
 
 /**
@@ -30,6 +38,7 @@ export function createLogger(options: LoggerOptions): Logger {
     level = 'info',
     pretty = false,
     additionalRedactionPaths = [],
+    gcpProjectId,
   } = options;
 
   const opts: PinoOptions = {
@@ -64,6 +73,32 @@ export function createLogger(options: LoggerOptions): Logger {
     },
     timestamp: pino.stdTimeFunctions.isoTime,
     messageKey: 'message',
+    // Correlación de traces (spec feat-otel-bootstrap): el docstring de
+    // este package PROMETÍA trace desde OTel context y nunca existió
+    // (auditoría 2026-06-09). Con un span activo, cada log lleva
+    // trace_id/span_id + los campos especiales que Cloud Logging usa
+    // para agrupar logs por trace en la consola. Sin span: cero ruido.
+    mixin: (() => {
+      // Resuelto una vez a la creación (no por log emitido).
+      const projectId = gcpProjectId ?? process.env.GOOGLE_CLOUD_PROJECT;
+      return () => {
+        const span = trace.getActiveSpan();
+        if (!span) {
+          return {};
+        }
+        const ctx = span.spanContext();
+        return {
+          trace_id: ctx.traceId,
+          span_id: ctx.spanId,
+          ...(projectId
+            ? {
+                'logging.googleapis.com/trace': `projects/${projectId}/traces/${ctx.traceId}`,
+                'logging.googleapis.com/spanId': ctx.spanId,
+              }
+            : {}),
+        };
+      };
+    })(),
   };
 
   if (pretty) {

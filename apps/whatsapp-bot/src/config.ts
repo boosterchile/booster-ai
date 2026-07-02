@@ -35,6 +35,15 @@ const whatsAppBotEnvSchema = commonEnvSchema
      */
     TWILIO_WEBHOOK_URL: z.string().url(),
 
+    /**
+     * URL pública EXACTA del status callback (Twilio Console → Status callback
+     * URL). El HMAC del status callback se firma sobre ESTA url (P1-6). Opcional:
+     * si se omite, se deriva de `TWILIO_WEBHOOK_URL` cambiando el path a
+     * `/webhooks/twilio-status`. Cablear cuando la Console use un dominio/path
+     * distinto al del inbound webhook, o el HMAC del status callback se rechaza.
+     */
+    TWILIO_STATUS_CALLBACK_URL: z.string().url().optional(),
+
     /** URL del apps/api — para llamar POST /trip-requests */
     API_URL: z.string().url(),
 

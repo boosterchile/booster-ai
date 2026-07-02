@@ -6,6 +6,7 @@ import {
   char,
   check,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -446,6 +447,23 @@ export const personaDemoEnum = pgEnum('persona_demo', [
   'conductor',
 ]);
 
+/**
+ * SEC-001 Sprint 2b H1.2 — estado enum para solicitudes_registro
+ * (migration 0039). Signup público gated por admin-approval — ver
+ * docs/adr/052-signup-migration-admin-sdk-gate.md. Values Spanish per
+ * CLAUDE.md §Reglas naming bilingüe.
+ *
+ * Transiciones permitidas (service layer T10 enforced):
+ *   pendiente_aprobacion → aprobado   (admin approve)
+ *   pendiente_aprobacion → rechazado  (admin reject)
+ * Sin transiciones desde estados terminales.
+ */
+export const estadoSolicitudRegistroEnum = pgEnum('estado_solicitud_registro', [
+  'pendiente_aprobacion',
+  'aprobado',
+  'rechazado',
+]);
+
 // =============================================================================
 // BILLING / AUTH
 // =============================================================================
@@ -494,6 +512,14 @@ export const empresas = pgTable(
      * `compliance_requested_by_shipper_at` (futuro).
      */
     complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
+    /**
+     * Opt-in de la empresa para medir la huella de carbono de sus viajes
+     * (Task 1, plan medicion-huella-segmento). Default false: la medición se
+     * activa explícitamente por cliente; un viaje puede overridear vía
+     * `trips.carbon_measurement_override`. Naming inglés total (decisión PO):
+     * columna en inglés, divergiendo a propósito de las legadas en español.
+     */
+    carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -717,6 +743,9 @@ export const memberships = pgTable(
   },
   (table) => ({
     userEmpresaUnique: unique('uq_membresias_usuario_empresa').on(table.userId, table.empresaId),
+    // SQL-only (0040): uq_membresias_usuario_org_stakeholder — unique
+    // parcial (usuario_id, organizacion_stakeholder_id) WHERE org IS NOT
+    // NULL. Drizzle no representa índices parciales; convención del repo.
     userIdx: index('idx_membresias_usuario').on(table.userId),
     empresaIdx: index('idx_membresias_empresa').on(table.empresaId),
     orgStakeholderIdx: index('idx_membresias_org_stakeholder').on(table.organizacionStakeholderId),
@@ -783,10 +812,26 @@ export const vehicles = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_vehiculos_empresa').on(table.empresaId),
+    // Índice compuesto del hot path de matching (runMatching → best-fit de
+    // vehículos aptos): WHERE empresa_id IN (...) AND estado_vehiculo='activo'
+    // AND capacidad_kg >= X  ORDER BY capacidad_kg, id. Las columnas en este
+    // orden permiten: igualdad sobre empresa_id (IN) + estado_vehiculo, rango
+    // sobre capacidad_kg, y entregan el orden (capacidad_kg, id) que hace el
+    // best-fit determinista (skill empty-leg-matching §7). Creado en 0041.
+    empresaEstadoCapacidadIdx: index('idx_vehiculos_empresa_estado_capacidad').on(
+      table.empresaId,
+      table.vehicleStatus,
+      table.capacityKg,
+      table.id,
+    ),
+    // idx_vehiculos_empresa (single-column) dropeado en 0041: el compuesto de
+    // arriba lo cubre como prefijo (empresa_id es su columna líder), así que
+    // toda query por empresa_id solo —incl. el check del FK a empresas— sigue
+    // indexada. Mismo criterio anti-redundancia que 0040.
     typeIdx: index('idx_vehiculos_tipo').on(table.vehicleType),
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
-    teltonikaImeiIdx: index('idx_vehiculos_teltonika_imei').on(table.teltonikaImei),
+    // idx_vehiculos_teltonika_imei dropeado en 0040: duplicaba el UNIQUE
+    // implícito de .unique() en la columna.
   }),
 );
 
@@ -891,7 +936,9 @@ export const documentosConductor = pgTable(
   'documentos_conductor',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    conductorId: uuid('conductor_id').notNull(),
+    conductorId: uuid('conductor_id')
+      .notNull()
+      .references(() => conductores.id, { onDelete: 'restrict' }),
     tipo: documentoConductorTipoEnum('tipo').notNull(),
     archivoUrl: text('archivo_url'),
     fechaEmision: timestamp('fecha_emision', { mode: 'date' }),
@@ -1075,6 +1122,13 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    /**
+     * Override por viaje del opt-in de medición de huella. NULL = heredar el
+     * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
+     * fuerza/desactiva la medición para este viaje (Task 1, plan
+     * medicion-huella-segmento). Naming inglés total (decisión PO).
+     */
+    carbonMeasurementOverride: boolean('carbon_measurement_override'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1187,7 +1241,18 @@ export const assignments = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    empresaIdx: index('idx_asignaciones_empresa').on(table.empresaId),
+    // Índice compuesto del histórico 7d de matching v2 (lookupCarriersForV2 →
+    // agregación por empresa, matching-v2-lookups.ts): WHERE empresa_id IN (...)
+    // AND entregado_en >= now() - interval '7 days' GROUP BY empresa_id.
+    // empresa_id (igualdad/IN) + entregado_en (rango) → index range scan por
+    // empresa sin escanear asignaciones viejas. Creado en 0042 (audit P1-K).
+    empresaEntregadoIdx: index('idx_asignaciones_empresa_entregado').on(
+      table.empresaId,
+      table.deliveredAt,
+    ),
+    // idx_asignaciones_empresa (single-column) dropeado en 0042: el compuesto
+    // de arriba lo cubre como prefijo (empresa_id es su columna líder), incl.
+    // el check del FK a empresas. Mismo criterio anti-redundancia que 0040/0041.
     statusIdx: index('idx_asignaciones_estado').on(table.status),
     driverIdx: index('idx_asignaciones_conductor').on(table.driverUserId),
   }),
@@ -1393,6 +1458,12 @@ export const consents = pgTable(
     expiresAt: timestamp('expira_en', { withTimezone: true }),
     revokedAt: timestamp('revocado_en', { withTimezone: true }),
     consentDocumentUrl: text('documento_consentimiento_url').notNull(),
+    // Evidencia verificable Ley 21.719 (versión del aviso vigente + IP/UA del
+    // otorgamiento). Nullable sin default: los consents existentes no tienen
+    // evidencia retroactiva y no se backfillean. Ver ADR-068 + migración 0043.
+    noticeVersion: varchar('version_aviso', { length: 20 }),
+    grantIp: text('ip_otorgamiento'),
+    grantUserAgent: text('user_agent_otorgamiento'),
   },
   (table) => ({
     stakeholderIdx: index('idx_consentimientos_stakeholder').on(table.stakeholderId),
@@ -1558,11 +1629,9 @@ export const telemetryPoints = pgTable(
   (table) => ({
     imeiTsUnique: unique('uq_telemetria_imei_ts').on(table.imei, table.timestampDevice),
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
-    imeiTsIdx: index('idx_telemetria_imei_ts').on(table.imei, table.timestampDevice),
-    vehicleReceivedIdx: index('idx_telemetria_vehiculo_recibido').on(
-      table.vehicleId,
-      table.timestampReceivedAt,
-    ),
+    // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
+    // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
+    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );
@@ -1623,11 +1692,8 @@ export const greenDrivingEvents = pgTable(
       table.timestampDevice,
       table.type,
     ),
-    // Index para queries de scoring por (vehículo, ventana de trip).
-    vehicleTsIdx: index('idx_eventos_conduccion_vehiculo_ts').on(
-      table.vehicleId,
-      table.timestampDevice,
-    ),
+    // idx_eventos_conduccion_vehiculo_ts dropeado en 0040: era prefijo del
+    // UNIQUE (vehiculo, ts, tipo) que cubre las queries de scoring.
     typeTsIdx: index('idx_eventos_conduccion_tipo_ts').on(table.type, table.timestampDevice),
   }),
 );
@@ -1898,7 +1964,16 @@ export const liquidaciones = pgTable(
     totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
     pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
     status: text('status').notNull(),
+    /**
+     * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
+     * Columna legacy: conserva datos históricos, ya no se escribe. No DROP
+     * (O-2: deprecación sin migración destructiva).
+     */
     dteFacturaBoosterFolio: text('dte_factura_booster_folio'),
+    /**
+     * @deprecated ADR-069 — ver `dteFacturaBoosterFolio`. Legacy, sin
+     * escritura, sin DROP.
+     */
     dteFacturaBoosterEmitidoEn: timestamp('dte_factura_booster_emitido_en', {
       withTimezone: true,
     }),
@@ -1910,6 +1985,11 @@ export const liquidaciones = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    // `dte_emitido` es un valor LEGACY del enum (ADR-069): Booster dejó de
+    // emitir DTE (remoción Sovos), por lo que el flujo ya no transiciona a
+    // este status. Se conserva en el CHECK para no invalidar filas
+    // históricas que quedaron en `dte_emitido` (O-2: sin migración
+    // destructiva).
     statusCheck: check(
       'chk_liquidaciones_status',
       sql`${table.status} IN ('pending_consent','lista_para_dte','dte_emitido','pagada_al_carrier','disputa')`,
@@ -1945,19 +2025,48 @@ export const facturasBoosterClp = pgTable(
     subtotalClp: integer('subtotal_clp').notNull(),
     ivaClp: integer('iva_clp').notNull(),
     totalClp: integer('total_clp').notNull(),
+    /**
+     * @deprecated ADR-069 — columnas DTE legacy. Booster dejó de emitir
+     * DTE (remoción Sovos): existían por la emisión vía proveedor SII, que
+     * fue removida. Conservan datos históricos, ya no se escriben. NO DROP
+     * (O-2: deprecación sin migración destructiva; la migración 0019 y el
+     * índice `idx_facturas_dte_status` quedan inertes).
+     */
     dteTipo: integer('dte_tipo').notNull().default(33),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteFolio: text('dte_folio'),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteEmitidaEn: timestamp('dte_emitida_en', { withTimezone: true }),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dtePdfGcsUri: text('dte_pdf_gcs_uri'),
-    // ADR-024 wire — provider que emitió el DTE ('sovos'|'mock'|'bsale'|...).
-    // Permite reconciliar histórico cuando rotamos provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProvider: text('dte_provider'),
-    // ID opaco del provider (track_id Sovos, etc.) para soporte y auditoría.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProviderTrackId: text('dte_provider_track_id'),
-    // Status SII canónico: `aceptado|rechazado|reparable|en_proceso|anulado`.
-    // Cron de reconciliación lo lee para queryStatus contra el provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteStatus: text('dte_status'),
     status: text('status').notNull(),
+    /**
+     * Sub-estado de COBRANZA (dunning) del cobro de membresía, separado del
+     * `status` contable de la factura (migración 0045, ADR-031). El cron
+     * `cobrar-memberships-mensual` lo avanza vía `decidirSiguienteDunning`.
+     * Mientras `MembershipPaymentGateway` sea el stub no-op (no existe
+     * `payment-provider`), las facturas paran en `pending_payment_provider`
+     * (NO cobradas). Valores: pendiente_cobro | pending_payment_provider |
+     * reintentando | morosa | cobrada.
+     */
+    cobroEstado: text('cobro_estado').notNull().default('pendiente_cobro'),
+    /** Nº de intentos de cobro realizados (dunning, máx 3 → morosa). */
+    cobroIntentos: integer('cobro_intentos').notNull().default(0),
+    /** Timestamp del último intento de cobro. */
+    cobroUltimoIntentoEn: timestamp('cobro_ultimo_intento_en', { withTimezone: true }),
+    /** Timestamp del próximo reintento agendado (backoff 7d). NULL si terminó. */
+    cobroProximoIntentoEn: timestamp('cobro_proximo_intento_en', { withTimezone: true }),
+    /**
+     * Ref opaca del provider de pago real. NULL mientras el gateway sea el
+     * stub no-op (no se mueve dinero hasta que exista `payment-provider`).
+     */
+    cobroGatewayRef: text('cobro_gateway_ref'),
     venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
     pagadaEn: timestamp('pagada_en', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1972,8 +2081,15 @@ export const facturasBoosterClp = pgTable(
       'chk_facturas_status',
       sql`${table.status} IN ('pendiente','emitida','pagada','vencida','anulada')`,
     ),
+    cobroEstadoCheck: check(
+      'chk_facturas_cobro_estado',
+      sql`${table.cobroEstado} IN ('pendiente_cobro','pending_payment_provider','reintentando','morosa','cobrada')`,
+    ),
     empresaStatusIdx: index('idx_facturas_empresa_status').on(table.empresaDestinoId, table.status),
     statusVenceIdx: index('idx_facturas_status_vence').on(table.status, table.venceEn),
+    cobroReintentoIdx: index('idx_facturas_cobro_reintento')
+      .on(table.cobroProximoIntentoEn)
+      .where(sql`${table.cobroEstado} IN ('pending_payment_provider', 'reintentando')`),
   }),
 );
 
@@ -2180,6 +2296,116 @@ export const cuentasDemo = pgTable('cuentas_demo', {
 });
 
 // =============================================================================
+// SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
+// =============================================================================
+//
+// Tabla DB-driven que sustenta el flow signup-request → admin-approval gate
+// definido en docs/adr/052-signup-migration-admin-sdk-gate.md. POST
+// /api/v1/signup-request (T8) inserta row con estado=pendiente_aprobacion;
+// admin approve/reject (T10) actualiza estado + approver email + timestamp.
+//
+// Email enumeration defense (SC-1.2.5): la response del endpoint NO depende
+// de si el email ya existe en users o solicitudes_registro — el dedup vive
+// en service layer (T8) sin signal lateral.
+
+export const solicitudesRegistro = pgTable('solicitudes_registro', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 320 }).notNull(),
+  nombreCompleto: varchar('nombre_completo', { length: 200 }).notNull(),
+  estado: estadoSolicitudRegistroEnum('estado').notNull().default('pendiente_aprobacion'),
+  solicitadoEn: timestamp('solicitado_en', { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Email del admin que aprobó (o rechazó). NULL mientras pending. NOT NULL
+   * post-decision. La service layer (T10) garantiza la invariante; aquí no
+   * lo enforce-amos via CHECK porque la condición es bi-columnar
+   * (estado + aprobado_por NOT NULL) y service-layer es el único writer.
+   */
+  aprobadoPor: text('aprobado_por'),
+  aprobadoEn: timestamp('aprobado_en', { withTimezone: true }),
+});
+
+// =============================================================================
+// REPOSITORIO DOCUMENTAL DE TRANSPORTE (ADR-070, frente F4 — migration 0044)
+// =============================================================================
+// Booster RECIBE y ARCHIVA documentos tributarios de terceros (Guía de
+// Despacho DTE 52, Factura 33, etc.) que amparan la carga de una orden. NO
+// emite DTE ni se integra con el SII (ADR-069). El worker (4b) decodifica el
+// TED PDF417 best-effort; el cierre flexible exige ≥1 documento subido.
+//
+// Naming bilingüe: tabla `documentos_transporte`; los valores de `doc_type`
+// son códigos literales del SII (no se traducen); los demás enums en español.
+
+/** Códigos de tipo de documento del SII + `other` para tipos no esperados. */
+export const docTypeEnum = pgEnum('tipo_documento_transporte', [
+  '33',
+  '34',
+  '52',
+  '56',
+  '61',
+  'other',
+]);
+
+/** Estado de extracción del TED (lo mueve el worker 4b / manual-entry). */
+export const extractionStatusEnum = pgEnum('estado_extraccion', [
+  'pendiente',
+  'procesando',
+  'decodificado',
+  'ingreso_manual',
+  'fallido',
+]);
+
+/** Origen del documento. `xml_intercambio` reservado para el stub de 4c. */
+export const documentSourceEnum = pgEnum('origen_documento', [
+  'pdf_upload',
+  'photo_upload',
+  'xml_intercambio',
+]);
+
+export const transportDocuments = pgTable(
+  'documentos_transporte',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // FK a `viajes`. `restrict`: NO cascada al borrar/cerrar la orden — la
+    // retención legal (6a) prohíbe borrar un documento dentro del período.
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    // Objeto GCS (no URI completa; el bucket viene de env). Prefijo
+    // `transport-documents/{viajeId}/{uuid}.{ext}`.
+    filePath: text('file_path').notNull(),
+    fileMime: text('file_mime').notNull(),
+    docType: docTypeEnum('doc_type').notNull(),
+    // Campos del `<DD>` del TED — nullable hasta decodificar / manual-entry.
+    folio: text('folio'),
+    rutEmisor: text('rut_emisor'),
+    razonSocialEmisor: text('razon_social_emisor'),
+    rutReceptor: text('rut_receptor'),
+    razonSocialReceptor: text('razon_social_receptor'),
+    // `<DD><FE>` — insumo del cálculo de `retention_until`.
+    fechaEmision: date('fecha_emision'),
+    // `<DD><MNT>` — CLP entero; scale 2 por defensa.
+    montoTotal: numeric('monto_total', { precision: 14, scale: 2 }),
+    // XML crudo del `<TED>` decodificado (4b). Nullable.
+    tedRaw: text('ted_raw'),
+    // NULL = firma no validada (flag off); true/false = validada (4b).
+    tedSignatureValid: boolean('ted_signature_valid'),
+    extractionStatus: extractionStatusEnum('extraction_status').notNull().default('pendiente'),
+    source: documentSourceEnum('source').notNull(),
+    // Política de custodia del archivador (ADR-070): fecha_emision + 6a
+    // (fallback created_at + 6a). Sin purga automática en F4.
+    retentionUntil: date('retention_until'),
+    uploadedBy: uuid('subido_por').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeIdx: index('idx_documentos_transporte_viaje').on(table.viajeId),
+    // Para el worker/listados que filtran por estado de extracción.
+    estadoIdx: index('idx_documentos_transporte_estado').on(table.extractionStatus),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2256,3 +2482,11 @@ export type NewZonaStakeholderRow = typeof zonasStakeholder.$inferInsert;
 // SEC-001 Sprint 2a H1.1 — cuentas_demo (migration 0038)
 export type CuentaDemoRow = typeof cuentasDemo.$inferSelect;
 export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
+
+// SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
+export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
+export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
+
+// Repositorio documental de transporte — documentos_transporte (migration 0044)
+export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
+export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;

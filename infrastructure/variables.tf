@@ -155,13 +155,24 @@ variable "cloudsql_backup_retention_days" {
   default     = 30
 }
 
+variable "cloudsql_high_availability" {
+  description = "true = REGIONAL (HA con failover automático); false = ZONAL (single-zone)."
+  type        = bool
+  # Pre-comercial: ZONAL (sin standby; caída de zona = BD no disponible, RTO
+  # minutos-1h con backups + PITR). Volver a true al firmar B2B con SLA 99.9%.
+  # Ver .specs/cost-optimization-precomercial.
+  default = false
+}
+
 # -----------------------------------------------------------------------------
 # Memorystore Redis
 # -----------------------------------------------------------------------------
 variable "redis_tier" {
   description = "Redis tier: BASIC (single node) o STANDARD_HA (con failover)"
   type        = string
-  default     = "STANDARD_HA"
+  # Pre-comercial: BASIC (cache medido practicamente vacio). STANDARD_HA al
+  # firmar B2B con SLA. Ver .specs/cost-optimization-precomercial.
+  default = "BASIC"
 }
 
 variable "redis_memory_gb" {
@@ -352,6 +363,25 @@ variable "auth_universal_v1_activated" {
 }
 
 # ---------------------------------------------------------------------------
+# SEC-001 H1.2 Sprint 2c-B T8 pre-apply (ADR-052 Accepted) — admin-approval
+# signup-request flow
+# ---------------------------------------------------------------------------
+# Cuando `true`, activa el endpoint público POST /api/v1/signup-request +
+# admin UI /admin/signup-requests (Sprint 2b PR2 T8/T10 wired pero gated por
+# este flag). Cuando `false`, ambos retornan 503 "Coming soon" — no hay
+# destino UX para rechazos del Cloud Function blocking-function (Sprint 2c-B
+# T4+T5). Por eso este flag es hard precondition de T8 plan v4.
+#
+# Flip a `true` 2026-05-29 post ADR-052 Accepted + Sprint 2b T13 canary
+# success (cloudbuild 8f4ec780). Reversible: `terraform apply` con default
+# false revierte a "Coming soon" sin redeploy de código.
+variable "signup_request_flow_activated" {
+  description = "Activa POST /api/v1/signup-request + admin UI (SEC-001 H1.2 ADR-052)."
+  type        = bool
+  default     = true
+}
+
+# ---------------------------------------------------------------------------
 # ADR-036 Wave 5 — Wake-word "Oye Booster"
 # ---------------------------------------------------------------------------
 # Cuando `true`, la card "Activación por voz" en
@@ -458,4 +488,19 @@ variable "google_workspace_price_per_seat_usd_enterprise" {
   description = "USD/mes por seat de Enterprise (precio aproximado, custom contracts típico)"
   type        = number
   default     = 30
+}
+
+variable "sre_webhook_url" {
+  description = <<-EOT
+    URL del incoming webhook para el segundo canal de alertas (Slack
+    "Incoming Webhooks" o Google Chat space → Apps → Webhooks). Vacío =
+    solo email (estado actual). Al poblarla, TODAS las alert policies
+    notifican a ambos canales. Sensitive: la URL del webhook es un
+    secreto de facto (quien la tenga puede postear al canal).
+    Auditoría 2026-06-09: email único a dev@ era riesgo medio
+    ("un email no leído de madrugada = incidente sin atender").
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
 }

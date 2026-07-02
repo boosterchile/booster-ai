@@ -613,6 +613,7 @@ function StakeholderOrgsSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshTick es un trigger de refresh intencional (handleCreated lo incrementa); el efecto no lo lee, pero debe re-ejecutarse cuando cambia.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -772,6 +773,7 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
   const [showInvite, setShowInvite] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshTick es un trigger de refresh intencional (handleInvited lo incrementa); el efecto no lo lee, pero debe re-ejecutarse cuando cambia.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);

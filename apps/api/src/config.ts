@@ -6,6 +6,7 @@ import {
   redisEnvSchema,
 } from '@booster-ai/config';
 import { z } from 'zod';
+import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
 /**
  * Parsea env var boolean correctamente. `z.coerce.boolean()` es un footgun
@@ -41,7 +42,7 @@ function booleanFlag(defaultValue: boolean) {
     .default(defaultValue);
 }
 
-const apiEnvSchema = commonEnvSchema
+export const apiEnvSchema = commonEnvSchema
   .merge(databaseEnvSchema)
   .merge(redisEnvSchema)
   .merge(gcpEnvSchema)
@@ -192,6 +193,55 @@ const apiEnvSchema = commonEnvSchema
     CHAT_PUBSUB_TOPIC: z.string().min(1).optional(),
 
     /**
+     * Repositorio documental de transporte (ADR-070, frente F4-4a).
+     *
+     * TRANSPORT_DOCUMENTS_BUCKET: bucket GCS donde se archivan los documentos
+     *   tributarios de terceros (Guía/Factura) bajo prefijo
+     *   `transport-documents/{viajeId}/{uuid}.{ext}`. Reusa el bucket
+     *   `documents` (storage.tf, retención SII 6a). Optional: si está ausente,
+     *   el endpoint de subida devuelve 503 (sin GCS no se puede archivar).
+     */
+    TRANSPORT_DOCUMENTS_BUCKET: z.string().min(1).optional(),
+
+    /**
+     * Pub/Sub topic name del evento `document.uploaded` (creado en
+     * messaging.tf). El endpoint de subida publica acá tras persistir la fila
+     * `pendiente`; el worker TED (sub-fase 4b) lo consume. Optional: si está
+     * ausente, el endpoint persiste + responde 202 igual (el worker llega en
+     * 4b), solo no publica el evento.
+     */
+    DOCUMENT_UPLOADED_TOPIC: z.string().min(1).optional(),
+
+    /**
+     * Cierre flexible (ADR-070 / spec O-7). Si `true`, una orden requiere ≥1
+     * documento subido para transicionar a `entregado` (independiente del
+     * estado de extracción). Solo aplica a órdenes creadas en/después de
+     * `REQUIRE_DOCUMENT_TO_CLOSE_SINCE`; las legacy/en-curso quedan exentas.
+     * Default `true` (O-7 resuelta 2026-06-18). `booleanFlag` (no
+     * `z.coerce.boolean()` — footgun, memoria Redis TLS 2026-06).
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE: booleanFlag(true),
+
+    /**
+     * Fecha de corte ISO (YYYY-MM-DD) del cierre flexible: el guard de
+     * `REQUIRE_DOCUMENT_TO_CLOSE` solo aplica a órdenes con `creado_en >=`
+     * esta fecha. Sin esta var, el guard NO se aplica (las órdenes quedan
+     * exentas) aunque el flag esté ON — defensa contra bloquear viajes en
+     * ruta antes de definir el corte del rollout.
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE_SINCE: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'REQUIRE_DOCUMENT_TO_CLOSE_SINCE debe ser ISO date YYYY-MM-DD')
+      .optional(),
+
+    /**
+     * Si `true`, el cierre exige al menos un documento `decodificado` (no solo
+     * subido). Default `false` (spec invariante): el TED es enriquecimiento, no
+     * condición de cierre. El worker decodificador llega en 4b.
+     */
+    REQUIRE_TED_DECODE: booleanFlag(false),
+
+    /**
      * VAPID keys para Web Push (P3.c). Generadas con
      * `npx web-push generate-vapid-keys` post-deploy y subidas a Secret
      * Manager. La pública se sirve via GET /webpush/vapid-public-key
@@ -267,6 +317,30 @@ const apiEnvSchema = commonEnvSchema
       .optional(),
 
     /**
+     * Content SID del template Twilio `safety_alert_v1` (fan-out de eventos de
+     * seguridad al transportista). Vacío → WhatsApp se skipea y la alerta sale
+     * solo por push (la feature no depende de la aprobación de Meta).
+     */
+    CONTENT_SID_SAFETY_ALERT: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
+     * SA email que firma el OIDC de la push subscription de safety-events
+     * (Pub/Sub → POST /internal/safety-events). El endpoint valida
+     * claims.email === este valor. Optional en dev (sin él, el endpoint
+     * rechaza todo por falta de caller autorizado).
+     */
+    SAFETY_PUSH_CALLER_SA: z
+      .string()
+      .regex(/^[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/, 'SA email inválido')
+      .optional(),
+
+    /**
      * GCP project ID — Cloud Run lo setea automáticamente en runtime.
      * Usado para:
      *   - Vertex AI Gemini endpoint (ADR-037, coaching IA post-entrega).
@@ -292,11 +366,10 @@ const apiEnvSchema = commonEnvSchema
      * Comportamiento cuando es `true`:
      *   - El service evalúa carrier_memberships + consent T&Cs v2 antes
      *     de emitir cualquier cobro. Sin consent firmado, las liquidaciones
-     *     quedan en `pending_consent` (DTE emisión bloqueada por el carrier,
-     *     no por Booster).
-     *   - DTE Tipo 33 se emite vía Sovos cuando esté integrado;
-     *     mientras tanto las liquidaciones quedan `lista_para_dte`
-     *     (auditables, válidas contablemente, sin presentación SII).
+     *     quedan en `pending_consent`.
+     *   - Con consent firmado, la liquidación queda en `lista_para_dte`
+     *     (auditable, válida contablemente). Booster ya no emite DTE
+     *     (ADR-069 supersede ADR-024): el estado es contable, no tributario.
      *
      * Override explícito: setear `PRICING_V2_ACTIVATED=false` en Cloud Run
      * env revierte la activación en segundos sin tocar BD ni código.
@@ -305,9 +378,12 @@ const apiEnvSchema = commonEnvSchema
 
     /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
-     * (ADR-029 + ADR-032). Default por entorno:
-     *   - production → `true`
-     *   - dev/test/staging → `false`
+     * (ADR-029 + ADR-032). Default `false` en TODOS los entornos
+     * (vuelve al default seguro de ADR-030 §1; decisión PO 2026-06-10,
+     * spec fix-factoring-exposicion-y-flag): mover dinero requiere
+     * opt-in explícito del operador — `FACTORING_V1_ACTIVATED=true` en
+     * el env del Cloud Run `api` (vía infrastructure/compute.tf), no
+     * activación implícita por NODE_ENV.
      *
      * Cuando es `false`:
      *   - `cobraHoy()` retorna `skipped_flag_disabled`.
@@ -322,7 +398,7 @@ const apiEnvSchema = commonEnvSchema
      *     queda diferido — adelantos quedan en `solicitado` hasta
      *     integración del partner.
      */
-    FACTORING_V1_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
+    FACTORING_V1_ACTIVATED: booleanFlag(false),
 
     /**
      * Allowlist de emails con acceso a endpoints `/admin/cobra-hoy/*`
@@ -340,43 +416,6 @@ const apiEnvSchema = commonEnvSchema
      * Default vacío para que ningún entorno tenga acceso accidental.
      * Cloud Run prod debe setear esta var explícitamente.
      */
-    /**
-     * ADR-024 — Provider activo para emisión de DTEs (factura comisión
-     * Booster al carrier post-liquidación). Valores válidos:
-     *   - 'disabled' (default): no se emiten DTEs. Las liquidaciones
-     *     quedan `lista_para_dte` indefinidamente. Útil en staging y
-     *     mientras no hay creds.
-     *   - 'mock': MockDteAdapter — folios sintéticos in-memory. Útil
-     *     en dev para validar el flow sin tocar Sovos. Restart del
-     *     server pierde la secuencia (no persistente).
-     *   - 'sovos': SovosDteAdapter contra Paperless Chile. Exige
-     *     SOVOS_API_KEY + SOVOS_BASE_URL.
-     */
-    DTE_PROVIDER: z.enum(['disabled', 'mock', 'sovos']).default('disabled'),
-
-    /**
-     * Sovos credentials (solo se leen cuando `DTE_PROVIDER='sovos'`).
-     * Optional para que dev/staging arranque sin estas. Cuando el
-     * factory las necesita y faltan, se lanza DteNotConfiguredError.
-     */
-    SOVOS_API_KEY: z.string().min(1).optional(),
-    SOVOS_BASE_URL: z.string().url().optional(),
-
-    /**
-     * Datos de Booster Chile SpA como emisor de la factura comisión.
-     * Hardcoded por env para no exponerlos en el repo. Se inyectan al
-     * SovosAdapter en cada emisión.
-     *
-     * BOOSTER_RUT debe ser el RUT real registrado en SII (cuando
-     * Booster Chile SpA esté constituida) — placeholder en config para
-     * dev/staging.
-     */
-    BOOSTER_RUT: z.string().min(1).default('76.000.000-0'),
-    BOOSTER_RAZON_SOCIAL: z.string().min(1).default('Booster Chile SpA'),
-    BOOSTER_GIRO: z.string().min(1).default('Marketplace digital de logística'),
-    BOOSTER_DIRECCION: z.string().min(1).default('Av. Providencia 1000'),
-    BOOSTER_COMUNA: z.string().min(1).default('Providencia'),
-
     /**
      * ADR-033 — Activa el algoritmo de matching v2 (multi-factor con
      * awareness de empty-backhaul). Default `false` en todos los
@@ -456,6 +495,67 @@ const apiEnvSchema = commonEnvSchema
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
     /**
+     * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
+     * rollback) — gating del flow signup-request → admin-approval.
+     *
+     * Cuando `true`: admin UI muestra la lista de signup-requests pendientes
+     * y los endpoints `POST /admin/signup-requests/:id/{approve,reject}`
+     * procesan normalmente.
+     *
+     * Cuando `false` (default): admin UI muestra "Coming soon" banner; los
+     * endpoints admin retornan `503 service_unavailable` con
+     * `code: signup_flow_disabled`. El endpoint público
+     * `POST /api/v1/signup-request` sigue aceptando solicitudes (NO se gate
+     * por este flag — las solicitudes se acumulan en `solicitudes_registro`
+     * pero no se procesan hasta flip ON).
+     *
+     * Rollback path per spec §7.5: si SC-1.2.1 falla post-deploy pero la
+     * Terraform IdP flip (T11) ya está aplicada, flip este flag a false
+     * inhabilita el approve flow; las solicitudes nuevas siguen siendo
+     * aceptadas (UX no-rota) pero quedan pending hasta fix + flip ON. SLA
+     * target fix: 4h.
+     */
+    SIGNUP_REQUEST_FLOW_ACTIVATED: booleanFlag(false),
+
+    /**
+     * SEC-001 hotfix (`.specs/sec-001-empresa-onboarding-gate-hotfix/`) —
+     * KILL SWITCH para self-service company onboarding.
+     *
+     * `POST /empresas/onboarding` permite a cualquier usuario Firebase
+     * autenticado crear users+empresa+membership `dueno` SIN gate de
+     * aprobación (vector de auto-promoción a dueño verificado vivo en prod
+     * 2026-05-29). Mientras el flujo aprobación→dueño se rediseña
+     * (`.specs/_followups/onboarding-flow-redesign.md`), este flag cierra
+     * el self-service.
+     *
+     * **Estado seguro = OFF (default false).** Flag-ON es INSEGURO en prod:
+     * reabre el agujero. No es un toggle operacional rutinario — solo el
+     * rediseño futuro lo activa deliberadamente una vez exista un camino
+     * gateado. Rollback de un bug en el gate = revert del PR, NO flag-ON.
+     * Alta de pilotos durante la ventana cerrada = provisioning manual.
+     *
+     * Defensa en profundidad: `onboardEmpresa` (service layer) también
+     * rechaza `authorizedBy='self_service'` cuando este flag está OFF, así
+     * un futuro caller no puede auto-provisionar saltándose el gate de ruta.
+     */
+    EMPRESA_SELF_ONBOARDING_ENABLED: booleanFlag(false),
+
+    /**
+     * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
+     * reaper de cuentas IdP inertes.
+     *
+     * **Estado seguro = OFF (default false) = dry-run.** Con el flag OFF el job
+     * `/admin/jobs/reap-inert-idp-accounts` solo loguea/cuenta lo que haría; NO
+     * deshabilita ni borra cuentas. Flag-ON habilita disable-before-delete real.
+     *
+     * Control server-side a propósito (NO por el request del scheduler): una
+     * credencial filtrada del scheduler no puede disparar mutaciones. Activar
+     * requiere el **gate de primer run destructivo** (dry-run revisado +
+     * sign-off PO) y se setea vía env del Cloud Run (Terraform) + redeploy.
+     */
+    REAPER_DESTRUCTIVE: booleanFlag(false),
+
+    /**
      * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
      * fail-closed startup cuando `runMigrations` falla.
      *
@@ -496,10 +596,13 @@ const apiEnvSchema = commonEnvSchema
      *
      * Habilitado 2026-05-13 vía consola Cloud Billing → Export. Datos
      * empiezan a propagar ~24-48h post-habilitación.
+     *
+     * Sin default (audit 2026-06-14 P0-D): el valor contiene el billing
+     * account id real y NO debe vivir en el repo. Se inyecta por env var
+     * desde Terraform. Required cuando OBSERVABILITY_DASHBOARD_ACTIVATED=true
+     * (ver superRefine al final del schema).
      */
-    BILLING_EXPORT_TABLE: z
-      .string()
-      .default('booster-ai-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377'),
+    BILLING_EXPORT_TABLE: z.string().min(1).optional(),
 
     /**
      * Dominio Google Workspace gestionado por Booster. Usado por el
@@ -578,6 +681,49 @@ const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
+
+    /**
+     * F2 P0-C (`.specs/p0c-uids-demo-secret-manager/spec.md`) — CSV de los
+     * Firebase UIDs demo viejos a retirar vía `--retire-old-batch` (ADR-053).
+     *
+     * Antes eran 4 literales hardcoded (PII / Ley 19.628) en
+     * `services/harden-demo-accounts.ts`. Se extrajeron a esta env validada.
+     *
+     * Cada entrada debe matchear `/^[A-Za-z0-9]{20,128}$/` (formato Firebase
+     * UID). Ausente/"" → `[]` (el batch es no-op seguro). Malformada → el
+     * startup del API rehúsa arrancar (fail-fast `parseEnv`), defensa en
+     * profundidad: un solo lugar documentado para el formato.
+     *
+     * Hoy solo el CLI standalone consume estos UIDs (lee `DEMO_OLD_UIDS`
+     * directo, sin importar este config). El runtime del API NO llama
+     * `retireOldBatch`; se declara acá para evitar drift si alguna ruta/cron
+     * futura lo necesitara (inyectaría `config.DEMO_OLD_UIDS` como
+     * `opts.oldUids`). No se setea en el env del Cloud Run (queda `[]`).
+     */
+    DEMO_OLD_UIDS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        (s ?? '')
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.string().regex(/^[A-Za-z0-9]{20,128}$/, 'Firebase UID inválido'))),
+  })
+  // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
+  // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
+  // las necesita, fallando rápido en el startup en vez de apuntar a prod.
+  .superRefine((env, ctx) => {
+    const errors = checkGcpConfigInvariants({
+      nodeEnv: env.NODE_ENV,
+      observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
+      googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+      billingExportTable: env.BILLING_EXPORT_TABLE,
+    });
+    for (const message of errors) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
   });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

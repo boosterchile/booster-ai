@@ -1,0 +1,86 @@
+# Terraform Drift Check — alerta cuando el estado real de GCP diverge de `main`.
+#
+# Origen: issue #410 (remediación #4, "antifrágil"). Lección: el `terraform apply
+# -target` enmascara estado; nadie corría un plan completo, así que el drift
+# (SEC-001 sin aplicar, etc.) pasó desapercibido por semanas. Este workflow corre
+# `terraform plan -detailed-exitcode` periódicamente y FALLA si hay drift (exit 2),
+# para que aparezca en la pestaña Actions / notificaciones.
+#
+# ── SETUP (todo en código/IaC; sin pasos manuales pendientes) ──
+#  - Auth: WIF (vars.WIF_PROVIDER, ya existente) impersonando un SA dedicado
+#    READ-ONLY `terraform-drift@` (iam.tf): roles/viewer + un custom role acotado
+#    (redis.getAuthString + iap.getIamPolicy, los 2 reads que viewer no incluye y
+#    que un plan completo necesita). NO se le da write. Email hardcodeado abajo
+#    (no es secreto). El binding workloadIdentityUser lo limita a este repo.
+#  - billing_account: `var.billing_account` es opcional para el check — el
+#    proyecto lo tiene en `ignore_changes` (project.tf), así que si la var está
+#    vacía no genera falso diff ni intenta desvincular billing.
+#  - Ruido perpetuo: resuelto (multi_tenant/phone_number declarados en
+#    identity-platform.tf + ignore_changes del dashboard_json). Plan = "No changes".
+#
+# Estado: una vez aplicado el IaC del SA drift (iam.tf), el check corre verde
+# (plan = "No changes"). Disparable por cron diario o workflow_dispatch.
+
+name: Terraform Drift Check
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # diario 11:17 UTC (08:17 Chile aprox), minuto off-peak
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # OIDC para Workload Identity Federation con GCP
+
+jobs:
+  drift:
+    name: terraform plan -detailed-exitcode
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth a GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          # SA dedicado read-only (iam.tf). Hardcodeado: un email de SA no es secreto.
+          service_account: terraform-drift@booster-ai-494222.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -input=false -lock=false
+
+      - name: Terraform plan (detailed-exitcode)
+        id: plan
+        env:
+          TF_VAR_billing_account: ${{ vars.TF_BILLING_ACCOUNT }}
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -detailed-exitcode -no-color -out=drift.plan 2>&1 | tee plan.out
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Terraform drift check"
+            case "$code" in
+              0) echo "✅ Sin drift — el estado de GCP coincide con \`main\`." ;;
+              2) echo "⚠️ **DRIFT detectado** — el estado de GCP diverge de \`main\`. Revisar el diff abajo y reconciliar (con \`-target\` acotado; NO tocar IAM Owner sin revisión, ver #410/#411)." ;;
+              *) echo "❌ Error corriendo el plan (¿permisos del SA? ¿TF_VAR_billing_account?). Ver log." ;;
+            esac
+            echo ""
+            echo '```'
+            tail -c 60000 plan.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # exit 0 si no drift; exit 2 si drift (falla el job); exit 1 si error
+          [ "$code" = "0" ] && exit 0
+          exit "$code"

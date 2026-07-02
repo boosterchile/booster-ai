@@ -28,6 +28,9 @@ process.env.SERVICE_NAME ??= 'booster-ai-api';
 process.env.SERVICE_VERSION ??= '0.0.0-test';
 process.env.LOG_LEVEL ??= 'error';
 process.env.GOOGLE_CLOUD_PROJECT ??= 'booster-ai-test';
+// Requerido cuando OBSERVABILITY_DASHBOARD_ACTIVATED=true (default), tras
+// quitar el default hardcodeado de prod en config.ts (audit P0-D).
+process.env.BILLING_EXPORT_TABLE ??= 'booster-ai-test.billing_export.test_table';
 // DATABASE_URL placeholder para parseEnv — los tests integration no lo usan,
 // usan TEST_DATABASE_URL via createTestDb. Si algún import indirecto necesita
 // DATABASE_URL real, ese test debe sobreescribir process.env.DATABASE_URL

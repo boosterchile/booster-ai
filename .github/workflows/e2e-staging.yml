@@ -22,20 +22,26 @@ permissions:
 jobs:
   playwright:
     name: Playwright + axe-core (a11y)
+    # Guard (auditoría 2026-06-09): en PRs, si STAGING_URL no está seteada
+    # (staging no existe — #STAGING-ENV), el job se SALTA en vez de caer al
+    # fallback PRODUCTION_URL y pegarle a prod con data real desde un PR.
+    # El nightly (schedule) sigue corriendo contra producción a propósito.
+    if: github.event_name != 'pull_request' || vars.STAGING_URL != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Browsers preinstalados en la imagen oficial de Playwright, pin EXACTO a
+    # la versión de @playwright/test del lockfile (1.59.1). Elimina el step
+    # `playwright install`, cuya descarga de webkit colgaba 30 min y cancelaba
+    # el job (5+ noches seguidas). La imagen `noble` trae Node 22 (cumple
+    # engines >= 22). Al subir @playwright/test, actualizar este tag a la par.
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-noble
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
           version: '9.15.4'
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Playwright browsers
-        run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium webkit
       - name: Run E2E
         env:
           BASE_URL: ${{ github.event_name == 'pull_request' && vars.STAGING_URL || vars.PRODUCTION_URL }}

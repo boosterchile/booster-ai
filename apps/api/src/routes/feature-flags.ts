@@ -21,7 +21,8 @@ import { config as appConfig } from '../config.js';
  *     auth_universal_v1_activated: boolean,
  *     wake_word_voice_activated: boolean,
  *     matching_algorithm_v2_activated: boolean,
- *     demo_mode_activated: boolean
+ *     demo_mode_activated: boolean,
+ *     signup_request_flow_activated: boolean
  *   }
  */
 export function createFeatureFlagsRoutes(opts: { logger: Logger }) {
@@ -34,6 +35,7 @@ export function createFeatureFlagsRoutes(opts: { logger: Logger }) {
       wake_word_voice_activated: appConfig.WAKE_WORD_VOICE_ACTIVATED,
       matching_algorithm_v2_activated: appConfig.MATCHING_ALGORITHM_V2_ACTIVATED,
       demo_mode_activated: appConfig.DEMO_MODE_ACTIVATED,
+      signup_request_flow_activated: appConfig.SIGNUP_REQUEST_FLOW_ACTIVATED,
     });
   });
 
