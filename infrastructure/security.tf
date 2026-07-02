@@ -174,6 +174,10 @@ locals {
     # Database
     "database-url",
 
+    # Memorystore Redis auth_string — movido de plaintext env a Secret Manager
+    # (redis-password-to-secret-manager). La version se auto-deriva del recurso.
+    "redis-auth",
+
     # AI providers
     # NOTA: gemini-api-key eliminada en ADR-037 — el backend ahora usa
     # Vertex AI Gemini con ADC (workload identity del SA cloud_run_runtime).
@@ -209,6 +213,14 @@ locals {
 
     # Observability
     "sentry-dsn", # opcional
+
+    # Datadog API key (ADR-071) — Agent en GKE (infra + logs, sin APM). NO se
+    # monta en ningún Cloud Run service; el Secret k8s `datadog-secret` se
+    # materializa desde aquí en el bootstrap del cluster (setup-datadog.sh lee
+    # `gcloud secrets versions access latest --secret=datadog-api-key`). GSM es
+    # el source-of-truth; el owner rota el placeholder con la key real:
+    #   echo -n "<dd-api-key>" | gcloud secrets versions add datadog-api-key --data-file=-
+    "datadog-api-key",
 
     # Verify token Meta webhook handshake (DEPRECATED en Fase 6.4 junto al
     # resto). REVIEW: 2026-10-30 (mismo gate que los otros 4 secrets Meta).
@@ -293,11 +305,18 @@ resource "google_secret_manager_secret" "secrets" {
 #   gcloud secrets versions access latest --secret=<name>
 # Si devuelve "ROTATE_ME_..." el valor real aún no se puso.
 #
-# Excepción: database-url se gestiona en data.tf con el password real (Cloud SQL crea la cuenta).
+# Excepción: database-url y redis-auth tienen su version REAL gestionada aparte en
+# data.tf (password de Cloud SQL / auth_string de Memorystore). NO crearles también
+# un placeholder ROTATE_ME: el mount de Cloud Run usa version="latest"
+# (modules/cloud-run-service/main.tf) y, con dos versiones creadas en el mismo apply,
+# "latest" es no determinista → podría montar el placeholder y romper la auth. En
+# redis-auth eso deja REDIS_PASSWORD=ROTATE_ME_… en los 7 services (Redis AUTH rota:
+# rate-limit fail-closed, conversation store, OIDC cache). Ver incidente 2026-06-07.
 resource "google_secret_manager_secret_version" "placeholder" {
   for_each = toset([
     for name in local.secret_names : name
-    if name != "database-url" # database-url se setea en data.tf con password generado
+    # database-url → version real en data.tf; redis-auth → version real `redis_auth` en data.tf
+    if name != "database-url" && name != "redis-auth"
   ])
 
   secret      = google_secret_manager_secret.secrets[each.value].id

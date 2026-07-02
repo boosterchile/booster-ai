@@ -24,6 +24,7 @@ import {
   vehicles,
   zones,
 } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { buildCandidateV2, lookupCarriersForV2 } from './matching-v2-lookups.js';
 import { resolveMatchingV2Weights } from './matching-v2-weights.js';
 import { type NotifyOfferDeps, notifyOfferToCarrier } from './notify-offer.js';
@@ -84,6 +85,30 @@ export interface RunMatchingOptions {
 }
 
 export async function runMatching(opts: RunMatchingOptions): Promise<MatchingResult> {
+  const { tripId } = opts;
+
+  return await withBusinessSpan(
+    {
+      name: 'matching.run',
+      attributes: {
+        'booster.trip_id': tripId,
+        'booster.matching.algorithm_version': appConfig.MATCHING_ALGORITHM_V2_ACTIVATED
+          ? 'v2'
+          : 'v1',
+      },
+    },
+    async (span) => {
+      const result = await runMatchingInner(opts);
+      setResultAttributes(span, {
+        'booster.matching.candidates_evaluated': result.candidatesEvaluated,
+        'booster.matching.offers_created': result.offersCreated,
+      });
+      return result;
+    },
+  );
+}
+
+async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResult> {
   const { db, logger, tripId, notify } = opts;
 
   return await db
