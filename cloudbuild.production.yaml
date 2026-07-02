@@ -378,15 +378,34 @@ steps:
   # resolver. Cambiar el id rompe la pipeline. Per plan T13 round 2 P1-1 fix.
   - id: deploy-api
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    entrypoint: bash
+    # Promueve la revisión a 100% (--to-latest) y luego limpia los tags
+    # canary-signup-* viejos (cloud-run-canary-tag-cleanup, Opción A). El
+    # update-traffic es la acción crítica (set -e → falla el deploy si falla).
+    # La limpieza es FAIL-SAFE: corre POST-promoción (ningún canary tag sirve
+    # tráfico ya), preserva el tag de ESTE deploy para auditoría, y si su parseo
+    # falla solo loguea WARN (los tags siguen acumulando como hoy, no rompe el
+    # deploy). Sin esto los tags crecen 1/deploy → quota a ~50 (hoy ~10).
     args:
-      - run
-      - services
-      - update-traffic
-      - booster-ai-api
-      - --region=${_REGION}
-      - --platform=managed
-      - --to-latest
+      - -c
+      - |
+        set -e
+        gcloud run services update-traffic booster-ai-api \
+          --region=${_REGION} --platform=managed --to-latest
+        FULL_SHA='${_COMMIT_SHA}'
+        SHORT_SHA="$${FULL_SHA:0:12}"
+        CURRENT="canary-signup-$${SHORT_SHA}"
+        OLD=$(gcloud run services describe booster-ai-api --region=${_REGION} \
+                --format='value(spec.traffic[].tag)' 2>/dev/null \
+              | tr ';,' '\n' | grep '^canary-signup-' | grep -vx "$${CURRENT}" \
+              | sort -u | paste -sd, -) || true
+        if [ -n "$${OLD}" ]; then
+          gcloud run services update-traffic booster-ai-api \
+            --region=${_REGION} --platform=managed --remove-tags="$${OLD}" \
+            || echo "WARN: cleanup de canary tags falló (no-bloqueante): $${OLD}"
+        else
+          echo "Sin canary tags viejos que limpiar."
+        fi
     waitFor: [canary-verify]
 
   # =========================================================================
