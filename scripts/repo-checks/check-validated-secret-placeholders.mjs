@@ -230,8 +230,7 @@ export function main(argv) {
 
   for (const w of warnings) {
     process.stdout.write(
-      `[check-validated-secret-placeholders] NOTA — '${w.secret}' se crea como placeholder ` +
-        'y no está montado en ningún service en este plan (poblá su valor real antes de montarlo).\n',
+      `[check-validated-secret-placeholders] NOTA — '${w.secret}' se crea como placeholder y no está montado en ningún service en este plan (poblá su valor real antes de montarlo).\n`,
     );
   }
 
@@ -243,8 +242,7 @@ export function main(argv) {
   }
 
   process.stderr.write(
-    `[check-validated-secret-placeholders] FAIL — ${violations.length} secreto(s) validado(s) por formato ` +
-      'con placeholder, montados en un service (romperán el startup probe):\n',
+    `[check-validated-secret-placeholders] FAIL — ${violations.length} secreto(s) validado(s) por formato con placeholder, montados en un service (romperán el startup probe):\n`,
   );
   for (const v of violations) {
     process.stderr.write(`  ${v.secret} → ${v.services.join(', ')}\n`);

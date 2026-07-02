@@ -125,7 +125,7 @@ function CobraHoyModal({
         )}
 
         {solicitarM.isSuccess && solicitarM.data && (
-          <output className="mt-4 flex items-center gap-2 rounded-md border border-success-500/30 bg-success-50 p-3 text-success-700 text-sm">
+          <output className="mt-4 flex items-center gap-2 rounded-md border border-success-500/30 bg-success-50 p-3 text-sm text-success-700">
             <CheckCircle2 className="h-4 w-4" aria-hidden />
             {solicitarM.data.already_requested
               ? 'Ya tenías una solicitud en curso para este viaje.'

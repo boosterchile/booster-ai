@@ -54,9 +54,14 @@ describe('calcularLiquidacion — montos por tier (ADR-026 §2)', () => {
           .montoNetoCarrierClp,
     );
     // Debe ser estrictamente creciente: tiers superiores → mayor neto.
-    expect(netos[0]).toBeLessThan(netos[1]!);
-    expect(netos[1]).toBeLessThan(netos[2]!);
-    expect(netos[2]).toBeLessThan(netos[3]!);
+    for (let i = 1; i < netos.length; i++) {
+      const prev = netos[i - 1];
+      const curr = netos[i];
+      if (prev === undefined || curr === undefined) {
+        throw new Error('neto indefinido en la secuencia de tiers');
+      }
+      expect(prev).toBeLessThan(curr);
+    }
   });
 });
 

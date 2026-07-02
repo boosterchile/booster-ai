@@ -325,8 +325,8 @@ describe('calcularFactorMatchingGeo (heurística v2 puro)', () => {
       origenNextRegionCode: 'V',
     });
     expect(factor).not.toBeNull();
-    expect(factor!).toBeGreaterThan(0);
-    expect(factor!).toBeLessThan(1);
+    expect(factor).toBeGreaterThan(0);
+    expect(factor).toBeLessThan(1);
   });
 
   it('factor retornado tiene como máximo 2 decimales (encaja BD precision 3,2)', () => {
@@ -446,6 +446,6 @@ describe('actualizarFactorMatchingViaje — wire v2 con region codes', () => {
     });
     expect(result.recomputed).toBe(true);
     expect(result.factorMatching).toBeGreaterThan(0);
-    expect(result.factorMatching!).toBeLessThan(1);
+    expect(result.factorMatching).toBeLessThan(1);
   });
 });

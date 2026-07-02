@@ -47,7 +47,7 @@ export function AssignmentEcoRouteCard({ assignmentId }: AssignmentEcoRouteCardP
         aria-expanded={expanded}
         data-testid="assignment-eco-route-toggle"
       >
-        <span className="flex items-center gap-2 text-success-800 text-sm">
+        <span className="flex items-center gap-2 text-sm text-success-800">
           <Leaf className="h-4 w-4" aria-hidden />
           <span className="font-semibold">Ruta eco-eficiente sugerida</span>
         </span>

@@ -363,7 +363,6 @@ describe('admin/observability — error paths', () => {
         getSnapshot: vi.fn(async () => {
           throw new Error('health-fail');
         }),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -382,7 +381,6 @@ describe('admin/observability — error paths', () => {
         getTrend: vi.fn(),
         getTopSkus: vi.fn(),
         getMonthlyHistory: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -401,7 +399,6 @@ describe('admin/observability — error paths', () => {
         }),
         getTopSkus: vi.fn(),
         getMonthlyHistory: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -420,7 +417,6 @@ describe('admin/observability — error paths', () => {
           throw new Error('BQ unavailable');
         }),
         getMonthlyHistory: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -439,7 +435,6 @@ describe('admin/observability — error paths', () => {
         getMonthlyHistory: vi.fn(async () => {
           throw new Error('BQ unavailable');
         }),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -455,7 +450,6 @@ describe('admin/observability — error paths', () => {
         }),
         getCloudSqlMetrics: vi.fn(),
         getUptimeSnapshot: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -471,7 +465,6 @@ describe('admin/observability — error paths', () => {
           throw new Error('monitoring-fail');
         }),
         getUptimeSnapshot: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -486,7 +479,6 @@ describe('admin/observability — error paths', () => {
           throw new Error('twilio-fail');
         }),
         getMonthToDateUsage: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -500,7 +492,6 @@ describe('admin/observability — error paths', () => {
         getUsageSnapshot: vi.fn(async () => {
           throw new Error('workspace-fail');
         }),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });
@@ -521,7 +512,6 @@ describe('admin/observability — error paths', () => {
         getTrend: vi.fn(),
         getTopSkus: vi.fn(),
         getMonthlyHistory: vi.fn(),
-        // biome-ignore lint/suspicious/noExplicitAny: minimal stub
       } as any,
     });
     const app = makeApp(opts, { withContext: true });

@@ -187,7 +187,7 @@ export function DriverAssignmentCard({
           )}
 
           {submitState.kind === 'success' && (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-success-700 text-sm">
+            <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
               Conductor asignado: <strong>{submitState.driverName ?? '(sin nombre)'}</strong>
             </div>
