@@ -24,6 +24,14 @@ on:
       - 'playbooks/**'
       - 'scripts/**'
       - '*.md'
+      # Cambios test-only no van en ningún bundle de runtime → no deben
+      # disparar un deploy no-op que encola la lane de concurrency (#422 lo
+      # hizo, hubo que rechazar el run). Igual que arriba: skipea solo si TODO
+      # el push matchea (código+test mezclado SÍ despliega). No hay .spec.ts
+      # fuera de e2e (verificado). Ver _followups/release-paths-ignore-test-only-changes.
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - 'apps/**/e2e/**'
   # Trigger manual: re-disparar el deploy de `main` sin depender de un push.
   # Agregado tras el footgun 2026-06-22 (merges rápidos a main trabaron la
   # lane de concurrency `cancel-in-progress:false` y la única vía de

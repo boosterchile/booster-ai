@@ -48,4 +48,9 @@ paths-ignore:
   (push con código → sí dispara).
 
 ## Estado
-Pendiente de priorizar. Relacionado: [[ci-release-paths-ignore-2026-06]].
+✅ **RESUELTO (2026-06-22)**. Agregados `**/*.test.ts`, `**/*.test.tsx`, `apps/**/e2e/**`
+al `paths-ignore` de `release.yml`. Verificado que NO hay `.spec.ts` fuera de `e2e/`
+(grep), así que `apps/**/e2e/**` cubre los Playwright sin tocar productivo; los tests
+no se consumen en ningún bundle de runtime. YAML válido (parse OK, jobs intactos).
+**Validación end-to-end igual que #415 (post-merge)**: SC-1 (push test-only → 0 runs)
++ SC-2 (push con código → dispara). Relacionado: [[ci-release-paths-ignore-2026-06]].
