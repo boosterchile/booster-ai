@@ -7,6 +7,7 @@ import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { empresas, memberships, offers, trips, users } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Configuración del dispatcher de notificaciones de oferta.
@@ -29,6 +30,27 @@ export interface NotifyOfferDeps {
 export type { NotifyOfferResult } from '@booster-ai/notification-fan-out';
 
 export async function notifyOfferToCarrier(
+  deps: NotifyOfferDeps,
+  opts: { offerId: string },
+): Promise<NotifyOfferResult> {
+  return await withBusinessSpan(
+    {
+      name: 'notification.notify_offer',
+      attributes: { 'booster.offer_id': opts.offerId },
+    },
+    async (span) => {
+      const result = await notifyOfferToCarrierInner(deps, opts);
+      setResultAttributes(span, {
+        'booster.notification.skipped': result.skipped,
+        'booster.notification.reason': result.reason ?? undefined,
+        'booster.notification.sent': result.twilioMessageSid !== undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function notifyOfferToCarrierInner(
   deps: NotifyOfferDeps,
   opts: { offerId: string },
 ): Promise<NotifyOfferResult> {
