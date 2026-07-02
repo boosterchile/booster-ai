@@ -18,9 +18,11 @@ locals {
     REDIS_PORT = tostring(google_redis_instance.main.port)
     # REDIS_PASSWORD se movió a `common_secrets` (Secret Manager) para no exponer
     # el auth_string en plaintext en la config de la revisión Cloud Run
-    # (redis-password-to-secret-manager). El valor sigue auto-derivado del recurso
-    # (`google_redis_instance.main.auth_string`), NO es un placeholder → sin riesgo
-    # del patrón INC-2026-06-19.
+    # (redis-password-to-secret-manager). El valor se auto-deriva del recurso vía la
+    # version `redis_auth` (data.tf, secret_data = google_redis_instance.main.auth_string).
+    # `redis-auth` está EXCLUIDO del for_each de placeholders en security.tf: si no,
+    # coexistiría un ROTATE_ME y el mount version="latest" podría montarlo → Redis AUTH
+    # rota (patrón INC-2026-06-19). Con la exclusión, la única version es la real.
     REDIS_TLS = "true"
     # Server CA de Memorystore (SERVER_AUTHENTICATION): cert firmado por CA privada
     # por-instancia que NO está en el bundle público del sistema. Sin pinnearla,
