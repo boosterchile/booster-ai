@@ -62,6 +62,32 @@ Todos rechazados vía API `pending_deployments` (`environment_ids` **entero** en
 
 > 🧠 Memoria nueva: [[datadog-gke-infra-logs-no-apm-2026-07]] — NO revivir APM/ddtrace en el gateway (bypasea el redactor); traces en OTel→Cloud Trace; secret en GSM; workloads GKE por kubectl no TF.
 
+### Triage + ejecución del cluster de PRs abiertos + deploy
+
+Se triagearon ~25 PRs abiertos con **5 agentes read-only** (verificado vs código vivo) y se ejecutó por waves. **PARADA deliberada**: Wave 4 y varios pendientes quedan **abiertos para otra sesión**.
+
+**❌ Cerrados (3):** #493 (ya en main, ADR-069), #512 (redundante de #513), #494 (claim falso: el gap P2-7 existe pero ya está trackeado en `.specs/_followups/stakeholder-zonas-consent-scope-y-audit.md`, P2, TODO deliberado en `stakeholder-zonas.ts:191`).
+
+**✅ Mergeados a `main` (16):**
+- Docs/no-deploy (Wave 1): #253, #510, #514, #519, #523, #524, #525, #527.
+- Código self-contained + deploy real (bundle): **#425, #427, #518, #522** → **desplegado a prod** (ver abajo).
+- Wave 3 (test/tfvars/lint/cloudbuild/terraform, gate rechazado, sin deploy): #257, #517, #520, #521.
+
+**🚀 Deploy (bundle #427+#518+#425+#522, rev `booster-ai-api-00423-gav` = `221793c`):** gate `production` **aprobado por el PO**. Canary → **100%**. Verificado: run success · 100% en la rev nueva (no stuck 1%) · health 200 · `POST /auth/login-rut` inválido→400 (no 5xx) · **error rate 0.00% 5xx** (248 req) · **P95 ~28 ms**. Se rechazó un run intermedio superseded (`e5d30f2`/#425) para desatascar la lane antes de aprobar el HEAD.
+
+**⏸️ ABIERTOS para otra sesión (NO mergear sin retomar):**
+- **Wave 4 (deploys reales, parar en gate)**: #428 (onboarding, colisión migración 0040→renumerar), #516 (dedup booleanFlag, toca release.yml), #511 (fix consumer safety-p0, `terraform apply`), #256 (web stakeholder-zonas UI), #526 (**hardening INC-2026-06-19**, infra+workflows, sign-off + apply), #426 (marketing, al final).
+- **Rebase (CONFLICTING)**: #515 (paths-ignore test-only, toca release.yml), **#509** (lint 62→0 — colisionó en `rate-limit-pin.test.ts` con #425/#522 ya mergeados).
+- **#343** (tsup entry harden-demo-accounts): diff revisado, **aditivo/bajo riesgo, pendiente OK del PO** — no mergeado.
+- **#513** excluido (CI rojo).
+
+**🔴 Hallazgo P0 en `terraform plan` (revisión de #520) — NO aplicar #520 como está:**
+`#520` mueve `REDIS_PASSWORD` a Secret Manager pero **NO excluyó `redis-auth` del `for_each` del placeholder** (a diferencia de `database-url`). Resultado: en un `terraform apply` se crean **dos** versiones — `redis_auth` (auth_string real) **y** `placeholder["redis-auth"]` = `ROTATE_ME_REDIS_AUTH_PLACEHOLDER`. El módulo montea `version = "latest"` (`modules/cloud-run-service/main.tf:60`) → si el placeholder queda como latest, los **7 services** reciben `REDIS_PASSWORD=ROTATE_ME…` → **Redis AUTH falla** (rate-limit fail-closed, conversation store, OIDC cache) — repite el patrón del incidente Redis 2026-06-07 / INC-2026-06-19. El comentario en `compute.tf:22` ("NO es un placeholder → sin riesgo") es **incorrecto**. **Fix**: excluir `redis-auth` del `for_each` (como `database-url`) o pinnear el mount a la version `redis_auth`. Follow-up pendiente.
+
+**🟠 Drift de infra sin aplicar (el `terraform plan` da 16 add / 15 change / 0 destroy):** además de #520, hay infra mergeada-sin-aplicar: **#554** (`datadog-api-key`), **#530** (SLOs + burn-rate alerts + monitoring services, 06-22), **#535** (cron `cobrar_memberships_mensual`, 06-22). `main` está adelante de prod en IaC. **Requiere `terraform apply` del owner** — pero **NO aplicar hasta corregir el defecto de #520** (arriba), o excluir #520 del apply con `-target`.
+
+**Estado final:** `main` HEAD `68ced39` (#521), **CI success**. **Prod sana**: rev `221793c` sirviendo 100%, health 200, 0% 5xx, P95 ~28ms. **Lane de release limpia** (0 waiting/in_progress/queued; se rechazaron todos los gates no-op de Wave 3). PRs de handoff de la sesión: #555/#556 mergeados; #557 cerrado (superseded por este resumen).
+
 ---
 
 ## Ventana 2026-06-22 → 06-30 — reconstrucción del hueco (24 PRs #528–#551 mergeados)
