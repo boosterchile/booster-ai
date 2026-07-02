@@ -116,7 +116,7 @@
   - Tests: dentro, fuera, en borde (lat=lat_min, lng=lng_max), bbox invertido (defensive).
 - **Rollback**: revertir commit.
 
-### T8: Endpoint `GET /stakeholder/zonas` (cards 30d)
+### T8: Endpoint `GET /stakeholder/zonas` (cards 30d) [BLOCKED 2026-05-17 — ver §Abort]
 
 - **Files**: `apps/api/src/routes/stakeholder.ts` (nuevo o extender), `apps/api/test/integration/stakeholder.test.ts` (nuevo, incluye fixtures inline)
 - **LOC estimate**: ~120 *(waiver: endpoint integra auth + agregación + k-anonymity + logging + integration tests con fixtures de 3 escenarios. Splitearlo crea PRs con menos coherencia funcional. Test fixtures inline son ~30 LOC dentro del waiver, no task aparte.)*
@@ -135,7 +135,7 @@
   - Integration test: 6 roles (5 negados + 1 admitido).
 - **Rollback**: revertir commit. **Caveat (objeción #6 resuelta)**: si T11 (UI cards) ya mergeó, este rollback rompe la página de cards con 500 en producción. Plan de rollback post-T11: revertir T11 ANTES de T8 (frontend vuelve a estado pre-D11 con mock data).
 
-### T9: Endpoint `GET /stakeholder/zonas/:slug/agregaciones`
+### T9: Endpoint `GET /stakeholder/zonas/:slug/agregaciones` [BLOCKED 2026-05-17 — depende de T8]
 
 - **Files**: `apps/api/src/routes/stakeholder.ts` (extender), `apps/api/test/integration/stakeholder.test.ts` (extender)
 - **LOC estimate**: ~110 *(waiver: 3 breakdowns + metodologia + integration tests con k-anonymity per-cell. Auth ya viene de T8. El extra sobre 100 son los 3 helpers de agregación llamados en sequence + el field `metodologia` con generación del ISO timestamp.)*
@@ -148,7 +148,7 @@
   - Integration test: bucketing horario + k-anonymity en celda con 4 viajes (null) vs 5 viajes (número).
 - **Rollback**: revertir commit. **Caveat**: si T10 (UI drill-down) ya mergeó, esa página retorna error genérico (TanStack Query maneja). Sin daño funcional crítico, pero estakeholder ve "error" en drill-down hasta revertir T10 también.
 
-### T10: UI drill-down ruta + componente
+### T10: UI drill-down ruta + componente [BLOCKED 2026-05-17 — depende de T9]
 
 - **Files**: `apps/web/src/routes/stakeholder-zonas.$slug.tsx` (nuevo), `apps/web/src/services/stakeholder-aggregations-client.ts` (nuevo — hook `useStakeholderAgregaciones`), `apps/web/src/routes/stakeholder-zonas.$slug.test.tsx` (nuevo)
 - **LOC estimate**: ~100
@@ -161,7 +161,7 @@
 - **Rollback**: revertir commit. Caveat: si T11 ya mergeó y enlaza a esta ruta, los links dan 404. Aceptable como degradación transitoria — el banner pre-D11 vuelve al revertir T11.
 - **Nota orden T10→T11 (decisión PO)**: T10 mergea primero para que T11 enlace a ruta existente.
 
-### T11: UI cards reales (`stakeholder-zonas.tsx`)
+### T11: UI cards reales (`stakeholder-zonas.tsx`) [BLOCKED 2026-05-17 — depende de T8, T10]
 
 - **Files**: `apps/web/src/routes/stakeholder-zonas.tsx` (modificar — remover `ZONAS_DEMO`, agregar TanStack Query), `apps/web/src/services/stakeholder-aggregations-client.ts` (extender — hook `useStakeholderZonas`), `apps/web/src/routes/stakeholder-zonas.test.tsx` (modificar)
 - **LOC estimate**: ~120 *(waiver: refactor + nuevo cliente + tests. Alternativa de 2 PRs deja UI rota mid-merge.)*
@@ -175,7 +175,7 @@
   - Component tests + screenshot manual.
 - **Rollback**: revertir commit. UI vuelve a mock data (no daño crítico, solo cosmético).
 
-### T12: Performance — `EXPLAIN ANALYZE` + índice condicional
+### T12: Performance — `EXPLAIN ANALYZE` + índice condicional [BLOCKED 2026-05-17 — depende de T8]
 
 - **Files**: `apps/api/test/perf/stakeholder-zonas-explain.test.ts` (nuevo, ejecutable manual + en CI), eventualmente `apps/api/drizzle/0035_geocode_index.sql` (condicional)
 - **LOC estimate**: ~50 (test + posible migration condicional)
@@ -234,3 +234,62 @@ Tras aprobación: cooling-off 30 min antes de empezar T1 (agent-rigor §6.1). Re
 - 12 tasks × ~85 LOC promedio = ~1020 LOC netas
 - 4 PRs con waiver (T8, T9, T11; +T12 si requiere migration)
 - Tiempo estimado: 5-7 días con foco continuo, 10-14 con interrupciones
+
+---
+
+## Abort — T8 (2026-05-17): gap entre spec y schema actual
+
+Durante la articulación pre-build de T8 (endpoint `GET /stakeholder/zonas`), el agente descubrió **tres gaps** entre el filtro descrito en la spec criterio 3 y el schema actual de `apps/api/src/db/schema.ts`:
+
+### Gap 1 — Sin geocode en `viajes`
+
+La spec dice: _"viajes ... cuyo `cargo_request.origin.geocode` cae dentro del bounding box"_.
+
+Realidad del schema (`viajes` table):
+
+```text
+originAddressRaw       text NOT NULL  -- texto libre
+originRegionCode       varchar(4)
+originComunaCode       varchar(10)
+pickupDateRaw          varchar(200) NOT NULL
+pickupWindowStart      timestamp with time zone
+pickupWindowEnd        timestamp with time zone
+-- NO existe: originLat / originLng / origin_geocode
+```
+
+Tampoco hay tabla `cargo_requests`. Las sucursales (`sucursales_empresa`) sí tienen `latitud`/`longitud` pero `viajes` no tiene FK a sucursal. Sin geocode no se puede aplicar `puntoEnBoundingBox` que entregó T7.
+
+### Gap 2 — Trip state values divergen
+
+Spec dice: `state IN ('delivered', 'confirmed_by_shipper', 'completed_rated')`.
+
+Realidad (`tripStatusEnum`): `'borrador', 'esperando_match', 'emparejando', 'ofertas_enviadas', 'asignado', 'en_proceso', 'entregado', 'cancelado', 'expirado'`.
+
+No existen `'delivered'`, `'confirmed_by_shipper'`, `'completed_rated'`. Probable mapping: `'entregado'` cubre los tres ESG-relevant, pero requiere PO confirmación.
+
+### Gap 3 — `pickup_at` no es field literal
+
+Spec dice: `pickup_at >= now() - interval '30 days'`.
+
+Realidad: `pickupWindowStart` (timestamp), `pickupWindowEnd` (timestamp), `pickupDateRaw` (texto). Probablemente la spec quiso decir `pickupWindowStart`, pero "pickup_at" como nombre no existe.
+
+### Decisión
+
+Per goal text agent-rigor: **"Abort si Ti revela gap en spec/plan"**. T8 detiene el build. T9–T12 quedan bloqueados por cascada.
+
+### Caminos posibles (a discutir con PO antes de reanudar)
+
+1. **Migration que agrega `pickup_lat` + `pickup_lng` a `viajes`** + backfill mediante Google Geocoding API a partir de `origen_direccion_raw`. Costo: nueva spec separada (geocoding backfill); deja D11 esperando el backfill.
+
+2. **Filtro por `origen_codigo_comuna` mapeado a zona** (tabla aux `comuna_a_zona_stakeholder` curada por PR). Pierde la precisión bbox del ADR-041 pero no requiere geocoding; cada zona declara las comunas que cubre. Decisión arquitectónica: ADR-041 superseded parcial.
+
+3. **Approximation por `sucursalOrigenId`** si se introduce FK en `viajes` apuntando a `sucursales_empresa` (que sí tiene lat/lng). Pero hoy `viajes` no tiene esa FK ni la spec menciona depender de sucursales.
+
+4. **Posponer D11 hasta que exista geocoding de viajes** (spec independiente). T1–T7 quedan en `main` como infraestructura preparatoria (ADR, schema, helpers, migration de zonas), endpoints esperan.
+
+### Estado a 2026-05-17
+
+- **T1–T7**: DONE. PRs #246–#252 abiertos sin merge (cooling-off review).
+- **T8–T12**: BLOCKED. No se construye nada hasta resolver la decisión arriba.
+
+El agente no toma esta decisión: implica decisiones de producto + arquitectura (ADR superseded vs spec nueva vs scope D11).
