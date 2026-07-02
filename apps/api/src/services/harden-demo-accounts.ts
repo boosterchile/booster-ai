@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import type { PersonaDemo } from '@booster-ai/shared-schemas';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { cuentasDemo } from '../db/schema.js';
 import { lookupOrCreateCuentaDemoEmail } from './seed-demo.js';
@@ -29,13 +30,47 @@ import { lookupOrCreateCuentaDemoEmail } from './seed-demo.js';
  * SC-1.1.4 + SC-1.1.5. Plan: plan-sprint-2a.md T4. ADR-053.
  */
 
-/** 4 UIDs viejas hardcoded post-disclosure (spec §3 H1.1). Retiradas en --retire-old-batch. */
-export const OLD_DEMO_UIDS = [
-  'nQSqGqVCHGUn8yrU21uFtnLvaCK2', // demo-shipper viejo
-  'Uxa37UZPAEPWPYEhjjG772ELOiI2', // demo-stakeholder viejo
-  's1qSYAUJZcUtjGu4Pg2wjcjgd2o1', // demo-carrier viejo
-  'Gg9k3gIPa1cJZtgKC0RRkWQ0QHJ3', // conductor viejo (drivers+123456785)
-] as const;
+/**
+ * Formato de un Firebase UID. Alfanumérico, 20-128 chars (los UIDs reales
+ * son de 28). Rechaza guiones, `@`, espacios, strings cortos o basura larga.
+ */
+const firebaseUidSchema = z.string().regex(/^[A-Za-z0-9]{20,128}$/, 'Firebase UID inválido');
+
+/**
+ * Parser self-contained de `DEMO_OLD_UIDS` (CSV de Firebase UIDs).
+ *
+ * F2 P0-C (`.specs/p0c-uids-demo-secret-manager/spec.md`): las 4 UIDs viejas
+ * post-disclosure (ADR-053) eran PII hardcodeada en el código vivo. Salen del
+ * código y se leen de una env var validada por Zod. CSV (consistente con
+ * `API_AUDIENCE`/`CORS_ALLOWED_ORIGINS`; un UID no contiene comas).
+ *
+ * Contrato:
+ *   - ausente/"" → `[]` (no lanza; el batch es no-op seguro).
+ *   - CSV con espacios/elementos vacíos → trimmed + filtrados.
+ *   - cualquier entrada que no matchee `firebaseUidSchema` → throw Zod
+ *     (fail-fast: no se acepta una lista de UIDs malformada).
+ *
+ * NO importa `config.ts` a propósito: el service corre standalone desde el
+ * CLI wrapper (`scripts/harden-demo-accounts.mjs`, sobre `dist/`) sin el env
+ * completo del API; acoplarlo a `parseEnv(apiEnvSchema)` mataría el CLI
+ * (`process.exit(1)` por env incompleta). Mismo precedente que
+ * `getPasswordForPersona` (abajo).
+ */
+const demoOldUidsSchema = z
+  .string()
+  .optional()
+  .transform((s) =>
+    (s ?? '')
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+  )
+  .pipe(z.array(firebaseUidSchema));
+
+/** Lee + valida `DEMO_OLD_UIDS` (CSV) desde el entorno. Default source = process.env. */
+export function getDemoOldUids(source: NodeJS.ProcessEnv = process.env): string[] {
+  return demoOldUidsSchema.parse(source.DEMO_OLD_UIDS);
+}
 
 /** Las 4 personas que recreate genera (en orden de iteración). */
 const PERSONAS_RECREATE: ReadonlyArray<PersonaDemo> = [
@@ -53,6 +88,12 @@ interface HardenOpts {
   firebaseAuth: Auth;
   logger: Logger;
   dryRun?: boolean;
+  /**
+   * UIDs viejas a retirar en `retireOldBatch` (F2 P0-C, inyección por opts).
+   * Si se omite, el batch cae a `getDemoOldUids()` (env `DEMO_OLD_UIDS`).
+   * Lista vacía → no-op seguro. Permite testear sin tocar `process.env`.
+   */
+  oldUids?: readonly string[];
 }
 
 interface RecreateResult {
@@ -236,18 +277,32 @@ export async function retire(
 }
 
 /**
- * Retire los 4 UIDs viejas hardcoded (post-disclosure one-shot). Idempotent
- * + resume-from-partial-retire: si alguna ya está disabled (script falló
+ * Retire las UIDs viejas post-disclosure (one-shot ADR-053). Idempotent +
+ * resume-from-partial-retire: si alguna ya está disabled (script falló
  * mid-batch previamente), skip + counter; si una falla, continúa con las
  * siguientes y reporta failure al final.
+ *
+ * F2 P0-C: la lista de UIDs ya NO está hardcoded. Viene de `opts.oldUids`
+ * (inyección, p.ej. desde el CLI/tests) con fallback a `getDemoOldUids()`
+ * (env `DEMO_OLD_UIDS` validada por Zod). Lista vacía/ausente → no-op seguro:
+ * retorna `{ retired: 0, ... }`, loguea `warn` y NO toca Firebase SDK ni DB.
  *
  * dry-run: no muta nada; solo simula y reporta el plan.
  */
 export async function retireOldBatch(opts: HardenOpts): Promise<RetireResult> {
   const { logger, dryRun = false } = opts;
+  const oldUids = opts.oldUids ?? getDemoOldUids();
   const result: RetireResult = { retired: 0, skippedAlreadyDisabled: 0, failed: [] };
 
-  for (const uid of OLD_DEMO_UIDS) {
+  if (oldUids.length === 0) {
+    logger.warn(
+      { dryRun },
+      'harden-demo-accounts.retireOldBatch: DEMO_OLD_UIDS ausente/vacía — nada que retirar; no-op',
+    );
+    return result;
+  }
+
+  for (const uid of oldUids) {
     try {
       const r = await retire({ ...opts, uid });
       if (r.status === 'retired') {

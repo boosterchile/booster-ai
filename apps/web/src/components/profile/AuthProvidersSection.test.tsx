@@ -30,6 +30,15 @@ function makeUser(over: Partial<User> = {}): User {
   } as unknown as User;
 }
 
+/** Primer botón que matchea `name`. getAllByRole ya lanza si no hay ninguno. */
+function firstButton(name: string | RegExp): HTMLElement {
+  const [button] = screen.getAllByRole('button', { name });
+  if (!button) {
+    throw new Error(`no se encontró botón: ${name}`);
+  }
+  return button;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -79,7 +88,7 @@ describe('AuthProvidersSection — link Google', () => {
       .mockReturnValue(['google.com', 'password']);
     linkGoogleProviderMock.mockResolvedValueOnce(undefined);
     render(<AuthProvidersSection />);
-    fireEvent.click(screen.getAllByRole('button', { name: /Vincular/ })[0]!);
+    fireEvent.click(firstButton(/Vincular/));
     await waitFor(() => expect(linkGoogleProviderMock).toHaveBeenCalledWith(user));
     await waitFor(() => expect(user.reload).toHaveBeenCalled());
   });
@@ -91,7 +100,7 @@ describe('AuthProvidersSection — link Google', () => {
       Object.assign(new Error('popup'), { code: 'auth/popup-closed-by-user' }),
     );
     render(<AuthProvidersSection />);
-    fireEvent.click(screen.getAllByRole('button', { name: /Vincular/ })[0]!);
+    fireEvent.click(firstButton(/Vincular/));
     await waitFor(() => expect(linkGoogleProviderMock).toHaveBeenCalled());
     expect(screen.queryByText(/No pudimos vincular/)).not.toBeInTheDocument();
   });
@@ -103,7 +112,7 @@ describe('AuthProvidersSection — link Google', () => {
       Object.assign(new Error('blocked'), { code: 'auth/popup-blocked' }),
     );
     render(<AuthProvidersSection />);
-    fireEvent.click(screen.getAllByRole('button', { name: /Vincular/ })[0]!);
+    fireEvent.click(firstButton(/Vincular/));
     expect(await screen.findByText(/El navegador bloqueó/)).toBeInTheDocument();
   });
 
@@ -114,7 +123,7 @@ describe('AuthProvidersSection — link Google', () => {
       Object.assign(new Error('boom'), { code: 'auth/something-else' }),
     );
     render(<AuthProvidersSection />);
-    fireEvent.click(screen.getAllByRole('button', { name: /Vincular/ })[0]!);
+    fireEvent.click(firstButton(/Vincular/));
     expect(await screen.findByText(/No pudimos vincular/)).toBeInTheDocument();
   });
 });
@@ -126,7 +135,7 @@ describe('AuthProvidersSection — unlink', () => {
     getLinkedProvidersMock.mockReturnValue(['google.com', 'password']);
     unlinkProviderMock.mockResolvedValueOnce(undefined);
     render(<AuthProvidersSection />);
-    fireEvent.click(screen.getAllByRole('button', { name: 'Quitar' })[0]!);
+    fireEvent.click(firstButton('Quitar'));
     await waitFor(() => expect(unlinkProviderMock).toHaveBeenCalledWith(user, expect.any(String)));
   });
 });

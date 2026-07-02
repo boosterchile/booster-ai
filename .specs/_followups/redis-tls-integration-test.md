@@ -23,4 +23,16 @@ Integration test que levante Redis con TLS + una CA propia y verifique:
 Considerar `stunnel` o un Redis con TLS configurado en el contenedor de test.
 
 ## Estado
-Pendiente de priorizar.
+✅ **RESUELTO (2026-06-22)** — `packages/config/src/redis-tls-handshake.test.ts`.
+
+Implementa exactamente (a) + (b) ejercitando el handshake TLS **real** con `node:tls`
+(la misma capa que ioredis usa por debajo) en vez de un container de Redis:
+- (a) CA correcta pinneada (vía `buildRedisTlsOptions`) → handshake OK (authorized).
+- (b) CA distinta → handshake **FALLA** (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`). Es el guard
+  que distingue el pinning real de `rejectUnauthorized:false`: si alguien rompiera el
+  pinning, la CA equivocada se aceptaría y el test fallaría.
+- (c) `requireCa` sin CA → throw (paridad con el incidente).
+
+**Ventaja sobre stunnel/testcontainers**: NO depende de Docker → corre en cada CI (no
+solo `test:integration`) y es verificable localmente. Certs efímeros con openssl en
+tmpdir (TTL 1d, sin secretos versionados). Verificado verde local (node 24): 3/3.

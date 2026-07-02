@@ -28,7 +28,7 @@ export function LegalTerminosRoute() {
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <div>
-            <h1 className="font-semibold text-neutral-900 text-lg">Términos de Servicio</h1>
+            <h1 className="font-semibold text-lg text-neutral-900">Términos de Servicio</h1>
             <p className="text-neutral-500 text-xs">Versión 2 · Vigente desde 2026-05-10</p>
           </div>
         </div>

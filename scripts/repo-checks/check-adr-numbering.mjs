@@ -87,10 +87,11 @@ export function main(argv) {
   }
   if (collisions.length === 0) {
     process.stdout.write(
-      `[check-adr-numbering] OK — no collisions in ${args.dir}` +
-        (args.allowLegacy.size > 0
+      `[check-adr-numbering] OK — no collisions in ${args.dir}${
+        args.allowLegacy.size > 0
           ? ` (legacy allowed: ${[...args.allowLegacy].sort().join(',')})\n`
-          : '\n'),
+          : '\n'
+      }`,
     );
     return 0;
   }

@@ -6,6 +6,7 @@ import {
   char,
   check,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -512,6 +513,14 @@ export const empresas = pgTable(
      * `compliance_requested_by_shipper_at` (futuro).
      */
     complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
+    /**
+     * Opt-in de la empresa para medir la huella de carbono de sus viajes
+     * (Task 1, plan medicion-huella-segmento). Default false: la medición se
+     * activa explícitamente por cliente; un viaje puede overridear vía
+     * `trips.carbon_measurement_override`. Naming inglés total (decisión PO):
+     * columna en inglés, divergiendo a propósito de las legadas en español.
+     */
+    carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -1114,6 +1123,13 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    /**
+     * Override por viaje del opt-in de medición de huella. NULL = heredar el
+     * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
+     * fuerza/desactiva la medición para este viaje (Task 1, plan
+     * medicion-huella-segmento). Naming inglés total (decisión PO).
+     */
+    carbonMeasurementOverride: boolean('carbon_measurement_override'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -1443,6 +1459,12 @@ export const consents = pgTable(
     expiresAt: timestamp('expira_en', { withTimezone: true }),
     revokedAt: timestamp('revocado_en', { withTimezone: true }),
     consentDocumentUrl: text('documento_consentimiento_url').notNull(),
+    // Evidencia verificable Ley 21.719 (versión del aviso vigente + IP/UA del
+    // otorgamiento). Nullable sin default: los consents existentes no tienen
+    // evidencia retroactiva y no se backfillean. Ver ADR-068 + migración 0043.
+    noticeVersion: varchar('version_aviso', { length: 20 }),
+    grantIp: text('ip_otorgamiento'),
+    grantUserAgent: text('user_agent_otorgamiento'),
   },
   (table) => ({
     stakeholderIdx: index('idx_consentimientos_stakeholder').on(table.stakeholderId),
@@ -1943,7 +1965,16 @@ export const liquidaciones = pgTable(
     totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
     pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
     status: text('status').notNull(),
+    /**
+     * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
+     * Columna legacy: conserva datos históricos, ya no se escribe. No DROP
+     * (O-2: deprecación sin migración destructiva).
+     */
     dteFacturaBoosterFolio: text('dte_factura_booster_folio'),
+    /**
+     * @deprecated ADR-069 — ver `dteFacturaBoosterFolio`. Legacy, sin
+     * escritura, sin DROP.
+     */
     dteFacturaBoosterEmitidoEn: timestamp('dte_factura_booster_emitido_en', {
       withTimezone: true,
     }),
@@ -1955,6 +1986,11 @@ export const liquidaciones = pgTable(
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    // `dte_emitido` es un valor LEGACY del enum (ADR-069): Booster dejó de
+    // emitir DTE (remoción Sovos), por lo que el flujo ya no transiciona a
+    // este status. Se conserva en el CHECK para no invalidar filas
+    // históricas que quedaron en `dte_emitido` (O-2: sin migración
+    // destructiva).
     statusCheck: check(
       'chk_liquidaciones_status',
       sql`${table.status} IN ('pending_consent','lista_para_dte','dte_emitido','pagada_al_carrier','disputa')`,
@@ -1990,19 +2026,48 @@ export const facturasBoosterClp = pgTable(
     subtotalClp: integer('subtotal_clp').notNull(),
     ivaClp: integer('iva_clp').notNull(),
     totalClp: integer('total_clp').notNull(),
+    /**
+     * @deprecated ADR-069 — columnas DTE legacy. Booster dejó de emitir
+     * DTE (remoción Sovos): existían por la emisión vía proveedor SII, que
+     * fue removida. Conservan datos históricos, ya no se escriben. NO DROP
+     * (O-2: deprecación sin migración destructiva; la migración 0019 y el
+     * índice `idx_facturas_dte_status` quedan inertes).
+     */
     dteTipo: integer('dte_tipo').notNull().default(33),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteFolio: text('dte_folio'),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteEmitidaEn: timestamp('dte_emitida_en', { withTimezone: true }),
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dtePdfGcsUri: text('dte_pdf_gcs_uri'),
-    // ADR-024 wire — provider que emitió el DTE ('sovos'|'mock'|'bsale'|...).
-    // Permite reconciliar histórico cuando rotamos provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProvider: text('dte_provider'),
-    // ID opaco del provider (track_id Sovos, etc.) para soporte y auditoría.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteProviderTrackId: text('dte_provider_track_id'),
-    // Status SII canónico: `aceptado|rechazado|reparable|en_proceso|anulado`.
-    // Cron de reconciliación lo lee para queryStatus contra el provider.
+    /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteStatus: text('dte_status'),
     status: text('status').notNull(),
+    /**
+     * Sub-estado de COBRANZA (dunning) del cobro de membresía, separado del
+     * `status` contable de la factura (migración 0045, ADR-031). El cron
+     * `cobrar-memberships-mensual` lo avanza vía `decidirSiguienteDunning`.
+     * Mientras `MembershipPaymentGateway` sea el stub no-op (no existe
+     * `payment-provider`), las facturas paran en `pending_payment_provider`
+     * (NO cobradas). Valores: pendiente_cobro | pending_payment_provider |
+     * reintentando | morosa | cobrada.
+     */
+    cobroEstado: text('cobro_estado').notNull().default('pendiente_cobro'),
+    /** Nº de intentos de cobro realizados (dunning, máx 3 → morosa). */
+    cobroIntentos: integer('cobro_intentos').notNull().default(0),
+    /** Timestamp del último intento de cobro. */
+    cobroUltimoIntentoEn: timestamp('cobro_ultimo_intento_en', { withTimezone: true }),
+    /** Timestamp del próximo reintento agendado (backoff 7d). NULL si terminó. */
+    cobroProximoIntentoEn: timestamp('cobro_proximo_intento_en', { withTimezone: true }),
+    /**
+     * Ref opaca del provider de pago real. NULL mientras el gateway sea el
+     * stub no-op (no se mueve dinero hasta que exista `payment-provider`).
+     */
+    cobroGatewayRef: text('cobro_gateway_ref'),
     venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
     pagadaEn: timestamp('pagada_en', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -2017,8 +2082,15 @@ export const facturasBoosterClp = pgTable(
       'chk_facturas_status',
       sql`${table.status} IN ('pendiente','emitida','pagada','vencida','anulada')`,
     ),
+    cobroEstadoCheck: check(
+      'chk_facturas_cobro_estado',
+      sql`${table.cobroEstado} IN ('pendiente_cobro','pending_payment_provider','reintentando','morosa','cobrada')`,
+    ),
     empresaStatusIdx: index('idx_facturas_empresa_status').on(table.empresaDestinoId, table.status),
     statusVenceIdx: index('idx_facturas_status_vence').on(table.status, table.venceEn),
+    cobroReintentoIdx: index('idx_facturas_cobro_reintento')
+      .on(table.cobroProximoIntentoEn)
+      .where(sql`${table.cobroEstado} IN ('pending_payment_provider', 'reintentando')`),
   }),
 );
 
@@ -2279,6 +2351,87 @@ export const solicitudesRegistro = pgTable(
 );
 
 // =============================================================================
+// REPOSITORIO DOCUMENTAL DE TRANSPORTE (ADR-070, frente F4 — migration 0044)
+// =============================================================================
+// Booster RECIBE y ARCHIVA documentos tributarios de terceros (Guía de
+// Despacho DTE 52, Factura 33, etc.) que amparan la carga de una orden. NO
+// emite DTE ni se integra con el SII (ADR-069). El worker (4b) decodifica el
+// TED PDF417 best-effort; el cierre flexible exige ≥1 documento subido.
+//
+// Naming bilingüe: tabla `documentos_transporte`; los valores de `doc_type`
+// son códigos literales del SII (no se traducen); los demás enums en español.
+
+/** Códigos de tipo de documento del SII + `other` para tipos no esperados. */
+export const docTypeEnum = pgEnum('tipo_documento_transporte', [
+  '33',
+  '34',
+  '52',
+  '56',
+  '61',
+  'other',
+]);
+
+/** Estado de extracción del TED (lo mueve el worker 4b / manual-entry). */
+export const extractionStatusEnum = pgEnum('estado_extraccion', [
+  'pendiente',
+  'procesando',
+  'decodificado',
+  'ingreso_manual',
+  'fallido',
+]);
+
+/** Origen del documento. `xml_intercambio` reservado para el stub de 4c. */
+export const documentSourceEnum = pgEnum('origen_documento', [
+  'pdf_upload',
+  'photo_upload',
+  'xml_intercambio',
+]);
+
+export const transportDocuments = pgTable(
+  'documentos_transporte',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // FK a `viajes`. `restrict`: NO cascada al borrar/cerrar la orden — la
+    // retención legal (6a) prohíbe borrar un documento dentro del período.
+    viajeId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'restrict' }),
+    // Objeto GCS (no URI completa; el bucket viene de env). Prefijo
+    // `transport-documents/{viajeId}/{uuid}.{ext}`.
+    filePath: text('file_path').notNull(),
+    fileMime: text('file_mime').notNull(),
+    docType: docTypeEnum('doc_type').notNull(),
+    // Campos del `<DD>` del TED — nullable hasta decodificar / manual-entry.
+    folio: text('folio'),
+    rutEmisor: text('rut_emisor'),
+    razonSocialEmisor: text('razon_social_emisor'),
+    rutReceptor: text('rut_receptor'),
+    razonSocialReceptor: text('razon_social_receptor'),
+    // `<DD><FE>` — insumo del cálculo de `retention_until`.
+    fechaEmision: date('fecha_emision'),
+    // `<DD><MNT>` — CLP entero; scale 2 por defensa.
+    montoTotal: numeric('monto_total', { precision: 14, scale: 2 }),
+    // XML crudo del `<TED>` decodificado (4b). Nullable.
+    tedRaw: text('ted_raw'),
+    // NULL = firma no validada (flag off); true/false = validada (4b).
+    tedSignatureValid: boolean('ted_signature_valid'),
+    extractionStatus: extractionStatusEnum('extraction_status').notNull().default('pendiente'),
+    source: documentSourceEnum('source').notNull(),
+    // Política de custodia del archivador (ADR-070): fecha_emision + 6a
+    // (fallback created_at + 6a). Sin purga automática en F4.
+    retentionUntil: date('retention_until'),
+    uploadedBy: uuid('subido_por').references(() => users.id),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeIdx: index('idx_documentos_transporte_viaje').on(table.viajeId),
+    // Para el worker/listados que filtran por estado de extracción.
+    estadoIdx: index('idx_documentos_transporte_estado').on(table.extractionStatus),
+  }),
+);
+
+// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
@@ -2359,3 +2512,7 @@ export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
 // SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
 export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;
 export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
+
+// Repositorio documental de transporte — documentos_transporte (migration 0044)
+export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
+export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;

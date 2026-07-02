@@ -48,6 +48,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import admin from 'firebase-admin';
 import pg from 'pg';
 import {
+  getDemoOldUids,
   recreateAll,
   renew,
   retire,
@@ -89,7 +90,10 @@ Env vars requeridos:
   GOOGLE_APPLICATION_CREDENTIALS o ADC (gcloud auth application-default login)
   DATABASE_URL (postgres prod, format: postgresql://user:pw@host:port/db)
   DEMO_ACCOUNT_PASSWORD_{SHIPPER,CARRIER,STAKEHOLDER,CONDUCTOR_FIREBASE}_2026
-    (lookup desde gcloud secrets pre-execution recomendado)
+    (lookup desde gcloud secrets pre-execution recomendado; solo --recreate)
+  DEMO_OLD_UIDS (solo --retire-old-batch): CSV de los Firebase UIDs demo
+    viejos a retirar (ADR-053). Formato /^[A-Za-z0-9]{20,128}$/ por UID.
+    Ausente → --retire-old-batch es no-op (avisa y sale limpio, sin retirar).
 `);
   process.exit(0);
 }
@@ -161,7 +165,17 @@ try {
     const r = await retire({ db, firebaseAuth, logger, uid: values.retire, dryRun });
     logger.info({ result: r, durationMs: Math.round(performance.now() - t0) }, 'retire done');
   } else if (values['retire-old-batch']) {
-    const r = await retireOldBatch({ db, firebaseAuth, logger, dryRun });
+    // F2 P0-C: la lista de UIDs viejas viene de la env DEMO_OLD_UIDS (CSV
+    // validada por Zod), ya no hardcoded. Si está ausente, getDemoOldUids()
+    // devuelve [] y retireOldBatch es no-op; avisamos explícito en vez de
+    // fingir éxito silencioso.
+    const oldUids = getDemoOldUids();
+    if (oldUids.length === 0) {
+      logger.warn(
+        'DEMO_OLD_UIDS no seteada (o vacía) — --retire-old-batch será no-op. Exporta el CSV de UIDs viejos antes de correr el retiro real.',
+      );
+    }
+    const r = await retireOldBatch({ db, firebaseAuth, logger, dryRun, oldUids });
     logger.info(
       { result: r, durationMs: Math.round(performance.now() - t0) },
       'retire-old-batch done',

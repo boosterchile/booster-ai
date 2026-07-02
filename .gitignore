@@ -132,7 +132,8 @@ __pycache__/
 * 3.*
 
 # Claude Code local settings
-.claude/
+.claude/*
+!.claude/settings.json
 
 # Clon de trabajo del plugin booster-skills (vive en boosterchile/booster-skills,
 # no debe embeberse en este repo). Ver ADR-049.

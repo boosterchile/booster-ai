@@ -42,7 +42,7 @@ function booleanFlag(defaultValue: boolean) {
     .default(defaultValue);
 }
 
-const apiEnvSchema = commonEnvSchema
+export const apiEnvSchema = commonEnvSchema
   .merge(databaseEnvSchema)
   .merge(redisEnvSchema)
   .merge(gcpEnvSchema)
@@ -193,6 +193,55 @@ const apiEnvSchema = commonEnvSchema
     CHAT_PUBSUB_TOPIC: z.string().min(1).optional(),
 
     /**
+     * Repositorio documental de transporte (ADR-070, frente F4-4a).
+     *
+     * TRANSPORT_DOCUMENTS_BUCKET: bucket GCS donde se archivan los documentos
+     *   tributarios de terceros (Guía/Factura) bajo prefijo
+     *   `transport-documents/{viajeId}/{uuid}.{ext}`. Reusa el bucket
+     *   `documents` (storage.tf, retención SII 6a). Optional: si está ausente,
+     *   el endpoint de subida devuelve 503 (sin GCS no se puede archivar).
+     */
+    TRANSPORT_DOCUMENTS_BUCKET: z.string().min(1).optional(),
+
+    /**
+     * Pub/Sub topic name del evento `document.uploaded` (creado en
+     * messaging.tf). El endpoint de subida publica acá tras persistir la fila
+     * `pendiente`; el worker TED (sub-fase 4b) lo consume. Optional: si está
+     * ausente, el endpoint persiste + responde 202 igual (el worker llega en
+     * 4b), solo no publica el evento.
+     */
+    DOCUMENT_UPLOADED_TOPIC: z.string().min(1).optional(),
+
+    /**
+     * Cierre flexible (ADR-070 / spec O-7). Si `true`, una orden requiere ≥1
+     * documento subido para transicionar a `entregado` (independiente del
+     * estado de extracción). Solo aplica a órdenes creadas en/después de
+     * `REQUIRE_DOCUMENT_TO_CLOSE_SINCE`; las legacy/en-curso quedan exentas.
+     * Default `true` (O-7 resuelta 2026-06-18). `booleanFlag` (no
+     * `z.coerce.boolean()` — footgun, memoria Redis TLS 2026-06).
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE: booleanFlag(true),
+
+    /**
+     * Fecha de corte ISO (YYYY-MM-DD) del cierre flexible: el guard de
+     * `REQUIRE_DOCUMENT_TO_CLOSE` solo aplica a órdenes con `creado_en >=`
+     * esta fecha. Sin esta var, el guard NO se aplica (las órdenes quedan
+     * exentas) aunque el flag esté ON — defensa contra bloquear viajes en
+     * ruta antes de definir el corte del rollout.
+     */
+    REQUIRE_DOCUMENT_TO_CLOSE_SINCE: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'REQUIRE_DOCUMENT_TO_CLOSE_SINCE debe ser ISO date YYYY-MM-DD')
+      .optional(),
+
+    /**
+     * Si `true`, el cierre exige al menos un documento `decodificado` (no solo
+     * subido). Default `false` (spec invariante): el TED es enriquecimiento, no
+     * condición de cierre. El worker decodificador llega en 4b.
+     */
+    REQUIRE_TED_DECODE: booleanFlag(false),
+
+    /**
      * VAPID keys para Web Push (P3.c). Generadas con
      * `npx web-push generate-vapid-keys` post-deploy y subidas a Secret
      * Manager. La pública se sirve via GET /webpush/vapid-public-key
@@ -317,11 +366,10 @@ const apiEnvSchema = commonEnvSchema
      * Comportamiento cuando es `true`:
      *   - El service evalúa carrier_memberships + consent T&Cs v2 antes
      *     de emitir cualquier cobro. Sin consent firmado, las liquidaciones
-     *     quedan en `pending_consent` (DTE emisión bloqueada por el carrier,
-     *     no por Booster).
-     *   - DTE Tipo 33 se emite vía Sovos cuando esté integrado;
-     *     mientras tanto las liquidaciones quedan `lista_para_dte`
-     *     (auditables, válidas contablemente, sin presentación SII).
+     *     quedan en `pending_consent`.
+     *   - Con consent firmado, la liquidación queda en `lista_para_dte`
+     *     (auditable, válida contablemente). Booster ya no emite DTE
+     *     (ADR-069 supersede ADR-024): el estado es contable, no tributario.
      *
      * Override explícito: setear `PRICING_V2_ACTIVATED=false` en Cloud Run
      * env revierte la activación en segundos sin tocar BD ni código.
@@ -368,43 +416,6 @@ const apiEnvSchema = commonEnvSchema
      * Default vacío para que ningún entorno tenga acceso accidental.
      * Cloud Run prod debe setear esta var explícitamente.
      */
-    /**
-     * ADR-024 — Provider activo para emisión de DTEs (factura comisión
-     * Booster al carrier post-liquidación). Valores válidos:
-     *   - 'disabled' (default): no se emiten DTEs. Las liquidaciones
-     *     quedan `lista_para_dte` indefinidamente. Útil en staging y
-     *     mientras no hay creds.
-     *   - 'mock': MockDteAdapter — folios sintéticos in-memory. Útil
-     *     en dev para validar el flow sin tocar Sovos. Restart del
-     *     server pierde la secuencia (no persistente).
-     *   - 'sovos': SovosDteAdapter contra Paperless Chile. Exige
-     *     SOVOS_API_KEY + SOVOS_BASE_URL.
-     */
-    DTE_PROVIDER: z.enum(['disabled', 'mock', 'sovos']).default('disabled'),
-
-    /**
-     * Sovos credentials (solo se leen cuando `DTE_PROVIDER='sovos'`).
-     * Optional para que dev/staging arranque sin estas. Cuando el
-     * factory las necesita y faltan, se lanza DteNotConfiguredError.
-     */
-    SOVOS_API_KEY: z.string().min(1).optional(),
-    SOVOS_BASE_URL: z.string().url().optional(),
-
-    /**
-     * Datos de Booster Chile SpA como emisor de la factura comisión.
-     * Hardcoded por env para no exponerlos en el repo. Se inyectan al
-     * SovosAdapter en cada emisión.
-     *
-     * BOOSTER_RUT debe ser el RUT real registrado en SII (cuando
-     * Booster Chile SpA esté constituida) — placeholder en config para
-     * dev/staging.
-     */
-    BOOSTER_RUT: z.string().min(1).default('76.000.000-0'),
-    BOOSTER_RAZON_SOCIAL: z.string().min(1).default('Booster Chile SpA'),
-    BOOSTER_GIRO: z.string().min(1).default('Marketplace digital de logística'),
-    BOOSTER_DIRECCION: z.string().min(1).default('Av. Providencia 1000'),
-    BOOSTER_COMUNA: z.string().min(1).default('Providencia'),
-
     /**
      * ADR-033 — Activa el algoritmo de matching v2 (multi-factor con
      * awareness de empty-backhaul). Default `false` en todos los
@@ -712,6 +723,35 @@ const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
+
+    /**
+     * F2 P0-C (`.specs/p0c-uids-demo-secret-manager/spec.md`) — CSV de los
+     * Firebase UIDs demo viejos a retirar vía `--retire-old-batch` (ADR-053).
+     *
+     * Antes eran 4 literales hardcoded (PII / Ley 19.628) en
+     * `services/harden-demo-accounts.ts`. Se extrajeron a esta env validada.
+     *
+     * Cada entrada debe matchear `/^[A-Za-z0-9]{20,128}$/` (formato Firebase
+     * UID). Ausente/"" → `[]` (el batch es no-op seguro). Malformada → el
+     * startup del API rehúsa arrancar (fail-fast `parseEnv`), defensa en
+     * profundidad: un solo lugar documentado para el formato.
+     *
+     * Hoy solo el CLI standalone consume estos UIDs (lee `DEMO_OLD_UIDS`
+     * directo, sin importar este config). El runtime del API NO llama
+     * `retireOldBatch`; se declara acá para evitar drift si alguna ruta/cron
+     * futura lo necesitara (inyectaría `config.DEMO_OLD_UIDS` como
+     * `opts.oldUids`). No se setea en el env del Cloud Run (queda `[]`).
+     */
+    DEMO_OLD_UIDS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        (s ?? '')
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.string().regex(/^[A-Za-z0-9]{20,128}$/, 'Firebase UID inválido'))),
   })
   // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
   // de prod hardcodeados, exigimos las env vars exactamente cuando un feature

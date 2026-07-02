@@ -167,10 +167,10 @@ function PlatformAdminMatchingPage() {
     }
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: carga única al montar; refreshList se redefine en cada render y listarlo dispararía un refetch en loop.
   useEffect(() => {
     void refreshList();
-    // refreshList se re-define en cada render; queremos cargar la lista
-    // una sola vez al montar — el setter funcional + closures basta.
+    // El setter funcional + closures basta para la carga inicial.
   }, []);
 
   async function handleSignOut() {
@@ -520,7 +520,7 @@ function PesoInput({
     <label className="flex items-start gap-2 text-xs">
       <div className="w-36 shrink-0 pt-1">
         <div className="text-neutral-700">{label}</div>
-        {hint && <div className="text-neutral-500 text-[10px] leading-tight">{hint}</div>}
+        {hint && <div className="text-[10px] text-neutral-500 leading-tight">{hint}</div>}
       </div>
       <input
         type="number"
@@ -764,7 +764,7 @@ function PesoChip({ label, value }: { label: string; value: number }) {
   const pct = Math.round(value * 100);
   return (
     <div className="rounded-md bg-neutral-100 px-2 py-1.5">
-      <div className="text-neutral-500 text-[10px] leading-tight">{label}</div>
+      <div className="text-[10px] text-neutral-500 leading-tight">{label}</div>
       <div className="font-semibold text-neutral-900 text-sm">{pct}%</div>
     </div>
   );

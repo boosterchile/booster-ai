@@ -44,7 +44,7 @@ Contenido relevante:
 
 > **Prioridad**: `superpowers:using-superpowers` declara explícitamente que las instrucciones del usuario (este `CLAUDE.md`, `AGENTS.md`) tienen **prioridad máxima** sobre las skills. Este archivo manda.
 
-### Plugin 2: `booster-skills` 0.2.0+ (dominio + estándar Booster)
+### Plugin 2: `booster-skills` 0.4.0+ (dominio + estándar Booster)
 
 Provee el **dominio + stack + auditoría + estándar de disciplina específicos de Booster AI**.
 
@@ -67,7 +67,7 @@ Contenido:
 Tras instalar ambos plugins, una sesión nueva de Claude Code debe reportar (vía `/plugin list`):
 
 - `superpowers` ✓ enabled
-- `booster-skills@booster-skills` v0.2.0 ✓ enabled
+- `booster-skills@booster-skills` v0.4.0 ✓ enabled
 - `agent-rigor` ❌ ausente (retirado por ADR-060)
 
 Test de aceptación de superpowers: sesión limpia + "hagamos una lista de tareas en React" → debe auto-disparar `brainstorming` antes de escribir código.
@@ -183,10 +183,12 @@ Booster-AI/
 ├── .nvmrc
 ├── .gitignore
 │
-├── .claude/                    # minimal. Los plugins NO se declaran acá: se
-│   │                           # instalan a nivel usuario/global (~/.claude) vía
-│   │                           # `/plugin install`. NO existe un
-│   │                           # `.claude/settings.json` versionado.
+├── .claude/                    # Los plugins se instalan a nivel usuario/global
+│   │                           # (~/.claude) vía `/plugin install`. El
+│   │                           # `.claude/settings.json` versionado declara
+│   │                           # `superpowers` + `booster-skills`
+│   │                           # (enabledPlugins + extraKnownMarketplaces);
+│   │                           # el resto de .claude/ sigue gitignored.
 │   ├── settings.local.json     # permisos pre-autorizados (gitignored)
 │   ├── ledger/                 # ledger observacional de booster-skills (.jsonl per session)
 │   ├── worktrees/              # worktrees parallel (superpowers:using-git-worktrees)
@@ -205,7 +207,7 @@ Booster-AI/
 │   ├── _followups/             # follow-up stubs no urgentes
 │   └── <feature-slug>/         # specs activas por feature
 │
-├── apps/                       # 8 apps
+├── apps/                       # 9 apps
 │   ├── api/                    # Backend principal (Hono)
 │   ├── web/                    # PWA multi-rol (shipper/carrier/driver/admin/stakeholder)
 │   ├── matching-engine/        # Matching carrier-based
@@ -213,15 +215,16 @@ Booster-AI/
 │   ├── telemetry-processor/    # Dedup + enrich + write
 │   ├── notification-service/   # Fan-out notificaciones
 │   ├── whatsapp-bot/           # Webhook Meta + NLU
-│   └── document-service/       # DTE + Carta Porte + OCR
+│   ├── document-service/       # DTE + Carta Porte + OCR
+│   └── sms-fallback-gateway/   # Fallback SMS (Cloud Run)
 │
-├── packages/                   # 21 packages compartidos
-│   # ai-provider, carbon-calculator, carta-porte-generator,
+├── packages/                   # 20 packages compartidos
+│   # carbon-calculator, carta-porte-generator,
 │   # certificate-generator, coaching-generator, codec8-parser, config,
-│   # document-indexer, driver-scoring, dte-provider, factoring-engine,
+│   # document-indexer, driver-scoring, factoring-engine,
 │   # logger, matching-algorithm, notification-fan-out, otel-bootstrap,
-│   # pricing-engine, shared-schemas, trip-state-machine, ui-components,
-│   # ui-tokens, whatsapp-client
+│   # pricing-engine, shared-schemas, transport-documents, trip-state-machine,
+│   # ui-components, ui-tokens, whatsapp-client
 │
 ├── infrastructure/             # Terraform 100% IaC (incluye IAM humana)
 │   ├── main.tf

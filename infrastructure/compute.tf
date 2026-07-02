@@ -14,10 +14,16 @@ locals {
     # Memorystore Redis — compartido entre services para conversation store +
     # caching de OIDC tokens + rate limiting. Privado por VPC con AUTH +
     # transit encryption (SERVER_AUTHENTICATION) requeridos.
-    REDIS_HOST     = google_redis_instance.main.host
-    REDIS_PORT     = tostring(google_redis_instance.main.port)
-    REDIS_PASSWORD = google_redis_instance.main.auth_string
-    REDIS_TLS      = "true"
+    REDIS_HOST = google_redis_instance.main.host
+    REDIS_PORT = tostring(google_redis_instance.main.port)
+    # REDIS_PASSWORD se movió a `common_secrets` (Secret Manager) para no exponer
+    # el auth_string en plaintext en la config de la revisión Cloud Run
+    # (redis-password-to-secret-manager). El valor se auto-deriva del recurso vía la
+    # version `redis_auth` (data.tf, secret_data = google_redis_instance.main.auth_string).
+    # `redis-auth` está EXCLUIDO del for_each de placeholders en security.tf: si no,
+    # coexistiría un ROTATE_ME y el mount version="latest" podría montarlo → Redis AUTH
+    # rota (patrón INC-2026-06-19). Con la exclusión, la única version es la real.
+    REDIS_TLS = "true"
     # Server CA de Memorystore (SERVER_AUTHENTICATION): cert firmado por CA privada
     # por-instancia que NO está en el bundle público del sistema. Sin pinnearla,
     # ioredis falla con UNABLE_TO_VERIFY_LEAF_SIGNATURE (incidente 2026-06-07 tras
@@ -30,6 +36,9 @@ locals {
 
   common_secrets = {
     DATABASE_URL = google_secret_manager_secret.secrets["database-url"].secret_id
+    # Auth string de Memorystore como secret-mount (antes plaintext env). Valor
+    # auto-derivado vía la version `redis_auth` (secret_data = auth_string).
+    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
   }
 
   # Lista de IDs de todas las secret versions que deben existir antes de crear
@@ -42,6 +51,7 @@ locals {
   all_secret_versions_ready = concat(
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
+    [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
   )
@@ -82,6 +92,10 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
+    # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
+    # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
+    # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
+    TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -656,10 +670,11 @@ module "service_document" {
     UPLOADS_BUCKET   = google_storage_bucket.uploads_raw.name
     SIGNING_KEY_NAME = google_kms_crypto_key.document_signing.id
   })
-  secrets = merge(local.common_secrets, {
-    DTE_PROVIDER_API_KEY       = google_secret_manager_secret.secrets["dte-provider-api-key"].secret_id
-    DTE_PROVIDER_CLIENT_SECRET = google_secret_manager_secret.secrets["dte-provider-client-secret"].secret_id
-  })
+  # DTE_PROVIDER_* removidos (ADR-069): Booster ya no emite DTE. El skeleton de
+  # document-service nunca leyó estos secretos; se elimina el binding para
+  # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
+  # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
+  secrets = local.common_secrets
 
   public = false
 

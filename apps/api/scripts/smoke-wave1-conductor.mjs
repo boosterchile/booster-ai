@@ -37,7 +37,6 @@ const PLATFORM_ADMIN_EMAIL = process.env.PLATFORM_ADMIN_EMAIL ?? 'dev@boosterchi
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY;
 
 if (!FIREBASE_WEB_API_KEY) {
-  // biome-ignore lint/suspicious/noConsole: script CLI, output va a stdout.
   console.error('ERROR: falta FIREBASE_WEB_API_KEY (export desde cloudbuild env vars).');
   process.exit(1);
 }
@@ -61,7 +60,6 @@ function log(level, ...args) {
     fail: `${COLOR_RED}✗${COLOR_RESET}`,
     step: `${COLOR_GRAY}→${COLOR_RESET}`,
   }[level];
-  // biome-ignore lint/suspicious/noConsole: script CLI.
   console.log(prefix, ...args);
 }
 
@@ -154,7 +152,7 @@ async function step2SeedDemo(adminIdToken) {
   const activationPin = seedRes.credentials.conductor.activation_pin;
   log(
     'ok',
-    `Conductor demo creado/reusado: RUT ${conductorRut} | PIN ${activationPin ? activationPin.slice(0, 2) + '••••' : 'NULL (ya activado)'}`,
+    `Conductor demo creado/reusado: RUT ${conductorRut} | PIN ${activationPin ? `${activationPin.slice(0, 2)}••••` : 'NULL (ya activado)'}`,
   );
   return { conductorRut, activationPin, seedCredentials: seedRes.credentials };
 }

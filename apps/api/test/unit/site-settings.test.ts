@@ -109,7 +109,6 @@ function makeAdminStub(opts: {
  * el array con un objeto cuando llamamos .from() directo (sin where ni limit).
  */
 function makeDraftStub(maxVersion: number, insertResult: FakeRow) {
-  // biome-ignore lint/suspicious/noExplicitAny: stub flexible — usado solo en tests.
   const fromObj: any = [{ maxVersion }];
   // Make .from() return [maxRow] when awaited (drizzle's pattern: await db.select(...).from(...))
   return {
@@ -163,11 +162,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function buildAdminApp(
-  // biome-ignore lint/suspicious/noExplicitAny: db stub flexible.
-  db: any,
-  ctx: typeof adminCtx | typeof notAdminCtx | null,
-) {
+async function buildAdminApp(db: any, ctx: typeof adminCtx | typeof notAdminCtx | null) {
   const { createSiteSettingsRoutes } = await import('../../src/routes/site-settings.js');
   const app = new Hono();
   if (ctx) {

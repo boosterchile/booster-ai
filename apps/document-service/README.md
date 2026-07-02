@@ -1,10 +1,23 @@
 # @booster-ai/document-service
 
 **Runtime**: `cloud-run`
-**Status**: `SKELETON`
+**Status**: `WORKER TED (F4-4b)`
 
-DTE emission (Bsale) + Carta de Porte PDF + OCR Document AI + retention 6 años (ADR-007).
+Worker Pub/Sub que consume `document.uploaded` y decodifica el **TED** (Timbre
+Electrónico Documento, PDF417) de los documentos tributarios de terceros (Guía
+de Despacho DTE 52, Factura 33, etc.) que el generador o el transportista sube
+a una orden en 4a. Booster **recibe y archiva** — NO emite DTE ni se integra
+con el SII (ADR-069 / ADR-070).
 
-## Implementación pendiente
+Por mensaje: valida el payload (Zod), reclama la fila por estado (idempotencia),
+descarga el objeto de GCS, decodifica el TED vía
+`@booster-ai/transport-documents` (pdfium WASM para rasterizar PDF, zxing-wasm
+para PDF417, sharp para preprocesar fotos) y persiste `decodificado` (campos
+del `<DD>` + `ted_raw` + `retention_until`) o `fallido` en
+`documentos_transporte`. Nunca borra ni reescribe el objeto GCS original
+(retención legal 6 años, O-3). ack/nack con DLQ tras 5 intentos
+(`messaging.tf`).
 
-Seguir la skill `booster-skills:adding-cloud-run-service` (o adaptado para GKE si aplica) y los ADRs relacionados.
+> La lógica de dominio (parser `<DD>`, cálculo de retención, ingestor) vive en
+> `packages/transport-documents`, no inline acá (C-4). La verificación
+> criptográfica de la firma `<FRMT>` está fuera de alcance de 4b (gate C-7 §6).

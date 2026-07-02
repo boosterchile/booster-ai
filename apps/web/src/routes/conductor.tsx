@@ -376,7 +376,7 @@ function AssignmentCard({
         )}
         {reporter.isWatching ? (
           <div className="mt-3 space-y-2">
-            <div className="rounded-md bg-success-50 px-3 py-2 text-success-700 text-sm">
+            <div className="rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
               Reportando posición en vivo · {reporter.pointsSent} puntos enviados
             </div>
             <button

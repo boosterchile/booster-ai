@@ -1,6 +1,14 @@
 # Followup: github-branch-protection-squash
 
-**Status**: Draft (stub, no ejecutar todavía)
+> ✅ **RESUELTO / acceptance ya cumplido (verificado 2026-06-22)**. `gh api repos/boosterchile/booster-ai`
+> retorna `allow_squash_merge=true`, `allow_merge_commit=false`, `allow_rebase_merge=false` →
+> **squash es el ÚNICO método de merge posible** a nivel repo. El acceptance criteria del
+> stub ("la UI de PR solo ofrece 'Squash and merge'; `gh pr merge --merge`/`--rebase` rechaza")
+> **ya se cumple** — el outcome operacional está enforced, vía la restricción de merge-methods
+> del repo (equivalente, y de hecho más fuerte que una branch-protection rule, para este fin).
+> Nada que ejecutar.
+
+**Status**: ✅ RESUELTO (acceptance ya cumplido a nivel repo)
 **Created**: 2026-05-21
 **Triggered by**: Devils-advocate REVIEW round 2 — S2 finding ("Squash merge MANDATORIO en spec §6.2 es declarativo, NO enforceado a nivel de plataforma. PO podría ejecutar `gh pr merge --merge` por accidente y typos cosméticos quedan permanentes en main")
 **Estimated effort**: 5-10 min (configurar branch protection rule en GitHub UI o vía gh CLI)

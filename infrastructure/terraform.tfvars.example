@@ -18,10 +18,11 @@ domain      = "boosterchile.com"
 
 billing_account = "XXXXXX-XXXXXX-XXXXXX"
 
-# Si el proyecto está bajo organization — opcional. Obtener de:
-#   gcloud organizations list
-# Si no estás bajo org, dejar null.
-organization_id = null
+# Organización del proyecto. ESTE proyecto (booster-ai-494222) SÍ está bajo la
+# org boosterchile.com — id 435506363892 (no-secreto: visible en
+# `gcloud projects describe`). Dejarlo en null diverge de cómo se aplicó el state
+# (IAM/recursos a nivel org). Un fork bajo otra org: cambiar el id; sin org: null.
+organization_id = "435506363892"
 
 # =============================================================================
 # IDENTIDAD HUMANA
@@ -45,9 +46,13 @@ github_repository = "boosterchile/booster-ai"
 
 # Cloud SQL machine tier. Sizing común:
 #   db-custom-1-3840  = 1 vCPU,  3.75 GB (mini dev)
+#   db-custom-1-6144  = 1 vCPU,  6    GB (prod ACTUAL, ADR-058 right-sizing)
 #   db-custom-2-7680  = 2 vCPU,  7.5  GB (inicial comercial)
 #   db-custom-4-15360 = 4 vCPU, 15    GB (prod medium)
-cloudsql_tier                  = "db-custom-2-7680"
+# Valor REAL de prod = db-custom-1-6144. El example traía 2-7680 → un plan
+# reconstruido desde acá proponía un resize espurio de la DB de prod (falso
+# positivo confirmado y descartado el 2026-06-05).
+cloudsql_tier                  = "db-custom-1-6144"
 cloudsql_backup_retention_days = 30
 
 # Cloud SQL alta disponibilidad (ADR-058 pre-comercial):
