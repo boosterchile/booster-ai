@@ -303,6 +303,17 @@ resource "google_secret_manager_secret_version" "database_url" {
 # MEMORYSTORE REDIS
 # =============================================================================
 
+# Version del secret `redis-auth`: el auth_string de Memorystore. Auto-derivado
+# del recurso (NO un placeholder) — patrón idéntico a `database_url`, evita el
+# modo de falla de INC-2026-06-19 (placeholder que no matchea formato). Mueve el
+# auth_string de un plaintext env var (visible en la config de la revisión Cloud
+# Run) a un secret-mount. El runtime SA ya tiene secretAccessor a nivel proyecto
+# (security.tf:312), así que los 7 services lo leen sin IAM extra.
+resource "google_secret_manager_secret_version" "redis_auth" {
+  secret      = google_secret_manager_secret.secrets["redis-auth"].id
+  secret_data = google_redis_instance.main.auth_string
+}
+
 resource "google_redis_instance" "main" {
   name           = "booster-ai-redis"
   project        = google_project.booster_ai.project_id

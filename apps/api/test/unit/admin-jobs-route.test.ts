@@ -14,6 +14,10 @@ vi.mock('../../src/services/procesar-cobranza-cobra-hoy.js', () => ({
   procesarCobranzaCobraHoy: vi.fn(),
 }));
 
+vi.mock('../../src/services/cobrar-memberships-mensual.js', () => ({
+  cobrarMembershipsMensual: vi.fn(),
+}));
+
 vi.mock('../../src/services/purgar-posiciones-movil.js', () => ({
   purgarPosicionesMovil: vi.fn(),
 }));
@@ -30,6 +34,9 @@ const { procesarCobranzaCobraHoy } = await import(
   '../../src/services/procesar-cobranza-cobra-hoy.js'
 );
 const { purgarPosicionesMovil } = await import('../../src/services/purgar-posiciones-movil.js');
+const { cobrarMembershipsMensual } = await import(
+  '../../src/services/cobrar-memberships-mensual.js'
+);
 const { config: appConfig } = await import('../../src/config.js');
 
 const noop = (): void => undefined;
@@ -253,5 +260,65 @@ describe('POST /admin/jobs/reap-inert-idp-accounts (T9)', () => {
     expect(res.status).toBe(200);
     const passedConfig = (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(passedConfig.destructive).toBe(true);
+  });
+});
+
+describe('POST /admin/jobs/cobrar-memberships-mensual (gap B5)', () => {
+  beforeEach(() => {
+    appConfig.PRICING_V2_ACTIVATED = true;
+  });
+  afterEach(() => {
+    appConfig.PRICING_V2_ACTIVATED = false;
+  });
+
+  it('flag off → 200 skipped:true sin invocar el service', async () => {
+    appConfig.PRICING_V2_ACTIVATED = false;
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/cobrar-memberships-mensual', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; skipped: boolean; reason: string };
+    expect(body).toEqual({ ok: true, skipped: true, reason: 'feature_disabled' });
+    expect(cobrarMembershipsMensual).not.toHaveBeenCalled();
+  });
+
+  it('happy path: 200 con counts snake_case + payment_rail_stubbed:true', async () => {
+    (cobrarMembershipsMensual as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: 'ok',
+      periodoMes: '2026-06',
+      evaluadas: 2,
+      facturasCreadas: 2,
+      reintentos: 0,
+      pendingProvider: 2,
+      cobradas: 0,
+      morosas: 0,
+      yaFacturadas: 0,
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/cobrar-memberships-mensual', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      ok: true,
+      periodo_mes: '2026-06',
+      evaluadas: 2,
+      facturas_creadas: 2,
+      reintentos: 0,
+      pending_provider: 2,
+      cobradas: 0,
+      morosas: 0,
+      ya_facturadas: 0,
+      payment_rail_stubbed: true,
+    });
+  });
+
+  it('service retorna skipped_flag_disabled (defensa) → 200 skipped', async () => {
+    (cobrarMembershipsMensual as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: 'skipped_flag_disabled',
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/cobrar-memberships-mensual', { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { skipped: boolean };
+    expect(body.skipped).toBe(true);
   });
 });

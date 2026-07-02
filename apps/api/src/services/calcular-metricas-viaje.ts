@@ -12,6 +12,7 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { calcularCobertura } from './calcular-cobertura-telemetria.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
 import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
@@ -160,7 +161,7 @@ async function obtenerDistanciaKm(opts: {
 /**
  * Calcular métricas estimadas (al asignar viaje, antes de la entrega).
  */
-export async function calcularMetricasEstimadas(opts: {
+interface CalcularMetricasEstimadasOptions {
   db: Db;
   logger: Logger;
   tripId: string;
@@ -171,7 +172,36 @@ export async function calcularMetricasEstimadas(opts: {
    * Si no, fallback a estimarDistanciaKm.
    */
   routesProjectId?: string | undefined;
-}): Promise<CalcularMetricasResult> {
+}
+
+export async function calcularMetricasEstimadas(
+  opts: CalcularMetricasEstimadasOptions,
+): Promise<CalcularMetricasResult> {
+  return await withBusinessSpan(
+    {
+      name: 'carbon.calcular_metricas_estimadas',
+      attributes: {
+        'booster.trip_id': opts.tripId,
+        'booster.vehicle_id': opts.vehicleId ?? undefined,
+      },
+    },
+    async (span) => {
+      const result = await calcularMetricasEstimadasInner(opts);
+      setResultAttributes(span, {
+        'booster.carbon.precision_method': result.emisiones.metodoPrecision,
+        'booster.carbon.distancia_km': result.emisiones.distanciaKm,
+        'booster.carbon.emisiones_kgco2e_wtw': result.emisiones.emisionesKgco2eWtw,
+        'booster.carbon.glec_version': result.emisiones.versionGlec,
+        'booster.carbon.is_initial_calculation': result.isInitialCalculation,
+      });
+      return result;
+    },
+  );
+}
+
+async function calcularMetricasEstimadasInner(
+  opts: CalcularMetricasEstimadasOptions,
+): Promise<CalcularMetricasResult> {
   const { db, logger, tripId, vehicleId, routesProjectId } = opts;
 
   // (1) Lectura de trip + vehicle FUERA de la transacción. Esto permite
@@ -370,17 +400,41 @@ export async function calcularMetricasEstimadas(opts: {
  * no-op (drizzle igual hace el round-trip — opt: chequeo de igualdad
  * antes de update si esto se vuelve hot path).
  */
-export async function recalcularNivelPostEntrega(opts: {
-  db: Db;
-  logger: Logger;
-  tripId: string;
-}): Promise<{
+interface RecalcularNivelPostEntregaResult {
   recomputed: boolean;
   /** Nivel resultante (puede ser igual al previo). */
   certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
   /** Cobertura calculada (0..100). */
   coveragePct?: number;
-}> {
+}
+
+export async function recalcularNivelPostEntrega(opts: {
+  db: Db;
+  logger: Logger;
+  tripId: string;
+}): Promise<RecalcularNivelPostEntregaResult> {
+  return await withBusinessSpan(
+    {
+      name: 'carbon.recalcular_nivel_post_entrega',
+      attributes: { 'booster.trip_id': opts.tripId },
+    },
+    async (span) => {
+      const result = await recalcularNivelPostEntregaInner(opts);
+      setResultAttributes(span, {
+        'booster.carbon.recomputed': result.recomputed,
+        'booster.carbon.certification_level': result.certificationLevel ?? undefined,
+        'booster.carbon.coverage_pct': result.coveragePct ?? undefined,
+      });
+      return result;
+    },
+  );
+}
+
+async function recalcularNivelPostEntregaInner(opts: {
+  db: Db;
+  logger: Logger;
+  tripId: string;
+}): Promise<RecalcularNivelPostEntregaResult> {
   const { db, logger, tripId } = opts;
 
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);

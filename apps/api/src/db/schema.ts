@@ -512,6 +512,14 @@ export const empresas = pgTable(
      * `compliance_requested_by_shipper_at` (futuro).
      */
     complianceEnabled: boolean('compliance_habilitado').notNull().default(false),
+    /**
+     * Opt-in de la empresa para medir la huella de carbono de sus viajes
+     * (Task 1, plan medicion-huella-segmento). Default false: la medición se
+     * activa explícitamente por cliente; un viaje puede overridear vía
+     * `trips.carbon_measurement_override`. Naming inglés total (decisión PO):
+     * columna en inglés, divergiendo a propósito de las legadas en español.
+     */
+    carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -1114,6 +1122,13 @@ export const trips = pgTable(
      */
     consigneeName: varchar('destinatario_nombre', { length: 100 }),
     consigneeWhatsappE164: varchar('destinatario_whatsapp_e164', { length: 20 }),
+    /**
+     * Override por viaje del opt-in de medición de huella. NULL = heredar el
+     * default de la empresa (`empresas.carbon_measurement_enabled`); true/false
+     * fuerza/desactiva la medición para este viaje (Task 1, plan
+     * medicion-huella-segmento). Naming inglés total (decisión PO).
+     */
+    carbonMeasurementOverride: boolean('carbon_measurement_override'),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -2031,6 +2046,27 @@ export const facturasBoosterClp = pgTable(
     /** @deprecated ADR-069 — ver `dteTipo`. Legacy, sin escritura, sin DROP. */
     dteStatus: text('dte_status'),
     status: text('status').notNull(),
+    /**
+     * Sub-estado de COBRANZA (dunning) del cobro de membresía, separado del
+     * `status` contable de la factura (migración 0045, ADR-031). El cron
+     * `cobrar-memberships-mensual` lo avanza vía `decidirSiguienteDunning`.
+     * Mientras `MembershipPaymentGateway` sea el stub no-op (no existe
+     * `payment-provider`), las facturas paran en `pending_payment_provider`
+     * (NO cobradas). Valores: pendiente_cobro | pending_payment_provider |
+     * reintentando | morosa | cobrada.
+     */
+    cobroEstado: text('cobro_estado').notNull().default('pendiente_cobro'),
+    /** Nº de intentos de cobro realizados (dunning, máx 3 → morosa). */
+    cobroIntentos: integer('cobro_intentos').notNull().default(0),
+    /** Timestamp del último intento de cobro. */
+    cobroUltimoIntentoEn: timestamp('cobro_ultimo_intento_en', { withTimezone: true }),
+    /** Timestamp del próximo reintento agendado (backoff 7d). NULL si terminó. */
+    cobroProximoIntentoEn: timestamp('cobro_proximo_intento_en', { withTimezone: true }),
+    /**
+     * Ref opaca del provider de pago real. NULL mientras el gateway sea el
+     * stub no-op (no se mueve dinero hasta que exista `payment-provider`).
+     */
+    cobroGatewayRef: text('cobro_gateway_ref'),
     venceEn: timestamp('vence_en', { withTimezone: true }).notNull(),
     pagadaEn: timestamp('pagada_en', { withTimezone: true }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -2045,8 +2081,15 @@ export const facturasBoosterClp = pgTable(
       'chk_facturas_status',
       sql`${table.status} IN ('pendiente','emitida','pagada','vencida','anulada')`,
     ),
+    cobroEstadoCheck: check(
+      'chk_facturas_cobro_estado',
+      sql`${table.cobroEstado} IN ('pendiente_cobro','pending_payment_provider','reintentando','morosa','cobrada')`,
+    ),
     empresaStatusIdx: index('idx_facturas_empresa_status').on(table.empresaDestinoId, table.status),
     statusVenceIdx: index('idx_facturas_status_vence').on(table.status, table.venceEn),
+    cobroReintentoIdx: index('idx_facturas_cobro_reintento')
+      .on(table.cobroProximoIntentoEn)
+      .where(sql`${table.cobroEstado} IN ('pending_payment_provider', 'reintentando')`),
   }),
 );
 

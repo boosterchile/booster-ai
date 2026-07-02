@@ -62,6 +62,36 @@ describe('LoginRoute — auth state', () => {
   });
 });
 
+describe('LoginRoute — flags cargando (anti-flash)', () => {
+  const DEFAULT_FLAGS = {
+    flags: {
+      auth_universal_v1_activated: false,
+      wake_word_voice_activated: false,
+      matching_algorithm_v2_activated: false,
+      demo_mode_activated: false,
+    },
+    isLoading: false,
+    isError: false,
+  };
+
+  it('mientras los flags cargan, muestra loader — no el form legacy ni el universal', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    useFeatureFlagsMock.mockReturnValue({ ...DEFAULT_FLAGS, isLoading: true });
+    try {
+      render(<LoginRoute />);
+      // Loader presente; NO el form legacy (botón Google) — evita el parpadeo
+      // del email/password antes de que el flag conmute a RUT+clave.
+      expect(screen.getByRole('status')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Continuar con Google/ }),
+      ).not.toBeInTheDocument();
+    } finally {
+      // Restaurar el default (otros tests asumen flag OFF, no loading).
+      useFeatureFlagsMock.mockReturnValue(DEFAULT_FLAGS);
+    }
+  });
+});
+
 describe('LoginRoute — Google sign in', () => {
   it('click Google → signInWithGoogle + navigate /app', async () => {
     useAuthMock.mockReturnValue({ user: null, loading: false });

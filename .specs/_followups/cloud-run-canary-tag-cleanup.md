@@ -4,6 +4,14 @@
 **Owner**: PO (Felipe Vicencio)
 **Priority**: P1
 
+> ✅ **RESUELTO (2026-06-22)** vía **Opción A** — el step `deploy-api` de
+> `cloudbuild.production.yaml` ahora, tras `update-traffic --to-latest`, remueve los
+> tags `canary-signup-*` viejos (preserva el de ESTE deploy). **FAIL-SAFE**: corre
+> POST-promoción (ningún canary tag sirve tráfico ya) y si el parseo falla solo loguea
+> `WARN` — NUNCA rompe el deploy (peor caso: los tags siguen acumulando como hoy). YAML
+> validado (`deploy-api` id/waitFor preservados). El owner lo valida en el 1er canary
+> real. Cierra el footgun de quota a ~50 tags.
+
 ## Problem
 
 Sprint 2b T13 canary lane creates a per-deploy traffic tag `canary-signup-<sha12>` via `gcloud run services update --tag=...` on `booster-ai-api`. Cloud Run retains the tag on the revision until explicitly removed. With daily deploys, tags accumulate.

@@ -1,7 +1,7 @@
 # Follow-up — `infrastructure/terraform.tfvars.example` desactualizado vs estado real
 
 **Origen**: `terraform plan` del 2026-06-05 (apply pendiente de SEC-001 boundary-closure: scheduler reaper + metric + alert).
-**Tipo**: IaC / safety del onboarding. **Riesgo**: medio — un `terraform apply` reconstruido desde el `.example` propone cambios NO deseados a recursos de prod. **Estado**: pendiente.
+**Tipo**: IaC / safety del onboarding. **Riesgo**: medio — un `terraform apply` reconstruido desde el `.example` propone cambios NO deseados a recursos de prod. **Estado**: ✅ **Fix #1 HECHO (2026-06-22)** — `terraform.tfvars.example` actualizado: `cloudsql_tier = "db-custom-1-6144"` (valor real de prod, ADR-058) + `organization_id = "435506363892"` (el proyecto SÍ está bajo org); ambos no-secretos (visibles en `gcloud projects describe`). Reduce la deriva del onboarding. **Fix #2/#3** (versionar tfvars canónico no-secreto / auditoría completa de drift code↔state) siguen ABIERTOS, ligados a `main-branch-protection-terraform-iac.md`.
 
 ## Problema
 
