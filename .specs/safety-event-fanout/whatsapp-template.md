@@ -1,37 +1,31 @@
-# WhatsApp template — `safety_alert_v2`
+# WhatsApp template — `safety_alert` (v2 aprobado + live)
 
-Template del fan-out de seguridad (P0-G): notifica al transportista ante eventos crash/unplug/jamming. Categoría **UTILITY** (notificación transaccional, no marketing → aprobación más rápida y enviable fuera de la ventana de 24h).
+Template del fan-out de seguridad (P0-G): notifica al transportista ante eventos crash/unplug/jamming. Categoría **UTILITY** (notificación transaccional, no marketing → enviable fuera de la ventana de 24h).
 
-**Forma de submit recomendada**: `scripts/create-safety-alert-template.sh` (crea el content vía Twilio Content API y lo submitea a Meta en un paso, sin hardcodear credenciales). El Content Editor de la consola también sirve, pero el script es reproducible.
+## Estado actual (2026-06-22) — ✅ APROBADO Y EN PRODUCCIÓN
 
----
+`safety_alert_v2` (`HX48d541ad8f2cab4e4f65165cb26489b1`) está **`approved`** por Meta y **cargado** en el secret `content-sid-safety-alert` + montado en el api. El canal WhatsApp de safety está **vivo**: las alertas se entregan al transportista (confirmado en prod, 2026-06-22).
 
-## Historial de rechazo (por qué v2)
+Tardó ~7 días en `pending` (revisión humana de Meta, por el contenido sensible: contactos de emergencia + tono de alarma), bastante por encima del típico 5min–48h — pero **no estaba muerto**, Meta terminó aprobándolo. Verificación del estado en cualquier momento:
+
+```bash
+TW_SID="$(gcloud secrets versions access latest --secret=twilio-account-sid --project=booster-ai-494222)"
+TW_TOK="$(gcloud secrets versions access latest --secret=twilio-auth-token  --project=booster-ai-494222)"
+curl -sS -u "$TW_SID:$TW_TOK" \
+  "https://content.twilio.com/v1/Content/HX48d541ad8f2cab4e4f65165cb26489b1/ApprovalRequests" | python3 -m json.tool
+# whatsapp.status == "approved"
+```
+
+## Historial de aprobación
 
 | Template | Content SID | Estado |
 |---|---|---|
-| `safety_alert_v1` | `HX0d6363fd0162c2d71519ed4e3afe2e3d` | **rejected** por Meta |
-| `copy_of_safety_alert_v1` | `HX80819b02ce9a546b855d09ada1aac944` | **rejected** por Meta |
-| `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` | **pending** (creado y submiteado 2026-06-15T23:01Z; en revisión Meta) |
+| `safety_alert_v1` | `HX0d6363fd0162c2d71519ed4e3afe2e3d` | **rejected** (subCode 2388293: "too many variables for its length") |
+| `copy_of_safety_alert_v1` | `HX80819b02ce9a546b855d09ada1aac944` | **rejected** (mismo subCode) |
+| `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` | **approved + live** ✅ (submiteado 2026-06-15, aprobado tras ~7d de revisión humana) |
+| `safety_alert_v3` | _(no creado)_ | **fallback de-riesgado** (no submitear salvo que v2 se pause/disable — ver abajo) |
 
-Razón de Meta (`subCode 2388293`):
-
-> *"This template has too many variables for its length. Reduce the number of variables or increase the message length."*
-
-El body de v1 era demasiado corto para 4 variables (ratio variables/texto muy alto). **v2 mantiene las mismas 4 variables** (para no tocar `dispatch-safety-notification.ts`) pero **alarga el texto fijo** que las rodea, lo que resuelve el ratio. Las variables además quedan cada una precedida por una etiqueta estática (nunca adyacentes entre sí ni al inicio/fin del body), otra regla que Meta valida.
-
-> El código referencia el template por **Content SID**, no por nombre — por eso el nombre nuevo (`safety_alert_v2`) no impacta nada. Se usa nombre nuevo porque Meta a veces bloquea reusar un nombre rechazado.
-
-## Metadatos
-
-| Campo | Valor |
-|---|---|
-| **Template name** | `safety_alert_v2` (Twilio exige snake_case minúscula) |
-| **Category** | UTILITY |
-| **Language** | Spanish (`es`) |
-| **Content type** | `twilio/text` (body-only) — ver abajo variante con botón |
-
-## Body (v2 — el que va a producción)
+## Body (v2 — el que está en producción)
 
 ```
 🚨 Alerta de seguridad Booster AI
@@ -46,7 +40,9 @@ Detectamos un evento en uno de tus vehículos que requiere tu atención.
 Por favor verifica cuanto antes el estado del conductor y de la carga. Si se trata de una emergencia, llama a los servicios de emergencia (131 ambulancia · 133 Carabineros) y luego avísanos por este mismo chat. Si fue una falsa alarma, responde OK para que quede registrado.
 ```
 
-## Variables — sample values (Meta los exige para aprobar)
+## Variables — sample values
+
+Las 4 variables son **idénticas** entre v2 y el fallback v3 (mismo orden), por eso `dispatch-safety-notification.ts` no cambia si algún día se rota el template.
 
 | Var | Significado (app) | Origen en código | Sample para el submit |
 |---|---|---|---|
@@ -60,27 +56,27 @@ Por favor verifica cuanto antes el estado del conductor y de la carga. Si se tra
 - `unplug` → `Desconexión de energía (manipulación)`
 - `jamming` → `Interferencia de señal GPS`
 
-> El orden 1→4 y el mapping están fijados en `apps/api/src/services/dispatch-safety-notification.ts:121-126`. Si se cambia el body, NO reordenar ni agregar variables sin tocar también ese servicio (y sus tests).
+> El orden 1→4 y el mapping están fijados en `apps/api/src/services/dispatch-safety-notification.ts:121-126`. Si se rota el template, NO reordenar ni agregar variables sin tocar también ese servicio (y sus tests). El código referencia por **Content SID**, no por nombre.
 
-## Variante con botón (opcional — no en v2)
+## Fallback de-riesgado (`safety_alert_v3`) — solo si Meta pausa/disable v2
 
-Se podría agregar un **botón URL dinámico** (`Ver vehículo` → `https://app.boosterchile.com/app/flota?v={{1}}`), pero agrega una variable extra y alarga la revisión de Meta. El deep-link igual sale por push, así que v2 va **body-only** para maximizar probabilidad de aprobación. El botón se evalúa en una v3 si se decide.
+Meta puede **pausar** o **deshabilitar** un template aprobado si acumula feedback negativo (bloqueos/spam reports). Si eso pasa con v2, hay un reemplazo **pre-de-riesgado** listo en `scripts/create-safety-alert-template.sh` (apunta a `safety_alert_v3`): mismo set de 4 variables, pero sin la instrucción de servicios de emergencia (van por app/push), sin líneas en blanco (`\n\n`→`\n`) y con tono transaccional sin emojis de alarma — para maximizar la probabilidad de auto-aprobación rápida.
 
-## Después de aprobar
-
-Meta devuelve (vía Twilio) el estado `approved` para el Content SID. Cargarlo en el secret `content-sid-safety-alert` (wiring de infra ya existe desde #476) y redeploy del api:
-
-```bash
-echo -n "HX48d541ad8f2cab4e4f65165cb26489b1" | gcloud secrets versions add content-sid-safety-alert --data-file=- --project=booster-ai-494222
-gcloud run services update booster-ai-api --region=southamerica-west1 \
-  --update-secrets=CONTENT_SID_SAFETY_ALERT=content-sid-safety-alert:latest --project=booster-ai-494222
+```
+Hola, te escribe el sistema de Booster AI. Detectamos un evento en uno de tus vehículos que necesita tu atención.
+Vehículo (patente): {{1}}
+Evento detectado: {{2}}
+Hora (Chile): {{3}}
+Viaje asociado: {{4}}
+Revisa cuanto antes el estado del vehículo y de la carga, y respóndenos por este chat para confirmar que recibiste este aviso. Encontrarás el detalle y los contactos de ayuda en la app de Booster AI.
 ```
 
-Hasta entonces el código skipea WhatsApp y notifica **solo por push** (sin romper nada). Detalle completo en `docs/runbooks/load-content-sids.md`.
+Flujo de rotación (solo si hace falta): correr el script → anota el SID de v3 → al aprobar Meta, `gcloud secrets versions add content-sid-safety-alert` (nueva versión) + redeploy del api. El env var ya está montado (mount A7 de #526), así que no toca Terraform.
 
-## Checklist de submit
+## Checklist
 
-- [x] Correr `scripts/create-safety-alert-template.sh` (o crear a mano en Content Editor con name `safety_alert_v2`, category UTILITY, language `es`, body de arriba, 4 sample values). — hecho 2026-06-15.
-- [x] Anotar el Content SID nuevo: `HX48d541ad8f2cab4e4f65165cb26489b1`.
-- [ ] Vigilar aprobación (`ApprovalRequests`, típico 24-48h). — en curso; status `pending` al 2026-06-16.
-- [ ] Al aprobar: cargar el SID en `content-sid-safety-alert` + redeploy (comandos arriba).
+- [x] Crear `safety_alert_v2`, submitear a Meta (UTILITY, es, 4 sample values). — 2026-06-15.
+- [x] Aprobación de Meta. — **approved** (tras ~7d de revisión humana).
+- [x] Cargar el SID en `content-sid-safety-alert` + montar en el api. — live en prod.
+- [x] Confirmar entrega real de WhatsApp al transportista. — confirmado 2026-06-22.
+- [ ] _(solo si Meta pausa/disable v2)_ rotar al fallback v3 vía el script.

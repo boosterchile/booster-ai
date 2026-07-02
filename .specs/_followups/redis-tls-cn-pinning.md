@@ -21,4 +21,18 @@ new Error('CN mismatch')`, con `EXPECTED_INSTANCE_UID` inyectado por env desde T
 cert sea efectivamente el UID estable de la instancia.
 
 ## Estado
-Pendiente de priorizar (hardening, no bloqueante).
+**Deuda conscientemente NO tomada (2026-06-22)** — hardening de valor marginal,
+cerrado como aceptado salvo cambio de topología.
+
+`packages/config/src/redis-tls.ts:30-34,59` ya documenta por qué NO se pinea el CN:
+se conecta por **IP privada** (el CN del leaf cert es el UID de la instancia, no la
+IP) y el control anti-MITM real es la **validación de cadena contra la CA pinneada
+por-instancia** (`REDIS_CA_CERT`). Bajo ese modelo (CA per-instancia + IP fija en
+`PRIVATE_SERVICE_ACCESS` + AUTH habilitado) no hay otro host bajo la misma CA dentro
+del VPC al que redirigir, así que pinear el CN agrega defensa marginal sobre lo que
+la cadena CA ya garantiza. El security-auditor lo evaluó **aceptable** (`spec.md §7b`).
+
+**Re-evaluar SI**: la topología cambia a una CA compartida entre instancias, o
+Memorystore pasa a accederse por hostname en vez de IP — ahí el CN-pinning sí cierra
+un gap. Mientras tanto, implementarlo sería complejidad (inyectar `EXPECTED_INSTANCE_UID`
+desde Terraform + verificar que el CN sea el UID estable) sin beneficio de seguridad real.

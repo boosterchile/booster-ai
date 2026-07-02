@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { adelantosCarrier } from '../db/schema.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * ADR-029 v1 / ADR-032 — Job de cobranza al shipper para "Booster Cobra Hoy".
@@ -76,6 +77,18 @@ export function buildAutoMoraNota(opts: {
 }
 
 export async function procesarCobranzaCobraHoy(
+  input: ProcesarCobranzaInput,
+): Promise<ProcesarCobranzaResult> {
+  return await withBusinessSpan({ name: 'factoring.procesar_cobranza' }, async (span) => {
+    const result = await procesarCobranzaCobraHoyInner(input);
+    setResultAttributes(span, {
+      'booster.factoring.moras_creadas': result.morasCreadas,
+    });
+    return result;
+  });
+}
+
+async function procesarCobranzaCobraHoyInner(
   input: ProcesarCobranzaInput,
 ): Promise<ProcesarCobranzaResult> {
   const { db, logger, actorEmail = 'cron@boosterchile.com' } = input;
