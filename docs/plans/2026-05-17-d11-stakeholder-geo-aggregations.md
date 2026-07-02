@@ -161,7 +161,7 @@
 - **Rollback**: revertir commit. Caveat: si T11 ya mergeó y enlaza a esta ruta, los links dan 404. Aceptable como degradación transitoria — el banner pre-D11 vuelve al revertir T11.
 - **Nota orden T10→T11 (decisión PO)**: T10 mergea primero para que T11 enlace a ruta existente.
 
-### T11: UI cards reales (`stakeholder-zonas.tsx`) [BLOCKED 2026-05-17 — depende de T8, T10]
+### T11: UI cards reales (`stakeholder-zonas.tsx`) [DONE 2026-05-17 — PR #256]
 
 - **Files**: `apps/web/src/routes/stakeholder-zonas.tsx` (modificar — remover `ZONAS_DEMO`, agregar TanStack Query), `apps/web/src/services/stakeholder-aggregations-client.ts` (extender — hook `useStakeholderZonas`), `apps/web/src/routes/stakeholder-zonas.test.tsx` (modificar)
 - **LOC estimate**: ~120 *(waiver: refactor + nuevo cliente + tests. Alternativa de 2 PRs deja UI rota mid-merge.)*
@@ -175,7 +175,7 @@
   - Component tests + screenshot manual.
 - **Rollback**: revertir commit. UI vuelve a mock data (no daño crítico, solo cosmético).
 
-### T12: Performance — `EXPLAIN ANALYZE` + índice condicional [BLOCKED 2026-05-17 — depende de T8]
+### T12: Performance — `EXPLAIN ANALYZE` + índice condicional [DONE 2026-05-17 — PR #257]
 
 - **Files**: `apps/api/test/perf/stakeholder-zonas-explain.test.ts` (nuevo, ejecutable manual + en CI), eventualmente `apps/api/drizzle/0035_geocode_index.sql` (condicional)
 - **LOC estimate**: ~50 (test + posible migration condicional)
