@@ -38,3 +38,7 @@ Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` pe
 ## D2b · Verificado: el rechazo de pending devices NO es tenant-scoped (2026-07-06, W2a)
 
 `dispositivos_pendientes` no tiene `empresaId` (by design, open enrollment global): cualquier `dueno|admin` de CUALQUIER empresa puede listar (`admin-dispositivos.ts:60-78`) y rechazar (`admin-dispositivos.ts:191-216`) pending devices ajenos. **Por eso el rechazo no puede ser terminal**: sería un vector de denegación cruzada (empresa A rechaza el device que empresa B está por reclamar). El PATCH de W2 lo mitiga con el override en dos pasos de D2 (409 `imei_rechazado` + `confirmar_reasociacion: true`), que convierte el rechazo en un obstáculo reversible por el dueño legítimo, con log estructurado del override. Deuda relacionada (no de hoy): evaluar rate-limit o scoping del reject en el panel.
+
+## D2c · Adición de contrato W2 (2026-07-06, fix round): 409 `pending_device_conflict`
+
+El CAS de la reconciliación agrega un código residual fuera del enum original de D2: cuando el CAS pierde la carrera y el estado fresco NO es `rechazado` (p.ej. aprobado por otra tx concurrente o row ausente), el PATCH responde **409 `pending_device_conflict`** (neutro: no filtra tenant/patente; informacionalmente equivalente a `imei_en_uso`). W2b debe manejarlo deliberadamente: mensaje "el estado del dispositivo cambió mientras guardábamos — reintenta" + refetch. Registrado aquí para que el contrato no viva solo en código (`vehiculos.ts:619-627`).
