@@ -30,6 +30,40 @@ Ninguna de las 4 se puede completar sin acción humana fuera del repo (credencia
 
 ---
 
+## Paso 0 — PRE-merge (obligatorio)
+
+**Hallazgo R1 (fix round final-review, 2026-07-06), confirmado contra prod vía Cloud Run REST**: el servicio vivo `booster-ai-api` (revisión `booster-ai-api-00426-bes`, `updateTime` 2026-07-02T22:21Z, proyecto `booster-ai-494222`, `southamerica-west1`) corría `SIGNUP_REQUEST_FLOW_ACTIVATED=true` — el default `true` de `variables.tf` (histórico, flip 2026-05-29 post ADR-052) estaba aplicado, y `ADMIN_PROVISIONED_ONBOARDING_ENABLED`/`EMPRESA_SELF_ONBOARDING_ENABLED` seguían en `false` (defaults). Es decir: la cola de solicitudes **no estaba congelada** — un approve real habría tomado el modo legacy silencioso (precrea fila `users`, sin token ni link one-shot; ver `apps/api/src/routes/admin-signup-requests.ts` líneas 182-188).
+
+**Corrección sobre `infrastructure/terraform.tfvars`**: NO está trackeado en git (`*.tfvars` en `.gitignore:97`; `git ls-files infrastructure/terraform.tfvars` no devuelve nada) — es un archivo local que cada operador mantiene reflejando el estado real aplicado en prod (ver su propio comentario de cabecera). El override explícito `signup_request_flow_activated = false` que agrega este PR en ese archivo es un cambio **local a esta máquina/checkout**, no algo que viaje por git — protege este checkout puntual pero NO reemplaza el default `false` de `variables.tf` (ese sí es el control real, versionado, que aplica a cualquier apply desde cualquier checkout). Si operás desde otra máquina, confirma que tu `terraform.tfvars` local no tenga `signup_request_flow_activated = true` colgado de un cambio manual anterior.
+
+Esta rama ya revirtió `signup_request_flow_activated` a `false` (código: `infrastructure/variables.tf` default + `infrastructure/terraform.tfvars` override explícito), pero eso solo toma efecto en prod cuando se aplique el Terraform de esta rama (paso 2). Hasta entonces, prod sigue corriendo con el flag `true` de la revisión actual. Antes de mergear:
+
+- [ ] **(a) El PO fuerza el flag en prod de inmediato** (no espera al merge + apply de esta rama):
+  ```bash
+  gcloud run services update booster-ai-api \
+    --region=southamerica-west1 \
+    --project=booster-ai-494222 \
+    --update-env-vars=SIGNUP_REQUEST_FLOW_ACTIVATED=false
+  ```
+  Esto crea una revisión nueva con la misma imagen (solo cambia la env var). Verificación posterior vía REST contra Cloud Run (`revision.spec.containers[].env`) antes de continuar.
+- [ ] **(b) Auditar si ya hubo approves en modo legacy** mientras el flag estuvo en `true` (2026-07-02 en adelante como cota inferior conocida — el flip real puede ser anterior, confirmar con el historial de revisiones). Query contra `solicitudes_registro` (ajustar nombres de columna si difieren del schema vivo en `packages/shared-schemas`):
+  ```sql
+  -- Solicitudes aprobadas en modo legacy: fila en `usuarios` ya creada
+  -- (aprobación silenciosa sin token) y SIN `token_hash` asociado.
+  SELECT sr.id, sr.email, sr.nombre_completo, sr.estado, sr.aprobado_en
+  FROM solicitudes_registro sr
+  WHERE sr.estado = 'aprobado'
+    AND sr.token_hash IS NULL
+    AND sr.aprobado_en >= '2026-07-02'
+  ORDER BY sr.aprobado_en DESC;
+  ```
+  Si hay filas: esos usuarios quedaron provisionados por el path legacy (sin token, ver `signup-request.ts`) — no es un incidente de seguridad (el legacy precrea igual que siempre lo hizo, ADR-052), pero documentar el conteo acá para que el paso 6 (reaper T1.7, que solo limpia huérfanos del modo NUEVO con token) no los toque por error ni se asuman "perdidos".
+- [ ] **(c) La advertencia original se mantiene**: no aprobar solicitudes reales antes del paso 5 (flip) de este runbook — con el flag admin-provisioned OFF, el approve toma silenciosamente el modo legacy (precrea fila `users`, sin token ni link). Esto aplica incluso después de (a): forzar `signup_request_flow_activated=false` cierra la puerta pública de solicitudes nuevas, pero cualquier solicitud YA pendiente en la cola seguiría siendo aprobable en modo legacy si alguien reabre el flag manualmente antes de tiempo.
+
+**Estado real de los flags verificado** (2026-07-06, antes de este PR):
+- `signup_request_flow_activated`: `infrastructure/variables.tf:394-398` (default `true` histórico, ahora revertido a `false` por este PR) — sin override en `infrastructure/terraform.tfvars` (ahora sí lo tiene, explícito).
+- `admin_provisioned_onboarding_enabled`: `infrastructure/variables.tf:421-425` (default `false`, sin cambios — esta es la condición que el paso 5 de este runbook flipea).
+
 ## Paso 1 — Merge del PR de esta rama
 
 ```bash
@@ -118,15 +152,20 @@ El plan (`.specs/onboarding-flow-redesign/plan.md`, "Cierre Fase 1") exige 2 act
 
 ## Paso 5 — Flip de flags + deploy
 
+**Actualizado (fix round final-review, 2026-07-06, hallazgo R1)**: hasta este PR, `signup_request_flow_activated` no requería cambio en este paso porque ya estaba en `true` desde 2026-05-29 (ADR-052). Este PR lo revirtió a `false` (default en `variables.tf` + override explícito en `terraform.tfvars`) — ver Paso 0. Ese `false` viaja al aplicar el Terraform de esta rama en el paso 2. **Este paso 5 ahora debe flipear AMBOS flags**, no solo uno:
+
 ```bash
-# En infrastructure/variables.tf (o vía -var en el apply), cambiar defaults:
-#   admin_provisioned_onboarding_enabled = true
-#   signup_request_flow_activated ya está en `true` (ADR-052, no requiere cambio)
+# En infrastructure/terraform.tfvars, editar (o vía -var en el apply):
+#   signup_request_flow_activated        = true   # reabre la cola pública de solicitudes
+#   admin_provisioned_onboarding_enabled  = true   # activa el modo admin-provisioned (token one-shot)
+# Ambos deben quedar en `true` a la vez — reabrir la cola SIN el modo
+# admin-provisioned recrea exactamente el hallazgo R1 (approve legacy silencioso).
 
 cd infrastructure
 terraform plan -out=tfplan-flip
-# Verificar que el ÚNICO cambio in-place es la env var ADMIN_PROVISIONED_ONBOARDING_ENABLED
-# (de "false" a "true") en module.service_api. Nada más.
+# Verificar que el ÚNICO cambio in-place son las env vars SIGNUP_REQUEST_FLOW_ACTIVATED
+# y ADMIN_PROVISIONED_ONBOARDING_ENABLED (ambas de "false" a "true") en
+# module.service_api. Nada más.
 terraform apply tfplan-flip
 ```
 
@@ -169,7 +208,7 @@ Checklist manual contra producción (no hay staging):
 1. [ ] `POST /api/v1/signup-request` (o UI `/solicitar-acceso`) — crear una solicitud de prueba con un email real accesible.
 2. [ ] Admin aprueba desde `/admin/signup-requests` — la respuesta/UI muestra el `onboarding_link` copiable **una sola vez**.
    ⚠️ **Copiar el link INMEDIATAMENTE al aprobar.** El token viaja hasheado en BD (`token_hash`) — si el admin cierra el modal sin copiarlo, **no hay recuperación desde la UI**. El único rescate es rechazar la solicitud y pedir que se re-solicite acceso (vuelve al paso 1), o esperar Fase 2 (notificación por email real, mes 9 — ver `.specs/_followups/` de Fase 2).
-3. [ ] Abrir el link → login con Google (si la sesión no existe, el flujo redirige a login y **preserva** `?token=` en la vuelta — confirmado para el flujo Google/Firebase estándar).
+3. [ ] Abrir el link → login con Google o email/password (si la sesión no existe, el flujo redirige a login y **preserva** `?token=` en la vuelta). **Corregido en el fix round del review final W1 (2026-07-06, B1)**: hasta ese fix, `navigate()`/`<Navigate>` en `login.tsx` perdían el `?redirect=` en dos puntos — el `<Navigate to="/app" />` incondicional de una sesión ya activa (línea 83) y los `navigate({ to: postLoginTarget })` post-login (líneas 128/169/176) cuando `postLoginTarget` traía un `?query` embebido; ambos se cambiaron a la forma `href` de TanStack Router. Antes de ese fix la afirmación "preserva `?token=`" de este paso era falsa en el peor caso (el listener `onAuthStateChanged` de Firebase ganándole la carrera al `navigate()` manual). Cubierto por `apps/web/src/routes/login-post-login-redirect.test.tsx` (router real, sin mocks de navegación).
 4. [ ] `/onboarding-admin?token=...` consume el token (header `x-onboarding-token`, nunca en la URL del request ni en el body) y completa el alta.
 5. [ ] `GET /me` inmediatamente después: **sin** `needs_onboarding` — el usuario quedó provisionado.
 6. [ ] Reintentar el MISMO link (segundo consumo) → **403** (el consumo es atómico, un solo uso).
