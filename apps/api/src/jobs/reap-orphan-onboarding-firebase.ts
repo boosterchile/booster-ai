@@ -167,7 +167,12 @@ export async function reapOrphanOnboardingFirebaseUsers(
   return summary;
 }
 
-interface PoolLike {
+/**
+ * Exportado (W1.5) para que el handler HTTP del router `/admin/jobs`
+ * (`routes/admin-jobs.ts`) pueda tipar el cast de `opts.pool` (`pg.Pool`) sin
+ * `any` — mismo patrón que `PoolLike` de `reap-inert-idp-accounts.ts`.
+ */
+export interface PoolLike {
   query(
     sql: string,
     params?: unknown[],

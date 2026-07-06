@@ -51,6 +51,21 @@ const HMAC_ALG = 'sha256';
 const SEPARATOR = '.';
 
 /**
+ * W1.5 (runbook activación) — prefijo del placeholder que Terraform siembra en
+ * Secret Manager (`ROTATE_ME_<NAME>_PLACEHOLDER`, ver
+ * `infrastructure/security.tf`) para que Cloud Run pueda montar el secret
+ * antes de la rotación real. El placeholder de
+ * `onboarding-token-signing-secret` mide >= 32 bytes y por tanto PASA el
+ * chequeo de longitud de `assertStrongSecret` — sin este denylist, un
+ * `terraform apply` sin rotar dejaría el api firmando/verificando tokens con
+ * un valor público (visible en el HCL versionado). Fail-closed: cualquier
+ * secreto que empiece con este prefijo se trata como débil sin importar su
+ * longitud. El flip a `ADMIN_PROVISIONED_ONBOARDING_ENABLED=true` exige
+ * rotación real ANTES (ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`).
+ */
+const PLACEHOLDER_SECRET_PREFIX = 'ROTATE_ME_';
+
+/**
  * Cota superior barata del tamaño del token aceptado por verify. Rechaza antes
  * de computar el HMAC, evitando gastar un HMAC sobre un payload gigante de un
  * atacante (defensa-en-profundidad; el token real ronda ~200 chars).
@@ -84,8 +99,12 @@ export type OnboardingTokenVerification =
 function assertStrongSecret(secret: string): void {
   if (Buffer.byteLength(secret, 'utf8') < MIN_SECRET_BYTES) {
     throw new Error(
-      `onboarding-token: signing secret too weak (need >= ${MIN_SECRET_BYTES} bytes). ` +
-        'Fail-closed: a missing/weak secret must never mint or accept tokens.',
+      `onboarding-token: signing secret too weak (need >= ${MIN_SECRET_BYTES} bytes). Fail-closed: a missing/weak secret must never mint or accept tokens.`,
+    );
+  }
+  if (secret.startsWith(PLACEHOLDER_SECRET_PREFIX)) {
+    throw new Error(
+      `onboarding-token: signing secret is the unrotated Terraform placeholder (prefix "${PLACEHOLDER_SECRET_PREFIX}"). Fail-closed: rotate the secret with \`gcloud secrets versions add onboarding-token-signing-secret\` before enabling the flow.`,
     );
   }
 }
