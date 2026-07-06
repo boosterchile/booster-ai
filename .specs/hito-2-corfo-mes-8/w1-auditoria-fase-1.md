@@ -113,7 +113,7 @@ Los tres viven en `apps/api/src/config.ts`, todos `booleanFlag(false)` (helper Z
 - **Rate limit**: middleware `createRateLimitSignupMiddleware` (`apps/api/src/middleware/rate-limit-signup.ts`), 5 requests / 15 min por IP (ventana 900s), key `rl:signup-request:<ip>`. Al excederse → `429`. Si Redis está caído → `503` fail-closed (no pasa la request).
 - **Respuestas**:
   - `202 { ok: true }` — SIEMPRE, tanto si el email es nuevo como si ya existe en `users` (anti-enumeración; no hay forma de distinguir desde la respuesta).
-  - `422` — body inválido (zValidator, p.ej. email mal formado o campos ausentes).
+  - `400` — body inválido (zValidator default; corrección 2026-07-06: esta auditoría decía 422, pero `signup-request.test.ts:122-159` confirma 400 — hallazgo del implementador W1.2).
   - `429` — rate limit excedido.
   - `503 { error: 'service_unavailable', code: 'service_unavailable' }` — Redis caído (middleware) o excepción en el service/DB (route catch).
 - **UI**: mostrar siempre el mismo mensaje de éxito tras un 202 ("revisa tu correo"), sin importar si el email ya estaba registrado — replicar la postura anti-enumeración en el copy.
