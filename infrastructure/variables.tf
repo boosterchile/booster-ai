@@ -382,6 +382,33 @@ variable "signup_request_flow_activated" {
 }
 
 # ---------------------------------------------------------------------------
+# W1.5 (runbook activación onboarding) — admin-provisioned onboarding
+# ---------------------------------------------------------------------------
+# onboarding-flow-redesign Fase 1 (T1.4) — KILL SWITCH del path de onboarding
+# provisionado por admin (token one-shot HMAC, ver
+# apps/api/src/services/onboarding-token.ts). Distinto de
+# `signup_request_flow_activated` (admite/lista solicitudes) y de
+# `EMPRESA_SELF_ONBOARDING_ENABLED` (path viejo self-service, que NUNCA se
+# reenciende — SEC-001).
+#
+# **Estado seguro = false (default).** Este PR SOLO deja el código+infra
+# mergeables (secret shell + placeholder + scheduler paused + mount + esta
+# var en false). El flip a `true` es un apply DEDICADO del PO, gateado por:
+#   1. Reaper T1.7 agendado (scheduling.tf `reap-orphan-onboarding-firebase`).
+#   2. Secret `onboarding-token-signing-secret` ROTADO (valor real, no
+#      `ROTATE_ME_*` — el placeholder está en el denylist de
+#      `assertStrongSecret`, así que un flip sin rotar deja el api fail-closed
+#      en vez de firmar tokens forjables).
+#   3. TTL 72h (OQ1) ratificado + sign-off security-auditor del modelo
+#      bearer-token (acta en el runbook).
+# Ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`.
+variable "admin_provisioned_onboarding_enabled" {
+  description = "Activa el onboarding admin-provisioned (token one-shot) — runbook-activacion-onboarding.md."
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
 # ADR-036 Wave 5 — Wake-word "Oye Booster"
 # ---------------------------------------------------------------------------
 # Cuando `true`, la card "Activación por voz" en
