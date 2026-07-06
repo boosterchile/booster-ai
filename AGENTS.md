@@ -12,7 +12,7 @@ Este repo está diseñado para ser trabajado primariamente con **Claude** (ver [
 
 ## Estructura del repo
 
-Ver [`CLAUDE.md`](./CLAUDE.md) sección "Estructura del repo" para el mapa completo.
+Ver [`README.md`](./README.md) para el mapa del monorepo (9 apps en `apps/`, 20 packages en `packages/`, Terraform en `infrastructure/`, specs en `.specs/`, ADRs en `docs/adr/`).
 
 ## Stack fijo (ADR-001)
 
@@ -50,7 +50,7 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
-- Antes de una tarea compleja: consultar los plugins `superpowers` y `booster-skills` (vía `/plugin list`) — puede haber una skill o workflow definido.
+- Los plugins `superpowers` y `booster-skills` son apoyo opcional cuando estén disponibles (conocimiento de dominio y refuerzo de proceso); la disciplina normativa vive íntegra en `CLAUDE.md` + CI + gates humanos (ADR-072).
 - Antes de introducir una dependencia nueva: crear ADR.
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 
