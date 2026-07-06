@@ -21,6 +21,7 @@ describe('router', () => {
         '/',
         'login',
         'onboarding',
+        'onboarding-admin',
         'app',
         'app/ofertas',
         'app/perfil',

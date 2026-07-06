@@ -72,6 +72,21 @@ const onboardingRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/onboarding.js'), 'OnboardingRoute'),
 });
 
+// W1.3 (hito CORFO) — alta de usuarios operativa: consume el token de
+// onboarding emitido por el admin al aprobar un signup-request (ver
+// /solicitar-acceso). Distinta de /onboarding (flujo viejo SC3 self-signup,
+// dead-end permanente, no se toca): el aprobado ya tiene cuenta Firebase
+// pero aún no existe en la DB, así que también requiere
+// meRequirement="allow-pre-onboarding".
+const onboardingAdminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/onboarding-admin',
+  component: lazyRouteComponent(
+    () => import('./routes/onboarding-admin.js'),
+    'OnboardingAdminRoute',
+  ),
+});
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app',
@@ -376,6 +391,7 @@ const routeTree = rootRoute.addChildren([
   demoRoute,
   loginConductorRoute,
   onboardingRoute,
+  onboardingAdminRoute,
   appRoute,
   ofertasRoute,
   perfilRoute,
