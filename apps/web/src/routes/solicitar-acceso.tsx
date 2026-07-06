@@ -2,7 +2,7 @@ import { signupRequestSchema } from '@booster-ai/shared-schemas';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Send } from 'lucide-react';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { type UseFormSetError, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { FormField, inputClass } from '../components/FormField.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -68,6 +68,7 @@ export function SolicitarAccesoRoute() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<SolicitarAccesoFormValues>({
     resolver: zodResolver(solicitarAccesoFormSchema),
@@ -82,7 +83,14 @@ export function SolicitarAccesoRoute() {
       setState('success');
     } catch (err) {
       setState('error');
-      setErrorMessage(translateSignupRequestError(err));
+      // 400/422 → intenta mapear los issues de validación del backend a
+      // los campos del form (setError) en vez del banner genérico. Si el
+      // payload no trae issues mapeables, cae al banner (ver
+      // `mapValidationIssuesToForm`).
+      const mappedToFields = mapValidationIssuesToForm(err, setError);
+      if (!mappedToFields) {
+        setErrorMessage(translateSignupRequestError(err));
+      }
     }
   }
 
@@ -187,6 +195,10 @@ export function SolicitarAccesoRoute() {
  * `@hono/zod-validator`. Se tratan ambos status como "validación" acá: el
  * form ya espeja el contrato client-side, así que este branch es puramente
  * defensivo (bypass del form o drift futuro del backend hacia 422).
+ *
+ * Es el **fallback**: `onSubmit` primero intenta `mapValidationIssuesToForm`
+ * (error por campo vía `setError`); solo si esa función devuelve `false`
+ * (shape no mapeable) se usa este banner genérico para 400/422.
  */
 function translateSignupRequestError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -198,4 +210,72 @@ function translateSignupRequestError(err: unknown): string {
     }
   }
   return 'No pudimos procesar tu solicitud, intenta más tarde.';
+}
+
+/**
+ * Copy en español por campo para cuando el backend rechaza el body con un
+ * issue de zod en ese `path` — nunca se usa el `issue.message` crudo del
+ * backend (viene en inglés, ej. "Invalid email", por ser el default de
+ * `@hono/zod-validator`/zod sin locale custom).
+ */
+const FIELD_ERROR_COPY: Record<keyof SolicitarAccesoFormValues, string> = {
+  nombreCompleto: 'Ingresa tu nombre completo (máx. 200 caracteres).',
+  email: 'Ingresa un correo válido.',
+};
+
+/**
+ * Shape real (verificado empíricamente contra `apps/api/src/routes/
+ * signup-request.ts` — `zValidator('json', schema)` sin hook custom, que
+ * es el default de `@hono/zod-validator@0.7.6`):
+ *
+ *   c.json({ success: false, error: <ZodError> }, 400)
+ *
+ * `ZodError` serializa (JSON.stringify de sus propiedades propias
+ * enumerables) como `{ issues: [{ path, message, code, ... }], name }` —
+ * `message` es un getter de prototipo y NO sobrevive el stringify. Solo
+ * se valida el subset que se necesita (`path`); el resto del issue
+ * (`message`, `code`) se ignora a propósito — ver `FIELD_ERROR_COPY`.
+ */
+const zValidatorErrorPayloadSchema = z.object({
+  success: z.literal(false),
+  error: z.object({
+    issues: z.array(z.object({ path: z.array(z.union([z.string(), z.number()])) })),
+  }),
+});
+
+/**
+ * Mapea el payload 400/422 del backend a los campos del form vía
+ * `setError` de react-hook-form, por `path` del issue de zod.
+ *
+ * Devuelve `true` si mapeó al menos un issue a un campo conocido del form
+ * (`email` | `nombreCompleto`) — en ese caso el caller NO debe mostrar el
+ * banner genérico. Devuelve `false` (fallback) cuando:
+ *   - `err` no es un `ApiError` 400/422, o
+ *   - `err.details` no calza con `zValidatorErrorPayloadSchema` (shape
+ *     inesperado / drift del backend), o
+ *   - ningún issue trae un `path[0]` que corresponda a un campo del form
+ *     (ej. error en un campo desconocido).
+ */
+function mapValidationIssuesToForm(
+  err: unknown,
+  setFieldError: UseFormSetError<SolicitarAccesoFormValues>,
+): boolean {
+  if (!(err instanceof ApiError) || (err.status !== 400 && err.status !== 422)) {
+    return false;
+  }
+
+  const parsed = zValidatorErrorPayloadSchema.safeParse(err.details);
+  if (!parsed.success) {
+    return false;
+  }
+
+  let mappedAny = false;
+  for (const issue of parsed.data.error.issues) {
+    const field = issue.path[0];
+    if (field === 'email' || field === 'nombreCompleto') {
+      setFieldError(field, { type: 'server', message: FIELD_ERROR_COPY[field] });
+      mappedAny = true;
+    }
+  }
+  return mappedAny;
 }

@@ -152,3 +152,52 @@ describe('SolicitarAccesoRoute — manejo de errores por status/code', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('SolicitarAccesoRoute — 400/422 mapeado por campo (setError vs banner genérico)', () => {
+  beforeEach(() => {
+    render(<SolicitarAccesoRoute />);
+    fireEvent.change(screen.getByLabelText(/Nombre completo/), {
+      target: { value: 'Felipe Vicencio' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'felipe@empresa.cl' } });
+  });
+
+  it('400 con issues de zod sobre email → error asociado al campo, no banner genérico', async () => {
+    // Shape real del default de @hono/zod-validator (verificado contra
+    // apps/api/src/routes/signup-request.ts): `{ success: false, error: {
+    // issues: [{ path, message, code }], name: 'ZodError' } }`.
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(400, undefined, {
+        success: false,
+        error: {
+          issues: [{ path: ['email'], message: 'Invalid email', code: 'invalid_string' }],
+          name: 'ZodError',
+        },
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Solicitar acceso/ }));
+    expect(await screen.findByText(/Ingresa un correo válido/)).toBeInTheDocument();
+    expect(screen.queryByText(/Revisa los datos ingresados/)).not.toBeInTheDocument();
+  });
+
+  it('400 con shape no mapeable (payload inesperado) → banner genérico', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(400, undefined, { unexpected: 'shape' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Solicitar acceso/ }));
+    expect(await screen.findByText(/Revisa los datos ingresados/)).toBeInTheDocument();
+    expect(screen.queryByText(/Ingresa un correo válido/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ingresa tu nombre completo/)).not.toBeInTheDocument();
+  });
+
+  it('400 con issue de path desconocido (no email/nombreCompleto) → banner genérico', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(
+      new ApiError(400, undefined, {
+        success: false,
+        error: { issues: [{ path: ['otroCampo'], message: 'algo raro' }], name: 'ZodError' },
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Solicitar acceso/ }));
+    expect(await screen.findByText(/Revisa los datos ingresados/)).toBeInTheDocument();
+  });
+});
