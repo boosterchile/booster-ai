@@ -102,15 +102,15 @@ function TokenMissingPage() {
         <div className="w-full max-w-sm">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Enlace incompleto</h1>
           <p className="mt-2 text-neutral-600 text-sm">
-            Este link no incluye el código de acceso necesario para completar tu registro.
+            Este enlace no incluye el código de acceso necesario para completar tu registro.
           </p>
 
           <div
             role="alert"
             className="mt-6 rounded-md border border-danger-500/30 bg-danger-50 p-3 text-danger-700 text-sm"
           >
-            Verifica que copiaste la URL completa desde el correo de aprobación, o solicita un
-            enlace nuevo al administrador.
+            Verifica que copiaste la URL completa desde el enlace que te entregó el administrador, o
+            solicita uno nuevo.
           </div>
 
           <p className="mt-6 text-center text-neutral-600 text-sm">

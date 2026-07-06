@@ -80,7 +80,25 @@ export function LoginRoute() {
   }
 
   if (user) {
-    return <Navigate to="/app" />;
+    // B1 (review final W1.5, 2026-07-06) — `<Navigate to={postLoginTarget} />`
+    // (solo `to`) mandaba SIEMPRE a `/app`, ignorando `?redirect=` por
+    // completo: antes de este fix esta rama era `to="/app"` hardcodeado, sin
+    // usar `postLoginTarget` en absoluto. Se agrega `href` (la forma
+    // documentada por TanStack para navegar a un path+query ya construido,
+    // ver JSDoc de `NavigateOptions.href` en `@tanstack/router-core`) porque
+    // es la variante verificada para que un `postLoginTarget` con `?query`
+    // embebido (ej. `/onboarding-admin?token=...`) sobreviva el round-trip.
+    // `to` se mantiene además de `href` SOLO por el tipado: el overload
+    // default de `NavigateOptions`/`Navigate` exige `to` aunque se pase
+    // `href` (gap entre el JSDoc — "puede usarse EN VEZ de to" — y los tipos
+    // de @tanstack/router-core@1.169.2); en runtime `href`, si está
+    // presente, siempre gana (`buildAndCommitLocation` sobreescribe `to`
+    // derivándolo de `href` cuando ambos vienen). Este era el bug más grave
+    // de los dos: una sesión Firebase ya activa (u otro re-render con `user`
+    // seteado que gane la carrera contra el `navigate()` manual de abajo)
+    // perdía el destino SIEMPRE, no solo a veces. Ver
+    // `login-post-login-redirect.test.tsx`.
+    return <Navigate to={postLoginTarget} href={postLoginTarget} />;
   }
 
   // demo.boosterchile.com NO debe servir /login — el login real vive en
@@ -113,7 +131,7 @@ export function LoginRoute() {
     setResetSent(false);
     try {
       await signInWithGoogle();
-      void navigate({ to: postLoginTarget });
+      void navigate({ to: postLoginTarget, href: postLoginTarget });
     } catch (err) {
       const code = (err as FirebaseError).code;
       const message = (err as FirebaseError).message;
@@ -154,14 +172,14 @@ export function LoginRoute() {
     try {
       if (mode === 'sign-in') {
         await signInWithEmail(values.email, values.password);
-        void navigate({ to: postLoginTarget });
+        void navigate({ to: postLoginTarget, href: postLoginTarget });
       } else if (mode === 'sign-up') {
         await signUpWithEmail({
           email: values.email,
           password: values.password,
           ...(values.name.trim() ? { displayName: values.name.trim() } : {}),
         });
-        void navigate({ to: postLoginTarget });
+        void navigate({ to: postLoginTarget, href: postLoginTarget });
       } else {
         await requestPasswordReset(values.email);
         setResetSent(true);
