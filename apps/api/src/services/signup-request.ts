@@ -146,8 +146,20 @@ export type ApproveSignupRequestResult =
       firebaseUid: string;
       /** `null` en modo admin-provisioned (no se precrea users; lo crea el onboarding). */
       userId: string | null;
-      /** Token one-shot emitido (solo modo admin-provisioned). NUNCA exponerlo al admin. */
+      /**
+       * Token one-shot emitido (solo modo admin-provisioned).
+       *
+       * **Política (W1.4, `.specs/hito-2-corfo-mes-8/plan.md`, desviación 8):**
+       * mientras el notifier de email real sea Fase 2 (`LoggingSignupRequestNotifier`
+       * stub), el admin de plataforma autenticado es el ÚNICO canal de entrega del
+       * token al usuario aprobado. La route expone este campo (como `onboarding_link`)
+       * SOLO en la respuesta 200 al admin autenticado — NUNCA se persiste en otra
+       * parte ni se loguea en claro (el log estructurado mantiene la redacción vía
+       * `onboardingTokenIssued: boolean`, ver `notifications/signup-request-email.ts`).
+       */
       onboardingToken?: string;
+      /** Expiración del token emitido (coherente con `ONBOARDING_TOKEN_TTL_HOURS`); solo junto con `onboardingToken`. */
+      onboardingTokenExpiresAt?: Date;
     }
   | { outcome: 'not_found' }
   | { outcome: 'already_processed' }
@@ -306,7 +318,13 @@ export async function approveSignupRequest(
       },
       'signup-request.approve: success (admin-provisioned; token issued, no user precreated)',
     );
-    return { outcome: 'approved', firebaseUid, userId: null, onboardingToken: token };
+    return {
+      outcome: 'approved',
+      firebaseUid,
+      userId: null,
+      onboardingToken: token,
+      onboardingTokenExpiresAt: expiraEn,
+    };
   }
 
   // Modo viejo (flag OFF): INSERT users + UPDATE solicitudes_registro en transacción.
