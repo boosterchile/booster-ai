@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api-client.js';
@@ -217,6 +217,41 @@ describe('PlatformAdminSignupRequestsRoute — W1.4 onboarding_link', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: /Copiar enlace/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/no se volverá a mostrar/)).not.toBeInTheDocument();
+  });
+
+  it('dos "Ocultar" en el mismo batch (doble click) no rompen — dismiss es idempotente', async () => {
+    // Cubre la rama defensiva de `dismissOnboardingLink`: si el id ya no está
+    // en `onboardingLinks` (dismiss duplicado dentro del mismo batch de
+    // React, p.ej. doble click antes del re-render), el updater retorna
+    // `prev` sin modificar en vez de fallar.
+    vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [PENDING_REQUEST] });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      outcome: 'approved',
+      firebase_uid: 'fb-uid',
+      user_id: null,
+      onboarding_link: 'https://app.boosterchile.com/onboarding-admin?token=abc.def',
+      onboarding_link_expires_at: '2026-07-08T10:00:00Z',
+    });
+    stubClipboard(vi.fn(async () => undefined));
+
+    render(<PlatformAdminSignupRequestsRoute />);
+    await waitFor(() => screen.getByText(PENDING_REQUEST.email));
+    fireEvent.click(screen.getByRole('button', { name: /Aprobar/ }));
+    await waitFor(() => screen.getByRole('button', { name: 'Ocultar' }));
+
+    const ocultarButton = screen.getByRole('button', { name: 'Ocultar' });
+    // Ambos clicks dentro del mismo `act()` → React aplica los dos updaters
+    // de `setOnboardingLinks` en el mismo batch antes de re-renderizar: el
+    // segundo ve el estado ya sin el id (rama `!(id in prev)`).
+    act(() => {
+      fireEvent.click(ocultarButton);
+      fireEvent.click(ocultarButton);
+    });
+
+    expect(
+      screen.queryByText('https://app.boosterchile.com/onboarding-admin?token=abc.def'),
+    ).not.toBeInTheDocument();
   });
 
   it('el link sigue visible tras el refetch de la lista (que ya no incluye la solicitud aprobada)', async () => {
