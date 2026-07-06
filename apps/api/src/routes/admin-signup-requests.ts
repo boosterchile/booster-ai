@@ -74,12 +74,17 @@ const DEFAULT_ONBOARDING_LINK_BASE_URL = 'https://app.boosterchile.com/onboardin
 
 /**
  * Arma el link copiable a partir del token one-shot emitido por el approve.
- * `encodeURIComponent` es defensivo (el token es base64url + un separador
- * `.`, ya URL-safe) — protege igual si el formato del token cambiara.
+ * Usa `URL` + `searchParams.set` (en vez de template string `${base}?token=`)
+ * porque un `onboardingLinkBaseUrl` con query o fragment ya presentes
+ * (p.ej. `https://x.com/consume?ref=a`) rompería la concatenación naive
+ * (`...?ref=a?token=...` → `URLSearchParams.get('token')` de la página
+ * consumidora retorna `null`, link muerto silencioso). `searchParams.set`
+ * hace el URL-encoding correcto sin `encodeURIComponent` manual.
  */
 function buildOnboardingLink(baseUrl: string | undefined, token: string): string {
-  const base = baseUrl ?? DEFAULT_ONBOARDING_LINK_BASE_URL;
-  return `${base}?token=${encodeURIComponent(token)}`;
+  const url = new URL(baseUrl ?? DEFAULT_ONBOARDING_LINK_BASE_URL);
+  url.searchParams.set('token', token);
+  return url.toString();
 }
 
 export function createAdminSignupRequestsRoutes(opts: {

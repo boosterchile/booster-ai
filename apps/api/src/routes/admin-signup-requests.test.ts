@@ -514,6 +514,55 @@ describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 
     expect(json.onboarding_link).toMatch(/^https:\/\/custom\.example\.com\/consume\?token=.+$/);
   });
 
+  it('con onboardingLinkBaseUrl que YA trae query preexistente → token se agrega como param propio (no concatenación rota)', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [selectRow()],
+      updateRows: [{ id: REQUEST_ID, email: 'nuevo@cliente.cl' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ onboardingLinkBaseUrl: 'https://custom.example.com/consume?ref=a' }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { onboarding_link: string };
+    const parsed = new URL(json.onboarding_link);
+    // El query preexistente `ref=a` se conserva y el token queda parseable
+    // como su propio param — nunca `...?ref=a?token=...` (link muerto).
+    expect(parsed.searchParams.get('ref')).toBe('a');
+    expect(parsed.searchParams.get('token')).toBeTruthy();
+    expect(parsed.searchParams.get('token')).not.toBeNull();
+  });
+
+  it('con onboardingLinkBaseUrl que trae fragment (#) → token se agrega como query param, no se pierde tras el fragment', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [selectRow()],
+      updateRows: [{ id: REQUEST_ID, email: 'nuevo@cliente.cl' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ onboardingLinkBaseUrl: 'https://custom.example.com/consume#section' }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { onboarding_link: string };
+    const parsed = new URL(json.onboarding_link);
+    expect(parsed.hash).toBe('#section');
+    expect(parsed.searchParams.get('token')).toBeTruthy();
+  });
+
   it('el token emitido NUNCA aparece en los logs capturados (solo redacted boolean upstream)', async () => {
     const mod = await loadModWithAdminProvisionedConfig();
     const d = makeDb({
