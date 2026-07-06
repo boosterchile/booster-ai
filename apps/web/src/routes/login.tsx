@@ -39,13 +39,19 @@ const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
  * rotar su clave numérica desde su método anterior (Wave 4 PR 3 wire).
  *
  * Tras login exitoso → /app, que decide via /me si va a /onboarding o
- * directo al dashboard según `needs_onboarding`.
+ * directo al dashboard según `needs_onboarding`. Excepción: si llegamos acá
+ * con `?redirect=` (seteado por `ProtectedRoute` cuando un no-autenticado
+ * pedía una ruta protegida, ej. `/onboarding-admin?token=...` del alta
+ * gateada por admin — W1.3), navegamos ahí en vez de a `/app` para no perder
+ * el destino original. `safeRedirectTarget` valida que sea un path relativo
+ * propio (nunca una URL externa) antes de usarlo — mitigación de open-redirect.
  */
 export function LoginRoute() {
   const { user, loading } = useAuth();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string };
+  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string; redirect?: string };
   const navigate = useNavigate();
+  const postLoginTarget = safeRedirectTarget(search.redirect) ?? '/app';
   const [mode, setMode] = useState<Mode>('sign-in');
   const [resetSent, setResetSent] = useState(false);
 
@@ -107,7 +113,7 @@ export function LoginRoute() {
     setResetSent(false);
     try {
       await signInWithGoogle();
-      void navigate({ to: '/app' });
+      void navigate({ to: postLoginTarget });
     } catch (err) {
       const code = (err as FirebaseError).code;
       const message = (err as FirebaseError).message;
@@ -148,14 +154,14 @@ export function LoginRoute() {
     try {
       if (mode === 'sign-in') {
         await signInWithEmail(values.email, values.password);
-        void navigate({ to: '/app' });
+        void navigate({ to: postLoginTarget });
       } else if (mode === 'sign-up') {
         await signUpWithEmail({
           email: values.email,
           password: values.password,
           ...(values.name.trim() ? { displayName: values.name.trim() } : {}),
         });
-        void navigate({ to: '/app' });
+        void navigate({ to: postLoginTarget });
       } else {
         await requestPasswordReset(values.email);
         setResetSent(true);
@@ -401,4 +407,22 @@ export function LoginRoute() {
       </main>
     </div>
   );
+}
+
+/**
+ * Valida que `redirect` (viene de `?redirect=` en la URL, seteado por
+ * `ProtectedRoute` — W1.3) sea un path relativo de la propia app antes de
+ * usarlo en `navigate()`. Mitigación de open-redirect: rechaza URLs
+ * absolutas (`https://evil.example`), protocol-relative (`//evil.example`) y
+ * cualquier valor con `\` (algunos navegadores normalizan `/\` a `//`).
+ * `undefined`/vacío → `null` (el caller cae a `/app`).
+ */
+function safeRedirectTarget(raw: string | undefined): string | null {
+  if (!raw) {
+    return null;
+  }
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('://') || raw.includes('\\')) {
+    return null;
+  }
+  return raw;
 }

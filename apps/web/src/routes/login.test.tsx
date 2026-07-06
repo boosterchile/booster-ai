@@ -43,6 +43,10 @@ const { LoginRoute } = await import('./login.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // vi.clearAllMocks() no revierte mockReturnValue (solo mockReturnValueOnce
+  // y el historial de calls) — reset explícito para que un override de
+  // useSearchMock en un test no filtre al siguiente.
+  useSearchMock.mockReturnValue({});
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -110,6 +114,16 @@ describe('LoginRoute — Google sign in', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
   });
 
+  it('Google + ?redirect= → navigate al redirect en vez de /app', async () => {
+    useSearchMock.mockReturnValue({ redirect: '/onboarding-admin?token=xyz789' });
+    signInWithGoogleMock.mockResolvedValueOnce(undefined);
+    render(<LoginRoute />);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar con Google/ }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/onboarding-admin?token=xyz789' }),
+    );
+  });
+
   it('Google popup cancelado → no error visible', async () => {
     useAuthMock.mockReturnValue({ user: null, loading: false });
     signInWithGoogleMock.mockRejectedValueOnce(
@@ -160,6 +174,28 @@ describe('LoginRoute — sign in con email/password', () => {
     fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
     await waitFor(() => expect(signInWithEmailMock).toHaveBeenCalledWith('a@b.cl', '123456'));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
+  });
+
+  it('happy con ?redirect= (W1.3 — retorno desde onboarding-admin) → navigate al redirect en vez de /app', async () => {
+    signInWithEmailMock.mockResolvedValueOnce(undefined);
+    useSearchMock.mockReturnValue({ redirect: '/onboarding-admin?token=xyz789' });
+    render(<LoginRoute />);
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'a@b.cl' } });
+    fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/onboarding-admin?token=xyz789' }),
+    );
+  });
+
+  it('redirect no relativo (posible open-redirect) → ignora y navega a /app', async () => {
+    signInWithEmailMock.mockResolvedValueOnce(undefined);
+    useSearchMock.mockReturnValue({ redirect: 'https://evil.example/phish' });
+    render(<LoginRoute />);
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'a@b.cl' } });
+    fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
   });
 
