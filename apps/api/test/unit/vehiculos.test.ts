@@ -503,4 +503,359 @@ describe('vehiculos routes', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/dispositivo — IMEI self-service (W2, hito 2 CORFO).
+  //
+  // A diferencia de makeDbStub (chains directos usados por el resto de este
+  // archivo), este endpoint corre TODA su lógica dentro de
+  // `db.transaction(async (tx) => {...})` (mismo patrón que
+  // admin-dispositivos.ts). El stub de abajo expone un `tx` con
+  // select/update respaldados por colas que se consumen en el ORDEN EXACTO
+  // en que el handler las invoca — documentado en el comentario de cada
+  // test. Correctitud de las cláusulas WHERE reales (p.ej. que el UPDATE de
+  // "reemplazado" realmente filtre por status='aprobado' AND
+  // assignedToVehicleId=vehiculo) queda fuera de este nivel de test (no hay
+  // Postgres real acá); eso es responsabilidad de un test de integración
+  // futuro si se prioriza.
+  // ---------------------------------------------------------------------
+  describe('PATCH /:id/dispositivo — IMEI self-service (W2)', () => {
+    const VALID_IMEI = '356307042441013';
+
+    function makeDeviceTxStub(opts: {
+      selects?: Array<Record<string, unknown>[]>;
+      updates?: Array<Record<string, unknown>[] | { code: string }>;
+    }) {
+      let selectIdx = 0;
+      let updateIdx = 0;
+
+      const selectFn = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => Promise.resolve(opts.selects?.[selectIdx++] ?? [])),
+          })),
+        })),
+      }));
+
+      const updateFn = vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            returning: vi.fn(() => {
+              const result = opts.updates?.[updateIdx++];
+              if (result && !Array.isArray(result)) {
+                return Promise.reject(result);
+              }
+              return Promise.resolve(result ?? []);
+            }),
+          })),
+        })),
+      }));
+
+      const tx = { select: selectFn, update: updateFn };
+      const transactionFn = vi.fn((cb: (tx: typeof tx) => unknown) => cb(tx));
+
+      return {
+        db: { transaction: transactionFn } as unknown as Parameters<
+          typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+        >[0]['db'],
+        spies: { selectFn, updateFn, transactionFn },
+      };
+    }
+
+    function patchDispositivo(
+      db: Parameters<typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes>[0]['db'],
+      body: Record<string, unknown>,
+      opts: { role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null } = {
+        role: 'dueno',
+      },
+    ) {
+      return buildApp(db, opts).then((app) =>
+        app.request(`/vehiculos/${VEHICLE_ID}/dispositivo`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+
+    it.each([
+      ['14 dígitos', '3563070424410'],
+      ['con letras', '35630704244101A'],
+      ['vacío', ''],
+    ])('formato de IMEI inválido (%s) → 400', async (_label, imei) => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(stub.db, { teltonika_imei: imei });
+      expect(res.status).toBe(400);
+      expect(stub.spies.transactionFn).not.toHaveBeenCalled();
+    });
+
+    it('sin campo teltonika_imei en el body → 400', async () => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(stub.db, {});
+      expect(res.status).toBe(400);
+    });
+
+    it('rol sin permiso (despachador) → 403', async () => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(
+        stub.db,
+        { teltonika_imei: VALID_IMEI },
+        { role: 'despachador' },
+      );
+      expect(res.status).toBe(403);
+      expect(stub.spies.transactionFn).not.toHaveBeenCalled();
+    });
+
+    it('IDOR cross-tenant: vehículo no pertenece a la empresa activa → 404 (NO 403)', async () => {
+      // select #1 (ownership id+empresaId) no matchea → [].
+      const stub = makeDeviceTxStub({ selects: [[]] });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('vehicle_not_found');
+    });
+
+    it('vehículo con espejo activo + IMEI propio nuevo → 422 imei_espejo_activo', async () => {
+      // select #1: vehiculo con teltonika_imei_espejo seteado.
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: null,
+              teltonikaImeiEspejo: '999999999999999',
+              plate: 'ABCD12',
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('imei_espejo_activo');
+    });
+
+    it('IMEI ya en uso (23505 en el UPDATE) → 409 imei_en_uso, mensaje neutro', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [], // select #2: pendingDevices sin row para el IMEI nuevo
+        ],
+        updates: [{ code: '23505' }], // update #1: vehiculo → rechazado por UNIQUE
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; error: string };
+      expect(body.code).toBe('imei_en_uso');
+      expect(JSON.stringify(body)).not.toMatch(/empresa|patente|ABCD12/i);
+    });
+
+    it('pending aprobado en OTRO vehículo → 409 imei_en_uso (coherencia UNIQUE, sin gastar el UPDATE)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-5',
+              imei: VALID_IMEI,
+              status: 'aprobado',
+              notes: null,
+              updatedAt: new Date('2026-05-01T00:00:00Z'),
+              assignedToVehicleId: 'otro-vehiculo-uuid',
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('imei_en_uso');
+      expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    });
+
+    it('IMEI rechazado sin confirmar_reasociacion → 409 imei_rechazado con rechazado_en/motivo', async () => {
+      const rechazadoEn = new Date('2026-06-01T12:00:00Z');
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-1',
+              imei: VALID_IMEI,
+              status: 'rechazado',
+              notes: 'device de prueba, no instalado',
+              updatedAt: rechazadoEn,
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; rechazado_en: string; motivo: string };
+      expect(body.code).toBe('imei_rechazado');
+      expect(body.motivo).toBe('device de prueba, no instalado');
+      expect(body.rechazado_en).toBe(rechazadoEn.toISOString());
+      expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    });
+
+    it('IMEI rechazado CON confirmar_reasociacion:true → 200, reasociado_desde=rechazado', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-1',
+              imei: VALID_IMEI,
+              status: 'rechazado',
+              notes: 'motivo',
+              updatedAt: new Date('2026-06-01T12:00:00Z'),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: VALID_IMEI })], // update #1: vehiculo
+          [{ id: 'pd-1' }], // update #2: pending → aprobado (override)
+        ],
+      });
+      const res = await patchDispositivo(stub.db, {
+        teltonika_imei: VALID_IMEI,
+        confirmar_reasociacion: true,
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        reconciliacion: string;
+        reasociado_desde: string;
+        reemplazado_anterior: boolean;
+      };
+      expect(body.reconciliacion).toBe('reaprobado_desde_rechazado');
+      expect(body.reasociado_desde).toBe('rechazado');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('asociar con pending "pendiente" → 200, reconciliacion=aprobado', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-2',
+              imei: VALID_IMEI,
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], [{ id: 'pd-2' }]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('asociar con pending "reemplazado" → 200 directo (D3.a, sin confirmar_reasociacion)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-3',
+              imei: VALID_IMEI,
+              status: 'reemplazado',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: 'algun-vehiculo-anterior',
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], [{ id: 'pd-3' }]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string };
+      expect(body.reconciliacion).toBe('aprobado');
+    });
+
+    it('cambiar X→Y: X pasa a reemplazado, Y se reconcilia (pendiente→aprobado)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: '111111111111111',
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+          [
+            {
+              id: 'pd-4',
+              imei: '222222222222222',
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: '222222222222222' })], // update #1: vehiculo
+          [{ id: 'pd-old' }], // update #2: X → reemplazado
+          [{ id: 'pd-4' }], // update #3: Y → aprobado
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: '222222222222222' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(true);
+    });
+
+    it('desasociar (null): X pasa a reemplazado, reconciliacion=null', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: '111111111111111',
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: null })], // update #1: vehiculo
+          [{ id: 'pd-old' }], // update #2: X → reemplazado
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: null });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        reconciliacion: string | null;
+        reemplazado_anterior: boolean;
+      };
+      expect(body.reconciliacion).toBeNull();
+      expect(body.reemplazado_anterior).toBe(true);
+    });
+
+    it('asociar IMEI sin row en pending → reconciliacion=sin_registro', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [], // select #2: sin pending row
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('sin_registro');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+  });
 });
