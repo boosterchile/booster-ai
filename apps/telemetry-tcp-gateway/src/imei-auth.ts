@@ -68,6 +68,20 @@ export async function resolveImei(opts: {
   }
 
   // 2. Upsert en dispositivos_pendientes.
+  //
+  // D3b (.specs/hito-2-corfo-mes-8/decisiones.md D3.b) — un device
+  // DESASOCIADO (PATCH self-service W2 pone su row en 'reemplazado') que
+  // sigue transmitiendo debe reaparecer en la bandeja de pendientes al
+  // reconectar, para que un admin lo reasocie. Antes de esto el UPSERT
+  // nunca tocaba `estado`: un row 'reemplazado' quedaba terminal y el
+  // device jamás volvía a `pendiente` solo, aunque siguiera enviando
+  // datos (el PATCH quedaba como único rescate manual).
+  //
+  // 'rechazado' NO se reabre acá — el rechazo debe sobrevivir reconexiones
+  // (D2): reabrirlo automáticamente anularía la decisión explícita del
+  // admin. 'aprobado' tampoco se toca (y en la práctica no debería llegar
+  // a este UPSERT mientras siga vigente: el lookup de vehículo del paso 1
+  // ya habría matcheado y retornado antes).
   const upserted = await db.execute<{ id: string }>(sql`
     INSERT INTO dispositivos_pendientes (imei, ultima_ip_origen, cantidad_conexiones)
     VALUES (${imei}, ${sourceIp ?? null}::inet, 1)
@@ -75,7 +89,11 @@ export async function resolveImei(opts: {
       ultima_conexion_en = now(),
       ultima_ip_origen = EXCLUDED.ultima_ip_origen,
       cantidad_conexiones = dispositivos_pendientes.cantidad_conexiones + 1,
-      actualizado_en = now()
+      actualizado_en = now(),
+      estado = CASE
+        WHEN dispositivos_pendientes.estado = 'reemplazado' THEN 'pendiente'
+        ELSE dispositivos_pendientes.estado
+      END
     RETURNING id
   `);
   const pendingId = upserted.rows[0]?.id ?? null;
