@@ -385,14 +385,18 @@ variable "auth_universal_v1_activated" {
 # token ni link one-shot) — `apps/api/src/routes/admin-signup-requests.ts`
 # líneas 182-188, gateado por `ADMIN_PROVISIONED_ONBOARDING_ENABLED &&
 # ONBOARDING_TOKEN_SIGNING_SECRET`. Fail-closed explícito: mientras este PR
-# no esté seguido del runbook de activación completo (paso 5), el flag
-# público de solicitudes queda apagado también — el PO decide
-# explícitamente cuándo reabrir la cola de solicitudes junto con el modo
-# admin-provisioned. Ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`
-# §Paso 0 (verificación de que prod corría con `true` desde <=2026-07-02 sin
-# que el modo admin-provisioned estuviera listo).
+# no esté seguido del runbook de activación completo (paso 5), el
+# procesamiento admin de solicitudes queda apagado. OJO precisión: este flag
+# gatea SOLO los endpoints admin (listar/approve/reject → 503); el POST
+# público /api/v1/signup-request NO está gateado por diseño (spec §7.5/R6)
+# y la UI /solicitar-acceso sigue viva — la cola acumula con 202 durante la
+# ventana pre-flip y nadie puede aprobarla. El PO decide explícitamente
+# cuándo reabrir el procesamiento junto con el modo admin-provisioned. Ver
+# `docs/corfo/hito-2/runbook-activacion-onboarding.md` §Paso 0 (verificación
+# de que prod corría con `true` desde <=2026-07-02 sin que el modo
+# admin-provisioned estuviera listo).
 variable "signup_request_flow_activated" {
-  description = "Activa POST /api/v1/signup-request + admin UI (SEC-001 H1.2 ADR-052)."
+  description = "Procesamiento admin de signup-requests: list/approve/reject (el POST público no se gatea; SEC-001 H1.2 ADR-052)."
   type        = bool
   default     = false
 }
