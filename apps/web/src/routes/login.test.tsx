@@ -62,6 +62,15 @@ describe('LoginRoute — auth state', () => {
   });
 });
 
+describe('LoginRoute — link a solicitar-acceso', () => {
+  it('muestra el link "Solicita acceso" apuntando a /solicitar-acceso', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    render(<LoginRoute />);
+    const link = screen.getByTestId('login-link-solicitar-acceso');
+    expect(link).toHaveAttribute('href', '/solicitar-acceso');
+  });
+});
+
 describe('LoginRoute — flags cargando (anti-flash)', () => {
   const DEFAULT_FLAGS = {
     flags: {

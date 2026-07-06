@@ -356,6 +356,20 @@ const liquidacionesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/liquidaciones.js'), 'LiquidacionesRoute'),
 });
 
+// SEC-001 Sprint 2b (ADR-052) — alta de usuarios gateada por admin. Reemplaza
+// el self-signup directo de Firebase: el visitante pide acceso acá (POST
+// público /api/v1/signup-request) y un admin aprueba/rechaza desde
+// /app/platform-admin/signup-requests. Path raíz (NO /app/...) porque debe
+// ser accesible sin sesión, igual que /login.
+const solicitarAccesoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/solicitar-acceso',
+  component: lazyRouteComponent(
+    () => import('./routes/solicitar-acceso.js'),
+    'SolicitarAccesoRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -399,6 +413,7 @@ const routeTree = rootRoute.addChildren([
   liquidacionesRoute,
   adminCobraHoyRoute,
   maintenanceRoute,
+  solicitarAccesoRoute,
 ]);
 
 export const router = createRouter({

@@ -341,6 +341,21 @@ export function LoginRoute() {
                     Ingresar con RUT
                   </a>
                 </p>
+                {/* SEC-001 Sprint 2b (ADR-052) — alta gateada por admin.
+                    Reemplaza el self-signup directo de Firebase (mode
+                    "sign-up" arriba, aún vigente hasta que se retire en un
+                    follow-up): el visitante pide acceso y un admin
+                    aprueba/rechaza desde /app/platform-admin/signup-requests. */}
+                <p>
+                  ¿No tienes cuenta?{' '}
+                  <a
+                    href="/solicitar-acceso"
+                    className="font-medium text-primary-600 hover:underline"
+                    data-testid="login-link-solicitar-acceso"
+                  >
+                    Solicita acceso
+                  </a>
+                </p>
                 <p className="mt-3 border-neutral-200 border-t pt-3 text-neutral-500 text-xs">
                   ¿Admin de plataforma Booster?{' '}
                   <a
