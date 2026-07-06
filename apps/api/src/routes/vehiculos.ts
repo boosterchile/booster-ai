@@ -12,6 +12,8 @@ import {
   telemetryPoints,
   vehicles,
 } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -93,6 +95,38 @@ const patchDispositivoBodySchema = z.object({
   teltonika_imei: teltonikaImeiSchema.nullable(),
   confirmar_reasociacion: z.boolean().optional(),
 });
+
+/**
+ * TOCTOU en la reconciliación del IMEI entrante de `PATCH /:id/dispositivo`
+ * (ver esa ruta más abajo): el UPDATE con CAS sobre `dispositivos_pendientes`
+ * puede perder la carrera contra un actor externo — p.ej. un admin de
+ * CUALQUIER empresa rechazando el mismo pending vía el panel
+ * (`admin-dispositivos.ts:191-216`; D2b: el rechazo NO es tenant-scoped, ver
+ * `.specs/hito-2-corfo-mes-8/decisiones.md`). Cuando el CAS devuelve 0 filas,
+ * este error aborta la transacción COMPLETA (incluyendo el UPDATE ya
+ * aplicado a `vehicles.teltonika_imei`) y el handler responde con el estado
+ * REAL re-derivado fresco — "nunca silencioso".
+ */
+class PendingDeviceReconciliationConflictError extends Error {
+  readonly detail:
+    | { kind: 'rechazado'; rechazadoEn: Date; motivo: string | null }
+    | { kind: 'inesperado'; status: string };
+
+  constructor(
+    detail:
+      | { kind: 'rechazado'; rechazadoEn: Date; motivo: string | null }
+      | { kind: 'inesperado'; status: string },
+  ) {
+    super('pending device reconciliation conflict (TOCTOU)');
+    this.name = 'PendingDeviceReconciliationConflictError';
+    this.detail = detail;
+  }
+}
+
+// Métrica de negocio del PATCH de auto-asociación (W2). Único endpoint de
+// vehiculos.ts instrumentado hoy — ver
+// .specs/_followups/vehiculos-router-otel-spans.md para el resto del router.
+const dispositivoAsociacionesCounter = getBusinessCounter('dispositivo_asociaciones_total');
 
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -534,13 +568,29 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   //     se limpia el FK) — decisión: el dato "quién lo tuvo antes" es útil
   //     para auditoría y no hay necesidad funcional de nulearlo.
   //
-  // Observabilidad: log estructurado por mutación (actor/empresa/vehículo/
-  // imei anterior→nuevo/reconciliación). Sin span OTel dedicado: vehiculos.ts
-  // no tiene NINGÚN span OTel hoy en ninguno de sus otros 7 endpoints (no
-  // hay patrón establecido en este router para replicar — el único uso de
-  // `withBusinessSpan` en routes/ vive en transport-documents.ts, un router
-  // distinto); agregar un span aislado acá sería inconsistente con el resto
-  // del archivo. Deuda pre-existente del router, no de esta tarea.
+  // TOCTOU en la reconciliación de Y (fix — ver
+  // PendingDeviceReconciliationConflictError arriba en este archivo): los
+  // dos UPDATE que mueven Y a 'aprobado' llevan CAS (status esperado en el
+  // WHERE, espejo del patrón de la línea de "reemplazado" de X y de
+  // admin-dispositivos.ts:191-216). Si el CAS devuelve 0 filas — otro actor
+  // (p.ej. un admin de OTRA empresa rechazando el mismo pending vía D2b)
+  // cambió el status entre la SELECT de reconciliación y este UPDATE —, la
+  // tx aborta (throw) y el catch de más abajo responde con el estado FRESCO
+  // re-leído, nunca sobreescribe silenciosamente una decisión ajena.
+  //
+  // Observabilidad: log estructurado (igual que antes) + PRIMER span OTel y
+  // PRIMERA métrica de negocio de este router (vehiculos.ts no tenía ninguno
+  // de los dos en sus otros 7 endpoints — deuda documentada en
+  // .specs/_followups/vehiculos-router-otel-spans.md, que toma este endpoint
+  // como el patrón a replicar). Atributos del span: SOLO vehiculo_id/
+  // empresa_id/reconciliacion — el IMEI completo NO se expone como
+  // atributo (el logger estructurado ya lo registra con su propia
+  // retención; un atributo de span queda indexado/exportado a Cloud Trace
+  // con superficie de acceso más amplia, y ningún span del repo expone hoy
+  // un identificador de dispositivo — se prefiere no sentar ese precedente
+  // acá). La métrica (`dispositivo_asociaciones_total`) lleva labels
+  // resultado/reconciliacion para cubrir TODOS los desenlaces, incluidos
+  // los 4xx.
   // ---------------------------------------------------------------------
   app.patch('/:id/dispositivo', zValidator('json', patchDispositivoBodySchema), async (c) => {
     const auth = requireOwnerOrAdminRole(c);
@@ -553,190 +603,298 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const actorUserId = auth.userContext.user.id;
     const newImei = body.teltonika_imei;
 
-    return await opts.db.transaction(async (tx) => {
-      const [vehicle] = await tx
-        .select({
-          id: vehicles.id,
-          teltonikaImei: vehicles.teltonikaImei,
-          teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
-          plate: vehicles.plate,
-        })
-        .from(vehicles)
-        .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
-        .limit(1);
-      if (!vehicle) {
-        return c.json({ error: 'vehicle_not_found' }, 404);
-      }
-      const oldImei = vehicle.teltonikaImei;
+    let resultado = 'error_interno';
+    let reconciliacionMetrica = 'ninguna';
 
-      // Invariante espejo (schema.ts L804-806): "mutuamente excluyente con
-      // teltonika_imei... validado en runtime, no en BD" — hasta hoy ese
-      // runtime check no existía en ningún endpoint. Primer enforcement real.
-      if (newImei !== null && vehicle.teltonikaImeiEspejo !== null) {
-        return c.json({ error: 'imei_espejo_activo', code: 'imei_espejo_activo' }, 422);
-      }
+    try {
+      return await withBusinessSpan(
+        {
+          name: 'vehiculo.actualizar_dispositivo',
+          attributes: { 'booster.vehiculo_id': id, 'booster.empresa_id': empresaId },
+        },
+        async (span) => {
+          return await opts.db.transaction(async (tx) => {
+            // TOCTOU: cuando el CAS de reconciliación de Y (abajo) pierde la
+            // carrera (0 filas), re-lee el row para responder con el estado
+            // REAL en vez de fallar genérico — "nunca silencioso".
+            async function reconciliationConflict(
+              pendingId: string,
+            ): Promise<PendingDeviceReconciliationConflictError> {
+              const [fresh] = await tx
+                .select({
+                  status: pendingDevices.status,
+                  notes: pendingDevices.notes,
+                  updatedAt: pendingDevices.updatedAt,
+                })
+                .from(pendingDevices)
+                .where(eq(pendingDevices.id, pendingId))
+                .limit(1);
+              if (fresh?.status === 'rechazado') {
+                return new PendingDeviceReconciliationConflictError({
+                  kind: 'rechazado',
+                  rechazadoEn: fresh.updatedAt,
+                  motivo: fresh.notes,
+                });
+              }
+              return new PendingDeviceReconciliationConflictError({
+                kind: 'inesperado',
+                status: fresh?.status ?? 'ausente',
+              });
+            }
 
-      // Reconciliación del IMEI entrante (Y): se busca ANTES de escribir
-      // nada para poder cortar en 409 (rechazado sin confirmar) sin dejar
-      // writes a medias en la transacción.
-      type PendingDeviceRow = Pick<
-        typeof pendingDevices.$inferSelect,
-        'id' | 'status' | 'notes' | 'updatedAt' | 'assignedToVehicleId'
-      >;
-      let pendingRow: PendingDeviceRow | undefined;
-      if (newImei !== null) {
-        [pendingRow] = await tx
-          .select({
-            id: pendingDevices.id,
-            status: pendingDevices.status,
-            notes: pendingDevices.notes,
-            updatedAt: pendingDevices.updatedAt,
-            assignedToVehicleId: pendingDevices.assignedToVehicleId,
-          })
-          .from(pendingDevices)
-          .where(eq(pendingDevices.imei, newImei))
-          .limit(1);
+            const [vehicle] = await tx
+              .select({
+                id: vehicles.id,
+                teltonikaImei: vehicles.teltonikaImei,
+                teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+                plate: vehicles.plate,
+              })
+              .from(vehicles)
+              .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+              .limit(1);
+            if (!vehicle) {
+              resultado = 'vehicle_not_found';
+              return c.json({ error: 'vehicle_not_found' }, 404);
+            }
+            const oldImei = vehicle.teltonikaImei;
 
-        if (pendingRow?.status === 'rechazado' && !body.confirmar_reasociacion) {
+            // Invariante espejo (schema.ts L804-806): "mutuamente excluyente con
+            // teltonika_imei... validado en runtime, no en BD" — hasta hoy ese
+            // runtime check no existía en ningún endpoint. Primer enforcement real.
+            if (newImei !== null && vehicle.teltonikaImeiEspejo !== null) {
+              resultado = 'imei_espejo_activo';
+              return c.json({ error: 'imei_espejo_activo', code: 'imei_espejo_activo' }, 422);
+            }
+
+            // Reconciliación del IMEI entrante (Y): se busca ANTES de escribir
+            // nada para poder cortar en 409 (rechazado sin confirmar) sin dejar
+            // writes a medias en la transacción.
+            type PendingDeviceRow = Pick<
+              typeof pendingDevices.$inferSelect,
+              'id' | 'status' | 'notes' | 'updatedAt' | 'assignedToVehicleId'
+            >;
+            let pendingRow: PendingDeviceRow | undefined;
+            if (newImei !== null) {
+              [pendingRow] = await tx
+                .select({
+                  id: pendingDevices.id,
+                  status: pendingDevices.status,
+                  notes: pendingDevices.notes,
+                  updatedAt: pendingDevices.updatedAt,
+                  assignedToVehicleId: pendingDevices.assignedToVehicleId,
+                })
+                .from(pendingDevices)
+                .where(eq(pendingDevices.imei, newImei))
+                .limit(1);
+
+              if (pendingRow?.status === 'rechazado' && !body.confirmar_reasociacion) {
+                resultado = 'imei_rechazado';
+                return c.json(
+                  {
+                    error: 'imei_rechazado',
+                    code: 'imei_rechazado',
+                    rechazado_en: pendingRow.updatedAt,
+                    motivo: pendingRow.notes,
+                  },
+                  409,
+                );
+              }
+
+              // Coherencia UNIQUE (D2, verificado): si el pending ya dice
+              // 'aprobado' en OTRO vehículo, cortamos acá sin gastar el UPDATE.
+              // El catch de 23505 más abajo sigue siendo la defensa de fondo
+              // real (race-safe) para cualquier estado que no reflejara esto
+              // (pending ausente/desactualizado, condición de carrera genuina).
+              if (
+                pendingRow?.status === 'aprobado' &&
+                pendingRow.assignedToVehicleId !== null &&
+                pendingRow.assignedToVehicleId !== vehicle.id
+              ) {
+                resultado = 'imei_en_uso';
+                return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
+              }
+            }
+
+            let updated: typeof vehicles.$inferSelect | undefined;
+            try {
+              [updated] = await tx
+                .update(vehicles)
+                .set({ teltonikaImei: newImei, updatedAt: new Date() })
+                .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+                .returning();
+            } catch (err) {
+              const code = (err as { code?: string }).code;
+              if (code === '23505') {
+                // Mensaje neutro: NO revela qué otra empresa/patente tiene el IMEI.
+                resultado = 'imei_en_uso';
+                return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
+              }
+              throw err;
+            }
+            if (!updated) {
+              resultado = 'vehicle_not_found';
+              return c.json({ error: 'vehicle_not_found' }, 404);
+            }
+
+            // Row de X (IMEI anterior) → reemplazado. Solo si estaba aprobado y
+            // asignado a ESTE vehículo (la condición va en el WHERE: si no
+            // matchea, no reemplaza nada — no hay nada que reconciliar).
+            let reemplazadoAnterior = false;
+            if (oldImei !== null && oldImei !== newImei) {
+              const [reemplazado] = await tx
+                .update(pendingDevices)
+                .set({ status: 'reemplazado', updatedAt: new Date() })
+                .where(
+                  and(
+                    eq(pendingDevices.imei, oldImei),
+                    eq(pendingDevices.status, 'aprobado'),
+                    eq(pendingDevices.assignedToVehicleId, vehicle.id),
+                  ),
+                )
+                .returning();
+              reemplazadoAnterior = Boolean(reemplazado);
+            }
+
+            // Row de Y (IMEI nuevo) → reconciliación según su estado previo.
+            let reconciliacion: 'aprobado' | 'reaprobado_desde_rechazado' | 'sin_registro' | null =
+              null;
+            let reasociadoDesde: 'rechazado' | undefined;
+            if (newImei !== null) {
+              if (!pendingRow) {
+                reconciliacion = 'sin_registro';
+              } else if (pendingRow.status === 'pendiente' || pendingRow.status === 'reemplazado') {
+                // CAS: re-exige en el WHERE el status leído más arriba (ver
+                // comentario TOCTOU al inicio de la ruta).
+                const [reconciled] = await tx
+                  .update(pendingDevices)
+                  .set({
+                    status: 'aprobado',
+                    assignedToVehicleId: vehicle.id,
+                    assignedAt: new Date(),
+                    assignedByUserId: actorUserId,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(pendingDevices.id, pendingRow.id),
+                      inArray(pendingDevices.status, ['pendiente', 'reemplazado']),
+                    ),
+                  )
+                  .returning();
+                if (!reconciled) {
+                  throw await reconciliationConflict(pendingRow.id);
+                }
+                reconciliacion = 'aprobado';
+              } else if (pendingRow.status === 'rechazado') {
+                // Solo se llega acá con confirmar_reasociacion:true — el gate de
+                // arriba ya cortó en 409 el caso sin confirmar.
+                //
+                // CAS: re-exige status='rechazado' en el WHERE (ver
+                // comentario TOCTOU al inicio de la ruta) — si 0 filas, el
+                // row cambió entre la SELECT de reconciliación y este
+                // UPDATE (p.ej. otro admin lo rechazó de nuevo, o ganó otro
+                // PATCH concurrente con el mismo override).
+                const [reconciled] = await tx
+                  .update(pendingDevices)
+                  .set({
+                    status: 'aprobado',
+                    assignedToVehicleId: vehicle.id,
+                    assignedAt: new Date(),
+                    assignedByUserId: actorUserId,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(pendingDevices.id, pendingRow.id),
+                      eq(pendingDevices.status, 'rechazado'),
+                    ),
+                  )
+                  .returning();
+                if (!reconciled) {
+                  throw await reconciliationConflict(pendingRow.id);
+                }
+                reconciliacion = 'reaprobado_desde_rechazado';
+                reasociadoDesde = 'rechazado';
+                opts.logger.warn(
+                  {
+                    actorUserId,
+                    empresaId,
+                    vehicleId: vehicle.id,
+                    imei: newImei,
+                    estadoPrevio: 'rechazado',
+                    rechazadoEn: pendingRow.updatedAt,
+                    timestamp: new Date().toISOString(),
+                  },
+                  'override: reasociación de IMEI previamente rechazado (confirmar_reasociacion)',
+                );
+              } else {
+                // pendingRow.status === 'aprobado' asignado a ESTE MISMO
+                // vehículo (PATCH idempotente: reenviar el mismo IMEI que ya
+                // tenía). Nada que reconciliar, pero no es un error.
+                reconciliacion = 'aprobado';
+              }
+            }
+
+            opts.logger.info(
+              {
+                actorUserId,
+                empresaId,
+                vehicleId: vehicle.id,
+                plate: vehicle.plate,
+                imeiAnterior: oldImei,
+                imeiNuevo: newImei,
+                reconciliacion,
+                reemplazadoAnterior,
+              },
+              'dispositivo Teltonika actualizado vía self-service (W2)',
+            );
+
+            resultado = 'ok';
+            reconciliacionMetrica = reconciliacion ?? 'ninguna';
+            setResultAttributes(span, {
+              'booster.dispositivo.reconciliacion': reconciliacionMetrica,
+            });
+
+            return c.json({
+              vehicle: serializeVehicle(updated),
+              reconciliacion,
+              reemplazado_anterior: reemplazadoAnterior,
+              ...(reasociadoDesde ? { reasociado_desde: reasociadoDesde } : {}),
+            });
+          });
+        },
+      );
+    } catch (err) {
+      if (err instanceof PendingDeviceReconciliationConflictError) {
+        if (err.detail.kind === 'rechazado') {
+          resultado = 'imei_rechazado';
           return c.json(
             {
               error: 'imei_rechazado',
               code: 'imei_rechazado',
-              rechazado_en: pendingRow.updatedAt,
-              motivo: pendingRow.notes,
+              rechazado_en: err.detail.rechazadoEn,
+              motivo: err.detail.motivo,
             },
             409,
           );
         }
-
-        // Coherencia UNIQUE (D2, verificado): si el pending ya dice
-        // 'aprobado' en OTRO vehículo, cortamos acá sin gastar el UPDATE.
-        // El catch de 23505 más abajo sigue siendo la defensa de fondo
-        // real (race-safe) para cualquier estado que no reflejara esto
-        // (pending ausente/desactualizado, condición de carrera genuina).
-        if (
-          pendingRow?.status === 'aprobado' &&
-          pendingRow.assignedToVehicleId !== null &&
-          pendingRow.assignedToVehicleId !== vehicle.id
-        ) {
-          return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
-        }
+        resultado = 'pending_device_conflict';
+        return c.json(
+          {
+            error: 'pending_device_conflict',
+            code: 'pending_device_conflict',
+            status: err.detail.status,
+          },
+          409,
+        );
       }
-
-      let updated: typeof vehicles.$inferSelect | undefined;
-      try {
-        [updated] = await tx
-          .update(vehicles)
-          .set({ teltonikaImei: newImei, updatedAt: new Date() })
-          .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
-          .returning();
-      } catch (err) {
-        const code = (err as { code?: string }).code;
-        if (code === '23505') {
-          // Mensaje neutro: NO revela qué otra empresa/patente tiene el IMEI.
-          return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
-        }
-        throw err;
-      }
-      if (!updated) {
-        return c.json({ error: 'vehicle_not_found' }, 404);
-      }
-
-      // Row de X (IMEI anterior) → reemplazado. Solo si estaba aprobado y
-      // asignado a ESTE vehículo (la condición va en el WHERE: si no
-      // matchea, no reemplaza nada — no hay nada que reconciliar).
-      let reemplazadoAnterior = false;
-      if (oldImei !== null && oldImei !== newImei) {
-        const [reemplazado] = await tx
-          .update(pendingDevices)
-          .set({ status: 'reemplazado', updatedAt: new Date() })
-          .where(
-            and(
-              eq(pendingDevices.imei, oldImei),
-              eq(pendingDevices.status, 'aprobado'),
-              eq(pendingDevices.assignedToVehicleId, vehicle.id),
-            ),
-          )
-          .returning();
-        reemplazadoAnterior = Boolean(reemplazado);
-      }
-
-      // Row de Y (IMEI nuevo) → reconciliación según su estado previo.
-      let reconciliacion: 'aprobado' | 'reaprobado_desde_rechazado' | 'sin_registro' | null = null;
-      let reasociadoDesde: 'rechazado' | undefined;
-      if (newImei !== null) {
-        if (!pendingRow) {
-          reconciliacion = 'sin_registro';
-        } else if (pendingRow.status === 'pendiente' || pendingRow.status === 'reemplazado') {
-          await tx
-            .update(pendingDevices)
-            .set({
-              status: 'aprobado',
-              assignedToVehicleId: vehicle.id,
-              assignedAt: new Date(),
-              assignedByUserId: actorUserId,
-              updatedAt: new Date(),
-            })
-            .where(eq(pendingDevices.id, pendingRow.id))
-            .returning();
-          reconciliacion = 'aprobado';
-        } else if (pendingRow.status === 'rechazado') {
-          // Solo se llega acá con confirmar_reasociacion:true — el gate de
-          // arriba ya cortó en 409 el caso sin confirmar.
-          await tx
-            .update(pendingDevices)
-            .set({
-              status: 'aprobado',
-              assignedToVehicleId: vehicle.id,
-              assignedAt: new Date(),
-              assignedByUserId: actorUserId,
-              updatedAt: new Date(),
-            })
-            .where(eq(pendingDevices.id, pendingRow.id))
-            .returning();
-          reconciliacion = 'reaprobado_desde_rechazado';
-          reasociadoDesde = 'rechazado';
-          opts.logger.warn(
-            {
-              actorUserId,
-              empresaId,
-              vehicleId: vehicle.id,
-              imei: newImei,
-              estadoPrevio: 'rechazado',
-              rechazadoEn: pendingRow.updatedAt,
-              timestamp: new Date().toISOString(),
-            },
-            'override: reasociación de IMEI previamente rechazado (confirmar_reasociacion)',
-          );
-        } else {
-          // pendingRow.status === 'aprobado' asignado a ESTE MISMO
-          // vehículo (PATCH idempotente: reenviar el mismo IMEI que ya
-          // tenía). Nada que reconciliar, pero no es un error.
-          reconciliacion = 'aprobado';
-        }
-      }
-
-      opts.logger.info(
-        {
-          actorUserId,
-          empresaId,
-          vehicleId: vehicle.id,
-          plate: vehicle.plate,
-          imeiAnterior: oldImei,
-          imeiNuevo: newImei,
-          reconciliacion,
-          reemplazadoAnterior,
-        },
-        'dispositivo Teltonika actualizado vía self-service (W2)',
-      );
-
-      return c.json({
-        vehicle: serializeVehicle(updated),
-        reconciliacion,
-        reemplazado_anterior: reemplazadoAnterior,
-        ...(reasociadoDesde ? { reasociado_desde: reasociadoDesde } : {}),
+      throw err;
+    } finally {
+      dispositivoAsociacionesCounter.add(1, {
+        resultado,
+        reconciliacion: reconciliacionMetrica,
       });
-    });
+    }
   });
 
   // ---------------------------------------------------------------------

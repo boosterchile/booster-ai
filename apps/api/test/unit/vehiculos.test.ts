@@ -781,6 +781,102 @@ describe('vehiculos routes', () => {
       expect(body.reconciliacion).toBe('aprobado');
     });
 
+    // -----------------------------------------------------------------
+    // TOCTOU (finding 1, revisión W2a): el UPDATE de reconciliación de Y
+    // (pendiente/reemplazado → aprobado) no llevaba CAS sobre el status
+    // leído en la SELECT previa. Race concreta: mientras esta tx corre, un
+    // admin de OTRA empresa (D2b: el rechazo NO es tenant-scoped) rechaza
+    // el mismo pending vía `/admin/dispositivos-pendientes/:id/rechazar`.
+    // Sin CAS, el UPDATE de esta tx sobreescribiría igual a 'aprobado' sin
+    // pasar por el 409 `imei_rechazado` — "nunca silencioso" violado. Con
+    // CAS, el UPDATE pierde la carrera (0 filas), la tx aborta (throw) y el
+    // handler responde con el estado FRESCO re-leído.
+    // -----------------------------------------------------------------
+    it('TOCTOU: el CAS de reconciliación de Y pierde la carrera contra un reject externo → 409 imei_rechazado, sin persistir el IMEI', async () => {
+      const rechazadoEnFresco = new Date('2026-07-06T15:00:00Z');
+      const stub = makeDeviceTxStub({
+        selects: [
+          // select #1: vehículo (sin IMEI previo).
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          // select #2: pending del IMEI Y, leído como 'pendiente' — decide
+          // entrar a la rama pendiente/reemplazado.
+          [
+            {
+              id: 'pd-race',
+              imei: VALID_IMEI,
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date('2026-07-06T14:00:00Z'),
+              assignedToVehicleId: null,
+            },
+          ],
+          // select #3: re-lectura fresca tras el CAS fallido — el pending
+          // fue rechazado por el admin externo ENTRE el select #2 y el
+          // UPDATE con CAS.
+          [
+            {
+              status: 'rechazado',
+              notes: 'rechazado durante la carrera',
+              updatedAt: rechazadoEnFresco,
+            },
+          ],
+        ],
+        updates: [
+          // update #1: vehiculo.teltonika_imei — "éxito aparente" (el stub
+          // no modela rollback; en Postgres real este UPDATE sí se revierte
+          // porque el throw más abajo aborta la tx completa).
+          [buildVehicleRow({ teltonikaImei: VALID_IMEI })],
+          // update #2: CAS de reconciliación de Y → 0 filas (perdió la
+          // carrera: el WHERE ya no matchea porque el status cambió).
+          [],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; rechazado_en: string; motivo: string };
+      expect(body.code).toBe('imei_rechazado');
+      expect(body.motivo).toBe('rechazado durante la carrera');
+      expect(body.rechazado_en).toBe(rechazadoEnFresco.toISOString());
+      // No se llegó a la respuesta 200: sin `vehicle` en el body pese a que
+      // el UPDATE de `vehicles` había "aparentado" tener éxito en el stub —
+      // evidencia (a este nivel de test) de que la tx abortó en vez de
+      // confirmar el cambio de IMEI.
+      expect(body).not.toHaveProperty('vehicle');
+      // Solo 2 updates: el del vehículo + el CAS fallido. La rama de éxito
+      // habría hecho un 2do update de pendingDevices con datos distintos
+      // (aprobado/assignedToVehicleId) que acá nunca se alcanza porque el
+      // throw corta el flujo antes de cualquier otro write.
+      expect(stub.spies.updateFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('TOCTOU: el CAS de reconciliación de Y pierde la carrera y el estado fresco NO es "rechazado" → 409 de conflicto genérico', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-race-2',
+              imei: VALID_IMEI,
+              status: 'reemplazado',
+              notes: null,
+              updatedAt: new Date('2026-07-06T14:00:00Z'),
+              assignedToVehicleId: 'otro-vehiculo-anterior',
+            },
+          ],
+          // re-lectura fresca: otro PATCH concurrente ya lo dejó 'aprobado'
+          // en OTRO vehículo — ni siquiera pasó por 'rechazado'.
+          [{ status: 'aprobado', notes: null, updatedAt: new Date('2026-07-06T14:30:00Z') }],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], []],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; status: string };
+      expect(body.code).toBe('pending_device_conflict');
+      expect(body.status).toBe('aprobado');
+      expect(body).not.toHaveProperty('vehicle');
+    });
+
     it('cambiar X→Y: X pasa a reemplazado, Y se reconcilia (pendiente→aprobado)', async () => {
       const stub = makeDeviceTxStub({
         selects: [
@@ -856,6 +952,40 @@ describe('vehiculos routes', () => {
       const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
       expect(body.reconciliacion).toBe('sin_registro');
       expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('pending "aprobado" YA asignado a ESTE MISMO vehículo (PATCH idempotente: reenviar el mismo IMEI) → 200, reconciliacion=aprobado, sin update de pendingDevices', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: VALID_IMEI,
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+          [
+            {
+              id: 'pd-6',
+              imei: VALID_IMEI,
+              status: 'aprobado',
+              notes: null,
+              updatedAt: new Date('2026-06-01T00:00:00Z'),
+              assignedToVehicleId: VEHICLE_ID,
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(false);
+      // Rama idempotente (else final): nada que reconciliar — un solo
+      // update (el del vehículo), CERO updates de pendingDevices.
+      expect(stub.spies.updateFn).toHaveBeenCalledTimes(1);
     });
   });
 });
