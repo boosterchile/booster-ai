@@ -375,10 +375,26 @@ variable "auth_universal_v1_activated" {
 # Flip a `true` 2026-05-29 post ADR-052 Accepted + Sprint 2b T13 canary
 # success (cloudbuild 8f4ec780). Reversible: `terraform apply` con default
 # false revierte a "Coming soon" sin redeploy de código.
+#
+# REVERTIDO a `false` (fix round final-review, 2026-07-06, hallazgo R1):
+# esta rama agrega el onboarding admin-provisioned (T1.4,
+# `admin_provisioned_onboarding_enabled` más abajo, default `false`) — con
+# la UI pública de `/solicitar-acceso` activa (`true`, como quedó desde el
+# flip de 2026-05-29) pero el modo admin-provisioned todavía apagado, un
+# approve real cae SILENCIOSAMENTE al modo legacy (precrea fila `users` sin
+# token ni link one-shot) — `apps/api/src/routes/admin-signup-requests.ts`
+# líneas 182-188, gateado por `ADMIN_PROVISIONED_ONBOARDING_ENABLED &&
+# ONBOARDING_TOKEN_SIGNING_SECRET`. Fail-closed explícito: mientras este PR
+# no esté seguido del runbook de activación completo (paso 5), el flag
+# público de solicitudes queda apagado también — el PO decide
+# explícitamente cuándo reabrir la cola de solicitudes junto con el modo
+# admin-provisioned. Ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`
+# §Paso 0 (verificación de que prod corría con `true` desde <=2026-07-02 sin
+# que el modo admin-provisioned estuviera listo).
 variable "signup_request_flow_activated" {
   description = "Activa POST /api/v1/signup-request + admin UI (SEC-001 H1.2 ADR-052)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ---------------------------------------------------------------------------
