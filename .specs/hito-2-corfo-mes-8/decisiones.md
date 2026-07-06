@@ -34,3 +34,7 @@ Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` pe
 - Segundo consumo de token = **403 anti-oráculo** (no 409): deliberado, documentado en spec de Fase 1. La UI onboarding-admin (W1.3) debe tratar 403 como "token inválido/expirado/consumido" sin distinguir.
 - **W1.4 (link copiable) es la única vía de entrega del token** — el approve no lo devuelve hoy y el notifier es stub. Exponerlo en la respuesta del approve está mandatado por el plan del PO.
 - Activación (W1.5) bloqueada además por: reaper T1.7 sin agendar en Cloud Scheduler (falta Terraform) y `ONBOARDING_TOKEN_SIGNING_SECRET` sin provisionar en GSM/Terraform.
+
+## D2b · Verificado: el rechazo de pending devices NO es tenant-scoped (2026-07-06, W2a)
+
+`dispositivos_pendientes` no tiene `empresaId` (by design, open enrollment global): cualquier `dueno|admin` de CUALQUIER empresa puede listar (`admin-dispositivos.ts:60-78`) y rechazar (`admin-dispositivos.ts:191-216`) pending devices ajenos. **Por eso el rechazo no puede ser terminal**: sería un vector de denegación cruzada (empresa A rechaza el device que empresa B está por reclamar). El PATCH de W2 lo mitiga con el override en dos pasos de D2 (409 `imei_rechazado` + `confirmar_reasociacion: true`), que convierte el rechazo en un obstáculo reversible por el dueño legítimo, con log estructurado del override. Deuda relacionada (no de hoy): evaluar rate-limit o scoping del reject en el panel.
