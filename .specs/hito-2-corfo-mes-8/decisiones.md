@@ -17,6 +17,18 @@ Override en dos pasos, nunca silencioso: primer PATCH sobre IMEI `rechazado` →
 
 `reemplazado` aplica a: cambio X→Y (row de X), desasociar con null (row de X), y asociar IMEI sin row = sin reconciliación (enrollment al conectar). Condiciones: (a) re-asociar desde `reemplazado` procede DIRECTO (el confirm de dos pasos es solo para `rechazado`); (b) verificar que un device desasociado que sigue transmitiendo re-abra `pendiente` aunque exista row `reemplazado` — si el row terminal bloquea el re-enrollment, corregirlo o documentarlo como limitación explícita con el PATCH como único rescate; (c) verificar que el enrollment no crea rows espurios para IMEIs ya asociados.
 
+## D4 · W4a: DDL 0048 APROBADO con FK en asignaciones (2026-07-06)
+
+El PO aprueba la migración 0048 expand-only (enums `categoria_unidad`/`tipo_unidad`/`tipo_carroceria`, columnas nuevas en `vehiculos` con CHECK tipo↔categoría tolerante a NULL, backfill según mapping, `asignaciones.unidad_arrastre_id` FK a vehiculos ON DELETE RESTRICT + índice parcial) **con la corrección de FK en `asignaciones`** (el plan original atribuyó mal el `asignado_a_vehiculo_id`, que pertenece a `dispositivos_pendientes`). **Cinco condiciones antes del apply:**
+
+1. El caveat "revisar rows reales del piloto en W4b UI" se extiende a **`camion_pesado→camion_rigido`**: el enum viejo no tenía tracto — los tractos del piloto están casi seguro registrados como `camion_pesado`. (Aplica también a refrigerado/tanque como ya estaba.)
+2. **Zod exige `tipo_unidad` en toda escritura nueva** (NULL solo para rows legacy); la fase **contract** endurece la columna a NOT NULL — dejarlo escrito en el plan de contract (del ADR/migración).
+3. **CHECK same-row en `asignaciones`**: `unidad_arrastre_id IS NULL OR unidad_arrastre_id <> vehiculo_id`.
+4. Follow-up stub 0..N/bitrén: ✅ ya existe (`.specs/_followups/flota-bitren-0-n-arrastres.md`, commit cd73e95).
+5. **`curb_weight_kg` sigue requerido para `arrastre`** (tara del semi = insumo GVW/GLEC); solo `consumption_l_per_100km_baseline` y `fuel_type` van null.
+
+Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` permitido y consumo requerido; `arrastre` → capacity > 0, consumo/fuel null, IMEI opcional (asset-tracker); demás motrices como hoy. Coherencias runtime+tests (D1.3): arrastre nunca en `vehiculo_id` de asignaciones; compatibilidad tracto↔semirremolque / rígido↔remolque al armar la configuración (W4c). Clase GLEC por configuración: con arrastre → articulado (HDV); motriz sola → por GVW (curb+capacity); derivada en el service y pasada explícita al carbon-calculator (su API ya acepta `categoria`).
+
 ## Hallazgos de auditoría W1.1 que ajustan el plan
 
 - Segundo consumo de token = **403 anti-oráculo** (no 409): deliberado, documentado en spec de Fase 1. La UI onboarding-admin (W1.3) debe tratar 403 como "token inválido/expirado/consumido" sin distinguir.
