@@ -27,6 +27,18 @@ export const fuelTypeSchema = z.enum([
 
 export const vehicleStatusSchema = z.enum(['activo', 'mantenimiento', 'retirado']);
 
+/**
+ * IMEI Teltonika: exactamente 15 dígitos (estándar GSM IMEI, incl. Luhn a
+ * nivel de fabricante pero no validado acá — el gateway ya solo autoriza
+ * IMEIs reales que efectivamente conectan). Usado en el PATCH de
+ * auto-asociación de dispositivo (W2 self-service, hito 2 CORFO) para que
+ * cliente (web) y servidor (apps/api) compartan la misma regla de
+ * formato — antes solo vivía como comentario/regex ad-hoc en el backend.
+ */
+export const teltonikaImeiSchema = z
+  .string()
+  .regex(/^\d{15}$/, 'IMEI debe tener exactamente 15 dígitos');
+
 export const vehicleSchema = z.object({
   id: vehicleIdSchema,
   transportista_id: transportistaIdSchema,
