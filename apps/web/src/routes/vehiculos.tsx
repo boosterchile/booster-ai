@@ -1,9 +1,14 @@
-import { chileanPlateSchema, normalizePlate } from '@booster-ai/shared-schemas';
+import {
+  chileanPlateSchema,
+  normalizePlate,
+  teltonikaImeiSchema,
+} from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { ChileanPlate } from '../components/ChileanPlate.js';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
@@ -11,7 +16,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -404,6 +409,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
   const canDelete = role === 'dueno' || role === 'admin';
+  // PATCH /:id/dispositivo exige dueno|admin en el backend
+  // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
+  // separado en su propia constante para no acoplar semánticas distintas.
+  const canManageDispositivo = role === 'dueno' || role === 'admin';
 
   const vehicleQ = useQuery({
     queryKey: ['vehiculos', id],
@@ -496,25 +505,13 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
         <>
           {/* D3 — La ubicación en vivo y el histórico de telemetría se
               movieron a /app/flota y /app/vehiculos/:id/live. Esta página
-              ahora es pure-edit. Para no perder el afordance rápido al
-              tracking dejamos un link discreto al inicio cuando hay
-              Teltonika asociado. */}
-          {vehicleQ.data.teltonika_imei && (
-            <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-primary-100 bg-primary-50 p-3">
-              <div className="text-primary-900 text-sm">
-                <strong>Teltonika asociado:</strong>{' '}
-                <span className="font-mono">{vehicleQ.data.teltonika_imei}</span>
-              </div>
-              <Link
-                to="/app/vehiculos/$id/live"
-                params={{ id: vehicleQ.data.id }}
-                className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
-              >
-                <Navigation className="h-4 w-4" aria-hidden />
-                Ver en vivo
-              </Link>
-            </div>
-          )}
+              ahora es pure-edit. El link rápido al tracking vive dentro de
+              DispositivoSection (W2b), junto a la gestión del IMEI. */}
+          <DispositivoSection
+            vehicleId={vehicleQ.data.id}
+            currentImei={vehicleQ.data.teltonika_imei}
+            canManage={canManageDispositivo}
+          />
 
           <div>
             <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
@@ -546,6 +543,285 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
         </>
       )}
     </Layout>
+  );
+}
+
+// =============================================================================
+// DispositivoSection — gestión self-service del IMEI Teltonika (W2b)
+// =============================================================================
+
+/**
+ * Respuesta 200 de `PATCH /vehiculos/:id/dispositivo` (W2a,
+ * apps/api/src/routes/vehiculos.ts). `reconciliacion` refleja qué pasó con
+ * el row de `dispositivos_pendientes` del IMEI nuevo; `reemplazado_anterior`
+ * indica si el IMEI previo de este vehículo quedó marcado `reemplazado`;
+ * `reasociado_desde` solo aparece cuando el override de D2 (confirmar
+ * reasociación de un IMEI `rechazado`) se aplicó.
+ */
+interface DispositivoPatchResponse {
+  vehicle: Vehicle;
+  reconciliacion: 'aprobado' | 'reaprobado_desde_rechazado' | 'sin_registro' | null;
+  reemplazado_anterior: boolean;
+  reasociado_desde?: 'rechazado';
+}
+
+/**
+ * Payload del 409 `imei_rechazado` (D2/D2c): `rechazado_en` viaja como
+ * fecha ISO serializada por `c.json` (Date → string). Se valida con Zod acá
+ * porque es una respuesta de API cruzando el boundary cliente — no se
+ * confía en el shape sin parsear (regla de boundaries del CLAUDE.md).
+ */
+const imeiRechazadoDetailsSchema = z.object({
+  rechazado_en: z.string(),
+  motivo: z.string().nullable(),
+});
+
+interface RechazoConfirmState {
+  imei: string;
+  rechazadoEn: string | null;
+  motivo: string | null;
+}
+
+/**
+ * Mensaje por `err.code` (nunca `err.message.includes`, gotcha documentado
+ * en `.specs/hito-2-corfo-mes-8/w2-contexto.md` §7). `imei_rechazado` NO
+ * pasa por acá: abre el diálogo de dos pasos (D2) en vez de un mensaje.
+ */
+function dispositivoErrorMessage(err: ApiError): string {
+  switch (err.code) {
+    case 'imei_en_uso':
+      return 'Ese IMEI ya está asociado a otro vehículo.';
+    case 'imei_espejo_activo':
+      return 'Este vehículo tiene un espejo demo activo: no puede asociarse un IMEI propio mientras el espejo esté activo.';
+    case 'pending_device_conflict':
+      return 'El estado del dispositivo cambió mientras guardábamos — reintenta.';
+    case 'admin_required':
+      return 'Solo dueños o administradores pueden gestionar el dispositivo.';
+    default:
+      if (err.status === 404) {
+        return 'No se encontró el vehículo.';
+      }
+      if (err.status === 400) {
+        return 'El IMEI ingresado no es válido.';
+      }
+      return 'No se pudo actualizar el dispositivo. Intenta nuevamente.';
+  }
+}
+
+function DispositivoSection({
+  vehicleId,
+  currentImei,
+  canManage,
+}: {
+  vehicleId: string;
+  currentImei: string | null;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [imeiInput, setImeiInput] = useState(currentImei ?? '');
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [confirmQuitar, setConfirmQuitar] = useState(false);
+  const [rechazoConfirm, setRechazoConfirm] = useState<RechazoConfirmState | null>(null);
+
+  const dispositivoM = useMutation({
+    mutationFn: async (input: {
+      teltonika_imei: string | null;
+      confirmar_reasociacion?: boolean;
+    }) => {
+      return await api.patch<DispositivoPatchResponse>(
+        `/vehiculos/${vehicleId}/dispositivo`,
+        input,
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
+      queryClient.invalidateQueries({ queryKey: ['vehiculos', vehicleId] });
+      setServerError(null);
+      setRechazoConfirm(null);
+      setConfirmQuitar(false);
+      if (data.reasociado_desde === 'rechazado') {
+        setAviso(
+          'El dispositivo estaba marcado como rechazado y fue reasociado igualmente: queda en estado aprobado.',
+        );
+      } else if (data.reemplazado_anterior) {
+        setAviso('El IMEI anterior de este vehículo quedó marcado como reemplazado.');
+      } else {
+        setAviso(null);
+      }
+    },
+    onError: (err, variables) => {
+      if (!(err instanceof ApiError)) {
+        setServerError('No se pudo actualizar el dispositivo. Intenta nuevamente.');
+        return;
+      }
+      if (err.code === 'imei_rechazado' && variables.teltonika_imei !== null) {
+        const parsed = imeiRechazadoDetailsSchema.safeParse(err.details);
+        setRechazoConfirm({
+          imei: variables.teltonika_imei,
+          rechazadoEn: parsed.success ? parsed.data.rechazado_en : null,
+          motivo: parsed.success ? parsed.data.motivo : null,
+        });
+        setServerError(null);
+        return;
+      }
+      setRechazoConfirm(null);
+      setServerError(dispositivoErrorMessage(err));
+      if (err.code === 'pending_device_conflict') {
+        // D2c: el estado real cambió concurrentemente — refetch para que
+        // el usuario reintente contra el estado fresco, no el stale.
+        queryClient.invalidateQueries({ queryKey: ['vehiculos', vehicleId] });
+      }
+    },
+  });
+
+  function handleGuardar() {
+    const result = teltonikaImeiSchema.safeParse(imeiInput);
+    if (!result.success) {
+      setClientError(result.error.issues[0]?.message ?? 'IMEI inválido');
+      return;
+    }
+    setClientError(null);
+    setAviso(null);
+    dispositivoM.mutate({ teltonika_imei: result.data });
+  }
+
+  return (
+    <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo Teltonika</h2>
+          <p className="mt-1 text-neutral-600 text-sm">
+            <strong>IMEI actual:</strong>{' '}
+            <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>
+          </p>
+        </div>
+        {currentImei && (
+          <Link
+            to="/app/vehiculos/$id/live"
+            params={{ id: vehicleId }}
+            className="flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
+          >
+            <Navigation className="h-4 w-4" aria-hidden />
+            Ver en vivo
+          </Link>
+        )}
+      </div>
+
+      {canManage && (
+        <div className="mt-4 space-y-3">
+          <FormField
+            label="IMEI"
+            error={clientError ?? undefined}
+            hint="15 dígitos, sin espacios ni guiones."
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                inputMode="numeric"
+                placeholder="15 dígitos"
+                maxLength={15}
+                value={imeiInput}
+                onChange={(e) => {
+                  setImeiInput(e.target.value);
+                  setClientError(null);
+                }}
+                className={fieldInputClass(!!clientError)}
+              />
+            )}
+          />
+
+          {serverError && (
+            <div className="rounded-md border border-danger-200 bg-danger-50 p-3 text-danger-700 text-sm">
+              {serverError}
+            </div>
+          )}
+
+          {aviso && (
+            <div className="rounded-md border border-primary-200 bg-primary-50 p-3 text-primary-800 text-sm">
+              {aviso}
+            </div>
+          )}
+
+          {rechazoConfirm && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm">
+              <p>
+                Este dispositivo fue rechazado el{' '}
+                {rechazoConfirm.rechazadoEn
+                  ? new Date(rechazoConfirm.rechazadoEn).toLocaleDateString('es-CL')
+                  : 'fecha desconocida'}
+                {rechazoConfirm.motivo ? `: ${rechazoConfirm.motivo}` : ''}. ¿Reasociar de todas
+                formas?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    dispositivoM.mutate({
+                      teltonika_imei: rechazoConfirm.imei,
+                      confirmar_reasociacion: true,
+                    })
+                  }
+                  disabled={dispositivoM.isPending}
+                  className="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  Sí, reasociar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRechazoConfirm(null)}
+                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2">
+            {currentImei &&
+              (confirmQuitar ? (
+                <>
+                  <span className="text-neutral-700 text-sm">¿Quitar el dispositivo?</span>
+                  <button
+                    type="button"
+                    onClick={() => dispositivoM.mutate({ teltonika_imei: null })}
+                    disabled={dispositivoM.isPending}
+                    className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
+                  >
+                    Sí, quitar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmQuitar(false)}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmQuitar(true)}
+                  className="rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
+                >
+                  Quitar
+                </button>
+              ))}
+            <button
+              type="button"
+              onClick={handleGuardar}
+              disabled={dispositivoM.isPending}
+              className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {dispositivoM.isPending ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
