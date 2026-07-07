@@ -131,6 +131,20 @@ UPDATE vehiculos SET tipo_unidad = 'camion_rigido'
   WHERE tipo_vehiculo IN ('camion_pequeno', 'camion_mediano', 'camion_pesado');
 --> statement-breakpoint
 
+-- NOTA (M3, fix review W4a, ADR-073 §5): este backfill NO nulifica
+-- `combustible`/`consumo_l_100km_base` de las filas `semi_remolque`
+-- legacy. Bajo la semántica nueva (D4.5), `arrastre` exige esos dos
+-- campos SIEMPRE null (un arrastre no tiene motor propio) — si alguna
+-- fila legacy los tenía poblados (dato heredado del modelo plano
+-- anterior, donde `semi_remolque` no distinguía motriz/arrastre), queda
+-- en estado latente contra D4.5 hasta que se limpie. No se corrige acá
+-- (expand-only, no se reescriben columnas fuera del mapping D4): el
+-- primer PATCH que toque la config de unidad de una de estas filas
+-- (`apps/api/src/routes/vehiculos.ts` vía `validarCoherenciaUnidadVehiculo`)
+-- exigirá `consumption_l_per_100km_baseline`/`fuel_type` = null y
+-- devolverá 422 (`arrastre_consumo_debe_ser_null`/`arrastre_combustible_debe_ser_null`)
+-- si no vienen limpios en el mismo PATCH. Revisión de estas filas es
+-- parte de W4b (junto con el caveat D4.1 de arriba).
 UPDATE vehiculos SET categoria_unidad = 'arrastre', tipo_unidad = 'semirremolque'
   WHERE tipo_vehiculo = 'semi_remolque';
 --> statement-breakpoint

@@ -51,11 +51,13 @@ La BD solo puede expresar con un CHECK simple la coherencia tipo↔categoría (`
 
 | Categoría / tipo | `capacity_kg` | `curb_weight_kg` | `consumo`/`fuel_type` |
 |---|---|---|---|
-| motriz, `tracto_camion` | `>= 0` (D1.2: un tracto no carga solo) | nullable, como hoy | nullable, como hoy |
+| motriz, `tracto_camion` | `>= 0` (D1.2: un tracto no carga solo) | nullable, como hoy | **REQUERIDO** (`> 0` y `fuel_type` no-null) — texto vinculante D4, decisiones.md línea 30: "tracto_camion → capacity_kg = 0 permitido y consumo requerido". Un tracto no carga solo, pero sí tiene motor propio y consume combustible; `curb_weight_kg` sigue nullable porque D4.5 solo lo exige para `arrastre` |
 | motriz, demás tipos | `> 0`, como hoy | nullable, como hoy | nullable, como hoy |
 | arrastre | `> 0` | `> 0` **REQUERIDO** (D4.5: la tara del semi es insumo directo del GVW agregado, y por tanto del cálculo GLEC) | **siempre `null`** (D4.5: un arrastre no tiene motor propio) |
 
 `teltonika_imei` queda opcional para arrastre (asset-tracker independiente del motriz — caso de uso futuro, no bloqueado por este DDL).
+
+**Fix W4a review (I1)**: la implementación inicial dejó `consumo`/`fuel_type` nullable para `tracto_camion` (arrastrando por error la nota "nullable, como hoy" de `curb_weight_kg"). El texto vinculante de D4 (decisiones.md línea 30) exige el consumo explícitamente — corregido en `validarCoherenciaUnidadVehiculo` (nuevos códigos `tracto_consumo_requerido`/`tracto_combustible_requerido`) con el mismo scope que la exigencia de `tipo_unidad` (D4.2): aplica a escrituras nuevas, no reabre filas legacy con `tipo_unidad` NULL.
 
 ### 4. Clase GLEC derivada de la CONFIGURACIÓN, no del vehículo suelto
 
@@ -86,12 +88,15 @@ tanque                                 → motriz / camion_rigido   / cisterna
 
 **Caveat D4.1 (extendido por el PO en la ronda de aprobación de D4)**: el enum legacy no tenía un valor "tracto" — los tractos reales del piloto están **casi seguro** registrados hoy como `camion_pesado`, y este backfill los clasifica como `camion_rigido` (heurística: "el más pesado de los rígidos"), lo cual es **sabido como incorrecto** para cualquier tracto real. Lo mismo aplica a `refrigerado`/`tanque`, que el backfill asume montados sobre chasís rígido cuando en la práctica pueden ser semirremolques. **Acción requerida**: revisar las filas reales del piloto en la UI de flota (W4b) y corregir manualmente. Este backfill es un punto de partida auditable (documentado en comentarios SQL en la propia migración 0048), no un hecho verificado — la columna `tipo_vehiculo` original permanece intacta como fuente de reconciliación.
 
+**Caveat M3 (fix review W4a) — consumo/combustible latentes en `semi_remolque` legacy**: el backfill de la fila `UPDATE ... WHERE tipo_vehiculo = 'semi_remolque'` (migración 0048) **NO nulifica** `consumption_l_per_100km_baseline`/`fuel_type`. Bajo la semántica nueva (D4.5), `arrastre` exige esos campos SIEMPRE `null`; si una fila legacy los tenía poblados (herencia del modelo plano anterior, donde `semi_remolque` no distinguía motriz/arrastre), queda en un estado **latente contra D4.5** hasta que se limpie — no viola el CHECK de BD (que no los toca) ni bloquea lecturas, pero el primer `PATCH` que toque la config de unidad de esa fila (`validarCoherenciaUnidadVehiculo`) exigirá que vengan `null` en el mismo PATCH y devolverá 422 (`arrastre_consumo_debe_ser_null`/`arrastre_combustible_debe_ser_null`) si no se limpian a la vez. Revisión de estas filas es parte de W4b, junto con el caveat D4.1.
+
 ### 6. Plan de contract (D4.2)
 
 `vehiculos.tipo_unidad` queda **nullable** en esta migración (expand-only, ADR-066). Zod exige el campo en toda escritura nueva (`apps/api/src/routes/vehiculos.ts`: 400 si falta en `POST /vehiculos`) desde este mismo PR — el `NULL` solo puede ocurrir en filas legacy backfilled. Una migración **contract** futura puede endurecer la columna a `NOT NULL` cuando:
 
 1. El backfill legacy (caveat D4.1) haya sido revisado y corregido en la UI de flota (W4b).
 2. Las escrituras nuevas lleven ≥1 sprint exigiendo el campo (ya lo exigen desde este PR) sin incidentes.
+3. **(M2, fix review W4a) `apps/api/src/services/seed-demo.ts` esté actualizado para insertar `tipo_unidad`** (hoy inserta vehículos sin ese campo — cada seed nuevo crearía filas `NULL` frescas, no solo backfill legacy, lo que reabre la ventana que el punto 1 busca cerrar) **o el subsistema demo esté retirado** (decisión de negocio ya tomada para el go-live de carriers reales, jun-2026 — ver memoria `demo-subsystem-debt`). Cualquiera de las dos satisface esta precondición; no aplicar el `SET NOT NULL` mientras ninguna se cumpla.
 
 Esa migración futura debe llevar el marcador `-- contract-phase: ADR-073` (exigido por el guard `scripts/repo-checks/check-migration-safety.mjs`, ADR-066) porque `SET NOT NULL` sobre una columna con filas `NULL` existentes es DDL destructivo (rompe backward-compat si alguna revisión vieja de Cloud Run todavía escribe sin el campo).
 
