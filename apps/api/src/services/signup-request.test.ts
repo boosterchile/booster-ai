@@ -152,6 +152,10 @@ describe('approveSignupRequest — modo admin-provisioned (flag ON)', () => {
     }
     expect(result.userId).toBeNull();
     expect(typeof result.onboardingToken).toBe('string');
+    // W1.4 — el approve devuelve la expiración exacta del token emitido,
+    // para que la route derive `onboarding_link_expires_at` sin recomputar
+    // (coherencia con ONBOARDING_TOKEN_TTL_HOURS garantizada por construcción).
+    expect(result.onboardingTokenExpiresAt).toBeInstanceOf(Date);
 
     // NO precrea users, NO usa transacción.
     expect(insertCalls.length).toBe(0);
@@ -162,6 +166,7 @@ describe('approveSignupRequest — modo admin-provisioned (flag ON)', () => {
     expect(set.estado).toBe('aprobado');
     expect(set.firebaseUid).toBe(FB_UID);
     expect(set.expiraEn).toBeInstanceOf(Date);
+    expect(result.onboardingTokenExpiresAt?.getTime()).toBe((set.expiraEn as Date).getTime());
     expect(typeof set.tokenHash).toBe('string');
     // token_hash persistido == sha256 del token emitido (consistencia).
     expect(set.tokenHash).toBe(hashOnboardingToken(result.onboardingToken as string));

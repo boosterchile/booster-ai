@@ -28,8 +28,18 @@ vi.mock('../../src/jobs/reap-inert-idp-accounts.js', () => ({
   DEFAULT_MAX_DELETES_PER_RUN: 50,
 }));
 
+vi.mock('../../src/jobs/reap-orphan-onboarding-firebase.js', () => ({
+  reapOrphanOnboardingFirebaseUsers: vi.fn(),
+  listOnboardingOrphans: vi.fn(),
+  markOnboardingOrphanReaped: vi.fn(),
+  DEFAULT_ORPHAN_MAX_DELETES_PER_RUN: 50,
+}));
+
 const { procesarMensajesNoLeidos } = await import('../../src/services/chat-whatsapp-fallback.js');
 const { reapInertIdpAccounts } = await import('../../src/jobs/reap-inert-idp-accounts.js');
+const { reapOrphanOnboardingFirebaseUsers } = await import(
+  '../../src/jobs/reap-orphan-onboarding-firebase.js'
+);
 const { procesarCobranzaCobraHoy } = await import(
   '../../src/services/procesar-cobranza-cobra-hoy.js'
 );
@@ -259,6 +269,94 @@ describe('POST /admin/jobs/reap-inert-idp-accounts (T9)', () => {
     const res = await app.request('/admin/jobs/reap-inert-idp-accounts', { method: 'POST' });
     expect(res.status).toBe(200);
     const passedConfig = (reapInertIdpAccounts as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(passedConfig.destructive).toBe(true);
+  });
+});
+
+describe('POST /admin/jobs/reap-orphan-onboarding-firebase (W1.5 — onboarding-flow-redesign T1.7)', () => {
+  beforeEach(() => {
+    appConfig.ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE = false;
+  });
+
+  it('deps faltantes (sin firebaseAuth/pool) → 503 skipped, sin invocar el reaper', async () => {
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/reap-orphan-onboarding-firebase', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { ok: boolean; skipped: boolean; reason: string };
+    expect(body).toEqual({ ok: true, skipped: true, reason: 'deps_missing' });
+    expect(reapOrphanOnboardingFirebaseUsers).not.toHaveBeenCalled();
+  });
+
+  it('dry-run por defecto (ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE=false): 200 con summary + destructive:false', async () => {
+    (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 2,
+      deleted: 2,
+      alreadyGone: 0,
+      deferred: 0,
+      errors: 0,
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-orphan-onboarding-firebase', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      destructive: boolean;
+      scanned: number;
+      deleted: number;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.destructive).toBe(false);
+    expect(body.scanned).toBe(2);
+    expect(body.deleted).toBe(2);
+    // el flag destructive se pasa server-side desde config, no desde el request
+    const passedConfig = (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mock
+      .calls[0][1];
+    expect(passedConfig.destructive).toBe(false);
+  });
+
+  it('P1-4 (mismo patrón que reap-inert-idp-accounts): un request con body destructive:true NO puede forzar el modo', async () => {
+    appConfig.ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE = false;
+    (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 0,
+      deleted: 0,
+      alreadyGone: 0,
+      deferred: 0,
+      errors: 0,
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-orphan-onboarding-firebase?destructive=true', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destructive: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { destructive: boolean };
+    expect(body.destructive).toBe(false);
+    const passedConfig = (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mock
+      .calls[0][1];
+    expect(passedConfig.destructive).toBe(false);
+  });
+
+  it('ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE=true → pasa destructive:true al runner', async () => {
+    appConfig.ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE = true;
+    (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      scanned: 1,
+      deleted: 1,
+      alreadyGone: 0,
+      deferred: 0,
+      errors: 0,
+    });
+    const app = await buildApp({ firebaseAuth: {}, pool: { query: vi.fn() } });
+    const res = await app.request('/admin/jobs/reap-orphan-onboarding-firebase', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const passedConfig = (reapOrphanOnboardingFirebaseUsers as ReturnType<typeof vi.fn>).mock
+      .calls[0][1];
     expect(passedConfig.destructive).toBe(true);
   });
 });
