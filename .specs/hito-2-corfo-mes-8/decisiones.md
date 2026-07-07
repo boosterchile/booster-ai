@@ -42,3 +42,9 @@ Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` pe
 ## D2c · Adición de contrato W2 (2026-07-06, fix round): 409 `pending_device_conflict`
 
 El CAS de la reconciliación agrega un código residual fuera del enum original de D2: cuando el CAS pierde la carrera y el estado fresco NO es `rechazado` (p.ej. aprobado por otra tx concurrente o row ausente), el PATCH responde **409 `pending_device_conflict`** (neutro: no filtra tenant/patente; informacionalmente equivalente a `imei_en_uso`). W2b debe manejarlo deliberadamente: mensaje "el estado del dispositivo cambió mientras guardábamos — reintenta" + refetch. Registrado aquí para que el contrato no viva solo en código (`vehiculos.ts:619-627`).
+
+## D5 · Régimen de autonomía (2026-07-06, ~21:00)
+
+- **(a)** El texto original del régimen ("Configura tú mismo el régimen de autonomía", 5 reglas) **nunca llegó a la sesión** — el PO lo re-enviará; `.specs/policy-decisiones.md` queda pendiente de esa transcripción (NO se inventan reglas). El **punto 3 del régimen (auto-merge) queda REVOCADO** por el propio PO al adoptar la objeción por ADR-072.
+- **(b)** Deny rules duras aplicadas a `.claude/settings.local.json` (17 reglas: terraform apply, gcloud run update/deploy/update-traffic, secrets add/create, scheduler run/resume, gh pr merge, push a main/force, gh api mutante, agent-query -y) DESPUÉS del squash-merge de #565 autorizado explícitamente (secuencia definida por el PO). Verificadas en vivo con probe denegado.
+- **(c)** ADR-072 se mantiene: merge a `main` = decisión del PO por mensaje explícito, sin auto-merge. Con las deny rules activas, la EJECUCIÓN del merge también es del PO (el agente ya no puede ejecutar `gh pr merge` ni autorizado — la deny rule es dura a propósito).
