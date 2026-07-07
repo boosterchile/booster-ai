@@ -47,9 +47,18 @@ Las 4 condiciones bloqueantes de activación (reaper T1.7 agendado en Cloud Sche
 
 **Estado real de activación en producción al momento de escribir este informe**: los pasos 5 a 8 del runbook (flip de ambos flags vía Terraform, deploy con gate humano en el Environment `production`, primer tick manual del reaper, checklist E2E de aceptación contra prod, monitoreo de 2 horas post-deploy) son responsabilidad exclusiva del PO, con credenciales `gcloud`/`gh` reales, y estaban programados para ejecutarse la noche del 2026-07-06. Este informe se redacta antes de esa ejecución y no puede verificar su resultado.
 
-**[ACTUALIZAR AL CIERRE: estado activación]**
+**Estado de activación en producción (verificado por REST, 2026-07-07 ~04:06 America/Santiago)**: el flip de ambos flags fue **aplicado y confirmado**. Secuencia ejecutada por el PO y verificada por el agente contra las APIs de Cloud Run / Secret Manager / Cloud Scheduler:
 
-**Trace E2E en producción**: [TRACE E2E PROD — pendiente de la activación de esta noche]
+1. `SIGNUP_REQUEST_FLOW_ACTIVATED` forzado a `false` pre-merge (revisión `booster-ai-api-00373-lcm`) — se descubrió que prod corría con `true` desde ≤2026-07-02 sin el modo admin-provisioned listo; se cerró esa ventana antes del merge.
+2. Secreto `onboarding-token-signing-secret` provisionado por Terraform (targeted apply de los 2 recursos sin dependencias) y **rotado a valor real** (versión 2 ENABLED, verificada sin prefijo `ROTATE_ME_`, 64 bytes).
+3. Scheduler `reap-orphan-onboarding-firebase` creado (`45 4 * * *` America/Santiago, OIDC `internal-cron-invoker`, retries 3/60s/300s) en estado **`PAUSED`** — params verificados idénticos al recurso Terraform para import sin diff.
+4. Batch `#566`/`#567`/`#568` (IMEI self-service + telemetría de temperatura + tipologías de flota) mergeado a `main`; migración **0048 aplicada en el startup del deploy** (verificada en prod: 15 vehículos backfilleados a `categoria_unidad`, columna `asignaciones.unidad_arrastre_id` presente).
+5. Deploy con gate humano aprobado por el PO → canary 1% → **promoción a 100%** (revisión `booster-ai-api-00432-ceg`, imagen `43a5af0`, run `completed/success`, health `200`).
+6. **Flip aplicado**: `ADMIN_PROVISIONED_ONBOARDING_ENABLED=true` + `SIGNUP_REQUEST_FLOW_ACTIVATED=true` (revisión `booster-ai-api-00375-wkx` sirviendo LATEST 100%). Verificado: ambos flags `true`, `EMPRESA_SELF_ONBOARDING_ENABLED` ausente del env (default `false`, SC3 intacto), secret `latest` = versión 2 real montado.
+
+Pendiente al cierre de esta sesión (regla de parada a las 04:06; se ejecuta en el smoke matinal, ver [`smoke-test-manana.md`](smoke-test-manana.md)): primer tick manual del reaper (paso 6) y el checklist E2E de aceptación end-to-end (paso 7).
+
+**Trace E2E en producción**: [PENDIENTE — smoke AM: signup → approve → link → onboarding → /me sin needs_onboarding; segundo consumo 403; path viejo 403. Ver `smoke-test-manana.md` §E2E.]
 
 ### Meta 2 (redefinida por el PO) — IMEI self-service + 2 sensores + fallback sin dispositivo
 

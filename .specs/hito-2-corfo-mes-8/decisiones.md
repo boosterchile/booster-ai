@@ -34,3 +34,30 @@ Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` pe
 - Segundo consumo de token = **403 anti-oráculo** (no 409): deliberado, documentado en spec de Fase 1. La UI onboarding-admin (W1.3) debe tratar 403 como "token inválido/expirado/consumido" sin distinguir.
 - **W1.4 (link copiable) es la única vía de entrega del token** — el approve no lo devuelve hoy y el notifier es stub. Exponerlo en la respuesta del approve está mandatado por el plan del PO.
 - Activación (W1.5) bloqueada además por: reaper T1.7 sin agendar en Cloud Scheduler (falta Terraform) y `ONBOARDING_TOKEN_SIGNING_SECRET` sin provisionar en GSM/Terraform.
+
+---
+
+## Estado de cierre de sesión — 2026-07-07 ~04:06 America/Santiago
+
+**Hito 2 CORFO técnicamente cerrado esta noche.** Batch W1+W2+W3+W4a en `main` y desplegado a prod con activación de usuarios aplicada.
+
+### Desplegado y verificado por REST
+- **W1** (PR #565, merge `62453ae`): alta de usuarios E2E, flip de ambos flags APLICADO (revisión `booster-ai-api-00375-wkx`, `ADMIN_PROVISIONED_ONBOARDING_ENABLED=true` + `SIGNUP_REQUEST_FLOW_ACTIVATED=true`, `EMPRESA_SELF_ONBOARDING` ausente/false SC3, secret v2 real montado). Acta del PO firmada (runbook Paso 4).
+- **W2** (PR #566): IMEI self-service + reconciliación pending_devices + CAS anti-TOCTOU + 1ª métrica de negocio del API.
+- **W3** (PR #567): telemetría de temperatura Dallas (catálogo + simulador + endpoint + UI).
+- **W4a** (PR #568, merge `43a5af0`): tipologías de flota + GLEC por configuración; **migración 0048 aplicada en prod** (15 vehículos backfilleados a `motriz/camion_rigido`, columna `asignaciones.unidad_arrastre_id` creada). ADR-073.
+- Infra: secret `onboarding-token-signing-secret` (v2 real) + scheduler `reap-orphan-onboarding-firebase` (PAUSED) creados por targeted apply + gcloud.
+- Gobernanza: 17 deny rules en `.claude/settings.local.json` (D5); régimen de autonomía con auto-merge revocado.
+
+### Pendiente inmediato (smoke matinal 2026-07-07 AM — ver `docs/corfo/hito-2/smoke-test-manana.md`)
+- **Paso 6**: tick manual del reaper (resume→run→pause) + revisar summary dry-run. Higiene, no bloqueante.
+- **Paso 7**: E2E del alta (signup→approve→link→onboarding→/me) + cadena demo (IMEI UI→simulador W3→screenshot posición+temperatura). Diferido por regla de parada (flujo multi-tap, 04:06).
+- **Paso 8**: llenar el placeholder `[PENDIENTE — smoke AM]` del trace E2E en `informe-hito-2.md` y `meta-1-crud-auth.md` con el resultado real + monitoreo 2h post-deploy.
+
+### Pendientes fechados (mes 9 salvo indicado)
+- **W4b** (mañana AM si alcanza, si no mes 9): registro de arrastres/carrocerías en la UI de flota; **retira la derivación temporal C1** (`.specs/_followups/retiro-derivacion-unit-type-create.md`) y revisa los 15 rows backfilleados (caveat D4.1: posibles tractos como `camion_rigido`).
+- **W4c** (mes 9): acción "Iniciar viaje" del conductor + medición de huella anclada al inicio; implementa las 12 tareas restantes de `.specs/medicion-huella-segmento` y agrega el test de integración del FK RESTRICT de `unidad_arrastre_id`.
+- **Import del scheduler a Terraform** (diurno próximo): `terraform import google_cloud_scheduler_job.reap_orphan_onboarding_firebase ...` validando params (schedule/uri/oidc/retries) → apply sin diff. El recurso ya existe en prod idéntico al TF.
+- **Reconciliación TF diurna** (fuera de la ruta crítica nocturna): el `terraform plan` traía 18 add / 15 change (drift de PRs mergeados sin aplicar). Aplicar con runbook propio y verificación de operación Redis real (lección ADR-058): monitoring/SLO (#535), scheduler memberships (#530), `datadog-api-key` (decidir crear vía TF o corregir ADR-071 — el secret NO existe en GSM), y **migración `redis-auth`** servicio-por-servicio (blast radius 7 services, clase #520 ya corregida en código pero no aplicada).
+- **Fase 2 email notifier** (mes 9): swap `EmailSignupRequestNotifier` para entrega automática del link (hoy manual — desviación 8).
+- Otros follow-ups creados esta noche en `.specs/_followups/`: `login-universal-redirect-param`, `login-retiro-boton-crea-una-legacy`, `router-mocks-audit-critical-flows`, `runbook-tuteo`, `solicitar-acceso-cleanup`, `login-link-url-https`, `imei-reconciliacion-integration-test-postgres`, `vehiculos-router-otel-spans`, `flota-bitren-0-n-arrastres`.
