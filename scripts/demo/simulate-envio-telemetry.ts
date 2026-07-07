@@ -271,7 +271,7 @@ function temperatureForProgress(progress: number, profile: CliArgs['tempProfile'
 // Codec 8 packet builders
 // =============================================================================
 
-function buildImeiHandshake(imei: string): Buffer {
+export function buildImeiHandshake(imei: string): Buffer {
   const imeiBuf = Buffer.from(imei, 'ascii');
   const lenBuf = Buffer.alloc(2);
   lenBuf.writeUInt16BE(imeiBuf.length, 0);
@@ -301,7 +301,7 @@ interface AvlPacketOpts {
  * movement, voltajes) + IO 72 Dallas Temperature 1. CRC importado de
  * @booster-ai/codec8-parser — NO reimplementado acá.
  */
-function buildAvlPacket(opts: AvlPacketOpts): Buffer {
+export function buildAvlPacket(opts: AvlPacketOpts): Buffer {
   const {
     timestampMs,
     latitude,
@@ -510,7 +510,15 @@ async function main(): Promise<void> {
   log('[demo-telemetry] listo.');
 }
 
-main().catch((err: Error) => {
-  log(`[demo-telemetry] FATAL: ${err.message}`);
-  process.exit(1);
-});
+// Guard de entrypoint: solo corre main() cuando el archivo se ejecuta
+// directamente (CLI vía tsx), no cuando se importa (p.ex. desde el test de
+// round-trip, que solo necesita los builders `buildImeiHandshake` /
+// `buildAvlPacket` sin disparar el flujo de socket + `process.exit`).
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+
+if (isMainModule) {
+  main().catch((err: Error) => {
+    log(`[demo-telemetry] FATAL: ${err.message}`);
+    process.exit(1);
+  });
+}
