@@ -99,3 +99,13 @@ Evidencia:
 **Para la matriz W5 (dos evidencias SEPARADAS, no confundir)**:
 1. **Operación real (GPS)**: Van Oosterwyk / VFZH-68 / IMEI 863238075489155 — 105.856 puntos/30d. Prueba telemetría GPS en producción real. Evidencia dura de Meta 2 (IoT).
 2. **Habilitación de temperatura**: simulador W3 sobre vehículo de prueba + IMEI demo. Prueba que el pipeline de temperatura funciona end-to-end (posición + °C en vehiculo-live), NO que exista un sensor físico de temperatura en la flota hoy.
+
+## Regla dura — IMEI real de Van Oosterwyk NO se reutiliza para la demo (2026-07-07)
+
+**El IMEI real `863238075489155` (Van Oosterwyk / VFZH-68) NO se reutiliza para la demo bajo ninguna circunstancia** — evidencia de operación real protegida. Razones verificadas:
+- **(a) No daría realismo**: el dispositivo real no emite temperatura (`tiene_dallas_temp=false`), así que el simulador tendría que inyectar la temperatura igual — cero ganancia de realismo.
+- **(b) Contaminaría la evidencia**: emitir el simulador contra ese IMEI mezclaría datos sintéticos con los 239.148 puntos de telemetría real, y podría interferir con el dispositivo físico que está vivo emitiendo ahora (último punto hoy 13:53 UTC).
+
+**Costo de evitarlo: cero.** La habilitación de temperatura se prueba con **IMEI demo sintético `990000000000017`** (verificado sin colisión en `teltonika_imei`/`teltonika_imei_espejo`/`dispositivos_pendientes`; prefijo `99` distinto del `863238` real para distinción visual en el informe) sobre un **vehículo de prueba** de la empresa nueva (piloto-smoke). Van Oosterwyk es además la **beneficiaria del convenio CORFO** — citar así en el informe (evidencia de operación real GPS en producción).
+
+**IMEI demo reservado: `990000000000017`** (15 dígitos, sintético). El simulador W3 solo apunta acá; nunca al real.
