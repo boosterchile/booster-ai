@@ -4,11 +4,15 @@ import {
   ensureRutHasDash,
 } from '@booster-ai/shared-schemas';
 import { zodResolver } from '@hookform/resolvers/zod';
+import type { UseMutationResult } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, ArrowRight, Building2, Check, Layers, Truck, User } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
-import { useOnboardingMutation } from '../../hooks/use-onboarding-mutation.js';
+import {
+  type OnboardingResponse,
+  useOnboardingMutation,
+} from '../../hooks/use-onboarding-mutation.js';
 import type { ApiError } from '../../lib/api-client.js';
 import { FormField, inputClass } from '../FormField.js';
 
@@ -114,12 +118,33 @@ const PLANS: ReadonlyArray<{
 export interface OnboardingFormProps {
   firebaseEmail: string;
   firebaseName: string | undefined;
+  /**
+   * Mutación ya instanciada a usar en vez de la interna (`useOnboardingMutation`,
+   * que pega a `POST /empresas/onboarding`). Permite reusar este form en
+   * flujos con contrato de request distinto — ej. `/onboarding-admin`
+   * (W1.3), que pega a `POST /empresas/onboarding-admin` con el token de
+   * onboarding en el header `x-onboarding-token` vía
+   * `useOnboardingAdminMutation(token)`. Mismo shape de respuesta
+   * (`OnboardingResponse`) en ambos casos, así que el resto del form
+   * (submit, error mapping, post-éxito) no necesita saber cuál es.
+   *
+   * Si no se pasa, se usa `useOnboardingMutation()` interno (comportamiento
+   * histórico de `/onboarding`, sin cambios).
+   */
+  mutation?: UseMutationResult<OnboardingResponse, ApiError, EmpresaOnboardingInput>;
 }
 
-export function OnboardingForm({ firebaseEmail, firebaseName }: OnboardingFormProps) {
+export function OnboardingForm({
+  firebaseEmail,
+  firebaseName,
+  mutation: injectedMutation,
+}: OnboardingFormProps) {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
-  const mutation = useOnboardingMutation();
+  // Rules of Hooks: siempre se llama, aunque el resultado no se use cuando
+  // el caller inyecta su propia mutación (injectedMutation ?? internal).
+  const internalMutation = useOnboardingMutation();
+  const mutation = injectedMutation ?? internalMutation;
 
   const methods = useForm<EmpresaOnboardingInput>({
     resolver: zodResolver(empresaOnboardingInputSchema),
@@ -700,6 +725,21 @@ function translateApiError(err: ApiError): string {
       return 'El plan seleccionado no está disponible. Intenta con otro.';
     case 'firebase_email_missing':
       return 'Tu sesión no tiene email asociado. Vuelve a iniciar sesión con email y contraseña o con Google.';
+    // W1.3 — códigos de POST /empresas/onboarding-admin (alta gateada por
+    // admin). onboarding_token_required (401, no debería pasar si la UI
+    // arma bien el request) y onboarding_token_invalid (403: firma
+    // inválida / expirado / ya consumido / nunca existió) colapsan a
+    // PROPÓSITO al mismo mensaje genérico — anti-oráculo SEC-001, no
+    // distinguir "expirado" de "usado" es deliberado (ver empresas.ts).
+    case 'onboarding_token_required':
+    case 'onboarding_token_invalid':
+      return 'Este enlace ya no es válido. Solicita uno nuevo al administrador.';
+    case 'onboarding_disabled':
+      return 'El registro no está habilitado por ahora.';
+    case 'email_not_verified':
+      return 'Verifica tu email antes de continuar. Revisa tu bandeja de entrada.';
+    case 'onboarding_misconfigured':
+      return 'Hubo un error de configuración en nuestro lado. Contacta a soporte@boosterchile.com.';
     default:
       if (err.status >= 500) {
         return 'Hubo un error en nuestro lado. Intenta de nuevo en unos minutos o contacta a soporte@boosterchile.com.';

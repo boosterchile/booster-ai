@@ -21,6 +21,7 @@ describe('router', () => {
         '/',
         'login',
         'onboarding',
+        'onboarding-admin',
         'app',
         'app/ofertas',
         'app/perfil',
@@ -35,6 +36,7 @@ describe('router', () => {
         'app/cargas/$id/track',
         'app/certificados',
         'app/asignaciones/$id',
+        'solicitar-acceso',
       ]),
     );
   });

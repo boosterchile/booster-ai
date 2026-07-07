@@ -255,3 +255,46 @@ describe('canonicalidad y hardening (review adversarial T1.2)', () => {
     ).toThrow();
   });
 });
+
+/**
+ * W1.5 (runbook activación) — el placeholder Terraform de
+ * `onboarding-token-signing-secret` (`ROTATE_ME_..._PLACEHOLDER`,
+ * infrastructure/security.tf) mide >= 32 bytes y por tanto PASA el chequeo de
+ * longitud de `assertStrongSecret`. Sin un denylist explícito, un `terraform
+ * apply` sin rotar dejaría el api firmando/verificando tokens con un valor
+ * público (visible en el HCL versionado). Fail-closed: cualquier secreto que
+ * empiece con el prefijo `ROTATE_ME_` se trata como débil sin importar su
+ * longitud — el flip a `ADMIN_PROVISIONED_ONBOARDING_ENABLED=true` exige
+ * rotación real ANTES (ver runbook `docs/corfo/hito-2/runbook-activacion-onboarding.md`).
+ */
+describe('assertStrongSecret — denylist del placeholder Terraform ROTATE_ME_ (W1.5)', () => {
+  const PLACEHOLDER = 'ROTATE_ME_ONBOARDING_TOKEN_SIGNING_SECRET_PLACEHOLDER';
+
+  it('el placeholder mide >= 32 bytes (documenta por qué el check de longitud NO alcanza)', () => {
+    expect(Buffer.byteLength(PLACEHOLDER, 'utf8')).toBeGreaterThanOrEqual(32);
+  });
+
+  it('createOnboardingToken lanza con el placeholder aunque tenga >= 32 bytes', () => {
+    expect(() =>
+      createOnboardingToken({ solicitudId: SID, ttlMs: HOUR, secret: PLACEHOLDER }),
+    ).toThrow();
+  });
+
+  it('verifyOnboardingToken lanza con el placeholder aunque tenga >= 32 bytes', () => {
+    const { token } = createOnboardingToken({ solicitudId: SID, ttlMs: HOUR, secret: SECRET });
+    expect(() => verifyOnboardingToken({ token, secret: PLACEHOLDER })).toThrow();
+  });
+
+  it('otros secretos que arrancan con "ROTATE_ME_" también se rechazan (denylist por prefijo, no exact-match)', () => {
+    const otherPlaceholder = `ROTATE_ME_${'x'.repeat(40)}`;
+    expect(() =>
+      createOnboardingToken({ solicitudId: SID, ttlMs: HOUR, secret: otherPlaceholder }),
+    ).toThrow();
+  });
+
+  it('un secreto fuerte que NO empieza con el prefijo sigue aceptándose (no over-block)', () => {
+    expect(() =>
+      createOnboardingToken({ solicitudId: SID, ttlMs: HOUR, secret: SECRET }),
+    ).not.toThrow();
+  });
+});

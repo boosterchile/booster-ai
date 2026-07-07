@@ -375,10 +375,57 @@ variable "auth_universal_v1_activated" {
 # Flip a `true` 2026-05-29 post ADR-052 Accepted + Sprint 2b T13 canary
 # success (cloudbuild 8f4ec780). Reversible: `terraform apply` con default
 # false revierte a "Coming soon" sin redeploy de código.
+#
+# REVERTIDO a `false` (fix round final-review, 2026-07-06, hallazgo R1):
+# esta rama agrega el onboarding admin-provisioned (T1.4,
+# `admin_provisioned_onboarding_enabled` más abajo, default `false`) — con
+# la UI pública de `/solicitar-acceso` activa (`true`, como quedó desde el
+# flip de 2026-05-29) pero el modo admin-provisioned todavía apagado, un
+# approve real cae SILENCIOSAMENTE al modo legacy (precrea fila `users` sin
+# token ni link one-shot) — `apps/api/src/routes/admin-signup-requests.ts`
+# líneas 182-188, gateado por `ADMIN_PROVISIONED_ONBOARDING_ENABLED &&
+# ONBOARDING_TOKEN_SIGNING_SECRET`. Fail-closed explícito: mientras este PR
+# no esté seguido del runbook de activación completo (paso 5), el
+# procesamiento admin de solicitudes queda apagado. OJO precisión: este flag
+# gatea SOLO los endpoints admin (listar/approve/reject → 503); el POST
+# público /api/v1/signup-request NO está gateado por diseño (spec §7.5/R6)
+# y la UI /solicitar-acceso sigue viva — la cola acumula con 202 durante la
+# ventana pre-flip y nadie puede aprobarla. El PO decide explícitamente
+# cuándo reabrir el procesamiento junto con el modo admin-provisioned. Ver
+# `docs/corfo/hito-2/runbook-activacion-onboarding.md` §Paso 0 (verificación
+# de que prod corría con `true` desde <=2026-07-02 sin que el modo
+# admin-provisioned estuviera listo).
 variable "signup_request_flow_activated" {
-  description = "Activa POST /api/v1/signup-request + admin UI (SEC-001 H1.2 ADR-052)."
+  description = "Procesamiento admin de signup-requests: list/approve/reject (el POST público no se gatea; SEC-001 H1.2 ADR-052)."
   type        = bool
-  default     = true
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
+# W1.5 (runbook activación onboarding) — admin-provisioned onboarding
+# ---------------------------------------------------------------------------
+# onboarding-flow-redesign Fase 1 (T1.4) — KILL SWITCH del path de onboarding
+# provisionado por admin (token one-shot HMAC, ver
+# apps/api/src/services/onboarding-token.ts). Distinto de
+# `signup_request_flow_activated` (admite/lista solicitudes) y de
+# `EMPRESA_SELF_ONBOARDING_ENABLED` (path viejo self-service, que NUNCA se
+# reenciende — SEC-001).
+#
+# **Estado seguro = false (default).** Este PR SOLO deja el código+infra
+# mergeables (secret shell + placeholder + scheduler paused + mount + esta
+# var en false). El flip a `true` es un apply DEDICADO del PO, gateado por:
+#   1. Reaper T1.7 agendado (scheduling.tf `reap-orphan-onboarding-firebase`).
+#   2. Secret `onboarding-token-signing-secret` ROTADO (valor real, no
+#      `ROTATE_ME_*` — el placeholder está en el denylist de
+#      `assertStrongSecret`, así que un flip sin rotar deja el api fail-closed
+#      en vez de firmar tokens forjables).
+#   3. TTL 72h (OQ1) ratificado + sign-off security-auditor del modelo
+#      bearer-token (acta en el runbook).
+# Ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`.
+variable "admin_provisioned_onboarding_enabled" {
+  description = "Activa el onboarding admin-provisioned (token one-shot) — runbook-activacion-onboarding.md."
+  type        = bool
+  default     = false
 }
 
 # ---------------------------------------------------------------------------
