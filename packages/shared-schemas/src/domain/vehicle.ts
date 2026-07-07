@@ -245,6 +245,83 @@ export function validarCoherenciaUnidadVehiculo(
   return violations;
 }
 
+/** Output de `derivarUnidadDesdeTipoLegacy` — triple derivado del tipo legacy. */
+export interface UnidadDerivadaDeTipoLegacy {
+  unitCategory: UnitCategory;
+  unitType: UnitType;
+  bodyType: BodyType | null;
+}
+
+/**
+ * Fix C1 (review W4a, decisión PO opción b, 2026-07-06) — el create de
+ * vehículos (`apps/api/src/routes/vehiculos.ts`) exigía `unit_type`
+ * obligatorio, pero el form web actual (`apps/web/src/routes/vehiculos.tsx`,
+ * `vehicleFormToBody`) todavía no lo manda (W4b lo agregará). En vez de
+ * romper el form o relajar la validación, el server DERIVA `unit_type`
+ * (+ `unit_category` + `body_type`) desde el `vehicle_type` legacy cuando
+ * `unit_type` no viene explícito, usando el MISMO mapping D4 del backfill de
+ * la migración 0048 (`apps/api/drizzle/0048_tipologias_flota.sql` §3,
+ * espejo también en ADR-073 §5) — un único mapping, no dos copias que
+ * puedan divergir.
+ *
+ * ```
+ * camioneta                       → motriz    / camioneta     / (sin carrocería)
+ * furgon_pequeno | furgon_mediano → motriz    / furgon        / furgon_cerrado
+ * camion_pequeno|mediano|pesado   → motriz    / camion_rigido / (sin carrocería)
+ * semi_remolque                   → arrastre  / semirremolque / (sin carrocería)
+ * refrigerado                     → motriz    / camion_rigido / refrigerado
+ * tanque                          → motriz    / camion_rigido / cisterna
+ * ```
+ *
+ * **Caveat heredado (D4.1, mismo caveat que el backfill SQL)**: el enum
+ * legacy no tiene un valor "tracto" — los tractos reales del piloto están
+ * casi seguro registrados como `camion_pesado`, y este mapping los deriva a
+ * `camion_rigido` (heurística "el más pesado de los rígidos"), lo cual es
+ * **sabido como incorrecto** para cualquier tracto real. Un create vía form
+ * de un tracto real del piloto queda con `unit_type='camion_rigido'` hasta
+ * que W4b (form actualizado con selector de `unit_type` + revisión manual en
+ * la UI de flota) lo corrija. Mitigación mientras tanto: cada disparo de
+ * esta derivación queda logueado (`apps/api/src/routes/vehiculos.ts`,
+ * condición 1 del fix C1) para poder auditar cuántos creates reales cayeron
+ * en esta ruta y revisarlos manualmente — ver ADR-073 §"Caveat C1 runtime"
+ * y `.specs/_followups/retiro-derivacion-unit-type-create.md` (retiro
+ * planeado para cuando el form mande `unit_type`).
+ *
+ * `vehicleType` es `VehicleType` (el enum de 9 valores, whitelisted por
+ * `vehicleTypeSchema`/Zod en el boundary HTTP) — no existe una entrada que
+ * llegue acá sin haber pasado primero por ese enum. El `default` de abajo es
+ * solo un guard de exhaustividad de TypeScript: si el enum legacy alguna vez
+ * gana un 10º valor sin actualizar este mapping (y el del backfill SQL), el
+ * `switch` deja de compilar (`_exhaustive: never`) en vez de derivar algo
+ * silenciosamente incorrecto en runtime. No hay — ni puede haber con el tipo
+ * actual — una rama de error alcanzable en producción.
+ */
+export function derivarUnidadDesdeTipoLegacy(vehicleType: VehicleType): UnidadDerivadaDeTipoLegacy {
+  switch (vehicleType) {
+    case 'camioneta':
+      return { unitCategory: 'motriz', unitType: 'camioneta', bodyType: null };
+    case 'furgon_pequeno':
+    case 'furgon_mediano':
+      return { unitCategory: 'motriz', unitType: 'furgon', bodyType: 'furgon_cerrado' };
+    case 'camion_pequeno':
+    case 'camion_mediano':
+    case 'camion_pesado':
+      return { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: null };
+    case 'semi_remolque':
+      return { unitCategory: 'arrastre', unitType: 'semirremolque', bodyType: null };
+    case 'refrigerado':
+      return { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: 'refrigerado' };
+    case 'tanque':
+      return { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: 'cisterna' };
+    default: {
+      const _exhaustive: never = vehicleType;
+      throw new Error(
+        `vehicle_type sin mapping D4 en derivarUnidadDesdeTipoLegacy: ${_exhaustive}`,
+      );
+    }
+  }
+}
+
 /**
  * D1.3 — compatibilidad al armar una configuración de viaje (motriz +
  * arrastre). Regla aprobada: tracto↔semirremolque, rígido↔remolque.

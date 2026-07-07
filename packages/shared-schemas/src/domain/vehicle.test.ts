@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type VehicleUnitConfigInput,
   bodyTypeSchema,
+  derivarUnidadDesdeTipoLegacy,
   esConfiguracionCompatible,
   unitCategorySchema,
   unitTypeSchema,
@@ -328,6 +329,45 @@ describe('validarCoherenciaUnidadVehiculo — espejo runtime de chk_vehiculos_ti
     expect(violations.map((v) => v.field).sort()).toEqual(
       ['capacity_kg', 'consumption_l_per_100km_baseline', 'curb_weight_kg', 'fuel_type'].sort(),
     );
+  });
+});
+
+describe('derivarUnidadDesdeTipoLegacy — fix C1 (review W4a, decisión PO opción b, 2026-07-06)', () => {
+  // MISMO mapping D4 del backfill de la migración 0048
+  // (apps/api/drizzle/0048_tipologias_flota.sql §3, ADR-073 §5), pero para
+  // escrituras nuevas que llegan sin `unit_type` (el form web actual todavía
+  // no lo manda — W4b lo agregará). Table-driven: los 9 valores de
+  // `vehicleTypeSchema`.
+  it.each([
+    ['camioneta', { unitCategory: 'motriz', unitType: 'camioneta', bodyType: null }],
+    ['furgon_pequeno', { unitCategory: 'motriz', unitType: 'furgon', bodyType: 'furgon_cerrado' }],
+    ['furgon_mediano', { unitCategory: 'motriz', unitType: 'furgon', bodyType: 'furgon_cerrado' }],
+    ['camion_pequeno', { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: null }],
+    ['camion_mediano', { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: null }],
+    ['camion_pesado', { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: null }],
+    ['semi_remolque', { unitCategory: 'arrastre', unitType: 'semirremolque', bodyType: null }],
+    ['refrigerado', { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: 'refrigerado' }],
+    ['tanque', { unitCategory: 'motriz', unitType: 'camion_rigido', bodyType: 'cisterna' }],
+  ] as const)('%s → %o (D4)', (vehicleType, expected) => {
+    expect(derivarUnidadDesdeTipoLegacy(vehicleType)).toEqual(expected);
+  });
+
+  it('cubre los 9 valores de vehicleTypeSchema (ningún tipo legacy queda sin mapping)', () => {
+    const covered = [
+      'camioneta',
+      'furgon_pequeno',
+      'furgon_mediano',
+      'camion_pequeno',
+      'camion_mediano',
+      'camion_pesado',
+      'semi_remolque',
+      'refrigerado',
+      'tanque',
+    ] as const;
+    for (const vehicleType of covered) {
+      expect(() => derivarUnidadDesdeTipoLegacy(vehicleType)).not.toThrow();
+    }
+    expect(covered).toHaveLength(9);
   });
 });
 
