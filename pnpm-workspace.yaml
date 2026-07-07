@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "scripts/demo"
   - "scripts/load-test"
   - "scripts/repo-checks"
 

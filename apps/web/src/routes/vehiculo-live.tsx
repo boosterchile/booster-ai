@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
+import { Thermometer } from 'lucide-react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { api } from '../lib/api-client.js';
+import { ageSeconds, formatAge } from '../lib/freshness.js';
 
 /**
  * /app/vehiculos/:id/live — pantalla full-screen estilo Uber.
@@ -26,7 +28,48 @@ interface UbicacionResponse {
     satellites: number | null;
     speed_kmh: number | null;
     priority: number;
+    /**
+     * W3 — 2º sensor por envío (IO 72 Dallas, FMC150). `null` explícito si
+     * el punto no trae IO 72, el valor es inválido, o la fuente es el
+     * fallback browser_gps (sin sensores). Ver apps/api/src/routes/vehiculos.ts.
+     */
+    temperatura_c: number | null;
+    temperatura_registrada_en: string | null;
   };
+}
+
+/**
+ * Stat "Temperatura" del bottomExtra de LiveTrackingScreen. `null` se
+ * muestra como "Sin dato" explícito — nunca se oculta el stat completo,
+ * porque la ausencia de sensor de temperatura es información relevante
+ * para el transportista (ej. sensor Dallas desconectado en tránsito).
+ */
+function TemperaturaStat({
+  temperaturaC,
+  temperaturaRegistradaEn,
+}: {
+  temperaturaC: number | null;
+  temperaturaRegistradaEn: string | null;
+}) {
+  const ageLabel = formatAge(ageSeconds(temperaturaRegistradaEn));
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="flex items-center gap-1 text-neutral-500 text-xs uppercase tracking-wide">
+        <Thermometer className="h-4 w-4" aria-hidden />
+        Temperatura
+      </div>
+      <div className="mt-0.5 font-semibold text-lg text-neutral-700">
+        {temperaturaC != null ? (
+          <>
+            {temperaturaC.toFixed(1)} °C{' '}
+            <span className="font-normal text-neutral-500 text-xs">{ageLabel ?? '—'}</span>
+          </>
+        ) : (
+          'Sin dato'
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function VehiculoLiveRoute() {
@@ -74,6 +117,14 @@ function VehiculoLivePage() {
       isLoading={ubicacionQ.isLoading}
       isFetching={ubicacionQ.isFetching}
       onRefresh={() => void ubicacionQ.refetch()}
+      bottomExtra={
+        ubicacionQ.data ? (
+          <TemperaturaStat
+            temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
+            temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
+          />
+        ) : undefined
+      }
     />
   );
 }

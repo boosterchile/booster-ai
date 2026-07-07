@@ -7,10 +7,12 @@
  * objetos tipados con unidades canónicas Booster.
  *
  * Estructura por wave del rollout:
- *   - low-priority.ts            — 14 IDs Wave 2 Low Priority (Track B1)
- *   - interpret-low-priority.ts  — interpretador Low Priority
- *   - high-panic.ts              — 10 IDs Wave 2 eventuales (Track B2)
- *   - event-router.ts            — routing de eventuales a Pub/Sub topics
+ *   - low-priority.ts               — 14 IDs Wave 2 Low Priority (Track B1)
+ *   - interpret-low-priority.ts     — interpretador Low Priority
+ *   - high-panic.ts                 — 10 IDs Wave 2 eventuales (Track B2)
+ *   - event-router.ts               — routing de eventuales a Pub/Sub topics
+ *   - dallas-temperature.ts         — IDs 72-75 Dallas Temperature (Wave 3)
+ *   - interpret-dallas-temperature.ts — interpretador Dallas Temperature
  *
  * El parser binario sigue siendo agnóstico de IDs por diseño (ver
  * tipos.ts del codec8-parser): este package es donde reside la
@@ -55,12 +57,30 @@ export {
 
 export {
   interpretLowPriority,
+  toSignedInt16,
   type LowPriorityTelemetry,
   type LowPriorityInterpretResult,
   type MinimalIoEntry,
   type UnknownEntry,
   type InvalidEntry,
 } from './interpret-low-priority.js';
+
+export {
+  AVL_ID_DALLAS,
+  DALLAS_TEMPERATURE_IDS,
+  DALLAS_TEMPERATURE_RAW_SCHEMAS,
+  DALLAS_TEMPERATURE_MIN_C,
+  DALLAS_TEMPERATURE_MAX_C,
+  dallasTemperatureRawSchema,
+  type AvlIdDallas,
+  type DallasTemperatureRaw,
+} from './dallas-temperature.js';
+
+export {
+  interpretDallasTemperature,
+  type DallasTemperatureTelemetry,
+  type DallasTemperatureInterpretResult,
+} from './interpret-dallas-temperature.js';
 
 export {
   AVL_ID_EVENT,
