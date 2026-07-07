@@ -638,6 +638,11 @@ function DispositivoSection({
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
       queryClient.invalidateQueries({ queryKey: ['vehiculos', vehicleId] });
+      // Re-sincroniza el input con el IMEI realmente persistido (o `''` si
+      // se quitó). Sin esto, tras "Quitar" el input conservaba el IMEI recién
+      // eliminado y un "Guardar" no gateado lo reasociaría en silencio,
+      // bypaseando la confirmación de "Quitar" (finding W2b review).
+      setImeiInput(data.vehicle.teltonika_imei ?? '');
       setServerError(null);
       setRechazoConfirm(null);
       setConfirmQuitar(false);
@@ -676,6 +681,19 @@ function DispositivoSection({
     },
   });
 
+  // Punto único de entrada a la mutación: limpia el feedback de un submit
+  // anterior (error de servidor / diálogo de reasociación) antes de disparar
+  // uno nuevo, para que no queden mensajes stale mientras el nuevo PATCH está
+  // en vuelo (Minor #2 del review W2b).
+  function submitDispositivo(input: {
+    teltonika_imei: string | null;
+    confirmar_reasociacion?: boolean;
+  }) {
+    setServerError(null);
+    setRechazoConfirm(null);
+    dispositivoM.mutate(input);
+  }
+
   function handleGuardar() {
     const result = teltonikaImeiSchema.safeParse(imeiInput);
     if (!result.success) {
@@ -684,7 +702,7 @@ function DispositivoSection({
     }
     setClientError(null);
     setAviso(null);
-    dispositivoM.mutate({ teltonika_imei: result.data });
+    submitDispositivo({ teltonika_imei: result.data });
   }
 
   return (
@@ -759,7 +777,7 @@ function DispositivoSection({
                 <button
                   type="button"
                   onClick={() =>
-                    dispositivoM.mutate({
+                    submitDispositivo({
                       teltonika_imei: rechazoConfirm.imei,
                       confirmar_reasociacion: true,
                     })
@@ -787,7 +805,7 @@ function DispositivoSection({
                   <span className="text-neutral-700 text-sm">¿Quitar el dispositivo?</span>
                   <button
                     type="button"
-                    onClick={() => dispositivoM.mutate({ teltonika_imei: null })}
+                    onClick={() => submitDispositivo({ teltonika_imei: null })}
                     disabled={dispositivoM.isPending}
                     className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
                   >

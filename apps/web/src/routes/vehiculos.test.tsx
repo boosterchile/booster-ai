@@ -312,6 +312,55 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
     );
   });
 
+  it('quitar exitoso → el input no conserva el IMEI y "Guardar" no re-asocia silenciosamente', async () => {
+    // Simula backend real: el GET refleja el estado que dejó el último PATCH,
+    // no un mock estático (finding W2b: currentImei cambia tras el refetch
+    // pero imeiInput quedaba con el valor viejo — "Guardar" podía reasociarlo
+    // sin que el usuario lo haya tocado).
+    let teltonikaImei: string | null = IMEI_VALIDO;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: teltonikaImei }) };
+      }
+      return {} as never;
+    });
+    const patchSpy = vi
+      .spyOn(api, 'patch')
+      .mockImplementation(async (_path: string, body: unknown) => {
+        teltonikaImei = (body as { teltonika_imei: string | null }).teltonika_imei;
+        return {
+          vehicle: makeVehicleRow({ teltonika_imei: teltonikaImei }),
+          reconciliacion: null,
+          reemplazado_anterior: true,
+        };
+      });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+
+    const input = (await screen.findByPlaceholderText('15 dígitos')) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe(IMEI_VALIDO));
+
+    fireEvent.click(screen.getByRole('button', { name: /^quitar$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sí, quitar/i }));
+
+    await waitFor(() =>
+      expect(patchSpy).toHaveBeenCalledWith('/vehiculos/veh-1/dispositivo', {
+        teltonika_imei: null,
+      }),
+    );
+    await waitFor(() => expect(screen.getByText(/sin dispositivo/i)).toBeInTheDocument());
+
+    // El input debe quedar vacío, no conservar el IMEI recién quitado.
+    await waitFor(() => expect(input.value).toBe(''));
+
+    // Un click en "Guardar" con el input ya sincronizado (vacío) no debe
+    // re-disparar el PATCH con el IMEI viejo: la validación client rechaza
+    // el string vacío antes de llegar a la mutación.
+    patchSpy.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }));
+    expect(patchSpy).not.toHaveBeenCalled();
+  });
+
   it('error imei_en_uso → mensaje "ya está asociado a otro vehículo"', async () => {
     mockDetalleGet(null);
     vi.spyOn(api, 'patch').mockRejectedValue(
