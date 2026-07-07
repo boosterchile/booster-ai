@@ -109,3 +109,18 @@ Evidencia:
 **Costo de evitarlo: cero.** La habilitación de temperatura se prueba con **IMEI demo sintético `990000000000017`** (verificado sin colisión en `teltonika_imei`/`teltonika_imei_espejo`/`dispositivos_pendientes`; prefijo `99` distinto del `863238` real para distinción visual en el informe) sobre un **vehículo de prueba** de la empresa nueva (piloto-smoke). Van Oosterwyk es además la **beneficiaria del convenio CORFO** — citar así en el informe (evidencia de operación real GPS en producción).
 
 **IMEI demo reservado: `990000000000017`** (15 dígitos, sintético). El simulador W3 solo apunta acá; nunca al real.
+
+## Diagnóstico auth del admin + estado de firebase-admin-key (2026-07-07)
+
+**(4) firebase-admin-key NO se usa en runtime de prod — NO es incidente.** `infrastructure/compute.tf` NO monta el secret en ningún servicio (grep vacío). El Admin SDK del api se inicializa con `applicationDefault()` (`apps/api/src/services/firebase.ts:29-30`) = ADC del **runtime SA** de Cloud Run (workload identity), no la key JSON. El secret `firebase-admin-key` está en la lista de placeholders (`security.tf:172`, no excluido en el loop línea 333) → es `ROTATE_ME` sin rotar, pero **vestigial/no leído**. Prod (validación de tokens, createUser del approve, custom tokens vía ADC) funciona por el runtime SA. Cleanup candidato (retirar el secret muerto), NO incidente. Consecuencia: mi "Opción B" original (fetch de firebase-admin-key para mintear custom token) era incorrecta — ese secret es placeholder; el custom token se mintearía vía el runtime SA (ADC + signBlob), no vía el archivo.
+
+**(2) Dos cuentas Firebase distintas:**
+- `dev@boosterchile.com` — uid `eMSaQTM7TbMWpOpTCOwfV7vnvzp1`, Firebase: `google.com`+`password`, emailVerified=TRUE, passwordHash=TRUE. En `usuarios`: rut VACÍO, sin clave numérica. **Es el ÚNICO en la allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`.**
+- `contacto@boosterchile.com` — uid `9iTEKErBinemdNhRK9GGXdr3uxt2`, Firebase: solo `password`, emailVerified=FALSE, passwordHash=TRUE. En `usuarios`: rut `76653720-0` (= RUT de Van Oosterwyk), CON clave numérica. **NO está en la allowlist.**
+
+**(3) Causa raíz — NO es unificada (corrige la hipótesis del PO):**
+- Lookup de cuenta: NO bloqueado — funciona con el access token de `gcloud auth application-default` + header `X-Goog-User-Project` (REST Identity Toolkit), sin service-account key.
+- `signInWithPassword` con dev@ → `INVALID_LOGIN_CREDENTIALS`: es **password mismatch** (dev@ SÍ tiene passwordHash; la clave probada no coincide). Independiente del admin-key. La clave que el PO recuerda podría ser la de **contacto@** (que sí tiene password+clave numérica) — pero contacto@ no está en la allowlist.
+- Custom token: mi receta con firebase-admin-key fallaba por el placeholder; no es la vía.
+
+**Desbloqueo recomendado**: resetear la clave Firebase de `dev@boosterchile.com` (consola Identity Platform) → `signInWithPassword` como dev@ → idToken → approve (dev@ en allowlist). Alternativa: agregar contacto@ a la allowlist (cambio de config prod + está unverified) — menos limpio.
