@@ -1,5 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
-import { chileanPlateSchema } from '@booster-ai/shared-schemas';
+import {
+  type FuelType,
+  type UnitCategory,
+  type UnitType,
+  bodyTypeSchema,
+  chileanPlateSchema,
+  unitCategorySchema,
+  unitTypeSchema,
+  validarCoherenciaUnidadVehiculo,
+} from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -58,10 +67,23 @@ const vehicleStatuses = ['activo', 'mantenimiento', 'retirado'] as const;
 //
 // Reemplaza el schema laxo previo que aceptaba `....`, `XXX-99`, `1234`, etc.
 // porque solo validaba caracteres + min(4), no la estructura chilena.
+// W4a (migración 0048, ADR-073) — tipologías de flota. `vehicle_type`
+// (arriba, enum legacy) sigue obligatorio: la columna SQL `tipo_vehiculo`
+// no se toca y sigue NOT NULL. `unit_type` es el campo NUEVO, también
+// obligatorio en create (D4.2: Zod exige tipo_unidad en toda escritura
+// nueva) — un POST hoy declara AMBOS. `unit_category` default 'motriz'
+// (espejo del DEFAULT de la columna); `body_type` opcional/nullable
+// (carrocería, ortogonal). `capacity_kg` relajado a `.min(0)` (D1.2: un
+// tracto no carga solo) — el piso >0 para el resto de tipos motrices y
+// para arrastre se valida en runtime (`validarCoherenciaUnidadVehiculo`,
+// espejo de `chk_vehiculos_tipo_categoria` + D4.5), no acá a nivel de forma.
 const createBodySchema = z.object({
   plate: chileanPlateSchema,
   vehicle_type: z.enum(vehicleTypes),
-  capacity_kg: z.number().int().positive().max(100_000),
+  unit_category: unitCategorySchema.default('motriz'),
+  unit_type: unitTypeSchema,
+  body_type: bodyTypeSchema.nullable().optional(),
+  capacity_kg: z.number().int().min(0).max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
   year: z.number().int().min(1980).max(2100).nullable().optional(),
   brand: z.string().min(1).max(50).nullable().optional(),
@@ -74,6 +96,55 @@ const createBodySchema = z.object({
 const updateBodySchema = createBodySchema.partial().extend({
   vehicle_status: z.enum(vehicleStatuses).optional(),
 });
+
+/**
+ * Campos que participan de la coherencia tipo↔categoría
+ * (`validarCoherenciaUnidadVehiculo`, espejo de
+ * `chk_vehiculos_tipo_categoria` + D4.5). Si un PATCH no toca ninguno de
+ * estos, no hace falta re-validar (el estado previo ya era coherente).
+ */
+const UNIT_CONFIG_FIELDS = [
+  'unit_category',
+  'unit_type',
+  'capacity_kg',
+  'curb_weight_kg',
+  'consumption_l_per_100km_baseline',
+  'fuel_type',
+] as const;
+
+function touchesUnitConfig(body: z.infer<typeof updateBodySchema>): boolean {
+  return UNIT_CONFIG_FIELDS.some((f) => body[f] !== undefined);
+}
+
+/**
+ * 422 antes de BD (D4 condición 3): valida `validarCoherenciaUnidadVehiculo`
+ * y devuelve la respuesta de error si hay ≥1 violación, o `null` si la
+ * configuración es coherente.
+ */
+function validarOResponderIncoherencia(
+  c: Context,
+  input: {
+    unitCategory: UnitCategory;
+    unitType: UnitType;
+    capacityKg: number;
+    curbWeightKg: number | null;
+    consumptionLPer100kmBaseline: number | null;
+    fuelType: FuelType | null;
+  },
+) {
+  const violations = validarCoherenciaUnidadVehiculo(input);
+  if (violations.length === 0) {
+    return null;
+  }
+  return c.json(
+    {
+      error: 'tipo_categoria_incoherente',
+      code: violations[0]?.code ?? 'tipo_categoria_incoherente',
+      violations,
+    },
+    422,
+  );
+}
 
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -140,6 +211,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         id: vehicles.id,
         plate: vehicles.plate,
         type: vehicles.vehicleType,
+        unit_category: vehicles.unitCategory,
+        unit_type: vehicles.unitType,
+        body_type: vehicles.bodyType,
         capacity_kg: vehicles.capacityKg,
         capacity_m3: vehicles.capacityM3,
         year: vehicles.year,
@@ -340,6 +414,21 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
+    // D4 condición 3 — CHECK tipo↔categoría (+ D4.5) validado en Zod/runtime
+    // ANTES de llegar a BD. La CHECK `chk_vehiculos_tipo_categoria` de la
+    // migración 0048 es la red de seguridad final, no la primera línea.
+    const incoherencia = validarOResponderIncoherencia(c, {
+      unitCategory: body.unit_category,
+      unitType: body.unit_type,
+      capacityKg: body.capacity_kg,
+      curbWeightKg: body.curb_weight_kg ?? null,
+      consumptionLPer100kmBaseline: body.consumption_l_per_100km_baseline ?? null,
+      fuelType: body.fuel_type ?? null,
+    });
+    if (incoherencia) {
+      return incoherencia;
+    }
+
     try {
       const [created] = await opts.db
         .insert(vehicles)
@@ -347,6 +436,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           empresaId,
           plate: body.plate,
           vehicleType: body.vehicle_type,
+          unitCategory: body.unit_category,
+          unitType: body.unit_type,
+          bodyType: body.body_type ?? null,
           capacityKg: body.capacity_kg,
           capacityM3: body.capacity_m3 ?? null,
           year: body.year ?? null,
@@ -414,9 +506,21 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
-    // Verificar ownership antes del update.
+    // Verificar ownership antes del update. Trae también el estado actual
+    // relevante para la coherencia tipo↔categoría (D4): un PATCH parcial
+    // que solo toca, por ejemplo, `capacity_kg` necesita saber el
+    // `unit_category`/`unit_type` YA persistidos para re-validar el estado
+    // resultante (merge), no solo el fragmento que llegó en el body.
     const [existing] = await opts.db
-      .select({ id: vehicles.id })
+      .select({
+        id: vehicles.id,
+        unitCategory: vehicles.unitCategory,
+        unitType: vehicles.unitType,
+        capacityKg: vehicles.capacityKg,
+        curbWeightKg: vehicles.curbWeightKg,
+        consumptionLPer100kmBaseline: vehicles.consumptionLPer100kmBaseline,
+        fuelType: vehicles.fuelType,
+      })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
@@ -430,6 +534,15 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     }
     if (body.vehicle_type !== undefined) {
       updates.vehicleType = body.vehicle_type;
+    }
+    if (body.unit_category !== undefined) {
+      updates.unitCategory = body.unit_category;
+    }
+    if (body.unit_type !== undefined) {
+      updates.unitType = body.unit_type;
+    }
+    if (body.body_type !== undefined) {
+      updates.bodyType = body.body_type;
     }
     if (body.capacity_kg !== undefined) {
       updates.capacityKg = body.capacity_kg;
@@ -460,6 +573,39 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     }
     if (body.vehicle_status !== undefined) {
       updates.vehicleStatus = body.vehicle_status;
+    }
+
+    // D4 condición 3 — re-validar coherencia SOLO si el PATCH toca algún
+    // campo relevante (unit_category/unit_type/capacity_kg/curb_weight_kg/
+    // consumption_l_per_100km_baseline/fuel_type), mergeando con el estado
+    // ya persistido. Si el `unit_type` efectivo (post-merge) sigue siendo
+    // NULL (fila legacy que nunca lo declaró), no hay nada que validar —
+    // igual que la CHECK de BD, que bypasea cuando tipo_unidad IS NULL.
+    if (touchesUnitConfig(body)) {
+      const effectiveUnitType = body.unit_type !== undefined ? body.unit_type : existing.unitType;
+      if (effectiveUnitType != null) {
+        const effectiveConsumption =
+          body.consumption_l_per_100km_baseline !== undefined
+            ? body.consumption_l_per_100km_baseline
+            : existing.consumptionLPer100kmBaseline != null
+              ? Number(existing.consumptionLPer100kmBaseline)
+              : null;
+        const incoherencia = validarOResponderIncoherencia(c, {
+          unitCategory:
+            body.unit_category !== undefined ? body.unit_category : existing.unitCategory,
+          unitType: effectiveUnitType,
+          capacityKg: body.capacity_kg !== undefined ? body.capacity_kg : existing.capacityKg,
+          curbWeightKg:
+            body.curb_weight_kg !== undefined
+              ? (body.curb_weight_kg ?? null)
+              : existing.curbWeightKg,
+          consumptionLPer100kmBaseline: effectiveConsumption ?? null,
+          fuelType: body.fuel_type !== undefined ? (body.fuel_type ?? null) : existing.fuelType,
+        });
+        if (incoherencia) {
+          return incoherencia;
+        }
+      }
     }
 
     try {
@@ -731,6 +877,9 @@ function serializeVehicle(row: typeof vehicles.$inferSelect) {
     id: row.id,
     plate: row.plate,
     type: row.vehicleType,
+    unit_category: row.unitCategory,
+    unit_type: row.unitType,
+    body_type: row.bodyType,
     capacity_kg: row.capacityKg,
     capacity_m3: row.capacityM3,
     year: row.year,

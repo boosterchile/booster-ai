@@ -39,6 +39,9 @@ function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
     // el transform de chileanPlateSchema.
     plate: 'ABCD12',
     vehicleType: 'camion_pequeno',
+    unitCategory: 'motriz',
+    unitType: 'camion_rigido',
+    bodyType: null,
     capacityKg: 3500,
     capacityM3: null,
     year: null,
@@ -149,6 +152,7 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -167,6 +171,7 @@ describe('vehiculos routes', () => {
         // Input con minúsculas y separador. El servidor normaliza a canónico.
         plate: 'ab·cd·12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -199,6 +204,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate,
           vehicle_type: 'camion_pequeno',
+          unit_type: 'camion_rigido',
           capacity_kg: 3500,
         }),
       });
@@ -240,6 +246,7 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -257,6 +264,218 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({ vehicle_type: 'camion_pequeno', capacity_kg: 3500 }),
     });
     expect(res.status).toBe(400);
+  });
+
+  // ---------------------------------------------------------------------
+  // W4a (migración 0048, ADR-073) — D4.2: tipo_unidad obligatorio en
+  // create; D4 condición 3: CHECK tipo↔categoría (+ D4.5) validada en Zod
+  // ANTES de BD (422).
+  // ---------------------------------------------------------------------
+  describe('tipologías de flota (D1/D4, W4a)', () => {
+    it('POST / sin unit_type → 400 (D4.2: obligatorio en toda escritura nueva)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pequeno',
+          capacity_kg: 3500,
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('POST / unit_category=motriz + unit_type=semirremolque → 422 (incoherente, espejo del CHECK)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'motriz',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tipo_categoria_incoherente');
+    });
+
+    it('POST / arrastre sin curb_weight_kg → 422 (D4.5)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_curb_weight_requerido');
+    });
+
+    it('POST / arrastre con fuel_type declarado → 422 (D4.5: arrastre no tiene combustible propio)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+          curb_weight_kg: 7000,
+          fuel_type: 'diesel',
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_combustible_debe_ser_null');
+    });
+
+    it('POST / arrastre coherente (semirremolque, capacity/curb_weight > 0) → 201', async () => {
+      const stub = makeDbStub({
+        insertRows: [
+          buildVehicleRow({
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            fuelType: null,
+            consumptionLPer100kmBaseline: null,
+          }),
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+          curb_weight_kg: 7000,
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { unit_category: string; unit_type: string } };
+      expect(body.vehicle.unit_category).toBe('arrastre');
+      expect(body.vehicle.unit_type).toBe('semirremolque');
+    });
+
+    it('POST / tracto_camion con capacity_kg=0 → 201 (D1.2: un tracto no carga solo)', async () => {
+      const stub = makeDbStub({
+        insertRows: [
+          buildVehicleRow({
+            vehicleType: 'camion_pesado',
+            unitCategory: 'motriz',
+            unitType: 'tracto_camion',
+            capacityKg: 0,
+          }),
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+        }),
+      });
+      expect(res.status).toBe(201);
+    });
+
+    it('POST / motriz no-tracto con capacity_kg=0 → 422 (motriz_capacidad_requerida)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camioneta',
+          unit_category: 'motriz',
+          unit_type: 'camioneta',
+          capacity_kg: 0,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('motriz_capacidad_requerida');
+    });
+
+    it('PATCH /:id que solo cambia capacity_kg re-valida coherencia mergeando con el estado persistido → 422', async () => {
+      // Fila existente: arrastre semirremolque coherente (capacity=30000,
+      // curb_weight=7000). El PATCH solo manda capacity_kg=0 — el merge
+      // con unit_category='arrastre' persistido debe detectar la violación
+      // (arrastre requiere capacity_kg > 0), aunque el body del PATCH no
+      // toque unit_category/unit_type.
+      const stub = makeDbStub({
+        selectRows: [
+          {
+            id: VEHICLE_ID,
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            consumptionLPer100kmBaseline: null,
+            fuelType: null,
+          },
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request(`/vehiculos/${VEHICLE_ID}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ capacity_kg: 0 }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_capacidad_requerida');
+    });
+
+    it('PATCH /:id que no toca campos de coherencia → no re-valida (200 normal)', async () => {
+      const stub = makeDbStub({
+        selectRows: [
+          {
+            id: VEHICLE_ID,
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            consumptionLPer100kmBaseline: null,
+            fuelType: null,
+          },
+        ],
+        updateRows: [buildVehicleRow({ year: 2021 })],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request(`/vehiculos/${VEHICLE_ID}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ year: 2021 }),
+      });
+      expect(res.status).toBe(200);
+    });
   });
 
   it('PATCH /:id no encontrado → 404', async () => {
