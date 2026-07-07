@@ -145,7 +145,15 @@ export interface VehicleUnitConfigViolation {
  *     tara del semi = insumo GVW/GLEC), `consumption_l_per_100km_baseline`
  *     y `fuel_type` SIEMPRE null (un arrastre no tiene motor propio).
  *   - `motriz` + `tracto_camion`: `capacity_kg >= 0` permitido (D1.2, un
- *     tracto no carga solo).
+ *     tracto no carga solo), pero `consumption_l_per_100km_baseline > 0` y
+ *     `fuel_type` son REQUERIDOS (texto vinculante D4, decisiones.md línea
+ *     30: "tracto_camion → capacity_kg = 0 permitido y consumo requerido"
+ *     — un tracto SÍ tiene motor propio y consume combustible aunque no
+ *     cargue solo; `curb_weight_kg` sigue nullable "como hoy", D4.5 solo
+ *     lo exige para `arrastre`). Mismo scope que la exigencia de
+ *     `tipo_unidad` (D4.2): aplica a ESCRITURAS NUEVAS — filas legacy con
+ *     `tipo_unidad` NULL no pasan por esta validación (no hay `unitType`
+ *     que evaluar).
  *   - `motriz` + demás tipos: `capacity_kg > 0`, igual que "como hoy".
  *
  * Devuelve `[]` si la configuración es coherente, o la lista de
@@ -209,6 +217,21 @@ export function validarCoherenciaUnidadVehiculo(
         field: 'capacity_kg',
         code: 'capacidad_negativa',
         message: 'capacity_kg no puede ser negativo',
+      });
+    }
+    if (input.consumptionLPer100kmBaseline == null || !(input.consumptionLPer100kmBaseline > 0)) {
+      violations.push({
+        field: 'consumption_l_per_100km_baseline',
+        code: 'tracto_consumo_requerido',
+        message:
+          'tracto_camion requiere consumption_l_per_100km_baseline > 0 (D4: texto vinculante, decisiones.md línea 30)',
+      });
+    }
+    if (input.fuelType == null) {
+      violations.push({
+        field: 'fuel_type',
+        code: 'tracto_combustible_requerido',
+        message: 'tracto_camion requiere fuel_type (D4: un tracto sí tiene motor propio)',
       });
     }
   } else if (!(input.capacityKg > 0)) {

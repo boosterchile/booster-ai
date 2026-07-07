@@ -101,6 +101,86 @@ describe('validarCoherenciaUnidadVehiculo — espejo runtime de chk_vehiculos_ti
     ]);
   });
 
+  // D4 (decisiones.md línea 30): "tracto_camion → capacity_kg = 0 permitido
+  // y consumo requerido". El texto vinculante exige el consumo, a
+  // diferencia de curb_weight_kg (que sigue nullable "como hoy" para
+  // motriz). Mismo scope que la exigencia de tipo_unidad: aplica a
+  // ESCRITURAS nuevas — filas legacy con tipo NULL no pasan por acá.
+  it('tracto_camion completo (capacity=0, consumo>0, fuel_type presente) → coherente', () => {
+    expect(
+      validarCoherenciaUnidadVehiculo(
+        build({
+          unitType: 'tracto_camion',
+          capacityKg: 0,
+          consumptionLPer100kmBaseline: 33,
+          fuelType: 'diesel',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('tracto_camion sin consumo (null) → violación tracto_consumo_requerido (D4)', () => {
+    const violations = validarCoherenciaUnidadVehiculo(
+      build({
+        unitType: 'tracto_camion',
+        capacityKg: 0,
+        consumptionLPer100kmBaseline: null,
+      }),
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        field: 'consumption_l_per_100km_baseline',
+        code: 'tracto_consumo_requerido',
+      }),
+    ]);
+  });
+
+  it('tracto_camion con consumo=0 → misma violación (D4 exige > 0, no solo "presente")', () => {
+    const violations = validarCoherenciaUnidadVehiculo(
+      build({
+        unitType: 'tracto_camion',
+        capacityKg: 0,
+        consumptionLPer100kmBaseline: 0,
+      }),
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        field: 'consumption_l_per_100km_baseline',
+        code: 'tracto_consumo_requerido',
+      }),
+    ]);
+  });
+
+  it('tracto_camion sin fuel_type (null) → violación tracto_combustible_requerido (D4)', () => {
+    const violations = validarCoherenciaUnidadVehiculo(
+      build({
+        unitType: 'tracto_camion',
+        capacityKg: 0,
+        fuelType: null,
+      }),
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        field: 'fuel_type',
+        code: 'tracto_combustible_requerido',
+      }),
+    ]);
+  });
+
+  it('tracto_camion puede acumular varias violaciones a la vez (capacidad negativa + sin consumo + sin fuel)', () => {
+    const violations = validarCoherenciaUnidadVehiculo(
+      build({
+        unitType: 'tracto_camion',
+        capacityKg: -1,
+        consumptionLPer100kmBaseline: null,
+        fuelType: null,
+      }),
+    );
+    expect(violations.map((v) => v.field).sort()).toEqual(
+      ['capacity_kg', 'consumption_l_per_100km_baseline', 'fuel_type'].sort(),
+    );
+  });
+
   it('motriz no-tracto (camioneta) con capacity_kg=0 → violación motriz_capacidad_requerida', () => {
     const violations = validarCoherenciaUnidadVehiculo(
       build({ unitType: 'camioneta', capacityKg: 0 }),
