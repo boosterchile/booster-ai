@@ -1,4 +1,4 @@
-import type { ParametrosPorDefecto } from '../tipos.js';
+import type { ConfiguracionViaje, ParametrosPorDefecto } from '../tipos.js';
 
 /**
  * Corrección del consumo según factor de carga.
@@ -62,7 +62,53 @@ export function categoriaVehiculo(
     case 'refrigerado':
     case 'tanque':
       return 'HDV';
+    // W4a (ADR-073) — tipos nuevos de `tipo_unidad` (migración 0048).
+    // `tracto_camion` (chasís solo, sin carga propia) y los dos arrastres
+    // (`semirremolque`/`remolque`) clasifican HDV por clase de peso, igual
+    // que sus equivalentes legacy más cercanos arriba. Los 9 valores legacy
+    // de arriba NO cambian de comportamiento (compat legacy).
+    case 'tracto_camion':
+    case 'semirremolque':
+    case 'remolque':
+      return 'HDV';
   }
+}
+
+/**
+ * D4 (decisiones.md) — clase GLEC derivada de la CONFIGURACIÓN de viaje
+ * (motriz + 0..1 arrastre), no del vehículo suelto como `categoriaVehiculo()`
+ * arriba. Reglas aprobadas por el PO:
+ *
+ *   - Con arrastre enganchado → configuración articulada → siempre 'HDV',
+ *     independiente del peso agregado (un tracto+semi liviano sigue siendo
+ *     un articulado a efectos de manejo/consumo/GLEC).
+ *   - Motriz sola → por GVW agregado (`curbWeightKg + capacityKg`):
+ *     < 3.5 t → LDV, 3.5–16 t → MDV, > 16 t → HDV.
+ *
+ * Fuentes / verificación (ver docs/adr/073 §Fuentes normativas para el
+ * detalle): la segmentación LDV/MDV/HDV por GVW está alineada con el
+ * espíritu de GLEC Framework v3.0 §6.3 (la misma fuente de
+ * `categoriaVehiculo()`/`ALFA_POR_CATEGORIA` arriba), pero el corte
+ * numérico exacto de 16 t para el techo de MDV **no está tomado
+ * literalmente de una tabla publicada** — es una convención de ingeniería
+ * del proyecto (razonable pero **referencial**, no una cita verificada).
+ * D.S. N°158/1980 (MOP, no MTT — ver corrección de atribución en el ADR)
+ * fija pesos máximos de circulación en Chile pero no define por sí mismo
+ * una segmentación LDV/MDV/HDV.
+ */
+export function categoriaPorConfiguracion(configuracion: ConfiguracionViaje): CategoriaVehiculo {
+  if (configuracion.arrastre) {
+    return 'HDV';
+  }
+
+  const gvwTon = (configuracion.motriz.curbWeightKg + configuracion.motriz.capacityKg) / 1000;
+  if (gvwTon < 3.5) {
+    return 'LDV';
+  }
+  if (gvwTon <= 16) {
+    return 'MDV';
+  }
+  return 'HDV';
 }
 
 /**

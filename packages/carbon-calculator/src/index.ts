@@ -54,6 +54,7 @@ export { obtenerFactorEmision, factorWtw } from './factores/sec-chile-2024.js';
 export { DEFAULTS_POR_TIPO } from './factores/defaults-por-tipo.js';
 export {
   calcularFactorCorreccionPorCarga,
+  categoriaPorConfiguracion,
   categoriaVehiculo,
   type CategoriaVehiculo,
 } from './glec/factor-carga.js';
@@ -75,6 +76,11 @@ export type {
   ParametrosPorDefecto,
   ParametrosCalculo,
   ResultadoEmisiones,
+  TipoUnidadMotriz,
+  TipoUnidadArrastre,
+  UnidadMotrizConfiguracion,
+  UnidadArrastreConfiguracion,
+  ConfiguracionViaje,
 } from './tipos.js';
 export {
   derivarNivelCertificacion,
