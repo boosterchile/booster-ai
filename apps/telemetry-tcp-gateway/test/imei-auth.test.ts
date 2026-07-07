@@ -102,4 +102,64 @@ describe('resolveImei', () => {
     });
     expect(result.pendingDeviceId).toBe('pending-uuid-xyz');
   });
+
+  // -------------------------------------------------------------------
+  // D3b (W2, hito 2 CORFO / .specs/hito-2-corfo-mes-8/decisiones.md D3.b):
+  // un device que fue DESASOCIADO (su row de dispositivos_pendientes queda
+  // en 'reemplazado' vía el PATCH self-service) pero sigue transmitiendo
+  // debe reaparecer en la bandeja de pendientes (reemplazado→pendiente) al
+  // reconectar. 'rechazado' NO se reabre (el rechazo debe sobrevivir
+  // reconexiones — D2). 'aprobado' no se toca acá (nunca debería llegar a
+  // este upsert mientras siga vigente: el lookup de vehículo del paso 1 ya
+  // habría matcheado).
+  //
+  // No hay Postgres real en este test unitario (db.execute está mockeado),
+  // así que la verificación es sobre el TEXTO del SQL emitido: confirma que
+  // el ON CONFLICT DO UPDATE incluye el CASE que reabre 'reemplazado' pero
+  // preserva cualquier otro estado (rechazado/aprobado/pendiente) intacto.
+  // -------------------------------------------------------------------
+  it('D3b: el upsert de enrollment reabre reemplazado→pendiente pero preserva otros estados', async () => {
+    const execute = vi.fn().mockResolvedValueOnce({ rows: [] }); // sin match de vehículo
+    const db = { execute } as unknown as Parameters<typeof resolveImei>[0]['db'];
+    execute.mockResolvedValueOnce({ rows: [{ id: 'pending-uuid-1' }] }); // el upsert
+
+    await resolveImei({
+      db,
+      logger: noopLogger,
+      imei: '356307042441013',
+      sourceIp: '1.2.3.4',
+    });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    const upsertSql = execute.mock.calls[1]?.[0];
+    const text = JSON.stringify(upsertSql);
+    // Reabre reemplazado → pendiente.
+    expect(text).toContain("WHEN dispositivos_pendientes.estado = 'reemplazado'");
+    expect(text).toContain("THEN 'pendiente'");
+    // Preserva el estado actual en cualquier otro caso (rechazado/aprobado
+    // sobreviven la reconexión sin ser tocados por este upsert).
+    expect(text).toContain('ELSE dispositivos_pendientes.estado');
+  });
+
+  // -------------------------------------------------------------------
+  // D3c: el enrollment NO debe crear/reabrir rows de dispositivos_pendientes
+  // para IMEIs que YA resuelven a un vehículo — el lookup de vehículo
+  // (paso 1) corre PRIMERO y, si matchea, se retorna sin tocar
+  // dispositivos_pendientes en absoluto (ni INSERT ni upsert). Verificado
+  // hoy: ya es así (early return antes del upsert) — este test lo deja
+  // bloqueado contra regresión.
+  // -------------------------------------------------------------------
+  it('D3c: IMEI que matchea vehículo NO toca dispositivos_pendientes (solo 1 query)', async () => {
+    const db = makeMockDb({ vehicleRow: { id: 'veh-uuid-123' } });
+    const result = await resolveImei({
+      db,
+      logger: noopLogger,
+      imei: '356307042441013',
+      sourceIp: '1.2.3.4',
+    });
+    expect(result.vehicleId).toBe('veh-uuid-123');
+    // Solo corrió el SELECT de vehículos; el upsert de dispositivos_pendientes
+    // NO se ejecutó.
+    expect(db.execute).toHaveBeenCalledTimes(1);
+  });
 });
