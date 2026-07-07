@@ -69,3 +69,17 @@ Al crear el scheduler `reap-orphan-onboarding-firebase` por gcloud (paso 2b, 202
 **Fix (PO, 2026-07-07 12:55:55Z)**: `gcloud scheduler jobs update http` con `uri` + `oidc-token-audience` en la forma con número de proyecto. Re-tick 12:57:00Z → **HTTP 200** + summary `{scanned:0, deleted:0, deferred:0, alreadyGone:0, errors:0, destructive:false}` (dry-run confirmado, 0 huérfanos — esperado, no ha habido approves reales todavía). Job de vuelta en `PAUSED`.
 
 **Lección para el import a TF** (pendiente fechado): `local.cloud_run_api_url` YA trae la forma correcta (número de proyecto) — el `terraform import` del scheduler reconciliará `uri`+`audience` sin diff SOLO si el estado de prod ya usa esa forma (ahora sí, tras el fix). Verificar que el plan post-import sea no-op en esos dos campos. NO usar nunca la URL vanity `.uri` para audiences OIDC en jobs manuales.
+
+## Corrección de diagnóstico — el panel admin NO falta (error de URL del agente) — 2026-07-07 AM
+
+Durante el smoke E2E (paso 7a) el agente indicó la URL `/platform-admin/signup-requests` (sin prefijo `/app`) → el PO obtuvo "Not Found" y se planteó como posible gap de W1 ("UI del panel no desplegada"). **Verificado contra `origin/main`: la premisa es falsa, la UI existe y está ruteada.**
+
+Evidencia:
+- Página `apps/web/src/routes/platform-admin-signup-requests.tsx` (+ `.test.tsx`) presente en main (PR #565).
+- Ruta registrada: `router.tsx:264` (`createRoute`, path **`/app/platform-admin/signup-requests`**) + en el `routeTree` (`addChildren`, línea 418).
+- Gate: `BOOSTER_PLATFORM_ADMIN_EMAILS` (allowlist server-side, 403 si no está). **Verificado en prod: = `dev@boosterchile.com`** (el PO ES el platform admin). NO es un rol de login (los 5 roles del login son de empresa/tenant, ortogonales).
+- Endpoint de aprobación existe: `POST /admin/signup-requests/:id/approve` (`admin-signup-requests.ts:153`, gate `requirePlatformAdmin` + `requireFlowActivated`), su respuesta devuelve `onboarding_link` (W1.4).
+
+**Raíz del bloqueo**: error del agente al citar la ruta (omitió el prefijo `/app`), no un defecto de W1. Camino correcto para aprobar: login como `dev@boosterchile.com` → `/app/platform-admin/signup-requests` → Aprobar → link copiable de un solo uso. Sin trabajo de UI pendiente.
+
+**Lección**: no citar rutas de UI sin verificarlas contra el router (regla del contrato: "cita solo lo que verificaste"). El agente asumió la URL en vez de leer `router.tsx`.
