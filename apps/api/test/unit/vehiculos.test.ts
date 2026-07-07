@@ -378,7 +378,12 @@ describe('vehiculos routes', () => {
       expect(body.vehicle.unit_type).toBe('semirremolque');
     });
 
-    it('POST / tracto_camion con capacity_kg=0 → 201 (D1.2: un tracto no carga solo)', async () => {
+    // D4 (decisiones.md línea 30, texto vinculante): "tracto_camion →
+    // capacity_kg = 0 permitido y consumo requerido". Un tracto no carga
+    // solo, pero sí tiene motor propio: consumption_l_per_100km_baseline y
+    // fuel_type son obligatorios (a diferencia de curb_weight_kg, que
+    // sigue nullable "como hoy" para motriz).
+    it('POST / tracto_camion completo (capacity_kg=0 + consumo + fuel) → 201 (D1.2 + D4)', async () => {
       const stub = makeDbStub({
         insertRows: [
           buildVehicleRow({
@@ -386,6 +391,8 @@ describe('vehiculos routes', () => {
             unitCategory: 'motriz',
             unitType: 'tracto_camion',
             capacityKg: 0,
+            fuelType: 'diesel',
+            consumptionLPer100kmBaseline: '33',
           }),
         ],
       });
@@ -399,9 +406,50 @@ describe('vehiculos routes', () => {
           unit_category: 'motriz',
           unit_type: 'tracto_camion',
           capacity_kg: 0,
+          fuel_type: 'diesel',
+          consumption_l_per_100km_baseline: 33,
         }),
       });
       expect(res.status).toBe(201);
+    });
+
+    it('POST / tracto_camion sin consumo/fuel → 422 (tracto_consumo_requerido, D4)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tracto_consumo_requerido');
+    });
+
+    it('POST / tracto_camion con consumo pero sin fuel_type → 422 (tracto_combustible_requerido, D4)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+          consumption_l_per_100km_baseline: 33,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tracto_combustible_requerido');
     });
 
     it('POST / motriz no-tracto con capacity_kg=0 → 422 (motriz_capacidad_requerida)', async () => {
