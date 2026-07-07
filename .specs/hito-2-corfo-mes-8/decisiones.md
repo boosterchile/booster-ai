@@ -83,3 +83,19 @@ Evidencia:
 **Raíz del bloqueo**: error del agente al citar la ruta (omitió el prefijo `/app`), no un defecto de W1. Camino correcto para aprobar: login como `dev@boosterchile.com` → `/app/platform-admin/signup-requests` → Aprobar → link copiable de un solo uso. Sin trabajo de UI pendiente.
 
 **Lección**: no citar rutas de UI sin verificarlas contra el router (regla del contrato: "cita solo lo que verificaste"). El agente asumió la URL en vez de leer `router.tsx`.
+
+## Evidencia protegida Meta 2 — dispositivo Teltonika real (INTOCABLE) — 2026-07-07 AM
+
+**Único dispositivo real de la operación, evidencia crítica de telemetría en producción. NO reasignar su IMEI, NO apuntarle el simulador, NO tocar su empresa/vehículo en ningún E2E.**
+
+- **Empresa**: Transportes Van Oosterwyk (RUT `76653720-0`, empresa_id `60c344e0-b925-43a6-a7b3-aa6b07fac721`).
+- **Vehículo**: patente **VFZH-68** (vehiculo_id `6487dac2-600e-4655-a20e-2ea77a6b1017`).
+- **IMEI**: `863238075489155` (sin espejo).
+- **Ventana de datos** (verificada read-only 2026-07-07): **239.148 puntos** totales, primer punto 2026-05-05 12:00 UTC, último 2026-07-07 13:53 UTC (emitiendo en vivo), **105.856 puntos en 30 días** continuos.
+- **Sensores**: **solo GPS** — `io_data` reciente = `{16,21,24,66,67,68,69,80,181,182,199,200,239,240,241,388}` (Low-Priority estándar: ignición 239, movimiento 240, voltajes 66-69, GSM 21, odómetro 16). **NO tiene IO Dallas Temperature (72-75)** → `tiene_dallas_temp=false` en todos los puntos.
+
+**Consecuencia para la cadena demo (W3 / Meta 2)**: la demostración de temperatura DEBE correr el simulador W3 sobre un **vehículo de prueba con IMEI de demo distinto** — nunca el `863238075489155`. El simulador prueba la **habilitación** del pipeline de temperatura (codec8 → io_data['72'] → interpretación °C → UI vehiculo-live), NO operación real de un sensor físico.
+
+**Para la matriz W5 (dos evidencias SEPARADAS, no confundir)**:
+1. **Operación real (GPS)**: Van Oosterwyk / VFZH-68 / IMEI 863238075489155 — 105.856 puntos/30d. Prueba telemetría GPS en producción real. Evidencia dura de Meta 2 (IoT).
+2. **Habilitación de temperatura**: simulador W3 sobre vehículo de prueba + IMEI demo. Prueba que el pipeline de temperatura funciona end-to-end (posición + °C en vehiculo-live), NO que exista un sensor físico de temperatura en la flota hoy.
