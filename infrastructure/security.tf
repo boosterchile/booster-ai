@@ -265,6 +265,20 @@ locals {
     "webpush-vapid-public-key",
     "webpush-vapid-private-key",
 
+    # W1.5 (runbook activación onboarding) — secreto de firma HMAC del token
+    # one-shot de onboarding admin-provisioned (apps/api/src/services/
+    # onboarding-token.ts, config ONBOARDING_TOKEN_SIGNING_SECRET). El
+    # placeholder ROTATE_ME_* que crea este bloque mide >= 32 bytes (pasa el
+    # min-length de assertStrongSecret) pero cae en el denylist explícito del
+    # prefijo `ROTATE_ME_` (fail-closed) — el `check-validated-secret-
+    # placeholders.mjs` preflight NO cubre este secret (valida solo formatos
+    # regex-anclados, no min-length), así que la rotación real se verifica
+    # MANUALMENTE antes del flip (ver runbook
+    # docs/corfo/hito-2/runbook-activacion-onboarding.md):
+    #   gcloud secrets versions access latest --secret=onboarding-token-signing-secret
+    # NO debe imprimir "ROTATE_ME_...".
+    "onboarding-token-signing-secret",
+
     # NOTA: spec 2026-05-13 observability dashboard usaba originalmente un
     # secret `google-workspace-admin-credentials` con el JSON key del SA
     # `observability-workspace-reader`. Refactor: cumple org policy

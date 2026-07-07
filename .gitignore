@@ -143,6 +143,8 @@ booster-skills/
 *.png
 !apps/**/*.png
 !packages/**/*.png
+# Evidencia CORFO versionada (hito 2: screenshots de UI son anexos del informe)
+!docs/corfo/**/*.png
 
 
 # SEC-001 boundary-closure T4 (REVIEW finding E) — reporte de clasificación de

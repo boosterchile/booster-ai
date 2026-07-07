@@ -598,6 +598,24 @@ export const apiEnvSchema = commonEnvSchema
     REAPER_DESTRUCTIVE: booleanFlag(false),
 
     /**
+     * W1.5 (runbook activación onboarding, onboarding-flow-redesign T1.7) —
+     * modo destructivo del reaper de usuarios Firebase huérfanos del
+     * onboarding admin-provisioned (`POST /admin/jobs/reap-orphan-onboarding-firebase`).
+     *
+     * **Estado seguro = OFF (default false) = dry-run.** Con el flag OFF el
+     * job solo loguea/cuenta lo que borraría; NO llama `auth.deleteUser` ni
+     * marca filas. Mismo patrón que `REAPER_DESTRUCTIVE` (control
+     * server-side, no por el request del scheduler): una credencial filtrada
+     * del scheduler no puede disparar borrados.
+     *
+     * NOTA: a diferencia de `REAPER_DESTRUCTIVE`, esta env var aún NO está
+     * cableada en `infrastructure/compute.tf` (mismo patrón de precedente:
+     * el flip requiere un apply dedicado cuando el gate esté listo — ver
+     * runbook `docs/corfo/hito-2/runbook-activacion-onboarding.md`).
+     */
+    ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE: booleanFlag(false),
+
+    /**
      * T3 SEC-001 (sec-001-cierre §3 round 4 P1-R4-4 + P0-4) — gating del
      * fail-closed startup cuando `runMigrations` falla.
      *

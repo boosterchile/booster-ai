@@ -72,6 +72,21 @@ const onboardingRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/onboarding.js'), 'OnboardingRoute'),
 });
 
+// W1.3 (hito CORFO) — alta de usuarios operativa: consume el token de
+// onboarding emitido por el admin al aprobar un signup-request (ver
+// /solicitar-acceso). Distinta de /onboarding (flujo viejo SC3 self-signup,
+// dead-end permanente, no se toca): el aprobado ya tiene cuenta Firebase
+// pero aún no existe en la DB, así que también requiere
+// meRequirement="allow-pre-onboarding".
+const onboardingAdminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/onboarding-admin',
+  component: lazyRouteComponent(
+    () => import('./routes/onboarding-admin.js'),
+    'OnboardingAdminRoute',
+  ),
+});
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app',
@@ -356,12 +371,27 @@ const liquidacionesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/liquidaciones.js'), 'LiquidacionesRoute'),
 });
 
+// SEC-001 Sprint 2b (ADR-052) — alta de usuarios gateada por admin. Reemplaza
+// el self-signup directo de Firebase: el visitante pide acceso acá (POST
+// público /api/v1/signup-request) y un admin aprueba/rechaza desde
+// /app/platform-admin/signup-requests. Path raíz (NO /app/...) porque debe
+// ser accesible sin sesión, igual que /login.
+const solicitarAccesoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/solicitar-acceso',
+  component: lazyRouteComponent(
+    () => import('./routes/solicitar-acceso.js'),
+    'SolicitarAccesoRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   demoRoute,
   loginConductorRoute,
   onboardingRoute,
+  onboardingAdminRoute,
   appRoute,
   ofertasRoute,
   perfilRoute,
@@ -399,6 +429,7 @@ const routeTree = rootRoute.addChildren([
   liquidacionesRoute,
   adminCobraHoyRoute,
   maintenanceRoute,
+  solicitarAccesoRoute,
 ]);
 
 export const router = createRouter({

@@ -318,6 +318,74 @@ resource "google_cloud_scheduler_job" "cobrar_memberships_mensual" {
   ]
 }
 
+# -----------------------------------------------------------------------------
+# W1.5 (runbook activación onboarding) — Cloud Scheduler diario para el
+# reaper del usuario Firebase huérfano del onboarding admin-provisioned
+# -----------------------------------------------------------------------------
+# Spec .specs/onboarding-flow-redesign/spec.md §9 (riesgo huérfano) + plan T1.7.
+# Daily 04:45 America/Santiago. POST /admin/jobs/reap-orphan-onboarding-firebase.
+#
+# Offset elegido: el bloque off-peak 04:00-04:30 ya tiene 2 jobs
+# (`reap_inert_idp_accounts` @ 04:00, `purgar_posiciones_movil` @ 04:30) —
+# 04:45 mantiene 15 min de separación de ambos vecinos para no competir por
+# el pool de conexiones compartido del api.
+#
+# **Arranca en DRY-RUN + PAUSADO** (mismo gate que `reap_inert_idp_accounts`):
+# el handler corre con `ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE=false` (config
+# server-side, default OFF) → solo loguea/cuenta lo que haría, NO borra
+# usuarios Firebase ni marca filas. El modo destructivo se habilita seteando
+# la env en el Cloud Run del api (Terraform compute.tf) + redeploy — hoy esa
+# env NO está cableada ahí a propósito (mismo patrón que REAPER_DESTRUCTIVE):
+# el flip es un apply dedicado posterior, no parte de este PR.
+#
+# Este job reemplaza el trigger MANUAL (`tsx
+# apps/api/src/jobs/reap-orphan-onboarding-firebase.ts`) que era la única
+# forma de correrlo hasta ahora — el riesgo "huérfano Firebase" del spec §9
+# queda mitigado automáticamente una vez el PO corre el primer tick manual y
+# despausa (ver runbook docs/corfo/hito-2/runbook-activacion-onboarding.md).
+resource "google_cloud_scheduler_job" "reap_orphan_onboarding_firebase" {
+  name        = "reap-orphan-onboarding-firebase"
+  description = "Daily 04:45 Santiago: reaper del usuario Firebase huérfano del onboarding admin-provisioned (dry-run hasta gate destructivo). onboarding-flow-redesign T1.7."
+  project     = google_project.booster_ai.project_id
+
+  # SHIP REVIEW pattern (mismo criterio que reap_inert_idp_accounts): arranca
+  # PAUSADO. El PO corre el primer tick MANUAL y observado:
+  #   gcloud scheduler jobs run reap-orphan-onboarding-firebase --location=southamerica-east1
+  # y recién tras revisar el summary lo despausa:
+  #   gcloud scheduler jobs resume reap-orphan-onboarding-firebase --location=southamerica-east1
+  paused = true
+
+  region    = "southamerica-east1"
+  schedule  = "45 4 * * *"
+  time_zone = "America/Santiago"
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "60s"
+    max_backoff_duration = "300s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${local.cloud_run_api_url}/admin/jobs/reap-orphan-onboarding-firebase"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type" = "application/json"
+    }
+
+    oidc_token {
+      service_account_email = google_service_account.internal_cron_invoker.email
+      audience              = local.cloud_run_api_url
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.service_api,
+  ]
+}
+
 # Purga diaria de posiciones GPS de browser (retención 30d, preservando la
 # última posición por vehículo — spec feat-retencion-posiciones-movil).
 # La tabla crecía sin límite (auditoría 2026-06-09, seguimiento BD).

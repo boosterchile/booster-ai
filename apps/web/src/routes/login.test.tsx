@@ -19,7 +19,14 @@ const useSearchMock = vi.fn(() => ({}));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
-  Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
+  // B1 (review final W1.5) — LoginRoute navega con `href` (no `to`) para
+  // que un `postLoginTarget` con `?query` embebido (ej.
+  // `/onboarding-admin?token=...`) sobreviva el round-trip. Ver
+  // `login-post-login-redirect.test.tsx` para el test con router real que
+  // prueba el mecanismo sin mockear el router.
+  Navigate: ({ href, to }: { href?: string; to?: string }) => (
+    <div data-testid="navigate" data-href={href} data-to={to} />
+  ),
 }));
 
 // ADR-035 Wave 4 PR 2 — el LoginRoute lee `auth_universal_v1_activated`
@@ -43,6 +50,10 @@ const { LoginRoute } = await import('./login.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // vi.clearAllMocks() no revierte mockReturnValue (solo mockReturnValueOnce
+  // y el historial de calls) — reset explícito para que un override de
+  // useSearchMock en un test no filtre al siguiente.
+  useSearchMock.mockReturnValue({});
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -52,13 +63,32 @@ describe('LoginRoute — auth state', () => {
   it('user presente → redirige a /app', () => {
     useAuthMock.mockReturnValue({ user: { uid: 'u' }, loading: false });
     render(<LoginRoute />);
-    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-href', '/app');
+  });
+
+  it('user presente + ?redirect= → honra el redirect en vez de /app incondicional (B1 login.tsx:83)', () => {
+    useAuthMock.mockReturnValue({ user: { uid: 'u' }, loading: false });
+    useSearchMock.mockReturnValue({ redirect: '/onboarding-admin?token=xyz789' });
+    render(<LoginRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute(
+      'data-href',
+      '/onboarding-admin?token=xyz789',
+    );
   });
 
   it('user null + loading → render form', () => {
     useAuthMock.mockReturnValue({ user: null, loading: false });
     render(<LoginRoute />);
     expect(screen.getByRole('button', { name: /Continuar con Google/ })).toBeInTheDocument();
+  });
+});
+
+describe('LoginRoute — link a solicitar-acceso', () => {
+  it('muestra el link "Solicita acceso" apuntando a /solicitar-acceso', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    render(<LoginRoute />);
+    const link = screen.getByTestId('login-link-solicitar-acceso');
+    expect(link).toHaveAttribute('href', '/solicitar-acceso');
   });
 });
 
@@ -98,7 +128,20 @@ describe('LoginRoute — Google sign in', () => {
     signInWithGoogleMock.mockResolvedValueOnce(undefined);
     render(<LoginRoute />);
     fireEvent.click(screen.getByRole('button', { name: /Continuar con Google/ }));
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app', href: '/app' }));
+  });
+
+  it('Google + ?redirect= → navigate al redirect en vez de /app', async () => {
+    useSearchMock.mockReturnValue({ redirect: '/onboarding-admin?token=xyz789' });
+    signInWithGoogleMock.mockResolvedValueOnce(undefined);
+    render(<LoginRoute />);
+    fireEvent.click(screen.getByRole('button', { name: /Continuar con Google/ }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/onboarding-admin?token=xyz789',
+        href: '/onboarding-admin?token=xyz789',
+      }),
+    );
   });
 
   it('Google popup cancelado → no error visible', async () => {
@@ -151,7 +194,32 @@ describe('LoginRoute — sign in con email/password', () => {
     fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
     await waitFor(() => expect(signInWithEmailMock).toHaveBeenCalledWith('a@b.cl', '123456'));
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app', href: '/app' }));
+  });
+
+  it('happy con ?redirect= (W1.3 — retorno desde onboarding-admin) → navigate al redirect en vez de /app', async () => {
+    signInWithEmailMock.mockResolvedValueOnce(undefined);
+    useSearchMock.mockReturnValue({ redirect: '/onboarding-admin?token=xyz789' });
+    render(<LoginRoute />);
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'a@b.cl' } });
+    fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/onboarding-admin?token=xyz789',
+        href: '/onboarding-admin?token=xyz789',
+      }),
+    );
+  });
+
+  it('redirect no relativo (posible open-redirect) → ignora y navega a /app', async () => {
+    signInWithEmailMock.mockResolvedValueOnce(undefined);
+    useSearchMock.mockReturnValue({ redirect: 'https://evil.example/phish' });
+    render(<LoginRoute />);
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'a@b.cl' } });
+    fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /Entrar/ }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app', href: '/app' }));
   });
 
   it('error wrong-password → mensaje traducido', async () => {

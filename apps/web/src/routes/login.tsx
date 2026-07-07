@@ -39,13 +39,19 @@ const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
  * rotar su clave numérica desde su método anterior (Wave 4 PR 3 wire).
  *
  * Tras login exitoso → /app, que decide via /me si va a /onboarding o
- * directo al dashboard según `needs_onboarding`.
+ * directo al dashboard según `needs_onboarding`. Excepción: si llegamos acá
+ * con `?redirect=` (seteado por `ProtectedRoute` cuando un no-autenticado
+ * pedía una ruta protegida, ej. `/onboarding-admin?token=...` del alta
+ * gateada por admin — W1.3), navegamos ahí en vez de a `/app` para no perder
+ * el destino original. `safeRedirectTarget` valida que sea un path relativo
+ * propio (nunca una URL externa) antes de usarlo — mitigación de open-redirect.
  */
 export function LoginRoute() {
   const { user, loading } = useAuth();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string };
+  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string; redirect?: string };
   const navigate = useNavigate();
+  const postLoginTarget = safeRedirectTarget(search.redirect) ?? '/app';
   const [mode, setMode] = useState<Mode>('sign-in');
   const [resetSent, setResetSent] = useState(false);
 
@@ -74,7 +80,25 @@ export function LoginRoute() {
   }
 
   if (user) {
-    return <Navigate to="/app" />;
+    // B1 (review final W1.5, 2026-07-06) — `<Navigate to={postLoginTarget} />`
+    // (solo `to`) mandaba SIEMPRE a `/app`, ignorando `?redirect=` por
+    // completo: antes de este fix esta rama era `to="/app"` hardcodeado, sin
+    // usar `postLoginTarget` en absoluto. Se agrega `href` (la forma
+    // documentada por TanStack para navegar a un path+query ya construido,
+    // ver JSDoc de `NavigateOptions.href` en `@tanstack/router-core`) porque
+    // es la variante verificada para que un `postLoginTarget` con `?query`
+    // embebido (ej. `/onboarding-admin?token=...`) sobreviva el round-trip.
+    // `to` se mantiene además de `href` SOLO por el tipado: el overload
+    // default de `NavigateOptions`/`Navigate` exige `to` aunque se pase
+    // `href` (gap entre el JSDoc — "puede usarse EN VEZ de to" — y los tipos
+    // de @tanstack/router-core@1.169.2); en runtime `href`, si está
+    // presente, siempre gana (`buildAndCommitLocation` sobreescribe `to`
+    // derivándolo de `href` cuando ambos vienen). Este era el bug más grave
+    // de los dos: una sesión Firebase ya activa (u otro re-render con `user`
+    // seteado que gane la carrera contra el `navigate()` manual de abajo)
+    // perdía el destino SIEMPRE, no solo a veces. Ver
+    // `login-post-login-redirect.test.tsx`.
+    return <Navigate to={postLoginTarget} href={postLoginTarget} />;
   }
 
   // demo.boosterchile.com NO debe servir /login — el login real vive en
@@ -107,7 +131,7 @@ export function LoginRoute() {
     setResetSent(false);
     try {
       await signInWithGoogle();
-      void navigate({ to: '/app' });
+      void navigate({ to: postLoginTarget, href: postLoginTarget });
     } catch (err) {
       const code = (err as FirebaseError).code;
       const message = (err as FirebaseError).message;
@@ -148,14 +172,14 @@ export function LoginRoute() {
     try {
       if (mode === 'sign-in') {
         await signInWithEmail(values.email, values.password);
-        void navigate({ to: '/app' });
+        void navigate({ to: postLoginTarget, href: postLoginTarget });
       } else if (mode === 'sign-up') {
         await signUpWithEmail({
           email: values.email,
           password: values.password,
           ...(values.name.trim() ? { displayName: values.name.trim() } : {}),
         });
-        void navigate({ to: '/app' });
+        void navigate({ to: postLoginTarget, href: postLoginTarget });
       } else {
         await requestPasswordReset(values.email);
         setResetSent(true);
@@ -341,6 +365,21 @@ export function LoginRoute() {
                     Ingresar con RUT
                   </a>
                 </p>
+                {/* SEC-001 Sprint 2b (ADR-052) — alta gateada por admin.
+                    Reemplaza el self-signup directo de Firebase (mode
+                    "sign-up" arriba, aún vigente hasta que se retire en un
+                    follow-up): el visitante pide acceso y un admin
+                    aprueba/rechaza desde /app/platform-admin/signup-requests. */}
+                <p>
+                  ¿No tienes cuenta?{' '}
+                  <a
+                    href="/solicitar-acceso"
+                    className="font-medium text-primary-600 hover:underline"
+                    data-testid="login-link-solicitar-acceso"
+                  >
+                    Solicita acceso
+                  </a>
+                </p>
                 <p className="mt-3 border-neutral-200 border-t pt-3 text-neutral-500 text-xs">
                   ¿Admin de plataforma Booster?{' '}
                   <a
@@ -386,4 +425,22 @@ export function LoginRoute() {
       </main>
     </div>
   );
+}
+
+/**
+ * Valida que `redirect` (viene de `?redirect=` en la URL, seteado por
+ * `ProtectedRoute` — W1.3) sea un path relativo de la propia app antes de
+ * usarlo en `navigate()`. Mitigación de open-redirect: rechaza URLs
+ * absolutas (`https://evil.example`), protocol-relative (`//evil.example`) y
+ * cualquier valor con `\` (algunos navegadores normalizan `/\` a `//`).
+ * `undefined`/vacío → `null` (el caller cae a `/app`).
+ */
+function safeRedirectTarget(raw: string | undefined): string | null {
+  if (!raw) {
+    return null;
+  }
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('://') || raw.includes('\\')) {
+    return null;
+  }
+  return raw;
 }
