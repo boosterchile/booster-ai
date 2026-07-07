@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  AVL_ID_DALLAS,
   type BodyType,
   type FuelType,
   type UnitCategory,
@@ -7,6 +8,7 @@ import {
   bodyTypeSchema,
   chileanPlateSchema,
   derivarUnidadDesdeTipoLegacy,
+  interpretDallasTemperature,
   teltonikaImeiSchema,
   unitCategorySchema,
   unitTypeSchema,
@@ -169,6 +171,44 @@ function validarOResponderIncoherencia(
     },
     422,
   );
+}
+
+/**
+ * `telemetria_puntos.io_data` es jsonb sin `$type<>` en el schema Drizzle
+ * (columna catalog-agnostic, ver comentario en db/schema.ts) → llega como
+ * `unknown` al select. Boundary: validamos con Zod antes de interpretar
+ * cualquier IO — el contenido lo escribió el processor a partir de bytes
+ * de un device de terreno, no confiamos en la forma sin chequear.
+ */
+const ioDataRecordSchema = z.record(z.string(), z.union([z.number(), z.string()]));
+
+/**
+ * W3 — interpreta IO 72 (Dallas Temperature 1, FMC150) desde `io_data` para
+ * exponerlo en `GET /vehiculos/:id/ubicacion`. `null` explícito si no hay
+ * IO 72 en el punto o si el valor no pasa el catálogo Dallas (fuera del
+ * rango físico DS18B20, ver `packages/shared-schemas/avl-ids`).
+ *
+ * `temperatura_registrada_en` viaja junto a `temperatura_c`: si no hay
+ * lectura válida, tampoco hay timestamp de lectura que reportar.
+ */
+function extractTemperatura(
+  ioData: unknown,
+  timestampDevice: Date,
+): { temperatura_c: number | null; temperatura_registrada_en: string | null } {
+  const parsedIoData = ioDataRecordSchema.safeParse(ioData);
+  const raw72 = parsedIoData.success ? parsedIoData.data['72'] : undefined;
+  if (typeof raw72 !== 'number') {
+    return { temperatura_c: null, temperatura_registrada_en: null };
+  }
+
+  const { telemetry } = interpretDallasTemperature([
+    { id: AVL_ID_DALLAS.DALLAS_TEMPERATURE_1, value: raw72, byteSize: 2 },
+  ]);
+  const temperaturaC = telemetry.dallasTemperature1C ?? null;
+  return {
+    temperatura_c: temperaturaC,
+    temperatura_registrada_en: temperaturaC != null ? timestampDevice.toISOString() : null,
+  };
 }
 
 // W2 (hito 2 CORFO) — body del PATCH de auto-asociación de dispositivo.
@@ -1270,6 +1310,10 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           priority: 0,
           accuracy_m:
             browserPoint.accuracy_m != null ? Number.parseFloat(browserPoint.accuracy_m) : null,
+          // D2 — posiciones_movil_conductor no tiene sensores (es GPS del
+          // browser del conductor): temperatura siempre "sin dato".
+          temperatura_c: null,
+          temperatura_registrada_en: null,
         },
       });
     }
@@ -1285,6 +1329,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         satellites: telemetryPoints.satellites,
         speed_kmh: telemetryPoints.speedKmh,
         priority: telemetryPoints.priority,
+        io_data: telemetryPoints.ioData,
       })
       .from(telemetryPoints);
 
@@ -1331,6 +1376,8 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         satellites: last.satellites,
         speed_kmh: last.speed_kmh,
         priority: last.priority,
+        // W3 — 2º sensor por envío: temperatura (IO 72 Dallas, FMC150).
+        ...extractTemperatura(last.io_data, last.timestamp_device),
       },
     });
   });
