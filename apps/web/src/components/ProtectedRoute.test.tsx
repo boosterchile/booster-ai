@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const useAuthMock = vi.fn();
 const useMeMock = vi.fn();
 const useIsDemoMock = vi.fn();
-const NavigateMock = vi.fn(({ to }: { to: string }) => <div data-testid="navigate">{to}</div>);
+const NavigateMock = vi.fn(({ to, search }: { to: string; search?: unknown }) => (
+  <div data-testid="navigate" data-search={JSON.stringify(search ?? null)}>
+    {to}
+  </div>
+));
 
 vi.mock('../hooks/use-auth.js', () => ({ useAuth: useAuthMock }));
 vi.mock('../hooks/use-me.js', () => ({ useMe: useMeMock }));
@@ -31,6 +35,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // Algunos tests mutan window.location vía pushState; resetear para no
+  // filtrar estado entre tests (jsdom no lo hace solo entre tests del mismo archivo).
+  window.history.pushState({}, '', '/');
 });
 
 describe('ProtectedRoute', () => {
@@ -48,6 +55,19 @@ describe('ProtectedRoute', () => {
       wrapper: makeWrapper(),
     });
     expect(screen.getByTestId('navigate').textContent).toBe('/login');
+  });
+
+  it('sin user → Navigate a /login preserva path + query actual en search.redirect (W1.3 — onboarding-admin necesita sobrevivir el round-trip de login)', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    window.history.pushState({}, '', '/onboarding-admin?token=abc123');
+    render(<ProtectedRoute>{() => <div>contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    const nav = screen.getByTestId('navigate');
+    expect(nav.textContent).toBe('/login');
+    expect(nav.getAttribute('data-search')).toBe(
+      JSON.stringify({ redirect: '/onboarding-admin?token=abc123' }),
+    );
   });
 
   it('skip + user → renderiza children con kind="unmanaged"', () => {

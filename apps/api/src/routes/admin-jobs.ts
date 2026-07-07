@@ -33,6 +33,13 @@ import {
   fetchReaperFacts,
   reapInertIdpAccounts,
 } from '../jobs/reap-inert-idp-accounts.js';
+import {
+  DEFAULT_ORPHAN_MAX_DELETES_PER_RUN,
+  type PoolLike as OrphanPoolLike,
+  listOnboardingOrphans,
+  markOnboardingOrphanReaped,
+  reapOrphanOnboardingFirebaseUsers,
+} from '../jobs/reap-orphan-onboarding-firebase.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
@@ -226,6 +233,46 @@ export function createAdminJobsRoutes(opts: {
       },
     );
     return c.json({ ok: true, destructive: appConfig.REAPER_DESTRUCTIVE, ...summary });
+  });
+
+  /**
+   * W1.5 (runbook activación onboarding, onboarding-flow-redesign T1.7,
+   * spec §9) — reaper del usuario Firebase huérfano del onboarding
+   * admin-provisioned. Antes de este handler el job solo corría como script
+   * `tsx` MANUAL (higiene operacional, no una mitigación automática); este
+   * endpoint es lo que permite cablearlo a Cloud Scheduler (scheduling.tf,
+   * job `reap-orphan-onboarding-firebase`, arranca `paused = true`).
+   *
+   * **dry-run por defecto**: el modo destructivo está gateado por
+   * `ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE` (config server-side, NO por el
+   * request del scheduler). Con el flag OFF solo loguea/cuenta lo que haría.
+   *
+   * 503 skipped si faltan deps (firebaseAuth o pool) — Cloud Scheduler lo
+   * trata como no-error pero el log queda.
+   */
+  app.post('/reap-orphan-onboarding-firebase', async (c) => {
+    if (!opts.firebaseAuth || !opts.pool) {
+      opts.logger.warn('reap-orphan-onboarding-firebase: firebaseAuth o pool no inyectado, skip');
+      return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
+    }
+    const pool = opts.pool as unknown as OrphanPoolLike;
+    const summary = await reapOrphanOnboardingFirebaseUsers(
+      {
+        auth: opts.firebaseAuth,
+        listOrphans: () => listOnboardingOrphans(pool),
+        markReaped: (id) => markOnboardingOrphanReaped(pool, id),
+        logger: opts.logger,
+      },
+      {
+        destructive: appConfig.ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE,
+        maxDeletesPerRun: DEFAULT_ORPHAN_MAX_DELETES_PER_RUN,
+      },
+    );
+    return c.json({
+      ok: true,
+      destructive: appConfig.ONBOARDING_ORPHAN_REAPER_DESTRUCTIVE,
+      ...summary,
+    });
   });
 
   return app;

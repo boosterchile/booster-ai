@@ -39,8 +39,22 @@ import type { UserContext } from '../services/user-context.js';
  * `LoggingSignupRequestNotifier` (structured logs).
  */
 
+/**
+ * W1.4 (hito-2-corfo-mes-8, desviación 8) — base configurable del link de
+ * onboarding que el admin copia y entrega manualmente (email real = Fase 2).
+ * Debe ser https (nunca http, ni siquiera en overrides explícitos) porque el
+ * token viaja como query param.
+ */
+const onboardingLinkBaseUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => value.startsWith('https://'), {
+    message: 'onboardingLinkBaseUrl debe ser https',
+  });
+
 const approveBodySchema = z.object({
   loginLinkUrl: z.string().url().optional(),
+  onboardingLinkBaseUrl: onboardingLinkBaseUrlSchema.optional(),
 });
 
 const rejectBodySchema = z.object({
@@ -50,6 +64,28 @@ const rejectBodySchema = z.object({
 const idParamSchema = z.object({ id: z.string().uuid() });
 
 const DEFAULT_LOGIN_LINK_URL = 'https://app.boosterchile.com/login';
+
+/**
+ * W1.4 — default del base URL del link de onboarding copiable. Consistente
+ * con la página consumidora `/onboarding-admin` (W1.3, `apps/web/src/router.tsx`),
+ * que lee `?token=` y lo reenvía como header `x-onboarding-token`.
+ */
+const DEFAULT_ONBOARDING_LINK_BASE_URL = 'https://app.boosterchile.com/onboarding-admin';
+
+/**
+ * Arma el link copiable a partir del token one-shot emitido por el approve.
+ * Usa `URL` + `searchParams.set` (en vez de template string `${base}?token=`)
+ * porque un `onboardingLinkBaseUrl` con query o fragment ya presentes
+ * (p.ej. `https://x.com/consume?ref=a`) rompería la concatenación naive
+ * (`...?ref=a?token=...` → `URLSearchParams.get('token')` de la página
+ * consumidora retorna `null`, link muerto silencioso). `searchParams.set`
+ * hace el URL-encoding correcto sin `encodeURIComponent` manual.
+ */
+function buildOnboardingLink(baseUrl: string | undefined, token: string): string {
+  const url = new URL(baseUrl ?? DEFAULT_ONBOARDING_LINK_BASE_URL);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
 
 export function createAdminSignupRequestsRoutes(opts: {
   db: Db;
@@ -168,12 +204,28 @@ export function createAdminSignupRequestsRoutes(opts: {
         if (result.outcome === 'firebase_user_already_exists') {
           return c.json({ error: 'conflict', code: 'firebase_user_already_exists' }, 409);
         }
+        // W1.4 — flag ON + secret emiten `onboardingToken`/`onboardingTokenExpiresAt`
+        // (ver signup-request.ts); flag OFF los deja `undefined` y la respuesta
+        // queda EXACTAMENTE como antes de esta tarea (sin campos nuevos). El
+        // link/token NUNCA se loguea ni se persiste acá — solo viaja en este
+        // body de respuesta al admin autenticado.
+        const onboardingLinkFields =
+          result.onboardingToken && result.onboardingTokenExpiresAt
+            ? {
+                onboarding_link: buildOnboardingLink(
+                  body.onboardingLinkBaseUrl,
+                  result.onboardingToken,
+                ),
+                onboarding_link_expires_at: result.onboardingTokenExpiresAt.toISOString(),
+              }
+            : {};
         return c.json(
           {
             ok: true,
             outcome: 'approved',
             firebase_uid: result.firebaseUid,
             user_id: result.userId,
+            ...onboardingLinkFields,
           },
           200,
         );

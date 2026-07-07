@@ -58,7 +58,18 @@ export function ProtectedRoute({
   }
 
   if (!user) {
-    return <Navigate to="/login" />;
+    // W1.3 — preservar path + query actual para que sobreviva el round-trip
+    // de login (ej. /onboarding-admin?token=... del alta gateada por admin).
+    // Se pasa por variable tipada (no objeto literal inline) para esquivar
+    // el excess-property-check de TS: /login no declara validateSearch, así
+    // que su search schema resuelto es `{}` y un literal `{redirect:...}`
+    // sería rechazado en compile-time aunque el router lo acepte en runtime
+    // (verificado empíricamente: TanStack Router no valida search cuando la
+    // ruta destino no define `validateSearch`).
+    const currentPath =
+      typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/';
+    const redirectSearch: { redirect: string } = { redirect: currentPath };
+    return <Navigate to="/login" search={redirectSearch} />;
   }
 
   if (meRequirement === 'skip') {

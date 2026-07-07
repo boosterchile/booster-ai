@@ -240,6 +240,14 @@ module "service_api" {
     # destino UX válido cuando rechace signups Google ad-hoc. Sin esto,
     # los rechazados ven "Coming soon" del admin UI sin path forward.
     SIGNUP_REQUEST_FLOW_ACTIVATED = tostring(var.signup_request_flow_activated)
+
+    # W1.5 (runbook activación onboarding, onboarding-flow-redesign Fase 1
+    # T1.4) — KILL SWITCH del path de onboarding admin-provisioned (token
+    # one-shot). Default false: este PR solo deja código+infra mergeables;
+    # el flip a true es un apply DEDICADO del PO tras rotar el secret de
+    # firma + agendar el reaper T1.7 + ratificar TTL/sign-off (ver
+    # docs/corfo/hito-2/runbook-activacion-onboarding.md).
+    ADMIN_PROVISIONED_ONBOARDING_ENABLED = tostring(var.admin_provisioned_onboarding_enabled)
   })
   secrets = merge(local.common_secrets, {
     # Mismo secret que el bot — un solo lugar de verdad para rotaciones.
@@ -278,6 +286,18 @@ module "service_api" {
     # `npx web-push generate-vapid-keys`.
     WEBPUSH_VAPID_PUBLIC_KEY  = google_secret_manager_secret.secrets["webpush-vapid-public-key"].secret_id
     WEBPUSH_VAPID_PRIVATE_KEY = google_secret_manager_secret.secrets["webpush-vapid-private-key"].secret_id
+
+    # W1.5 (runbook activación onboarding) — secreto de firma HMAC del token
+    # one-shot de onboarding admin-provisioned. El mount usa version="latest";
+    # con `admin_provisioned_onboarding_enabled=false` (default) el api ni
+    # siquiera lee esta env var (ONBOARDING_TOKEN_SIGNING_SECRET es opcional
+    # en config.ts, solo requerida cuando el flag está ON). Rotar el valor
+    # real ANTES del flip: `gcloud secrets versions add
+    # onboarding-token-signing-secret` — el placeholder ROTATE_ME_* cae en el
+    # denylist de assertStrongSecret (apps/api/src/services/onboarding-token.ts),
+    # así que un flip sin rotar deja el endpoint fail-closed (503) en vez de
+    # firmar tokens forjables con un valor público.
+    ONBOARDING_TOKEN_SIGNING_SECRET = google_secret_manager_secret.secrets["onboarding-token-signing-secret"].secret_id
 
     # NOTA observability dashboard: el reader SA usa IAM Credentials
     # `signJwt` para producir JWTs DWD on-the-fly (cero-key). No hay

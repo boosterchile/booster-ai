@@ -1,7 +1,9 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { EmpresaOnboardingInput } from '@booster-ai/shared-schemas';
+import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OnboardingResponse } from '../../hooks/use-onboarding-mutation.js';
 import { ApiError, api } from '../../lib/api-client.js';
 
 const navigateMock = vi.fn();
@@ -242,4 +244,98 @@ describe('OnboardingForm — submit', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(regex);
     });
   }
+
+  // W1.3 — códigos nuevos del contrato de /empresas/onboarding-admin.
+  // onboarding_token_required y onboarding_token_invalid colapsan al MISMO
+  // mensaje genérico a propósito (anti-oráculo SEC-001, ver empresas.ts).
+  for (const [status, code, regex] of [
+    [401, 'onboarding_token_required', /enlace ya no es válido/],
+    [403, 'onboarding_token_invalid', /enlace ya no es válido/],
+    [403, 'onboarding_disabled', /registro no está habilitado/],
+    [403, 'email_not_verified', /[Vv]erifica tu email/],
+    [503, 'onboarding_misconfigured', /error de configuración/],
+  ] as const) {
+    it(`error ${code} (status ${status}) → ${regex}`, async () => {
+      vi.spyOn(api, 'post').mockRejectedValueOnce(new ApiError(status, code, null));
+      renderForm();
+      await fillStep1AndAdvance();
+      await fillStep2AndAdvance();
+      await fillStep3AndAdvance();
+      fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(regex);
+    });
+  }
+});
+
+describe('OnboardingForm — mutation inyectada (W1.3 onboarding-admin)', () => {
+  it('con prop mutation → usa esa mutación en vez de useOnboardingMutation interno (no llama a /empresas/onboarding)', async () => {
+    const customMutationFn = vi
+      .fn<(input: EmpresaOnboardingInput) => Promise<OnboardingResponse>>()
+      .mockResolvedValue({
+        user: { id: 'u' },
+        empresa: { id: 'emp-custom' },
+        membership: { id: 'm', role: 'dueno', status: 'activa' },
+      } as OnboardingResponse);
+    const postSpy = vi.spyOn(api, 'post');
+
+    function Harness() {
+      const mutation = useMutation<OnboardingResponse, ApiError, EmpresaOnboardingInput>({
+        mutationFn: customMutationFn,
+      });
+      return (
+        <OnboardingForm
+          firebaseEmail="felipe@boosterchile.com"
+          firebaseName={undefined}
+          mutation={mutation}
+        />
+      );
+    }
+
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <Harness />
+      </Wrapper>,
+    );
+    await fillStep1AndAdvance();
+    await fillStep2AndAdvance();
+    await fillStep3AndAdvance();
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }));
+
+    await waitFor(() => expect(customMutationFn).toHaveBeenCalledTimes(1));
+    expect(postSpy).not.toHaveBeenCalledWith('/empresas/onboarding', expect.anything());
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app' }));
+  });
+
+  it('con prop mutation en error → translateApiError sigue aplicando (mensaje genérico de token inválido)', async () => {
+    const customMutationFn = vi
+      .fn<(input: EmpresaOnboardingInput) => Promise<OnboardingResponse>>()
+      .mockRejectedValue(new ApiError(403, 'onboarding_token_invalid', null));
+
+    function Harness() {
+      const mutation = useMutation<OnboardingResponse, ApiError, EmpresaOnboardingInput>({
+        mutationFn: customMutationFn,
+      });
+      return (
+        <OnboardingForm
+          firebaseEmail="felipe@boosterchile.com"
+          firebaseName={undefined}
+          mutation={mutation}
+        />
+      );
+    }
+
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <Harness />
+      </Wrapper>,
+    );
+    await fillStep1AndAdvance();
+    await fillStep2AndAdvance();
+    await fillStep3AndAdvance();
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/enlace ya no es válido/);
+  });
 });
