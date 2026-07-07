@@ -1,10 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  type BodyType,
   type FuelType,
   type UnitCategory,
   type UnitType,
   bodyTypeSchema,
   chileanPlateSchema,
+  derivarUnidadDesdeTipoLegacy,
   unitCategorySchema,
   unitTypeSchema,
   validarCoherenciaUnidadVehiculo,
@@ -69,19 +71,28 @@ const vehicleStatuses = ['activo', 'mantenimiento', 'retirado'] as const;
 // porque solo validaba caracteres + min(4), no la estructura chilena.
 // W4a (migración 0048, ADR-073) — tipologías de flota. `vehicle_type`
 // (arriba, enum legacy) sigue obligatorio: la columna SQL `tipo_vehiculo`
-// no se toca y sigue NOT NULL. `unit_type` es el campo NUEVO, también
-// obligatorio en create (D4.2: Zod exige tipo_unidad en toda escritura
-// nueva) — un POST hoy declara AMBOS. `unit_category` default 'motriz'
-// (espejo del DEFAULT de la columna); `body_type` opcional/nullable
-// (carrocería, ortogonal). `capacity_kg` relajado a `.min(0)` (D1.2: un
-// tracto no carga solo) — el piso >0 para el resto de tipos motrices y
-// para arrastre se valida en runtime (`validarCoherenciaUnidadVehiculo`,
-// espejo de `chk_vehiculos_tipo_categoria` + D4.5), no acá a nivel de forma.
+// no se toca y sigue NOT NULL. `unit_type` es el campo NUEVO. D4.2 lo exigía
+// obligatorio en toda escritura nueva, pero el fix C1 (review W4a, decisión
+// PO opción b, 2026-07-06) lo relajó a OPCIONAL a nivel de forma: el form
+// web actual (apps/web/src/routes/vehiculos.tsx, vehicleFormToBody) todavía
+// no lo manda (W4b lo agregará) — en vez de romper el form, el handler de
+// `POST /` deriva `unit_type`/`unit_category`/`body_type` desde
+// `vehicle_type` (`derivarUnidadDesdeTipoLegacy`, mismo mapping D4 del
+// backfill de la migración 0048) cuando `unit_type` no viene explícito. Si
+// SÍ viene, se valida como antes (la derivación no pisa input explícito) —
+// ver `.specs/_followups/retiro-derivacion-unit-type-create.md` para el
+// plan de retiro de este fallback cuando el form mande el campo.
+// `unit_category`/`body_type` quedan igual de opcionales que antes (default
+// 'motriz'/null cuando no hay derivación en juego). `capacity_kg` relajado a
+// `.min(0)` (D1.2: un tracto no carga solo) — el piso >0 para el resto de
+// tipos motrices y para arrastre se valida en runtime
+// (`validarCoherenciaUnidadVehiculo`, espejo de `chk_vehiculos_tipo_categoria`
+// + D4.5), no acá a nivel de forma.
 const createBodySchema = z.object({
   plate: chileanPlateSchema,
   vehicle_type: z.enum(vehicleTypes),
-  unit_category: unitCategorySchema.default('motriz'),
-  unit_type: unitTypeSchema,
+  unit_category: unitCategorySchema.optional(),
+  unit_type: unitTypeSchema.optional(),
   body_type: bodyTypeSchema.nullable().optional(),
   capacity_kg: z.number().int().min(0).max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
@@ -414,12 +425,38 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
+    // Fix C1 (review W4a, decisión PO opción b, 2026-07-06): si `unit_type`
+    // no vino en el body (el form web actual todavía no lo manda), derivar
+    // unit_category/unit_type/body_type desde vehicle_type con el mismo
+    // mapping D4 del backfill de la migración 0048
+    // (`derivarUnidadDesdeTipoLegacy`, packages/shared-schemas). Si
+    // `unit_type` SÍ vino explícito, se respeta tal cual — la derivación
+    // NUNCA pisa input explícito, ni siquiera parcialmente: solo completa
+    // los campos hermanos (`unit_category`/`body_type`) que el cliente no
+    // haya mandado él mismo.
+    let unitCategory: UnitCategory;
+    let unitType: UnitType;
+    let bodyType: BodyType | null;
+    let derivadoDeTipoLegacy = false;
+
+    if (body.unit_type === undefined) {
+      const derivado = derivarUnidadDesdeTipoLegacy(body.vehicle_type);
+      unitType = derivado.unitType;
+      unitCategory = body.unit_category ?? derivado.unitCategory;
+      bodyType = body.body_type !== undefined ? (body.body_type ?? null) : derivado.bodyType;
+      derivadoDeTipoLegacy = true;
+    } else {
+      unitType = body.unit_type;
+      unitCategory = body.unit_category ?? 'motriz';
+      bodyType = body.body_type ?? null;
+    }
+
     // D4 condición 3 — CHECK tipo↔categoría (+ D4.5) validado en Zod/runtime
     // ANTES de llegar a BD. La CHECK `chk_vehiculos_tipo_categoria` de la
     // migración 0048 es la red de seguridad final, no la primera línea.
     const incoherencia = validarOResponderIncoherencia(c, {
-      unitCategory: body.unit_category,
-      unitType: body.unit_type,
+      unitCategory,
+      unitType,
       capacityKg: body.capacity_kg,
       curbWeightKg: body.curb_weight_kg ?? null,
       consumptionLPer100kmBaseline: body.consumption_l_per_100km_baseline ?? null,
@@ -436,9 +473,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           empresaId,
           plate: body.plate,
           vehicleType: body.vehicle_type,
-          unitCategory: body.unit_category,
-          unitType: body.unit_type,
-          bodyType: body.body_type ?? null,
+          unitCategory,
+          unitType,
+          bodyType,
           capacityKg: body.capacity_kg,
           capacityM3: body.capacity_m3 ?? null,
           year: body.year ?? null,
@@ -461,6 +498,23 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         { vehicleId: created.id, plate: created.plate, empresaId },
         'vehículo creado',
       );
+      // Condición 1 del PO (fix C1): log estructurado cada vez que la
+      // derivación dispara — el PO quiere contar cuántos creates la usan
+      // para decidir el criterio de retiro (ver follow-up stub
+      // .specs/_followups/retiro-derivacion-unit-type-create.md).
+      if (derivadoDeTipoLegacy) {
+        opts.logger.info(
+          {
+            vehicleType: body.vehicle_type,
+            derivedUnitCategory: unitCategory,
+            derivedUnitType: unitType,
+            derivedBodyType: bodyType,
+            empresaId,
+            vehicleId: created.id,
+          },
+          'unit_type derivado desde vehicle_type en create (fix C1, ADR-073 §Caveat C1 runtime)',
+        );
+      }
       return c.json({ vehicle: serializeVehicle(created) }, 201);
     } catch (err) {
       const code = (err as { code?: string }).code;

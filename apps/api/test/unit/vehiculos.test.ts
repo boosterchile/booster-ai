@@ -28,6 +28,30 @@ const noopLogger = {
   typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
 >[0]['logger'];
 
+/**
+ * Logger con spy en `.info` — usado por los tests de la derivación C1
+ * (fix review W4a) que necesitan asertar que el log estructurado se emite
+ * (o no se emite) exactamente en las condiciones esperadas.
+ */
+function buildSpyLogger() {
+  const info = vi.fn();
+  const spyLogger: Record<string, unknown> = {
+    trace: noop,
+    debug: noop,
+    info,
+    warn: noop,
+    error: noop,
+    fatal: noop,
+  };
+  spyLogger.child = () => spyLogger;
+  return {
+    logger: spyLogger as unknown as Parameters<
+      typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+    >[0]['logger'],
+    info,
+  };
+}
+
 const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
 const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -100,14 +124,20 @@ function makeDbStub(opts: {
 
 async function buildApp(
   db: Parameters<typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes>[0]['db'],
-  opts: { role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null } = {
-    role: 'dueno',
-  },
+  opts: {
+    role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null;
+    logger?: Parameters<
+      typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+    >[0]['logger'];
+  } = {},
 ) {
+  // Merge explícito (no reemplazo posicional): pasar solo `{ logger }` no
+  // debe perder el default `role: 'dueno'`.
+  const role = opts.role === undefined ? 'dueno' : opts.role;
   const { createVehiculosRoutes } = await import('../../src/routes/vehiculos.js');
   const app = new Hono();
   app.use('*', async (c, next) => {
-    if (opts.role === null) {
+    if (role === null) {
       // sin userContext = unauthorized
       await next();
       return;
@@ -116,13 +146,13 @@ async function buildApp(
       user: { id: 'u-1', firebaseUid: 'fb-1', email: 'test@x.com' },
       memberships: [],
       activeMembership: {
-        membership: { id: 'm-1', role: opts.role },
+        membership: { id: 'm-1', role },
         empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
       },
     });
     await next();
   });
-  app.route('/vehiculos', createVehiculosRoutes({ db, logger: noopLogger }));
+  app.route('/vehiculos', createVehiculosRoutes({ db, logger: opts.logger ?? noopLogger }));
   return app;
 }
 
@@ -267,13 +297,20 @@ describe('vehiculos routes', () => {
   });
 
   // ---------------------------------------------------------------------
-  // W4a (migración 0048, ADR-073) — D4.2: tipo_unidad obligatorio en
-  // create; D4 condición 3: CHECK tipo↔categoría (+ D4.5) validada en Zod
-  // ANTES de BD (422).
+  // W4a (migración 0048, ADR-073) — D4 condición 3: CHECK tipo↔categoría
+  // (+ D4.5) validada en Zod ANTES de BD (422). D4.2 originalmente exigía
+  // `unit_type` obligatorio (400 si faltaba) en toda escritura nueva; el fix
+  // C1 (review W4a, decisión PO opción b, 2026-07-06) lo reemplazó por
+  // derivación server-side desde `vehicle_type` cuando `unit_type` no viene
+  // — ver el describe `derivación de unit_type desde vehicle_type en create
+  // (fix C1, ADR-073)` más abajo para la cobertura completa (9 mappings +
+  // no-pisa-input-explícito + guard de exhaustividad).
   // ---------------------------------------------------------------------
   describe('tipologías de flota (D1/D4, W4a)', () => {
-    it('POST / sin unit_type → 400 (D4.2: obligatorio en toda escritura nueva)', async () => {
-      const stub = makeDbStub({});
+    it('POST / sin unit_type → ya NO es 400 (fix C1): deriva desde vehicle_type y crea 201', async () => {
+      const stub = makeDbStub({
+        insertRows: [buildVehicleRow({ vehicleType: 'camion_pequeno', unitType: 'camion_rigido' })],
+      });
       const localApp = await buildApp(stub.db);
       const res = await localApp.request('/vehiculos', {
         method: 'POST',
@@ -284,7 +321,10 @@ describe('vehiculos routes', () => {
           capacity_kg: 3500,
         }),
       });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { unit_category: string; unit_type: string } };
+      expect(body.vehicle.unit_category).toBe('motriz');
+      expect(body.vehicle.unit_type).toBe('camion_rigido');
     });
 
     it('POST / unit_category=motriz + unit_type=semirremolque → 422 (incoherente, espejo del CHECK)', async () => {
@@ -523,6 +563,135 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({ year: 2021 }),
       });
       expect(res.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Fix C1 (review W4a, decisión PO opción b, 2026-07-06): el form web
+  // actual (apps/web/src/routes/vehiculos.tsx, vehicleFormToBody) todavía no
+  // manda `unit_type` en el create — romper el form no es opción (W4b lo
+  // arregla). El server DERIVA `unit_type`/`unit_category`/`body_type`
+  // desde `vehicle_type` con el mismo mapping D4 del backfill (migración
+  // 0048), vía `derivarUnidadDesdeTipoLegacy` (packages/shared-schemas). Si
+  // `unit_type` SÍ viene explícito, la derivación no dispara (no pisa input
+  // explícito).
+  // ---------------------------------------------------------------------
+  describe('derivación de unit_type desde vehicle_type en create (fix C1, ADR-073)', () => {
+    // Los 9 valores de vehicleTypeSchema, table-driven, mismo mapping D4 del
+    // backfill SQL (0048) y de derivarUnidadDesdeTipoLegacy. `semi_remolque`
+    // deriva a `arrastre` — arrastre exige curb_weight_kg > 0 (D4.5), así
+    // que ese caso manda el campo explícito (no forma parte de lo que la
+    // derivación de unit_type resuelve).
+    it.each([
+      ['camioneta', {}, 'motriz', 'camioneta', null],
+      ['furgon_pequeno', {}, 'motriz', 'furgon', 'furgon_cerrado'],
+      ['furgon_mediano', {}, 'motriz', 'furgon', 'furgon_cerrado'],
+      ['camion_pequeno', {}, 'motriz', 'camion_rigido', null],
+      ['camion_mediano', {}, 'motriz', 'camion_rigido', null],
+      ['camion_pesado', {}, 'motriz', 'camion_rigido', null],
+      ['semi_remolque', { curb_weight_kg: 7000 }, 'arrastre', 'semirremolque', null],
+      ['refrigerado', {}, 'motriz', 'camion_rigido', 'refrigerado'],
+      ['tanque', {}, 'motriz', 'camion_rigido', 'cisterna'],
+    ] as const)(
+      'POST / sin unit_type, vehicle_type=%s → 201 con unidad derivada + log emitido',
+      async (
+        vehicleType,
+        extraFields,
+        expectedUnitCategory,
+        expectedUnitType,
+        expectedBodyType,
+      ) => {
+        const spy = buildSpyLogger();
+        const stub = makeDbStub({
+          insertRows: [
+            buildVehicleRow({
+              vehicleType,
+              unitCategory: expectedUnitCategory,
+              unitType: expectedUnitType,
+              bodyType: expectedBodyType,
+              capacityKg: 1000,
+              curbWeightKg: 'curb_weight_kg' in extraFields ? extraFields.curb_weight_kg : null,
+            }),
+          ],
+        });
+        const localApp = await buildApp(stub.db, { logger: spy.logger });
+        const res = await localApp.request('/vehiculos', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            plate: 'AB-CD-12',
+            vehicle_type: vehicleType,
+            capacity_kg: 1000,
+            ...extraFields,
+          }),
+        });
+        expect(res.status).toBe(201);
+        const body = (await res.json()) as {
+          vehicle: { unit_category: string; unit_type: string; body_type: string | null };
+        };
+        expect(body.vehicle.unit_category).toBe(expectedUnitCategory);
+        expect(body.vehicle.unit_type).toBe(expectedUnitType);
+        expect(body.vehicle.body_type).toBe(expectedBodyType);
+
+        // Condición 1 del PO (fix C1): log estructurado cada vez que la
+        // derivación dispara, con vehicle_type origen + unidad derivada +
+        // empresa_id + vehiculo_id resultante.
+        expect(spy.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            vehicleType,
+            derivedUnitCategory: expectedUnitCategory,
+            derivedUnitType: expectedUnitType,
+            derivedBodyType: expectedBodyType,
+            empresaId: EMPRESA_ID,
+            vehicleId: VEHICLE_ID,
+          }),
+          expect.stringContaining('derivado'),
+        );
+      },
+    );
+
+    it('POST / con unit_type explícito → la derivación NO dispara (no pisa input explícito)', async () => {
+      const spy = buildSpyLogger();
+      const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
+      const localApp = await buildApp(stub.db, { logger: spy.logger });
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pequeno',
+          unit_type: 'camion_rigido',
+          capacity_kg: 3500,
+        }),
+      });
+      expect(res.status).toBe(201);
+      // Ningún log de derivación — solo el log normal "vehículo creado".
+      const derivationLogCalls = spy.info.mock.calls.filter(([, msg]) =>
+        String(msg).includes('derivado'),
+      );
+      expect(derivationLogCalls).toHaveLength(0);
+    });
+
+    // No existe una rama de error/fallback alcanzable en runtime: Zod
+    // (`z.enum(vehicleTypes)`) rechaza con 400 CUALQUIER `vehicle_type` que
+    // no sea uno de los 9 valores whitelisted ANTES de que el handler llegue
+    // a invocar `derivarUnidadDesdeTipoLegacy` — por eso ese helper puede
+    // asumir (y documenta vía el guard `_exhaustive: never`) que jamás
+    // recibe un valor fuera de los 9 mapeados. Este test confirma la mitad
+    // del contrato que sí es observable desde afuera: el 400 en el boundary.
+    it('POST / vehicle_type fuera del enum → 400 (Zod bloquea antes de derivar, no hay rama de error en la derivación)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'tracto_inventado',
+          capacity_kg: 1000,
+        }),
+      });
+      expect(res.status).toBe(400);
     });
   });
 
