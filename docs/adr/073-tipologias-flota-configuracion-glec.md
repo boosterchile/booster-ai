@@ -108,6 +108,16 @@ Helper puro `esConfiguracionCompatible(motrizUnitType, arrastreUnitType)` en `pa
 
 El plan original atribuyó `unidad_arrastre_id` a `viajes`. `w4-contexto.md` encontró que el vehículo del servicio vive en `asignaciones.vehiculo_id` (el campo `asignado_a_vehiculo_id` que el plan original tenía en mente pertenece en realidad a `dispositivos_pendientes`, una tabla no relacionada). El PO corrigió esto en D4: `unidad_arrastre_id` vive en `asignaciones`, con `CHECK chk_asignaciones_arrastre_distinto (unidad_arrastre_id IS NULL OR unidad_arrastre_id <> vehiculo_id)` para impedir que la misma fila apunte al mismo vehículo como motriz y como arrastre simultáneamente.
 
+### 9. Caveat C1 runtime — la derivación en create hereda el riesgo del backfill (fix Critical C1, review W4a)
+
+**Finding C1 del review de W4a**: D4.2 hizo `unit_type` obligatorio en `POST /vehiculos` (400 si faltaba), pero el form web vigente (`apps/web/src/routes/vehiculos.tsx`, `vehicleFormToBody`) no manda ese campo — el create rompía en producción para el único flujo de creación de vehículos que existe hoy. W4b (actualizar el form con un selector de `unit_type`) es la solución de fondo, pero no estaba lista para este PR.
+
+**Decisión del PO (opción b, 2026-07-06)**: en vez de bloquear el create o relajar la validación de coherencia, el servidor **deriva** `unit_type`/`unit_category`/`body_type` desde `vehicle_type` cuando `unit_type` no viene explícito en el body — función pura `derivarUnidadDesdeTipoLegacy()` (`packages/shared-schemas/src/domain/vehicle.ts`), consumida por `apps/api/src/routes/vehiculos.ts` (`POST /`). Usa el **mismo mapping D4** documentado en §5 (una sola fuente de verdad para el mapping; el backfill SQL y esta función deben mantenerse en sync si el mapping cambia). Si `unit_type` sí viene explícito, la derivación no se activa — nunca pisa input explícito del cliente.
+
+**El caveat D4.1 (§5) se hereda tal cual, ahora también en runtime**: el enum legacy no tiene un valor "tracto" — un `camion_pesado` real del piloto creado HOY mismo vía el form (sin `unit_type`) queda derivado como `unit_type='camion_rigido'`, exactamente la misma mala clasificación que el backfill le da a las filas legacy. A diferencia del backfill (un evento único, ya ocurrido, documentado y acotado), esta derivación es una función que se ejecuta en **cada create nuevo** mientras el form no mande `unit_type` — el riesgo no es un evento pasado, es una superficie activa hasta que se retire.
+
+**Mitigación (condición 1 del fix C1)**: cada disparo de la derivación queda logueado estructuradamente (`logger.info` con `vehicleType` origen, `unit_category`/`unit_type`/`body_type` derivados, `empresaId`, `vehicleId` resultante — mensaje `'unit_type derivado desde vehicle_type en create (fix C1, ADR-073 §Caveat C1 runtime)'`) para poder contar cuántos creates reales caen en esta ruta y auditarlos manualmente en la revisión de W4b (misma revisión que ya cubre el caveat D4.1 del backfill legacy, §5). Retiro planeado en `.specs/_followups/retiro-derivacion-unit-type-create.md` (criterio: form actualizado en W4b, o 0 disparos del log en N días de operación del piloto).
+
 ## Alcance (qué NO toca esta tarea)
 
 - `packages/matching-algorithm`, `apps/api/src/routes/cargo-request.ts`, `apps/api/src/services/seed-demo.ts`: siguen en el enum `tipo_vehiculo` legacy sin cambios.
@@ -136,7 +146,10 @@ El plan original atribuyó `unidad_arrastre_id` a `viajes`. `w4-contexto.md` enc
 - El backfill de `camion_pesado`/`refrigerado`/`tanque` puede estar objetivamente mal para filas reales del piloto — requiere revisión manual en W4b antes de confiar en el dato para reporting GLEC certificado.
 - El corte GVW de 16 t en `categoriaPorConfiguracion()` es una convención de ingeniería, no una cita normativa verificada — marcado explícitamente como referencial en código y acá.
 - Dos columnas de "tipo" coexisten (`tipo_vehiculo` legacy + `tipo_unidad` nuevo) hasta que W4b/consumidores legacy migren — mismo patrón que ADR-043 (SQL es canónico, domain/consumers migran cuando corresponda).
+- **(Fix C1, review W4a) La derivación server-side de `unit_type` en `POST /vehiculos` hereda el caveat D4.1 en runtime**, no solo en el backfill histórico: cada create nuevo sin `unit_type` explícito (todo el tráfico del form web actual) puede clasificar un tracto real del piloto como `camion_rigido` — ver §9 para la mitigación (log de disparo) y `.specs/_followups/retiro-derivacion-unit-type-create.md` para el criterio de retiro.
 
 ## Status
 
 Accepted. Implementado en `feat/tipologias-flota-y-huella-inicio-viaje` (W4a): migración `0048_tipologias_flota.sql`, schema Drizzle, `packages/shared-schemas/src/domain/vehicle.ts`, `packages/carbon-calculator` (`categoriaPorConfiguracion`), `apps/api/src/routes/vehiculos.ts`. Apply a prod pendiente de checkpoint del PO (fuera de alcance de esta tarea — el entregable es la migración mergeable + evidencia local).
+
+**Fix Critical C1 (review W4a, 2026-07-06)**: `POST /vehiculos` deriva `unit_type`/`unit_category`/`body_type` desde `vehicle_type` cuando el body no manda `unit_type` (el form web actual todavía no lo hace) — `derivarUnidadDesdeTipoLegacy()` en `packages/shared-schemas/src/domain/vehicle.ts`, mismo mapping D4 del backfill (§5). Ver §9 para el caveat heredado en runtime y su mitigación (log estructurado), y `.specs/_followups/retiro-derivacion-unit-type-create.md` para el plan de retiro.
