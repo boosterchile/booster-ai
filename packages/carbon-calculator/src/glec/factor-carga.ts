@@ -85,6 +85,36 @@ export function categoriaVehiculo(
  *   - Motriz sola → por GVW agregado (`curbWeightKg + capacityKg`):
  *     < 3.5 t → LDV, 3.5–16 t → MDV, > 16 t → HDV.
  *
+ * **Fallback por `curbWeightKg` nulo (I2, fix review W4a)**: la columna SQL
+ * `vehiculos.peso_vacio_kg` es nullable y la mayoría de las filas del
+ * piloto todavía no la declaran. Cuando `configuracion.motriz.curbWeightKg`
+ * es `null` (y no hay arrastre — el caso con arrastre ya resuelve a `HDV`
+ * sin necesitar el GVW motriz):
+ *
+ *   1. Si se pasa `tipoVehiculoLegacy`, se usa `categoriaVehiculo(tipoVehiculoLegacy)`
+ *      (lookup legacy por tipo, sin peso) como aproximación.
+ *   2. Si no hay `tipoVehiculoLegacy`, lanza un `Error` explícito — **nunca**
+ *      se asume `curbWeightKg = 0` (inflaría artificialmente el efecto de
+ *      la carga y podría, por ejemplo, malclasificar un HDV como LDV/MDV).
+ *
+ * **Precedencia**: el GVW real (vía 1) es siempre más preciso que el
+ * lookup legacy por tipo (vía 2) y gana cuando `curbWeightKg` está
+ * presente, incluso si se pasa `tipoVehiculoLegacy` (se ignora en ese
+ * caso). El fallback legacy es un peldaño de transición, no un empate.
+ *
+ * **Nota de transición para W4c (impacto en certificados)**: el lookup
+ * legacy por tipo puede diferir del GVW real. Ejemplo: un `camion_mediano`
+ * sin `curb_weight_kg` declarado clasifica como `HDV` vía
+ * `categoriaVehiculo('camion_mediano')` (ver switch arriba); si ese mismo
+ * vehículo completa su `curb_weight_kg` y su GVW real resulta ser, p. ej.,
+ * 12 t (`camion_mediano` con `capacityKg` moderado), la vía 1 (GVW)
+ * reclasificaría la configuración como `MDV`. Esto es una RECLASIFICACIÓN
+ * hacia una categoría con menor α (0.10 vs 0.15) — el certificado GLEC de
+ * viajes futuros de ese vehículo bajará su factor de corrección por carga
+ * al completarse el dato. W4c (el orquestador que arma la configuración
+ * efectiva desde `asignaciones`) debe tratar esto como esperado y
+ * documentado, no como un bug de inconsistencia entre certificados.
+ *
  * Fuentes / verificación (ver docs/adr/073 §Fuentes normativas para el
  * detalle): la segmentación LDV/MDV/HDV por GVW está alineada con el
  * espíritu de GLEC Framework v3.0 §6.3 (la misma fuente de
@@ -95,13 +125,37 @@ export function categoriaVehiculo(
  * D.S. N°158/1980 (MOP, no MTT — ver corrección de atribución en el ADR)
  * fija pesos máximos de circulación en Chile pero no define por sí mismo
  * una segmentación LDV/MDV/HDV.
+ *
+ * @param configuracion Configuración efectiva del servicio (motriz + 0..1 arrastre).
+ * @param tipoVehiculoLegacy Fallback opcional para cuando `curbWeightKg`
+ *   motriz es `null` — tipo legacy (`ParametrosPorDefecto['tipoVehiculo']`)
+ *   a pasar a `categoriaVehiculo()`. Ignorado si `curbWeightKg` está
+ *   presente (el GVW real siempre gana) o si hay arrastre (siempre HDV).
+ * @throws {Error} si `curbWeightKg` motriz es `null`, no hay arrastre, y no
+ *   se proporcionó `tipoVehiculoLegacy` — nunca se inventa `curb=0` ni se
+ *   devuelve una categoría por defecto en silencio.
  */
-export function categoriaPorConfiguracion(configuracion: ConfiguracionViaje): CategoriaVehiculo {
+export function categoriaPorConfiguracion(
+  configuracion: ConfiguracionViaje,
+  tipoVehiculoLegacy?: ParametrosPorDefecto['tipoVehiculo'],
+): CategoriaVehiculo {
   if (configuracion.arrastre) {
     return 'HDV';
   }
 
-  const gvwTon = (configuracion.motriz.curbWeightKg + configuracion.motriz.capacityKg) / 1000;
+  const { curbWeightKg, capacityKg } = configuracion.motriz;
+
+  if (curbWeightKg == null) {
+    if (tipoVehiculoLegacy != null) {
+      return categoriaVehiculo(tipoVehiculoLegacy);
+    }
+    throw new Error(
+      'categoriaPorConfiguracion: curbWeightKg motriz es null y no se proporcionó ' +
+        'tipoVehiculoLegacy de fallback (I2/ADR-073 — nunca se asume curbWeightKg=0)',
+    );
+  }
+
+  const gvwTon = (curbWeightKg + capacityKg) / 1000;
   if (gvwTon < 3.5) {
     return 'LDV';
   }

@@ -268,8 +268,17 @@ export type TipoUnidadArrastre = 'semirremolque' | 'remolque';
 /** Unidad motriz de la configuración: insumo de `categoriaPorConfiguracion`. */
 export interface UnidadMotrizConfiguracion {
   tipoUnidad: TipoUnidadMotriz;
-  /** Peso vacío en kg. Sumado a `capacityKg` da el GVW motriz. */
-  curbWeightKg: number;
+  /**
+   * Peso vacío en kg. Sumado a `capacityKg` da el GVW motriz. **Nullable**
+   * (I2, fix review W4a): la columna SQL `vehiculos.peso_vacio_kg` no
+   * tiene `NOT NULL` y la mayoría de las filas del piloto no la declaran
+   * todavía. `categoriaPorConfiguracion()` acepta `null` acá y hace
+   * fallback documentado a `categoriaVehiculo(tipoVehiculoLegacy)` — NUNCA
+   * asume `curbWeightKg = 0` (distorsionaría el GVW y la clase GLEC). Ver
+   * JSDoc de esa función para la precedencia y el impacto de reclasificar
+   * cuando el dato se completa.
+   */
+  curbWeightKg: number | null;
   /** Capacidad de carga propia en kg. 0 para un tracto solo (D1.2). */
   capacityKg: number;
 }

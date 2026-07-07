@@ -180,4 +180,55 @@ describe('categoriaPorConfiguracion — clase GLEC derivada de la CONFIGURACIÓN
     });
     expect(categoria).toBe('HDV');
   });
+
+  // I2 (fix review W4a) — `curbWeightKg` es nullable en la mayoría del
+  // piloto (columna SQL `peso_vacio_kg` sin NOT NULL). La firma original
+  // exigía `curbWeightKg: number`, lo que hacía la función inutilizable
+  // para el caso real de datos incompletos. Fix: acepta `null` + fallback
+  // documentado a `categoriaVehiculo(tipoVehiculoLegacy)` cuando hay un
+  // tipo legacy disponible — NUNCA se inventa `curb=0` (eso distorsionaría
+  // el GVW y por tanto la clase GLEC). Tres vías cubiertas abajo.
+  describe('curbWeightKg nullable + fallback a tipoVehiculoLegacy (I2, sin inventar curb=0)', () => {
+    it('vía 1 — curb presente → clasifica por GVW (ignora tipoVehiculoLegacy si viene)', () => {
+      // GVW = 4000+8000 = 12t → MDV por GVW, aunque el legacy camion_pesado
+      // clasificaría HDV. Precedencia: GVW gana cuando existe (más preciso).
+      const categoria = categoriaPorConfiguracion(
+        {
+          motriz: { tipoUnidad: 'camion_rigido', curbWeightKg: 4000, capacityKg: 8000 },
+        },
+        'camion_pesado',
+      );
+      expect(categoria).toBe('MDV');
+    });
+
+    it('vía 2 — curb NULL + tipoVehiculoLegacy disponible → switch legacy (categoriaVehiculo)', () => {
+      const categoria = categoriaPorConfiguracion(
+        {
+          motriz: { tipoUnidad: 'camion_rigido', curbWeightKg: null, capacityKg: 8000 },
+        },
+        'camion_mediano',
+      );
+      // categoriaVehiculo('camion_mediano') === 'HDV' (ver switch legacy) —
+      // nota de transición: si más adelante se completa curb_weight_kg y el
+      // GVW real resulta ser, p. ej., 12t, la vía 1 reclasificaría este
+      // mismo vehículo como MDV. Ver JSDoc de categoriaPorConfiguracion.
+      expect(categoria).toBe('HDV');
+    });
+
+    it('vía 2b — con arrastre enganchado, curb motriz NULL sin legacy → sigue HDV (arrastre manda, no necesita fallback)', () => {
+      const categoria = categoriaPorConfiguracion({
+        motriz: { tipoUnidad: 'tracto_camion', curbWeightKg: null, capacityKg: 0 },
+        arrastre: { tipoUnidad: 'semirremolque', curbWeightKg: 7000, capacityKg: 30000 },
+      });
+      expect(categoria).toBe('HDV');
+    });
+
+    it('vía 3 — curb NULL sin tipoVehiculoLegacy → error explícito (nunca inventa curb=0 ni categoría silenciosa)', () => {
+      expect(() =>
+        categoriaPorConfiguracion({
+          motriz: { tipoUnidad: 'camion_rigido', curbWeightKg: null, capacityKg: 8000 },
+        }),
+      ).toThrow(/curbWeightKg.*tipoVehiculoLegacy/);
+    });
+  });
 });
