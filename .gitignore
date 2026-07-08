@@ -145,6 +145,8 @@ booster-skills/
 !packages/**/*.png
 # Evidencia CORFO versionada (hito 2: screenshots de UI son anexos del informe)
 !docs/corfo/**/*.png
+# Evidencia de UI adjunta a specs (capturas citadas en la sección Evidencia del PR)
+!.specs/**/evidencia/*.png
 
 
 # SEC-001 boundary-closure T4 (REVIEW finding E) — reporte de clasificación de
