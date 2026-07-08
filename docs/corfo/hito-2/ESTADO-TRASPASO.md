@@ -45,6 +45,20 @@ d. **Bug del probe de connect.sh** (`connect.sh:96`, `echo > /dev/tcp/...`): no 
 
 Limpieza de cuentas de test (`fvicencio@gmail.com`, `pensando@fueradelacaja.co`). Requiere resolver primero los viajes/eventos que cuelgan de ellas (la FK los frena) + backup. **No es necesario para el hito.**
 
+## 6. BUG DEL SEED DEMO 🔴 (bloqueante — NO correr el seed hasta resolver)
+
+Auditoría read-only del seed (código + queries a prod vía `agent-query.sh`, 2026-07-07 noche) antes de correrlo para la demo. **El seed NO contamina datos reales** (cero deletes en el POST; el DELETE filtra `empresas.es_demo=true` y hoy solo matchea las 2 empresas demo; Van Oosterwyk `es_demo=false`; el vehículo espejo `DEMO01` es fila propia con `teltonika_imei_espejo` — `VFZH-68` y sus posiciones quedan fuera por construcción; cero colisiones con las cuentas/RUTs reales). **Pero tiene un bug bloqueante:**
+
+- `seed-demo.ts` busca los usuarios dueños por email **`demo-2026-*`** (post-rotación, los activos en `cuentas_demo`), pero en prod existen filas demo **VIEJAS** con emails pre-rotación (`demo-shipper@boosterchile.com`, `demo-carrier@…`, `demo-stakeholder@…`) y los mismos RUTs (`11999001-7`, `11999002-5`, `11999003-3`) — verificado con query en prod.
+- `ensureFirebaseUser` busca la fila por **email** (`seed-demo.ts:688-692`) → no encuentra la vieja → hace INSERT de una **segunda fila con el MISMO RUT**.
+- `usuarios.rut` **NO tiene UNIQUE** (solo `index('idx_usuarios_rut')`) → el INSERT pasa → rompe el invariante "1 RUT = 1 fila" y deja `login-rut` (`LIMIT 1`) **no-determinista** para esas cuentas demo.
+- `deleteDemo` **no lo arregla**: no borra las filas `usuarios` de los dueños demo (solo conductores/stakeholders huérfanos, `seed-demo.ts:546-555, 583-592`).
+- El conductor demo NO sufre el bug (su lookup es por RUT, `seed-demo.ts:956-960` → reusa).
+
+**CAUSA RAÍZ**: `usuarios.rut` sin constraint UNIQUE. Recomendación: evaluar agregar UNIQUE a `rut` (migración expand/contract, previa limpieza de cualquier duplicado). Hoy verificado: 0 duplicados en cuentas reales — pero el seed los introduciría.
+
+**RESOLUCIÓN PENDIENTE (decisión de datos + gate PO, para mañana)**: renombrar el email de las 2-3 filas demo viejas a `demo-2026-*` (para que el seed las reuse por email), o borrarlas tras `deleteDemo`. Con eso resuelto, el seed es seguro de correr. **Requiere backup previo.**
+
 ## Próximos pasos del corte aprobado
 
 1. ~~Gate PO: merge de #569 (WS1)~~ **HECHO** (mergeado por el PO, `0d1a26f`). Quedan dos gates PO menores: merge de #570 (runbook) y aprobación del deploy de `release.yml` si corresponde.
