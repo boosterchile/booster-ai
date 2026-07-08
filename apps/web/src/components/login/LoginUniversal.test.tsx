@@ -64,20 +64,19 @@ describe('LoginUniversal', () => {
     expect(screen.getByTestId('login-tipo-booster')).toBeInTheDocument();
   });
 
-  it('selector muestra link "Solicita acceso" → /solicitar-acceso (alta comercial, no self-service)', () => {
+  it('selector muestra el fallback comercial suave "Conversemos" → /solicitar-acceso', () => {
     render(<LoginUniversal />);
-    expect(screen.getByText(/¿Tu empresa aún no está en Booster\?/)).toBeInTheDocument();
+    expect(screen.getByText(/¿Aún no trabajas con Booster\?/)).toBeInTheDocument();
     const link = screen.getByTestId('login-link-solicitar-acceso');
     expect(link).toHaveAttribute('href', '/solicitar-acceso');
-    expect(link).toHaveTextContent('Solicita acceso');
+    expect(link).toHaveTextContent('Conversemos');
   });
 
-  it('selector muestra link "Ingresar con método anterior" → /login?legacy=1', () => {
+  it('selector NO muestra el link legacy "método anterior" (retirado — D6, /login?legacy=1 roto)', () => {
     render(<LoginUniversal />);
-    expect(screen.getByText(/¿Usabas Google o email\?/)).toBeInTheDocument();
-    const link = screen.getByTestId('login-link-metodo-anterior');
-    expect(link).toHaveAttribute('href', '/login?legacy=1');
-    expect(link).toHaveTextContent('Ingresar con método anterior');
+    expect(screen.queryByTestId('login-link-metodo-anterior')).not.toBeInTheDocument();
+    expect(screen.queryByText(/método anterior/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/¿Usabas Google o email\?/)).not.toBeInTheDocument();
   });
 
   it('click en tipo Transporte → muestra form', async () => {

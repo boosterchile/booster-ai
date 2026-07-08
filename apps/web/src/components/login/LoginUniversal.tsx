@@ -282,31 +282,22 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
           Tu acceso usa RUT + clave numérica. Lo mismo que tu app de banco.
         </p>
 
-        {/* Copy aprobado por el PO (spec ws2-descubribilidad-login): el alta
-            es comercial (venta→credenciales), no self-service — no reformular
-            sin re-aprobación. */}
-        <div className="mt-4 space-y-1 border-neutral-200 border-t pt-4 text-center text-neutral-600 text-sm">
-          <p>
-            ¿Tu empresa aún no está en Booster?{' '}
-            <a
-              href="/solicitar-acceso"
-              data-testid="login-link-solicitar-acceso"
-              className="font-medium text-primary-600 hover:underline"
-            >
-              Solicita acceso
-            </a>
-          </p>
-          <p>
-            ¿Usabas Google o email?{' '}
-            <a
-              href="/login?legacy=1"
-              data-testid="login-link-metodo-anterior"
-              className="font-medium text-primary-600 hover:underline"
-            >
-              Ingresar con método anterior
-            </a>
-          </p>
-        </div>
+        {/* Puerta discreta de contacto comercial (spec ws2-descubribilidad-login,
+            decisión D6 del PO 2026-07-08): el alta es comercial
+            (venta→credenciales), no self-service — copy aprobado, no reformular
+            sin re-aprobación. El link legacy "método anterior" (→ /login?legacy=1)
+            se retiró: ese toggle está roto (coerción JSON.parse del search param)
+            y el flow legacy se retira antes de comercializar (D6). */}
+        <p className="mt-4 border-neutral-200 border-t pt-4 text-center text-neutral-500 text-xs">
+          ¿Aún no trabajas con Booster?{' '}
+          <a
+            href="/solicitar-acceso"
+            data-testid="login-link-solicitar-acceso"
+            className="font-medium text-primary-600 hover:underline"
+          >
+            Conversemos
+          </a>
+        </p>
       </div>
     </div>
   );
