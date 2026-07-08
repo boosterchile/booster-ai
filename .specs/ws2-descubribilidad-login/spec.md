@@ -66,3 +66,31 @@ auto-registro.
   prod del flujo de alta).
 - Cambios al backend `signup-request` o a su contrato.
 - Notificación automática del equipo comercial (Fase 2, mes 9).
+
+## Corrección post-merge #572 (PO, 2026-07-08 — decisión (b) + convergencia)
+
+Diagnóstico read-only tras #572: `/login?legacy=1` **no** conmuta al flow
+legacy — TanStack Router parsea los search params con `JSON.parse`, así que
+`?legacy=1` llega como número `1` y la comparación `search.legacy !== '1'`
+(string) en `login.tsx:61` nunca matchea → el flow universal gana siempre.
+Bug congénito de Wave 4 (PR #185), no del #572; el link nuevo solo lo expuso.
+
+**Decisión del PO (b) + dirección de producto**: NO se arregla el toggle. El
+**flow legacy completo (Google + email/password) se retira antes de
+comercializar** (decisión de convergencia, registrada en
+`.specs/hito-2-corfo-mes-8/decisiones.md`). La salida futura del 410
+(needs-rotation) será **recovery de clave** (`recovery_otp_hash` /
+`recovery_otp_expires_at` ya existen en `schema.ts:629-630`) o admin de
+empresa — **no** un login paralelo.
+
+Cambios de este PR corrector (revert parcial de #572, ya en main):
+1. Se retira del selector de `LoginUniversal` el `<p>` "Ingresar con método
+   anterior" (→ `/login?legacy=1`, link roto) + su test.
+2. El fallback "Solicita acceso" queda con copy más suave (puerta discreta de
+   contacto comercial), aprobado por el PO 2026-07-08:
+   **«¿Aún no trabajas con Booster? Conversemos»** → `/solicitar-acceso`.
+3. El rescue de needs-rotation (`LoginUniversal.tsx`, vista 410) queda **sin
+   autoservicio** hasta el retiro del legacy — documentado en el follow-up
+   `login-retiro-boton-crea-una-legacy.md`. Cero usuarios reales en ese
+   estado hoy (verificado por el PO: todas las cuentas con clave). NO se toca
+   en este PR (fuera de scope, decisión (b)).
