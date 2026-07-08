@@ -4,7 +4,10 @@ import { ApiError, api } from '../lib/api-client.js';
 
 const { SolicitarAccesoRoute } = await import('./solicitar-acceso.js');
 
-const SUCCESS_MESSAGE = /Recibimos tu solicitud/;
+// Copy aprobado por el PO (2026-07-08, spec ws2-descubribilidad-login):
+// manifestación de interés comercial, neutro por anti-enumeración SC-1.2.5.
+const SUCCESS_MESSAGE =
+  /Recibimos tu interés\. Nuestro equipo comercial te contactará al correo indicado\./;
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -25,6 +28,15 @@ describe('SolicitarAccesoRoute — render inicial', () => {
     render(<SolicitarAccesoRoute />);
     const link = screen.getByTestId('solicitar-acceso-link-login');
     expect(link).toHaveAttribute('href', '/login');
+  });
+
+  it('bajada con framing comercial: manifestación de interés, la solicitud NO crea cuenta', () => {
+    render(<SolicitarAccesoRoute />);
+    expect(
+      screen.getByText(
+        /Cuéntanos quién eres y te contactaremos para sumar a tu empresa a Booster\. Esta solicitud no crea una cuenta: tus credenciales se activan al contratar el servicio\./,
+      ),
+    ).toBeInTheDocument();
   });
 });
 

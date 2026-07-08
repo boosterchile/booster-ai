@@ -14,6 +14,12 @@ interface SolicitarAccesoFormValues {
 
 const EMPTY_VALUES: SolicitarAccesoFormValues = { nombreCompleto: '', email: '' };
 
+// Single source of truth del copy de error por campo: se usa tanto en la
+// validación client-side (zodResolver) como en el mapeo de issues 400/422
+// del backend (`mapValidationIssuesToForm`).
+const NOMBRE_COMPLETO_ERROR_COPY = 'Ingresa tu nombre completo (máx. 200 caracteres).';
+const EMAIL_ERROR_COPY = 'Ingresa un correo válido.';
+
 /**
  * Espejo del contrato del backend (`apps/api/src/routes/signup-request.ts`
  * zValidator body): `{ email: z.string().email().max(320), nombreCompleto:
@@ -31,17 +37,14 @@ const solicitarAccesoFormSchema = z.object({
     .string()
     .refine(
       (v) => signupRequestSchema.shape.nombreCompleto.safeParse(v).success,
-      'Ingresa tu nombre completo (máx. 200 caracteres).',
+      NOMBRE_COMPLETO_ERROR_COPY,
     ),
   email: z
     .string()
-    .refine(
-      (v) => signupRequestSchema.shape.email.safeParse(v).success,
-      'Ingresa un correo válido.',
-    ),
+    .refine((v) => signupRequestSchema.shape.email.safeParse(v).success, EMAIL_ERROR_COPY),
 });
 
-type SubmitState = 'idle' | 'success' | 'error';
+type SubmitState = 'idle' | 'success';
 
 /**
  * /solicitar-acceso — alta de usuarios gateada por admin (SEC-001 Sprint 2b,
@@ -57,6 +60,11 @@ type SubmitState = 'idle' | 'success' | 'error';
  * Anti-enumeración (SC-1.2.5): el backend responde `202 {ok:true}` SIEMPRE,
  * sin importar si el email ya existía (shadow) — el copy de éxito es
  * deliberadamente neutro y NUNCA insinúa si el correo ya estaba registrado.
+ *
+ * Framing comercial (spec ws2-descubribilidad-login, PO 2026-07-08): esta
+ * página es una MANIFESTACIÓN DE INTERÉS, no un registro — la empresa
+ * levanta la mano, Booster contacta y la venta gatilla las credenciales.
+ * El copy lo aprueba el PO; no reformular sin re-aprobación.
  *
  * No redirige si hay sesión activa (un admin logueado puede querer ver la
  * página) — se mantiene simple, sin leer `useAuth()`.
@@ -82,7 +90,6 @@ export function SolicitarAccesoRoute() {
       await api.post('/api/v1/signup-request', values);
       setState('success');
     } catch (err) {
-      setState('error');
       // 400/422 → intenta mapear los issues de validación del backend a
       // los campos del form (setError) en vez del banner genérico. Si el
       // payload no trae issues mapeables, cae al banner (ver
@@ -107,12 +114,13 @@ export function SolicitarAccesoRoute() {
         <div className="w-full max-w-sm">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Solicita acceso</h1>
           <p className="mt-2 text-neutral-600 text-sm">
-            Completa tus datos y nuestro equipo revisará tu solicitud.
+            Cuéntanos quién eres y te contactaremos para sumar a tu empresa a Booster. Esta
+            solicitud no crea una cuenta: tus credenciales se activan al contratar el servicio.
           </p>
 
           {state === 'success' ? (
             <output className="mt-6 block rounded-md border border-success-500/30 bg-success-50 p-3 text-sm text-success-700">
-              Recibimos tu solicitud. Nuestro equipo la revisará y te contactará al correo indicado.
+              Recibimos tu interés. Nuestro equipo comercial te contactará al correo indicado.
             </output>
           ) : (
             <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4" noValidate>
@@ -219,8 +227,8 @@ function translateSignupRequestError(err: unknown): string {
  * `@hono/zod-validator`/zod sin locale custom).
  */
 const FIELD_ERROR_COPY: Record<keyof SolicitarAccesoFormValues, string> = {
-  nombreCompleto: 'Ingresa tu nombre completo (máx. 200 caracteres).',
-  email: 'Ingresa un correo válido.',
+  nombreCompleto: NOMBRE_COMPLETO_ERROR_COPY,
+  email: EMAIL_ERROR_COPY,
 };
 
 /**

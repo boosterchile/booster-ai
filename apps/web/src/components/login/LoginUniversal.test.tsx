@@ -64,6 +64,22 @@ describe('LoginUniversal', () => {
     expect(screen.getByTestId('login-tipo-booster')).toBeInTheDocument();
   });
 
+  it('selector muestra link "Solicita acceso" → /solicitar-acceso (alta comercial, no self-service)', () => {
+    render(<LoginUniversal />);
+    expect(screen.getByText(/¿Tu empresa aún no está en Booster\?/)).toBeInTheDocument();
+    const link = screen.getByTestId('login-link-solicitar-acceso');
+    expect(link).toHaveAttribute('href', '/solicitar-acceso');
+    expect(link).toHaveTextContent('Solicita acceso');
+  });
+
+  it('selector muestra link "Ingresar con método anterior" → /login?legacy=1', () => {
+    render(<LoginUniversal />);
+    expect(screen.getByText(/¿Usabas Google o email\?/)).toBeInTheDocument();
+    const link = screen.getByTestId('login-link-metodo-anterior');
+    expect(link).toHaveAttribute('href', '/login?legacy=1');
+    expect(link).toHaveTextContent('Ingresar con método anterior');
+  });
+
   it('click en tipo Transporte → muestra form', async () => {
     render(<LoginUniversal />);
     await userEvent.click(screen.getByTestId('login-tipo-transporte'));

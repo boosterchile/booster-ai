@@ -281,6 +281,32 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
         <p className="mt-6 text-center text-neutral-500 text-xs">
           Tu acceso usa RUT + clave numérica. Lo mismo que tu app de banco.
         </p>
+
+        {/* Copy aprobado por el PO (spec ws2-descubribilidad-login): el alta
+            es comercial (venta→credenciales), no self-service — no reformular
+            sin re-aprobación. */}
+        <div className="mt-4 space-y-1 border-neutral-200 border-t pt-4 text-center text-neutral-600 text-sm">
+          <p>
+            ¿Tu empresa aún no está en Booster?{' '}
+            <a
+              href="/solicitar-acceso"
+              data-testid="login-link-solicitar-acceso"
+              className="font-medium text-primary-600 hover:underline"
+            >
+              Solicita acceso
+            </a>
+          </p>
+          <p>
+            ¿Usabas Google o email?{' '}
+            <a
+              href="/login?legacy=1"
+              data-testid="login-link-metodo-anterior"
+              className="font-medium text-primary-600 hover:underline"
+            >
+              Ingresar con método anterior
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
