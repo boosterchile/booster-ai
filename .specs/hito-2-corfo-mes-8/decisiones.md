@@ -138,3 +138,13 @@ Evidencia:
 - Custom token: mi receta con firebase-admin-key fallaba por el placeholder; no es la vía.
 
 **Desbloqueo recomendado**: resetear la clave Firebase de `dev@boosterchile.com` (consola Identity Platform) → `signInWithPassword` como dev@ → idToken → approve (dev@ en allowlist). Alternativa: agregar contacto@ a la allowlist (cambio de config prod + está unverified) — menos limpio.
+
+## D6 · Convergencia: retiro del flow legacy de login antes de comercializar (2026-07-08)
+
+Diagnóstico read-only tras #572: `/login?legacy=1` **no** conmuta al flow legacy (Google + email/password). Causa raíz probada: TanStack Router parsea los search params con `JSON.parse` (`@tanstack/router-core@1.169.2` `defaultParseSearch`), así que `?legacy=1` llega como número `1`; `login.tsx:61` compara contra el string `'1'` (`search.legacy !== '1'`) y nunca matchea → el flow universal gana siempre. Bug congénito de Wave 4 (PR #185, 2026-05-13), no del #572 — el link nuevo solo lo expuso. El flow legacy sigue existiendo y montable (`login.tsx:130-427`), solo es inalcanzable por la vía documentada.
+
+**Decisión del PO (opción b + dirección de producto)**: NO se arregla el toggle. El **flow legacy completo se retira antes de comercialización**. Consecuencias fijadas:
+- **(a)** Se retira del selector de `LoginUniversal` el link "Ingresar con método anterior" (→ `/login?legacy=1`, roto). El fallback "Solicita acceso" queda con copy más suave aprobado hoy: **«¿Aún no trabajas con Booster? Conversemos»** → `/solicitar-acceso` (puerta discreta de contacto comercial). PR corrector aparte (revert parcial de #572, ya en main).
+- **(b)** La salida futura del estado 410 (needs-rotation, usuario sin clave numérica) **NO será un login paralelo** sino **recovery de clave** — el schema ya tiene el soporte (`recovery_otp_hash` / `recovery_otp_expires_at`, `apps/api/src/db/schema.ts:629-630`) — o desbloqueo por admin de empresa. Detalle de implementación difiere a mes 9.
+- **(c)** Hasta el retiro efectivo, el rescue de needs-rotation queda **sin autoservicio** (su link "Usar método anterior" apunta al mismo `/login?legacy=1` roto). **Cero usuarios reales** en ese estado hoy (verificado por el PO: todas las cuentas con clave). Gap documentado en `.specs/_followups/login-retiro-boton-crea-una-legacy.md`; NO se toca en el PR corrector.
+- **(d)** El retiro del botón "Crea una" (self-signup Firebase, `.specs/_followups/login-retiro-boton-crea-una-legacy.md`) queda subsumido en este mismo retiro de flow legacy.
