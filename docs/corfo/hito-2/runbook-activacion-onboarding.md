@@ -150,6 +150,13 @@ El plan (`.specs/onboarding-flow-redesign/plan.md`, "Cierre Fase 1") exige 2 act
 
 **Bloqueante**: no avanzar al paso 5 sin ambas actas firmadas.
 
+
+### ✅ Acta del Paso 4 — registrada 2026-07-06
+
+> "2026-07-06 · Ratifico TTL 72h para el token de onboarding admin-provisionado (OQ1 cerrada). Acepto el modelo bearer-token del link de onboarding con mitigaciones vigentes: token one-shot con consumo atómico, TTL 72h, placeholder denylisted que jamás firma, reaper agendado (PAUSED hasta activación), entrega manual del link mientras no exista el email notifier (Fase 2). Riesgo residual aceptado: quien posea el link dentro del TTL puede completar el onboarding — mitigado por canal de entrega controlado. **Firma: Felipe Vicencio, PO.**"
+
+Con esta acta quedan cumplidas las 4 condiciones del flip de Fase 1: (1) reaper agendado (job creado 2026-07-06, PAUSED, params verificados por REST idénticos al recurso TF), (2) `onboarding-token-signing-secret` provisionado con valor real (versión 2, verificado sin prefijo placeholder), (3) TTL 72h ratificado, (4) sign-off bearer-token — este documento.
+
 ## Paso 5 — Flip de flags + deploy
 
 **Actualizado (fix round final-review, 2026-07-06, hallazgo R1)**: hasta este PR, `signup_request_flow_activated` no requería cambio en este paso porque ya estaba en `true` desde 2026-05-29 (ADR-052). Este PR lo revirtió a `false` (default en `variables.tf` + override explícito en `terraform.tfvars`) — ver Paso 0. Ese `false` viaja al aplicar el Terraform de esta rama en el paso 2. **Este paso 5 ahora debe flipear AMBOS flags**, no solo uno:
