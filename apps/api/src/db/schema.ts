@@ -112,6 +112,44 @@ export const fuelTypeEnum = pgEnum('tipo_combustible', [
 export const vehicleStatusEnum = pgEnum('estado_vehiculo', ['activo', 'mantenimiento', 'retirado']);
 
 /**
+ * W4a (migración 0048, ADR-073) — tipologías de flota. `tipo_vehiculo`
+ * (arriba) NO se toca: sigue siendo la fuente de verdad para
+ * matching-algorithm/cargo-request/seed-demo. Estos 3 enums nuevos son
+ * ORTOGONALES entre sí y coexisten con el legacy:
+ *
+ *   - `categoriaUnidadEnum`: motriz (tiene motor propio) vs arrastre
+ *     (remolcado, sin motor). Ver decisiones.md D1.
+ *   - `tipoUnidadEnum`: subtipo dentro de la categoría. Nullable en BD —
+ *     NULL solo en filas legacy backfilled best-effort (comentario de
+ *     migración 0048, caveat D4.1); toda escritura nueva lo exige (D4.2).
+ *   - `tipoCarroceriaEnum`: carrocería, ortogonal a categoría/tipo (un
+ *     `camion_rigido` puede tener carrocería `refrigerado`, `tolva`, etc.).
+ */
+export const categoriaUnidadEnum = pgEnum('categoria_unidad', ['motriz', 'arrastre']);
+
+export const tipoUnidadEnum = pgEnum('tipo_unidad', [
+  'tracto_camion',
+  'camion_rigido',
+  'camioneta',
+  'furgon',
+  'semirremolque',
+  'remolque',
+]);
+
+export const tipoCarroceriaEnum = pgEnum('tipo_carroceria', [
+  'plano',
+  'cortina',
+  'furgon_cerrado',
+  'refrigerado',
+  'tolva',
+  'cisterna',
+  'portacontenedor',
+  'cama_baja',
+  'jaula',
+  'forestal',
+]);
+
+/**
  * Clases de licencia de conducir Chile (Ley Tránsito DS Nº 170):
  *   A1-A5: profesionales (taxi/colectivo, transporte público, camiones).
  *   A5 es la única que habilita camión articulado > 3.500 kg con remolque.
@@ -809,6 +847,21 @@ export const vehicles = pgTable(
     lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
     inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
     vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),
+    /**
+     * W4a (migración 0048, ADR-073) — motriz vs arrastre. DEFAULT 'motriz'
+     * clasifica correctamente 8 de los 9 tipos legacy (solo semi_remolque
+     * es arrastre, corregido por el backfill de la migración).
+     */
+    unitCategory: categoriaUnidadEnum('categoria_unidad').notNull().default('motriz'),
+    /**
+     * Subtipo dentro de `unitCategory`. NULL solo en filas legacy backfilled
+     * best-effort (caveat D4.1: camion_pesado/refrigerado/tanque pueden
+     * estar mal clasificados, revisar en W4b UI). Toda escritura nueva lo
+     * exige vía Zod (D4.2) — el NOT NULL retroactivo es la fase contract.
+     */
+    unitType: tipoUnidadEnum('tipo_unidad'),
+    /** Carrocería, ortogonal a categoría/tipo. NULL = no declarada. */
+    bodyType: tipoCarroceriaEnum('carroceria'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -833,6 +886,15 @@ export const vehicles = pgTable(
     statusIdx: index('idx_vehiculos_estado').on(table.vehicleStatus),
     // idx_vehiculos_teltonika_imei dropeado en 0040: duplicaba el UNIQUE
     // implícito de .unique() en la columna.
+    // W4a (migración 0048) — espejo runtime en
+    // packages/shared-schemas/src/domain/vehicle.ts
+    // (validarCoherenciaUnidadVehiculo) + Zod local de
+    // apps/api/src/routes/vehiculos.ts (422 antes de BD). Tolerante a NULL:
+    // una fila legacy sin tipo_unidad no viola el CHECK.
+    tipoCategoriaCheck: check(
+      'chk_vehiculos_tipo_categoria',
+      sql`${table.unitType} IS NULL OR ((${table.unitCategory} = 'arrastre') = (${table.unitType} IN ('semirremolque', 'remolque')))`,
+    ),
   }),
 );
 
@@ -1238,6 +1300,20 @@ export const assignments = pgTable(
      * bloquea por un servicio externo).
      */
     ecoRoutePolylineEncoded: text('eco_route_polyline_encoded'),
+    /**
+     * W4a (migración 0048, ADR-073) — unidad de arrastre (semirremolque/
+     * remolque) enganchada en la configuración efectiva de este servicio,
+     * 0..1 (deuda 0..N/bitrén declarada en
+     * .specs/_followups/flota-bitren-0-n-arrastres.md, D1.1). NULL =
+     * configuración motriz sola. Vive en `asignaciones` (no en `viajes`,
+     * corrección D4 vs el plan original) porque el vehículo del servicio
+     * ya vive acá (`vehicleId`). ON DELETE RESTRICT: no se puede borrar un
+     * vehículo mientras esté enganchado como arrastre de una asignación
+     * viva.
+     */
+    unidadArrastreId: uuid('unidad_arrastre_id').references(() => vehicles.id, {
+      onDelete: 'restrict',
+    }),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1256,6 +1332,23 @@ export const assignments = pgTable(
     // el check del FK a empresas. Mismo criterio anti-redundancia que 0040/0041.
     statusIdx: index('idx_asignaciones_estado').on(table.status),
     driverIdx: index('idx_asignaciones_conductor').on(table.driverUserId),
+    // W4a (migración 0048) — índice parcial: solo asignaciones con arrastre
+    // efectivamente enganchado (la mayoría, piloto mes 8 sin bitrén, tendrá
+    // NULL — indexar solo el subconjunto relevante evita inflar el índice).
+    unidadArrastreIdx: index('idx_asignaciones_unidad_arrastre')
+      .on(table.unidadArrastreId)
+      .where(sql`${table.unidadArrastreId} IS NOT NULL`),
+    // D1 condición 3 / D4 condición 3 — CHECK same-row: la unidad de
+    // arrastre no puede ser literalmente el mismo vehículo que la unidad
+    // motriz de la misma asignación. La coherencia de categoría (vehicleId
+    // debe ser motriz, unidadArrastreId debe ser arrastre) y la
+    // compatibilidad tracto↔semirremolque/rígido↔remolque se validan en
+    // runtime al armar la configuración (W4c) — no hay write path de
+    // asignación en W4a.
+    arrastreDistintoCheck: check(
+      'chk_asignaciones_arrastre_distinto',
+      sql`${table.unidadArrastreId} IS NULL OR ${table.unidadArrastreId} <> ${table.vehicleId}`,
+    ),
   }),
 );
 

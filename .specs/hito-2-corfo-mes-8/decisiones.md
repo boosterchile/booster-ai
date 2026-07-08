@@ -35,6 +35,20 @@ Semántica Zod por categoría aprobada: `tracto_camion` → `capacity_kg = 0` pe
 - **W1.4 (link copiable) es la única vía de entrega del token** — el approve no lo devuelve hoy y el notifier es stub. Exponerlo en la respuesta del approve está mandatado por el plan del PO.
 - Activación (W1.5) bloqueada además por: reaper T1.7 sin agendar en Cloud Scheduler (falta Terraform) y `ONBOARDING_TOKEN_SIGNING_SECRET` sin provisionar en GSM/Terraform.
 
+## D2b · Verificado: el rechazo de pending devices NO es tenant-scoped (2026-07-06, W2a)
+
+`dispositivos_pendientes` no tiene `empresaId` (by design, open enrollment global): cualquier `dueno|admin` de CUALQUIER empresa puede listar (`admin-dispositivos.ts:60-78`) y rechazar (`admin-dispositivos.ts:191-216`) pending devices ajenos. **Por eso el rechazo no puede ser terminal**: sería un vector de denegación cruzada (empresa A rechaza el device que empresa B está por reclamar). El PATCH de W2 lo mitiga con el override en dos pasos de D2 (409 `imei_rechazado` + `confirmar_reasociacion: true`), que convierte el rechazo en un obstáculo reversible por el dueño legítimo, con log estructurado del override. Deuda relacionada (no de hoy): evaluar rate-limit o scoping del reject en el panel.
+
+## D2c · Adición de contrato W2 (2026-07-06, fix round): 409 `pending_device_conflict`
+
+El CAS de la reconciliación agrega un código residual fuera del enum original de D2: cuando el CAS pierde la carrera y el estado fresco NO es `rechazado` (p.ej. aprobado por otra tx concurrente o row ausente), el PATCH responde **409 `pending_device_conflict`** (neutro: no filtra tenant/patente; informacionalmente equivalente a `imei_en_uso`). W2b debe manejarlo deliberadamente: mensaje "el estado del dispositivo cambió mientras guardábamos — reintenta" + refetch. Registrado aquí para que el contrato no viva solo en código (`vehiculos.ts:619-627`).
+
+## D5 · Régimen de autonomía (2026-07-06, ~21:00)
+
+- **(a)** El texto original del régimen ("Configura tú mismo el régimen de autonomía", 5 reglas) **nunca llegó a la sesión** — el PO lo re-enviará; `.specs/policy-decisiones.md` queda pendiente de esa transcripción (NO se inventan reglas). El **punto 3 del régimen (auto-merge) queda REVOCADO** por el propio PO al adoptar la objeción por ADR-072.
+- **(b)** Deny rules duras aplicadas a `.claude/settings.local.json` (17 reglas: terraform apply, gcloud run update/deploy/update-traffic, secrets add/create, scheduler run/resume, gh pr merge, push a main/force, gh api mutante, agent-query -y) DESPUÉS del squash-merge de #565 autorizado explícitamente (secuencia definida por el PO). Verificadas en vivo con probe denegado.
+- **(c)** ADR-072 se mantiene: merge a `main` = decisión del PO por mensaje explícito, sin auto-merge. Con las deny rules activas, la EJECUCIÓN del merge también es del PO (el agente ya no puede ejecutar `gh pr merge` ni autorizado — la deny rule es dura a propósito).
+
 ---
 
 ## Estado de cierre de sesión — 2026-07-07 ~04:06 America/Santiago

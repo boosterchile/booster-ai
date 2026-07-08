@@ -1,29 +1,56 @@
 import type { Logger } from '@booster-ai/logger';
-import { chileanPlateSchema } from '@booster-ai/shared-schemas';
+import {
+  AVL_ID_DALLAS,
+  type BodyType,
+  type FuelType,
+  type UnitCategory,
+  type UnitType,
+  bodyTypeSchema,
+  chileanPlateSchema,
+  derivarUnidadDesdeTipoLegacy,
+  interpretDallasTemperature,
+  teltonikaImeiSchema,
+  unitCategorySchema,
+  unitTypeSchema,
+  validarCoherenciaUnidadVehiculo,
+} from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { posicionesMovilConductor, telemetryPoints, vehicles } from '../db/schema.js';
+import {
+  pendingDevices,
+  posicionesMovilConductor,
+  telemetryPoints,
+  vehicles,
+} from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
  *
- *   GET    /vehiculos          → lista de la empresa activa (todos los users)
- *   POST   /vehiculos          → crear (dueno/admin/despachador)
- *   GET    /vehiculos/:id      → detalle (todos los users)
- *   PATCH  /vehiculos/:id      → actualizar (dueno/admin/despachador)
- *   DELETE /vehiculos/:id      → soft delete = vehicleStatus 'retirado'
- *                                (dueno/admin)
+ *   GET    /vehiculos              → lista de la empresa activa (todos los users)
+ *   POST   /vehiculos              → crear (dueno/admin/despachador)
+ *   GET    /vehiculos/:id          → detalle (todos los users)
+ *   PATCH  /vehiculos/:id          → actualizar (dueno/admin/despachador)
+ *   PATCH  /vehiculos/:id/dispositivo → asociar/cambiar/desasociar IMEI Teltonika
+ *                                    (dueno/admin) — W2 self-service
+ *   DELETE /vehiculos/:id          → soft delete = vehicleStatus 'retirado'
+ *                                    (dueno/admin)
  *
  * Reglas multi-tenant:
  *   - Todos los reads y writes filtran por activeMembership.empresa.id.
  *   - Patente única en el sistema (constraint DB). Si choca → 409.
- *   - teltonika_imei se asigna desde /admin/dispositivos-pendientes
- *     (asociar). Acá NO se permite setearlo directamente para no abrir un
- *     flujo paralelo al de open enrollment — devolvemos 400 si vienen.
+ *   - teltonika_imei: hasta W2 (hito 2 CORFO) solo se asignaba desde
+ *     /admin/dispositivos-pendientes (asociar) y este PATCH lo descartaba
+ *     silenciosamente (no estaba en `updateBodySchema`). Ahora el write-path
+ *     self-service vive acá mismo, en `PATCH /:id/dispositivo` — ver esa
+ *     ruta más abajo para el contrato completo (reconciliación con
+ *     dispositivos_pendientes, invariante espejo, etc). El PATCH genérico
+ *     de arriba (`/:id`) sigue sin aceptar teltonika_imei en su body.
  */
 
 const vehicleTypes = [
@@ -58,10 +85,32 @@ const vehicleStatuses = ['activo', 'mantenimiento', 'retirado'] as const;
 //
 // Reemplaza el schema laxo previo que aceptaba `....`, `XXX-99`, `1234`, etc.
 // porque solo validaba caracteres + min(4), no la estructura chilena.
+// W4a (migración 0048, ADR-073) — tipologías de flota. `vehicle_type`
+// (arriba, enum legacy) sigue obligatorio: la columna SQL `tipo_vehiculo`
+// no se toca y sigue NOT NULL. `unit_type` es el campo NUEVO. D4.2 lo exigía
+// obligatorio en toda escritura nueva, pero el fix C1 (review W4a, decisión
+// PO opción b, 2026-07-06) lo relajó a OPCIONAL a nivel de forma: el form
+// web actual (apps/web/src/routes/vehiculos.tsx, vehicleFormToBody) todavía
+// no lo manda (W4b lo agregará) — en vez de romper el form, el handler de
+// `POST /` deriva `unit_type`/`unit_category`/`body_type` desde
+// `vehicle_type` (`derivarUnidadDesdeTipoLegacy`, mismo mapping D4 del
+// backfill de la migración 0048) cuando `unit_type` no viene explícito. Si
+// SÍ viene, se valida como antes (la derivación no pisa input explícito) —
+// ver `.specs/_followups/retiro-derivacion-unit-type-create.md` para el
+// plan de retiro de este fallback cuando el form mande el campo.
+// `unit_category`/`body_type` quedan igual de opcionales que antes (default
+// 'motriz'/null cuando no hay derivación en juego). `capacity_kg` relajado a
+// `.min(0)` (D1.2: un tracto no carga solo) — el piso >0 para el resto de
+// tipos motrices y para arrastre se valida en runtime
+// (`validarCoherenciaUnidadVehiculo`, espejo de `chk_vehiculos_tipo_categoria`
+// + D4.5), no acá a nivel de forma.
 const createBodySchema = z.object({
   plate: chileanPlateSchema,
   vehicle_type: z.enum(vehicleTypes),
-  capacity_kg: z.number().int().positive().max(100_000),
+  unit_category: unitCategorySchema.optional(),
+  unit_type: unitTypeSchema.optional(),
+  body_type: bodyTypeSchema.nullable().optional(),
+  capacity_kg: z.number().int().min(0).max(100_000),
   capacity_m3: z.number().int().positive().max(500).nullable().optional(),
   year: z.number().int().min(1980).max(2100).nullable().optional(),
   brand: z.string().min(1).max(50).nullable().optional(),
@@ -74,6 +123,133 @@ const createBodySchema = z.object({
 const updateBodySchema = createBodySchema.partial().extend({
   vehicle_status: z.enum(vehicleStatuses).optional(),
 });
+
+/**
+ * Campos que participan de la coherencia tipo↔categoría
+ * (`validarCoherenciaUnidadVehiculo`, espejo de
+ * `chk_vehiculos_tipo_categoria` + D4.5). Si un PATCH no toca ninguno de
+ * estos, no hace falta re-validar (el estado previo ya era coherente).
+ */
+const UNIT_CONFIG_FIELDS = [
+  'unit_category',
+  'unit_type',
+  'capacity_kg',
+  'curb_weight_kg',
+  'consumption_l_per_100km_baseline',
+  'fuel_type',
+] as const;
+
+function touchesUnitConfig(body: z.infer<typeof updateBodySchema>): boolean {
+  return UNIT_CONFIG_FIELDS.some((f) => body[f] !== undefined);
+}
+
+/**
+ * 422 antes de BD (D4 condición 3): valida `validarCoherenciaUnidadVehiculo`
+ * y devuelve la respuesta de error si hay ≥1 violación, o `null` si la
+ * configuración es coherente.
+ */
+function validarOResponderIncoherencia(
+  c: Context,
+  input: {
+    unitCategory: UnitCategory;
+    unitType: UnitType;
+    capacityKg: number;
+    curbWeightKg: number | null;
+    consumptionLPer100kmBaseline: number | null;
+    fuelType: FuelType | null;
+  },
+) {
+  const violations = validarCoherenciaUnidadVehiculo(input);
+  if (violations.length === 0) {
+    return null;
+  }
+  return c.json(
+    {
+      error: 'tipo_categoria_incoherente',
+      code: violations[0]?.code ?? 'tipo_categoria_incoherente',
+      violations,
+    },
+    422,
+  );
+}
+
+/**
+ * `telemetria_puntos.io_data` es jsonb sin `$type<>` en el schema Drizzle
+ * (columna catalog-agnostic, ver comentario en db/schema.ts) → llega como
+ * `unknown` al select. Boundary: validamos con Zod antes de interpretar
+ * cualquier IO — el contenido lo escribió el processor a partir de bytes
+ * de un device de terreno, no confiamos en la forma sin chequear.
+ */
+const ioDataRecordSchema = z.record(z.string(), z.union([z.number(), z.string()]));
+
+/**
+ * W3 — interpreta IO 72 (Dallas Temperature 1, FMC150) desde `io_data` para
+ * exponerlo en `GET /vehiculos/:id/ubicacion`. `null` explícito si no hay
+ * IO 72 en el punto o si el valor no pasa el catálogo Dallas (fuera del
+ * rango físico DS18B20, ver `packages/shared-schemas/avl-ids`).
+ *
+ * `temperatura_registrada_en` viaja junto a `temperatura_c`: si no hay
+ * lectura válida, tampoco hay timestamp de lectura que reportar.
+ */
+function extractTemperatura(
+  ioData: unknown,
+  timestampDevice: Date,
+): { temperatura_c: number | null; temperatura_registrada_en: string | null } {
+  const parsedIoData = ioDataRecordSchema.safeParse(ioData);
+  const raw72 = parsedIoData.success ? parsedIoData.data['72'] : undefined;
+  if (typeof raw72 !== 'number') {
+    return { temperatura_c: null, temperatura_registrada_en: null };
+  }
+
+  const { telemetry } = interpretDallasTemperature([
+    { id: AVL_ID_DALLAS.DALLAS_TEMPERATURE_1, value: raw72, byteSize: 2 },
+  ]);
+  const temperaturaC = telemetry.dallasTemperature1C ?? null;
+  return {
+    temperatura_c: temperaturaC,
+    temperatura_registrada_en: temperaturaC != null ? timestampDevice.toISOString() : null,
+  };
+}
+
+// W2 (hito 2 CORFO) — body del PATCH de auto-asociación de dispositivo.
+// `teltonika_imei` es requerido (puede ser null para desasociar); usa el
+// schema compartido con el frontend para paridad cliente/servidor.
+const patchDispositivoBodySchema = z.object({
+  teltonika_imei: teltonikaImeiSchema.nullable(),
+  confirmar_reasociacion: z.boolean().optional(),
+});
+
+/**
+ * TOCTOU en la reconciliación del IMEI entrante de `PATCH /:id/dispositivo`
+ * (ver esa ruta más abajo): el UPDATE con CAS sobre `dispositivos_pendientes`
+ * puede perder la carrera contra un actor externo — p.ej. un admin de
+ * CUALQUIER empresa rechazando el mismo pending vía el panel
+ * (`admin-dispositivos.ts:191-216`; D2b: el rechazo NO es tenant-scoped, ver
+ * `.specs/hito-2-corfo-mes-8/decisiones.md`). Cuando el CAS devuelve 0 filas,
+ * este error aborta la transacción COMPLETA (incluyendo el UPDATE ya
+ * aplicado a `vehicles.teltonika_imei`) y el handler responde con el estado
+ * REAL re-derivado fresco — "nunca silencioso".
+ */
+class PendingDeviceReconciliationConflictError extends Error {
+  readonly detail:
+    | { kind: 'rechazado'; rechazadoEn: Date; motivo: string | null }
+    | { kind: 'inesperado'; status: string };
+
+  constructor(
+    detail:
+      | { kind: 'rechazado'; rechazadoEn: Date; motivo: string | null }
+      | { kind: 'inesperado'; status: string },
+  ) {
+    super('pending device reconciliation conflict (TOCTOU)');
+    this.name = 'PendingDeviceReconciliationConflictError';
+    this.detail = detail;
+  }
+}
+
+// Métrica de negocio del PATCH de auto-asociación (W2). Único endpoint de
+// vehiculos.ts instrumentado hoy — ver
+// .specs/_followups/vehiculos-router-otel-spans.md para el resto del router.
+const dispositivoAsociacionesCounter = getBusinessCounter('dispositivo_asociaciones_total');
 
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -110,8 +286,12 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     return auth;
   }
 
+  // Umbral dueno|admin — mismo patrón que admin-dispositivos.ts:37-57
+  // (requireAdmin). Compartido por DELETE /:id y PATCH /:id/dispositivo
+  // (W2 self-service, más abajo); antes solo lo usaba DELETE (de ahí el
+  // nombre previo `requireDeleteRole`, renombrado acá al generalizarse).
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireDeleteRole(c: Context<any, any, any>) {
+  function requireOwnerOrAdminRole(c: Context<any, any, any>) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -140,6 +320,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         id: vehicles.id,
         plate: vehicles.plate,
         type: vehicles.vehicleType,
+        unit_category: vehicles.unitCategory,
+        unit_type: vehicles.unitType,
+        body_type: vehicles.bodyType,
         capacity_kg: vehicles.capacityKg,
         capacity_m3: vehicles.capacityM3,
         year: vehicles.year,
@@ -340,6 +523,47 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
+    // Fix C1 (review W4a, decisión PO opción b, 2026-07-06): si `unit_type`
+    // no vino en el body (el form web actual todavía no lo manda), derivar
+    // unit_category/unit_type/body_type desde vehicle_type con el mismo
+    // mapping D4 del backfill de la migración 0048
+    // (`derivarUnidadDesdeTipoLegacy`, packages/shared-schemas). Si
+    // `unit_type` SÍ vino explícito, se respeta tal cual — la derivación
+    // NUNCA pisa input explícito, ni siquiera parcialmente: solo completa
+    // los campos hermanos (`unit_category`/`body_type`) que el cliente no
+    // haya mandado él mismo.
+    let unitCategory: UnitCategory;
+    let unitType: UnitType;
+    let bodyType: BodyType | null;
+    let derivadoDeTipoLegacy = false;
+
+    if (body.unit_type === undefined) {
+      const derivado = derivarUnidadDesdeTipoLegacy(body.vehicle_type);
+      unitType = derivado.unitType;
+      unitCategory = body.unit_category ?? derivado.unitCategory;
+      bodyType = body.body_type !== undefined ? (body.body_type ?? null) : derivado.bodyType;
+      derivadoDeTipoLegacy = true;
+    } else {
+      unitType = body.unit_type;
+      unitCategory = body.unit_category ?? 'motriz';
+      bodyType = body.body_type ?? null;
+    }
+
+    // D4 condición 3 — CHECK tipo↔categoría (+ D4.5) validado en Zod/runtime
+    // ANTES de llegar a BD. La CHECK `chk_vehiculos_tipo_categoria` de la
+    // migración 0048 es la red de seguridad final, no la primera línea.
+    const incoherencia = validarOResponderIncoherencia(c, {
+      unitCategory,
+      unitType,
+      capacityKg: body.capacity_kg,
+      curbWeightKg: body.curb_weight_kg ?? null,
+      consumptionLPer100kmBaseline: body.consumption_l_per_100km_baseline ?? null,
+      fuelType: body.fuel_type ?? null,
+    });
+    if (incoherencia) {
+      return incoherencia;
+    }
+
     try {
       const [created] = await opts.db
         .insert(vehicles)
@@ -347,6 +571,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           empresaId,
           plate: body.plate,
           vehicleType: body.vehicle_type,
+          unitCategory,
+          unitType,
+          bodyType,
           capacityKg: body.capacity_kg,
           capacityM3: body.capacity_m3 ?? null,
           year: body.year ?? null,
@@ -369,6 +596,23 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         { vehicleId: created.id, plate: created.plate, empresaId },
         'vehículo creado',
       );
+      // Condición 1 del PO (fix C1): log estructurado cada vez que la
+      // derivación dispara — el PO quiere contar cuántos creates la usan
+      // para decidir el criterio de retiro (ver follow-up stub
+      // .specs/_followups/retiro-derivacion-unit-type-create.md).
+      if (derivadoDeTipoLegacy) {
+        opts.logger.info(
+          {
+            vehicleType: body.vehicle_type,
+            derivedUnitCategory: unitCategory,
+            derivedUnitType: unitType,
+            derivedBodyType: bodyType,
+            empresaId,
+            vehicleId: created.id,
+          },
+          'unit_type derivado desde vehicle_type en create (fix C1, ADR-073 §Caveat C1 runtime)',
+        );
+      }
       return c.json({ vehicle: serializeVehicle(created) }, 201);
     } catch (err) {
       const code = (err as { code?: string }).code;
@@ -414,9 +658,21 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
 
-    // Verificar ownership antes del update.
+    // Verificar ownership antes del update. Trae también el estado actual
+    // relevante para la coherencia tipo↔categoría (D4): un PATCH parcial
+    // que solo toca, por ejemplo, `capacity_kg` necesita saber el
+    // `unit_category`/`unit_type` YA persistidos para re-validar el estado
+    // resultante (merge), no solo el fragmento que llegó en el body.
     const [existing] = await opts.db
-      .select({ id: vehicles.id })
+      .select({
+        id: vehicles.id,
+        unitCategory: vehicles.unitCategory,
+        unitType: vehicles.unitType,
+        capacityKg: vehicles.capacityKg,
+        curbWeightKg: vehicles.curbWeightKg,
+        consumptionLPer100kmBaseline: vehicles.consumptionLPer100kmBaseline,
+        fuelType: vehicles.fuelType,
+      })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
       .limit(1);
@@ -430,6 +686,15 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
     }
     if (body.vehicle_type !== undefined) {
       updates.vehicleType = body.vehicle_type;
+    }
+    if (body.unit_category !== undefined) {
+      updates.unitCategory = body.unit_category;
+    }
+    if (body.unit_type !== undefined) {
+      updates.unitType = body.unit_type;
+    }
+    if (body.body_type !== undefined) {
+      updates.bodyType = body.body_type;
     }
     if (body.capacity_kg !== undefined) {
       updates.capacityKg = body.capacity_kg;
@@ -462,6 +727,39 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       updates.vehicleStatus = body.vehicle_status;
     }
 
+    // D4 condición 3 — re-validar coherencia SOLO si el PATCH toca algún
+    // campo relevante (unit_category/unit_type/capacity_kg/curb_weight_kg/
+    // consumption_l_per_100km_baseline/fuel_type), mergeando con el estado
+    // ya persistido. Si el `unit_type` efectivo (post-merge) sigue siendo
+    // NULL (fila legacy que nunca lo declaró), no hay nada que validar —
+    // igual que la CHECK de BD, que bypasea cuando tipo_unidad IS NULL.
+    if (touchesUnitConfig(body)) {
+      const effectiveUnitType = body.unit_type !== undefined ? body.unit_type : existing.unitType;
+      if (effectiveUnitType != null) {
+        const effectiveConsumption =
+          body.consumption_l_per_100km_baseline !== undefined
+            ? body.consumption_l_per_100km_baseline
+            : existing.consumptionLPer100kmBaseline != null
+              ? Number(existing.consumptionLPer100kmBaseline)
+              : null;
+        const incoherencia = validarOResponderIncoherencia(c, {
+          unitCategory:
+            body.unit_category !== undefined ? body.unit_category : existing.unitCategory,
+          unitType: effectiveUnitType,
+          capacityKg: body.capacity_kg !== undefined ? body.capacity_kg : existing.capacityKg,
+          curbWeightKg:
+            body.curb_weight_kg !== undefined
+              ? (body.curb_weight_kg ?? null)
+              : existing.curbWeightKg,
+          consumptionLPer100kmBaseline: effectiveConsumption ?? null,
+          fuelType: body.fuel_type !== undefined ? (body.fuel_type ?? null) : existing.fuelType,
+        });
+        if (incoherencia) {
+          return incoherencia;
+        }
+      }
+    }
+
     try {
       const [updated] = await opts.db
         .update(vehicles)
@@ -487,12 +785,366 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   });
 
   // ---------------------------------------------------------------------
+  // PATCH /:id/dispositivo — asociar/cambiar/desasociar el IMEI Teltonika
+  // del vehículo (W2 self-service, hito 2 CORFO mes 8). La empresa
+  // (dueno|admin) gestiona su propio dispositivo sin pasar por el panel
+  // `/admin/dispositivos-pendientes`. Primera implementación real de la
+  // invariante espejo y primer uso del estado `reemplazado`
+  // (.specs/hito-2-corfo-mes-8/{w2-contexto,decisiones}.md).
+  //
+  // Reconciliación con dispositivos_pendientes (D2/D3 — literal):
+  //   ASOCIAR (teltonika_imei no-null), según el row de ese IMEI en pending:
+  //     - pendiente   → aprobado (directo).
+  //     - reemplazado → aprobado (directo, D3.a: solo `rechazado` exige
+  //       confirmar_reasociacion).
+  //     - rechazado   → 409 imei_rechazado (con rechazado_en/motivo) salvo
+  //       confirmar_reasociacion:true → aprobado + log de override (D2).
+  //     - aprobado en OTRO vehículo → 409 imei_en_uso (pre-check derivado +
+  //       fallback 23505 real en el UPDATE — race-safe).
+  //     - sin row → reconciliacion:'sin_registro' (el enrollment ocurrirá
+  //       al conectar, ver imei-auth.ts).
+  //   CAMBIAR X→Y / DESASOCIAR (null): el row de X con
+  //     status='aprobado' AND assignedToVehicleId=este vehículo → pasa a
+  //     `reemplazado`. Se CONSERVA assignedToVehicleId como historial (no
+  //     se limpia el FK) — decisión: el dato "quién lo tuvo antes" es útil
+  //     para auditoría y no hay necesidad funcional de nulearlo.
+  //
+  // TOCTOU en la reconciliación de Y (fix — ver
+  // PendingDeviceReconciliationConflictError arriba en este archivo): los
+  // dos UPDATE que mueven Y a 'aprobado' llevan CAS (status esperado en el
+  // WHERE, espejo del patrón de la línea de "reemplazado" de X y de
+  // admin-dispositivos.ts:191-216). Si el CAS devuelve 0 filas — otro actor
+  // (p.ej. un admin de OTRA empresa rechazando el mismo pending vía D2b)
+  // cambió el status entre la SELECT de reconciliación y este UPDATE —, la
+  // tx aborta (throw) y el catch de más abajo responde con el estado FRESCO
+  // re-leído, nunca sobreescribe silenciosamente una decisión ajena.
+  //
+  // Observabilidad: log estructurado (igual que antes) + PRIMER span OTel y
+  // PRIMERA métrica de negocio de este router (vehiculos.ts no tenía ninguno
+  // de los dos en sus otros 7 endpoints — deuda documentada en
+  // .specs/_followups/vehiculos-router-otel-spans.md, que toma este endpoint
+  // como el patrón a replicar). Atributos del span: SOLO vehiculo_id/
+  // empresa_id/reconciliacion — el IMEI completo NO se expone como
+  // atributo (el logger estructurado ya lo registra con su propia
+  // retención; un atributo de span queda indexado/exportado a Cloud Trace
+  // con superficie de acceso más amplia, y ningún span del repo expone hoy
+  // un identificador de dispositivo — se prefiere no sentar ese precedente
+  // acá). La métrica (`dispositivo_asociaciones_total`) lleva labels
+  // resultado/reconciliacion para cubrir TODOS los desenlaces, incluidos
+  // los 4xx.
+  // ---------------------------------------------------------------------
+  app.patch('/:id/dispositivo', zValidator('json', patchDispositivoBodySchema), async (c) => {
+    const auth = requireOwnerOrAdminRole(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+    const body = c.req.valid('json');
+    const empresaId = auth.activeMembership.empresa.id;
+    const actorUserId = auth.userContext.user.id;
+    const newImei = body.teltonika_imei;
+
+    let resultado = 'error_interno';
+    let reconciliacionMetrica = 'ninguna';
+
+    try {
+      return await withBusinessSpan(
+        {
+          name: 'vehiculo.actualizar_dispositivo',
+          attributes: { 'booster.vehiculo_id': id, 'booster.empresa_id': empresaId },
+        },
+        async (span) => {
+          return await opts.db.transaction(async (tx) => {
+            // TOCTOU: cuando el CAS de reconciliación de Y (abajo) pierde la
+            // carrera (0 filas), re-lee el row para responder con el estado
+            // REAL en vez de fallar genérico — "nunca silencioso".
+            async function reconciliationConflict(
+              pendingId: string,
+            ): Promise<PendingDeviceReconciliationConflictError> {
+              const [fresh] = await tx
+                .select({
+                  status: pendingDevices.status,
+                  notes: pendingDevices.notes,
+                  updatedAt: pendingDevices.updatedAt,
+                })
+                .from(pendingDevices)
+                .where(eq(pendingDevices.id, pendingId))
+                .limit(1);
+              if (fresh?.status === 'rechazado') {
+                return new PendingDeviceReconciliationConflictError({
+                  kind: 'rechazado',
+                  rechazadoEn: fresh.updatedAt,
+                  motivo: fresh.notes,
+                });
+              }
+              return new PendingDeviceReconciliationConflictError({
+                kind: 'inesperado',
+                status: fresh?.status ?? 'ausente',
+              });
+            }
+
+            const [vehicle] = await tx
+              .select({
+                id: vehicles.id,
+                teltonikaImei: vehicles.teltonikaImei,
+                teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+                plate: vehicles.plate,
+              })
+              .from(vehicles)
+              .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+              .limit(1);
+            if (!vehicle) {
+              resultado = 'vehicle_not_found';
+              return c.json({ error: 'vehicle_not_found' }, 404);
+            }
+            const oldImei = vehicle.teltonikaImei;
+
+            // Invariante espejo (schema.ts L804-806): "mutuamente excluyente con
+            // teltonika_imei... validado en runtime, no en BD" — hasta hoy ese
+            // runtime check no existía en ningún endpoint. Primer enforcement real.
+            if (newImei !== null && vehicle.teltonikaImeiEspejo !== null) {
+              resultado = 'imei_espejo_activo';
+              return c.json({ error: 'imei_espejo_activo', code: 'imei_espejo_activo' }, 422);
+            }
+
+            // Reconciliación del IMEI entrante (Y): se busca ANTES de escribir
+            // nada para poder cortar en 409 (rechazado sin confirmar) sin dejar
+            // writes a medias en la transacción.
+            type PendingDeviceRow = Pick<
+              typeof pendingDevices.$inferSelect,
+              'id' | 'status' | 'notes' | 'updatedAt' | 'assignedToVehicleId'
+            >;
+            let pendingRow: PendingDeviceRow | undefined;
+            if (newImei !== null) {
+              [pendingRow] = await tx
+                .select({
+                  id: pendingDevices.id,
+                  status: pendingDevices.status,
+                  notes: pendingDevices.notes,
+                  updatedAt: pendingDevices.updatedAt,
+                  assignedToVehicleId: pendingDevices.assignedToVehicleId,
+                })
+                .from(pendingDevices)
+                .where(eq(pendingDevices.imei, newImei))
+                .limit(1);
+
+              if (pendingRow?.status === 'rechazado' && !body.confirmar_reasociacion) {
+                resultado = 'imei_rechazado';
+                return c.json(
+                  {
+                    error: 'imei_rechazado',
+                    code: 'imei_rechazado',
+                    rechazado_en: pendingRow.updatedAt,
+                    motivo: pendingRow.notes,
+                  },
+                  409,
+                );
+              }
+
+              // Coherencia UNIQUE (D2, verificado): si el pending ya dice
+              // 'aprobado' en OTRO vehículo, cortamos acá sin gastar el UPDATE.
+              // El catch de 23505 más abajo sigue siendo la defensa de fondo
+              // real (race-safe) para cualquier estado que no reflejara esto
+              // (pending ausente/desactualizado, condición de carrera genuina).
+              if (
+                pendingRow?.status === 'aprobado' &&
+                pendingRow.assignedToVehicleId !== null &&
+                pendingRow.assignedToVehicleId !== vehicle.id
+              ) {
+                resultado = 'imei_en_uso';
+                return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
+              }
+            }
+
+            let updated: typeof vehicles.$inferSelect | undefined;
+            try {
+              [updated] = await tx
+                .update(vehicles)
+                .set({ teltonikaImei: newImei, updatedAt: new Date() })
+                .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+                .returning();
+            } catch (err) {
+              const code = (err as { code?: string }).code;
+              if (code === '23505') {
+                // Mensaje neutro: NO revela qué otra empresa/patente tiene el IMEI.
+                resultado = 'imei_en_uso';
+                return c.json({ error: 'imei_en_uso', code: 'imei_en_uso' }, 409);
+              }
+              throw err;
+            }
+            if (!updated) {
+              resultado = 'vehicle_not_found';
+              return c.json({ error: 'vehicle_not_found' }, 404);
+            }
+
+            // Row de X (IMEI anterior) → reemplazado. Solo si estaba aprobado y
+            // asignado a ESTE vehículo (la condición va en el WHERE: si no
+            // matchea, no reemplaza nada — no hay nada que reconciliar).
+            let reemplazadoAnterior = false;
+            if (oldImei !== null && oldImei !== newImei) {
+              const [reemplazado] = await tx
+                .update(pendingDevices)
+                .set({ status: 'reemplazado', updatedAt: new Date() })
+                .where(
+                  and(
+                    eq(pendingDevices.imei, oldImei),
+                    eq(pendingDevices.status, 'aprobado'),
+                    eq(pendingDevices.assignedToVehicleId, vehicle.id),
+                  ),
+                )
+                .returning();
+              reemplazadoAnterior = Boolean(reemplazado);
+            }
+
+            // Row de Y (IMEI nuevo) → reconciliación según su estado previo.
+            let reconciliacion: 'aprobado' | 'reaprobado_desde_rechazado' | 'sin_registro' | null =
+              null;
+            let reasociadoDesde: 'rechazado' | undefined;
+            if (newImei !== null) {
+              if (!pendingRow) {
+                reconciliacion = 'sin_registro';
+              } else if (pendingRow.status === 'pendiente' || pendingRow.status === 'reemplazado') {
+                // CAS: re-exige en el WHERE el status leído más arriba (ver
+                // comentario TOCTOU al inicio de la ruta).
+                const [reconciled] = await tx
+                  .update(pendingDevices)
+                  .set({
+                    status: 'aprobado',
+                    assignedToVehicleId: vehicle.id,
+                    assignedAt: new Date(),
+                    assignedByUserId: actorUserId,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(pendingDevices.id, pendingRow.id),
+                      inArray(pendingDevices.status, ['pendiente', 'reemplazado']),
+                    ),
+                  )
+                  .returning();
+                if (!reconciled) {
+                  throw await reconciliationConflict(pendingRow.id);
+                }
+                reconciliacion = 'aprobado';
+              } else if (pendingRow.status === 'rechazado') {
+                // Solo se llega acá con confirmar_reasociacion:true — el gate de
+                // arriba ya cortó en 409 el caso sin confirmar.
+                //
+                // CAS: re-exige status='rechazado' en el WHERE (ver
+                // comentario TOCTOU al inicio de la ruta) — si 0 filas, el
+                // row cambió entre la SELECT de reconciliación y este
+                // UPDATE (p.ej. otro admin lo rechazó de nuevo, o ganó otro
+                // PATCH concurrente con el mismo override).
+                const [reconciled] = await tx
+                  .update(pendingDevices)
+                  .set({
+                    status: 'aprobado',
+                    assignedToVehicleId: vehicle.id,
+                    assignedAt: new Date(),
+                    assignedByUserId: actorUserId,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(pendingDevices.id, pendingRow.id),
+                      eq(pendingDevices.status, 'rechazado'),
+                    ),
+                  )
+                  .returning();
+                if (!reconciled) {
+                  throw await reconciliationConflict(pendingRow.id);
+                }
+                reconciliacion = 'reaprobado_desde_rechazado';
+                reasociadoDesde = 'rechazado';
+                opts.logger.warn(
+                  {
+                    actorUserId,
+                    empresaId,
+                    vehicleId: vehicle.id,
+                    imei: newImei,
+                    estadoPrevio: 'rechazado',
+                    rechazadoEn: pendingRow.updatedAt,
+                    timestamp: new Date().toISOString(),
+                  },
+                  'override: reasociación de IMEI previamente rechazado (confirmar_reasociacion)',
+                );
+              } else {
+                // pendingRow.status === 'aprobado' asignado a ESTE MISMO
+                // vehículo (PATCH idempotente: reenviar el mismo IMEI que ya
+                // tenía). Nada que reconciliar, pero no es un error.
+                reconciliacion = 'aprobado';
+              }
+            }
+
+            opts.logger.info(
+              {
+                actorUserId,
+                empresaId,
+                vehicleId: vehicle.id,
+                plate: vehicle.plate,
+                imeiAnterior: oldImei,
+                imeiNuevo: newImei,
+                reconciliacion,
+                reemplazadoAnterior,
+              },
+              'dispositivo Teltonika actualizado vía self-service (W2)',
+            );
+
+            resultado = 'ok';
+            reconciliacionMetrica = reconciliacion ?? 'ninguna';
+            setResultAttributes(span, {
+              'booster.dispositivo.reconciliacion': reconciliacionMetrica,
+            });
+
+            return c.json({
+              vehicle: serializeVehicle(updated),
+              reconciliacion,
+              reemplazado_anterior: reemplazadoAnterior,
+              ...(reasociadoDesde ? { reasociado_desde: reasociadoDesde } : {}),
+            });
+          });
+        },
+      );
+    } catch (err) {
+      if (err instanceof PendingDeviceReconciliationConflictError) {
+        if (err.detail.kind === 'rechazado') {
+          resultado = 'imei_rechazado';
+          return c.json(
+            {
+              error: 'imei_rechazado',
+              code: 'imei_rechazado',
+              rechazado_en: err.detail.rechazadoEn,
+              motivo: err.detail.motivo,
+            },
+            409,
+          );
+        }
+        resultado = 'pending_device_conflict';
+        return c.json(
+          {
+            error: 'pending_device_conflict',
+            code: 'pending_device_conflict',
+            status: err.detail.status,
+          },
+          409,
+        );
+      }
+      throw err;
+    } finally {
+      dispositivoAsociacionesCounter.add(1, {
+        resultado,
+        reconciliacion: reconciliacionMetrica,
+      });
+    }
+  });
+
+  // ---------------------------------------------------------------------
   // DELETE /:id — soft delete (vehicleStatus = 'retirado').
   // No hard-delete porque vehicles está referenciado por trip_assignments,
   // telemetria_puntos, etc. Borrar rompería integridad.
   // ---------------------------------------------------------------------
   app.delete('/:id', async (c) => {
-    const auth = requireDeleteRole(c);
+    const auth = requireOwnerOrAdminRole(c);
     if (!auth.ok) {
       return auth.response;
     }
@@ -658,6 +1310,10 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           priority: 0,
           accuracy_m:
             browserPoint.accuracy_m != null ? Number.parseFloat(browserPoint.accuracy_m) : null,
+          // D2 — posiciones_movil_conductor no tiene sensores (es GPS del
+          // browser del conductor): temperatura siempre "sin dato".
+          temperatura_c: null,
+          temperatura_registrada_en: null,
         },
       });
     }
@@ -673,6 +1329,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         satellites: telemetryPoints.satellites,
         speed_kmh: telemetryPoints.speedKmh,
         priority: telemetryPoints.priority,
+        io_data: telemetryPoints.ioData,
       })
       .from(telemetryPoints);
 
@@ -719,6 +1376,8 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         satellites: last.satellites,
         speed_kmh: last.speed_kmh,
         priority: last.priority,
+        // W3 — 2º sensor por envío: temperatura (IO 72 Dallas, FMC150).
+        ...extractTemperatura(last.io_data, last.timestamp_device),
       },
     });
   });
@@ -731,6 +1390,9 @@ function serializeVehicle(row: typeof vehicles.$inferSelect) {
     id: row.id,
     plate: row.plate,
     type: row.vehicleType,
+    unit_category: row.unitCategory,
+    unit_type: row.unitType,
+    body_type: row.bodyType,
     capacity_kg: row.capacityKg,
     capacity_m3: row.capacityM3,
     year: row.year,

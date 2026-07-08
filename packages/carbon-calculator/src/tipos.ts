@@ -219,8 +219,18 @@ export interface ParametrosPorDefecto {
   distanciaKm: number;
   cargaKg: number;
   /**
-   * Tipo de vehículo según enum `tipo_vehiculo`. Usado para mapear a
-   * un consumo y combustible default por categoría.
+   * Tipo de vehículo. Usado para mapear a un consumo y combustible default
+   * por categoría (`DEFAULTS_POR_TIPO` + `categoriaVehiculo()`).
+   *
+   * Los 9 primeros valores son el enum legacy `tipo_vehiculo` (compat,
+   * NO cambian de comportamiento). Los 3 últimos
+   * (`tracto_camion`/`semirremolque`/`remolque`) son un espejo PARCIAL del
+   * enum nuevo `tipo_unidad` (migración 0048, ADR-073) — solo se agregan acá
+   * los que tienen perfil energético propio con sentido en este modo de
+   * "un solo tipo sin más contexto" (ver comentario de
+   * `DEFAULTS_POR_TIPO` sobre por qué `camion_rigido`/`camioneta`/`furgon`
+   * de `tipo_unidad` NO se agregan: ya están cubiertos por sus equivalentes
+   * legacy de arriba).
    */
   tipoVehiculo:
     | 'camioneta'
@@ -231,12 +241,64 @@ export interface ParametrosPorDefecto {
     | 'camion_pesado'
     | 'semi_remolque'
     | 'refrigerado'
-    | 'tanque';
+    | 'tanque'
+    | 'tracto_camion'
+    | 'semirremolque'
+    | 'remolque';
   /** Empty backhaul allocation opcional (GLEC §6.4). */
   backhaul?: ParametrosBackhaul;
 }
 
 export type ParametrosCalculo = ParametrosModelado | ParametrosExactoCanbus | ParametrosPorDefecto;
+
+// =============================================================================
+// W4a (migración 0048, ADR-073) — clase GLEC derivada de la CONFIGURACIÓN de
+// viaje (motriz + 0..1 arrastre, decisiones.md D1/D4), no del vehículo suelto.
+// Espejo PARCIAL de `unitTypeSchema` en
+// `packages/shared-schemas/src/domain/vehicle.ts` (sync manual documentado,
+// zero-dep — mismo patrón que `TipoCombustible` arriba).
+// =============================================================================
+
+/** Subtipos de unidad motriz (tienen motor propio). */
+export type TipoUnidadMotriz = 'tracto_camion' | 'camion_rigido' | 'camioneta' | 'furgon';
+
+/** Subtipos de unidad de arrastre (remolcados, sin motor propio). */
+export type TipoUnidadArrastre = 'semirremolque' | 'remolque';
+
+/** Unidad motriz de la configuración: insumo de `categoriaPorConfiguracion`. */
+export interface UnidadMotrizConfiguracion {
+  tipoUnidad: TipoUnidadMotriz;
+  /**
+   * Peso vacío en kg. Sumado a `capacityKg` da el GVW motriz. **Nullable**
+   * (I2, fix review W4a): la columna SQL `vehiculos.peso_vacio_kg` no
+   * tiene `NOT NULL` y la mayoría de las filas del piloto no la declaran
+   * todavía. `categoriaPorConfiguracion()` acepta `null` acá y hace
+   * fallback documentado a `categoriaVehiculo(tipoVehiculoLegacy)` — NUNCA
+   * asume `curbWeightKg = 0` (distorsionaría el GVW y la clase GLEC). Ver
+   * JSDoc de esa función para la precedencia y el impacto de reclasificar
+   * cuando el dato se completa.
+   */
+  curbWeightKg: number | null;
+  /** Capacidad de carga propia en kg. 0 para un tracto solo (D1.2). */
+  capacityKg: number;
+}
+
+/** Unidad de arrastre de la configuración (0..1, deuda 0..N/bitrén declarada). */
+export interface UnidadArrastreConfiguracion {
+  tipoUnidad: TipoUnidadArrastre;
+  curbWeightKg: number;
+  capacityKg: number;
+}
+
+/**
+ * Configuración efectiva de un servicio: unidad motriz + 0..1 unidad de
+ * arrastre enganchada. Input de `categoriaPorConfiguracion()`.
+ */
+export interface ConfiguracionViaje {
+  motriz: UnidadMotrizConfiguracion;
+  /** Presente ⟺ hay una unidad de arrastre enganchada (articulado). */
+  arrastre?: UnidadArrastreConfiguracion;
+}
 
 /**
  * Resultado del cálculo. Contiene los KPIs principales + desglose

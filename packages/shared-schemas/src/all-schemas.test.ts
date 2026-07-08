@@ -403,6 +403,19 @@ describe('tripEvent — whitelist guardrail (Sprint S1a T1.2)', () => {
   });
 });
 
+describe('vehicle — teltonikaImeiSchema (W2 IMEI self-service)', () => {
+  it('acepta IMEI de exactamente 15 dígitos', () => {
+    expect(vehicle.teltonikaImeiSchema.parse('356307042441013')).toBe('356307042441013');
+  });
+
+  it('rechaza 14 dígitos, 16 dígitos, letras y string vacío', () => {
+    expect(() => vehicle.teltonikaImeiSchema.parse('35630704244101')).toThrow(/15 dígitos/);
+    expect(() => vehicle.teltonikaImeiSchema.parse('3563070424410133')).toThrow(/15 dígitos/);
+    expect(() => vehicle.teltonikaImeiSchema.parse('35630704244101A')).toThrow(/15 dígitos/);
+    expect(() => vehicle.teltonikaImeiSchema.parse('')).toThrow(/15 dígitos/);
+  });
+});
+
 describe('domain modules — importables sin errores (schemas executados al import)', () => {
   const modules = {
     assignment,

@@ -153,8 +153,12 @@ export function interpretLowPriority(entries: MinimalIoEntry[]): LowPriorityInte
  * Convierte un valor uint16 a int16 con signo (two's complement).
  * Si recibe BigInt o Buffer (no aplicable a battery current), retorna
  * NaN para que el schema falle limpiamente.
+ *
+ * Exportada porque `interpret-dallas-temperature.ts` (grupo N2 con signo,
+ * mismo caso que Battery Current) reutiliza exactamente esta conversión —
+ * evita reimplementar el two's complement en cada módulo de avl-ids.
  */
-function toSignedInt16(value: number | bigint | Uint8Array): number {
+export function toSignedInt16(value: number | bigint | Uint8Array): number {
   if (typeof value !== 'number') {
     return Number.NaN;
   }

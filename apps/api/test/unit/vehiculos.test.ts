@@ -28,6 +28,30 @@ const noopLogger = {
   typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
 >[0]['logger'];
 
+/**
+ * Logger con spy en `.info` — usado por los tests de la derivación C1
+ * (fix review W4a) que necesitan asertar que el log estructurado se emite
+ * (o no se emite) exactamente en las condiciones esperadas.
+ */
+function buildSpyLogger() {
+  const info = vi.fn();
+  const spyLogger: Record<string, unknown> = {
+    trace: noop,
+    debug: noop,
+    info,
+    warn: noop,
+    error: noop,
+    fatal: noop,
+  };
+  spyLogger.child = () => spyLogger;
+  return {
+    logger: spyLogger as unknown as Parameters<
+      typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+    >[0]['logger'],
+    info,
+  };
+}
+
 const EMPRESA_ID = '11111111-1111-1111-1111-111111111111';
 const VEHICLE_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -39,6 +63,9 @@ function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
     // el transform de chileanPlateSchema.
     plate: 'ABCD12',
     vehicleType: 'camion_pequeno',
+    unitCategory: 'motriz',
+    unitType: 'camion_rigido',
+    bodyType: null,
     capacityKg: 3500,
     capacityM3: null,
     year: null,
@@ -97,14 +124,20 @@ function makeDbStub(opts: {
 
 async function buildApp(
   db: Parameters<typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes>[0]['db'],
-  opts: { role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null } = {
-    role: 'dueno',
-  },
+  opts: {
+    role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null;
+    logger?: Parameters<
+      typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+    >[0]['logger'];
+  } = {},
 ) {
+  // Merge explícito (no reemplazo posicional): pasar solo `{ logger }` no
+  // debe perder el default `role: 'dueno'`.
+  const role = opts.role === undefined ? 'dueno' : opts.role;
   const { createVehiculosRoutes } = await import('../../src/routes/vehiculos.js');
   const app = new Hono();
   app.use('*', async (c, next) => {
-    if (opts.role === null) {
+    if (role === null) {
       // sin userContext = unauthorized
       await next();
       return;
@@ -113,13 +146,13 @@ async function buildApp(
       user: { id: 'u-1', firebaseUid: 'fb-1', email: 'test@x.com' },
       memberships: [],
       activeMembership: {
-        membership: { id: 'm-1', role: opts.role },
+        membership: { id: 'm-1', role },
         empresa: { id: EMPRESA_ID, legal_name: 'Test SA' },
       },
     });
     await next();
   });
-  app.route('/vehiculos', createVehiculosRoutes({ db, logger: noopLogger }));
+  app.route('/vehiculos', createVehiculosRoutes({ db, logger: opts.logger ?? noopLogger }));
   return app;
 }
 
@@ -149,6 +182,7 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -167,6 +201,7 @@ describe('vehiculos routes', () => {
         // Input con minúsculas y separador. El servidor normaliza a canónico.
         plate: 'ab·cd·12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -199,6 +234,7 @@ describe('vehiculos routes', () => {
         body: JSON.stringify({
           plate,
           vehicle_type: 'camion_pequeno',
+          unit_type: 'camion_rigido',
           capacity_kg: 3500,
         }),
       });
@@ -240,6 +276,7 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({
         plate: 'AB-CD-12',
         vehicle_type: 'camion_pequeno',
+        unit_type: 'camion_rigido',
         capacity_kg: 3500,
       }),
     });
@@ -257,6 +294,405 @@ describe('vehiculos routes', () => {
       body: JSON.stringify({ vehicle_type: 'camion_pequeno', capacity_kg: 3500 }),
     });
     expect(res.status).toBe(400);
+  });
+
+  // ---------------------------------------------------------------------
+  // W4a (migración 0048, ADR-073) — D4 condición 3: CHECK tipo↔categoría
+  // (+ D4.5) validada en Zod ANTES de BD (422). D4.2 originalmente exigía
+  // `unit_type` obligatorio (400 si faltaba) en toda escritura nueva; el fix
+  // C1 (review W4a, decisión PO opción b, 2026-07-06) lo reemplazó por
+  // derivación server-side desde `vehicle_type` cuando `unit_type` no viene
+  // — ver el describe `derivación de unit_type desde vehicle_type en create
+  // (fix C1, ADR-073)` más abajo para la cobertura completa (9 mappings +
+  // no-pisa-input-explícito + guard de exhaustividad).
+  // ---------------------------------------------------------------------
+  describe('tipologías de flota (D1/D4, W4a)', () => {
+    it('POST / sin unit_type → ya NO es 400 (fix C1): deriva desde vehicle_type y crea 201', async () => {
+      const stub = makeDbStub({
+        insertRows: [buildVehicleRow({ vehicleType: 'camion_pequeno', unitType: 'camion_rigido' })],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pequeno',
+          capacity_kg: 3500,
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { unit_category: string; unit_type: string } };
+      expect(body.vehicle.unit_category).toBe('motriz');
+      expect(body.vehicle.unit_type).toBe('camion_rigido');
+    });
+
+    it('POST / unit_category=motriz + unit_type=semirremolque → 422 (incoherente, espejo del CHECK)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'motriz',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tipo_categoria_incoherente');
+    });
+
+    it('POST / arrastre sin curb_weight_kg → 422 (D4.5)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_curb_weight_requerido');
+    });
+
+    it('POST / arrastre con fuel_type declarado → 422 (D4.5: arrastre no tiene combustible propio)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+          curb_weight_kg: 7000,
+          fuel_type: 'diesel',
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_combustible_debe_ser_null');
+    });
+
+    it('POST / arrastre coherente (semirremolque, capacity/curb_weight > 0) → 201', async () => {
+      const stub = makeDbStub({
+        insertRows: [
+          buildVehicleRow({
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            fuelType: null,
+            consumptionLPer100kmBaseline: null,
+          }),
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'semi_remolque',
+          unit_category: 'arrastre',
+          unit_type: 'semirremolque',
+          capacity_kg: 30000,
+          curb_weight_kg: 7000,
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { vehicle: { unit_category: string; unit_type: string } };
+      expect(body.vehicle.unit_category).toBe('arrastre');
+      expect(body.vehicle.unit_type).toBe('semirremolque');
+    });
+
+    // D4 (decisiones.md línea 30, texto vinculante): "tracto_camion →
+    // capacity_kg = 0 permitido y consumo requerido". Un tracto no carga
+    // solo, pero sí tiene motor propio: consumption_l_per_100km_baseline y
+    // fuel_type son obligatorios (a diferencia de curb_weight_kg, que
+    // sigue nullable "como hoy" para motriz).
+    it('POST / tracto_camion completo (capacity_kg=0 + consumo + fuel) → 201 (D1.2 + D4)', async () => {
+      const stub = makeDbStub({
+        insertRows: [
+          buildVehicleRow({
+            vehicleType: 'camion_pesado',
+            unitCategory: 'motriz',
+            unitType: 'tracto_camion',
+            capacityKg: 0,
+            fuelType: 'diesel',
+            consumptionLPer100kmBaseline: '33',
+          }),
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+          fuel_type: 'diesel',
+          consumption_l_per_100km_baseline: 33,
+        }),
+      });
+      expect(res.status).toBe(201);
+    });
+
+    it('POST / tracto_camion sin consumo/fuel → 422 (tracto_consumo_requerido, D4)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tracto_consumo_requerido');
+    });
+
+    it('POST / tracto_camion con consumo pero sin fuel_type → 422 (tracto_combustible_requerido, D4)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pesado',
+          unit_category: 'motriz',
+          unit_type: 'tracto_camion',
+          capacity_kg: 0,
+          consumption_l_per_100km_baseline: 33,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('tracto_combustible_requerido');
+    });
+
+    it('POST / motriz no-tracto con capacity_kg=0 → 422 (motriz_capacidad_requerida)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camioneta',
+          unit_category: 'motriz',
+          unit_type: 'camioneta',
+          capacity_kg: 0,
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('motriz_capacidad_requerida');
+    });
+
+    it('PATCH /:id que solo cambia capacity_kg re-valida coherencia mergeando con el estado persistido → 422', async () => {
+      // Fila existente: arrastre semirremolque coherente (capacity=30000,
+      // curb_weight=7000). El PATCH solo manda capacity_kg=0 — el merge
+      // con unit_category='arrastre' persistido debe detectar la violación
+      // (arrastre requiere capacity_kg > 0), aunque el body del PATCH no
+      // toque unit_category/unit_type.
+      const stub = makeDbStub({
+        selectRows: [
+          {
+            id: VEHICLE_ID,
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            consumptionLPer100kmBaseline: null,
+            fuelType: null,
+          },
+        ],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request(`/vehiculos/${VEHICLE_ID}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ capacity_kg: 0 }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('arrastre_capacidad_requerida');
+    });
+
+    it('PATCH /:id que no toca campos de coherencia → no re-valida (200 normal)', async () => {
+      const stub = makeDbStub({
+        selectRows: [
+          {
+            id: VEHICLE_ID,
+            unitCategory: 'arrastre',
+            unitType: 'semirremolque',
+            capacityKg: 30000,
+            curbWeightKg: 7000,
+            consumptionLPer100kmBaseline: null,
+            fuelType: null,
+          },
+        ],
+        updateRows: [buildVehicleRow({ year: 2021 })],
+      });
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request(`/vehiculos/${VEHICLE_ID}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ year: 2021 }),
+      });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Fix C1 (review W4a, decisión PO opción b, 2026-07-06): el form web
+  // actual (apps/web/src/routes/vehiculos.tsx, vehicleFormToBody) todavía no
+  // manda `unit_type` en el create — romper el form no es opción (W4b lo
+  // arregla). El server DERIVA `unit_type`/`unit_category`/`body_type`
+  // desde `vehicle_type` con el mismo mapping D4 del backfill (migración
+  // 0048), vía `derivarUnidadDesdeTipoLegacy` (packages/shared-schemas). Si
+  // `unit_type` SÍ viene explícito, la derivación no dispara (no pisa input
+  // explícito).
+  // ---------------------------------------------------------------------
+  describe('derivación de unit_type desde vehicle_type en create (fix C1, ADR-073)', () => {
+    // Los 9 valores de vehicleTypeSchema, table-driven, mismo mapping D4 del
+    // backfill SQL (0048) y de derivarUnidadDesdeTipoLegacy. `semi_remolque`
+    // deriva a `arrastre` — arrastre exige curb_weight_kg > 0 (D4.5), así
+    // que ese caso manda el campo explícito (no forma parte de lo que la
+    // derivación de unit_type resuelve).
+    it.each([
+      ['camioneta', {}, 'motriz', 'camioneta', null],
+      ['furgon_pequeno', {}, 'motriz', 'furgon', 'furgon_cerrado'],
+      ['furgon_mediano', {}, 'motriz', 'furgon', 'furgon_cerrado'],
+      ['camion_pequeno', {}, 'motriz', 'camion_rigido', null],
+      ['camion_mediano', {}, 'motriz', 'camion_rigido', null],
+      ['camion_pesado', {}, 'motriz', 'camion_rigido', null],
+      ['semi_remolque', { curb_weight_kg: 7000 }, 'arrastre', 'semirremolque', null],
+      ['refrigerado', {}, 'motriz', 'camion_rigido', 'refrigerado'],
+      ['tanque', {}, 'motriz', 'camion_rigido', 'cisterna'],
+    ] as const)(
+      'POST / sin unit_type, vehicle_type=%s → 201 con unidad derivada + log emitido',
+      async (
+        vehicleType,
+        extraFields,
+        expectedUnitCategory,
+        expectedUnitType,
+        expectedBodyType,
+      ) => {
+        const spy = buildSpyLogger();
+        const stub = makeDbStub({
+          insertRows: [
+            buildVehicleRow({
+              vehicleType,
+              unitCategory: expectedUnitCategory,
+              unitType: expectedUnitType,
+              bodyType: expectedBodyType,
+              capacityKg: 1000,
+              curbWeightKg: 'curb_weight_kg' in extraFields ? extraFields.curb_weight_kg : null,
+            }),
+          ],
+        });
+        const localApp = await buildApp(stub.db, { logger: spy.logger });
+        const res = await localApp.request('/vehiculos', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            plate: 'AB-CD-12',
+            vehicle_type: vehicleType,
+            capacity_kg: 1000,
+            ...extraFields,
+          }),
+        });
+        expect(res.status).toBe(201);
+        const body = (await res.json()) as {
+          vehicle: { unit_category: string; unit_type: string; body_type: string | null };
+        };
+        expect(body.vehicle.unit_category).toBe(expectedUnitCategory);
+        expect(body.vehicle.unit_type).toBe(expectedUnitType);
+        expect(body.vehicle.body_type).toBe(expectedBodyType);
+
+        // Condición 1 del PO (fix C1): log estructurado cada vez que la
+        // derivación dispara, con vehicle_type origen + unidad derivada +
+        // empresa_id + vehiculo_id resultante.
+        expect(spy.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            vehicleType,
+            derivedUnitCategory: expectedUnitCategory,
+            derivedUnitType: expectedUnitType,
+            derivedBodyType: expectedBodyType,
+            empresaId: EMPRESA_ID,
+            vehicleId: VEHICLE_ID,
+          }),
+          expect.stringContaining('derivado'),
+        );
+      },
+    );
+
+    it('POST / con unit_type explícito → la derivación NO dispara (no pisa input explícito)', async () => {
+      const spy = buildSpyLogger();
+      const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
+      const localApp = await buildApp(stub.db, { logger: spy.logger });
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'camion_pequeno',
+          unit_type: 'camion_rigido',
+          capacity_kg: 3500,
+        }),
+      });
+      expect(res.status).toBe(201);
+      // Ningún log de derivación — solo el log normal "vehículo creado".
+      const derivationLogCalls = spy.info.mock.calls.filter(([, msg]) =>
+        String(msg).includes('derivado'),
+      );
+      expect(derivationLogCalls).toHaveLength(0);
+    });
+
+    // No existe una rama de error/fallback alcanzable en runtime: Zod
+    // (`z.enum(vehicleTypes)`) rechaza con 400 CUALQUIER `vehicle_type` que
+    // no sea uno de los 9 valores whitelisted ANTES de que el handler llegue
+    // a invocar `derivarUnidadDesdeTipoLegacy` — por eso ese helper puede
+    // asumir (y documenta vía el guard `_exhaustive: never`) que jamás
+    // recibe un valor fuera de los 9 mapeados. Este test confirma la mitad
+    // del contrato que sí es observable desde afuera: el 400 en el boundary.
+    it('POST / vehicle_type fuera del enum → 400 (Zod bloquea antes de derivar, no hay rama de error en la derivación)', async () => {
+      const stub = makeDbStub({});
+      const localApp = await buildApp(stub.db);
+      const res = await localApp.request('/vehiculos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plate: 'AB-CD-12',
+          vehicle_type: 'tracto_inventado',
+          capacity_kg: 1000,
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   it('PATCH /:id no encontrado → 404', async () => {
@@ -501,6 +937,777 @@ describe('vehiculos routes', () => {
       const app = await buildApp(stub.db, { role: 'conductor' });
       const res = await app.request('/vehiculos/flota');
       expect(res.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/ubicacion — último punto GPS + temperatura (W3, IO 72 Dallas).
+  // ---------------------------------------------------------------------
+  describe('GET /:id/ubicacion', () => {
+    /**
+     * Stub específico para ubicación: 2 selects encadenados.
+     *   1. select.from(vehicles).where().limit(1) → row del vehículo.
+     *   2. select.from(telemetryPoints | posicionesMovilConductor)
+     *      .where().orderBy().limit(1) → último punto.
+     * Ambos caminos usan formas de chain distintas (limit directo vs
+     * orderBy().limit()) así que un mismo par de mocks no se pisa.
+     */
+    function makeUbicacionStub(opts: {
+      vehicleRows: Record<string, unknown>[];
+      pointRows: Record<string, unknown>[];
+    }) {
+      const limitFn = vi.fn().mockResolvedValue(opts.vehicleRows);
+      const orderByLimitFn = vi.fn().mockResolvedValue(opts.pointRows);
+      const orderByFn = vi.fn(() => ({ limit: orderByLimitFn }));
+      const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+      const fromFn = vi.fn(() => ({ where: whereFn }));
+      const selectFn = vi.fn(() => ({ from: fromFn }));
+      return {
+        db: { select: selectFn } as unknown as Parameters<
+          typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+        >[0]['db'],
+        spies: { selectFn, fromFn, whereFn, limitFn, orderByFn, orderByLimitFn },
+      };
+    }
+
+    interface UbicacionBody {
+      vehicle_id: string;
+      teltonika_source: string | null;
+      ubicacion: {
+        temperatura_c: number | null;
+        temperatura_registrada_en: string | null;
+      };
+    }
+
+    it('sin auth → 401', async () => {
+      const stub = makeUbicacionStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db, { role: null });
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(401);
+    });
+
+    it('vehículo no encontrado → 404', async () => {
+      const stub = makeUbicacionStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(404);
+    });
+
+    it('Teltonika propio con IO 72 positivo → temperatura_c + temperatura_registrada_en', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:00:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:00:01Z'),
+            longitude: '-71.2519',
+            latitude: '-29.9027',
+            altitude_m: 30,
+            angle_deg: 180,
+            satellites: 11,
+            speed_kmh: 60,
+            priority: 1,
+            io_data: { '72': 55 }, // 5.5°C
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBeCloseTo(5.5, 5);
+      expect(body.ubicacion.temperatura_registrada_en).toBe('2026-07-06T10:00:00.000Z');
+    });
+
+    it("Teltonika propio con IO 72 negativo (two's complement) → temperatura_c negativo", async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:05:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:05:01Z'),
+            longitude: '-71.3000',
+            latitude: '-29.9300',
+            altitude_m: 15,
+            angle_deg: 200,
+            satellites: 10,
+            speed_kmh: 55,
+            priority: 1,
+            io_data: { '72': 0xff38 }, // -20.0°C
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBeCloseTo(-20, 5);
+    });
+
+    it('Teltonika propio SIN IO 72 en io_data → temperatura_c null explícito', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:10:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:10:01Z'),
+            longitude: '-71.3100',
+            latitude: '-29.9400',
+            altitude_m: 20,
+            angle_deg: 210,
+            satellites: 9,
+            speed_kmh: 40,
+            priority: 1,
+            io_data: { '239': 1, '240': 1 }, // sin IO 72
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBeNull();
+      expect(body.ubicacion.temperatura_registrada_en).toBeNull();
+    });
+
+    it('Teltonika propio con IO 72 fuera de rango físico (sensor desconectado) → temperatura_c null', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:15:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:15:01Z'),
+            longitude: '-71.3200',
+            latitude: '-29.9450',
+            altitude_m: 18,
+            angle_deg: 220,
+            satellites: 9,
+            speed_kmh: 35,
+            priority: 1,
+            io_data: { '72': 1300 }, // 130.0°C, imposible para DS18B20
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBeNull();
+    });
+
+    it('Teltonika espejo (mirror) con IO 72 → temperatura_c calculado igual que propio', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: null,
+            teltonikaImeiEspejo: '999000000000875',
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:20:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:20:01Z'),
+            longitude: '-71.3300',
+            latitude: '-29.9500',
+            altitude_m: 12,
+            angle_deg: 230,
+            satellites: 8,
+            speed_kmh: 30,
+            priority: 1,
+            io_data: { '72': 80 }, // 8.0°C
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.teltonika_source).toBe('mirror');
+      expect(body.ubicacion.temperatura_c).toBeCloseTo(8.0, 5);
+    });
+
+    it('fallback browser_gps (sin Teltonika) → temperatura_c SIEMPRE null', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: null,
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:25:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:25:01Z'),
+            latitude: '-29.9500',
+            longitude: '-71.3300',
+            speed_kmh: '20',
+            heading_deg: 240,
+            accuracy_m: '5.0',
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.teltonika_source).toBe('browser_gps');
+      expect(body.ubicacion.temperatura_c).toBeNull();
+      expect(body.ubicacion.temperatura_registrada_en).toBeNull();
+    });
+
+    it('sin Teltonika y sin punto de browser → 404 no_teltonika', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: null,
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('no_teltonika');
+    });
+
+    it('con Teltonika pero sin puntos aún → 404 no_points_yet', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('no_points_yet');
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/dispositivo — IMEI self-service (W2, hito 2 CORFO).
+  //
+  // A diferencia de makeDbStub (chains directos usados por el resto de este
+  // archivo), este endpoint corre TODA su lógica dentro de
+  // `db.transaction(async (tx) => {...})` (mismo patrón que
+  // admin-dispositivos.ts). El stub de abajo expone un `tx` con
+  // select/update respaldados por colas que se consumen en el ORDEN EXACTO
+  // en que el handler las invoca — documentado en el comentario de cada
+  // test. Correctitud de las cláusulas WHERE reales (p.ej. que el UPDATE de
+  // "reemplazado" realmente filtre por status='aprobado' AND
+  // assignedToVehicleId=vehiculo) queda fuera de este nivel de test (no hay
+  // Postgres real acá); eso es responsabilidad de un test de integración
+  // futuro si se prioriza.
+  // ---------------------------------------------------------------------
+  describe('PATCH /:id/dispositivo — IMEI self-service (W2)', () => {
+    const VALID_IMEI = '356307042441013';
+
+    function makeDeviceTxStub(opts: {
+      selects?: Array<Record<string, unknown>[]>;
+      updates?: Array<Record<string, unknown>[] | { code: string }>;
+    }) {
+      let selectIdx = 0;
+      let updateIdx = 0;
+
+      const selectFn = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => Promise.resolve(opts.selects?.[selectIdx++] ?? [])),
+          })),
+        })),
+      }));
+
+      const updateFn = vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            returning: vi.fn(() => {
+              const result = opts.updates?.[updateIdx++];
+              if (result && !Array.isArray(result)) {
+                return Promise.reject(result);
+              }
+              return Promise.resolve(result ?? []);
+            }),
+          })),
+        })),
+      }));
+
+      const tx = { select: selectFn, update: updateFn };
+      const transactionFn = vi.fn((cb: (tx: typeof tx) => unknown) => cb(tx));
+
+      return {
+        db: { transaction: transactionFn } as unknown as Parameters<
+          typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+        >[0]['db'],
+        spies: { selectFn, updateFn, transactionFn },
+      };
+    }
+
+    function patchDispositivo(
+      db: Parameters<typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes>[0]['db'],
+      body: Record<string, unknown>,
+      opts: { role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador' | null } = {
+        role: 'dueno',
+      },
+    ) {
+      return buildApp(db, opts).then((app) =>
+        app.request(`/vehiculos/${VEHICLE_ID}/dispositivo`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+
+    it.each([
+      ['14 dígitos', '3563070424410'],
+      ['con letras', '35630704244101A'],
+      ['vacío', ''],
+    ])('formato de IMEI inválido (%s) → 400', async (_label, imei) => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(stub.db, { teltonika_imei: imei });
+      expect(res.status).toBe(400);
+      expect(stub.spies.transactionFn).not.toHaveBeenCalled();
+    });
+
+    it('sin campo teltonika_imei en el body → 400', async () => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(stub.db, {});
+      expect(res.status).toBe(400);
+    });
+
+    it('rol sin permiso (despachador) → 403', async () => {
+      const stub = makeDeviceTxStub({});
+      const res = await patchDispositivo(
+        stub.db,
+        { teltonika_imei: VALID_IMEI },
+        { role: 'despachador' },
+      );
+      expect(res.status).toBe(403);
+      expect(stub.spies.transactionFn).not.toHaveBeenCalled();
+    });
+
+    it('IDOR cross-tenant: vehículo no pertenece a la empresa activa → 404 (NO 403)', async () => {
+      // select #1 (ownership id+empresaId) no matchea → [].
+      const stub = makeDeviceTxStub({ selects: [[]] });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('vehicle_not_found');
+    });
+
+    it('vehículo con espejo activo + IMEI propio nuevo → 422 imei_espejo_activo', async () => {
+      // select #1: vehiculo con teltonika_imei_espejo seteado.
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: null,
+              teltonikaImeiEspejo: '999999999999999',
+              plate: 'ABCD12',
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('imei_espejo_activo');
+    });
+
+    it('IMEI ya en uso (23505 en el UPDATE) → 409 imei_en_uso, mensaje neutro', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [], // select #2: pendingDevices sin row para el IMEI nuevo
+        ],
+        updates: [{ code: '23505' }], // update #1: vehiculo → rechazado por UNIQUE
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; error: string };
+      expect(body.code).toBe('imei_en_uso');
+      expect(JSON.stringify(body)).not.toMatch(/empresa|patente|ABCD12/i);
+    });
+
+    it('pending aprobado en OTRO vehículo → 409 imei_en_uso (coherencia UNIQUE, sin gastar el UPDATE)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-5',
+              imei: VALID_IMEI,
+              status: 'aprobado',
+              notes: null,
+              updatedAt: new Date('2026-05-01T00:00:00Z'),
+              assignedToVehicleId: 'otro-vehiculo-uuid',
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('imei_en_uso');
+      expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    });
+
+    it('IMEI rechazado sin confirmar_reasociacion → 409 imei_rechazado con rechazado_en/motivo', async () => {
+      const rechazadoEn = new Date('2026-06-01T12:00:00Z');
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-1',
+              imei: VALID_IMEI,
+              status: 'rechazado',
+              notes: 'device de prueba, no instalado',
+              updatedAt: rechazadoEn,
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; rechazado_en: string; motivo: string };
+      expect(body.code).toBe('imei_rechazado');
+      expect(body.motivo).toBe('device de prueba, no instalado');
+      expect(body.rechazado_en).toBe(rechazadoEn.toISOString());
+      expect(stub.spies.updateFn).not.toHaveBeenCalled();
+    });
+
+    it('IMEI rechazado CON confirmar_reasociacion:true → 200, reasociado_desde=rechazado', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-1',
+              imei: VALID_IMEI,
+              status: 'rechazado',
+              notes: 'motivo',
+              updatedAt: new Date('2026-06-01T12:00:00Z'),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: VALID_IMEI })], // update #1: vehiculo
+          [{ id: 'pd-1' }], // update #2: pending → aprobado (override)
+        ],
+      });
+      const res = await patchDispositivo(stub.db, {
+        teltonika_imei: VALID_IMEI,
+        confirmar_reasociacion: true,
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        reconciliacion: string;
+        reasociado_desde: string;
+        reemplazado_anterior: boolean;
+      };
+      expect(body.reconciliacion).toBe('reaprobado_desde_rechazado');
+      expect(body.reasociado_desde).toBe('rechazado');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('asociar con pending "pendiente" → 200, reconciliacion=aprobado', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-2',
+              imei: VALID_IMEI,
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], [{ id: 'pd-2' }]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('asociar con pending "reemplazado" → 200 directo (D3.a, sin confirmar_reasociacion)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-3',
+              imei: VALID_IMEI,
+              status: 'reemplazado',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: 'algun-vehiculo-anterior',
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], [{ id: 'pd-3' }]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string };
+      expect(body.reconciliacion).toBe('aprobado');
+    });
+
+    // -----------------------------------------------------------------
+    // TOCTOU (finding 1, revisión W2a): el UPDATE de reconciliación de Y
+    // (pendiente/reemplazado → aprobado) no llevaba CAS sobre el status
+    // leído en la SELECT previa. Race concreta: mientras esta tx corre, un
+    // admin de OTRA empresa (D2b: el rechazo NO es tenant-scoped) rechaza
+    // el mismo pending vía `/admin/dispositivos-pendientes/:id/rechazar`.
+    // Sin CAS, el UPDATE de esta tx sobreescribiría igual a 'aprobado' sin
+    // pasar por el 409 `imei_rechazado` — "nunca silencioso" violado. Con
+    // CAS, el UPDATE pierde la carrera (0 filas), la tx aborta (throw) y el
+    // handler responde con el estado FRESCO re-leído.
+    // -----------------------------------------------------------------
+    it('TOCTOU: el CAS de reconciliación de Y pierde la carrera contra un reject externo → 409 imei_rechazado, sin persistir el IMEI', async () => {
+      const rechazadoEnFresco = new Date('2026-07-06T15:00:00Z');
+      const stub = makeDeviceTxStub({
+        selects: [
+          // select #1: vehículo (sin IMEI previo).
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          // select #2: pending del IMEI Y, leído como 'pendiente' — decide
+          // entrar a la rama pendiente/reemplazado.
+          [
+            {
+              id: 'pd-race',
+              imei: VALID_IMEI,
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date('2026-07-06T14:00:00Z'),
+              assignedToVehicleId: null,
+            },
+          ],
+          // select #3: re-lectura fresca tras el CAS fallido — el pending
+          // fue rechazado por el admin externo ENTRE el select #2 y el
+          // UPDATE con CAS.
+          [
+            {
+              status: 'rechazado',
+              notes: 'rechazado durante la carrera',
+              updatedAt: rechazadoEnFresco,
+            },
+          ],
+        ],
+        updates: [
+          // update #1: vehiculo.teltonika_imei — "éxito aparente" (el stub
+          // no modela rollback; en Postgres real este UPDATE sí se revierte
+          // porque el throw más abajo aborta la tx completa).
+          [buildVehicleRow({ teltonikaImei: VALID_IMEI })],
+          // update #2: CAS de reconciliación de Y → 0 filas (perdió la
+          // carrera: el WHERE ya no matchea porque el status cambió).
+          [],
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; rechazado_en: string; motivo: string };
+      expect(body.code).toBe('imei_rechazado');
+      expect(body.motivo).toBe('rechazado durante la carrera');
+      expect(body.rechazado_en).toBe(rechazadoEnFresco.toISOString());
+      // No se llegó a la respuesta 200: sin `vehicle` en el body pese a que
+      // el UPDATE de `vehicles` había "aparentado" tener éxito en el stub —
+      // evidencia (a este nivel de test) de que la tx abortó en vez de
+      // confirmar el cambio de IMEI.
+      expect(body).not.toHaveProperty('vehicle');
+      // Solo 2 updates: el del vehículo + el CAS fallido. La rama de éxito
+      // habría hecho un 2do update de pendingDevices con datos distintos
+      // (aprobado/assignedToVehicleId) que acá nunca se alcanza porque el
+      // throw corta el flujo antes de cualquier otro write.
+      expect(stub.spies.updateFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('TOCTOU: el CAS de reconciliación de Y pierde la carrera y el estado fresco NO es "rechazado" → 409 de conflicto genérico', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [
+            {
+              id: 'pd-race-2',
+              imei: VALID_IMEI,
+              status: 'reemplazado',
+              notes: null,
+              updatedAt: new Date('2026-07-06T14:00:00Z'),
+              assignedToVehicleId: 'otro-vehiculo-anterior',
+            },
+          ],
+          // re-lectura fresca: otro PATCH concurrente ya lo dejó 'aprobado'
+          // en OTRO vehículo — ni siquiera pasó por 'rechazado'.
+          [{ status: 'aprobado', notes: null, updatedAt: new Date('2026-07-06T14:30:00Z') }],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })], []],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string; status: string };
+      expect(body.code).toBe('pending_device_conflict');
+      expect(body.status).toBe('aprobado');
+      expect(body).not.toHaveProperty('vehicle');
+    });
+
+    it('cambiar X→Y: X pasa a reemplazado, Y se reconcilia (pendiente→aprobado)', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: '111111111111111',
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+          [
+            {
+              id: 'pd-4',
+              imei: '222222222222222',
+              status: 'pendiente',
+              notes: null,
+              updatedAt: new Date(),
+              assignedToVehicleId: null,
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: '222222222222222' })], // update #1: vehiculo
+          [{ id: 'pd-old' }], // update #2: X → reemplazado
+          [{ id: 'pd-4' }], // update #3: Y → aprobado
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: '222222222222222' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(true);
+    });
+
+    it('desasociar (null): X pasa a reemplazado, reconciliacion=null', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: '111111111111111',
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+        ],
+        updates: [
+          [buildVehicleRow({ teltonikaImei: null })], // update #1: vehiculo
+          [{ id: 'pd-old' }], // update #2: X → reemplazado
+        ],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: null });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        reconciliacion: string | null;
+        reemplazado_anterior: boolean;
+      };
+      expect(body.reconciliacion).toBeNull();
+      expect(body.reemplazado_anterior).toBe(true);
+    });
+
+    it('asociar IMEI sin row en pending → reconciliacion=sin_registro', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [{ id: VEHICLE_ID, teltonikaImei: null, teltonikaImeiEspejo: null, plate: 'ABCD12' }],
+          [], // select #2: sin pending row
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('sin_registro');
+      expect(body.reemplazado_anterior).toBe(false);
+    });
+
+    it('pending "aprobado" YA asignado a ESTE MISMO vehículo (PATCH idempotente: reenviar el mismo IMEI) → 200, reconciliacion=aprobado, sin update de pendingDevices', async () => {
+      const stub = makeDeviceTxStub({
+        selects: [
+          [
+            {
+              id: VEHICLE_ID,
+              teltonikaImei: VALID_IMEI,
+              teltonikaImeiEspejo: null,
+              plate: 'ABCD12',
+            },
+          ],
+          [
+            {
+              id: 'pd-6',
+              imei: VALID_IMEI,
+              status: 'aprobado',
+              notes: null,
+              updatedAt: new Date('2026-06-01T00:00:00Z'),
+              assignedToVehicleId: VEHICLE_ID,
+            },
+          ],
+        ],
+        updates: [[buildVehicleRow({ teltonikaImei: VALID_IMEI })]],
+      });
+      const res = await patchDispositivo(stub.db, { teltonika_imei: VALID_IMEI });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reconciliacion: string; reemplazado_anterior: boolean };
+      expect(body.reconciliacion).toBe('aprobado');
+      expect(body.reemplazado_anterior).toBe(false);
+      // Rama idempotente (else final): nada que reconciliar — un solo
+      // update (el del vehículo), CERO updates de pendingDevices.
+      expect(stub.spies.updateFn).toHaveBeenCalledTimes(1);
     });
   });
 });
