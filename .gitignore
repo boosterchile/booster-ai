@@ -69,6 +69,7 @@ coverage/
 # -------- Tests --------
 test-results/
 playwright-report/
+playwright-report-local/
 playwright/.cache/
 .playwright-mcp/
 blob-report/

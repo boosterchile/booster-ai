@@ -1,0 +1,64 @@
+name: E2E PR (local)
+
+# Check E2E de PR que levanta el dev server de apps/web LOCALMENTE (sin tocar
+# prod/staging) y corre Playwright/Chromium contra `/apariencia`. Verifica
+# cascada CSS computada y foco reales, que jsdom no puede (p.ej. blindaje #576).
+#
+# Distinto de `e2e-staging.yml` (nightly + on-demand contra PROD, 4 browsers, se
+# salta en PRs a propósito): éste corre en CADA PR relevante, contra un server
+# local. NO-required: es un workflow nuevo, no está en branch protection; su
+# promoción a required es decisión posterior del PO.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'packages/ui-components/**'
+      - 'packages/ui-tokens/**'
+      - '.github/workflows/e2e-pr.yml'
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '9.15.4'
+
+jobs:
+  e2e-local:
+    name: E2E local (Chromium) — /apariencia
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `.env.local` está gitignoreado (ausente en CI). Sin las VITE_*, el schema
+      # de `env.ts` lanza en el boot y la app queda en blanco. `/apariencia` es
+      # pública (no llama a Firebase), así que los placeholders del example
+      # satisfacen el schema y la app monta.
+      - name: Provide public env (placeholders del example)
+        run: cp apps/web/.env.example apps/web/.env
+      # Solo Chromium (pin implícito a @playwright/test del lockfile). Sin webkit
+      # ni firefox: los descartamos a propósito (webkit colgaba el nightly).
+      - name: Install Playwright Chromium
+        run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium
+      - name: Run E2E local (build + preview + Chromium)
+        run: pnpm --filter @booster-ai/web test:e2e:local
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-local-report
+          path: |
+            apps/web/playwright-report-local/
+            apps/web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
