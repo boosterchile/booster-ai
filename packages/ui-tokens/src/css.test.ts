@@ -35,4 +35,22 @@ describe('theme.css (fuente única TS→CSS)', () => {
     expect(css).toContain('--color-primary-500: #1FA058;');
     expect(css).toContain('--color-neutral-50: #FAF9F7;');
   });
+
+  it('emite registro/densidad CSS-driven (calc con base inlineada + --density-scale)', () => {
+    const css = renderThemeCss();
+    // default operador anclado en :root; --touch-min piso (no escalado)
+    expect(css).toContain(":root,\n[data-register='operador']");
+    expect(css).toContain('--touch-min: 44px;');
+    // conductor holgado (guantes/movimiento) — base mayor
+    expect(css).toContain("[data-register='conductor']");
+    expect(css).toContain('--touch-min: 56px;');
+    // padding = base literal * var(--density-scale) → re-cascadea por subtree
+    expect(css).toContain('--pad-y: calc(0.5rem * var(--density-scale));');
+    expect(css).toContain('--pad-y: calc(0.875rem * var(--density-scale));');
+    // densidad: solo multiplicador, default cómoda en :root
+    expect(css).toContain(":root,\n[data-density='comoda']");
+    expect(css).toContain('--density-scale: 1;');
+    expect(css).toContain("[data-density='compacta']");
+    expect(css).toContain('--density-scale: 0.8;');
+  });
 });

@@ -1,7 +1,14 @@
+import { RegisterProvider } from '@booster-ai/ui-components';
 import {
   ACCENT_GLOW,
   ACCENT_PRESET_LABEL,
   type AccentPalette,
+  DENSITY_KEYS,
+  DENSITY_LABEL,
+  type DensityKey,
+  REGISTER_KEYS,
+  REGISTER_LABEL,
+  type RegisterKey,
   allAccentPresets,
 } from '@booster-ai/ui-tokens';
 import { useState } from 'react';
@@ -20,6 +27,9 @@ import { useAccentPreset } from '../hooks/use-accent-preset.js';
 export function AparienciaRoute() {
   const [palette, setPalette] = useState<AccentPalette>('operator');
   const [current, setAccent, keys] = useAccentPreset(palette);
+  // Demostrador de registro/densidad (D2 Ola 0): CSS-driven vía data-attribute.
+  const [register, setRegister] = useState<RegisterKey>('operador');
+  const [density, setDensity] = useState<DensityKey>('comoda');
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6">
@@ -111,6 +121,101 @@ export function AparienciaRoute() {
               Enlace de acento
             </a>
           </div>
+        </div>
+
+        {/* Registro y densidad (D2 Ola 0) — CSS-driven vía data-attribute, mismo
+            patrón runtime que el acento. RegisterProvider co-loca
+            data-register/data-density en un ancestro; el elemento de muestra
+            consume var(--touch-min)/var(--pad-y)/... y cambia EN VIVO, sin
+            rebuild. En la app el registro lo fija el rol. */}
+        <div className="mt-8 border-neutral-200 border-t pt-6">
+          <p className="mb-1 font-medium text-neutral-900 text-sm">Registro y densidad</p>
+          <p className="mb-3 text-neutral-500 text-xs">
+            Mismos componentes base, configurados distinto: conductor holgado (guantes/movimiento),
+            operador denso. Cambia al instante.
+          </p>
+
+          <div className="flex flex-wrap gap-4">
+            <fieldset
+              className="inline-flex rounded-md border border-neutral-200 p-0.5"
+              data-testid="register-selector"
+            >
+              <legend className="sr-only">Registro</legend>
+              {REGISTER_KEYS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-testid={`register-toggle-${value}`}
+                  aria-pressed={register === value}
+                  onClick={() => setRegister(value)}
+                  className={`rounded px-3 py-1.5 font-medium text-sm transition ${
+                    register === value
+                      ? 'bg-neutral-900 text-white'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  {REGISTER_LABEL[value]}
+                </button>
+              ))}
+            </fieldset>
+
+            <fieldset
+              className="inline-flex rounded-md border border-neutral-200 p-0.5"
+              data-testid="density-selector"
+            >
+              <legend className="sr-only">Densidad</legend>
+              {DENSITY_KEYS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-testid={`density-toggle-${value}`}
+                  aria-pressed={density === value}
+                  onClick={() => setDensity(value)}
+                  className={`rounded px-3 py-1.5 font-medium text-sm transition ${
+                    density === value
+                      ? 'bg-neutral-900 text-white'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  {DENSITY_LABEL[value]}
+                </button>
+              ))}
+            </fieldset>
+          </div>
+
+          {/* Muestra: el ancestro lleva data-register/data-density; los hijos
+              se dimensionan SOLO por las custom properties del theme. */}
+          <RegisterProvider
+            register={register}
+            density={density}
+            className="mt-4 flex flex-col rounded-md bg-neutral-50 p-4"
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--gap)' }}>
+              <button
+                type="button"
+                data-testid="register-sample-button"
+                className="rounded-md bg-accent-600 font-medium text-sm text-white"
+                style={{
+                  minHeight: 'var(--touch-min)',
+                  paddingBlock: 'var(--pad-y)',
+                  paddingInline: 'var(--pad-x)',
+                }}
+              >
+                Acción
+              </button>
+              <span
+                data-testid="register-sample-chip"
+                className="inline-flex items-center rounded-md border border-neutral-300 text-neutral-700 text-sm"
+                style={{
+                  minHeight: 'var(--touch-min)',
+                  paddingBlock: 'var(--pad-y)',
+                  paddingInline: 'var(--pad-x)',
+                }}
+              >
+                Fila de datos
+              </span>
+            </div>
+          </RegisterProvider>
         </div>
       </div>
     </div>

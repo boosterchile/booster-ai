@@ -1,7 +1,15 @@
 /**
  * @booster-ai/ui-components
  *
- * TODO: implementar según ADRs relacionados.
- * Este archivo es un placeholder para que el monorepo compile.
+ * Primitivas "tontas" del registro producto (sin personalidad). Cimiento de la
+ * librería (D2 Ola 0): el helper `cn()` y el sistema de registro/densidad
+ * CSS-driven (`RegisterProvider` + `useRegister`). Los valores del theme viven
+ * en `@booster-ai/ui-tokens` (fuente única); acá va solo el wiring React.
  */
-export const PACKAGE_NAME = '@booster-ai/ui-components' as const;
+export { cn } from './cn.js';
+export {
+  RegisterProvider,
+  type RegisterContextValue,
+  type RegisterProviderProps,
+  useRegister,
+} from './register-provider.js';
