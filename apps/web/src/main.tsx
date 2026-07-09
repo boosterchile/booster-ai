@@ -2,8 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { initAccent } from './hooks/use-accent-preset.js';
 import { router } from './router.js';
 import './styles.css';
+
+// Aplica el acento guardado (registro producto, D1) antes del primer render
+// para evitar el flash del acento default.
+initAccent();
 
 const queryClient = new QueryClient({
   defaultOptions: {

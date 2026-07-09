@@ -385,6 +385,14 @@ const solicitarAccesoRoute = createRoute({
   ),
 });
 
+// /apariencia — selector de acento (D1 · H4). Ruta pública: preferencia
+// client-side inocua; demostrador del theming en runtime.
+const aparienciaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia',
+  component: lazyRouteComponent(() => import('./routes/apariencia.js'), 'AparienciaRoute'),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -430,6 +438,7 @@ const routeTree = rootRoute.addChildren([
   adminCobraHoyRoute,
   maintenanceRoute,
   solicitarAccesoRoute,
+  aparienciaRoute,
 ]);
 
 export const router = createRouter({
