@@ -13,3 +13,15 @@ export {
   type RegisterProviderProps,
   useRegister,
 } from './register-provider.js';
+
+// Primitivas D2 Ola 1 (tontas, token-driven, sin personalidad).
+export { Badge, type BadgeProps, type BadgeVariant } from './badge.js';
+export { Button, type ButtonProps, type ButtonVariant } from './button.js';
+export { Card, CardBody, CardFooter, CardHeader, type CardProps } from './card.js';
+export { Input, type InputProps } from './input.js';
+export {
+  ToastProvider,
+  type ToastOptions,
+  type ToastSeverity,
+  useToast,
+} from './toast.js';
