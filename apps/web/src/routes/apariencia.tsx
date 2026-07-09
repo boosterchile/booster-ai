@@ -1,4 +1,15 @@
-import { RegisterProvider } from '@booster-ai/ui-components';
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardFooter,
+  CardHeader,
+  Input,
+  RegisterProvider,
+  ToastProvider,
+  useToast,
+} from '@booster-ai/ui-components';
 import {
   ACCENT_GLOW,
   ACCENT_PRESET_LABEL,
@@ -215,9 +226,57 @@ export function AparienciaRoute() {
                 Fila de datos
               </span>
             </div>
+
+            {/* Primitivas D2 Ola 1: responden al registro (tamaño) y al acento
+                (el primary del Button). El Toast va en su propio provider. */}
+            <ToastProvider>
+              <PrimitivasDemo />
+            </ToastProvider>
           </RegisterProvider>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Showcase de las 5 primitivas para revisión visual del PO (en /apariencia). */
+function PrimitivasDemo() {
+  const { notify } = useToast();
+  return (
+    <div className="mt-4 flex flex-col" style={{ gap: 'var(--gap)' }}>
+      <div className="flex flex-wrap items-center" style={{ gap: 'var(--gap)' }}>
+        <Button variant="primary">Primario</Button>
+        <Button variant="secondary">Secundario</Button>
+        <Button variant="ghost">Ghost</Button>
+        <Button variant="danger">Peligro</Button>
+        <Button loading>Cargando</Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="success">Entregado</Badge>
+        <Badge variant="error">Rechazado</Badge>
+        <Badge variant="warning">Pendiente</Badge>
+        <Badge variant="info">En ruta</Badge>
+        <Badge variant="neutral">Borrador</Badge>
+      </div>
+      <Card className="max-w-sm">
+        <CardHeader>Carga #1234</CardHeader>
+        <CardBody>Santiago → Valparaíso · 12 t</CardBody>
+        <CardFooter>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              notify({
+                title: 'Notificación de prueba',
+                description: 'Toast del sistema',
+                severity: 'success',
+              })
+            }
+          >
+            Probar Toast
+          </Button>
+        </CardFooter>
+      </Card>
+      <Input aria-label="Buscar carga" placeholder="Buscar carga…" />
     </div>
   );
 }
