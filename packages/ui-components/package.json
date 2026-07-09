@@ -16,6 +16,7 @@
   "dependencies": {
     "@booster-ai/ui-tokens": "workspace:*",
     "clsx": "^2.1.1",
+    "react-aria-components": "^1.19.0",
     "tailwind-merge": "^3.6.0"
   },
   "peerDependencies": {
