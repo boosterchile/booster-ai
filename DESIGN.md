@@ -52,7 +52,20 @@ Los tres están sometidos a fuertes cargas de trabajo, y **Booster es su apoyo e
 - Para el **conductor** → por **voz** (Booster le habla: frase optimista al iniciar/terminar trayecto, chiste en la ruta, aliento).
 - Para los **operadores** → por **UI** (un mensaje cálido al vaciar la bandeja, una micro-celebración al cerrar un match difícil, un estado vacío con onda, una frase al terminar la jornada).
 
-Mismo principio, dos canales. Esto se diseña como sistema (D2/D3), no como parches por pantalla.
+Mismo principio, dos canales. Esto se diseña como **sistema** (D2/D3), no como parches por pantalla — y sobre todo **no dentro de las primitivas.** Una primitiva (un Button, un Input) es tonta: consume tokens, expone comportamiento, no tiene personalidad. Hornear la personalidad dentro de la primitiva es un error de categoría y rompe "derivá, no dupliques" (el mismo chiste terminaría repetido en cada componente que lo use).
+
+La personalidad opera en una cadena de **cuatro capas**, cada una con una sola razón de existir:
+
+```
+primitiva tonta  →  componente-de-momento  →  contenido  →  adaptador de canal
+```
+
+- **Primitiva tonta** (Button, Card, Input…): token-driven, sin personalidad.
+- **Componente-de-momento** (EmptyState, SuccessMoment, LoadingMoment): la estructura del momento. Consume primitivas.
+- **Contenido**: el registro de frases/chistes/tono. Se escribe una vez.
+- **Adaptador de canal**: decide cómo se entrega el momento — voz para el conductor, UI para el operador.
+
+El chiste se escribe una sola vez y el adaptador lo entrega por voz o por pantalla según el usuario. El split voz/UI vive en un solo lugar (los ~4-5 touchpoints reales), no repetido en cada componente. **`packages/ui-components` contiene solo primitivas tontas; la capa de momentos es separada.**
 
 ## 4. Los usuarios — cuatro usuarios en dos mundos
 
@@ -92,7 +105,7 @@ Hay **dos tipos de operador**, ambos usan la plataforma día a día y ambos est�
 
 Ninguno es necesariamente quien paga, pero de su experiencia depende la retención.
 
-**Registro emocional: eficiencia + control + apoyo.** El operador necesita **potencia sin fricción**. Aquí "simple" se vive distinto que en el conductor: puede necesitar **densidad de información** (tablas, filtros, estados de matching) — lo opuesto a las cards grandes del conductor. El sistema da simplicidad al conductor y potencia-sin-fricción al operador **con los mismos componentes base, configurados distinto.**
+**Registro emocional: eficiencia + control + apoyo.** El operador necesita **potencia sin fricción**. Aquí "simple" se vive distinto que en el conductor: puede necesitar **densidad de información** (tablas, filtros, estados de matching) — lo opuesto a las cards grandes del conductor. El sistema da simplicidad al conductor y potencia-sin-fricción al operador **con los mismos componentes base, configurados distinto** — aunque, como se detalla en 4.5, ese eje **no aplica a todos los componentes por igual.**
 
 Pero "eficiencia" no significa "frialdad": el operador está estresado y **Booster es su apoyo, con la misma "buena onda"** (sección 3). Sus momentos humanos —cerrar jornada, resolver un match difícil, vaciar una bandeja— también merecen calidez.
 
@@ -123,6 +136,18 @@ Quien recibe la carga hace seguimiento con un **código** (el `codigo_seguimient
 El dueño del generador, el gerente de flota. Decide la compra, pero su satisfacción depende de que sus operadores, conductores y **la experiencia de sus destinatarios** estén a la altura.
 
 **Registro emocional: profesionalismo + ROI.** Ve el valor, la seriedad, el retorno. Su superficie principal es comercial (el sitio de marketing) y los reportes/certificados. Y ahora tiene un argumento de venta extra: el tracking Uber-like que mejora *su* relación con sus clientes.
+
+### 4.5 Una misma base, configurada por usuario — pero el eje no es universal
+
+Adaptar la experiencia por usuario (conductor simple / operador denso) es correcto como intención, pero **no se aplica de forma uniforme a todos los componentes.** El conductor es voice-first ~90%: su superficie visual es delgada. No lee tablas ni navega tabs mientras maneja. Tratar "modo conductor" como un flag universal presente en cada componente produce configuración vacía en la mitad de ellos.
+
+Los componentes se agrupan en tres registros según cómo —y si— el eje conductor/operador aplica:
+
+1. **Duales de verdad** — viven en ambos mundos y sí llevan el eje: **Button, Card, Input, Modal, Toast.** Acá el registro cambia tamaño de touch target, densidad de padding y jerarquía. Conductor = grande, alto contraste, una cosa a la vez. Operador = denso, set completo de variantes, opción compacta.
+2. **Operador-first** — el conductor casi no los toca; no se les inventa un "modo conductor": **DataTable, Tabs, Dropdown, Select.** Viven en el contexto operador.
+3. **Semántico-compartido** — fijos, no dependen ni del acento ni del registro: **Badge** y los estados éxito/error/warning (cerrado en #576). Es el tablero del auto que no cambia con los LED de cabina.
+
+**Consecuencia de diseño:** el esfuerzo de "modo conductor" se concentra en las 5 duales, no se dispersa en las 11. No se sobre-invierte en variantes-conductor que el conductor casi no ve.
 
 ## 5. La voz de Booster (VUI)
 
@@ -158,6 +183,12 @@ La customización tiene **tres dimensiones integradas desde el cimiento** (se di
 Para el conductor —que usa la app en un celular, en movimiento, quizás con el sol de frente, quizás con guantes— la accesibilidad **no es un checkbox de norma: es funcionalidad core.** Una app inaccesible para el conductor es una app rota, no una app que incumple una regla.
 
 La accesibilidad es **real y verificada**, no nominal. (Ver Parte II, sección D3.)
+
+**Postura de implementación — React Aria (headless puro).** El comportamiento accesible de los componentes difíciles —focus-trap y retorno de foco en Modal, roving tabindex en Tabs, manejo de portales y teclado en Dropdown y Select— se resuelve con **`react-aria-components`** (React Aria, de Adobe), no hand-rolleado. Esos comportamientos son exactamente donde se meten bugs sutiles de a11y, y el conductor puede depender de accesibilidad real. React Aria es **headless puro**: aporta el comportamiento accesible, cero estilos — el 100% de la apariencia la ponen nuestros tokens.
+
+Esto **no contradice** la postura de "sin opiniones de diseño de terceros" del stack. Lo que se evitó deliberadamente fue **shadcn** (Radix + estilos con opinión). Una primitiva headless pura es otra cosa: no trae diseño. Se preserva el control total de la apariencia sin reinventar la rueda difícil de la accesibilidad.
+
+**Alcance:** React Aria se usa solo para el comportamiento de los componentes difíciles (Modal/Dialog, Dropdown/Menu, Select/ComboBox, Tabs). Las primitivas simples (Button, Badge, Card, Input, Toast) se construyen a mano con tokens; no necesitan React Aria. El encaje in-repo (versión compatible con el React del proyecto, compatibilidad con Tailwind 4, delta de bundle) se verifica antes de construir Modal.
 
 ## 8. Registros de color — qué significa cada uno
 
@@ -195,11 +226,11 @@ Sistema fucsia, más delgado (solo color + 2 fuentes; usa defaults de Tailwind p
 - Utilities propias: `glass`, `glass-card`, `text-stroke-1`, animación `move-path` (el camión del mapa).
 
 ### Componentes existentes — capa vacía (hallazgo crítico)
-- **`packages/ui-components` es un STUB** (`index.ts` solo exporta `PACKAGE_NAME` + comentario "TODO: implementar"). **No existe librería de componentes compartida.**
+- **`packages/ui-components`: cimiento presente, primitivas pendientes.** Ola 0 (#577, ya en main) aterrizó el helper `cn()` y el sistema de registro/densidad CSS-driven (`RegisterProvider` + tokens `data-register`/`data-density`, mismo patrón runtime que `data-accent`). **Todavía no hay primitivas base compartidas** — son Ola 1.
 - En `apps/web` solo `FormField.tsx` está abstraído (label + hint + error + ARIA via render-prop, helper `inputClass`). Reutilizado en 10+ archivos.
-- **Ausentes como primitivas base:** Button, Card, Badge, Table, Select, Toast, Tabs, Dropdown, Modal. Tampoco helper `cn()`.
+- **Ausentes como primitivas base:** Button, Card, Badge, Table, Select, Toast, Tabs, Dropdown, Modal (Ola 1). El helper `cn()` ya existe (Ola 0).
 - **La consistencia hoy es frágil:** botones son `<button className="…bg-primary-600…">` copiado a mano en ~21 archivos; tablas son `<table>` crudo en 12 rutas; selects crudos en 6; tabs hand-rolled con `role="tab"`+useState.
-- Sin librería headless de terceros (no radix/shadcn/headless-ui/react-aria/MUI). Es Tailwind plano + clases de token.
+- **Hoy** sin librería headless de terceros (Tailwind plano + clases de token). **Decisión de este documento (D-17, §7):** adoptar **React Aria** (`react-aria-components`, headless puro) para el *comportamiento* accesible de los componentes difíciles (Modal, Dropdown, Select, Tabs). No revive shadcn/Radix-con-estilos (deliberadamente evitados); las primitivas simples siguen a mano con tokens, y la apariencia queda 100% en nuestros tokens.
 
 ### Duplicación de fuente de verdad
 `apps/web/src/styles.css` **re-declara los tokens a mano** en un bloque `@theme` (el comentario lo admite: "espejo de los tokens… source-of-truth manual"). Los tokens viven duplicados en dos lugares — a resolver en D1.
@@ -235,6 +266,9 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 | D-12 | Destinatario V1 = ubicación en vivo + ventana estimada, **NO ETA calculado en tiempo real** | Recorte deliberado: resuelve el dolor sin sobre-ingeniería; ETA dinámico fuera de V1 |
 | D-13 | Destinatario puede mensajear al conductor, **mensajes estructurados, acotado al viaje** — nunca control sobre el conductor | Opciones predefinidas/plantillas, sin texto libre; protege al conductor |
 | D-14 | **Principio de protección del conductor:** ante conflicto entre otro usuario y la no-vigilancia del conductor, se protege al conductor | Gobierna toda función que conecte otros usuarios con el conductor |
+| D-15 | El eje conductor/operador **no es universal**: solo las 5 duales (Button, Card, Input, Modal, Toast) lo llevan; las operador-first (DataTable, Tabs, Dropdown, Select) no tienen "modo conductor"; las semántico-compartidas (Badge, estados) son fijas | El esfuerzo de registro se concentra en 5 duales, no se dispersa en las 11 (ver 4.5) |
+| D-16 | Las primitivas de `ui-components` son **tontas** (token-driven, sin personalidad); los momentos humanos son **capa separada**: primitiva → componente-de-momento → contenido → adaptador de canal | La personalidad no se hornea en la primitiva; el split voz/UI y el contenido viven en un solo lugar, no repetidos por componente |
+| D-17 | **React Aria** (`react-aria-components`, headless puro) para el comportamiento accesible de los componentes difíciles (Modal, Dropdown, Select, Tabs); primitivas simples a mano con tokens | A11y real sin reinventar la rueda difícil; cero estilos de terceros (no shadcn/Radix); apariencia 100% por tokens |
 
 ## Trabajo pendiente por fase
 
@@ -245,12 +279,12 @@ Viewport notch-aware (viewport-fit=cover); tokens de breakpoint mobile-first; us
 - Coordinar los tres registros (comercial/ambiental/producto) como sistema, con reglas de cuándo aplica cada uno.
 
 ### D2 — Librería de componentes base
-- Llenar `packages/ui-components`: Button, Card, Input, Select, Modal, Table (DataTable), Badge, Toast, Tabs, Dropdown, y helper `cn()`.
+- Llenar `packages/ui-components` **con primitivas tontas** (token-driven, sin personalidad — D-16): Button, Card, Input, Select, Modal, Table (DataTable), Badge, Toast, Tabs, Dropdown, y helper `cn()`.
 - Cada componente consume tokens de D1 y soporta los tres registros + customización.
-- Accesibilidad real incorporada en cada primitiva (no agregada después).
-- Cada componente configurable para "simplicidad conductor" vs "densidad operador" (D-1 vivido distinto por usuario).
-- Definir dónde vive lo lúdico (D-2): micro-interacciones, animaciones con personalidad en los momentos elegidos.
-- **Sistema de "momentos humanos" (D-6b):** la capa transversal que decide cuándo aparece una frase/felicitación/aliento, con adaptadores de canal (voz para el conductor vía VUI, UI para los operadores vía componentes de mensaje/estado). La lógica de *cuándo* es compartida; el *cómo se entrega* depende del usuario.
+- Accesibilidad real incorporada en cada primitiva (no agregada después). El **comportamiento** accesible de los componentes difíciles (Modal, Dropdown, Select, Tabs) se apoya en **React Aria** headless (D-17, §7); las primitivas simples se cablean a mano con tokens.
+- **El eje conductor/operador NO es universal (D-15):** se concentra en las 5 duales (Button, Card, Input, Modal, Toast); las operador-first (DataTable, Tabs, Dropdown, Select) no inventan "modo conductor"; las semántico-compartidas (Badge, estados) son fijas. Ver 4.5.
+- Definir dónde vive lo lúdico (D-2): micro-interacciones y animaciones con personalidad **en los componentes-de-momento, nunca en las primitivas** (D-16).
+- **Sistema de "momentos humanos" (D-6b/D-16):** capa **separada** de las primitivas, en la cadena *primitiva tonta → componente-de-momento → contenido → adaptador de canal* (§3). La lógica de *cuándo* es compartida; el *cómo se entrega* (voz para el conductor vía VUI, UI para los operadores) lo decide el adaptador de canal; el contenido (frases/chistes) se escribe una vez.
 
 ### D3 — Patrones de interacción + accesibilidad + voz
 - Patrones de navegación (respetando el shell sin-sidebar / cards-dashboard actual).
