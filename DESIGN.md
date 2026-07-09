@@ -143,7 +143,7 @@ Adaptar la experiencia por usuario (conductor simple / operador denso) es correc
 
 Los componentes se agrupan en tres registros según cómo —y si— el eje conductor/operador aplica:
 
-1. **Duales de verdad** — viven en ambos mundos y sí llevan el eje: **Button, Card, Input, Modal, Toast.** Acá el registro cambia tamaño de touch target, densidad de padding y jerarquía. Conductor = grande, alto contraste, una cosa a la vez. Operador = denso, set completo de variantes, opción compacta.
+1. **Duales de verdad** — viven en ambos mundos y sí llevan el eje: **Button, Card, Input, Modal, Toast.** Acá el registro cambia tamaño de touch target, densidad de padding y jerarquía. Conductor = grande, alto contraste, una cosa a la vez. Operador = denso, set completo de variantes, opción compacta. **Matiz de Modal** (implementado en Ola 2): responde al registro —hereda las custom properties— pero **se optimiza para operador**; el conductor es voice-first ~90% y casi no ve modales, así que no lleva variante-conductor elaborada. Nota técnica: el Modal portea al `body`, fuera del ancestro del registro, así que **re-aplica `data-register` en el portal**; el **acento se hereda solo** (vive en `:root`), no se re-aplica.
 2. **Operador-first** — el conductor casi no los toca; no se les inventa un "modo conductor": **DataTable, Tabs, Dropdown, Select.** Viven en el contexto operador.
 3. **Semántico-compartido** — fijos, no dependen ni del acento ni del registro: **Badge** y los estados éxito/error/warning (cerrado en #576). Es el tablero del auto que no cambia con los LED de cabina.
 

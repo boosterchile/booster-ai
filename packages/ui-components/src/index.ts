@@ -25,3 +25,6 @@ export {
   type ToastSeverity,
   useToast,
 } from './toast.js';
+
+// Primitiva D2 Ola 2 — Modal (comportamiento accesible por react-aria-components).
+export { Modal, type ModalProps } from './modal.js';

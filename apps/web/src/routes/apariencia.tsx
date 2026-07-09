@@ -6,6 +6,7 @@ import {
   CardFooter,
   CardHeader,
   Input,
+  Modal,
   RegisterProvider,
   ToastProvider,
   useToast,
@@ -242,6 +243,8 @@ export function AparienciaRoute() {
 /** Showcase de las 5 primitivas para revisión visual del PO (en /apariencia). */
 function PrimitivasDemo() {
   const { notify } = useToast();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <div className="mt-4 flex flex-col" style={{ gap: 'var(--gap)' }}>
       <div className="flex flex-wrap items-center" style={{ gap: 'var(--gap)' }}>
@@ -277,6 +280,61 @@ function PrimitivasDemo() {
         </CardFooter>
       </Card>
       <Input aria-label="Buscar carga" placeholder="Buscar carga…" />
+
+      {/* Modal (D2 Ola 2) — RAC headless. Responde al registro re-aplicado en el
+          portal (probá togglear a Conductor y abrir: el modal crece) y hereda el
+          acento de :root. Optimizado operador. */}
+      <div className="flex flex-wrap items-center" style={{ gap: 'var(--gap)' }}>
+        <Button data-testid="open-modal" variant="primary" onClick={() => setModalOpen(true)}>
+          Abrir modal
+        </Button>
+        <Button data-testid="open-confirm" variant="danger" onClick={() => setConfirmOpen(true)}>
+          Cancelar flete…
+        </Button>
+      </div>
+
+      <Modal
+        isOpen={modalOpen}
+        onOpenChange={setModalOpen}
+        title="Detalle de la carga"
+        data-testid="demo-modal"
+      >
+        {({ close }) => (
+          <div className="flex flex-col gap-3">
+            <p className="text-neutral-700 text-sm">
+              Santiago → Valparaíso · 12 t. Este modal responde al registro y hereda el acento.
+            </p>
+            <Button data-testid="demo-modal-close" variant="secondary" onClick={close}>
+              Cerrar
+            </Button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        isDismissable={false}
+        title="¿Cancelar el flete?"
+        data-testid="demo-confirm"
+      >
+        {({ close }) => (
+          <div className="flex flex-col gap-3">
+            <p className="text-neutral-700 text-sm">
+              Acción destructiva: el click afuera NO cierra (solo Esc o los botones).
+            </p>
+            <div className="flex gap-2">
+              {/* Cancelar va primero → recibe el foco por default (botón seguro). */}
+              <Button data-testid="demo-confirm-cancel" variant="secondary" onClick={close}>
+                Cancelar
+              </Button>
+              <Button data-testid="demo-confirm-accept" variant="danger" onClick={close}>
+                Sí, cancelar flete
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
