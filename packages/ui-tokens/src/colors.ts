@@ -60,11 +60,14 @@ const urgency = {
   900: '#542C00',
 } as const;
 
+// Éxito: verde DISTINTO del verde-ambiental de marca (primary #1FA058) y del
+// Verde LED del conductor — tres verdes con roles distintos que coexisten
+// (regla del PO). Emerald/teal, para no confundir estado con marca.
 const success = {
-  50: '#ECFAF1',
-  500: '#1FA058',
-  600: '#168047',
-  700: '#10653A',
+  50: '#ECFDF5',
+  500: '#0E9F6E',
+  600: '#0B815A',
+  700: '#0A6247',
 } as const;
 
 const warning = {

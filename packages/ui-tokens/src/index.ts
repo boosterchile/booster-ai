@@ -23,7 +23,7 @@ export * from './duration.js';
 export * from './accent-presets.js';
 export * from './contrast.js';
 
-import { DEFAULT_ACCENT, accentPresets } from './accent-presets.js';
+import { ACCENT_PALETTES, allAccentPresets } from './accent-presets.js';
 import { breakpoint } from './breakpoint.js';
 import { colors, semanticColors } from './colors.js';
 import { duration, easing } from './duration.js';
@@ -43,8 +43,8 @@ import { zIndex } from './z-index.js';
 export const tokens = {
   colors,
   semanticColors,
-  accentPresets,
-  defaultAccent: DEFAULT_ACCENT,
+  accentPresets: allAccentPresets,
+  accentPalettes: ACCENT_PALETTES,
   fontFamily,
   fontSize,
   fontWeight,

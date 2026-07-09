@@ -39,10 +39,10 @@
   --color-urgency-800: #7A4100;
   --color-urgency-900: #542C00;
   /* Semánticos */
-  --color-success-50: #ECFAF1;
-  --color-success-500: #1FA058;
-  --color-success-600: #168047;
-  --color-success-700: #10653A;
+  --color-success-50: #ECFDF5;
+  --color-success-500: #0E9F6E;
+  --color-success-600: #0B815A;
+  --color-success-700: #0A6247;
   --color-warning-50: #FFF7EB;
   --color-warning-500: #F58A00;
   --color-warning-600: #A85C00;
@@ -109,18 +109,6 @@
   --accent-800: #163E57;
   --accent-900: #122E40;
 }
-[data-accent='terracota'] {
-  --accent-50: #FBF0EB;
-  --accent-100: #F4DACD;
-  --accent-200: #E7B29D;
-  --accent-300: #D6866A;
-  --accent-400: #C25F41;
-  --accent-500: #A8472B;
-  --accent-600: #8C3A24;
-  --accent-700: #72311F;
-  --accent-800: #5E2A1D;
-  --accent-900: #431E15;
-}
 [data-accent='ciruela'] {
   --accent-50: #F9EEF3;
   --accent-100: #F0D4E0;
@@ -168,4 +156,88 @@
   --accent-700: #4F2B65;
   --accent-800: #412453;
   --accent-900: #2C1839;
+}
+[data-accent='ambar-led'] {
+  --accent-50: #FEF3C7;
+  --accent-100: #FDE49A;
+  --accent-200: #FBD24F;
+  --accent-300: #EFB528;
+  --accent-400: #CF9412;
+  --accent-500: #AE7B0E;
+  --accent-600: #8F650C;
+  --accent-700: #75530E;
+  --accent-800: #5E4310;
+  --accent-900: #43300C;
+}
+[data-accent='naranjo-led'] {
+  --accent-50: #FFEDD5;
+  --accent-100: #FED7AA;
+  --accent-200: #FDBA74;
+  --accent-300: #F7913A;
+  --accent-400: #E06614;
+  --accent-500: #C24E10;
+  --accent-600: #A5410E;
+  --accent-700: #87360F;
+  --accent-800: #6E2E10;
+  --accent-900: #4C2010;
+}
+[data-accent='rojo-led'] {
+  --accent-50: #FCE7E7;
+  --accent-100: #F9CFCF;
+  --accent-200: #F0A3A3;
+  --accent-300: #E17070;
+  --accent-400: #CE3F3F;
+  --accent-500: #B92B2B;
+  --accent-600: #9E2222;
+  --accent-700: #831D1D;
+  --accent-800: #6B1B1B;
+  --accent-900: #4C1414;
+}
+[data-accent='azul-led'] {
+  --accent-50: #E0EDFF;
+  --accent-100: #C2D8FF;
+  --accent-200: #93BCFB;
+  --accent-300: #5F97F5;
+  --accent-400: #3570E0;
+  --accent-500: #2559CC;
+  --accent-600: #1E4FBA;
+  --accent-700: #1C3F93;
+  --accent-800: #1E3A8A;
+  --accent-900: #16265C;
+}
+[data-accent='verde-led'] {
+  --accent-50: #E4F7D9;
+  --accent-100: #C9EFB0;
+  --accent-200: #A3E07C;
+  --accent-300: #79C748;
+  --accent-400: #549F20;
+  --accent-500: #478718;
+  --accent-600: #3E7D14;
+  --accent-700: #336212;
+  --accent-800: #2C5016;
+  --accent-900: #1E380F;
+}
+[data-accent='fluor'] {
+  --accent-50: #D6F7F7;
+  --accent-100: #A5EFEF;
+  --accent-200: #5FE0E0;
+  --accent-300: #22C2C2;
+  --accent-400: #0F9E9E;
+  --accent-500: #0D8686;
+  --accent-600: #0C7A7A;
+  --accent-700: #0A6262;
+  --accent-800: #0A4A4A;
+  --accent-900: #073232;
+}
+[data-accent='negro'] {
+  --accent-50: #EDEDEC;
+  --accent-100: #DBDBD9;
+  --accent-200: #B9B9B6;
+  --accent-300: #909090;
+  --accent-400: #6B6B67;
+  --accent-500: #4E4E4A;
+  --accent-600: #3A3A37;
+  --accent-700: #2C2C2A;
+  --accent-800: #1C1C1B;
+  --accent-900: #111110;
 }

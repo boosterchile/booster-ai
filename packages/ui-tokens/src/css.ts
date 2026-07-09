@@ -16,7 +16,7 @@
  *      vivo (D-5), sin rebuild. Solo el acento cambia; la base queda fija.
  */
 
-import { type AccentPresetKey, DEFAULT_ACCENT, accentPresets } from './accent-presets.js';
+import { type AccentPresetKey, OPERATOR_DEFAULT, allAccentPresets } from './accent-presets.js';
 import { colors } from './colors.js';
 import { radius } from './radius.js';
 import { shadow } from './shadow.js';
@@ -82,13 +82,15 @@ export function renderThemeCss(): string {
   lines.push('}');
   lines.push('');
 
-  // Presets de acento. El default se ancla también en :root para que sin
-  // `data-accent` el acento sea el default (Índigo).
-  const keys = Object.keys(accentPresets) as AccentPresetKey[];
+  // Presets de acento (13: operador 6 + conductor LED 7). El default operador
+  // (Índigo) se ancla también en :root para que sin `data-accent` haya acento.
+  // El hook fija el data-accent correcto por rol en el boot (conductor → Azul
+  // LED). Cada rol solo ve su paleta; los bloques CSS de ambas coexisten.
+  const keys = Object.keys(allAccentPresets) as AccentPresetKey[];
   for (const key of keys) {
-    const ramp = accentPresets[key];
+    const ramp = allAccentPresets[key];
     const selector =
-      key === DEFAULT_ACCENT ? `:root,\n[data-accent='${key}']` : `[data-accent='${key}']`;
+      key === OPERATOR_DEFAULT ? `:root,\n[data-accent='${key}']` : `[data-accent='${key}']`;
     lines.push(`${selector} {`);
     for (const stop of ACCENT_STOPS) {
       lines.push(`  --accent-${stop}: ${ramp[stop]};`);

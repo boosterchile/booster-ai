@@ -53,10 +53,16 @@ body,
   border-radius: var(--radius-sm);
 }
 
-input,
-button,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
+/* Reset de form controls DENTRO de @layer base: en Tailwind 4 las reglas
+ * sin capa ganan sobre @layer utilities, así que `color: inherit` sin capa
+ * pisaba `text-white`/`text-*` en TODO botón (texto oscuro ilegible sobre
+ * fills fuertes). En @layer base, las utilities de texto vuelven a ganar. */
+@layer base {
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
