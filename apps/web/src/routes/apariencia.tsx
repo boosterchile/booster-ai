@@ -1,18 +1,25 @@
-import { ACCENT_PRESET_KEYS, ACCENT_PRESET_LABEL, accentPresets } from '@booster-ai/ui-tokens';
+import {
+  ACCENT_GLOW,
+  ACCENT_PRESET_LABEL,
+  type AccentPalette,
+  allAccentPresets,
+} from '@booster-ai/ui-tokens';
+import { useState } from 'react';
 import { useAccentPreset } from '../hooks/use-accent-preset.js';
 
 /**
- * /apariencia — selector de acento del registro producto (D1 · H4).
+ * /apariencia — selector de acento del registro producto (D-4/D-5).
  *
- * Demostrador MÍNIMO del theming en runtime (D-5): elegir un preset cambia el
- * acento EN VIVO (setea `data-accent` en <html> → el bloque `[data-accent]` del
- * theme generado re-tematiza sin rebuild). El selector "bonito" y su ubicación
- * definitiva (settings) son D2/D3. Ruta pública a propósito: es una preferencia
- * client-side inocua (localStorage), sin datos ni privilegio — permite probar el
- * theming sin fricción de auth.
+ * Demostrador del theming en runtime: elegir un preset cambia el acento EN VIVO
+ * (setea `data-accent` en <html> → bloque `[data-accent]` del theme generado,
+ * sin rebuild). Dos paletas por ROL — conductor (LED vibrante) y operador
+ * (sobria). En la app la paleta la fija el rol; acá (ruta pública, sin login)
+ * se toggle-ea para demostrar ambas. El selector definitivo (settings) es D2/D3.
+ * Ruta pública a propósito: preferencia client-side inocua, sin datos.
  */
 export function AparienciaRoute() {
-  const [current, setAccent] = useAccentPreset();
+  const [palette, setPalette] = useState<AccentPalette>('operator');
+  const [current, setAccent, keys] = useAccentPreset(palette);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6">
@@ -22,11 +29,39 @@ export function AparienciaRoute() {
           Elegí el color de acento de tu Booster. Cambia al instante.
         </p>
 
-        <fieldset className="mt-6" data-testid="accent-selector">
+        {/* Toggle de paleta (en la app lo fija el rol; acá se demuestra) */}
+        <fieldset className="mt-5 inline-flex rounded-md border border-neutral-200 p-0.5">
+          <legend className="sr-only">Paleta por rol</legend>
+          {(
+            [
+              ['operator', 'Operador'],
+              ['conductor', 'Conductor'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              data-testid={`palette-toggle-${value}`}
+              aria-pressed={palette === value}
+              onClick={() => setPalette(value)}
+              className={`rounded px-3 py-1.5 font-medium text-sm transition ${
+                palette === value
+                  ? 'bg-neutral-900 text-white'
+                  : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+
+        <fieldset className="mt-5" data-testid="accent-selector">
           <legend className="sr-only">Color de acento</legend>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {ACCENT_PRESET_KEYS.map((key) => {
+            {keys.map((key) => {
               const selected = current === key;
+              // Swatch: el glow decorativo si existe (fluor neón), si no el 500.
+              const swatch = ACCENT_GLOW[key] ?? allAccentPresets[key][500];
               return (
                 <label
                   key={key}
@@ -45,11 +80,10 @@ export function AparienciaRoute() {
                     data-testid={`accent-option-${key}`}
                     className="sr-only"
                   />
-                  {/* Preview del preset (su propio 600), independiente del activo. */}
                   <span
                     aria-hidden
                     className="h-5 w-5 shrink-0 rounded-full border border-black/10"
-                    style={{ backgroundColor: accentPresets[key][600] }}
+                    style={{ backgroundColor: swatch }}
                   />
                   {ACCENT_PRESET_LABEL[key]}
                 </label>
@@ -59,7 +93,7 @@ export function AparienciaRoute() {
         </fieldset>
 
         {/* Demo del acento ACTIVO: usa las utilities de acento (bg/text) que
-            cambian en vivo al elegir un preset. */}
+            cambian en vivo. El botón usa texto BLANCO (nunca negro). */}
         <div className="mt-8 border-neutral-200 border-t pt-6">
           <p className="mb-3 text-neutral-500 text-xs">Vista previa (acento activo)</p>
           <div className="flex flex-wrap items-center gap-3">

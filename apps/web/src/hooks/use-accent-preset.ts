@@ -1,27 +1,33 @@
-import { ACCENT_PRESET_KEYS, type AccentPresetKey, DEFAULT_ACCENT } from '@booster-ai/ui-tokens';
-import { useCallback, useState } from 'react';
+import { ACCENT_PALETTES, type AccentPalette, type AccentPresetKey } from '@booster-ai/ui-tokens';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
- * Acento customizable del registro producto (D1 · D-5). Cambia en runtime vía
- * el atributo `data-accent` del `<html>`, que gatilla el bloque `[data-accent]`
- * del theme generado (theme.css) — cero rebuild. Persistido en localStorage.
+ * Acento customizable del registro producto (D-4/D-5) — DOS paletas por ROL:
+ * `operator` (sobria) y `conductor` (LED vibrante). Cambia en runtime vía el
+ * atributo `data-accent` del <html> (→ bloque `[data-accent]` del theme
+ * generado). Base + primario + semánticos quedan FIJOS; solo el acento cambia.
  *
- * La base cálida y el primario quedan FIJOS; solo el acento cambia.
+ * La PALETA la determina el rol del usuario: el conductor ve las LED, los
+ * operadores las sobrias. El selector recibe la paleta (derivada del rol en la
+ * app; en el demostrador público /apariencia se toggle-ea). Cada paleta recuerda
+ * su propio acento en localStorage.
  */
 
-const STORAGE_KEY = 'booster.accent';
+const STORAGE_PREFIX = 'booster.accent.';
+const storageKey = (p: AccentPalette) => `${STORAGE_PREFIX}${p}`;
 
-function isAccentKey(v: string | null): v is AccentPresetKey {
-  return v !== null && (ACCENT_PRESET_KEYS as readonly string[]).includes(v);
+function isKeyOfPalette(palette: AccentPalette, v: string | null): v is AccentPresetKey {
+  return v !== null && ACCENT_PALETTES[palette].keys.includes(v as AccentPresetKey);
 }
 
-/** Lee el acento guardado; default (Índigo) si falta o es inválido. */
-export function getStoredAccent(): AccentPresetKey {
+/** Acento guardado para la paleta, o su default (operador → Índigo,
+ * conductor → Azul LED) si falta o no pertenece a la paleta. */
+export function getStoredAccent(palette: AccentPalette): AccentPresetKey {
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return isAccentKey(v) ? v : DEFAULT_ACCENT;
+    const v = localStorage.getItem(storageKey(palette));
+    return isKeyOfPalette(palette, v) ? v : ACCENT_PALETTES[palette].default;
   } catch {
-    return DEFAULT_ACCENT;
+    return ACCENT_PALETTES[palette].default;
   }
 }
 
@@ -32,28 +38,41 @@ export function applyAccent(key: AccentPresetKey): void {
   }
 }
 
-/**
- * Aplica el acento guardado en el arranque de la app (main.tsx), antes del
- * primer render, para evitar el flash del acento default.
- */
-export function initAccent(): void {
-  applyAccent(getStoredAccent());
+/** Aplica en el boot (main.tsx) el acento guardado de la paleta operador por
+ * defecto, para evitar el flash. La paleta real (por rol) se fija al montar la
+ * surface correspondiente. */
+export function initAccent(palette: AccentPalette = 'operator'): void {
+  applyAccent(getStoredAccent(palette));
 }
 
-/** Hook del selector: [acento actual, setter que persiste + aplica en vivo]. */
-export function useAccentPreset(): readonly [AccentPresetKey, (key: AccentPresetKey) => void] {
-  const [current, setCurrent] = useState<AccentPresetKey>(getStoredAccent);
+/**
+ * Hook del selector: [acento actual, setter que persiste + aplica en vivo, keys
+ * de la paleta]. Al cambiar de paleta (rol/toggle) re-sincroniza y aplica el
+ * acento de la nueva paleta.
+ */
+export function useAccentPreset(
+  palette: AccentPalette,
+): readonly [AccentPresetKey, (key: AccentPresetKey) => void, AccentPresetKey[]] {
+  const [current, setCurrent] = useState<AccentPresetKey>(() => getStoredAccent(palette));
 
-  const setAccent = useCallback((key: AccentPresetKey) => {
+  useEffect(() => {
+    const key = getStoredAccent(palette);
     setCurrent(key);
-    try {
-      localStorage.setItem(STORAGE_KEY, key);
-    } catch {
-      // localStorage no disponible (modo privado / SSR): el cambio en vivo
-      // igual aplica vía data-accent; solo no persiste. No romper.
-    }
     applyAccent(key);
-  }, []);
+  }, [palette]);
 
-  return [current, setAccent] as const;
+  const setAccent = useCallback(
+    (key: AccentPresetKey) => {
+      setCurrent(key);
+      try {
+        localStorage.setItem(storageKey(palette), key);
+      } catch {
+        // localStorage no disponible: el cambio en vivo igual aplica, no persiste.
+      }
+      applyAccent(key);
+    },
+    [palette],
+  );
+
+  return [current, setAccent, ACCENT_PALETTES[palette].keys] as const;
 }
