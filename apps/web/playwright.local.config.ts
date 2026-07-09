@@ -26,10 +26,16 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   // webServer siempre-on (a diferencia de la config de staging): la gracia de
   // este check es correr contra un server local, también en CI.
+  //
+  // build + preview (no `dev`): sirve el bundle de PRODUCCIÓN — el CSS real que
+  // llega al usuario (lo que importa para el #576), sin la variabilidad del
+  // dev server (compilación on-demand). Requiere las VITE_* de env: local las
+  // toma de `.env.local`; el job de CI copia `.env.example` → `.env` (la ruta
+  // es pública, no llama a Firebase; los placeholders satisfacen el schema).
   webServer: {
-    command: 'pnpm dev',
+    command: 'pnpm build && pnpm preview',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
   },
 });
