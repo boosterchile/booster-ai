@@ -393,6 +393,14 @@ const aparienciaRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/apariencia.js'), 'AparienciaRoute'),
 });
 
+// SPIKE (NO productivo, rama spike/modal-react-aria-fit): gate de encaje de
+// react-aria-components para el Modal. Se descarta; no se mergea a main.
+const spikeModalFitRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/spike/modal-fit',
+  component: lazyRouteComponent(() => import('./routes/spike-modal-fit.js'), 'SpikeModalFitRoute'),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -439,6 +447,7 @@ const routeTree = rootRoute.addChildren([
   maintenanceRoute,
   solicitarAccesoRoute,
   aparienciaRoute,
+  spikeModalFitRoute,
 ]);
 
 export const router = createRouter({
