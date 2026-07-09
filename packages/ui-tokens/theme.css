@@ -241,3 +241,24 @@
   --accent-800: #1C1C1B;
   --accent-900: #111110;
 }
+
+:root,
+[data-register='operador'] {
+  --touch-min: 44px;
+  --pad-y: calc(0.5rem * var(--density-scale));
+  --pad-x: calc(0.75rem * var(--density-scale));
+  --gap: calc(0.5rem * var(--density-scale));
+}
+[data-register='conductor'] {
+  --touch-min: 56px;
+  --pad-y: calc(0.875rem * var(--density-scale));
+  --pad-x: calc(1.25rem * var(--density-scale));
+  --gap: calc(0.75rem * var(--density-scale));
+}
+:root,
+[data-density='comoda'] {
+  --density-scale: 1;
+}
+[data-density='compacta'] {
+  --density-scale: 0.8;
+}

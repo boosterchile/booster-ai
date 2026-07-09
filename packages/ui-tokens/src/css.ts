@@ -19,6 +19,14 @@
 import { type AccentPresetKey, OPERATOR_DEFAULT, allAccentPresets } from './accent-presets.js';
 import { colors } from './colors.js';
 import { radius } from './radius.js';
+import {
+  DENSITY_DEFAULT,
+  DENSITY_KEYS,
+  REGISTER_DEFAULT,
+  REGISTER_KEYS,
+  densityScales,
+  registerScales,
+} from './register.js';
 import { shadow } from './shadow.js';
 import { fontFamily } from './typography.js';
 
@@ -95,6 +103,33 @@ export function renderThemeCss(): string {
     for (const stop of ACCENT_STOPS) {
       lines.push(`  --accent-${stop}: ${ramp[stop]};`);
     }
+    lines.push('}');
+  }
+  lines.push('');
+
+  // Registro/densidad — dimensiones CSS-driven (DESIGN.md §4.2), mismos
+  // componentes base configurados distinto. Cada [data-register] inlinea su
+  // base literal en el calc y deja --density-scale como la única var cruzada;
+  // --touch-min es piso de a11y (no lo escala la densidad). El default operador
+  // se ancla en :root para que sin data-register haya escala. RegisterProvider
+  // co-loca data-register + data-density en el mismo ancestro (invariante del
+  // calc). Cambiar el atributo re-cascadea en runtime, sin rebuild.
+  for (const key of REGISTER_KEYS) {
+    const s = registerScales[key];
+    const selector =
+      key === REGISTER_DEFAULT ? `:root,\n[data-register='${key}']` : `[data-register='${key}']`;
+    lines.push(`${selector} {`);
+    lines.push(`  --touch-min: ${s.touchMin};`);
+    lines.push(`  --pad-y: calc(${s.padY} * var(--density-scale));`);
+    lines.push(`  --pad-x: calc(${s.padX} * var(--density-scale));`);
+    lines.push(`  --gap: calc(${s.gap} * var(--density-scale));`);
+    lines.push('}');
+  }
+  for (const key of DENSITY_KEYS) {
+    const selector =
+      key === DENSITY_DEFAULT ? `:root,\n[data-density='${key}']` : `[data-density='${key}']`;
+    lines.push(`${selector} {`);
+    lines.push(`  --density-scale: ${densityScales[key]};`);
     lines.push('}');
   }
   lines.push('');

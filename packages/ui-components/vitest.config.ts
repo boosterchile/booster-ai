@@ -1,18 +1,22 @@
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  plugins: [react()],
   test: {
-    environment: 'node',
+    // jsdom: el paquete ahora trae el Provider React (tsx). El test de cn()
+    // corre igual bajo jsdom.
+    environment: 'jsdom',
     globals: true,
-    include: ['src/**/*.{test,spec}.ts', 'test/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'lcov'],
-      // Sin excluir el entrypoint: el smoke test DEBE cubrir el archivo
-      // real para que coverage-summary sea numérico y el gate de ci.yml
-      // valide este workspace (spec chore-ci-tooling-higiene §6.2).
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+      // El coverage-summary debe ser numérico para que el gate de ci.yml valide
+      // este workspace (spec chore-ci-tooling-higiene §6.2). index.ts es solo
+      // barrel de re-exports.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/index.ts', 'src/**/*.test.{ts,tsx}', 'src/**/*.spec.{ts,tsx}'],
       thresholds: {
         lines: 80,
         functions: 80,

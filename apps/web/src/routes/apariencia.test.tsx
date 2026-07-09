@@ -69,3 +69,32 @@ describe('AparienciaRoute — toggle a paleta conductor (LED)', () => {
     // pisa el rojo-error (verificado a nivel token en ui-tokens/contrast.test).
   });
 });
+
+describe('AparienciaRoute — registro/densidad CSS-driven (D2 Ola 0)', () => {
+  it('el ancestro arranca en operador/cómoda y la muestra consume las custom properties', () => {
+    render(<AparienciaRoute />);
+    const sample = screen.getByTestId('register-sample-button');
+    const ancestor = sample.closest('[data-register]');
+    expect(ancestor?.getAttribute('data-register')).toBe('operador');
+    expect(ancestor?.getAttribute('data-density')).toBe('comoda');
+    // el rendering NO se dirige por state JS: el tamaño sale SOLO de las vars.
+    expect(sample.style.minHeight).toBe('var(--touch-min)');
+    expect(sample.style.paddingBlock).toBe('var(--pad-y)');
+  });
+
+  it('togglear a Conductor cambia data-register EN VIVO (sin rebuild), sin tocar la muestra', async () => {
+    render(<AparienciaRoute />);
+    await userEvent.click(screen.getByTestId('register-toggle-conductor'));
+    const ancestor = screen.getByTestId('register-sample-button').closest('[data-register]');
+    expect(ancestor?.getAttribute('data-register')).toBe('conductor');
+    // la muestra sigue leyendo la MISMA var; solo cambió el atributo del ancestro.
+    expect(screen.getByTestId('register-sample-button').style.paddingInline).toBe('var(--pad-x)');
+  });
+
+  it('togglear densidad a Compacta cambia data-density EN VIVO', async () => {
+    render(<AparienciaRoute />);
+    await userEvent.click(screen.getByTestId('density-toggle-compacta'));
+    const ancestor = screen.getByTestId('register-sample-button').closest('[data-register]');
+    expect(ancestor?.getAttribute('data-density')).toBe('compacta');
+  });
+});

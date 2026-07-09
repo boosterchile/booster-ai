@@ -21,6 +21,7 @@ export * from './breakpoint.js';
 export * from './z-index.js';
 export * from './duration.js';
 export * from './accent-presets.js';
+export * from './register.js';
 export * from './contrast.js';
 
 import { ACCENT_PALETTES, allAccentPresets } from './accent-presets.js';

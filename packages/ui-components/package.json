@@ -13,9 +13,24 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@booster-ai/ui-tokens": "workspace:*",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
   "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.0.18",
+    "jsdom": "^26.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
