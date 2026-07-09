@@ -11,7 +11,9 @@
  *      operativa" maduro.
  *   2. Neutrals cálidos (no slate frío) — para que la UI se lea como
  *      empresa chilena, no como dashboard SaaS gringo.
- *   3. Accent ámbar — para urgencia (offers expiran, tracking en vivo).
+ *   3. Urgency ámbar — para urgencia (offers expiran, tracking en vivo).
+ *      Antes se llamaba `accent`; renombrado en D1 porque `accent` pasó a ser
+ *      el acento CUSTOMIZABLE del registro producto (ver `accent-presets.ts`).
  *   4. Semantic claro: success verde, warning ámbar, danger rojo, info azul.
  *      Nunca reusar primary para semantic — confunde estado con marca.
  */
@@ -45,7 +47,7 @@ const neutral = {
   1000: '#0A0A09',
 } as const;
 
-const accent = {
+const urgency = {
   50: '#FFF7EB',
   100: '#FFEAC9',
   200: '#FFD489',
@@ -68,7 +70,10 @@ const success = {
 const warning = {
   50: '#FFF7EB',
   500: '#F58A00',
-  600: '#CC6F00',
+  // 600 oscurecido de #CC6F00 (blanco daba 3.6:1, fallaba WCAG y el negro
+  // contrastaba más — prohibido). #A85C00 pasa blanco ≥4.5 y mantiene ámbar.
+  // Stop NO usado en apps/web (solo 50/500/700) → sin regresión visual.
+  600: '#A85C00',
   700: '#A05500',
 } as const;
 
@@ -89,7 +94,7 @@ const info = {
 export const colors = {
   primary,
   neutral,
-  accent,
+  urgency,
   success,
   warning,
   danger,
@@ -133,9 +138,9 @@ export const semanticColors = {
   brandPrimaryHover: primary[600],
   brandPrimaryActive: primary[700],
 
-  // Accent (urgencia, CTAs secundarios)
-  accentPrimary: accent[500],
-  accentPrimaryHover: accent[600],
+  // Urgency ámbar (offers expiran, tracking en vivo)
+  urgencyPrimary: urgency[500],
+  urgencyPrimaryHover: urgency[600],
 
   // Status
   statusSuccessBg: success[50],

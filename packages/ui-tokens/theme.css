@@ -1,0 +1,171 @@
+/* GENERADO por @booster-ai/ui-tokens/css.ts — NO editar a mano.
+ * Fuente: packages/ui-tokens/src/. Regenerar: pnpm --filter @booster-ai/ui-tokens gen:css
+ * El drift-guard de CI falla si este archivo no coincide con regenerar. */
+@theme {
+  /* Primary — verde Booster (marca / ambiental) */
+  --color-primary-50: #ECFAF1;
+  --color-primary-100: #D1F2DD;
+  --color-primary-200: #A5E3BA;
+  --color-primary-300: #73D094;
+  --color-primary-400: #42BB72;
+  --color-primary-500: #1FA058;
+  --color-primary-600: #168047;
+  --color-primary-700: #10653A;
+  --color-primary-800: #0C4D2D;
+  --color-primary-900: #083823;
+  --color-primary-950: #04231A;
+  /* Neutrales cálidos (base fija) */
+  --color-neutral-0: #FFFFFF;
+  --color-neutral-50: #FAF9F7;
+  --color-neutral-100: #F4F2EE;
+  --color-neutral-200: #E7E4DD;
+  --color-neutral-300: #D5D1C7;
+  --color-neutral-400: #A6A199;
+  --color-neutral-500: #73706A;
+  --color-neutral-600: #56544F;
+  --color-neutral-700: #3F3D39;
+  --color-neutral-800: #2A2926;
+  --color-neutral-900: #1A1917;
+  --color-neutral-1000: #0A0A09;
+  /* Urgency ámbar (offers expiran, tracking en vivo) */
+  --color-urgency-50: #FFF7EB;
+  --color-urgency-100: #FFEAC9;
+  --color-urgency-200: #FFD489;
+  --color-urgency-300: #FFB94A;
+  --color-urgency-400: #FFA21F;
+  --color-urgency-500: #F58A00;
+  --color-urgency-600: #CC6F00;
+  --color-urgency-700: #A05500;
+  --color-urgency-800: #7A4100;
+  --color-urgency-900: #542C00;
+  /* Semánticos */
+  --color-success-50: #ECFAF1;
+  --color-success-500: #1FA058;
+  --color-success-600: #168047;
+  --color-success-700: #10653A;
+  --color-warning-50: #FFF7EB;
+  --color-warning-500: #F58A00;
+  --color-warning-600: #A85C00;
+  --color-warning-700: #A05500;
+  --color-danger-50: #FEF2F2;
+  --color-danger-500: #DC2626;
+  --color-danger-600: #B91C1C;
+  --color-danger-700: #991B1B;
+  --color-info-50: #EFF6FF;
+  --color-info-500: #2563EB;
+  --color-info-600: #1D4ED8;
+  --color-info-700: #1E40AF;
+  /* Acento CUSTOMIZABLE (registro producto) — indirecto para theming
+     en runtime; el valor real lo fija el bloque [data-accent] activo. */
+  --color-accent-50: var(--accent-50);
+  --color-accent-100: var(--accent-100);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-800: var(--accent-800);
+  --color-accent-900: var(--accent-900);
+  /* Tipografía */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Monaco, Inconsolata, "Fira Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  /* Radius (solo el set que Booster sobrescribe) */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  /* Shadow (solo el set que Booster sobrescribe) */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 0.10), 0 4px 6px -2px rgb(0 0 0 / 0.05);
+  --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.20);
+}
+
+:root,
+[data-accent='indigo'] {
+  --accent-50: #EEF0FB;
+  --accent-100: #DADEF5;
+  --accent-200: #BAC2EC;
+  --accent-300: #909CDD;
+  --accent-400: #6675CB;
+  --accent-500: #4553B5;
+  --accent-600: #3B4496;
+  --accent-700: #2F3878;
+  --accent-800: #282F60;
+  --accent-900: #1E2347;
+}
+[data-accent='oceano'] {
+  --accent-50: #E9F3FA;
+  --accent-100: #CBE4F2;
+  --accent-200: #9BCAE6;
+  --accent-300: #5EA9D4;
+  --accent-400: #2E88BE;
+  --accent-500: #1D6E9E;
+  --accent-600: #175A82;
+  --accent-700: #164A69;
+  --accent-800: #163E57;
+  --accent-900: #122E40;
+}
+[data-accent='terracota'] {
+  --accent-50: #FBF0EB;
+  --accent-100: #F4DACD;
+  --accent-200: #E7B29D;
+  --accent-300: #D6866A;
+  --accent-400: #C25F41;
+  --accent-500: #A8472B;
+  --accent-600: #8C3A24;
+  --accent-700: #72311F;
+  --accent-800: #5E2A1D;
+  --accent-900: #431E15;
+}
+[data-accent='ciruela'] {
+  --accent-50: #F9EEF3;
+  --accent-100: #F0D4E0;
+  --accent-200: #E0A9C2;
+  --accent-300: #CB789F;
+  --accent-400: #B4507D;
+  --accent-500: #993A63;
+  --accent-600: #7F3052;
+  --accent-700: #682843;
+  --accent-800: #552138;
+  --accent-900: #3C1727;
+}
+[data-accent='pizarra'] {
+  --accent-50: #EEF1F4;
+  --accent-100: #DAE0E6;
+  --accent-200: #B9C4CF;
+  --accent-300: #8F9EAF;
+  --accent-400: #697A8D;
+  --accent-500: #4F6072;
+  --accent-600: #404E5D;
+  --accent-700: #36414D;
+  --accent-800: #2E3742;
+  --accent-900: #212830;
+}
+[data-accent='cobalto'] {
+  --accent-50: #EBF1FE;
+  --accent-100: #D3E1FC;
+  --accent-200: #A7C4F9;
+  --accent-300: #729EF2;
+  --accent-400: #4278E6;
+  --accent-500: #255BD0;
+  --accent-600: #1D49AA;
+  --accent-700: #1B3E8A;
+  --accent-800: #1B3670;
+  --accent-900: #152449;
+}
+[data-accent='berenjena'] {
+  --accent-50: #F4EFF8;
+  --accent-100: #E6D8F0;
+  --accent-200: #CCB1E0;
+  --accent-300: #AC81CC;
+  --accent-400: #8F57B4;
+  --accent-500: #763F9A;
+  --accent-600: #61337E;
+  --accent-700: #4F2B65;
+  --accent-800: #412453;
+  --accent-900: #2C1839;
+}

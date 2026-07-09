@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@booster-ai/ui-tokens/theme.css";
 
 /**
  * Observability dashboard (spec 2026-05-13) — @tremor/react construye
@@ -14,85 +15,20 @@
  */
 @source inline("{hover:,focus:,data-[selected]:,dark:,}{bg,text,border,fill,stroke,ring}-{emerald,red,amber,cyan,indigo,rose,fuchsia,violet,sky,gray,slate,zinc}-{50,100,200,300,400,500,600,700,800,900}");
 
-/**
- * Tema de Booster AI — Tailwind 4 CSS-first config.
- *
- * Espejo de los tokens en @booster-ai/ui-tokens. Si modificas algo aquí,
- * refléjalo en packages/ui-tokens/src/ y viceversa. En slice posterior
- * podemos generar este bloque automáticamente desde los tokens TS via
- * build script (tailwind-merge-tokens). Por ahora source-of-truth manual
- * para minimizar build complexity pre-launch.
+/* Acento CUSTOMIZABLE (registro producto): safelist de la rampa completa para
+ * que las utilities existan y el theming en runtime (data-accent) aplique en
+ * toda la app, no solo donde el selector las usa literalmente. */
+@source inline("{hover:,focus:,}{bg,text,border,ring}-accent-{50,100,200,300,400,500,600,700,800,900}");
+
+/*
+ * Tokens del sistema (color, tipografía, radius, shadow) — FUENTE ÚNICA:
+ * generados desde @booster-ai/ui-tokens vía `theme.css` (importado arriba).
+ * Antes este bloque `@theme` se re-declaraba a mano acá y en el TS (dos
+ * fuentes que drifteaban); D1 lo unificó. El acento del registro producto es
+ * theme-able en runtime vía `data-accent` (ver useAccentPreset). Para cambiar
+ * un token, editá el TS y corré `pnpm --filter @booster-ai/ui-tokens gen:css`
+ * (el drift-guard de CI lo exige).
  */
-@theme {
-  /* Color — primary (verde Booster) */
-  --color-primary-50: #ecfaf1;
-  --color-primary-100: #d1f2dd;
-  --color-primary-200: #a5e3ba;
-  --color-primary-300: #73d094;
-  --color-primary-400: #42bb72;
-  --color-primary-500: #1fa058;
-  --color-primary-600: #168047;
-  --color-primary-700: #10653a;
-  --color-primary-800: #0c4d2d;
-  --color-primary-900: #083823;
-  --color-primary-950: #04231a;
-
-  /* Color — neutrals cálidos */
-  --color-neutral-0: #ffffff;
-  --color-neutral-50: #faf9f7;
-  --color-neutral-100: #f4f2ee;
-  --color-neutral-200: #e7e4dd;
-  --color-neutral-300: #d5d1c7;
-  --color-neutral-400: #a6a199;
-  --color-neutral-500: #73706a;
-  --color-neutral-600: #56544f;
-  --color-neutral-700: #3f3d39;
-  --color-neutral-800: #2a2926;
-  --color-neutral-900: #1a1917;
-  --color-neutral-1000: #0a0a09;
-
-  /* Color — accent (urgencia) */
-  --color-accent-50: #fff7eb;
-  --color-accent-100: #ffeac9;
-  --color-accent-200: #ffd489;
-  --color-accent-300: #ffb94a;
-  --color-accent-400: #ffa21f;
-  --color-accent-500: #f58a00;
-  --color-accent-600: #cc6f00;
-  --color-accent-700: #a05500;
-
-  /* Color — semantic */
-  --color-success-50: #ecfaf1;
-  --color-success-500: #1fa058;
-  --color-success-700: #10653a;
-  --color-warning-50: #fff7eb;
-  --color-warning-500: #f58a00;
-  --color-warning-700: #a05500;
-  --color-danger-50: #fef2f2;
-  --color-danger-500: #dc2626;
-  --color-danger-700: #991b1b;
-  --color-info-50: #eff6ff;
-  --color-info-500: #2563eb;
-  --color-info-700: #1e40af;
-
-  /* Tipografía */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Monaco, "Menlo", Consolas, monospace;
-
-  /* Radius */
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-
-  /* Shadow */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06);
-  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05);
-  --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.2);
-}
 
 /* Defaults globales */
 :root {
