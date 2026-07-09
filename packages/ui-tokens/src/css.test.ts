@@ -22,18 +22,10 @@ describe('theme.css (fuente única TS→CSS)', () => {
   it('mapea el acento a variables indirectas (theming en runtime)', () => {
     const css = renderThemeCss();
     expect(css).toContain('--color-accent-600: var(--accent-600);');
-    // default Índigo anclado en :root
+    // default operador (Índigo) anclado en :root
     expect(css).toContain(":root,\n[data-accent='indigo']");
-    // los 7 presets presentes
-    for (const key of [
-      'indigo',
-      'oceano',
-      'terracota',
-      'ciruela',
-      'pizarra',
-      'cobalto',
-      'berenjena',
-    ]) {
+    // presets de ambas paletas presentes (operador + conductor LED)
+    for (const key of ['indigo', 'berenjena', 'azul-led', 'verde-led', 'fluor', 'negro']) {
       expect(css).toContain(`[data-accent='${key}']`);
     }
   });
