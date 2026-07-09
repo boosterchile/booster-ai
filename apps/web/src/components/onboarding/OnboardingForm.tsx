@@ -661,7 +661,7 @@ function PlanCard(props: {
       aria-pressed={props.selected}
     >
       {props.plan.recommended && (
-        <span className="-top-2 absolute right-3 rounded-full bg-accent-500 px-2 py-0.5 font-medium text-white text-xs">
+        <span className="-top-2 absolute right-3 rounded-full bg-urgency-500 px-2 py-0.5 font-medium text-white text-xs">
           Recomendado
         </span>
       )}

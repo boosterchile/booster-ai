@@ -139,7 +139,7 @@ export function OfferCard({ offer }: OfferCardProps) {
             <span
               className={`flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-xs ${
                 remaining.urgent
-                  ? 'bg-accent-50 text-accent-700'
+                  ? 'bg-urgency-50 text-urgency-700'
                   : 'bg-neutral-100 text-neutral-700'
               }`}
             >
