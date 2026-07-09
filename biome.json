@@ -19,7 +19,8 @@
       "**/test-results",
       "**/*.min.js",
       "**/*.min.css",
-      "**/pnpm-lock.yaml"
+      "**/pnpm-lock.yaml",
+      "packages/ui-tokens/theme.css"
     ]
   },
   "formatter": {
