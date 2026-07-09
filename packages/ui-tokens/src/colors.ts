@@ -68,7 +68,10 @@ const success = {
 const warning = {
   50: '#FFF7EB',
   500: '#F58A00',
-  600: '#CC6F00',
+  // 600 oscurecido de #CC6F00 (blanco daba 3.6:1, fallaba WCAG y el negro
+  // contrastaba más — prohibido). #A85C00 pasa blanco ≥4.5 y mantiene ámbar.
+  // Stop NO usado en apps/web (solo 50/500/700) → sin regresión visual.
+  600: '#A85C00',
   700: '#A05500',
 } as const;
 
