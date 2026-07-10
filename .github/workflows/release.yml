@@ -1,42 +1,40 @@
 name: Release + Deploy
 
 # Gestión de versiones con Changesets + deploy a GCP via Workload Identity Federation.
-# Triggered on push to main después de CI verde.
+# DISPARO MANUAL (workflow_dispatch-only) — NO en push a main. Ver el porqué abajo.
 # Sin service account keys descargadas — cumple ADR de seguridad.
 
 on:
-  push:
-    branches: [main]
-    # Pushes docs-only NO disparan deploy (era no-op + ensuciaba la lane de
-    # concurrency). Denylist: lo NO listado siempre despliega (falla seguro).
-    # NO agregar '**/*.md' acá: matchearía .changeset/*.md y rompería el
-    # release de versiones. '*.md' (un solo '*') es root-only. Ver
-    # .specs/ci-release-skip-docs-only/spec.md (R1/SC-3).
-    # 'scripts/**': tooling/dev no-desplegable. Verificado 2026-06-24: ningún
-    # script bajo scripts/ es ejecutado por el deploy (ni release.yml ni
-    # cloudbuild.production.yaml — deploy-telemetry-gateway.sh es manual/
-    # break-glass, ADR-065). ci.yml/security.yml igual los validan (corren sin
-    # paths-ignore). Footgun visto en #545.
-    paths-ignore:
-      - 'docs/**'
-      - '.specs/**'
-      - 'references/**'
-      - 'playbooks/**'
-      - 'scripts/**'
-      - '*.md'
-      # Cambios test-only no van en ningún bundle de runtime → no deben
-      # disparar un deploy no-op que encola la lane de concurrency (#422 lo
-      # hizo, hubo que rechazar el run). Igual que arriba: skipea solo si TODO
-      # el push matchea (código+test mezclado SÍ despliega). No hay .spec.ts
-      # fuera de e2e (verificado). Ver _followups/release-paths-ignore-test-only-changes.
-      - '**/*.test.ts'
-      - '**/*.test.tsx'
-      - 'apps/**/e2e/**'
-  # Trigger manual: re-disparar el deploy de `main` sin depender de un push.
-  # Agregado tras el footgun 2026-06-22 (merges rápidos a main trabaron la
-  # lane de concurrency `cancel-in-progress:false` y la única vía de
-  # re-trigger era pushear). Uso: `gh workflow run release.yml --ref main`
-  # o Actions → Release + Deploy → Run workflow.
+  # Deploy dispatch-only (arreglo de raíz "C", 2026-07-10). ANTES: `push:
+  # branches:[main]` con `paths-ignore`.
+  #
+  # POR QUÉ SE QUITÓ EL TRIGGER PUSH: el deploy a prod pasa por un gate humano
+  # obligatorio (job `deploy-production`, environment `production` con
+  # `required_reviewers`). Con `push` + `concurrency: cancel-in-progress:false`,
+  # una release run que llega al gate y NO se aprueba queda en `waiting` y
+  # RETIENE la lane `release-deploy-main` indefinidamente (no hay `wait_timer`);
+  # cada merge posterior encola detrás y las pending se cancelan entre sí (GitHub
+  # permite 1 pending por grupo) → NADA despliega. Footgun recurrente (memoria
+  # ci-release-paths-ignore: jun 22, jun 24, jul 01; el 2026-07-08 una waiting
+  # run sin aprobar dejó 13 commits — toda la ola D2 + impersonación — sin
+  # desplegar por días). Renombrar la concurrency group (band-aid de junio) NO
+  # prevenía esta variante del gate.
+  #
+  # DISPATCH-ONLY LO CIERRA DE RAÍZ: como todo deploy a prod YA requiere una
+  # aprobación humana, ahora se dispara con UNA acción deliberada que despliega
+  # `main` HEAD:  `gh workflow run release.yml --ref main`  (o Actions →
+  # Release + Deploy → Run workflow). Sin pile-up de waiting runs, sin zombies
+  # que retengan el lock, y — a diferencia de `cancel-in-progress:true` — sin
+  # riesgo de cancelar un canary en progreso. El gate `required_reviewers` y el
+  # `concurrency` se conservan INTACTOS.
+  #
+  # Nota Changesets: el job `version-or-publish` (bump de versiones + PR "Version
+  # Packages") corre ahora al dispatchear, no en cada push. Los 23 packages son
+  # `private` (`access: restricted`) → no hay publish externo que dependa del
+  # push; el versionado es bookkeeping interno que ocurre junto al deploy.
+  #
+  # (El `paths-ignore` anterior — docs/specs/scripts/*.md/tests — dejó de ser
+  # necesario: sin trigger push no hay deploys no-op que filtrar.)
   workflow_dispatch: {}
 
 concurrency:
