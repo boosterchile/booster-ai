@@ -179,6 +179,14 @@ module "service_api" {
     #      usuarios con email/password legacy.
     AUTH_UNIVERSAL_V1_ACTIVATED = tostring(var.auth_universal_v1_activated)
 
+    # Impersonación auditada (#584/#585/#586) — cuando ON, POST
+    # /auth/impersonate + GET /auth/impersonate/targets quedan operativos
+    # (guard de escritura fail-closed, auditoría en eventos_impersonacion,
+    # banner + picker ya en main). Con OFF responden 503. Triple guard:
+    # esta env var + requirePlatformAdmin (allowlist) + escritura solo sobre
+    # empresas es_demo. Flip reversible (var.impersonation_v1_activated).
+    IMPERSONATION_V1_ACTIVATED = tostring(var.impersonation_v1_activated)
+
     # ADR-036 (Wave 5) — Wake-word "Oye Booster" para conductor. Default
     # `false`. Activar SOLO después de entrenar el modelo custom con
     # voces chilenas (Wave 5 PR 2). El conductor además debe opt-in en
