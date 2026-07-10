@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import type { MeResponse } from '../hooks/use-me.js';
 
 // Layout (usado por AppRoute) internamente usa TanStack Query (vía
@@ -22,10 +23,16 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Link: ({ children, to, ...props }: { children: ReactNode; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   // D9 — el dashboard renderiza <Navigate to="/app/conductor" /> cuando
   // el rol activo es conductor. Stub que no crashea en tests sin router real.
   Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
+  // Layout → Sidebar usa useRouterState para el item activo.
+  useRouterState: () => '/app',
 }));
 
 const signOutUserMock = vi.fn();
@@ -93,7 +100,19 @@ describe('AppRoute', () => {
   it('shipper → muestra card "Crear carga"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);
-    expect(screen.getByText(/Crear carga/)).toBeInTheDocument();
+    // "Crear carga" también aparece en el sidebar; apuntamos a la descripción
+    // única de la CARD del dashboard.
+    expect(screen.getByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
+  });
+
+  it('el shell + dashboard operador no tiene violaciones de a11y (vitest-axe)', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
+    const { baseElement } = renderWithQueryClient(<AppRoute />);
+    // color-contrast off: jsdom no computa layout/canvas (lo cubre ui-tokens).
+    const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
+    // Sin matcher (el .d.ts de vitest-axe exporta el matcher type-only): axe cubre
+    // la a11y semántica; violations vacío = sin violaciones.
+    expect(results.violations).toEqual([]);
   });
 
   it('admin + transportista → muestra "Dispositivos pendientes"', () => {

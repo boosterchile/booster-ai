@@ -1,3 +1,4 @@
+import { Card, cn } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowRight,
@@ -5,6 +6,7 @@ import {
   Building2,
   Bus,
   Leaf,
+  type LucideIcon,
   MapPinned,
   Package,
   PackagePlus,
@@ -21,14 +23,10 @@ import type { MeResponse } from '../hooks/use-me.js';
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * /app — dashboard post-login.
- *
- * Slice B.3.b/c: layout mínimo con header + main column placeholder. Las
- * vistas reales (lista de ofertas para carrier, lista de cargas para
- * shipper, dashboard admin) se construyen en B.5+.
- *
- * ProtectedRoute con `require-onboarded`: si no hay user → /login,
- * si needs_onboarding → /onboarding, sino render con `me` ya tipado.
+ * /app — dashboard post-login (hub de navegación role-aware). Migrado a D2:
+ * las cards son la primitiva `Card` (padding por registro **operador**), los
+ * acentos por card son tokens semánticos (no hex hardcodeado). Sin datos —
+ * pura navegación (el detalle vive en cada surface).
  */
 export function AppRoute() {
   return (
@@ -43,33 +41,140 @@ export function AppRoute() {
   );
 }
 
+type Tone = 'primary' | 'warning' | 'success';
+
+interface DashCard {
+  to: string;
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  tone?: Tone;
+  testId?: string;
+}
+
+const TONE_CLASS: Record<Tone, { badge: string; hover: string }> = {
+  primary: { badge: 'bg-primary-50 text-primary-600', hover: 'hover:border-primary-500' },
+  warning: { badge: 'bg-warning-50 text-warning-700', hover: 'hover:border-warning-500' },
+  success: { badge: 'bg-success-50 text-success-700', hover: 'hover:border-success-600' },
+};
+
+/** Card de navegación del dashboard (primitiva D2 `Card` + acento semántico). */
+function DashboardCard({ to, icon: Icon, title, desc, tone = 'primary', testId }: DashCard) {
+  const t = TONE_CLASS[tone];
+  return (
+    <Link to={to} data-testid={testId} className="mt-3 block">
+      <Card className={cn('flex items-center justify-between transition hover:shadow-md', t.hover)}>
+        <div className="flex items-center gap-4">
+          <div
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-md',
+              t.badge,
+            )}
+            aria-hidden
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="font-medium text-neutral-900">{title}</div>
+            <div className="text-neutral-600 text-sm">{desc}</div>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
+      </Card>
+    </Link>
+  );
+}
+
+const TRANSPORTISTA_CARDS: DashCard[] = [
+  {
+    to: '/app/flota',
+    icon: MapPinned,
+    title: 'Seguimiento de flota',
+    desc: 'Ubicación en tiempo real de todos tus vehículos en un mapa, con histórico.',
+    testId: 'dashboard-link-flota',
+  },
+  {
+    to: '/app/ofertas',
+    icon: Truck,
+    title: 'Ofertas activas',
+    desc: 'Cargas disponibles para tu empresa. Acepta o rechaza rápido.',
+  },
+  {
+    to: '/app/vehiculos',
+    icon: Bus,
+    title: 'Vehículos',
+    desc: 'Gestiona tu flota: alta, edición, asociación a Teltonika.',
+  },
+  {
+    to: '/app/conductores',
+    icon: Users,
+    title: 'Conductores',
+    desc: 'Crea, edita y monitorea licencias y vencimientos de los conductores de tu empresa.',
+    testId: 'dashboard-link-conductores',
+  },
+  {
+    to: '/app/cumplimiento',
+    icon: ShieldAlert,
+    title: 'Cumplimiento',
+    desc: 'Documentos vencidos o por vencer de vehículos y conductores (revisión técnica, SOAP, licencia, antecedentes…).',
+    tone: 'warning',
+    testId: 'dashboard-link-cumplimiento',
+  },
+  {
+    to: '/app/cobra-hoy/historial',
+    icon: Banknote,
+    title: 'Cobra hoy',
+    desc: 'Solicita pronto pago de viajes entregados y revisa tu historial de adelantos.',
+    tone: 'success',
+  },
+  {
+    to: '/app/liquidaciones',
+    icon: Receipt,
+    title: 'Liquidaciones',
+    desc: 'Desglose de cada viaje entregado: monto bruto, comisión, IVA y DTE Tipo 33.',
+  },
+];
+
+const GENERADOR_CARDS: DashCard[] = [
+  {
+    to: '/app/cargas/nueva',
+    icon: PackagePlus,
+    title: 'Crear carga',
+    desc: 'Origen, destino, tipo de carga y ventana de pickup. Matching automático con transportistas.',
+  },
+  {
+    to: '/app/cargas',
+    icon: Package,
+    title: 'Mis cargas',
+    desc: 'Estado del matching, asignaciones, seguimiento en vivo.',
+  },
+  {
+    to: '/app/sucursales',
+    icon: Building2,
+    title: 'Sucursales',
+    desc: 'Bodegas, plantas y centros de distribución. Puntos físicos de origen y destino para tus cargas.',
+    testId: 'dashboard-link-sucursales',
+  },
+  {
+    to: '/app/certificados',
+    icon: Leaf,
+    title: 'Certificados de huella de carbono',
+    desc: 'Descarga los certificados firmados (GLEC v3.0 + SEC Chile 2024) de tus viajes entregados.',
+  },
+];
+
 function AppDashboard({ me }: { me: MeOnboarded }) {
   const activeEmpresa = me.active_membership?.empresa;
   const myRole = me.active_membership?.role;
   const isAdmin = myRole === 'dueno' || myRole === 'admin';
 
-  // Platform admin surface guard. El admin de plataforma no es tenant: no
-  // tiene empresa propia ni rol de tenant. Su único hub es
-  // /app/platform-admin (seed, ops platform-wide). Si además tuviera
-  // memberships de testing, puede navegar manualmente a las otras
-  // surfaces — pero el landing por defecto es el panel admin.
+  // Surface guards (platform-admin / conductor / stakeholder tienen shell propio).
   if (me.user.is_platform_admin) {
     return <Navigate to="/app/platform-admin" />;
   }
-
-  // D9 — Driver surface guard. Si el rol activo es 'conductor', el user
-  // no debería ver el dashboard carrier (ofertas/vehículos/cargas).
-  // Redirigimos a /app/conductor (su único hub: dashboard con servicios
-  // asignados + alerta WhatsApp + reporte GPS). Excepción: si el mismo
-  // user tiene OTRA membership donde es dueño/admin/etc., puede hacer
-  // switch desde Layout y vuelve al dashboard carrier normalmente.
   if (myRole === 'conductor') {
     return <Navigate to="/app/conductor" />;
   }
-
-  // D11 — Stakeholder surface guard. Si el rol activo es stakeholder,
-  // su único hub útil es /app/stakeholder/zonas — el dashboard general
-  // (carrier/shipper) no le aplica.
   if (myRole === 'stakeholder_sostenibilidad') {
     return <Navigate to="/app/stakeholder/zonas" />;
   }
@@ -93,156 +198,26 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
       {activeEmpresa?.is_transportista && (
         <section className="mt-10">
           <h2 className="font-semibold text-neutral-900 text-xl">Como transportista</h2>
-          <Link
-            to="/app/flota"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-            data-testid="dashboard-link-flota"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <MapPinned className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Seguimiento de flota</div>
-                <div className="text-neutral-600 text-sm">
-                  Ubicación en tiempo real de todos tus vehículos en un mapa, con histórico.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
+          {TRANSPORTISTA_CARDS.map((c) => (
+            <DashboardCard key={c.to} {...c} />
+          ))}
+          {isAdmin && (
+            <DashboardCard
+              to="/app/admin/dispositivos"
+              icon={Radio}
+              title="Dispositivos pendientes"
+              desc="Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos."
+            />
+          )}
+        </section>
+      )}
 
-          <Link
-            to="/app/ofertas"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Truck className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Ofertas activas</div>
-                <div className="text-neutral-600 text-sm">
-                  Cargas disponibles para tu empresa. Acepta o rechaza rápido.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/vehiculos"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Bus className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Vehículos</div>
-                <div className="text-neutral-600 text-sm">
-                  Gestiona tu flota: alta, edición, asociación a Teltonika.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/conductores"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-            data-testid="dashboard-link-conductores"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Users className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Conductores</div>
-                <div className="text-neutral-600 text-sm">
-                  Crea, edita y monitorea licencias y vencimientos de los conductores de tu empresa.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/cumplimiento"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-amber-500 hover:shadow-md"
-            data-testid="dashboard-link-cumplimiento"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-700"
-                aria-hidden
-              >
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Cumplimiento</div>
-                <div className="text-neutral-600 text-sm">
-                  Documentos vencidos o por vencer de vehículos y conductores (revisión técnica,
-                  SOAP, licencia, antecedentes…).
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/cobra-hoy/historial"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-success-700 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-success-50 text-success-700"
-                aria-hidden
-              >
-                <Banknote className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Cobra hoy</div>
-                <div className="text-neutral-600 text-sm">
-                  Solicita pronto pago de viajes entregados y revisa tu historial de adelantos.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/liquidaciones"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Receipt className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Liquidaciones</div>
-                <div className="text-neutral-600 text-sm">
-                  Desglose de cada viaje entregado: monto bruto, comisión, IVA y DTE Tipo 33.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
+      {activeEmpresa?.is_generador_carga && (
+        <section className="mt-10">
+          <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
+          {GENERADOR_CARDS.map((c) => (
+            <DashboardCard key={c.to} {...c} />
+          ))}
         </section>
       )}
 
@@ -261,8 +236,6 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
               Crear empresa
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
-            {/* Atajo discreto para admins de plataforma (validación de
-                    autorización es server-side en el backend). */}
             <Link
               to="/app/platform-admin"
               className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-4 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-100"
@@ -281,127 +254,6 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             Configura si vas a operar como generador de carga, transportista o ambos desde el perfil
             de empresa.
           </p>
-        </section>
-      )}
-
-      {activeEmpresa?.is_generador_carga && (
-        <section className="mt-10">
-          <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
-          <Link
-            to="/app/cargas/nueva"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <PackagePlus className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Crear carga</div>
-                <div className="text-neutral-600 text-sm">
-                  Origen, destino, tipo de carga y ventana de pickup. Matching automático con
-                  transportistas.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/cargas"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Package className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Mis cargas</div>
-                <div className="text-neutral-600 text-sm">
-                  Estado del matching, asignaciones, seguimiento en vivo.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/sucursales"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-            data-testid="dashboard-link-sucursales"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Building2 className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Sucursales</div>
-                <div className="text-neutral-600 text-sm">
-                  Bodegas, plantas y centros de distribución. Puntos físicos de origen y destino
-                  para tus cargas.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-
-          <Link
-            to="/app/certificados"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-emerald-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"
-                aria-hidden
-              >
-                <Leaf className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">
-                  Certificados de huella de carbono
-                </div>
-                <div className="text-neutral-600 text-sm">
-                  Descarga los certificados firmados (GLEC v3.0 + SEC Chile 2024) de tus viajes
-                  entregados.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
-        </section>
-      )}
-
-      {isAdmin && activeEmpresa?.is_transportista && (
-        <section className="mt-10">
-          <h2 className="font-semibold text-neutral-900 text-xl">Administración</h2>
-          <Link
-            to="/app/admin/dispositivos"
-            className="mt-3 flex items-center justify-between rounded-lg border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-primary-500 hover:shadow-md"
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-50 text-primary-600"
-                aria-hidden
-              >
-                <Radio className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium text-neutral-900">Dispositivos pendientes</div>
-                <div className="text-neutral-600 text-sm">
-                  Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-neutral-400" aria-hidden />
-          </Link>
         </section>
       )}
     </Layout>

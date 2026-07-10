@@ -1,180 +1,90 @@
-import { Link } from '@tanstack/react-router';
-import { LogOut, Menu, Settings, User as UserIcon, X } from 'lucide-react';
+import { RegisterProvider } from '@booster-ai/ui-components';
+import { Menu } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { signOutUser } from '../hooks/use-auth.js';
 import type { MeResponse } from '../hooks/use-me.js';
-import { useSwitchCompany } from '../hooks/use-switch-company.js';
-import { CompanySwitcher } from './CompanySwitcher.js';
 import { ConsentTermsBanner } from './ConsentTermsBanner.js';
+import { Sidebar } from './Sidebar.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * AppShell estándar para todas las páginas de `/app/*` autenticadas.
+ * AppShell estándar para las superficies de operador (`/app/*`): transportista,
+ * generador, stakeholder y perfil. **Sidebar persistente** (D2) con navegación
+ * role-aware; colapsa a **drawer** en móvil. Envuelto en `RegisterProvider`
+ * (registro **operador**) para que las primitivas D2 respondan al registro.
  *
- * Contiene el banner global con logo Booster AI, switcher de empresa
- * activa (multi-tenant), link a perfil del usuario y botón Salir. El
- * children se renderiza dentro de un `<main>` con max-width consistente.
+ * El **conductor** (`conductor.tsx`) y el **platform-admin** (`platform-admin.tsx`)
+ * tienen shell propio y NO usan este Layout — el sidebar no los alcanza.
  *
- * Responsive (BUG-006):
- *   - Desktop (sm+): logo + switcher empresa a la izquierda, perfil +
- *     Salir a la derecha en una sola fila.
- *   - Mobile (<sm): logo a la izquierda, hamburguesa a la derecha. Al
- *     abrirla, panel desplegable con switcher empresa, link a perfil y
- *     botón Salir. Esto evita que "Booster AI", el switcher y "Salir" se
- *     rompan en múltiples líneas a 375px de viewport.
- *
- * El switcher es global (FIX-013/§3.1): antes vivía solo en
- * `/app/perfil`. Ahora cualquier ruta autenticada permite cambiar de
- * empresa sin navegar al perfil — crítico para usuarios con membresías
- * en múltiples empresas (despachadores cross-tenant, sostenibilidad).
- *
- * Siempre que crees una página nueva bajo `/app/*`, envolvé el cuerpo
- * en `<Layout me={me} title="...">` — sin Layout, el usuario pierde la
- * navegación principal, el switcher y "Salir", lo que cuenta como una
- * regresión de UX bloqueante (ver BUG-003).
- *
- * El prop `title` actualmente no se renderiza acá (cada página define
- * su propio `<h1>` para flexibilidad), pero queda reservado para
- * cuando agreguemos un breadcrumb o título de pestaña dinámico.
+ * Siempre que crees una página de operador bajo `/app/*`, envolvé el cuerpo en
+ * `<Layout me={me} title="…">`. Sin Layout, el usuario pierde el sidebar, el
+ * switcher y "Salir" (regresión de UX bloqueante). El `title` se muestra como
+ * contexto en la topbar (cada página mantiene su propio `<h1>`).
  */
 export function Layout({
   me,
-  title: _title,
+  title,
   children,
 }: {
   me: MeOnboarded;
   title: string;
   children: ReactNode;
 }) {
-  // ADR-034 — empresa puede ser null cuando la membership activa es a una
-  // organización stakeholder. El Layout es shipper/carrier surface; el
-  // AppRoute redirige a stakeholders a /app/stakeholder/zonas antes de
-  // llegar acá, pero usamos chaining null-safe defensivamente.
-  const activeEmpresaId = me.active_membership?.empresa?.id ?? null;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { switchTo, isPending: switchPending } = useSwitchCompany();
-
-  async function handleSignOut() {
-    await signOutUser();
-  }
-
-  function handleSwitchEmpresa(empresaId: string) {
-    setMobileOpen(false);
-    void switchTo(empresaId);
-  }
 
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
-          {/* Logo (siempre visible). El badge de empresa solo en sm+ para
-              evitar wraps a 375px; en mobile va dentro del menú. */}
-          <Link
-            to="/app"
-            className="flex shrink-0 items-center gap-2 sm:gap-3"
-            onClick={() => setMobileOpen(false)}
-          >
-            <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
-            <span className="whitespace-nowrap font-semibold text-lg text-neutral-900">
-              Booster AI
-            </span>
-          </Link>
+    <RegisterProvider
+      register="operador"
+      density="comoda"
+      className="flex min-h-screen bg-neutral-50"
+    >
+      {/* Sidebar persistente (desktop) */}
+      <aside className="hidden w-64 shrink-0 border-neutral-200 border-r bg-neutral-0 md:block">
+        <div className="sticky top-0 h-screen">
+          <Sidebar me={me} />
+        </div>
+      </aside>
 
-          <div className="ml-3 hidden sm:block">
-            <CompanySwitcher
-              memberships={me.memberships}
-              activeEmpresaId={activeEmpresaId}
-              onSelect={handleSwitchEmpresa}
-              disabled={switchPending}
-            />
-          </div>
-
-          {/* Spacer para empujar el cluster derecho */}
-          <div className="hidden flex-1 sm:block" />
-
-          {/* Desktop: perfil + salir */}
-          <div className="hidden items-center gap-2 sm:flex">
-            <Link
-              to="/app/perfil"
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
-            >
-              <UserIcon className="h-4 w-4" aria-hidden />
-              <span>{me.user.full_name}</span>
-              <Settings className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-            </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-neutral-600 text-sm transition hover:bg-neutral-100"
-            >
-              <LogOut className="h-4 w-4" aria-hidden />
-              Salir
-            </button>
-          </div>
-
-          {/* Mobile: hamburguesa */}
+      {/* Sidebar como drawer (móvil) */}
+      {mobileOpen && (
+        <div className="md:hidden">
           <button
             type="button"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label={mobileOpen ? 'Cerrar menú' : 'Abrir menú'}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-menu"
-            className="flex items-center justify-center rounded-md p-2 text-neutral-700 hover:bg-neutral-100 sm:hidden"
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" aria-hidden />
-            ) : (
-              <Menu className="h-5 w-5" aria-hidden />
-            )}
-          </button>
-        </div>
-
-        {/* Mobile: panel desplegable */}
-        {mobileOpen && (
+            aria-label="Cerrar menú"
+            onClick={() => setMobileOpen(false)}
+            className="fixed inset-0 z-40 bg-neutral-1000/40"
+          />
+          {/* El landmark de navegación lo aporta el <nav> interno del Sidebar. */}
           <div
-            id="mobile-menu"
-            className="border-neutral-200 border-t bg-white px-4 py-3 sm:hidden"
+            data-testid="mobile-drawer"
+            className="fixed inset-y-0 left-0 z-50 w-72 border-neutral-200 border-r bg-neutral-0 shadow-xl"
           >
-            {me.memberships.some((m) => m.status === 'activa') && (
-              <div className="mb-3">
-                <div className="text-neutral-500 text-xs uppercase tracking-wider">
-                  Empresa activa
-                </div>
-                <div className="mt-1">
-                  <CompanySwitcher
-                    memberships={me.memberships}
-                    activeEmpresaId={activeEmpresaId}
-                    onSelect={handleSwitchEmpresa}
-                    disabled={switchPending}
-                  />
-                </div>
-              </div>
-            )}
-            <Link
-              to="/app/perfil"
-              onClick={() => setMobileOpen(false)}
-              className="-mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-neutral-700 text-sm transition hover:bg-neutral-100"
-            >
-              <UserIcon className="h-4 w-4" aria-hidden />
-              <span className="flex-1">{me.user.full_name}</span>
-              <Settings className="h-3.5 w-3.5 text-neutral-400" aria-hidden />
-            </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="-mx-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-rose-600 text-sm transition hover:bg-rose-50"
-            >
-              <LogOut className="h-4 w-4" aria-hidden />
-              Salir
-            </button>
+            <Sidebar me={me} onNavigate={() => setMobileOpen(false)} />
           </div>
-        )}
-      </header>
-      <ConsentTermsBanner />
-      <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">{children}</div>
-      </main>
-    </div>
+        </div>
+      )}
+
+      {/* Columna principal */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-3 border-neutral-200 border-b bg-neutral-0 px-4 py-3 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Abrir menú"
+            aria-expanded={mobileOpen}
+            className="rounded-md p-2 text-neutral-700 hover:bg-neutral-100 md:hidden"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
+          <span className="font-semibold text-neutral-900">{title}</span>
+        </header>
+
+        <ConsentTermsBanner />
+
+        <main className="flex-1">
+          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">{children}</div>
+        </main>
+      </div>
+    </RegisterProvider>
   );
 }

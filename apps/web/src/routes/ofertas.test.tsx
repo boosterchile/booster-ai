@@ -21,7 +21,13 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Link: ({ children, to, ...props }: { children: ReactNode; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+  // Layout → Sidebar usa useRouterState para el item activo.
+  useRouterState: () => '/app/ofertas',
 }));
 
 const useOffersMineMock = vi.fn();

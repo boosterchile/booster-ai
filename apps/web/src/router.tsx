@@ -393,6 +393,17 @@ const aparienciaRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/apariencia.js'), 'AparienciaRoute'),
 });
 
+// Preview del shell operador (sidebar D2) con `me` mock por rol. Demostrador
+// público (como /apariencia); sirve al E2E del sidebar sin auth/backend.
+const aparienciaShellRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/shell',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-shell.js'),
+    'AparienciaShellRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -439,6 +450,7 @@ const routeTree = rootRoute.addChildren([
   maintenanceRoute,
   solicitarAccesoRoute,
   aparienciaRoute,
+  aparienciaShellRoute,
 ]);
 
 export const router = createRouter({

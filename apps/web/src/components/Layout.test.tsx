@@ -3,11 +3,16 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
 
-// Mockeamos el router porque Layout usa <Link> de @tanstack/react-router
-// y traer el RouterProvider real al test es overkill para verificar la
-// integración del switcher.
+// El Sidebar usa <Link> + useRouterState de @tanstack/react-router; traer el
+// RouterProvider real es overkill. Link → <a>, useRouterState → pathname fijo.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  // `to` → `href` para que el <a> tenga rol "link" en las queries por rol.
+  Link: ({ children, to, ...props }: { children: ReactNode; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+  useRouterState: () => '/app',
 }));
 
 const switchToMock = vi.fn();
@@ -30,6 +35,27 @@ const signOutUserMock = vi.mocked(signOutUser);
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
+function membership(
+  id: string,
+  name: string,
+  flags: { transportista?: boolean; generador?: boolean } = { generador: true },
+) {
+  return {
+    id: `m-${id}`,
+    role: 'dueno' as const,
+    status: 'activa' as const,
+    joined_at: '2026-01-01T00:00:00Z',
+    empresa: {
+      id,
+      legal_name: name,
+      rut: '76.123.456-7',
+      is_generador_carga: flags.generador ?? false,
+      is_transportista: flags.transportista ?? false,
+      status: 'activa' as const,
+    },
+  };
+}
+
 function buildMe(memberships: MeOnboarded['memberships']): MeOnboarded {
   return {
     needs_onboarding: false,
@@ -49,167 +75,75 @@ function buildMe(memberships: MeOnboarded['memberships']): MeOnboarded {
   } as MeOnboarded;
 }
 
-function membership(
-  id: string,
-  name: string,
-  status: 'activa' | 'pendiente_invitacion' = 'activa',
-) {
-  return {
-    id: `m-${id}`,
-    role: 'dueno' as const,
-    status,
-    joined_at: '2026-01-01T00:00:00Z',
-    empresa: {
-      id,
-      legal_name: name,
-      rut: '76.123.456-7',
-      is_generador_carga: true,
-      is_transportista: false,
-      status: 'activa' as const,
-    },
-  };
-}
-
-describe('Layout — integración del CompanySwitcher (FIX-013/§3.1)', () => {
-  it('renderiza el switcher con la empresa activa cuando hay 1 membership', () => {
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+describe('Layout — shell con sidebar', () => {
+  it('el CompanySwitcher sigue accesible (nombre de la empresa activa)', () => {
     render(
-      <Layout me={me} title="Cargas">
+      <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>contenido</div>
       </Layout>,
     );
-    // 1 sola empresa: el switcher renderiza el nombre sin dropdown.
-    // Aparece dos veces (desktop visible + mobile dentro del menú colapsado);
-    // basta con que esté al menos una vez para confirmar la integración.
     expect(screen.getAllByText('Naviera Costera').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('con 2+ memberships activas renderiza el dropdown del switcher', () => {
-    const me = buildMe([
-      membership('e-1', 'Naviera Costera'),
-      membership('e-2', 'Transportes Andes'),
-    ]);
+  it('renderiza children dentro del main y el title en la topbar', () => {
     render(
-      <Layout me={me} title="Cargas">
-        <div>contenido</div>
-      </Layout>,
-    );
-    // El switcher en modo dropdown renderiza un <button aria-haspopup="menu">.
-    expect(screen.getAllByRole('button', { expanded: false }).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('no renderiza el bloque "Empresa activa" del menú móvil cuando no hay memberships activas', () => {
-    const me = buildMe([membership('e-1', 'Pendiente', 'pendiente_invitacion')]);
-    render(
-      <Layout me={me} title="Cargas">
-        <div>contenido</div>
-      </Layout>,
-    );
-    expect(screen.queryByText(/empresa activa/i)).not.toBeInTheDocument();
-  });
-
-  it('renderiza children dentro del main', () => {
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
-    render(
-      <Layout me={me} title="Cargas">
+      <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Contexto de prueba">
         <div>contenido del main</div>
       </Layout>,
     );
     expect(screen.getByText('contenido del main')).toBeInTheDocument();
+    expect(screen.getByText('Contexto de prueba')).toBeInTheDocument();
   });
-});
 
-describe('Layout — mobile menu + signOut', () => {
-  it('hamburguesa cambia aria-expanded false → true → false', () => {
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
+  it('sidebar role-aware: generador ve "Mis cargas", NO "Ofertas"', () => {
     render(
-      <Layout me={me} title="Cargas">
+      <Layout me={buildMe([membership('e-1', 'Gen', { generador: true })])} title="Inicio">
+        <div>x</div>
+      </Layout>,
+    );
+    expect(screen.getByRole('link', { name: /Mis cargas/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Ofertas$/ })).not.toBeInTheDocument();
+  });
+
+  it('sidebar role-aware: transportista ve "Ofertas", NO "Mis cargas"', () => {
+    render(
+      <Layout me={buildMe([membership('e-1', 'Trans', { transportista: true })])} title="Inicio">
+        <div>x</div>
+      </Layout>,
+    );
+    expect(screen.getByRole('link', { name: /Ofertas/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Mis cargas/ })).not.toBeInTheDocument();
+  });
+
+  it('hamburguesa abre el drawer (aria-expanded false → true)', () => {
+    render(
+      <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>x</div>
       </Layout>,
     );
     const trigger = screen.getByRole('button', { name: 'Abrir menú' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(trigger);
-    expect(screen.getByRole('button', { name: 'Cerrar menú' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Abrir menú' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar menú' }));
-    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument();
+    // el drawer expone un diálogo de navegación
+    expect(screen.getByTestId('mobile-drawer')).toBeInTheDocument();
   });
 
-  it('click logo cierra el menú móvil si estaba abierto', () => {
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
-    render(
-      <Layout me={me} title="Cargas">
-        <div>x</div>
-      </Layout>,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
-    fireEvent.click(screen.getByText('Booster AI'));
-    expect(screen.getByRole('button', { name: 'Abrir menú' })).toBeInTheDocument();
-  });
-
-  it('click "Salir" desktop llama signOutUser', () => {
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
-    render(
-      <Layout me={me} title="Cargas">
-        <div>x</div>
-      </Layout>,
-    );
-    const buttons = screen.getAllByRole('button', { name: /Salir/ });
-    const first = buttons[0];
-    if (!first) {
-      throw new Error('expected button');
-    }
-    fireEvent.click(first);
-    expect(signOutUserMock).toHaveBeenCalled();
-  });
-
-  it('click "Salir" mobile (dentro del panel desplegable) también llama signOutUser', () => {
+  it('click "Salir" llama signOutUser', () => {
     signOutUserMock.mockClear();
-    const me = buildMe([membership('e-1', 'Naviera Costera')]);
     render(
-      <Layout me={me} title="Cargas">
+      <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
         <div>x</div>
       </Layout>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
-    const buttons = screen.getAllByRole('button', { name: /Salir/ });
-    const last = buttons[buttons.length - 1];
-    if (!last) {
+    const salir = screen.getAllByRole('button', { name: /Salir/ })[0];
+    if (!salir) {
       throw new Error('expected Salir button');
     }
-    fireEvent.click(last);
+    fireEvent.click(salir);
     expect(signOutUserMock).toHaveBeenCalled();
-  });
-
-  it('handleSwitchEmpresa invoca switchTo + cierra menú mobile', () => {
-    switchToMock.mockClear();
-    const me = buildMe([
-      membership('e-1', 'Naviera Costera'),
-      membership('e-2', 'Transportes Andes'),
-    ]);
-    render(
-      <Layout me={me} title="Cargas">
-        <div>x</div>
-      </Layout>,
-    );
-    // Abre el menú móvil para que su switcher esté visible.
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
-    // El switcher mobile (el último renderizado) tiene los items del dropdown.
-    const switcherButtons = screen.getAllByRole('button', { expanded: false });
-    const lastSwitcher = switcherButtons[switcherButtons.length - 1];
-    if (!lastSwitcher) {
-      throw new Error('expected switcher trigger');
-    }
-    fireEvent.click(lastSwitcher);
-    const items = screen.getAllByRole('menuitem');
-    const target = items.find((el) => !el.hasAttribute('disabled'));
-    if (!target) {
-      throw new Error('expected non-disabled menuitem');
-    }
-    fireEvent.click(target);
-    expect(switchToMock).toHaveBeenCalled();
   });
 });
