@@ -11,8 +11,10 @@ import type { Db } from './db/client.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createDemoExpiresMiddleware } from './middleware/demo-expires.js';
 import { createFirebaseAuthMiddleware } from './middleware/firebase-auth.js';
+import { createImpersonationWriteGuardMiddleware } from './middleware/impersonation-write-guard.js';
 import { ALLOWLISTED_PATHS } from './middleware/is-demo-allowlist.js';
 import { createIsDemoEnforcementMiddleware } from './middleware/is-demo-enforcement.js';
+import { createRateLimitImpersonateMiddleware } from './middleware/rate-limit-impersonate.js';
 import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createRateLimitPublicTrackingMiddleware } from './middleware/rate-limit-public-tracking.js';
 import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
@@ -29,6 +31,7 @@ import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
+import { createAuthImpersonateRoutes } from './routes/auth-impersonate.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
 import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
@@ -337,8 +340,19 @@ export function createServer(opts: CreateServerOptions): Hono {
       allowlist: ALLOWLISTED_PATHS,
       logger,
     });
+    // Impersonación auditada: guard de escritura. Se monta per-group DESPUÉS de
+    // userContext (necesita activeMembership.empresa.isDemo para permitir
+    // escrituras demo). En grupos sin userContext (/me raíz, /empresas
+    // onboarding) fail-closea toda mutación impersonada. Cobertura garantizada
+    // por el CI gate check-impersonation-wire-completeness.ts.
+    const impersonationWriteGuardMiddleware = createImpersonationWriteGuardMiddleware({ logger });
     app.use('/me', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
     app.use('/me/*', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
+    // /me raíz + sub-paths: sin userContext acá → el guard fail-closea las
+    // mutaciones impersonadas (no se puede cambiar clave/consents/perfil del
+    // target mientras se impersona).
+    app.use('/me', impersonationWriteGuardMiddleware);
+    app.use('/me/*', impersonationWriteGuardMiddleware);
     // userContext requerido para /me/push-subscription (necesita user.id).
     // /me raíz queda con solo firebase auth (acepta users pre-onboarding).
     const userContextMiddlewareForMe = createUserContextMiddleware({
@@ -380,6 +394,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
+    // Sin userContext (onboarding) → fail-closed: bloquea onboarding impersonado.
+    app.use('/empresas/*', impersonationWriteGuardMiddleware);
     app.route(
       '/empresas',
       createEmpresaRoutes({
@@ -427,7 +443,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/trip-requests-v2/*', userContextMiddleware);
+    app.use('/trip-requests-v2/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/trip-requests-v2',
       createTripRequestsV2Routes({
@@ -447,7 +463,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/offers/*', userContextMiddleware);
+    app.use('/offers/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/offers',
       createOfferRoutes({
@@ -485,7 +501,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     for (const prefix of ['/transport-orders/*', '/documents/*']) {
       app.use(prefix, firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
       app.use(prefix, rateLimitTransportDocs);
-      app.use(prefix, userContextMiddleware);
+      app.use(prefix, userContextMiddleware, impersonationWriteGuardMiddleware);
     }
     app.route('/', transportDocsRouter);
 
@@ -536,7 +552,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/assignments/*', userContextMiddleware);
+    app.use('/assignments/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     const assignmentsRouter = createAssignmentsRoutes({
       db: opts.db,
       logger,
@@ -590,6 +606,8 @@ export function createServer(opts: CreateServerOptions): Hono {
     // están seteadas → mode requireNotDemo enforces. No wrapper conditional
     // necesario porque el middleware self-handles ambos casos.
     app.use('/certificates/*', isDemoEnforcementMiddleware);
+    // Guard tras userContext, con el mismo short-circuit del /verify público.
+    app.use('/certificates/*', skipPublicVerify(impersonationWriteGuardMiddleware));
     app.route('/certificates', createCertificatesRoutes({ db: opts.db, logger, certConfig }));
 
     // Admin: gestión de dispositivos Teltonika pendientes (open enrollment).
@@ -599,7 +617,11 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/dispositivos-pendientes/*', userContextMiddleware);
+    app.use(
+      '/admin/dispositivos-pendientes/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
     app.route(
       '/admin/dispositivos-pendientes',
       createAdminDispositivosRoutes({ db: opts.db, logger }),
@@ -614,7 +636,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/cobra-hoy/*', userContextMiddleware);
+    app.use('/admin/cobra-hoy/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/cobra-hoy', createAdminCobraHoyRoutes({ db: opts.db, logger }));
 
     // Admin platform-wide: CRUD de organizaciones stakeholder (ADR-034).
@@ -625,7 +647,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/stakeholder-orgs/*', userContextMiddleware);
+    app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
@@ -640,7 +662,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/signup-requests/*', userContextMiddleware);
+    app.use('/admin/signup-requests/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/signup-requests',
       createAdminSignupRequestsRoutes({
@@ -660,7 +682,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/site-settings/*', userContextMiddleware);
+    app.use('/admin/site-settings/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/site-settings',
       createSiteSettingsRoutes({
@@ -679,7 +701,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/seed/*', userContextMiddleware);
+    app.use('/admin/seed/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/seed',
       createAdminSeedRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
@@ -692,7 +714,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/matching/*', userContextMiddleware);
+    app.use('/admin/matching/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
 
     // Spec 2026-05-13 — Admin platform-wide observability dashboard
@@ -734,7 +756,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/admin/observability/*', userContextMiddleware);
+    app.use('/admin/observability/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/observability',
       createAdminObservabilityRoutes({
@@ -750,14 +772,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/vehiculos/*', userContextMiddleware);
+    app.use('/vehiculos/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use(
       '/vehiculos',
       firebaseAuthMiddleware,
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/vehiculos', userContextMiddleware);
+    app.use('/vehiculos', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
 
     // Conductores de la empresa activa (carrier). D8 — solo accesible
@@ -769,14 +791,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/conductores/*', userContextMiddleware);
+    app.use('/conductores/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use(
       '/conductores',
       firebaseAuthMiddleware,
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/conductores', userContextMiddleware);
+    app.use('/conductores', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
 
     // D9 — Driver-only auth surface. `/auth/driver-activate` NO requiere
@@ -828,6 +850,33 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
 
+    // Impersonación auditada — POST /auth/impersonate. A diferencia de
+    // login-rut/driver-activate (pre-auth), este endpoint SÍ requiere que el
+    // ADMIN esté autenticado (firebaseAuth + userContext, que requirePlatformAdmin
+    // consume). Rate-limit per-admin-uid. El guard de escritura pasa directo
+    // acá (la sesión del admin no lleva impersonated_by), pero se incluye para
+    // satisfacer la cobertura del gate sin excepciones.
+    const rateLimitImpersonate = createRateLimitImpersonateMiddleware({
+      redis: redisForRateLimit,
+      logger,
+    });
+    app.use(
+      '/auth/impersonate',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
+    app.use('/auth/impersonate', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/auth/impersonate', rateLimitImpersonate);
+    app.route(
+      '/auth',
+      createAuthImpersonateRoutes({
+        db: opts.db,
+        firebaseAuth: opts.firebaseAuth,
+        logger,
+      }),
+    );
+
     // D7b — Sucursales del shipper. Misma surface multi-tenant que vehiculos.
     app.use(
       '/sucursales/*',
@@ -835,14 +884,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/sucursales/*', userContextMiddleware);
+    app.use('/sucursales/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use(
       '/sucursales',
       firebaseAuthMiddleware,
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/sucursales', userContextMiddleware);
+    app.use('/sucursales', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/sucursales', createSucursalesRoutes({ db: opts.db, logger }));
 
     // D6 — Compliance: documentos de vehículo + conductor + dashboard.
@@ -852,7 +901,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/documentos/*', userContextMiddleware);
+    app.use('/documentos/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/documentos', createDocumentosRoutes({ db: opts.db, logger }));
     app.use(
       '/cumplimiento',
@@ -860,14 +909,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/cumplimiento', userContextMiddleware);
+    app.use('/cumplimiento', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use(
       '/cumplimiento/*',
       firebaseAuthMiddleware,
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
-    app.use('/cumplimiento/*', userContextMiddleware);
+    app.use('/cumplimiento/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/cumplimiento', createCumplimientoRoutes({ db: opts.db, logger }));
   } else {
     logger.warn(
