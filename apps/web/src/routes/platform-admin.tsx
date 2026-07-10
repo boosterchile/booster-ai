@@ -3,6 +3,7 @@ import {
   STAKEHOLDER_ORG_TYPE_LABEL,
   type StakeholderOrgType,
 } from '@booster-ai/shared-schemas';
+import { RegisterProvider } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -196,6 +198,10 @@ function PlatformAdminPage() {
         {seedState.kind === 'success' && <CredentialsPanel data={seedState.data} />}
 
         <StakeholderOrgsSection />
+
+        <RegisterProvider register="operador" density="comoda" className="mt-8 block">
+          <ImpersonationPicker />
+        </RegisterProvider>
 
         <details className="mt-8 rounded-lg border border-neutral-200 bg-white p-4 text-sm">
           <summary className="cursor-pointer font-medium text-neutral-900">

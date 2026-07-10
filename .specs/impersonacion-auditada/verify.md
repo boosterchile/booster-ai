@@ -52,3 +52,43 @@ impersonation-write-guard.ts | 100 | 87.5 | 100 | 100
   job `integration-tests`.
 - **Docker build**: corre en el job `docker-build`. No se agregaron deps externas
   nuevas al api → sin cambios de bundling.
+
+---
+
+## Parte 3 — Frontend (evidencia fresca, Node 24)
+
+TDD: hook + banner + picker escritos con test primero (rojo), luego verde.
+
+| Criterio | Dónde | Estado |
+|---|---|---|
+| Picker lista usuarios es_demo + "Ver como" (D2, sin hardcode) | `GET /auth/impersonate/targets` + `ImpersonationPicker(.test)` | ✅ |
+| Banner por `impersonated_by`, fijo, imposible de ignorar, Salir | `ImpersonationBanner(.test)` (role=alert, danger, D2) | ✅ |
+| Salir → signOut + /login | banner container test + E2E | ✅ |
+| `useImpersonation()` lee el claim | `use-impersonation(.test)` | ✅ |
+| 503 (flag OFF) manejado con gracia | picker container test (estado "desactivada") | ✅ |
+| vitest-axe picker + banner | ambos test files | ✅ |
+| E2E flujo picker→banner→salir→login (Chromium) | `e2e-local/impersonation.spec.ts` vía `/apariencia/impersonacion` | ✅ |
+
+```
+# Tests de impersonación frontend (hook + banner + picker)
+ Tests  34 passed  (use-impersonation 4 + banner 8 + picker 10 + ... )
+
+# Suite unit completo WEB (sin regresiones; __root actualizado)
+ Test Files  121 passed (121)   Tests  1155 passed
+
+# Suite unit completo API (endpoint targets; sin regresiones)
+ Test Files  147 passed (147)   Tests  1766 passed | 2 skipped
+
+# E2E Chromium (build + preview + flujo real de los *View)
+ 1 passed (12.1s)  picker → ver como → banner → salir → login
+
+tsc --noEmit (web + api)  → OK
+biome check (15 archivos) → sin errores
+build web + api           → ✓ built / Build success
+coverage web (80/75/75/80): 83.78 stmts | 78.02 branch | 82.7 funcs | 83.76 lines → PASA
+gates api (wire-completeness + route default-deny + wire test) → verde
+```
+
+**Frontera:** el ciclo entrar/salir es el sellado (Salir = re-login como admin,
+sin restaurar sesión). La caducidad de la ventana impersonada depende de N1
+(token corto) — sin cambios respecto al backend.

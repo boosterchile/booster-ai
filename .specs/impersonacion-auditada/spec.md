@@ -88,3 +88,41 @@ completeness.test.ts`) — así CI enforcea el gap-free **sin tocar workflows**.
 Wirear además el script `tsx` en `security.yml` (junto a check-is-demo) es una
 mejora opcional que toca un quality-gate de CI (archivo protegido, CLAUDE.md) →
 la dejo para aprobación explícita del PO, no la apliqué unilateralmente.
+
+---
+
+# Parte 3 — Frontend (banner + picker + salir)
+
+**Estado:** implementado, PR aparte (no mergeado). Consume el backend #584 ya en
+main. UI nueva → nace en **D2** (primitivas de `packages/ui-components`).
+
+## Decisiones SELLADAS con el PO (parte 3, no reabrir)
+- **Picker:** lista usuarios de EMPRESAS DE PRUEBA (`es_demo`) con "Ver como" por
+  fila. NO un buscador de todos los usuarios (acotado a `es_demo`).
+- **Banner:** fijo arriba, imposible de ignorar, "Estás viendo como [Nombre] ·
+  [Empresa] — Salir", botón Salir siempre visible. Reusa el patrón DemoBanner.
+- **Salir:** cierra la sesión impersonada y vuelve al LOGIN (re-auth como admin),
+  sin guardar/restaurar sesión admin (comodidad diferida).
+
+## Endpoint nuevo (aprobado por el PO — "endpoint chico en el mismo PR")
+`GET /auth/impersonate/targets` (en `auth-impersonate.ts`): read-only, mismo
+caller trust boundary que el mint (`requirePlatformAdmin` + flag). Lista usuarios
+con membership ACTIVA en empresa `es_demo`, no-admin, Firebase UID real. Wireado
+en `/auth/impersonate/*` (firebaseAuth + userContext + guard), sin rate-limit (el
+GET no consume la cuota del mint). El gap "no había endpoint para listar usuarios
+es_demo" se reportó y el PO eligió construirlo acá.
+
+## Componentes (D2, presentacional + container)
+- `hooks/use-impersonation.ts` — `useImpersonation()` lee `claims.impersonated_by`
+  del ID token (patrón useIsDemo). `{ active, impersonatedBy }`.
+- `components/ImpersonationBanner.tsx` — `ImpersonationBannerView` (props, `role=
+  alert`, `bg-danger-600`, D2 Button) + container (self-gate + datos del target
+  vía `useMe`; Salir → `signOutUser` + `/login`). Montado global en `__root`.
+- `components/ImpersonationPicker.tsx` — `ImpersonationPickerView` (states loading/
+  disabled/error/ready, Card + Badge + Button) + container (useQuery targets;
+  "Ver como" → POST /auth/impersonate → `signInUniversalWithCustomToken`; 503 →
+  estado "desactivada", no error crudo). Insertado en `platform-admin.tsx`.
+- `routes/apariencia-impersonacion.tsx` — preview público (mock) para el E2E sin
+  backend/Firebase (patrón `/apariencia/shell`).
+
+Evidencia en `verify.md`.

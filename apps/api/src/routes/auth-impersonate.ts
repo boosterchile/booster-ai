@@ -1,12 +1,12 @@
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
-import { eq } from 'drizzle-orm';
+import { and, eq, notLike } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { eventosImpersonacion, users } from '../db/schema.js';
+import { empresas, eventosImpersonacion, memberships, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { evaluateImpersonationTarget } from '../services/impersonation.js';
 
@@ -59,6 +59,52 @@ export function createAuthImpersonateRoutes(opts: {
   logger: Logger;
 }) {
   const app = new Hono();
+
+  /**
+   * GET /auth/impersonate/targets — lista los usuarios impersonables para el
+   * picker del platform-admin: usuarios con membership ACTIVA en una empresa
+   * `es_demo`, no-admin, con Firebase UID real (no placeholder). Read-only,
+   * mismo caller trust boundary que el mint (requirePlatformAdmin + flag).
+   *
+   * Decisión SELLADA con el PO: el picker se acota a empresas de PRUEBA
+   * (es_demo) — no es un buscador de todos los usuarios.
+   */
+  app.get('/impersonate/targets', async (c) => {
+    const auth = requirePlatformAdmin(c, {
+      featureFlag: appConfig.IMPERSONATION_V1_ACTIVATED,
+    });
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const rows = await opts.db
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        empresa: empresas.legalName,
+        role: memberships.role,
+      })
+      .from(users)
+      .innerJoin(memberships, eq(memberships.userId, users.id))
+      .innerJoin(empresas, eq(empresas.id, memberships.empresaId))
+      .where(
+        and(
+          eq(empresas.isDemo, true),
+          eq(memberships.status, 'activa'),
+          eq(users.isPlatformAdmin, false),
+          notLike(users.firebaseUid, 'pending-rut:%'),
+        ),
+      );
+
+    return c.json({
+      targets: rows.map((r) => ({
+        id: r.id,
+        full_name: r.fullName,
+        empresa: r.empresa,
+        role: r.role,
+      })),
+    });
+  });
 
   app.post('/impersonate', zValidator('json', impersonateBodySchema), async (c) => {
     // Caller-side: feature flag + auth + allowlist platform-admin.

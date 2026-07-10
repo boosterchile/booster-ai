@@ -850,12 +850,15 @@ export function createServer(opts: CreateServerOptions): Hono {
       }),
     );
 
-    // Impersonación auditada — POST /auth/impersonate. A diferencia de
-    // login-rut/driver-activate (pre-auth), este endpoint SÍ requiere que el
-    // ADMIN esté autenticado (firebaseAuth + userContext, que requirePlatformAdmin
-    // consume). Rate-limit per-admin-uid. El guard de escritura pasa directo
-    // acá (la sesión del admin no lleva impersonated_by), pero se incluye para
-    // satisfacer la cobertura del gate sin excepciones.
+    // Impersonación auditada — POST /auth/impersonate (mint) + GET
+    // /auth/impersonate/targets (picker). A diferencia de login-rut/
+    // driver-activate (pre-auth), estos endpoints SÍ requieren que el ADMIN
+    // esté autenticado (firebaseAuth + userContext, que requirePlatformAdmin
+    // consume). El chain cubre el path exacto (mint) y el sub-path (targets).
+    // Rate-limit per-admin-uid SOLO sobre el mint (el GET del picker es
+    // read-only y no debe consumir la cuota de emisión). El guard de escritura
+    // pasa directo acá (la sesión del admin no lleva impersonated_by), pero se
+    // incluye para satisfacer la cobertura del gate sin excepciones.
     const rateLimitImpersonate = createRateLimitImpersonateMiddleware({
       redis: redisForRateLimit,
       logger,
@@ -866,7 +869,14 @@ export function createServer(opts: CreateServerOptions): Hono {
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
+    app.use(
+      '/auth/impersonate/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
     app.use('/auth/impersonate', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/auth/impersonate/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use('/auth/impersonate', rateLimitImpersonate);
     app.route(
       '/auth',
