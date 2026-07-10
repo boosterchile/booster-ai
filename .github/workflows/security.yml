@@ -243,6 +243,33 @@ jobs:
         run: pnpm --filter @booster-ai/api exec tsx scripts/check-is-demo-wire-completeness.ts
 
   # ---------------------------------------------------------------------------
+  # Impersonación auditada (#584) — wire-completeness del guard de escritura.
+  # Parsea server.ts + verifica que CADA mount point con firebaseAuthMiddleware
+  # también tiene impersonationWriteGuardMiddleware en el chain. Un gap ahí
+  # sería una ruta mutante por la que una sesión impersonada podría escribir
+  # sobre una empresa real sin bloqueo. Reusa el mismo script que ya corre como
+  # test vitest en el job `test` (apps/api/scripts/check-impersonation-wire-
+  # completeness.ts) — acá es el gate de SEGURIDAD dedicado y visible, gemelo
+  # del is-demo-wire-completeness.
+  # ---------------------------------------------------------------------------
+  impersonation-wire-completeness:
+    name: Impersonation write-guard completeness
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: '9.15.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify every auth-required mount point has impersonationWriteGuardMiddleware wired
+        run: pnpm --filter @booster-ai/api exec tsx scripts/check-impersonation-wire-completeness.ts
+
+  # ---------------------------------------------------------------------------
   # SEC-001 boundary-closure T2 (SC-G1b) — harness CI default-deny.
   # Spec .specs/sec-001-h1-2-google-boundary-closure/spec.md SC-G1b + T15;
   # ADR-057 (supersede ADR-054). Enumera CADA mount de server.ts (app.route()
