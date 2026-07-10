@@ -518,6 +518,19 @@ export const apiEnvSchema = commonEnvSchema
     SIGNUP_REQUEST_FLOW_ACTIVATED: booleanFlag(false),
 
     /**
+     * Impersonación auditada — gate del endpoint `POST /auth/impersonate`
+     * (platform-admin actúa como cualquier usuario no-admin, con escritura
+     * acotada a empresas `es_demo` vía el impersonation-write-guard).
+     *
+     * Default `false` (opt-in explícito del PO en Terraform). Con el flag OFF,
+     * el endpoint responde `503 feature_disabled` — no existe superficie de
+     * impersonación en prod hasta activación deliberada. El guard de escritura
+     * y la propagación de `impersonated_by` son inertes sin tokens de
+     * impersonación emitidos, así que mergear con el flag OFF es 0-impacto.
+     */
+    IMPERSONATION_V1_ACTIVATED: booleanFlag(false),
+
+    /**
      * SEC-001 hotfix (`.specs/sec-001-empresa-onboarding-gate-hotfix/`) —
      * KILL SWITCH para self-service company onboarding.
      *

@@ -22,6 +22,13 @@ export interface UserContext {
    * default. Si tiene 0 memberships, este valor es null.
    */
   activeMembership: MembershipWithEmpresa | null;
+  /**
+   * Impersonación auditada: el user id del platform-admin que impersona,
+   * leído del custom claim `impersonated_by` (lo setea el
+   * userContextMiddleware, no `resolveUserContext`). `null` en sesiones
+   * normales. El guard de escritura, la auditoría y el banner lo consumen.
+   */
+  impersonatedBy: string | null;
 }
 
 export class UserNotFoundError extends Error {
@@ -80,5 +87,8 @@ export async function resolveUserContext(opts: {
     user,
     memberships: memberships_,
     activeMembership,
+    // Default: sesión no impersonada. El userContextMiddleware lo sobreescribe
+    // con el admin del claim `impersonated_by` cuando la sesión es impersonada.
+    impersonatedBy: null,
   };
 }

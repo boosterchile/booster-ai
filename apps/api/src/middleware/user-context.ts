@@ -46,6 +46,17 @@ export function createUserContextMiddleware(opts: {
         firebaseUid: claims.uid,
         requestedEmpresaId,
       });
+      // Impersonación auditada: si el token trae el custom claim
+      // `impersonated_by`, la sesión ES el target (claims.uid = target) pero
+      // colgamos el admin que impersona para el guard de escritura + auditoría
+      // + banner. El claim solo RESTRINGE (nunca otorga), así que es seguro
+      // confiar en él acá.
+      const impersonatedByClaim = (claims.custom as Record<string, unknown> | undefined)
+        ?.impersonated_by;
+      ctx.impersonatedBy =
+        typeof impersonatedByClaim === 'string' && impersonatedByClaim.length > 0
+          ? impersonatedByClaim
+          : null;
       c.set('userContext', ctx);
     } catch (err) {
       if (err instanceof UserNotFoundError) {

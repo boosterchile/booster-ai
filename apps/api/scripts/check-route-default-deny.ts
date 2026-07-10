@@ -81,6 +81,10 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAdminSeedRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
+  // Impersonación auditada — POST /auth/impersonate. firebaseAuth + userContext
+  // preceden el mount (app.use('/auth/impersonate', …)); gate adicional
+  // requirePlatformAdmin (allowlist + flag IMPERSONATION_V1_ACTIVATED) + rate-limit.
+  createAuthImpersonateRoutes: { category: 'ENFORCED', rationale: '' },
   createVehiculosRoutes: { category: 'ENFORCED', rationale: '' },
   createConductoresRoutes: { category: 'ENFORCED', rationale: '' },
   createSucursalesRoutes: { category: 'ENFORCED', rationale: '' },

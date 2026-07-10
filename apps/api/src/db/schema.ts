@@ -2524,10 +2524,46 @@ export const transportDocuments = pgTable(
   }),
 );
 
+/**
+ * Auditoría de impersonación (impersonación auditada). Cada inicio de una
+ * sesión impersonada (POST /auth/impersonate) inserta una fila: quién
+ * (`admin_id`), a quién (`usuario_impersonado_id`), sobre qué empresa
+ * (`empresa_id`, nullable — la empresa activa la elige el cliente vía
+ * X-Empresa-Id y puede variar), cuándo empezó (`iniciado_en`) y cuándo
+ * terminó (`finalizado_en`, nullable — lo setea el "salir"). Las mutaciones
+ * individuales durante la sesión se atribuyen vía el log estructurado del
+ * `impersonation-write-guard` (evento con `impersonated_by`).
+ *
+ * FKs con `onDelete: 'restrict'`: un registro de auditoría nunca debe
+ * desaparecer por el borrado de un usuario/empresa.
+ */
+export const eventosImpersonacion = pgTable(
+  'eventos_impersonacion',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    adminUserId: uuid('admin_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    targetUserId: uuid('usuario_impersonado_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id').references(() => empresas.id, { onDelete: 'restrict' }),
+    startedAt: timestamp('iniciado_en', { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp('finalizado_en', { withTimezone: true }),
+  },
+  (table) => ({
+    adminIdx: index('idx_eventos_impersonacion_admin').on(table.adminUserId),
+    targetIdx: index('idx_eventos_impersonacion_target').on(table.targetUserId),
+    iniciadoIdx: index('idx_eventos_impersonacion_iniciado').on(table.startedAt),
+  }),
+);
+
 // =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 
+export type EventoImpersonacionRow = typeof eventosImpersonacion.$inferSelect;
+export type NewEventoImpersonacionRow = typeof eventosImpersonacion.$inferInsert;
 export type PlanRow = typeof plans.$inferSelect;
 export type NewPlanRow = typeof plans.$inferInsert;
 export type EmpresaRow = typeof empresas.$inferSelect;
