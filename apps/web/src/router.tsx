@@ -404,6 +404,17 @@ const aparienciaShellRoute = createRoute({
   ),
 });
 
+// Preview del flujo de impersonación (picker → banner → salir) con datos mock.
+// Público (como /apariencia); sirve al E2E sin auth/backend ni Firebase.
+const aparienciaImpersonacionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/impersonacion',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-impersonacion.js'),
+    'AparienciaImpersonacionRoute',
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -451,6 +462,7 @@ const routeTree = rootRoute.addChildren([
   solicitarAccesoRoute,
   aparienciaRoute,
   aparienciaShellRoute,
+  aparienciaImpersonacionRoute,
 ]);
 
 export const router = createRouter({
