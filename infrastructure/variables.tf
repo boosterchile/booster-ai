@@ -363,6 +363,27 @@ variable "auth_universal_v1_activated" {
 }
 
 # ---------------------------------------------------------------------------
+# Impersonación auditada (#584 backend / #585 frontend / #586 gate) —
+# platform-admin actúa como usuario no-admin, con escritura acotada a
+# empresas `es_demo` y auditoría en `eventos_impersonacion`. El guard de
+# escritura, el mint, la auditoría, el banner y el picker ya están en main y
+# testeados; este flag es el interruptor.
+# ---------------------------------------------------------------------------
+# Con `false`: POST /auth/impersonate y GET /auth/impersonate/targets
+# responden 503 y el picker del platform-admin muestra "desactivada" (0
+# impacto). Con `true`: la impersonación queda operativa.
+#
+# ⚠️ Este `default = true` deja el flag PREPARADO para encenderse, pero NO se
+# enciende hasta un `terraform apply` deliberado del PO — no hay auto-apply en
+# este repo (solo terraform-drift.yml, read-only). Flip reversible sin redeploy
+# de código: setear a `false` + `terraform apply` revierte a 503 en segundos.
+variable "impersonation_v1_activated" {
+  description = "Activa la impersonación auditada (platform-admin ve-como usuario no-admin; escritura solo en empresas es_demo). false = endpoints 503."
+  type        = bool
+  default     = true
+}
+
+# ---------------------------------------------------------------------------
 # SEC-001 H1.2 Sprint 2c-B T8 pre-apply (ADR-052 Accepted) — admin-approval
 # signup-request flow
 # ---------------------------------------------------------------------------
