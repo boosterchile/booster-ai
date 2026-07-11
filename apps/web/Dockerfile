@@ -19,8 +19,17 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json biome.json ./
 COPY apps/web/package.json ./apps/web/
-COPY packages/shared-schemas/package.json ./packages/shared-schemas/
-COPY packages/ui-tokens/package.json ./packages/ui-tokens/
+# Copiamos TODO packages/ (no una lista curada frágil de package.json). apps/web
+# depende de @booster-ai/ui-components (ola D2, #577), que arrastra clsx /
+# tailwind-merge / react-aria-components. La lista curada anterior omitía
+# ui-components → pnpm no instalaba sus deps → `vite build` moría con "Rollup
+# failed to resolve import clsx" (deploy 2026-07-10). Copiar packages/ entero
+# garantiza que el deps stage NUNCA quede stale cuando web gane una workspace
+# dep nueva. `.dockerignore` excluye node_modules/dist (solo entran fuentes +
+# package.json); el prod build corre con --no-cache, así que no se pierde
+# layer-cache útil. El node_modules instalado acá sobrevive al `COPY . .` del
+# build stage (node_modules está en .dockerignore → no se sobrescribe).
+COPY packages/ ./packages/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage: vite build con env vars inyectadas via ARG ---
