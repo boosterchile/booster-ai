@@ -63,11 +63,13 @@ export function createAuthImpersonateRoutes(opts: {
   /**
    * GET /auth/impersonate/targets — lista los usuarios impersonables para el
    * picker del platform-admin: usuarios con membership ACTIVA en una empresa
-   * `es_demo`, no-admin, con Firebase UID real (no placeholder). Read-only,
-   * mismo caller trust boundary que el mint (requirePlatformAdmin + flag).
+   * `es_usuario_prueba`, no-admin, con Firebase UID real (no placeholder).
+   * Read-only, mismo caller trust boundary que el mint (requirePlatformAdmin +
+   * flag).
    *
-   * Decisión SELLADA con el PO: el picker se acota a empresas de PRUEBA
-   * (es_demo) — no es un buscador de todos los usuarios.
+   * Decisión SELLADA con el PO: el picker se acota a empresas de USUARIOS DE
+   * PRUEBA (`es_usuario_prueba`, DESACOPLADO de `es_demo` — ADR-053 + recon
+   * findings) — no es un buscador de todos los usuarios.
    */
   app.get('/impersonate/targets', async (c) => {
     const auth = requirePlatformAdmin(c, {
@@ -89,7 +91,8 @@ export function createAuthImpersonateRoutes(opts: {
       .innerJoin(empresas, eq(empresas.id, memberships.empresaId))
       .where(
         and(
-          eq(empresas.isDemo, true),
+          // DESACOPLE ADR-053: solo empresas `es_usuario_prueba` (NO `es_demo`).
+          eq(empresas.isTestUser, true),
           eq(memberships.status, 'activa'),
           eq(users.isPlatformAdmin, false),
           notLike(users.firebaseUid, 'pending-rut:%'),
