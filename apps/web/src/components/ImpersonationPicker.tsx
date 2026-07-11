@@ -30,6 +30,8 @@ export interface ImpersonationPickerViewProps {
   targets: ImpersonationTarget[];
   impersonatingId: string | null;
   onImpersonate: (id: string) => void;
+  /** Mensaje de error del último intento de impersonar; `null` si no hubo. */
+  errorMessage?: string | null;
 }
 
 /** Presentacional (props). Testeable + axe sin red. */
@@ -38,6 +40,7 @@ export function ImpersonationPickerView({
   targets,
   impersonatingId,
   onImpersonate,
+  errorMessage = null,
 }: ImpersonationPickerViewProps) {
   return (
     <Card>
@@ -48,6 +51,14 @@ export function ImpersonationPickerView({
         </p>
       </CardHeader>
       <CardBody>
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-danger-700 text-sm"
+          >
+            {errorMessage}
+          </div>
+        ) : null}
         {state === 'disabled' ? (
           <p className="text-neutral-600 text-sm">
             La impersonación está <span className="font-medium">desactivada</span>. Activá el flag{' '}
@@ -99,6 +110,7 @@ export function ImpersonationPicker() {
     retry: false,
   });
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const disabled = query.error instanceof ApiError && query.error.status === 503;
   const state: PickerState = disabled
@@ -111,6 +123,7 @@ export function ImpersonationPicker() {
 
   async function onImpersonate(id: string) {
     setImpersonatingId(id);
+    setErrorMessage(null);
     try {
       const res = await api.post<{ custom_token: string }>('/auth/impersonate', {
         target_user_id: id,
@@ -118,8 +131,11 @@ export function ImpersonationPicker() {
       // signInWithCustomToken dispara onAuthStateChanged → la app pasa a ser el
       // target y el banner aparece. No navegamos: la sesión cambia sola.
       await signInUniversalWithCustomToken(res.custom_token);
-    } catch {
+    } catch (err) {
+      // No tragar el error: mostrarlo al admin (antes un catch vacío dejaba el
+      // botón "sin hacer nada" cuando el backend devolvía 409 o Firebase 400).
       setImpersonatingId(null);
+      setErrorMessage(impersonationErrorMessage(err));
     }
   }
 
@@ -129,6 +145,32 @@ export function ImpersonationPicker() {
       targets={query.data?.targets ?? []}
       impersonatingId={impersonatingId}
       onImpersonate={onImpersonate}
+      errorMessage={errorMessage}
     />
   );
+}
+
+/**
+ * Traduce el error de un intento de impersonar a un mensaje para el admin.
+ * Prioriza el `message` del cuerpo del error del backend (ej. 409
+ * target_account_disabled), luego el código de Firebase, luego genérico.
+ */
+function impersonationErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    const body = err.details as { message?: string } | null | undefined;
+    if (body?.message) {
+      return body.message;
+    }
+    if (err.code === 'target_account_disabled') {
+      return 'La cuenta del usuario está deshabilitada; no se puede impersonar.';
+    }
+    return `No se pudo impersonar (error ${err.status}).`;
+  }
+  const code =
+    err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+  if (code === 'auth/user-disabled') {
+    return 'La cuenta del usuario está deshabilitada; no se puede impersonar.';
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return `No se pudo impersonar: ${msg}`;
 }
