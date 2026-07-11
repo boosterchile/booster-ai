@@ -8,21 +8,21 @@ import { createImpersonationWriteGuardMiddleware } from './impersonation-write-g
 /**
  * Tests del middleware impersonation-write-guard.
  *
- * Decisión SELLADA con el PO (impersonación auditada):
+ * Decisión SELLADA con el PO (impersonación auditada) + DESACOPLE ADR-053:
  *   - Una sesión impersonada (custom claim `impersonated_by` presente) puede
  *     LEER cualquier empresa del target (GET/HEAD/OPTIONS passthrough), pero
  *     solo puede ESCRIBIR (POST/PUT/PATCH/DELETE) cuando la empresa activa
- *     (`userContext.activeMembership.empresa.isDemo`) es de-prueba.
- *   - Empresa real + sesión impersonada + método mutante → 403 (fail-closed).
- *   - Sin userContext resoluble (rutas user-level como /me raíz) → 403: no se
- *     puede confirmar es_demo, así que se bloquea (fail-closed).
+ *     (`userContext.activeMembership.empresa.isTestUser` = `es_usuario_prueba`)
+ *     es de usuarios de prueba. `es_demo` YA NO autoriza.
+ *   - Empresa real, demo legacy, o sin userContext resoluble + método mutante
+ *     → 403 (fail-closed).
  *   - Sesión normal (sin `impersonated_by`) → passthrough SIEMPRE (no rompe la
  *     escritura normal de usuarios reales).
  *
  * Atribución (criterio de auditoría): el guard emite un log estructurado con
  * `impersonated_by` en CADA mutación impersonada — tanto las bloqueadas
- * (`auth.impersonation.write_blocked`) como las permitidas sobre empresa demo
- * (`auth.impersonation.write_allowed`). Así toda mutación impersonada es
+ * (`auth.impersonation.write_blocked`) como las permitidas sobre empresa de
+ * prueba (`auth.impersonation.write_allowed`). Así toda mutación impersonada es
  * atribuible al admin.
  */
 
@@ -59,12 +59,20 @@ const NORMAL_CLAIMS: FirebaseClaims = {
 
 const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
-/** Construye un userContext mínimo con la empresa activa marcada (o no) demo. */
-function userContextWithDemo(isDemo: boolean): UserContext {
+/**
+ * Construye un userContext mínimo con la empresa activa marcada con los flags
+ * dados. La AUTORIZACIÓN de escritura impersonada depende SOLO de
+ * `es_usuario_prueba` (isTestUser); `es_demo` (isDemo) NO autoriza (desacople
+ * ADR-053).
+ */
+function userContextWith(flags: { isDemo?: boolean; isTestUser?: boolean }): UserContext {
   return {
     user: { id: 'target-uuid' },
     memberships: [],
-    activeMembership: { membership: {}, empresa: { id: 'e1', isDemo } },
+    activeMembership: {
+      membership: {},
+      empresa: { id: 'e1', isDemo: flags.isDemo ?? false, isTestUser: flags.isTestUser ?? false },
+    },
     impersonatedBy: ADMIN_ID,
   } as unknown as UserContext;
 }
@@ -101,7 +109,7 @@ function makeApp(opts: {
 describe('impersonation-write-guard middleware', () => {
   describe('sesión normal (sin impersonated_by)', () => {
     it('passthrough en TODOS los métodos mutantes (no rompe escritura real)', async () => {
-      const app = makeApp({ claims: NORMAL_CLAIMS, userContext: userContextWithDemo(false) });
+      const app = makeApp({ claims: NORMAL_CLAIMS, userContext: userContextWith({}) });
       for (const method of MUTATING_METHODS) {
         const res = await app.request('/x', { method });
         expect(res.status, method).toBe(200);
@@ -119,7 +127,7 @@ describe('impersonation-write-guard middleware', () => {
     it('GET passthrough aunque la empresa activa NO sea demo (lecturas en cualquier empresa)', async () => {
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
       });
       const res = await app.request('/x', { method: 'GET' });
       expect(res.status).toBe(200);
@@ -128,7 +136,7 @@ describe('impersonation-write-guard middleware', () => {
     it('HEAD passthrough con empresa real', async () => {
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
       });
       const res = await app.request('/x', { method: 'HEAD' });
       expect(res.status).toBe(200);
@@ -139,7 +147,7 @@ describe('impersonation-write-guard middleware', () => {
     it('POST/PUT/PATCH/DELETE → 403 forbidden_impersonation_write en CADA método', async () => {
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
       });
       for (const method of MUTATING_METHODS) {
         const res = await app.request('/x', { method });
@@ -173,16 +181,43 @@ describe('impersonation-write-guard middleware', () => {
     });
   });
 
-  describe('sesión impersonada + método mutante + empresa demo (permitido)', () => {
-    it('POST/PUT/PATCH/DELETE → passthrough sobre empresa es_demo', async () => {
+  describe('sesión impersonada + método mutante + empresa es_usuario_prueba (permitido)', () => {
+    it('POST/PUT/PATCH/DELETE → passthrough sobre empresa es_usuario_prueba=true', async () => {
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(true),
+        userContext: userContextWith({ isTestUser: true }),
       });
       for (const method of MUTATING_METHODS) {
         const res = await app.request('/x', { method });
         expect(res.status, method).toBe(200);
       }
+    });
+  });
+
+  describe('DESACOPLE ADR-053: es_demo ya NO autoriza escritura impersonada', () => {
+    it('empresa legacy es_demo=true pero es_usuario_prueba=false → 403 en CADA método mutante', async () => {
+      // Rojo de seguridad: si el guard siguiera keyeado en es_demo, esto
+      // permitiría MUTAR data de una empresa demo legacy bajo identidad
+      // impersonada. Solo es_usuario_prueba debe autorizar.
+      const app = makeApp({
+        claims: IMPERSONATED_CLAIMS,
+        userContext: userContextWith({ isDemo: true, isTestUser: false }),
+      });
+      for (const method of MUTATING_METHODS) {
+        const res = await app.request('/x', { method });
+        expect(res.status, method).toBe(403);
+        const body = (await res.json()) as { code: string };
+        expect(body.code, method).toBe('forbidden_impersonation_write');
+      }
+    });
+
+    it('empresa real de cliente (es_demo=false, es_usuario_prueba=false) → 403 (data real protegida)', async () => {
+      const app = makeApp({
+        claims: IMPERSONATED_CLAIMS,
+        userContext: userContextWith({ isDemo: false, isTestUser: false }),
+      });
+      const res = await app.request('/x', { method: 'PATCH' });
+      expect(res.status).toBe(403);
     });
   });
 
@@ -206,7 +241,7 @@ describe('impersonation-write-guard middleware', () => {
       const { logger, warn } = makeSpyLogger();
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
         logger,
       });
       const res = await app.request('/x', {
@@ -229,7 +264,7 @@ describe('impersonation-write-guard middleware', () => {
       const { logger, info, warn } = makeSpyLogger();
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(true),
+        userContext: userContextWith({ isTestUser: true }),
         logger,
       });
       const res = await app.request('/x', { method: 'POST' });
@@ -250,7 +285,7 @@ describe('impersonation-write-guard middleware', () => {
       const { logger, warn, info } = makeSpyLogger();
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
         logger,
       });
       await app.request('/x', { method: 'GET' });
@@ -262,7 +297,7 @@ describe('impersonation-write-guard middleware', () => {
       const { logger, warn, info } = makeSpyLogger();
       const app = makeApp({
         claims: NORMAL_CLAIMS,
-        userContext: userContextWithDemo(false),
+        userContext: userContextWith({}),
         logger,
       });
       await app.request('/x', { method: 'POST' });

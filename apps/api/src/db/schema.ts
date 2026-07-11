@@ -544,6 +544,18 @@ export const empresas = pgTable(
      */
     isDemo: boolean('es_demo').notNull().default(false),
     /**
+     * Impersonación auditada — marca de empresa de USUARIOS DE PRUEBA. Es el
+     * ÚNICO flag que autoriza la escritura de una sesión impersonada (el
+     * write-guard) y el ÚNICO que el picker lista como target. DESACOPLADO de
+     * `es_demo` a propósito (ADR-053 + recon findings): a diferencia de
+     * `es_demo`, esta marca NO expone la empresa a `/demo/login` ni al lifecycle
+     * demo (retire/TTL) — no es login-reachable por ninguna superficie pública,
+     * solo alcanzable por el mint admin-gated. Así los usuarios de prueba de
+     * impersonación sobreviven al retiro del subsistema demo y quedan fuera del
+     * vector de credencial compartida que motivó ADR-053.
+     */
+    isTestUser: boolean('es_usuario_prueba').notNull().default(false),
+    /**
      * D6 — Opt-in del transportista para activar el módulo de compliance
      * (documentos + mantenimientos preventivos del carrier). Cuando true,
      * las queries del dashboard de cumplimiento aplican; cuando false, el

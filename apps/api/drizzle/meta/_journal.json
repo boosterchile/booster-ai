@@ -351,6 +351,13 @@
       "when": 1780876800013,
       "tag": "0049_eventos_impersonacion",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1780876800014,
+      "tag": "0050_empresas_es_usuario_prueba",
+      "breakpoints": true
     }
   ]
 }
