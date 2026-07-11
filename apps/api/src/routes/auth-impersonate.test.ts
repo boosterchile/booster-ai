@@ -66,9 +66,19 @@ function makeDb(targetRow: TargetRow | null) {
   };
 }
 
-function makeAuth() {
+function makeAuth(opts: { disabled?: boolean } = {}) {
   const createCustomToken = vi.fn(async () => 'minted-custom-token');
-  return { auth: { createCustomToken } as unknown as Auth, spies: { createCustomToken } };
+  // getUser: por default la cuenta target está ENABLED (disabled:false). El
+  // mint chequea disabled ANTES de mintear (robustez: una cuenta disabled
+  // 400ea en signInWithCustomToken del lado cliente — USER_DISABLED).
+  const getUser = vi.fn(async () => ({
+    uid: 'target-firebase-uid',
+    disabled: opts.disabled ?? false,
+  }));
+  return {
+    auth: { createCustomToken, getUser } as unknown as Auth,
+    spies: { createCustomToken, getUser },
+  };
 }
 
 /** userContext del CALLER (el admin autenticado que invoca el endpoint). */
@@ -208,6 +218,36 @@ describe('POST /auth/impersonate — emisión + auditoría', () => {
     );
   });
 
+  it('target con cuenta Firebase DISABLED → 409 target_account_disabled, sin token, sin auditoría', async () => {
+    const { db, spies } = makeDb({
+      id: 'target-uuid',
+      firebaseUid: 'target-firebase-uid',
+      isPlatformAdmin: false,
+    });
+    const { auth, spies: authSpies } = makeAuth({ disabled: true });
+    const app = makeApp({ db, auth, userContext: adminContext() });
+    const res = await post(app, { target_user_id: VALID_TARGET });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; message?: string };
+    expect(body.code).toBe('target_account_disabled');
+    // NO se mintea token ni se inserta auditoría para una cuenta disabled.
+    expect(authSpies.createCustomToken).not.toHaveBeenCalled();
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('chequea disabled ANTES de mintear: getUser se llama con el UID del target', async () => {
+    const { db } = makeDb({
+      id: 'target-uuid',
+      firebaseUid: 'target-firebase-uid',
+      isPlatformAdmin: false,
+    });
+    const { auth, spies: authSpies } = makeAuth();
+    const app = makeApp({ db, auth, userContext: adminContext() });
+    await post(app, { target_user_id: VALID_TARGET });
+    expect(authSpies.getUser).toHaveBeenCalledWith('target-firebase-uid');
+  });
+
   it('createCustomToken falla → 502 firebase_error, sin fila de auditoría', async () => {
     const { db, spies } = makeDb({
       id: 'target-uuid',
@@ -215,6 +255,7 @@ describe('POST /auth/impersonate — emisión + auditoría', () => {
       isPlatformAdmin: false,
     });
     const auth = {
+      getUser: vi.fn(async () => ({ uid: 'target-firebase-uid', disabled: false })),
       createCustomToken: vi.fn(async () => {
         throw new Error('firebase down');
       }),

@@ -138,6 +138,35 @@ export function createAuthImpersonateRoutes(opts: {
       return c.json({ error: decision.code, code: decision.code }, decision.status);
     }
 
+    // Robustez: chequear que la cuenta Firebase del target NO esté disabled
+    // ANTES de mintear. `createCustomToken` firma igual una cuenta disabled,
+    // pero `signInWithCustomToken` del lado cliente 400ea (USER_DISABLED) → el
+    // botón "Ver como" fallaba en silencio. Detectarlo acá da un error claro.
+    // (No toca el trust boundary — es un chequeo adicional post-decisión.)
+    try {
+      const targetRecord = await opts.firebaseAuth.getUser(decision.targetFirebaseUid);
+      if (targetRecord.disabled) {
+        opts.logger.warn(
+          { adminUserId: callerUserId, targetUserId: decision.targetUserId },
+          'impersonate: cuenta Firebase del target disabled',
+        );
+        return c.json(
+          {
+            error: 'target_account_disabled',
+            code: 'target_account_disabled',
+            message: 'La cuenta del usuario está deshabilitada; no se puede impersonar.',
+          },
+          409,
+        );
+      }
+    } catch (err) {
+      opts.logger.error(
+        { err, adminUserId: callerUserId, targetUserId: decision.targetUserId },
+        'impersonate: getUser falló',
+      );
+      return c.json({ error: 'firebase_error', code: 'firebase_error' }, 502);
+    }
+
     const impersonatedAt = new Date().toISOString();
 
     // Mint del custom token sobre el UID del target con impersonated_by.

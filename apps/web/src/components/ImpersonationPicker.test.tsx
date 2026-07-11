@@ -123,9 +123,23 @@ describe('ImpersonationPickerView (presentacional)', () => {
     expect(onImpersonate).toHaveBeenCalledWith('u1');
   });
 
-  it('sin violaciones de a11y (vitest-axe)', async () => {
+  it('errorMessage seteado → muestra el error (role=alert)', () => {
+    render(
+      <ImpersonationPickerView
+        state="ready"
+        targets={TARGETS}
+        impersonatingId={null}
+        onImpersonate={() => undefined}
+        errorMessage="La cuenta del usuario está deshabilitada; no se puede impersonar."
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/deshabilitada/i);
+  });
+
+  it('sin violaciones de a11y (vitest-axe), incluido el estado de error', async () => {
     // El picker vive dentro del <main> de platform-admin; lo envolvemos en un
-    // landmark para que la regla `region` refleje el uso real.
+    // landmark para que la regla `region` refleje el uso real. Con errorMessage
+    // seteado para cubrir el alert de error en a11y.
     const { baseElement } = render(
       <main>
         <ImpersonationPickerView
@@ -133,6 +147,7 @@ describe('ImpersonationPickerView (presentacional)', () => {
           targets={TARGETS}
           impersonatingId={null}
           onImpersonate={() => undefined}
+          errorMessage="La cuenta del usuario está deshabilitada; no se puede impersonar."
         />
       </main>,
     );
@@ -163,6 +178,25 @@ describe('ImpersonationPicker (container)', () => {
       expect(postMock).toHaveBeenCalledWith('/auth/impersonate', { target_user_id: 'u1' }),
     );
     await waitFor(() => expect(signInMock).toHaveBeenCalledWith('tok-123'));
+  });
+
+  it('"Ver como" falla (409 target_account_disabled) → MUESTRA el error al admin', async () => {
+    const { ApiError } = await import('../lib/api-client.js');
+    getMock.mockResolvedValue({ targets: TARGETS });
+    postMock.mockRejectedValue(
+      new ApiError(409, 'target_account_disabled', {
+        message: 'La cuenta del usuario está deshabilitada; no se puede impersonar.',
+      }),
+    );
+    wrap(<ImpersonationPicker />);
+    await waitFor(() => expect(screen.getByText('Ana Demo')).toBeInTheDocument());
+    const first = screen.getAllByRole('button', { name: /Ver como/i })[0];
+    if (!first) {
+      throw new Error('sin botón');
+    }
+    await userEvent.click(first);
+    // El error NO se traga: aparece en la UI.
+    await waitFor(() => expect(screen.getByText(/deshabilitada/i)).toBeInTheDocument());
   });
 
   it('backend 503 (flag OFF) → estado desactivado, no error crudo', async () => {
