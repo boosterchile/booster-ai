@@ -280,6 +280,13 @@ resource "google_cloud_scheduler_job" "reap_inert_idp_accounts" {
 # diario) si se quieren reintentos más densos. Mensual cubre el caso base de
 # emitir la cuota del mes.
 resource "google_cloud_scheduler_job" "cobrar_memberships_mensual" {
+  # INERTE por decisión del PO (2026-07): con count=0 el cron NO se crea — el
+  # bloque queda declarado como diseño, sin instancia en GCP. Activarlo
+  # (var.cobro_mensual_activado = true) es una decisión de NEGOCIO del PO:
+  # dispara el cobro mensual de membresías (movimiento de dinero real). NO se
+  # toca la lógica interna (schedule/uri/payload/paused): solo su activación.
+  count = var.cobro_mensual_activado ? 1 : 0
+
   name        = "cobrar-memberships-mensual"
   description = "Mensual día 1 08:00 Santiago: factura las cuotas de membresía de carriers en tier pagado + dunning. ⚠️ rail de pago STUBEADO (no mueve dinero). Gap B5 / ADR-030 §7 / ADR-031."
   project     = google_project.booster_ai.project_id
