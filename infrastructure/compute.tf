@@ -539,6 +539,15 @@ module "service_notification" {
     SERVICE_NAME = "booster-ai-notification-service"
   })
 
+  # REDIS_PASSWORD → secret redis-auth (Memorystore con AUTH_ENABLED=True). El
+  # service ya recibe REDIS_HOST/PORT/TLS/CA_CERT vía local.common_env_vars pero
+  # le faltaba el password; sin este mount un apply dropea el REDIS_PASSWORD vivo
+  # (valor plano) → auth failure en runtime. Mismo mount que local.common_secrets
+  # (solo REDIS_PASSWORD; el service no usa DATABASE_URL).
+  secrets = {
+    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
+  }
+
   public = false
 
   # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
@@ -658,6 +667,10 @@ module "service_whatsapp_bot" {
   secrets = {
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+    # REDIS_PASSWORD → secret redis-auth (Memorystore con AUTH_ENABLED=True). El
+    # bot conecta a Redis (ver vpc_connector abajo); sin este mount un apply
+    # dropea el REDIS_PASSWORD vivo (valor plano) → auth failure en runtime.
+    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
     # ADR-037: GEMINI_API_KEY eliminada. El bot WhatsApp no usa Gemini en
     # código — era binding huérfano.
   }
