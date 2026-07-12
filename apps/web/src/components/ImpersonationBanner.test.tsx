@@ -1,7 +1,9 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
 /**
  * Tests del ImpersonationBanner (impersonación auditada, frontend). Banner fijo
@@ -108,5 +110,42 @@ describe('ImpersonationBanner (container)', () => {
     await userEvent.click(screen.getByRole('button', { name: /Salir/i }));
     expect(signOutMock).toHaveBeenCalled();
     await vi.waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/login' }));
+  });
+});
+
+/** Extrae el z-index numérico de la className (soporta `z-50` y `z-[60]`). */
+function zIndexOf(el: HTMLElement): number {
+  const cls = el.className;
+  const bracket = cls.match(/z-\[(\d+)\]/);
+  if (bracket) {
+    return Number(bracket[1]);
+  }
+  const plain = cls.match(/\bz-(\d+)\b/);
+  if (plain) {
+    return Number(plain[1]);
+  }
+  throw new Error(`sin clase z-index en className: "${cls}"`);
+}
+
+describe('z-ordering: el banner escapa por encima de los overlays (Salir siempre alcanzable)', () => {
+  it('el banner de impersonación stackea por encima del modal de clave (C4)', () => {
+    // C4 (rojo antes del fix): banner y modal comparten z-50, así que el modal
+    // (montado después en el DOM) gana el tie y tapa "Salir", atrapando al
+    // admin sin escape. El banner debe stackear ESTRICTAMENTE por encima.
+    const banner = render(
+      <ImpersonationBannerView targetName="Ana" empresa={null} onExit={() => undefined} />,
+    );
+    const bannerZ = zIndexOf(banner.getByTestId('impersonation-banner'));
+    banner.unmount();
+
+    const client = new QueryClient();
+    const modal = render(
+      <QueryClientProvider client={client}>
+        <RotarClaveModal />
+      </QueryClientProvider>,
+    );
+    const modalZ = zIndexOf(modal.getByTestId('rotar-clave-modal'));
+
+    expect(bannerZ).toBeGreaterThan(modalZ);
   });
 });

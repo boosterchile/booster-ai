@@ -37,10 +37,25 @@ export function useRotarClave() {
  * Devuelve mensaje humano para un error de rotación. Maneja los códigos
  * conocidos del backend; falls back a "error inesperado" para todo lo
  * demás. Útil para los componentes UI que muestren el error inline.
+ *
+ * IMPORTANTE — distinguir por IDENTIFICADOR del error, nunca por
+ * `status === 403`: bajo impersonación, el `impersonation-write-guard`
+ * responde 403 `forbidden_impersonation_write` al `POST /me/clave-numerica`.
+ * Mapear cualquier 403 a "la clave anterior no es correcta" MENTÍA sobre la
+ * causa. El wire real de cada error (backend intacto):
+ *   - clave incorrecta → `{ error: 'invalid_clave_anterior' }` SIN `code`
+ *     (api-client deja `err.code = undefined`, `err.message =
+ *     'invalid_clave_anterior'`), por eso se matchea por code O message.
+ *   - bloqueo impersonación → `{ error, code: 'forbidden_impersonation_write' }`.
  */
 export function humanizeRotarClaveError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.code === 'invalid_clave_anterior' || err.status === 403) {
+    // Bloqueo de escritura bajo impersonación: NO es un problema de clave.
+    if (err.code === 'forbidden_impersonation_write') {
+      return 'No puedes crear ni cambiar la clave mientras ves la cuenta de otro usuario. Sal de esa vista para continuar.';
+    }
+    // Clave anterior incorrecta (por code o por message del wire real).
+    if (err.code === 'invalid_clave_anterior' || err.message === 'invalid_clave_anterior') {
       return 'La clave anterior no es correcta.';
     }
     if (err.status === 404) {

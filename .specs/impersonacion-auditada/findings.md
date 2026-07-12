@@ -59,3 +59,18 @@ Del ADR-053 §Decision y §Consequences:
 ---
 
 *Recon read-only. Sin llamadas a prod, sin writes al schema, sin creación de cuentas. Citas verificadas contra archivos en `main`.*
+
+---
+
+## Resolución — el trío que atrapaba al admin en "Crea tu clave numérica" (fix frontend)
+
+**Síntoma:** al impersonar, el admin caía en el modal `RotarClaveModal` sin escape, con el mensaje *"La clave anterior no es correcta."*. Diagnóstico: el backend **hace lo correcto** (el `impersonation-write-guard` 403ea el `POST /me/clave-numerica`, fail-closed sobre `/me`: el admin no debe crear la clave del target). El problema era 100% frontend — un trío:
+
+1. **El modal no debía montarse bajo impersonación.** Fix: `ProtectedRoute.tsx` — `useImpersonation()` + `impersonation.active !== true` en `needsClaveRotation` (mismo trato de `null` que `useIsDemo`: solo `active === true` gatea, no se esconde a usuarios reales por race del claim).
+2. **La copy mentía sobre el 403.** `humanizeRotarClaveError` mapeaba **cualquier** `status === 403` → "la clave anterior no es correcta". Fix: distinguir por el IDENTIFICADOR del error, no por status.
+   - **Discrepancia con el hint del goal** (registrada para el PO): el goal asumía distinguir por `err.code === 'invalid_clave_anterior'`, pero el wire REAL de `me-clave-numerica.ts` es `{ error: 'invalid_clave_anterior' }` **sin campo `code`** → api-client deja `err.code = undefined` y `err.message = 'invalid_clave_anterior'`. Keyear solo por `err.code` habría roto el caso legítimo. El fix matchea `err.code === 'forbidden_impersonation_write'` (el guard SÍ manda `code`) para el mensaje veraz, y `code === 'invalid_clave_anterior' || message === 'invalid_clave_anterior'` para la copy de clave. Proxy `status === 403` eliminado.
+3. **El banner quedaba tapado por el overlay.** Banner y modal compartían `z-50`; el modal (montado después) ganaba el tie y tapaba "Salir". Fix: `ImpersonationBanner.tsx` sube a `z-[60]` → stackea sobre cualquier overlay, "Salir" siempre alcanzable.
+
+**Cero backend:** `git diff` vacío en `me-clave-numerica.ts`, `impersonation-write-guard.ts`, `server.ts`. TDD rojo→verde exhibido (C1 modal montado hoy; C2 copy mentirosa hoy; C4 empate z). No-regresión: usuario real sin clave sigue viendo el modal no-descartable; `invalid_clave_anterior` conserva su texto.
+
+*Fix frontend-only. Sin merge, sin deploy, sin prod (esos son del PO — ADR-072).*
