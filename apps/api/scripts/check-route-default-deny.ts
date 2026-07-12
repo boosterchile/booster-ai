@@ -78,7 +78,6 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSignupRequestsRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
-  createAdminSeedRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
   // Impersonación auditada — POST /auth/impersonate. firebaseAuth + userContext
@@ -167,11 +166,6 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'INTENTIONAL-OPEN',
     rationale:
       'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Verificado: sin app.use de auth precediéndolo.',
-  },
-  createDemoLoginRoutes: {
-    category: 'INTENTIONAL-OPEN',
-    rationale:
-      'login demo (mint custom token; doble guard flag DEMO_MODE_ACTIVATED + es_demo). Verificado: sin app.use de auth precediéndolo.',
   },
   createDemoCacheWarmRoutes: {
     category: 'INTENTIONAL-OPEN',

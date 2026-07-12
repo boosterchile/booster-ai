@@ -221,14 +221,13 @@ describe('check-route-default-deny — integridad de la tabla', () => {
   });
 });
 
-describe('check-route-default-deny — los 6 mounts verificados (INTENTIONAL-OPEN)', () => {
+describe('check-route-default-deny — los 5 mounts verificados (INTENTIONAL-OPEN)', () => {
   // Verificados línea-a-línea contra server.ts al codear T2: ninguno tiene
   // firebaseAuth/userContext app.use precediéndolos; son emisores de auth o
   // endpoints demo/público por diseño.
   it.each([
     'createAuthUniversalRoutes',
     'createDriverAuthRoutes',
-    'createDemoLoginRoutes',
     'createDemoCacheWarmRoutes',
     'createPublicTrackingRoutes',
     'createWebpushPublicRoutes',

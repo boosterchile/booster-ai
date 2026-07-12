@@ -26,7 +26,6 @@ import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
-import { createAdminSeedRoutes } from './routes/admin-seed.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -38,7 +37,6 @@ import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
 import { createDemoCacheWarmRoutes } from './routes/demo-cache-warm.js';
-import { createDemoLoginRoutes } from './routes/demo-login.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
@@ -193,18 +191,8 @@ export function createServer(opts: CreateServerOptions): Hono {
   // auth porque la decisión de UI ocurre ANTES del login.
   app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
 
-  // Public route — POST /demo/login (modo demo subdominio).
-  // Mintea custom token Firebase para la persona demo (shipper/carrier/
-  // conductor/stakeholder). Endpoint público (sin firebase auth previa)
-  // porque la PWA en demo.boosterchile.com quiere login con un click
-  // sin tipear nada. Doble guard: flag DEMO_MODE_ACTIVATED + columna
-  // `es_demo=true` en BD. Si flag OFF, responde 404. Si firebaseAuth no
-  // está inyectado (tests), no se monta para evitar runtime errors.
+  // POST /demo/login (modo demo subdominio) RETIRADO — chore/retiro-subsistema-demo.
   if (opts.firebaseAuth) {
-    app.route(
-      '/demo',
-      createDemoLoginRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
-    );
     // T5 SEC-001 Sprint 2a — GET /api/v1/demo/cache-warm/:persona
     // (pre-warm del cache del middleware demo-expires, llamado fire-
     // and-forget desde el landing demo). IP rate-limited inline (10/
@@ -694,18 +682,8 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
 
-    // D1 — Admin seed demo (POST/DELETE). Auth platform-admin allowlist.
-    app.use(
-      '/admin/seed/*',
-      firebaseAuthMiddleware,
-      demoExpiresMiddleware,
-      isDemoEnforcementMiddleware,
-    );
-    app.use('/admin/seed/*', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route(
-      '/admin/seed',
-      createAdminSeedRoutes({ db: opts.db, firebaseAuth: opts.firebaseAuth, logger }),
-    );
+    // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
+    // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).
 
     // ADR-033 §8 — Admin matching backtest. Misma allowlist platform-admin.
     app.use(

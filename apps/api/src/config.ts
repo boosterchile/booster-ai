@@ -473,24 +473,13 @@ export const apiEnvSchema = commonEnvSchema
     /**
      * Modo demo (subdominio `demo.boosterchile.com`). Default OFF.
      *
-     * Cuando `true`:
-     *   - El api habilita `POST /demo/login`, que mintea un Firebase
-     *     custom token para la persona demo solicitada (shipper,
-     *     carrier, conductor, stakeholder). Endpoint público (sin
-     *     Firebase auth previa), porque la PWA en `demo.*` quiere
-     *     login con un solo click sin email/password/PIN.
-     *   - En startup, el server corre `ensureDemoSeeded` para
-     *     garantizar que las 4 personas demo existen en la DB con sus
-     *     empresas marcadas `es_demo=true`. Idempotente.
-     *
-     * Cuando `false`:
-     *   - `POST /demo/login` responde 404 (no revela que el endpoint
-     *     existe en producción sin modo demo).
-     *   - El auto-seed startup hook es no-op.
-     *
-     * Doble guard contra exposición accidental: este flag + columna
-     * `es_demo=true` en `empresas`. Los users demo nunca acceden a data
-     * real, y viceversa.
+     * NOTA (chore/retiro-subsistema-demo, Fase 2): la superficie de
+     * login/seed demo (`POST /demo/login`, el auto-seed de startup y los
+     * endpoints `/admin/seed/demo`) fue RETIRADA. Este flag queda sin
+     * consumidor de ruta; se conserva por compat de env validado y lo lee
+     * aún la maquinaria de enforcement `is-demo` que sobrevive en Tier 1.
+     * Su retiro total (junto a `es_demo` y la maquinaria) va en un PR
+     * posterior con su propio ADR.
      */
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
