@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { lookupOrCreateCuentaDemoEmail } from '../../src/services/seed-demo.js';
+import { lookupOrCreateCuentaDemoEmail } from '../../src/services/cuentas-demo.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**

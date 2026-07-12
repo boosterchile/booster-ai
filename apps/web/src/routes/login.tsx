@@ -101,15 +101,8 @@ export function LoginRoute() {
     return <Navigate to={postLoginTarget} href={postLoginTarget} />;
   }
 
-  // demo.boosterchile.com NO debe servir /login — el login real vive en
-  // app.boosterchile.com. Si el user llega acá (típicamente post-logout
-  // desde un surface /app/* en host demo), lo redirigimos al selector
-  // de personas en vez de mostrar el form de login.
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  const isDemoHost = host === 'demo.boosterchile.com' || host === 'demo.localhost';
-  if (isDemoHost) {
-    return <Navigate to="/demo" />;
-  }
+  // Ruteo especial de demo.boosterchile.com → /demo RETIRADO
+  // (chore/retiro-subsistema-demo): el host demo cae al flujo de login normal.
 
   // Esperar a que los feature flags resuelvan antes de elegir el flujo. Sin
   // esto, el form legacy (email/password) parpadea ~2s antes de que llegue

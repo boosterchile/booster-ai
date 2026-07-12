@@ -5,7 +5,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { cuentasDemo } from '../db/schema.js';
-import { lookupOrCreateCuentaDemoEmail } from './seed-demo.js';
+import { lookupOrCreateCuentaDemoEmail } from './cuentas-demo.js';
 
 /**
  * T4 SEC-001 Sprint 2a — harden-demo-accounts service module.

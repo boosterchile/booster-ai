@@ -20,7 +20,8 @@ export function DemoBanner() {
 
   async function handleExit() {
     await signOutUser();
-    void navigate({ to: '/demo' });
+    // Ruta /demo retirada (chore/retiro-subsistema-demo); salida al login.
+    void navigate({ to: '/login' });
   }
 
   return (

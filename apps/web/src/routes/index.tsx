@@ -22,12 +22,7 @@ export function IndexRoute() {
     );
   }
 
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  const isDemoHost = host === 'demo.boosterchile.com' || host === 'demo.localhost';
-
-  if (isDemoHost && !user) {
-    return <Navigate to="/demo" />;
-  }
-
+  // Ruteo del subdominio demo.boosterchile.com → /demo RETIRADO
+  // (chore/retiro-subsistema-demo).
   return <Navigate to={user ? '/app' : '/login'} />;
 }

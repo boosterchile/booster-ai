@@ -41,7 +41,7 @@ describe('DemoBanner', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('botón Salir llama signOutUser y navega a /demo', async () => {
+  it('botón Salir llama signOutUser y navega a /login (ruta /demo retirada)', async () => {
     useIsDemoMock.mockReturnValue(true);
     navigateMock.mockClear();
     signOutMock.mockClear();
@@ -49,6 +49,6 @@ describe('DemoBanner', () => {
     render(<DemoBanner />);
     await user.click(screen.getByRole('button', { name: /Salir del demo/i }));
     expect(signOutMock).toHaveBeenCalledOnce();
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/demo' });
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/login' });
   });
 });

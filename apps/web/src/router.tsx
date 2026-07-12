@@ -38,19 +38,11 @@ const loginRoute = createRoute({
   component: LoginRoute,
 });
 
-// Modo demo — selector de persona para el subdominio
-// demo.boosterchile.com. Sin Firebase signup; el backend mintea custom
-// token Firebase con claim is_demo:true via POST /demo/login.
-const demoRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/demo',
-  component: lazyRouteComponent(() => import('./routes/demo.js'), 'DemoRoute'),
-});
+// Ruta /demo (selector de persona demo) RETIRADA — chore/retiro-subsistema-demo.
 
-// SC-INT-1 (sec-001-cierre): página de mantenimiento renderizada por
-// DemoRoute cuando flag demo_mode_activated=false. Ruta directa
-// `/maintenance` expone también el componente para preview/QA sin
-// depender del flag.
+// SC-INT-1 (sec-001-cierre): página de mantenimiento. Ruta directa
+// `/maintenance` expone el componente para preview/QA (antes también la
+// renderizaba la ya-retirada DemoRoute cuando demo_mode_activated=false).
 const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/maintenance',
@@ -418,7 +410,6 @@ const aparienciaImpersonacionRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  demoRoute,
   loginConductorRoute,
   onboardingRoute,
   onboardingAdminRoute,
