@@ -31,7 +31,12 @@ export function ImpersonationBannerView({
     <div
       data-testid="impersonation-banner"
       role="alert"
-      className="sticky top-0 z-50 flex items-center justify-between gap-4 bg-danger-600 px-4 py-2 text-neutral-0 text-sm"
+      // z-[60] (por encima del z-50 de los overlays/modales, ej. RotarClaveModal
+      // `fixed inset-0 z-50`): el banner debe quedar SIEMPRE pintado y clickeable
+      // sobre cualquier overlay para que "Salir" sea el escape garantizado de la
+      // sesión impersonada. Al ganar el stacking en su franja, el backdrop del
+      // modal no captura los clics del banner.
+      className="sticky top-0 z-[60] flex items-center justify-between gap-4 bg-danger-600 px-4 py-2 text-neutral-0 text-sm"
     >
       <div className="flex min-w-0 items-center gap-2">
         <span className="text-base" aria-hidden>

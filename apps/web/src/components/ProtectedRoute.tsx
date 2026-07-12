@@ -2,6 +2,7 @@ import { Navigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
+import { useImpersonation } from '../hooks/use-impersonation.js';
 import { useIsDemo } from '../hooks/use-is-demo.js';
 import { type MeResponse, useMe } from '../hooks/use-me.js';
 import { RotarClaveModal } from './auth/RotarClaveModal.js';
@@ -48,6 +49,7 @@ export function ProtectedRoute({
   const { user, loading: authLoading } = useAuth();
   const { flags } = useFeatureFlags();
   const isDemo = useIsDemo();
+  const impersonation = useImpersonation();
 
   const meEnabled = !!user && meRequirement !== 'skip';
   const { data: me, isLoading: meLoading, error: meError } = useMe({ enabled: meEnabled });
@@ -110,8 +112,20 @@ export function ProtectedRoute({
     // demo" para no esconder el modal a usuarios reales por error de
     // race condition (worst case: usuario demo ve el modal medio segundo
     // hasta que el claim resuelve, mucho mejor que esconderlo a reales).
+    //
+    // EXCEPCIÓN — sesiones IMPERSONADAS (claim `impersonated_by`). La
+    // sesión ES el target, pero el `impersonation-write-guard` del backend
+    // 403ea el `POST /me/clave-numerica` (fail-closed en `/me`, correcto:
+    // el admin no debe crear la clave del target). Forzar el modal atrapa
+    // al admin sin escape. Se excluye acá; la creación de clave la hace el
+    // usuario real en su propia sesión. Mismo trato de `null` que
+    // `useIsDemo`: solo `active === true` gatea (no esconder a reales por
+    // race del claim).
     const needsClaveRotation =
-      flags.auth_universal_v1_activated && me.user.has_clave_numerica === false && isDemo !== true;
+      flags.auth_universal_v1_activated &&
+      me.user.has_clave_numerica === false &&
+      isDemo !== true &&
+      impersonation.active !== true;
     return (
       <>
         {children({ kind: 'onboarded', me })}
