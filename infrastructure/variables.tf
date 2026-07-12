@@ -383,6 +383,13 @@ variable "impersonation_v1_activated" {
   default     = true
 }
 
+# Gobierna la CREACIÓN del cron `cobrar_memberships_mensual` (count=0/1).
+variable "cobro_mensual_activado" {
+  description = "Crea el Cloud Scheduler del cobro mensual de membresías. false (default) = NO se crea el cron (inerte). true = lo crea → dispara facturación mensual de carriers en tier pagado + dunning (MOVIMIENTO DE DINERO REAL). Activarlo es una decisión de NEGOCIO del PO; el rail de pago hoy está stubeado (ver scheduling.tf). El cron además arranca paused=true."
+  type        = bool
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # SEC-001 H1.2 Sprint 2c-B T8 pre-apply (ADR-052 Accepted) — admin-approval
 # signup-request flow
