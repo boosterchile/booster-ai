@@ -14,8 +14,9 @@ El parser soporta 8E dinámicamente (`avl-packet.ts:44,80,157-196`). El `.cfg` y
 ### 2. ACK AVL — **ACK después de confirmar Pub/Sub**. Mantener; corregir comentario.
 `connection-handler.ts:260→267` ya ACK-ea tras `await Promise.all(publishes)`. Corregir el comentario engañoso `:263-266` (dice "responde el total"; el código responde 0 en fallo — que es lo correcto). Semántica at-least-once + dedup `UNIQUE(imei,timestamp)`. ✔
 
-### 3. TLS — **TLS 1.2**, cert Let's Encrypt vía cert-manager. Sin cambio técnico.
-Límite de hardware (FMC150 no hace 1.3). **[PO]**: CA privada vs Let's Encrypt para el canal — decisión de gobernanza, no técnica.
+### 3. TLS + **autenticación de device (mTLS)** — es la MISMA decisión que CA privada
+Técnico: **TLS 1.2** (límite del FMC150, no hace 1.3). Sin cambio ahí.
+**[PO] — CA privada + client-cert por device (mTLS) = autenticación de device.** Hoy el TLS es **server-auth only** (`main.ts:154 requestCert:false`): el servidor se autentica, el device **no**. La única "credencial" del device es su **IMEI**, que viaja en claro por 5027 y **no es secreto** (etiqueta física, configs) → un atacante que presenta un IMEI **registrado válido** inyecta telemetría a ese vehículo, **incluso sobre TLS**. Una CA privada con **client-cert por device (mTLS)** lo resuelve de raíz: cada device presenta su propio certificado y el IMEI deja de ser credencial. **CA privada vs Let's Encrypt y device-auth son la misma decisión** — resolverlas juntas. Más grave de lo estimado: hoy **no hay autenticación del device**.
 
 ### 4. Puertos — **retirar el 5027 (plano) una vez confirmada la migración TLS**.
 El 5027 está vivo, declarado y DNS-alcanzable (`telemetry.boosterchile.com`), pero es geolocalización **en claro** sobre red móvil de terceros. Hoy: 1 device, canal no verificable (gap de instrumentación: el gateway no loguea `localPort`). **Propuesta:** (a) instrumentar el puerto/canal por conexión; (b) confirmar que ningún device usa 5027; (c) retirar el Service plano. **[PO]** aprueba el retiro.
@@ -23,8 +24,11 @@ El 5027 está vivo, declarado y DNS-alcanzable (`telemetry.boosterchile.com`), p
 ### 5. Server Mode — **[PO]**: `Backup` vs `Duplicate` vs `Disabled`.
 Matiz de la auditoría: el DR (us-central1) publica al **mismo** topic global y converge a la **única** Cloud SQL, que **no tiene réplica cross-region** y hoy está `cold` (`replicas:0`) (`ADR-058:43-46`). En caída **regional** completa, los records al DR quedan en el topic sin consumidor hasta que el primario vuelva → riesgo de hoyos si el outage supera la retención de Pub/Sub. `Duplicate` no ayuda mientras el destino sea único. Decisión debe considerar: primero **DR de datos** (réplica/lectura cross-region), después el modo del device.
 
-### 6. Autenticación de device — **añadir strict-mode allowlist detrás de flag**.
-Hoy es *open enrollment* sin allowlist (`imei-auth.ts:19-23`): IMEI en claro + spoofeable + canal 5027 en claro = superficie de inyección. El código ya prevé el flag. **Propuesta:** activarlo antes del go-live de flota real.
+### 6. Enrollment / allowlist — **corrección de diagnóstico** (era falso "open enrollment persiste todo")
+La allowlist **ya existe** = `vehiculos.teltonika_imei`, aplicada **en persist** (no en la conexión):
+- **Posiciones (`telemetria_puntos`) + green-driving: CERRADO.** IMEI no registrado → `persist.ts:42-58` descarta (warn, `inserted:false`); `persist-green-driving.ts:57` hace skip. Ningún dato de device desconocido entra a la tabla. El "open enrollment" solo existe en el **wire/bandeja** (`dispositivos_pendientes`), que es UX intencional (el instalador ve el device aparecer). → **documentar**, no hay fix.
+- **Crash traces: NO cerrado (fix acotado).** `persist-crash-trace.ts:126-150,171-185` persiste **igual** con `vehicleId=null`, en GCS `unassigned/{imei}/` + fila BigQuery. Un device no-registrado (o spoofeado) escribe forensics. → **fix:** gatear `persistCrashTrace` en `vehicleId`, **o** decisión explícita + **política de retención/limpieza** de `unassigned/`.
+- **El agujero real = spoofing de un IMEI conocido**, no la allowlist. Se resuelve con **mTLS (punto 3)**: la allowlist ya está; lo que falta es que el IMEI deje de ser la credencial.
 
 ### 7. Conjunto de elementos AVL habilitados — **alinear a consumo** (ver `mapa-avl.md`/`delta.md`)
 
@@ -63,13 +67,19 @@ Hoy **no existe** un chequeo que compare lo habilitado en el `.cfg` contra lo pr
 3. **Alerta** (Cloud Monitoring, patrón de `infrastructure/telemetry-monitoring.tf`) sobre los **habilitados-pero-ausentes**.
 **Matiz de diseño (crítico):** aplica solo a I/O **permanente** (Low priority periódico: CAN combustible, Dallas 72, voltaje 66, odómetro 16…), que debe aparecer en cada record. **NO** a I/O **eventual** (crash 247, green driving 253/254/255, geofence, jamming): son legítimamente esporádicos y su ausencia no es señal de falla. Sin este matiz, el chequeo genera falsos positivos y se ignora.
 
+### 13. `consumo_l_por_100km_base` NULL — requisito de GLEC §6.4 completo, hoy omitido en silencio
+**77% de la flota** (10 de 13 vehículos) tiene `consumo_l_por_100km_base` **NULL** (incluido KZBB26; solo 3 lo declaran). Efecto hoy: huella en modo `por_defecto` (genérico). Efecto **con CAN**: `exacto_canbus` vuelve irrelevante el consumo base para el **loaded leg** (usa combustible medido, `exacto-canbus.ts:48-50`), **pero** el **empty backhaul (GLEC §6.4)** sigue gateado en `consumoBasePor100km != null` (`exacto-canbus.ts:70`) → si es NULL, la atribución del retorno vacío **se omite en silencio**. **El silencio es el problema.**
+**Propuesta:** (a) declarar `consumo_l_por_100km_base` por vehículo (requisito para §6.4 completo); **o** (b) que el certificado marque explícitamente **"backhaul no atribuido"** en vez de omitirlo callado. Nunca omisión silenciosa.
+
 ## Decisiones que quedan al PO (no se toman aquí)
-- **[PO]** CA privada vs Let's Encrypt (punto 3).
+- **[PO]** CA privada + **mTLS / autenticación de device** (punto 3) — misma decisión; resuelve el spoofing de IMEI de raíz. Hoy no hay auth de device.
 - **[PO]** Retiro del 5027 (punto 4).
+- **[PO]** Crash-trace `unassigned/`: gatear en `vehicleId` o política de retención (punto 6).
+- **[PO]** Declarar `consumo_l_por_100km_base` (77% NULL) o marcar "backhaul no atribuido" explícito (punto 13).
 - **[PO]** Server Mode + DR de datos cross-region (punto 5).
 - **[PO]** Gobernanza Ley 21.719/19.628: el DR en us-central1 saca geolocalización de conductores chilenos fuera de Chile y **no existe ADR que lo cubra** (hallazgos §C.3); completar además el país/proveedor en el modelo de consentimiento.
 
 ## Consecuencias
 - **Positivas:** contrato explícito y diffeable; elementos AVL alineados a consumo; dos features muertas (temp, crash-G) dejan de aparentar funcionar; camino claro a huella medida.
-- **Costo:** trabajo backend (wire `exacto_canbus`, strict-mode, instrumentación de puerto); decisiones de gobernanza del PO; posible re-firma de compliance.
-- **Riesgo si no se actúa:** se sigue vendiendo/asumiendo features vacías (cadena de frío, forensics de impacto), la huella queda estimada indefinidamente, y persiste superficie de datos personales en claro + transferencia internacional sin ADR.
+- **Costo:** trabajo backend (wire `exacto_canbus`, gate de crash-trace, instrumentación de puerto/detección); mTLS + CA privada; decisiones de gobernanza del PO; posible re-firma de compliance.
+- **Riesgo si no se actúa:** **sin auth de device** (spoofing de IMEI inyecta a vehículos reales, aun sobre TLS); se sigue vendiendo/asumiendo features vacías (cadena de frío, forensics de impacto); crash-traces de devices no-registrados en `unassigned/` sin límite; **backhaul GLEC §6.4 omitido en silencio en el 77% de la flota**; la huella queda estimada indefinidamente; y persiste superficie de datos personales en claro + transferencia internacional sin ADR.

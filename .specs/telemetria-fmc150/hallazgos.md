@@ -42,12 +42,14 @@ Detecta el codec por el byte ID y ramifica toda la estructura:
 - **Matiz (comentario engañoso):** `:263-266` dice "*si fallara la publish… igual respondemos el total*", pero el código ACK-ea **0**, no el total. La conducta del código (ACK 0 + reintento) es la segura; el comentario contradice al código. Efecto real: en fallo parcial de un batch multi-record puede haber **duplicados** (no pérdida) → dedup natural aguas abajo por `UNIQUE (imei, timestamp_device)` (`persist.ts:91`).
 - ACK encoder: `avl-packet.ts:218-225` (4 bytes BE = record count).
 
-### B.3 Handshake IMEI — **Hay handshake, pero NO allowlist. Es *open enrollment*.**
+### B.3 Handshake IMEI + enrollment — **diagnóstico corregido** (el framing previo "open enrollment persiste todo" era FALSO)
 
-- Handshake implementado: `connection-handler.ts:161-191` (`parseImeiHandshake` → `resolveImei` → `encodeImeiAck(true)`; parse inválido → `encodeImeiAck(false)`+destroy)
-- **Sin allowlist:** `imei-auth.ts:50-56` lookup `vehiculos.teltonika_imei`; match → autorizado. **Sin match `:85-104` NO rechaza**: upsert en `dispositivos_pendientes`, `vehicleId=null`, conexión sigue abierta; el device sigue enviando y los records sin vehicleId se descartan en el processor (`persist.ts:52-58`). Rate-limited (`imei-auth.ts:62-68`).
-- El modo estricto (rechazar IMEI desconocido) está **diferido** a "strict-mode con flag" (`imei-auth.ts:19-23`).
-- **Implicación de seguridad (combinada con Fase A):** IMEI en claro (spoofeable) + canal 5027 en claro + open enrollment → un tercero que conozca/adivine un IMEI válido podría **inyectar telemetría** por ese vehículo. Decisión documentada de piloto, pero es superficie real.
+- Handshake implementado: `connection-handler.ts:161-191` (`parseImeiHandshake` → `resolveImei` → `encodeImeiAck(true)`; parse inválido → `encodeImeiAck(false)`+destroy).
+- **La allowlist SÍ existe = `vehiculos.teltonika_imei`, aplicada EN PERSIST** (no en la conexión). Camino del IMEI desconocido:
+  - Wire: `imei-auth.ts:53-104` — sin match → upsert `dispositivos_pendientes` (rate-limited `:62-68`), `vehicleId=null`, no cierra; ACK true; publica a Pub/Sub con `vehicleId=null` (`connection-handler.ts:253-260`). *Open enrollment* **solo en la bandeja** (UX del instalador), no en la data.
+  - **Posiciones + green-driving → CERRADO:** `persist.ts:42-58` re-busca por IMEI en `vehiculos`; sin match → **descarta** (warn, `inserted:false`); `persist-green-driving.ts:57` skip sin `vehicleId`. Ningún dato de device desconocido entra a `telemetria_puntos`. → **documentar, no hay fix.**
+- **Residuo 1 — crash traces NO cerrado (fix acotado):** `persist-crash-trace.ts:126-150,171-185` persiste **igual** con `vehicleId=null` en GCS `unassigned/{imei}/` + fila BigQuery. Un device no-registrado escribe forensics. → gatear en `vehicleId` o política de retención de `unassigned/`.
+- **Residuo 2 — el agujero real = spoofing de un IMEI conocido:** el IMEI es la única credencial, viaja en claro por 5027 y **no es secreto**; el TLS 5061 es **server-auth only** (`main.ts:154 requestCert:false`) → un atacante con un IMEI registrado válido inyecta telemetría a ese vehículo **aun sobre TLS**. Hoy **no hay autenticación del device**. Se resuelve con **mTLS / client-cert por device** (ligado a la CA privada — ADR punto 3), no con un flag de allowlist.
 
 ### B.4 Elementos AVL — parser **agnóstico**; semántica en catálogo aparte
 
