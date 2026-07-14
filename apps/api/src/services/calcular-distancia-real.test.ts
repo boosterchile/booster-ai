@@ -5,13 +5,14 @@ import { haversineKm } from './calcular-cobertura-telemetria.js';
 // hasta que se implemente calcularDistanciaHibrida.
 import {
   type DistanciaHibridaResultado,
+  MAX_HUECOS_ROUTES,
   type PingGps,
   calcularDistanciaHibrida,
-  // RED (write): resolverEscrituraDistanciaReal aún no existe. Decide QUÉ se
-  // persiste en metricas_viaje a partir de la híbrida, acoplando distancia_km_real
-  // y coverage_pct (misma fuente) y blindando el 0 (certificates.ts:128 hace
-  // `distanceKmActual ?? distanceKmEstimated` — un 0 NO es nullish → se comería
-  // la estimación mostrando "0 km medidos").
+  // RED (integración): computarEscrituraDistanciaReal orquesta híbrida + decisión
+  // de escritura con las políticas de FALLO (Routes cae → propaga → el caller
+  // aborta, NO persiste → cae a la estimación) y COSTO (más de MAX_HUECOS_ROUTES
+  // huecos → aborta sin llamar a Routes).
+  computarEscrituraDistanciaReal,
   resolverEscrituraDistanciaReal,
 } from './calcular-distancia-real.js';
 
@@ -79,20 +80,16 @@ describe('calcularDistanciaHibrida', () => {
     expect(estimarHueco).not.toHaveBeenCalled();
   });
 
-  it('criterio 5 — Routes caído: no revienta el cierre, cae a fallback declarado y no subestima', async () => {
+  it('criterio 5 — Routes caído: PROPAGA (no fallback silencioso) → el caller decide abortar', async () => {
+    // Decisión del PO: un número parte-medido parte-haversine "parece medido y
+    // no lo es". Ante fallo de Routes, calcularDistanciaHibrida NO inventa un
+    // fallback silencioso — propaga, y el caller aborta (no persiste → estimación).
     const estimarHueco = vi.fn(async () => {
       throw new Error('Routes API timeout');
     });
-
-    const r = await calcularDistanciaHibrida([p1, p2], estimarHueco);
-
-    // no tira; el hueco queda como fallback declarado (no descartado → 0).
-    const gap = r.segmentos.find((s) => s.desde === p1 && s.hasta === p2);
-    expect(gap?.tipo).toBe('estimado_fallback');
-    // el fallback es al menos la línea recta (piso), nunca 0 (subestimación silenciosa).
-    expect(gap?.km).toBeGreaterThanOrEqual(haversineKm(p1.lat, p1.lng, p2.lat, p2.lng));
-    expect(Number.isFinite(r.distanciaTotalKm)).toBe(true);
-    expect(r.distanciaTotalKm).toBeGreaterThan(0);
+    await expect(calcularDistanciaHibrida([p1, p2], estimarHueco)).rejects.toThrow(
+      'Routes API timeout',
+    );
   });
 });
 
@@ -176,5 +173,58 @@ describe('resolverEscrituraDistanciaReal — qué persistir (write consistente +
       expect(Number.isFinite(w.coveragePct)).toBe(true);
       expect(Number.isNaN(w.coveragePct)).toBe(false);
     }
+  });
+});
+
+describe('computarEscrituraDistanciaReal — integración: política de fallo y costo', () => {
+  // 1 tramo observado (gap 30s) + `huecos` tramos con gap ≥60s. kmObservado>0.
+  const pingsConHuecos = (huecos: number): PingGps[] => {
+    const pings: PingGps[] = [
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 }, // +30s → observado
+    ];
+    let t = 30_000;
+    let lat = -33.41;
+    for (let i = 0; i < huecos; i++) {
+      t += 120_000; // +120s → hueco
+      lat -= 0.02;
+      pings.push({ tMs: t, lat, lng: -70.61 });
+    }
+    return pings;
+  };
+
+  it('INVARIANTE 1 — Routes falla en un hueco → ABORTA (propaga), sin escritura parcial', async () => {
+    const estimarHueco = vi.fn(async () => {
+      throw new Error('Routes 503');
+    });
+    // No cae a un número parte-medido: propaga → el caller no persiste → estimación.
+    await expect(computarEscrituraDistanciaReal(pingsConHuecos(2), estimarHueco)).rejects.toThrow(
+      'Routes 503',
+    );
+  });
+
+  it('INVARIANTE 2 (costo) — nº de llamadas a Routes == nº de huecos (peor caso medido)', async () => {
+    const estimarHueco = vi.fn(async () => 5);
+    await computarEscrituraDistanciaReal(pingsConHuecos(3), estimarHueco);
+    expect(estimarHueco).toHaveBeenCalledTimes(3); // 3 huecos → 3 llamadas, ni más ni menos
+  });
+
+  it('INVARIANTE 2 (cap) — más de MAX_HUECOS_ROUTES huecos → aborta (null) SIN llamar a Routes', async () => {
+    const estimarHueco = vi.fn(async () => 5);
+    const w = await computarEscrituraDistanciaReal(
+      pingsConHuecos(MAX_HUECOS_ROUTES + 1),
+      estimarHueco,
+    );
+    expect(w).toBeNull(); // cae a la estimación
+    expect(estimarHueco).not.toHaveBeenCalled(); // costo acotado: 0 llamadas
+  });
+
+  it('éxito — todos los huecos resuelven → payload con distancia real + coverage acoplados', async () => {
+    const estimarHueco = vi.fn(async () => 5);
+    const w = await computarEscrituraDistanciaReal(pingsConHuecos(2), estimarHueco);
+    expect(w).not.toBeNull();
+    expect(w?.distanciaKmReal).toBeGreaterThan(0);
+    expect(w?.coveragePct).toBeGreaterThan(0);
+    expect(w?.coveragePct).toBeLessThan(100); // hay huecos → no es 100% medido
   });
 });
