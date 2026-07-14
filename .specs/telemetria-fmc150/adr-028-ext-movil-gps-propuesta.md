@@ -72,6 +72,22 @@ debe medirse **contra ella**:
   secundario, consistente con ADR-028 §5 "coverage NULL → 0").
 - **A diferencia de §1–§4, §5-ext YA aplica al paso 1** (canal `teltonika_gps`), no solo al canal app.
 
+### 6. Journal de reversibilidad del backfill — TABLA TEMPORAL con **fecha de retiro**
+El backfill de re-derivación (F0-0 paso 1, spec `distancia-real-hibrida`) reescribe `cobertura_pct` de
+históricos al denominador §5-ext. Para tener camino de vuelta se crea la tabla
+`bitacora_backfill_distancia` (migración **0051**) que guarda, por trip procesado, el before-state
+(cobertura/nivel/distancia ANTES), el after-state, el `motivo_abort` (qué no se reconstruyó y por qué) y
+`llamadas_routes` (costo por trip). El before-state va en la **misma transacción** que el UPDATE →
+imposible escribir un trip sin su registro de reversión.
+
+- **Es deuda TEMPORAL, no permanente** (por eso una tabla aparte y no una columna en `metricas_viaje`).
+- **Fecha de retiro (explícita):** DROP de la tabla cuando el backfill esté **consolidado** — (a) corrió en
+  prod, (b) los certs afectados se re-emitieron/verificaron, (c) cerró la ventana de revert (30 días).
+  **Backstop: 2026-09-30** — si no se retiró antes, revisar en el cierre del frente F0-0. El retiro
+  definitivo quita la tabla del schema + la forward `0051` + su entrada en `meta/_journal.json` (down en
+  `drizzle/down/0051_*.down.sql`).
+- **[PO]** confirmar la fecha de retiro y firmar el DROP cuando corresponda.
+
 ## Relación con el fix F0-0
 
 - **Paso 1 (spec `distancia-real-hibrida`)** usa **`teltonika_gps`** (ya en el enum) — **no depende de
