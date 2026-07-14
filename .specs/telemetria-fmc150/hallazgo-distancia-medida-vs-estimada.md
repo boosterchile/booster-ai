@@ -149,12 +149,21 @@ que estamos corrigiendo. Diseño correcto:
 distancia_km_real = kmObservado      (Σ haversine de tramos con gap < 60s)
                   + kmEstimadoHuecos  (tramos con gap ≥ 60s)
 ```
-- **Huecos con ambos extremos conocidos:** estimar **por-hueco** = `haversine(inicio, fin del gap) ×
-  factor de sinuosidad` (reutilizar el ×1.3 ya usado en `actualizar-factor-matching.ts:81-117`).
-  **NO** rellenar con `(1−coverage)×distanciaRutaTotal`: eso **colapsa a la estimación pura** (algebraicamente
-  `kmObservado + (1−cov)×ruta = ruta` cuando `cov = kmObservado/ruta`) y **anula el fix**.
+- **Huecos con ambos extremos conocidos:** estimar **por-hueco** llamando a **Routes API** entre los dos
+  pings que bordean el hueco (`computeRoutes`, cliente ya existente `routes-api.ts`). Da distancia de ruta
+  **real** (no haversine corregido), **cero parámetros mágicos**, y procedencia **granular y defendible**:
+  *"tramo A–B observado; tramo B–C estimado por Routes"*. **NO** rellenar con `(1−coverage)×distanciaRutaTotal`:
+  eso **colapsa a la estimación pura** (algebraicamente `kmObservado + (1−cov)×ruta = ruta` cuando
+  `cov = kmObservado/ruta`) y **anula el fix**.
+  - **Por qué Routes y no `haversine × 1.3`:** el factor de sinuosidad es el **único parámetro del cálculo
+    sin procedencia** — el consumo sale de factores GLEC default, la distancia observada de pings reales, y
+    un ×1.3 saldría de la nada. En dominio GLEC un auditor pregunta de dónde salió. Routes elimina el
+    parámetro mágico.
+  - **Fallback declarado (nunca el camino principal):** si costo/latencia de Routes por-hueco lo exige,
+    caer a `haversine(inicio,fin) × factor documentado` (con su fuente citada), marcado como fallback en la
+    procedencia. Nunca por defecto.
 - **Huecos de cola/cabeza sin bracket** (device apagado hasta la entrega): caer al estimate de ruta
-  para ese tramo, declarado como estimado.
+  origen→destino para ese tramo, declarado como estimado.
 - **El certificado declara la mezcla:** *"medido X%, estimado (100−X)%"* con `X = coverage_pct`. Nunca
   "distancia medida" a secas cuando hay huecos. Reutiliza la maquinaria de §7.
 
@@ -170,10 +179,25 @@ distancia_km_real = kmObservado      (Σ haversine de tramos con gap < 60s)
 - **Caveat de consistencia transitoria:** entre paso 1 y paso 2 el cert muestra distancia real pero
   emisiones aún modeladas desde la estimación → **declararlo** en el cert (la etiqueta medido/estimado
   aplica a distancia; emisiones siguen modeladas hasta el paso 2). No dejarlo implícito.
-- **Sigue pendiente (no autorizado aquí):** el valor de enum `movil_gps` y dónde cae en
-  `derivarNivelCertificacion()` (¿`primario_verificable`, o nivel propio con incertidumbre entre
-  Teltonika y Maps?) → extensión de **ADR-028** + su spec. Y el fix es **dominio crítico** (carbono/GLEC)
-  → **TDD con rojo exhibido** antes de implementar (CLAUDE.md).
+- **Jerarquía `movil_gps` (decidida por el PO, extiende ADR-028):** ADR-028 §7 (Out of scope) **ya reservó
+  este slot** como `phone_gps` — `secundario_modeled`, incertidumbre 0.10 (entre Teltonika 0.05 y Maps 0.15).
+  La decisión del PO lo **activa** con esta jerarquía en `derivarNivelCertificacion()`:
+
+  | procedencia | naturaleza | nivel |
+  |---|---|---|
+  | `teltonika_gps` | hardware cableado a la ignición, **no suprimible por el conductor** | `primario_verificable` |
+  | `movil_gps` | traza real pero **suprimible** (app manual, foreground-only, el conductor la apaga) | `secundario_modeled` (incert. 0.10) |
+  | `maps_directions` | ruta calculada | `secundario_modeled` |
+  | `manual_declared` | declarado | `secundario_default` |
+
+  Razón: un dato que **el sujeto medido controla** no tiene la calidad de hardware no-suprimible → **nunca**
+  `primario_verificable`. Es el mismo principio de integridad del certificado que el resto de la auditoría.
+- **Decisión de nombre:** ADR-028 §7 lo llamó `phone_gps`; el PO propone `movil_gps` (alinea con la tabla
+  `posiciones_movil_conductor`). Adoptar **uno** canónico en la extensión ADR — recomiendo `movil_gps` por
+  consistencia con el schema existente. Borrador: `adr-028-ext-movil-gps-propuesta.md`.
+- **Fuera del paso 1:** el valor de enum + su nivel = **extensión de ADR-028** (requiere ratificación PO) +
+  su spec, cuando se cablee la app (hoy 0 filas). **El paso 1 usa `teltonika_gps`, que ya existe** — no toca
+  el enum. Y el fix es **dominio crítico** (carbono/GLEC) → **TDD con rojo exhibido** antes de implementar.
 
 Esta parte **se arregla**: es deuda técnica con dato disponible + decisión ya tomada, no un problema de producto.
 
@@ -250,9 +274,11 @@ Ground-truth prod (2026-07-13, `SELECT … FROM metricas_viaje`):
   históricos, la reemisión con distancia real **es factible**: `telemetria_puntos` retiene **260k pings
   del device operativo desde el 5-may** (2+ meses continuos, ver `delta.md`) → la distancia real es
   re-derivable post-hoc (haversine sobre la ventana pickup→entrega), sin recolectar nada nuevo.
-- **Ventana de re-derivabilidad — NO VERIFICADO su cierre:** vale mientras `telemetria_puntos` retenga
-  los pings; ligado al followup `.specs/_followups/telemetria-particion-y-retencion.md`. Si se
-  purga/particiona sin archivar, la ventana se cierra.
+- **Ventana de re-derivabilidad — con CANDADO puesto:** vale mientras `telemetria_puntos` retenga los
+  pings. Es **lo único de la auditoría con fecha de caducidad**: hot-window de 90d → los pings de mayo
+  expiran **~3-ago-2026**. Se puso un candado explícito en
+  `.specs/_followups/telemetria-particion-y-retencion.md` (🔒): NO purgar/particionar `telemetria_puntos`
+  hasta que este fix esté mergeado + históricos re-derivados.
 
 ---
 
