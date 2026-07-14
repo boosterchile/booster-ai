@@ -50,14 +50,38 @@ ADR-028 §7 condicionó `phone_gps` a un consent flow. La activación de `movil_
 el conductor consiente el reporte de su geolocalización (Ley 19.628 / 21.719). Es parte de la extensión, no
 del paso 1 (que es Teltonika).
 
+### 5. §5-ext — denominador de `coverage_pct` = distancia REAL (aplica YA al paso 1, PO 2026-07-13)
+ADR-028 §5 define `coverage_pct = km_cubiertos / km_totales_ESTIMADOS × 100` (denominador = distancia
+estimada origen→destino). El fix F0-0 persiste una distancia **real** (`distancia_km_real` = observado +
+huecos); para que la leyenda del cert *"medido X%, estimado (100−X)%"* sea exacta sobre esa distancia, X
+debe medirse **contra ella**:
+
+    coverage_pct = km_observado / distancia_km_real × 100   (denominador = distancia REAL)
+
+- **Por qué:** medir cobertura contra una **estimación** es justo lo que el fix existe para desconfiar —
+  "cobertura 95%" contra un número inventado no es verificable. Con el denominador real, `coverage_pct`
+  pasa a significar algo auditable: qué fracción del trayecto que **realmente ocurrió** fue observada.
+- **Efecto en el downgrade (ADR-028 §2):** los umbrales 95%/80% se evalúan contra la distancia real →
+  algunos certs cruzarán distinto. Es la **corrección**, no daño colateral (medían contra el número
+  equivocado). Sesgo conservador: si la distancia real supera a la estimada, la cobertura baja y el cert
+  se vuelve más estricto.
+- **Superficie medida en prod (2026-07-13):** `metricas_viaje` = 1 fila (artefacto de test), **0** con
+  nivel derivado, **0** `teltonika_gps`, **0** cerca de umbral, **0** certs → **0 trips cambian de nivel
+  hoy**. Barato ahora, imposible después (una vez que el pipeline de certs corra a volumen).
+- **Sin observación:** `distancia_km_real = null` (no se divide por null) → `coverage_pct = 0` (path
+  secundario, consistente con ADR-028 §5 "coverage NULL → 0").
+- **A diferencia de §1–§4, §5-ext YA aplica al paso 1** (canal `teltonika_gps`), no solo al canal app.
+
 ## Relación con el fix F0-0
 
-- **Paso 1 (spec `distancia-real-hibrida`)** usa **`teltonika_gps`** — que ya existe en el enum. **No depende
-  de esta extensión.** Se puede mergear sin ratificar este ADR.
+- **Paso 1 (spec `distancia-real-hibrida`)** usa **`teltonika_gps`** (ya en el enum) — **no depende de
+  §1–§4** (el enum `movil_gps`), pero **sí materializa §5-ext** (el denominador de cobertura). El §5-ext
+  se ratifica junto con / antes del merge de paso 1; §1–§4 pueden esperar al canal app.
 - **Esta extensión** habilita el canal app (`movil_gps`), hoy latente (0 filas en `posiciones_movil_conductor`).
   Se ratifica cuando se cablee la captura de la app a la distancia — frente posterior.
 
 ## Pendiente para ratificar (PO)
-- [ ] Escribir el ADR formal (número siguiente disponible) que extiende ADR-028 con §1–§4.
-- [ ] Confirmar el rename `phone_gps` → `movil_gps`.
-- [ ] Consent flow del reporte GPS de la app antes de habilitar `movil_gps` en producción.
+- [ ] Escribir el ADR formal (número siguiente disponible) que extiende ADR-028 con §1–§5.
+- [ ] **§5-ext (denominador de cobertura) — ratificar junto con / antes del paso 1** (ya lo materializa; PO aprobó la dirección 2026-07-13).
+- [ ] Confirmar el rename `phone_gps` → `movil_gps` (§1–§2, canal app).
+- [ ] Consent flow del reporte GPS de la app antes de habilitar `movil_gps` en producción (§4).
