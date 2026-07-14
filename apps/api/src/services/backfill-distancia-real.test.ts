@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 // RED: `ejecutarBackfill` aún no existe. Es el backfill de re-derivación de
 // históricos (F0-0 paso 1) — el ÚNICO paso que reescribe datos ya existentes.
 // Cuatro invariantes: dry-run, resumabilidad, cota agregada de Routes, reversibilidad.
-import { type ReconstruccionTrip, ejecutarBackfill } from './backfill-distancia-real.js';
+import {
+  type NivelCert,
+  type ReconstruccionTrip,
+  ejecutarBackfill,
+} from './backfill-distancia-real.js';
 
 const noopLogger = {
   trace: () => undefined,
@@ -20,8 +24,8 @@ const noopLogger = {
 const ok = (
   tripId: string,
   coveragePctAntes: number | null,
-  nivelAntes: string | null,
-  nivelNuevo: string,
+  nivelAntes: NivelCert | null,
+  nivelNuevo: NivelCert,
   llamadasRoutes = 1,
 ): ReconstruccionTrip => ({
   tripId,
@@ -104,7 +108,7 @@ describe('ejecutarBackfill — re-derivación de históricos (F0-0 paso 1)', () 
     expect(r.nivelAntes).toBe('secundario_modeled');
   });
 
-  it('IDEMPOTENCIA — un abort NO se persiste (distancia sigue null → re-run lo reintenta sin corromper)', async () => {
+  it('IDEMPOTENCIA — un abort se journaliza (diagnóstico) pero NO cuenta como actualizado', async () => {
     const persistir = vi.fn();
     const report = await ejecutarBackfill({
       logger: noopLogger,
@@ -113,7 +117,10 @@ describe('ejecutarBackfill — re-derivación de históricos (F0-0 paso 1)', () 
       reconstruir: vi.fn().mockResolvedValueOnce(abortar('t1', 'routes_error', 1)),
       persistir,
     });
-    expect(persistir).not.toHaveBeenCalled(); // no escribe → sigue null → reintentable
+    // El journal captura el abort (motivo + llamadas). Pero `actualizados`=0: el
+    // UPDATE de tripMetrics NO ocurre para aborts (lo garantiza persistir) →
+    // distancia sigue null → reintentable. Ese "no UPDATE" se testea en persistir.
+    expect(persistir).toHaveBeenCalledTimes(1);
     expect(report.actualizados).toBe(0);
     expect(report.abortados.routes_error).toBe(1);
   });

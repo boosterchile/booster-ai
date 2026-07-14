@@ -14,12 +14,17 @@ import type { Logger } from '@booster-ai/logger';
  *      escrito no vuelve a ser candidato).
  *   3. **Cota agregada** — `llamadasRoutesTotal` suma las llamadas a Routes de
  *      todos los trips (visible en dry-run, antes de gastar cuota/costo).
- *   4. **Reversibilidad** — en write mode, `persistir` recibe el `before-state`
- *      (coverage_pct/nivel originales) para poder revertir. Un abort NO se
- *      persiste → la distancia sigue null → reintentable sin corromper.
+ *   4. **Reversibilidad + diagnóstico** — en write mode, `persistir` recibe cada
+ *      trip (ok Y abort): guarda el `before-state` (para revertir) y el
+ *      `abortReason` (qué no se reconstruyó y por qué). El UPDATE de `tripMetrics`
+ *      lo hace SOLO si es `ok` → un abort deja `distancia_km_real` en null →
+ *      reintentable sin corromper. Dry-run no escribe NADA (ni journal).
  */
 
 export type AbortReconstruccion = 'sin_observacion' | 'cap_exceeded' | 'routes_error';
+
+/** Nivel de certificación (espejo del enum de metricas_viaje / carbon-calculator). */
+export type NivelCert = 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
 
 /** Candidato mínimo devuelto por el cargador (paginado por cursor). */
 export interface CandidatoTrip {
@@ -32,13 +37,13 @@ export interface ReconstruccionTrip {
   /** coverage_pct ANTES del backfill (denominador viejo) — se guarda para revertir. */
   coveragePctAntes: number | null;
   /** certification_level ANTES del backfill. */
-  nivelAntes: string | null;
+  nivelAntes: NivelCert | null;
   resultado:
     | {
         ok: true;
         distanciaKmReal: number;
         coveragePct: number;
-        nivelNuevo: string;
+        nivelNuevo: NivelCert;
         cambiaNivel: boolean;
         llamadasRoutes: number;
       }
@@ -56,11 +61,11 @@ export interface BackfillReport {
   ultimoCursor: string | null;
 }
 
-export async function ejecutarBackfill(opts: {
+export async function ejecutarBackfill<C extends CandidatoTrip>(opts: {
   logger: Logger;
   dryRun: boolean;
-  cargarCandidatos: (desdeCursor: string | null, limite: number) => Promise<CandidatoTrip[]>;
-  reconstruir: (c: CandidatoTrip) => Promise<ReconstruccionTrip>;
+  cargarCandidatos: (desdeCursor: string | null, limite: number) => Promise<C[]>;
+  reconstruir: (c: C) => Promise<ReconstruccionTrip>;
   /** Write mode: persiste el before-state (journal) + el UPDATE atómico. */
   persistir: (r: ReconstruccionTrip) => Promise<void>;
   desdeCursor?: string | null;
@@ -101,16 +106,20 @@ export async function ejecutarBackfill(opts: {
         if (r.resultado.cambiaNivel) {
           report.cambiaronNivel++;
         }
-        if (!dryRun) {
-          // Reversibilidad: `persistir` guarda el before-state (journal) ANTES de
-          // sobrescribir, en la misma unidad que el UPDATE atómico.
-          await persistir(r);
+      } else {
+        report.abortados[r.resultado.abortReason]++;
+      }
+
+      // Write mode: `persistir` se llama para TODO trip → el journal captura
+      // también los aborts (motivo + llamadas), no solo los escritos. Dentro,
+      // `persistir` hace el UPDATE de metricas SOLO si es `ok`: un abort deja
+      // `distancia_km_real` en null → reintentable (idempotencia). Dry-run no
+      // escribe NADA (ni journal).
+      if (!dryRun) {
+        await persistir(r);
+        if (r.resultado.ok) {
           report.actualizados++;
         }
-      } else {
-        // Abort NO se persiste → distancia sigue null → cae a estimación y es
-        // reintentable en una corrida futura (idempotencia bajo re-ejecución).
-        report.abortados[r.resultado.abortReason]++;
       }
     }
     // Página incompleta → no hay más candidatos.
