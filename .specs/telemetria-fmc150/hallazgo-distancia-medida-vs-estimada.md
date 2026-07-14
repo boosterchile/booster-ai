@@ -133,27 +133,49 @@ se invoca** (`delta.md`; `calcular-metricas-viaje.ts:24-30`). El gate del §4 es
 
 ## 5. Propuesta A — cablear traza → distancia del leg cargado (deuda técnica; se arregla)
 
-El dato existe; falta el cable. Diseño:
+El dato existe; falta el cable. Prioridad de procedencia en el **eje de distancia**:
+`teltonika_gps` · `movil_gps` (trazas **medidas**) **>** `maps_directions` (sintetizada) **>**
+`manual_declared`. Aplica a Teltonika (`telemetria_puntos`, hoy) y a la app (`posiciones_movil_conductor`,
+cuando se pueble), con la **misma** técnica haversine + gap de continuidad ya existente
+(`calcularCoberturaPura`, `:88-111`).
 
-1. **Derivar la distancia del leg cargado desde la traza real cuando exista**, con esta prioridad de
-   procedencia en el **eje de distancia**:
-   `teltonika_gps` · `movil_gps` (trazas **medidas**) **>** `maps_directions` (sintetizada) **>**
-   `manual_declared`.
-   - **Teltonika:** dejar de descartar `kmCubiertos` (§3.2). Con cobertura ≥ threshold, escribir
-     `distance_km_actual` y usarla como distancia de emisiones (hoy `recalcularNivelPostEntrega` ya
-     calcula todo lo necesario; solo falta persistir el km y re-derivar emisiones, `:535-544`).
-   - **App:** derivar `kmCubiertos` de `posiciones_movil_conductor` con la **misma** técnica haversine +
-     gap de continuidad ya existente (`calcularCoberturaPura`, `:88-111`).
-2. **Nuevo valor de procedencia `movil_gps`** en `route_data_source` (hoy sin representación para la app).
+### 5.1 · Distancia HÍBRIDA, nunca `kmCubiertos` crudo (resuelve el envenenamiento del fix)
+`kmCubiertos` (`calcular-cobertura-telemetria.ts:105`) suma **solo** tramos con gap < 60s. Escribir
+`distancia_km_real = kmCubiertos` a cobertura < 100% cambia una estimación por una **subestimación
+sistemática** — el sesgo vuelve a ser **direccional a la baja**, exactamente el error del backhaul (§4)
+que estamos corrigiendo. Diseño correcto:
 
-> **Gate de contrato — NO es decisión de Claude.** Tocar `route_data_source` (Zod `trip-metrics.ts` +
-> pgEnum `schema.ts` = **schema BD público**) y cambiar la **distancia que alimenta las emisiones** (los
-> certificados emitidos cambian de número) son cambios de contrato y de metodología → requieren
-> **aprobación del PO + ADR** que extienda/supersede **ADR-028**. En particular, `derivarNivelCertificacion()`
-> debe decidir **dónde** cae `movil_gps` (¿califica para `primario_verificable`, o un nivel propio con
-> incertidumbre entre Teltonika y Maps?) — decisión de metodología, no la resuelvo aquí.
+```
+distancia_km_real = kmObservado      (Σ haversine de tramos con gap < 60s)
+                  + kmEstimadoHuecos  (tramos con gap ≥ 60s)
+```
+- **Huecos con ambos extremos conocidos:** estimar **por-hueco** = `haversine(inicio, fin del gap) ×
+  factor de sinuosidad` (reutilizar el ×1.3 ya usado en `actualizar-factor-matching.ts:81-117`).
+  **NO** rellenar con `(1−coverage)×distanciaRutaTotal`: eso **colapsa a la estimación pura** (algebraicamente
+  `kmObservado + (1−cov)×ruta = ruta` cuando `cov = kmObservado/ruta`) y **anula el fix**.
+- **Huecos de cola/cabeza sin bracket** (device apagado hasta la entrega): caer al estimate de ruta
+  para ese tramo, declarado como estimado.
+- **El certificado declara la mezcla:** *"medido X%, estimado (100−X)%"* con `X = coverage_pct`. Nunca
+  "distancia medida" a secas cuando hay huecos. Reutiliza la maquinaria de §7.
 
-Esta parte **se arregla**: es deuda técnica con dato disponible, no un problema de producto.
+### 5.2 · Autorización del PO + secuenciación (distancia primero, emisiones después)
+- **[PO — AUTORIZADO 2026-07-13]** escribir `distancia_km_real` y que el certificado la prefiera
+  (`certificates.ts:128` ya hace `distanceKmActual ?? distanceKmEstimated`). Resuelve el bloqueador (b):
+  hoy el cert publica una estimación bajo un campo llamado "distancia real"; corregirlo es la decisión
+  correcta.
+- **Paso 1 (este fix):** persistir la distancia **híbrida** (§5.1) en `distancia_km_real`. Cambia el
+  número de **distancia** del cert. Mecánica en §8.1.
+- **Paso 2 (PR separado):** recomputar **emisiones** desde la distancia real (hoy clavadas a la
+  estimación, `:394-397`). **No se mezcla con el paso 1.**
+- **Caveat de consistencia transitoria:** entre paso 1 y paso 2 el cert muestra distancia real pero
+  emisiones aún modeladas desde la estimación → **declararlo** en el cert (la etiqueta medido/estimado
+  aplica a distancia; emisiones siguen modeladas hasta el paso 2). No dejarlo implícito.
+- **Sigue pendiente (no autorizado aquí):** el valor de enum `movil_gps` y dónde cae en
+  `derivarNivelCertificacion()` (¿`primario_verificable`, o nivel propio con incertidumbre entre
+  Teltonika y Maps?) → extensión de **ADR-028** + su spec. Y el fix es **dominio crítico** (carbono/GLEC)
+  → **TDD con rojo exhibido** antes de implementar (CLAUDE.md).
+
+Esta parte **se arregla**: es deuda técnica con dato disponible + decisión ya tomada, no un problema de producto.
 
 ---
 
@@ -205,9 +227,9 @@ El daño (todo cert cae a la estimación) es **desproporcionado** al cambio nece
   ~una decena de líneas en 2 archivos — **no un proyecto**.
 - **Por qué no es literalmente una línea — dos acoplamientos reales, no tamaño:**
   1. `kmCubiertos` suma **solo** segmentos con gap < 60s (`:104`) → a cobertura < 100% es distancia
-     **cubierta**, no total: escribirla cruda **subestima** distancia y emisiones en los tramos con
-     hueco. Debe ir atado a la regla §7 (usarla como `actual` a cobertura alta; declarar la mezcla si
-     no), no persistir a ciegas.
+     **cubierta**, no total: escribirla cruda **subestima** (sesgo direccional a la baja). Persistir la
+     **distancia híbrida de §5.1** (observado + estimado-por-hueco), no `kmCubiertos` crudo, con la
+     declaración de mezcla del cert.
   2. Escribir `distancia_km_real` **cambia el número del certificado** (por el `??`) → cae bajo el
      gate de contrato **PO/ADR-028** (§5). Recomputar además las **emisiones** desde la distancia real
      es un paso mayor y separado (hoy quedan clavadas a la estimación, `:394-397`).
