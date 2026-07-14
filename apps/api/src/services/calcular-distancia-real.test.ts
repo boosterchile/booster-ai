@@ -3,7 +3,17 @@ import { haversineKm } from './calcular-cobertura-telemetria.js';
 // RED: este módulo aún no existe — es el paso 1 del fix F0-0
 // (.specs/distancia-real-hibrida/spec.md). El test falla al resolver el import
 // hasta que se implemente calcularDistanciaHibrida.
-import { type PingGps, calcularDistanciaHibrida } from './calcular-distancia-real.js';
+import {
+  type DistanciaHibridaResultado,
+  type PingGps,
+  calcularDistanciaHibrida,
+  // RED (write): resolverEscrituraDistanciaReal aún no existe. Decide QUÉ se
+  // persiste en metricas_viaje a partir de la híbrida, acoplando distancia_km_real
+  // y coverage_pct (misma fuente) y blindando el 0 (certificates.ts:128 hace
+  // `distanceKmActual ?? distanceKmEstimated` — un 0 NO es nullish → se comería
+  // la estimación mostrando "0 km medidos").
+  resolverEscrituraDistanciaReal,
+} from './calcular-distancia-real.js';
 
 // Pings de referencia (Santiago). tMs fijos para evitar flakiness.
 const p0: PingGps = { tMs: 1_000_000, lat: -33.45, lng: -70.66 };
@@ -83,5 +93,88 @@ describe('calcularDistanciaHibrida', () => {
     expect(gap?.km).toBeGreaterThanOrEqual(haversineKm(p1.lat, p1.lng, p2.lat, p2.lng));
     expect(Number.isFinite(r.distanciaTotalKm)).toBe(true);
     expect(r.distanciaTotalKm).toBeGreaterThan(0);
+  });
+});
+
+describe('resolverEscrituraDistanciaReal — qué persistir (write consistente + blindaje del 0)', () => {
+  // Construye una híbrida mínima con overrides.
+  const hib = (o: Partial<DistanciaHibridaResultado>): DistanciaHibridaResultado => ({
+    distanciaTotalKm: 0,
+    kmObservado: 0,
+    kmEstimado: 0,
+    coberturaObservadaPct: 0,
+    segmentos: [],
+    ...o,
+  });
+
+  it('con observación (kmObservado>0) → persiste distancia_km_real y coverage_pct de la MISMA híbrida', () => {
+    const h = hib({
+      distanciaTotalKm: 100,
+      kmObservado: 60,
+      kmEstimado: 40,
+      coberturaObservadaPct: 60,
+    });
+    const w = resolverEscrituraDistanciaReal(h);
+    expect(w.distanciaKmReal).toBe(100);
+    expect(w.coveragePct).toBe(60);
+    // Consistencia: la fracción medida declarada (X=coverage) sobre la distancia
+    // persistida reconstruye los km observados. Si X viniera de otro cálculo,
+    // esto NO cerraría — y el cert declararía "medido X%" sobre un número ajeno.
+    expect((w.distanciaKmReal! * w.coveragePct) / 100).toBeCloseTo(h.kmObservado, 6);
+  });
+
+  it('trip SIN pings (total 0) → NO persiste (null), jamás 0 — el ?? no se come un cero', () => {
+    const w = resolverEscrituraDistanciaReal(hib({ distanciaTotalKm: 0, kmObservado: 0 }));
+    expect(w.distanciaKmReal).toBeNull();
+    expect(w.distanciaKmReal).not.toBe(0);
+    expect(w.coveragePct).toBe(0);
+  });
+
+  it('todos los gaps ≥60s (total>0 pero kmObservado=0) → NO persiste como real (null), cae a estimación', () => {
+    const w = resolverEscrituraDistanciaReal(
+      hib({ distanciaTotalKm: 80, kmObservado: 0, kmEstimado: 80, coberturaObservadaPct: 0 }),
+    );
+    // No mostrar un relleno 100% Routes bajo el campo "distancia real": sin
+    // observación no hay medición → el cert cae a la estimación via ??.
+    expect(w.distanciaKmReal).toBeNull();
+    expect(w.coveragePct).toBe(0);
+  });
+
+  it('distancia_km_real es SIEMPRE null o >0, nunca 0 (blindaje del ??)', () => {
+    const casos = [
+      hib({ distanciaTotalKm: 0, kmObservado: 0 }),
+      hib({ distanciaTotalKm: 80, kmObservado: 0, coberturaObservadaPct: 0 }),
+      hib({ distanciaTotalKm: 50, kmObservado: 30, coberturaObservadaPct: 60 }),
+    ];
+    for (const c of casos) {
+      const w = resolverEscrituraDistanciaReal(c);
+      expect(w.distanciaKmReal === null || w.distanciaKmReal > 0, JSON.stringify(w)).toBe(true);
+    }
+  });
+
+  it('idempotente: misma híbrida → misma escritura (sin drift entre corridas)', () => {
+    const h = hib({
+      distanciaTotalKm: 50,
+      kmObservado: 30,
+      kmEstimado: 20,
+      coberturaObservadaPct: 60,
+    });
+    expect(resolverEscrituraDistanciaReal(h)).toEqual(resolverEscrituraDistanciaReal(h));
+  });
+
+  it('distancia_km_real=null ⇒ coverage_pct=0 finito (nunca kmObs/null → NaN): el ?? del coverage', () => {
+    // Contraparte del blindaje del ?? en el eje de la cobertura: sin distancia
+    // real no se puede dividir por null. coverage debe ser 0 (fuerza path
+    // secundario, ADR-028 §5), NUNCA NaN/null/Infinity.
+    for (const c of [
+      hib({ distanciaTotalKm: 0, kmObservado: 0 }),
+      hib({ distanciaTotalKm: 80, kmObservado: 0, coberturaObservadaPct: 0 }),
+    ]) {
+      const w = resolverEscrituraDistanciaReal(c);
+      expect(w.distanciaKmReal).toBeNull();
+      expect(w.coveragePct).toBe(0);
+      expect(Number.isFinite(w.coveragePct)).toBe(true);
+      expect(Number.isNaN(w.coveragePct)).toBe(false);
+    }
   });
 });
