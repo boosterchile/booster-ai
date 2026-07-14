@@ -274,11 +274,13 @@ Ground-truth prod (2026-07-13, `SELECT … FROM metricas_viaje`):
   históricos, la reemisión con distancia real **es factible**: `telemetria_puntos` retiene **260k pings
   del device operativo desde el 5-may** (2+ meses continuos, ver `delta.md`) → la distancia real es
   re-derivable post-hoc (haversine sobre la ventana pickup→entrega), sin recolectar nada nuevo.
-- **Ventana de re-derivabilidad — con CANDADO puesto:** vale mientras `telemetria_puntos` retenga los
-  pings. Es **lo único de la auditoría con fecha de caducidad**: hot-window de 90d → los pings de mayo
-  expiran **~3-ago-2026**. Se puso un candado explícito en
-  `.specs/_followups/telemetria-particion-y-retencion.md` (🔒): NO purgar/particionar `telemetria_puntos`
-  hasta que este fix esté mergeado + históricos re-derivados.
+- **Ventana de re-derivabilidad — CANDADO puesto, sin reloj vivo:** vale mientras `telemetria_puntos`
+  retenga los pings. **Verificado 2026-07-13:** NO existe hoy retención/purga/partición de
+  `telemetria_puntos` (ningún cron en `scheduling.tf`, ninguna migración con PARTITION/TTL; el "90d hot
+  window" es solo texto **propuesto** del followup, nunca implementado) → **no hay reloj corriendo** (mi
+  estimación previa "~3-ago" era conjetura, corregida). El candado
+  (`.specs/_followups/telemetria-particion-y-retencion.md`, 🔒) es **precondición, no carrera**: no
+  arrancar la retención/partición hasta que el fix (PR #598) esté mergeado + históricos re-derivados.
 
 ---
 

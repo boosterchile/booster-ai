@@ -3,19 +3,26 @@
 **Origen**: Auditoría arquitectónica 2026-06-09 (seguimiento "Modelo de datos Postgres"), riesgo alto "sin particionamiento ni retención".
 **Prioridad**: P2 (sube a P1 si la flota crece o la latencia del processor degrada).
 
-> ## 🔒 CANDADO — NO EJECUTAR la retención/purga/partición de `telemetria_puntos` hasta que el fix F0-0 esté mergeado
+> ## 🔒 CANDADO — NO ARRANCAR retención/purga/partición de `telemetria_puntos` hasta liberar (orden ↓)
 >
 > **Puesto 2026-07-13 por la auditoría de telemetría** (`.specs/telemetria-fmc150/hallazgo-distancia-medida-vs-estimada.md`).
 >
-> Los **260k pings del device operativo desde el 5-may** son la **única fuente** para re-derivar la
-> distancia real de viajes históricos (F0-0 §8.2). Son lo **único de toda la auditoría con fecha de
-> caducidad**: un hot-window de 90d (acción propuesta ↓) empieza a expirar los pings de mayo **~3-ago-2026**.
-> Si se purgan/particionan-out **antes** de que el fix F0-0 (paso 1: distancia híbrida, spec
-> `distancia-real-hibrida`) esté mergeado y haya re-derivado, **la ventana se cierra y no vuelve**.
+> **Verificado 2026-07-13:** hoy NO corre ninguna retención/purga/partición de `telemetria_puntos` —
+> ningún cron en `scheduling.tf`, ninguna migración con PARTITION/TTL; el "90d hot window" es solo el
+> texto **propuesto** de este followup, **nunca implementado**. → **No hay reloj corriendo** (la
+> estimación previa "~3-ago" era conjetura, corregida). El candado es **precondición, no carrera**.
 >
-> **Condición de desbloqueo:** F0-0 paso 1 mergeado a `main` **Y** re-derivación de históricos ejecutada
-> (o el sink a BigQuery hecho **archivado real**, no purga, **y** la re-derivación vuelta BQ-aware). Hasta
-> entonces, el ítem "Partición de telemetria_puntos + sink BigQuery" (↓ §Pendiente) queda **bloqueado**.
+> **Por qué:** los **260k pings del device operativo desde el 5-may** son la **única fuente** para
+> re-derivar la distancia real de viajes históricos (F0-0 §8.2). Si se purgan/particionan-out antes de
+> re-derivar, la ventana se cierra y no vuelve.
+>
+> **Orden de liberación (acordado con el PO):**
+> 1. Merge **PR #597** (auditoría, docs read-only).
+> 2. Merge **PR #598** `fix/distancia-real-hibrida` → `distancia_km_real` hacia adelante.
+> 3. **Re-derivación de históricos** desde los 260k pings.
+> 4. **Recién ahí** se libera este candado: arrancar retención/partición con **archivado real** a BigQuery
+>    (no purga) y re-derivación **BQ-aware** si el sink mueve los pings.
+>
 > El resto del followup (índices, /flota, retención de `posiciones_movil_conductor` — tabla vacía) no está
 > afectado.
 
@@ -42,5 +49,5 @@ Parcialmente ejecutado en la ola 2:
 
 Pendiente con condición de reapertura:
 - /flota LATERAL (o tabla ultima_posicion_vehiculo): REABRIR al superar 50 devices o si P95 de GET /flota > 300ms — decisión deliberada de no tocar el endpoint más visible de la PWA al cierre de una ola larga (decision log de feat-retencion-posiciones-movil §13).
-- Partición de telemetria_puntos + sink BigQuery: requiere ventana de mantenimiento del PO (tabla viva). **🔒 BLOQUEADO por el candado de arriba** hasta que F0-0 paso 1 esté mergeado + históricos re-derivados (reloj: pings de mayo expiran ~3-ago si el hot-window es 90d).
+- Partición de telemetria_puntos + sink BigQuery: requiere ventana de mantenimiento del PO (tabla viva). **🔒 BLOQUEADO por el candado de arriba** hasta que el fix F0-0 (PR #598) esté mergeado + históricos re-derivados (ver orden de liberación en el candado).
 - log_acceso_stakeholder: partición + sink ANTES de abrir el portal stakeholder.
