@@ -79,27 +79,43 @@ export async function ejecutarBackfill(opts: {
     ultimoCursor: desdeCursor,
   };
 
-  const candidatos = await cargarCandidatos(desdeCursor, limite);
-  for (const c of candidatos) {
-    const r = await reconstruir(c);
-    report.procesados++;
-    report.llamadasRoutesTotal += r.resultado.llamadasRoutes;
-    report.ultimoCursor = r.tripId;
+  // Paginación por KEYSET (cursor = tripId, orden asc), NO por offset. El backfill
+  // escribe `distancia_km_real` mientras itera → los trips escritos salen del
+  // filtro `IS NULL`. Con keyset, esos trips quedan DETRÁS del cursor y no
+  // desplazan el scan hacia adelante → se procesa EXACTAMENTE N, ni uno menos.
+  // (Con offset, cada write correría el offset y saltaría trips.)
+  let cursor = desdeCursor;
+  for (;;) {
+    const candidatos = await cargarCandidatos(cursor, limite);
+    if (candidatos.length === 0) {
+      break;
+    }
+    for (const c of candidatos) {
+      const r = await reconstruir(c);
+      report.procesados++;
+      report.llamadasRoutesTotal += r.resultado.llamadasRoutes;
+      cursor = r.tripId;
+      report.ultimoCursor = cursor;
 
-    if (r.resultado.ok) {
-      if (r.resultado.cambiaNivel) {
-        report.cambiaronNivel++;
+      if (r.resultado.ok) {
+        if (r.resultado.cambiaNivel) {
+          report.cambiaronNivel++;
+        }
+        if (!dryRun) {
+          // Reversibilidad: `persistir` guarda el before-state (journal) ANTES de
+          // sobrescribir, en la misma unidad que el UPDATE atómico.
+          await persistir(r);
+          report.actualizados++;
+        }
+      } else {
+        // Abort NO se persiste → distancia sigue null → cae a estimación y es
+        // reintentable en una corrida futura (idempotencia bajo re-ejecución).
+        report.abortados[r.resultado.abortReason]++;
       }
-      if (!dryRun) {
-        // Reversibilidad: `persistir` guarda el before-state (journal) ANTES de
-        // sobrescribir, en la misma unidad que el UPDATE atómico.
-        await persistir(r);
-        report.actualizados++;
-      }
-    } else {
-      // Abort NO se persiste → distancia sigue null → cae a estimación y es
-      // reintentable en una corrida futura (idempotencia bajo re-ejecución).
-      report.abortados[r.resultado.abortReason]++;
+    }
+    // Página incompleta → no hay más candidatos.
+    if (candidatos.length < limite) {
+      break;
     }
   }
 

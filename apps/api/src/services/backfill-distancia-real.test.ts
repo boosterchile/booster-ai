@@ -118,8 +118,12 @@ describe('ejecutarBackfill — re-derivación de históricos (F0-0 paso 1)', () 
     expect(report.abortados.routes_error).toBe(1);
   });
 
-  it('RESUMABILIDAD — respeta el límite y reanuda desde el cursor (no re-procesa lo previo)', async () => {
-    const cargarCandidatos = vi.fn().mockResolvedValueOnce([{ tripId: 't1' }, { tripId: 't2' }]);
+  it('RESUMABILIDAD — pagina por cursor: 2ª página arranca desde el último tripId', async () => {
+    // Página 1 (llena) → sigue; página 2 vacía → termina. El cursor avanza t0→t2.
+    const cargarCandidatos = vi
+      .fn()
+      .mockResolvedValueOnce([{ tripId: 't1' }, { tripId: 't2' }])
+      .mockResolvedValueOnce([]);
     const report = await ejecutarBackfill({
       logger: noopLogger,
       dryRun: true,
@@ -132,8 +136,38 @@ describe('ejecutarBackfill — re-derivación de históricos (F0-0 paso 1)', () 
         .mockResolvedValueOnce(ok('t2', 0, 'secundario_modeled', 'secundario_modeled')),
       persistir: vi.fn(),
     });
-    // el cargador recibe cursor + límite → reanuda sin re-procesar lo ya hecho.
-    expect(cargarCandidatos).toHaveBeenCalledWith('t0', 2);
-    expect(report.ultimoCursor).toBe('t2'); // la próxima corrida arranca desde acá
+    expect(cargarCandidatos).toHaveBeenNthCalledWith(1, 't0', 2); // arranca en el cursor dado
+    expect(cargarCandidatos).toHaveBeenNthCalledWith(2, 't2', 2); // 2ª página desde el último
+    expect(report.ultimoCursor).toBe('t2');
+  });
+
+  it('CORRECTITUD — procesa EXACTAMENTE N aunque escriba mientras itera (keyset, no offset)', async () => {
+    // El bug clásico: paginar sobre `IS NULL` mientras escribes `distancia_km_real`.
+    // Con offset saltaría trips; con keyset (tripId > cursor) procesa los N.
+    const N = 7;
+    const K = 3;
+    const todos = Array.from({ length: N }, (_, i) => `t${String(i).padStart(2, '0')}`);
+    const escritos = new Set<string>();
+    // Cargador realista: filtra los ya escritos (IS NULL) + keyset (id > cursor).
+    const cargarCandidatos = async (cursor: string | null, limite: number) =>
+      todos
+        .filter((id) => !escritos.has(id) && (cursor === null || id > cursor))
+        .sort()
+        .slice(0, limite)
+        .map((tripId) => ({ tripId }));
+    const persistir = async (r: ReconstruccionTrip) => {
+      escritos.add(r.tripId); // simula que el trip deja de ser candidato
+    };
+    const report = await ejecutarBackfill({
+      logger: noopLogger,
+      dryRun: false,
+      limite: K,
+      cargarCandidatos,
+      reconstruir: async (c) => ok(c.tripId, 0, 'secundario_modeled', 'primario_verificable'),
+      persistir,
+    });
+    expect(report.procesados).toBe(N); // ni uno menos
+    expect(report.actualizados).toBe(N);
+    expect(escritos.size).toBe(N);
   });
 });
