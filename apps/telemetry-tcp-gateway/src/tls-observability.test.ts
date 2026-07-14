@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import tls from 'node:tls';
 import forge from 'node-forge';
@@ -140,5 +141,49 @@ describe('attachTlsObservability', () => {
     await waitFor(() => conexionesOk.mock.calls.length > 0);
     expect(conexionesOk).toHaveBeenCalledTimes(1); // el path de red sigue intacto
     expect(warns.length).toBe(0); // sin falsos positivos en handshake sano
+  });
+});
+
+describe('attachTlsObservability — degradación (sin _parent / sin peername)', () => {
+  it('TLSSocket sin _parent (Node cambió la interna) → degrada a socket.remoteAddress; err sin code → errCode null', () => {
+    const { logger, warns } = makeLoggerSpy();
+    const fakeServer = new EventEmitter();
+    attachTlsObservability(fakeServer as never, logger);
+
+    // Sin 'connection' previo y sin _parent: el puente devuelve null y el
+    // handler cae al read directo del socket (que acá SÍ tiene valor).
+    const fakeTlsSocket = { remoteAddress: '10.0.0.9', remotePort: 4444 };
+    fakeServer.emit('tlsClientError', new Error('boom sin code'), fakeTlsSocket);
+
+    expect(warns.length).toBe(1);
+    const w = warns[0];
+    if (!w) {
+      return;
+    }
+    expect(w.fields.remoteAddress).toBe('10.0.0.9');
+    expect(w.fields.remotePort).toBe(4444);
+    expect(w.fields.errCode).toBeNull(); // err.code ausente → null explícito, no undefined
+    expect(w.fields.errMessage).toBe('boom sin code');
+  });
+
+  it('raw socket sin peername (nunca conectado) + socket destruido → null/null, jamás revienta', () => {
+    const { logger, warns } = makeLoggerSpy();
+    const fakeServer = new EventEmitter();
+    attachTlsObservability(fakeServer as never, logger);
+
+    const rawSinPeer = new net.Socket(); // unconnected → remoteAddress undefined
+    fakeServer.emit('connection', rawSinPeer);
+    const err = Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+    const fakeTlsSocket = { remoteAddress: undefined, remotePort: undefined, _parent: rawSinPeer };
+    fakeServer.emit('tlsClientError', err, fakeTlsSocket);
+
+    expect(warns.length).toBe(1);
+    const w = warns[0];
+    if (!w) {
+      return;
+    }
+    expect(w.fields.remoteAddress).toBeNull();
+    expect(w.fields.remotePort).toBeNull();
+    expect(w.fields.errCode).toBe('ECONNRESET');
   });
 });
