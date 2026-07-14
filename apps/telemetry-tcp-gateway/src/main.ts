@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import { handleConnection } from './connection-handler.js';
 import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 import { createConnectionGuard, createSlidingWindowLimiter } from './rate-limiter.js';
+import { attachTlsObservability } from './tls-observability.js';
 
 /**
  * Entry point del telemetry-tcp-gateway.
@@ -162,16 +163,11 @@ async function main(): Promise<void> {
     tlsServer.on('error', (err) => {
       logger.error({ err, port: config.TLS_PORT }, 'tls server error');
     });
-    tlsServer.on('tlsClientError', (err, socket) => {
-      logger.warn(
-        {
-          err,
-          remoteAddress: socket.remoteAddress,
-          remotePort: socket.remotePort,
-        },
-        'tls handshake error — cliente con cert chain inválido o protocolo viejo',
-      );
-    });
+    // Fallos de handshake TLS: la IP se captura pre-handshake y el mensaje
+    // emite err.code/err.message crudos sin afirmar causa — ver
+    // tls-observability.ts (bug de observabilidad verificado en prod:
+    // remoteAddress vacío + mensaje que contradecía el ECONNRESET real).
+    attachTlsObservability(tlsServer, logger);
     tlsServer.listen(config.TLS_PORT, () => {
       logger.info({ port: config.TLS_PORT }, 'listening for Teltonika TLS connections');
     });
