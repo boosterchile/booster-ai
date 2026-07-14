@@ -28,7 +28,7 @@ export interface PingGps {
   lng: number;
 }
 
-export type TipoSegmento = 'observado' | 'estimado' | 'estimado_fallback';
+export type TipoSegmento = 'observado' | 'estimado';
 
 export interface SegmentoDistancia {
   tipo: TipoSegmento;
@@ -49,15 +49,6 @@ export interface DistanciaHibridaResultado {
   /** Desglose por tramo, con su procedencia (para el certificado). */
   segmentos: SegmentoDistancia[];
 }
-
-/**
- * Factor de sinuosidad del FALLBACK declarado (NUNCA el camino principal).
- * Solo se usa cuando el resolver de huecos (Routes) falla: aproxima la
- * distancia de ruta desde la línea recta. Fuente: heurística geográfica ya
- * usada en `actualizar-factor-matching.ts` (haversine × 1.3). Documentado y
- * marcado en la procedencia como `estimado_fallback`.
- */
-const FALLBACK_FACTOR_SINUOSIDAD = 1.3;
 
 /**
  * Estimador de la distancia de un hueco entre dos pings. En producción se
@@ -83,28 +74,21 @@ export async function calcularDistanciaHibrida(
     }
 
     const gapS = (hasta.tMs - desde.tMs) / 1000;
-    const rectaKm = haversineKm(desde.lat, desde.lng, hasta.lat, hasta.lng);
 
     if (gapS < CONTINUITY_GAP_S) {
       // Tramo observado: la distancia real entre pings consecutivos.
+      const rectaKm = haversineKm(desde.lat, desde.lng, hasta.lat, hasta.lng);
       segmentos.push({ tipo: 'observado', desde, hasta, km: rectaKm });
       kmObservado += rectaKm;
       continue;
     }
 
-    // Hueco (gap ≥ 60s): estimar por-tramo con Routes; fallback declarado si falla.
-    let km: number;
-    let tipo: TipoSegmento;
-    try {
-      km = await estimarHuecoKm(desde, hasta);
-      tipo = 'estimado';
-    } catch {
-      // Routes caído: no reventar el cierre del trip. Fallback declarado (piso =
-      // línea recta × factor documentado), nunca descartar el hueco a 0.
-      km = rectaKm * FALLBACK_FACTOR_SINUOSIDAD;
-      tipo = 'estimado_fallback';
-    }
-    segmentos.push({ tipo, desde, hasta, km });
+    // Hueco (gap ≥ 60s): estimar por-tramo con Routes. Si Routes falla, PROPAGA
+    // (decisión del PO: no inventar un fallback silencioso — un número parte
+    // medido parte haversine "parece medido y no lo es"). El caller aborta el
+    // write → el cert cae a la estimación via el `??`, que es honesto.
+    const km = await estimarHuecoKm(desde, hasta);
+    segmentos.push({ tipo: 'estimado', desde, hasta, km });
     kmEstimado += km;
   }
 
@@ -155,4 +139,51 @@ export function resolverEscrituraDistanciaReal(
     distanciaKmReal: hibrida.distanciaTotalKm,
     coveragePct: hibrida.coberturaObservadaPct,
   };
+}
+
+/**
+ * Cota de huecos por trip. Cada hueco = 1 llamada a Routes (~$5/1000, ~ms de
+ * latencia). Un trip con GPS muy fragmentado puede tener decenas → costo y
+ * latencia sin control. Por encima de esta cota el trip se considera demasiado
+ * fragmentado para reconstruir con confianza: se **aborta a la estimación** (no
+ * se llama a Routes). Tunable; medido en el test (nº llamadas == nº huecos).
+ */
+export const MAX_HUECOS_ROUTES = 20;
+
+/**
+ * Orquesta híbrida + decisión de escritura con las dos políticas de la
+ * integración:
+ *
+ *   - **Fallo de Routes** en cualquier hueco → `calcularDistanciaHibrida`
+ *     propaga → esta función propaga → el caller **no persiste** (cae a la
+ *     estimación via `??`). Nunca un número parte-medido parte-fallback.
+ *   - **Costo**: si hay más de `MAX_HUECOS_ROUTES` huecos → **aborta** (devuelve
+ *     `null`) **sin llamar a Routes** → cae a la estimación.
+ *
+ * Devuelve el payload a persistir, o `null` si se aborta a la estimación.
+ * (Distinto de propagar: `null` = política de costo esperada; throw = fallo de
+ * Routes que el caller debe loguear.)
+ */
+export async function computarEscrituraDistanciaReal(
+  pings: readonly PingGps[],
+  estimarHuecoKm: EstimarHuecoKm,
+): Promise<EscrituraDistanciaReal | null> {
+  // Contar huecos ANTES de gastar en Routes (cota de costo).
+  let huecos = 0;
+  for (let i = 1; i < pings.length; i++) {
+    const desde = pings[i - 1];
+    const hasta = pings[i];
+    if (!desde || !hasta) {
+      continue;
+    }
+    if ((hasta.tMs - desde.tMs) / 1000 >= CONTINUITY_GAP_S) {
+      huecos++;
+    }
+  }
+  if (huecos > MAX_HUECOS_ROUTES) {
+    return null;
+  }
+
+  const hibrida = await calcularDistanciaHibrida(pings, estimarHuecoKm);
+  return resolverEscrituraDistanciaReal(hibrida);
 }

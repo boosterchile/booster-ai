@@ -64,10 +64,15 @@ re-derivarlos, el resultado es distancia real para el futuro y **estimación par
 3. **Traza continua = distancia observada:** sin huecos, `distancia_km_real == Σ haverside observado` y
    `coverage_pct == 100`; el resolver **no** se llama.
 4. **Cobertura consistente:** `coverage_pct == kmObservado / distancia_km_real × 100`, en [0,100].
-5. **Falla del sistema externo (Routes caído):** si el resolver de un hueco falla/timeout, el cálculo
-   **no** revienta el cierre del trip: cae al fallback declarado (haversine×factor documentado o estimate
-   de ruta), marca la procedencia como degradada, y **loguea** — nunca traga el error ni subestima en
-   silencio.
+5. **Falla del sistema externo (Routes caído) → ABORTA (decisión del PO, supersede el fallback previo):**
+   si el resolver de un hueco falla/timeout, `calcularDistanciaHibrida` **propaga** (no inventa un
+   fallback haversine — un número parte-medido parte-fallback "parece medido y no lo es"). El caller
+   **no persiste** `distancia_km_real` (queda null) → el cert cae a la estimación via el `??` (ya
+   blindado). Se **loguea** el fallo. Nunca un número parcialmente inventado.
+6. **Costo/latencia — cap de huecos:** cada hueco = 1 llamada a Routes. `computarEscrituraDistanciaReal`
+   mide `nº llamadas == nº huecos` (test) y **acota**: más de `MAX_HUECOS_ROUTES` (=20, tunable) huecos →
+   trip demasiado fragmentado → **aborta sin llamar a Routes** → cae a la estimación. Cota el costo a
+   ≤20 llamadas/trip.
 
 ## Diseño (para el verde; no se implementa en este commit)
 - Función pura-inyectable `calcularDistanciaHibrida(pings, estimarHuecoKm)` en
