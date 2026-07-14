@@ -56,6 +56,19 @@ describe('calcularDistanciaHibrida', () => {
     expect(r.coberturaObservadaPct).toBeLessThanOrEqual(100);
   });
 
+  it('traza vacía o de un solo ping → distancia 0, cobertura 0, resolver NO llamado', async () => {
+    const estimarHueco = vi.fn(async () => 5);
+    const vacia = await calcularDistanciaHibrida([], estimarHueco);
+    const unico = await calcularDistanciaHibrida([p0], estimarHueco);
+
+    for (const r of [vacia, unico]) {
+      expect(r.distanciaTotalKm).toBe(0);
+      expect(r.coberturaObservadaPct).toBe(0);
+      expect(r.segmentos).toHaveLength(0);
+    }
+    expect(estimarHueco).not.toHaveBeenCalled();
+  });
+
   it('criterio 5 — Routes caído: no revienta el cierre, cae a fallback declarado y no subestima', async () => {
     const estimarHueco = vi.fn(async () => {
       throw new Error('Routes API timeout');
