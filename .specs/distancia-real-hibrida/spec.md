@@ -104,6 +104,27 @@ downgrade de nivel (ADR-028 §2, umbrales 95%/80%): ahora mide contra la distanc
 - **Caso sin observación (`distancia_km_real = null`):** `coverage_pct = 0` **finito** (nunca `kmObs/null`
   → NaN), fuerza path secundario (ADR-028 §5). El cert cae a la estimación via el `??`.
 
+## Integración en `recalcularNivelPostEntrega` (el write que mueve el número)
+- **Atomicidad:** `distancia_km_real` + `coverage_pct` + `certification_level` + `uncertainty` en **UN
+  solo UPDATE** (todo-o-nada). Un write a medias dejaría cobertura que no corresponde a la distancia → el
+  cert declararía "medido X%" sobre un número que no es esa X.
+- **Idempotencia:** con los pings ya persistidos el cálculo es determinista → correr `recalcular` dos veces
+  converge al mismo resultado. Load-bearing para la re-derivación de históricos (re-run parcial es lo que
+  va a pasar).
+- **No-op en abort (decisión del PO):** si no se reconstruye la distancia real, `recalcular` **no hace
+  upgrade** — el trip queda con su cálculo estimado (`maps_directions`, coverage 0, secundario). Forzar
+  `teltonika_gps` + coverage 0 etiquetaría la **procedencia de la distancia** con la **fuente de la
+  ubicación**: el vehículo tiene device, pero la distancia de ese trip no vino del device, vino de la
+  estimación. Es **F0-0 en miniatura** — una etiqueta que el número no respalda. No-op deja el trip como
+  lo que es.
+- **Observabilidad del abort (contable, no solo log):** `recalcular` devuelve/emite `abortReason` con
+  **cuatro** estados para que un `distancia_km_real = null` diga POR QUÉ:
+  - `null` → éxito (distancia real persistida).
+  - `sin_observacion` → hay device y pings, pero 0 tramos continuos → **no aplica** (esperado).
+  - `cap_exceeded` → más de `MAX_HUECOS_ROUTES` huecos → demasiado fragmentado (política).
+  - `routes_error` → Routes cayó → **está roto** (operacional, alertable).
+  Sin esto, ADR punto 12 no distingue "no aplica" de "está roto" — un null es ambiguo.
+
 ## Orden de release (dependencias, acordado con el PO)
 Cada paso desbloquea el siguiente:
 1. **Merge PR #597** (auditoría, docs read-only) → main.

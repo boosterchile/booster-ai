@@ -264,7 +264,14 @@ export async function confirmarEntregaViaje(opts: {
     // emisión del cert con los valores estimados (no bloqueamos al
     // cliente).
     try {
-      await recalcularNivelPostEntrega({ db, logger, tripId });
+      await recalcularNivelPostEntrega({
+        db,
+        logger,
+        tripId,
+        // F0-0 paso 1: Routes rellena los huecos de la traza para reconstruir la
+        // distancia real. Sin projectId, un trip con huecos abortaría a estimación.
+        routesProjectId: appConfig.GOOGLE_CLOUD_PROJECT,
+      });
     } catch (err) {
       logger.error(
         { err, tripId },

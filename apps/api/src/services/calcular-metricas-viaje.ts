@@ -13,7 +13,8 @@ import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
-import { calcularCobertura } from './calcular-cobertura-telemetria.js';
+import { cargarPingsVentana } from './calcular-cobertura-telemetria.js';
+import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
 import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
@@ -400,18 +401,28 @@ async function calcularMetricasEstimadasInner(
  * no-op (drizzle igual hace el round-trip — opt: chequeo de igualdad
  * antes de update si esto se vuelve hot path).
  */
+/** Motivo por el que NO se persistió una distancia real. Contable (F0-0): distingue
+ *  "no aplica" (sin_observacion) de "está roto" (routes_error). */
+type AbortReconstruccion = 'sin_observacion' | 'cap_exceeded' | 'routes_error';
+
 interface RecalcularNivelPostEntregaResult {
   recomputed: boolean;
   /** Nivel resultante (puede ser igual al previo). */
   certificationLevel?: 'primario_verificable' | 'secundario_modeled' | 'secundario_default';
   /** Cobertura calculada (0..100). */
   coveragePct?: number;
+  /** Distancia real persistida (km); null si se abortó (cae a la estimación). */
+  distanciaKmReal?: number | null;
+  /** Motivo del abort para observabilidad; null en éxito. */
+  abortReason?: AbortReconstruccion | null;
 }
 
 export async function recalcularNivelPostEntrega(opts: {
   db: Db;
   logger: Logger;
   tripId: string;
+  /** Project id para Routes API (rellena huecos de la traza). */
+  routesProjectId?: string | undefined;
 }): Promise<RecalcularNivelPostEntregaResult> {
   return await withBusinessSpan(
     {
@@ -424,6 +435,8 @@ export async function recalcularNivelPostEntrega(opts: {
         'booster.carbon.recomputed': result.recomputed,
         'booster.carbon.certification_level': result.certificationLevel ?? undefined,
         'booster.carbon.coverage_pct': result.coveragePct ?? undefined,
+        // Contable: un distancia_km_real=null dice POR QUÉ (no aplica vs roto).
+        'booster.carbon.abort_reason': result.abortReason ?? undefined,
       });
       return result;
     },
@@ -434,8 +447,9 @@ async function recalcularNivelPostEntregaInner(opts: {
   db: Db;
   logger: Logger;
   tripId: string;
+  routesProjectId?: string | undefined;
 }): Promise<RecalcularNivelPostEntregaResult> {
-  const { db, logger, tripId } = opts;
+  const { db, logger, tripId, routesProjectId } = opts;
 
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
@@ -499,44 +513,76 @@ async function recalcularNivelPostEntregaInner(opts: {
   // de búsqueda y dejamos al cálculo el filtrado por gaps de continuidad.
   const pickupAt = trip.pickupWindowStart ?? trip.createdAt;
 
-  const distanciaEstimadaKm = existing.distanceKmEstimated
-    ? Number(existing.distanceKmEstimated)
-    : 0;
-
-  const coveragePct = await calcularCobertura({
-    db,
-    logger,
-    vehicleId: assignment.vehicleId,
-    pickupAt,
-    deliveredAt: assignment.deliveredAt,
-    distanciaEstimadaKm,
-  });
-
   const precisionMethod =
     (existing.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
     'por_defecto';
 
-  // routeDataSource sube a 'teltonika_gps' porque el vehículo tiene
-  // device asociado y SI calculamos cobertura (puede ser 0 si no llegó
-  // ningún ping, pero la fuente conceptual es Teltonika).
-  const routeDataSource: RouteDataSource = 'teltonika_gps';
+  // Reconstrucción de la distancia real (F0-0 paso 1): pings observados +
+  // huecos rellenados por-tramo con Routes.
+  const pings = await cargarPingsVentana({
+    db,
+    vehicleId: assignment.vehicleId,
+    pickupAt,
+    deliveredAt: assignment.deliveredAt,
+  });
 
+  // Resolver de huecos sobre Routes API (acepta "lat,lng"). Si Routes falla,
+  // PROPAGA → abortamos (no un número parte-medido parte-inventado).
+  const estimarHuecoKm: EstimarHuecoKm = async (desde, hasta) => {
+    const rutas = await computeRoutes({
+      projectId: routesProjectId ?? '',
+      origin: `${desde.lat},${desde.lng}`,
+      destination: `${hasta.lat},${hasta.lng}`,
+    });
+    const mejor = rutas[0];
+    if (!mejor || mejor.distanceKm <= 0) {
+      throw new Error('Routes: sin ruta para el hueco');
+    }
+    return mejor.distanceKm;
+  };
+
+  // Política de abort → NO-OP honesto: sin distancia real reconstruida, el trip
+  // queda con su cálculo estimado (maps_directions/secundario). Forzar
+  // teltonika_gps con coverage 0 etiquetaría la procedencia de la DISTANCIA con
+  // la fuente de la UBICACIÓN — F0-0 en miniatura. `abortReason` lo hace contable.
+  let escritura: Awaited<ReturnType<typeof computarEscrituraDistanciaReal>>;
+  try {
+    escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
+  } catch (err) {
+    logger.warn({ err, tripId }, 'recalcular: reconstrucción abortada — Routes falló (roto)');
+    return { recomputed: false, abortReason: 'routes_error', distanciaKmReal: null };
+  }
+  if (escritura === null) {
+    logger.info({ tripId }, 'recalcular: reconstrucción abortada — demasiados huecos (cap)');
+    return { recomputed: false, abortReason: 'cap_exceeded', distanciaKmReal: null };
+  }
+  if (escritura.distanciaKmReal === null) {
+    logger.info({ tripId }, 'recalcular: sin observación continua — no aplica upgrade');
+    return { recomputed: false, abortReason: 'sin_observacion', distanciaKmReal: null };
+  }
+
+  // Éxito: distancia real + cobertura §5-ext salen de la MISMA híbrida.
+  const routeDataSource: RouteDataSource = 'teltonika_gps';
   const certificationLevel = derivarNivelCertificacion({
     precisionMethod,
     routeDataSource,
-    coveragePct,
+    coveragePct: escritura.coveragePct,
   });
   const uncertaintyFactor = calcularFactorIncertidumbre({
     nivelCertificacion: certificationLevel,
-    coveragePct,
+    coveragePct: escritura.coveragePct,
     vehicleTypeMatchesRoutesApi: true,
   });
 
+  // ATOMICIDAD: distancia + cobertura + nivel + uncertainty en UN solo UPDATE
+  // (todo-o-nada). Un write a medias dejaría cobertura que no corresponde a la
+  // distancia → el cert declararía "medido X%" sobre un número que no es esa X.
   await db
     .update(tripMetrics)
     .set({
+      distanceKmActual: escritura.distanciaKmReal.toString(),
       routeDataSource,
-      coveragePct: coveragePct.toString(),
+      coveragePct: escritura.coveragePct.toString(),
       certificationLevel,
       uncertaintyFactor: uncertaintyFactor.toString(),
       updatedAt: sql`now()`,
@@ -547,15 +593,22 @@ async function recalcularNivelPostEntregaInner(opts: {
     {
       tripId,
       vehicleId: assignment.vehicleId,
-      coveragePct,
+      distanciaKmReal: escritura.distanciaKmReal,
+      coveragePct: escritura.coveragePct,
       certificationLevel,
       uncertaintyFactor,
       precisionMethod,
     },
-    'nivel de certificación recalculado post-entrega',
+    'distancia real reconstruida + nivel recalculado post-entrega',
   );
 
-  return { recomputed: true, certificationLevel, coveragePct };
+  return {
+    recomputed: true,
+    certificationLevel,
+    coveragePct: escritura.coveragePct,
+    distanciaKmReal: escritura.distanciaKmReal,
+    abortReason: null,
+  };
 }
 
 /**
