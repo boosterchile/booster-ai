@@ -14,8 +14,11 @@ import { attachTlsObservability } from './tls-observability.js';
 
 /**
  * Cert self-signed minteado EN RUNTIME (nunca un PEM commiteado — gitleaks).
- * Keygen nativo (rápido) + firma X.509 con node-forge. Solo para levantar el
- * tls.Server del test; el caso de fallo ni siquiera llega a validar el cert.
+ * Keygen nativo (rápido) + firma X.509 con node-forge. Lleva SAN
+ * (localhost + 127.0.0.1) para que el cliente del test de control pueda
+ * validarlo DE VERDAD pineando la CA — sin rejectUnauthorized:false
+ * (CodeQL js/disabling-certificate-validation), y más cerca de lo que hace
+ * un device Teltonika (valida el server cert contra sus raíces).
  */
 function mintCertLocalhost(): { key: string; cert: string } {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
@@ -31,6 +34,15 @@ function mintCertLocalhost(): { key: string; cert: string } {
   const attrs = [{ name: 'commonName', value: 'localhost' }];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
+  cert.setExtensions([
+    {
+      name: 'subjectAltName',
+      altNames: [
+        { type: 2, value: 'localhost' }, // dNSName
+        { type: 7, ip: '127.0.0.1' }, // iPAddress
+      ],
+    },
+  ]);
   cert.sign(forge.pki.privateKeyFromPem(privateKey), forge.md.sha256.create());
   return { key: privateKey, cert: forge.pki.certificateToPem(cert) };
 }
@@ -131,7 +143,9 @@ describe('attachTlsObservability', () => {
     attachTlsObservability(server, logger);
     const port = await listen(server);
 
-    const client = tls.connect({ port, host: '127.0.0.1', rejectUnauthorized: false });
+    // CA pineada al cert minteado: el cliente valida en serio (SAN 127.0.0.1),
+    // sin deshabilitar la verificación.
+    const client = tls.connect({ port, host: '127.0.0.1', ca: [cert] });
     await new Promise<void>((resolve, reject) => {
       client.once('secureConnect', () => resolve());
       client.once('error', reject);
