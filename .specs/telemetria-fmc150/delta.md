@@ -23,9 +23,15 @@ El publisher pasa **todos** los `io.entries` sin filtrar (`pubsub-publisher.ts:4
 
 ---
 
-## 🔴 Hallazgos de primer orden — features vivas que devuelven vacío (prioridad SOBRE la huella)
+## 🔴 Hallazgos de primer orden — capacidad presente, consumidor ausente (prioridad SOBRE la huella)
 
-Dos consumidores de producción leen elementos AVL que **el device nunca emite**. No fallan: devuelven vacío en silencio. Son más graves que la huella medida — esta al menos es honesta sobre su ausencia; estas dos **el sistema las cree funcionando**.
+Features que **el sistema cree funcionando** y en silencio no funcionan. Más graves que la huella
+medida (esa al menos es honesta sobre su ausencia).
+
+### F0-0 · Distancia real descartada; huella calculada con estimación — **EL MÁS GRAVE** → `hallazgo-distancia-medida-vs-estimada.md`
+- **Resumen:** hay distancia GPS real en `telemetria_puntos` (260k pings) y en `posiciones_movil_conductor` (app, cableada pero **0 filas en prod**), y el cálculo de huella **no lee ninguna** para la distancia — la toma de Routes API o de una tabla regional hardcodeada. El único lugar que toca los pings reales (cobertura) computa la distancia recorrida y la **descarta**, conservando solo el ratio (`calcular-cobertura-telemetria.ts:105,109`).
+- **Prueba definitiva:** existe la columna `distancia_km_real` (`schema.ts:1407`), el certificado la prefiere (`certificates.ts:128`: `distanceKmActual ?? distanceKmEstimated`), pero **nunca se escribe** (0 writes) → todo certificado cae a la estimación, aun con procedencia etiquetada `teltonika_gps`.
+- **Distinto de F0-1/F0-2:** no es un dato que falta (el dato **está**); es un dato presente y almacenado sin consumidor. **Detalle completo, corrección del gate backhaul §6.4, y propuestas A (cablear, deuda técnica) / B (observar retorno, decisión de producto) en el documento dedicado.**
 
 ### F0-1 · Temperatura de cadena de frío — `temperatura_c` **siempre null**
 - **Consumidor:** `apps/api/src/routes/vehiculos.ts:198-206, 1380` lee `io_data['72']` (Dallas Temperature 1) y lo expone como `temperatura_c` en `GET /vehiculos/:id/ubicacion`; el frontend lo muestra (`apps/web/src/routes/vehiculo-live.tsx:36,123`).

@@ -4,7 +4,11 @@
 **Naturaleza:** auditoría READ-ONLY. No se modificó infra, Terraform, cluster, `.cfg`, ni se desplegó nada.
 **Regla de evidencia:** cada afirmación lleva `archivo:línea` o salida literal de comando. Lo no comprobable se marca **NO VERIFICADO**.
 
-Mapa AVL (Fase D) → documento separado `mapa-avl.md`. Delta (Fase E) y ADR propuesto → pendientes.
+**Documentos de esta auditoría:**
+- `hallazgo-distancia-medida-vs-estimada.md` — **F0-0, el hallazgo más grave**: distancia real (GPS Teltonika + app) descartada; huella calculada con estimación. Incluye corrección del gate backhaul §6.4 y propuestas A/B.
+- `delta.md` (Fase E) — habilitado vs presente vs consumido; hueco CAN + lecturas muertas (temp, crash-G).
+- `mapa-avl.md` (Fase D) — catálogo de elementos AVL y consumidores.
+- `adr-propuesto-contrato-telemetria-fmc150.md` — ADR propuesto (no ratificado) + decisiones que quedan al PO.
 
 ---
 

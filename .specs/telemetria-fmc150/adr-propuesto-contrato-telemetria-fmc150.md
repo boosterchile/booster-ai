@@ -67,9 +67,14 @@ Hoy **no existe** un chequeo que compare lo habilitado en el `.cfg` contra lo pr
 3. **Alerta** (Cloud Monitoring, patrón de `infrastructure/telemetry-monitoring.tf`) sobre los **habilitados-pero-ausentes**.
 **Matiz de diseño (crítico):** aplica solo a I/O **permanente** (Low priority periódico: CAN combustible, Dallas 72, voltaje 66, odómetro 16…), que debe aparecer en cada record. **NO** a I/O **eventual** (crash 247, green driving 253/254/255, geofence, jamming): son legítimamente esporádicos y su ausencia no es señal de falla. Sin este matiz, el chequeo genera falsos positivos y se ignora.
 
-### 13. `consumo_l_por_100km_base` NULL — requisito de GLEC §6.4 completo, hoy omitido en silencio
-**77% de la flota** (10 de 13 vehículos) tiene `consumo_l_por_100km_base` **NULL** (incluido KZBB26; solo 3 lo declaran). Efecto hoy: huella en modo `por_defecto` (genérico). Efecto **con CAN**: `exacto_canbus` vuelve irrelevante el consumo base para el **loaded leg** (usa combustible medido, `exacto-canbus.ts:48-50`), **pero** el **empty backhaul (GLEC §6.4)** sigue gateado en `consumoBasePor100km != null` (`exacto-canbus.ts:70`) → si es NULL, la atribución del retorno vacío **se omite en silencio**. **El silencio es el problema.**
-**Propuesta:** (a) declarar `consumo_l_por_100km_base` por vehículo (requisito para §6.4 completo); **o** (b) que el certificado marque explícitamente **"backhaul no atribuido"** en vez de omitirlo callado. Nunca omisión silenciosa.
+### 13. Empty backhaul GLEC §6.4 — dos regímenes, ninguno medido (gate `consumo_base` precisado)
+**77% de la flota** (10 de 13 vehículos) tiene `consumo_l_por_100km_base` **NULL** (incluido KZBB26; solo 3 lo declaran). Efecto hoy: huella en modo `por_defecto` (genérico). Efecto **con CAN**: `exacto_canbus` vuelve irrelevante el consumo base para el **loaded leg** (usa combustible medido, `exacto-canbus.ts:48-50`).
+
+**Qué corta exactamente el gate `exacto-canbus.ts:70`** (`… && consumoBasePor100km != null`) — verificado, corrige el framing previo "se omite en silencio": el gate **NO** corta el cálculo del leg cargado (las emisiones del shipment se computan y retornan antes, `:48-50,:56-68`); corta el **bloque `resultado.backhaul` entero** — cálculo §6.4 + su atribución de emisiones + storytelling `ahorroVsSinMatching` (`:71-86`). De ahí **dos regímenes, ninguno es backhaul medido**:
+- **`consumo_base` NULL (77%):** `resultado.backhaul` queda `undefined` → retorno aporta **cero**, sin flag. Este régimen **sí** es omisión silenciosa.
+- **`consumo_base` presente (23%):** §6.4 **sí calcula**, pero sobre **supuestos** — `distanciaRetornoKm = leg cargado` (`calcular-metricas-viaje.ts:588-589`) y `factorMatching` = heurística geográfica (`actualizar-factor-matching.ts:81-117`), **no** GPS real.
+
+**Propuesta:** (a) declarar `consumo_l_por_100km_base` por vehículo (requisito para §6.4 completo); **y** (b) que el certificado marque **"backhaul no atribuido"** en el régimen NULL, y **"backhaul estimado (§6.4), no medido"** en el régimen con supuestos. Nunca presentar supuesto como medición ni omitir en silencio. Ligado a **F0-0** (`hallazgo-distancia-medida-vs-estimada.md`): la observación real del retorno es propuesta B ahí (decisión de producto).
 
 ## Decisiones que quedan al PO (no se toman aquí)
 - **[PO]** CA privada + **mTLS / autenticación de device** (punto 3) — misma decisión; resuelve el spoofing de IMEI de raíz. Hoy no hay auth de device.
