@@ -86,6 +86,19 @@ Test `apps/api/src/services/calcular-distancia-real.test.ts` sobre `calcularDist
 criterio 1–5 (comportamiento de negocio, no implementación). Rojo exhibido antes del verde; output del rojo
 va en la Evidencia del PR. Incluye el caso de falla externa (criterio 5).
 
+## Decisión: denominador de `coverage_pct` (§5-ext de ADR-028, PO 2026-07-13)
+El write persiste `distancia_km_real` + `coverage_pct` **juntos, en un solo UPDATE**, derivados de la
+**misma** híbrida (`resolverEscrituraDistanciaReal`) → imposible que "medido X%" quede sobre un número
+ajeno. Para que X sea exacto sobre la distancia mostrada, `coverage_pct = kmObservado / distancia_km_real`
+(no la distancia estimada de ADR-028 §5). **Cambia la semántica de `coverage_pct`** que alimenta el
+downgrade de nivel (ADR-028 §2, umbrales 95%/80%): ahora mide contra la distancia REAL.
+- **Decisión del PO:** Opción A — un solo `coverage_pct` coherente. Se **folddea en `adr-028-ext-movil-gps-propuesta.md` como §5-ext** (no se toca el ADR ratificado).
+- **Superficie del cambio (medida en prod, 2026-07-13):** `metricas_viaje` = 1 fila (artefacto de test),
+  **0** con nivel derivado, **0** `teltonika_gps`, **0** cerca de umbral, **0** certs emitidos → **cero
+  trips cambian de nivel hoy**. Barato ahora, imposible después.
+- **Caso sin observación (`distancia_km_real = null`):** `coverage_pct = 0` **finito** (nunca `kmObs/null`
+  → NaN), fuerza path secundario (ADR-028 §5). El cert cae a la estimación via el `??`.
+
 ## Orden de release (dependencias, acordado con el PO)
 Cada paso desbloquea el siguiente:
 1. **Merge PR #597** (auditoría, docs read-only) → main.

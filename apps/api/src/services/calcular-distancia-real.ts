@@ -113,3 +113,46 @@ export async function calcularDistanciaHibrida(
 
   return { distanciaTotalKm, kmObservado, kmEstimado, coberturaObservadaPct, segmentos };
 }
+
+/** Payload de escritura en `metricas_viaje`, derivado de una sola híbrida. */
+export interface EscrituraDistanciaReal {
+  /**
+   * Distancia real a persistir en `distancia_km_real`; **null** si no hay
+   * observación → el cert cae a la estimación via `distanceKmActual ??
+   * distanceKmEstimated` (`certificates.ts:128`). **NUNCA 0**: un 0 no es
+   * nullish, así que el `??` lo mostraría como "0 km medidos".
+   */
+  distanciaKmReal: number | null;
+  /**
+   * Cobertura CONSISTENTE con `distanciaKmReal` — fracción medida de la
+   * distancia real (ADR-028 §5-ext: denominador = distancia_km_real, no la
+   * estimada). 0 cuando no hay observación (fuerza path secundario, ADR-028 §5).
+   */
+  coveragePct: number;
+}
+
+/**
+ * Decide QUÉ persistir a partir de la híbrida, acoplando `distancia_km_real` y
+ * `coverage_pct` a la MISMA fuente (imposible mezclar cálculos distintos) y
+ * blindando los dos agujeros del `??`:
+ *   - distancia: null (no 0) cuando no hay observación.
+ *   - cobertura: 0 finito (nunca `kmObs/null` → NaN).
+ *
+ * Pura e idempotente. El caller la escribe en UN solo UPDATE (misma transacción).
+ */
+export function resolverEscrituraDistanciaReal(
+  hibrida: DistanciaHibridaResultado,
+): EscrituraDistanciaReal {
+  // Sin observación real (sin pings, o todos los tramos son huecos): no hay
+  // "distancia medida". No persistir → el cert cae a la estimación.
+  if (hibrida.kmObservado <= 0) {
+    return { distanciaKmReal: null, coveragePct: 0 };
+  }
+  // Con observación: distancia y cobertura salen de la misma híbrida → "medido
+  // X%" corresponde exactamente a la distancia mostrada (X = kmObservado /
+  // distanciaTotalKm).
+  return {
+    distanciaKmReal: hibrida.distanciaTotalKm,
+    coveragePct: hibrida.coberturaObservadaPct,
+  };
+}
