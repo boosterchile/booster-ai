@@ -13,6 +13,30 @@ vi.mock('../../lib/env.js', () => ({
   ),
 }));
 
+/** Mapa fake mínimo para ejercitar AutoFitBounds (spies sobre la API usada). */
+interface FakeMap {
+  setCenter: ReturnType<typeof vi.fn>;
+  setZoom: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
+}
+
+/**
+ * Stub construible de google.maps.LatLngBounds. En la API real el
+ * constructor vive en la librería 'core' (CoreLibrary) — NO en 'maps'
+ * (outage /app/flota 2026-07-15) — y el mock respeta esa forma.
+ */
+class FakeLatLngBounds {
+  extended: Array<{ lat: number; lng: number }> = [];
+  extend(pos: { lat: number; lng: number }): void {
+    this.extended.push(pos);
+  }
+}
+
+const mapState: { map: FakeMap | null; libs: Record<string, unknown> } = {
+  map: null,
+  libs: {},
+};
+
 vi.mock('@vis.gl/react-google-maps', () => ({
   APIProvider: ({ children }: { children: ReactNode }) => (
     <div data-testid="api-provider">{children}</div>
@@ -37,14 +61,16 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     </div>
   ),
   Pin: ({ background }: { background: string }) => <div data-testid="pin" data-bg={background} />,
-  useMap: () => null,
-  useMapsLibrary: () => null,
+  useMap: () => mapState.map,
+  useMapsLibrary: (name: string) => mapState.libs[name] ?? null,
 }));
 
 const { FleetMap } = await import('./FleetMap.js');
 
 beforeEach(() => {
   envState.value = {};
+  mapState.map = null;
+  mapState.libs = {};
 });
 
 describe('FleetMap', () => {
@@ -160,6 +186,43 @@ describe('FleetMap', () => {
       render(<FleetMap vehicles={[]} height={600} />);
       const map = screen.getByTestId('google-map');
       expect(map).toHaveStyle({ height: '600px' });
+    });
+  });
+
+  describe('auto-fit bounds (regresión outage /app/flota 2026-07-15)', () => {
+    beforeEach(() => {
+      envState.value = { VITE_GOOGLE_MAPS_API_KEY: 'test-key' };
+      mapState.map = { setCenter: vi.fn(), setZoom: vi.fn(), fitBounds: vi.fn() };
+      // Forma real de las librerías google.maps: LatLngBounds SOLO en 'core'.
+      // 'maps' truthy pero sin LatLngBounds, como en runtime — pedirlo ahí
+      // era el bug (TypeError: not a constructor).
+      mapState.libs = {
+        core: { LatLngBounds: FakeLatLngBounds },
+        maps: { Map: class {} },
+      };
+    });
+
+    it('con ≥2 vehículos no tira y encuadra vía fitBounds con bounds de core', () => {
+      expect(() =>
+        render(
+          <FleetMap
+            vehicles={[
+              { id: 'v1', plate: 'BCDF12', latitude: -33.45, longitude: -70.65 },
+              { id: 'v2', plate: 'AAAA11', latitude: -33.46, longitude: -70.64 },
+            ]}
+          />,
+        ),
+      ).not.toThrow();
+
+      const fitBounds = mapState.map?.fitBounds;
+      expect(fitBounds).toHaveBeenCalledTimes(1);
+      const bounds = fitBounds?.mock.calls[0]?.[0] as FakeLatLngBounds;
+      expect(bounds).toBeInstanceOf(FakeLatLngBounds);
+      expect(bounds.extended).toEqual([
+        { lat: -33.45, lng: -70.65 },
+        { lat: -33.46, lng: -70.64 },
+      ]);
+      expect(fitBounds?.mock.calls[0]?.[1]).toBe(60);
     });
   });
 });

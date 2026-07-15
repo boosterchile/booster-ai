@@ -119,9 +119,9 @@ function AutoFitBounds({
   fallback: { lat: number; lng: number };
 }) {
   const map = useMap();
-  // useMapsLibrary nos da los constructores de `google.maps` con tipos. Sin
-  // esto deberíamos declarar el `google` global a mano.
-  const mapsLib = useMapsLibrary('maps');
+  // LatLngBounds vive en la librería 'core' de google.maps (CoreLibrary),
+  // no en 'maps' — pedirlo a 'maps' devuelve undefined en runtime.
+  const coreLib = useMapsLibrary('core');
 
   useEffect(() => {
     if (!map) {
@@ -140,21 +140,21 @@ function AutoFitBounds({
       }
       return;
     }
-    if (!mapsLib) {
+    if (!coreLib) {
       // Mientras carga la lib, centramos en el primer vehículo. Cuando
-      // mapsLib resuelve el effect re-corre y aplica fitBounds.
+      // coreLib resuelve el effect re-corre y aplica fitBounds.
       const first = vehicles[0];
       if (first) {
         map.setCenter({ lat: first.latitude, lng: first.longitude });
       }
       return;
     }
-    const bounds = new mapsLib.LatLngBounds();
+    const bounds = new coreLib.LatLngBounds();
     for (const v of vehicles) {
       bounds.extend({ lat: v.latitude, lng: v.longitude });
     }
     map.fitBounds(bounds, 60);
-  }, [map, mapsLib, vehicles, fallback]);
+  }, [map, coreLib, vehicles, fallback]);
 
   return null;
 }
