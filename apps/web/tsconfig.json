@@ -7,7 +7,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "outDir": "./dist",
-    "types": ["vite/client", "vite-plugin-pwa/client"]
+    "types": ["vite/client", "vite-plugin-pwa/client", "google.maps"]
   },
   "include": ["src/**/*", "test/**/*", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]
