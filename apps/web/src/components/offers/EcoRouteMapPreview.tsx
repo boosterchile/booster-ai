@@ -123,12 +123,13 @@ export function EcoRouteMapPreview({ polylineEncoded, height = 200 }: EcoRouteMa
  */
 function RoutePolyline({ points }: { points: LatLng[] }) {
   const map = useMap();
-  // useMapsLibrary devuelve la lib `google.maps` ya cargada con tipos
-  // correctos. Hasta que resuelve es `null` — evita race con APIProvider.
+  // Cada lib resuelve `null` hasta cargar — evita race con APIProvider.
+  // Polyline vive en 'maps'; LatLngBounds en 'core' (CoreLibrary).
   const mapsLib = useMapsLibrary('maps');
+  const coreLib = useMapsLibrary('core');
 
   useEffect(() => {
-    if (!map || !mapsLib || points.length === 0) {
+    if (!map || !mapsLib || !coreLib || points.length === 0) {
       return;
     }
     const polyline = new mapsLib.Polyline({
@@ -145,7 +146,7 @@ function RoutePolyline({ points }: { points: LatLng[] }) {
     // no queden cortados al borde.
     const b = boundsOf(points);
     if (b) {
-      const bounds = new mapsLib.LatLngBounds(
+      const bounds = new coreLib.LatLngBounds(
         { lat: b.south, lng: b.west },
         { lat: b.north, lng: b.east },
       );
@@ -155,7 +156,7 @@ function RoutePolyline({ points }: { points: LatLng[] }) {
     return () => {
       polyline.setMap(null);
     };
-  }, [map, mapsLib, points]);
+  }, [map, mapsLib, coreLib, points]);
 
   return null;
 }
