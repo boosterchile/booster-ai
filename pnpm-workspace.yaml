@@ -25,6 +25,7 @@ overrides:
   "@opentelemetry/core@<2.8.0": ">=2.8.0"
   "@opentelemetry/resources@<2.8.0": ">=2.8.0"
   "@opentelemetry/sdk-trace-base@<2.8.0": ">=2.8.0"
+  "websocket-driver@<0.7.5": ">=0.7.5"
 
 onlyBuiltDependencies:
   - "@biomejs/biome"
