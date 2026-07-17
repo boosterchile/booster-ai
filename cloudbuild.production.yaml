@@ -648,7 +648,7 @@ substitutions:
   # por diseño (ADR-074), misma categoría que las keys Firebase de abajo.
   # Vacío = sink de errores OFF y upload de sourcemaps OFF (deploy idéntico).
   # Poblar con el valor del GSM `sentry-dsn` (v2) — decisión/acción del PO.
-  _VITE_SENTRY_DSN: ''
+  _VITE_SENTRY_DSN: 'https://43f59f65b075c31f1a428cc0dc7eaa04@o4511656331706368.ingest.us.sentry.io/4511747927769088'
   _VITE_API_URL: https://api.boosterchile.com
   _VITE_FIREBASE_API_KEY: AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk
   _VITE_FIREBASE_AUTH_DOMAIN: booster-ai-494222.firebaseapp.com
