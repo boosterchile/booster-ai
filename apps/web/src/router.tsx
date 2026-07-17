@@ -1,10 +1,12 @@
 import {
+  ErrorComponent,
   createRootRoute,
   createRoute,
   createRouter,
   lazyRouteComponent,
 } from '@tanstack/react-router';
 import { RouteFallback } from './components/RouteFallback.js';
+import { reportError } from './lib/error-reporting.js';
 import { RootComponent } from './routes/__root.js';
 // Rutas EAGER (primer-paint público): no se code-splittean, para evitar un
 // flash de carga en landing / login / login conductor / link de tracking
@@ -460,6 +462,14 @@ export const router = createRouter({
   routeTree,
   defaultPendingComponent: RouteFallback,
   defaultPreload: 'intent', // prefetch on link hover
+  // ADR-074: el CatchBoundary del router SOLO envuelve rutas si hay un
+  // errorComponent resuelto — sin esto, defaultOnCatch jamás se invoca.
+  // ErrorComponent es el mismo built-in que ya se veía ("Something went
+  // wrong!"): cero cambio visual, boundary garantizado en toda ruta.
+  defaultErrorComponent: ErrorComponent,
+  // Captura de errores de render/effect de rutas (la clase LatLngBounds
+  // de #600/#601 — invisible a window.onerror porque React la atrapa antes).
+  defaultOnCatch: (error) => reportError(error),
 });
 
 // Module augmentation para que useNavigate / Link tengan los paths tipados.

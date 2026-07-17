@@ -60,6 +60,10 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    // ADR-074: 'hidden' genera los .map para subirlos a Sentry pero sin el
+    // comentario sourceMappingURL — antes con `true` los mapas viajaban al
+    // image y nginx los servía públicos. El Dockerfile además los aparta
+    // del dist antes del runtime stage.
+    sourcemap: 'hidden',
   },
 });

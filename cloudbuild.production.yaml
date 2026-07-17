@@ -66,10 +66,70 @@ steps:
       - --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID}
       - --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY}
       - --build-arg=VITE_RECAPTCHA_SITE_KEY=${_VITE_RECAPTCHA_SITE_KEY}
+      # ADR-074 — sink de errores client-side. DSN público (misma categoría
+      # que las keys Firebase de arriba); release = commit para correlar
+      # issue ↔ deploy. DSN vacío = sink deshabilitado (build idéntico al actual).
+      - --build-arg=VITE_SENTRY_DSN=${_VITE_SENTRY_DSN}
+      - --build-arg=VITE_RELEASE=${_COMMIT_SHA}
       - --tag=${_REGISTRY}/web:${_COMMIT_SHA}
       - --tag=${_REGISTRY}/web:latest
       - .
     waitFor: ['-']
+
+  # ADR-074 — token para subir sourcemaps a Sentry. SOFT-GATED: si el secret
+  # `sentry-auth-token` no existe (o el SA no puede leerlo), deja el archivo
+  # vacío y el paso de upload se salta — el deploy NO cambia. Crear el secret
+  # (consola/Terraform, PO) activa la subida sin tocar este archivo.
+  - id: fetch-sentry-token
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud secrets versions access latest --secret=sentry-auth-token \
+          > /workspace/.sentry-token 2>/dev/null \
+          || { echo "[sourcemaps] sentry-auth-token no disponible — upload se saltará"; : > /workspace/.sentry-token; }
+    waitFor: ['-']
+
+  # ADR-074 — upload de sourcemaps del web a Sentry (org booster-chile,
+  # proyecto javascript-react). Los .map viven SOLO en la stage `build` del
+  # Dockerfile (apartados del runtime image); se extraen reusando el layer
+  # cache del build-web. Sin token o sin DSN: skip explícito, exit 0.
+  - id: upload-sourcemaps-web
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        TOKEN=$$(cat /workspace/.sentry-token)
+        if [ -z "$$TOKEN" ] || [ -z "${_VITE_SENTRY_DSN}" ]; then
+          echo "[sourcemaps] skip (token o DSN ausente) — deploy sigue idéntico"
+          exit 0
+        fi
+        docker build --file=apps/web/Dockerfile --target=build \
+          --build-arg=VITE_API_URL=${_VITE_API_URL} \
+          --build-arg=VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY} \
+          --build-arg=VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN} \
+          --build-arg=VITE_FIREBASE_PROJECT_ID=${_VITE_FIREBASE_PROJECT_ID} \
+          --build-arg=VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET} \
+          --build-arg=VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID} \
+          --build-arg=VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID} \
+          --build-arg=VITE_GOOGLE_MAPS_API_KEY=${_VITE_GOOGLE_MAPS_API_KEY} \
+          --build-arg=VITE_RECAPTCHA_SITE_KEY=${_VITE_RECAPTCHA_SITE_KEY} \
+          --build-arg=VITE_SENTRY_DSN=${_VITE_SENTRY_DSN} \
+          --build-arg=VITE_RELEASE=${_COMMIT_SHA} \
+          -t web-build-stage .
+        docker create --name webbuild web-build-stage
+        docker cp webbuild:/app/sourcemaps ./sourcemaps-web
+        docker cp webbuild:/app/apps/web/dist ./dist-web
+        docker rm webbuild
+        docker run --rm -v /workspace:/work -e SENTRY_AUTH_TOKEN="$$TOKEN" \
+          getsentry/sentry-cli:2 \
+          sourcemaps upload --org=booster-chile --project=javascript-react \
+          --release=${_COMMIT_SHA} --url-prefix='~/assets' \
+          /work/sourcemaps-web /work/dist-web/assets
+    waitFor: ['build-web', 'fetch-sentry-token']
 
   # apps/telemetry-tcp-gateway — TCP server para devices Teltonika.
   # Va a GKE Autopilot (no Cloud Run; el deploy es kubectl set image).
@@ -584,6 +644,11 @@ substitutions:
   # dominio autorizado en Firebase Auth. Por eso se hardcodean acá en
   # vez de pasarse via Secret Manager.
   # Override puntual: --substitutions=_VITE_FIREBASE_API_KEY=...
+  # Sentry DSN del proyecto javascript-react (org booster-chile) — público
+  # por diseño (ADR-074), misma categoría que las keys Firebase de abajo.
+  # Vacío = sink de errores OFF y upload de sourcemaps OFF (deploy idéntico).
+  # Poblar con el valor del GSM `sentry-dsn` (v2) — decisión/acción del PO.
+  _VITE_SENTRY_DSN: 'https://43f59f65b075c31f1a428cc0dc7eaa04@o4511656331706368.ingest.us.sentry.io/4511747927769088'
   _VITE_API_URL: https://api.boosterchile.com
   _VITE_FIREBASE_API_KEY: AIzaSyDrmKjRa1i0RVAJQKtFsVcQCF_uuJ6IxZk
   _VITE_FIREBASE_AUTH_DOMAIN: booster-ai-494222.firebaseapp.com

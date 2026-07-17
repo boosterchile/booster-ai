@@ -5,16 +5,29 @@
  * directos en componentes/hooks/lib (CLAUDE.md §1 prohíbe `console.*` en
  * código de producción).
  *
- * Estado actual: forwardea a `console` con prefijo `[web]` para que sea
- * filtrable en DevTools del usuario y capturable por `window.onerror` /
- * `window.addEventListener('unhandledrejection')` futuras.
- *
- * TODO(adr-pendiente): definir sink de browser observability — Sentry vs
- * OpenTelemetry browser SDK vs envío a backend `/api/log/client`. Una vez
- * decidido, esta es la única superficie a cambiar.
+ * Forwardea a `console` con prefijo `[web]` (filtrable en DevTools) y, en
+ * nivel `error`, reporta además al sink Sentry decidido en ADR-074
+ * (docs/adr/074-sink-errores-client-side-sentry-scrubbing.md) vía
+ * `error-reporting.ts` — único punto de envío, con scrubbing allowlist.
+ * Sin DSN configurado el reporte es no-op y queda solo la consola.
  */
 
 type LogContext = Record<string, unknown>;
+
+type ErrorSink = (error: unknown) => void;
+
+/**
+ * Sink de nivel `error`, cableado por `error-reporting.ts` en el init
+ * (ADR-074). Hook invertido a propósito: un import estático acá crearía el
+ * ciclo logger → error-reporting → env → logger (TDZ real si env falla la
+ * validación durante la evaluación del módulo). Antes del init: null = solo
+ * consola, que es exactamente el comportamiento sin DSN.
+ */
+let errorSink: ErrorSink | null = null;
+
+export function setLoggerErrorSink(sink: ErrorSink): void {
+  errorSink = sink;
+}
 
 interface WebLogger {
   error(msgOrCtx: string | LogContext, message?: string): void;
@@ -27,11 +40,15 @@ function emit(level: 'error' | 'warn' | 'info', a: string | LogContext, b?: stri
   const context = typeof a === 'string' ? undefined : a;
   const prefix = '[web]';
   if (context !== undefined) {
-    // biome-ignore lint/suspicious/noConsole: punto único de logging del cliente; ver TODO de ADR pendiente arriba
+    // biome-ignore lint/suspicious/noConsole: punto único de logging del cliente (ADR-074)
     console[level](prefix, message, context);
   } else {
-    // biome-ignore lint/suspicious/noConsole: punto único de logging del cliente; ver TODO de ADR pendiente arriba
+    // biome-ignore lint/suspicious/noConsole: punto único de logging del cliente (ADR-074)
     console[level](prefix, message);
+  }
+  if (level === 'error' && errorSink) {
+    const causa = context?.err;
+    errorSink(causa instanceof Error ? causa : new Error(message || 'logger.error sin mensaje'));
   }
 }
 
