@@ -39,6 +39,19 @@ const envSchema = z.object({
    * En dev se define en `.env.local`; en prod la inyecta cloudbuild como VITE_*.
    */
   VITE_RECAPTCHA_SITE_KEY: z.string().min(1, 'VITE_RECAPTCHA_SITE_KEY required'),
+
+  /**
+   * DSN de Sentry (público por diseño, como las keys de Firebase; ADR-074).
+   * Vacío/ausente = sink de errores deshabilitado (no-op) — dev y CI corren
+   * así. En prod lo inyecta cloudbuild como las demás VITE_*.
+   */
+  VITE_SENTRY_DSN: z.string().optional(),
+
+  /**
+   * Release para correlar issues Sentry ↔ deploy (ADR-074). cloudbuild lo
+   * inyecta con el commit SHA; en dev queda ausente.
+   */
+  VITE_RELEASE: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -43,8 +43,13 @@ ARG VITE_FIREBASE_MESSAGING_SENDER_ID
 ARG VITE_FIREBASE_APP_ID
 ARG VITE_GOOGLE_MAPS_API_KEY
 ARG VITE_RECAPTCHA_SITE_KEY
+# ADR-074 — DSN Sentry (público) + release (commit SHA) para el sink de errores.
+ARG VITE_SENTRY_DSN
+ARG VITE_RELEASE
 
-ENV VITE_API_URL=$VITE_API_URL \
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
+    VITE_RELEASE=$VITE_RELEASE \
+    VITE_API_URL=$VITE_API_URL \
     VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
     VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
     VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID \
@@ -56,6 +61,12 @@ ENV VITE_API_URL=$VITE_API_URL \
 
 COPY . .
 RUN pnpm --filter @booster-ai/web build
+
+# ADR-074: los sourcemaps ('hidden' en vite.config) se APARTAN del dist antes
+# del runtime stage — jamás se sirven. El paso upload-sourcemaps-web de
+# cloudbuild los extrae de ESTA stage (--target=build) para subirlos a Sentry.
+RUN mkdir -p /app/sourcemaps && \
+    find /app/apps/web/dist -name '*.map' -exec mv {} /app/sourcemaps/ \;
 
 # --- runtime stage: nginx-unprivileged sirviendo el bundle ---
 # Trivy IaC: nginxinc/nginx-unprivileged corre como user `nginx` (UID 101)
