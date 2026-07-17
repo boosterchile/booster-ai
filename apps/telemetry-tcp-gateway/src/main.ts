@@ -11,6 +11,7 @@ import { buildShutdown, createDrainController } from './drain.js';
 import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 import { createConnectionGuard, createSlidingWindowLimiter } from './rate-limiter.js';
 import { attachTlsObservability } from './tls-observability.js';
+import { buildTlsServerOptions } from './tls-server.js';
 
 /**
  * Entry point del telemetry-tcp-gateway.
@@ -152,27 +153,13 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const tlsContext = tls.createSecureContext({
-      cert,
-      key,
-      // Aceptamos TLS 1.2+. Devices Teltonika FMC150 soportan TLS 1.2;
-      // 1.3 también pero sin negociación si el firmware es antiguo.
-      minVersion: 'TLSv1.2',
+    // Options extraídas a tls-server.ts (factory testeable): cert/key en la
+    // raíz para clientes sin SNI + SNICallback para los que sí la mandan.
+    tlsServer = tls.createServer(buildTlsServerOptions(cert, key), (socket) => {
+      // tls.TLSSocket extiende net.Socket — pasable directamente al
+      // acceptConnection (cap concurrente + handler).
+      acceptConnection(socket);
     });
-
-    tlsServer = tls.createServer(
-      {
-        SNICallback: (_servername, cb) => cb(null, tlsContext),
-        // Devices Teltonika no presentan client cert — solo verifican el
-        // server cert contra raíces públicas. requestCert: false explícito.
-        requestCert: false,
-      },
-      (socket) => {
-        // tls.TLSSocket extiende net.Socket — pasable directamente al
-        // acceptConnection (cap concurrente + handler).
-        acceptConnection(socket);
-      },
-    );
     tlsServer.on('error', (err) => {
       logger.error({ err, port: config.TLS_PORT }, 'tls server error');
     });
