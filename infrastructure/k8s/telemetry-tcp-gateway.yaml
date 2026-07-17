@@ -182,10 +182,11 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3
-          # Graceful shutdown: SIGTERM → main.ts cierra server +
-          # flush pubsub + close pool en ≤30s. preStop sleep para que
-          # K8s saque el pod del Service antes de cortar conexiones
-          # nuevas.
+          # Graceful shutdown: SIGTERM → main.ts deja de aceptar y DRENA
+          # las conexiones vivas en quiescencia (drain.ts, budget 40s) +
+          # flush pubsub + close pool; hard-exit a los 45s como última red
+          # (< 60s de grace − 5s de preStop). preStop sleep para que K8s
+          # saque el pod del Service antes de cortar conexiones nuevas.
           lifecycle:
             preStop:
               exec:

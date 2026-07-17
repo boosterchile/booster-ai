@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { loadConfig } from './config.js';
 import { handleConnection } from './connection-handler.js';
+import { buildShutdown, createDrainController } from './drain.js';
 import { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 import { createConnectionGuard, createSlidingWindowLimiter } from './rate-limiter.js';
 import { attachTlsObservability } from './tls-observability.js';
@@ -79,6 +80,9 @@ async function main(): Promise<void> {
     windowMs: config.ENROLLMENT_RATE_WINDOW_SEC * 1000,
   });
 
+  // Registro de sockets vivos + quiescencia para el drenaje de shutdown.
+  const drainController = createDrainController(logger);
+
   const connectionDeps = {
     db,
     publisher,
@@ -86,6 +90,7 @@ async function main(): Promise<void> {
     logger,
     idleTimeoutSec: config.IDLE_TIMEOUT_SEC,
     enrollmentLimiter,
+    drain: drainController,
   };
 
   // Acepta una conexión bajo el cap concurrente: si está lleno, rechaza
@@ -104,6 +109,14 @@ async function main(): Promise<void> {
       socket.destroy();
       return;
     }
+    if (drainController.isDraining()) {
+      // Los listeners ya cerraron, pero una conexión puede colarse en la
+      // carrera: durante el drain no se aceptan sesiones nuevas.
+      connectionGuard.release();
+      socket.destroy();
+      return;
+    }
+    drainController.register(socket);
     socket.once('close', () => connectionGuard.release());
     handleConnection(socket, connectionDeps);
   };
@@ -176,49 +189,35 @@ async function main(): Promise<void> {
   }
 
   // -------------------------------------------------------------------------
-  // Graceful shutdown
+  // Graceful shutdown con drenaje de sockets (ver drain.ts)
+  //
+  // Presupuestos vs GKE: terminationGracePeriodSeconds=60 (primary) − preStop
+  // sleep 5 − margen ≈ 55s utilizables (DR: 90s). El shutdown anterior
+  // esperaba server.close() (que jamás resuelve con sesiones long-lived) y
+  // moría SIEMPRE en el hard-exit de 30s sin flush ni pool.end.
   // -------------------------------------------------------------------------
 
-  const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'shutdown requested');
-    const closes = [
-      new Promise<void>((resolve) => plainServer.close(() => resolve())),
-      tlsServer
-        ? new Promise<void>((resolve) => tlsServer?.close(() => resolve()))
-        : Promise.resolve(),
-    ];
-    try {
-      await Promise.all(closes);
-      logger.info('servers closed');
-    } catch (err) {
-      logger.error({ err }, 'error closing servers');
-    }
-    try {
-      await publisher.flush();
-      logger.info('publisher flushed');
-    } catch (e) {
-      logger.error({ err: e }, 'error flushing publisher');
-    }
-    try {
-      await pool.end();
-      logger.info('pg pool closed');
-    } catch (e) {
-      logger.error({ err: e }, 'error closing pg pool');
-    }
-    process.exit(0);
-  };
+  const DRAIN_BUDGET_MS = 40_000;
+  const HARD_EXIT_MS = 45_000; // última red; < 55s efectivos del grace
 
-  // Hard kill después de 30s si las conexiones no cierran.
-  const forceExit = (signal: string) => {
-    void shutdown(signal);
-    setTimeout(() => {
-      logger.warn('shutdown timeout, forcing exit');
-      process.exit(1);
-    }, 30_000).unref();
-  };
+  const { onSignal } = buildShutdown({
+    logger,
+    closeListeners: () => {
+      // Solo dejar de aceptar — el cierre de las conexiones vivas es del
+      // drain, no del close() (cuyo callback jamás llega con sesiones vivas).
+      plainServer.close();
+      tlsServer?.close();
+    },
+    drainController,
+    drainBudgetMs: DRAIN_BUDGET_MS,
+    hardExitMs: HARD_EXIT_MS,
+    flush: () => publisher.flush(),
+    closePool: () => pool.end(),
+    exit: (code) => process.exit(code),
+  });
 
-  process.on('SIGTERM', () => forceExit('SIGTERM'));
-  process.on('SIGINT', () => forceExit('SIGINT'));
+  process.on('SIGTERM', () => onSignal('SIGTERM'));
+  process.on('SIGINT', () => onSignal('SIGINT'));
 }
 
 main().catch((err) => {

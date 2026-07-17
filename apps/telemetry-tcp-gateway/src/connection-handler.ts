@@ -10,6 +10,7 @@ import {
 } from '@booster-ai/codec8-parser';
 import type { Logger } from '@booster-ai/logger';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { OpTracker } from './drain.js';
 import { resolveImei } from './imei-auth.js';
 import type { CrashTracePublisher, TelemetryPublisher } from './pubsub-publisher.js';
 import type { RateLimiter } from './rate-limiter.js';
@@ -76,6 +77,13 @@ export interface ConnectionDeps {
   idleTimeoutSec: number;
   /** Rate limiter del open enrollment (P1-L). Se pasa a resolveImei. */
   enrollmentLimiter: RateLimiter;
+  /**
+   * Tracker de ops en vuelo para el drenaje de shutdown. `processBuffer`
+   * corre sin serializar (un `void` por chunk): el drain solo puede cerrar
+   * un socket en quiescencia real (cero ops), o cortaría un publish+ACK a
+   * medias y el device reenviaría el lote. Opcional para tests unitarios.
+   */
+  drain?: OpTracker;
 }
 
 interface ConnectionState {
@@ -127,6 +135,9 @@ export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
   socket.on('data', (chunk: Buffer) => {
     state.buffer = state.buffer.length === 0 ? chunk : Buffer.concat([state.buffer, chunk]);
 
+    // Op en vuelo para el drenaje: begin ANTES de arrancar, end en finally
+    // (cubre éxito, catch y el publish+ACK del packet en curso).
+    deps.drain?.beginOp(socket);
     // Mientras tengamos bytes para procesar, drain.
     void processBuffer({
       state,
@@ -137,10 +148,14 @@ export function handleConnection(socket: Socket, deps: ConnectionDeps): void {
       logger: childLogger,
       sourceIp,
       enrollmentLimiter,
-    }).catch((err) => {
-      childLogger.error({ err }, 'error procesando buffer, cerrando conexión');
-      socket.destroy();
-    });
+    })
+      .catch((err) => {
+        childLogger.error({ err }, 'error procesando buffer, cerrando conexión');
+        socket.destroy();
+      })
+      .finally(() => {
+        deps.drain?.endOp(socket);
+      });
   });
 }
 
