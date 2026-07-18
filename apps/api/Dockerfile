@@ -40,7 +40,7 @@ RUN pnpm --filter @booster-ai/api build
 
 # --- deploy stage: árbol auto-contenido production-only ---
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/api --prod deploy /prod/api
+RUN pnpm --filter=@booster-ai/api --prod deploy /prod/api --legacy
 
 # --- runtime stage ---
 FROM node:24-alpine AS runtime

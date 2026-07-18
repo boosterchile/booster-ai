@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -208,7 +208,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -233,7 +233,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -260,7 +260,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -286,7 +286,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -313,7 +313,7 @@ jobs:
           fetch-depth: 0  # full history para git diff vs base
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -335,7 +335,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
         with:
-          version: '9.15.4'
+          version: '10.34.4'
       - uses: actions/setup-node@v6
         with:
           node-version: '24'

@@ -29,7 +29,7 @@ RUN pnpm --filter @booster-ai/telemetry-tcp-gateway build
 
 # --- deploy stage ---
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/telemetry-tcp-gateway --prod deploy /prod/gateway
+RUN pnpm --filter=@booster-ai/telemetry-tcp-gateway --prod deploy /prod/gateway --legacy
 
 # --- runtime stage ---
 FROM node:24-alpine AS runtime

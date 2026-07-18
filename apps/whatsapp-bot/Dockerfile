@@ -29,7 +29,7 @@ RUN pnpm --filter @booster-ai/whatsapp-bot build
 
 # --- deploy stage: árbol auto-contenido production-only ---
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/whatsapp-bot --prod deploy /prod/bot
+RUN pnpm --filter=@booster-ai/whatsapp-bot --prod deploy /prod/bot --legacy
 
 # --- runtime stage ---
 FROM node:24-alpine AS runtime
