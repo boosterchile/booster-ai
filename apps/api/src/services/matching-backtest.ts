@@ -178,6 +178,7 @@ export async function runBacktest(input: RunBacktestInput): Promise<{
     if (tripsHasta) {
       tripFilters.push(lte(trips.createdAt, tripsHasta));
     }
+    // rls-allowlist: backtest platform-admin, lectura cross-tenant gated por requirePlatformAdmin (rls-viabilidad §3/§4)
     const tripRows = await db
       .select()
       .from(trips)

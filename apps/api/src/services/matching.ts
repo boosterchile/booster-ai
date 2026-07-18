@@ -114,6 +114,7 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
   return await db
     .transaction(async (tx) => {
       // 1. Cargar trip.
+      // rls-allowlist: matching core scoped por tripId ya validado en la ruta (rls-viabilidad §3)
       const tripRows = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
       const trip = tripRows[0];
       if (!trip) {
@@ -422,6 +423,7 @@ async function finalizeNoCandidates(
   // CAS por estado (SC-4): mismo racional que las otras transiciones del
   // matching — si el shipper canceló mientras evaluábamos candidatos, el
   // terminal correcto es 'cancelado', no 'expirado'.
+  // rls-allowlist: matching core, CAS de estado del trip scoped por tripId (rls-viabilidad §3)
   const aExpirado = await tx
     .update(trips)
     .set({ status: 'expirado', updatedAt: new Date() })

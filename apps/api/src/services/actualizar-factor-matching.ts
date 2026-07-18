@@ -126,6 +126,7 @@ export async function actualizarFactorMatchingViaje(opts: {
 }> {
   const { db, logger, tripId } = opts;
 
+  // rls-allowlist: pipeline de factor-matching scoped por tripId ya validado en la ruta llamadora (censo §2 nota C / rls-viabilidad §2C)
   const tripRows = await db
     .select({
       id: trips.id,
@@ -142,6 +143,7 @@ export async function actualizarFactorMatchingViaje(opts: {
     return { recomputed: false };
   }
 
+  // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C / rls-viabilidad §2C)
   const asgRows = await db
     .select({
       vehicleId: assignments.vehicleId,
@@ -159,6 +161,7 @@ export async function actualizarFactorMatchingViaje(opts: {
     return { recomputed: false };
   }
 
+  // rls-allowlist: vehículo scoped por vehicleId del assignment ya validado (censo §2 nota C)
   const vehRows = await db
     .select({
       fuelType: vehicles.fuelType,
@@ -199,6 +202,7 @@ export async function actualizarFactorMatchingViaje(opts: {
   // Buscar el próximo trip del mismo vehículo: assignment.vehicleId
   // coincide, pickup_window_start > deliveredAt y dentro de la ventana.
   // Orden por pickup_window_start asc → el más cercano cronológicamente.
+  // rls-allowlist: "próximo trip del vehículo" cruza shippers por diseño del matching (rls-viabilidad §3)
   const nextRows = await db
     .select({
       tripId: trips.id,

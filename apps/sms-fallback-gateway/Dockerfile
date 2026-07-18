@@ -23,7 +23,7 @@ RUN pnpm --filter @booster-ai/sms-fallback-gateway build
 
 # --- deploy stage: árbol auto-contenido production-only ---
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/sms-fallback-gateway --prod deploy /prod/svc
+RUN pnpm --filter=@booster-ai/sms-fallback-gateway --prod deploy /prod/svc --legacy
 
 # --- runtime stage ---
 FROM node:24-alpine AS runtime

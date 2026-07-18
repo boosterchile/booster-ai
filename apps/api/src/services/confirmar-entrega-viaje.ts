@@ -186,6 +186,7 @@ export async function confirmarEntregaViaje(opts: {
     // subido. La semántica vive en la función pura `puedeCerrarConDocumentos`.
     // Las órdenes legacy (creadas antes del corte) quedan exentas.
     if (documentClosePolicy?.requireDocumentToClose) {
+      // rls-allowlist: entrega bilateral, documentos scoped por tripId (viaje_id) ya validado (rls-viabilidad §2)
       const docRows = await tx
         .select({ extractionStatus: transportDocuments.extractionStatus })
         .from(transportDocuments)
@@ -321,6 +322,7 @@ export async function confirmarEntregaViaje(opts: {
     // si falla, log error pero NO revierte el deliveredAt. El job futuro
     // de "reconciliar liquidaciones pendientes" puede tomar trips
     // entregados sin liquidación. Idempotente vía UNIQUE en asignacion_id.
+    // rls-allowlist: entrega bilateral, assignment scoped por tripId ya validado (rls-viabilidad §2)
     const asgForLiq = await db
       .select({ id: assignments.id })
       .from(assignments)

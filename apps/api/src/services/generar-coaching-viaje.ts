@@ -61,6 +61,7 @@ export async function generarCoachingViaje(opts: {
   const { db, logger, tripId, geminiProjectId } = opts;
 
   // Cargar trip + metricas + assignment para construir el contexto.
+  // rls-allowlist: pipeline de coaching scoped por tripId ya validado en la ruta llamadora (censo §2 nota C / rls-viabilidad §2C)
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
   if (!trip) {
@@ -88,6 +89,7 @@ export async function generarCoachingViaje(opts: {
     return { computed: false };
   }
 
+  // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C)
   const assignmentRows = await db
     .select({ deliveredAt: assignments.deliveredAt })
     .from(assignments)

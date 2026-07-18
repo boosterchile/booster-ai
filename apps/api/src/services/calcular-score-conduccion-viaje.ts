@@ -52,12 +52,14 @@ export async function calcularScoreConduccionViaje(opts: {
   const { db, logger, tripId } = opts;
 
   // Cargar trip + assignment para obtener vehículo + ventana del trip.
+  // rls-allowlist: pipeline de score scoped por tripId ya validado en la ruta llamadora (censo §2 nota C / rls-viabilidad §2C)
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
   if (!trip) {
     throw new TripNotFoundForScoreError(tripId);
   }
 
+  // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C)
   const assignmentRows = await db
     .select({
       vehicleId: assignments.vehicleId,
@@ -82,6 +84,7 @@ export async function calcularScoreConduccionViaje(opts: {
   const pickupAt = trip.pickupWindowStart ?? trip.createdAt;
   const deliveredAt = assignment.deliveredAt;
 
+  // rls-allowlist: eventos scoped por vehicleId del assignment validado + ventana del trip (censo §2 nota C)
   const eventRows = await db
     .select({
       type: greenDrivingEvents.type,
