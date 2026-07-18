@@ -312,6 +312,7 @@ async function cobraHoyInner(input: CobraHoyInput): Promise<CobraHoyResult> {
     };
   } catch (err) {
     if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      // rls-allowlist: dupe-check scoped por asignacionId ya validado (censo §2(1) financiero)
       const existing = await db
         .select({ id: adelantosCarrier.id })
         .from(adelantosCarrier)

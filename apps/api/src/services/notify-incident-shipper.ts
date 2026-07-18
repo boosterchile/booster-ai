@@ -67,6 +67,7 @@ export async function notifyIncidentToShipper(opts: {
   const { db, logger, assignmentId, tripEventId, incidentType, description } = opts;
 
   // Cargar trip + tracking_code + shipper userId en un solo round-trip.
+  // rls-allowlist: notificador server-side, destinatario derivado del assignmentId ya validado (censo §2(3))
   const rows = await db
     .select({
       tripId: assignments.tripId,

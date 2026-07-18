@@ -184,6 +184,7 @@ export async function getPublicTracking(opts: {
       vehicleType: vehicles.vehicleType,
       vehiclePlate: vehicles.plate,
     })
+    // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
     .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
