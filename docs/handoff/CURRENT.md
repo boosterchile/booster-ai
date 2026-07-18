@@ -30,6 +30,7 @@ Cierra la deuda de mantener los overrides duplicados en `package.json.pnpm` y `p
 - **Riesgo core respetado**: quitar el campo con el CI en pnpm 9 perdería los overrides (reintroduce CVEs) → los dos cambios son **inseparables** (mismo PR).
 - **Corrección de premisa desde primera fuente**: el `pnpm` local (Homebrew) es **9.15.4**, no 10; pnpm 10 solo vía **corepack (10.34.4)** — se usó ése para toda la validación crítica.
 - Validado con pnpm 10 + node 24: WARN **eliminado** (0 ocurrencias en install y en `pnpm ci`), `pnpm audit --audit-level=high --prod` **0 vulns**, los 13 pins **idénticos** (websocket-driver@0.7.5, qs@6.15.2, tmp@0.2.7, …), **lockfile byte-idéntico** (la resolución no cambió), `pnpm ci` verde (typecheck 32/32, test 31/31, build 9/9). Doc-rot corregido en el mismo PR (comentario de `pnpm-workspace.yaml` + `README.md` `pnpm 9+`→`pnpm 10+`). **Cero runtime.** Cierra la deuda de [[pnpm-field-warning-false-friend-2026-07]].
+- **Regresión de CI cazada y corregida** (no la cubre `pnpm ci` local): el check **"Docker build + smoke (api)"** falló con `ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE` — **pnpm 10 cambió el default de `pnpm deploy`**. Fix: **`--legacy`** en los **6 Dockerfiles** con `pnpm --prod deploy` (api, whatsapp-bot, telemetry-tcp-gateway, telemetry-processor, document-service, sms-fallback-gateway); sin él romperían también en `release.yml`/prod. Verificado local (`deploy --legacy` exit 0) y en CI (**Docker build + smoke SUCCESS**, commit `a3d74ee`). **#610 → MERGEABLE/CLEAN.**
 
 ### Coordinación entre PRs
 
