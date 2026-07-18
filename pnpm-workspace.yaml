@@ -5,13 +5,14 @@ packages:
   - "scripts/load-test"
   - "scripts/repo-checks"
 
-# DUPLICADO DELIBERADO de package.json `pnpm.overrides` (mantener en sync):
-# el repo pinea pnpm@9.15.4 (packageManager + CI), que lee package.json;
-# pnpm 10 lee ESTE archivo e ignora package.json con warning. Tener ambos
-# evita que un install local con pnpm 10 genere un lockfile SIN los
-# overrides de seguridad en silencio — exactamente lo que pasó hasta
-# 2026-06-11 (lockfile sin settings.overrides; crypto-js 3.3.0 y
-# @grpc/grpc-js vulnerables resueltos pese a los overrides históricos).
+# FUENTE ÚNICA de overrides + onlyBuiltDependencies (ADR-075): pnpm 10 lee
+# ESTE archivo. package.json ya NO tiene el campo `pnpm` (se eliminó en la
+# migración a pnpm 10); `packageManager` fija pnpm@10.34.4 vía Corepack.
+# Los 13 overrides son security pins (CVEs) — no quitar ninguno sin re-verificar
+# `pnpm audit --audit-level=high --prod`. Antecedente: 2026-06-11 un lockfile
+# sin `settings.overrides` resolvió crypto-js 3.3.0 y @grpc/grpc-js vulnerables;
+# estos pins lo previenen. Un `pnpm install` con pnpm 9 ignoraría este archivo
+# y dropearía los overrides → usar Corepack/pnpm 10 (ADR-075).
 overrides:
   "crypto-js@<4.2.0": ">=4.2.0"
   "fast-xml-builder@<1.1.7": ">=1.1.7"
