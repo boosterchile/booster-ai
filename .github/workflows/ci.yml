@@ -16,7 +16,7 @@ concurrency:
 
 env:
   NODE_VERSION: '24'
-  PNPM_VERSION: '9.15.4'
+  PNPM_VERSION: '10.34.4'
   # Coverage mínimo bloqueante. Subir conforme el repo madure.
   COVERAGE_MIN_LINES: 80
   COVERAGE_MIN_BRANCHES: 75

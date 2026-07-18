@@ -29,7 +29,7 @@ COPY . .
 RUN pnpm --filter @booster-ai/document-service build
 
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/document-service --prod deploy /prod/worker
+RUN pnpm --filter=@booster-ai/document-service --prod deploy /prod/worker --legacy
 
 FROM node:24-slim AS runtime
 WORKDIR /app
