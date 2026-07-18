@@ -90,6 +90,7 @@ export async function notifyTrackingLinkAtAssignment(
       shipperUserId: trips.createdByUserId,
       shipperWhatsapp: users.whatsappE164,
     })
+    // rls-allowlist: notificador server-side, destinatario derivado del assignmentId ya validado (censo §2(3))
     .from(assignments)
     .innerJoin(trips, eq(trips.id, assignments.tripId))
     .leftJoin(users, eq(users.id, trips.createdByUserId))

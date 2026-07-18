@@ -216,6 +216,7 @@ async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTrip
   } catch (err) {
     // Si ya existe row por UNIQUE constraint en asignacion_id, retornar ya_liquidada.
     if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      // rls-allowlist: dupe-check idempotente scoped por asignacionId ya validado (censo §2(1) / rls-viabilidad §2C)
       const existing = await db
         .select({ id: liquidaciones.id })
         .from(liquidaciones)

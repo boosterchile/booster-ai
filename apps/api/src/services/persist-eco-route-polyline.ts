@@ -51,6 +51,7 @@ export async function persistEcoRoutePolyline(opts: {
   // Lookup origin/destination via join. No optimizamos con select específico
   // de columnas en services hot — Drizzle es eficiente con shape inferencia
   // y el query plan es idéntico.
+  // rls-allowlist: scoped por assignmentId ya validado en el accept de oferta (censo §2(1))
   const rows = await db
     .select({
       assignmentId: assignments.id,
@@ -98,6 +99,7 @@ export async function persistEcoRoutePolyline(opts: {
     return { attempted: true, persisted: false, reason: 'routes_api_failed' };
   }
 
+  // rls-allowlist: scoped por assignmentId ya validado en el accept de oferta (censo §2(1))
   await db
     .update(assignments)
     .set({ ecoRoutePolylineEncoded: polylineEncoded, updatedAt: new Date() })

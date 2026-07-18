@@ -210,12 +210,14 @@ async function calcularMetricasEstimadasInner(
   // en re-cálculos concurrentes del mismo trip). Postgres MVCC garantiza
   // que las lecturas son consistentes punto-en-tiempo aunque sean fuera
   // del begin/commit del UPDATE final.
+  // rls-allowlist: pipeline de métricas scoped por tripId ya validado en la ruta llamadora (censo §2 nota C / rls-viabilidad §2C)
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
   if (!trip) {
     throw new TripNotFoundError(tripId);
   }
 
+  // rls-allowlist: vehículo scoped por vehicleId ya validado del trip (censo §2 nota C)
   const veh = vehicleId
     ? (await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1))[0]
     : undefined;
@@ -437,6 +439,7 @@ async function recalcularNivelPostEntregaInner(opts: {
 }): Promise<RecalcularNivelPostEntregaResult> {
   const { db, logger, tripId } = opts;
 
+  // rls-allowlist: recálculo de nivel post-entrega scoped por tripId ya validado (censo §2 nota C / rls-viabilidad §2C)
   const tripRows = await db.select().from(trips).where(eq(trips.id, tripId)).limit(1);
   const trip = tripRows[0];
   if (!trip) {
@@ -459,6 +462,7 @@ async function recalcularNivelPostEntregaInner(opts: {
 
   // Necesitamos vehicleId + deliveredAt del assignment. Si no hay
   // assignment cerrado, no se debería estar llamando esta función todavía.
+  // rls-allowlist: assignment scoped por tripId ya validado (censo §2 nota C)
   const assignmentRows = await db
     .select({
       vehicleId: assignments.vehicleId,
@@ -480,6 +484,7 @@ async function recalcularNivelPostEntregaInner(opts: {
   // Si el vehículo no tiene Teltonika, no hay telemetría — el nivel se
   // queda como secundario_modeled con maps_directions y coverage 0.
   // Skip silencioso para no escribir un UPDATE no-op.
+  // rls-allowlist: vehículo scoped por vehicleId del assignment ya validado (censo §2 nota C)
   const vehRows = await db
     .select({ teltonikaImei: vehicles.teltonikaImei })
     .from(vehicles)

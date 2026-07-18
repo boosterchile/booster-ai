@@ -153,6 +153,7 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
       // cancelación del shipper (que también toma FOR UPDATE sobre el
       // trip). Solo 'ofertas_enviadas' es aceptable — un trip cancelado,
       // expirado o ya asignado rechaza el accept con 409 en el route.
+      // rls-allowlist: accept de oferta scoped por offer.tripId ya validado (rls-viabilidad §2)
       const tripRows = await tx
         .select({ id: trips.id, status: trips.status })
         .from(trips)
@@ -208,6 +209,7 @@ async function acceptOfferInner(opts: AcceptOfferOptions): Promise<AcceptOfferRe
       }
 
       // 4. Otras offers del mismo trip pasan a reemplazada.
+      // rls-allowlist: supersede de ofertas hermanas del mismo trip (offer.tripId ya validado) (rls-viabilidad §2)
       const supersededRows = await tx
         .update(offers)
         .set({ status: 'reemplazada', updatedAt: now })
