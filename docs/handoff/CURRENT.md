@@ -20,6 +20,7 @@
 - `TENANT_FREE_TABLES` +4 (`solicitudesRegistro`, `matchingBacktestRuns`, `empresas`, `membershipTiers`). **28 findings** — todos Drizzle en `services/`; **raw reales = 0** (los sitios raw tocan tablas tenant-free o usan `${fk.table}` dinámico, BYPASSRLS-by-design); `jobs/` = 0. Anotados con `// rls-allowlist:` **transcribiendo** el censo. **0 findings sin clasificar → sin IDOR, sin escalamiento.**
 - TDD rojo exhibido → verde (`scripts/lint-rls.test.mjs`, **node:test** porque scripts/ raíz no está en el vitest workspace): 15 tests 8 pass/7 fail (rojo) → **17/17** (verde). Coverage del linter **97.69/90/100** (node `--experimental-test-coverage`, gate 80/75/80). `pnpm lint` + `pnpm typecheck` (32/32) verdes. **Cero runtime.**
 - Gotcha: el comentario allowlist debe ir a **≤10 líneas del `.from()`** (no del inicio del statement) o queda fuera de la ventana −10 (pasó con selects largos en `get-public-tracking`/`notify-tracking-link`).
+- **CodeQL**: alert **#155** `js/file-system-race` (high) sobre `readFileSync` en `walk()` (`lint-rls.mjs:200`) — TOCTOU `statSync`→`readFileSync`. **Descartada como `false positive`** (2026-07-18, PO): linter de CI que no se despacha a prod, recorre solo `SCAN_DIRS` fijas de primera parte, sin input no confiable; peor caso = crash del linter, sin brecha. Sin tocar la lógica de `walk()`.
 
 ### #610 — `feat/migrate-pnpm-10`: fuente única de overrides (ADR-075 Proposed)
 
