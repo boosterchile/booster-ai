@@ -21,7 +21,7 @@ COPY . .
 RUN pnpm --filter @booster-ai/telemetry-processor build
 
 FROM build AS deploy
-RUN pnpm --filter=@booster-ai/telemetry-processor --prod deploy /prod/processor
+RUN pnpm --filter=@booster-ai/telemetry-processor --prod deploy /prod/processor --legacy
 
 FROM node:24-alpine AS runtime
 WORKDIR /app

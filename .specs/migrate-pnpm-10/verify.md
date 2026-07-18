@@ -49,6 +49,8 @@ build:     Tasks:  9 successful,  9 total
 ```
 (lint = `biome check . && pnpm lint:rls` pasó primero por el `&&` del script `ci`.)
 
+**Regresión detectada por CI (no por `pnpm ci` local) y corregida en el mismo PR**: el check **"Docker build + smoke (api)"** falló con `ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE` — pnpm 10 cambió el default de `pnpm deploy`. Fix: `--legacy` en los **6 Dockerfiles** con `pnpm --prod deploy` (api + 5 servicios). Verificado local con pnpm 10.34.4: `pnpm --filter=@booster-ai/api --prod deploy <tmp> --legacy` → **exit 0**, árbol auto-contenido armado (dist + node_modules + package.json). El resto de servicios usa el patrón idéntico.
+
 ## 4. `git diff --stat`
 
 ```

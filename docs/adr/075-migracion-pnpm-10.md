@@ -41,6 +41,7 @@ Adoptar **pnpm 10.34.4** como versión única del proyecto y consolidar la confi
 - El lockfile se regenera con pnpm 10 (sigue `lockfileVersion 9.0`).
 - El CI corre pnpm 10.34.4 en todos los jobs; el WARN de "pnpm field no longer read" desaparece del install.
 - **Dev local**: quien tenga Corepack toma pnpm 10 automáticamente vía `packageManager`; quien use un pnpm 9 de Homebrew debe actualizar (`corepack use pnpm@10` o `brew upgrade pnpm`). Sin esto, un install local con pnpm 9 dropea overrides — mismo riesgo que motiva este ADR, ahora acotado a entornos que ignoran `packageManager`.
+- **`pnpm deploy` cambió de default en pnpm 10** → los 6 Dockerfiles que usan `pnpm --prod deploy` (`api`, `whatsapp-bot`, `telemetry-tcp-gateway`, `telemetry-processor`, `document-service`, `sms-fallback-gateway`) requieren el flag `--legacy` para conservar el árbol de deploy de pnpm 9 (sin él: `ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE`). Se agregó `--legacy` (preserva el linking; no se adopta `inject-workspace-packages` para no cambiar la estructura del árbol runtime). Detectado por el check "Docker build + smoke (api)" de CI — que **`pnpm ci` local no cubre** (ver [[api-bundled-pkg-runtime-deps]]).
 - Se elimina la deuda de mantener dos listas de overrides en sync.
 
 El PO pasa este ADR a **Accepted** al aprobar el PR.
