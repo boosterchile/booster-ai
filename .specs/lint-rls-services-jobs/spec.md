@@ -93,6 +93,7 @@ Coverage ≥ umbral de `scripts/repo-checks` (80/75/80/80; el linter vive en `sc
 
 - RLS a nivel Postgres (proyecto posterior; este spec ES parte de sus prerrequisitos — `rls-viabilidad.md`).
 - Análisis AST / verificación semántica de los filtros (el linter sigue siendo textual).
+- **fix-2 detecta raw SQL solo con nombre de tabla LITERAL en el cuerpo**; raw SQL con nombre dinámico (ej. `jobs/merge-duplicate-users.ts:191`, un `client.query` con `UPDATE ${fk.table} ...` sobre tablas tenant-scoped) queda fuera del alcance del matcher textual, igual que el resto de límites no-AST. Es un punto ciego conocido, **no un `findings=0` que implique cobertura total**.
 - Otros `apps/*` sin acceso a DB de tenant (notification-service, whatsapp-bot, matching-engine, eco-routing-service, sms-fallback-gateway, auth-blocking-functions) y `packages/*` — el censo los verificó sin acceso a DB de tenant.
 - Cambiar cualquier query de negocio (solo se agregan comentarios).
 
