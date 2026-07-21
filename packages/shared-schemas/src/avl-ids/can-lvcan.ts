@@ -1,0 +1,74 @@
+import { z } from 'zod';
+
+/**
+ * Catálogo de AVL IDs **CAN / LVCAN v1** del adaptador CAN Teltonika
+ * (LVCAN200/ALLCAN300) sobre el FMC150. v1 mapea los 4 parámetros
+ * confirmados en runtime (device PLFL57, imei 860693084796730):
+ *
+ * | AVL ID | Nombre Teltonika    | Tipo RAW | Unidad / escala   |
+ * |--------|---------------------|----------|-------------------|
+ * | 81     | Vehicle Speed (CAN) | uint16   | km/h (directo)    |
+ * | 84     | Fuel Level          | uint16   | litros (raw ×0.1) |
+ * | 85     | Engine RPM          | uint16   | rpm (directo)     |
+ * | 89     | Fuel Level          | uint8    | % (directo)       |
+ *
+ * Spec canónica:
+ *   https://wiki.teltonika-gps.com/view/FMC150_Teltonika_Data_Sending_Parameters_ID
+ *
+ * A diferencia de Dallas Temperature (72-75, int16 SIGNED), estos son
+ * **unsigned** — el codec8-parser entrega el uint directo, sin conversión
+ * two's complement. La única escala es `×0.1 L` en el ID 84.
+ *
+ * Fuera de v1 (persistidos crudos en `io_data`, no mapeados acá todavía):
+ * 82 accelerator pedal, 83 fuel consumed, 87 CAN mileage, 90, y OEM 1xx/1xxx.
+ * Se dejan para el historial por carga (capa 2). Este módulo es aditivo:
+ * NO toca `low-priority.ts`, `dallas-temperature.ts` ni `high-panic.ts`.
+ */
+
+/** Singleton: ID numérico fijo de cada parámetro CAN v1 en la spec FMC150. */
+export const AVL_ID_CAN = {
+  CAN_VEHICLE_SPEED: 81,
+  CAN_FUEL_LEVEL_L: 84,
+  CAN_ENGINE_RPM: 85,
+  CAN_FUEL_LEVEL_PCT: 89,
+} as const;
+
+export type AvlIdCan = (typeof AVL_ID_CAN)[keyof typeof AVL_ID_CAN];
+
+/** Set de IDs CAN v1 — usado por interpret() para clasificar entries. */
+export const CAN_LVCAN_IDS: ReadonlySet<number> = new Set(Object.values(AVL_ID_CAN));
+
+/** Fuel Level (AVL 84) — factor RAW→litros. */
+export const CAN_FUEL_LEVEL_L_SCALE = 0.1;
+
+// =============================================================================
+// SCHEMAS RAW (validan el uint crudo del ping; rango físico sano). Fuera de
+// rango = bus corrupto / grupo equivocado → `invalidEntries`, no `telemetry`.
+// =============================================================================
+
+/** AVL 81 — Vehicle Speed (uint, km/h). Cap físico generoso 300 km/h. */
+export const canVehicleSpeedRawSchema = z.number().int().min(0).max(300);
+export type CanVehicleSpeedRaw = z.infer<typeof canVehicleSpeedRawSchema>;
+
+/** AVL 84 — Fuel Level (uint, ×0.1 L). Cap 30000 raw = 3000 L (camión grande). */
+export const canFuelLevelLRawSchema = z.number().int().min(0).max(30000);
+export type CanFuelLevelLRaw = z.infer<typeof canFuelLevelLRawSchema>;
+
+/** AVL 85 — Engine RPM (uint, rpm). Cap 20000 (muy por encima de redline). */
+export const canEngineRpmRawSchema = z.number().int().min(0).max(20000);
+export type CanEngineRpmRaw = z.infer<typeof canEngineRpmRawSchema>;
+
+/** AVL 89 — Fuel Level (uint, %). Rango físico 0..100. */
+export const canFuelLevelPctRawSchema = z.number().int().min(0).max(100);
+export type CanFuelLevelPctRaw = z.infer<typeof canFuelLevelPctRawSchema>;
+
+// =============================================================================
+// MAP { id → schema } — usado por interpret() para validar de forma genérica.
+// =============================================================================
+
+export const CAN_LVCAN_RAW_SCHEMAS: Record<AvlIdCan, z.ZodTypeAny> = {
+  [AVL_ID_CAN.CAN_VEHICLE_SPEED]: canVehicleSpeedRawSchema,
+  [AVL_ID_CAN.CAN_FUEL_LEVEL_L]: canFuelLevelLRawSchema,
+  [AVL_ID_CAN.CAN_ENGINE_RPM]: canEngineRpmRawSchema,
+  [AVL_ID_CAN.CAN_FUEL_LEVEL_PCT]: canFuelLevelPctRawSchema,
+};

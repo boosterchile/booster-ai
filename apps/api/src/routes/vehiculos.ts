@@ -1,13 +1,16 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  AVL_ID_CAN,
   AVL_ID_DALLAS,
   type BodyType,
   type FuelType,
+  type MinimalIoEntry,
   type UnitCategory,
   type UnitType,
   bodyTypeSchema,
   chileanPlateSchema,
   derivarUnidadDesdeTipoLegacy,
+  interpretCanLvcan,
   interpretDallasTemperature,
   teltonikaImeiSchema,
   unitCategorySchema,
@@ -208,6 +211,51 @@ function extractTemperatura(
   return {
     temperatura_c: temperaturaC,
     temperatura_registrada_en: temperaturaC != null ? timestampDevice.toISOString() : null,
+  };
+}
+
+/**
+ * W4 — interpreta los 3 parámetros CAN LVCAN de la vista en vivo desde
+ * `io_data`: **81** vehicle speed (km/h), **85** engine RPM, **89** fuel
+ * level (%). Mismo molde que `extractTemperatura`: Zod safeParse boundary
+ * sobre el jsonb (bytes de un device de terreno, no confiamos en la forma),
+ * intérprete puro, retorno null-safe.
+ *
+ * El CAN solo llega con el **motor encendido** — si el ping no trae estos
+ * IDs (vehículo apagado o sin adaptador CAN), los 3 campos son `null` y NO
+ * rompe. Fuel level en litros (84), fuel consumed (83) y mileage (87) se
+ * mapean en `avl-ids/` pero NO se exponen en vivo (historial por carga).
+ */
+export function extractCan(ioData: unknown): {
+  can_speed_kmh: number | null;
+  rpm: number | null;
+  fuel_pct: number | null;
+} {
+  const parsed = ioDataRecordSchema.safeParse(ioData);
+  if (!parsed.success) {
+    return { can_speed_kmh: null, rpm: null, fuel_pct: null };
+  }
+
+  const viewIds = [
+    AVL_ID_CAN.CAN_VEHICLE_SPEED,
+    AVL_ID_CAN.CAN_ENGINE_RPM,
+    AVL_ID_CAN.CAN_FUEL_LEVEL_PCT,
+  ] as const;
+  const entries: MinimalIoEntry[] = [];
+  for (const id of viewIds) {
+    const raw = parsed.data[String(id)];
+    if (typeof raw === 'number') {
+      // byteSize es informativo para el intérprete CAN (unsigned, no lo usa);
+      // 89 es N1 (uint8), 81/85 son N2 (uint16).
+      entries.push({ id, value: raw, byteSize: id === AVL_ID_CAN.CAN_FUEL_LEVEL_PCT ? 1 : 2 });
+    }
+  }
+
+  const { telemetry } = interpretCanLvcan(entries);
+  return {
+    can_speed_kmh: telemetry.vehicleSpeedKmh ?? null,
+    rpm: telemetry.engineRpm ?? null,
+    fuel_pct: telemetry.fuelLevelPct ?? null,
   };
 }
 
@@ -1311,9 +1359,12 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           accuracy_m:
             browserPoint.accuracy_m != null ? Number.parseFloat(browserPoint.accuracy_m) : null,
           // D2 — posiciones_movil_conductor no tiene sensores (es GPS del
-          // browser del conductor): temperatura siempre "sin dato".
+          // browser del conductor): temperatura y CAN siempre "sin dato".
           temperatura_c: null,
           temperatura_registrada_en: null,
+          can_speed_kmh: null,
+          rpm: null,
+          fuel_pct: null,
         },
       });
     }
@@ -1378,6 +1429,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         priority: last.priority,
         // W3 — 2º sensor por envío: temperatura (IO 72 Dallas, FMC150).
         ...extractTemperatura(last.io_data, last.timestamp_device),
+        // W4 — CAN LVCAN en vivo (81 speed, 85 RPM, 89 fuel %). null si el
+        // ping no trae CAN (motor apagado / sin adaptador).
+        ...extractCan(last.io_data),
       },
     });
   });

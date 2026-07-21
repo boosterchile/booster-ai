@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
-import { Thermometer } from 'lucide-react';
+import { Activity, Fuel, Gauge, Thermometer } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { api } from '../lib/api-client.js';
@@ -35,6 +36,15 @@ interface UbicacionResponse {
      */
     temperatura_c: number | null;
     temperatura_registrada_en: string | null;
+    /**
+     * W4 — CAN LVCAN en vivo (81 vehicle speed km/h, 85 engine RPM, 89 fuel
+     * level %). `null` si el ping no trae CAN (motor apagado / sin adaptador
+     * CAN / fuente browser_gps). Espejo MANUAL del DTO en
+     * apps/api/src/routes/vehiculos.ts (extractCan).
+     */
+    can_speed_kmh: number | null;
+    rpm: number | null;
+    fuel_pct: number | null;
   };
 }
 
@@ -68,6 +78,32 @@ function TemperaturaStat({
           'Sin dato'
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * W4 — Stat CAN LVCAN del `bottomExtra` (fuel %, RPM, velocidad CAN). Mismo
+ * molde visual que `TemperaturaStat`. `null` (motor apagado / sin CAN) se
+ * muestra como "Sin dato" explícito, nunca se oculta — la ausencia de CAN es
+ * información relevante (vehículo apagado o adaptador CAN desconectado).
+ */
+function CanStat({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="flex items-center gap-1 text-neutral-500 text-xs uppercase tracking-wide">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-0.5 font-semibold text-lg text-neutral-700">{value ?? 'Sin dato'}</div>
     </div>
   );
 }
@@ -119,10 +155,37 @@ function VehiculoLivePage() {
       onRefresh={() => void ubicacionQ.refetch()}
       bottomExtra={
         ubicacionQ.data ? (
-          <TemperaturaStat
-            temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
-            temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
-          />
+          <div className="flex items-center justify-between gap-4">
+            <TemperaturaStat
+              temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
+              temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
+            />
+            <CanStat
+              icon={<Fuel className="h-4 w-4" aria-hidden />}
+              label="Combustible"
+              value={
+                ubicacionQ.data.ubicacion.fuel_pct != null
+                  ? `${ubicacionQ.data.ubicacion.fuel_pct} %`
+                  : null
+              }
+            />
+            <CanStat
+              icon={<Gauge className="h-4 w-4" aria-hidden />}
+              label="RPM"
+              value={
+                ubicacionQ.data.ubicacion.rpm != null ? `${ubicacionQ.data.ubicacion.rpm}` : null
+              }
+            />
+            <CanStat
+              icon={<Activity className="h-4 w-4" aria-hidden />}
+              label="Vel. CAN"
+              value={
+                ubicacionQ.data.ubicacion.can_speed_kmh != null
+                  ? `${ubicacionQ.data.ubicacion.can_speed_kmh} km/h`
+                  : null
+              }
+            />
+          </div>
         ) : undefined
       }
     />
