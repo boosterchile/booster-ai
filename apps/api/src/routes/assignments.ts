@@ -32,6 +32,8 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
   AssignmentNotFoundError,
   AssignmentNotMutableError,
@@ -45,7 +47,15 @@ import {
 } from '../services/confirmar-entrega-viaje.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
+import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
+
+const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
+
+/** Query de `GET /assignments/:id/traza`: cap de puntos (default 800, máx 2000). */
+const trazaCargaQuerySchema = z.object({
+  maxPuntos: z.coerce.number().int().min(2).max(2000).optional().default(800),
+});
 
 export function createAssignmentsRoutes(opts: {
   db: Db;
@@ -691,6 +701,81 @@ export function createAssignmentsRoutes(opts: {
       opts.logger.error({ err, assignmentId }, 'asignar-conductor failed');
       return c.json({ error: 'internal_server_error' }, 500);
     }
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/traza — recorrido real de la CARGA sobre la ruta esperada.
+  //
+  // Capa 2 (versión literal por-carga): ventana derivada (viaje.recogida →
+  // asignacion.entregado_en), traza real downsampleada + ruta esperada
+  // (eco_route_polyline_encoded) + resumen (real vs esperada, cobertura,
+  // CAN). Scaffold forward-looking: hoy sin cargas entregadas con telemetría
+  // devuelve traza vacía pero mostrable. Ver `.specs/vehiculo-traza-historial/`.
+  // ---------------------------------------------------------------------
+  app.get('/:id/traza', zValidator('query', trazaCargaQuerySchema), async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+    const { maxPuntos } = c.req.valid('query');
+
+    return await withBusinessSpan(
+      {
+        name: 'assignments.traza',
+        attributes: {
+          'booster.assignment_id': assignmentId,
+          'booster.traza.max_puntos': maxPuntos,
+        },
+      },
+      async (span) => {
+        const result = await obtenerTrazaCarga({
+          db: opts.db,
+          logger: opts.logger,
+          assignmentId,
+          empresaId,
+          maxPuntos,
+          now: new Date(),
+        });
+        if (result.kind === 'not_found') {
+          return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+        }
+        const d = result.data;
+        trazaCargaConsultasCounter.add(1, {
+          con_can: d.resumen.litrosConsumidos !== null,
+          con_ruta: d.rutaEsperadaPolyline !== null,
+        });
+        setResultAttributes(span, {
+          'booster.traza.puntos_total': d.puntosTotal,
+          'booster.traza.puntos_devueltos': d.puntos.length,
+        });
+        return c.json({
+          assignment_id: d.assignmentId,
+          trip_id: d.tripId,
+          plate: d.plate,
+          desde: d.desde,
+          hasta: d.hasta,
+          delivered: d.delivered,
+          puntos: d.puntos.map((p) => ({
+            t: new Date(p.tMs).toISOString(),
+            lat: p.lat,
+            lng: p.lng,
+          })),
+          puntos_total: d.puntosTotal,
+          puntos_devueltos: d.puntos.length,
+          ruta_esperada_polyline: d.rutaEsperadaPolyline,
+          resumen: {
+            distancia_real_km: d.resumen.distanciaRealKm,
+            distancia_esperada_km: d.resumen.distanciaEsperadaKm,
+            duracion_min: d.resumen.duracionMin,
+            cobertura_pct: d.resumen.coberturaPct,
+            litros_consumidos: d.resumen.litrosConsumidos,
+            km_can: d.resumen.kmCan,
+          },
+        });
+      },
+    );
   });
 
   return app;

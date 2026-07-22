@@ -102,4 +102,21 @@ describe('TrazaMapPreview', () => {
     expect(FakePolyline.instances[0]?.setMap).toHaveBeenCalled();
     expect(fitBounds).toHaveBeenCalled();
   });
+
+  it('con ruta esperada → dibuja 2 polylines (real azul + esperada verde)', () => {
+    envMock.VITE_GOOGLE_MAPS_API_KEY = 'fake-key';
+    mapState.map = { fitBounds: vi.fn() };
+    mapState.libs = {
+      maps: { Polyline: FakePolyline },
+      core: { LatLngBounds: FakeLatLngBounds },
+    };
+    render(<TrazaMapPreview points={PUNTOS} expectedRoute={PUNTOS} />);
+    expect(FakePolyline.instances).toHaveLength(2);
+  });
+
+  it('solo ruta esperada (sin traza real) → monta el mapa igual', () => {
+    envMock.VITE_GOOGLE_MAPS_API_KEY = 'fake-key';
+    render(<TrazaMapPreview points={[]} expectedRoute={PUNTOS} />);
+    expect(screen.getByTestId('traza-map')).toBeInTheDocument();
+  });
 });

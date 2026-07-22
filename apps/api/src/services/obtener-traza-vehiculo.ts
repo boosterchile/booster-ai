@@ -263,20 +263,17 @@ export function extraerCanAcumulado(ioData: unknown): {
 }
 
 /**
- * Carga la traza del vehículo en la ventana `[desde, hasta]`, arma el resumen
- * y devuelve la traza downsampleada a `maxPuntos`. Sin puntos → traza vacía y
- * resumen en cero/null, sin error.
+ * Query de ventana (`vehiculo_id` + `timestamp_device` BETWEEN, índice
+ * `idx_telemetria_vehiculo_ts`) → lista de `TrazaPoint` con CAN ya extraído.
+ * Compartida por la traza de vehículo y la de carga (capa 2).
  */
-export async function obtenerTrazaVehiculo(opts: {
+export async function cargarTrazaPoints(opts: {
   db: Db;
-  logger: Logger;
   vehicleId: string;
   desde: Date;
   hasta: Date;
-  maxPuntos: number;
-}): Promise<TrazaVehiculoResult> {
-  const { db, logger, vehicleId, desde, hasta, maxPuntos } = opts;
-
+}): Promise<TrazaPoint[]> {
+  const { db, vehicleId, desde, hasta } = opts;
   const rows = await db
     .select({
       ts: telemetryPoints.timestampDevice,
@@ -308,6 +305,25 @@ export async function obtenerTrazaVehiculo(opts: {
       totalMileageKm: can.totalMileageKm,
     });
   }
+  return puntos;
+}
+
+/**
+ * Carga la traza del vehículo en la ventana `[desde, hasta]`, arma el resumen
+ * y devuelve la traza downsampleada a `maxPuntos`. Sin puntos → traza vacía y
+ * resumen en cero/null, sin error.
+ */
+export async function obtenerTrazaVehiculo(opts: {
+  db: Db;
+  logger: Logger;
+  vehicleId: string;
+  desde: Date;
+  hasta: Date;
+  maxPuntos: number;
+}): Promise<TrazaVehiculoResult> {
+  const { db, logger, vehicleId, desde, hasta, maxPuntos } = opts;
+
+  const puntos = await cargarTrazaPoints({ db, vehicleId, desde, hasta });
 
   const resumen = construirResumen(puntos);
   const down = downsampleTraza(puntos, maxPuntos);
