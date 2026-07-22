@@ -26,6 +26,7 @@ import { BehaviorScoreCard } from '../components/scoring/BehaviorScoreCard.js';
 import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.js';
 import { DriverAssignmentCard } from '../components/scoring/DriverAssignmentCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
+import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
 import { api } from '../lib/api-client.js';
 
 interface AssignmentDetail {
@@ -147,6 +148,12 @@ function AsignacionDetallePage() {
           huella. Visible para cualquier trip activo o entregado (la
           ruta sigue siendo informativa post-entrega para revisar). */}
       {!isClosed && <AssignmentEcoRouteCard assignmentId={assignmentId} />}
+
+      {/* Capa 2 — recorrido REAL de la carga (traza + ruta esperada + resumen).
+          Collapsed por default (mapa pesado); expand-on-tap fetches la traza.
+          Útil durante el viaje y post-entrega para revisar el recorrido real.
+          Solo con vehículo asignado (si no, no hay telemetría posible). */}
+      {tripQ.data?.assignment && <TrazaCargaCard assignmentId={assignmentId} />}
 
       {/* Phase 4 PR-K4 — confirmación de entrega hands-free (voz +
           botón visual). Visible para el carrier mientras el trip está

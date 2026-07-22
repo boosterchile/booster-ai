@@ -31,6 +31,7 @@ import {
 } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -298,6 +299,17 @@ class PendingDeviceReconciliationConflictError extends Error {
 // vehiculos.ts instrumentado hoy — ver
 // .specs/_followups/vehiculos-router-otel-spans.md para el resto del router.
 const dispositivoAsociacionesCounter = getBusinessCounter('dispositivo_asociaciones_total');
+const trazaConsultasCounter = getBusinessCounter('vehiculo_traza_consultas_total');
+
+/** Rango máx defensivo de la ventana de traza (protege query + browser). */
+const MAX_RANGO_TRAZA_MS = 31 * 24 * 60 * 60 * 1000;
+
+/** Query de `GET /:id/traza`: ventana ISO + cap de puntos (default 800, máx 2000). */
+const trazaQuerySchema = z.object({
+  desde: z.string().datetime({ offset: true }),
+  hasta: z.string().datetime({ offset: true }),
+  maxPuntos: z.coerce.number().int().min(2).max(2000).optional().default(800),
+});
 
 export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
@@ -1434,6 +1446,84 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         ...extractCan(last.io_data),
       },
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/traza — historial de recorrido del vehículo en una ventana.
+  //
+  // Capa 2 (reframe a vehículo): traza real downsampleada + resumen
+  // (distancia, duración, y si hay CAN, litros consumidos y km del odómetro
+  // CAN). La versión por-carga quedó bloqueada por datos (0 cargas entregadas
+  // con telemetría); ver `.specs/vehiculo-traza-historial/`.
+  // ---------------------------------------------------------------------
+  app.get('/:id/traza', zValidator('query', trazaQuerySchema), async (c) => {
+    const auth = requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const id = c.req.param('id');
+    const empresaId = auth.activeMembership.empresa.id;
+    const { desde, hasta, maxPuntos } = c.req.valid('query');
+
+    const desdeDate = new Date(desde);
+    const hastaDate = new Date(hasta);
+    if (hastaDate.getTime() <= desdeDate.getTime()) {
+      return c.json({ error: 'rango_invalido', code: 'rango_invalido' }, 400);
+    }
+    if (hastaDate.getTime() - desdeDate.getTime() > MAX_RANGO_TRAZA_MS) {
+      return c.json({ error: 'rango_muy_amplio', code: 'rango_muy_amplio', max_dias: 31 }, 400);
+    }
+
+    // Ownership por empresa antes de exponer la traza.
+    const [vehicle] = await opts.db
+      .select({ id: vehicles.id, plate: vehicles.plate })
+      .from(vehicles)
+      .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
+      .limit(1);
+    if (!vehicle) {
+      return c.json({ error: 'vehicle_not_found' }, 404);
+    }
+
+    return await withBusinessSpan(
+      {
+        name: 'vehiculos.traza',
+        attributes: { 'booster.vehicle_id': id, 'booster.traza.max_puntos': maxPuntos },
+      },
+      async (span) => {
+        const traza = await obtenerTrazaVehiculo({
+          db: opts.db,
+          logger: opts.logger,
+          vehicleId: id,
+          desde: desdeDate,
+          hasta: hastaDate,
+          maxPuntos,
+        });
+        trazaConsultasCounter.add(1, { con_can: traza.resumen.litrosConsumidos !== null });
+        setResultAttributes(span, {
+          'booster.traza.puntos_total': traza.puntosTotal,
+          'booster.traza.puntos_devueltos': traza.puntos.length,
+        });
+        return c.json({
+          vehicle_id: id,
+          plate: vehicle.plate,
+          desde,
+          hasta,
+          puntos: traza.puntos.map((p) => ({
+            t: new Date(p.tMs).toISOString(),
+            lat: p.lat,
+            lng: p.lng,
+          })),
+          puntos_total: traza.puntosTotal,
+          puntos_devueltos: traza.puntos.length,
+          resumen: {
+            distancia_km: traza.resumen.distanciaKm,
+            duracion_min: traza.resumen.duracionMin,
+            litros_consumidos: traza.resumen.litrosConsumidos,
+            km_can: traza.resumen.kmCan,
+          },
+        });
+      },
+    );
   });
 
   return app;

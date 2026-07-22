@@ -1784,4 +1784,127 @@ describe('vehiculos routes', () => {
       expect(stub.spies.updateFn).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ---------------------------------------------------------------------
+  // GET /:id/traza — historial de recorrido del vehículo (capa 2).
+  // 2 selects: vehículo (.limit) + traza (.orderBy terminal, sin .limit).
+  // ---------------------------------------------------------------------
+  describe('GET /:id/traza (historial de vehículo, capa 2)', () => {
+    function makeTrazaStub(opts: {
+      vehicleRows: Record<string, unknown>[];
+      pointRows: Record<string, unknown>[];
+    }) {
+      const limitFn = vi.fn().mockResolvedValue(opts.vehicleRows); // vehículo .limit(1)
+      const orderByFn = vi.fn().mockResolvedValue(opts.pointRows); // traza .orderBy() terminal
+      const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
+      const fromFn = vi.fn(() => ({ where: whereFn }));
+      const selectFn = vi.fn(() => ({ from: fromFn }));
+      return {
+        db: { select: selectFn } as unknown as Parameters<
+          typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
+        >[0]['db'],
+        spies: { selectFn, orderByFn, limitFn },
+      };
+    }
+
+    const vehicleRow = { id: VEHICLE_ID, plate: 'PLFL57' };
+    const desde = '2026-07-14T00:00:00Z';
+    const hasta = '2026-07-22T00:00:00Z';
+    const url = (extra = '') =>
+      `/vehiculos/${VEHICLE_ID}/traza?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}${extra}`;
+    const pt = (iso: string, lat: string, lng: string, io: Record<string, number> = {}) => ({
+      ts: new Date(iso),
+      lat,
+      lng,
+      io,
+    });
+
+    interface TrazaBody {
+      plate: string;
+      puntos: Array<{ t: string; lat: number; lng: number }>;
+      puntos_total: number;
+      puntos_devueltos: number;
+      resumen: {
+        distancia_km: number;
+        duracion_min: number;
+        litros_consumidos: number | null;
+        km_can: number | null;
+      };
+    }
+
+    it('sin auth → 401', async () => {
+      const stub = makeTrazaStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db, { role: null });
+      expect((await app.request(url())).status).toBe(401);
+    });
+
+    it('vehículo no encontrado → 404', async () => {
+      const stub = makeTrazaStub({ vehicleRows: [], pointRows: [] });
+      const app = await buildApp(stub.db);
+      expect((await app.request(url())).status).toBe(404);
+    });
+
+    it('rango inválido (hasta <= desde) → 400', async () => {
+      const stub = makeTrazaStub({ vehicleRows: [vehicleRow], pointRows: [] });
+      const app = await buildApp(stub.db);
+      const res = await app.request(
+        `/vehiculos/${VEHICLE_ID}/traza?desde=${encodeURIComponent(hasta)}&hasta=${encodeURIComponent(desde)}`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('con telemetría + CAN → traza no vacía + resumen con litros/km del Δ', async () => {
+      const stub = makeTrazaStub({
+        vehicleRows: [vehicleRow],
+        pointRows: [
+          pt('2026-07-14T10:00:00Z', '-33.4000', '-70.6000', { '83': 637270, '87': 714023430 }),
+          pt('2026-07-14T10:10:00Z', '-33.4500', '-70.6100', {}), // sin CAN en el medio
+          pt('2026-07-20T18:00:00Z', '-33.5000', '-70.6200', { '83': 641185, '87': 715017215 }),
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(url());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as TrazaBody;
+      expect(body.plate).toBe('PLFL57');
+      expect(body.puntos.length).toBeGreaterThan(0);
+      expect(body.puntos_total).toBe(3);
+      expect(body.resumen.litros_consumidos).toBeCloseTo(391.5, 1); // (641185-637270)×0.1
+      expect(body.resumen.km_can).toBeCloseTo(993.785, 2); // (715017215-714023430)/1000
+      expect(body.resumen.distancia_km).toBeGreaterThan(0);
+      expect(body.resumen.duracion_min).toBeGreaterThan(0);
+    });
+
+    it('sin telemetría → puntos [], resumen en cero/null, no rompe', async () => {
+      const stub = makeTrazaStub({ vehicleRows: [vehicleRow], pointRows: [] });
+      const app = await buildApp(stub.db);
+      const res = await app.request(url());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as TrazaBody;
+      expect(body.puntos).toEqual([]);
+      expect(body.puntos_total).toBe(0);
+      expect(body.resumen.distancia_km).toBe(0);
+      expect(body.resumen.litros_consumidos).toBeNull();
+      expect(body.resumen.km_can).toBeNull();
+    });
+
+    it('downsampling: puntos_devueltos ≤ maxPuntos y puntos_total = crudos', async () => {
+      const many = Array.from({ length: 50 }, (_, i) =>
+        pt(
+          new Date(Date.UTC(2026, 6, 15, 12, 0, i)).toISOString(),
+          `-33.${400 + i}`,
+          '-70.6000',
+          {},
+        ),
+      );
+      const stub = makeTrazaStub({ vehicleRows: [vehicleRow], pointRows: many });
+      const app = await buildApp(stub.db);
+      const res = await app.request(url('&maxPuntos=10'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as TrazaBody;
+      expect(body.puntos_total).toBe(50);
+      expect(body.puntos_devueltos).toBeLessThanOrEqual(10);
+      expect(body.puntos.length).toBeLessThanOrEqual(10);
+    });
+  });
 });

@@ -105,3 +105,51 @@ describe('interpretCanLvcan — catálogo CAN LVCAN v1 (81/84/85/89)', () => {
     });
   });
 });
+
+/**
+ * Capa 2 (historial de vehículo): contadores acumulados CAN.
+ * 83 fuel consumed (raw ×0.1 L), 87 CAN total mileage (raw metros → km).
+ * Se usan por Δ (último − primero) para el resumen litros/km de una ventana.
+ */
+describe('interpretCanLvcan — capa 2: fuel consumed (83) + CAN mileage (87)', () => {
+  it('83 fuel consumed → litros (raw ×0.1): 637270 → 63727.0 L', () => {
+    const r = interpretCanLvcan([
+      { id: AVL_ID_CAN.CAN_FUEL_CONSUMED_L, value: 637270, byteSize: 4 },
+    ]);
+    expect(r.telemetry.fuelConsumedL).toBeCloseTo(63727.0, 3);
+    expect(r.invalidEntries).toEqual([]);
+  });
+
+  it('87 CAN mileage → km (raw /1000): 715017215 → 715017.215 km', () => {
+    const r = interpretCanLvcan([
+      { id: AVL_ID_CAN.CAN_TOTAL_MILEAGE, value: 715017215, byteSize: 4 },
+    ]);
+    expect(r.telemetry.totalMileageKm).toBeCloseTo(715017.215, 3);
+    expect(r.invalidEntries).toEqual([]);
+  });
+
+  it('record real de PLFL57 con 83 + 87 juntos', () => {
+    const r = interpretCanLvcan([
+      { id: 83, value: 641185, byteSize: 4 },
+      { id: 87, value: 715017215, byteSize: 4 },
+    ]);
+    expect(r.telemetry.fuelConsumedL).toBeCloseTo(64118.5, 3);
+    expect(r.telemetry.totalMileageKm).toBeCloseTo(715017.215, 3);
+    expect(r.unknownEntries).toEqual([]);
+    expect(r.invalidEntries).toEqual([]);
+  });
+
+  it('83 fuera de rango uint32 → invalidEntries, sin dato', () => {
+    const r = interpretCanLvcan([
+      { id: AVL_ID_CAN.CAN_FUEL_CONSUMED_L, value: 5_000_000_000, byteSize: 8 },
+    ]);
+    expect(r.telemetry.fuelConsumedL).toBeUndefined();
+    expect(r.invalidEntries).toHaveLength(1);
+  });
+
+  it('87 negativo (imposible en odómetro) → invalidEntries', () => {
+    const r = interpretCanLvcan([{ id: AVL_ID_CAN.CAN_TOTAL_MILEAGE, value: -5, byteSize: 4 }]);
+    expect(r.telemetry.totalMileageKm).toBeUndefined();
+    expect(r.invalidEntries).toHaveLength(1);
+  });
+});
