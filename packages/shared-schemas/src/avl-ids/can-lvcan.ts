@@ -19,17 +19,26 @@ import { z } from 'zod';
  * **unsigned** — el codec8-parser entrega el uint directo, sin conversión
  * two's complement. La única escala es `×0.1 L` en el ID 84.
  *
- * Fuera de v1 (persistidos crudos en `io_data`, no mapeados acá todavía):
- * 82 accelerator pedal, 83 fuel consumed, 87 CAN mileage, 90, y OEM 1xx/1xxx.
- * Se dejan para el historial por carga (capa 2). Este módulo es aditivo:
+ * Capa 2 (historial de vehículo) suma dos **contadores acumulados** —
+ * se leen por Δ (último − primero de una ventana), no como estado puntual:
+ *
+ * | AVL ID | Nombre Teltonika    | Tipo RAW | Unidad / escala   |
+ * |--------|---------------------|----------|-------------------|
+ * | 83     | Fuel Consumed       | uint32   | litros (raw ×0.1) |
+ * | 87     | CAN Total Mileage   | uint32   | km (raw /1000, m) |
+ *
+ * Fuera de catálogo (persistidos crudos en `io_data`, no mapeados):
+ * 82 accelerator pedal, 90, y OEM 1xx/1xxx. Este módulo es aditivo:
  * NO toca `low-priority.ts`, `dallas-temperature.ts` ni `high-panic.ts`.
  */
 
-/** Singleton: ID numérico fijo de cada parámetro CAN v1 en la spec FMC150. */
+/** Singleton: ID numérico fijo de cada parámetro CAN en la spec FMC150. */
 export const AVL_ID_CAN = {
   CAN_VEHICLE_SPEED: 81,
+  CAN_FUEL_CONSUMED_L: 83,
   CAN_FUEL_LEVEL_L: 84,
   CAN_ENGINE_RPM: 85,
+  CAN_TOTAL_MILEAGE: 87,
   CAN_FUEL_LEVEL_PCT: 89,
 } as const;
 
@@ -40,6 +49,12 @@ export const CAN_LVCAN_IDS: ReadonlySet<number> = new Set(Object.values(AVL_ID_C
 
 /** Fuel Level (AVL 84) — factor RAW→litros. */
 export const CAN_FUEL_LEVEL_L_SCALE = 0.1;
+
+/** Fuel Consumed (AVL 83) — factor RAW→litros (mismo ×0.1 que el nivel). */
+export const CAN_FUEL_CONSUMED_L_SCALE = 0.1;
+
+/** CAN Total Mileage (AVL 87) — factor RAW(metros)→km. */
+export const CAN_MILEAGE_KM_SCALE = 0.001;
 
 // =============================================================================
 // SCHEMAS RAW (validan el uint crudo del ping; rango físico sano). Fuera de
@@ -62,13 +77,23 @@ export type CanEngineRpmRaw = z.infer<typeof canEngineRpmRawSchema>;
 export const canFuelLevelPctRawSchema = z.number().int().min(0).max(100);
 export type CanFuelLevelPctRaw = z.infer<typeof canFuelLevelPctRawSchema>;
 
+/** AVL 83 — Fuel Consumed (uint32 acumulado, ×0.1 L). Cap uint32. */
+export const canFuelConsumedRawSchema = z.number().int().min(0).max(4294967295);
+export type CanFuelConsumedRaw = z.infer<typeof canFuelConsumedRawSchema>;
+
+/** AVL 87 — CAN Total Mileage (uint32 acumulado, metros). Cap uint32. */
+export const canTotalMileageRawSchema = z.number().int().min(0).max(4294967295);
+export type CanTotalMileageRaw = z.infer<typeof canTotalMileageRawSchema>;
+
 // =============================================================================
 // MAP { id → schema } — usado por interpret() para validar de forma genérica.
 // =============================================================================
 
 export const CAN_LVCAN_RAW_SCHEMAS: Record<AvlIdCan, z.ZodTypeAny> = {
   [AVL_ID_CAN.CAN_VEHICLE_SPEED]: canVehicleSpeedRawSchema,
+  [AVL_ID_CAN.CAN_FUEL_CONSUMED_L]: canFuelConsumedRawSchema,
   [AVL_ID_CAN.CAN_FUEL_LEVEL_L]: canFuelLevelLRawSchema,
   [AVL_ID_CAN.CAN_ENGINE_RPM]: canEngineRpmRawSchema,
+  [AVL_ID_CAN.CAN_TOTAL_MILEAGE]: canTotalMileageRawSchema,
   [AVL_ID_CAN.CAN_FUEL_LEVEL_PCT]: canFuelLevelPctRawSchema,
 };

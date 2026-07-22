@@ -1,9 +1,11 @@
 import {
   AVL_ID_CAN,
   type AvlIdCan,
+  CAN_FUEL_CONSUMED_L_SCALE,
   CAN_FUEL_LEVEL_L_SCALE,
   CAN_LVCAN_IDS,
   CAN_LVCAN_RAW_SCHEMAS,
+  CAN_MILEAGE_KM_SCALE,
 } from './can-lvcan.js';
 import type { InvalidEntry, MinimalIoEntry, UnknownEntry } from './interpret-low-priority.js';
 
@@ -21,6 +23,10 @@ export interface CanLvcanTelemetry {
   engineRpm?: number;
   /** AVL 89. Nivel de combustible, %. */
   fuelLevelPct?: number;
+  /** AVL 83. Combustible consumido acumulado, litros (raw ×0.1). Capa 2 — se usa por Δ. */
+  fuelConsumedL?: number;
+  /** AVL 87. Odómetro CAN acumulado, km (raw metros /1000). Capa 2 — se usa por Δ. */
+  totalMileageKm?: number;
 }
 
 export interface CanLvcanInterpretResult {
@@ -96,6 +102,12 @@ function applyToTelemetry(t: CanLvcanTelemetry, id: AvlIdCan, raw: number): void
       return;
     case AVL_ID_CAN.CAN_FUEL_LEVEL_PCT:
       t.fuelLevelPct = raw;
+      return;
+    case AVL_ID_CAN.CAN_FUEL_CONSUMED_L:
+      t.fuelConsumedL = raw * CAN_FUEL_CONSUMED_L_SCALE;
+      return;
+    case AVL_ID_CAN.CAN_TOTAL_MILEAGE:
+      t.totalMileageKm = raw * CAN_MILEAGE_KM_SCALE;
       return;
   }
 }

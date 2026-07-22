@@ -300,6 +300,15 @@ const vehiculoLiveRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/vehiculo-live.js'), 'VehiculoLiveRoute'),
 });
 
+const vehiculoHistorialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/vehiculos/$id/historial',
+  component: lazyRouteComponent(
+    () => import('./routes/vehiculo-historial.js'),
+    'VehiculoHistorialRoute',
+  ),
+});
+
 const cargaTrackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/cargas/$id/track',
@@ -425,6 +434,7 @@ const routeTree = rootRoute.addChildren([
   vehiculosNuevoRoute,
   vehiculosDetalleRoute,
   vehiculoLiveRoute,
+  vehiculoHistorialRoute,
   flotaRoute,
   conductoresListRoute,
   conductoresNuevoRoute,

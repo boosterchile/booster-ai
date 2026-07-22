@@ -124,15 +124,21 @@ export {
   CAN_LVCAN_IDS,
   CAN_LVCAN_RAW_SCHEMAS,
   CAN_FUEL_LEVEL_L_SCALE,
+  CAN_FUEL_CONSUMED_L_SCALE,
+  CAN_MILEAGE_KM_SCALE,
   canVehicleSpeedRawSchema,
   canFuelLevelLRawSchema,
   canEngineRpmRawSchema,
   canFuelLevelPctRawSchema,
+  canFuelConsumedRawSchema,
+  canTotalMileageRawSchema,
   type AvlIdCan,
   type CanVehicleSpeedRaw,
   type CanFuelLevelLRaw,
   type CanEngineRpmRaw,
   type CanFuelLevelPctRaw,
+  type CanFuelConsumedRaw,
+  type CanTotalMileageRaw,
 } from './can-lvcan.js';
 
 export {
