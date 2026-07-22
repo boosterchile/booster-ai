@@ -976,6 +976,9 @@ describe('vehiculos routes', () => {
       ubicacion: {
         temperatura_c: number | null;
         temperatura_registrada_en: string | null;
+        can_speed_kmh: number | null;
+        rpm: number | null;
+        fuel_pct: number | null;
       };
     }
 
@@ -1024,6 +1027,77 @@ describe('vehiculos routes', () => {
       const body = (await res.json()) as UbicacionBody;
       expect(body.ubicacion.temperatura_c).toBeCloseTo(5.5, 5);
       expect(body.ubicacion.temperatura_registrada_en).toBe('2026-07-06T10:00:00.000Z');
+    });
+
+    it('Teltonika propio con CAN (motor encendido) → can_speed_kmh + rpm + fuel_pct, temperatura coexiste', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'PLFL57',
+            teltonikaImei: '860693084796730',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-20T20:31:58Z'),
+            timestamp_received_at: new Date('2026-07-20T20:31:59Z'),
+            longitude: '-70.6693',
+            latitude: '-33.4489',
+            altitude_m: 500,
+            angle_deg: 90,
+            satellites: 10,
+            speed_kmh: 0,
+            priority: 0,
+            // io_data real PLFL57 con CAN: 81 speed, 85 RPM, 89 fuel%, 84 fuel L (no expuesto), 72 temp.
+            io_data: { '72': 0, '81': 0, '84': 520, '85': 852, '89': 26 },
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.can_speed_kmh).toBe(0);
+      expect(body.ubicacion.rpm).toBe(852);
+      expect(body.ubicacion.fuel_pct).toBe(26);
+      // regresión: temperatura (IO 72 = 0 → 0.0°C) sigue en el DTO.
+      expect(body.ubicacion.temperatura_c).toBe(0);
+    });
+
+    it('Teltonika propio SIN CAN (motor apagado) → can_speed_kmh/rpm/fuel_pct null', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'PLFL57',
+            teltonikaImei: '860693084796730',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-21T15:38:13Z'),
+            timestamp_received_at: new Date('2026-07-21T15:38:14Z'),
+            longitude: '-70.6693',
+            latitude: '-33.4489',
+            altitude_m: 500,
+            angle_deg: 90,
+            satellites: 10,
+            speed_kmh: 0,
+            priority: 0,
+            io_data: { '16': 972232, '66': 25200, '239': 0 }, // solo I/O permanente, sin CAN
+          },
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.can_speed_kmh).toBeNull();
+      expect(body.ubicacion.rpm).toBeNull();
+      expect(body.ubicacion.fuel_pct).toBeNull();
     });
 
     it("Teltonika propio con IO 72 negativo (two's complement) → temperatura_c negativo", async () => {

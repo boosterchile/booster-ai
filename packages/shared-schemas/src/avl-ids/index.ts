@@ -118,3 +118,25 @@ export {
   type RouteEventResult,
   type InvalidEventEntry,
 } from './event-router.js';
+
+export {
+  AVL_ID_CAN,
+  CAN_LVCAN_IDS,
+  CAN_LVCAN_RAW_SCHEMAS,
+  CAN_FUEL_LEVEL_L_SCALE,
+  canVehicleSpeedRawSchema,
+  canFuelLevelLRawSchema,
+  canEngineRpmRawSchema,
+  canFuelLevelPctRawSchema,
+  type AvlIdCan,
+  type CanVehicleSpeedRaw,
+  type CanFuelLevelLRaw,
+  type CanEngineRpmRaw,
+  type CanFuelLevelPctRaw,
+} from './can-lvcan.js';
+
+export {
+  interpretCanLvcan,
+  type CanLvcanTelemetry,
+  type CanLvcanInterpretResult,
+} from './interpret-can-lvcan.js';

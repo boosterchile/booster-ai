@@ -86,6 +86,9 @@ describe('VehiculoLiveRoute', () => {
         priority: 1,
         temperatura_c: null,
         temperatura_registrada_en: null,
+        can_speed_kmh: null,
+        rpm: null,
+        fuel_pct: null,
       },
     });
     const Wrapper = makeWrapper();
@@ -116,6 +119,9 @@ describe('VehiculoLiveRoute', () => {
         priority: 1,
         temperatura_c: null,
         temperatura_registrada_en: null,
+        can_speed_kmh: null,
+        rpm: null,
+        fuel_pct: null,
       },
     });
     const Wrapper = makeWrapper();
@@ -146,6 +152,9 @@ describe('VehiculoLiveRoute', () => {
           priority: 1,
           temperatura_c: 5.5,
           temperatura_registrada_en: registradaEn,
+          can_speed_kmh: null,
+          rpm: null,
+          fuel_pct: null,
         },
       });
       const Wrapper = makeWrapper();
@@ -158,7 +167,9 @@ describe('VehiculoLiveRoute', () => {
       const text = screen.getByTestId('bottom-extra').textContent ?? '';
       expect(text).toContain('5.5 °C');
       expect(text).toContain('hace 10s');
-      expect(text).not.toContain('Sin dato');
+      // los 3 stats CAN (motor apagado en este mock) muestran "Sin dato", así
+      // que ya no vale un `not.toContain('Sin dato')` global; el `5.5 °C`
+      // prueba que la temperatura no cayó a "Sin dato".
     });
 
     it('temperatura_c negativo (cadena de frío) → "-X.X °C"', async () => {
@@ -177,6 +188,9 @@ describe('VehiculoLiveRoute', () => {
           priority: 1,
           temperatura_c: -20,
           temperatura_registrada_en: new Date(Date.now() - 5_000).toISOString(),
+          can_speed_kmh: null,
+          rpm: null,
+          fuel_pct: null,
         },
       });
       const Wrapper = makeWrapper();
@@ -206,6 +220,9 @@ describe('VehiculoLiveRoute', () => {
           priority: 1,
           temperatura_c: null,
           temperatura_registrada_en: null,
+          can_speed_kmh: null,
+          rpm: null,
+          fuel_pct: null,
         },
       });
       const Wrapper = makeWrapper();
@@ -218,6 +235,74 @@ describe('VehiculoLiveRoute', () => {
         expect(screen.getByTestId('bottom-extra').textContent).toContain('Sin dato'),
       );
       expect(screen.getByTestId('bottom-extra')).toBeInTheDocument();
+    });
+  });
+
+  describe('stats CAN (W4 — LVCAN 81 speed / 85 RPM / 89 fuel %)', () => {
+    it('CAN presente (motor encendido) → fuel %, RPM y velocidad CAN renderizados', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'PLFL57',
+        teltonika_imei: '860693084796730',
+        ubicacion: {
+          timestamp_device: '2026-07-20T20:31:58Z',
+          latitude: -33.4489,
+          longitude: -70.6693,
+          altitude_m: 500,
+          angle_deg: 90,
+          satellites: 10,
+          speed_kmh: 0,
+          priority: 0,
+          temperatura_c: null,
+          temperatura_registrada_en: null,
+          can_speed_kmh: 40,
+          rpm: 1800,
+          fuel_pct: 75,
+        },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(screen.getByTestId('bottom-extra').textContent).toContain('75 %'));
+      const text = screen.getByTestId('bottom-extra').textContent ?? '';
+      expect(text).toContain('1800'); // RPM
+      expect(text).toContain('40 km/h'); // velocidad CAN
+    });
+
+    it('CAN null (motor apagado) → "Sin dato" en los stats CAN (temperatura coexiste)', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'PLFL57',
+        teltonika_imei: '860693084796730',
+        ubicacion: {
+          timestamp_device: '2026-07-21T15:38:13Z',
+          latitude: -33.4489,
+          longitude: -70.6693,
+          altitude_m: 500,
+          angle_deg: 90,
+          satellites: 10,
+          speed_kmh: 0,
+          priority: 0,
+          temperatura_c: 10,
+          temperatura_registrada_en: new Date(Date.now() - 3_000).toISOString(),
+          can_speed_kmh: null,
+          rpm: null,
+          fuel_pct: null,
+        },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('bottom-extra').textContent).toContain('10.0 °C'),
+      );
+      expect(screen.getByTestId('bottom-extra').textContent).toContain('Sin dato');
     });
   });
 
