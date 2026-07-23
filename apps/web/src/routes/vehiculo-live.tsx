@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
-import { Activity, Fuel, Gauge, Thermometer } from 'lucide-react';
+import { Activity, Cloud, Fuel, Gauge, Thermometer } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
@@ -45,6 +45,14 @@ interface UbicacionResponse {
     can_speed_kmh: number | null;
     rpm: number | null;
     fuel_pct: number | null;
+    /**
+     * Temperatura AMBIENTE del lugar donde está el vehículo (Google Weather
+     * API, cacheada server-side por celda geográfica, TTL 30 min; NO se
+     * persiste — ToS Maps Platform). Distinta de `temperatura_c` (sensor Dallas
+     * de la CARGA). `null` si el proveedor está off o la API falló. Espejo
+     * MANUAL del DTO en apps/api/src/routes/vehiculos.ts.
+     */
+    temperatura_ambiente_c: number | null;
   };
 }
 
@@ -66,7 +74,7 @@ function TemperaturaStat({
     <div className="flex flex-1 flex-col">
       <div className="flex items-center gap-1 text-neutral-500 text-xs uppercase tracking-wide">
         <Thermometer className="h-4 w-4" aria-hidden />
-        Temperatura
+        Temp. carga
       </div>
       <div className="mt-0.5 font-semibold text-lg text-neutral-700">
         {temperaturaC != null ? (
@@ -155,36 +163,53 @@ function VehiculoLivePage() {
       onRefresh={() => void ubicacionQ.refetch()}
       bottomExtra={
         ubicacionQ.data ? (
-          <div className="flex items-center justify-between gap-4">
-            <TemperaturaStat
-              temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
-              temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
-            />
-            <CanStat
-              icon={<Fuel className="h-4 w-4" aria-hidden />}
-              label="Combustible"
-              value={
-                ubicacionQ.data.ubicacion.fuel_pct != null
-                  ? `${ubicacionQ.data.ubicacion.fuel_pct} %`
-                  : null
-              }
-            />
-            <CanStat
-              icon={<Gauge className="h-4 w-4" aria-hidden />}
-              label="RPM"
-              value={
-                ubicacionQ.data.ubicacion.rpm != null ? `${ubicacionQ.data.ubicacion.rpm}` : null
-              }
-            />
-            <CanStat
-              icon={<Activity className="h-4 w-4" aria-hidden />}
-              label="Vel. CAN"
-              value={
-                ubicacionQ.data.ubicacion.can_speed_kmh != null
-                  ? `${ubicacionQ.data.ubicacion.can_speed_kmh} km/h`
-                  : null
-              }
-            />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <TemperaturaStat
+                temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
+                temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
+              />
+              <CanStat
+                icon={<Fuel className="h-4 w-4" aria-hidden />}
+                label="Combustible"
+                value={
+                  ubicacionQ.data.ubicacion.fuel_pct != null
+                    ? `${ubicacionQ.data.ubicacion.fuel_pct} %`
+                    : null
+                }
+              />
+              <CanStat
+                icon={<Gauge className="h-4 w-4" aria-hidden />}
+                label="RPM"
+                value={
+                  ubicacionQ.data.ubicacion.rpm != null ? `${ubicacionQ.data.ubicacion.rpm}` : null
+                }
+              />
+              <CanStat
+                icon={<Activity className="h-4 w-4" aria-hidden />}
+                label="Vel. CAN"
+                value={
+                  ubicacionQ.data.ubicacion.can_speed_kmh != null
+                    ? `${ubicacionQ.data.ubicacion.can_speed_kmh} km/h`
+                    : null
+                }
+              />
+              {/* Temperatura AMBIENTE (Google Weather) — distinta de "Temp. carga"
+                  (Dallas). El operador no las confunde: label + icono nube. */}
+              <CanStat
+                icon={<Cloud className="h-4 w-4" aria-hidden />}
+                label="Temp. ambiente"
+                value={
+                  ubicacionQ.data.ubicacion.temperatura_ambiente_c != null
+                    ? `${ubicacionQ.data.ubicacion.temperatura_ambiente_c.toFixed(1)} °C`
+                    : null
+                }
+              />
+            </div>
+            {/* Atribución obligatoria de Google Maps Platform (Weather API). */}
+            <p className="text-[10px] text-neutral-400" data-testid="clima-atribucion">
+              Powered by Google · Source: Includes weather data from Google
+            </p>
           </div>
         ) : undefined
       }
