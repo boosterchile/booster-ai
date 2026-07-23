@@ -358,6 +358,13 @@
       "when": 1780876800014,
       "tag": "0050_empresas_es_usuario_prueba",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1780876800015,
+      "tag": "0051_vehiculos_tiene_sensor_temperatura",
+      "breakpoints": true
     }
   ]
 }

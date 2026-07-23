@@ -856,6 +856,14 @@ export const vehicles = pgTable(
      * existente). Validado en runtime, no en BD (para evitar trigger).
      */
     teltonikaImeiEspejo: varchar('teltonika_imei_espejo', { length: 20 }),
+    /**
+     * Provisioning de la sonda Dallas (IO 72) cableada al Teltonika (migración
+     * 0051). true → el endpoint expone `temperatura_c`; false → `null` sin
+     * importar el crudo (0°C es lectura válida de cadena de frío, indistinguible
+     * por VALOR de "sin sensor" — ver `.specs/sensor-temperatura-flag/`).
+     * Desacoplado de `bodyType='refrigerado'` (carrocería ≠ sonda cableada).
+     */
+    tieneSensorTemperatura: boolean('tiene_sensor_temperatura').notNull().default(false),
     lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
     inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
     vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),
