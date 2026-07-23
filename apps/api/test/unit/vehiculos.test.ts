@@ -1948,10 +1948,17 @@ describe('vehiculos routes', () => {
     const hasta = '2026-07-22T00:00:00Z';
     const url = (extra = '') =>
       `/vehiculos/${VEHICLE_ID}/traza?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}${extra}`;
-    const pt = (iso: string, lat: string, lng: string, io: Record<string, number> = {}) => ({
+    const pt = (
+      iso: string,
+      lat: string,
+      lng: string,
+      io: Record<string, number> = {},
+      speed: number | null = 40,
+    ) => ({
       ts: new Date(iso),
       lat,
       lng,
+      speed,
       io,
     });
 
@@ -1994,8 +2001,8 @@ describe('vehiculos routes', () => {
         vehicleRows: [vehicleRow],
         pointRows: [
           pt('2026-07-14T10:00:00Z', '-33.4000', '-70.6000', { '83': 637270, '87': 714023430 }),
-          pt('2026-07-14T10:10:00Z', '-33.4500', '-70.6100', {}), // sin CAN en el medio
-          pt('2026-07-20T18:00:00Z', '-33.5000', '-70.6200', { '83': 641185, '87': 715017215 }),
+          pt('2026-07-14T10:00:30Z', '-33.4050', '-70.6100', {}), // +30s, sin CAN, en marcha
+          pt('2026-07-14T10:00:55Z', '-33.5000', '-70.6200', { '83': 641185, '87': 715017215 }), // +25s
         ],
       });
       const app = await buildApp(stub.db);
@@ -2008,7 +2015,27 @@ describe('vehiculos routes', () => {
       expect(body.resumen.litros_consumidos).toBeCloseTo(391.5, 1); // (641185-637270)×0.1
       expect(body.resumen.km_can).toBeCloseTo(993.785, 2); // (715017215-714023430)/1000
       expect(body.resumen.distancia_km).toBeGreaterThan(0);
-      expect(body.resumen.duracion_min).toBeGreaterThan(0);
+      expect(body.resumen.duracion_min).toBeGreaterThan(0); // 55s en marcha
+    });
+
+    it('duración = movimiento (no span): excluye una parada larga', async () => {
+      const stub = makeTrazaStub({
+        vehicleRows: [vehicleRow],
+        pointRows: [
+          pt('2026-07-15T12:00:00Z', '-33.4000', '-70.6000', {}, 40),
+          pt('2026-07-15T12:01:00Z', '-33.4100', '-70.6000', {}, 40), // [0→60] marcha
+          pt('2026-07-15T12:02:00Z', '-33.4200', '-70.6000', {}, 0), // [60→120] frena → cuenta
+          pt('2026-07-15T12:06:00Z', '-33.4200', '-70.6000', {}, 0), // [120→360] 4min parado → NO
+          pt('2026-07-15T12:07:00Z', '-33.4300', '-70.6000', {}, 40), // [360→420] arranca → cuenta
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(url());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as TrazaBody;
+      // span = 7 min; movimiento = 3 tramos × 60s = 3 min.
+      expect(body.resumen.duracion_min).toBeCloseTo(3, 5);
+      expect(body.resumen.duracion_min).toBeLessThan(7);
     });
 
     it('sin telemetría → puntos [], resumen en cero/null, no rompe', async () => {

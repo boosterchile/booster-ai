@@ -31,11 +31,14 @@ export interface TrazaPoint {
   fuelConsumedL: number | null;
   /** AVL 87 acumulado, km. `null` si el ping no trae CAN. */
   totalMileageKm: number | null;
+  /** Velocidad GPS del ping en km/h (`velocidad_kmh`). `null` sin fix. */
+  speedKmh: number | null;
 }
 
 /** Resumen de la ventana. CAN `null` si hay < 2 puntos con contador. */
 export interface TrazaResumen {
   distanciaKm: number;
+  /** Tiempo REAL de movimiento (excluye paradas y apagones), no el span. */
   duracionMin: number;
   litrosConsumidos: number | null;
   kmCan: number | null;
@@ -191,6 +194,58 @@ export function downsampleTraza<T extends LatLng>(points: readonly T[], maxPunto
   return out;
 }
 
+/**
+ * Velocidad GPS (km/h) a partir de la cual se considera que el vehículo se
+ * mueve. Por debajo, el reporte del FMC150 suele ser jitter GPS estando
+ * detenido; marcha real ≥ 3 km/h.
+ */
+export const VELOCIDAD_MOVIMIENTO_KMH = 3;
+
+/**
+ * Hueco máximo (ms) entre pings consecutivos para atribuir el intervalo a
+ * tiempo de movimiento. Por encima se asume device apagado/dormido y el hueco
+ * NO cuenta como viaje (aunque el ping de despertar traiga velocidad > 0).
+ *
+ * No se reusa `CONTINUITY_GAP_S` (60 s, ADR-028 §5, cobertura): esa tolerancia
+ * es *tight* para NO sobre-contar distancia (rectas largas falsas); acá se
+ * quiere *loose* para NO sub-contar marcha con cadencia dispersa (~30 s con
+ * jitter/túneles hasta ~1-2 min), sin tragarse un apagón (huecos de ≥ varios
+ * minutos). 5 min separa ambos casos de forma conservadora.
+ */
+export const MAX_GAP_MOVIMIENTO_MS = 5 * 60_000;
+
+/**
+ * Tiempo REAL de movimiento en minutos: suma de Δt entre puntos consecutivos,
+ * contando un intervalo solo si (a) `0 < Δt < MAX_GAP_MOVIMIENTO_MS` (no es un
+ * hueco de device apagado) y (b) alguno de sus extremos iba a velocidad de
+ * marcha (`≥ VELOCIDAD_MOVIMIENTO_KMH`). Excluye paradas (velocidad ≈ 0
+ * sostenida, ambos extremos detenidos) y apagones. Función pura.
+ *
+ * Se usa `max` de los extremos para que los tramos de frenado/aceleración
+ * (entrada y salida de una parada) sí cuenten; solo el interior detenido queda
+ * fuera. Velocidad `null` (sin fix) se trata como 0 (conservador). Distinto del
+ * span (`último − primero`), que sobre-cuenta paradas y apagones.
+ */
+export function duracionMovimientoMin(points: readonly TrazaPoint[]): number {
+  let ms = 0;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (!prev || !curr) {
+      continue;
+    }
+    const dt = curr.tMs - prev.tMs;
+    if (dt <= 0 || dt >= MAX_GAP_MOVIMIENTO_MS) {
+      continue;
+    }
+    const vMax = Math.max(prev.speedKmh ?? 0, curr.speedKmh ?? 0);
+    if (vMax >= VELOCIDAD_MOVIMIENTO_KMH) {
+      ms += dt;
+    }
+  }
+  return ms / 60_000;
+}
+
 /** Δ entre el último y el primer valor de una lista; `null` si hay < 2. */
 function deltaExtremos(vals: readonly number[]): number | null {
   if (vals.length < 2) {
@@ -209,9 +264,7 @@ export function construirResumen(points: readonly TrazaPoint[]): TrazaResumen {
   if (points.length === 0) {
     return { distanciaKm: 0, duracionMin: 0, litrosConsumidos: null, kmCan: null };
   }
-  const primero = points[0];
-  const ultimo = points[points.length - 1];
-  const duracionMin = primero && ultimo ? (ultimo.tMs - primero.tMs) / 60_000 : 0;
+  const duracionMin = duracionMovimientoMin(points);
 
   const fuels: number[] = [];
   const kms: number[] = [];
@@ -279,6 +332,7 @@ export async function cargarTrazaPoints(opts: {
       ts: telemetryPoints.timestampDevice,
       lat: telemetryPoints.latitude,
       lng: telemetryPoints.longitude,
+      speed: telemetryPoints.speedKmh,
       io: telemetryPoints.ioData,
     })
     .from(telemetryPoints)
@@ -303,6 +357,7 @@ export async function cargarTrazaPoints(opts: {
       lng: Number(r.lng),
       fuelConsumedL: can.fuelConsumedL,
       totalMileageKm: can.totalMileageKm,
+      speedKmh: r.speed === null || r.speed === undefined ? null : Number(r.speed),
     });
   }
   return puntos;

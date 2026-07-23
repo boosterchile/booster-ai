@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api-client.js';
@@ -89,6 +89,52 @@ describe('VehiculoHistorialRoute', () => {
     expect(text).toContain('2 h 5 min'); // 125 min
     await waitFor(() => expect(capturedPoints).toHaveLength(2));
     expect(capturedPoints?.[0]).toEqual({ lat: -33.4, lng: -70.6 });
+  });
+
+  it('filtros son datetime-local y la query respeta la hora (no solo el día)', async () => {
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue(trazaConCan);
+    const Wrapper = makeWrapper();
+    const { container } = render(
+      <Wrapper>
+        <VehiculoHistorialRoute />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(getSpy).toHaveBeenCalled());
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]');
+    expect(inputs).toHaveLength(2); // Desde + Hasta, con hora
+
+    // Cambiar "Desde" a una hora concreta → la query lleva esa hora exacta.
+    const desde = inputs[0];
+    if (!desde) {
+      throw new Error('input Desde no encontrado');
+    }
+    fireEvent.change(desde, { target: { value: '2026-07-15T08:30' } });
+    // Round-trip con el mismo `new Date` que usa el componente → TZ-agnóstico.
+    const esperadoIso = new Date('2026-07-15T08:30').toISOString();
+    await waitFor(() =>
+      expect(
+        getSpy.mock.calls.some(
+          ([u]) => typeof u === 'string' && u.includes(encodeURIComponent(esperadoIso)),
+        ),
+      ).toBe(true),
+    );
+    // La hora 08:30 no es medianoche → prueba que no se cayó a granularidad de día.
+    expect(esperadoIso).not.toContain('T00:00:00');
+  });
+
+  it('resumen etiqueta la duración como "En movimiento" (no span)', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce(trazaConCan);
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <VehiculoHistorialRoute />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('traza-resumen').textContent).toContain('12.3 km'),
+    );
+    expect(screen.getByTestId('traza-resumen').textContent).toContain('En movimiento');
   });
 
   it('sin CAN → combustible y km "Sin dato"', async () => {
