@@ -101,13 +101,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           format: sarif
           output: trivy-fs.sarif
           severity: HIGH,CRITICAL
+          # En modo sarif la action hace `unset TRIVY_SEVERITY` e ignora el input
+          # `severity`, así que el exit-code dispara con CUALQUIER severidad
+          # (rompió un deploy con 5 MEDIUM). `true` respeta el `severity:
+          # HIGH,CRITICAL` de arriba → el gate solo falla en HIGH/CRITICAL.
+          # Trade-off: el Security tab (trivy-fs) solo mostrará HIGH/CRITICAL.
+          limit-severities-for-sarif: true
           # Bloqueante en HIGH/CRITICAL (verificado 2026-06-22: 0 alertas
           # Trivy HIGH/CRITICAL abiertas en code-scanning → no rompe CI hoy;
           # bloquea regresiones futuras). El upload de SARIF abajo mantiene
@@ -115,7 +121,10 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
       - name: Trivy config scan (Dockerfiles + Terraform)
-        uses: aquasecurity/trivy-action@master
+        # Sin limit-severities-for-sarif: este step es report-only (exit-code
+        # '0', nunca gatea) y el config scan de IaC quiere visibilidad amplia de
+        # misconfigs en el Security tab para triage aparte (ver comentario abajo).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         if: always()
         with:
           scan-type: config
