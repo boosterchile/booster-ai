@@ -31,7 +31,9 @@ import {
 } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
+import { obtenerClimaActual } from '../services/weather-api.js';
 
 /**
  * Endpoints de vehículos. CRUD completo:
@@ -311,8 +313,37 @@ const trazaQuerySchema = z.object({
   maxPuntos: z.coerce.number().int().min(2).max(2000).optional().default(800),
 });
 
-export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
+export function createVehiculosRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /** GCP project ID facturado por Weather API (X-Goog-User-Project). Ausente → clima off. */
+  weatherProjectId?: string | undefined;
+  /** Override del lookup de clima (para tests). Default: cache-wrapped Weather API. */
+  obtenerClima?: ((lat: number, lng: number) => Promise<number | null>) | undefined;
+}) {
   const app = new Hono();
+
+  // Lookup de temperatura ambiente con caché por celda (TTL 30 min). Si no hay
+  // projectId ni override → feature off (siempre null, sin llamadas a la API).
+  const weatherProjectId = opts.weatherProjectId;
+  const lookupClima: (lat: number, lng: number) => Promise<number | null> =
+    opts.obtenerClima ??
+    (weatherProjectId
+      ? (lat, lng) =>
+          obtenerTemperaturaAmbiente({
+            lat,
+            lng,
+            nowMs: Date.now(),
+            logger: opts.logger,
+            fetchClima: (la, ln) =>
+              obtenerClimaActual({
+                lat: la,
+                lng: ln,
+                projectId: weatherProjectId,
+                logger: opts.logger,
+              }),
+          })
+      : async () => null);
 
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
   function requireAuth(c: Context<any, any, any>) {
@@ -1352,6 +1383,11 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         return c.json({ error: 'no_teltonika', code: 'no_teltonika', plate: vehicle.plate }, 404);
       }
 
+      const brLat = Number.parseFloat(browserPoint.latitude);
+      const brLng = Number.parseFloat(browserPoint.longitude);
+      const temperaturaAmbienteBrowser =
+        Number.isFinite(brLat) && Number.isFinite(brLng) ? await lookupClima(brLat, brLng) : null;
+
       return c.json({
         vehicle_id: id,
         plate: vehicle.plate,
@@ -1377,6 +1413,9 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           can_speed_kmh: null,
           rpm: null,
           fuel_pct: null,
+          // Clima ambiente (Google Weather API, cacheado por celda). Es
+          // location-based → aplica también al fallback browser_gps.
+          temperatura_ambiente_c: temperaturaAmbienteBrowser,
         },
       });
     }
@@ -1418,6 +1457,11 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       );
     }
 
+    const tlLat = last.latitude != null ? Number.parseFloat(last.latitude) : Number.NaN;
+    const tlLng = last.longitude != null ? Number.parseFloat(last.longitude) : Number.NaN;
+    const temperaturaAmbiente =
+      Number.isFinite(tlLat) && Number.isFinite(tlLng) ? await lookupClima(tlLat, tlLng) : null;
+
     return c.json({
       vehicle_id: id,
       plate: vehicle.plate,
@@ -1444,6 +1488,10 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         // W4 — CAN LVCAN en vivo (81 speed, 85 RPM, 89 fuel %). null si el
         // ping no trae CAN (motor apagado / sin adaptador).
         ...extractCan(last.io_data),
+        // Clima ambiente (Google Weather API, cacheado por celda geográfica,
+        // TTL 30 min; NO se persiste — ToS Maps Platform). null si no hay
+        // proyecto configurado, GPS sin fix, o la API falla (degrada).
+        temperatura_ambiente_c: temperaturaAmbiente,
       },
     });
   });

@@ -758,7 +758,16 @@ export function createServer(opts: CreateServerOptions): Hono {
       isDemoEnforcementMiddleware,
     );
     app.use('/vehiculos', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/vehiculos', createVehiculosRoutes({ db: opts.db, logger }));
+    app.route(
+      '/vehiculos',
+      createVehiculosRoutes({
+        db: opts.db,
+        logger,
+        // Weather API se factura al mismo proyecto que Routes (X-Goog-User-Project).
+        // Ausente → clima ambiente off (temperatura_ambiente_c siempre null).
+        ...(config.GOOGLE_CLOUD_PROJECT ? { weatherProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
+      }),
+    );
 
     // Conductores de la empresa activa (carrier). D8 — solo accesible
     // desde la interfaz transportista; el conductor mismo no consume estos
