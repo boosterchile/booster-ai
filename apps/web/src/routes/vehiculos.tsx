@@ -5,7 +5,15 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import {
+  ArrowLeft,
+  Navigation,
+  Pencil,
+  Plus,
+  Route as RouteIcon,
+  Trash2,
+  Truck,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -716,14 +724,24 @@ function DispositivoSection({
           </p>
         </div>
         {currentImei && (
-          <Link
-            to="/app/vehiculos/$id/live"
-            params={{ id: vehicleId }}
-            className="flex shrink-0 items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
-          >
-            <Navigation className="h-4 w-4" aria-hidden />
-            Ver en vivo
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/app/vehiculos/$id/historial"
+              params={{ id: vehicleId }}
+              className="flex items-center gap-2 rounded-md border border-primary-600 px-4 py-2 font-medium text-primary-700 text-sm transition hover:bg-primary-50"
+            >
+              <RouteIcon className="h-4 w-4" aria-hidden />
+              Recorrido
+            </Link>
+            <Link
+              to="/app/vehiculos/$id/live"
+              params={{ id: vehicleId }}
+              className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
+            >
+              <Navigation className="h-4 w-4" aria-hidden />
+              Ver en vivo
+            </Link>
+          </div>
         )}
       </div>
 

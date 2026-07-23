@@ -220,20 +220,24 @@ function mockDetalleGet(teltonikaImei: string | null) {
 const IMEI_VALIDO = '356307042441013';
 
 describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
-  it('sin IMEI → muestra "Sin dispositivo" y sin link de ubicación en vivo', async () => {
+  it('sin IMEI → muestra "Sin dispositivo" y sin links de telemetría (vivo/recorrido)', async () => {
     mockDetalleGet(null);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosDetalleRoute />);
     await waitFor(() => expect(screen.getByText(/sin dispositivo/i)).toBeInTheDocument());
     expect(screen.queryByText(/ver en vivo/i)).toBeNull();
+    expect(screen.queryByText(/recorrido/i)).toBeNull();
   });
 
-  it('con IMEI → muestra el IMEI actual y el link a ubicación en vivo', async () => {
+  it('con IMEI → muestra el IMEI actual y los links a vivo + recorrido', async () => {
     mockDetalleGet(IMEI_VALIDO);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosDetalleRoute />);
     await waitFor(() => expect(screen.getAllByText(IMEI_VALIDO).length).toBeGreaterThan(0));
     expect(screen.getByText(/ver en vivo/i)).toBeInTheDocument();
+    // Link "Recorrido" → /app/vehiculos/$id/historial (puerta de entrada al historial).
+    const recorrido = screen.getByText(/recorrido/i).closest('a');
+    expect(recorrido).toHaveAttribute('to', '/app/vehiculos/$id/historial');
   });
 
   it('despachador (sin permiso dueno/admin) → no ve el input de edición', async () => {

@@ -27,15 +27,31 @@ interface TrazaResponse {
   puntos_devueltos: number;
   resumen: {
     distancia_km: number;
+    /** Tiempo REAL de movimiento (excluye paradas y apagones), no el span. */
     duracion_min: number;
     litros_consumidos: number | null;
     km_can: number | null;
   };
 }
 
-/** YYYY-MM-DD de una fecha (UTC), para los `<input type="date">`. */
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/**
+ * `YYYY-MM-DDTHH:mm` en hora LOCAL del navegador, para los
+ * `<input type="datetime-local">`. El operador (en Chile) ve/edita su hora
+ * local; la conversión a UTC la hace `localInputToIso`.
+ */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Interpreta el valor del `datetime-local` (hora local del navegador → zona
+ * del SO, DST incluido) y lo convierte a ISO UTC para la query. Devuelve `null`
+ * si el valor es inválido (input vacío), para no romper el render.
+ */
+function localInputToIso(local: string): string | null {
+  const ms = new Date(local).getTime();
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 function formatDuracion(min: number): string {
@@ -63,22 +79,30 @@ export function VehiculoHistorialRoute() {
 function VehiculoHistorialPage() {
   const { id } = useParams({ strict: false }) as { id: string };
 
-  // Rango por defecto: últimos 7 días.
+  // Rango por defecto: últimos 7 días, con hora.
   const hoy = new Date();
   const hace7 = new Date(hoy.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const [desde, setDesde] = useState(isoDate(hace7));
-  const [hasta, setHasta] = useState(isoDate(hoy));
+  const [desde, setDesde] = useState(toLocalInput(hace7));
+  const [hasta, setHasta] = useState(toLocalInput(hoy));
 
-  const desdeIso = `${desde}T00:00:00Z`;
-  const hastaIso = `${hasta}T23:59:59Z`;
+  const desdeIso = localInputToIso(desde);
+  const hastaIso = localInputToIso(hasta);
+  // `desde <= hasta` sobre `YYYY-MM-DDTHH:mm` es comparación cronológica
+  // (formato fijo, zero-padded).
+  const rangoValido = desdeIso !== null && hastaIso !== null && desde <= hasta;
 
   const trazaQ = useQuery({
     queryKey: ['vehiculos', id, 'traza', desdeIso, hastaIso],
-    queryFn: () =>
-      api.get<TrazaResponse>(
+    queryFn: () => {
+      if (desdeIso === null || hastaIso === null) {
+        // Inalcanzable: `enabled` ya exige rango válido. Guard defensivo.
+        throw new Error('rango inválido');
+      }
+      return api.get<TrazaResponse>(
         `/vehiculos/${id}/traza?desde=${encodeURIComponent(desdeIso)}&hasta=${encodeURIComponent(hastaIso)}`,
-      ),
-    enabled: desde <= hasta,
+      );
+    },
+    enabled: rangoValido,
   });
 
   const points = useMemo<LatLng[]>(
@@ -109,7 +133,7 @@ function VehiculoHistorialPage() {
         <label className="flex flex-col text-neutral-600 text-xs">
           Desde
           <input
-            type="date"
+            type="datetime-local"
             value={desde}
             max={hasta}
             onChange={(e) => setDesde(e.target.value)}
@@ -119,7 +143,7 @@ function VehiculoHistorialPage() {
         <label className="flex flex-col text-neutral-600 text-xs">
           Hasta
           <input
-            type="date"
+            type="datetime-local"
             value={hasta}
             min={desde}
             onChange={(e) => setHasta(e.target.value)}
@@ -148,7 +172,7 @@ function VehiculoHistorialPage() {
             />
             <ResumenStat
               icon={<Timer className="h-4 w-4" aria-hidden />}
-              label="Duración"
+              label="En movimiento"
               value={resumen ? formatDuracion(resumen.duracion_min) : '—'}
             />
             <ResumenStat
