@@ -129,6 +129,7 @@ async function buildApp(
     logger?: Parameters<
       typeof import('../../src/routes/vehiculos.js').createVehiculosRoutes
     >[0]['logger'];
+    obtenerClima?: (lat: number, lng: number) => Promise<number | null>;
   } = {},
 ) {
   // Merge explícito (no reemplazo posicional): pasar solo `{ logger }` no
@@ -152,7 +153,14 @@ async function buildApp(
     });
     await next();
   });
-  app.route('/vehiculos', createVehiculosRoutes({ db, logger: opts.logger ?? noopLogger }));
+  app.route(
+    '/vehiculos',
+    createVehiculosRoutes({
+      db,
+      logger: opts.logger ?? noopLogger,
+      ...(opts.obtenerClima ? { obtenerClima: opts.obtenerClima } : {}),
+    }),
+  );
   return app;
 }
 
@@ -984,6 +992,7 @@ describe('vehiculos routes', () => {
         can_speed_kmh: number | null;
         rpm: number | null;
         fuel_pct: number | null;
+        temperatura_ambiente_c: number | null;
       };
     }
 
@@ -1225,6 +1234,71 @@ describe('vehiculos routes', () => {
       const body = (await res.json()) as UbicacionBody;
       expect(body.ubicacion.temperatura_c).toBeNull();
       expect(body.ubicacion.temperatura_registrada_en).toBeNull();
+    });
+
+    it('clima: obtenerClima inyectado → temperatura_ambiente_c en el DTO (lat/lng del punto)', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:00:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:00:01Z'),
+            longitude: '-70.6600',
+            latitude: '-33.4400',
+            altitude_m: 500,
+            angle_deg: 90,
+            satellites: 10,
+            speed_kmh: 0,
+            priority: 1,
+            io_data: {},
+          },
+        ],
+      });
+      const obtenerClima = vi.fn().mockResolvedValue(17.5);
+      const app = await buildApp(stub.db, { obtenerClima });
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_ambiente_c).toBeCloseTo(17.5, 5);
+      expect(obtenerClima).toHaveBeenCalledWith(-33.44, -70.66);
+    });
+
+    it('clima OFF (sin obtenerClima ni weatherProjectId) → temperatura_ambiente_c null', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+          },
+        ],
+        pointRows: [
+          {
+            timestamp_device: new Date('2026-07-06T10:00:00Z'),
+            timestamp_received_at: new Date('2026-07-06T10:00:01Z'),
+            longitude: '-70.6600',
+            latitude: '-33.4400',
+            altitude_m: 500,
+            angle_deg: 90,
+            satellites: 10,
+            speed_kmh: 0,
+            priority: 1,
+            io_data: {},
+          },
+        ],
+      });
+      const app = await buildApp(stub.db); // feature off
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_ambiente_c).toBeNull();
     });
 
     it('Teltonika propio con IO 72 fuera de rango físico (sensor desconectado) → temperatura_c null', async () => {

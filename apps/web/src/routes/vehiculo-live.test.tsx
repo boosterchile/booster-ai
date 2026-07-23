@@ -333,6 +333,7 @@ describe('VehiculoLiveRoute', () => {
       can_speed_kmh: null,
       rpm: null,
       fuel_pct: null,
+      temperatura_ambiente_c: null,
     };
 
     it('sin sensor (flag=false) → "Sin dato", sin hint de sospechoso', async () => {
@@ -382,6 +383,67 @@ describe('VehiculoLiveRoute', () => {
       );
       expect(screen.getByTestId('temp-sensor-sospechoso')).toBeInTheDocument();
       expect(screen.getByTestId('bottom-extra').textContent).toContain('revisar sensor');
+    });
+  });
+
+  describe('temperatura ambiente (Google Weather)', () => {
+    const baseUbi = {
+      timestamp_device: '2026-05-10T10:00:00Z',
+      latitude: -33.44,
+      longitude: -70.66,
+      altitude_m: 500,
+      angle_deg: 90,
+      satellites: 10,
+      speed_kmh: 0,
+      priority: 1,
+      temperatura_c: null,
+      temperatura_registrada_en: null,
+      temperatura_sensor_sospechoso: false,
+      can_speed_kmh: null,
+      rpm: null,
+      fuel_pct: null,
+    };
+
+    it('temperatura_ambiente_c presente → "X.X °C" + atribución Google obligatoria', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'ABCD12',
+        teltonika_imei: '111222333',
+        ubicacion: { ...baseUbi, temperatura_ambiente_c: 17.5 },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('bottom-extra').textContent).toContain('17.5 °C'),
+      );
+      const text = screen.getByTestId('bottom-extra').textContent ?? '';
+      expect(text).toContain('Temp. ambiente'); // distinta de "Temp. carga"
+      expect(text).toContain('Temp. carga');
+      expect(text).toContain('Powered by Google');
+      expect(text).toContain('Includes weather data from Google');
+    });
+
+    it('temperatura_ambiente_c null → "Sin dato" pero la atribución sigue visible', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'ABCD12',
+        teltonika_imei: '111222333',
+        ubicacion: { ...baseUbi, temperatura_ambiente_c: null },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('bottom-extra').textContent).toContain('Powered by Google'),
+      );
+      expect(screen.getByTestId('bottom-extra').textContent).toContain('Sin dato');
     });
   });
 });
