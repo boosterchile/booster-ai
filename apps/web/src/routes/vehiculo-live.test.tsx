@@ -319,4 +319,69 @@ describe('VehiculoLiveRoute', () => {
     expect(captured?.title).toBe('Vehículo en vivo');
     expect(captured?.latitude).toBeNull();
   });
+
+  describe('sensor de temperatura — gating + sanity (migración 0051)', () => {
+    const baseUbi = {
+      timestamp_device: '2026-05-10T10:00:00Z',
+      latitude: -33.44,
+      longitude: -70.66,
+      altitude_m: 30,
+      angle_deg: 90,
+      satellites: 10,
+      speed_kmh: 0,
+      priority: 1,
+      can_speed_kmh: null,
+      rpm: null,
+      fuel_pct: null,
+    };
+
+    it('sin sensor (flag=false) → "Sin dato", sin hint de sospechoso', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'ABCD12',
+        teltonika_imei: '111',
+        ubicacion: {
+          ...baseUbi,
+          temperatura_c: null, // gated
+          temperatura_registrada_en: null,
+          temperatura_sensor_sospechoso: false,
+        },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('bottom-extra').textContent).toContain('Sin dato'),
+      );
+      expect(screen.queryByTestId('temp-sensor-sospechoso')).toBeNull();
+    });
+
+    it('sensor con 0 constante → "0.0 °C" válido + hint "⚠ revisar sensor"', async () => {
+      vi.spyOn(api, 'get').mockResolvedValueOnce({
+        vehicle_id: 'veh-123',
+        plate: 'ABCD12',
+        teltonika_imei: '111',
+        ubicacion: {
+          ...baseUbi,
+          temperatura_c: 0, // 0°C válido, NO se nulea
+          temperatura_registrada_en: new Date(Date.now() - 5_000).toISOString(),
+          temperatura_sensor_sospechoso: true,
+        },
+      });
+      const Wrapper = makeWrapper();
+      render(
+        <Wrapper>
+          <VehiculoLiveRoute />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('bottom-extra').textContent).toContain('0.0 °C'),
+      );
+      expect(screen.getByTestId('temp-sensor-sospechoso')).toBeInTheDocument();
+      expect(screen.getByTestId('bottom-extra').textContent).toContain('revisar sensor');
+    });
+  });
 });

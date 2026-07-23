@@ -37,6 +37,13 @@ interface UbicacionResponse {
     temperatura_c: number | null;
     temperatura_registrada_en: string | null;
     /**
+     * Sanity de varianza (migración 0051): `true` si el vehículo tiene
+     * `tiene_sensor_temperatura` pero IO 72 es 0 constante (instalación fallida /
+     * sonda desconectada). NO es alerta — hint de ops. Espejo MANUAL del DTO en
+     * apps/api/src/routes/vehiculos.ts (resolverTemperaturaCarga).
+     */
+    temperatura_sensor_sospechoso: boolean;
+    /**
      * W4 — CAN LVCAN en vivo (81 vehicle speed km/h, 85 engine RPM, 89 fuel
      * level %). `null` si el ping no trae CAN (motor apagado / sin adaptador
      * CAN / fuente browser_gps). Espejo MANUAL del DTO en
@@ -57,9 +64,11 @@ interface UbicacionResponse {
 function TemperaturaStat({
   temperaturaC,
   temperaturaRegistradaEn,
+  sospechoso,
 }: {
   temperaturaC: number | null;
   temperaturaRegistradaEn: string | null;
+  sospechoso: boolean;
 }) {
   const ageLabel = formatAge(ageSeconds(temperaturaRegistradaEn));
   return (
@@ -73,6 +82,15 @@ function TemperaturaStat({
           <>
             {temperaturaC.toFixed(1)} °C{' '}
             <span className="font-normal text-neutral-500 text-xs">{ageLabel ?? '—'}</span>
+            {sospechoso ? (
+              <span
+                className="font-normal text-danger-600 text-xs"
+                data-testid="temp-sensor-sospechoso"
+              >
+                {' '}
+                ⚠ revisar sensor
+              </span>
+            ) : null}
           </>
         ) : (
           'Sin dato'
@@ -159,6 +177,7 @@ function VehiculoLivePage() {
             <TemperaturaStat
               temperaturaC={ubicacionQ.data.ubicacion.temperatura_c}
               temperaturaRegistradaEn={ubicacionQ.data.ubicacion.temperatura_registrada_en}
+              sospechoso={ubicacionQ.data.ubicacion.temperatura_sensor_sospechoso}
             />
             <CanStat
               icon={<Fuel className="h-4 w-4" aria-hidden />}

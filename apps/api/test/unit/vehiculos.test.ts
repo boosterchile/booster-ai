@@ -956,7 +956,11 @@ describe('vehiculos routes', () => {
       vehicleRows: Record<string, unknown>[];
       pointRows: Record<string, unknown>[];
     }) {
-      const limitFn = vi.fn().mockResolvedValue(opts.vehicleRows);
+      // Default `tieneSensorTemperatura: true` (overridable por-row) para que los
+      // tests de temperatura preexistentes expongan el dato como antes; los tests
+      // de gating pasan `false` explícito.
+      const vehicleRows = opts.vehicleRows.map((r) => ({ tieneSensorTemperatura: true, ...r }));
+      const limitFn = vi.fn().mockResolvedValue(vehicleRows);
       const orderByLimitFn = vi.fn().mockResolvedValue(opts.pointRows);
       const orderByFn = vi.fn(() => ({ limit: orderByLimitFn }));
       const whereFn = vi.fn(() => ({ limit: limitFn, orderBy: orderByFn }));
@@ -976,17 +980,75 @@ describe('vehiculos routes', () => {
       ubicacion: {
         temperatura_c: number | null;
         temperatura_registrada_en: string | null;
+        temperatura_sensor_sospechoso: boolean;
         can_speed_kmh: number | null;
         rpm: number | null;
         fuel_pct: number | null;
       };
     }
 
+    const puntoTemp = (raw72: number, i = 0) => ({
+      timestamp_device: new Date(`2026-07-06T10:00:${String(i).padStart(2, '0')}Z`),
+      timestamp_received_at: new Date(`2026-07-06T10:00:${String(i).padStart(2, '0')}Z`),
+      longitude: '-71.2519',
+      latitude: '-29.9027',
+      altitude_m: 30,
+      angle_deg: 90,
+      satellites: 11,
+      speed_kmh: 0,
+      priority: 1,
+      io_data: { '72': raw72 },
+    });
+
     it('sin auth → 401', async () => {
       const stub = makeUbicacionStub({ vehicleRows: [], pointRows: [] });
       const app = await buildApp(stub.db, { role: null });
       const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
       expect(res.status).toBe(401);
+    });
+
+    it('GATING: flag=false + crudo IO 72 = 0 → temperatura_c null (0°C no se infiere del valor)', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+            tieneSensorTemperatura: false, // ← sin sonda cableada
+          },
+        ],
+        pointRows: [puntoTemp(0)],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBeNull();
+      expect(body.ubicacion.temperatura_registrada_en).toBeNull();
+      expect(body.ubicacion.temperatura_sensor_sospechoso).toBe(false);
+    });
+
+    it('SANITY: flag=true + IO 72 constante 0 → temperatura_c 0.0 (válido) + sospechoso=true', async () => {
+      const stub = makeUbicacionStub({
+        vehicleRows: [
+          {
+            id: VEHICLE_ID,
+            plate: 'ABCD12',
+            teltonikaImei: '999000000000875',
+            teltonikaImeiEspejo: null,
+            // flag defaultea true
+          },
+        ],
+        // 15 pings, todos IO 72 = 0 → varianza cero.
+        pointRows: Array.from({ length: 15 }, (_, i) => puntoTemp(0, i)),
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request(`/vehiculos/${VEHICLE_ID}/ubicacion`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as UbicacionBody;
+      expect(body.ubicacion.temperatura_c).toBe(0); // 0°C NO se nulea
+      expect(body.ubicacion.temperatura_sensor_sospechoso).toBe(true);
     });
 
     it('vehículo no encontrado → 404', async () => {

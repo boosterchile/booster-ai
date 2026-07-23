@@ -215,6 +215,60 @@ function extractTemperatura(
   };
 }
 
+/** Nº de pings recientes que mira la sanity de varianza del sensor Dallas. */
+export const SANITY_TEMP_PINGS = 20;
+/** Mínimo de lecturas para disparar la sanity (evita falso positivo en device recién online). */
+export const SANITY_TEMP_MIN = 10;
+
+/** Lee el crudo IO 72 de un `io_data` (para la sanity de varianza). `null` si ausente. */
+export function extraerRaw72(ioData: unknown): number | null {
+  const parsed = ioDataRecordSchema.safeParse(ioData);
+  const raw = parsed.success ? parsed.data['72'] : undefined;
+  return typeof raw === 'number' ? raw : null;
+}
+
+/**
+ * Sanity de varianza: `true` si hay ≥ `SANITY_TEMP_MIN` lecturas y TODAS son
+ * exactamente 0. Una DS18B20 real —incluso a 0°C en cadena de frío— tiene ruido
+ * físico; 0 exacto y constante sobre decenas de pings ⇒ sonda no cableada
+ * (instalación fallida). Función pura.
+ */
+export function temperaturaConstanteCero(raw72: readonly number[]): boolean {
+  return raw72.length >= SANITY_TEMP_MIN && raw72.every((v) => v === 0);
+}
+
+/**
+ * Resuelve la temperatura de CARGA (sonda Dallas IO 72) con **gating por
+ * provisioning**. Sin sensor cableado (`tieneSensor=false`) → siempre `null`,
+ * sin importar el crudo: 0°C es lectura VÁLIDA (cadena de frío) e indistinguible
+ * por VALOR de "sin sensor" — la distinción viene del flag, NO del dato (ver
+ * `.specs/sensor-temperatura-flag/`). Con sensor → interpreta IO 72 + señal de
+ * sanity (`temperatura_sensor_sospechoso`) si las últimas lecturas son 0
+ * constante. NO se special-casea 0 en el intérprete (sigue siendo 0.0°C válido).
+ */
+export function resolverTemperaturaCarga(opts: {
+  ioData: unknown;
+  timestampDevice: Date;
+  tieneSensor: boolean;
+  recent72: readonly number[];
+}): {
+  temperatura_c: number | null;
+  temperatura_registrada_en: string | null;
+  temperatura_sensor_sospechoso: boolean;
+} {
+  if (!opts.tieneSensor) {
+    return {
+      temperatura_c: null,
+      temperatura_registrada_en: null,
+      temperatura_sensor_sospechoso: false,
+    };
+  }
+  return {
+    ...extractTemperatura(opts.ioData, opts.timestampDevice),
+    temperatura_sensor_sospechoso: temperaturaConstanteCero(opts.recent72),
+  };
+}
+
 /**
  * W4 — interpreta los 3 parámetros CAN LVCAN de la vista en vivo desde
  * `io_data`: **81** vehicle speed (km/h), **85** engine RPM, **89** fuel
@@ -1316,6 +1370,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         plate: vehicles.plate,
         teltonikaImei: vehicles.teltonikaImei,
         teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+        tieneSensorTemperatura: vehicles.tieneSensorTemperatura,
       })
       .from(vehicles)
       .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
@@ -1374,6 +1429,7 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
           // browser del conductor): temperatura y CAN siempre "sin dato".
           temperatura_c: null,
           temperatura_registrada_en: null,
+          temperatura_sensor_sospechoso: false,
           can_speed_kmh: null,
           rpm: null,
           fuel_pct: null,
@@ -1418,6 +1474,42 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
       );
     }
 
+    // W3+ — temperatura de CARGA (Dallas IO 72) con gating por provisioning.
+    // La sanity de varianza mira las últimas lecturas para detectar instalación
+    // fallida (0 constante). Query extra SOLO cuando hay sensor cableado (hoy:
+    // ningún vehículo → costo cero); con flag off no se consulta.
+    let recent72: number[] = [];
+    if (vehicle.tieneSensorTemperatura) {
+      const recentRows = vehicle.teltonikaImei
+        ? await opts.db
+            .select({ io_data: telemetryPoints.ioData })
+            .from(telemetryPoints)
+            .where(eq(telemetryPoints.vehicleId, id))
+            .orderBy(desc(telemetryPoints.timestampDevice))
+            .limit(SANITY_TEMP_PINGS)
+        : await opts.db
+            .select({ io_data: telemetryPoints.ioData })
+            .from(telemetryPoints)
+            .where(eq(telemetryPoints.imei, effectiveImei))
+            .orderBy(desc(telemetryPoints.timestampDevice))
+            .limit(SANITY_TEMP_PINGS);
+      recent72 = recentRows
+        .map((r) => extraerRaw72(r.io_data))
+        .filter((v): v is number => v !== null);
+    }
+    const temperatura = resolverTemperaturaCarga({
+      ioData: last.io_data,
+      timestampDevice: last.timestamp_device,
+      tieneSensor: vehicle.tieneSensorTemperatura,
+      recent72,
+    });
+    if (temperatura.temperatura_sensor_sospechoso) {
+      opts.logger.warn(
+        { vehicleId: id, plate: vehicle.plate, pingsMirados: recent72.length },
+        'sensor temperatura sospechoso: flag activo pero IO 72 constante 0 (instalación fallida?)',
+      );
+    }
+
     return c.json({
       vehicle_id: id,
       plate: vehicle.plate,
@@ -1439,8 +1531,11 @@ export function createVehiculosRoutes(opts: { db: Db; logger: Logger }) {
         satellites: last.satellites,
         speed_kmh: last.speed_kmh,
         priority: last.priority,
-        // W3 — 2º sensor por envío: temperatura (IO 72 Dallas, FMC150).
-        ...extractTemperatura(last.io_data, last.timestamp_device),
+        // W3 — temperatura de CARGA (IO 72 Dallas), GATED por
+        // `tiene_sensor_temperatura`: sin sonda cableada → temperatura_c null
+        // aunque el crudo sea 0 (0°C es lectura válida; ver
+        // .specs/sensor-temperatura-flag). + señal de sanity de varianza.
+        ...temperatura,
         // W4 — CAN LVCAN en vivo (81 speed, 85 RPM, 89 fuel %). null si el
         // ping no trae CAN (motor apagado / sin adaptador).
         ...extractCan(last.io_data),
