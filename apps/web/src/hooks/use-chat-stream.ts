@@ -114,6 +114,23 @@ export function useChatStream(opts: UseChatStreamOptions): void {
           clearTimeout(timeout);
         }
         if (!res.ok) {
+          // Error PERMANENTE (401/403): reintentar el mismo mint no puede tener
+          // éxito — token inválido, sin acceso, o empresa stale/revocada. NO
+          // reagendamos reconnect (evita el loop indefinido con backoff ≤30s);
+          // el realtime queda off y el polling/useQuery cubre la lectura. Solo
+          // los transitorios (5xx/network/abort/timeout) caen al catch y
+          // reintentan. (use-chat-stream-hardening #1)
+          if (res.status === 401 || res.status === 403) {
+            if (cancelled) {
+              return;
+            }
+            logger.warn(
+              { status: res.status },
+              'useChatStream: stream-ticket rechazado (permanente) — sin reconnect',
+            );
+            onDisconnectRef.current?.();
+            return;
+          }
           throw new Error(`stream-ticket ${res.status}`);
         }
         ticket = ((await res.json()) as { ticket: string }).ticket;
