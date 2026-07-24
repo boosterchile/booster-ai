@@ -372,6 +372,13 @@
       "when": 1780876800016,
       "tag": "0052_asignaciones_tracking_token_expira_en",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1780876800017,
+      "tag": "0053_bitacora_backfill_distancia",
+      "breakpoints": true
     }
   ]
 }

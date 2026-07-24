@@ -20,6 +20,7 @@ import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   DISCLAIMER_SECUNDARIO_LINEAS,
+  declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
   muestraDisclaimerSecundario,
@@ -288,8 +289,10 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   const distanciaKm =
     params.metricas.distanciaKmActual ?? params.metricas.distanciaKmEstimated ?? 0;
 
+  // Invariante de honestidad (F0-0 §7): la distancia se declara cualificada por
+  // la cobertura medida — nunca "medida" a secas cuando hay huecos.
   page.drawText(
-    `Distancia: ${distanciaKm.toFixed(1)} km  ·  Combustible: ${
+    `Distancia: ${distanciaKm.toFixed(1)} km (${declaracionDistancia(params.metricas.coveragePct)})  ·  Combustible: ${
       params.metricas.combustibleConsumido !== null
         ? `${params.metricas.combustibleConsumido.toFixed(2)} ${params.metricas.combustibleUnidad ?? ''}`
         : '—'
