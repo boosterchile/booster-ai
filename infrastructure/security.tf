@@ -253,9 +253,13 @@ locals {
     # telemetry-processor. Categoría Meta: Utility. `safety_alert_v1`
     # (HX0d6363fd0162c2d71519ed4e3afe2e3d) fue rechazado por Meta; se
     # reenvió como `copy_of_safety_alert_v1`
-    # (HX80819b02ce9a546b855d09ada1aac944, en revisión 2026-06-15). El
-    # código degrada a solo-push si el secret está en placeholder, así
-    # que la feature no bloquea por la aprobación de Meta.
+    # (HX80819b02ce9a546b855d09ada1aac944, en revisión 2026-06-15).
+    # ⚠️ INC-2026-06-19 (A6): el placeholder `ROTATE_ME_*` NO degrada graceful si
+    # se MONTA — `config.ts` valida `^HX[a-fA-F0-9]+$` y el placeholder no matchea
+    # → "Refusing to start". Solo el valor AUSENTE (no montado) o vacío degrada a
+    # solo-push. Por eso este secret NO se monta hasta estar ready: el flag
+    # `var.content_sid_ready["content-sid-safety-alert"]` gatea el mount en
+    # compute.tf (A7). Con el `HX...` real cargado, el fan-out usa WhatsApp + push.
     "content-sid-safety-alert",
 
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
