@@ -32,6 +32,7 @@ import {
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { obtenerTemperaturaAmbiente } from '../services/clima-ambiente-cache.js';
+import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import { obtenerTrazaVehiculo } from '../services/obtener-traza-vehiculo.js';
 import { obtenerClimaActual } from '../services/weather-api.js';
 
@@ -557,7 +558,14 @@ export function createVehiculosRoutes(opts: {
               angle_deg: telemetryPoints.angleDeg,
             })
             .from(telemetryPoints)
-            .where(inArray(telemetryPoints.vehicleId, ownVehicleIds))
+            // Última posición VÁLIDA por vehículo: descarta null + "null island"
+            // (0,0) para que el marcador de flota no caiga en el Golfo de Guinea.
+            .where(
+              and(
+                inArray(telemetryPoints.vehicleId, ownVehicleIds),
+                coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
+              ),
+            )
             .orderBy(telemetryPoints.vehicleId, desc(telemetryPoints.timestampDevice));
     const lastByVehicleId = new Map<string, LastPoint>();
     for (const p of ownLastPoints) {
@@ -584,7 +592,12 @@ export function createVehiculosRoutes(opts: {
               angle_deg: telemetryPoints.angleDeg,
             })
             .from(telemetryPoints)
-            .where(inArray(telemetryPoints.imei, mirrorImeis))
+            .where(
+              and(
+                inArray(telemetryPoints.imei, mirrorImeis),
+                coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
+              ),
+            )
             .orderBy(telemetryPoints.imei, desc(telemetryPoints.timestampDevice));
     const lastByImei = new Map<string, LastPoint>();
     for (const p of mirrorLastPoints) {
@@ -1491,13 +1504,17 @@ export function createVehiculosRoutes(opts: {
       })
       .from(telemetryPoints);
 
+    // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin fix)
+    // para no devolver el marcador en el Golfo de Guinea. La temperatura (IO 72)
+    // se resuelve aparte, sin este filtro (es independiente del fix GPS).
+    const coordValida = coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude);
     const [last] = vehicle.teltonikaImei
       ? await baseSelect
-          .where(eq(telemetryPoints.vehicleId, id))
+          .where(and(eq(telemetryPoints.vehicleId, id), coordValida))
           .orderBy(desc(telemetryPoints.timestampDevice))
           .limit(1)
       : await baseSelect
-          .where(eq(telemetryPoints.imei, effectiveImei))
+          .where(and(eq(telemetryPoints.imei, effectiveImei), coordValida))
           .orderBy(desc(telemetryPoints.timestampDevice))
           .limit(1);
 
