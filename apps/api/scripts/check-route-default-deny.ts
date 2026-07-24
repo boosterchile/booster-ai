@@ -80,6 +80,9 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
+  // F0-0 backfill de distancia real: firebaseAuth + userContext preceden el mount
+  // (/admin/backfill-distancia/*); gate adicional requirePlatformAdmin (allowlist).
+  createAdminBackfillDistanciaRoutes: { category: 'ENFORCED', rationale: '' },
   // Impersonación auditada — POST /auth/impersonate. firebaseAuth + userContext
   // preceden el mount (app.use('/auth/impersonate', …)); gate adicional
   // requirePlatformAdmin (allowlist + flag IMPERSONATION_V1_ACTIVATED) + rate-limit.
