@@ -149,6 +149,56 @@ const POSITION_FRESH_MINUTES = 30;
 /** Ventana para calcular avg_speed_kmh_last_15min. */
 const AVG_SPEED_WINDOW_MINUTES = 15;
 
+/**
+ * Estados de fulfillment activo donde el vehículo cumple ESTE viaje y su
+ * posición/progreso viva es legítima. **Allowlist fail-closed**: cualquier otro
+ * estado (terminal `entregado`/`cancelado`/`expirado`, pre-activo
+ * `esperando_match`/…, o cualquier estado futuro) NO expone `position`/
+ * `progress`/`eta_minutes` — el vehículo puede estar en otra carga (fuga de
+ * ubicación). Espeja `ACTIVE_TRIP_STATUSES` del front (`use-public-tracking.ts`).
+ */
+const POSITION_VISIBLE_STATUSES = new Set(['asignado', 'en_proceso']);
+
+const DAY_MS = 86_400_000;
+/**
+ * TTL tras estado terminal (días): el destinatario puede consultar el
+ * comprobante/estado N días post-entrega/cancelación antes de que el link
+ * muera. Una semana cubre verificación/disputa; no indefinido.
+ */
+export const TOKEN_TTL_AFTER_TERMINAL_DAYS = 7;
+/**
+ * Cap absoluto (días) desde `aceptado_en`. Garantiza **no-permanencia** aun
+ * para viajes que nunca alcanzan estado terminal (stuck/abandonados). Un viaje
+ * abierto >30 días es anómalo en flete doméstico Chile (<2 días típico).
+ */
+export const TOKEN_TTL_ABSOLUTE_DAYS = 30;
+
+/**
+ * Instante (epoch ms) tras el cual el token deja de ser válido. Función pura.
+ *
+ * - `overrideMs` (columna `tracking_token_expira_en`) **gana** si está seteado —
+ *   habilita revocación manual (setearlo a un instante pasado → expira ya).
+ * - si no: `min(terminal + AFTER_TERMINAL, aceptado + ABSOLUTE)` con
+ *   `terminal = entregado ?? cancelado`. Sin terminal (viaje activo):
+ *   `aceptado + ABSOLUTE`. Nunca permanente.
+ */
+export function computeTokenExpiry(opts: {
+  acceptedAtMs: number;
+  deliveredAtMs: number | null;
+  cancelledAtMs: number | null;
+  overrideMs: number | null;
+}): number {
+  if (opts.overrideMs !== null) {
+    return opts.overrideMs;
+  }
+  const absolute = opts.acceptedAtMs + TOKEN_TTL_ABSOLUTE_DAYS * DAY_MS;
+  const terminalMs = opts.deliveredAtMs ?? opts.cancelledAtMs;
+  if (terminalMs !== null) {
+    return Math.min(terminalMs + TOKEN_TTL_AFTER_TERMINAL_DAYS * DAY_MS, absolute);
+  }
+  return absolute;
+}
+
 export async function getPublicTracking(opts: {
   db: Db;
   logger: Logger;
@@ -183,6 +233,10 @@ export async function getPublicTracking(opts: {
       vehicleId: vehicles.id,
       vehicleType: vehicles.vehicleType,
       vehiclePlate: vehicles.plate,
+      acceptedAt: assignments.acceptedAt,
+      deliveredAt: assignments.deliveredAt,
+      cancelledAt: assignments.cancelledAt,
+      tokenExpiresAt: assignments.trackingTokenExpiresAt,
     })
     // rls-allowlist: tracking público por token, sin tenant de sesión por diseño (censo §2 / rls-viabilidad §3)
     .from(assignments)
@@ -197,89 +251,100 @@ export async function getPublicTracking(opts: {
     return { status: 'not_found' };
   }
 
-  // Cargamos los pings de la ventana de avg_speed (15min) — más amplia
-  // que la de fresh-position (30min) sería innecesario; necesitamos solo
-  // pings de los últimos 15 min para el promedio. La última posición
-  // viene del primer elemento (orderBy DESC), y avg_speed agrega TODA
-  // la lista.
-  //
-  // POSITION_FRESH_MINUTES (30) > AVG_SPEED_WINDOW_MINUTES (15): si hay
-  // un ping a 20min, lo mostramos como posición "vieja" pero NO lo
-  // metemos al avg de 15min.
   const now = Date.now();
-  const positionCutoff = new Date(now - POSITION_FRESH_MINUTES * 60_000);
-  const pings = await db
-    .select({
-      timestamp: telemetryPoints.timestampDevice,
-      latitude: telemetryPoints.latitude,
-      longitude: telemetryPoints.longitude,
-      speedKmh: telemetryPoints.speedKmh,
-    })
-    .from(telemetryPoints)
-    .where(
-      and(
-        eq(telemetryPoints.vehicleId, row.vehicleId),
-        isNotNull(telemetryPoints.latitude),
-        isNotNull(telemetryPoints.longitude),
-        gte(telemetryPoints.timestampDevice, positionCutoff),
-      ),
-    )
-    .orderBy(desc(telemetryPoints.timestampDevice))
-    .limit(200); // cap defensivo: 200 pings cubre ~30min a 1Hz
 
-  const latest = pings[0];
-  const position: PublicTrackingPosition | null =
-    latest && latest.latitude !== null && latest.longitude !== null
-      ? {
-          timestamp: latest.timestamp.toISOString(),
-          latitude: Number(latest.latitude),
-          longitude: Number(latest.longitude),
-          speed_kmh: latest.speedKmh,
-        }
-      : null;
-
-  const progress = computeProgress({
-    pings: pings.map((p) => ({ timestamp: p.timestamp, speedKmh: p.speedKmh })),
-    nowMs: now,
+  // TTL / revocación (fix privacidad): token expirado → 404 neutro, idéntico a
+  // token inválido/inexistente (no filtra que el token existió).
+  const expiryMs = computeTokenExpiry({
+    acceptedAtMs: row.acceptedAt.getTime(),
+    deliveredAtMs: row.deliveredAt ? row.deliveredAt.getTime() : null,
+    cancelledAtMs: row.cancelledAt ? row.cancelledAt.getTime() : null,
+    overrideMs: row.tokenExpiresAt ? row.tokenExpiresAt.getTime() : null,
   });
+  if (now > expiryMs) {
+    logger.info({ token: token.slice(0, 8) }, 'public tracking: token expired');
+    return { status: 'not_found' };
+  }
 
-  // Phase 5 PR-L2b — ETA al centroide regional. Computado primero como
-  // fallback para PR-L2c. Si Routes API funciona (con routesApiKey
-  // presente), se reemplaza con la distancia real al destino exacto.
-  const fallbackEtaMinutes = computeEtaMinutes({
-    currentLat: position?.latitude ?? null,
-    currentLng: position?.longitude ?? null,
-    destRegionCode: row.destRegionCode,
-    avgSpeedKmh: progress.avg_speed_kmh_last_15min,
-    tripStatus: row.tripStatus,
-  });
+  // Corte de posición (fix privacidad): los datos vivos (position/progress/eta)
+  // se exponen SOLO en estados de fulfillment activo. En terminal/pre-activo se
+  // siguen viendo ruta+direcciones+estado+vehículo, pero NUNCA la ubicación
+  // viva del vehículo (que puede estar ya en otra carga).
+  let position: PublicTrackingPosition | null = null;
+  let progress: PublicTrackingProgress = {
+    avg_speed_kmh_last_15min: null,
+    last_position_age_seconds: null,
+  };
+  let etaMinutes: number | null = null;
 
-  // Phase 5 PR-L2c — upgrade a Routes API on-demand. Si trip está activo
-  // y hay posición + avgSpeed + routesProjectId + destinationAddress,
-  // pedimos a Routes API la distancia real por carretera al destino y
-  // recalculamos con el avgSpeed del vehículo. Cache de 5min + grid 0.01°
-  // evita hammering. Fallback automático al centroide si algo falla.
-  let etaMinutes = fallbackEtaMinutes;
-  if (!NO_ETA_STATUSES.has(row.tripStatus)) {
-    const routeEtaResult = await computeRouteEta({
-      logger,
-      tripId: row.tripId,
+  if (POSITION_VISIBLE_STATUSES.has(row.tripStatus)) {
+    // Pings de la ventana de fresh-position (30min); avg_speed usa la sub-ventana
+    // de 15min (computeProgress). La última posición es el primer elemento (DESC).
+    const positionCutoff = new Date(now - POSITION_FRESH_MINUTES * 60_000);
+    const pings = await db
+      .select({
+        timestamp: telemetryPoints.timestampDevice,
+        latitude: telemetryPoints.latitude,
+        longitude: telemetryPoints.longitude,
+        speedKmh: telemetryPoints.speedKmh,
+      })
+      .from(telemetryPoints)
+      .where(
+        and(
+          eq(telemetryPoints.vehicleId, row.vehicleId),
+          isNotNull(telemetryPoints.latitude),
+          isNotNull(telemetryPoints.longitude),
+          gte(telemetryPoints.timestampDevice, positionCutoff),
+        ),
+      )
+      .orderBy(desc(telemetryPoints.timestampDevice))
+      .limit(200); // cap defensivo: 200 pings cubre ~30min a 1Hz
+
+    const latest = pings[0];
+    position =
+      latest && latest.latitude !== null && latest.longitude !== null
+        ? {
+            timestamp: latest.timestamp.toISOString(),
+            latitude: Number(latest.latitude),
+            longitude: Number(latest.longitude),
+            speed_kmh: latest.speedKmh,
+          }
+        : null;
+
+    progress = computeProgress({
+      pings: pings.map((p) => ({ timestamp: p.timestamp, speedKmh: p.speedKmh })),
+      nowMs: now,
+    });
+
+    // Phase 5 PR-L2b — ETA al centroide regional (fallback de PR-L2c).
+    const fallbackEtaMinutes = computeEtaMinutes({
       currentLat: position?.latitude ?? null,
       currentLng: position?.longitude ?? null,
-      destinationAddress: row.destAddr,
+      destRegionCode: row.destRegionCode,
       avgSpeedKmh: progress.avg_speed_kmh_last_15min,
-      fallbackEtaMinutes,
-      routesProjectId,
+      tripStatus: row.tripStatus,
     });
-    etaMinutes = routeEtaResult.etaMinutes;
-    logger.debug(
-      {
+
+    // Phase 5 PR-L2c — upgrade a Routes API on-demand (distancia real por
+    // carretera al destino), con fallback automático al centroide.
+    etaMinutes = fallbackEtaMinutes;
+    if (!NO_ETA_STATUSES.has(row.tripStatus)) {
+      const routeEtaResult = await computeRouteEta({
+        logger,
         tripId: row.tripId,
-        etaMinutes,
-        source: routeEtaResult.source,
-      },
-      'public tracking eta computed',
-    );
+        currentLat: position?.latitude ?? null,
+        currentLng: position?.longitude ?? null,
+        destinationAddress: row.destAddr,
+        avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+        fallbackEtaMinutes,
+        routesProjectId,
+      });
+      etaMinutes = routeEtaResult.etaMinutes;
+      logger.debug(
+        { tripId: row.tripId, etaMinutes, source: routeEtaResult.source },
+        'public tracking eta computed',
+      );
+    }
   }
 
   return {

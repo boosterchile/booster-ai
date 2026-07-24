@@ -1,0 +1,21 @@
+-- =============================================================================
+-- REVERSE-SQL MANUAL — 0052_asignaciones_tracking_token_expira_en (ADR-066)
+-- =============================================================================
+-- ⚠️ MANUAL-APPLY-ONLY. El auto-migrator (src/db/migrator.ts) es forward-only y
+--    NO lee este directorio.
+--
+-- Revierte la migración 0052 (columna tracking_token_expira_en). Data-safe: es
+-- un override de expiración del token público; dropearlo pierde cualquier TTL
+-- explícito/revocación seteada a mano, pero el servicio vuelve a derivar la
+-- expiración de entregado_en/cancelado_en/aceptado_en (sin dato de negocio
+-- irrecuperable). En prod preferí rollback de código (la migración es aditiva →
+-- una revisión previa ignora la columna) o PITR.
+--
+-- Aplicar a mano vía bastion en modo password (DDL):
+--   AUTH_MODE=password bash scripts/db/connect.sh -f apps/api/drizzle/down/0052_asignaciones_tracking_token_expira_en.down.sql
+--
+-- ⚠️ NO actualiza drizzle.__drizzle_migrations: si la migración forward sigue en
+--    el repo, el próximo startup la re-aplica. Parche puente, no undo permanente.
+-- =============================================================================
+
+ALTER TABLE asignaciones DROP COLUMN IF EXISTS tracking_token_expira_en;
