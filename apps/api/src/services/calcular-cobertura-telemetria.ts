@@ -2,6 +2,7 @@ import type { Logger } from '@booster-ai/logger';
 import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { telemetryPoints } from '../db/schema.js';
+import { esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /**
  * Cálculo de cobertura telemétrica de un trip (ADR-028 §5).
@@ -152,18 +153,20 @@ export async function calcularCobertura(opts: {
     )
     .orderBy(asc(telemetryPoints.timestampDevice));
 
-  // Filtramos pings sin lat/lng (defensa contra rows malformados —
-  // schema permite null en latitud/longitud para records sin GPS fix).
+  // Filtramos pings sin lat/lng (null) y el "null island" (lat/lng = 0, GPS sin
+  // fix): sin esto un 0,0 mete una recta de ~9.000 km a la cobertura (capeada a
+  // 100% pero contaminada). Ver `coordenada-gps.ts`.
   const validPings: PingPoint[] = [];
   for (const p of pings) {
     if (p.lat === null || p.lng === null) {
       continue;
     }
-    validPings.push({
-      tMs: p.ts.getTime(),
-      lat: Number(p.lat),
-      lng: Number(p.lng),
-    });
+    const lat = Number(p.lat);
+    const lng = Number(p.lng);
+    if (!esCoordenadaGpsValida(lat, lng)) {
+      continue;
+    }
+    validPings.push({ tMs: p.ts.getTime(), lat, lng });
   }
 
   const coverage = calcularCoberturaPura(validPings, distanciaEstimadaKm);

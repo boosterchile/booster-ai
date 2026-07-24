@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type TrazaPoint,
+  cargarTrazaPoints,
   construirResumen,
   distanciaTotalKm,
   downsampleTraza,
@@ -208,5 +209,60 @@ describe('construirResumen — duración de movimiento', () => {
     const tramo = [p(3600, 40), p(3660, 40), p(3720, 0), p(3780, 0)];
     // [3600→3660] cuenta; [3660→3720] max(40,0) cuenta; [3720→3780] parado NO.
     expect(construirResumen(tramo).duracionMin).toBeCloseTo(2, 5);
+  });
+});
+
+// =============================================================================
+// cargarTrazaPoints — filtra el "null island" (lat/lng = 0, GPS sin fix) en el
+// read path. El bug de KZXB64: un punto 0,0 intercalado dibujaba una recta
+// Chile→Golfo de Guinea e inflaba la distancia a ~18.000 km.
+// =============================================================================
+describe('cargarTrazaPoints — filtro null island', () => {
+  function makeDb(rows: unknown[]) {
+    const orderByFn = vi.fn(() => Promise.resolve(rows));
+    const whereFn = vi.fn(() => ({ orderBy: orderByFn }));
+    const fromFn = vi.fn(() => ({ where: whereFn }));
+    const selectFn = vi.fn(() => ({ from: fromFn }));
+    return { select: selectFn } as never;
+  }
+  const row = (lat: string | null, lng: string | null, tSec: number) => ({
+    ts: new Date(Date.UTC(2026, 0, 1, 0, 0, tSec)),
+    lat,
+    lng,
+    speed: 40,
+    io: {},
+  });
+  const opts = (db: never) => ({
+    db,
+    vehicleId: 'v1',
+    desde: new Date(0),
+    hasta: new Date(Date.UTC(2026, 0, 2)),
+  });
+
+  it('excluye puntos 0,0 intercalados → distancia correcta, no inflada', async () => {
+    const db = makeDb([
+      row('-33.4000', '-70.6000', 0), // Santiago
+      row('0', '0', 30), // null island — GPS sin fix
+      row('-30.0000', '-71.3000', 60), // Coquimbo
+    ]);
+    const puntos = await cargarTrazaPoints(opts(db));
+    expect(puntos).toHaveLength(2); // el 0,0 quedó fuera
+    expect(puntos.every((p) => p.lat !== 0 && p.lng !== 0)).toBe(true);
+    // Santiago→Coquimbo ≈ 380 km, NO ~18.000 km (ida y vuelta al 0,0).
+    const dist = distanciaTotalKm(puntos);
+    expect(dist).toBeGreaterThan(300);
+    expect(dist).toBeLessThan(600);
+  });
+
+  it('traza TODA 0,0 (o null) → vacío, no rompe', async () => {
+    const db = makeDb([row('0', '0', 0), row('0', '0', 30), row(null, null, 60)]);
+    const puntos = await cargarTrazaPoints(opts(db));
+    expect(puntos).toEqual([]);
+  });
+
+  it('sin puntos malos → todos incluidos (sin cambio de comportamiento)', async () => {
+    const db = makeDb([row('-33.40', '-70.60', 0), row('-33.50', '-70.60', 30)]);
+    const puntos = await cargarTrazaPoints(opts(db));
+    expect(puntos).toHaveLength(2);
   });
 });
