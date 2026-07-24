@@ -32,4 +32,5 @@ Antes de construir, leer los cimientos vigentes (todos en main, verificado 2026-
 
 ## Estado
 
-- **ABIERTO** — feature pendiente, sin PR asociado. Rama remota `feat/d11-t11-ui-cards-reales` viva (no borrada) solo como referencia histórica; **no** rebasear desde ahí.
+- **ABIERTO** — feature pendiente, sin PR asociado.
+- Ramas remotas **borradas 2026-07-24** (no eran ancestro de main; nada rescatable): `feat/d11-t11-ui-cards-reales` (`a283114`) y su base `feat/d11-t10-ui-drill-down` (`86572e2`). Los SHA quedan acá por si alguna vez hace falta consultarlas — el diff y la discusión siguen legibles en los PRs #256 y #255. **No** rebasear desde ahí: rehacer bajo D11 v2.
