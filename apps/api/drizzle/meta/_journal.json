@@ -365,6 +365,13 @@
       "when": 1780876800015,
       "tag": "0051_vehiculos_tiene_sensor_temperatura",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1780876800016,
+      "tag": "0052_asignaciones_tracking_token_expira_en",
+      "breakpoints": true
     }
   ]
 }
