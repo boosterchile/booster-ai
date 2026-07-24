@@ -1,4 +1,5 @@
 import {
+  booleanFlag,
   commonEnvSchema,
   databaseEnvSchema,
   gcpEnvSchema,
@@ -8,39 +9,8 @@ import {
 import { z } from 'zod';
 import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
-/**
- * Parsea env var boolean correctamente. `z.coerce.boolean()` es un footgun
- * — coerce-ea CUALQUIER string non-empty a `true`, incluyendo "false".
- *
- * Bug descubierto 2026-05-13: `WAKE_WORD_VOICE_ACTIVATED="false"` se
- * coerce-eaba a `true`. Propagó al endpoint /feature-flags y a logic
- * server. Mismo issue afectaba a AUTH_UNIVERSAL_V1_ACTIVATED,
- * MATCHING_ALGORITHM_V2_ACTIVATED, FACTORING_V1_ACTIVATED,
- * PRICING_V2_ACTIVATED.
- *
- * Mapea explícitamente: "true"/"1" → true, "false"/"0"/"" → false,
- * otros (incluyendo undefined) → defaultValue.
- */
-function booleanFlag(defaultValue: boolean) {
-  return z
-    .preprocess((v) => {
-      if (typeof v === 'boolean') {
-        return v;
-      }
-      if (typeof v !== 'string') {
-        return defaultValue;
-      }
-      const normalized = v.trim().toLowerCase();
-      if (normalized === 'true' || normalized === '1') {
-        return true;
-      }
-      if (normalized === 'false' || normalized === '0' || normalized === '') {
-        return false;
-      }
-      return defaultValue;
-    }, z.boolean())
-    .default(defaultValue);
-}
+// `booleanFlag` (anti-footgun de z.coerce.boolean) se importa de
+// `@booster-ai/config` — antes había una copia local byte-idéntica acá.
 
 export const apiEnvSchema = commonEnvSchema
   .merge(databaseEnvSchema)
