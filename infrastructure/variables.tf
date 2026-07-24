@@ -579,3 +579,40 @@ variable "sre_webhook_url" {
   default     = ""
   sensitive   = true
 }
+
+# ---------------------------------------------------------------------------
+# Hardening Secret Manager — readiness de content-sids (INC-2026-06-19 A7)
+# ---------------------------------------------------------------------------
+# El INC-2026-06-19: un secret `content-sid-*` creado con su placeholder
+# `ROTATE_ME_*` (no-vacío) y MONTADO en service_api → config.ts lo valida con
+# `^HX[a-fA-F0-9]+$` → el placeholder no matchea → `parseEnv` "Refusing to start"
+# → la revisión nueva NO llega a READY → deploys bloqueados (sin impacto a
+# usuarios: Cloud Run no enruta a una revisión que no arranca).
+#
+# Control preventivo (A7): un content-sid se MONTA en service_api SOLO si su flag
+# acá es `true` (= ya tiene valor real cargado). `false`/ausente → NO se monta →
+# la env var queda ausente → config.ts la trata como `undefined` (`.optional()`)
+# → el service arranca y la feature (template WhatsApp) queda inactiva hasta que
+# se cargue el valor real (`gcloud secrets versions add`) y se flippee el flag.
+#
+# El default lista los 4 que YA tienen valor real en prod (el api arranca sano
+# montándolos hoy) → `terraform plan` sigue No changes. Un content-sid NUEVO se
+# agrega a `local.content_sid_secret_names` (compute.tf) + a `local.secret_names`
+# (security.tf) y entra **no-montado** por default (key ausente → `false`); recién
+# se monta al cargarlo + agregar `"<name>" = true` acá. Apply en dos pasos a
+# propósito: el placeholder nunca llega a tumbar el startup.
+#
+# Detective complementario: scripts/repo-checks/check-validated-secret-placeholders
+# (cableado como gate en .github/workflows/terraform-drift.yml) falla el plan si un
+# secret validado-por-formato queda placeholder y montado. Cubre también
+# `twilio-account-sid` (validado `^AC`), no solo content-sids.
+variable "content_sid_ready" {
+  description = "Por content-sid (key = nombre del secret, ej. 'content-sid-offer-new'): true = valor real cargado → se monta en service_api; false/ausente = aún placeholder → NO se monta (evita el 'Refusing to start' del ^HX, INC-2026-06-19)."
+  type        = map(bool)
+  default = {
+    "content-sid-offer-new"    = true
+    "content-sid-chat-unread"  = true
+    "content-sid-tracking"     = true
+    "content-sid-safety-alert" = true
+  }
+}
