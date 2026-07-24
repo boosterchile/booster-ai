@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { telemetryPoints } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
+import { esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /**
  * Historial de traza de un vehículo (capa 2, reframe): dada una ventana de
@@ -350,11 +351,18 @@ export async function cargarTrazaPoints(opts: {
     if (r.lat === null || r.lng === null) {
       continue;
     }
+    const lat = Number(r.lat);
+    const lng = Number(r.lng);
+    // Descarta el "null island" (lat/lng = 0, GPS sin fix): sin esto un solo
+    // 0,0 dibuja una recta Chile→Golfo de Guinea e infla la distancia.
+    if (!esCoordenadaGpsValida(lat, lng)) {
+      continue;
+    }
     const can = extraerCanAcumulado(r.io);
     puntos.push({
       tMs: r.ts.getTime(),
-      lat: Number(r.lat),
-      lng: Number(r.lng),
+      lat,
+      lng,
       fuelConsumedL: can.fuelConsumedL,
       totalMileageKm: can.totalMileageKm,
       speedKmh: r.speed === null || r.speed === undefined ? null : Number(r.speed),

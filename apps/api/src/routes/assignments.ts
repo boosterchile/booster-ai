@@ -16,7 +16,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -45,6 +45,7 @@ import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
@@ -208,7 +209,14 @@ export function createAssignmentsRoutes(opts: {
           angleDeg: telemetryPoints.angleDeg,
         })
         .from(telemetryPoints)
-        .where(eq(telemetryPoints.vehicleId, row.vehicleId))
+        // Última posición VÁLIDA: descarta null + "null island" (0,0) para no
+        // plantar el marcador en el Golfo de Guinea. Ver `coordenada-gps.ts`.
+        .where(
+          and(
+            eq(telemetryPoints.vehicleId, row.vehicleId),
+            coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
+          ),
+        )
         .orderBy(desc(telemetryPoints.timestampDevice))
         .limit(1);
       if (last) {

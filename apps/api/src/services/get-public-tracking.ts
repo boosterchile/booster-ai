@@ -27,11 +27,12 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, telemetryPoints, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { computeRouteEta } from './compute-route-eta.js';
+import { coordenadaGpsValidaSql } from './coordenada-gps.js';
 
 /**
  * Centroides aproximados (capital regional) para las 16 regiones de
@@ -292,8 +293,9 @@ export async function getPublicTracking(opts: {
       .where(
         and(
           eq(telemetryPoints.vehicleId, row.vehicleId),
-          isNotNull(telemetryPoints.latitude),
-          isNotNull(telemetryPoints.longitude),
+          // Descarta null + "null island" (0,0, GPS sin fix) → la última
+          // posición nunca cae en el Golfo de Guinea. Ver `coordenada-gps.ts`.
+          coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
           gte(telemetryPoints.timestampDevice, positionCutoff),
         ),
       )

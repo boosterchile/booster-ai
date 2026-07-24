@@ -23,6 +23,7 @@ import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
@@ -334,7 +335,14 @@ export function createTripRequestsV2Routes(opts: {
           angle_deg: telemetryPoints.angleDeg,
         })
         .from(telemetryPoints)
-        .where(eq(telemetryPoints.vehicleId, assignmentRow.vehicle_id))
+        // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin
+        // fix) para no plantar el marcador en el Golfo de Guinea.
+        .where(
+          and(
+            eq(telemetryPoints.vehicleId, assignmentRow.vehicle_id),
+            coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
+          ),
+        )
         .orderBy(desc(telemetryPoints.timestampDevice))
         .limit(1);
       if (last) {
