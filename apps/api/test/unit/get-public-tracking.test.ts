@@ -103,6 +103,11 @@ describe('getPublicTracking', () => {
       vehicleId: string;
       vehicleType: string;
       vehiclePlate: string;
+      /** Nuevos (fix privacidad): default aceptado=ahora, resto null → no expira. */
+      acceptedAt?: Date;
+      deliveredAt?: Date | null;
+      cancelledAt?: Date | null;
+      tokenExpiresAt?: Date | null;
     } | null;
     pings?: Array<{
       timestamp: Date;
@@ -111,10 +116,16 @@ describe('getPublicTracking', () => {
       speedKmh: number | null;
     }>;
   }) {
-    const responses: Array<unknown[]> = [
-      opts.assignmentRow ? [opts.assignmentRow] : [],
-      opts.pings ?? [],
-    ];
+    const row = opts.assignmentRow
+      ? {
+          acceptedAt: new Date(),
+          deliveredAt: null,
+          cancelledAt: null,
+          tokenExpiresAt: null,
+          ...opts.assignmentRow,
+        }
+      : null;
+    const responses: Array<unknown[]> = [row ? [row] : [], opts.pings ?? []];
     let callIdx = 0;
 
     const limitFn = vi.fn(() => Promise.resolve(responses[callIdx++] ?? []));
@@ -260,6 +271,190 @@ describe('getPublicTracking', () => {
       expect(result.vehicle.plate_partial).toBe('*******ET99');
       expect(result.vehicle.plate_partial).not.toContain('TOPSECRET');
     }
+  });
+
+  // ---- Fix privacidad: corte de posición por estado + TTL/revocación ----
+
+  it('estado terminal (entregado) → corta position/progress/eta; trip + vehículo visibles', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'entregado',
+        trackingCode: 'BOO-DELIV1',
+        originAddr: 'Origen X',
+        destAddr: 'Destino Y',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        acceptedAt: new Date(now - 60 * 60_000),
+        deliveredAt: new Date(now - 60 * 60_000), // entregado hace 1h → NO expirado
+      },
+      // Pings RECIENTES: el vehículo sigue reportando (ya en otra carga) → fuga si no se corta.
+      pings: [
+        { timestamp: new Date(now - 60_000), latitude: '-33.0', longitude: '-71.0', speedKmh: 80 },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      // Corte de privacidad: nada de posición viva en estado terminal.
+      expect(result.position).toBeNull();
+      expect(result.progress.avg_speed_kmh_last_15min).toBeNull();
+      expect(result.progress.last_position_age_seconds).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+      // Pero el destinatario SÍ ve que se entregó + ruta + vehículo.
+      expect(result.trip.status).toBe('entregado');
+      expect(result.trip.tracking_code).toBe('BOO-DELIV1');
+      expect(result.trip.origin_address).toBe('Origen X');
+      expect(result.trip.destination_address).toBe('Destino Y');
+      expect(result.vehicle.plate_partial).toBe('***AS12');
+    }
+  });
+
+  it('estado cancelado → mismo corte de posición', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'cancelado',
+        trackingCode: 'BOO-CANC1',
+        originAddr: 'A',
+        destAddr: 'B',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        acceptedAt: new Date(now - 60 * 60_000),
+        cancelledAt: new Date(now - 60 * 60_000),
+      },
+      pings: [
+        { timestamp: new Date(now - 60_000), latitude: '-33.0', longitude: '-71.0', speedKmh: 80 },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position).toBeNull();
+      expect(result.trip.status).toBe('cancelado');
+    }
+  });
+
+  it('token expirado (entregado hace 8 días) → not_found neutro', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const eightDays = 8 * 86_400_000;
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'entregado',
+        trackingCode: 'BOO-OLD1',
+        originAddr: 'A',
+        destAddr: 'B',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        acceptedAt: new Date(now - eightDays),
+        deliveredAt: new Date(now - eightDays), // entregado+7d < now → expirado
+      },
+      pings: [],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('not_found');
+  });
+
+  it('revocación: override tracking_token_expira_en en el pasado → not_found', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db } = makeDbStub({
+      assignmentRow: {
+        assignmentId: 'a1',
+        tripStatus: 'en_proceso', // activo, pero revocado explícitamente
+        trackingCode: 'BOO-REV1',
+        originAddr: 'A',
+        destAddr: 'B',
+        cargoType: 'carga_seca',
+        vehicleId: 'v1',
+        vehicleType: 'camion_3_4',
+        vehiclePlate: 'GR-AS12',
+        acceptedAt: new Date(now - 60_000),
+        tokenExpiresAt: new Date(now - 60_000), // revocado
+      },
+      pings: [
+        { timestamp: new Date(now - 30_000), latitude: '-33.0', longitude: '-71.0', speedKmh: 80 },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('not_found');
+  });
+});
+
+describe('computeTokenExpiry', () => {
+  const DAY = 86_400_000;
+  const NOW = new Date('2026-05-10T15:00:00Z').getTime();
+
+  it('activo (sin terminal, sin override) → aceptado + 30d (cap absoluto)', async () => {
+    const { computeTokenExpiry } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeTokenExpiry({
+        acceptedAtMs: NOW,
+        deliveredAtMs: null,
+        cancelledAtMs: null,
+        overrideMs: null,
+      }),
+    ).toBe(NOW + 30 * DAY);
+  });
+
+  it('entregado reciente → entregado + 7d', async () => {
+    const { computeTokenExpiry } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeTokenExpiry({
+        acceptedAtMs: NOW - 2 * DAY,
+        deliveredAtMs: NOW,
+        cancelledAtMs: null,
+        overrideMs: null,
+      }),
+    ).toBe(NOW + 7 * DAY);
+  });
+
+  it('cancelado reciente → cancelado + 7d', async () => {
+    const { computeTokenExpiry } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeTokenExpiry({
+        acceptedAtMs: NOW - 2 * DAY,
+        deliveredAtMs: null,
+        cancelledAtMs: NOW,
+        overrideMs: null,
+      }),
+    ).toBe(NOW + 7 * DAY);
+  });
+
+  it('override gana, incluso en el pasado (revocación)', async () => {
+    const { computeTokenExpiry } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeTokenExpiry({
+        acceptedAtMs: NOW,
+        deliveredAtMs: null,
+        cancelledAtMs: null,
+        overrideMs: NOW - 1000,
+      }),
+    ).toBe(NOW - 1000);
+  });
+
+  it('cap absoluto: entregado muy tardío no supera aceptado + 30d', async () => {
+    const { computeTokenExpiry } = await import('../../src/services/get-public-tracking.js');
+    expect(
+      computeTokenExpiry({
+        acceptedAtMs: NOW,
+        deliveredAtMs: NOW + 29 * DAY, // entregado+7d = NOW+36d > aceptado+30d
+        cancelledAtMs: null,
+        overrideMs: null,
+      }),
+    ).toBe(NOW + 30 * DAY);
   });
 });
 

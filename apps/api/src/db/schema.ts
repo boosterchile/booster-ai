@@ -1311,6 +1311,14 @@ export const assignments = pgTable(
      */
     publicTrackingToken: uuid('tracking_token_publico'),
     /**
+     * Fix privacidad tracking público (migración 0052). Override explícito de
+     * expiración del `publicTrackingToken`: NULL = derivar en el servicio
+     * (entregado/cancelado + N días, cap absoluto desde `aceptado_en` —
+     * `get-public-tracking.computeTokenExpiry`). Si se setea, gana; setearlo a
+     * un instante pasado invalida el token (revocación manual, sin endpoint).
+     */
+    trackingTokenExpiresAt: timestamp('tracking_token_expira_en', { withTimezone: true }),
+    /**
      * Phase 1 PR-H5b — Polyline encoded de Routes API capturada al
      * momento de aceptar la oferta. Persistida para evitar re-fetch
      * en cada visita del driver a la asignación (Routes API factura
