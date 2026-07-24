@@ -194,6 +194,17 @@ jobs:
       TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test
       REDIS_HOST: localhost
       REDIS_PORT: '6379'
+      # Deshabilita ryuk (el reaper de testcontainers): su imagen
+      # testcontainers/ryuk:0.14.0 flakea al pullear de Docker Hub (404
+      # intermitente que tumbaba el job entero — rompió CI en #618 y #622,
+      # ajeno al cambio bajo prueba). En este runner ubuntu-latest EFÍMERO el
+      # cleanup de ryuk es redundante: la VM (con su Docker daemon y todos los
+      # contenedores) se destruye al terminar el job, así que no quedan
+      # huérfanos que reapear. Los 4 suites que usan testcontainers
+      # (safety-events, redis-fail-closed-real, signup-request[-fail-closed])
+      # levantan su Redis igual, solo sin el sidecar reaper. Si el job migrara a
+      # un runner self-hosted/persistente, reevaluar (ahí ryuk sí limpia).
+      TESTCONTAINERS_RYUK_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
