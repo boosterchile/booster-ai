@@ -125,6 +125,25 @@ downgrade de nivel (ADR-028 §2, umbrales 95%/80%): ahora mide contra la distanc
   - `routes_error` → Routes cayó → **está roto** (operacional, alertable).
   Sin esto, ADR punto 12 no distingue "no aplica" de "está roto" — un null es ambiguo.
 
+## Reconciliación con lo mergeado durante el rezago (decisión del rebase, 2026-07-24)
+El PR quedó 10 días detrás; main incorporó cuatro cambios que tocan esta zona. Cómo se resolvió cada uno:
+
+| Cambio en main | Colisión | Resolución |
+|---|---|---|
+| **#617** (migr 0051) + **#621** (migr 0052) | el número **0051** de este PR ya estaba tomado (y **live en prod**) | renumerado a **0053** (`bitacora_backfill_distancia`) + re-append al journal — 54 entries / 54 archivos `.sql`, íntegro |
+| **#622** filtro null-island | este PR **extrae** el loader del mismo read-path | el filtro vive **dentro** de `cargarPingsVentana` vía `esCoordenadaGpsValida` → cobertura, distancia y backfill lo heredan; sin él vuelve la recta Chile→Golfo de Guinea (18.029 km) |
+| **#609** `rls-allowlist` en `calcular-metricas-viaje.ts` | comentarios en la misma zona | preservados (5 anotaciones, idénticas a main) |
+| **#616** (clima) / **#621** (TTL token) en `server.ts`/`schema.ts` | aditivos | sin conflicto semántico |
+
+**Dos loaders de pings, a propósito.** Main quedó con `cargarPingsVentana` (este PR, en
+`calcular-cobertura-telemetria.ts`) y `cargarTrazaPoints` (#615, en `obtener-traza-vehiculo.ts`). Misma
+query base y mismo filtro de fix, pero distinto proyectado: éste trae `ts/lat/lng` para el **write-path**
+de cálculo; el de #615 trae además `speed_kmh` + `io_data` y corre `extraerCanAcumulado` (Zod `safeParse`)
+por punto para el **read-path** de display. Unificarlos obligaría a leer y parsear el JSONB de CAN en cada
+ping del write-path (~260k en la ventana viva) para descartarlo enseguida → se rechaza por costo, no por
+descuido. La regla que sí es única (qué coordenada es válida) ya está centralizada en `coordenada-gps.ts`.
+Si el write-path llegara a necesitar CAN, la unificación correcta es parametrizar el proyectado.
+
 ## Orden de release (dependencias, acordado con el PO)
 Cada paso desbloquea el siguiente:
 1. **Merge PR #597** (auditoría, docs read-only) → main.

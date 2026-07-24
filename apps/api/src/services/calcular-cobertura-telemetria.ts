@@ -70,6 +70,26 @@ export interface PingPoint {
  * Extraído para reuso entre el cálculo de cobertura y la reconstrucción de
  * distancia real (F0-0 paso 1), y para poder **mockearlo** en el test de
  * integración de `recalcularNivelPostEntrega`.
+ *
+ * ## Por qué convive con `cargarTrazaPoints` (obtener-traza-vehiculo.ts, #615)
+ *
+ * Son la misma query base (índice `idx_telemetria_vehiculo_ts`, ventana por
+ * `timestamp_device`, orden asc) y comparten el filtro de fix vía
+ * `esCoordenadaGpsValida`, pero **proyectan distinto a propósito**:
+ *
+ * - Este loader trae solo `ts/lat/lng` → alimenta cálculo (distancia real,
+ *   cobertura, backfill), que no mira CAN ni velocidad.
+ * - `cargarTrazaPoints` trae además `speed_kmh` e `io_data`, y corre
+ *   `extraerCanAcumulado` (con `safeParse` Zod) por punto → alimenta display
+ *   (traza de vehículo y de carga, capa 2).
+ *
+ * Unificarlos NO es limpieza: obligaría a leer el JSONB `io_data` y parsearlo
+ * en cada ping del write-path — un trip largo ronda las decenas de miles de
+ * pings (~260k en la ventana viva) — para descartar el resultado acto seguido.
+ * La lógica que sí es única (qué coordenada es válida) ya está centralizada en
+ * `coordenada-gps.ts` (#622); lo que se repite es el loop de proyección, no la
+ * regla. Si algún día el write-path necesita CAN, la unificación correcta es
+ * parametrizar el proyectado, no llamar al loader de display.
  */
 export async function cargarPingsVentana(opts: {
   db: Db;

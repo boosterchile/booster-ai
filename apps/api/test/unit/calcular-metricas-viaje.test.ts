@@ -18,7 +18,7 @@ vi.mock('../../src/services/calcular-cobertura-telemetria.js', async (importOrig
 }));
 
 const { computeRoutes } = await import('../../src/services/routes-api.js');
-const { calcularCobertura, cargarPingsVentana } = await import(
+const { calcularCobertura, cargarPingsVentana, haversineKm } = await import(
   '../../src/services/calcular-cobertura-telemetria.js'
 );
 
@@ -672,6 +672,24 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(setArg.certificationLevel).not.toBeUndefined();
     expect(setArg.uncertaintyFactor).not.toBeUndefined();
     expect(setArg.routeDataSource).toBe('teltonika_gps');
+  });
+
+  it('VALOR ESCRITO — persiste el híbrido (Σ observado + Σ hueco), NO la estimación', async () => {
+    (cargarPingsVentana as Mock).mockResolvedValueOnce(pings(1));
+    (computeRoutes as Mock).mockResolvedValue(ruta(5));
+    const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
+
+    await run(db);
+
+    const setArg = (db.update as Mock).mock.results[0].value.set.mock.calls[0][0];
+    // `pings(1)` = 1 tramo observado (gap 30 s → haversine real) + 1 hueco
+    // (gap 120 s → Routes, mockeado en 5 km). Lo persistido debe ser la SUMA:
+    // descartar el hueco subestimaría (el error de backhaul que F0-0 corrige).
+    const observadoKm = haversineKm(-33.4, -70.6, -33.41, -70.61);
+    expect(Number(setArg.distanceKmActual)).toBeCloseTo(observadoKm + 5, 6);
+    // Y NO la distancia estimada del trip (100 km): ése ES el bug F0-0 — con
+    // 260k pings reales en la DB el certificado caía igual al fallback estimado.
+    expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(100, 6);
   });
 
   it('IDEMPOTENCIA — dos corridas sobre los mismos pings convergen al mismo UPDATE', async () => {
