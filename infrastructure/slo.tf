@@ -41,6 +41,18 @@ locals {
   # Período rolling del SLO. 30 días = mismo horizonte que el budget mensual.
   slo_rolling_days = 30
 
+  # Nombres de los Cloud Run que estos SLOs observan, como LITERALES (idénticos
+  # al `name` de cada Cloud Run: "booster-ai-api" / "booster-ai-web"). Antes se
+  # tomaban de los outputs de los módulos service_*, lo que acoplaba estos
+  # recursos de monitoring al grafo de los Cloud Run: un `terraform plan
+  # -target=<recursos de monitoring>` arrastraba los módulos Cloud Run (con su
+  # propio drift). Los SLOs referencian el servicio por su LABEL en Cloud
+  # Monitoring, no por el recurso TF — con el literal la config es idéntica y el
+  # -target queda aislado (Fase A additive-only). Si el Cloud Run se renombra,
+  # actualizar estos literales.
+  slo_api_service_name = "booster-ai-api"
+  slo_web_service_name = "booster-ai-web"
+
   # --- Targets de availability (fracción de requests no-5xx) ---
   # 99.5% para el api: deja ~3.6h de budget de error al mes. Conservador para
   # pre-comercial (<=10 camiones) — subir a 99.9% al firmar B2B con SLA.
@@ -76,8 +88,8 @@ locals {
 # GCP mantiene un "basic service" por cada Cloud Run service. Lo declaramos
 # explícito acá (en vez de importar el auto-generado) para anclar los SLOs a
 # un recurso versionado en Terraform. El par {service_name, location} debe
-# matchear el Cloud Run real — lo tomamos del output `name` del módulo y de
-# var.region para no hardcodear.
+# matchear el Cloud Run real — el service_name sale de local.slo_*_service_name
+# (literal, para desacoplar del grafo de los módulos) y la location de var.region.
 
 resource "google_monitoring_service" "api" {
   project      = google_project.booster_ai.project_id
@@ -87,12 +99,10 @@ resource "google_monitoring_service" "api" {
   basic_service {
     service_type = "CLOUD_RUN"
     service_labels = {
-      service_name = module.service_api.name
+      service_name = local.slo_api_service_name
       location     = var.region
     }
   }
-
-  depends_on = [module.service_api]
 }
 
 resource "google_monitoring_service" "web" {
@@ -103,12 +113,10 @@ resource "google_monitoring_service" "web" {
   basic_service {
     service_type = "CLOUD_RUN"
     service_labels = {
-      service_name = module.service_web.name
+      service_name = local.slo_web_service_name
       location     = var.region
     }
   }
-
-  depends_on = [module.service_web]
 }
 
 # =============================================================================
@@ -135,13 +143,13 @@ resource "google_monitoring_slo" "api_availability" {
       total_service_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_count\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_api.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_api_service_name}\"",
       ])
       # Good = las que NO son 5xx.
       good_service_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_count\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_api.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_api_service_name}\"",
         "metric.label.\"response_code_class\"!=\"5xx\"",
       ])
     }
@@ -164,7 +172,7 @@ resource "google_monitoring_slo" "api_latency" {
       distribution_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_latencies\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_api.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_api_service_name}\"",
       ])
       range {
         # request_latencies está en MILISEGUNDOS; el umbral local está en
@@ -194,12 +202,12 @@ resource "google_monitoring_slo" "web_availability" {
       total_service_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_count\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_web.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_web_service_name}\"",
       ])
       good_service_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_count\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_web.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_web_service_name}\"",
         "metric.label.\"response_code_class\"!=\"5xx\"",
       ])
     }
@@ -220,7 +228,7 @@ resource "google_monitoring_slo" "web_latency" {
       distribution_filter = join(" AND ", [
         "metric.type=\"run.googleapis.com/request_latencies\"",
         "resource.type=\"cloud_run_revision\"",
-        "resource.label.\"service_name\"=\"${module.service_web.name}\"",
+        "resource.label.\"service_name\"=\"${local.slo_web_service_name}\"",
       ])
       range {
         min = 0
