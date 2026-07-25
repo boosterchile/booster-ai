@@ -129,6 +129,15 @@ terraform output wif_service_account_deploy
 
 ## Post-apply — llenar secretos en Secret Manager
 
+> ⚠️ **Disciplina de apply + secrets validados por formato**: ver
+> [`docs/runbooks/terraform-apply.md`](../docs/runbooks/terraform-apply.md).
+> Un secret validado por `.regex` en `config.ts` (`content-sid-*` → `^HX`,
+> `twilio-account-sid` → `^AC`) **no debe montarse con su placeholder `ROTATE_ME_*`**:
+> falla el arranque del service ("Refusing to start", INC-2026-06-19). Cargá el valor
+> real ANTES de montarlo; el flag `var.content_sid_ready` (A7) lo mantiene sin montar
+> hasta entonces, y el preflight `check-validated-secret-placeholders` (gate en
+> `terraform-drift.yml`) ataja el caso.
+
 Terraform crea los shells vacíos. Los valores reales se agregan via gcloud (nunca via código):
 
 ```bash

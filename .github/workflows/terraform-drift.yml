@@ -84,3 +84,26 @@ jobs:
           # exit 0 si no drift; exit 2 si drift (falla el job); exit 1 si error
           [ "$code" = "0" ] && exit 0
           exit "$code"
+
+      # ── A5 INC-2026-06-19 — gate de placeholder en secrets validados ──
+      # Detective preventivo: falla el job si el plan dejaría un secret validado
+      # POR FORMATO (content-sid-* `^HX`, twilio-account-sid `^AC`) con su
+      # placeholder `ROTATE_ME_*` y MONTADO en un service → ese mount tumba el
+      # startup ("Refusing to start"), el modo de falla del INC. `if: always()`
+      # para correr aunque el plan haya marcado drift (exit 2). El check es Node
+      # puro (sin deps); reusa `drift.plan` del step anterior.
+      - name: Setup Node (preflight secrets validados)
+        if: always()
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Preflight — secret validado con placeholder montado
+        if: always()
+        run: |
+          if [ ! -f drift.plan ]; then
+            echo "drift.plan ausente (el plan falló antes) — skip preflight."
+            exit 0
+          fi
+          terraform show -json drift.plan > plan.json
+          node ../scripts/repo-checks/check-validated-secret-placeholders.mjs plan.json
