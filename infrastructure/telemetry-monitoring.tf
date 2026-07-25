@@ -635,8 +635,12 @@ locals {
       subscription_id = "telemetry-events-safety-p0-notification-sub"
       threshold_s     = 600 # 10 min — fan-out de eventos panic, debe ackear en <30s
       severity        = "CRITICAL"
-      consumer        = "notification-service"
-      detail          = "El fan-out de eventos panic (crash/unplug/jamming) al transportista (SMS/push/WhatsApp) está detenido. La detección del evento en sí ya la cubre crash_event_p0/unplug_event_p0/gnss_jamming_p0; esta alerta es que la NOTIFICACIÓN no se entrega."
+      # El consumer del safety fan-out es el endpoint OIDC en apps/api (PUSH
+      # subscription), NO notification-service (skeleton). Ver messaging.tf
+      # `telemetry_events_safety_p0_notification` + spec safety-event-fanout.
+      # On-call debe mirar apps/api / la PUSH subscription, no el skeleton.
+      consumer = "apps/api · POST /internal/safety-events (PUSH)"
+      detail   = "El fan-out de eventos panic (crash/unplug/jamming) al transportista (SMS/push/WhatsApp) está detenido. La detección del evento en sí ya la cubre crash_event_p0/unplug_event_p0/gnss_jamming_p0; esta alerta es que la NOTIFICACIÓN no se entrega."
     }
     security_p1 = {
       subscription_id = "telemetry-events-security-p1-notification-sub"
