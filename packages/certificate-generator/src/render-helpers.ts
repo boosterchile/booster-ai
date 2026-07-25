@@ -91,6 +91,34 @@ export function formatearNumeroPrincipal(kgWtw: number, uncertaintyFactor?: numb
 }
 
 /**
+ * Declaración de honestidad de la distancia según la cobertura telemétrica
+ * (F0-0 §7 / spec `distancia-real-hibrida`).
+ *
+ * **Invariante:** con cobertura < 100% el cert **NUNCA** declara "medida" a
+ * secas — declara la mezcla `"medido X%, estimado (100−X)%"`, con `X = coveragePct`.
+ * Impide reintroducir el sesgo direccional a la baja que motivó el fix (una
+ * traza con huecos NO es un trayecto medido).
+ *
+ * - sin cobertura / ≤ 0% → distancia totalmente estimada → `"estimada"`.
+ * - ≥ 100% → `"medida (100% telemetría)"`.
+ * - 0 < X < 100 → `"medido X%, estimado (100−X)%"`.
+ *
+ * `X` se calcula con `Math.floor` (piso): nunca redondea la fracción medida
+ * hacia arriba, así que jamás sobre-declara "medido".
+ */
+export function declaracionDistancia(coveragePct?: number): string {
+  if (coveragePct === undefined || coveragePct <= 0) {
+    return 'estimada';
+  }
+  if (coveragePct >= 100) {
+    return 'medida (100% telemetría)';
+  }
+  const medido = Math.floor(coveragePct);
+  const estimado = 100 - medido;
+  return `medido ${medido}%, estimado ${estimado}%`;
+}
+
+/**
  * Formato human-readable del origen de la ruta para imprimir en el cert.
  */
 export function formatRouteDataSource(s: string): string {

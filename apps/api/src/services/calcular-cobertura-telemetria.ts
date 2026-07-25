@@ -53,11 +53,81 @@ export const CONTINUITY_GAP_S = 60;
 /** Radio de la Tierra en km, usado en haversine. WGS84 mean radius. */
 const EARTH_RADIUS_KM = 6371;
 
-interface PingPoint {
+export interface PingPoint {
   /** Timestamp del ping en epoch ms. */
   tMs: number;
   lat: number;
   lng: number;
+}
+
+/**
+ * Carga los pings GPS del vehículo en la ventana `pickupAt..deliveredAt`,
+ * ordenados asc por timestamp y filtrados de rows sin fix: lat/lng null Y el
+ * "null island" (lat/lng = 0, GPS sin fix — ver `coordenada-gps.ts`, #622). Sin
+ * el filtro 0,0 un solo punto mete una recta de ~9.000 km al cálculo de
+ * distancia/cobertura.
+ *
+ * Extraído para reuso entre el cálculo de cobertura y la reconstrucción de
+ * distancia real (F0-0 paso 1), y para poder **mockearlo** en el test de
+ * integración de `recalcularNivelPostEntrega`.
+ *
+ * ## Por qué convive con `cargarTrazaPoints` (obtener-traza-vehiculo.ts, #615)
+ *
+ * Son la misma query base (índice `idx_telemetria_vehiculo_ts`, ventana por
+ * `timestamp_device`, orden asc) y comparten el filtro de fix vía
+ * `esCoordenadaGpsValida`, pero **proyectan distinto a propósito**:
+ *
+ * - Este loader trae solo `ts/lat/lng` → alimenta cálculo (distancia real,
+ *   cobertura, backfill), que no mira CAN ni velocidad.
+ * - `cargarTrazaPoints` trae además `speed_kmh` e `io_data`, y corre
+ *   `extraerCanAcumulado` (con `safeParse` Zod) por punto → alimenta display
+ *   (traza de vehículo y de carga, capa 2).
+ *
+ * Unificarlos NO es limpieza: obligaría a leer el JSONB `io_data` y parsearlo
+ * en cada ping del write-path — un trip largo ronda las decenas de miles de
+ * pings (~260k en la ventana viva) — para descartar el resultado acto seguido.
+ * La lógica que sí es única (qué coordenada es válida) ya está centralizada en
+ * `coordenada-gps.ts` (#622); lo que se repite es el loop de proyección, no la
+ * regla. Si algún día el write-path necesita CAN, la unificación correcta es
+ * parametrizar el proyectado, no llamar al loader de display.
+ */
+export async function cargarPingsVentana(opts: {
+  db: Db;
+  vehicleId: string;
+  pickupAt: Date;
+  deliveredAt: Date;
+}): Promise<PingPoint[]> {
+  const { db, vehicleId, pickupAt, deliveredAt } = opts;
+  const rows = await db
+    .select({
+      ts: telemetryPoints.timestampDevice,
+      lat: telemetryPoints.latitude,
+      lng: telemetryPoints.longitude,
+    })
+    .from(telemetryPoints)
+    .where(
+      and(
+        eq(telemetryPoints.vehicleId, vehicleId),
+        gte(telemetryPoints.timestampDevice, pickupAt),
+        lte(telemetryPoints.timestampDevice, deliveredAt),
+      ),
+    )
+    .orderBy(asc(telemetryPoints.timestampDevice));
+
+  const pings: PingPoint[] = [];
+  for (const p of rows) {
+    if (p.lat === null || p.lng === null) {
+      continue;
+    }
+    const lat = Number(p.lat);
+    const lng = Number(p.lng);
+    // Descarta el "null island" (lat/lng = 0, GPS sin fix) — preserva el fix #622.
+    if (!esCoordenadaGpsValida(lat, lng)) {
+      continue;
+    }
+    pings.push({ tMs: p.ts.getTime(), lat, lng });
+  }
+  return pings;
 }
 
 /**
@@ -134,40 +204,8 @@ export async function calcularCobertura(opts: {
     return 0;
   }
 
-  // Solo necesitamos lat/lng/timestampDevice para el cálculo. Ordenado
-  // ascendente por timestamp para que `calcularCoberturaPura` opere
-  // sobre la secuencia natural de pings.
-  const pings = await db
-    .select({
-      ts: telemetryPoints.timestampDevice,
-      lat: telemetryPoints.latitude,
-      lng: telemetryPoints.longitude,
-    })
-    .from(telemetryPoints)
-    .where(
-      and(
-        eq(telemetryPoints.vehicleId, vehicleId),
-        gte(telemetryPoints.timestampDevice, pickupAt),
-        lte(telemetryPoints.timestampDevice, deliveredAt),
-      ),
-    )
-    .orderBy(asc(telemetryPoints.timestampDevice));
-
-  // Filtramos pings sin lat/lng (null) y el "null island" (lat/lng = 0, GPS sin
-  // fix): sin esto un 0,0 mete una recta de ~9.000 km a la cobertura (capeada a
-  // 100% pero contaminada). Ver `coordenada-gps.ts`.
-  const validPings: PingPoint[] = [];
-  for (const p of pings) {
-    if (p.lat === null || p.lng === null) {
-      continue;
-    }
-    const lat = Number(p.lat);
-    const lng = Number(p.lng);
-    if (!esCoordenadaGpsValida(lat, lng)) {
-      continue;
-    }
-    validPings.push({ tMs: p.ts.getTime(), lat, lng });
-  }
+  // Reusa el loader compartido (incluye el filtro null-island de #622).
+  const validPings = await cargarPingsVentana({ db, vehicleId, pickupAt, deliveredAt });
 
   const coverage = calcularCoberturaPura(validPings, distanciaEstimadaKm);
 
@@ -177,7 +215,6 @@ export async function calcularCobertura(opts: {
       pickupAt,
       deliveredAt,
       distanciaEstimadaKm,
-      pingsTotal: pings.length,
       pingsValidos: validPings.length,
       coveragePct: coverage,
     },
