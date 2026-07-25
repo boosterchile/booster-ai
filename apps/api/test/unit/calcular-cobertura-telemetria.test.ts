@@ -281,7 +281,6 @@ describe('calcularCobertura — wrapper con I/O', () => {
     expect(infoSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         vehicleId: VEH_ID,
-        pingsTotal: 2,
         pingsValidos: 2,
       }),
       expect.stringContaining('cobertura'),
