@@ -21,6 +21,7 @@ import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.
 import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-limit-transport-documents.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
@@ -61,6 +62,13 @@ import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
 import { createMePushSubscriptionRoutes, createWebpushPublicRoutes } from './routes/webpush.js';
+import {
+  cargarCandidatosBackfill,
+  contarCandidatosBackfill,
+  persistirBackfill,
+  reconstruirTripBackfill,
+} from './services/backfill-distancia-adapters.js';
+import { ejecutarBackfill } from './services/backfill-distancia-real.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
@@ -694,6 +702,44 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     app.use('/admin/matching/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/matching', createAdminMatchingBacktestRoutes({ db: opts.db, logger }));
+
+    // F0-0 paso 1 — backfill de re-derivación de distancia real. Gate
+    // platform-admin (allowlist), NO /admin/jobs (SA de cron) ni JWT genérico:
+    // reescribe la huella de toda la flota. Default dry-run; escritura exige
+    // confirmación explícita + conteo que coincide.
+    app.use(
+      '/admin/backfill-distancia/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
+    app.use(
+      '/admin/backfill-distancia/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    const backfillDistanciaProjectId = config.GOOGLE_CLOUD_PROJECT;
+    app.route(
+      '/admin/backfill-distancia',
+      createAdminBackfillDistanciaRoutes({
+        logger,
+        contarCandidatos: () => contarCandidatosBackfill(opts.db),
+        correrBackfill: (dryRun) =>
+          ejecutarBackfill({
+            logger,
+            dryRun,
+            cargarCandidatos: (cursor, limite) => cargarCandidatosBackfill(opts.db, cursor, limite),
+            reconstruir: (candidato) =>
+              reconstruirTripBackfill({
+                db: opts.db,
+                logger,
+                routesProjectId: backfillDistanciaProjectId,
+                candidato,
+              }),
+            persistir: (r) => persistirBackfill(opts.db, r),
+          }),
+      }),
+    );
 
     // Spec 2026-05-13 — Admin platform-wide observability dashboard
     // (costos GCP + Twilio + Workspace + uptime + capacity + forecast).

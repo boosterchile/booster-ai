@@ -2673,3 +2673,35 @@ export type NewSolicitudRegistroRow = typeof solicitudesRegistro.$inferInsert;
 // Repositorio documental de transporte — documentos_transporte (migration 0044)
 export type TransportDocumentRow = typeof transportDocuments.$inferSelect;
 export type NewTransportDocumentRow = typeof transportDocuments.$inferInsert;
+
+/**
+ * Bitácora de reversibilidad del backfill de re-derivación de distancia real
+ * (F0-0 paso 1, migration 0051). **TEMPORAL** — retiro planeado (backstop
+ * 2026-09-30; ver header de la migración + adr-028-ext). Registra cada trip
+ * procesado en write mode: before/after (para revert) + motivo_abort
+ * (diagnóstico de qué no se reconstruyó y por qué) + llamadas a Routes por trip
+ * (costo real). Sin FK (throwaway).
+ */
+export const bitacoraBackfillDistancia = pgTable(
+  'bitacora_backfill_distancia',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tripId: uuid('viaje_id').notNull(),
+    coveragePctAntes: numeric('cobertura_pct_antes', { precision: 5, scale: 2 }),
+    certificationLevelAntes: certificationLevelEnum('nivel_certificacion_antes'),
+    distanceKmRealAntes: numeric('distancia_km_real_antes', { precision: 10, scale: 2 }),
+    coveragePctDespues: numeric('cobertura_pct_despues', { precision: 5, scale: 2 }),
+    certificationLevelDespues: certificationLevelEnum('nivel_certificacion_despues'),
+    distanceKmRealDespues: numeric('distancia_km_real_despues', { precision: 10, scale: 2 }),
+    /** abortReason del wiring; null si el trip se escribió OK. */
+    motivoAbort: varchar('motivo_abort', { length: 20 }),
+    llamadasRoutes: integer('llamadas_routes').notNull().default(0),
+    procesadoEn: timestamp('procesado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    viajeIdx: index('idx_bitacora_backfill_distancia_viaje').on(table.tripId),
+    procesadoIdx: index('idx_bitacora_backfill_distancia_procesado').on(table.procesadoEn),
+  }),
+);
+export type BitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferSelect;
+export type NewBitacoraBackfillDistanciaRow = typeof bitacoraBackfillDistancia.$inferInsert;
