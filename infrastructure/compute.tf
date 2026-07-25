@@ -41,6 +41,26 @@ locals {
     REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
   }
 
+  # Content SIDs de templates WhatsApp (validados `^HX` en config.ts). Mapa
+  # env-var → nombre de secret. El MONTAJE de cada uno está gateado por
+  # `var.content_sid_ready` (INC-2026-06-19 A7): un content-sid sin valor real
+  # cargado NO se monta, para que su placeholder `ROTATE_ME_*` no falle el `^HX`
+  # y tumbe el startup. Agregar uno nuevo acá entra no-montado por default.
+  content_sid_secret_names = {
+    CONTENT_SID_OFFER_NEW    = "content-sid-offer-new"
+    CONTENT_SID_CHAT_UNREAD  = "content-sid-chat-unread"
+    CONTENT_SID_TRACKING     = "content-sid-tracking"
+    CONTENT_SID_SAFETY_ALERT = "content-sid-safety-alert"
+  }
+
+  # Solo los content-sids READY (valor real cargado) se montan en service_api.
+  # `lookup(..., false)` → key ausente = NO montado (default seguro).
+  ready_content_sid_secrets = {
+    for env_name, secret_name in local.content_sid_secret_names :
+    env_name => google_secret_manager_secret.secrets[secret_name].secret_id
+    if lookup(var.content_sid_ready, secret_name, false)
+  }
+
   # Lista de IDs de todas las secret versions que deben existir antes de crear
   # cualquier Cloud Run service que monte secrets. Se pasa a cada módulo via
   # `secret_versions_ready` para que Terraform propague el orden automáticamente.
@@ -264,28 +284,19 @@ module "service_api" {
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
 
-    # B.8 — Content SIDs de templates WhatsApp aprobados por Meta.
-    # Migrados a Secret Manager (refactor 2026-05-07) — antes vivían
-    # como variables Terraform y causaban drift en apply.
-    # Cargar con: gcloud secrets versions add content-sid-offer-new \
-    #   --data-file=<(echo -n "HX...")
-    # Si el secret tiene valor placeholder ROTATE_ME_..., el dispatcher
-    # del api loguea warn y skipea — las offers se crean en DB pero el
-    # carrier no recibe WhatsApp template hasta que se cargue el real.
-    # Ver docs/runbooks/load-content-sids.md.
-    CONTENT_SID_OFFER_NEW   = google_secret_manager_secret.secrets["content-sid-offer-new"].secret_id
-    CONTENT_SID_CHAT_UNREAD = google_secret_manager_secret.secrets["content-sid-chat-unread"].secret_id
-    # Phase 5 PR-L3 — Twilio template `tracking_link_v1` para enviar el
-    # link público de tracking al shipper al asignar el trip. Hasta que
-    # Meta apruebe (submitted 2026-05-10, SID HXac1ef21ed9423258a2c38dad02f31e41),
-    # el secret mantiene placeholder y notify-tracking-link skipea con warn.
-    CONTENT_SID_TRACKING = google_secret_manager_secret.secrets["content-sid-tracking"].secret_id
-    # Safety fan-out (P0-G) — template `safety_alert` al transportista ante
-    # crash/unplug/jamming. `safety_alert_v1` rechazado por Meta; reenviado
-    # como `copy_of_safety_alert_v1` (SID HX80819b02ce9a546b855d09ada1aac944,
-    # en revisión 2026-06-15). Mientras el secret esté en placeholder el
-    # fan-out sale solo por push (config.ts CONTENT_SID_SAFETY_ALERT opcional).
-    CONTENT_SID_SAFETY_ALERT = google_secret_manager_secret.secrets["content-sid-safety-alert"].secret_id
+    # B.8 — Content SIDs de templates WhatsApp (offer-new, chat-unread, tracking,
+    # safety-alert). Validados `^HX[a-fA-F0-9]+$` en config.ts (preprocess
+    # ''→undefined + .optional()). Se MONTAN vía `local.ready_content_sid_secrets`
+    # (agregado al merge abajo), gateado por `var.content_sid_ready` — un content-sid
+    # sin valor real cargado NO se monta (INC-2026-06-19 A7).
+    #
+    # ⚠️ A6 (corrección INC-2026-06-19): el placeholder `ROTATE_ME_*` que crea
+    # security.tf es NO-VACÍO → NO matchea `^HX` → si se MONTA, `parseEnv` hace
+    # "Refusing to start" (NO "el dispatcher loguea warn y skipea" — eso solo pasa
+    # con valor ausente/undefined). Por eso A7 no lo monta hasta que esté ready; con
+    # el valor real (`HX...`) cargado, el dispatcher sí degrada a warn si Twilio lo
+    # rechaza. Cargar valores: docs/runbooks/load-content-sids.md +
+    # docs/runbooks/terraform-apply.md (§secrets validados por formato).
 
     # P3.c — Web Push VAPID. El api firma cada push con la privada (JWT
     # Authorization header al push service del browser). La pública se
@@ -349,7 +360,13 @@ module "service_api" {
     DEMO_ACCOUNT_PASSWORD_CARRIER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier-2026"].secret_id
     DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026        = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder-2026"].secret_id
     DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor-2026-firebase"].secret_id
-  })
+    },
+    # CONTENT_SID_* gateados por readiness (INC-2026-06-19 A7): solo se montan los
+    # que tienen valor real cargado (`var.content_sid_ready[name] = true`). Default
+    # = los 4 actuales true → plan No changes. Un content-sid no-ready queda fuera
+    # del mount → su env var ausente → config.ts undefined (.optional()) → arranca.
+    local.ready_content_sid_secrets,
+  )
 
   vpc_connector = google_vpc_access_connector.serverless.id
 
