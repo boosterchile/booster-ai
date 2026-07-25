@@ -11,4 +11,10 @@ El POST `/stream-ticket` (y antes el SSE con `?auth=`) usa raw fetch/EventSource
 - (EventSource del stream no puede mandar header, pero ya no lo necesita: la identidad+empresa se fijan en el mint.)
 
 ## Estado
-Pendiente (BAJA). Afecta solo a users multi-empresa con chat en empresa no-default.
+✅ **RESUELTO** (verificado en `main`, 2026-06-22). `apps/web/src/hooks/use-chat-stream.ts:102-105`
+ya manda `X-Empresa-Id` (la empresa activa de la PWA vía `getActiveEmpresaId()`) en el
+POST `/stream-ticket`, igualando lo que el api-client hace para el resto de requests.
+`resolveChatAccess` resuelve la empresa correcta para users multi-empresa con chat en
+empresa no-default → el ticket se emite y el realtime conecta. (commit
+"fix-sse-ticket-x-empresa".) El re-mint al CAMBIAR de empresa con un stream vivo es un
+residual menor distinto, trackeado en [[use-chat-stream-hardening]] #2.

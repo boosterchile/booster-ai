@@ -11,6 +11,19 @@ const REQ: RequestInit = {
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ rut: VALID_RUT }),
 };
+/**
+ * Intento con PIN incorrecto → el handler stub responde 401. Es lo que el
+ * rate-limit debe contar: la protección es anti-brute-force, y desde el
+ * reset-on-success per-RUT un 2xx **limpia** el counter (un 4xx lo mantiene).
+ * Contar éxitos dejaría afuera al usuario legítimo tras 5 logins correctos, y
+ * permitiría que un tercero que conoce un RUT ajeno lo bloquee acumulando
+ * intentos contra la víctima.
+ */
+const REQ_PIN_MALO: RequestInit = {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ rut: VALID_RUT, pin: 'wrong' }),
+};
 const logger = createLogger({ service: 't8', version: '0', level: 'silent', pretty: false });
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -26,7 +39,16 @@ function buildApp(redis: Redis): Hono {
       windowSeconds: 60,
     }),
   );
-  app.post('/activate', (c) => c.json({ ok: true }, 200));
+  // Stub de auth: `pin: 'wrong'` → 401 (intento fallido), cualquier otro → 200.
+  // `c.req.json()` lo memoiza Hono, así que releerlo tras el middleware es seguro.
+  app.post('/activate', async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    const pin =
+      typeof body === 'object' && body !== null && 'pin' in body
+        ? (body as { pin?: unknown }).pin
+        : undefined;
+    return pin === 'wrong' ? c.json({ error: 'invalid_pin' }, 401) : c.json({ ok: true }, 200);
+  });
   return app;
 }
 
@@ -59,13 +81,31 @@ describe('T8 SEC-001 — rate-limit-pin contra Redis REAL via testcontainers', (
     container = undefined;
   });
 
-  it('Scenario 1: Redis up — 5 intentos pasan, 6º retorna 429 scope=rut', async () => {
+  it('Scenario 1: Redis up — 5 intentos FALLIDOS pasan, 6º retorna 429 scope=rut', async () => {
     for (let i = 1; i <= 5; i += 1) {
-      expect((await app.request('/activate', REQ)).status, `request #${i}`).toBe(200);
+      expect((await app.request('/activate', REQ_PIN_MALO)).status, `request #${i}`).toBe(401);
     }
-    const sixth = await app.request('/activate', REQ);
+    const sixth = await app.request('/activate', REQ_PIN_MALO);
     expect(sixth.status).toBe(429);
     expect(sixth.headers.get('X-RateLimit-Scope')).toBe('rut');
+  });
+
+  it('Scenario 1b: reset-on-success — un 2xx limpia el counter per-RUT (Redis real)', async () => {
+    // 4 fallos: queda a uno del límite sin haberlo cruzado.
+    for (let i = 1; i <= 4; i += 1) {
+      expect((await app.request('/activate', REQ_PIN_MALO)).status, `fallo #${i}`).toBe(401);
+    }
+    // Auth exitosa → borra el counter per-RUT (el per-IP NO se resetea).
+    expect((await app.request('/activate', REQ)).status).toBe(200);
+
+    // Sin el reset, el 6º intento global sería 429. Con reset, la ventana
+    // arranca de cero: 5 fallos nuevos vuelven a pasar y recién el 6º corta.
+    for (let i = 1; i <= 5; i += 1) {
+      expect((await app.request('/activate', REQ_PIN_MALO)).status, `post-reset #${i}`).toBe(401);
+    }
+    const bloqueado = await app.request('/activate', REQ_PIN_MALO);
+    expect(bloqueado.status).toBe(429);
+    expect(bloqueado.headers.get('X-RateLimit-Scope')).toBe('rut');
   });
 
   it('Scenario 2: Redis stopped mid-test — middleware retorna 503 fail-closed con Retry-After', async () => {
