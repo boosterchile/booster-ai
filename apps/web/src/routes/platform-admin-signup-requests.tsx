@@ -49,6 +49,8 @@ interface ApproveResponse {
   user_id: string | null;
   onboarding_link?: string;
   onboarding_link_expires_at?: string;
+  /** T2.0 — password reset de Firebase: la vía de acceso del aprobado. */
+  access_link?: string;
 }
 
 interface OnboardingLinkInfo {
@@ -56,6 +58,14 @@ interface OnboardingLinkInfo {
   nombreCompleto: string;
   link: string;
   expiresAt: string;
+  /**
+   * T2.0 — link de acceso. La cuenta que crea el approve no tiene contraseña y
+   * su email está sin verificar; completar este reset resuelve ambas cosas
+   * (Firebase verifica el email al consumirlo), que es lo que el gate de
+   * `/empresas/onboarding-admin` exige. `undefined` si Firebase falló al
+   * generarlo — el alta se entrega igual.
+   */
+  accessLink?: string;
 }
 
 type LoadState =
@@ -117,6 +127,7 @@ function PlatformAdminSignupRequestsPage() {
         if (res.onboarding_link && res.onboarding_link_expires_at) {
           const link = res.onboarding_link;
           const expiresAt = res.onboarding_link_expires_at;
+          const accessLink = res.access_link;
           setOnboardingLinks((prev) => ({
             ...prev,
             [req.id]: {
@@ -124,6 +135,7 @@ function PlatformAdminSignupRequestsPage() {
               nombreCompleto: req.nombre_completo,
               link,
               expiresAt,
+              ...(accessLink ? { accessLink } : {}),
             },
           }));
         }
@@ -309,6 +321,8 @@ function OnboardingLinkPanel({
 }) {
   const [copied, setCopied] = useState(false);
   const [clipboardFailed, setClipboardFailed] = useState(false);
+  const [accessCopied, setAccessCopied] = useState(false);
+  const [accessClipboardFailed, setAccessClipboardFailed] = useState(false);
 
   async function handleCopy() {
     try {
@@ -320,6 +334,21 @@ function OnboardingLinkPanel({
       // Sin clipboard API (http local, permiso denegado, navegador viejo) —
       // fallback: input readonly seleccionable para copiar manualmente.
       setClipboardFailed(true);
+    }
+  }
+
+  /** T2.0 — mismo contrato de copia para el link de acceso, estado propio. */
+  async function handleCopyAccess() {
+    if (!info.accessLink) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(info.accessLink);
+      setAccessClipboardFailed(false);
+      setAccessCopied(true);
+      window.setTimeout(() => setAccessCopied(false), 2500);
+    } catch {
+      setAccessClipboardFailed(true);
     }
   }
 
@@ -369,6 +398,45 @@ function OnboardingLinkPanel({
           {copied ? 'Copiado ✓' : 'Copiar enlace'}
         </button>
       </div>
+
+      {/* T2.0 — link de acceso. Va segundo porque el orden de uso es: primero
+          define su contraseña (esto verifica su email), después abre el alta.
+          Sin él, el aprobado no tiene forma de autenticarse y el link de
+          arriba le devuelve 403 `email_not_verified`. */}
+      {info.accessLink && (
+        <div className="mt-4 border-amber-200 border-t pt-3">
+          <div className="font-medium text-amber-900 text-sm">
+            Paso 1 — enlace de acceso (define su contraseña)
+          </div>
+          <p className="mt-0.5 text-amber-800 text-xs">
+            Envíale primero este enlace: al usarlo define su contraseña y queda verificado su
+            correo. Recién después podrá abrir el enlace de alta de arriba.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            {accessClipboardFailed ? (
+              <input
+                type="text"
+                readOnly
+                value={info.accessLink}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-xs"
+              />
+            ) : (
+              <div className="flex-1 overflow-x-auto rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-xs">
+                {info.accessLink}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleCopyAccess()}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+            >
+              <Copy className="h-3 w-3" aria-hidden />
+              {accessCopied ? 'Copiado ✓' : 'Copiar enlace de acceso'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

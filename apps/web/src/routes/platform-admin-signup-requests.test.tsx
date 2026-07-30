@@ -87,6 +87,64 @@ describe('PlatformAdminSignupRequestsRoute — W1.4 onboarding_link', () => {
     expect(screen.getByRole('button', { name: /Copiar enlace/ })).toBeInTheDocument();
   });
 
+  it('T2.0 — muestra también el link de ACCESO cuando el approve lo devuelve', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [PENDING_REQUEST] });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      outcome: 'approved',
+      firebase_uid: 'fb-uid',
+      user_id: null,
+      onboarding_link: 'https://app.boosterchile.com/onboarding-admin?token=abc.def',
+      onboarding_link_expires_at: '2026-07-08T10:00:00Z',
+      access_link: 'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=xyz',
+    });
+    stubClipboard(vi.fn(async () => undefined));
+
+    render(<PlatformAdminSignupRequestsRoute />);
+    await waitFor(() => screen.getByText(PENDING_REQUEST.email));
+
+    fireEvent.click(screen.getByRole('button', { name: /Aprobar/ }));
+
+    // Los dos links: sin el de acceso el aprobado no tiene contraseña ni email
+    // verificado, y el de onboarding le devuelve 403 email_not_verified.
+    await waitFor(() =>
+      expect(
+        screen.getByText('https://app.boosterchile.com/onboarding-admin?token=abc.def'),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(
+        'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=xyz',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copiar enlace de acceso/ })).toBeInTheDocument();
+  });
+
+  it('T2.0 — approve sin access_link (Firebase falló) → el panel sigue mostrando el de alta', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [PENDING_REQUEST] });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      outcome: 'approved',
+      firebase_uid: 'fb-uid',
+      user_id: null,
+      onboarding_link: 'https://app.boosterchile.com/onboarding-admin?token=abc.def',
+      onboarding_link_expires_at: '2026-07-08T10:00:00Z',
+    });
+    stubClipboard(vi.fn(async () => undefined));
+
+    render(<PlatformAdminSignupRequestsRoute />);
+    await waitFor(() => screen.getByText(PENDING_REQUEST.email));
+
+    fireEvent.click(screen.getByRole('button', { name: /Aprobar/ }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('https://app.boosterchile.com/onboarding-admin?token=abc.def'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /Copiar enlace de acceso/ })).toBeNull();
+  });
+
   it('click en "Copiar enlace" llama a clipboard.writeText y da feedback de copiado', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [PENDING_REQUEST] });
     vi.spyOn(api, 'post').mockResolvedValue({

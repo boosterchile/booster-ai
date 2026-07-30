@@ -30,7 +30,15 @@ vi.mock('../config.js', () => ({
 
 function makeAuthStub() {
   const createUser = vi.fn(async () => ({ uid: 'fb-new-uid' }));
-  return { auth: { createUser } as unknown as Auth, spies: { createUser } };
+  // T2.0 — el approve genera además el link de acceso (password reset), que es
+  // lo que permite al aprobado autenticarse y verificar su email.
+  const generatePasswordResetLink = vi.fn(
+    async () => 'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=abc',
+  );
+  return {
+    auth: { createUser, generatePasswordResetLink } as unknown as Auth,
+    spies: { createUser, generatePasswordResetLink },
+  };
 }
 
 function makeNotifierStub() {
@@ -491,6 +499,56 @@ describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 
     const ttlMs = TTL_HOURS * 60 * 60 * 1000;
     expect(expiresAtMs).toBeGreaterThanOrEqual(before + ttlMs);
     expect(expiresAtMs).toBeLessThanOrEqual(after + ttlMs);
+  });
+
+  it('T2.0 — devuelve access_link junto al onboarding_link', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [selectRow()],
+      updateRows: [{ id: REQUEST_ID, email: 'nuevo@cliente.cl' }],
+    });
+    const a = makeAuthStub();
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { access_link?: string; onboarding_link?: string };
+    // Sin el link de acceso, el aprobado no tiene contraseña ni email
+    // verificado → 403 email_not_verified al abrir el link de alta.
+    expect(json.access_link).toBe(
+      'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=abc',
+    );
+    expect(json.onboarding_link).toBeDefined();
+    expect(a.spies.generatePasswordResetLink).toHaveBeenCalledWith('nuevo@cliente.cl');
+  });
+
+  it('T2.0 — si Firebase no puede generar el link de acceso, el approve igual entrega el alta', async () => {
+    const mod = await loadModWithAdminProvisionedConfig();
+    const d = makeDb({
+      selectRows: [selectRow()],
+      updateRows: [{ id: REQUEST_ID, email: 'nuevo@cliente.cl' }],
+    });
+    const a = makeAuthStub();
+    a.spies.generatePasswordResetLink.mockRejectedValueOnce(new Error('firebase down'));
+    const n = makeNotifierStub();
+    const app = buildApp(mod, d.db, a.auth, n);
+
+    const res = await app.request(`/${REQUEST_ID}/approve`, {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { access_link?: string; onboarding_link?: string };
+    expect(json.onboarding_link).toBeDefined();
+    expect(json.access_link).toBeUndefined();
   });
 
   it('con onboardingLinkBaseUrl custom → onboarding_link usa esa base', async () => {

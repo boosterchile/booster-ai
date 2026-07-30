@@ -219,6 +219,13 @@ export function createAdminSignupRequestsRoutes(opts: {
                 onboarding_link_expires_at: result.onboardingTokenExpiresAt.toISOString(),
               }
             : {};
+        // T2.0 — el link de acceso (password reset de Firebase) viaja junto al
+        // de onboarding: la cuenta recién creada no tiene contraseña ni email
+        // verificado, y sin resolver eso el aprobado choca con 403
+        // `email_not_verified` en `/empresas/onboarding-admin`. Igual que el
+        // token: solo en esta respuesta al admin autenticado, nunca logueado ni
+        // persistido. Ausente si Firebase falló al generarlo (el service degrada).
+        const accessLinkField = result.accessLink ? { access_link: result.accessLink } : {};
         return c.json(
           {
             ok: true,
@@ -226,6 +233,7 @@ export function createAdminSignupRequestsRoutes(opts: {
             firebase_uid: result.firebaseUid,
             user_id: result.userId,
             ...onboardingLinkFields,
+            ...accessLinkField,
           },
           200,
         );

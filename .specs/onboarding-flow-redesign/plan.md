@@ -111,11 +111,38 @@ Cuando T1.1–T1.8 verde: flip `ADMIN_PROVISIONED_ONBOARDING_ENABLED=ON` + `SIGN
 
 ---
 
-## FASES 2-5 (perfiladas; descomposición + devils-advocate al llegar)
-- **Fase 2 — Email**: swap `EmailSignupRequestNotifier` (contrato existe) + proveedor (OQ4) + degradación.
+## FASE 2 — Email real (descompuesta 2026-07-30; OQ4 cerrada = Resend)
+
+**Contexto de urgencia**: los flags se encendieron el 2026-07-30 SIN esta fase (desviación declarada en spec §13). Hasta que T2.0 y T2.1 estén en prod, cada alta de cliente exige que el admin entregue el link a mano y que el aprobado adivine cómo fijar su contraseña. Esta fase existe para eliminar ambos pasos manuales, no para mejorarlos.
+
+### T2.0 — El approve emite también el link de ACCESO (no depende de Resend)
+- **Problema que cierra**: `approveSignupRequest` crea la cuenta con `auth.createUser({emailVerified:false})` y **sin contraseña**. El aprobado no tiene forma de autenticarse, y aunque la consiguiera, el gate 2 de `POST /empresas/onboarding-admin` (`empresas.ts:176`) lo rechaza con 403 `email_not_verified`. Hoy eso se "resuelve" diciéndole de palabra que use "¿olvidaste tu contraseña?".
+- **Solución**: usar `auth.generatePasswordResetLink(email)` del Admin SDK (hoy sin uso en el repo) dentro del approve, y devolverlo en el body junto a `onboarding_link`. Completar un password reset en Firebase marca el email como verificado ⇒ el gate deja de rebotar.
+- Files: `services/signup-request.ts` + `.test`, `routes/admin-signup-requests.ts` + `.test`, `routes/platform-admin-signup-requests.tsx` + `.test` (segundo link copiable, mismo panel de un solo uso).
+- **Acceptance**: approve responde `access_link` + `onboarding_link`; el panel muestra ambos con su botón de copiar; el link de acceso NUNCA se loguea ni se persiste (mismo trato que el token); tests de que el aprobado que consume el reset queda con `emailVerified=true` y pasa el gate.
+- **Degradación**: si `generatePasswordResetLink` falla, el approve NO falla — emite el link de onboarding igual y loguea el error con `@booster-ai/logger` (el admin puede reenviar el reset desde el login). Nunca un `catch` mudo.
+
+### T2.1 — `EmailSignupRequestNotifier` sobre Resend
+- Swap de implementación del contrato `SignupRequestNotifier` (`signup-request-email.ts:30-54`), sin tocar callers.
+- Inyección condicional con degradación **calcando el patrón de `TwilioWhatsAppClient` en `main.ts`**: con `RESEND_API_KEY` + `RESEND_FROM` presentes se usa el notifier real; faltando cualquiera, cae a `LoggingSignupRequestNotifier` con `logger.warn` explícito (nunca falla el approve por un problema de correo).
+- Env por Zod en `config.ts` (boundary); API key en Secret Manager + mount en `compute.tf` (NUNCA en código, ADR de secretos).
+- **Acceptance**: al aprobar, el solicitante recibe un correo con ambos links (acceso + alta) y el TTL de 72h explícito; el admin recibe aviso de solicitud nueva; con credenciales ausentes el flujo degrada a logs sin romper. Tests con el cliente Resend stubbeado — cero llamadas reales en CI.
+
+### T2.2 — Dominio y entregabilidad (out-of-band, PO)
+- Verificar `boosterchile.com` en Resend + registros SPF/DKIM en la zona DNS (`infrastructure/`, la zona ya la maneja Terraform).
+- Sin esto los correos salen a spam o son rechazados: **T2.1 no se declara terminada sin un envío real observado**.
+
+### T2.3 — Cierre honesto de la desviación
+- Recién con T2.0+T2.1 en prod, el criterio §7 de la spec ("flags ON cuando Fase 1 + email funcionen end-to-end") queda satisfecho de verdad. Actualizar spec §13 y el runbook.
+
+## FASES 3-5 (perfiladas; descomposición + devils-advocate al llegar)
 - **Fase 3 — Conductor**: cablear `POST /conductores` al alta dentro de transportista.
 - **Fase 4 — Gestor**: endpoint nuevo + migración/role + boundary. **Su propio devils-advocate.**
 - **Fase 5 — Stakeholder**: consentimiento (Ley 19.628, ADR-034). **Su propio devils-advocate.**
+
+### Hueco detectado 2026-07-30 — usuarios en empresa EXISTENTE (candidato a Fase 3.5)
+Caso real: Transportes Van Oosterwyk ya existe como tenant (8 vehículos, 6 conductores) y su único acceso es `contacto@boosterchile.com`, una cuenta de Booster dentro del tenant del cliente. El onboarding no sirve (RUT ya registrado ⇒ 409 `rut_already_registered`, `onboarding.ts:205`) y **no hay endpoint que sume un usuario a una empresa existente**: los únicos `insert(memberships)` del repo son `onboarding.ts`, `auth-driver.ts` (conductores) y `admin-stakeholder-orgs.ts`.
+El modelo YA lo soporta — `membresias.estado` incluye `pendiente_invitacion` y existen `invitado_por_id`/`invitado_en`/`unido_en` (`schema.ts:82-87`, `786-793`) — así que es construir el endpoint + UI, no rediseñar. Impacto de no tenerlo: el alta de cada persona del cliente se hace por SQL a mano, y sin cuenta propia el cliente no puede aceptar los T&C v2, con lo que sus liquidaciones quedan en `pending_consent` y no pasan a `lista_para_dte` (`liquidar-trip.ts:172`) — opera pero no se le factura. Requiere su propia descomposición.
 
 ## Out-of-band tasks
 - **Valor del TTL del token (OQ1)** — decidir ANTES del cierre de Fase 1 (no embebido en T1.7; review P2-2).
