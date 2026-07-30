@@ -423,10 +423,14 @@ variable "cobro_mensual_activado" {
 # `docs/corfo/hito-2/runbook-activacion-onboarding.md` §Paso 0 (verificación
 # de que prod corría con `true` desde <=2026-07-02 sin que el modo
 # admin-provisioned estuviera listo).
+# FLIP A `true` 2026-07-30 (paso 5 del runbook, decisión del PO): se abre el
+# alta de clientes. Va junto con `admin_provisioned_onboarding_enabled` — abrir
+# la cola SIN el modo admin-provisioned recrea el hallazgo R1 (approve legacy
+# silencioso, sin token ni link). Revertir ambos a la vez o ninguno.
 variable "signup_request_flow_activated" {
   description = "Procesamiento admin de signup-requests: list/approve/reject (el POST público no se gatea; SEC-001 H1.2 ADR-052)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 # ---------------------------------------------------------------------------
@@ -439,21 +443,25 @@ variable "signup_request_flow_activated" {
 # `EMPRESA_SELF_ONBOARDING_ENABLED` (path viejo self-service, que NUNCA se
 # reenciende — SEC-001).
 #
-# **Estado seguro = false (default).** Este PR SOLO deja el código+infra
-# mergeables (secret shell + placeholder + scheduler paused + mount + esta
-# var en false). El flip a `true` es un apply DEDICADO del PO, gateado por:
-#   1. Reaper T1.7 agendado (scheduling.tf `reap-orphan-onboarding-firebase`).
-#   2. Secret `onboarding-token-signing-secret` ROTADO (valor real, no
-#      `ROTATE_ME_*` — el placeholder está en el denylist de
-#      `assertStrongSecret`, así que un flip sin rotar deja el api fail-closed
-#      en vez de firmar tokens forjables).
-#   3. TTL 72h (OQ1) ratificado + sign-off security-auditor del modelo
-#      bearer-token (acta en el runbook).
+# FLIP A `true` 2026-07-30 — apply dedicado del PO (paso 5 del runbook), con
+# las 4 condiciones verificadas ese día contra prod:
+#   1. Reaper T1.7 agendado — `reap-orphan-onboarding-firebase` existe en
+#      southamerica-east1, estado PAUSED (primer tick manual = paso 6, PENDIENTE).
+#   2. Secret `onboarding-token-signing-secret` ROTADO — versión 2 (2026-07-07),
+#      64 chars, ya no es el placeholder `ROTATE_ME_*` del denylist de
+#      `assertStrongSecret`.
+#   3. TTL 72h (OQ1) ratificado — acta 2026-07-06 en el runbook.
+#   4. Sign-off security-auditor del modelo bearer-token — acta 2026-07-06.
+# Evidencia del apply: plan `0 to add, 1 to change, 0 to destroy` (solo las 2
+# env vars), revisión `booster-ai-api-00402-mr8` al 100% con la MISMA imagen
+# (sha256:eee15d16…) que la anterior `00525-yus` — sin cambio de código.
+# Distinto de `EMPRESA_SELF_ONBOARDING_ENABLED` (path viejo self-service, que
+# NUNCA se reenciende — SEC-001).
 # Ver `docs/corfo/hito-2/runbook-activacion-onboarding.md`.
 variable "admin_provisioned_onboarding_enabled" {
   description = "Activa el onboarding admin-provisioned (token one-shot) — runbook-activacion-onboarding.md."
   type        = bool
-  default     = false
+  default     = true
 }
 
 # ---------------------------------------------------------------------------
