@@ -187,6 +187,27 @@ git push origin main   # si el flip de tfvars viaja en un commit
 - **Canary**: el paso `canary-verify` en `cloudbuild.production.yaml` es un placeholder (`exit 0`) — la promoción a 100% la observás y decidís vos, no un chequeo automático. Ver `.specs/adr-vs-prod-inventory/inventory.md` finding #1.
 - Si el `apply` de Terraform con traffic split falla a mitad de camino (memoria `cloudbuild-prod-canary-timeout`), destrabar con `gcloud run services update-traffic booster-ai-api --to-latest --region=southamerica-west1`.
 
+### ✅ Acta del Paso 5 — EJECUTADO 2026-07-30
+
+Flip aplicado por el PO (`dev@boosterchile.com`) para habilitar el alta del primer cliente real. Las 4 condiciones se re-verificaron ese día contra prod, no contra el papel:
+
+| Condición | Verificación 2026-07-30 |
+|---|---|
+| 1. Reaper agendado | `reap-orphan-onboarding-firebase` existe en `southamerica-east1`, estado `PAUSED` (correcto pre-paso 6) |
+| 2. Secret rotado | `onboarding-token-signing-secret` versión **2** (2026-07-07), 64 chars, sin prefijo `ROTATE_ME_` |
+| 3. TTL 72h ratificado | acta 2026-07-06 (arriba) |
+| 4. Sign-off bearer-token | acta 2026-07-06 (arriba) |
+
+Ejecución:
+
+- `terraform plan` guardado y aplicado tal cual: **`0 to add, 1 to change, 0 to destroy`**, único cambio in-place = las 2 env vars `false → true` en `module.service_api`. Sin drift contaminante (el de `REDIS_PASSWORD` que la memoria advertía no apareció).
+- Revisión resultante **`booster-ai-api-00402-mr8`** al 100% de tráfico, `Ready=True`, corriendo la **misma imagen** `sha256:eee15d16…` que la anterior `booster-ai-api-00525-yus` → el flip no movió código.
+- ⚠️ **El número de revisión bajó (00525 → 00402) y eso NO es un rollback**: el `.tf` dejó de fijar el nombre explícito (`revision -> null`), así que Cloud Run pasó a su contador de auto-generación, que corre en otra secuencia. Verificar siempre por digest de imagen, no por número de revisión.
+- Smoke post-flip: `GET /health` → 200, `GET /health/signup-flow` → `{"status":"ok"}`, `GET /admin/signup-requests` sin auth → 401 (ya no 503 de flag apagado).
+- Defaults de `variables.tf` movidos a `true` en el mismo cambio, para que un apply desde otra máquina no revierta el flip en silencio.
+
+**Pendiente inmediato**: el paso 6 (primer tick manual del reaper) sigue sin ejecutarse — el scheduler continúa `PAUSED`.
+
 ## Paso 6 — Primer tick MANUAL del reaper T1.7
 
 El scheduler `reap-orphan-onboarding-firebase` quedó **pausado** en el paso 2 (mismo criterio que `reap-inert-idp-accounts`): un primer tick automático sin supervisión consume quota de Firebase Admin (`deleteUser`) + queries sobre el pool compartido del api sin que nadie haya visto el resultado.
