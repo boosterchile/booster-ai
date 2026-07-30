@@ -5,7 +5,7 @@ import {
 } from '@booster-ai/shared-schemas';
 import { RegisterProvider } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Building2, Loader2, LogOut, Plus, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Building2, Loader2, LogOut, Plus, ShieldCheck, UserPlus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -76,9 +76,9 @@ function PlatformAdminPage() {
               Operaciones de plataforma
             </h1>
             <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-              Herramientas internas de Booster: comparación de algoritmo de asignación,
-              observabilidad, configuración del sitio, organizaciones stakeholder e impersonación
-              auditada.
+              Herramientas internas de Booster: alta de clientes nuevos, comparación de algoritmo de
+              asignación, observabilidad, configuración del sitio, organizaciones stakeholder e
+              impersonación auditada.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -97,6 +97,29 @@ function PlatformAdminPage() {
               Observabilidad de plataforma →
             </Link>
           </div>
+        </div>
+
+        {/* Alta de clientes: primera card porque es la operación recurrente del
+            panel desde que el flujo quedó activo (runbook paso 5, 2026-07-30). */}
+        <div className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-primary-200 bg-white p-4">
+          <div className="flex items-start gap-3">
+            <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
+            <div>
+              <h3 className="font-semibold text-neutral-900">Solicitudes de registro</h3>
+              <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+                Aprueba o rechaza las cuentas nuevas que llegan por <code>/solicitar-acceso</code>.
+                Al aprobar se emite el link de alta de un solo uso (vive 72 h): hay que copiarlo en
+                ese momento y entregárselo al cliente, porque no se envía por correo.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/app/platform-admin/signup-requests"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
+            data-testid="signup-requests-link"
+          >
+            Ver solicitudes →
+          </Link>
         </div>
 
         <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-white p-4">
