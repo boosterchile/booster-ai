@@ -160,6 +160,22 @@ export type ApproveSignupRequestResult =
       onboardingToken?: string;
       /** Expiración del token emitido (coherente con `ONBOARDING_TOKEN_TTL_HOURS`); solo junto con `onboardingToken`. */
       onboardingTokenExpiresAt?: Date;
+      /**
+       * T2.0 — link de ACCESO del aprobado (password reset de Firebase).
+       *
+       * `auth.createUser` deja la cuenta **sin contraseña** y con
+       * `emailVerified=false`: sin esto el aprobado no puede autenticarse y,
+       * aunque lo lograra, el gate de `POST /empresas/onboarding-admin`
+       * (`routes/empresas.ts`) lo rechaza con 403 `email_not_verified`.
+       * Completar un password reset en Firebase **verifica el email**, así que
+       * este link es el camino de acceso completo.
+       *
+       * Mismo trato que `onboardingToken`: viaja SOLO en la respuesta al admin
+       * autenticado, nunca se persiste ni se loguea en claro. `undefined` si
+       * Firebase falló al generarlo (degradación: el alta no se pierde por un
+       * problema de link — el admin puede reenviar el reset desde el login).
+       */
+      accessLink?: string;
     }
   | { outcome: 'not_found' }
   | { outcome: 'already_processed' }
@@ -251,6 +267,26 @@ export async function approveSignupRequest(
     throw err;
   }
 
+  // T2.0 — link de ACCESO. La cuenta recién creada no tiene contraseña y su
+  // email está sin verificar; completar este reset resuelve ambas cosas de una
+  // (Firebase marca `emailVerified=true` al consumirlo), que es justo lo que el
+  // gate del route de onboarding exige.
+  //
+  // Degradación deliberada: un fallo acá NO aborta el approve. La solicitud ya
+  // fue aprobada y el usuario Firebase existe; perder el alta por un problema de
+  // link sería peor que entregarlo sin él (el admin puede disparar el reset
+  // desde el login). Se loguea el error — nunca se traga en silencio — y el
+  // link jamás entra al log en claro (es una credencial de un solo uso).
+  let accessLink: string | undefined;
+  try {
+    accessLink = await auth.generatePasswordResetLink(request.email);
+  } catch (err) {
+    logger.error(
+      { err, correlationId: opts.correlationId, requestId: opts.id, firebaseUid },
+      'signup-request.approve: generatePasswordResetLink falló; se aprueba sin link de acceso',
+    );
+  }
+
   // Modo admin-provisioned (flag ON): emite token one-shot, persiste
   // token_hash/expira_en/firebase_uid y NO precrea users (destraba el 409
   // approve→onboarding). El dueño consume el token en T1.5a. Un solo UPDATE
@@ -324,6 +360,7 @@ export async function approveSignupRequest(
       userId: null,
       onboardingToken: token,
       onboardingTokenExpiresAt: expiraEn,
+      ...(accessLink ? { accessLink } : {}),
     };
   }
 
@@ -401,7 +438,7 @@ export async function approveSignupRequest(
     },
     'signup-request.approve: success',
   );
-  return { outcome: 'approved', firebaseUid, userId };
+  return { outcome: 'approved', firebaseUid, userId, ...(accessLink ? { accessLink } : {}) };
 }
 
 export type RejectSignupRequestResult =

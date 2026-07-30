@@ -37,6 +37,24 @@ const ADMIN_PROVISIONED = { signingSecret: SECRET, ttlMs: 72 * 60 * 60 * 1000 };
 function makeAuth(uid = FB_UID): Auth {
   return { createUser: vi.fn(async () => ({ uid })) } as unknown as Auth;
 }
+/** Auth con `generatePasswordResetLink` funcional (T2.0). */
+function makeAuthWithResetLink(link: string, uid = FB_UID) {
+  return {
+    createUser: vi.fn(async () => ({ uid })),
+    generatePasswordResetLink: vi.fn(async () => link),
+  } as unknown as Auth & { generatePasswordResetLink: ReturnType<typeof vi.fn> };
+}
+
+/** Auth cuyo `generatePasswordResetLink` falla (T2.0 — degradación). */
+function makeAuthWithResetLinkThrowing(uid = FB_UID) {
+  return {
+    createUser: vi.fn(async () => ({ uid })),
+    generatePasswordResetLink: vi.fn(async () => {
+      throw new Error('firebase: quota exceeded');
+    }),
+  } as unknown as Auth & { generatePasswordResetLink: ReturnType<typeof vi.fn> };
+}
+
 function makeAuthThrowing(code: string): Auth {
   return {
     createUser: vi.fn(async () => {
@@ -195,6 +213,90 @@ describe('approveSignupRequest — modo admin-provisioned (flag ON)', () => {
     });
     expect(result).toEqual({ outcome: 'already_processed' });
     expect(notifier.notifyUserOfApproval).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2.0 — link de ACCESO junto al de onboarding
+// ---------------------------------------------------------------------------
+// El approve crea la cuenta Firebase sin contraseña y con emailVerified=false;
+// sin un camino de acceso, el aprobado no puede autenticarse y, aunque lo
+// lograra, el gate de `POST /empresas/onboarding-admin` lo rechaza con 403
+// `email_not_verified`. Completar un password reset en Firebase marca el email
+// como verificado, así que el link de reset ES el camino de acceso.
+describe('approveSignupRequest — link de acceso (T2.0)', () => {
+  it('emite accessLink junto al token de onboarding', async () => {
+    const { db } = makeDb();
+    const notifier = makeNotifier();
+    const auth = makeAuthWithResetLink('https://app.boosterchile.com/__/auth/action?mode=reset');
+
+    const result = await approveSignupRequest(db, noopLogger, auth, notifier, {
+      id: SID,
+      approverEmail: 'admin@booster.cl',
+      loginLinkUrl: 'https://app.boosterchile.com/login',
+      correlationId: 'corr-access-1',
+      adminProvisionedOnboarding: ADMIN_PROVISIONED,
+    });
+
+    expect(result.outcome).toBe('approved');
+    if (result.outcome !== 'approved') {
+      return;
+    }
+    expect(result.accessLink).toBe('https://app.boosterchile.com/__/auth/action?mode=reset');
+    // Se generó para el email de la solicitud, no para otro.
+    expect(auth.generatePasswordResetLink).toHaveBeenCalledWith(REQUEST.email);
+  });
+
+  it('degrada sin romper el approve si Firebase falla al generar el link', async () => {
+    const { db } = makeDb();
+    const notifier = makeNotifier();
+    const auth = makeAuthWithResetLinkThrowing();
+
+    const result = await approveSignupRequest(db, noopLogger, auth, notifier, {
+      id: SID,
+      approverEmail: 'admin@booster.cl',
+      loginLinkUrl: 'https://app.boosterchile.com/login',
+      correlationId: 'corr-access-2',
+      adminProvisionedOnboarding: ADMIN_PROVISIONED,
+    });
+
+    // El alta NO se pierde por un problema de correo/link: sigue aprobada y
+    // con su token. El admin puede reenviar el reset desde el login.
+    expect(result.outcome).toBe('approved');
+    if (result.outcome !== 'approved') {
+      return;
+    }
+    expect(typeof result.onboardingToken).toBe('string');
+    expect(result.accessLink).toBeUndefined();
+  });
+
+  it('el link de acceso NUNCA se loguea en claro', async () => {
+    const { db } = makeDb();
+    const notifier = makeNotifier();
+    const secretLink = 'https://app.boosterchile.com/__/auth/action?oobCode=SUPER-SECRETO';
+    const logged: unknown[] = [];
+    const capture = (obj: unknown, msg?: unknown): void => {
+      logged.push(obj, msg);
+    };
+    const capturingLogger = {
+      trace: noop,
+      debug: noop,
+      info: capture,
+      warn: capture,
+      error: capture,
+      fatal: noop,
+      child: () => capturingLogger,
+    } as never;
+
+    await approveSignupRequest(db, capturingLogger, makeAuthWithResetLink(secretLink), notifier, {
+      id: SID,
+      approverEmail: 'admin@booster.cl',
+      loginLinkUrl: 'https://app.boosterchile.com/login',
+      correlationId: 'corr-access-3',
+      adminProvisionedOnboarding: ADMIN_PROVISIONED,
+    });
+
+    expect(JSON.stringify(logged)).not.toContain('SUPER-SECRETO');
   });
 });
 
