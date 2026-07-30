@@ -9,6 +9,7 @@ import { ArrowLeft, Building2, Loader2, LogOut, Plus, ShieldCheck, UserPlus } fr
 import { type FormEvent, useEffect, useState } from 'react';
 import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { InvitarMiembroEmpresa } from '../components/admin/InvitarMiembroEmpresa.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -138,6 +139,8 @@ function PlatformAdminPage() {
             Editar sitio →
           </Link>
         </div>
+
+        <InvitarMiembroEmpresa />
 
         <StakeholderOrgsSection />
 
