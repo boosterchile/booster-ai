@@ -82,3 +82,31 @@ export const empresaCreateSchema = empresaSchema
     status: empresaStatusSchema.default('pendiente_verificacion'),
   });
 export type EmpresaCreate = z.infer<typeof empresaCreateSchema>;
+
+/**
+ * Roles asignables al invitar a alguien a una empresa EXISTENTE.
+ *
+ * Excluye dos del enum de `membresias.rol`:
+ *   - `conductor` — tiene su propio alta (`POST /conductores`), que además
+ *     crea la ficha de conductor con licencia y vencimientos.
+ *   - `stakeholder_sostenibilidad` — pertenece a organizaciones stakeholder
+ *     (ADR-034), no a empresas; el CHECK XOR de la BD lo impide.
+ */
+export const rolInvitacionEmpresaSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador']);
+export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
+
+/**
+ * Payload para sumar una persona a una empresa que YA existe.
+ *
+ * Existe porque el onboarding solo sabe crear empresa + dueño de cero: con el
+ * RUT ya registrado devuelve 409 `rut_already_registered`, así que no había
+ * forma de darle acceso a la segunda persona de un cliente. El backend crea la
+ * cuenta Firebase (si el email es nuevo), la fila `usuarios` y la membresía, y
+ * devuelve el link de acceso para que la persona fije su contraseña.
+ */
+export const invitarMiembroEmpresaSchema = z.object({
+  email: z.string().email().max(320),
+  full_name: z.string().min(2).max(200),
+  rol: rolInvitacionEmpresaSchema,
+});
+export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;

@@ -24,6 +24,7 @@ import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
+import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
@@ -667,6 +668,22 @@ export function createServer(opts: CreateServerOptions): Hono {
         auth: opts.firebaseAuth,
         notifier: new LoggingSignupRequestNotifier(logger),
       }),
+    );
+
+    // Fase 3.5 (onboarding-flow-redesign) — POST /admin/empresas/:id/miembros.
+    // Suma personas a una empresa que YA existe, el caso que el onboarding no
+    // cubre (RUT registrado → 409). Mismo chain que signup-requests; la
+    // autorización real la da `requirePlatformAdmin` dentro del handler.
+    app.use(
+      '/admin/empresas/*',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
+    app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/empresas',
+      createAdminEmpresaMiembrosRoutes({ db: opts.db, logger, auth: opts.firebaseAuth }),
     );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
