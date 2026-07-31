@@ -44,8 +44,11 @@ async function fillStep1AndAdvance() {
   });
   fireEvent.change(screen.getByLabelText(/Teléfono móvil/), { target: { value: '+56912345678' } });
   fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
-  // RUT marcado opcional pero el schema rechaza string vacío. Pasamos uno válido.
+  // RUT y clave son obligatorios desde alta-cliente-autocontenida: juntos son
+  // la credencial con la que la persona vuelve a entrar (ADR-035).
   fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
+  fireEvent.change(screen.getByLabelText(/^Clave numérica/), { target: { value: '482915' } });
+  fireEvent.change(screen.getByLabelText(/Repite tu clave/), { target: { value: '482915' } });
   fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
   await screen.findByText('Tu empresa');
 }
@@ -337,5 +340,93 @@ describe('OnboardingForm — mutation inyectada (W1.3 onboarding-admin)', () => 
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/enlace ya no es válido/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// alta-cliente-autocontenida — la persona sale del alta con credencial propia
+// ---------------------------------------------------------------------------
+// El alta terminaba sin credencial usable: la cuenta quedaba sin contraseña y
+// el producto entra con RUT + clave numérica (ADR-035), así que la persona no
+// podía volver. Ahora elige su clave acá y nadie más la conoce.
+describe('OnboardingForm — clave numérica propia', () => {
+  it('el RUT ya no se ofrece como opcional: es la credencial de acceso', () => {
+    renderForm();
+    expect(screen.queryByLabelText(/RUT \(opcional\)/)).toBeNull();
+    expect(screen.getByLabelText(/^RUT/)).toBeInTheDocument();
+  });
+
+  it('pide la clave de 6 dígitos y su confirmación', () => {
+    renderForm();
+    expect(screen.getByLabelText(/^Clave numérica/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Repite tu clave/)).toBeInTheDocument();
+  });
+
+  it('no avanza si las dos claves no coinciden', async () => {
+    renderForm();
+    fireEvent.change(screen.getByLabelText(/Nombre completo/), {
+      target: { value: 'Felipe Vicencio' },
+    });
+    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+      target: { value: '+56912345678' },
+    });
+    fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
+    fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
+    fireEvent.change(screen.getByLabelText(/^Clave numérica/), { target: { value: '482915' } });
+    fireEvent.change(screen.getByLabelText(/Repite tu clave/), { target: { value: '482916' } });
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+
+    await waitFor(() => expect(screen.getByText(/no coinciden/i)).toBeInTheDocument());
+    // Sigue en el paso 1: no pasó a "Tu empresa".
+    expect(screen.getByText('Tus datos')).toBeInTheDocument();
+  });
+
+  it('rechaza una clave que no sea de 6 dígitos', async () => {
+    renderForm();
+    fireEvent.change(screen.getByLabelText(/Nombre completo/), {
+      target: { value: 'Felipe Vicencio' },
+    });
+    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+      target: { value: '+56912345678' },
+    });
+    fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
+    fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
+    fireEvent.change(screen.getByLabelText(/^Clave numérica/), { target: { value: '1234' } });
+    fireEvent.change(screen.getByLabelText(/Repite tu clave/), { target: { value: '1234' } });
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+
+    await waitFor(() => expect(screen.getByText('Tus datos')).toBeInTheDocument());
+  });
+
+  it('envía la clave en el body del alta', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      user: { id: 'u1' },
+      empresa: { id: 'e1' },
+      membership: { id: 'm1' },
+    } as never);
+
+    renderForm();
+    fireEvent.change(screen.getByLabelText(/Nombre completo/), {
+      target: { value: 'Felipe Vicencio' },
+    });
+    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+      target: { value: '+56912345678' },
+    });
+    fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
+    fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
+    fireEvent.change(screen.getByLabelText(/^Clave numérica/), { target: { value: '482915' } });
+    fireEvent.change(screen.getByLabelText(/Repite tu clave/), { target: { value: '482915' } });
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+    await screen.findByText('Tu empresa');
+
+    await fillStep2AndAdvance();
+    await fillStep3AndAdvance();
+    fireEvent.click(screen.getByRole('button', { name: /Crear mi empresa|Finalizar|Crear/ }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalled());
+    const body = postSpy.mock.calls[0]?.[1] as { user: { clave_numerica?: string } };
+    expect(body.user.clave_numerica).toBe('482915');
+    // La confirmación es solo de la UI: no viaja al backend.
+    expect(JSON.stringify(body)).not.toContain('clave_confirmacion');
   });
 });

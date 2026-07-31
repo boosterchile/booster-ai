@@ -5,6 +5,7 @@ import {
   OnboardingTokenNotConsumableError,
   OnboardingTokenRequiredError,
   PlanNotFoundError,
+  RutAlreadyRegisteredError,
   SelfOnboardingDisabledError,
   UserAlreadyExistsError,
   onboardEmpresa,
@@ -70,12 +71,20 @@ function makeDb(opts: DbQueues = {}) {
 const FB_UID = 'fb-uid-1';
 const FB_EMAIL = 'felipe@boosterchile.com';
 
+const CLAVE = '482915';
+
+const CONSUMPTION = {
+  solicitudId: '11111111-1111-4111-8111-111111111111',
+  tokenHash: 'a'.repeat(64),
+};
+
 const VALID_INPUT = {
   user: {
     full_name: 'Felipe Vicencio',
     phone: '+56912345678',
     whatsapp_e164: '+56912345678',
-    rut: '11.111.111-1',
+    rut: '11111111-1', // ya normalizado por rutSchema en el route
+    clave_numerica: CLAVE,
   },
   empresa: {
     legal_name: 'Booster SpA',
@@ -108,6 +117,7 @@ describe('onboardEmpresa', () => {
       selects: [
         [], // user by firebase_uid → no existe
         [], // user by email → no existe
+        [], // user by rut → libre (SC6)
         [], // empresa by rut → no existe
         [{ id: 'plan-uuid', slug: 'gratis', isActive: true }], // plan
       ],
@@ -177,7 +187,8 @@ describe('onboardEmpresa', () => {
       selects: [
         [], // por firebase_uid
         [], // por email
-        [{ id: 'existing-empresa' }], // por rut → existe
+        [], // por rut del usuario → libre
+        [{ id: 'existing-empresa' }], // por rut de la empresa → existe
       ],
     });
 
@@ -199,7 +210,8 @@ describe('onboardEmpresa', () => {
       selects: [
         [], // por firebase_uid
         [], // por email
-        [], // por rut
+        [], // por rut del usuario
+        [], // por rut de la empresa
         [], // plan no existe
       ],
     });
@@ -223,6 +235,7 @@ describe('onboardEmpresa', () => {
         [],
         [],
         [],
+        [],
         [{ id: 'plan-uuid', slug: 'gratis', isActive: false }], // plan inactivo
       ],
     });
@@ -240,9 +253,12 @@ describe('onboardEmpresa', () => {
     ).rejects.toThrow(PlanNotFoundError);
   });
 
-  it('rut del usuario opcional (null) — INSERT no incluye campo rut', async () => {
+  // Reemplaza al test previo "rut del usuario opcional (null)": bajo ADR-035 el
+  // RUT es la credencial de acceso, así que el alta SIEMPRE lo persiste. Un
+  // usuario sin RUT no podría volver a entrar (`login-rut` lo busca por ahí).
+  it('persiste el rut del usuario — es su credencial, no un dato opcional', async () => {
     const db = makeDb({
-      selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
+      selects: [[], [], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
       inserts: [[{ id: 'user-uuid' }], [{ id: 'empresa-uuid' }], [{ id: 'membership-uuid' }]],
     });
 
@@ -253,15 +269,20 @@ describe('onboardEmpresa', () => {
       firebaseEmail: FB_EMAIL,
       authorizedBy: 'self_service',
       selfServiceEnabled: true,
-      input: { ...VALID_INPUT, user: { ...VALID_INPUT.user, rut: null } },
+      input: VALID_INPUT,
     });
 
     expect(result.user.id).toBe('user-uuid');
+    const userInsert = db.insert.mock.results[0]?.value as {
+      values: { mock: { calls: unknown[][] } };
+    };
+    const values = userInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(values.rut).toBe('11111111-1');
   });
 
   it('addressNumber opcional (null) — concatena solo street', async () => {
     const db = makeDb({
-      selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
+      selects: [[], [], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
       inserts: [[{ id: 'u' }], [{ id: 'e' }], [{ id: 'm' }]],
     });
     const result = await onboardEmpresa({
@@ -284,7 +305,7 @@ describe('onboardEmpresa', () => {
 
   it('throw "Insert user returned no row" si INSERT user falla', async () => {
     const db = makeDb({
-      selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
+      selects: [[], [], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
       inserts: [[]], // user insert returns vacío
     });
     await expect(
@@ -321,16 +342,13 @@ describe('onboardEmpresa', () => {
   });
 
   // T1.5a — admin_provisioned: no lo bloquea el flag self-service, PERO ahora
-  // exige consumir el token one-shot (paso 0 atómico).
-  const CONSUMPTION = {
-    solicitudId: '11111111-1111-4111-8111-111111111111',
-    tokenHash: 'a'.repeat(64),
-  };
+  // exige consumir el token one-shot (paso 0 atómico). `CONSUMPTION` es de
+  // módulo: lo comparten los describes de abajo.
 
   it('admin_provisioned NO se ve afectado por el flag self-service OFF y consume el token', async () => {
     const db = makeDb({
       updates: [[{ id: 'sig-uuid' }]], // consume del token OK (1 fila)
-      selects: [[], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
+      selects: [[], [], [], [], [{ id: 'plan-uuid', slug: 'gratis', isActive: true }]],
       inserts: [[{ id: 'user-uuid' }], [{ id: 'empresa-uuid' }], [{ id: 'membership-uuid' }]],
     });
 
@@ -381,5 +399,143 @@ describe('onboardEmpresa', () => {
       }),
     ).rejects.toThrow(OnboardingTokenRequiredError);
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// alta-cliente-autocontenida — la persona queda con credencial propia
+// ---------------------------------------------------------------------------
+// Antes el alta terminaba sin credencial usable: la cuenta Firebase quedaba
+// sin contraseña y el producto pide RUT + clave numérica (ADR-035), así que
+// el recién dado de alta no podía volver a entrar sin pasar por el login
+// legacy. Ahora la clave se define en el mismo acto y nadie más la conoce.
+describe('onboardEmpresa — credencial propia (alta-cliente-autocontenida)', () => {
+  it('persiste la clave numérica HASHEADA, nunca en claro', async () => {
+    const db = makeDb({
+      selects: [
+        [], // user by firebase_uid
+        [], // user by email
+        [], // user by rut → libre
+        [], // empresa by rut
+        [{ id: 'plan-1', slug: 'gratis', isActive: true }],
+      ],
+      inserts: [
+        [{ id: 'user-1', email: FB_EMAIL, fullName: 'Felipe Vicencio' }],
+        [{ id: 'empresa-1', isTransportista: false }],
+        [{ id: 'membership-1', role: 'dueno', status: 'activa' }],
+      ],
+      updates: [[{ id: 'sol-1' }]],
+    });
+
+    await onboardEmpresa({
+      db: db as never,
+      logger: noopLogger,
+      firebaseUid: FB_UID,
+      firebaseEmail: FB_EMAIL,
+      authorizedBy: 'admin_provisioned',
+      selfServiceEnabled: false,
+      input: VALID_INPUT,
+      onboardingTokenConsumption: CONSUMPTION,
+    });
+
+    const userInsert = db.insert.mock.results[0]?.value as {
+      values: { mock: { calls: unknown[][] } };
+    };
+    const values = userInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(values.claveNumericaHash).toBeDefined();
+    expect(values.claveNumericaHash).not.toBe(CLAVE);
+    expect(JSON.stringify(values)).not.toContain(CLAVE);
+    // El RUT queda persistido: es la otra mitad de la credencial.
+    expect(values.rut).toBe('11111111-1');
+  });
+
+  it('rechaza el alta si el RUT ya pertenece a otra persona — sin crear nada', async () => {
+    const db = makeDb({
+      selects: [
+        [], // user by firebase_uid
+        [], // user by email
+        [{ id: 'otro-user' }], // user by rut → TOMADO
+      ],
+      updates: [[{ id: 'sol-1' }]],
+    });
+
+    await expect(
+      onboardEmpresa({
+        db: db as never,
+        logger: noopLogger,
+        firebaseUid: FB_UID,
+        firebaseEmail: FB_EMAIL,
+        authorizedBy: 'admin_provisioned',
+        selfServiceEnabled: false,
+        input: VALID_INPUT,
+        onboardingTokenConsumption: CONSUMPTION,
+      }),
+    ).rejects.toThrow(RutAlreadyRegisteredError);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it('toma identidad de la solicitud consumida, no de una sesión del caller', async () => {
+    // El alta ya no depende de que la persona traiga sesión Firebase: la
+    // fuente autorizada es la solicitud que el admin aprobó. El email y el uid
+    // salen del RETURNING del consumo, así que un caller no puede alterarlos.
+    const db = makeDb({
+      selects: [[], [], [], [], [{ id: 'plan-1', slug: 'gratis', isActive: true }]],
+      inserts: [
+        [{ id: 'user-1' }],
+        [{ id: 'empresa-1', isTransportista: false }],
+        [{ id: 'membership-1' }],
+      ],
+      updates: [[{ id: 'sol-1', email: 'aprobado@cliente.cl', firebaseUid: 'uid-del-approve' }]],
+    });
+
+    const result = await onboardEmpresa({
+      db: db as never,
+      logger: noopLogger,
+      authorizedBy: 'admin_provisioned',
+      selfServiceEnabled: false,
+      input: VALID_INPUT,
+      onboardingTokenConsumption: CONSUMPTION,
+    });
+
+    const userInsert = db.insert.mock.results[0]?.value as {
+      values: { mock: { calls: unknown[][] } };
+    };
+    const values = userInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(values.email).toBe('aprobado@cliente.cl');
+    expect(values.firebaseUid).toBe('uid-del-approve');
+    // El uid queda disponible para que el route mintee el custom token.
+    expect(result.firebaseUid).toBe('uid-del-approve');
+  });
+
+  it('conserva el email REAL de la persona, no un sintético', async () => {
+    const db = makeDb({
+      selects: [[], [], [], [], [{ id: 'plan-1', slug: 'gratis', isActive: true }]],
+      inserts: [
+        [{ id: 'user-1', email: FB_EMAIL, fullName: 'Felipe Vicencio' }],
+        [{ id: 'empresa-1', isTransportista: false }],
+        [{ id: 'membership-1', role: 'dueno', status: 'activa' }],
+      ],
+      updates: [[{ id: 'sol-1' }]],
+    });
+
+    await onboardEmpresa({
+      db: db as never,
+      logger: noopLogger,
+      firebaseUid: FB_UID,
+      firebaseEmail: FB_EMAIL,
+      authorizedBy: 'admin_provisioned',
+      selfServiceEnabled: false,
+      input: VALID_INPUT,
+      onboardingTokenConsumption: CONSUMPTION,
+    });
+
+    const userInsert = db.insert.mock.results[0]?.value as {
+      values: { mock: { calls: unknown[][] } };
+    };
+    const values = userInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    // El sintético (`users+<rut>@…invalid`) es identificador interno de
+    // Firebase; el canal de comunicación con la persona es su email real.
+    expect(values.email).toBe(FB_EMAIL);
+    expect(String(values.email)).not.toContain('invalid');
   });
 });

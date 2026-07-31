@@ -13,6 +13,7 @@ import {
   solicitudesRegistro,
   users,
 } from '../db/schema.js';
+import { hashClaveNumerica } from './clave-numerica.js';
 
 /**
  * Resultado del onboarding exitoso. Mismo shape que /me onboarded para
@@ -23,6 +24,12 @@ export interface OnboardingResult {
   user: UserRow;
   empresa: EmpresaRow;
   membership: MembershipRow;
+  /**
+   * uid de Firebase con el que quedó la persona. El route lo usa para mintear
+   * el custom token que la deja logueada al terminar el alta, sin pasar por
+   * ninguna pantalla de login (alta-cliente-autocontenida SC1).
+   */
+  firebaseUid: string;
 }
 
 export class UserAlreadyExistsError extends Error {
@@ -50,6 +57,21 @@ export class EmailAlreadyInUseError extends Error {
   constructor(public readonly email: string) {
     super(`User with email=${email} already exists with a different firebase_uid`);
     this.name = 'EmailAlreadyInUseError';
+  }
+}
+
+/**
+ * alta-cliente-autocontenida SC6 — el RUT ya pertenece a otra persona.
+ *
+ * Bajo ADR-035 el RUT es la credencial de acceso: permitir que un alta lo
+ * reclame sería entregarle a alguien la mitad de la identidad de otro (por
+ * ejemplo, la de un conductor ya cargado por su empresa). El route colapsa
+ * este caso sin revelar de quién es el RUT.
+ */
+export class RutAlreadyRegisteredError extends Error {
+  constructor(public readonly rut: string) {
+    super(`User with rut=${rut} already exists`);
+    this.name = 'RutAlreadyRegisteredError';
   }
 }
 
@@ -115,8 +137,13 @@ export type OnboardingAuthorization = 'self_service' | 'admin_provisioned';
 export async function onboardEmpresa(opts: {
   db: Db;
   logger: Logger;
-  firebaseUid: string;
-  firebaseEmail: string;
+  /**
+   * Claims del caller. Solo las usa el self-service viejo (OFF por SEC-001):
+   * en `admin_provisioned` la identidad sale de la solicitud consumida, por
+   * eso son opcionales — ese path ya no exige sesión previa.
+   */
+  firebaseUid?: string;
+  firebaseEmail?: string;
   input: EmpresaOnboardingInput;
   /** Base de autorización del caller (arg requerido — ver OnboardingAuthorization). */
   authorizedBy: OnboardingAuthorization;
@@ -131,7 +158,7 @@ export async function onboardEmpresa(opts: {
    */
   onboardingTokenConsumption?: { solicitudId: string; tokenHash: string };
 }): Promise<OnboardingResult> {
-  const { db, logger, firebaseUid, firebaseEmail, input, authorizedBy, selfServiceEnabled } = opts;
+  const { db, logger, input, authorizedBy, selfServiceEnabled } = opts;
 
   // SEC-001 hotfix — service-layer invariant (defensa en profundidad). El
   // gate de ruta `/empresas/onboarding` ya rechaza self-service cuando el
@@ -146,6 +173,12 @@ export async function onboardEmpresa(opts: {
   if (authorizedBy === 'admin_provisioned' && !opts.onboardingTokenConsumption) {
     throw new OnboardingTokenRequiredError();
   }
+
+  // Identidad efectiva del alta. Para `admin_provisioned` la pisan los datos
+  // de la solicitud consumida (paso 0); para el self-service viejo (OFF por
+  // SEC-001) siguen siendo las claims que pasa el caller.
+  let identidadUid = opts.firebaseUid ?? '';
+  let identidadEmail = opts.firebaseEmail ?? '';
 
   return await db.transaction(async (tx) => {
     // 0. (admin-provisioned) Consumir el token one-shot ATÓMICAMENTE. El
@@ -175,9 +208,26 @@ export async function onboardEmpresa(opts: {
             gt(solicitudesRegistro.expiraEn, sql`now()`),
           ),
         )
-        .returning({ id: solicitudesRegistro.id });
+        .returning({
+          id: solicitudesRegistro.id,
+          email: solicitudesRegistro.email,
+          firebaseUid: solicitudesRegistro.firebaseUid,
+        });
       if (consumed.length === 0) {
         throw new OnboardingTokenNotConsumableError();
+      }
+
+      // alta-cliente-autocontenida — la identidad sale de la solicitud que el
+      // admin aprobó, no de una sesión que traiga el caller. Es lo que permite
+      // que el alta no exija login previo: el token ES la autorización (spec
+      // madre §6.2) y el email/uid vienen de la fuente autorizada, así que
+      // nadie puede completar el alta a nombre de otro cambiando su sesión.
+      const fila = consumed[0];
+      if (fila?.email) {
+        identidadEmail = fila.email;
+      }
+      if (fila?.firebaseUid) {
+        identidadUid = fila.firebaseUid;
       }
     }
 
@@ -185,20 +235,33 @@ export async function onboardEmpresa(opts: {
     const existingByUid = await tx
       .select()
       .from(users)
-      .where(eq(users.firebaseUid, firebaseUid))
+      .where(eq(users.firebaseUid, identidadUid))
       .limit(1);
     if (existingByUid.length > 0) {
-      throw new UserAlreadyExistsError(firebaseUid);
+      throw new UserAlreadyExistsError(identidadUid);
     }
 
     // 2. Verificar email no usado por otro user.
     const existingByEmail = await tx
       .select()
       .from(users)
-      .where(eq(users.email, firebaseEmail))
+      .where(eq(users.email, identidadEmail))
       .limit(1);
     if (existingByEmail.length > 0) {
-      throw new EmailAlreadyInUseError(firebaseEmail);
+      throw new EmailAlreadyInUseError(identidadEmail);
+    }
+
+    // 2b. Verificar que el RUT de la persona esté libre (SC6). Va ANTES del
+    //     resto de las escrituras: bajo ADR-035 el RUT es media credencial, y
+    //     dejar que un alta reclame el RUT de otro (p.ej. un conductor ya
+    //     cargado por su empresa) sería entregarle parte de su identidad.
+    const existingByRut = await tx
+      .select()
+      .from(users)
+      .where(eq(users.rut, input.user.rut))
+      .limit(1);
+    if (existingByRut.length > 0) {
+      throw new RutAlreadyRegisteredError(input.user.rut);
     }
 
     // 3. Verificar empresa.rut no duplicado.
@@ -219,15 +282,27 @@ export async function onboardEmpresa(opts: {
     }
 
     // 5. Insertar user.
+    //
+    //    `email` es el REAL de la persona (el de su solicitud aprobada), no un
+    //    sintético: es el canal de comunicación de la plataforma con ella
+    //    (spec alta-cliente-autocontenida §6.5). El sintético
+    //    `users+<rut>@…invalid` que usa `auth-universal` existe solo como
+    //    identificador interno de Firebase y nunca pisa esta columna.
+    //
+    //    `claveNumericaHash` se guarda hasheado con el mismo scrypt que usa
+    //    `login-rut` para verificar. La clave en claro no se persiste, no se
+    //    loguea y no vuelve en ninguna respuesta: la eligió la persona y nadie
+    //    más la conoce.
     const userInsert = await tx
       .insert(users)
       .values({
-        firebaseUid,
-        email: firebaseEmail,
+        firebaseUid: identidadUid,
+        email: identidadEmail,
         fullName: input.user.full_name,
         phone: input.user.phone,
         whatsappE164: input.user.whatsapp_e164,
-        ...(input.user.rut ? { rut: input.user.rut } : {}),
+        rut: input.user.rut,
+        claveNumericaHash: hashClaveNumerica(input.user.clave_numerica),
         status: 'activo',
         isPlatformAdmin: false,
       })
@@ -305,6 +380,6 @@ export async function onboardEmpresa(opts: {
       'empresa onboarded',
     );
 
-    return { user, empresa, membership };
+    return { user, empresa, membership, firebaseUid: identidadUid };
   });
 }

@@ -19,6 +19,7 @@ import { createRateLimitPinMiddleware } from './middleware/rate-limit-pin.js';
 import { createRateLimitPublicTrackingMiddleware } from './middleware/rate-limit-public-tracking.js';
 import { createRateLimitSignupMiddleware } from './middleware/rate-limit-signup.js';
 import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-limit-transport-documents.js';
+import { skipOnboardingAdmin } from './middleware/skip-onboarding-admin.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
@@ -385,19 +386,41 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
     // Solo firebaseAuth (no userContext) porque el user todavía no existe
     // en la DB cuando llama acá.
+    // alta-cliente-autocontenida — `POST /empresas/onboarding-admin` queda
+    // FUERA del chain de Firebase: lo completa alguien que todavía no existe
+    // en la plataforma, con el token one-shot como única credencial. El resto
+    // de `/empresas/*` mantiene el chain intacto (`skipOnboardingAdmin` corta
+    // solo para ese método+path exacto).
     app.use(
       '/empresas/*',
-      firebaseAuthMiddleware,
-      demoExpiresMiddleware,
-      isDemoEnforcementMiddleware,
+      skipOnboardingAdmin(firebaseAuthMiddleware),
+      skipOnboardingAdmin(demoExpiresMiddleware),
+      skipOnboardingAdmin(isDemoEnforcementMiddleware),
     );
     // Sin userContext (onboarding) → fail-closed: bloquea onboarding impersonado.
-    app.use('/empresas/*', impersonationWriteGuardMiddleware);
+    app.use('/empresas/*', skipOnboardingAdmin(impersonationWriteGuardMiddleware));
+    // Al perder la sesión como barrera, el endpoint necesita su propia defensa
+    // (spec §6 constraint 4): rate limit por IP fail-closed — si Redis cae,
+    // responde 503 en vez de dejar pasar.
+    //
+    // Cubo PROPIO (`keyPrefix`): el flujo completo pasa por el signup público
+    // y por acá, así que compartir presupuesto lo descontaría dos veces, y una
+    // oficina tras un NAT no podría completar altas porque otro pidió acceso
+    // desde la misma IP. Detectado probando el flujo end-to-end (429).
+    app.use(
+      '/empresas/onboarding-admin',
+      createRateLimitSignupMiddleware({
+        redis: redisForRateLimit,
+        logger,
+        keyPrefix: 'rl:onboarding-alta:',
+      }),
+    );
     app.route(
       '/empresas',
       createEmpresaRoutes({
         db: opts.db,
         logger,
+        auth: opts.firebaseAuth,
         selfOnboardingEnabled: config.EMPRESA_SELF_ONBOARDING_ENABLED,
         adminProvisionedOnboardingEnabled: config.ADMIN_PROVISIONED_ONBOARDING_ENABLED,
         onboardingTokenSecret: config.ONBOARDING_TOKEN_SIGNING_SECRET,

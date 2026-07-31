@@ -1,10 +1,6 @@
 import { useSearch } from '@tanstack/react-router';
-import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { OnboardingForm } from '../components/onboarding/OnboardingForm.js';
-import type { MeResponse } from '../hooks/use-me.js';
 import { useOnboardingAdminMutation } from '../hooks/use-onboarding-admin-mutation.js';
-
-type MeNeedsOnboarding = Extract<MeResponse, { needs_onboarding: true }>;
 
 interface OnboardingAdminSearch {
   token?: string;
@@ -40,16 +36,13 @@ export function OnboardingAdminRoute() {
     return <TokenMissingPage />;
   }
 
-  return (
-    <ProtectedRoute meRequirement="allow-pre-onboarding">
-      {(ctx) => {
-        if (ctx.kind !== 'pre-onboarding') {
-          return null;
-        }
-        return <OnboardingAdminPage me={ctx.me} token={token} />;
-      }}
-    </ProtectedRoute>
-  );
+  // alta-cliente-autocontenida SC1 — sin ProtectedRoute a propósito.
+  //
+  // Quien abre este enlace todavía no existe en la plataforma: no tiene
+  // contraseña y el login principal le pide un RUT + clave que recién va a
+  // crear acá. Exigirle sesión lo dejaba en un callejón sin salida. La
+  // autorización la da el token del enlace, que el backend verifica y consume.
+  return <OnboardingAdminPage token={token} />;
 }
 
 function PageHeader() {
@@ -63,8 +56,7 @@ function PageHeader() {
   );
 }
 
-function OnboardingAdminPage({ me, token }: { me: MeNeedsOnboarding; token: string }) {
-  const firstName = me.firebase.name?.split(' ')[0];
+function OnboardingAdminPage({ token }: { token: string }) {
   const mutation = useOnboardingAdminMutation(token);
 
   return (
@@ -75,18 +67,16 @@ function OnboardingAdminPage({ me, token }: { me: MeNeedsOnboarding; token: stri
         <div className="w-full max-w-2xl">
           <div className="mb-6 text-center">
             <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-              Bienvenido{firstName ? `, ${firstName}` : ''}
+              Bienvenido a Booster
             </h1>
             <p className="mt-2 text-neutral-600 text-sm">
               Impacta menos, transporta más. En 2 minutos creamos tu empresa y empiezas a operar.
             </p>
           </div>
 
-          <OnboardingForm
-            firebaseEmail={me.firebase.email ?? ''}
-            firebaseName={me.firebase.name}
-            mutation={mutation}
-          />
+          {/* Sin sesión no hay datos que precargar: la persona los completa.
+              El email de contacto de la empresa es un campo del formulario. */}
+          <OnboardingForm firebaseEmail="" firebaseName={undefined} mutation={mutation} />
         </div>
       </main>
     </div>

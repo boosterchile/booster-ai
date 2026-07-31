@@ -262,10 +262,72 @@ describe('profile', () => {
 });
 
 describe('onboarding', () => {
+  // alta-cliente-autocontenida SC5 — el RUT es la credencial de acceso del
+  // producto (ADR-035: RUT + clave numérica), así que deja de ser opcional.
+  // Y la persona define su propia clave en el mismo acto (spec §6.5): nadie
+  // más la conoce.
+  it('exige rut del dueño — es su credencial de acceso, no un dato opcional', () => {
+    const schema = onboarding.empresaOnboardingInputSchema;
+    const sinRut = {
+      user: {
+        full_name: 'Juan',
+        phone: VALID_PHONE,
+        whatsapp_e164: VALID_PHONE,
+        clave_numerica: '482915',
+      },
+      empresa: {
+        legal_name: 'T',
+        rut: VALID_RUT,
+        contact_email: VALID_EMAIL,
+        contact_phone: VALID_PHONE,
+        address: ADDR,
+        is_generador_carga: false,
+        is_transportista: true,
+      },
+      plan_slug: 'gratis',
+    };
+    expect(() => schema.parse(sinRut)).toThrow();
+  });
+
+  it('exige clave numérica de 6 dígitos y rechaza otros formatos', () => {
+    const schema = onboarding.empresaOnboardingInputSchema;
+    const con = (clave: unknown) => ({
+      user: {
+        full_name: 'Juan',
+        phone: VALID_PHONE,
+        whatsapp_e164: VALID_PHONE,
+        rut: VALID_RUT,
+        ...(clave === undefined ? {} : { clave_numerica: clave }),
+      },
+      empresa: {
+        legal_name: 'T',
+        rut: VALID_RUT,
+        contact_email: VALID_EMAIL,
+        contact_phone: VALID_PHONE,
+        address: ADDR,
+        is_generador_carga: false,
+        is_transportista: true,
+      },
+      plan_slug: 'gratis',
+    });
+
+    expect(schema.parse(con('482915'))).toBeDefined();
+    expect(() => schema.parse(con(undefined))).toThrow();
+    expect(() => schema.parse(con('12345'))).toThrow(); // 5 dígitos
+    expect(() => schema.parse(con('1234567'))).toThrow(); // 7 dígitos
+    expect(() => schema.parse(con('abcdef'))).toThrow(); // no numérica
+  });
+
   it('empresaOnboardingInputSchema exige al menos generador_carga o transportista', () => {
     const schema = onboarding.empresaOnboardingInputSchema;
     const base = {
-      user: { full_name: 'Juan', phone: VALID_PHONE, whatsapp_e164: VALID_PHONE },
+      user: {
+        full_name: 'Juan',
+        phone: VALID_PHONE,
+        whatsapp_e164: VALID_PHONE,
+        rut: VALID_RUT,
+        clave_numerica: '482915',
+      },
       empresa: {
         legal_name: 'T',
         rut: VALID_RUT,

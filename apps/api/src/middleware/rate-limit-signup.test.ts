@@ -218,3 +218,57 @@ describe('rate-limit-signup middleware (SC-1.2.5)', () => {
     expect(calls.incrCalled).toEqual([`${KEY_PREFIX}10.0.0.1`]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// alta-cliente-autocontenida — cubos separados por endpoint
+// ---------------------------------------------------------------------------
+// El alta reusa este middleware, pero NO puede compartir presupuesto con el
+// signup público: si lo hiciera, el propio flujo se descontaría dos veces
+// (pedir acceso + completar el alta) y una oficina tras un NAT quedaría sin
+// poder dar de alta a nadie porque otro pidió acceso desde la misma IP.
+/** Redis mínimo que registra las claves usadas. */
+function makeRedisSpy() {
+  const keys: string[] = [];
+  const redis = {
+    multi: () => ({
+      incr: (k: string) => {
+        keys.push(k);
+        return {
+          expire: () => ({ exec: async () => [[null, 1]] }),
+        };
+      },
+    }),
+  } as never;
+  return { redis, keys };
+}
+
+describe('createRateLimitSignupMiddleware — keyPrefix', () => {
+  it('usa el prefijo por defecto cuando no se configura', async () => {
+    const { redis, keys } = makeRedisSpy();
+    const app = new Hono();
+    app.use('*', createRateLimitSignupMiddleware({ redis, logger: noopLogger }));
+    app.post('/x', (c) => c.json({ ok: true }));
+
+    await app.request('/x', { method: 'POST', headers: { 'x-forwarded-for': '1.2.3.4' } });
+
+    expect(keys[0]).toBe('rl:signup-request:1.2.3.4');
+  });
+
+  it('aísla el cubo cuando se pasa un prefijo propio', async () => {
+    const { redis, keys } = makeRedisSpy();
+    const app = new Hono();
+    app.use(
+      '*',
+      createRateLimitSignupMiddleware({
+        redis,
+        logger: noopLogger,
+        keyPrefix: 'rl:onboarding-alta:',
+      }),
+    );
+    app.post('/x', (c) => c.json({ ok: true }));
+
+    await app.request('/x', { method: 'POST', headers: { 'x-forwarded-for': '1.2.3.4' } });
+
+    expect(keys[0]).toBe('rl:onboarding-alta:1.2.3.4');
+  });
+});

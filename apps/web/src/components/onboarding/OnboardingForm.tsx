@@ -39,6 +39,8 @@ function buildDefaults(opts: {
       full_name: opts.firebaseName ?? '',
       phone: '+569' as unknown as EmpresaOnboardingInput['user']['phone'],
       whatsapp_e164: '+569' as unknown as EmpresaOnboardingInput['user']['whatsapp_e164'],
+      rut: '' as unknown as EmpresaOnboardingInput['user']['rut'],
+      clave_numerica: '' as unknown as EmpresaOnboardingInput['user']['clave_numerica'],
     },
     empresa: {
       legal_name: '',
@@ -141,6 +143,10 @@ export function OnboardingForm({
 }: OnboardingFormProps) {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
+  // Confirmación de la clave: vive solo en la UI para atrapar un tipeo antes
+  // de que la persona quede afuera de su propia cuenta. Nunca se envía.
+  const [claveConfirmacion, setClaveConfirmacion] = useState('');
+  const [claveMismatch, setClaveMismatch] = useState(false);
   // Rules of Hooks: siempre se llama, aunque el resultado no se use cuando
   // el caller inyecta su propia mutación (injectedMutation ?? internal).
   const internalMutation = useOnboardingMutation();
@@ -186,7 +192,15 @@ export function OnboardingForm({
     const fieldsToValidate: ReadonlyArray<Parameters<typeof trigger>[0]> = (() => {
       switch (step) {
         case 1:
-          return [['user.full_name', 'user.phone', 'user.whatsapp_e164', 'user.rut']];
+          return [
+            [
+              'user.full_name',
+              'user.phone',
+              'user.whatsapp_e164',
+              'user.rut',
+              'user.clave_numerica',
+            ],
+          ];
         case 2:
           return [
             [
@@ -208,6 +222,17 @@ export function OnboardingForm({
     })();
 
     const ok = fieldsToValidate.length === 0 ? true : await trigger(fieldsToValidate[0]);
+
+    // La confirmación no la cubre el schema (no viaja al backend), pero un
+    // tipeo acá deja a la persona sin poder entrar: se valida en el paso.
+    if (step === 1) {
+      const mismatch = getValues('user.clave_numerica') !== claveConfirmacion;
+      setClaveMismatch(mismatch);
+      if (mismatch) {
+        return;
+      }
+    }
+
     if (ok && step < 4) {
       setStep(((step as number) + 1) as Step);
     }
@@ -303,8 +328,8 @@ export function OnboardingForm({
               )}
             />
             <FormField
-              label="RUT (opcional)"
-              hint="Tu RUT personal. Acepta con o sin puntos y con o sin guión (123456785 también funciona)."
+              label="RUT"
+              hint="Con este RUT vas a entrar a Booster. Acepta con o sin puntos y con o sin guión (123456785 también funciona)."
               error={errors.user?.rut?.message}
               render={({ id, describedBy }) => (
                 <input
@@ -318,6 +343,55 @@ export function OnboardingForm({
                 />
               )}
             />
+
+            {/* alta-cliente-autocontenida — la clave la elige la persona acá y
+                nadie más la conoce: ni Booster ni quien aprobó su solicitud.
+                Con esto sale del alta ya logueada y puede volver a entrar con
+                RUT + clave, sin pasar por ninguna pantalla de recuperación. */}
+            <div className="rounded-lg border border-primary-200 bg-primary-50/50 p-4">
+              <p className="font-medium text-neutral-900 text-sm">Crea tu clave de acceso</p>
+              <p className="mt-1 text-neutral-600 text-xs">
+                6 dígitos, como la de tu banco. La usarás junto a tu RUT cada vez que entres. No la
+                compartas: nadie de Booster te la va a pedir.
+              </p>
+              <div className="mt-3 space-y-4">
+                <FormField
+                  label="Clave numérica"
+                  error={errors.user?.clave_numerica?.message}
+                  render={({ id, describedBy }) => (
+                    <input
+                      id={id}
+                      aria-describedby={describedBy}
+                      {...register('user.clave_numerica')}
+                      type="password"
+                      autoComplete="new-password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="••••••"
+                      className={inputClass(!!errors.user?.clave_numerica)}
+                    />
+                  )}
+                />
+                <FormField
+                  label="Repite tu clave"
+                  error={claveMismatch ? 'Las claves no coinciden.' : undefined}
+                  render={({ id, describedBy }) => (
+                    <input
+                      id={id}
+                      aria-describedby={describedBy}
+                      value={claveConfirmacion}
+                      onChange={(e) => setClaveConfirmacion(e.target.value)}
+                      type="password"
+                      autoComplete="new-password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="••••••"
+                      className={inputClass(claveMismatch)}
+                    />
+                  )}
+                />
+              </div>
+            </div>
           </section>
         )}
 

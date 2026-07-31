@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { claveNumericaSchema } from './auth.js';
 import { planSlugSchema } from './domain/plan.js';
 import { chileanPhoneSchema, rutSchema } from './primitives/chile.js';
 import { addressSchema } from './primitives/geo.js';
@@ -30,7 +31,20 @@ export const empresaOnboardingInputSchema = z
       full_name: z.string().min(1).max(200),
       phone: chileanPhoneSchema,
       whatsapp_e164: chileanPhoneSchema,
-      rut: rutSchema.optional(),
+      /**
+       * RUT del dueño. **Obligatorio** desde `alta-cliente-autocontenida` (SC5):
+       * bajo ADR-035 el acceso al producto es RUT + clave numérica, así que
+       * el RUT dejó de ser un dato de perfil para ser la credencial. Sin él,
+       * la persona completaría el alta y no podría volver a entrar.
+       */
+      rut: rutSchema,
+      /**
+       * Clave numérica de 6 dígitos que la persona elige para SÍ MISMA en el
+       * mismo acto del alta (spec §6.5): nadie más la conoce — ni el admin de
+       * Booster ni la empresa. Reemplaza el rodeo por password reset + login
+       * legacy, que ADR-035 dejó fuera de la pantalla principal.
+       */
+      clave_numerica: claveNumericaSchema,
     }),
     /** Datos legales de la empresa. */
     empresa: z.object({
