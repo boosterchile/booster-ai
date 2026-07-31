@@ -66,6 +66,9 @@ async function fillFullForm() {
   fireEvent.change(screen.getByLabelText(/Teléfono móvil/), { target: { value: '+56912345678' } });
   fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
   fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
+  // alta-cliente-autocontenida: la persona elige acá su clave de acceso.
+  fireEvent.change(screen.getByLabelText(/^Clave numérica/), { target: { value: '482915' } });
+  fireEvent.change(screen.getByLabelText(/Repite tu clave/), { target: { value: '482915' } });
   fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
   await screen.findByText('Tu empresa');
 
@@ -121,10 +124,12 @@ describe('OnboardingAdminRoute — con token, contexto pre-onboarding', () => {
     providedContext = { kind: 'pre-onboarding', me: makeMe() };
   });
 
-  it('pasa meRequirement="allow-pre-onboarding" a ProtectedRoute y renderiza bienvenida + form', () => {
+  // alta-cliente-autocontenida: la página dejó de exigir sesión. Antes montaba
+  // ProtectedRoute con `allow-pre-onboarding`; ahora el token del enlace es la
+  // credencial y quien lo abre todavía no tiene cuenta.
+  it('NO monta ProtectedRoute: el enlace basta para completar el alta', () => {
     render(<OnboardingAdminRoute />, { wrapper: makeWrapper() });
-    expect(protectedRouteSpy).toHaveBeenCalledWith('allow-pre-onboarding');
-    expect(screen.getByText(/Bienvenido, Felipe/)).toBeInTheDocument();
+    expect(protectedRouteSpy).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /Siguiente/ })).toBeInTheDocument();
   });
 
@@ -175,11 +180,14 @@ describe('OnboardingAdminRoute — con token, contexto pre-onboarding', () => {
   });
 });
 
-describe('OnboardingAdminRoute — contexto no pre-onboarding', () => {
-  it('con token pero kind="unmanaged" → no renderiza el form', () => {
+describe('OnboardingAdminRoute — sin sesión previa', () => {
+  it('renderiza el formulario aunque no haya usuario autenticado', async () => {
     useSearchMock.mockReturnValue({ token: 'tok-abc123' });
-    providedContext = { kind: 'unmanaged' };
+    providedContext = { kind: 'unmanaged' }; // nadie logueado
     render(<OnboardingAdminRoute />, { wrapper: makeWrapper() });
-    expect(screen.queryByRole('button', { name: /Crear empresa/ })).not.toBeInTheDocument();
+
+    // Llega al paso 1 del alta, no a una pantalla de login ni a un vacío.
+    expect(await screen.findByText('Tus datos')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Clave numérica/)).toBeInTheDocument();
   });
 });

@@ -219,6 +219,17 @@ describe('check-route-default-deny — integridad de la tabla', () => {
     expect(rationale).toContain('token');
     expect(rationale).toContain('admin_provisioned_onboarding_enabled');
   });
+
+  // alta-cliente-autocontenida — el path admin-provisioned dejó de correr
+  // detrás del chain de Firebase. El rationale es documentación de seguridad
+  // viva: si sigue prometiendo un gate que ya no existe, engaña a quien audite.
+  it('createEmpresaRoutes: el rationale declara que el alta corre sin sesión y con qué se defiende', () => {
+    const rationale = (ROUTE_CLASSIFICATION.createEmpresaRoutes?.rationale ?? '').toLowerCase();
+    expect(rationale).toContain('sin sesión');
+    expect(rationale).toContain('rate-limit');
+    // El gate retirado no puede seguir figurando como vigente.
+    expect(rationale).toContain('emailverified se retiró');
+  });
 });
 
 describe('check-route-default-deny — los 5 mounts verificados (INTENTIONAL-OPEN)', () => {

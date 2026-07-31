@@ -55,6 +55,12 @@ vi.mock('../../src/services/onboarding.js', () => {
         this.name = 'OnboardingTokenRequiredError';
       }
     },
+    RutAlreadyRegisteredError: class RutAlreadyRegisteredError extends Error {
+      constructor(public readonly rut: string) {
+        super(`User with rut=${rut} already exists`);
+        this.name = 'RutAlreadyRegisteredError';
+      }
+    },
     OnboardingTokenNotConsumableError: class OnboardingTokenNotConsumableError extends Error {
       constructor() {
         super('Onboarding token is not consumable');
@@ -84,6 +90,10 @@ const validBody = {
     full_name: 'Felipe Vicencio',
     phone: '+56912345678',
     whatsapp_e164: '+56912345678',
+    // alta-cliente-autocontenida: el RUT es la credencial (ADR-035) y la clave
+    // la define la propia persona en el alta. Ambos obligatorios desde SC5.
+    rut: '11.111.111-1',
+    clave_numerica: '482915',
   },
   empresa: {
     legal_name: 'Booster Chile SpA',
@@ -136,6 +146,11 @@ async function buildApp(
       selfOnboardingEnabled,
       adminProvisionedOnboardingEnabled: adminOpts.enabled ?? false,
       onboardingTokenSecret: adminOpts.secret,
+      // El alta termina logueando a la persona: el route mintea un custom
+      // token con el uid que devuelve el servicio.
+      auth: {
+        createCustomToken: vi.fn(async () => 'custom-token-fake'),
+      } as never,
     }),
   );
   return app;
@@ -508,6 +523,28 @@ describe('POST /empresas/onboarding — self-service gate (EMPRESA_SELF_ONBOARDI
   });
 });
 
+const ONBOARDING_OK = {
+  user: {
+    id: 'u1',
+    email: 'dueno@empresa.cl',
+    fullName: 'Dueño',
+    phone: '+56912345678',
+    rut: '11111111-1',
+    isPlatformAdmin: false,
+    status: 'activo',
+  },
+  empresa: {
+    id: 'e1',
+    legalName: 'Empresa',
+    rut: '76.123.456-0',
+    isGeneradorCarga: false,
+    isTransportista: true,
+    status: 'pendiente_verificacion',
+  },
+  membership: { id: 'm1', role: 'dueno', status: 'activa' },
+  firebaseUid: 'uid-del-approve',
+};
+
 describe('POST /empresas/onboarding-admin (T1.5b)', () => {
   const ADMIN_SECRET = 'a-test-signing-secret-with-enough-bytes-xx'; // >= 32 bytes
   const SID = '11111111-1111-4111-8111-111111111111';
@@ -556,19 +593,54 @@ describe('POST /empresas/onboarding-admin (T1.5b)', () => {
     });
   });
 
-  it('emailVerified=false → 403 email_not_verified (T5)', async () => {
+  // -------------------------------------------------------------------------
+  // alta-cliente-autocontenida — el alta no exige sesión previa
+  // -------------------------------------------------------------------------
+  // El token one-shot ES la autorización (spec madre §6.2). Exigir además una
+  // sesión Firebase verificada obligaba al rodeo por password reset + login
+  // legacy, que ADR-035 sacó de la pantalla principal: el cliente quedaba sin
+  // camino. El análisis adversarial de la spec §8 concluyó que ese gate no
+  // cubría el vector que decía cubrir.
+  it('sin sesión Firebase → 201: el token autoriza por sí solo', async () => {
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    vi.mocked(onboardEmpresa).mockResolvedValueOnce(ONBOARDING_OK as never);
+
     const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
     const token = await mintToken();
-    const res = await req(app, {
-      'x-test-claims': JSON.stringify({
-        uid: 'fb-1',
-        email: 'dueno@empresa.cl',
-        emailVerified: false,
-      }),
-      'x-onboarding-token': token,
-    });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'email_not_verified', code: 'email_not_verified' });
+    // Sin `x-test-claims`: nadie inició sesión.
+    const res = await req(app, { 'x-onboarding-token': token });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('devuelve custom_token para dejar a la persona logueada sin pasar por login', async () => {
+    const { onboardEmpresa } = await import('../../src/services/onboarding.js');
+    vi.mocked(onboardEmpresa).mockResolvedValueOnce(ONBOARDING_OK as never);
+
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken();
+    const res = await req(app, { 'x-onboarding-token': token });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { custom_token?: string };
+    expect(json.custom_token).toBe('custom-token-fake');
+  });
+
+  it('RUT ya registrado → 409 sin revelar de quién es', async () => {
+    const { onboardEmpresa, RutAlreadyRegisteredError } = await import(
+      '../../src/services/onboarding.js'
+    );
+    vi.mocked(onboardEmpresa).mockRejectedValueOnce(new RutAlreadyRegisteredError('11111111-1'));
+
+    const app = await buildApp(false, { enabled: true, secret: ADMIN_SECRET });
+    const token = await mintToken();
+    const res = await req(app, { 'x-onboarding-token': token });
+
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string; message?: string };
+    expect(json.code).toBe('rut_already_registered');
+    // Sin oráculo: la respuesta no dice a quién pertenece el RUT.
+    expect(JSON.stringify(json)).not.toContain('11111111-1');
   });
 
   it('sin token header → 401 onboarding_token_required (T3a)', async () => {

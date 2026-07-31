@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { empresaOnboardingInputSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
+import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { hashOnboardingToken, verifyOnboardingToken } from '../services/onboarding-token.js';
@@ -11,6 +12,7 @@ import {
   OnboardingTokenNotConsumableError,
   OnboardingTokenRequiredError,
   PlanNotFoundError,
+  RutAlreadyRegisteredError,
   SelfOnboardingDisabledError,
   UserAlreadyExistsError,
   onboardEmpresa,
@@ -67,6 +69,8 @@ export function createEmpresaRoutes(opts: {
   adminProvisionedOnboardingEnabled: boolean;
   /** `ONBOARDING_TOKEN_SIGNING_SECRET` (T1.3). Requerido cuando el flag admin está ON. */
   onboardingTokenSecret?: string | undefined;
+  /** Firebase Admin — para mintear el custom token que deja logueado al dueño. */
+  auth: Auth;
 }) {
   const app = new Hono();
 
@@ -144,19 +148,25 @@ export function createEmpresaRoutes(opts: {
   // postura anti-enumeration de SEC-001.
   // ===========================================================================
   app.post('/onboarding-admin', zValidator('json', empresaOnboardingInputSchema), async (c) => {
+    // alta-cliente-autocontenida — este route ya NO exige sesión Firebase.
+    //
+    // El token one-shot es la autorización (spec madre §6.2: el predicado se
+    // movió del email al token justamente porque el email no es confiable).
+    // Exigir además una sesión verificada obligaba a la persona a pasar por un
+    // password reset + `/login?legacy=1`, camino que ADR-035 sacó de la
+    // pantalla principal: el alta quedaba sin salida. El análisis adversarial
+    // (spec §8) concluyó que ese gate no cubría el vector que decía cubrir —
+    // contra un token robado no aporta nada, porque el approve deja la cuenta
+    // sin contraseña y el atacante podría verificarla igual.
+    //
+    // La identidad (email + uid) sale de la solicitud consumida, dentro de la
+    // transacción del servicio, no de nada que mande el caller.
     const claims = c.get('firebaseClaims');
-    if (!claims) {
-      opts.logger.error({ path: c.req.path }, '/empresas/onboarding-admin without firebaseClaims');
-      return c.json({ error: 'internal_server_error' }, 500);
-    }
-    if (!claims.email) {
-      return c.json({ error: 'firebase_email_missing', code: 'firebase_email_missing' }, 400);
-    }
 
     // Gate 1 — flag (fail-closed ANTES de leer el token).
     if (!opts.adminProvisionedOnboardingEnabled) {
       opts.logger.warn(
-        { firebaseUid: claims.uid, path: c.req.path },
+        { path: c.req.path },
         'admin-provisioned onboarding blocked (ADMIN_PROVISIONED_ONBOARDING_ENABLED=false)',
       );
       return c.json({ error: 'onboarding_disabled', code: 'onboarding_disabled' }, 403);
@@ -172,14 +182,11 @@ export function createEmpresaRoutes(opts: {
       );
       return c.json({ error: 'service_unavailable', code: 'onboarding_misconfigured' }, 503);
     }
-    // Gate 2 — emailVerified (T5). Propiedad del caller, no oráculo de existencia.
-    if (!claims.emailVerified) {
-      opts.logger.warn(
-        { firebaseUid: claims.uid, path: c.req.path },
-        'admin-provisioned onboarding: email not verified',
-      );
-      return c.json({ error: 'email_not_verified', code: 'email_not_verified' }, 403);
-    }
+    // Gate 2 (emailVerified) RETIRADO por alta-cliente-autocontenida §8 — ver
+    // el comentario de arriba. La propiedad que pretendía dar la recupera de
+    // verdad la Fase 2 del programa madre, cuando el token viaje por correo al
+    // solicitante y poseerlo pruebe control de ese email.
+    //
     // Gate 3 — token presente (T3a). Header = bearer credential.
     const token = c.req.header('x-onboarding-token');
     if (!token) {
@@ -206,7 +213,7 @@ export function createEmpresaRoutes(opts: {
       c.json({ error: 'onboarding_token_invalid', code: 'onboarding_token_invalid' }, 403);
     if (!verification.ok) {
       opts.logger.warn(
-        { firebaseUid: claims.uid, reason: verification.reason },
+        { reason: verification.reason },
         'admin-provisioned onboarding: token rejected (verify)',
       );
       return tokenRejection();
@@ -218,8 +225,11 @@ export function createEmpresaRoutes(opts: {
       const result = await onboardEmpresa({
         db: opts.db,
         logger: opts.logger,
-        firebaseUid: claims.uid,
-        firebaseEmail: claims.email,
+        // Compatibilidad: si la persona YA venía con sesión (flujo viejo), se
+        // pasan sus claims; el servicio igual prioriza la identidad de la
+        // solicitud consumida.
+        ...(claims?.uid ? { firebaseUid: claims.uid } : {}),
+        ...(claims?.email ? { firebaseEmail: claims.email } : {}),
         input,
         authorizedBy: 'admin_provisioned',
         selfServiceEnabled: opts.selfOnboardingEnabled,
@@ -228,14 +238,37 @@ export function createEmpresaRoutes(opts: {
           tokenHash: hashOnboardingToken(token),
         },
       });
-      return c.json(onboardingResponseBody(result), 201);
+      // SC1 — la persona queda logueada sin pasar por ninguna pantalla de
+      // login: el cliente hace `signInWithCustomToken` con esto. Si el minteo
+      // falla, el alta NO se pierde (ya está commiteada): responde 201 sin
+      // token y la persona entra con su RUT + la clave que acaba de elegir.
+      let customToken: string | undefined;
+      try {
+        customToken = await opts.auth.createCustomToken(result.firebaseUid, {
+          auth_method: 'onboarding',
+        });
+      } catch (err) {
+        opts.logger.error(
+          { err, userId: result.user.id },
+          'onboarding-admin: createCustomToken falló; alta OK, la persona entra por login-rut',
+        );
+      }
+      return c.json(
+        {
+          ...onboardingResponseBody(result),
+          ...(customToken ? { custom_token: customToken } : {}),
+        },
+        201,
+      );
     } catch (err) {
+      if (err instanceof RutAlreadyRegisteredError) {
+        // SC6 — sin oráculo: no se revela de quién es el RUT.
+        opts.logger.warn({}, 'onboarding-admin: rut ya registrado');
+        return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+      }
       if (err instanceof OnboardingTokenNotConsumableError) {
         // Mismo colapso que verify-fail (sin oráculo consumido/expirado/no-row).
-        opts.logger.warn(
-          { firebaseUid: claims.uid },
-          'admin-provisioned onboarding: token not consumable',
-        );
+        opts.logger.warn({}, 'admin-provisioned onboarding: token not consumable');
         return tokenRejection();
       }
       if (err instanceof OnboardingTokenRequiredError) {

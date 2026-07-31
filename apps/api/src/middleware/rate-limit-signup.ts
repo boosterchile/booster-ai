@@ -40,15 +40,26 @@ export interface RateLimitSignupOptions {
   logger: Logger;
   limitPerIp?: number;
   windowSeconds?: number;
+  /**
+   * Prefijo de la clave en Redis. Default: el del signup público.
+   *
+   * Existe porque el alta autocontenida (`POST /empresas/onboarding-admin`)
+   * reusa este middleware y NO puede compartir cubo con el signup: el flujo
+   * completo pasa por los dos endpoints, así que compartirlo descontaría dos
+   * veces del mismo presupuesto, y una oficina tras un NAT quedaría sin poder
+   * completar altas porque alguien más pidió acceso desde esa IP.
+   */
+  keyPrefix?: string;
 }
 
 export function createRateLimitSignupMiddleware(opts: RateLimitSignupOptions): MiddlewareHandler {
   const ipLimit = opts.limitPerIp ?? DEFAULT_LIMIT_PER_IP;
   const window = opts.windowSeconds ?? DEFAULT_WINDOW_SECONDS;
+  const keyPrefix = opts.keyPrefix ?? KEY_PREFIX;
 
   return async function rateLimitSignup(c, next) {
     const ip = extractClientIp(c.req.header('x-forwarded-for'));
-    const ipKey = `${KEY_PREFIX}${ip}`;
+    const ipKey = `${keyPrefix}${ip}`;
 
     let ipCount: number;
     try {
