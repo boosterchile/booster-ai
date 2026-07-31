@@ -110,6 +110,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     rationale:
       'createMeRoutes (root /me): resuelve userId por firebase_uid; account-link y auto-provision platform-admin gateados por allowlist BOOSTER_PLATFORM_ADMIN_EMAILS (default-vacío). Sin fila/allowlist → no-op.',
   },
+  // equipo-de-la-empresa — /me/empresa/miembros: userContext precede el mount
+  // (app.use('/me/empresa/miembros', userContextMiddlewareForMe)); la
+  // autorización es la membresía activa del caller y el rol (dueno/admin).
+  createMeEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
+
   createMeConsentsRoutes: {
     category: 'GATED-CLOSED',
     rationale:
@@ -162,6 +167,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'INTENTIONAL-OPEN',
     rationale:
       'VAPID public key (identidad del sender, no secreto). Verificado: sin app.use de auth precediéndolo.',
+  },
+  createAuthActivarRoutes: {
+    category: 'INTENTIONAL-OPEN',
+    rationale:
+      'POST /auth/activar (equipo-de-la-empresa): pre-auth POR DISEÑO — lo usa alguien que todavía no tiene credencial, la está creando en este acto. Es emisor de auth, como login-rut y driver-activate. Defensas: el código de 6 dígitos se verifica timing-safe contra `activacion_pin_hash`, exige una invitación `pendiente_invitacion` vigente (7 días desde `invitado_en`), se consume de un solo uso (el hash se borra) y el endpoint corre tras rate-limit por IP fail-closed con cubo propio. Respuesta ÚNICA para rut-inexistente / código-incorrecto / ya-activada / vencido: sin oráculo de enumeración.',
   },
   createAuthUniversalRoutes: {
     category: 'INTENTIONAL-OPEN',

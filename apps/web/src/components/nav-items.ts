@@ -12,6 +12,7 @@ import {
   Receipt,
   ShieldAlert,
   Truck,
+  UserCog,
   Users,
 } from 'lucide-react';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -59,6 +60,10 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Ofertas', to: '/app/ofertas', icon: Truck },
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
+      // equipo-de-la-empresa: la gestión del equipo la hace el cliente, no
+      // Booster. El backend enforca por rol (dueño/admin escriben, el resto
+      // solo mira), así que el ítem es visible para todos los operadores.
+      { label: 'Equipo', to: '/app/equipo', icon: UserCog },
       { label: 'Cumplimiento', to: '/app/cumplimiento', icon: ShieldAlert },
       { label: 'Cobra hoy', to: '/app/cobra-hoy/historial', icon: Banknote },
       { label: 'Liquidaciones', to: '/app/liquidaciones', icon: Receipt },
