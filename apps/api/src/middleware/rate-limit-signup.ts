@@ -43,11 +43,14 @@ export interface RateLimitSignupOptions {
   /**
    * Prefijo de la clave en Redis. Default: el del signup público.
    *
-   * Existe porque el alta autocontenida (`POST /empresas/onboarding-admin`)
-   * reusa este middleware y NO puede compartir cubo con el signup: el flujo
-   * completo pasa por los dos endpoints, así que compartirlo descontaría dos
-   * veces del mismo presupuesto, y una oficina tras un NAT quedaría sin poder
-   * completar altas porque alguien más pidió acceso desde esa IP.
+   * Cada endpoint que reusa este middleware necesita su propio cubo. Si lo
+   * comparten, un flujo que pasa por varios se descuenta más de una vez del
+   * mismo presupuesto, y una oficina tras un NAT queda bloqueada por lo que
+   * hizo otra persona. Pasó de verdad: el alta autocontenida
+   * (`POST /empresas/onboarding-admin`) compartía cubo con el signup público,
+   * y el propio flujo —que pasa por los dos— se agotaba solo (429 en la
+   * prueba end-to-end). Hoy lo usan con prefijo propio ese endpoint y
+   * `POST /auth/activar`.
    */
   keyPrefix?: string;
 }

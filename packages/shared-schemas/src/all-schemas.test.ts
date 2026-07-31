@@ -676,3 +676,51 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
     expect(created.status).toBe('pendiente_verificacion');
   });
 });
+
+// ---------------------------------------------------------------------------
+// equipo-de-la-empresa — la empresa da de alta a su gente
+// ---------------------------------------------------------------------------
+describe('equipo de la empresa', () => {
+  it('el alta de un miembro exige email real, rut, nombre y rol', () => {
+    const schema = auth.invitarMiembroSchema;
+    const base = {
+      full_name: 'Gabriel Barros',
+      rut: VALID_RUT,
+      email: VALID_EMAIL,
+      rol: 'admin',
+    };
+    expect(schema.parse(base)).toBeDefined();
+
+    // El email es el canal de comunicación con la persona (spec §6.5): sin él
+    // la empresa crea a alguien incontactable, que es el defecto que arrastra
+    // el alta de conductores.
+    expect(() => schema.parse({ ...base, email: undefined })).toThrow();
+    expect(() => schema.parse({ ...base, email: 'no-es-un-email' })).toThrow();
+    expect(() => schema.parse({ ...base, rut: undefined })).toThrow();
+    expect(() => schema.parse({ ...base, full_name: '' })).toThrow();
+  });
+
+  it('los roles invitables excluyen conductor y stakeholder', () => {
+    const schema = auth.invitarMiembroSchema;
+    const base = { full_name: 'Alguien', rut: VALID_RUT, email: VALID_EMAIL };
+
+    for (const rol of ['dueno', 'admin', 'despachador', 'visualizador']) {
+      expect(schema.parse({ ...base, rol })).toBeDefined();
+    }
+    // Conductor tiene su propia alta (licencia + vencimientos) y stakeholder
+    // pertenece a organizaciones, no a empresas.
+    expect(() => schema.parse({ ...base, rol: 'conductor' })).toThrow();
+    expect(() => schema.parse({ ...base, rol: 'stakeholder_sostenibilidad' })).toThrow();
+  });
+
+  it('la activación exige rut, código de 6 dígitos y la clave que elige la persona', () => {
+    const schema = auth.activarCuentaSchema;
+    const base = { rut: VALID_RUT, codigo: '123456', clave_numerica: '482915' };
+    expect(schema.parse(base)).toBeDefined();
+
+    expect(() => schema.parse({ ...base, codigo: '12345' })).toThrow();
+    expect(() => schema.parse({ ...base, codigo: 'abcdef' })).toThrow();
+    expect(() => schema.parse({ ...base, clave_numerica: '1234' })).toThrow();
+    expect(() => schema.parse({ ...base, clave_numerica: undefined })).toThrow();
+  });
+});

@@ -158,6 +158,22 @@ const flotaRoute = createRoute({
 // D8 — CRUD de conductores del carrier. Solo accesible desde la interfaz
 // transportista (no es self-signup driver). Roles dueno/admin/despachador
 // crean y editan; conductor + visualizador solo leen.
+// equipo-de-la-empresa — la empresa gestiona su propia gente. Dueño y admin
+// dan de alta; el resto solo mira (el backend enforca por rol).
+const equipoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/equipo',
+  component: lazyRouteComponent(() => import('./routes/equipo.js'), 'EquipoRoute'),
+});
+
+// /activar — pública por diseño: la usa alguien que su empresa dio de alta y
+// que todavía no tiene credencial; la está creando acá.
+const activarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/activar',
+  component: lazyRouteComponent(() => import('./routes/activar.js'), 'ActivarRoute'),
+});
+
 const conductoresListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/conductores',
@@ -436,6 +452,8 @@ const routeTree = rootRoute.addChildren([
   vehiculoLiveRoute,
   vehiculoHistorialRoute,
   flotaRoute,
+  equipoRoute,
+  activarRoute,
   conductoresListRoute,
   conductoresNuevoRoute,
   conductoresDetalleRoute,

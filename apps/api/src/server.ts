@@ -32,6 +32,7 @@ import { createAdminObservabilityRoutes } from './routes/admin-observability.js'
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
+import { createAuthActivarRoutes } from './routes/auth-activar.js';
 import { createDriverAuthRoutes } from './routes/auth-driver.js';
 import { createAuthImpersonateRoutes } from './routes/auth-impersonate.js';
 import { createAuthUniversalRoutes } from './routes/auth-universal.js';
@@ -48,6 +49,7 @@ import { createHealthRouter } from './routes/health.js';
 import { createInternalSafetyEventsRoutes } from './routes/internal-safety-events.js';
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
+import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
@@ -381,6 +383,18 @@ export function createServer(opts: CreateServerOptions): Hono {
     // userContext + flag PRICING_V2_ACTIVATED.
     app.use('/me/liquidaciones', userContextMiddlewareForMe);
     meRouter.route('/', createMeLiquidacionesRoutes({ db: opts.db, logger }));
+    // equipo-de-la-empresa — /me/empresa/miembros: la empresa gestiona su
+    // propia gente. userContext precede el mount (la autorización sale de la
+    // membresía activa del caller; el empresaId nunca viene del cliente).
+    //
+    // OJO con el orden: los sub-mounts de `meRouter` tienen que registrarse
+    // ANTES de `app.route('/me', meRouter)`. Registrarlos después compila,
+    // pasa los tests unitarios del router aislado… y devuelve 404 en la app
+    // real (detectado en la prueba end-to-end).
+    app.use('/me/empresa/miembros', userContextMiddlewareForMe);
+    app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
+    meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+
     app.route('/me', meRouter);
 
     // Empresas — POST /empresas/onboarding crea user+empresa+membership.
@@ -920,6 +934,27 @@ export function createServer(opts: CreateServerOptions): Hono {
         firebaseAuth: opts.firebaseAuth,
         logger,
         rateLimitLogin,
+      }),
+    );
+
+    // equipo-de-la-empresa — POST /auth/activar. Pre-auth por diseño: lo usa
+    // alguien que todavía no tiene credencial (la está creando en este acto).
+    // Rate limit propio y fail-closed, igual que login-rut: el código es de 6
+    // dígitos y sin límite sería fuerza bruta trivial.
+    app.use(
+      '/auth/activar',
+      createRateLimitSignupMiddleware({
+        redis: redisForRateLimit,
+        logger,
+        keyPrefix: 'rl:activar-cuenta:',
+      }),
+    );
+    app.route(
+      '/auth',
+      createAuthActivarRoutes({
+        db: opts.db,
+        logger,
+        firebaseAuth: opts.firebaseAuth,
       }),
     );
 

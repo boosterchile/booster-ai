@@ -101,3 +101,53 @@ export interface LoginRutNeedsRotation {
   code: 'needs_rotation';
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// equipo-de-la-empresa — la empresa da de alta a su propia gente
+// ---------------------------------------------------------------------------
+
+/**
+ * Roles que una empresa puede asignar al sumar a alguien de su equipo.
+ *
+ * Excluye dos del enum de `membresias.rol`:
+ *   - `conductor`: tiene su propia alta, que además captura licencia y
+ *     vencimientos (`POST /conductores`).
+ *   - `stakeholder_sostenibilidad`: pertenece a organizaciones stakeholder
+ *     (ADR-034), no a empresas — el CHECK XOR de la BD lo impide.
+ */
+export const rolEquipoSchema = z.enum(['dueno', 'admin', 'despachador', 'visualizador']);
+export type RolEquipo = z.infer<typeof rolEquipoSchema>;
+
+/**
+ * Alta de un miembro del equipo, hecha por el dueño o admin de la empresa.
+ *
+ * El `email` es **obligatorio**: es el canal de comunicación de la plataforma
+ * con esa persona (spec `equipo-de-la-empresa` §6.1). Hacerlo opcional es el
+ * defecto que arrastra el alta de conductores, donde se termina creando gente
+ * con un correo `@boosterchile.invalid` a la que nadie puede escribirle.
+ *
+ * Ojo con lo que NO está acá: la credencial. La empresa no elige la clave de
+ * su gente — solo entrega un código de activación de un solo uso.
+ */
+export const invitarMiembroSchema = z.object({
+  full_name: z.string().min(2).max(200),
+  rut: rutSchema,
+  email: z.string().email().max(320),
+  rol: rolEquipoSchema,
+});
+export type InvitarMiembroInput = z.infer<typeof invitarMiembroSchema>;
+
+/**
+ * Activación de una cuenta creada por la empresa: la persona prueba identidad
+ * con el código que le entregaron y, en el mismo acto, **elige su clave**.
+ *
+ * El código sirve una vez y no queda como contraseña (spec §6.1): esa
+ * distinción es la diferencia con el flujo de conductores actual, donde el PIN
+ * que genera el admin termina siendo la credencial permanente.
+ */
+export const activarCuentaSchema = z.object({
+  rut: rutSchema,
+  codigo: z.string().regex(/^\d{6}$/, 'El código es de 6 dígitos'),
+  clave_numerica: claveNumericaSchema,
+});
+export type ActivarCuentaInput = z.infer<typeof activarCuentaSchema>;
