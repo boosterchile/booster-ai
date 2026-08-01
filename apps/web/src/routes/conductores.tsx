@@ -415,9 +415,8 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
         license_expiry: input.license_expiry,
         is_extranjero: input.is_extranjero,
       };
-      if (input.email.trim()) {
-        body.email = input.email.trim();
-      }
+      // Fase B: obligatorio — es el canal de la plataforma con el conductor.
+      body.email = input.email.trim();
       if (input.phone.trim()) {
         body.phone = input.phone.trim();
       }
@@ -493,7 +492,10 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
       return;
     }
     setError(null);
-    createM.mutate({ ...values, rut: rutResult.data });
+    // Fase B: el email llega garantizado por el `required` del register — sin
+    // él la plataforma no puede comunicarse con el conductor (5 de 6 en
+    // producción terminaron con un `@boosterchile.invalid`).
+    createM.mutate({ ...values, rut: rutResult.data, email: values.email.trim() });
   }
 
   if (activationResult) {
@@ -598,13 +600,18 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           />
 
           <FormField
-            label="Email (opcional)"
+            label="Email"
+            required
+            hint="El correo del conductor. Booster lo usa para comunicarse con él."
+            error={errors.email?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
                 aria-describedby={describedBy}
                 type="email"
-                {...register('email')}
+                {...register('email', {
+                  required: 'El email del conductor es obligatorio: es su canal con Booster.',
+                })}
                 className={fieldInputClass(!!errors.email)}
                 placeholder="conductor@ejemplo.cl"
               />

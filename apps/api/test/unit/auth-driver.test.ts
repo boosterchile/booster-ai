@@ -53,13 +53,20 @@ function makeDbStub(opts: {
   const updateWhere = vi.fn(() =>
     opts.updateOk === false ? Promise.reject(new Error('db error')) : Promise.resolve(undefined),
   );
-  const set = vi.fn(() => ({ where: updateWhere }));
+  // Captura los valores del UPDATE para poder afirmar QUÉ columnas se tocan
+  // (Fase B: el email real no debe estar entre ellas).
+  const capturedUpdates: Record<string, unknown>[] = [];
+  const set = vi.fn((vals: Record<string, unknown>) => {
+    capturedUpdates.push(vals);
+    return { where: updateWhere };
+  });
   const update = vi.fn(() => ({ set }));
 
   return {
     db: { select, update } as unknown as Parameters<
       typeof import('../../src/routes/auth-driver.js').createDriverAuthRoutes
     >[0]['db'],
+    capturedUpdates,
   };
 }
 
@@ -271,7 +278,7 @@ describe('POST /auth/driver-activate', () => {
     );
   });
 
-  it('activate retry (Firebase user ya existe) → reusa UID + actualiza password', async () => {
+  it('activate retry (Firebase user ya existe) → reusa UID sin tocar su credencial', async () => {
     const stub = makeDbStub({
       userRow: {
         id: USER_ID,
@@ -291,10 +298,9 @@ describe('POST /auth/driver-activate', () => {
     });
     expect(res.status).toBe(200);
     expect(firebase.createUser).not.toHaveBeenCalled();
-    expect(firebase.updateUser).toHaveBeenCalledWith(
-      'existing-uid-abc',
-      expect.objectContaining({ password: '123456' }),
-    );
+    // Fase B: ya NO se resetea el password con el PIN. La credencial del
+    // conductor es su clave numérica, que no conoce quien lo dio de alta.
+    expect(firebase.updateUser).not.toHaveBeenCalled();
   });
 
   it('createCustomToken error → 502 firebase_error', async () => {
@@ -341,5 +347,79 @@ describe('POST /auth/driver-activate', () => {
       body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
     });
     expect(res.status).toBe(503);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// equipo-de-la-empresa Fase B — el conductor es dueño de su identidad
+// ---------------------------------------------------------------------------
+// Dos defectos que este flujo arrastraba desde el inicio:
+//   · pisaba el email REAL del conductor con uno sintético → lo dejaba sin
+//     canal de comunicación con la plataforma;
+//   · usaba el PIN que generó su empresa como contraseña permanente de
+//     Firebase → su jefe conocía su credencial.
+// Medido en prod el 2026-07-31: ningún conductor había activado, así que
+// corregirlo no rompe nada vivo (spec §10).
+describe('POST /auth/driver-activate — identidad del conductor (Fase B)', () => {
+  const CONDUCTOR_EMAIL = 'conductor.real@gmail.com';
+
+  function stubConEmailReal() {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: CONDUCTOR_EMAIL,
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+    });
+  }
+
+  it('NO pisa el email real del conductor', async () => {
+    const stub = stubConEmailReal();
+    const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-nuevo' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+    });
+
+    // El UPDATE de activación no debe tocar `email`: el sintético es
+    // identificador interno de Firebase, no reemplaza el correo de la persona.
+    const set = stub.capturedUpdates[0] ?? {};
+    expect(set.email).toBeUndefined();
+  });
+
+  it('el PIN NO queda como contraseña de la cuenta', async () => {
+    const stub = stubConEmailReal();
+    const firebase = makeFirebaseStub({ existingUserUid: null, createUid: 'fb-nuevo' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+    });
+
+    const args = firebase.createUser.mock.calls[0]?.[0] ?? {};
+    expect(JSON.stringify(args)).not.toContain('123456');
+  });
+
+  it('en el retry tampoco setea el PIN como password', async () => {
+    const stub = stubConEmailReal();
+    const firebase = makeFirebaseStub({ existingUserUid: 'existing-uid-abc' });
+    const app = await buildApp({ db: stub.db, firebaseAuth: firebase });
+
+    await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+    });
+
+    const llamadas = JSON.stringify(firebase.updateUser.mock.calls ?? []);
+    expect(llamadas).not.toContain('123456');
   });
 });

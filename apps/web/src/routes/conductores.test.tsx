@@ -188,6 +188,7 @@ describe('ConductoresNuevoRoute', () => {
 
     await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-9');
     await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     // Date input
     const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
@@ -209,6 +210,8 @@ describe('ConductoresNuevoRoute', () => {
 
     await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
     await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    // Fase B: el email del conductor es obligatorio.
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     const dateInput = screen.getByLabelText(/^Vencimiento de licencia/);
     await userEvent.type(dateInput, '2027-12-31');
@@ -252,7 +255,13 @@ describe('ConductoresNuevoRoute', () => {
     });
     providedContext = {
       kind: 'onboarded',
-      me: makeMe('dueno', { rut: '22.222.222-2', full_name: 'Felipe' }),
+      // Fase B: el email es obligatorio, así que el dueño-conductor también
+      // necesita el suyo — el toggle self-mode lo prellena desde el `me`.
+      me: makeMe('dueno', {
+        rut: '22.222.222-2',
+        full_name: 'Felipe',
+        email: 'felipe@empresa.cl',
+      }),
     };
     wrap(<ConductoresNuevoRoute />);
 
@@ -273,6 +282,7 @@ describe('ConductoresNuevoRoute', () => {
 
     await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
     await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
 
@@ -303,5 +313,52 @@ describe('ConductoresDetalleRoute', () => {
     await waitFor(() =>
       expect(screen.getByText(/Conductor retirado el 2026-05-09/)).toBeInTheDocument(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// equipo-de-la-empresa Fase B — el conductor tiene email real
+// ---------------------------------------------------------------------------
+// Medido en prod el 2026-07-31: 5 de 6 conductores quedaron con un correo
+// `@boosterchile.invalid` porque el campo era opcional. Son personas a las que
+// la plataforma no puede escribirle.
+describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
+  it('no permite crear un conductor sin email', async () => {
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    // A propósito SIN email.
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+
+    // El alta no sale: crearía un conductor incontactable.
+    await waitFor(() =>
+      expect(screen.getByText(/email del conductor es obligatorio/i)).toBeInTheDocument(),
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('envía el email en el body cuando se completa', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValueOnce({
+      conductor: buildConductor(),
+      activation_pin: '123456',
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'juan@empresa.cl');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const body = post.mock.calls[0]?.[1] as { email?: string };
+    expect(body.email).toBe('juan@empresa.cl');
   });
 });
