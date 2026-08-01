@@ -225,6 +225,9 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          // Fase B: el email del conductor es obligatorio — es su canal con
+          // la plataforma.
+          email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
           license_number: 'LIC-1',
           license_expiry: '2027-12-31',
@@ -242,6 +245,8 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: '11.111.111-9', // dígito verificador incorrecto
           full_name: 'Juan',
+          // Fase B: el email del conductor es obligatorio — es su canal con la plataforma.
+          email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
           license_number: 'LIC-1',
           license_expiry: '2027-12-31',
@@ -261,6 +266,9 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          // Fase B: el email del conductor es obligatorio — es su canal con
+          // la plataforma.
+          email: 'juan.conductor@empresa.cl',
           license_number: 'LIC-1',
           license_expiry: '2027-12-31',
         }),
@@ -302,6 +310,8 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan Pérez',
+          // Fase B: el email del conductor es obligatorio.
+          email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
           license_number: 'LIC-12345',
           license_expiry: '2027-12-31',
@@ -356,6 +366,8 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan Pérez',
+          // Fase B: el email del conductor es obligatorio.
+          email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
           license_number: 'LIC-12345',
           license_expiry: '2027-12-31',
@@ -380,6 +392,9 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          // Fase B: el email del conductor es obligatorio — es su canal con
+          // la plataforma.
+          email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
           license_number: 'LIC-1',
           license_expiry: '2027-12-31',
@@ -424,6 +439,8 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Nuevo Conductor',
+          // Fase B: el email del conductor es obligatorio.
+          email: 'conductor@empresa.cl',
           license_class: 'B',
           license_number: 'LIC-NEW',
           license_expiry: '2028-06-30',
@@ -552,5 +569,60 @@ describe('conductores routes', () => {
       const res = await app.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
       expect(res.status).toBe(404);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug preexistente encontrado en la prueba e2e de la Fase B (2026-07-31)
+// ---------------------------------------------------------------------------
+// El POST serializaba `license_expiry` con `.toISOString()` directo. Cuando
+// node-postgres devuelve la fecha en un formato que produce un Date con tiempo
+// NaN, eso lanza RangeError "Invalid time value" y el alta entera se cae con
+// 500 — el conductor queda creado en la BD pero el operador ve un error.
+//
+// El helper `safeIsoString` ya existía en el mismo archivo, con un comentario
+// que describe este fallo ("caso real detectado durante el dry-run pre-Corfo");
+// el GET lo usaba y el POST no.
+describe('POST /conductores — fecha de licencia no rompe la respuesta', () => {
+  it('un licenseExpiry inválido devuelve 201 con la fecha en null, no 500', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], []],
+      insertReturning: [
+        [{ id: USER_ID }],
+        [
+          {
+            id: CONDUCTOR_ID,
+            userId: USER_ID,
+            empresaId: EMPRESA_ID,
+            licenseClass: 'A5',
+            licenseNumber: 'LIC-1',
+            // El caso que rompía: Date con tiempo NaN.
+            licenseExpiry: new Date('fecha-corrupta'),
+            isExtranjero: false,
+            driverStatus: 'activo',
+            createdAt: new Date('2026-05-10T22:00:00Z'),
+            updatedAt: new Date('2026-05-10T22:00:00Z'),
+            deletedAt: null,
+          },
+        ],
+      ],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Juan Pérez',
+        email: 'juan.conductor@empresa.cl',
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2027-12-31',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { conductor: { license_expiry: string | null } };
+    expect(body.conductor.license_expiry).toBeNull();
   });
 });

@@ -724,3 +724,28 @@ describe('equipo de la empresa', () => {
     expect(() => schema.parse({ ...base, clave_numerica: undefined })).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// equipo-de-la-empresa Fase B — el conductor también es una persona contactable
+// ---------------------------------------------------------------------------
+describe('alta de conductor — email obligatorio (Fase B)', () => {
+  const base = {
+    rut: VALID_RUT,
+    full_name: 'Conductor Prueba',
+    license_class: 'A4',
+    license_number: 'L-123456',
+    license_expiry: '2028-05-01',
+  };
+
+  it('exige email real: sin él se crea gente incontactable', () => {
+    const schema = driver.createDriverBodySchema;
+    expect(schema.parse({ ...base, email: 'conductor@empresa.cl' })).toBeDefined();
+
+    // Medido en prod 2026-07-31: 5 de 6 conductores quedaron con
+    // `pending-rut-…@boosterchile.invalid` porque el campo era opcional.
+    expect(() => schema.parse(base)).toThrow();
+    expect(() => schema.parse({ ...base, email: null })).toThrow();
+    expect(() => schema.parse({ ...base, email: '' })).toThrow();
+    expect(() => schema.parse({ ...base, email: 'no-es-email' })).toThrow();
+  });
+});

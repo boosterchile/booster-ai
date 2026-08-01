@@ -32,7 +32,7 @@ El patrón correcto **ya existe en producción para conductores**: la empresa lo
 - [ ] SC5 — El **email real se conserva siempre**. Ningún paso lo reemplaza por un sintético; el sintético queda como identificador interno de Firebase y nada más.
 - [ ] SC6 — Solo `dueno` y `admin` de esa empresa pueden dar de alta; un `despachador` o `visualizador` recibe 403. Nadie puede sumar gente a una empresa que no es la suya.
 - [ ] SC7 — Un RUT que ya pertenece a otra persona no puede reclamarse (mismo criterio que `alta-cliente-autocontenida` SC6), y el rechazo no revela de quién es.
-- [ ] SC8 — Los conductores ya activados en producción **siguen entrando** después del cambio (no se rompe lo vivo).
+- [ ] SC8 — Los conductores ya activados en producción **siguen entrando** después del cambio (no se rompe lo vivo). **Medido 2026-07-31: ese caso NO EXISTE** — ver §10.
 
 ## 4. User-visible behaviour
 
@@ -82,8 +82,29 @@ POST /auth/activar             → RUT + código → define clave → sesión
 | Un admin da de alta a alguien con un email ajeno | El código va a la empresa, no al email; el email es canal, no credencial. Riesgo aceptado y explícito |
 | Códigos que nunca se usan | Vencimiento + listado que muestra el estado `pendiente_invitacion` para que la empresa reenvíe |
 
+## 10. Estado real de los conductores en producción (medido 2026-07-31)
+
+Antes de codear la Fase B se midió contra prod, y el resultado cambia su riesgo:
+
+| Métrica | Valor |
+|---|---|
+| Conductores totales (Van Oosterwyk) | 6 |
+| **Activados alguna vez** | **0** |
+| Con PIN pendiente sin usar | 6 |
+| Con clave numérica | 0 |
+| **Con email sintético `@boosterchile.invalid`** | **5 de 6** |
+| Último login registrado | ninguno |
+
+Todos creados el 22-jun-2026, ninguno entró jamás.
+
+**Dos consecuencias:**
+
+1. **SC8 es vacío**: no hay conductores activados que se puedan romper. La Fase B deja de necesitar compatibilidad hacia atrás, y con ella se van los casos especiales que la habrían complicado.
+2. **El defecto es peor de lo documentado.** No es solo que `auth-driver.ts:173` pise el email al activar: 5 de 6 **nunca tuvieron email real**. La empresa los cargó sin correo y el sistema lo aceptó (`conductores.ts:337`, `body.email ?? placeholderEmail(rut)`). Son personas con las que la plataforma no puede comunicarse, y el dato no se perdió — nunca se pidió.
+
 ## 9. Decisiones (cerradas por el PO, 2026-07-31)
 
 - **OQ1 — Vencimiento del código: 7 días**, con re-emisión desde el listado. Más largo que el token de onboarding (72 h) porque lo entrega la empresa en mano, no un correo: el apuro del canal no aplica.
 - **OQ2 — Conductores ya activados: NO se les fuerza** a crear clave numérica. Migran cuando la roten. Es lo que hace verificable el SC8: lo que hoy funciona en producción sigue funcionando.
 - **OQ3 — El listado de Equipo NO incluye conductores.** Ellos mantienen su sección, que gestiona licencias y vencimientos; duplicarlos invitaría a editar la misma persona en dos lugares con reglas distintas.
+- **OQ4 (nueva, tras medir §10) — Los 6 conductores actuales se dan de alta de nuevo con el mecanismo nuevo.** Como ninguno activó, sus filas no tienen historia que preservar: no hay logins, ni claves, ni consentimientos. La empresa los vuelve a cargar desde la app —ahora con email obligatorio— y recibe un código por cada uno. Evita arrastrar un caso especial en el código para 6 filas que nadie usó, y de paso corrige el dato que falta (los correos). **Implicancia operativa**: Van Oosterwyk tiene que juntar los emails de sus 6 conductores antes de re-cargarlos.

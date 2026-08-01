@@ -44,10 +44,6 @@ function placeholderFirebaseUid(rut: string): string {
   return `${PENDING_FIREBASE_UID_PREFIX}${rut}`;
 }
 
-function placeholderEmail(rut: string): string {
-  return `pending-rut-${rut.replace(/[.\-]/g, '')}@boosterchile.invalid`;
-}
-
 /**
  * Helpers defensivos para serializar Dates de Drizzle.
  *
@@ -334,7 +330,11 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
             .insert(users)
             .values({
               firebaseUid: placeholderFirebaseUid(rut),
-              email: body.email ?? placeholderEmail(rut),
+              // Fase B: el email es obligatorio en el schema, así que acá
+              // siempre es el real de la persona. Antes caía a un
+              // `pending-rut-…@boosterchile.invalid` y creaba conductores
+              // incontactables — 5 de 6 en producción terminaron así.
+              email: body.email,
               fullName: body.full_name,
               phone: body.phone ?? null,
               rut,
@@ -382,10 +382,13 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
             empresa_id: result.driver.empresaId,
             license_class: result.driver.licenseClass,
             license_number: result.driver.licenseNumber,
-            license_expiry:
-              result.driver.licenseExpiry instanceof Date
-                ? result.driver.licenseExpiry.toISOString().slice(0, 10)
-                : result.driver.licenseExpiry,
+            // `safeIsoString` en vez de `.toISOString()` directo: este último
+            // lanza RangeError "Invalid time value" cuando node-postgres
+            // devuelve la fecha en un formato que produce un Date con tiempo
+            // NaN, y el 500 resultante se lleva puesto el alta entera. El
+            // helper ya existía para el GET; el POST no lo usaba (detectado en
+            // la prueba end-to-end de la Fase B).
+            license_expiry: safeIsoString(result.driver.licenseExpiry)?.slice(0, 10) ?? null,
             is_extranjero: result.driver.isExtranjero,
             status: result.driver.driverStatus,
             created_at: result.driver.createdAt,
@@ -412,7 +415,16 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
       if (errCode === '23505') {
         return c.json({ error: 'duplicate', code: 'duplicate' }, 409);
       }
-      opts.logger.error({ err }, 'failed to create conductor');
+      opts.logger.error(
+        {
+          err,
+          // El serializador del logger colapsa el Error a `{}`: sin esto, un
+          // 500 acá no deja rastro de su causa (visto en la prueba e2e).
+          errMessage: err instanceof Error ? err.message : String(err),
+          errCode,
+        },
+        'failed to create conductor',
+      );
       throw err;
     }
   });
@@ -518,4 +530,4 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
 
 // Re-export para que el seed y D9 (login por RUT) puedan calcular el mismo
 // placeholder cuando completen el firebase_uid real del conductor.
-export { PENDING_FIREBASE_UID_PREFIX, placeholderEmail, placeholderFirebaseUid };
+export { PENDING_FIREBASE_UID_PREFIX, placeholderFirebaseUid };

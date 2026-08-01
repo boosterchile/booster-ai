@@ -139,6 +139,17 @@ export function createDriverAuthRoutes(opts: {
     }
 
     // 5. Crear (o reusar) Firebase Auth user.
+    //
+    // equipo-de-la-empresa Fase B — el PIN NO se setea como contraseña.
+    //
+    // Antes se hacía `password: body.pin`, y eso dejaba la credencial del
+    // conductor en manos de quien lo dio de alta: su empresa generó ese PIN y
+    // lo conoce. Un código entregado por un tercero puede probar identidad una
+    // vez; no puede ser la contraseña de una persona.
+    //
+    // La credencial del conductor es su clave numérica (ADR-035), que vive
+    // hasheada en nuestra BD y verifica `login-rut`. La cuenta Firebase es solo
+    // el vehículo del custom token.
     const syntheticEmail = driverSyntheticEmail(rut);
     let firebaseUid: string;
     try {
@@ -146,14 +157,10 @@ export function createDriverAuthRoutes(opts: {
       if (existing) {
         // Caso retry (e.g. la primera vez el UPDATE de la DB falló post-Firebase).
         firebaseUid = existing.uid;
-        // Reset del password al nuevo PIN — es un usuario fresco activando, y
-        // si llegó hasta acá es porque pasó la verificación scrypt.
-        await opts.firebaseAuth.updateUser(firebaseUid, { password: body.pin });
       } else {
         const created = await opts.firebaseAuth.createUser({
           email: syntheticEmail,
           emailVerified: false,
-          password: body.pin,
           displayName: `Conductor ${rut}`,
           disabled: false,
         });
@@ -170,7 +177,12 @@ export function createDriverAuthRoutes(opts: {
         .update(users)
         .set({
           firebaseUid,
-          email: syntheticEmail,
+          // equipo-de-la-empresa Fase B — el email REAL no se toca.
+          //
+          // Antes acá iba `email: syntheticEmail`, que pisaba el correo de la
+          // persona con un `@boosterchile.invalid` y la dejaba sin canal de
+          // comunicación con la plataforma. El sintético existe solo como
+          // identificador interno de Firebase.
           activationPinHash: null,
           status: 'activo',
           lastLoginAt: sql`now()`,

@@ -59,7 +59,16 @@ export type Driver = z.infer<typeof driverSchema>;
 export const createDriverBodySchema = z.object({
   rut: z.string().min(1),
   full_name: z.string().min(1).max(200),
-  email: z.string().email().nullable().optional(),
+  /**
+   * Email real del conductor. **Obligatorio** desde `equipo-de-la-empresa`
+   * Fase B: es el canal de comunicación de la plataforma con esa persona.
+   *
+   * Era `nullable().optional()` y caía a `pending-rut-…@boosterchile.invalid`.
+   * Medido en prod el 2026-07-31: **5 de 6 conductores** quedaron así — gente
+   * a la que el sistema no puede escribirle. El dato no se perdió, nunca se
+   * pidió.
+   */
+  email: z.string().email().max(320),
   phone: z.string().nullable().optional(),
   license_class: licenseClassSchema,
   license_number: z.string().min(1).max(50),

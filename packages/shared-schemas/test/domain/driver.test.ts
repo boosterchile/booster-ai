@@ -98,15 +98,19 @@ describe('createDriverBodySchema', () => {
     const parsed = createDriverBodySchema.parse({
       rut: '11.111.111-1',
       full_name: 'Juan Pérez',
+      // equipo-de-la-empresa Fase B: el email pasó a ser parte del mínimo.
+      // Sin él se crea un conductor con el que la plataforma no puede
+      // comunicarse — 5 de 6 en producción terminaron así.
+      email: 'juan@empresa.cl',
       license_class: 'A5',
       license_number: 'LIC-12345',
       license_expiry: '2027-12-31',
     });
     expect(parsed.is_extranjero).toBe(false); // default
-    expect(parsed.email).toBeUndefined();
+    expect(parsed.email).toBe('juan@empresa.cl');
   });
 
-  it('email opcional debe ser válido si se provee', () => {
+  it('el email debe tener formato válido', () => {
     expect(() =>
       createDriverBodySchema.parse({
         rut: '11.111.111-1',
