@@ -132,6 +132,43 @@ describe('ConductorConfiguracionRoute', () => {
     expect(screen.queryByTestId('wake-word-toggle')).not.toBeInTheDocument();
   });
 
+  // Auditoría 2026-08-02. El wake-word es un stub declarado
+  // (`services/wake-word.ts`, Wave 5 PR 1): no toca el micrófono. Con el flag
+  // OFF —lo que está en prod hoy, `wake_word_voice_activated` default false—
+  // esta card igual afirmaba en presente "Solo escuchamos la frase Oye
+  // Booster" y "El micrófono se pausa cuando el vehículo se mueve". Un
+  // conductor que lo lee concluye que la app lo está escuchando ahora. Es la
+  // peor mentira que puede decir una interfaz sobre privacidad.
+  it('con el wake-word apagado no afirma que el micrófono esté escuchando', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const card = screen.getByTestId('wake-word-card');
+    const texto = card.textContent ?? '';
+    expect(texto).not.toMatch(/Solo escuchamos/i);
+    expect(texto).not.toMatch(/El micrófono se pausa/i);
+    // Y debe decir explícitamente que hoy no se usa el micrófono.
+    expect(texto).toMatch(/no us\w+ el micrófono|micrófono.*no se usa/i);
+  });
+
+  it('con el wake-word encendido explica la privacidad en futuro, no en presente', () => {
+    useFeatureFlagsMock.mockReturnValueOnce({
+      flags: {
+        auth_universal_v1_activated: false,
+        wake_word_voice_activated: true,
+        matching_algorithm_v2_activated: false,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    wakeWordEnabledMock.mockReturnValueOnce(true);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const texto = screen.getByTestId('wake-word-card').textContent ?? '';
+    // Mientras siga siendo stub, "activado" no puede leerse como "escuchando".
+    expect(texto).not.toMatch(/esperando .Oye Booster./i);
+    expect(texto).toMatch(/preparando|todavía|aún/i);
+  });
+
   it('WakeWord card con flag ON → toggle visible y refleja preferencia', () => {
     useFeatureFlagsMock.mockReturnValueOnce({
       flags: {

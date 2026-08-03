@@ -3,11 +3,30 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/**
+ * `/login/conductor` — activación del conductor.
+ *
+ * Reescrito tras la auditoría de 2026-08-01. La versión anterior fijaba en
+ * verde un contrato que la Fase B (#641) eliminó: usaba el PIN como contraseña
+ * de Firebase (`signInWithEmail(synthetic_email, pin)`). Hoy eso no puede
+ * funcionar —la cuenta se crea sin password— y además mandaba el email REAL
+ * del conductor junto al PIN que su empresa conoce.
+ *
+ * Contrato actual:
+ *   · Conductor con PIN pendiente → activa acá y **elige su clave**.
+ *   · Conductor ya activado (410) → entra por el login principal con RUT +
+ *     clave numérica. Esta pantalla no intenta autenticarlo.
+ */
+
 const navigateMock = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
   Navigate: ({ to }: { to: string }) => <div data-testid="nav" data-to={to} />,
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 const signInDriverWithCustomTokenMock = vi.fn();
@@ -40,99 +59,111 @@ function makeJsonResponse(status: number, body: unknown): Response {
   } as Response;
 }
 
-describe('LoginConductorRoute', () => {
-  it('RUT inválido → muestra error sin llamar API', async () => {
-    render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-9');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '123456');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
+const RUT = '11.111.111-1';
+const PIN = '123456';
+const CLAVE = '482915';
 
-    // El error de dígito verificador del rutSchema aparece bajo el field.
-    await waitFor(() => expect(screen.getByText(/Dígito verificador/i)).toBeInTheDocument());
+async function completar(
+  over: { rut?: string; pin?: string; clave?: string; repetir?: string } = {},
+) {
+  await userEvent.type(screen.getByLabelText(/^RUT/i), over.rut ?? RUT);
+  await userEvent.type(screen.getByLabelText(/PIN/i), over.pin ?? PIN);
+  await userEvent.type(screen.getByLabelText(/^Clave numérica/i), over.clave ?? CLAVE);
+  await userEvent.type(
+    screen.getByLabelText(/Repite tu clave/i),
+    over.repetir ?? over.clave ?? CLAVE,
+  );
+}
+
+describe('/login/conductor — activación', () => {
+  it('pide RUT, PIN y la clave que el conductor elige', () => {
+    render(<LoginConductorRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/PIN/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Clave numérica/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Repite tu clave/i)).toBeInTheDocument();
+  });
+
+  it('activa enviando la clave y entra a la app del conductor', async () => {
+    fetchSpy.mockResolvedValue(
+      makeJsonResponse(200, { custom_token: 'ct-1', synthetic_email: 'x@y.invalid' }),
+    );
+
+    render(<LoginConductorRoute />);
+    await completar();
+    await userEvent.click(screen.getByRole('button', { name: /Activar/i }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ rut: '11111111-1', pin: PIN, clave_numerica: CLAVE });
+
+    await waitFor(() => expect(signInDriverWithCustomTokenMock).toHaveBeenCalledWith('ct-1'));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor' }));
+  });
+
+  it('no envía nada si las dos claves no coinciden', async () => {
+    render(<LoginConductorRoute />);
+    await completar({ clave: '482915', repetir: '482916' });
+    await userEvent.click(screen.getByRole('button', { name: /Activar/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/no coinciden/i));
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('200 + custom_token → signInWithCustomToken + navigate a /app/conductor', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      makeJsonResponse(200, {
-        custom_token: 'tok-xyz',
-        synthetic_email: 'drivers+1@boosterchile.invalid',
-      }),
+  it('410 ya activado → manda al login principal, NO intenta autenticar acá', async () => {
+    fetchSpy.mockResolvedValue(
+      makeJsonResponse(410, { error: 'already_activated', code: 'already_activated' }),
     );
-    signInDriverWithCustomTokenMock.mockResolvedValueOnce({ uid: 'fb-1' });
 
     render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '123456');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
+    await completar();
+    await userEvent.click(screen.getByRole('button', { name: /Activar/i }));
 
-    await waitFor(() => expect(signInDriverWithCustomTokenMock).toHaveBeenCalledWith('tok-xyz'));
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor' });
-  });
-
-  it('410 already_activated → fallback signInWithEmail con synthetic_email', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      makeJsonResponse(410, {
-        code: 'already_activated',
-        synthetic_email: 'drivers+11111111@boosterchile.invalid',
-      }),
-    );
-    signInWithEmailMock.mockResolvedValueOnce({ uid: 'fb-1' });
-
-    render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '987654');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
-
+    // El defecto que esto reemplaza: intentaba `signInWithEmail(email, pin)`,
+    // usando el PIN como contraseña. Esa vía ya no existe.
     await waitFor(() =>
-      expect(signInWithEmailMock).toHaveBeenCalledWith(
-        'drivers+11111111@boosterchile.invalid',
-        '987654',
-      ),
+      expect(screen.getByRole('alert')).toHaveTextContent(/ya (está|esta) activa/i),
     );
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/app/conductor' });
+    expect(signInWithEmailMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('ir-al-login')).toHaveAttribute('href', '/login');
   });
 
-  it('410 + signInWithEmail falla → "PIN o contraseña incorrectos"', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      makeJsonResponse(410, {
-        code: 'already_activated',
-        synthetic_email: 'drivers+xyz@boosterchile.invalid',
-      }),
-    );
-    signInWithEmailMock.mockRejectedValueOnce(new Error('wrong-password'));
+  it('credenciales incorrectas → mensaje sin revelar qué falló', async () => {
+    fetchSpy.mockResolvedValue(makeJsonResponse(401, { error: 'invalid_credentials' }));
 
     render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '111111');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
+    await completar();
+    await userEvent.click(screen.getByRole('button', { name: /Activar/i }));
 
-    await waitFor(() =>
-      expect(screen.getByText(/PIN o contraseña incorrectos/)).toBeInTheDocument(),
-    );
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/RUT|PIN/i);
+    // El backend colapsa rut-inexistente / pin-incorrecto en una sola
+    // respuesta: la UI no inventa un diagnóstico que el backend evita dar.
+    expect(alerta.textContent ?? '').not.toMatch(/no existe|no está registrado/i);
   });
 
-  it('503 not_a_driver → mensaje específico', async () => {
-    fetchSpy.mockResolvedValueOnce(makeJsonResponse(503, { code: 'not_a_driver' }));
-
+  it('los campos numéricos abren el teclado numérico en el celular', () => {
     render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '123456');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
-
-    await waitFor(() =>
-      expect(screen.getByText(/no está habilitado como conductor/)).toBeInTheDocument(),
-    );
+    expect(screen.getByLabelText(/PIN/i)).toHaveAttribute('inputmode', 'numeric');
+    expect(screen.getByLabelText(/^Clave numérica/i)).toHaveAttribute('inputmode', 'numeric');
   });
 
-  it('401 → mensaje genérico de credenciales', async () => {
-    fetchSpy.mockResolvedValueOnce(makeJsonResponse(401, { code: 'invalid_credentials' }));
+  it('503 not_a_driver → mensaje claro', async () => {
+    fetchSpy.mockResolvedValue(makeJsonResponse(503, { code: 'not_a_driver' }));
 
     render(<LoginConductorRoute />);
-    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
-    await userEvent.type(screen.getByLabelText(/^PIN/), '000000');
-    await userEvent.click(screen.getByRole('button', { name: /Ingresar/ }));
+    await completar();
+    await userEvent.click(screen.getByRole('button', { name: /Activar/i }));
 
-    await waitFor(() => expect(screen.getByText(/RUT o PIN incorrectos/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+  });
+});
+
+describe('/login/conductor — accesibilidad', () => {
+  it('no tiene violaciones de a11y (vitest-axe)', async () => {
+    const { axe } = await import('vitest-axe');
+    const { baseElement } = render(<LoginConductorRoute />);
+    const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
   });
 });

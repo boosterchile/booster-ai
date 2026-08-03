@@ -279,7 +279,7 @@ function FormAlta({
         setError('Esa persona ya forma parte de tu equipo.');
       } else if (code === 'rol_sin_permiso') {
         setError(
-          'No tenés permiso para gestionar el equipo. Pedíselo al dueño o a un administrador.',
+          'No tienes permiso para gestionar el equipo. Pídeselo al dueño o a un administrador.',
         );
       } else {
         setError(err instanceof ApiError ? `${err.status}: ${err.message}` : String(err));

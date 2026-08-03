@@ -41,7 +41,7 @@ export function ActivarRoute() {
     // La confirmación se valida acá y no viaja al backend: un tipeo dejaría a
     // la persona sin poder entrar a su propia cuenta.
     if (clave !== repetir) {
-      setError('Las claves no coinciden. Revisalas y volvé a intentar.');
+      setError('Las claves no coinciden. Revísalas e intenta de nuevo.');
       return;
     }
 
@@ -87,7 +87,7 @@ export function ActivarRoute() {
         <div className="w-full max-w-md rounded-lg border border-success-200 bg-white p-6 text-center shadow-sm">
           <h1 className="font-semibold text-lg text-neutral-900">Tu cuenta quedó activa</h1>
           <p className="mt-2 text-neutral-600 text-sm">
-            Ya podés entrar con tu RUT y la clave que acabás de crear.
+            Ya puedes entrar con tu RUT y la clave que acabas de crear.
           </p>
           <a
             href="/login"
