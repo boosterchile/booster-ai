@@ -546,6 +546,24 @@ export const apiEnvSchema = commonEnvSchema
     ONBOARDING_TOKEN_SIGNING_SECRET: z.string().min(32).optional(),
 
     /**
+     * API key de Resend — primera infraestructura de correo de la plataforma
+     * (`conductor-activacion-correo`). Viene de Secret Manager vía env en
+     * Cloud Run.
+     *
+     * **Opcional a propósito**: ausente ⇒ `crearEmailSender` devuelve el
+     * `LoggingEmailSender`, que registra el correo que habría salido y sigue.
+     * Un correo caído nunca puede voltear un alta de conductor ya consumada.
+     * El arranque avisa por `warn` para que la degradación no sea silenciosa.
+     */
+    RESEND_API_KEY: z.string().min(8).optional(),
+
+    /**
+     * Remitente de los correos salientes. El dominio debe estar verificado en
+     * Resend (registros DNS) o el proveedor rechaza el envío con 422.
+     */
+    EMAIL_FROM: z.string().min(3).default('Booster <no-reply@boosterchile.com>'),
+
+    /**
      * onboarding-flow-redesign T1.3 — TTL del token one-shot, en horas. Default
      * 72h (3 días) como valor inicial razonable; el valor definitivo (OQ1) se
      * ratifica en el gate de Cierre Fase 1 con el security-auditor. Tunable por

@@ -34,7 +34,20 @@ interface ActivateResponse {
  */
 export function LoginConductorRoute() {
   const navigate = useNavigate();
-  const [rut, setRut] = useState('');
+  // El conductor puede llegar desde `/login` con su RUT ya tecleado (rebota
+  // ahí con `needs_activation`). Se valida antes de precargar: la URL es input
+  // externo y no puede sembrar cualquier cosa en el formulario.
+  const [rut, setRut] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    const crudo = new URLSearchParams(window.location.search).get('rut');
+    if (!crudo) {
+      return '';
+    }
+    const parsed = rutSchema.safeParse(ensureRutHasDash(crudo.replace(/\./g, '').trim()));
+    return parsed.success ? parsed.data : '';
+  });
   const [pin, setPin] = useState('');
   const [clave, setClave] = useState('');
   const [repetir, setRepetir] = useState('');

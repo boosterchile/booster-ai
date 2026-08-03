@@ -11,6 +11,8 @@ import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { conductores, users } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionConductor } from '../services/notifications/conductor-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 
 /**
  * Endpoints CRUD de conductores. Solo accesibles desde la interfaz del
@@ -88,7 +90,17 @@ function safeDateString(value: unknown): string | null {
   return null;
 }
 
-export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
+export function createConductoresRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * Envío del correo de activación al conductor. Opcional para no obligar a
+   * cada test a construirlo; ausente ⇒ no se manda nada (el PIN sigue en la
+   * respuesta, que es como funcionaba antes de agosto 2026).
+   */
+  emailSender?: EmailSender;
+  webAppUrl?: string;
+}) {
   const app = new Hono();
 
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
@@ -372,6 +384,22 @@ export function createConductoresRoutes(opts: { db: Db; logger: Logger }) {
 
       if (!result.ok) {
         return c.json({ error: 'user_already_driver', code: result.code }, 409);
+      }
+
+      // El conductor se entera por su propio correo, no por el WhatsApp de su
+      // jefe. Va DESPUÉS de la transacción y sin `await` bloqueante del alta:
+      // el registro ya está consumado y un proveedor caído no puede voltearlo.
+      if (opts.emailSender && activationPin !== null && body.email) {
+        await enviarCorreoActivacionConductor({
+          sender: opts.emailSender,
+          logger: opts.logger,
+          email: body.email,
+          nombre: body.full_name,
+          rut: body.rut,
+          pin: activationPin,
+          empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
+          webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+        });
       }
 
       return c.json(

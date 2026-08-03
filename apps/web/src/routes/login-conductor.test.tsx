@@ -167,3 +167,25 @@ describe('/login/conductor — accesibilidad', () => {
     expect(results.violations).toEqual([]);
   });
 });
+
+describe('/login/conductor — llegada desde el login principal', () => {
+  it('precarga el RUT que viene en la URL', () => {
+    // El conductor que rebotó en /login ya tecleó su RUT una vez. Pedírselo de
+    // nuevo, en el celular y muchas veces en la cabina, es fricción gratis.
+    window.history.replaceState({}, '', '/login/conductor?rut=5864136-7');
+    render(<LoginConductorRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('5864136-7');
+  });
+
+  it('sin parámetro queda vacío', () => {
+    window.history.replaceState({}, '', '/login/conductor');
+    render(<LoginConductorRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('');
+  });
+
+  it('un rut basura en la URL no se precarga', () => {
+    window.history.replaceState({}, '', '/login/conductor?rut=<script>');
+    render(<LoginConductorRoute />);
+    expect(screen.getByLabelText(/^RUT/i)).toHaveValue('');
+  });
+});
