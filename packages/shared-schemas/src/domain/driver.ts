@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { chileanPhoneSchema } from '../primitives/chile.js';
 import { driverIdSchema, transportistaIdSchema, userIdSchema } from '../primitives/ids.js';
 
 /**
@@ -69,7 +70,18 @@ export const createDriverBodySchema = z.object({
    * pidió.
    */
   email: z.string().email().max(320),
-  phone: z.string().nullable().optional(),
+  /**
+   * Teléfono móvil en E.164. **Obligatorio** desde 2026-08-03: WhatsApp es el
+   * canal principal hacia el conductor — los conductores chilenos de camión
+   * usan WhatsApp, no correo. Por acá le llega su PIN y el enlace de
+   * activación.
+   *
+   * Era `nullable().optional()`. Medido en prod: 2 de 7 conductores quedaron
+   * sin número, o sea inalcanzables por el canal que más van a usar. Mismo
+   * razonamiento que llevó a exigir el email en la Fase B: el dato no se
+   * perdió, nunca se pidió.
+   */
+  phone: chileanPhoneSchema,
   license_class: licenseClassSchema,
   license_number: z.string().min(1).max(50),
   license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

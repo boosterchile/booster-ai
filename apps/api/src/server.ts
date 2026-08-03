@@ -903,6 +903,12 @@ export function createServer(opts: CreateServerOptions): Hono {
         logger,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
+        // Comparte el mismo cliente Twilio que el resto de las notificaciones.
+        // Ausente en dev ⇒ no se intenta; el alta no depende de esto.
+        ...(opts.notify?.twilioClient ? { whatsappClient: opts.notify.twilioClient } : {}),
+        ...(config.CONTENT_SID_ACTIVACION_CONDUCTOR
+          ? { activacionContentSid: config.CONTENT_SID_ACTIVACION_CONDUCTOR }
+          : {}),
       }),
     );
 

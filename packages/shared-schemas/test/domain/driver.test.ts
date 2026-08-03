@@ -98,6 +98,7 @@ describe('createDriverBodySchema', () => {
     const parsed = createDriverBodySchema.parse({
       rut: '11.111.111-1',
       full_name: 'Juan Pérez',
+      phone: '+56957790379',
       // equipo-de-la-empresa Fase B: el email pasó a ser parte del mínimo.
       // Sin él se crea un conductor con el que la plataforma no puede
       // comunicarse — 5 de 6 en producción terminaron así.

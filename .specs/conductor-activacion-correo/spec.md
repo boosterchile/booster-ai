@@ -120,7 +120,43 @@ Dos entradas nuevas, en los dos momentos donde alguien la necesita:
    imposible de pegar en un WhatsApp. Mientras Resend no esté provisionado,
    esto es lo único que tiene la empresa para que su conductor llegue.
 
-### 3.5 El notificador de clientes deja de ser mudo
+### 3.5 WhatsApp — el canal PRINCIPAL
+
+Corrección del PO, y es la que más cambia el diseño:
+
+> «los conductores muchas veces no usan correos electrónicos pero sí whatsapp»
+
+Es cierto en la operación de carga chilena. Y a diferencia del correo, acá la
+infraestructura **ya existe**: Twilio operativo y cuatro plantillas aprobadas y
+montadas en producción (`content_sid_ready` en Terraform, las cuatro en `true`).
+
+También corrijo un encuadre mío: dije «~7 días de Meta» a partir de un solo
+caso, `safety_alert_v2` — una alerta de seguridad, contenido que va a revisión
+humana. Una plantilla de código de activación cae en categoría *Authentication*
+y suele aprobarse mucho más rápido. Presenté el peor caso como el esperado.
+
+**Plantilla `activacion_conductor_v1`**, con 4 variables que son contrato con
+el Content Editor:
+
+```
+{{1}} nombre · {{2}} empresa · {{3}} PIN
+{{4}} RUT → sufijo del botón: /login/conductor?rut={{4}}
+```
+
+Entra **no montada** siguiendo el patrón de la casa: el secreto se crea como
+placeholder y `content_sid_ready` no lo lista, así que el api no lo ve hasta
+que el PO cargue el `HX...` aprobado. Montar un placeholder tumbaba el arranque
+(INC-2026-06-19).
+
+**El teléfono pasa a ser obligatorio en el alta** (decisión del PO): si WhatsApp
+es el canal principal, un conductor sin número es inalcanzable. Medido en prod:
+2 de 7 estaban así. Se valida con `chileanPhoneSchema` (E.164) y el modo
+"agregarme a mí mismo" lo prellena desde el `me`, igual que el email.
+
+Orden de envío: **WhatsApp primero**, correo después como respaldo para quien
+sí lo usa. Ninguno de los dos puede voltear el alta.
+
+### 3.6 El notificador de clientes deja de ser mudo
 
 `SignupRequestNotifier` pasa a usar el mismo `EmailSender`. Dejar un stub que
 el PO cree que envía es exactamente el tipo de hueco silencioso que este frente

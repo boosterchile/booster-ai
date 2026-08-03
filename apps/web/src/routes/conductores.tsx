@@ -471,10 +471,18 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
       if (meEmail) {
         setValue('email', meEmail, { shouldValidate: false });
       }
+      // El teléfono también: desde que es obligatorio (canal WhatsApp), no
+      // prellenarlo obligaba al dueño a tipear un dato que la plataforma ya
+      // tiene. Mismo criterio que el email.
+      const mePhone = (me.user as { phone?: string | null }).phone;
+      if (mePhone) {
+        setValue('phone', mePhone, { shouldValidate: false });
+      }
     } else {
       setValue('rut', '');
       setValue('full_name', '');
       setValue('email', '');
+      setValue('phone', '');
     }
   }
 
@@ -619,13 +627,24 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           />
 
           <FormField
-            label="Teléfono (opcional)"
+            label="Teléfono"
+            required
+            error={errors.phone?.message}
+            hint="Su WhatsApp. Por acá le llega el PIN y el enlace para activar su cuenta."
             render={({ id, describedBy }) => (
               <input
                 id={id}
                 aria-describedby={describedBy}
                 type="tel"
-                {...register('phone')}
+                {...register('phone', {
+                  required:
+                    'El teléfono del conductor es obligatorio: WhatsApp es el canal principal con él.',
+                  pattern: {
+                    // Mismo formato que exige el backend (chileanPhoneSchema).
+                    value: /^\+56[2-9]\d{8}$/,
+                    message: 'Número chileno en formato +56912345678.',
+                  },
+                })}
                 className={fieldInputClass(!!errors.phone)}
                 placeholder="+56912345678"
               />

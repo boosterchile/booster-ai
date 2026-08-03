@@ -300,6 +300,24 @@ export const apiEnvSchema = commonEnvSchema
     ),
 
     /**
+     * Plantilla `activacion_conductor_v1` — el WhatsApp con el que el conductor
+     * activa su cuenta (PIN + botón al enlace de activación). Categoría
+     * *Authentication* en Meta: es un código de un solo uso.
+     *
+     * **Opcional a propósito**: ausente ⇒ no se intenta el envío y queda un
+     * `warn`. Entra no-montada por `content_sid_ready` (Terraform) hasta que
+     * Meta apruebe y se cargue el valor real — un placeholder montado tumbaba
+     * el arranque del api (INC-2026-06-19).
+     */
+    CONTENT_SID_ACTIVACION_CONDUCTOR: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
      * SA email que firma el OIDC de la push subscription de safety-events
      * (Pub/Sub → POST /internal/safety-events). El endpoint valida
      * claims.email === este valor. Optional en dev (sin él, el endpoint
