@@ -225,7 +225,7 @@ function AutoplayCard({ enabled, onChange }: AutoplayCardProps) {
             </span>
           </label>
 
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-neutral-500">
+          <p className="mt-2 flex items-start gap-1.5 text-sm text-neutral-500">
             <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
             Por seguridad, solo arranca cuando el vehículo está detenido (≤3 km/h por 4 s). Si
             comienzas a moverte se pausa.
@@ -332,7 +332,7 @@ function PermissionRow({
         <div className="flex-1">
           <p className="font-medium text-neutral-900 text-sm">{name}</p>
           <p className="text-neutral-600 text-xs">{purpose}</p>
-          <p className="mt-1 text-[11px]" data-testid={`${testIdPrefix}-status`}>
+          <p className="mt-1 text-sm" data-testid={`${testIdPrefix}-status`}>
             <StatusBadge status={status} />
           </p>
         </div>
@@ -460,9 +460,15 @@ function WakeWordCard() {
               </span>
             )}
           </div>
+          {/* Todo lo que sigue está en FUTURO a propósito. El reconocedor es un
+              stub declarado (`services/wake-word.ts`, Wave 5 PR 1): no abre el
+              micrófono. Redactar la privacidad en presente —"solo escuchamos",
+              "el micrófono se pausa"— le dice al conductor que la app lo está
+              escuchando ahora, y no es verdad. Cuando PR 2 integre Porcupine,
+              este texto pasa a presente. */}
           <p className="mt-1 text-neutral-600 text-sm">
-            Cuando está activo, di <strong>“Oye Booster”</strong> con el vehículo detenido y la app
-            empieza a escuchar tu comando. Sin tocar la pantalla.
+            Cuando esté disponible, vas a poder decir <strong>“Oye Booster”</strong> con el vehículo
+            detenido y dar tu comando sin tocar la pantalla.
           </p>
 
           {featureLive ? (
@@ -479,7 +485,7 @@ function WakeWordCard() {
               />
               <span className="font-medium">
                 {enabled
-                  ? 'Activado · esperando “Oye Booster” cuando estés parado'
+                  ? 'Lo quiero activado · todavía lo estamos preparando'
                   : 'Desactivado · seguir usando el botón de mic en cada acción'}
               </span>
             </label>
@@ -494,16 +500,17 @@ function WakeWordCard() {
             </div>
           )}
 
-          <div className="mt-3 space-y-1 text-[11px] text-neutral-500">
+          <div className="mt-3 space-y-1 text-sm text-neutral-500">
             <p className="flex items-start gap-1.5">
               <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
-              Solo escuchamos la frase “Oye Booster”. El audio se procesa en tu teléfono y no se
-              envía a Booster.
+              Hoy la app no usa el micrófono por su cuenta: solo se abre cuando tú tocas el botón de
+              mic.
             </p>
             <p className="flex items-start gap-1.5">
               <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
-              El micrófono se pausa automáticamente cuando el vehículo se mueve, cuando la pantalla
-              se apaga o cuando cambias de pestaña. Para cuidar tu batería y tu privacidad.
+              Cuando lo activemos, reconoceremos solo la frase “Oye Booster”, el audio se procesará
+              en tu teléfono sin enviarse a Booster, y se pausará al moverse el vehículo, al
+              apagarse la pantalla o al cambiar de pestaña.
             </p>
           </div>
         </div>
@@ -540,7 +547,7 @@ function VoiceCommandsReferenceCard() {
                   {cmd.phrases.map((p) => (
                     <span
                       key={p}
-                      className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-[11px] text-neutral-700 ring-1 ring-neutral-200"
+                      className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-sm text-neutral-700 ring-1 ring-neutral-200"
                     >
                       "{p}"
                     </span>

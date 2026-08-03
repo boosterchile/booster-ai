@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import { rutSchema } from '@booster-ai/shared-schemas';
+import { claveNumericaSchema, rutSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { conductores, memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
+import { hashClaveNumerica } from '../services/clave-numerica.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
@@ -53,6 +54,18 @@ function driverSyntheticEmail(rut: string): string {
 const activateBodySchema = z.object({
   rut: z.string().min(1),
   pin: z.string().regex(/^\d{6}$/, 'PIN debe ser 6 dígitos'),
+  /**
+   * Clave numérica que el conductor elige para SÍ MISMO al activar.
+   *
+   * Obligatoria: sin ella la activación lo dejaba sin ninguna credencial
+   * usable — Firebase sin password (correcto desde la Fase B) pero también
+   * sin `clave_numerica_hash`, que es lo que verifica `login-rut`. Si cerraba
+   * la app antes de crearla quedaba bloqueado, porque el alta de conductor no
+   * crea la membresía `pendiente_invitacion` que `/auth/activar` exige.
+   *
+   * El PIN prueba identidad una vez; esto es su credencial (ADR-035).
+   */
+  clave_numerica: claveNumericaSchema,
 });
 
 export function createDriverAuthRoutes(opts: {
@@ -177,6 +190,8 @@ export function createDriverAuthRoutes(opts: {
         .update(users)
         .set({
           firebaseUid,
+          // La clave la eligió el conductor: ni su empresa ni Booster la conocen.
+          claveNumericaHash: hashClaveNumerica(body.clave_numerica),
           // equipo-de-la-empresa Fase B — el email REAL no se toca.
           //
           // Antes acá iba `email: syntheticEmail`, que pisaba el correo de la

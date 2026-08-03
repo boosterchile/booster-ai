@@ -32,7 +32,22 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  // `to` → `href`: sin esto el mock renderiza un `<a>` sin href, que para axe
+  // tiene rol `generic` y hace ilegal su `aria-label`. En producción el Link de
+  // TanStack sí emite href, así que era un falso positivo del mock.
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: { children: ReactNode; to: string; params?: unknown }) => {
+    void params;
+    return (
+      <a href={to} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 const queryDriverPermissionsSpy = vi.fn();
@@ -43,11 +58,15 @@ vi.mock('../services/driver-mode-permissions.js', () => ({
 // ADR-036 (Wave 5) — el banner del wake-word usa useFeatureFlags. Default
 // flag OFF en tests para que el banner no aparezca y los assertions
 // existentes pasen sin cambios.
+// Mutable para poder encender el flag en un test puntual sin afectar al resto.
+let wakeWordFlag = false;
 vi.mock('../hooks/use-feature-flags.js', () => ({
   useFeatureFlags: () => ({
     flags: {
       auth_universal_v1_activated: false,
-      wake_word_voice_activated: false,
+      get wake_word_voice_activated() {
+        return wakeWordFlag;
+      },
       matching_algorithm_v2_activated: false,
     },
     isLoading: false,
@@ -56,8 +75,9 @@ vi.mock('../hooks/use-feature-flags.js', () => ({
 }));
 
 // Default mock para preference: wake-word OFF en localStorage.
+let wakeWordPreferido = false;
 vi.mock('../services/wake-word-preference.js', () => ({
-  isWakeWordEnabled: () => false,
+  isWakeWordEnabled: () => wakeWordPreferido,
   setWakeWordEnabled: vi.fn(),
 }));
 
@@ -77,6 +97,7 @@ vi.mock('../hooks/use-driver-position-reporter.js', () => ({
 }));
 
 const apiGetSpy = vi.fn();
+const apiPatchSpy = vi.fn();
 vi.mock('../lib/api-client.js', async () => {
   const actual =
     await vi.importActual<typeof import('../lib/api-client.js')>('../lib/api-client.js');
@@ -85,11 +106,13 @@ vi.mock('../lib/api-client.js', async () => {
     api: {
       ...actual.api,
       get: (...args: unknown[]) => apiGetSpy(...args),
+      patch: (...args: unknown[]) => apiPatchSpy(...args),
     },
   };
 });
 
 const { ConductorDashboardRoute } = await import('./conductor.js');
+const { ApiError } = await import('../lib/api-client.js');
 
 function makeMe(): MeOnboarded {
   return {
@@ -143,6 +166,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  wakeWordFlag = false;
+  wakeWordPreferido = false;
 });
 
 describe('ConductorDashboardRoute', () => {
@@ -158,7 +183,8 @@ describe('ConductorDashboardRoute', () => {
     expect(screen.getByText('Pedro Conductor')).toBeInTheDocument();
     expect(screen.getByText('Conductor')).toBeInTheDocument();
     const cogLink = screen.getByTestId('link-configuracion-conductor');
-    expect(cogLink).toHaveAttribute('to', '/app/conductor/configuracion');
+    // El mock ahora mapea `to` → `href`, como hace el Link real.
+    expect(cogLink).toHaveAttribute('href', '/app/conductor/configuracion');
   });
 
   it('banner sticky de WhatsApp es visible siempre (no oculto en config)', () => {
@@ -277,5 +303,207 @@ describe('ConductorDashboardRoute', () => {
     await screen.findByText('Tu próximo servicio');
     // El driver no negocia ofertas — la palabra "oferta" no debería aparecer en su superficie.
     expect(screen.queryByText(/\boferta(s)?\b/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auditoría 2026-08-01 — lo que el conductor necesita para hacer su trabajo
+// ---------------------------------------------------------------------------
+// El dashboard mostraba el servicio pero no dejaba operarlo: sin navegación al
+// destino y sin forma de confirmar la entrega. La única salida era un link a
+// `/app/asignaciones/$id`, pantalla del TRANSPORTISTA — el conductor pasa su
+// gate (su empresa es transportista) y termina viendo herramientas de su jefe:
+// "asignar conductor" y el factoring de Cobra hoy.
+describe('ConductorDashboardRoute — acciones del servicio', () => {
+  it('ofrece navegación al destino', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+
+    const nav = await screen.findByTestId('navegar-destino');
+    // Un conductor necesita abrir el destino en su app de mapas, no copiarlo.
+    expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
+    expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Brasil 2345'));
+  });
+
+  it('permite confirmar la entrega desde su propia pantalla', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+
+    const btn = await screen.findByRole('button', { name: /Confirmar entrega/i });
+    fireEvent.click(btn);
+
+    await waitFor(() =>
+      expect(apiPatchSpy).toHaveBeenCalledWith(
+        `/assignments/${sampleAssignment.id}/confirmar-entrega`,
+      ),
+    );
+  });
+
+  it('pide confirmación antes de marcar la entrega', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+
+    // Es una acción irreversible en la operación: no puede dispararse por un
+    // toque accidental con el celular en el bolsillo.
+    expect(apiPatchSpy).not.toHaveBeenCalled();
+  });
+
+  // Hallazgo del e2e contra API real (2026-08-02): con
+  // REQUIRE_DOCUMENT_TO_CLOSE=true (default, config.ts) el cierre devuelve
+  // 409 documento_requerido mientras el viaje no tenga guía/factura subida.
+  // El conductor NO puede subirla —`requireWriteRole` exige dueno|admin|
+  // despachador— así que un mensaje genérico lo deja golpeando el botón
+  // contra una pared. La UI tiene que nombrar el bloqueo y a quién pedírselo.
+  it('409 documento_requerido → dice qué falta y quién lo resuelve', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(new ApiError(409, 'documento_requerido', {}));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/documento|guía|guia|factura/i);
+    // Nunca culpar a la señal: el request llegó y el backend contestó.
+    expect(alerta.textContent ?? '').not.toMatch(/señal|senal/i);
+  });
+
+  it('409 ted_no_decodificado → pide esperar, no reintentar a ciegas', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(new ApiError(409, 'ted_no_decodificado', {}));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/procesando|minutos/i);
+    expect(alerta.textContent ?? '').not.toMatch(/señal|senal/i);
+  });
+
+  it('caída de red sí culpa a la señal', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/señal|conexión/i);
+  });
+
+  it('ya entregada (409 invalid_status) no queda como error del conductor', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(
+      new ApiError(409, 'invalid_status', { current_status: 'entregado' }),
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').toMatch(/ya .*(entregad|cerrad)/i);
+  });
+
+  it('NO manda al conductor a la pantalla del transportista', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+
+    const links = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(links.some((h) => h?.includes('/app/asignaciones/'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auditoría 2026-08-01 — P1 del dashboard
+// ---------------------------------------------------------------------------
+describe('ConductorDashboardRoute — mantenerse al día', () => {
+  it('ofrece actualizar la lista sin recargar la app', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByText(/No tienes servicios asignados/i);
+
+    // Un servicio despachado con la pantalla abierta no aparecía nunca: el
+    // fetch era único en mount y el conductor tenía que saber recargar.
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar/i }));
+
+    expect(await screen.findByTestId(`assignment-card-${sampleAssignment.id}`)).toBeInTheDocument();
+  });
+
+  it('un fallo del servidor se explica en lenguaje del conductor', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    const { ApiError } = await import('../lib/api-client.js');
+    apiGetSpy.mockRejectedValue(new ApiError(500, 'boom', null));
+    render(<ConductorDashboardRoute />);
+
+    const alerta = await screen.findByRole('alert');
+    // Antes mostraba `Error 500: boom` — ruido inútil para quien está en ruta.
+    expect(alerta.textContent ?? '').not.toMatch(/Error 500|boom/);
+    expect(alerta.textContent ?? '').toMatch(/intenta|señal|nuevamente/i);
+  });
+
+  it('si no se puede leer el permiso de GPS, lo dice en vez de dejar el botón muerto', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    queryDriverPermissionsSpy.mockRejectedValue(new Error('permissions API no disponible'));
+    render(<ConductorDashboardRoute />);
+
+    // El `.catch(() => undefined)` dejaba el botón de GPS deshabilitado para
+    // siempre, sin ninguna explicación.
+    expect(
+      await screen.findByText(/permiso de ubicación|activar la ubicación/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('ConductorDashboardRoute — el wake-word no miente sobre el micrófono', () => {
+  it('con el flag ON y la preferencia activa, NO afirma que está escuchando', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [] });
+    wakeWordFlag = true;
+    wakeWordPreferido = true;
+
+    render(<ConductorDashboardRoute />);
+    const banner = await screen.findByTestId('wake-word-active-banner');
+
+    // El controller es un stub declarado (`services/wake-word.ts`): no toca el
+    // micrófono. Decirle al conductor "Escuchando" es una afirmación falsa
+    // sobre su privacidad — la peor clase de placebo.
+    expect(banner.textContent ?? '').not.toMatch(/escuchando/i);
+    expect(banner.textContent ?? '').toMatch(/pronto|disponible|preparando/i);
+  });
+});
+
+describe('ConductorDashboardRoute — accesibilidad', () => {
+  it('no tiene violaciones de a11y con un servicio asignado (vitest-axe)', async () => {
+    const { axe } = await import('vitest-axe');
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+
+    const { baseElement } = render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+
+    // color-contrast off: jsdom no computa layout/canvas (lo cubre ui-tokens).
+    const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations).toEqual([]);
   });
 });

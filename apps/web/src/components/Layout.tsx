@@ -16,7 +16,7 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * El **conductor** (`conductor.tsx`) y el **platform-admin** (`platform-admin.tsx`)
  * tienen shell propio y NO usan este Layout — el sidebar no los alcanza.
  *
- * Siempre que crees una página de operador bajo `/app/*`, envolvé el cuerpo en
+ * Siempre que crees una página de operador bajo `/app/*`, envuelve el cuerpo en
  * `<Layout me={me} title="…">`. Sin Layout, el usuario pierde el sidebar, el
  * switcher y "Salir" (regresión de UX bloqueante). El `title` se muestra como
  * contexto en la topbar (cada página mantiene su propio `<h1>`).

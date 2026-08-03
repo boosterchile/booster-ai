@@ -143,7 +143,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: '11.111.111-9', pin: '123456' }),
+      body: JSON.stringify({ rut: '11.111.111-9', pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(401);
     const body = (await res.json()) as { code: string };
@@ -157,7 +157,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(401);
   });
@@ -177,7 +177,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(410);
     const body = (await res.json()) as { code: string; synthetic_email: string };
@@ -200,7 +200,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '000000' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '000000', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(401);
   });
@@ -220,7 +220,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(401);
   });
@@ -241,7 +241,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(503);
   });
@@ -265,7 +265,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { custom_token: string; synthetic_email: string };
@@ -294,7 +294,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(200);
     expect(firebase.createUser).not.toHaveBeenCalled();
@@ -323,7 +323,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(502);
   });
@@ -344,7 +344,7 @@ describe('POST /auth/driver-activate', () => {
     const res = await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
     expect(res.status).toBe(503);
   });
@@ -384,7 +384,7 @@ describe('POST /auth/driver-activate — identidad del conductor (Fase B)', () =
     await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
 
     // El UPDATE de activación no debe tocar `email`: el sintético es
@@ -401,7 +401,7 @@ describe('POST /auth/driver-activate — identidad del conductor (Fase B)', () =
     await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
 
     const args = firebase.createUser.mock.calls[0]?.[0] ?? {};
@@ -416,10 +416,87 @@ describe('POST /auth/driver-activate — identidad del conductor (Fase B)', () =
     await app.request('/auth/driver-activate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
     });
 
     const llamadas = JSON.stringify(firebase.updateUser.mock.calls ?? []);
     expect(llamadas).not.toContain('123456');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI conductor — la activación deja al conductor con SU clave
+// ---------------------------------------------------------------------------
+// Auditoría 2026-08-01: tras la Fase B el conductor activaba y quedaba sin
+// ninguna credencial usable — Firebase sin password (correcto) pero también
+// sin `clave_numerica_hash`. Si cerraba la app antes de crearla, las tres
+// puertas quedaban cerradas: /login/conductor (410 sin fallback válido),
+// /login (410 needs_rotation, "usa tu método anterior" que no existe) y
+// /activar (401, exige una membresía pendiente que el alta de conductor no
+// crea). Ahora la clave se define en el mismo acto de activar.
+describe('POST /auth/driver-activate — el conductor sale con su clave', () => {
+  function stubActivable() {
+    return makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:11.111.111-1',
+        email: 'conductor.real@gmail.com',
+        rut: VALID_RUT,
+        activationPinHash: hashActivationPin('123456'),
+      },
+      conductorRow: { id: 'c-1', deletedAt: null },
+    });
+  }
+
+  it('persiste la clave numérica que eligió el conductor, hasheada', async () => {
+    const stub = stubActivable();
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '482915' }),
+    });
+
+    expect(res.status).toBe(200);
+    const set = stub.capturedUpdates[0] ?? {};
+    expect(set.claveNumericaHash).toBeDefined();
+    expect(JSON.stringify(set)).not.toContain('482915');
+  });
+
+  it('exige la clave: sin ella el conductor quedaría sin forma de volver a entrar', async () => {
+    const stub = stubActivable();
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // A propósito SIN `clave_numerica`.
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456' }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rechaza una clave que no sea de 6 dígitos', async () => {
+    const stub = stubActivable();
+    const app = await buildApp({
+      db: stub.db,
+      firebaseAuth: makeFirebaseStub({ existingUserUid: null, createUid: 'fb-1' }),
+    });
+
+    const res = await app.request('/auth/driver-activate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, pin: '123456', clave_numerica: '12' }),
+    });
+
+    expect(res.status).toBe(400);
   });
 });
