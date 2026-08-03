@@ -408,7 +408,6 @@ export function createConductoresRoutes(opts: {
           telefono: body.phone ?? null,
           nombre: body.full_name,
           rut: body.rut,
-          pin: activationPin,
           empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
         });
       }

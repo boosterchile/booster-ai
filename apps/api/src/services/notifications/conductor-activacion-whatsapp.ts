@@ -13,23 +13,25 @@ import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
  * ya estaba: Twilio operativo y cuatro plantillas aprobadas y montadas en
  * producción.
  *
- * **Plantilla `activacion_conductor_v1`** — categoría Meta EN DEFINICIÓN: el v1
- * Utility con el PIN en el body fue rechazado (2026-08-03; los OTP solo pueden
- * ir en *Authentication*, que es de formato fijo — ver
- * docs/runbooks/load-content-sids.md). Las variables son CONTRATO con lo cargado en el
- * Content Editor de Twilio — cambiar el orden acá sin cambiarlo allá manda el
- * PIN al lugar del nombre:
+ * **Plantilla `activacion_conductor_v2`** (categoría Meta: *Utility*). El PIN
+ * NO viaja por WhatsApp — decisión A del PO (2026-08-03): Meta rechazó la v1
+ * por llevar un código de un solo uso fuera de *Authentication*, y esa
+ * categoría es de formato fijo (sin variables custom ni botón URL) — ver
+ * docs/runbooks/load-content-sids.md. El PIN llega por correo y por «Copiar
+ * enlace + PIN» de la pantalla de alta; esta función ni lo recibe.
+ *
+ * Las variables son CONTRATO con lo cargado en el Content Editor de Twilio —
+ * cambiar el orden acá sin cambiarlo allá rompe el botón:
  *
  *   {{1}} nombre del conductor
  *   {{2}} empresa que lo dio de alta
- *   {{3}} PIN de activación
- *   {{4}} RUT — sufijo dinámico del botón
- *         `https://app.boosterchile.com/login/conductor?rut={{4}}`
+ *   {{3}} RUT — sufijo dinámico del botón
+ *         `https://app.boosterchile.com/login/conductor?rut={{3}}`
  *
  * **Nunca lanza y nunca es silencioso.** Cuando esto corre el conductor ya
  * está creado: un fallo de Twilio no puede voltear un alta consumada. Pero
  * tampoco puede desaparecer — queda registrado para que la empresa sepa que
- * tiene que entregar el PIN a mano.
+ * tiene que entregar el enlace y el PIN a mano.
  */
 export async function enviarWhatsAppActivacionConductor(opts: {
   /** Ausente cuando Twilio no está configurado (dev, o credenciales faltantes). */
@@ -44,11 +46,9 @@ export async function enviarWhatsAppActivacionConductor(opts: {
   telefono: string | null;
   nombre: string;
   rut: string;
-  /** PIN en claro. NUNCA debe entrar a un log. */
-  pin: string;
   empresa: string;
 }): Promise<void> {
-  const { client, contentSid, logger, telefono, nombre, rut, pin, empresa } = opts;
+  const { client, contentSid, logger, telefono, nombre, rut, empresa } = opts;
 
   // Los tres motivos de no-envío se distinguen en el log: son diagnósticos
   // distintos (falta credencial / falta aprobación de Meta / falta el dato).
@@ -78,8 +78,7 @@ export async function enviarWhatsAppActivacionConductor(opts: {
       contentVariables: {
         '1': nombre,
         '2': empresa,
-        '3': pin,
-        '4': rut,
+        '3': rut,
       },
     });
     // Sin el teléfono en claro: el logger redacta RUT pero no números.

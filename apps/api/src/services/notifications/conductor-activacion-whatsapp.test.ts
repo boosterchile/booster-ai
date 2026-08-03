@@ -8,6 +8,11 @@ import { enviarWhatsAppActivacionConductor } from './conductor-activacion-whatsa
  * electrónicos pero sí whatsapp». A diferencia del correo, acá la
  * infraestructura ya existe: Twilio y cuatro plantillas aprobadas y montadas
  * en producción.
+ *
+ * v2 (opción A, PO 2026-08-03): el PIN NO viaja por WhatsApp — Meta rechazó el
+ * template v1 por llevar un OTP fuera de la categoría Authentication (que es de
+ * formato fijo). El PIN va por correo y por la pantalla de alta; esta función
+ * ni siquiera lo recibe, que es la garantía más fuerte de que no se filtra.
  */
 
 const noop = (): void => undefined;
@@ -48,12 +53,11 @@ const BASE = {
   telefono: '+56957790379',
   nombre: 'Javier Poblete',
   rut: '5864136-7',
-  pin: '482915',
   empresa: 'Transportes Van Oosterwyk',
 };
 
 describe('enviarWhatsAppActivacionConductor', () => {
-  it('manda la plantilla con las 4 variables en el orden del Content Editor', async () => {
+  it('manda la plantilla v2 con las 3 variables en el orden del Content Editor', async () => {
     const { client, sendContent } = makeClient();
     await enviarWhatsAppActivacionConductor({
       client,
@@ -67,12 +71,12 @@ describe('enviarWhatsAppActivacionConductor', () => {
     expect(params.to).toBe('+56957790379');
     expect(params.contentSid).toBe('HXaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     // El orden es contrato con la plantilla cargada en Twilio: cambiarlo acá
-    // sin cambiarla allá manda el PIN al lugar del nombre.
+    // sin cambiarla allá rompe el botón (el {{3}} es el RUT dentro de la URL).
+    // Sin PIN a propósito: Meta lo rechaza fuera de Authentication.
     expect(params.contentVariables).toEqual({
       '1': 'Javier Poblete',
       '2': 'Transportes Van Oosterwyk',
-      '3': '482915',
-      '4': '5864136-7',
+      '3': '5864136-7',
     });
   });
 
@@ -131,25 +135,9 @@ describe('enviarWhatsAppActivacionConductor', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('el PIN nunca se loguea', async () => {
-    // Va a Cloud Logging: cualquiera con read en el proyecto lo vería.
-    const { client } = makeClient(async () => {
-      throw new Error('Twilio 500');
-    });
-    const logger = makeLogger();
-    await enviarWhatsAppActivacionConductor({
-      client,
-      contentSid: 'HXaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      logger: logger as never,
-      ...BASE,
-    });
-    const todo = JSON.stringify([
-      logger.info.mock.calls,
-      logger.warn.mock.calls,
-      logger.error.mock.calls,
-    ]);
-    expect(todo).not.toContain('482915');
-  });
+  // El test «el PIN nunca se loguea» se retiró con la v2: la garantía subió de
+  // nivel — la función ya no RECIBE el PIN (no está en la firma), así que no
+  // hay valor que pudiera filtrarse a un log ni a las variables del template.
 
   it('el teléfono tampoco se loguea en claro', async () => {
     const { client } = makeClient(async () => {
