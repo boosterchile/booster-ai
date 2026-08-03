@@ -4,7 +4,13 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OfferPayload } from '../../hooks/use-offers.js';
 import { ApiError, api } from '../../lib/api-client.js';
-import { OfferCard } from './OfferCard.js';
+
+const navigateMock = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigateMock,
+}));
+
+const { OfferCard } = await import('./OfferCard.js');
 
 function makeOffer(over: Partial<OfferPayload> = {}): OfferPayload {
   return {
@@ -155,6 +161,51 @@ describe('OfferCard — accept flow', () => {
     renderCard();
     fireEvent.click(screen.getByRole('button', { name: /Aceptar oferta/ }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/offers/o1/accept', {}));
+  });
+
+  // Aceptar crea la asignación con `conductor_id = NULL`. Si acá no llevamos
+  // al despachador a asignarlo, la carga queda varada: el conductor no la ve
+  // en su teléfono y el GPS se rechaza. Medido en prod 2026-08-03: 0 de las
+  // asignaciones tenían conductor. La respuesta ya trae el `assignment.id`
+  // que hace falta — antes se descartaba.
+  it('al aceptar lleva al despachador a asignar conductor', async () => {
+    vi.spyOn(api, 'post').mockResolvedValueOnce({
+      offer: { id: 'o1', status: 'aceptada' },
+      assignment: { id: 'a-nueva' },
+      superseded_offer_ids: [],
+    });
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /Aceptar oferta/ }));
+
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/app/asignaciones/$id',
+        params: { id: 'a-nueva' },
+      }),
+    );
+  });
+
+  it('si el accept falla NO navega a ninguna parte', async () => {
+    vi.spyOn(api, 'post').mockRejectedValueOnce(new ApiError(409, 'offer_expired', null));
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /Aceptar oferta/ }));
+
+    await screen.findByText(/expiró/i);
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('sin assignment.id en la respuesta se queda donde está, sin romper', async () => {
+    // Defensivo: si el contrato cambia, la pantalla no puede tirar al usuario
+    // a `/app/asignaciones/undefined`.
+    vi.spyOn(api, 'post').mockResolvedValueOnce({
+      offer: { id: 'o1', status: 'aceptada' },
+      superseded_offer_ids: [],
+    });
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /Aceptar oferta/ }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('error ApiError offer_expired → mensaje traducido visible', async () => {

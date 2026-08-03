@@ -93,6 +93,12 @@ const ofertasRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/ofertas.js'), 'OfertasRoute'),
 });
 
+const serviciosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/servicios',
+  component: lazyRouteComponent(() => import('./routes/servicios.js'), 'ServiciosRoute'),
+});
+
 const perfilRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/perfil',
@@ -442,6 +448,7 @@ const routeTree = rootRoute.addChildren([
   onboardingAdminRoute,
   appRoute,
   ofertasRoute,
+  serviciosRoute,
   perfilRoute,
   conductorDashboardRoute,
   conductorConfiguracionRoute,

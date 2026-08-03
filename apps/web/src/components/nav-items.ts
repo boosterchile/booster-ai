@@ -2,6 +2,7 @@ import {
   Banknote,
   Building2,
   Bus,
+  ClipboardList,
   Home,
   Leaf,
   type LucideIcon,
@@ -58,6 +59,12 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
     const transporte: NavItem[] = [
       { label: 'Seguimiento de flota', to: '/app/flota', icon: MapPinned },
       { label: 'Ofertas', to: '/app/ofertas', icon: Truck },
+      // Servicios va inmediatamente después de Ofertas porque ese es el flujo
+      // real: llega la oferta, se acepta, y la carga hay que despacharla —
+      // asignarle conductor. Sin esta entrada, la asignación quedaba
+      // inalcanzable salvo desde Cobra Hoy o Liquidaciones (pantallas de
+      // plata), y en prod eso dejó 0 asignaciones con conductor.
+      { label: 'Servicios', to: '/app/servicios', icon: ClipboardList },
       { label: 'Vehículos', to: '/app/vehiculos', icon: Bus },
       { label: 'Conductores', to: '/app/conductores', icon: Users },
       // equipo-de-la-empresa: la gestión del equipo la hace el cliente, no

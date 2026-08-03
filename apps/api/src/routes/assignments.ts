@@ -16,7 +16,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -50,6 +50,7 @@ import type { EmitirCertificadoConfig } from '../services/emitir-certificado-via
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
+import { safeIsoString } from '../services/safe-iso-string.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
 
@@ -106,6 +107,105 @@ export function createAssignmentsRoutes(opts: {
     }
     return { ok: true as const, userContext, activeMembership: active };
   }
+
+  // ---------------------------------------------------------------------
+  // GET / — servicios (assignments) de la empresa activa.
+  //
+  // Existe porque no había forma de LLEGAR a asignar un conductor. La
+  // pantalla que lo hace (`/app/asignaciones/:id`, con el DriverAssignmentCard)
+  // no estaba en el menú: los únicos dos enlaces salían de Cobra Hoy y
+  // Liquidaciones, dos pantallas de plata. Medido en prod el 2026-08-03: 0 de
+  // 6 conductores activados y **0 asignaciones con conductor**, con 1 activa.
+  // Sin `conductor_id` el reporte de GPS rechaza y el dashboard del conductor
+  // queda vacío — el eslabón roto estaba acá, aguas arriba.
+  //
+  // Espejo de `GET /me/assignments` (routes/me.ts) pero scopeado por
+  // `empresa_id` en vez de `driver_user_id`, y con `driver` explícito: ese
+  // campo es el que marca la fila como "sin conductor" en la UI.
+  //
+  // Auth: `requireCarrierAuth` — igual que el resto del router. Sin rol-gate:
+  // VER la lista lo puede hacer cualquier miembro de la empresa (ya podía ver
+  // `GET /:id`); ASIGNAR sigue exigiendo `dueno|admin|despachador` en
+  // `POST /:id/asignar-conductor`.
+  //
+  // Sin paginación a propósito: un transportista corre unidades, no miles. Si
+  // eso cambia se agrega un `limit` explícito — un tope implícito acá sería
+  // peor que ninguno, porque escondería servicios sin avisar.
+  // ---------------------------------------------------------------------
+  app.get('/', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    // Estados operacionales. Los terminales (entregado, cancelado) quedan
+    // fuera: esta pantalla es para despachar, no para consultar histórico.
+    const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
+    const rows = await opts.db
+      .select({
+        assignmentId: assignments.id,
+        assignmentStatus: assignments.status,
+        acceptedAt: assignments.acceptedAt,
+        pickedUpAt: assignments.pickedUpAt,
+        agreedPriceClp: assignments.agreedPriceClp,
+        driverUserId: assignments.driverUserId,
+        driverName: usersTable.fullName,
+        vehicleId: assignments.vehicleId,
+        vehiclePlate: vehicles.plate,
+        tripId: trips.id,
+        trackingCode: trips.trackingCode,
+        tripStatus: trips.status,
+        originAddressRaw: trips.originAddressRaw,
+        originRegionCode: trips.originRegionCode,
+        destinationAddressRaw: trips.destinationAddressRaw,
+        destinationRegionCode: trips.destinationRegionCode,
+        cargoType: trips.cargoType,
+        cargoWeightKg: trips.cargoWeightKg,
+        pickupWindowStart: trips.pickupWindowStart,
+        pickupWindowEnd: trips.pickupWindowEnd,
+      })
+      .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
+      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+      .leftJoin(usersTable, eq(usersTable.id, assignments.driverUserId))
+      .where(
+        and(
+          eq(assignments.empresaId, auth.activeMembership.empresa.id),
+          inArray(assignments.status, ACTIVE_STATUSES),
+        ),
+      )
+      .orderBy(desc(assignments.acceptedAt));
+
+    return c.json({
+      assignments: rows.map((r) => ({
+        id: r.assignmentId,
+        status: r.assignmentStatus,
+        accepted_at: safeIsoString(r.acceptedAt),
+        picked_up_at: safeIsoString(r.pickedUpAt),
+        agreed_price_clp: r.agreedPriceClp,
+        // `null` explícito, no campo ausente: la UI necesita distinguir "sin
+        // conductor" de "no me lo mandaron".
+        driver: r.driverUserId
+          ? { user_id: r.driverUserId, full_name: r.driverName ?? null }
+          : null,
+        vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
+        trip: {
+          id: r.tripId,
+          tracking_code: r.trackingCode,
+          status: r.tripStatus,
+          origin: { address_raw: r.originAddressRaw, region_code: r.originRegionCode },
+          destination: {
+            address_raw: r.destinationAddressRaw,
+            region_code: r.destinationRegionCode,
+          },
+          cargo_type: r.cargoType,
+          cargo_weight_kg: r.cargoWeightKg,
+          pickup_window_start: safeIsoString(r.pickupWindowStart),
+          pickup_window_end: safeIsoString(r.pickupWindowEnd),
+        },
+      })),
+    });
+  });
 
   // ---------------------------------------------------------------------
   // GET /:id — detalle del assignment + trip para el carrier.
