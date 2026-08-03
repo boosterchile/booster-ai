@@ -59,6 +59,20 @@ describe('navSectionsForMe', () => {
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
 
+  // El despachador no tenía dónde ver las cargas que ya aceptó: la pantalla
+  // que asigna conductor solo se alcanzaba desde Cobra Hoy y Liquidaciones.
+  // En prod eso dejó 0 asignaciones con conductor (medido 2026-08-03).
+  it('transportista → "Servicios" está en el menú, justo después de Ofertas', () => {
+    const l = labels(navSectionsForMe(buildMe({ transportista: true, role: 'despachador' })));
+    expect(l).toContain('Servicios');
+    expect(l.indexOf('Servicios')).toBe(l.indexOf('Ofertas') + 1);
+  });
+
+  it('generador puro NO ve Servicios (no despacha nada)', () => {
+    const l = labels(navSectionsForMe(buildMe({ generador: true })));
+    expect(l).not.toContain('Servicios');
+  });
+
   it('transportista NO admin (despachador) → sin Dispositivos', () => {
     const l = labels(navSectionsForMe(buildMe({ transportista: true, role: 'despachador' })));
     expect(l).toContain('Ofertas');

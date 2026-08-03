@@ -59,6 +59,9 @@ function makeDb(queues: DbQueues = {}) {
       leftJoin: vi.fn(() => chain),
       orderBy: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
+      // Las queries de listado terminan en `.orderBy()` (sin `limit`), así que
+      // la cadena tiene que ser awaitable por sí misma, no solo vía `limit`.
+      then: (resolve: (v: unknown) => unknown) => resolve(selects.shift() ?? []),
     };
     return chain;
   };
@@ -473,5 +476,138 @@ describe('POST /assignments/:id/asignar-conductor', () => {
     expect((await res.json()) as { code: string }).toEqual(
       expect.objectContaining({ code: 'driver_not_in_carrier' }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /assignments — listado de la empresa activa.
+//
+// Existe porque no había forma de LLEGAR a asignar un conductor: la pantalla
+// que lo hace (`/app/asignaciones/:id`) no estaba en el menú y solo se
+// alcanzaba desde Cobra Hoy y Liquidaciones. Medido en prod 2026-08-03: 0 de
+// 6 conductores activados y 0 asignaciones con conductor, con 1 activa.
+// ---------------------------------------------------------------------------
+
+const LISTA_ROW = {
+  assignmentId: ASSIGNMENT_ID,
+  assignmentStatus: 'asignado',
+  acceptedAt: new Date('2026-08-01T10:00:00Z'),
+  pickedUpAt: null,
+  agreedPriceClp: 850000,
+  driverUserId: null,
+  driverName: null,
+  vehicleId: 'veh-uuid',
+  vehiclePlate: 'UICO01',
+  tripId: TRIP_ID,
+  trackingCode: 'BOO-4F2A',
+  tripStatus: 'asignado',
+  originAddressRaw: 'Av. Presidente Riesco 5335',
+  originRegionCode: '13',
+  destinationAddressRaw: 'Ruta 5 Sur km 1020',
+  destinationRegionCode: '10',
+  cargoType: 'carga_seca',
+  cargoWeightKg: 12000,
+  pickupWindowStart: null,
+  pickupWindowEnd: null,
+};
+
+describe('GET /assignments', () => {
+  it('sin userContext → 401', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request('/assignments');
+    expect(res.status).toBe(401);
+  });
+
+  it('sin activeMembership → 403 no_active_empresa', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request('/assignments', {
+      headers: {
+        'x-test-userctx': JSON.stringify({ user: { id: 'u' }, activeMembership: null }),
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('empresa no transportista → 403 not_a_carrier', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request('/assignments', {
+      headers: {
+        'x-test-userctx': JSON.stringify({
+          user: { id: USER_ID },
+          activeMembership: { empresa: { id: 'e', isTransportista: false, status: 'activa' } },
+        }),
+      },
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()) as { code: string }).toEqual(
+      expect.objectContaining({ code: 'not_a_carrier' }),
+    );
+  });
+
+  it('devuelve los servicios de la empresa con el conductor explícito', async () => {
+    const app = await buildApp({ db: makeDb({ selects: [[LISTA_ROW]] }) });
+    const res = await app.request('/assignments', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      assignments: Array<{
+        id: string;
+        driver: { user_id: string; full_name: string } | null;
+        vehicle: { plate: string } | null;
+        trip: { tracking_code: string; origin: { address_raw: string } };
+      }>;
+    };
+    expect(body.assignments).toHaveLength(1);
+    const a = body.assignments[0];
+    expect(a?.id).toBe(ASSIGNMENT_ID);
+    // `driver: null` es EL dato de esta pantalla: es lo que la marca como
+    // "sin conductor" y dispara la acción. Si viniera omitido, la UI no
+    // podría distinguir "sin conductor" de "no me lo mandaron".
+    expect(a?.driver).toBeNull();
+    expect(a?.vehicle?.plate).toBe('UICO01');
+    expect(a?.trip.tracking_code).toBe('BOO-4F2A');
+    expect(a?.trip.origin.address_raw).toBe('Av. Presidente Riesco 5335');
+  });
+
+  it('con conductor asignado lo devuelve con nombre', async () => {
+    const app = await buildApp({
+      db: makeDb({
+        selects: [[{ ...LISTA_ROW, driverUserId: 'drv-1', driverName: 'Pedro Conductor' }]],
+      }),
+    });
+    const res = await app.request('/assignments', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    const body = (await res.json()) as {
+      assignments: Array<{ driver: { user_id: string; full_name: string } | null }>;
+    };
+    expect(body.assignments[0]?.driver).toEqual({
+      user_id: 'drv-1',
+      full_name: 'Pedro Conductor',
+    });
+  });
+
+  it('sin servicios → lista vacía, no error', async () => {
+    const app = await buildApp({ db: makeDb({ selects: [[]] }) });
+    const res = await app.request('/assignments', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { assignments: unknown[] }).toEqual({ assignments: [] });
+  });
+
+  it('una fecha inválida no rompe la respuesta entera', async () => {
+    // Mismo blindaje que `/me/assignments`: un Date con time NaN hace que
+    // `toISOString()` tire RangeError y se lleve puesto el 200 completo.
+    const app = await buildApp({
+      db: makeDb({ selects: [[{ ...LISTA_ROW, acceptedAt: new Date('no-es-fecha') }]] }),
+    });
+    const res = await app.request('/assignments', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignments: Array<{ accepted_at: string | null }> };
+    expect(body.assignments[0]?.accepted_at).toBeNull();
   });
 });

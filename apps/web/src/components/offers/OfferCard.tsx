@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import { Check, Clock, Leaf, Loader2, MapPin, Package, X } from 'lucide-react';
 import { type FormEvent, useId, useState } from 'react';
 import {
@@ -79,6 +80,7 @@ export interface OfferCardProps {
 }
 
 export function OfferCard({ offer }: OfferCardProps) {
+  const navigate = useNavigate();
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +108,15 @@ export function OfferCard({ offer }: OfferCardProps) {
   async function handleAccept() {
     setError(null);
     try {
-      await acceptMutation.mutateAsync({ offerId: offer.id });
+      const res = await acceptMutation.mutateAsync({ offerId: offer.id });
+      // Aceptar crea la asignación con `conductor_id = NULL`. Si no llevamos
+      // al despachador a asignarlo acá, la carga queda varada: el conductor no
+      // la ve en su teléfono y `driver-position` rechaza el GPS. Medido en
+      // prod el 2026-08-03: 0 asignaciones con conductor. La respuesta ya
+      // traía este id; antes lo descartábamos.
+      if (res?.assignment?.id) {
+        void navigate({ to: '/app/asignaciones/$id', params: { id: res.assignment.id } });
+      }
     } catch (err) {
       setError(translate(err));
     }
