@@ -420,6 +420,84 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     expect(alerta.textContent ?? '').toMatch(/ya .*(entregad|cerrad)/i);
   });
 
+  // El paso `asignado → recogido` estaba modelado en la máquina de estados
+  // desde 2026-06 y NADIE lo escribía. Sin él, la pantalla de Servicios del
+  // despachador decía «Por recoger» para un camión ya en ruta, y el
+  // consignatario no veía posición en su link de tracking.
+  it('con el servicio asignado ofrece confirmar la recogida', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+
+    await waitFor(() =>
+      expect(apiPatchSpy).toHaveBeenCalledWith(
+        `/assignments/${sampleAssignment.id}/confirmar-recogida`,
+      ),
+    );
+  });
+
+  it('pide confirmación antes de marcar la recogida', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+
+    expect(apiPatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('ya recogido → no vuelve a ofrecerlo, y la entrega sigue disponible', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [{ ...sampleAssignment, status: 'recogido' }],
+    });
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+
+    expect(screen.queryByRole('button', { name: /Confirmar recogida/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Confirmar entrega/i })).toBeInTheDocument();
+  });
+
+  it('la entrega NO exige haber confirmado la recogida', async () => {
+    // Bloquear el cierre por un botón olvidado castigaría al conductor en
+    // terreno: llegaría a destino con la carga entregada y la app le diría
+    // que no puede cerrar. La tabla de transiciones ya permite
+    // asignado → entregado.
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    const entrega = await screen.findByRole('button', { name: /Confirmar entrega/i });
+    expect(entrega).not.toBeDisabled();
+    fireEvent.click(entrega);
+
+    await waitFor(() =>
+      expect(apiPatchSpy).toHaveBeenCalledWith(
+        `/assignments/${sampleAssignment.id}/confirmar-entrega`,
+      ),
+    );
+  });
+
+  it('recogida fallida → mensaje accionable, sin culpar a la señal si el backend contestó', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockRejectedValue(new ApiError(409, 'invalid_status', {}));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta.textContent ?? '').not.toMatch(/señal|senal/i);
+  });
+
   it('NO manda al conductor a la pantalla del transportista', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });

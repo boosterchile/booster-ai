@@ -6,6 +6,7 @@ import {
   MapPin,
   Mic,
   Navigation,
+  PackageCheck,
   RefreshCw,
   Settings,
   Square,
@@ -371,6 +372,28 @@ function mensajeDeCierre(err: unknown): string {
   return 'No pudimos confirmar la entrega. Revisa tu señal e intenta de nuevo.';
 }
 
+/**
+ * Traduce el fallo de `PATCH /assignments/:id/confirmar-recogida`.
+ *
+ * Mismo criterio que `mensajeDeCierre`: si el backend contestó, culpar a la
+ * señal sería mentira.
+ */
+function mensajeDeRecogida(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'invalid_status':
+        return 'Este viaje ya no está esperando la carga. Actualiza la lista para ver cómo quedó.';
+      case 'forbidden':
+        return 'Este viaje no está a tu nombre. Avísale a tu empresa.';
+      case 'assignment_not_found':
+        return 'No encontramos este viaje. Actualiza la lista.';
+      default:
+        return 'No pudimos registrar la recogida. Avísale a tu empresa.';
+    }
+  }
+  return 'No pudimos registrar la recogida. Revisa tu señal e intenta de nuevo.';
+}
+
 // ---------------------------------------------------------------------------
 // Card de un servicio asignado, con GPS reporter inline.
 // ---------------------------------------------------------------------------
@@ -388,6 +411,25 @@ function AssignmentCard({
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
+  const [recogiendo, setRecogiendo] = useState(false);
+  const [recogida, setRecogida] = useState(a.status === 'recogido');
+  const [recogidaError, setRecogidaError] = useState<string | null>(null);
+
+  async function confirmarRecogida() {
+    if (!window.confirm('¿Confirmas que ya cargaste esta carga en el camión?')) {
+      return;
+    }
+    setRecogidaError(null);
+    setRecogiendo(true);
+    try {
+      await api.patch(`/assignments/${a.id}/confirmar-recogida`);
+      setRecogida(true);
+    } catch (err) {
+      setRecogidaError(mensajeDeRecogida(err));
+    } finally {
+      setRecogiendo(false);
+    }
+  }
 
   async function confirmarEntrega() {
     // Acción irreversible en la operación: se confirma antes, para que no la
@@ -530,6 +572,42 @@ function AssignmentCard({
           Navegar al destino
         </a>
 
+        {/* Recogida: solo mientras la carga no subió al camión. Confirmarla
+            mueve el viaje a `en_proceso`, que es lo que destraba la posición
+            en el link de tracking del destinatario y lo que hace que su
+            empresa deje de ver «Por recoger» en Servicios. */}
+        {!recogida && (
+          <button
+            type="button"
+            onClick={() => void confirmarRecogida()}
+            disabled={recogiendo}
+            data-testid="confirmar-recogida"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700 disabled:opacity-50"
+          >
+            <PackageCheck className="h-4 w-4" aria-hidden />
+            {recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+          </button>
+        )}
+
+        {recogidaError && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
+          >
+            {recogidaError}
+          </div>
+        )}
+
+        {recogida && (
+          <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
+            Carga recogida. Cuando llegues a destino, confirma la entrega.
+          </output>
+        )}
+
+        {/* La entrega NO exige recogida previa: la tabla de transiciones
+            permite `asignado → entregado` y bloquearla castigaría al conductor
+            que olvidó apretar el botón anterior. */}
         <button
           type="button"
           onClick={() => void confirmarEntrega()}

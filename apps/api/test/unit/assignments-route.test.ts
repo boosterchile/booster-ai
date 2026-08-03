@@ -12,6 +12,9 @@ beforeAll(() => {
 vi.mock('../../src/services/confirmar-entrega-viaje.js', () => ({
   confirmarEntregaViaje: vi.fn(),
 }));
+vi.mock('../../src/services/confirmar-recogida-viaje.js', () => ({
+  confirmarRecogidaViaje: vi.fn(),
+}));
 // Mock asignar-conductor para validar el wire HTTP por separado del
 // servicio (que ya tiene su propio test file). Importamos las clases de
 // error reales para que el route las pueda detectar via instanceof.
@@ -25,6 +28,7 @@ vi.mock('../../src/services/asignar-conductor-a-assignment.js', async (importOri
 });
 
 const { confirmarEntregaViaje } = await import('../../src/services/confirmar-entrega-viaje.js');
+const { confirmarRecogidaViaje } = await import('../../src/services/confirmar-recogida-viaje.js');
 const {
   asignarConductorAAssignment,
   AssignmentNotFoundError,
@@ -609,5 +613,133 @@ describe('GET /assignments', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { assignments: Array<{ accepted_at: string | null }> };
     expect(body.assignments[0]?.accepted_at).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /assignments/:id/confirmar-recogida
+//
+// Cierra el paso muerto de la máquina de estados: `asignaciones: asignado →
+// recogido` y `viajes: asignado → en_proceso` estaban modelados desde 2026-06
+// sin nadie que los escribiera.
+// ---------------------------------------------------------------------------
+
+describe('PATCH /assignments/:id/confirmar-recogida', () => {
+  function ctxConRol(role: string, empresaId = CARRIER_EMP) {
+    return JSON.stringify({
+      user: { id: USER_ID },
+      activeMembership: {
+        membership: { role },
+        empresa: { id: empresaId, isTransportista: true, status: 'activa' },
+      },
+    });
+  }
+
+  it('sin userContext → 401', async () => {
+    const app = await buildApp({ db: makeDb() });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('conductor asignado → 200 y el service lo recibe como conductor', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: false,
+      pickedUpAt: new Date('2026-08-03T06:00:00Z'),
+      tripId: TRIP_ID,
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('conductor') },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { ok: boolean }).toEqual(
+      expect.objectContaining({ ok: true, already_picked_up: false }),
+    );
+    expect(vi.mocked(confirmarRecogidaViaje).mock.calls[0]?.[0].actor).toEqual(
+      expect.objectContaining({ esConductorAsignado: true, esCarrierConEscritura: false }),
+    );
+  });
+
+  it('despachador (no conductor) → llega como carrier con escritura', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: false,
+      pickedUpAt: new Date(),
+      tripId: TRIP_ID,
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: 'otro' }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('despachador') },
+    });
+    expect(res.status).toBe(200);
+    expect(vi.mocked(confirmarRecogidaViaje).mock.calls[0]?.[0].actor).toEqual(
+      expect.objectContaining({ esConductorAsignado: false, esCarrierConEscritura: true }),
+    );
+  });
+
+  it('visualizador que no es el conductor → llega sin ningún privilegio', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({ ok: false, code: 'forbidden' });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: 'otro' }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('visualizador') },
+    });
+    expect(res.status).toBe(403);
+    expect(vi.mocked(confirmarRecogidaViaje).mock.calls[0]?.[0].actor).toEqual(
+      expect.objectContaining({ esConductorAsignado: false, esCarrierConEscritura: false }),
+    );
+  });
+
+  it('idempotente → 200 con already_picked_up', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: true,
+      pickedUpAt: new Date('2026-08-03T05:00:00Z'),
+      tripId: TRIP_ID,
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('conductor') },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { already_picked_up: boolean }).toEqual(
+      expect.objectContaining({ already_picked_up: true }),
+    );
+  });
+
+  it('assignment inexistente → 404', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'assignment_not_found',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('despachador') },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('ya entregado → 409 invalid_status con el estado actual', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'invalid_status',
+      currentStatus: 'entregado',
+    });
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: { 'x-test-userctx': ctxConRol('conductor') },
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { current_status: string }).toEqual(
+      expect.objectContaining({ code: 'invalid_status', current_status: 'entregado' }),
+    );
   });
 });
