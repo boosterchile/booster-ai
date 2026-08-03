@@ -362,3 +362,38 @@ describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
     expect(body.email).toBe('juan@empresa.cl');
   });
 });
+
+/**
+ * Tras dar de alta, la empresa tiene que poder ENTREGARLE algo al conductor.
+ *
+ * La pantalla mencionaba `/login/conductor` como texto plano, sin dominio y
+ * sin ser clickeable: imposible de copiar y mandar por WhatsApp. Mientras el
+ * correo automático no esté activo (falta la key de Resend), esto es lo único
+ * que tiene la empresa para que el conductor llegue a activarse.
+ */
+describe('ConductoresNuevoRoute — el alta entrega un enlace usable', () => {
+  it('muestra el enlace de activación completo, con el RUT, y se puede copiar', async () => {
+    vi.spyOn(api, 'post').mockResolvedValueOnce({
+      conductor: buildConductor(),
+      activation_pin: '123456',
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '5.864.136-7');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Javier Poblete');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'fvp@live.cl');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+
+    const enlace = await screen.findByTestId('enlace-activacion-conductor');
+    const href = enlace.getAttribute('href') ?? '';
+    // Absoluto: la empresa lo copia y lo manda; un path relativo no sirve.
+    expect(href).toMatch(/^https?:\/\//);
+    expect(href).toContain('/login/conductor');
+    expect(href).toContain('rut=5864136-7');
+
+    expect(screen.getByTestId('copiar-enlace-activacion')).toBeInTheDocument();
+  });
+});

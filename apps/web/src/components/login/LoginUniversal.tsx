@@ -389,6 +389,24 @@ function FormView(props: FormViewProps) {
             </span>
           </label>
 
+          {/* La activación tiene que ser ENCONTRABLE desde el flujo principal.
+              `/login/conductor` existía en producción pero solo se alcanzaba
+              sabiendo la URL, desde la pantalla legacy, o fallando un login
+              primero — que es lo que le pasó al conductor 5864136-7. */}
+          {props.tipo === 'conductor' && (
+            <p className="rounded-md border border-primary-200 bg-primary-50 p-3 text-primary-800 text-sm">
+              ¿Es tu primera vez? Tu empresa te dio un <strong>PIN de 6 dígitos</strong>.{' '}
+              <a
+                href="/login/conductor"
+                className="font-medium text-primary-700 underline"
+                data-testid="login-link-activar-conductor"
+              >
+                Activa tu cuenta acá
+              </a>{' '}
+              y crea tu clave.
+            </p>
+          )}
+
           {props.submitError && (
             <div
               className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"

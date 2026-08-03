@@ -234,3 +234,30 @@ describe('LoginUniversal', () => {
     expect(screen.getByTestId('login-universal-selector')).toBeInTheDocument();
   });
 });
+
+/**
+ * Descubribilidad de la activación.
+ *
+ * `/login/conductor` existía en producción pero era **inalcanzable desde el
+ * flujo principal**: el único enlace vivía en la pantalla legacy, y la otra
+ * forma de llegar era fallar un login primero. Una pantalla a la que solo se
+ * llega sabiendo la URL, o equivocándose, no existe.
+ */
+describe('LoginUniversal — la activación tiene que ser encontrable', () => {
+  it('el conductor ve cómo activar SIN tener que fallar un login antes', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-conductor'));
+
+    const link = screen.getByTestId('login-link-activar-conductor');
+    expect(link).toHaveAttribute('href', '/login/conductor');
+    expect(link.textContent ?? '').toMatch(/activ/i);
+    // Tiene que nombrar el PIN: es lo que el conductor tiene en la mano.
+    expect(screen.getByText(/PIN/i)).toBeInTheDocument();
+  });
+
+  it('no se le ofrece a quien no es conductor', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    expect(screen.queryByTestId('login-link-activar-conductor')).not.toBeInTheDocument();
+  });
+});

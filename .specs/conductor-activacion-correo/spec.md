@@ -98,7 +98,29 @@ API, y el punto entero de este correo es que el conductor no dependa de que su
 jefe se lo dicte por WhatsApp. Mandarlo a su propia casilla no aumenta la
 exposición de forma significativa. Queda anotado como decisión consciente.
 
-### 3.4 El notificador de clientes deja de ser mudo
+### 3.4 La activación tiene que ser ENCONTRABLE
+
+Observación del PO al revisar el arreglo, y es la que ordena todo lo demás:
+
+> «esta interfaz debe quedar en producción y debe ser visible de alguna forma
+> … no puede estar aislada y que solo la obtenga a través del código»
+
+`/login/conductor` ya existía en producción pero era inalcanzable desde el
+flujo principal: el único enlace vivía en la pantalla **legacy**, y la otra vía
+era **fallar un login primero**. Una pantalla a la que solo se llega sabiendo
+la URL, o equivocándose, no existe.
+
+Dos entradas nuevas, en los dos momentos donde alguien la necesita:
+
+1. **En `/login`**, al elegir "Conductor": «¿Es tu primera vez? Tu empresa te
+   dio un PIN de 6 dígitos. Activa tu cuenta acá». Sin tener que fallar nada.
+2. **En la pantalla de alta**, un enlace **absoluto y copiable** con el RUT
+   embebido, más un botón «Copiar enlace + PIN». Antes ahí decía
+   `/login/conductor` como texto plano, sin dominio y sin ser clickeable:
+   imposible de pegar en un WhatsApp. Mientras Resend no esté provisionado,
+   esto es lo único que tiene la empresa para que su conductor llegue.
+
+### 3.5 El notificador de clientes deja de ser mudo
 
 `SignupRequestNotifier` pasa a usar el mismo `EmailSender`. Dejar un stub que
 el PO cree que envía es exactamente el tipo de hueco silencioso que este frente
