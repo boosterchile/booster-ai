@@ -9,6 +9,7 @@ WhatsApp aprobados por Meta. Los secrets viven en Secret Manager:
 | `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` | _pending Meta_ |
 | `content-sid-tracking` | Link público de tracking al shipper al asignar (Phase 5 PR-L3) | `tracking_link_v1` | `HXac1ef21ed9423258a2c38dad02f31e41` (submitted Meta 2026-05-10) |
 | `content-sid-safety-alert` | Alerta de seguridad al transportista (crash/unplug/jamming, P0-G) | `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` **approved + live** ✅ (aprobado tras ~7d de revisión humana; entregando en prod 2026-06-22). v1 `HX0d…3d` y copy_of_v1 `HX80…44` fueron **rechazados** (subCode 2388293). Fallback de-riesgado `safety_alert_v3` listo si Meta pausa v2: ver [`.specs/safety-event-fanout/whatsapp-template.md`](../../.specs/safety-event-fanout/whatsapp-template.md) |
+| `content-sid-activacion-conductor` | WhatsApp de activación del conductor (PR #645) | `activacion_conductor_v1` | `HX99bcd1331ff417782e0c4d279cd13309` **rechazado por Meta** (2026-08-03, auto en ~10s, `rejection_reason: "Unknown rejection reason"`; delta vs `tracking_link_v1` = el PIN en el body → política OTP de Meta. El secret NO existe aún en GCP — TF de la rama sin aplicar. **Decisión PO pendiente**, ver sección abajo) |
 
 ### Body de `tracking_link_v1` (creado vía Twilio Content API 2026-05-10)
 
@@ -50,6 +51,45 @@ gcloud run services update booster-ai-api \
   --update-annotations=last-secret-rotation=$(date +%s) \
   --project=booster-ai-494222
 ```
+
+### Body de `activacion_conductor_v1` (creado en Content Editor 2026-08-03 — RECHAZADO)
+
+```
+🚛 Booster AI — Hola {{1}}: {{2}} te registró como conductor.
+
+Tu PIN de activación es {{3}}. Toca el botón para activar tu cuenta con tu RUT y este PIN.
+```
+
+**Botón URL** («Activar mi cuenta»): `https://app.boosterchile.com/login/conductor?rut={{4}}`
+
+Variables (CONTRATO con `apps/api/src/services/notifications/conductor-activacion-whatsapp.ts`):
+`{{1}}` nombre · `{{2}}` empresa · `{{3}}` PIN · `{{4}}` RUT (solo en URL del botón).
+Samples del submit: `Javier` / `Transportes Van Oosterwyk` / `530214` / `12345678-5` (sintéticos).
+
+**Resultado**: `rejected` a los ~10s del submit como **Utility** (auto-clasificador;
+la Content API devuelve `rejection_reason: "Unknown rejection reason"`).
+
+**Análisis**: `tracking_link_v1` — misma forma exacta (call-to-action, body con
+variables, botón URL al mismo dominio) pero SIN código — fue aprobado. El delta es
+la línea del PIN: la política de Meta manda los códigos de un solo uso a la
+categoría *Authentication*, y esa categoría es de **formato fijo** (solo el código +
+botón copy-code; sin variables custom, sin botón URL). Verificado en la UI: para un
+template call-to-action el diálogo de submit solo ofrece **Marketing** y **Utility**
+— Authentication ni aparece. El diseño de `spec.md` §3.5 (PIN + nombre/empresa +
+enlace en un solo template) no es realizable tal cual en WhatsApp.
+
+**Opciones (decisión PO pendiente)**:
+
+- **A (recomendada)** — `activacion_conductor_v2` Utility **sin PIN**: `{{1}}` nombre,
+  `{{2}}` empresa, `{{3}}` RUT en la URL del botón. El PIN viaja por correo (Resend)
+  y por «Copiar enlace + PIN» de la pantalla de alta. ⚠️ Requiere renumerar las
+  variables en `conductor-activacion-whatsapp.ts` (3 en vez de 4) ANTES de activar:
+  con el código actual, el `{{3}}` del template nuevo recibiría el PIN dentro de la URL.
+- **B** — dos templates: uno *Authentication* de formato fijo (PIN + copy-code) y uno
+  Utility con el enlace. Dos envíos por alta, más código y más costo.
+- **C** — re-someter el mismo diseño con otro wording para eludir el clasificador:
+  **NO** — riesgo de strike/pausa sobre el WABA (precedente: safety_alert v1
+  rechazado 2×, subCode 2388293).
 
 ## Cuándo usar este runbook
 

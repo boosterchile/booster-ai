@@ -264,7 +264,10 @@ locals {
 
     # activacion_conductor_v1 — WhatsApp de activación del conductor (canal
     # PRINCIPAL hacia él: los conductores usan WhatsApp, no correo). Categoría
-    # *Authentication* en Meta (código de un solo uso).
+    # Meta EN DEFINICIÓN: el v1 (Utility, 2026-08-03) fue rechazado por llevar
+    # el PIN en el body (los OTP solo pueden ir en *Authentication*, que es de
+    # formato fijo — sin variables custom ni botón URL). Opciones y decisión PO
+    # pendiente en docs/runbooks/load-content-sids.md.
     # Mismo candado que el de arriba: entra como placeholder y NO se monta
     # (`content_sid_ready` no lo lista) hasta cargar el `HX...` aprobado —
     # montar el placeholder tumbaría el arranque del api (INC-2026-06-19).

@@ -301,8 +301,10 @@ export const apiEnvSchema = commonEnvSchema
 
     /**
      * Plantilla `activacion_conductor_v1` — el WhatsApp con el que el conductor
-     * activa su cuenta (PIN + botón al enlace de activación). Categoría
-     * *Authentication* en Meta: es un código de un solo uso.
+     * activa su cuenta (botón al enlace de activación). Categoría Meta EN
+     * DEFINICIÓN: el v1 Utility con el PIN en el body fue rechazado (2026-08-03;
+     * los OTP solo pueden ir en *Authentication*, que es de formato fijo) — ver
+     * docs/runbooks/load-content-sids.md.
      *
      * **Opcional a propósito**: ausente ⇒ no se intenta el envío y queda un
      * `warn`. Entra no-montada por `content_sid_ready` (Terraform) hasta que

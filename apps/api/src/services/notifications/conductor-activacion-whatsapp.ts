@@ -13,8 +13,10 @@ import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
  * ya estaba: Twilio operativo y cuatro plantillas aprobadas y montadas en
  * producción.
  *
- * **Plantilla `activacion_conductor_v1`**, categoría *Authentication* (es un
- * código de un solo uso). Las variables son CONTRATO con lo cargado en el
+ * **Plantilla `activacion_conductor_v1`** — categoría Meta EN DEFINICIÓN: el v1
+ * Utility con el PIN en el body fue rechazado (2026-08-03; los OTP solo pueden
+ * ir en *Authentication*, que es de formato fijo — ver
+ * docs/runbooks/load-content-sids.md). Las variables son CONTRATO con lo cargado en el
  * Content Editor de Twilio — cambiar el orden acá sin cambiarlo allá manda el
  * PIN al lugar del nombre:
  *
