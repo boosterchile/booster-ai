@@ -45,6 +45,7 @@ import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import { confirmarRecogidaViaje } from '../services/confirmar-recogida-viaje.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
@@ -408,6 +409,81 @@ export function createAssignmentsRoutes(opts: {
       distance_km: result.data.distanceKm,
       duration_s: result.data.durationS,
       status: result.data.status,
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PATCH /:id/confirmar-recogida — la carga subió al camión.
+  //
+  // Cierra el paso muerto de la máquina de estados: `asignaciones: asignado →
+  // recogido` y `viajes: asignado → en_proceso` estaban MODELADOS desde
+  // 2026-06 (columnas `recogido_en` / `evidencia_recogida_url`, tipo de evento
+  // `recogida_confirmada`, ocho lectores) y **nadie los escribía**. Resultado:
+  // Servicios decía «Por recoger» para un camión en ruta, y el tracking del
+  // consignatario no mostraba posición.
+  //
+  // Auth por DOS vías, resueltas acá y verificadas en el service contra la
+  // fila real:
+  //   - el conductor asignado a ESTE servicio (mismo criterio que
+  //     `driver-position`: por `driverUserId`, no por rol) — es quien está en
+  //     el punto de recogida;
+  //   - o la oficina del transportista con rol de escritura, como respaldo
+  //     para un conductor sin smartphone o sin señal en un patio.
+  //
+  // NO es requisito para entregar: `asignado → entregado` sigue siendo legal.
+  // Bloquear el cierre por un botón olvidado castigaría al conductor en
+  // terreno; un dato faltante es mejor que una operación congelada.
+  // ---------------------------------------------------------------------
+  app.patch('/:id/confirmar-recogida', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const assignmentId = c.req.param('id');
+
+    // ¿Es el conductor de este servicio? Se resuelve contra la fila, no contra
+    // lo que el cliente diga.
+    const rows = await opts.db
+      .select({ driverUserId: assignments.driverUserId })
+      .from(assignments)
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+    const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
+
+    const role = auth.activeMembership.membership.role;
+    const esCarrierConEscritura = role === 'dueno' || role === 'admin' || role === 'despachador';
+
+    const result = await confirmarRecogidaViaje({
+      db: opts.db,
+      logger: opts.logger,
+      assignmentId,
+      actor: {
+        userId: auth.userContext.user.id,
+        empresaId: auth.activeMembership.empresa.id,
+        esConductorAsignado,
+        esCarrierConEscritura,
+      },
+    });
+
+    if (!result.ok) {
+      const statusCode =
+        result.code === 'assignment_not_found' ? 404 : result.code === 'forbidden' ? 403 : 409;
+      return c.json(
+        {
+          error: result.code,
+          code: result.code,
+          ...(result.code === 'invalid_status' && result.currentStatus
+            ? { current_status: result.currentStatus }
+            : {}),
+        },
+        statusCode,
+      );
+    }
+
+    return c.json({
+      ok: true,
+      already_picked_up: result.alreadyPickedUp,
+      picked_up_at: result.pickedUpAt.toISOString(),
     });
   });
 
