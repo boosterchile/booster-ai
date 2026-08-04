@@ -5,5 +5,19 @@
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
     "booster-skills@booster-skills": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/check-contrato-al-dia.sh\"",
+            "timeout": 20,
+            "statusMessage": "Verificando contratos vs main"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -135,6 +135,9 @@ __pycache__/
 # Claude Code local settings
 .claude/*
 !.claude/settings.json
+# Los hooks viajan con el repo: si no, el chequeo de contratos no existe en
+# los demás clones, que es justo lo que busca detectar.
+!.claude/hooks/
 
 # Clon de trabajo del plugin booster-skills (vive en boosterchile/booster-skills,
 # no debe embeberse en este repo). Ver ADR-049.
