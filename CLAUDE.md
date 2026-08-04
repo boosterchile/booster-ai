@@ -1,6 +1,6 @@
 # CLAUDE.md — Contrato de trabajo del agente en Booster AI
 
-Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / ISO 14064). Owner: Felipe Vicencio (`dev@boosterchile.com`). Monorepo pnpm/Turborepo: 9 apps (`apps/`), 20 packages (`packages/`), Terraform (`infrastructure/`), GCP Cloud Run + GKE.
+Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / ISO 14064). Owner: Felipe Vicencio (`dev@boosterchile.com`). Monorepo pnpm/Turborepo: apps en `apps/`, packages en `packages/`, Terraform (`infrastructure/`), GCP Cloud Run + GKE.
 
 ## Fuente de verdad
 
@@ -46,7 +46,8 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 ## Archivos que NUNCA se tocan sin permiso explícito
 
-`CLAUDE.md` · `docs/adr/*.md` · `infrastructure/main.tf` (IAM/Billing) · quality gates en `.github/workflows/*.yml` · secretos.
+- `CLAUDE.md` · `docs/adr/*.md` · secretos · quality gates en `.github/workflows/*.yml`.
+- En `infrastructure/`: **cualquier `.tf` que declare IAM, Billing, service accounts, KMS o reglas de firewall**, sin importar su nombre de archivo. La regla protege el tipo de recurso, no la ruta: un rename o un split de módulos no la desactiva. Ante duda sobre si un `.tf` cae bajo esta regla, se pregunta antes de editar.
 
 ---
 *Contrato adoptado 2026-04-23 · reescrito 2026-07-06 ([ADR-072](docs/adr/072-disciplina-inline-plugins-como-conocimiento-opcional.md): disciplina inline; supersede ADR-049/060 en responsabilidades). Historia de la capa de plugins: ADR-049/050/060/064 y `docs/plugins/`.*

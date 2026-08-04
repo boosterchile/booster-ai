@@ -12,7 +12,7 @@ Este repo está diseñado para ser trabajado primariamente con **Claude** (ver [
 
 ## Estructura del repo
 
-Ver [`README.md`](./README.md) para el mapa del monorepo (9 apps en `apps/`, 20 packages en `packages/`, Terraform en `infrastructure/`, specs en `.specs/`, ADRs en `docs/adr/`).
+Ver [`README.md`](./README.md) para el mapa del monorepo (apps en `apps/`, packages en `packages/`, Terraform en `infrastructure/`, specs en `.specs/`, ADRs en `docs/adr/`).
 
 ## Stack fijo (ADR-001)
 
@@ -21,7 +21,6 @@ Ver [`README.md`](./README.md) para el mapa del monorepo (9 apps en `apps/`, 20 
 - **Frontend**: Vite + React 18 + TanStack Router + Tailwind + shadcn/ui
 - **Shared**: Zod schemas en `packages/shared-schemas`
 - **Logger**: Pino en `packages/logger`
-- **AI**: Gemini con abstracción en `packages/ai-provider`
 - **Infra**: Terraform sobre GCP (Cloud Run + Cloud SQL + Memorystore + Secret Manager)
 - **CI/CD**: GitHub Actions con WIF
 - **Linter/formatter**: Biome (reemplaza ESLint + Prettier)
@@ -56,10 +55,10 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 
 ## Archivos protegidos
 
-No modificar sin permiso explícito: `CLAUDE.md`, `docs/adr/*.md` (inmutables; se supersedan con nuevo ADR), `infrastructure/main.tf` en secciones críticas, `.github/workflows/*` en quality gates.
+No modificar sin permiso explícito: `CLAUDE.md`, `docs/adr/*.md` (inmutables; se supersedan con nuevo ADR), `.github/workflows/*` en quality gates, y en `infrastructure/` cualquier `.tf` que declare IAM, Billing, service accounts, KMS o reglas de firewall — la regla se aplica por tipo de recurso, no por nombre de archivo.
 
 ## Contacto
 
 - **Product Owner**: Felipe Vicencio — `dev@boosterchile.com`
 - **Repo**: `github.com/boosterchile/booster-ai`
-- **GCP Project**: `booster-ai`
+- **GCP Project**: `booster-ai-494222`
