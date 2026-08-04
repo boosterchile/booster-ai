@@ -164,6 +164,67 @@ describe('POST /auth/login-rut (ADR-035)', () => {
     expect(fb.spies.createCustomToken).not.toHaveBeenCalled();
   });
 
+  // Incidente en producción 2026-08-03: el conductor Javier Poblete
+  // (5864136-7) entró a /login y recibió «inicia sesión con tu método anterior
+  // (Google o email + contraseña)». Nunca tuvo método anterior: tiene un PIN.
+  // Quedó en un callejón sin salida. El handler SÍ sabe distinguir los dos
+  // casos —comprueba `pending-rut:`— pero recién después de verificar la
+  // clave, así que un conductor sin activar jamás llegaba ahí.
+  it('conductor sin activar → 410 needs_activation, NO needs_rotation', async () => {
+    const { db } = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        // Las dos marcas inequívocas de "conductor dado de alta, sin activar".
+        firebaseUid: 'pending-rut:5864136-7',
+        activationPinHash: 'hash-del-pin',
+        email: 'fvp@live.cl',
+        rut: '5864136-7',
+        claveNumericaHash: null,
+        status: 'pendiente_verificacion',
+      },
+    });
+    const fb = makeFirebaseStub();
+    const app = await buildApp(db, fb.auth);
+    const res = await app.request('/auth/login-rut', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, clave: CORRECT_CLAVE }),
+    });
+    expect(res.status).toBe(410);
+    const body = (await res.json()) as { code: string; message: string };
+    expect(body.code).toBe('needs_activation');
+    // El mensaje tiene que hablar de SU PIN, no de un método que no existe.
+    expect(body.message).toMatch(/PIN/i);
+    expect(body.message).not.toMatch(/Google|contraseña/i);
+    expect(fb.spies.createCustomToken).not.toHaveBeenCalled();
+  });
+
+  it('legacy real (uid de Firebase, sin PIN) sigue recibiendo needs_rotation', async () => {
+    // No se toca el flujo de quienes SÍ tienen método anterior.
+    const { db } = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'fb-real',
+        activationPinHash: null,
+        email: 'legacy@example.com',
+        rut: '11111111-1',
+        claveNumericaHash: null,
+        status: 'activo',
+      },
+    });
+    const fb = makeFirebaseStub();
+    const app = await buildApp(db, fb.auth);
+    const res = await app.request('/auth/login-rut', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, clave: CORRECT_CLAVE }),
+    });
+    expect(res.status).toBe(410);
+    expect((await res.json()) as { code: string }).toEqual(
+      expect.objectContaining({ code: 'needs_rotation' }),
+    );
+  });
+
   it('clave incorrecta → 401 invalid_credentials (no revela existencia)', async () => {
     const { db } = makeDbStub({
       userRow: {

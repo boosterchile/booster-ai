@@ -59,12 +59,12 @@ interface ActivateResponse {
 }
 
 interface NeedsRotationResponse {
-  error: 'needs_rotation';
-  code: 'needs_rotation';
+  error: 'needs_rotation' | 'needs_activation';
+  code: 'needs_rotation' | 'needs_activation';
   message: string;
 }
 
-type Step = 'selector' | 'form' | 'needs-rotation';
+type Step = 'selector' | 'form' | 'needs-rotation' | 'needs-activation';
 
 interface UserTypeOption {
   value: UserTypeHint;
@@ -192,7 +192,10 @@ export function LoginUniversal() {
       if (res.status === 410) {
         const body = (await res.json()) as NeedsRotationResponse;
         setSubmitError(body.message);
-        setStep('needs-rotation');
+        // Dos poblaciones distintas llegan acá con 410. Mandar a un conductor
+        // sin activar a "usar tu método anterior" lo deja sin salida: nunca
+        // tuvo Google ni contraseña, tiene un PIN. Pasó en producción.
+        setStep(body.code === 'needs_activation' ? 'needs-activation' : 'needs-rotation');
         return;
       }
 
@@ -216,6 +219,10 @@ export function LoginUniversal() {
 
   if (step === 'selector') {
     return <SelectorView onSelect={handleSelectTipo} />;
+  }
+
+  if (step === 'needs-activation') {
+    return <NeedsActivationView onBack={handleBackToSelector} message={submitError} rut={rut} />;
   }
 
   if (step === 'needs-rotation') {
@@ -382,6 +389,24 @@ function FormView(props: FormViewProps) {
             </span>
           </label>
 
+          {/* La activación tiene que ser ENCONTRABLE desde el flujo principal.
+              `/login/conductor` existía en producción pero solo se alcanzaba
+              sabiendo la URL, desde la pantalla legacy, o fallando un login
+              primero — que es lo que le pasó al conductor 5864136-7. */}
+          {props.tipo === 'conductor' && (
+            <p className="rounded-md border border-primary-200 bg-primary-50 p-3 text-primary-800 text-sm">
+              ¿Es tu primera vez? Tu empresa te dio un <strong>PIN de 6 dígitos</strong>.{' '}
+              <a
+                href="/login/conductor"
+                className="font-medium text-primary-700 underline"
+                data-testid="login-link-activar-conductor"
+              >
+                Activa tu cuenta acá
+              </a>{' '}
+              y crea tu clave.
+            </p>
+          )}
+
           {props.submitError && (
             <div
               className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
@@ -419,6 +444,59 @@ function FormView(props: FormViewProps) {
             Cambiar tipo de usuario
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NeedsActivation — el conductor que todavía no canjeó su PIN.
+//
+// Existe por un incidente de producción (2026-08-03): un conductor recién dado
+// de alta entró por acá y le ofrecimos "Usar método anterior (Google o email +
+// contraseña)". Nunca tuvo método anterior. Quedó sin poder entrar.
+// ---------------------------------------------------------------------------
+
+function NeedsActivationView({
+  onBack,
+  message,
+  rut,
+}: { onBack: () => void; message: string | null; rut: string }) {
+  // Arrastramos el RUT ya tecleado: el conductor está en su celular, muchas
+  // veces en la cabina, y no tiene por qué escribirlo dos veces.
+  const rutLimpio = ensureRutHasDash(rut.replace(/\./g, '').trim());
+  const href = rutLimpio
+    ? `/login/conductor?rut=${encodeURIComponent(rutLimpio)}`
+    : '/login/conductor';
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+      <div className="w-full max-w-md rounded-lg border border-primary-200 bg-primary-50 p-6 shadow-sm">
+        <h1 className="font-semibold text-lg text-primary-900">Activa tu cuenta primero</h1>
+        <p className="mt-2 text-primary-800 text-sm">
+          {message ??
+            'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa.'}
+        </p>
+        <p className="mt-3 text-primary-700 text-sm">
+          Con ese PIN vas a crear tu propia clave de 6 dígitos. Después entras siempre con tu RUT y
+          esa clave.
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <a
+            href={href}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white hover:bg-primary-700"
+            data-testid="needs-activation-go-activar"
+          >
+            Activar mi cuenta
+          </a>
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-center text-neutral-500 text-sm hover:text-neutral-700"
+          >
+            Cambiar tipo de usuario
+          </button>
+        </div>
       </div>
     </div>
   );

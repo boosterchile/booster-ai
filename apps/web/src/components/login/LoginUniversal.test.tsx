@@ -175,11 +175,89 @@ describe('LoginUniversal', () => {
     expect(legacyLink).toHaveAttribute('href', '/login?legacy=1');
   });
 
+  // Incidente en producción 2026-08-03: el conductor Javier Poblete
+  // (5864136-7) entró por acá y le ofrecimos "Usar método anterior (Google o
+  // email + contraseña)". Nunca tuvo método anterior — tiene un PIN. Quedó sin
+  // poder entrar a la plataforma.
+  it('410 needs_activation → manda a activar con el PIN, NO al método anterior', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeJsonResponse(410, {
+        error: 'needs_activation',
+        code: 'needs_activation',
+        message:
+          'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa.',
+      }),
+    );
+
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    fireEvent.change(screen.getByTestId('login-rut-input'), {
+      target: { value: '5.864.136-7' },
+    });
+    fireEvent.change(screen.getByTestId('login-clave-input'), { target: { value: '123456' } });
+    await userEvent.click(screen.getByTestId('login-submit'));
+
+    const link = await screen.findByTestId('needs-activation-go-activar');
+    expect(link.getAttribute('href') ?? '').toMatch(/^\/login\/conductor/);
+
+    // Lo que hacía antes y no puede volver a hacer: ofrecer un método que
+    // esta persona nunca tuvo.
+    expect(screen.queryByTestId('needs-rotation-go-legacy')).not.toBeInTheDocument();
+    const texto = document.body.textContent ?? '';
+    expect(texto).toMatch(/PIN/i);
+    expect(texto).not.toMatch(/Google/i);
+  });
+
+  it('el RUT tecleado se arrastra a la pantalla de activación', async () => {
+    // Que no tenga que volver a tipearlo en el celular, con guantes.
+    fetchSpy.mockResolvedValueOnce(
+      makeJsonResponse(410, { error: 'needs_activation', code: 'needs_activation', message: 'x' }),
+    );
+
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    fireEvent.change(screen.getByTestId('login-rut-input'), {
+      target: { value: '5.864.136-7' },
+    });
+    fireEvent.change(screen.getByTestId('login-clave-input'), { target: { value: '123456' } });
+    await userEvent.click(screen.getByTestId('login-submit'));
+
+    const link = await screen.findByTestId('needs-activation-go-activar');
+    expect(link.getAttribute('href')).toContain('rut=5864136-7');
+  });
+
   it('botón "Cambiar tipo de usuario" en form vuelve al selector', async () => {
     render(<LoginUniversal />);
     await userEvent.click(screen.getByTestId('login-tipo-stakeholder'));
     expect(screen.getByTestId('login-universal-form')).toBeInTheDocument();
     await userEvent.click(screen.getByTestId('login-back-to-selector'));
     expect(screen.getByTestId('login-universal-selector')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Descubribilidad de la activación.
+ *
+ * `/login/conductor` existía en producción pero era **inalcanzable desde el
+ * flujo principal**: el único enlace vivía en la pantalla legacy, y la otra
+ * forma de llegar era fallar un login primero. Una pantalla a la que solo se
+ * llega sabiendo la URL, o equivocándose, no existe.
+ */
+describe('LoginUniversal — la activación tiene que ser encontrable', () => {
+  it('el conductor ve cómo activar SIN tener que fallar un login antes', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-conductor'));
+
+    const link = screen.getByTestId('login-link-activar-conductor');
+    expect(link).toHaveAttribute('href', '/login/conductor');
+    expect(link.textContent ?? '').toMatch(/activ/i);
+    // Tiene que nombrar el PIN: es lo que el conductor tiene en la mano.
+    expect(screen.getByText(/PIN/i)).toBeInTheDocument();
+  });
+
+  it('no se le ofrece a quien no es conductor', async () => {
+    render(<LoginUniversal />);
+    await userEvent.click(screen.getByTestId('login-tipo-carga'));
+    expect(screen.queryByTestId('login-link-activar-conductor')).not.toBeInTheDocument();
   });
 });

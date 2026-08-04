@@ -73,6 +73,7 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
@@ -111,6 +112,15 @@ export function createServer(opts: CreateServerOptions): Hono {
       level: config.LOG_LEVEL,
       pretty: config.NODE_ENV === 'development',
     });
+
+  // Primera infraestructura de correo de la plataforma. Sin RESEND_API_KEY cae
+  // al logger y avisa por `warn`: un correo que no sale no puede voltear un
+  // alta, pero tampoco puede ser invisible.
+  const emailSender = crearEmailSender({
+    apiKey: config.RESEND_API_KEY,
+    from: config.EMAIL_FROM,
+    logger,
+  });
 
   const app = new Hono();
 
@@ -886,7 +896,21 @@ export function createServer(opts: CreateServerOptions): Hono {
       isDemoEnforcementMiddleware,
     );
     app.use('/conductores', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/conductores', createConductoresRoutes({ db: opts.db, logger }));
+    app.route(
+      '/conductores',
+      createConductoresRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+        // Comparte el mismo cliente Twilio que el resto de las notificaciones.
+        // Ausente en dev ⇒ no se intenta; el alta no depende de esto.
+        ...(opts.notify?.twilioClient ? { whatsappClient: opts.notify.twilioClient } : {}),
+        ...(config.CONTENT_SID_ACTIVACION_CONDUCTOR
+          ? { activacionContentSid: config.CONTENT_SID_ACTIVACION_CONDUCTOR }
+          : {}),
+      }),
+    );
 
     // D9 — Driver-only auth surface. `/auth/driver-activate` NO requiere
     // firebase auth previa (el driver aún no tiene Firebase user). Otros

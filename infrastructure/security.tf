@@ -262,6 +262,17 @@ locals {
     # compute.tf (A7). Con el `HX...` real cargado, el fan-out usa WhatsApp + push.
     "content-sid-safety-alert",
 
+    # activacion_conductor_v2 — WhatsApp de activación del conductor (canal
+    # PRINCIPAL hacia él: los conductores usan WhatsApp, no correo). Categoría
+    # Meta: Utility, SIN PIN — opción A del PO (2026-08-03): Meta rechazó la v1
+    # con PIN en el body (los OTP solo pueden ir en *Authentication*, que es de
+    # formato fijo, sin variables custom ni botón URL). Detalle, estado de
+    # aprobación y carga del HX en docs/runbooks/load-content-sids.md.
+    # Mismo candado que el de arriba: entra como placeholder y NO se monta
+    # (`content_sid_ready` no lo lista) hasta cargar el `HX...` aprobado —
+    # montar el placeholder tumbaría el arranque del api (INC-2026-06-19).
+    "content-sid-activacion-conductor",
+
     # Web Push VAPID (P3.c) — generadas con `npx web-push generate-vapid-keys`
     # post-deploy y subidas con `gcloud secrets versions add`. La pública se
     # inyecta tanto al api (para mandar push) como al web (para subscribe del

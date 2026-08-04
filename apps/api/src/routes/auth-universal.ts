@@ -76,6 +76,10 @@ export function createAuthUniversalRoutes(opts: {
         email: users.email,
         rut: users.rut,
         claveNumericaHash: users.claveNumericaHash,
+        // Necesario para distinguir "conductor sin activar" de "legacy sin
+        // migrar": los dos tienen clave_numerica_hash NULL y hasta hoy
+        // recibían el mismo mensaje.
+        activationPinHash: users.activationPinHash,
         status: users.status,
       })
       .from(users)
@@ -97,6 +101,36 @@ export function createAuthUniversalRoutes(opts: {
     //    Frontend debe redirigir a UI de "setear primera clave"
     //    autenticando con email/password legacy primero.
     if (!user.claveNumericaHash) {
+      // Dos poblaciones distintas comparten `clave_numerica_hash IS NULL` y
+      // hasta 2026-08-03 recibían la misma respuesta:
+      //
+      //   a) legacy: tiene un firebase_uid real y un método anterior (Google
+      //      o email+contraseña) con el que migrar.
+      //   b) conductor recién dado de alta: firebase_uid `pending-rut:<rut>`
+      //      y un PIN de activación. NUNCA tuvo método anterior.
+      //
+      // Al caso (b) se le entregaba el mensaje del (a): "inicia sesión con
+      // Google o email + contraseña". Callejón sin salida — reportado en
+      // producción con el conductor 5864136-7, que quedó sin poder entrar.
+      const esConductorSinActivar =
+        user.activationPinHash !== null && user.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX);
+
+      if (esConductorSinActivar) {
+        opts.logger.info(
+          { rut, tipo_hint: tipoHint },
+          'login-rut: conductor sin activar → needs_activation',
+        );
+        return c.json(
+          {
+            error: 'needs_activation',
+            code: 'needs_activation',
+            message:
+              'Tu cuenta todavía no está activada. Usa el PIN de 6 dígitos que te dio tu empresa para activarla y crear tu clave.',
+          },
+          410,
+        );
+      }
+
       opts.logger.info(
         { rut, tipo_hint: tipoHint },
         'login-rut: user sin clave_numerica_hash → needs_rotation',

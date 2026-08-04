@@ -9,6 +9,7 @@ WhatsApp aprobados por Meta. Los secrets viven en Secret Manager:
 | `content-sid-chat-unread` | Fallback WhatsApp para chat no leído (P3.d) | `chat_unread_v1` | _pending Meta_ |
 | `content-sid-tracking` | Link público de tracking al shipper al asignar (Phase 5 PR-L3) | `tracking_link_v1` | `HXac1ef21ed9423258a2c38dad02f31e41` (submitted Meta 2026-05-10) |
 | `content-sid-safety-alert` | Alerta de seguridad al transportista (crash/unplug/jamming, P0-G) | `safety_alert_v2` | `HX48d541ad8f2cab4e4f65165cb26489b1` **approved + live** ✅ (aprobado tras ~7d de revisión humana; entregando en prod 2026-06-22). v1 `HX0d…3d` y copy_of_v1 `HX80…44` fueron **rechazados** (subCode 2388293). Fallback de-riesgado `safety_alert_v3` listo si Meta pausa v2: ver [`.specs/safety-event-fanout/whatsapp-template.md`](../../.specs/safety-event-fanout/whatsapp-template.md) |
+| `content-sid-activacion-conductor` | WhatsApp de activación del conductor (PR #645) | `activacion_conductor_v2` | `HX2e4ce36f96943b455ef09c6fbdc8991d` **submitted Meta 2026-08-03, Utility, `pending`** — v2 SIN PIN (opción A del PO; el código quedó en 3 variables). La v1 `HX99bcd1331ff417782e0c4d279cd13309` (con PIN) fue **rechazada** en ~10s por política OTP. El secret NO existe aún en GCP — TF de la rama sin aplicar |
 
 ### Body de `tracking_link_v1` (creado vía Twilio Content API 2026-05-10)
 
@@ -50,6 +51,77 @@ gcloud run services update booster-ai-api \
   --update-annotations=last-secret-rotation=$(date +%s) \
   --project=booster-ai-494222
 ```
+
+### Body de `activacion_conductor_v1` (creado en Content Editor 2026-08-03 — RECHAZADO)
+
+```
+🚛 Booster AI — Hola {{1}}: {{2}} te registró como conductor.
+
+Tu PIN de activación es {{3}}. Toca el botón para activar tu cuenta con tu RUT y este PIN.
+```
+
+**Botón URL** («Activar mi cuenta»): `https://app.boosterchile.com/login/conductor?rut={{4}}`
+
+Variables (CONTRATO con `apps/api/src/services/notifications/conductor-activacion-whatsapp.ts`):
+`{{1}}` nombre · `{{2}}` empresa · `{{3}}` PIN · `{{4}}` RUT (solo en URL del botón).
+Samples del submit: `Javier` / `Transportes Van Oosterwyk` / `530214` / `12345678-5` (sintéticos).
+
+**Resultado**: `rejected` a los ~10s del submit como **Utility** (auto-clasificador;
+la Content API devuelve `rejection_reason: "Unknown rejection reason"`).
+
+**Análisis**: `tracking_link_v1` — misma forma exacta (call-to-action, body con
+variables, botón URL al mismo dominio) pero SIN código — fue aprobado. El delta es
+la línea del PIN: la política de Meta manda los códigos de un solo uso a la
+categoría *Authentication*, y esa categoría es de **formato fijo** (solo el código +
+botón copy-code; sin variables custom, sin botón URL). Verificado en la UI: para un
+template call-to-action el diálogo de submit solo ofrece **Marketing** y **Utility**
+— Authentication ni aparece. El diseño de `spec.md` §3.5 (PIN + nombre/empresa +
+enlace en un solo template) no es realizable tal cual en WhatsApp.
+
+**Decisión PO (2026-08-03): opción A** — v2 Utility **sin PIN**. El PIN viaja por
+correo (Resend) y por «Copiar enlace + PIN» de la pantalla de alta. Las variables
+del código se renumeraron a 3 en `conductor-activacion-whatsapp.ts` en el mismo
+cambio (con el código de 4 variables, el `{{3}}` del template nuevo habría
+recibido el PIN dentro de la URL del botón). Descartadas: B (dos templates —
+Authentication fijo + Utility: más código y costo por alta) y C (eludir el
+clasificador con otro wording — riesgo de strike sobre el WABA; precedente:
+safety_alert v1 rechazado 2×, subCode 2388293).
+
+### Body de `activacion_conductor_v2` (Content Editor 2026-08-03 — submitted Utility)
+
+```
+🚛 Booster AI — Hola {{1}}: {{2}} te registró como conductor.
+
+Activa tu cuenta tocando el botón — el enlace ya lleva tu RUT.
+```
+
+**Botón URL** («Activar mi cuenta»): `https://app.boosterchile.com/login/conductor?rut={{3}}`
+
+Variables (CONTRATO con `conductor-activacion-whatsapp.ts`, renumerado a 3):
+`{{1}}` nombre · `{{2}}` empresa · `{{3}}` RUT (solo en URL del botón).
+Samples del submit: `Javier` / `Transportes Van Oosterwyk` / `12345678-5` (sintéticos).
+
+**SID**: `HX2e4ce36f96943b455ef09c6fbdc8991d` — submitted 2026-08-03 18:24 GMT-4.
+A diferencia de la v1 (rechazo automático en ~10s), quedó **`pending`**: pasó el
+clasificador y está en la cola de revisión. Consultar estado:
+
+```bash
+curl -s -u "$(gcloud secrets versions access latest --secret=twilio-account-sid):$(gcloud secrets versions access latest --secret=twilio-auth-token)" \
+  "https://content.twilio.com/v1/Content/HX2e4ce36f96943b455ef09c6fbdc8991d/ApprovalRequests" \
+  | python3 -m json.tool
+```
+
+Con `whatsapp.status == "approved"` → `docs/runbooks/terraform-apply.md` (crear
+shell+placeholder con apply `-target`), y luego:
+
+```bash
+printf '%s' 'HX2e4ce36f96943b455ef09c6fbdc8991d' \
+  | gcloud secrets versions add content-sid-activacion-conductor \
+      --data-file=- --project=booster-ai-494222
+```
+
+Recién ahí: `"content-sid-activacion-conductor" = true` en `var.content_sid_ready`
+(variables.tf) + plan → preflight → apply (monta el env en el api).
 
 ## Cuándo usar este runbook
 

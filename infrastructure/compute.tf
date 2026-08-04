@@ -51,6 +51,10 @@ locals {
     CONTENT_SID_CHAT_UNREAD  = "content-sid-chat-unread"
     CONTENT_SID_TRACKING     = "content-sid-tracking"
     CONTENT_SID_SAFETY_ALERT = "content-sid-safety-alert"
+    # activacion_conductor_v1 — el WhatsApp con el que el conductor activa su
+    # cuenta (PIN + botón al enlace). Entra NO montado: `content_sid_ready` no
+    # lo lista hasta que Meta apruebe y se cargue el `HX...` real.
+    CONTENT_SID_ACTIVACION_CONDUCTOR = "content-sid-activacion-conductor"
   }
 
   # Solo los content-sids READY (valor real cargado) se montan en service_api.

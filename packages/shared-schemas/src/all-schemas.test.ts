@@ -732,6 +732,9 @@ describe('alta de conductor — email obligatorio (Fase B)', () => {
   const base = {
     rut: VALID_RUT,
     full_name: 'Conductor Prueba',
+    // Obligatorio desde 2026-08-03 (canal WhatsApp). Va en el `base` para que
+    // este test siga aislando el EMAIL y no falle por otro campo.
+    phone: '+56957790379',
     license_class: 'A4',
     license_number: 'L-123456',
     license_expiry: '2028-05-01',

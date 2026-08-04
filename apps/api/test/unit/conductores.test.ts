@@ -225,6 +225,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio — es su canal con
           // la plataforma.
           email: 'juan.conductor@empresa.cl',
@@ -245,6 +246,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: '11.111.111-9', // dígito verificador incorrecto
           full_name: 'Juan',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio — es su canal con la plataforma.
           email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
@@ -266,6 +268,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio — es su canal con
           // la plataforma.
           email: 'juan.conductor@empresa.cl',
@@ -310,6 +313,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan Pérez',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio.
           email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
@@ -366,6 +370,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan Pérez',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio.
           email: 'juan.conductor@empresa.cl',
           license_class: 'A5',
@@ -392,6 +397,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Juan',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio — es su canal con
           // la plataforma.
           email: 'juan.conductor@empresa.cl',
@@ -439,6 +445,7 @@ describe('conductores routes', () => {
         body: JSON.stringify({
           rut: VALID_RUT,
           full_name: 'Nuevo Conductor',
+          phone: '+56957790379',
           // Fase B: el email del conductor es obligatorio.
           email: 'conductor@empresa.cl',
           license_class: 'B',
@@ -614,6 +621,7 @@ describe('POST /conductores — fecha de licencia no rompe la respuesta', () => 
       body: JSON.stringify({
         rut: VALID_RUT,
         full_name: 'Juan Pérez',
+        phone: '+56957790379',
         email: 'juan.conductor@empresa.cl',
         license_class: 'A5',
         license_number: 'LIC-1',

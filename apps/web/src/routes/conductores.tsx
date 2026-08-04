@@ -471,10 +471,18 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
       if (meEmail) {
         setValue('email', meEmail, { shouldValidate: false });
       }
+      // El teléfono también: desde que es obligatorio (canal WhatsApp), no
+      // prellenarlo obligaba al dueño a tipear un dato que la plataforma ya
+      // tiene. Mismo criterio que el email.
+      const mePhone = (me.user as { phone?: string | null }).phone;
+      if (mePhone) {
+        setValue('phone', mePhone, { shouldValidate: false });
+      }
     } else {
       setValue('rut', '');
       setValue('full_name', '');
       setValue('email', '');
+      setValue('phone', '');
     }
   }
 
@@ -619,13 +627,24 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           />
 
           <FormField
-            label="Teléfono (opcional)"
+            label="Teléfono"
+            required
+            error={errors.phone?.message}
+            hint="Su WhatsApp. Por acá le llega el PIN y el enlace para activar su cuenta."
             render={({ id, describedBy }) => (
               <input
                 id={id}
                 aria-describedby={describedBy}
                 type="tel"
-                {...register('phone')}
+                {...register('phone', {
+                  required:
+                    'El teléfono del conductor es obligatorio: WhatsApp es el canal principal con él.',
+                  pattern: {
+                    // Mismo formato que exige el backend (chileanPhoneSchema).
+                    value: /^\+56[2-9]\d{8}$/,
+                    message: 'Número chileno en formato +56912345678.',
+                  },
+                })}
                 className={fieldInputClass(!!errors.phone)}
                 placeholder="+56912345678"
               />
@@ -1044,6 +1063,12 @@ function ActivationPinCard({
   onContinue: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Enlace ABSOLUTO y con el RUT: la empresa lo copia y se lo manda al
+  // conductor. Un path relativo (que es lo que se mostraba antes, como texto
+  // plano y sin dominio) no se puede pegar en un WhatsApp.
+  const enlaceActivacion = `${window.location.origin}/login/conductor?rut=${encodeURIComponent(driverRut)}`;
 
   async function handleCopy() {
     try {
@@ -1052,6 +1077,16 @@ function ActivationPinCard({
       window.setTimeout(() => setCopied(false), 2500);
     } catch {
       // Sin clipboard (ej. http en local) — el usuario lo lee y tipea.
+    }
+  }
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(`${enlaceActivacion}\n\nTu PIN: ${pin}`);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Sin clipboard — el enlace queda visible para copiarlo a mano.
     }
   }
 
@@ -1065,10 +1100,29 @@ function ActivationPinCard({
               {driverName} fue creado correctamente
             </h2>
             <p className="mt-1 text-neutral-700 text-sm">
-              RUT: <span className="font-mono">{driverRut}</span>. Ahora entrégale al conductor el
-              PIN de activación de abajo para que pueda ingresar a Booster con su RUT desde{' '}
-              <span className="font-mono">/login/conductor</span>.
+              RUT: <span className="font-mono">{driverRut}</span>. Mándale el enlace y el PIN de
+              abajo: con eso activa su cuenta y crea su propia clave.
             </p>
+            <div className="mt-3 rounded-md border border-neutral-200 bg-white p-3">
+              <p className="text-neutral-500 text-xs">Enlace de activación</p>
+              <a
+                href={enlaceActivacion}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="enlace-activacion-conductor"
+                className="mt-0.5 block break-all font-mono text-primary-700 text-sm underline"
+              >
+                {enlaceActivacion}
+              </a>
+              <button
+                type="button"
+                onClick={() => void handleCopyLink()}
+                data-testid="copiar-enlace-activacion"
+                className="mt-2 inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-700 text-sm hover:bg-neutral-50"
+              >
+                {copiedLink ? 'Copiado' : 'Copiar enlace + PIN'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

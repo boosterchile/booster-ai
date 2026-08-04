@@ -300,6 +300,26 @@ export const apiEnvSchema = commonEnvSchema
     ),
 
     /**
+     * Plantilla `activacion_conductor_v2` — el WhatsApp con el que el conductor
+     * activa su cuenta (botón al enlace con su RUT embebido). SIN PIN — opción A
+     * del PO (2026-08-03): Meta rechazó la v1 con PIN en el body (los OTP solo
+     * pueden ir en *Authentication*, que es de formato fijo) — ver
+     * docs/runbooks/load-content-sids.md.
+     *
+     * **Opcional a propósito**: ausente ⇒ no se intenta el envío y queda un
+     * `warn`. Entra no-montada por `content_sid_ready` (Terraform) hasta que
+     * Meta apruebe y se cargue el valor real — un placeholder montado tumbaba
+     * el arranque del api (INC-2026-06-19).
+     */
+    CONTENT_SID_ACTIVACION_CONDUCTOR: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^HX[a-fA-F0-9]+$/, 'Debe empezar con HX seguido de hex chars')
+        .optional(),
+    ),
+
+    /**
      * SA email que firma el OIDC de la push subscription de safety-events
      * (Pub/Sub → POST /internal/safety-events). El endpoint valida
      * claims.email === este valor. Optional en dev (sin él, el endpoint
@@ -544,6 +564,24 @@ export const apiEnvSchema = commonEnvSchema
      * hace que el approve gateado falle en vez de emitir tokens forjables.
      */
     ONBOARDING_TOKEN_SIGNING_SECRET: z.string().min(32).optional(),
+
+    /**
+     * API key de Resend — primera infraestructura de correo de la plataforma
+     * (`conductor-activacion-correo`). Viene de Secret Manager vía env en
+     * Cloud Run.
+     *
+     * **Opcional a propósito**: ausente ⇒ `crearEmailSender` devuelve el
+     * `LoggingEmailSender`, que registra el correo que habría salido y sigue.
+     * Un correo caído nunca puede voltear un alta de conductor ya consumada.
+     * El arranque avisa por `warn` para que la degradación no sea silenciosa.
+     */
+    RESEND_API_KEY: z.string().min(8).optional(),
+
+    /**
+     * Remitente de los correos salientes. El dominio debe estar verificado en
+     * Resend (registros DNS) o el proveedor rechaza el envío con 422.
+     */
+    EMAIL_FROM: z.string().min(3).default('Booster <no-reply@boosterchile.com>'),
 
     /**
      * onboarding-flow-redesign T1.3 — TTL del token one-shot, en horas. Default
