@@ -132,16 +132,43 @@ montadas en producción (`content_sid_ready` en Terraform, las cuatro en `true`)
 
 También corrijo un encuadre mío: dije «~7 días de Meta» a partir de un solo
 caso, `safety_alert_v2` — una alerta de seguridad, contenido que va a revisión
-humana. Una plantilla de código de activación cae en categoría *Authentication*
-y suele aprobarse mucho más rápido. Presenté el peor caso como el esperado.
+humana. Presenté el peor caso como el esperado. Lo que ocurrió después fue
+distinto y peor: rechazo automático en ~10 segundos.
 
-**Plantilla `activacion_conductor_v1`**, con 4 variables que son contrato con
-el Content Editor:
+#### El diseño original NO era realizable, y la evidencia lo probó
+
+`activacion_conductor_v1` llevaba 4 variables **con el PIN en el body** y fue
+**rechazada por Meta** (`HX99bc…3309`, 2026-08-03, ~10 s, auto).
+
+El control es limpio: `tracking_link_v1` tiene la **misma forma exacta**
+—call-to-action, body con variables, botón URL al mismo dominio— y está
+aprobada. El único delta era el PIN. La política de Meta manda los códigos de un
+solo uso a categoría *Authentication*, que es de **formato fijo**: solo el
+código y un botón copy-code, sin variables propias ni botón URL. En la UI, para
+un template call-to-action el diálogo de submit ni siquiera ofrece
+*Authentication*.
+
+O sea: **PIN + personalización + enlace en un mismo template de WhatsApp no
+existe.** Detalle y opciones evaluadas en
+[`docs/runbooks/load-content-sids.md`](../../docs/runbooks/load-content-sids.md).
+
+#### Diseño vigente — `activacion_conductor_v2`, 3 variables, sin PIN
+
+Decisión del PO: el WhatsApp lleva la invitación y el enlace; el PIN viaja por
+correo y por el botón «Copiar enlace + PIN» de la pantalla de alta.
 
 ```
-{{1}} nombre · {{2}} empresa · {{3}} PIN
-{{4}} RUT → sufijo del botón: /login/conductor?rut={{4}}
+{{1}} nombre · {{2}} empresa
+{{3}} RUT → sufijo del botón: /login/conductor?rut={{3}}
 ```
+
+`HX2e4ce36f96943b455ef09c6fbdc8991d`, submitted como **Utility**, en `pending`
+— pasó el clasificador que mató a la v1 en 10 segundos.
+
+⚠️ El orden es contrato: si el código mandara 4 variables contra este template,
+el PIN entraría en la URL del botón — o sea al historial del navegador y a los
+logs. Por eso el `pin` salió de la firma de
+`conductor-activacion-whatsapp.ts` antes de someter la v2.
 
 Entra **no montada** siguiendo el patrón de la casa: el secreto se crea como
 placeholder y `content_sid_ready` no lo lista, así que el api no lo ve hasta
@@ -161,6 +188,18 @@ sí lo usa. Ninguno de los dos puede voltear el alta.
 `SignupRequestNotifier` pasa a usar el mismo `EmailSender`. Dejar un stub que
 el PO cree que envía es exactamente el tipo de hueco silencioso que este frente
 viene a cerrar.
+
+## 3.7 Lo que YA funciona sin ninguna dependencia externa
+
+Importante para no confundir "frente abierto" con "conductor bloqueado". Sin
+Meta, sin Resend y sin ningún secreto cargado, hoy un conductor puede entrar:
+
+1. `/login` deja de mandarlo a un callejón sin salida (`needs_activation`).
+2. Al elegir "Conductor" ve el acceso directo a activar con su PIN.
+3. La empresa copia **enlace + PIN** de la pantalla de alta y se lo manda.
+
+Los canales automáticos (WhatsApp, correo) reemplazan el paso 3 por comodidad;
+no son la única vía. Ninguno de los dos puede voltear un alta ya consumada.
 
 ## 4. Dependencia externa — el PO debe provisionar
 
