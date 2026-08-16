@@ -7,7 +7,13 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
+import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
+import {
+  type NumericFieldRule,
+  numericFieldError,
+  serverValidationFieldsMessage,
+} from '../lib/form-validation.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -84,6 +90,42 @@ const EMPTY_FORM: SucursalFormValues = {
   longitude: '',
   operating_hours: '',
 };
+
+/**
+ * Rangos de coordenadas, espejo del `createBodySchema` del API
+ * (`apps/api/src/routes/sucursales.ts`). El form declara `noValidate`, así
+ * que los `min`/`max` HTML5 de los inputs NO bloquean el submit — esta tabla
+ * es la validación real (ver `lib/form-validation.ts`). Los campos de texto
+ * no la necesitan: usan reglas `required` de react-hook-form que sí corren.
+ */
+const COORD_FIELD_RULES: Record<'latitude' | 'longitude', NumericFieldRule> = {
+  latitude: { min: -90, max: 90, entero: false },
+  longitude: { min: -180, max: 180, entero: false },
+};
+
+/**
+ * Labels en español por campo del body del API — para nombrar campos en el
+ * banner cuando el server responde un 400 de validación.
+ */
+const API_FIELD_LABELS: Record<string, string> = {
+  nombre: 'Nombre',
+  address_street: 'Dirección',
+  address_city: 'Ciudad / Comuna',
+  address_region: 'Región',
+  latitude: 'Latitud',
+  longitude: 'Longitud',
+  operating_hours: 'Horario de operación',
+  is_active: 'Estado',
+};
+
+/**
+ * Copy del banner de error para las mutations create/update: 400/422 de
+ * validación con campos conocidos → banner que los nombra; cualquier otro
+ * error conserva su mensaje.
+ */
+function sucursalMutationErrorMessage(err: Error): string {
+  return serverValidationFieldsMessage(err, API_FIELD_LABELS) ?? err.message;
+}
 
 function formToBody(v: SucursalFormValues): Record<string, unknown> {
   const body: Record<string, unknown> = {
@@ -288,7 +330,7 @@ function SucursalesNuevaPage({ me }: { me: MeOnboarded }) {
       queryClient.invalidateQueries({ queryKey: ['sucursales'] });
       void navigate({ to: '/app/sucursales' });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => setError(sucursalMutationErrorMessage(err)),
   });
 
   return (
@@ -357,7 +399,7 @@ function SucursalesDetallePage({ me }: { me: MeOnboarded }) {
       queryClient.invalidateQueries({ queryKey: ['sucursales', id] });
       void navigate({ to: '/app/sucursales' });
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => setError(sucursalMutationErrorMessage(err)),
   });
 
   const deleteM = useMutation({
@@ -458,10 +500,13 @@ function SucursalForm({
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    setError,
+    formState: { errors, submitCount },
   } = useForm<SucursalFormValues>({
     defaultValues: initial ?? EMPTY_FORM,
   });
+
+  useScrollToFirstError(errors, submitCount);
 
   useEffect(() => {
     if (initial) {
@@ -469,9 +514,31 @@ function SucursalForm({
     }
   }, [initial, reset]);
 
+  /**
+   * Validación cliente de coordenadas (`COORD_FIELD_RULES`, espejo del
+   * schema del API). Los campos de texto ya vienen validados por las reglas
+   * `required` de react-hook-form cuando este submit corre. OJO: el form
+   * declara `noValidate` — los `min`/`max` HTML5 no frenan nada (misma
+   * clase de bug que vehiculos.tsx, PR #650).
+   */
+  function submit(values: SucursalFormValues) {
+    let hasError = false;
+    for (const field of ['latitude', 'longitude'] as const) {
+      const message = numericFieldError(COORD_FIELD_RULES[field], values[field]);
+      if (message) {
+        setError(field, { type: 'manual', message });
+        hasError = true;
+      }
+    }
+    if (hasError) {
+      return;
+    }
+    onSubmit(values);
+  }
+
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit(submit)}
       className="space-y-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
       noValidate
     >
@@ -548,6 +615,7 @@ function SucursalForm({
           <FormField
             label="Latitud (opcional)"
             hint="Coordenada decimal — completa al usar la sucursal en una oferta"
+            error={errors.latitude?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -557,7 +625,7 @@ function SucursalForm({
                 min={-90}
                 max={90}
                 {...register('latitude')}
-                className={fieldInputClass(false)}
+                className={fieldInputClass(!!errors.latitude)}
                 placeholder="-33.5111"
               />
             )}
@@ -565,6 +633,7 @@ function SucursalForm({
 
           <FormField
             label="Longitud (opcional)"
+            error={errors.longitude?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -574,7 +643,7 @@ function SucursalForm({
                 min={-180}
                 max={180}
                 {...register('longitude')}
-                className={fieldInputClass(false)}
+                className={fieldInputClass(!!errors.longitude)}
                 placeholder="-70.7575"
               />
             )}

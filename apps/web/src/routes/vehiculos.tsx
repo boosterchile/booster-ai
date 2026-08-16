@@ -25,6 +25,11 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
+import {
+  type NumericFieldRule,
+  numericFieldError,
+  serverValidationFieldsMessage,
+} from '../lib/form-validation.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -907,9 +912,10 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
  * `apps/api/src/routes/vehiculos.ts`. El form declara `noValidate`, así que
  * los attributes HTML5 `min`/`max`/`required` de los inputs NO bloquean el
  * submit: esta tabla es la validación real, corre en `submit()` con copy en
- * español por campo. Si el server endurece un rango antes de actualizar esta
- * tabla, el fallback de `vehicleServerValidationMessage` traduce ese 400 a
- * un banner que nombra el campo (defense in depth, no reemplazo).
+ * español por campo (ver `lib/form-validation.ts`). Si el server endurece un
+ * rango antes de actualizar esta tabla, el fallback de
+ * `vehicleMutationErrorMessage` traduce ese 400 a un banner que nombra el
+ * campo (defense in depth, no reemplazo).
  */
 type NumericFieldName =
   | 'capacity_kg'
@@ -918,10 +924,7 @@ type NumericFieldName =
   | 'curb_weight_kg'
   | 'consumption_l_per_100km_baseline';
 
-const NUMERIC_FIELD_RULES: Record<
-  NumericFieldName,
-  { min: number; max: number; entero: boolean; requiredMessage?: string }
-> = {
+const NUMERIC_FIELD_RULES: Record<NumericFieldName, NumericFieldRule> = {
   capacity_kg: {
     min: 1,
     max: 100_000,
@@ -933,32 +936,6 @@ const NUMERIC_FIELD_RULES: Record<
   curb_weight_kg: { min: 1, max: 50_000, entero: true },
   consumption_l_per_100km_baseline: { min: 0.01, max: 99.99, entero: false },
 };
-
-function numericFieldError(
-  rule: (typeof NUMERIC_FIELD_RULES)[NumericFieldName],
-  raw: string,
-): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return rule.requiredMessage ?? null;
-  }
-  const value = Number(trimmed);
-  if (!Number.isFinite(value)) {
-    // Inalcanzable vía inputs type=number (la sanitización WHATWG vacía a ''
-    // todo string cuyo parse no dé un finito — jsdom y browsers reales por
-    // igual), pero sin esta guardia un caller que pase strings crudos dejaría
-    // colar NaN: NaN < min y NaN > max son ambos false y "pasaría" el rango.
-    return 'Número inválido';
-  }
-  if (rule.entero && !Number.isInteger(value)) {
-    return 'Debe ser un número entero';
-  }
-  if (value < rule.min || value > rule.max) {
-    // `es-CL` para separador de miles (100.000) y coma decimal (99,99).
-    return `Debe estar entre ${rule.min.toLocaleString('es-CL')} y ${rule.max.toLocaleString('es-CL')}`;
-  }
-  return null;
-}
 
 /**
  * Labels en español por campo del body del API — para nombrar campos en el
@@ -982,51 +959,11 @@ const API_FIELD_LABELS: Record<string, string> = {
 };
 
 /**
- * Shape 400 de `zValidator('json', …)` sin hook custom (default de
- * `@hono/zod-validator`): `c.json({ success: false, error: <ZodError> }, 400)`
- * donde `ZodError` serializa como `{ issues: [{ path, … }], name }`. Mismo
- * contrato verificado empíricamente en `solicitar-acceso.tsx` — si aparece
- * un tercer consumidor, extraer a `lib/` compartida.
- */
-const zValidatorErrorPayloadSchema = z.object({
-  success: z.literal(false),
-  error: z.object({
-    issues: z.array(z.object({ path: z.array(z.union([z.string(), z.number()])) })),
-  }),
-});
-
-/**
- * Mensaje legible para un 400 de validación del server, nombrando los campos
- * afectados. `null` cuando `err` no es un 400 con shape zValidator o ningún
- * `path` mapea a un campo conocido — el caller conserva su mensaje original
- * (no se inventa contenido sobre un shape desconocido).
- */
-function vehicleServerValidationMessage(err: Error): string | null {
-  if (!(err instanceof ApiError) || err.status !== 400) {
-    return null;
-  }
-  const parsed = zValidatorErrorPayloadSchema.safeParse(err.details);
-  if (!parsed.success) {
-    return null;
-  }
-  const labels = [
-    ...new Set(
-      parsed.data.error.issues
-        .map((issue) => API_FIELD_LABELS[String(issue.path[0] ?? '')])
-        .filter((label): label is string => label !== undefined),
-    ),
-  ];
-  if (labels.length === 0) {
-    return null;
-  }
-  return `Revisa los campos: ${labels.join(', ')} — el servidor rechazó sus valores.`;
-}
-
-/**
  * Copy del banner de error para las mutations create/update. Prioridad:
  * patente duplicada (409, por `code` — el `message` del ApiError es el
- * técnico 'plate_already_exists') → 400 de validación con campos conocidos
- * → mensaje del error tal cual.
+ * técnico 'plate_already_exists') → 400/422 de validación con campos
+ * conocidos (`serverValidationFieldsMessage`, lib compartida) → mensaje del
+ * error tal cual.
  */
 function vehicleMutationErrorMessage(err: Error): string {
   if (
@@ -1035,7 +972,7 @@ function vehicleMutationErrorMessage(err: Error): string {
   ) {
     return 'Ya existe un vehículo con esa patente.';
   }
-  return vehicleServerValidationMessage(err) ?? err.message;
+  return serverValidationFieldsMessage(err, API_FIELD_LABELS) ?? err.message;
 }
 
 function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {

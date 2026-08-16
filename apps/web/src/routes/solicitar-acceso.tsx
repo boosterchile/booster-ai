@@ -6,6 +6,7 @@ import { type UseFormSetError, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { FormField, inputClass } from '../components/FormField.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { zValidatorIssuePaths } from '../lib/form-validation.js';
 
 interface SolicitarAccesoFormValues {
   nombreCompleto: string;
@@ -232,54 +233,29 @@ const FIELD_ERROR_COPY: Record<keyof SolicitarAccesoFormValues, string> = {
 };
 
 /**
- * Shape real (verificado empíricamente contra `apps/api/src/routes/
- * signup-request.ts` — `zValidator('json', schema)` sin hook custom, que
- * es el default de `@hono/zod-validator@0.7.6`):
- *
- *   c.json({ success: false, error: <ZodError> }, 400)
- *
- * `ZodError` serializa (JSON.stringify de sus propiedades propias
- * enumerables) como `{ issues: [{ path, message, code, ... }], name }` —
- * `message` es un getter de prototipo y NO sobrevive el stringify. Solo
- * se valida el subset que se necesita (`path`); el resto del issue
- * (`message`, `code`) se ignora a propósito — ver `FIELD_ERROR_COPY`.
- */
-const zValidatorErrorPayloadSchema = z.object({
-  success: z.literal(false),
-  error: z.object({
-    issues: z.array(z.object({ path: z.array(z.union([z.string(), z.number()])) })),
-  }),
-});
-
-/**
  * Mapea el payload 400/422 del backend a los campos del form vía
- * `setError` de react-hook-form, por `path` del issue de zod.
+ * `setError` de react-hook-form, por `path` del issue de zod. El parsing
+ * del shape zValidator vive en `lib/form-validation.ts`
+ * (`zValidatorIssuePaths` — shape verificado empíricamente contra
+ * `apps/api/src/routes/signup-request.ts`).
  *
  * Devuelve `true` si mapeó al menos un issue a un campo conocido del form
  * (`email` | `nombreCompleto`) — en ese caso el caller NO debe mostrar el
- * banner genérico. Devuelve `false` (fallback) cuando:
- *   - `err` no es un `ApiError` 400/422, o
- *   - `err.details` no calza con `zValidatorErrorPayloadSchema` (shape
- *     inesperado / drift del backend), o
- *   - ningún issue trae un `path[0]` que corresponda a un campo del form
- *     (ej. error en un campo desconocido).
+ * banner genérico. Devuelve `false` (fallback) cuando el error no trae
+ * shape zValidator o ningún `path[0]` corresponde a un campo del form.
  */
 function mapValidationIssuesToForm(
   err: unknown,
   setFieldError: UseFormSetError<SolicitarAccesoFormValues>,
 ): boolean {
-  if (!(err instanceof ApiError) || (err.status !== 400 && err.status !== 422)) {
-    return false;
-  }
-
-  const parsed = zValidatorErrorPayloadSchema.safeParse(err.details);
-  if (!parsed.success) {
+  const paths = zValidatorIssuePaths(err);
+  if (!paths) {
     return false;
   }
 
   let mappedAny = false;
-  for (const issue of parsed.data.error.issues) {
-    const field = issue.path[0];
+  for (const path of paths) {
+    const field = path[0];
     if (field === 'email' || field === 'nombreCompleto') {
       setFieldError(field, { type: 'server', message: FIELD_ERROR_COPY[field] });
       mappedAny = true;
