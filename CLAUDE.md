@@ -35,7 +35,7 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 ## PRs y deploy
 
 - PR: título Conventional Commits, sección `## Evidencia` obligatoria (tests, lint, typecheck, build, screenshots/curl si aplica). Squash merge a `main`. Ramas: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`.
-- Deploy prod: merge a `main` → `release.yml` → gate humano (`required_reviewers` en Environment `production`) → Cloud Build canary 1%→100%. Monitoreo 2h post-deploy (error rate, P95, logs). No hay staging (`#STAGING-ENV`); el nightly E2E pega a prod — deuda declarada, pendiente de re-firma del PO.
+- Deploy prod: **manual, no en merge** — `release.yml` es `workflow_dispatch`-only desde 2026-07-10 (un push/merge a `main` NO despliega). Disparo: `gh workflow run release.yml --ref main` → gate humano (`required_reviewers` en Environment `production`) → Cloud Build canary 1%→100%. Monitoreo 2h post-deploy (error rate, P95, logs). No hay staging (`#STAGING-ENV`); el nightly E2E pega a prod — deuda declarada, pendiente de re-firma del PO.
 
 ## Herramientas de apoyo (sin responsabilidad contractual)
 
