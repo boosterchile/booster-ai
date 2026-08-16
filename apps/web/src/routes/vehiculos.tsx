@@ -360,10 +360,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
       void navigate({ to: '/app/vehiculos' });
     },
     onError: (err: Error) => {
-      const msg = err.message.includes('plate_duplicate')
-        ? 'Ya existe un vehículo con esa patente.'
-        : err.message;
-      setError(msg);
+      setError(vehicleMutationErrorMessage(err));
     },
   });
 
@@ -440,10 +437,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
       void navigate({ to: '/app/vehiculos' });
     },
     onError: (err: Error) => {
-      const msg = err.message.includes('plate_duplicate')
-        ? 'Ya existe un vehículo con esa patente.'
-        : err.message;
-      setError(msg);
+      setError(vehicleMutationErrorMessage(err));
     },
   });
 
@@ -908,6 +902,142 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
   };
 }
 
+/**
+ * Rangos numéricos del form, espejo de `createBodySchema` en
+ * `apps/api/src/routes/vehiculos.ts`. El form declara `noValidate`, así que
+ * los attributes HTML5 `min`/`max`/`required` de los inputs NO bloquean el
+ * submit: esta tabla es la validación real, corre en `submit()` con copy en
+ * español por campo. Si el server endurece un rango antes de actualizar esta
+ * tabla, el fallback de `vehicleServerValidationMessage` traduce ese 400 a
+ * un banner que nombra el campo (defense in depth, no reemplazo).
+ */
+type NumericFieldName =
+  | 'capacity_kg'
+  | 'capacity_m3'
+  | 'year'
+  | 'curb_weight_kg'
+  | 'consumption_l_per_100km_baseline';
+
+const NUMERIC_FIELD_RULES: Record<
+  NumericFieldName,
+  { min: number; max: number; entero: boolean; requiredMessage?: string }
+> = {
+  capacity_kg: {
+    min: 1,
+    max: 100_000,
+    entero: true,
+    requiredMessage: 'Ingresa la capacidad de carga',
+  },
+  capacity_m3: { min: 1, max: 500, entero: true },
+  year: { min: 1980, max: 2100, entero: true },
+  curb_weight_kg: { min: 1, max: 50_000, entero: true },
+  consumption_l_per_100km_baseline: { min: 0.01, max: 99.99, entero: false },
+};
+
+function numericFieldError(
+  rule: (typeof NUMERIC_FIELD_RULES)[NumericFieldName],
+  raw: string,
+): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return rule.requiredMessage ?? null;
+  }
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) {
+    // Inalcanzable vía inputs type=number (la sanitización WHATWG vacía a ''
+    // todo string cuyo parse no dé un finito — jsdom y browsers reales por
+    // igual), pero sin esta guardia un caller que pase strings crudos dejaría
+    // colar NaN: NaN < min y NaN > max son ambos false y "pasaría" el rango.
+    return 'Número inválido';
+  }
+  if (rule.entero && !Number.isInteger(value)) {
+    return 'Debe ser un número entero';
+  }
+  if (value < rule.min || value > rule.max) {
+    // `es-CL` para separador de miles (100.000) y coma decimal (99,99).
+    return `Debe estar entre ${rule.min.toLocaleString('es-CL')} y ${rule.max.toLocaleString('es-CL')}`;
+  }
+  return null;
+}
+
+/**
+ * Labels en español por campo del body del API — para nombrar campos en el
+ * banner cuando el server responde un 400 de validación.
+ */
+const API_FIELD_LABELS: Record<string, string> = {
+  plate: 'Patente',
+  vehicle_type: 'Tipo de vehículo',
+  unit_category: 'Categoría de unidad',
+  unit_type: 'Tipo de unidad',
+  body_type: 'Tipo de carrocería',
+  capacity_kg: 'Capacidad (kg)',
+  capacity_m3: 'Capacidad (m³)',
+  year: 'Año',
+  brand: 'Marca',
+  model: 'Modelo',
+  fuel_type: 'Combustible',
+  curb_weight_kg: 'Peso vacío (kg)',
+  consumption_l_per_100km_baseline: 'Consumo base (L / 100 km)',
+  vehicle_status: 'Estado',
+};
+
+/**
+ * Shape 400 de `zValidator('json', …)` sin hook custom (default de
+ * `@hono/zod-validator`): `c.json({ success: false, error: <ZodError> }, 400)`
+ * donde `ZodError` serializa como `{ issues: [{ path, … }], name }`. Mismo
+ * contrato verificado empíricamente en `solicitar-acceso.tsx` — si aparece
+ * un tercer consumidor, extraer a `lib/` compartida.
+ */
+const zValidatorErrorPayloadSchema = z.object({
+  success: z.literal(false),
+  error: z.object({
+    issues: z.array(z.object({ path: z.array(z.union([z.string(), z.number()])) })),
+  }),
+});
+
+/**
+ * Mensaje legible para un 400 de validación del server, nombrando los campos
+ * afectados. `null` cuando `err` no es un 400 con shape zValidator o ningún
+ * `path` mapea a un campo conocido — el caller conserva su mensaje original
+ * (no se inventa contenido sobre un shape desconocido).
+ */
+function vehicleServerValidationMessage(err: Error): string | null {
+  if (!(err instanceof ApiError) || err.status !== 400) {
+    return null;
+  }
+  const parsed = zValidatorErrorPayloadSchema.safeParse(err.details);
+  if (!parsed.success) {
+    return null;
+  }
+  const labels = [
+    ...new Set(
+      parsed.data.error.issues
+        .map((issue) => API_FIELD_LABELS[String(issue.path[0] ?? '')])
+        .filter((label): label is string => label !== undefined),
+    ),
+  ];
+  if (labels.length === 0) {
+    return null;
+  }
+  return `Revisa los campos: ${labels.join(', ')} — el servidor rechazó sus valores.`;
+}
+
+/**
+ * Copy del banner de error para las mutations create/update. Prioridad:
+ * patente duplicada (409, por `code` — el `message` del ApiError es el
+ * técnico 'plate_already_exists') → 400 de validación con campos conocidos
+ * → mensaje del error tal cual.
+ */
+function vehicleMutationErrorMessage(err: Error): string {
+  if (
+    (err instanceof ApiError && err.code === 'plate_duplicate') ||
+    err.message.includes('plate_duplicate')
+  ) {
+    return 'Ya existe un vehículo con esa patente.';
+  }
+  return vehicleServerValidationMessage(err) ?? err.message;
+}
+
 function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
   // El servidor también normaliza vía chileanPlateSchema, pero normalizar
   // del lado del cliente nos da consistencia visual: si el usuario ingresa
@@ -977,16 +1107,31 @@ function VehicleForm({
   const vehicleStatus = watch('vehicle_status');
 
   /**
-   * Validación cliente: la patente es la única regla compleja.
-   * Capacidad, tipo, etc. quedan cubiertos por los attributes HTML5
-   * (`required`, `min`, `max`). Si el servidor encuentra otros issues
-   * vía Zod, los muestra el mutation handler de la mutación (`error` prop).
+   * Validación cliente completa: patente (schema compartido) + rangos
+   * numéricos (`NUMERIC_FIELD_RULES`, espejo del `createBodySchema` del
+   * API). OJO: el form declara `noValidate`, así que los attributes HTML5
+   * (`required`, `min`, `max`) de los inputs NO bloquean el submit — son
+   * solo afford visual de los steppers. Sin esta validación, un valor fuera
+   * de rango viaja al server y vuelve como 400 opaco (incidente prod
+   * 2026-08-15, capacity_m3=10000). Se reportan TODOS los campos inválidos
+   * de una vez; `useScrollToFirstError` lleva el foco al primero.
    */
   function submit(values: VehicleFormValues) {
+    let hasError = false;
     const plateResult = chileanPlateSchema.safeParse(values.plate);
     if (!plateResult.success) {
       const message = plateResult.error.issues[0]?.message ?? 'Patente inválida';
       setError('plate', { type: 'manual', message });
+      hasError = true;
+    }
+    for (const field of Object.keys(NUMERIC_FIELD_RULES) as NumericFieldName[]) {
+      const message = numericFieldError(NUMERIC_FIELD_RULES[field], values[field]);
+      if (message) {
+        setError(field, { type: 'manual', message });
+        hasError = true;
+      }
+    }
+    if (hasError) {
       return;
     }
     onSubmit(values);
@@ -1042,6 +1187,7 @@ function VehicleForm({
           <FormField
             label="Capacidad (kg)"
             required
+            error={errors.capacity_kg?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -1057,6 +1203,7 @@ function VehicleForm({
 
           <FormField
             label="Capacidad (m³)"
+            error={errors.capacity_m3?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -1072,6 +1219,7 @@ function VehicleForm({
 
           <FormField
             label="Año"
+            error={errors.year?.message}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -1140,6 +1288,7 @@ function VehicleForm({
           <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField
               label="Peso vacío (kg)"
+              error={errors.curb_weight_kg?.message}
               render={({ id, describedBy }) => (
                 <input
                   id={id}
@@ -1154,6 +1303,7 @@ function VehicleForm({
             />
             <FormField
               label="Consumo base (L / 100 km)"
+              error={errors.consumption_l_per_100km_baseline?.message}
               render={({ id, describedBy }) => (
                 <input
                   id={id}
