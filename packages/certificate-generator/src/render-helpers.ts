@@ -11,6 +11,31 @@ import type { DatosMetricasCertificado } from './tipos.js';
 export type NivelCertificacion = NonNullable<DatosMetricasCertificado['certificationLevel']>;
 
 /**
+ * Geometría del header del PDF (banda superior). Única fuente de verdad para
+ * `generar-pdf-base.ts` y para `test/header-layout.test.ts`, que verifica con
+ * el font real que el título nunca pise la marca.
+ *
+ * Todo en puntos PDF (1/72 in), página A4 (595,28 × 841,89).
+ */
+export const HEADER_LAYOUT = {
+  /** x del borde izquierdo del título y del subtítulo. */
+  tituloX: 40,
+  /** Texto de la marca dibujado a la derecha del header. */
+  marcaTexto: 'Booster Chile SpA',
+  /** Tamaño del texto de la marca (HelveticaBold). */
+  marcaTamano: 12,
+  /** La marca empieza en `anchoPagina − marcaOffsetDerecha`. */
+  marcaOffsetDerecha: 180,
+  /** Espacio libre mínimo exigido entre el fin del título y el inicio de la marca. */
+  separacionMinimaTituloMarca: 12,
+} as const;
+
+/** x donde empieza la marca del header para una página de `anchoPagina` pt. */
+export function posicionXMarcaHeader(anchoPagina: number): number {
+  return anchoPagina - HEADER_LAYOUT.marcaOffsetDerecha;
+}
+
+/**
  * Título principal del header del PDF según el nivel de certificación.
  *
  * - `primario_verificable` → "CERTIFICADO" (cert auditable bajo SBTi/CDP)
@@ -37,10 +62,14 @@ export function subtituloHeader(nivel: NivelCertificacion): string {
 /**
  * Tamaño del texto del título. Reducido en modo secundario porque la
  * cadena es más larga ("REPORTE ESTIMATIVO..." vs "CERTIFICADO...") y
- * cabe peor en el ancho del header con el font size original.
+ * debe caber a la izquierda de la marca "Booster Chile SpA" en el header.
+ *
+ * Medido con HelveticaBold en A4: a 16 pt el título secundario terminaba en
+ * x≈426,8 y pisaba la marca (x=415,28); a 14 pt termina en x≈378,5 y deja
+ * ~37 pt libres. El invariante lo vigila `test/header-layout.test.ts`.
  */
 export function tamanoTitulo(nivel: NivelCertificacion): number {
-  return nivel === 'primario_verificable' ? 18 : 16;
+  return nivel === 'primario_verificable' ? 18 : 14;
 }
 
 /**
