@@ -20,10 +20,12 @@ import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   DISCLAIMER_SECUNDARIO_LINEAS,
+  HEADER_LAYOUT,
   declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
   muestraDisclaimerSecundario,
+  posicionXMarcaHeader,
   subtituloHeader,
   tamanoTitulo,
   tituloHeader,
@@ -91,8 +93,11 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
     color: colorBackground,
   });
 
+  // Título y marca comparten la fila (y = height − 45). La geometría vive en
+  // HEADER_LAYOUT; `test/header-layout.test.ts` mide con el font real que el
+  // título de cada nivel termina antes de la marca.
   page.drawText(tituloHeader(nivelCert), {
-    x: 40,
+    x: HEADER_LAYOUT.tituloX,
     y: height - 45,
     size: tamanoTitulo(nivelCert),
     font: fontBold,
@@ -100,17 +105,17 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
   });
 
   page.drawText(subtituloHeader(nivelCert), {
-    x: 40,
+    x: HEADER_LAYOUT.tituloX,
     y: height - 70,
     size: 10,
     font: fontRegular,
     color: rgb(1, 1, 1),
   });
 
-  page.drawText('Booster Chile SpA', {
-    x: width - 180,
+  page.drawText(HEADER_LAYOUT.marcaTexto, {
+    x: posicionXMarcaHeader(width),
     y: height - 45,
-    size: 12,
+    size: HEADER_LAYOUT.marcaTamano,
     font: fontBold,
     color: rgb(1, 1, 1),
   });
