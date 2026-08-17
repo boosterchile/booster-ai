@@ -51,3 +51,9 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 ---
 *Contrato adoptado 2026-04-23 · reescrito 2026-07-06 ([ADR-072](docs/adr/072-disciplina-inline-plugins-como-conocimiento-opcional.md): disciplina inline; supersede ADR-049/060 en responsabilidades). Historia de la capa de plugins: ADR-049/050/060/064 y `docs/plugins/`.*
+
+## Frentes vivos
+
+Antes de proponer o iniciar trabajo, leer `docs/frentes-vivos.md`. Solo se trabaja
+sobre los tres slots vivos. Si la tarea pedida no pertenece a ninguno, decirlo y
+detenerse.
