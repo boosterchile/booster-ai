@@ -609,6 +609,9 @@ export function createServer(opts: CreateServerOptions): Hono {
       // X-Goog-User-Project. Sin él, GET /assignments/:id/eco-route
       // devuelve polyline_encoded=null con status='no_routes_api_key'.
       ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
+      // T8/T9 (medicion-huella-segmento): radio del geofence del origen que
+      // POST /:id/driver-position devuelve evaluado a la PWA del conductor.
+      geofenceRadiusM: config.GEOFENCE_RADIUS_M,
     });
     const chatRouter = createChatRoutes({
       db: opts.db,

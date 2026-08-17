@@ -70,7 +70,13 @@ function makeDb(queues: DbQueues = {}) {
     return chain;
   };
 
-  return { select: vi.fn(() => buildSelectChain()) };
+  const insertValues = vi.fn(async () => undefined);
+  return {
+    select: vi.fn(() => buildSelectChain()),
+    insert: vi.fn(() => ({ values: insertValues })),
+    /** Spy sobre `.values(...)` del insert (driver-position persiste la posición). */
+    insertValues,
+  };
 }
 
 const ASSIGNMENT_ID = 'assign-uuid-1';
@@ -125,6 +131,8 @@ async function buildApp(opts: { db: unknown; certConfig?: unknown }) {
       db: opts.db as never,
       logger: noopLogger,
       certConfig: opts.certConfig as never,
+      // T9: radio del geofence del origen (prod: config.GEOFENCE_RADIUS_M).
+      geofenceRadiusM: 150,
     }),
   );
   return app;
@@ -741,5 +749,165 @@ describe('PATCH /assignments/:id/confirmar-recogida', () => {
     expect((await res.json()) as { current_status: string }).toEqual(
       expect.objectContaining({ code: 'invalid_status', current_status: 'entregado' }),
     );
+  });
+
+  // T9 (medicion-huella-segmento): body opcional `{ picked_up_at }` = instante
+  // del cruce del geofence. Zod valida la forma acá; las cotas (ni futuro ni
+  // anterior a la aceptación) las aplica el service.
+  describe('body opcional picked_up_at (T9)', () => {
+    it('picked_up_at ISO válido → el service lo recibe como Date', async () => {
+      const cruce = '2026-08-02T09:30:00.000Z';
+      vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+        ok: true,
+        alreadyPickedUp: false,
+        pickedUpAt: new Date(cruce),
+        tripId: TRIP_ID,
+      });
+      const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+      const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+        method: 'PATCH',
+        headers: { 'x-test-userctx': ctxConRol('conductor'), 'content-type': 'application/json' },
+        body: JSON.stringify({ picked_up_at: cruce }),
+      });
+      expect(res.status).toBe(200);
+      expect(vi.mocked(confirmarRecogidaViaje).mock.calls[0]?.[0].pickedUpAt).toEqual(
+        new Date(cruce),
+      );
+      expect((await res.json()) as { picked_up_at: string }).toEqual(
+        expect.objectContaining({ picked_up_at: cruce }),
+      );
+    });
+
+    it('sin body → el service NO recibe pickedUpAt (tap manual = now en el servidor)', async () => {
+      vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+        ok: true,
+        alreadyPickedUp: false,
+        pickedUpAt: new Date(),
+        tripId: TRIP_ID,
+      });
+      const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+      const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+        method: 'PATCH',
+        headers: { 'x-test-userctx': ctxConRol('conductor') },
+      });
+      expect(res.status).toBe(200);
+      expect(vi.mocked(confirmarRecogidaViaje).mock.calls[0]?.[0].pickedUpAt).toBeUndefined();
+    });
+
+    it('picked_up_at que no es ISO datetime → 400 y el service no se llama', async () => {
+      const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+      const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+        method: 'PATCH',
+        headers: { 'x-test-userctx': ctxConRol('conductor'), 'content-type': 'application/json' },
+        body: JSON.stringify({ picked_up_at: 'ayer a las nueve' }),
+      });
+      expect(res.status).toBe(400);
+      expect(confirmarRecogidaViaje).not.toHaveBeenCalled();
+    });
+
+    it('service rechaza el instante (fuera de cotas) → 400 invalid_picked_up_at', async () => {
+      vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+        ok: false,
+        code: 'invalid_picked_up_at',
+      });
+      const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+      const res = await app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+        method: 'PATCH',
+        headers: { 'x-test-userctx': ctxConRol('conductor'), 'content-type': 'application/json' },
+        body: JSON.stringify({ picked_up_at: '2099-01-01T00:00:00.000Z' }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()) as { code: string }).toEqual(
+        expect.objectContaining({ code: 'invalid_picked_up_at' }),
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /assignments/:id/driver-position — T9 (medicion-huella-segmento): la
+// respuesta trae el veredicto del geofence del origen evaluado en servidor
+// (`evaluarGeofenceOrigen`, T8) para que la PWA sugiera la recogida.
+// ---------------------------------------------------------------------------
+
+describe('POST /assignments/:id/driver-position — geofence del origen', () => {
+  const DRIVER_CTX = JSON.stringify({ user: { id: USER_ID } });
+  /** Origen geocodificado (Av. Apoquindo, Las Condes) tal como lo persiste T4: numeric → string. */
+  const ORIGEN = { originLatitude: '-33.4188917', originLongitude: '-70.6045211' };
+
+  function assignmentRow(origen: {
+    originLatitude: string | null;
+    originLongitude: string | null;
+  }) {
+    return {
+      id: ASSIGNMENT_ID,
+      driverUserId: USER_ID,
+      vehicleId: 'veh-uuid',
+      status: 'asignado',
+      ...origen,
+    };
+  }
+
+  function bodyAt(lat: number, lng: number) {
+    return JSON.stringify({
+      timestamp_device: '2026-08-02T09:30:00.000Z',
+      latitude: lat,
+      longitude: lng,
+      accuracy_m: 8,
+    });
+  }
+
+  it('posición dentro del radio → 200 con geofence.estado=dentro y distancia_m', async () => {
+    const db = makeDb({ selects: [[assignmentRow(ORIGEN)]] });
+    const app = await buildApp({ db });
+    // ~50 m al norte del origen.
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/driver-position`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': DRIVER_CTX, 'content-type': 'application/json' },
+      body: bodyAt(-33.4188917 + 50 / 111_195, -70.6045211),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      geofence: { estado: string; distancia_m: number | null };
+    };
+    expect(json.ok).toBe(true);
+    expect(json.geofence.estado).toBe('dentro');
+    expect(json.geofence.distancia_m).toBeCloseTo(50, 0);
+    // La posición se sigue persistiendo igual que antes.
+    expect(db.insertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('posición a ~500 m → geofence.estado=fuera', async () => {
+    const app = await buildApp({ db: makeDb({ selects: [[assignmentRow(ORIGEN)]] }) });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/driver-position`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': DRIVER_CTX, 'content-type': 'application/json' },
+      body: bodyAt(-33.4188917 + 500 / 111_195, -70.6045211),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { geofence: { estado: string; distancia_m: number | null } };
+    expect(json.geofence.estado).toBe('fuera');
+    expect(json.geofence.distancia_m).toBeCloseTo(500, -1);
+  });
+
+  it('viaje sin origen geocodificado (NULL) → 200 con geofence.estado=sin_origen, nunca error', async () => {
+    const db = makeDb({
+      selects: [[assignmentRow({ originLatitude: null, originLongitude: null })]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/driver-position`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': DRIVER_CTX, 'content-type': 'application/json' },
+      body: bodyAt(-33.4188917, -70.6045211),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      geofence: { estado: string; distancia_m: number | null };
+    };
+    expect(json.ok).toBe(true);
+    expect(json.geofence).toEqual({ estado: 'sin_origen', distancia_m: null });
+    expect(db.insertValues).toHaveBeenCalledTimes(1);
   });
 });

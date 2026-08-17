@@ -83,11 +83,13 @@ vi.mock('../services/wake-word-preference.js', () => ({
 
 const reporterStartSpy = vi.fn();
 const reporterStopSpy = vi.fn();
+type GeofenceLectura = import('../hooks/use-driver-position-reporter.js').GeofenceLectura;
 let reporterState = {
   isWatching: false,
   lastPosition: null as { latitude: number; longitude: number; timestamp: string } | null,
   lastError: null as string | null,
   pointsSent: 0,
+  lastGeofence: null as GeofenceLectura | null,
   start: reporterStartSpy,
   stop: reporterStopSpy,
 };
@@ -157,6 +159,7 @@ beforeEach(() => {
     lastPosition: null,
     lastError: null,
     pointsSent: 0,
+    lastGeofence: null,
     start: reporterStartSpy,
     stop: reporterStopSpy,
   };
@@ -481,6 +484,59 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
         `/assignments/${sampleAssignment.id}/confirmar-entrega`,
+      ),
+    );
+  });
+
+  // T9 (medicion-huella-segmento): disparo híbrido. El geofence del origen
+  // (evaluado en el API con cada posición reportada) SUGIERE la recogida; el
+  // conductor confirma con un tap y viaja `picked_up_at` = instante del cruce.
+  it('dentro del geofence del origen → sugiere la recogida y el tap manda picked_up_at del cruce', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const cruce = '2026-08-02T09:30:00.000Z';
+    reporterState = {
+      ...reporterState,
+      isWatching: true,
+      pointsSent: 3,
+      lastGeofence: { estado: 'dentro', distanciaM: 40, at: cruce },
+    };
+
+    render(<ConductorDashboardRoute />);
+
+    const sugerencia = await screen.findByTestId('sugerencia-recogida');
+    expect(sugerencia.textContent ?? '').toMatch(/punto de recogida/i);
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+
+    await waitFor(() =>
+      expect(apiPatchSpy).toHaveBeenCalledWith(
+        `/assignments/${sampleAssignment.id}/confirmar-recogida`,
+        { picked_up_at: cruce },
+      ),
+    );
+  });
+
+  it('origen sin geocodificar (sin_origen) → no sugiere, pero el tap manual sigue disponible sin body', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    reporterState = {
+      ...reporterState,
+      isWatching: true,
+      lastGeofence: { estado: 'sin_origen', distanciaM: null, at: '2026-08-02T09:30:00.000Z' },
+    };
+
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+
+    expect(screen.queryByTestId('sugerencia-recogida')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    await waitFor(() =>
+      expect(apiPatchSpy).toHaveBeenCalledWith(
+        `/assignments/${sampleAssignment.id}/confirmar-recogida`,
       ),
     );
   });

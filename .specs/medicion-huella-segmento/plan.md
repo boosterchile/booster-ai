@@ -144,10 +144,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 2 (origen lat/lng).
 **Pasos:**
-- [ ] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
-- [ ] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`).
-- [ ] Implementar la función pura.
-- [ ] Verde + commit `feat(api): geofence de origen + GEOFENCE_RADIUS_M`.
+- [x] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
+- [x] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`). *(Nota de ejecución: `packages/config/src/env.ts` no existe; la variable vive en `apps/api/src/config.ts`, donde se declaran las env vars propias del API con este mismo patrón.)*
+- [x] Implementar la función pura.
+- [x] Verde + commit `feat(carbon): detector de geofence del origen` (mensaje fijado por el PO al ejecutar).
 **Criterio de hecho:** dentro/fuera/borde verdes; radio leído de config.
 
 ### Task 9 — Disparo híbrido en la PWA del conductor
@@ -156,9 +156,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** Tests de componente (no critical-domain backend, pero con cobertura).
 **Depende de:** Task 7, Task 8.
 **Pasos:**
-- [ ] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
-- [ ] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición).
-- [ ] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
+- [x] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
+- [x] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición). *(Nota de ejecución — dos contratos del API que el plan no fijaba, aprobados por el PO el 2026-08-17: (a) `POST /assignments/:id/driver-position` responde `geofence: { estado, distancia_m }` evaluado en servidor con `evaluarGeofenceOrigen` (T8) y `config.GEOFENCE_RADIUS_M`; (b) `PATCH /assignments/:id/confirmar-recogida` acepta body opcional `{ picked_up_at }` (Zod) —completa el paso de T7 que no se había implementado—, acotado en `confirmarRecogidaViaje`: ≤ now + 2 min y ≥ `assignments.acceptedAt`, si no `400 invalid_picked_up_at`; el evento registra `picked_up_at_source: cliente|servidor`.)*
+- [x] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
 **Criterio de hecho:** sugerencia aparece con geofence; fallback manual; `pickedUpAt` correcto en ambos caminos.
 
 > **=== GATE: F1 COMPLETO Y TESTEADO (Tasks 1–9). Recién aquí arrancan los tests de F2 sobre vehículos browser. ===**
