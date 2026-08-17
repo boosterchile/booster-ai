@@ -109,9 +109,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (máquina de estados).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
-- [ ] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
-- [ ] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
+- [x] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
+- [x] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
+- [x] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
 **Criterio de hecho:** guard derivado de la tabla (no lista paralela); 3 casos verdes.
 
 ### Task 6 — Servicio `confirmar-recogida-viaje.ts` (handler de recogida)
