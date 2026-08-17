@@ -169,9 +169,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ.
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): vehículo con `teltonika_imei` → lee de `telemetria_puntos` (por vehicle_id) en `[desde, hasta]`; vehículo con `teltonika_imei_espejo` → `telemetria_puntos` por `imei`; vehículo sin device → `posiciones_movil_conductor` por vehicle_id. Cada vehículo usa UNA sola fuente (sin dedup entre streams).
-- [ ] Implementar `resolverPosicionesSegmento({ db, vehicle, desde, hasta }): Promise<PingPoint[]>` ordenado ascendente por timestamp.
-- [ ] Verde + commit `feat(api): enrutamiento de posición por tipo de vehículo`.
+- [x] Test (rojo): vehículo con `teltonika_imei` → lee de `telemetria_puntos` (por vehicle_id) en `[desde, hasta]`; vehículo con `teltonika_imei_espejo` → `telemetria_puntos` por `imei`; vehículo sin device → `posiciones_movil_conductor` por vehicle_id. Cada vehículo usa UNA sola fuente (sin dedup entre streams).
+- [x] Implementar `resolverPosicionesSegmento({ db, vehicle, desde, hasta }): Promise<PingPoint[]>` ordenado ascendente por timestamp. *(Nota de ejecución: además se exporta el clasificador puro `fuentePosicionSegmento(vehicle)` → `teltonika_gps` | `movil_gps`, para que T11/T12 persistan `fuente_dato_ruta` según [ADR-077](../../docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md) sin re-derivar la regla. La decisión GLEC pre-T10 de `frentes-vivos.md` es ADR-077.)*
+- [x] Verde + commit `feat(api): enrutamiento de posición por tipo de vehículo`.
 **Criterio de hecho:** 3 ramas de routing verdes; salida ordenada; reusa el criterio de partición existente.
 
 ### Task 11 — Distancia real sobre el segmento `[pickedUpAt, deliveredAt]`
