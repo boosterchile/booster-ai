@@ -49,7 +49,7 @@ const EMPTY_VALUES: LoginFormValues = { name: '', email: '', password: '' };
 export function LoginRoute() {
   const { user, loading } = useAuth();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: string; redirect?: string };
+  const search = (useSearch({ strict: false }) ?? {}) as { legacy?: unknown; redirect?: string };
   const navigate = useNavigate();
   const postLoginTarget = safeRedirectTarget(search.redirect) ?? '/app';
   const [mode, setMode] = useState<Mode>('sign-in');
@@ -58,7 +58,7 @@ export function LoginRoute() {
   // Si el flag está ON y el user NO forzó legacy, ruta al flow universal.
   // Re-evaluamos esto tras `user`/loading checks debajo para mantener la
   // semántica del legacy (Navigate to /app si ya logueado).
-  const useUniversalFlow = flags.auth_universal_v1_activated && search.legacy !== '1';
+  const useUniversalFlow = flags.auth_universal_v1_activated && !isLegacyForced(search.legacy);
 
   const {
     register,
@@ -418,6 +418,18 @@ export function LoginRoute() {
       </main>
     </div>
   );
+}
+
+/**
+ * `?legacy=1` fuerza el flujo legacy (correo + Google) aunque el flag
+ * universal esté ON. TanStack Router parsea los search params con semántica
+ * JSON, así que `?legacy=1` llega como el NÚMERO `1` (y `?legacy=true` como
+ * boolean) — comparar solo contra el string `'1'` dejaba el escape hatch
+ * muerto y convertía "Usar método anterior" (needs-rotation de LoginUniversal)
+ * en un callejón sin salida. Se aceptan `1`, `'1'` y `true`; nada más.
+ */
+function isLegacyForced(raw: unknown): boolean {
+  return raw === 1 || raw === '1' || raw === true;
 }
 
 /**

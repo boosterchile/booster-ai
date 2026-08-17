@@ -76,6 +76,14 @@ vi.mock('../services/wake-word-preference.js', () => ({
   setWakeWordEnabled: (v: boolean) => setWakeWordEnabledMock(v),
 }));
 
+// "Salir" del conductor: mismo `signOutUser` que usa el Sidebar del operador.
+// ProtectedRoute redirige a /login cuando el user queda null, así que el
+// botón solo necesita cerrar sesión (no navegar).
+const signOutUserSpy = vi.fn(() => Promise.resolve());
+vi.mock('../hooks/use-auth.js', () => ({
+  signOutUser: () => signOutUserSpy(),
+}));
+
 const { ConductorConfiguracionRoute } = await import('./conductor-configuracion.js');
 
 function makeMe(): MeOnboarded {
@@ -295,5 +303,16 @@ describe('ConductorConfiguracionRoute', () => {
     expect(screen.getByText(/detección de vehículo parado/i)).toBeInTheDocument();
     expect(screen.getByText(/doble confirmación/i)).toBeInTheDocument();
     expect(screen.getByText(/Ley 18\.290/i)).toBeInTheDocument();
+  });
+
+  // El shell del conductor no tenía ninguna forma de cerrar sesión (solo el
+  // Sidebar del operador tiene "Salir"): un conductor logueado no podía
+  // cambiar de cuenta ni salir desde la app.
+  it('ofrece "Salir" y al tocarlo cierra la sesión con signOutUser', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    const salir = screen.getByRole('button', { name: /^Salir$/ });
+    fireEvent.click(salir);
+    await waitFor(() => expect(signOutUserSpy).toHaveBeenCalledTimes(1));
   });
 });
