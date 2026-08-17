@@ -38,6 +38,13 @@ vi.mock('../../src/services/matching.js', () => {
   };
 });
 
+// Task 4 (medicion-huella-segmento): el wire de geocodificación del origen se
+// mockea a nivel módulo; el contrato del service (degradar, nunca lanzar) se
+// prueba en src/services/geocodificar-origen.test.ts. Acá solo el wire.
+vi.mock('../../src/services/geocodificar-origen.js', () => ({
+  geocodificarOrigen: vi.fn(),
+}));
+
 const noop = (): undefined => undefined;
 const noopLogger = {
   trace: noop,
@@ -129,6 +136,7 @@ function buildUserContext(opts: UserContextOpts = {}): {
 async function buildAppWith(opts: {
   db: Db;
   userContext: ReturnType<typeof buildUserContext> | null;
+  routesProjectId?: string;
 }) {
   const { createTripRequestsV2Routes } = await import('../../src/routes/trip-requests-v2.js');
   const app = new Hono();
@@ -138,7 +146,14 @@ async function buildAppWith(opts: {
     }
     await next();
   });
-  app.route('/trip-requests-v2', createTripRequestsV2Routes({ db: opts.db, logger: noopLogger }));
+  app.route(
+    '/trip-requests-v2',
+    createTripRequestsV2Routes({
+      db: opts.db,
+      logger: noopLogger,
+      ...(opts.routesProjectId ? { routesProjectId: opts.routesProjectId } : {}),
+    }),
+  );
   return app;
 }
 
@@ -329,6 +344,66 @@ describe('POST /trip-requests-v2', () => {
     expect(body.trip_request.status).toBe('ofertas_enviadas');
     expect(body.matching.offers_created).toBe(2);
     expect(body.matching.offer_ids).toEqual(['offer-1', 'offer-2']);
+  });
+
+  describe('wire de geocodificación del origen (Task 4 medicion-huella-segmento)', () => {
+    async function postTripWith(routesProjectId?: string) {
+      const matching = await import('../../src/services/matching.js');
+      vi.mocked(matching.runMatching).mockResolvedValueOnce({
+        tripId: 'trip-geo',
+        candidatesEvaluated: 0,
+        offersCreated: 0,
+        offers: [],
+      });
+      const app = await buildAppWith({
+        db: makeStubDb({ id: 'trip-geo', trackingCode: 'BOO-GEO123' }),
+        userContext: buildUserContext(),
+        ...(routesProjectId ? { routesProjectId } : {}),
+      });
+      return app.request('/trip-requests-v2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(validBody),
+      });
+    }
+
+    it('con routesProjectId: tras el INSERT geocodifica el origen del trip recién creado y responde 201', async () => {
+      const geo = await import('../../src/services/geocodificar-origen.js');
+      vi.mocked(geo.geocodificarOrigen).mockResolvedValueOnce({ lat: -33.4, lng: -70.6 });
+
+      const res = await postTripWith('booster-ai-494222');
+
+      expect(res.status).toBe(201);
+      expect(geo.geocodificarOrigen).toHaveBeenCalledTimes(1);
+      expect(geo.geocodificarOrigen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tripId: 'trip-geo',
+          originAddress: validBody.origin.address_raw,
+          destinationAddress: validBody.destination.address_raw,
+          routesProjectId: 'booster-ai-494222',
+        }),
+      );
+    });
+
+    it('sin routesProjectId: no intenta geocodificar (dev sin GCP) y responde 201', async () => {
+      const geo = await import('../../src/services/geocodificar-origen.js');
+
+      const res = await postTripWith();
+
+      expect(res.status).toBe(201);
+      expect(geo.geocodificarOrigen).not.toHaveBeenCalled();
+    });
+
+    it('si la geocodificación revienta inesperadamente, el viaje se crea igual (201) — nunca bloquea', async () => {
+      const geo = await import('../../src/services/geocodificar-origen.js');
+      vi.mocked(geo.geocodificarOrigen).mockRejectedValueOnce(new Error('kaboom'));
+
+      const res = await postTripWith('booster-ai-494222');
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { trip_request: { id: string } };
+      expect(body.trip_request.id).toBe('trip-geo');
+    });
   });
 
   it('matching sin candidatos: 201 con status=expirado y matching offers vacío', async () => {

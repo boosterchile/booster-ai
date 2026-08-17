@@ -97,10 +97,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (tests required; degradación es crítica).
 **Depende de:** Task 2.
 **Pasos:**
-- [ ] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
-- [ ] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
-- [ ] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
-- [ ] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
+- [x] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
+- [x] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
+- [x] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
+- [x] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
 **Criterio de hecho:** trip nuevo tiene lat/lng del origen; fallo de geocoding no bloquea creación y emite métrica.
 
 ### Task 5 — trip-state-machine: guard de recogida
