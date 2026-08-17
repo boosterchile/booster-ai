@@ -144,10 +144,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 2 (origen lat/lng).
 **Pasos:**
-- [ ] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
-- [ ] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`).
-- [ ] Implementar la función pura.
-- [ ] Verde + commit `feat(api): geofence de origen + GEOFENCE_RADIUS_M`.
+- [x] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
+- [x] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`). *(Nota de ejecución: `packages/config/src/env.ts` no existe; la variable vive en `apps/api/src/config.ts`, donde se declaran las env vars propias del API con este mismo patrón.)*
+- [x] Implementar la función pura.
+- [x] Verde + commit `feat(carbon): detector de geofence del origen` (mensaje fijado por el PO al ejecutar).
 **Criterio de hecho:** dentro/fuera/borde verdes; radio leído de config.
 
 ### Task 9 — Disparo híbrido en la PWA del conductor
