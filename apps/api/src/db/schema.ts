@@ -1184,6 +1184,14 @@ export const trips = pgTable(
     originAddressRaw: text('origen_direccion_raw').notNull(),
     originRegionCode: varchar('origen_codigo_region', { length: 4 }),
     originComunaCode: varchar('origen_codigo_comuna', { length: 10 }),
+    /**
+     * Lat/lng del origen geocodificado (Task 2, plan medicion-huella-segmento):
+     * ancla del geofence de recogida. NULL = sin geocodificar (viaje previo a
+     * la migración, o geocodificación degradada en T4) — nunca 0/0. Misma
+     * precisión que `posiciones_movil_conductor`. Naming inglés total (PO).
+     */
+    originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 }),
+    originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 }),
     destinationAddressRaw: text('destino_direccion_raw').notNull(),
     destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),
