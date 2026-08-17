@@ -79,7 +79,7 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 1.
 **Pasos:**
-- [ ] Test (rojo), 7 casos:
+- [x] Test (rojo), 7 casos:
   - `{ tripOverride: true, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `true` (override gana)
   - `{ tripOverride: false, generadorCarbonEnabled: true, transportistaCarbonEnabled: true }` → `false` (override gana)
   - `{ tripOverride: null, generadorCarbonEnabled: true, transportistaCarbonEnabled: false }` → `true` (OR: generador)
@@ -87,8 +87,8 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
   - `{ tripOverride: null, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `false`
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: true }` → `true` (generador null → false, OR transportista)
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: null }` → `false` (todo null → false)
-- [ ] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
-- [ ] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
+- [x] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
+- [x] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
 **Criterio de hecho:** 7 casos verdes; sin acceso a DB (pura); consignee excluido por diseño (no es empresa consultable); generador nullable manejado.
 
 ### Task 4 — Geocodificar y persistir el origen al crear el viaje
