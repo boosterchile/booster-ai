@@ -1,7 +1,7 @@
 # Frentes vivos y criterios de término
 
 **Ubicación sugerida en el repo:** `docs/frentes-vivos.md`
-**Estado verificado contra:** `main` @ `c4143b0` (2026-08-16)
+**Estado verificado contra:** `main` @ `623ee2b` (2026-08-16)
 **Autor de la verificación:** revisión sobre clon de `main`; los estados marcados ✅/❌ salen de existencia de archivo o de símbolo, no de inferencia.
 
 ---
@@ -35,21 +35,7 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 
 **Fuera de alcance (no se hace bajo este frente):** F3 (ETA bifásico), F4 (hitos consignee), alertas sobre señales, dashboards de huella, exportación a stakeholders ESG. Cualquiera de esos entra como frente nuevo y compite por slot.
 
-**Estado verificado de F1+F2** (`.specs/medicion-huella-segmento/plan.md`, 50 checkboxes, 0 marcados):
-
-| Tarea | Artefacto | Estado |
-|---|---|---|
-| T1 | columnas opt-in en `empresas` + `trips` | ✅ en `schema.ts` |
-| T2 | `trips.origin_latitude/longitude` | ❌ sin migración ni columna |
-| T3 | `services/resolver-opt-in-huella.ts` | ❌ |
-| T4 | `services/geocodificar-origen.ts` | ❌ |
-| T5 | guard `esConfirmableRecogida` | ❌ |
-| T6 | `services/confirmar-recogida-viaje.ts` | ✅ |
-| T7 | `PATCH /:id/confirmar-recogida` | ✅ `assignments.ts:437` |
-| T8 | `services/geofence-origen.ts` + `GEOFENCE_RADIUS_M` | ❌ |
-| T9 | disparo en `conductor.tsx` | ~ tap sí; sugerencia por geofence no (depende de T8) |
-| T10 | `services/posicion-segmento.ts` | ❌ — **este es el fallback sin FMC150** |
-| T11–13 | cobertura, huella real, wire post-entrega | archivos existen; modificaciones pendientes |
+**Estado de F1+F2:** la fuente es `.specs/medicion-huella-segmento/plan.md` (checkboxes). No se duplica aquí.
 
 **Orden de ejecución** (respeta la compuerta dura: F1 completo antes de F2):
 
@@ -60,7 +46,7 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 5. **F1 cerrado.** Recién entonces **T10**, el enrutamiento de fuente de posición: con Teltonika → `telemetria_puntos`; sin Teltonika → `posiciones_movil_conductor`. Sin merge de streams.
 6. **T11–13** — cobertura anclada al pickup real, umbral binario ~80%, degradación por peso ausente.
 
-**Decisión pendiente que hay que tomar antes de T10:** la huella calculada desde CAN sale de combustible real; la calculada desde posición del móvil sale de un modelo de estimación. No son el mismo producto. Definir por escrito qué nivel de certificación GLEC corresponde a cada fuente y cómo se rotula al cliente. Sin esta decisión, T10 produce un número cuya validez comercial no está definida.
+**Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primaroi. Requiere migración expand-only del enum `fuente_dato_ruta` antes de T11.
 
 ---
 
