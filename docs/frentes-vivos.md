@@ -46,7 +46,7 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 5. **F1 cerrado.** Recién entonces **T10**, el enrutamiento de fuente de posición: con Teltonika → `telemetria_puntos`; sin Teltonika → `posiciones_movil_conductor`. Sin merge de streams.
 6. **T11–13** — cobertura anclada al pickup real, umbral binario ~80%, degradación por peso ausente.
 
-**Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primaroi. Requiere migración expand-only del enum `fuente_dato_ruta` antes de T11.
+**Decisión de certificación por fuente:** resuelta en ADR-077. `movil_gps` es fuente de ruta de primera clase; solo CAN + Teltonika ≥95% da `primario_verificable`; la posición del móvil nunca da primario. Requiere migración expand-only del enum `fuente_dato_ruta` antes de T11.
 
 ---
 
