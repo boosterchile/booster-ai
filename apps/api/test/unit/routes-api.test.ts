@@ -166,6 +166,7 @@ describe('computeRoutes — response parsing', () => {
         durationS: 5400,
         fuelL: null,
         polylineEncoded: 'abc123',
+        startLocation: null,
       },
     ]);
   });
@@ -242,6 +243,7 @@ describe('computeRoutes — response parsing', () => {
       durationS: 0,
       fuelL: null,
       polylineEncoded: '',
+      startLocation: null,
     });
   });
 });
