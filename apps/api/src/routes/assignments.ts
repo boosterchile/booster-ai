@@ -48,6 +48,7 @@ import {
 import { confirmarRecogidaViaje } from '../services/confirmar-recogida-viaje.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
@@ -58,6 +59,16 @@ const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_tot
 /** Query de `GET /assignments/:id/traza`: cap de puntos (default 800, máx 2000). */
 const trazaCargaQuerySchema = z.object({
   maxPuntos: z.coerce.number().int().min(2).max(2000).optional().default(800),
+});
+
+/**
+ * Body opcional de `PATCH /:id/confirmar-recogida` (T9, medicion-huella-segmento):
+ * `picked_up_at` = instante del cruce del geofence del origen, aportado por la
+ * PWA. Sin body (tap manual) → el service usa `now`. Zod valida la forma; las
+ * cotas temporales las aplica `confirmarRecogidaViaje`.
+ */
+const confirmarRecogidaBodySchema = z.object({
+  picked_up_at: z.string().datetime({ offset: true }).optional(),
 });
 
 export function createAssignmentsRoutes(opts: {
@@ -77,6 +88,12 @@ export function createAssignmentsRoutes(opts: {
    * status: 'no_routes_api_key' } sin error.
    */
   routesProjectId?: string | undefined;
+  /**
+   * Radio (m) del geofence del origen (`config.GEOFENCE_RADIUS_M`, T8/T9). Con
+   * él, `POST /:id/driver-position` responde el veredicto `geofence` para que la
+   * PWA sugiera la recogida.
+   */
+  geofenceRadiusM: number;
 }) {
   const app = new Hono();
 
@@ -434,58 +451,71 @@ export function createAssignmentsRoutes(opts: {
   // Bloquear el cierre por un botón olvidado castigaría al conductor en
   // terreno; un dato faltante es mejor que una operación congelada.
   // ---------------------------------------------------------------------
-  app.patch('/:id/confirmar-recogida', async (c) => {
-    const auth = requireCarrierAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-    const assignmentId = c.req.param('id');
+  app.patch(
+    '/:id/confirmar-recogida',
+    zValidator('json', confirmarRecogidaBodySchema),
+    async (c) => {
+      const auth = requireCarrierAuth(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const assignmentId = c.req.param('id');
+      const body = c.req.valid('json');
+      const pickedUpAt = body.picked_up_at ? new Date(body.picked_up_at) : undefined;
 
-    // ¿Es el conductor de este servicio? Se resuelve contra la fila, no contra
-    // lo que el cliente diga.
-    const rows = await opts.db
-      .select({ driverUserId: assignments.driverUserId })
-      .from(assignments)
-      .where(eq(assignments.id, assignmentId))
-      .limit(1);
-    const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
+      // ¿Es el conductor de este servicio? Se resuelve contra la fila, no contra
+      // lo que el cliente diga.
+      const rows = await opts.db
+        .select({ driverUserId: assignments.driverUserId })
+        .from(assignments)
+        .where(eq(assignments.id, assignmentId))
+        .limit(1);
+      const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
 
-    const role = auth.activeMembership.membership.role;
-    const esCarrierConEscritura = role === 'dueno' || role === 'admin' || role === 'despachador';
+      const role = auth.activeMembership.membership.role;
+      const esCarrierConEscritura = role === 'dueno' || role === 'admin' || role === 'despachador';
 
-    const result = await confirmarRecogidaViaje({
-      db: opts.db,
-      logger: opts.logger,
-      assignmentId,
-      actor: {
-        userId: auth.userContext.user.id,
-        empresaId: auth.activeMembership.empresa.id,
-        esConductorAsignado,
-        esCarrierConEscritura,
-      },
-    });
-
-    if (!result.ok) {
-      const statusCode =
-        result.code === 'assignment_not_found' ? 404 : result.code === 'forbidden' ? 403 : 409;
-      return c.json(
-        {
-          error: result.code,
-          code: result.code,
-          ...(result.code === 'invalid_status' && result.currentStatus
-            ? { current_status: result.currentStatus }
-            : {}),
+      const result = await confirmarRecogidaViaje({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId,
+        actor: {
+          userId: auth.userContext.user.id,
+          empresaId: auth.activeMembership.empresa.id,
+          esConductorAsignado,
+          esCarrierConEscritura,
         },
-        statusCode,
-      );
-    }
+        pickedUpAt,
+      });
 
-    return c.json({
-      ok: true,
-      already_picked_up: result.alreadyPickedUp,
-      picked_up_at: result.pickedUpAt.toISOString(),
-    });
-  });
+      if (!result.ok) {
+        const statusCode =
+          result.code === 'assignment_not_found'
+            ? 404
+            : result.code === 'forbidden'
+              ? 403
+              : result.code === 'invalid_picked_up_at'
+                ? 400
+                : 409;
+        return c.json(
+          {
+            error: result.code,
+            code: result.code,
+            ...(result.code === 'invalid_status' && result.currentStatus
+              ? { current_status: result.currentStatus }
+              : {}),
+          },
+          statusCode,
+        );
+      }
+
+      return c.json({
+        ok: true,
+        already_picked_up: result.alreadyPickedUp,
+        picked_up_at: result.pickedUpAt.toISOString(),
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------
   // PATCH /:id/confirmar-entrega — carrier marca la carga como entregada.
@@ -611,6 +641,7 @@ export function createAssignmentsRoutes(opts: {
     const body = c.req.valid('json');
 
     // Verificar que el assignment existe y el user es el driver asignado.
+    // El join trae el origen geocodificado del viaje (T4) para el geofence (T8).
     // rls-allowlist: scope por driverUserId, no empresa — el endpoint es del driver
     const [assignment] = await opts.db
       .select({
@@ -618,8 +649,11 @@ export function createAssignmentsRoutes(opts: {
         driverUserId: assignments.driverUserId,
         vehicleId: assignments.vehicleId,
         status: assignments.status,
+        originLatitude: trips.originLatitude,
+        originLongitude: trips.originLongitude,
       })
       .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
     if (!assignment) {
@@ -646,7 +680,29 @@ export function createAssignmentsRoutes(opts: {
       source: 'browser',
     });
 
-    return c.json({ ok: true });
+    // T9: veredicto del geofence del origen, evaluado acá (un solo haversine,
+    // en el API) para que la PWA sugiera "confirmar recogida". Origen NULL
+    // (viaje sin geocodificar) → `sin_origen`: respuesta válida, no error.
+    const origen =
+      assignment.originLatitude != null && assignment.originLongitude != null
+        ? {
+            lat: Number.parseFloat(assignment.originLatitude),
+            lng: Number.parseFloat(assignment.originLongitude),
+          }
+        : null;
+    const geofence = evaluarGeofenceOrigen({
+      pos: { lat: body.latitude, lng: body.longitude },
+      origen,
+      radioM: opts.geofenceRadiusM,
+    });
+
+    return c.json({
+      ok: true,
+      geofence: {
+        estado: geofence.estado,
+        distancia_m: 'distanciaM' in geofence ? Math.round(geofence.distanciaM) : null,
+      },
+    });
   });
 
   app.post('/:id/incidents', zValidator('json', incidentBodySchema), async (c) => {

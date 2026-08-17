@@ -156,9 +156,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** Tests de componente (no critical-domain backend, pero con cobertura).
 **Depende de:** Task 7, Task 8.
 **Pasos:**
-- [ ] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
-- [ ] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición).
-- [ ] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
+- [x] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
+- [x] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición). *(Nota de ejecución — dos contratos del API que el plan no fijaba, aprobados por el PO el 2026-08-17: (a) `POST /assignments/:id/driver-position` responde `geofence: { estado, distancia_m }` evaluado en servidor con `evaluarGeofenceOrigen` (T8) y `config.GEOFENCE_RADIUS_M`; (b) `PATCH /assignments/:id/confirmar-recogida` acepta body opcional `{ picked_up_at }` (Zod) —completa el paso de T7 que no se había implementado—, acotado en `confirmarRecogidaViaje`: ≤ now + 2 min y ≥ `assignments.acceptedAt`, si no `400 invalid_picked_up_at`; el evento registra `picked_up_at_source: cliente|servidor`.)*
+- [x] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
 **Criterio de hecho:** sugerencia aparece con geofence; fallback manual; `pickedUpAt` correcto en ambos caminos.
 
 > **=== GATE: F1 COMPLETO Y TESTEADO (Tasks 1–9). Recién aquí arrancan los tests de F2 sobre vehículos browser. ===**

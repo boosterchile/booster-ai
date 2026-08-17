@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -372,28 +373,6 @@ function mensajeDeCierre(err: unknown): string {
   return 'No pudimos confirmar la entrega. Revisa tu señal e intenta de nuevo.';
 }
 
-/**
- * Traduce el fallo de `PATCH /assignments/:id/confirmar-recogida`.
- *
- * Mismo criterio que `mensajeDeCierre`: si el backend contestó, culpar a la
- * señal sería mentira.
- */
-function mensajeDeRecogida(err: unknown): string {
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case 'invalid_status':
-        return 'Este viaje ya no está esperando la carga. Actualiza la lista para ver cómo quedó.';
-      case 'forbidden':
-        return 'Este viaje no está a tu nombre. Avísale a tu empresa.';
-      case 'assignment_not_found':
-        return 'No encontramos este viaje. Actualiza la lista.';
-      default:
-        return 'No pudimos registrar la recogida. Avísale a tu empresa.';
-    }
-  }
-  return 'No pudimos registrar la recogida. Revisa tu señal e intenta de nuevo.';
-}
-
 // ---------------------------------------------------------------------------
 // Card de un servicio asignado, con GPS reporter inline.
 // ---------------------------------------------------------------------------
@@ -411,24 +390,21 @@ function AssignmentCard({
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
-  const [recogiendo, setRecogiendo] = useState(false);
-  const [recogida, setRecogida] = useState(a.status === 'recogido');
-  const [recogidaError, setRecogidaError] = useState<string | null>(null);
+  // Recogida híbrida (T9, medicion-huella-segmento): el geofence del origen
+  // —que el API evalúa con cada posición reportada— SUGIERE; el conductor
+  // confirma con un tap y viaja el instante del cruce. Sin geofence, el tap
+  // manual sigue igual (el servidor pone la hora).
+  const recogida = useConfirmarRecogida({
+    assignmentId: a.id,
+    initialRecogida: a.status === 'recogido',
+    geofence: reporter.lastGeofence,
+  });
 
   async function confirmarRecogida() {
     if (!window.confirm('¿Confirmas que ya cargaste esta carga en el camión?')) {
       return;
     }
-    setRecogidaError(null);
-    setRecogiendo(true);
-    try {
-      await api.patch(`/assignments/${a.id}/confirmar-recogida`);
-      setRecogida(true);
-    } catch (err) {
-      setRecogidaError(mensajeDeRecogida(err));
-    } finally {
-      setRecogiendo(false);
-    }
+    await recogida.confirmar();
   }
 
   async function confirmarEntrega() {
@@ -576,30 +552,41 @@ function AssignmentCard({
             mueve el viaje a `en_proceso`, que es lo que destraba la posición
             en el link de tracking del destinatario y lo que hace que su
             empresa deje de ver «Por recoger» en Servicios. */}
-        {!recogida && (
+        {recogida.sugerida && (
+          // El geofence solo sugiere: <output> anuncia la llegada al punto de
+          // recogida sin disparar nada. El tap sigue siendo del conductor.
+          <output
+            data-testid="sugerencia-recogida"
+            className="block rounded-md border border-primary-200 bg-primary-50 p-2 text-primary-800 text-sm"
+          >
+            Estás en el punto de recogida. Cuando la carga esté arriba del camión, confírmala.
+          </output>
+        )}
+
+        {!recogida.recogida && (
           <button
             type="button"
             onClick={() => void confirmarRecogida()}
-            disabled={recogiendo}
+            disabled={recogida.recogiendo}
             data-testid="confirmar-recogida"
             className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700 disabled:opacity-50"
           >
             <PackageCheck className="h-4 w-4" aria-hidden />
-            {recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+            {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
           </button>
         )}
 
-        {recogidaError && (
+        {recogida.error && (
           <div
             role="alert"
             aria-live="assertive"
             className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
           >
-            {recogidaError}
+            {recogida.error}
           </div>
         )}
 
-        {recogida && (
+        {recogida.recogida && (
           <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
             Carga recogida. Cuando llegues a destino, confirma la entrega.
           </output>
