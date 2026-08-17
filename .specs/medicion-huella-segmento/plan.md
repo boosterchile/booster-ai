@@ -67,10 +67,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (migración).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
-- [ ] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
-- [ ] Generar + revisar migración.
-- [ ] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
+- [x] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
+- [x] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
+- [x] Generar + revisar migración.
+- [x] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
 **Criterio de hecho:** columnas presentes nullable `numeric(10,7)`; CI migración verde.
 
 ### Task 3 — Resolver de opt-in efectivo de huella (OR de empresas participantes)
