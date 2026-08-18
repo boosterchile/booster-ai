@@ -293,8 +293,9 @@ function SelectorView({ onSelect }: { onSelect: (t: UserTypeHint) => void }) {
             decisión D6 del PO 2026-07-08): el alta es comercial
             (venta→credenciales), no self-service — copy aprobado, no reformular
             sin re-aprobación. El link legacy "método anterior" (→ /login?legacy=1)
-            se retiró: ese toggle está roto (coerción JSON.parse del search param)
-            y el flow legacy se retira antes de comercializar (D6). */}
+            se retiró de ESTA pantalla por decisión D6: el flow legacy se retira
+            antes de comercializar. El escape hatch en sí funciona (login.tsx
+            `isLegacyForced` acepta 1/'1'/true) y lo sigue usando needs-rotation. */}
         <p className="mt-4 border-neutral-200 border-t pt-4 text-center text-neutral-500 text-xs">
           ¿Aún no trabajas con Booster?{' '}
           <a

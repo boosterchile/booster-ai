@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   HelpCircle,
   Info,
+  LogOut,
   Mic,
   MicOff,
   Navigation,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { signOutUser } from '../hooks/use-auth.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { loadAutoplayPreference, saveAutoplayPreference } from '../services/coaching-voice.js';
@@ -172,7 +174,22 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
           <HowItWorksCard />
         </div>
 
-        <div className="mt-8 flex justify-end">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          {/* El shell del conductor no tiene sidebar (donde el operador tiene
+              "Salir"), así que la salida vive acá, junto al resto de lo que el
+              conductor gestiona de su dispositivo. Solo cierra sesión:
+              ProtectedRoute redirige a /login cuando el user queda null. */}
+          <button
+            type="button"
+            onClick={() => {
+              void signOutUser();
+            }}
+            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-neutral-600 text-sm hover:bg-neutral-100 hover:text-neutral-900"
+            style={{ minHeight: 'var(--touch-min)' }}
+          >
+            <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+            Salir
+          </button>
           <Link
             to="/app/conductor"
             className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700"
