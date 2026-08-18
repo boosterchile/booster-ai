@@ -40,6 +40,12 @@ const authClient = new GoogleAuth({
  *  google.routes.v2.VehicleEmissionType. */
 export type VehicleEmissionType = 'GASOLINE' | 'ELECTRIC' | 'HYBRID' | 'DIESEL';
 
+/** Coordenada WGS84 en grados decimales, normalizada desde `LatLng` de Google. */
+export interface RouteLatLng {
+  lat: number;
+  lng: number;
+}
+
 /** Una ruta alternativa devuelta por Routes API, normalizada a unidades SI. */
 export interface RouteSuggestion {
   /** Distancia total en km. */
@@ -57,6 +63,13 @@ export interface RouteSuggestion {
    * de la ruta. Para mostrar en el mapa cliente.
    */
   polylineEncoded: string;
+  /**
+   * Punto de partida real de la ruta (`legs[0].startLocation.latLng`): el
+   * origen textual ya geocodificado por Routes API. Null si la respuesta no
+   * trae legs/startLocation o las coordenadas no son numéricas. Ancla del
+   * geofence de recogida (plan medicion-huella-segmento, Task 4).
+   */
+  startLocation: RouteLatLng | null;
 }
 
 export interface ComputeRoutesParams {
@@ -153,11 +166,13 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
   }
 
   // Field mask reducido para minimizar response size (Routes API factura
-  // por field-mask; pedir solo lo que usamos).
+  // por field-mask; pedir solo lo que usamos). `routes.legs.startLocation`
+  // es el origen geocodificado (Task 4): campo Basic, no cambia de SKU.
   const fieldMask = [
     'routes.distanceMeters',
     'routes.duration',
     'routes.polyline.encodedPolyline',
+    'routes.legs.startLocation',
     emissionType ? 'routes.travelAdvisory.fuelConsumptionMicroliters' : null,
   ]
     .filter(Boolean)
@@ -251,6 +266,9 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
       travelAdvisory?: {
         fuelConsumptionMicroliters?: string; // BigInt serializado
       };
+      legs?: Array<{
+        startLocation?: { latLng?: { latitude?: unknown; longitude?: unknown } };
+      }>;
     }>;
   };
 
@@ -267,8 +285,32 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
       durationS,
       fuelL: fuelMicroL != null ? Number(fuelMicroL) / 1_000_000 : null,
       polylineEncoded: r.polyline?.encodedPolyline ?? '',
+      startLocation: parseLatLng(r.legs?.[0]?.startLocation?.latLng),
     };
   });
+}
+
+/**
+ * `google.type.LatLng` llega como `{ latitude, longitude }` en grados. Solo
+ * aceptamos números finitos; cualquier otra forma → null (el caller decide la
+ * degradación — acá no se lanza por un campo opcional).
+ */
+function parseLatLng(
+  latLng: { latitude?: unknown; longitude?: unknown } | undefined,
+): RouteLatLng | null {
+  if (!latLng) {
+    return null;
+  }
+  const { latitude, longitude } = latLng;
+  if (
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+  return { lat: latitude, lng: longitude };
 }
 
 /**
