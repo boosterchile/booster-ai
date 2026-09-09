@@ -1,6 +1,6 @@
 # ADR-030 — Modelo de pricing v2: activación de comisión + billing recurrente
 
-**Status**: Accepted
+**Status**: Superado por [ADR-079](./079-modelo-comercial-v3-comision-al-generador-configurable.md) (modelo de comisión) y [ADR-080](./080-flujo-de-dinero-mandato-de-cobro-y-capital-de-trabajo.md) (flujo de dinero); la arquitectura pricing-engine + liquidaciones se conserva como base
 **Date**: 2026-05-10
 **Decider**: Felipe Vicencio (Product Owner)
 **Technical contributor**: Claude (Cowork) actuando como arquitecto de software
