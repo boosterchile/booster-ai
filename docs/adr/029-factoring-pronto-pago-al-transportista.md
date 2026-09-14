@@ -1,6 +1,6 @@
 # ADR-029 — Factoring / Pronto pago al transportista como diferenciador comercial
 
-**Status**: Proposed
+**Status**: Superado por [ADR-080](./080-flujo-de-dinero-mandato-de-cobro-y-capital-de-trabajo.md) (el pronto pago pasa de cesión al partner a anticipo dentro del programa de confirming con Booster como mandante)
 **Date**: 2026-05-10
 **Decider**: Felipe Vicencio (Product Owner)
 **Technical contributor**: Claude (Cowork) actuando como arquitecto de software

@@ -379,6 +379,13 @@
       "when": 1780876800017,
       "tag": "0053_bitacora_backfill_distancia",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1780876800018,
+      "tag": "0054_viajes_origin_latlng",
+      "breakpoints": true
     }
   ]
 }

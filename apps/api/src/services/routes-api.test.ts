@@ -67,8 +67,76 @@ describe('computeRoutes', () => {
     });
 
     expect(result).toEqual([
-      { distanceKm: 12.5, durationS: 1800, fuelL: null, polylineEncoded: 'abc123' },
+      {
+        distanceKm: 12.5,
+        durationS: 1800,
+        fuelL: null,
+        polylineEncoded: 'abc123',
+        startLocation: null,
+      },
     ]);
+  });
+
+  // Task 4 (medicion-huella-segmento): el origen geocodificado sale del
+  // primer leg. Se pide en el field mask y se expone normalizado como
+  // `startLocation` sin tocar distanceKm/durationS/polyline (consumidores
+  // actuales intactos).
+  it('pide routes.legs.startLocation en el field mask y expone startLocation del primer leg', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: {
+          routes: [
+            {
+              distanceMeters: 12_500,
+              duration: '1800s',
+              polyline: { encodedPolyline: 'abc123' },
+              legs: [
+                { startLocation: { latLng: { latitude: -33.4188917, longitude: -70.6045211 } } },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await computeRoutes({
+      projectId: 'p',
+      origin: 'A',
+      destination: 'B',
+      fetchImpl: fetchSpy as unknown as typeof fetch,
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    const fieldMask = (init.headers as Record<string, string>)['X-Goog-FieldMask'];
+    expect(fieldMask).toContain('routes.legs.startLocation');
+    expect(result[0]?.startLocation).toEqual({ lat: -33.4188917, lng: -70.6045211 });
+    // Lo existente sigue igual.
+    expect(result[0]).toMatchObject({
+      distanceKm: 12.5,
+      durationS: 1800,
+      polylineEncoded: 'abc123',
+    });
+  });
+
+  it('sin legs/startLocation en la respuesta → startLocation null (no lanza)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      fakeResponse({
+        ok: true,
+        status: 200,
+        json: { routes: [{ distanceMeters: 1000, duration: '60s' }] },
+      }),
+    ) as unknown as typeof fetch;
+
+    const result = await computeRoutes({
+      projectId: 'p',
+      origin: 'A',
+      destination: 'B',
+      fetchImpl,
+    });
+
+    expect(result[0]?.startLocation).toBeNull();
   });
 
   it('con emissionType pide FUEL_CONSUMPTION y convierte microlitros a litros', async () => {
