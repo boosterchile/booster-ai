@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
 // RED: `declaracionDistancia` aún no existe. Es el invariante de honestidad del
 // paso 1 (F0-0 §7 / spec `distancia-real-hibrida`): con cobertura < 100% el cert
 // NO puede declarar "distancia medida" a secas — debe declarar la mezcla
 // "medido X%, estimado (100−X)%", con X = coverage_pct. Sin esto se reintroduce
 // el sesgo direccional a la baja que motivó todo el fix.
-import { declaracionDistancia, formatRouteDataSource } from './render-helpers.js';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { describe, expect, it } from 'vitest';
+import {
+  TAMANO_LINEA_METODO,
+  declaracionDistancia,
+  formatRouteDataSource,
+  lineaMetodoCert,
+} from './render-helpers.js';
 
 describe('declaracionDistancia — invariante de honestidad de la distancia', () => {
   it('cobertura 100% → declara medida; NO menciona estimado', () => {
@@ -69,6 +75,63 @@ describe('formatRouteDataSource — fuente de la ruta en el certificado (ADR-077
   it('las tres fuentes de ADR-028 conservan un texto propio (no el literal)', () => {
     for (const fuente of ['teltonika_gps', 'maps_directions', 'manual_declared']) {
       expect(formatRouteDataSource(fuente), fuente).not.toBe(fuente);
+    }
+  });
+});
+
+/**
+ * ADR-077 §4/§5 — la línea de método del PDF sale de la MISMA función pura que
+ * usa la app (`lineaMetodoCertificacion`, carbon-calculator); el helper solo
+ * adapta `DatosMetricasCertificado` (campos opcionales en certs legacy).
+ */
+describe('lineaMetodoCert — línea de método en el PDF (ADR-077 §4)', () => {
+  it('movil_gps → «GPS del móvil del conductor», nunca «verificable»', () => {
+    const linea = lineaMetodoCert({
+      precisionMethod: 'modelado',
+      routeDataSource: 'movil_gps',
+      coveragePct: 100,
+    });
+    expect(linea).toMatch(/GPS del móvil del conductor/);
+    expect(linea).not.toMatch(/verificable/i);
+  });
+
+  it('cert legacy sin fuente de ruta → null (no se inventa método)', () => {
+    expect(lineaMetodoCert({ precisionMethod: 'modelado' })).toBeNull();
+    expect(
+      lineaMetodoCert({ precisionMethod: 'modelado', routeDataSource: 'maps_directions' }),
+    ).toBeNull();
+  });
+
+  it('primario → CAN bus + ruta GPS del vehículo', () => {
+    expect(
+      lineaMetodoCert({
+        precisionMethod: 'exacto_canbus',
+        routeDataSource: 'teltonika_gps',
+        coveragePct: 99,
+      }),
+    ).toMatch(/^Combustible medido por CAN bus del vehículo/);
+  });
+
+  it('LAYOUT — la línea más larga cabe en el ancho útil de A4 al tamaño que usa el renderer', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.HelveticaBold);
+    const A4_WIDTH_PT = 595.28;
+    const MARGEN_PT = 40;
+    const casos = [
+      { precisionMethod: 'exacto_canbus', routeDataSource: 'teltonika_gps', coveragePct: 100 },
+      { precisionMethod: 'modelado', routeDataSource: 'teltonika_gps', coveragePct: 100 },
+      { precisionMethod: 'modelado', routeDataSource: 'movil_gps', coveragePct: 100 },
+      { precisionMethod: 'modelado', routeDataSource: 'maps_directions', coveragePct: 0 },
+      { precisionMethod: 'por_defecto', routeDataSource: 'maps_directions', coveragePct: 0 },
+      { precisionMethod: 'por_defecto', routeDataSource: 'manual_declared', coveragePct: 0 },
+    ] as const;
+    for (const c of casos) {
+      const linea = lineaMetodoCert(c);
+      expect(linea, JSON.stringify(c)).not.toBeNull();
+      const ancho = font.widthOfTextAtSize(linea ?? '', TAMANO_LINEA_METODO);
+      expect(ancho, `${linea} → ${ancho.toFixed(1)} pt`).toBeLessThanOrEqual(
+        A4_WIDTH_PT - 2 * MARGEN_PT,
+      );
     }
   });
 });

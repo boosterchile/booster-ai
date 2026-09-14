@@ -134,6 +134,39 @@ describe('CertificadosRoute', () => {
     await waitFor(() => expect(screen.getByText('BST-001')).toBeInTheDocument());
   });
 
+  it('muestra la línea de método que entrega el API (ADR-077 §4) junto al kg CO₂e, sin reconstruirla', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      certificates: [
+        {
+          trip_id: 't1',
+          tracking_code: 'BST-001',
+          origin_address: 'A',
+          destination_address: 'B',
+          cargo_type: 'carga_seca',
+          kg_co2e: '50.00',
+          distance_km: '100.00',
+          precision_method: 'modelado',
+          glec_version: 'GLEC v3.0',
+          route_data_source: 'movil_gps',
+          coverage_pct: '100.00',
+          certification_level: 'secundario_modeled',
+          linea_metodo:
+            'Distancia medida por GPS del móvil del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
+          certificate_sha256: 'abc',
+          certificate_kms_key_version: '1',
+          certificate_issued_at: '2026-05-10T10:00:00Z',
+        },
+      ],
+      pagination: { limit: 100, offset: 0, returned: 1 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    const linea = await screen.findByText(/GPS del móvil del conductor \(cobertura 100 %\)/);
+    expect(linea).toBeInTheDocument();
+    // La fila muestra la línea tal cual llegó: vocabulario cerrado del API.
+    expect(linea.closest('tr')?.textContent).not.toMatch(/verificable/i);
+  });
+
   it('click Descargar → invoca descargarCertificadoDeViaje', async () => {
     descargarMock.mockResolvedValueOnce(undefined);
     vi.spyOn(api, 'get').mockResolvedValueOnce({

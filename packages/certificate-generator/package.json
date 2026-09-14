@@ -14,6 +14,7 @@
     "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
+    "@booster-ai/carbon-calculator": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
     "@google-cloud/storage": "^7.13.0",
     "@signpdf/placeholder-plain": "^3.2.4",

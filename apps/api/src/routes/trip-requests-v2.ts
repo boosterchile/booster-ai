@@ -26,6 +26,7 @@ import {
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
+import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
@@ -59,6 +60,47 @@ function generateTrackingCode(): string {
 const cancelBodySchema = z.object({
   reason: z.string().min(1).max(500).optional(),
 });
+
+/**
+ * Métricas ESG del viaje para el detalle (ADR-077 §4): además de los campos
+ * históricos, expone las tres dimensiones crudas y la línea de método derivada
+ * (misma función que el PDF). Exportada para testearla sin montar la ruta.
+ */
+export function serializeTripMetrics(
+  m: Pick<
+    typeof tripMetrics.$inferSelect,
+    | 'distanceKmEstimated'
+    | 'distanceKmActual'
+    | 'carbonEmissionsKgco2eEstimated'
+    | 'carbonEmissionsKgco2eActual'
+    | 'precisionMethod'
+    | 'glecVersion'
+    | 'routeDataSource'
+    | 'coveragePct'
+    | 'certificationLevel'
+    | 'certificatePdfUrl'
+    | 'certificateSha256'
+    | 'certificateKmsKeyVersion'
+    | 'certificateIssuedAt'
+  >,
+) {
+  return {
+    distance_km_estimated: m.distanceKmEstimated,
+    distance_km_actual: m.distanceKmActual,
+    carbon_emissions_kgco2e_estimated: m.carbonEmissionsKgco2eEstimated,
+    carbon_emissions_kgco2e_actual: m.carbonEmissionsKgco2eActual,
+    precision_method: m.precisionMethod,
+    glec_version: m.glecVersion,
+    route_data_source: m.routeDataSource,
+    coverage_pct: m.coveragePct,
+    certification_level: m.certificationLevel,
+    linea_metodo: lineaMetodoDesdeMetricas(m),
+    certificate_pdf_url: m.certificatePdfUrl,
+    certificate_sha256: m.certificateSha256,
+    certificate_kms_key_version: m.certificateKmsKeyVersion,
+    certificate_issued_at: m.certificateIssuedAt,
+  };
+}
 
 export function createTripRequestsV2Routes(opts: {
   db: Db;
@@ -395,20 +437,7 @@ export function createTripRequestsV2Routes(opts: {
       trip_request: serializeTripDetail(trip),
       events,
       assignment: assignmentRow ? { ...assignmentRow, ubicacion_actual: ubicacionActual } : null,
-      metrics: metricsRow
-        ? {
-            distance_km_estimated: metricsRow.distanceKmEstimated,
-            distance_km_actual: metricsRow.distanceKmActual,
-            carbon_emissions_kgco2e_estimated: metricsRow.carbonEmissionsKgco2eEstimated,
-            carbon_emissions_kgco2e_actual: metricsRow.carbonEmissionsKgco2eActual,
-            precision_method: metricsRow.precisionMethod,
-            glec_version: metricsRow.glecVersion,
-            certificate_pdf_url: metricsRow.certificatePdfUrl,
-            certificate_sha256: metricsRow.certificateSha256,
-            certificate_kms_key_version: metricsRow.certificateKmsKeyVersion,
-            certificate_issued_at: metricsRow.certificateIssuedAt,
-          }
-        : null,
+      metrics: metricsRow ? serializeTripMetrics(metricsRow) : null,
     });
   });
 

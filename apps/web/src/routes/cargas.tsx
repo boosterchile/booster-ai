@@ -146,6 +146,11 @@ interface TripMetrics {
   carbon_emissions_kgco2e_actual: string | null;
   precision_method: string | null;
   glec_version: string | null;
+  route_data_source: string | null;
+  coverage_pct: string | null;
+  certification_level: string | null;
+  /** ADR-077 §4 — línea de método derivada por el API; se muestra tal cual. */
+  linea_metodo: string | null;
   certificate_pdf_url: string | null;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
@@ -1419,6 +1424,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                     ? `${tripQ.data.metrics.carbon_emissions_kgco2e_actual} kg CO₂e`
                     : '—'}
                 </DataRow>
+                <div className="sm:col-span-2">
+                  <DataRow label="Método de cálculo">
+                    {tripQ.data.metrics.linea_metodo ?? '—'}
+                  </DataRow>
+                </div>
                 {tripQ.data.metrics.certificate_issued_at && (
                   <div className="sm:col-span-2">
                     <DescargarCertificadoButton tripId={tripQ.data.trip_request.id} />

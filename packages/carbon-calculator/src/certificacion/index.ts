@@ -18,3 +18,4 @@ export {
   THRESHOLD_SECUNDARIO_MODELED_PCT,
 } from './derivar-nivel.js';
 export { calcularFactorIncertidumbre } from './factor-incertidumbre.js';
+export { type LineaMetodoInput, lineaMetodoCertificacion } from './linea-metodo.js';
