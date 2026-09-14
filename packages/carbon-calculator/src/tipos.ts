@@ -61,12 +61,16 @@ export type MetodoPrecision = 'exacto_canbus' | 'modelado' | 'por_defecto';
  *     se asume — secundario modeled.
  *   - `manual_declared`: cliente declaró origen→destino sin telemetría ni
  *     simulación. Worst case — secundario default.
+ *   - `movil_gps`: polyline real medido por la Geolocation API del móvil del
+ *     conductor, para vehículos sin Teltonika (ADR-077 §1). Distancia medida
+ *     pero consumo modelado y sensor no fijo al vehículo: NUNCA produce
+ *     `primario_verificable`, sin importar la cobertura (ADR-077 §2).
  *
  * Espejo de `routeDataSourceSchema` en `@booster-ai/shared-schemas`. Si
  * cambia allá, actualizar acá (ver ADR-028 §1 y package philosophy:
  * carbon-calculator es zero-dep, no importa zod).
  */
-export type RouteDataSource = 'teltonika_gps' | 'maps_directions' | 'manual_declared';
+export type RouteDataSource = 'teltonika_gps' | 'maps_directions' | 'manual_declared' | 'movil_gps';
 
 /**
  * Nivel de certificación derivado (ADR-028 §2). NO es self-declared, lo

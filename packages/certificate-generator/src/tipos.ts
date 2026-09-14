@@ -53,9 +53,10 @@ export interface DatosMetricasCertificado {
    * ADR-028 — Origen del polyline real recorrido. Junto con
    * `precisionMethod` y `coveragePct` determina `certificationLevel`. Si
    * está ausente, el cert se renderiza con `precisionMethod` como única
-   * señal (legacy path, backwards-compatible).
+   * señal (legacy path, backwards-compatible). `movil_gps` (ADR-077 §1):
+   * distancia medida por el GPS del móvil del conductor; nunca primario.
    */
-  routeDataSource?: 'teltonika_gps' | 'maps_directions' | 'manual_declared';
+  routeDataSource?: 'teltonika_gps' | 'maps_directions' | 'manual_declared' | 'movil_gps';
   /**
    * ADR-028 — Fracción del trip cubierta por la fuente principal,
    * [0..100]. Si está ausente, no se imprime en el cert.
