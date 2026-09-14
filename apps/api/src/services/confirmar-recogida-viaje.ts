@@ -41,17 +41,32 @@ export type ConfirmarRecogidaResult =
   | { ok: true; alreadyPickedUp: boolean; pickedUpAt: Date; tripId: string }
   | {
       ok: false;
-      code: 'assignment_not_found' | 'forbidden' | 'invalid_status';
+      code: 'assignment_not_found' | 'forbidden' | 'invalid_status' | 'invalid_picked_up_at';
       currentStatus?: string;
     };
+
+/**
+ * Tolerancia hacia el futuro para un `pickedUpAt` provisto por el cliente:
+ * absorbe el skew de reloj de un celular sin aceptar "recogidas" que aún no
+ * ocurrieron. Ese instante ancla la ventana de medición de huella (T11/T12),
+ * por eso se acota en el servidor y no se confía a ciegas.
+ */
+export const PICKED_UP_AT_FUTURE_SKEW_MS = 2 * 60_000;
 
 export async function confirmarRecogidaViaje(opts: {
   db: Db;
   logger: Logger;
   assignmentId: string;
   actor: ConfirmarRecogidaActor;
+  /**
+   * Instante real de la recogida cuando lo aporta el cliente (T9: cruce del
+   * geofence del origen). Ausente → `now` (tap manual). Se acota: no puede
+   * estar en el futuro más allá del skew ni antes de la aceptación del
+   * servicio; fuera de cotas → `invalid_picked_up_at` sin escribir nada.
+   */
+  pickedUpAt?: Date | undefined;
 }): Promise<ConfirmarRecogidaResult> {
-  const { db, logger, assignmentId, actor } = opts;
+  const { db, logger, assignmentId, actor, pickedUpAt: pickedUpAtProvisto } = opts;
 
   return await db.transaction(async (tx) => {
     const rows = await tx
@@ -60,6 +75,7 @@ export async function confirmarRecogidaViaje(opts: {
         assignmentStatus: assignments.status,
         driverUserId: assignments.driverUserId,
         pickedUpAt: assignments.pickedUpAt,
+        acceptedAt: assignments.acceptedAt,
         empresaId: assignments.empresaId,
         tripId: assignments.tripId,
         tripStatus: trips.status,
@@ -121,6 +137,28 @@ export async function confirmarRecogidaViaje(opts: {
 
     const now = new Date();
 
+    // Cotas del instante provisto (T9). Se validan ANTES de escribir: fuera de
+    // rango no se mueve ningún estado ni se inserta evento.
+    if (pickedUpAtProvisto) {
+      const demasiadoFuturo =
+        pickedUpAtProvisto.getTime() > now.getTime() + PICKED_UP_AT_FUTURE_SKEW_MS;
+      const anteriorAAceptacion = pickedUpAtProvisto.getTime() < row.acceptedAt.getTime();
+      if (demasiadoFuturo || anteriorAAceptacion) {
+        logger.warn(
+          {
+            assignmentId,
+            pickedUpAt: pickedUpAtProvisto.toISOString(),
+            acceptedAt: row.acceptedAt.toISOString(),
+            motivo: demasiadoFuturo ? 'futuro' : 'anterior_a_aceptacion',
+          },
+          'confirmar-recogida rechazada: pickedUpAt fuera de cotas',
+        );
+        return { ok: false as const, code: 'invalid_picked_up_at' as const };
+      }
+    }
+    const pickedUpAt = pickedUpAtProvisto ?? now;
+    const pickedUpAtSource = pickedUpAtProvisto ? 'cliente' : 'servidor';
+
     // CAS por estado en el WHERE: si otro toque concurrente ya movió el viaje
     // entre el SELECT y el UPDATE, esto no afecta filas y abortamos. El
     // invariante queda en el SQL, no en la lectura previa.
@@ -139,7 +177,7 @@ export async function confirmarRecogidaViaje(opts: {
 
     await tx
       .update(assignments)
-      .set({ status: 'recogido', pickedUpAt: now })
+      .set({ status: 'recogido', pickedUpAt })
       .where(and(eq(assignments.id, row.assignmentId), eq(assignments.status, 'asignado')))
       .returning({ id: assignments.id });
 
@@ -153,19 +191,27 @@ export async function confirmarRecogidaViaje(opts: {
         actor_user_id: actor.userId,
         actor_empresa_id: actor.empresaId,
         confirmed_via: esSuConductor ? 'conductor' : 'carrier',
-        picked_up_at: now.toISOString(),
+        picked_up_at: pickedUpAt.toISOString(),
+        // 'cliente' = instante del cruce del geofence aportado por la PWA (T9);
+        // 'servidor' = tap manual, now del API.
+        picked_up_at_source: pickedUpAtSource,
       },
     });
 
     logger.info(
-      { assignmentId, tripId: row.tripId, via: esSuConductor ? 'conductor' : 'carrier' },
+      {
+        assignmentId,
+        tripId: row.tripId,
+        via: esSuConductor ? 'conductor' : 'carrier',
+        pickedUpAtSource,
+      },
       'recogida confirmada',
     );
 
     return {
       ok: true as const,
       alreadyPickedUp: false as const,
-      pickedUpAt: now,
+      pickedUpAt,
       tripId: row.tripId,
     };
   });
