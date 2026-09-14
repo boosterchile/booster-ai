@@ -1,6 +1,6 @@
 # ADR-031 — Activación de pricing v2 con escala mínima (1 cliente, 1 vehículo)
 
-**Status**: Accepted
+**Status**: Superado por [ADR-079](./079-modelo-comercial-v3-comision-al-generador-configurable.md) §6 (los criterios de activación de pricing v2 dejan de aplicar; v3 se activa con `PRICING_V3_ACTIVATED`)
 **Date**: 2026-05-10
 **Decider**: Felipe Vicencio (Product Owner)
 **Technical contributor**: Claude (Cowork) actuando como arquitecto de software

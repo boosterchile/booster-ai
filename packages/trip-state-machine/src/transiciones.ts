@@ -78,4 +78,15 @@ export function esConfirmableEntrega(estado: EstadoViaje): boolean {
   return puedeTransicionar(estado, 'entregado');
 }
 
+/**
+ * Confirmar recogida (pickup) es válido solo desde asignado: abre la ventana
+ * pickedUpAt → deliveredAt sobre la que se mide la huella (spec
+ * medicion-huella-segmento). Guard consultable que NO lanza — pensado para
+ * que la UI decida si ofrecer la acción; el service sigue validando con
+ * `assertTransicion(estado, 'en_proceso')`.
+ */
+export function esConfirmableRecogida(estado: EstadoViaje): boolean {
+  return puedeTransicionar(estado, 'en_proceso');
+}
+
 export { esTerminal };

@@ -1,6 +1,6 @@
 # ADR-026 — Modelo de membresías del transportista y revenue diversificado
 
-**Status**: Accepted
+**Status**: Superado por [ADR-079](./079-modelo-comercial-v3-comision-al-generador-configurable.md) (comisión escalonada al transportista y fees en CLP; el comodato Teltonika sigue vigente vía ADR-079 §4)
 **Date**: 2026-05-05
 **Decider**: Felipe Vicencio (Product Owner)
 **Related**:

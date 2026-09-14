@@ -9,6 +9,7 @@ import {
   esAceptableOferta,
   esCancelablePorShipper,
   esConfirmableEntrega,
+  esConfirmableRecogida,
   puedeTransicionar,
 } from './transiciones.js';
 
@@ -123,6 +124,27 @@ describe('guards semánticos ≡ sets históricos de los services (T4)', () => {
 
   it('confirmable entrega: asignado + en_proceso (ex STATUS_CONFIRMABLE)', () => {
     expect(ESTADOS_VIAJE.filter(esConfirmableEntrega)).toEqual(['asignado', 'en_proceso']);
+  });
+
+  // Guard consultable (NO lanza) para que la UI decida si ofrecer la recogida.
+  // El service sigue validando con assertTransicion; los 3 casos son los del
+  // plan medicion-huella-segmento Task 5.
+  describe('esConfirmableRecogida', () => {
+    it('asignado → true (la recogida abre la ventana pickedUpAt→deliveredAt)', () => {
+      expect(esConfirmableRecogida('asignado')).toBe(true);
+    });
+
+    it('en_proceso → false (ya recogido; no se ofrece de nuevo)', () => {
+      expect(esConfirmableRecogida('en_proceso')).toBe(false);
+    });
+
+    it('entregado → false (terminal; nada que recoger)', () => {
+      expect(esConfirmableRecogida('entregado')).toBe(false);
+    });
+
+    it('derivado de la tabla: exactamente los estados que transicionan a en_proceso', () => {
+      expect(ESTADOS_VIAJE.filter(esConfirmableRecogida)).toEqual(['asignado']);
+    });
   });
 });
 
