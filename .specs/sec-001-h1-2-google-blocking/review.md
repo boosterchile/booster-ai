@@ -1,5 +1,7 @@
 # Devils-advocate review — sec-001-h1-2-google-blocking — 2026-05-26T00:00:00Z
 
+> **Cerrado 2026-09-13** — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.
+
 Reviewer: devils-advocate sub-agent (agent-rigor 0.2.0+).
 Artifact reviewed: `.specs/sec-001-h1-2-google-blocking/spec.md` (Draft, 288 LOC, 2026-05-26).
 Posture: assume wrong until each load-bearing claim survives challenge. No "looks good" verdict.

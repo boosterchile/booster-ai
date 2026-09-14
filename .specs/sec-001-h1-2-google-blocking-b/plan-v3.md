@@ -2,7 +2,7 @@
 
 - **Spec**: [`./spec.md`](./spec.md) (Draft sub-spec)
 - **Created**: 2026-05-27 (v3)
-- **Status**: Draft v3
+- **Status**: **CERRADO 2026-09-13 — abandonado en T8; superado por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.** · Estado previo: Draft v3
 - **Linked**:
   - Umbrella: [`../sec-001-h1-2-google-blocking/spec.md`](../sec-001-h1-2-google-blocking/spec.md).
   - DA history (cumulative) of THIS plan: [`./plan-review.md`](./plan-review.md) (v1: F-B1..F-B12 5P0+4P1+3P2 → v2: N-B1..N-B5 2P0+3P1).

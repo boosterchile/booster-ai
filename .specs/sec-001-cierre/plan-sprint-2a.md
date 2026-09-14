@@ -4,7 +4,7 @@
 - **Plan Sprint 1**: `.specs/sec-001-cierre/plan.md` (CERRADO 2026-05-25, 14 tasks shipped)
 - **Plan Sprint 2 META**: `.specs/sec-001-cierre/plan-sprint-2.md`
 - **Created**: 2026-05-25 (v1 → v2 round 2 → v3 round 3 → v4 round 4)
-- **Status**: **Active** (Approved 2026-05-25 post devils-advocate round 5 verdict APPROVE; 0 new P0; convergence verificada R1:5→R2:3→R3:5→R4:3→R5:0; iteration halted; ready para `/agent-rigor:build T0`)
+- **Status**: **CERRADO 2026-09-13 — CERRADO 12/12 el 2026-05-25 (así lo registra `plan-sprint-2b.md`); estado terminal declarado en cabecera.** · Estado previo: **Active** (Approved 2026-05-25 post devils-advocate round 5 verdict APPROVE; 0 new P0; convergence verificada R1:5→R2:3→R3:5→R4:3→R5:0; iteration halted; ready para `/agent-rigor:build T0`)
 - **Scope**: H1.1 (SC-1.1.1..SC-1.1.8) + T0 (CI integration job, fix Sprint 1 drift) + T0.5 (GitHub branch protection on main, fix round 3 P0-R3-2) + T8 (Redis testcontainers, ex-T17 Sprint 2 inicial). NO cubre H1.3, H1.2, T16, T18 — esos van en Sprint 2b.
 - **Wall-clock estimate v3**: ~7-9 días hábiles ejecución (corregido per P2-R3-1: incluye cooling-off + review + ship + out-of-band).
 - **Spec hermano**: `.specs/sec-h3-dte-retention-lock/spec.md`.

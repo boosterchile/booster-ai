@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-26 (v2 redraft)
-- **Status**: **Umbrella — Split into 2c-A + 2c-B per G-14** (2026-05-26 23:50Z). Originally Approved v2 2026-05-26 21:50Z; split decision triggered por plan v2 DA review (5 P0 + 6 P1 + 5 P2 findings indicating spec too large for single sprint per skill §107).
+- **Status**: **CERRADO 2026-09-13 — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.** · Estado previo: **Umbrella — Split into 2c-A + 2c-B per G-14** (2026-05-26 23:50Z). Originally Approved v2 2026-05-26 21:50Z; split decision triggered por plan v2 DA review (5 P0 + 6 P1 + 5 P2 findings indicating spec too large for single sprint per skill §107).
 - **Linked**:
   - v1 historical: [`spec-v1.md`](./spec-v1.md) (INVALIDATED 2026-05-26 — architecture wrong per devils-advocate empirical findings; preserved for audit).
   - Review history: [`review.md`](./review.md) (DA pass over v1, 3 P0 + 5 P1 + 7 P2 findings).

@@ -2,7 +2,7 @@
 
 - **Spec**: [`.specs/sec-001-h1-2-google-blocking/spec.md`](./spec.md) (Approved v2 + OQ-2C-1..9 resolved 2026-05-26)
 - **Created**: 2026-05-26 (v2 redraft post DA findings)
-- **Status**: Draft v2
+- **Status**: **CERRADO 2026-09-13 — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.** · Estado previo: Draft v2
 - **Linked artifacts**:
   - [`plan-v1.md`](./plan-v1.md) — INVALIDATED historical (4 P0 + 7 P1 findings DA review).
   - [`plan-review.md`](./plan-review.md) — DA pass v1 (19 substantive findings).
