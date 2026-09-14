@@ -19,6 +19,7 @@ vi.mock('../services/driver-position.js', async () => {
 });
 
 const { useDriverPositionReporter } = await import('./use-driver-position-reporter.js');
+const { __resetForTests } = await import('../services/driver-position-reporter.js');
 
 const T1_MS = Date.parse('2026-08-02T09:30:00.000Z');
 
@@ -56,6 +57,8 @@ function installFakeGeolocation() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  __resetForTests(); // el reporter es un singleton por sesión (Slot 3)
 });
 afterEach(() => {
   vi.restoreAllMocks();

@@ -487,6 +487,12 @@ export function AssignmentCard({
     setEntregaError(null);
     setEntregando(true);
     try {
+      if (!hasTeltonika) {
+        // Lo que quedó en cola sin señal cuenta para la cobertura solo si
+        // entra ANTES de cerrar: tras la entrega el API lo rechaza (409).
+        // flush() está acotado (8 s): si no alcanza, se confirma igual.
+        await reporter.flush();
+      }
       await api.patch(`/assignments/${a.id}/confirmar-entrega`);
       setEntregada(true);
       if (!hasTeltonika) {
@@ -574,6 +580,7 @@ export function AssignmentCard({
         ) : reporter.isWatching ? (
           <output className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
             Reportando posición en vivo · {reporter.pointsSent} puntos enviados
+            {reporter.queued > 0 ? ` · ${reporter.queued} pendientes de envío` : ''}
           </output>
         ) : fase === 'por_recoger' ? (
           <p className="mt-2 text-neutral-600 text-sm">
