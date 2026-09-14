@@ -46,3 +46,26 @@ al header del Modo Conductor y a los cinco headers del shell platform-admin.
   se tocan (el manifest y `theme-color` siguen igual).
 - Pantallas públicas (login, landing): no tienen header fijo arriba; si el PO
   reporta lo mismo ahí, se aplica la misma utility.
+
+## 5. Pasada 2 (2026-09-14, misma fecha): pantallas con header propio fuera del shell
+
+Reporte del PO desde el iPhone: en «Configuración del Modo Conductor» la flecha
+«Volver» y el título quedaban bajo la barra de estado. La pasada 1 solo cubrió el
+shell operador, el Modo Conductor y platform-admin. Barrido de todos los
+`<header>`/barras superiores a nivel de página en `apps/web`:
+
+- `pt-safe` (header externo + div interno con el padding): `conductor-configuracion`,
+  `maintenance`, `legal-cobra-hoy`, `public-tracking`, `legal-terminos`.
+- Nueva utility `pt-safe-4` = `calc(env(safe-area-inset-top, 0px) + var(--spacing) * 4)`
+  para headers que llevan `py-4` sin div interno (`py-4` → `pb-4 pt-safe-4`):
+  `login`, `onboarding`, `onboarding-admin`, `solicitar-acceso`, y el overlay
+  superior del mapa en vivo (`LiveTrackingScreen`, flecha «Volver» + título).
+- Fuera de alcance, a propósito: `DemoBanner` e `ImpersonationBanner` (sticky en
+  `__root`). Solo aparecen en el host demo o durante una impersonación; darles
+  `pt-safe` duplicaría el inset con el header de la página que sigue debajo.
+  Si el PO los ve tapados, se resuelve moviendo el inset al banner y quitándolo
+  del header cuando el banner está visible.
+
+Criterios: tests rojo→verde en `conductor-configuracion.test.tsx` (`pt-safe`) y
+`login.test.tsx` (`pt-safe-4`); suite web, typecheck, biome, build con ambas
+utilities en el CSS compilado.

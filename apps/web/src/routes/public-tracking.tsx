@@ -70,7 +70,7 @@ export function PublicTrackingRoute() {
 
 function Header() {
   return (
-    <header className="border-neutral-200 border-b bg-white">
+    <header className="border-neutral-200 border-b bg-white pt-safe">
       <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-4">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-700 text-white"

@@ -121,6 +121,13 @@ describe('ConductorConfiguracionRoute', () => {
     expect(container.querySelector('[data-testid="autoplay-card"]')).toBeNull();
   });
 
+  it('iOS PWA: el header (flecha + título) reserva el inset superior (pt-safe)', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorConfiguracionRoute />);
+    // Reporte del PO 2026-09-14: la flecha «Volver» quedaba bajo la barra de estado.
+    expect(screen.getByRole('banner')).toHaveClass('pt-safe');
+  });
+
   it('contexto onboarded → renderiza las 5 cards de configuración', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<ConductorConfiguracionRoute />);

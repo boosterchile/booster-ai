@@ -31,7 +31,7 @@ function OnboardingPage({ me }: { me: MeNeedsOnboarding }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white px-6 py-4">
+      <header className="border-neutral-200 border-b bg-white px-6 pt-safe-4 pb-4">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
           <img src="/icons/icon.svg" alt="" aria-hidden className="h-7 w-7" />
           <span className="font-semibold text-lg text-neutral-900">Booster AI</span>
