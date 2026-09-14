@@ -99,6 +99,19 @@ resource "google_kms_crypto_key_iam_member" "cloud_run_certificate_viewer" {
   member        = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
 }
 
+# viewer (solo lectura) sobre ESTA key: el firmante resuelve la versión
+# primaria listando `cryptoKeyVersions` (packages/certificate-generator/
+# firmar-kms.ts) para no fijar "/cryptoKeyVersions/1" a mano y sobrevivir a
+# la rotación. signerVerifier + publicKeyViewer NO incluyen
+# `cloudkms.cryptoKeyVersions.list`, así que en prod la emisión fallaba con
+# IAM_PERMISSION_DENIED antes de firmar y ningún certificado se emitió jamás
+# (BOO-BKAXIK, 2026-09-14). Alcance: la key, no el keyring ni el proyecto.
+resource "google_kms_crypto_key_iam_member" "cloud_run_certificate_version_viewer" {
+  crypto_key_id = google_kms_crypto_key.certificate_carbono_signing.id
+  role          = "roles/cloudkms.viewer"
+  member        = "serviceAccount:${google_service_account.cloud_run_runtime.email}"
+}
+
 # Permitir a Cloud Storage usar la key para CMEK
 data "google_storage_project_service_account" "gcs" {
   project = google_project.booster_ai.project_id
