@@ -13,7 +13,10 @@ import type { ExtractionStatus } from '@booster-ai/shared-schemas';
  *     extracción. Solo aplica a órdenes creadas en/después de la fecha de
  *     corte (`REQUIRE_DOCUMENT_TO_CLOSE_SINCE`). Las órdenes legacy/en-curso
  *     (creadas antes del corte) quedan EXENTAS — no se bloquea un viaje en
- *     ruta por falta de documento.
+ *     ruta por falta de documento. Sin fecha de corte configurada el guard NO
+ *     aplica a ninguna orden (ADR-070 §O-7: la precondición nace con el
+ *     rollout y su fecha; decisión PO D1a 2026-09-13 — antes, `null` hacía
+ *     que aplicara a TODAS y bloqueaba cada entrega en prod).
  *   - `REQUIRE_TED_DECODE=false` (default): el TED decodificado NO es
  *     condición de cierre. Un documento subido cuyo TED quedó `fallido` o
  *     `pendiente` igual permite cerrar. Con el override `=true`, se exige al
@@ -31,8 +34,10 @@ export interface FlagsCierreDocumental {
   requireTedDecode: boolean;
   /**
    * Fecha de corte (REQUIRE_DOCUMENT_TO_CLOSE_SINCE). El guard solo aplica a
-   * órdenes con `creado_en >= esta fecha`. `null` => aplica a todas (sin
-   * exención legacy) cuando el flag está ON.
+   * órdenes con `creado_en >= esta fecha`. `null` => el guard NO aplica
+   * (razón `sin_fecha_de_corte`), aunque el flag esté ON: es la defensa que
+   * documentan `config.ts` y `server.ts` contra bloquear viajes antes de
+   * definir el corte del rollout.
    */
   requireDocumentSince: Date | null;
 }
@@ -43,6 +48,7 @@ export interface DocumentoParaCierre {
 
 export type RazonCierre =
   | 'flag_off'
+  | 'sin_fecha_de_corte'
   | 'orden_legacy_exenta'
   | 'documento_requerido'
   | 'ted_no_decodificado'
@@ -66,8 +72,14 @@ export function puedeCerrarConDocumentos(input: {
     return { puedeCerrar: true, razon: 'flag_off' };
   }
 
+  // Sin fecha de corte no hay cohorte a la que aplicar la precondición
+  // (ADR-070 §O-7). Se corta acá, antes de mirar documentos o TED.
+  if (flags.requireDocumentSince === null) {
+    return { puedeCerrar: true, razon: 'sin_fecha_de_corte' };
+  }
+
   // Exención legacy: órdenes creadas antes del corte no requieren documento.
-  if (flags.requireDocumentSince !== null && tripCreatedAt < flags.requireDocumentSince) {
+  if (tripCreatedAt < flags.requireDocumentSince) {
     return { puedeCerrar: true, razon: 'orden_legacy_exenta' };
   }
 
