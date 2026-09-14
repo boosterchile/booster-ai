@@ -68,7 +68,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     ['09:52:00', '-33.5000000', '-70.7324000'],
   ];
 
-  async function fixture() {
+  async function fixture(opts: { huella?: boolean } = {}) {
     const { db } = handle;
     const suffix = randomUUID().slice(0, 8);
     const [plan] = await db
@@ -107,6 +107,8 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         addressRegion: 'RM',
         isTransportista: true,
         planId,
+        // Opt-in de medición de huella (Task 1/3): el transportista mide.
+        carbonMeasurementEnabled: opts.huella === true,
       })
       .returning({ id: schema.empresas.id });
     if (!conductor || !empresa) {
@@ -121,6 +123,10 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
           plate: `${plateTag}${suffix.slice(0, 4).toUpperCase()}`,
           vehicleType: 'camion_mediano',
           capacityKg: 5000,
+          // Perfil energético completo → modo modelado (GLEC v3.0).
+          fuelType: 'diesel',
+          consumptionLPer100kmBaseline: '30.00',
+          curbWeightKg: 6000,
           ...(dev.imei ? { teltonikaImei: dev.imei } : {}),
         })
         .returning({ id: schema.vehicles.id });
@@ -140,7 +146,11 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
   }
 
   /** Viaje asignado a `vehicleId` + métricas estimadas previas (como deja `calcularMetricasEstimadas`). */
-  async function viajeAsignado(f: Awaited<ReturnType<typeof fixture>>, vehicleId: string) {
+  async function viajeAsignado(
+    f: Awaited<ReturnType<typeof fixture>>,
+    vehicleId: string,
+    opts: { cargoWeightKg?: number | null } = {},
+  ) {
     const { db } = handle;
     const [trip] = await db
       .insert(schema.trips)
@@ -149,7 +159,7 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         originAddressRaw: 'Av. Apoquindo 4500, Las Condes',
         destinationAddressRaw: 'Av. Libertad 100, Viña del Mar',
         cargoType: 'carga_seca',
-        cargoWeightKg: 3000,
+        cargoWeightKg: opts.cargoWeightKg === undefined ? 3000 : opts.cargoWeightKg,
         pickupDateRaw: '2026-08-10',
         pickupWindowStart: VENTANA_PLANIFICADA,
         status: 'asignado',
@@ -278,6 +288,9 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
         routeDataSource: schema.tripMetrics.routeDataSource,
         coveragePct: schema.tripMetrics.coveragePct,
         certificationLevel: schema.tripMetrics.certificationLevel,
+        carbonEmissionsKgco2eActual: schema.tripMetrics.carbonEmissionsKgco2eActual,
+        fuelConsumedLActual: schema.tripMetrics.fuelConsumedLActual,
+        precisionMethod: schema.tripMetrics.precisionMethod,
       })
       .from(schema.tripMetrics)
       .where(eq(schema.tripMetrics.tripId, tripId));
@@ -344,5 +357,43 @@ describe('integration: distancia real sobre el segmento recogida → entrega (T1
     const m = await metricas(tripId);
     expect(m?.distanceKmActual).toBeNull();
     expect(m?.routeDataSource).toBe('maps_directions');
+  });
+
+  test('T12 — huella activa (opt-in del transportista): emisiones_kgco2e_reales > 0 desde la distancia real del segmento, movil_gps + secundario_modeled', async () => {
+    const f = await fixture({ huella: true });
+    const { tripId, assignmentId } = await viajeAsignado(f, f.vehMovil);
+    await recogidaPorElConductor(f, assignmentId);
+    await movil(f.vehMovil, f.conductorId, [...CAMINO_AL_ORIGEN, ...RUTA_EN_VENTANA]);
+    await entregaRegistrada(tripId, assignmentId);
+
+    const r = await recalcularNivelPostEntrega({ db: handle.db, logger, tripId });
+
+    expect(r.recomputed).toBe(true);
+    expect(r.huella).toBe('medida');
+    expect(r.emisionesKgco2eReales).toBeGreaterThan(0);
+    const m = await metricas(tripId);
+    expect(Number(m?.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+    expect(Number(m?.carbonEmissionsKgco2eActual)).toBeCloseTo(r.emisionesKgco2eReales ?? -1, 3);
+    expect(Number(m?.fuelConsumedLActual)).toBeGreaterThan(0);
+    expect(m?.precisionMethod).toBe('modelado');
+    expect(m?.routeDataSource).toBe('movil_gps');
+    expect(m?.certificationLevel).toBe('secundario_modeled');
+    expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
+  });
+
+  test('T13 — huella activa + peso ausente: emisiones_kgco2e_reales queda null (nunca 0), la distancia medida sí se persiste', async () => {
+    const f = await fixture({ huella: true });
+    const { tripId, assignmentId } = await viajeAsignado(f, f.vehMovil, { cargoWeightKg: null });
+    await recogidaPorElConductor(f, assignmentId);
+    await movil(f.vehMovil, f.conductorId, RUTA_EN_VENTANA);
+    await entregaRegistrada(tripId, assignmentId);
+
+    const r = await recalcularNivelPostEntrega({ db: handle.db, logger, tripId });
+
+    expect(r.huella).toBe('peso_ausente');
+    const m = await metricas(tripId);
+    expect(m?.carbonEmissionsKgco2eActual).toBeNull();
+    expect(Number(m?.distanceKmActual)).toBeCloseTo(KM_EN_VENTANA, 2);
+    expect(m?.routeDataSource).toBe('movil_gps');
   });
 });

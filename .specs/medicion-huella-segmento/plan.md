@@ -197,13 +197,14 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (carbono/GLEC).
 **Depende de:** Task 3, Task 11.
 **Pasos:**
-- [ ] Cargar los inputs del opt-in y resolver: `trips.carbon_measurement_override`, flag del generador (`trips.generadorCargaEmpresaId` → `empresas.carbon_measurement_enabled`, null-safe si no hay empresa) y del transportista (`assignments.empresaId` → `empresas.carbon_measurement_enabled`); pasar a `resolverOptInHuella` (Task 3). Si el resultado es false → no medir (no tocar `*Actual`).
-- [ ] Test (rojo) cobertura alta: huella activa + cobertura ≥ umbral → `distanceKmActual` = `kmCubiertos`, `carbonEmissionsKgco2eActual` poblado (GLEC), nivel primario.
-- [ ] Test (rojo) cobertura baja: huella activa + cobertura < umbral → `*Actual` con distancia estimada, nivel secundario; métrica de degradación emitida.
-- [ ] Test (rojo) huella inactiva: opt-in efectivo false → no se computan `*Actual` (siguen null), no se llama carbon-calculator.
-- [ ] Implementar el wire en el post-commit (que hoy recalcula nivel) reusando `derivarNivelCertificacion` como fuente única del umbral.
-- [ ] Verde + commit `feat(carbon): huella real del segmento con umbral binario de cobertura`.
+- [x] Cargar los inputs del opt-in y resolver: `trips.carbon_measurement_override`, flag del generador (`trips.generadorCargaEmpresaId` → `empresas.carbon_measurement_enabled`, null-safe si no hay empresa) y del transportista (`assignments.empresaId` → `empresas.carbon_measurement_enabled`); pasar a `resolverOptInHuella` (Task 3). Si el resultado es false → no medir (no tocar `*Actual`).
+- [x] Test (rojo) cobertura alta: huella activa + cobertura ≥ umbral → `distanceKmActual` = `kmCubiertos`, `carbonEmissionsKgco2eActual` poblado (GLEC), nivel primario.
+- [x] Test (rojo) cobertura baja: huella activa + cobertura < umbral → `*Actual` con distancia estimada, nivel secundario; métrica de degradación emitida.
+- [x] Test (rojo) huella inactiva: opt-in efectivo false → no se computan `*Actual` (siguen null), no se llama carbon-calculator.
+- [x] Implementar el wire en el post-commit (que hoy recalcula nivel) reusando `derivarNivelCertificacion` como fuente única del umbral.
+- [x] Verde + commit `feat(carbon): huella real del segmento con umbral binario de cobertura`.
 **Criterio de hecho:** `*Actual` poblado solo con cobertura ≥ umbral y huella activa; degradación a estimada/secundario explícita.
+> **Ejecutado (2026-09-13):** `resolverOptInHuella` cableado en `recalcularNivelPostEntrega` (override del viaje ?? OR generador/transportista, leído de `empresas.carbon_measurement_enabled`). Con huella activa y cobertura ≥ `THRESHOLD_SECUNDARIO_MODELED_PCT` (fuente única de la matriz), las emisiones GLEC se calculan sobre la MISMA distancia real que se persiste (híbrida de #624) con el modo del perfil del vehículo (`emisionesSegunPerfil`, compartido con la estimación) → `emisiones_kgco2e_reales` + `combustible_consumido_l_real`. Cobertura < umbral o sin reconstrucción → emisiones null + `huella_cobertura_degradada_total{fuente, motivo}` y la degradación queda REGISTRADA en BD (sin observación con huella activa: `maps_directions` + cobertura 0). "Nivel primario" del plan se lee como fija ADR-077 §2: distancia primaria, nivel `secundario_modeled`. **Decisión escalada al PO:** ADR-077 §2 dice que bajo el umbral la fuente pasa a `maps_directions` y la distancia usada es la estimada; #624 (spec `distancia-real-hibrida`, aceptada) persiste la híbrida con cobertura declarada y sus tests lo fijan. Se implementó sin regresionar #624 (la híbrida se conserva; se degrada la huella). La lectura estricta es un cambio acotado si el PO la prefiere.
 
 ### Task 13 — Peso condicional + degradación nunca-`0`
 **Objetivo:** Con huella activa: peso presente → mide normal; peso ausente (`cargoWeightKg` NULL) → **no computar** `carbonEmissionsKgco2eActual` (null) + métrica data-quality + cert degradada, **NUNCA `0`** (degradación corte #3). En el punto de activación, exigir peso cuando la huella esté activa.
@@ -211,10 +212,11 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (carbono/GLEC).
 **Depende de:** Task 3, Task 12.
 **Pasos:**
-- [ ] Test (rojo): huella activa + peso presente → mide con `cargoWeightKg`. Huella activa + peso NULL → `carbonEmissionsKgco2eActual` queda null, se emite métrica `huella_peso_ausente`, nivel degradado; **assert explícito de que NO es `0`**. Huella inactiva → no aplica.
-- [ ] Implementar la rama condicional (no usar `?? 0` en el cómputo real de huella).
-- [ ] Verde + commit `feat(carbon): degradación explícita por peso ausente (nunca 0)`.
+- [x] Test (rojo): huella activa + peso presente → mide con `cargoWeightKg`. Huella activa + peso NULL → `carbonEmissionsKgco2eActual` queda null, se emite métrica `huella_peso_ausente`, nivel degradado; **assert explícito de que NO es `0`**. Huella inactiva → no aplica.
+- [x] Implementar la rama condicional (no usar `?? 0` en el cómputo real de huella).
+- [x] Verde + commit `feat(carbon): degradación explícita por peso ausente (nunca 0)`.
 **Criterio de hecho:** peso ausente con huella activa nunca produce emisiones `0`; métrica emitida.
+> **Ejecutado (2026-09-13, mismo PR que T12):** en el path real `carga_peso_kg` ausente con huella activa → `emisiones_kgco2e_reales = null` + métrica `huella_peso_ausente_total{fuente}` (assert explícito de que no es `0`); la distancia medida sí se persiste. El path estimado conserva `?? 0` a propósito (es un preview pre-asignación). "Exigir peso en el punto de activación" queda pendiente hasta que exista un endpoint/UI de activación del opt-in (hoy solo columnas, Task 1).
 
 ---
 

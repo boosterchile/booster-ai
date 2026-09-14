@@ -1,3 +1,4 @@
+import { calcularEmisionesViaje } from '@booster-ai/carbon-calculator';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_HUECOS_ROUTES } from '../../src/services/calcular-distancia-real.js';
 import {
@@ -8,6 +9,21 @@ import {
 
 vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
+}));
+// T12/T13: las métricas de negocio de la huella se capturan con spies (el meter
+// real es no-op en tests y no deja rastro).
+const { counterSpies } = vi.hoisted(() => ({
+  counterSpies: new Map<string, { add: ReturnType<typeof vi.fn> }>(),
+}));
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: vi.fn((name: string) => {
+    let counter = counterSpies.get(name);
+    if (!counter) {
+      counter = { add: vi.fn() };
+      counterSpies.set(name, counter);
+    }
+    return counter;
+  }),
 }));
 // Mock PARCIAL: solo calcularCobertura. haversineKm y CONTINUITY_GAP_S quedan
 // REALES — el híbrido (calcularDistanciaHibrida) los usa.
@@ -850,5 +866,278 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
     expect(res.abortReason).toBe('sin_observacion');
     expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso ausente (T13)', () => {
+  type Mock = ReturnType<typeof vi.fn>;
+  const DELIVERED = new Date('2026-05-01T15:00:00Z');
+  const RECOGIDA = new Date('2026-05-01T11:00:00Z');
+  const EMP_TRANSPORTISTA = '44444444-4444-4444-4444-444444444444';
+  const EMP_GENERADOR = '55555555-5555-5555-5555-555555555555';
+  const VEH_MODELADO = {
+    id: VEH_ID,
+    teltonikaImei: '123456789012345',
+    teltonikaImeiEspejo: null,
+    fuelType: 'diesel',
+    consumptionLPer100kmBaseline: '28.50',
+    curbWeightKg: 7000,
+    capacityKg: 12000,
+    vehicleType: 'camion_mediano',
+  };
+  const ruta = (km: number) => [
+    { distanceKm: km, durationS: 100, fuelL: null, polylineEncoded: '' },
+  ];
+  const continuos = () => [
+    { tMs: 0, lat: -33.4, lng: -70.6 },
+    { tMs: 30_000, lat: -33.41, lng: -70.61 },
+  ];
+  const kmContinuo = haversineKm(-33.4, -70.6, -33.41, -70.61);
+  // 1 tramo observado + 1 hueco de 120 s (Routes lo estima).
+  const conHueco = () => [...continuos(), { tMs: 150_000, lat: -33.6, lng: -70.8 }];
+  // Sin observación continua: todos los tramos son huecos.
+  const soloHuecos = () => [
+    { tMs: 0, lat: -33.4, lng: -70.6 },
+    { tMs: 120_000, lat: -33.42, lng: -70.62 },
+  ];
+
+  const selects = (
+    o: {
+      trip?: Record<string, unknown>;
+      metrics?: Record<string, unknown>;
+      assignment?: Record<string, unknown>;
+      vehicle?: Record<string, unknown>;
+      empresas?: unknown[];
+    } = {},
+  ) => [
+    [{ ...TRIP_BASE, generadorCargaEmpresaId: null, carbonMeasurementOverride: null, ...o.trip }],
+    [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado', ...o.metrics }],
+    [
+      {
+        vehicleId: VEH_ID,
+        deliveredAt: DELIVERED,
+        pickedUpAt: RECOGIDA,
+        empresaId: EMP_TRANSPORTISTA,
+        ...o.assignment,
+      },
+    ],
+    [{ ...VEH_MODELADO, ...o.vehicle }],
+    o.empresas ?? [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: true }],
+  ];
+  const run = (db: unknown) =>
+    recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      routesProjectId: 'proj',
+    });
+  const setDe = (db: ReturnType<typeof makeDb>) =>
+    (db.update as Mock).mock.results[0].value.set.mock.calls[0][0];
+  const counter = (name: string) => counterSpies.get(name);
+  const emisionesEsperadas = (distanciaKm: number, cargaKg = 5000) =>
+    calcularEmisionesViaje({
+      metodo: 'modelado',
+      distanciaKm,
+      cargaKg,
+      vehiculo: {
+        combustible: 'diesel',
+        consumoBasePor100km: 28.5,
+        pesoVacioKg: 7000,
+        capacidadKg: 12000,
+      },
+    });
+
+  beforeEach(() => {
+    for (const c of counterSpies.values()) {
+      c.add.mockClear();
+    }
+  });
+
+  it('opt-in inactivo (sin override, empresas sin flag) → NO computa emisiones reales; distancia y nivel como T11', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({ empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }] }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.recomputed).toBe(true);
+    expect(res.huella).toBe('opt_in_inactivo');
+    const setArg = setDe(db);
+    expect(setArg.distanceKmActual).toBeDefined();
+    expect(setArg.carbonEmissionsKgco2eActual).toBeUndefined();
+    expect(counter('huella_segmento_total')?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ resultado: 'opt_in_inactivo', fuente: 'teltonika_gps' }),
+    );
+  });
+
+  it('MEDIDA — opt-in del transportista + cobertura ≥ 80 % → emisiones reales GLEC desde la distancia real del segmento (perfil modelado), nunca 0', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({ selects: selects(), updates: [[]] });
+    const res = await run(db);
+    const esperado = emisionesEsperadas(kmContinuo);
+    expect(res.huella).toBe('medida');
+    expect(res.emisionesKgco2eReales).toBeCloseTo(esperado.emisionesKgco2eWtw, 6);
+    const setArg = setDe(db);
+    expect(Number(setArg.carbonEmissionsKgco2eActual)).toBeCloseTo(esperado.emisionesKgco2eWtw, 3);
+    expect(Number(setArg.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+    expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(esperado.combustibleConsumido, 2);
+    expect(setArg.precisionMethod).toBe('modelado');
+    expect(setArg.routeDataSource).toBe('teltonika_gps');
+    expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
+    expect(counter('huella_segmento_total')?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ resultado: 'medida', fuente: 'teltonika_gps' }),
+    );
+  });
+
+  it('la distancia que alimenta la huella es la MISMA que se persiste (híbrida = observado + huecos), no solo lo observado', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(conHueco());
+    // hueco pequeño (0,2 km) → cobertura ≈ 88 % ≥ 80 → medida.
+    (computeRoutes as Mock).mockResolvedValue(ruta(0.2));
+    const db = makeDb({ selects: selects(), updates: [[]] });
+    const res = await run(db);
+    expect(res.huella).toBe('medida');
+    const setArg = setDe(db);
+    const distanciaPersistida = Number(setArg.distanceKmActual);
+    expect(distanciaPersistida).toBeCloseTo(kmContinuo + 0.2, 6);
+    expect(Number(setArg.carbonEmissionsKgco2eActual)).toBeCloseTo(
+      emisionesEsperadas(distanciaPersistida).emisionesKgco2eWtw,
+      3,
+    );
+  });
+
+  it('override del viaje = true gana aunque ninguna empresa tenga el flag', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({
+        trip: { carbonMeasurementOverride: true },
+        empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }],
+      }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.huella).toBe('medida');
+  });
+
+  it('override del viaje = false gana aunque el transportista tenga el flag', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({ trip: { carbonMeasurementOverride: false } }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.huella).toBe('opt_in_inactivo');
+  });
+
+  it('el opt-in del generador (trips.generadorCargaEmpresaId) también activa la medición', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({
+        trip: { generadorCargaEmpresaId: EMP_GENERADOR },
+        empresas: [
+          { id: EMP_GENERADOR, carbonMeasurementEnabled: true },
+          { id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false },
+        ],
+      }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.huella).toBe('medida');
+  });
+
+  it('DEGRADACIÓN (corte #2) — cobertura < 80 % → emisiones reales null + métrica; la distancia híbrida (#624) y su fuente se conservan', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(conHueco());
+    // hueco grande (40 km) → cobertura ≈ 3,6 % < 80.
+    (computeRoutes as Mock).mockResolvedValue(ruta(40));
+    const db = makeDb({ selects: selects(), updates: [[]] });
+    const res = await run(db);
+    expect(res.huella).toBe('degradada_cobertura');
+    expect(res.emisionesKgco2eReales).toBeNull();
+    const setArg = setDe(db);
+    expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo + 40, 6);
+    expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
+    expect(setArg.routeDataSource).toBe('teltonika_gps');
+    expect(setArg.certificationLevel).toBe('secundario_modeled');
+    expect(Number(setArg.coveragePct)).toBeLessThan(80);
+    expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ fuente: 'teltonika_gps', motivo: 'cobertura_bajo_umbral' }),
+    );
+  });
+
+  it('DEGRADACIÓN sin observación continua (opt-in activo) → queda REGISTRADA en BD (maps_directions + *Actual null), no en silencio', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(soloHuecos());
+    (computeRoutes as Mock).mockResolvedValue(ruta(5));
+    const db = makeDb({ selects: selects(), updates: [[]] });
+    const res = await run(db);
+    expect(res.abortReason).toBe('sin_observacion');
+    expect(res.huella).toBe('degradada_cobertura');
+    expect(db.update).toHaveBeenCalledTimes(1);
+    const setArg = setDe(db);
+    expect(setArg.routeDataSource).toBe('maps_directions');
+    expect(setArg.distanceKmActual).toBeNull();
+    expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
+    expect(Number(setArg.coveragePct)).toBe(0);
+    expect(counter('huella_cobertura_degradada_total')?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ motivo: 'sin_observacion' }),
+    );
+  });
+
+  it('sin observación con opt-in INACTIVO → sigue sin UPDATE (comportamiento T11 intacto)', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(soloHuecos());
+    const db = makeDb({
+      selects: selects({ empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }] }),
+    });
+    const res = await run(db);
+    expect(res.abortReason).toBe('sin_observacion');
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('PESO AUSENTE (T13) — opt-in activo + cobertura alta → emisiones reales null + métrica huella_peso_ausente; la distancia medida SÍ se persiste', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({ selects: selects({ trip: { cargoWeightKg: null } }), updates: [[]] });
+    const res = await run(db);
+    expect(res.huella).toBe('peso_ausente');
+    expect(res.emisionesKgco2eReales).toBeNull();
+    const setArg = setDe(db);
+    expect(setArg.carbonEmissionsKgco2eActual).toBeNull();
+    expect(Number(setArg.distanceKmActual)).toBeCloseTo(kmContinuo, 6);
+    expect(setArg.routeDataSource).toBe('teltonika_gps');
+    expect(counter('huella_peso_ausente_total')?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ fuente: 'teltonika_gps' }),
+    );
+  });
+
+  it('perfil incompleto (sin consumo base) → mide en por_defecto con el tipo de vehículo', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(continuos());
+    const db = makeDb({
+      selects: selects({ vehicle: { consumptionLPer100kmBaseline: null } }),
+      updates: [[]],
+    });
+    const res = await run(db);
+    expect(res.huella).toBe('medida');
+    const setArg = setDe(db);
+    expect(setArg.precisionMethod).toBe('por_defecto');
+    expect(Number(setArg.carbonEmissionsKgco2eActual)).toBeGreaterThan(0);
+  });
+
+  it('INVARIANTE — en ningún camino degradado emisiones_kgco2e_reales es 0: siempre null', async () => {
+    const casos: Array<{ pings: () => unknown[]; km: number; trip?: Record<string, unknown> }> = [
+      { pings: conHueco, km: 40 },
+      { pings: soloHuecos, km: 5 },
+      { pings: continuos, km: 5, trip: { cargoWeightKg: null } },
+    ];
+    for (const caso of casos) {
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(caso.pings());
+      (computeRoutes as Mock).mockResolvedValue(ruta(caso.km));
+      const db = makeDb({ selects: selects({ trip: caso.trip ?? {} }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(setArg.carbonEmissionsKgco2eActual, JSON.stringify(caso.trip)).toBeNull();
+      expect(setArg.carbonEmissionsKgco2eActual).not.toBe('0');
+    }
   });
 });
