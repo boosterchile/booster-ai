@@ -154,6 +154,20 @@ describe('api.patch / api.put', () => {
     expect(fetchSpy.mock.calls[0]?.[1]?.method).toBe('PATCH');
   });
 
+  it('patch SIN body no manda Content-Type (regresión 2026-09-14: confirmar-recogida → 500)', async () => {
+    // El validador json de Hono parsea el cuerpo si llega Content-Type json;
+    // con cuerpo vacío lanza «Malformed JSON» (400) y el onError lo volvía 500.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    await api.patch('/assignments/a-1/confirmar-recogida');
+    const call = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect(call.body).toBeUndefined();
+    expect(new Headers(call.headers).has('content-type')).toBe(false);
+  });
+
   it('put con body', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

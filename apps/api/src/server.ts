@@ -3,6 +3,7 @@ import { type Logger, createLogger } from '@booster-ai/logger';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { secureHeaders } from 'hono/secure-headers';
 import Redis from 'ioredis';
 import type pg from 'pg';
@@ -1072,6 +1073,14 @@ export function createServer(opts: CreateServerOptions): Hono {
   }
 
   app.onError((err, c) => {
+    // Una HTTPException la lanza el framework (p. ej. el validador json ante un
+    // cuerpo malformado) con status y mensaje pensados para el cliente: se
+    // devuelve tal cual. Pisarla con un 500 opaco escondió durante un día que
+    // «Confirmar recogida» fallaba por un 400 (2026-09-14).
+    if (err instanceof HTTPException) {
+      logger.warn({ status: err.status, message: err.message, path: c.req.path }, 'http exception');
+      return err.getResponse();
+    }
     logger.error({ err }, 'unhandled error');
     return c.json({ error: 'internal_server_error' }, 500);
   });
