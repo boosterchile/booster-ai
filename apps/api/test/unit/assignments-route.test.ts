@@ -27,6 +27,31 @@ vi.mock('../../src/services/asignar-conductor-a-assignment.js', async (importOri
   };
 });
 
+// Observabilidad del endpoint de recogida (T7 del plan medicion-huella-segmento):
+// el counter y el span se capturan con spies para poder asertar que el endpoint
+// los emite; el meter/tracer reales son no-op en tests y no dejan rastro.
+const { counterSpies } = vi.hoisted(() => ({
+  counterSpies: new Map<string, { add: ReturnType<typeof vi.fn> }>(),
+}));
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: vi.fn((name: string) => {
+    let counter = counterSpies.get(name);
+    if (!counter) {
+      counter = { add: vi.fn() };
+      counterSpies.set(name, counter);
+    }
+    return counter;
+  }),
+}));
+vi.mock('../../src/observability/business-span.js', () => ({
+  withBusinessSpan: vi.fn(
+    async (_opts: unknown, fn: (span: { setAttributes: () => void }) => Promise<unknown>) =>
+      fn({ setAttributes: vi.fn() }),
+  ),
+  setResultAttributes: vi.fn(),
+}));
+const { withBusinessSpan } = await import('../../src/observability/business-span.js');
+
 const { confirmarEntregaViaje } = await import('../../src/services/confirmar-entrega-viaje.js');
 const { confirmarRecogidaViaje } = await import('../../src/services/confirmar-recogida-viaje.js');
 const {
@@ -909,5 +934,96 @@ describe('POST /assignments/:id/driver-position — geofence del origen', () => 
     expect(json.ok).toBe(true);
     expect(json.geofence).toEqual({ estado: 'sin_origen', distancia_m: null });
     expect(db.insertValues).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PATCH /assignments/:id/confirmar-recogida — observabilidad (T7: span + métrica)', () => {
+  const ctxConductor = JSON.stringify({
+    user: { id: USER_ID },
+    activeMembership: {
+      membership: { role: 'conductor' },
+      empresa: { id: CARRIER_EMP, isTransportista: true, status: 'activa' },
+    },
+  });
+  const recogidas = () => counterSpies.get('recogidas_confirmadas_total');
+
+  beforeEach(() => {
+    vi.mocked(withBusinessSpan).mockClear();
+    for (const c of counterSpies.values()) {
+      c.add.mockClear();
+    }
+  });
+
+  async function patchRecogida(body?: Record<string, string>) {
+    const app = await buildApp({ db: makeDb({ selects: [[{ driverUserId: USER_ID }]] }) });
+    return app.request(`/assignments/${ASSIGNMENT_ID}/confirmar-recogida`, {
+      method: 'PATCH',
+      headers: body
+        ? { 'x-test-userctx': ctxConductor, 'content-type': 'application/json' }
+        : { 'x-test-userctx': ctxConductor },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  it('abre el span assignments.confirmar_recogida con el assignment_id y la fuente del instante', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: false,
+      pickedUpAt: new Date('2026-08-03T06:00:00Z'),
+      tripId: TRIP_ID,
+    });
+    const res = await patchRecogida();
+    expect(res.status).toBe(200);
+    expect(withBusinessSpan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'assignments.confirmar_recogida',
+        attributes: expect.objectContaining({
+          'booster.assignment_id': ASSIGNMENT_ID,
+          'booster.recogida.picked_up_at_source': 'servidor',
+        }),
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it('recogida nueva por el conductor → recogidas_confirmadas_total +1 {via, fuente, already_picked_up:false}', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: false,
+      pickedUpAt: new Date('2026-08-03T06:00:00Z'),
+      tripId: TRIP_ID,
+    });
+    await patchRecogida({ picked_up_at: '2026-08-03T06:00:00Z' });
+    expect(recogidas()?.add).toHaveBeenCalledTimes(1);
+    expect(recogidas()?.add).toHaveBeenCalledWith(1, {
+      via: 'conductor',
+      picked_up_at_source: 'cliente',
+      already_picked_up: false,
+    });
+  });
+
+  it('repetición idempotente → cuenta con already_picked_up:true (distinguible en el dashboard)', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: true,
+      alreadyPickedUp: true,
+      pickedUpAt: new Date('2026-08-03T06:00:00Z'),
+      tripId: TRIP_ID,
+    });
+    await patchRecogida();
+    expect(recogidas()?.add).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ already_picked_up: true, picked_up_at_source: 'servidor' }),
+    );
+  });
+
+  it('rechazo del service (409 invalid_status) → NO incrementa la métrica', async () => {
+    vi.mocked(confirmarRecogidaViaje).mockResolvedValueOnce({
+      ok: false,
+      code: 'invalid_status',
+      currentStatus: 'entregado',
+    });
+    const res = await patchRecogida();
+    expect(res.status).toBe(409);
+    expect(recogidas()?.add ?? vi.fn()).not.toHaveBeenCalled();
   });
 });

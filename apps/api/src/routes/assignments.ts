@@ -55,6 +55,13 @@ import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incident
 import { safeIsoString } from '../services/safe-iso-string.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
+/**
+ * T7 (medicion-huella-segmento): recogidas confirmadas por el endpoint. Atributos
+ * `via` (conductor|carrier), `picked_up_at_source` (cliente = cruce del geofence
+ * aportado por la PWA; servidor = tap manual) y `already_picked_up` (repetición
+ * idempotente, distinguible para no inflar el conteo de recogidas nuevas).
+ */
+const recogidasConfirmadasCounter = getBusinessCounter('recogidas_confirmadas_total');
 
 /** Query de `GET /assignments/:id/traza`: cap de puntos (default 800, máx 2000). */
 const trazaCargaQuerySchema = z.object({
@@ -462,58 +469,90 @@ export function createAssignmentsRoutes(opts: {
       const assignmentId = c.req.param('id');
       const body = c.req.valid('json');
       const pickedUpAt = body.picked_up_at ? new Date(body.picked_up_at) : undefined;
+      const pickedUpAtSource = pickedUpAt ? 'cliente' : 'servidor';
 
-      // ¿Es el conductor de este servicio? Se resuelve contra la fila, no contra
-      // lo que el cliente diga.
-      const rows = await opts.db
-        .select({ driverUserId: assignments.driverUserId })
-        .from(assignments)
-        .where(eq(assignments.id, assignmentId))
-        .limit(1);
-      const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
-
-      const role = auth.activeMembership.membership.role;
-      const esCarrierConEscritura = role === 'dueno' || role === 'admin' || role === 'despachador';
-
-      const result = await confirmarRecogidaViaje({
-        db: opts.db,
-        logger: opts.logger,
-        assignmentId,
-        actor: {
-          userId: auth.userContext.user.id,
-          empresaId: auth.activeMembership.empresa.id,
-          esConductorAsignado,
-          esCarrierConEscritura,
-        },
-        pickedUpAt,
-      });
-
-      if (!result.ok) {
-        const statusCode =
-          result.code === 'assignment_not_found'
-            ? 404
-            : result.code === 'forbidden'
-              ? 403
-              : result.code === 'invalid_picked_up_at'
-                ? 400
-                : 409;
-        return c.json(
-          {
-            error: result.code,
-            code: result.code,
-            ...(result.code === 'invalid_status' && result.currentStatus
-              ? { current_status: result.currentStatus }
-              : {}),
+      // Span de negocio + métrica (T7): la recogida abre la ventana de medición
+      // de huella; sin rastro propio, un conductor que "no puede confirmar" es
+      // invisible en Cloud Trace y el dashboard no sabe cuántas recogidas
+      // llegan por geofence vs por tap.
+      return await withBusinessSpan(
+        {
+          name: 'assignments.confirmar_recogida',
+          attributes: {
+            'booster.assignment_id': assignmentId,
+            'booster.recogida.picked_up_at_source': pickedUpAtSource,
           },
-          statusCode,
-        );
-      }
+        },
+        async (span) => {
+          // ¿Es el conductor de este servicio? Se resuelve contra la fila, no
+          // contra lo que el cliente diga.
+          const rows = await opts.db
+            .select({ driverUserId: assignments.driverUserId })
+            .from(assignments)
+            .where(eq(assignments.id, assignmentId))
+            .limit(1);
+          const esConductorAsignado = rows[0]?.driverUserId === auth.userContext.user.id;
 
-      return c.json({
-        ok: true,
-        already_picked_up: result.alreadyPickedUp,
-        picked_up_at: result.pickedUpAt.toISOString(),
-      });
+          const role = auth.activeMembership.membership.role;
+          const esCarrierConEscritura =
+            role === 'dueno' || role === 'admin' || role === 'despachador';
+          const via = esConductorAsignado ? 'conductor' : 'carrier';
+
+          const result = await confirmarRecogidaViaje({
+            db: opts.db,
+            logger: opts.logger,
+            assignmentId,
+            actor: {
+              userId: auth.userContext.user.id,
+              empresaId: auth.activeMembership.empresa.id,
+              esConductorAsignado,
+              esCarrierConEscritura,
+            },
+            pickedUpAt,
+          });
+
+          if (!result.ok) {
+            setResultAttributes(span, {
+              'booster.recogida.via': via,
+              'booster.recogida.resultado': result.code,
+            });
+            const statusCode =
+              result.code === 'assignment_not_found'
+                ? 404
+                : result.code === 'forbidden'
+                  ? 403
+                  : result.code === 'invalid_picked_up_at'
+                    ? 400
+                    : 409;
+            return c.json(
+              {
+                error: result.code,
+                code: result.code,
+                ...(result.code === 'invalid_status' && result.currentStatus
+                  ? { current_status: result.currentStatus }
+                  : {}),
+              },
+              statusCode,
+            );
+          }
+
+          recogidasConfirmadasCounter.add(1, {
+            via,
+            picked_up_at_source: pickedUpAtSource,
+            already_picked_up: result.alreadyPickedUp,
+          });
+          setResultAttributes(span, {
+            'booster.recogida.via': via,
+            'booster.recogida.resultado': result.alreadyPickedUp ? 'ya_recogida' : 'confirmada',
+          });
+
+          return c.json({
+            ok: true,
+            already_picked_up: result.alreadyPickedUp,
+            picked_up_at: result.pickedUpAt.toISOString(),
+          });
+        },
+      );
     },
   );
 
