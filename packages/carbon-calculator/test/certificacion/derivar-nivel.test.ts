@@ -101,6 +101,60 @@ describe('derivarNivelCertificacion — matriz ADR-028 §2', () => {
     });
   });
 
+  describe('movil_gps (ADR-077 §2): distancia medida por el móvil, nunca primario', () => {
+    it('modelado + movil_gps + cobertura ≥ 80% → secundario_modeled (distancia medida)', () => {
+      expect(derivarNivelCertificacion(caso('modelado', 'movil_gps', 100))).toBe(
+        'secundario_modeled',
+      );
+      expect(derivarNivelCertificacion(caso('modelado', 'movil_gps', 95))).toBe(
+        'secundario_modeled',
+      );
+      expect(derivarNivelCertificacion(caso('modelado', 'movil_gps', 80))).toBe(
+        'secundario_modeled',
+      );
+    });
+
+    it('modelado + movil_gps + cobertura < 80% → secundario_modeled (distancia estimada)', () => {
+      expect(derivarNivelCertificacion(caso('modelado', 'movil_gps', 79.9))).toBe(
+        'secundario_modeled',
+      );
+      expect(derivarNivelCertificacion(caso('modelado', 'movil_gps', 0))).toBe(
+        'secundario_modeled',
+      );
+    });
+
+    it('por_defecto + movil_gps (cualquier cobertura) → secundario_modeled', () => {
+      expect(derivarNivelCertificacion(caso('por_defecto', 'movil_gps', 100))).toBe(
+        'secundario_modeled',
+      );
+      expect(derivarNivelCertificacion(caso('por_defecto', 'movil_gps', 40))).toBe(
+        'secundario_modeled',
+      );
+    });
+
+    it('exacto_canbus + movil_gps → secundario_modeled aunque la cobertura sea ≥ 95% (combinación imposible por construcción: un bug de wire jamás fabrica un primario)', () => {
+      expect(derivarNivelCertificacion(caso('exacto_canbus', 'movil_gps', 100))).toBe(
+        'secundario_modeled',
+      );
+      expect(
+        derivarNivelCertificacion(caso('exacto_canbus', 'movil_gps', THRESHOLD_PRIMARIO_PCT)),
+      ).toBe('secundario_modeled');
+    });
+
+    it('INVARIANTE: toda combinación con movil_gps es secundario_modeled, sin importar método ni cobertura', () => {
+      const metodos: MetodoPrecision[] = ['exacto_canbus', 'modelado', 'por_defecto'];
+      const coberturas = [0, 50, 79.9, 80, 94.9, THRESHOLD_PRIMARIO_PCT, 100];
+      for (const metodo of metodos) {
+        for (const cobertura of coberturas) {
+          expect(
+            derivarNivelCertificacion(caso(metodo, 'movil_gps', cobertura)),
+            `${metodo} + movil_gps + ${cobertura}%`,
+          ).toBe('secundario_modeled');
+        }
+      }
+    });
+  });
+
   describe('boundaries del threshold primario (95%)', () => {
     it(`exactamente ${THRESHOLD_PRIMARIO_PCT}% → primario_verificable`, () => {
       expect(

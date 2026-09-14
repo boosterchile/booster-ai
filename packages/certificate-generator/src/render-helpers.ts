@@ -149,6 +149,10 @@ export function declaracionDistancia(coveragePct?: number): string {
 
 /**
  * Formato human-readable del origen de la ruta para imprimir en el cert.
+ *
+ * ADR-077 §4 — vocabulario cerrado: «medida» aplica solo a la distancia y
+ * «verificable» está prohibido fuera de `primario_verificable`. El móvil del
+ * conductor mide distancia, nunca energía, y nunca es primario.
  */
 export function formatRouteDataSource(s: string): string {
   switch (s) {
@@ -158,6 +162,8 @@ export function formatRouteDataSource(s: string): string {
       return 'Google Routes API (ruta modelada)';
     case 'manual_declared':
       return 'Declaración manual';
+    case 'movil_gps':
+      return 'GPS del móvil del conductor (distancia medida)';
     default:
       return s;
   }
