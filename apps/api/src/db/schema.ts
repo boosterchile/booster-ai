@@ -1122,7 +1122,11 @@ export const conductores = pgTable(
      * Vencimiento de la licencia. DATE en Postgres (sin hora) — la
      * resolución diaria es suficiente y simplifica chequeos contra NOW().
      */
-    licenseExpiry: timestamp('licencia_vencimiento', { mode: 'date' }).notNull(),
+    // DATE en la base (migración 0021, a propósito: fecha sin hora). Se declara
+    // como `date` en modo string ("YYYY-MM-DD"): declararla `timestamp` hacía que
+    // Drizzle le pegara "+0000" al valor del driver y produjera un Date INVÁLIDO
+    // (500 en GET /conductores/:id, vencimientos en null en la lista — 2026-09-14).
+    licenseExpiry: date('licencia_vencimiento', { mode: 'string' }).notNull(),
     /**
      * `true` si el conductor no es chileno residente. Algunos puertos
      * (San Antonio, Valparaíso) y plantas industriales bloquean el ingreso
