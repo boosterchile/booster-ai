@@ -20,7 +20,7 @@
 
 import { createHash } from 'node:crypto';
 import { SignPdf } from '@signpdf/signpdf';
-import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils';
+import { SUBFILTER_ETSI_CADES_DETACHED, Signer } from '@signpdf/utils';
 import forge from 'node-forge';
 import type { CertSelfSignedResultado } from './ca-self-signed.js';
 import { firmarConKms } from './firmar-kms.js';
@@ -56,8 +56,12 @@ export async function firmarPades(params: ParametrosFirmaPades): Promise<Resulta
 
   // SignPdf custom signer — invocado UNA vez por sign() con los bytes
   // del PDF que entran en /ByteRange (todo el PDF excepto el placeholder).
-  const signer = {
-    async sign(pdfToSign: Buffer): Promise<Buffer> {
+  // DEBE extender `Signer` de @signpdf/utils: @signpdf/signpdf ≥3.3 rechaza
+  // cualquier otra cosa con «Signer implementation expected». Un objeto
+  // plano pasó los tests (mockean SignPdf) y reventó en prod el primer
+  // certificado que llegó a la firma (BOO-BKAXIK, 2026-09-14).
+  class KmsPadesSigner extends Signer {
+    override async sign(pdfToSign: Buffer): Promise<Buffer> {
       const pkcs7Result = await construirPkcs7(
         pdfToSign,
         params.cert,
@@ -67,8 +71,9 @@ export async function firmarPades(params: ParametrosFirmaPades): Promise<Resulta
       // Capturamos la firma raw para devolverla al caller (sidecar .sig).
       signatureRaw = pkcs7Result.signatureRaw;
       return pkcs7Result.pkcs7Der;
-    },
-  };
+    }
+  }
+  const signer = new KmsPadesSigner();
 
   const signpdf = new SignPdf();
   const pdfBuffer = Buffer.from(params.pdfBytes);
