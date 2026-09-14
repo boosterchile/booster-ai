@@ -102,10 +102,36 @@ describe('puedeCerrarConDocumentos', () => {
     expect(r.puedeCerrar).toBe(true);
   });
 
-  it('si requireDocumentSince es null y el flag ON, aplica a todas las órdenes', () => {
+  // D1a (PO 2026-09-13). ADR-070 y la spec O-7 fijan que el guard aplica SOLO a
+  // órdenes creadas tras la fecha de corte del rollout; sin fecha configurada no
+  // hay cohorte a la que aplicarlo, y la defensa que prometen `config.ts` y
+  // `server.ts` («sin esta var, el guard NO se aplica») tiene que ser real: en
+  // prod el flag va en `true` por defecto y `_SINCE` nunca se definió, lo que
+  // bloqueaba TODA entrega (409) y dejó cero certificados emitidos.
+  it('sin fecha de corte (null) y flag ON, el guard NO aplica: la orden cierra sin documento', () => {
     const r = puedeCerrarConDocumentos({
       flags: { ...flagsBase, requireDocumentSince: null },
       tripCreatedAt: new Date('2020-01-01T00:00:00.000Z'),
+      documentos: [],
+    });
+    expect(r.puedeCerrar).toBe(true);
+    expect(r.razon).toBe('sin_fecha_de_corte');
+  });
+
+  it('sin fecha de corte, tampoco exige TED aunque REQUIRE_TED_DECODE esté ON', () => {
+    const r = puedeCerrarConDocumentos({
+      flags: { ...flagsBase, requireDocumentSince: null, requireTedDecode: true },
+      tripCreatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      documentos: [docPendiente],
+    });
+    expect(r.puedeCerrar).toBe(true);
+    expect(r.razon).toBe('sin_fecha_de_corte');
+  });
+
+  it('con fecha de corte configurada, el guard sigue aplicando igual que antes (sin regresión)', () => {
+    const r = puedeCerrarConDocumentos({
+      flags: flagsBase,
+      tripCreatedAt: new Date('2026-09-01T00:00:00.000Z'),
       documentos: [],
     });
     expect(r.puedeCerrar).toBe(false);
