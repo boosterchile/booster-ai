@@ -9,10 +9,9 @@ import {
   PackageCheck,
   RefreshCw,
   Settings,
-  Square,
   Truck,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
@@ -40,9 +39,11 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  *      configuración. Booster lo avisa antes de que sea un problema.
  *
  *   2. **Próximo servicio asignado** — el viaje que tienes que ejecutar
- *      ahora (origen → destino, carga, ventana de recogida, vehículo).
- *      Botón grande "Iniciar reporte GPS" si el vehículo no tiene
- *      Teltonika.
+ *      ahora (origen → destino, carga, ventana de recogida, vehículo), con
+ *      UNA acción principal según la fase: «Confirmar recogida» → «Confirmar
+ *      entrega». La posición no es un botón: si el vehículo no tiene
+ *      Teltonika, el teléfono reporta solo desde la recogida hasta la
+ *      entrega; si lo tiene, el camión reporta y la tarjeta lo dice.
  *
  *   3. **Acceso a configuración** — icono de engranaje en la esquina,
  *      lleva a /app/conductor/configuracion. Solo se entra ahí si
@@ -60,7 +61,7 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  * latinoamericano: "tu/tienes/aquí" (no "vos/tenés/acá").
  */
 
-interface DriverAssignment {
+export interface DriverAssignment {
   id: string;
   status: string;
   trip: {
@@ -75,7 +76,7 @@ interface DriverAssignment {
     pickup_window_end: string | null;
   };
   carrier_empresa: { id: string; legal_name: string | null };
-  vehicle: { id: string; plate: string | null } | null;
+  vehicle: { id: string; plate: string | null; has_teltonika: boolean } | null;
 }
 
 export function ConductorDashboardRoute() {
@@ -209,12 +210,14 @@ function AssignmentsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [geoPermission, setGeoPermission] = useState<PermissionStatus>('unknown');
+  const [refrescando, setRefrescando] = useState(false);
 
   // El fetch vive en un callback para poder repetirlo: el conductor recibe
   // servicios mientras tiene la pantalla abierta, y antes no había forma de
   // verlos sin saber recargar la app.
   const cargarServicios = useCallback(async () => {
     setError(null);
+    setRefrescando(true);
     try {
       const res = await api.get<{ assignments: DriverAssignment[] }>('/me/assignments');
       setAssignments(res.assignments);
@@ -226,6 +229,10 @@ function AssignmentsSection() {
           ? 'No encontramos tu cuenta. Vuelve a iniciar sesión.'
           : 'No pudimos cargar tus servicios. Revisa tu señal e intenta nuevamente.',
       );
+    } finally {
+      // El PO tocó «Actualizar» y «no funcionó»: sí recargaba, pero sin
+      // ninguna señal visible. Ahora el botón lo dice mientras carga.
+      setRefrescando(false);
     }
   }, []);
 
@@ -309,10 +316,11 @@ function AssignmentsSection() {
         <button
           type="button"
           onClick={() => void cargarServicios()}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50"
+          disabled={refrescando}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-60"
         >
           <RefreshCw className="h-4 w-4" aria-hidden />
-          Actualizar
+          {refrescando ? 'Actualizando…' : 'Actualizar'}
         </button>
       </section>
     );
@@ -329,10 +337,11 @@ function AssignmentsSection() {
       <button
         type="button"
         onClick={() => void cargarServicios()}
-        className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50"
+        disabled={refrescando}
+        className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-60"
       >
         <RefreshCw className="h-4 w-4" aria-hidden />
-        Actualizar
+        {refrescando ? 'Actualizando…' : 'Actualizar'}
       </button>
     </section>
   );
@@ -374,10 +383,18 @@ function mensajeDeCierre(err: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Card de un servicio asignado, con GPS reporter inline.
+// Card de un servicio asignado: una acción principal por fase, posición
+// automática. Antes mostraba cuatro botones a la vez (GPS, navegar, recogida,
+// entrega) y el conductor no sabía cuál tocar (reporte del PO, 2026-09-14).
 // ---------------------------------------------------------------------------
 
-function AssignmentCard({
+type FaseServicio = 'por_recoger' | 'en_ruta' | 'entregada';
+
+function mapsHref(address: string): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+}
+
+export function AssignmentCard({
   assignment,
   geoPermission,
 }: {
@@ -385,11 +402,14 @@ function AssignmentCard({
   geoPermission: PermissionStatus;
 }) {
   const reporter = useDriverPositionReporter();
-  const canStart = geoPermission === 'granted' && !reporter.isWatching;
   const a = assignment;
+  // Con Teltonika la huella se mide con el equipo del camión (T10): el
+  // teléfono no tiene que reportar nada y la tarjeta no lo pide.
+  const hasTeltonika = a.vehicle?.has_teltonika === true;
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
+
   // Recogida híbrida (T9, medicion-huella-segmento): el geofence del origen
   // —que el API evalúa con cada posición reportada— SUGIERE; el conductor
   // confirma con un tap y viaja el instante del cruce. Sin geofence, el tap
@@ -399,6 +419,33 @@ function AssignmentCard({
     initialRecogida: a.status === 'recogido',
     geofence: reporter.lastGeofence,
   });
+
+  const fase: FaseServicio = entregada
+    ? 'entregada'
+    : recogida.recogida
+      ? 'en_ruta'
+      : 'por_recoger';
+
+  // Posición automática (vehículo sin Teltonika). En ruta arranca siempre: es
+  // el momento en que iOS pide la ubicación, no antes. Antes de recoger solo
+  // si el permiso ya está concedido (sin prompt), para que el geofence del
+  // origen pueda sugerir la recogida. Un intento por fase: si el permiso se
+  // niega, no se insiste en cada render; queda el botón «Reintentar».
+  const { isWatching, start: iniciarReporte } = reporter;
+  const intentoAutoInicio = useRef<FaseServicio | null>(null);
+  useEffect(() => {
+    if (hasTeltonika || isWatching || fase === 'entregada') {
+      return;
+    }
+    if (fase === 'por_recoger' && geoPermission !== 'granted') {
+      return;
+    }
+    if (intentoAutoInicio.current === fase) {
+      return;
+    }
+    intentoAutoInicio.current = fase;
+    iniciarReporte(a.id);
+  }, [a.id, fase, geoPermission, hasTeltonika, isWatching, iniciarReporte]);
 
   async function confirmarRecogida() {
     if (!window.confirm('¿Confirmas que ya cargaste esta carga en el camión?')) {
@@ -418,12 +465,22 @@ function AssignmentCard({
     try {
       await api.patch(`/assignments/${a.id}/confirmar-entrega`);
       setEntregada(true);
+      if (!hasTeltonika) {
+        // La ventana de medición cierra con la entrega: el teléfono deja de
+        // reportar solo, sin que el conductor tenga que acordarse.
+        reporter.stop();
+      }
     } catch (err) {
       setEntregaError(mensajeDeCierre(err));
     } finally {
       setEntregando(false);
     }
   }
+
+  const botonPrimario =
+    'flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 font-medium text-base text-white transition disabled:opacity-50';
+  const botonSecundario =
+    'flex w-full items-center justify-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-4 py-3 font-medium text-base text-primary-700';
 
   return (
     <article
@@ -480,130 +537,147 @@ function AssignmentCard({
         )}
       </dl>
 
-      {/* GPS reporter: si el vehículo no tiene Teltonika, el conductor
-          puede reportar posición desde el teléfono. Si tiene Teltonika,
-          esto es complementario. */}
+      {/* Posición: nunca un botón para iniciar. */}
       <div className="mt-4 border-neutral-200 border-t pt-4">
         <div className="flex items-center gap-2 text-neutral-700 text-xs uppercase tracking-wide">
           <Navigation className="h-3 w-3" aria-hidden />
-          Reporte GPS
+          Posición
         </div>
-        {geoPermission !== 'granted' && (
-          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
-            Para activar el reporte GPS, primero habilita el permiso de ubicación. Toca el ícono de
-            engranaje arriba para configurarlo.
-          </div>
-        )}
-        {reporter.isWatching ? (
-          <div className="mt-3 space-y-2">
-            <div className="rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
-              Reportando posición en vivo · {reporter.pointsSent} puntos enviados
+        {hasTeltonika ? (
+          <output data-testid="posicion-camion" className="mt-2 block text-neutral-700 text-sm">
+            Tu camión reporta la posición automáticamente. No necesitas hacer nada.
+          </output>
+        ) : reporter.isWatching ? (
+          <output className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
+            Reportando posición en vivo · {reporter.pointsSent} puntos enviados
+          </output>
+        ) : fase === 'por_recoger' ? (
+          <p className="mt-2 text-neutral-600 text-sm">
+            Al confirmar la recogida, tu teléfono empezará a reportar la posición. Si te lo pide,
+            permite la ubicación.
+          </p>
+        ) : fase === 'en_ruta' ? (
+          <div className="mt-2 space-y-2">
+            <div
+              role="alert"
+              className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-sm"
+            >
+              No estamos recibiendo tu posición. Permite la ubicación para app.boosterchile.com y
+              vuelve a intentar.
             </div>
             <button
               type="button"
-              onClick={() => reporter.stop()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-danger-600 px-4 py-3 font-medium text-sm text-white hover:bg-danger-700"
-              data-testid="gps-stop"
+              onClick={() => reporter.start(a.id)}
+              data-testid="gps-retry"
+              className={botonSecundario}
             >
-              <Square className="h-4 w-4" aria-hidden />
-              Detener reporte
+              <Navigation className="h-4 w-4" aria-hidden />
+              Reintentar ubicación
             </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => reporter.start(a.id)}
-            disabled={!canStart}
-            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-            data-testid="gps-start"
-          >
-            <Navigation className="h-4 w-4" aria-hidden />
-            Iniciar reporte GPS
-          </button>
-        )}
-        {reporter.lastError && (
+        ) : null}
+        {!hasTeltonika && reporter.lastError && (
           <div className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
             {reporter.lastError}
           </div>
         )}
       </div>
 
-      {/* Acciones del conductor, en SU pantalla.
+      {/* Acciones del conductor, en SU pantalla: UNA principal por fase.
           Antes acá había un link a `/app/asignaciones/$id`, que es superficie
           del TRANSPORTISTA: el conductor pasa su gate (su empresa es
           transportista) y terminaba viendo herramientas de su jefe — "asignar
           conductor" y el factoring de Cobra hoy—, cuyas acciones después le
           respondían 403. */}
       <div className="mt-4 space-y-2 border-neutral-100 border-t pt-4">
-        <a
-          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-            a.trip.destination.address_raw,
-          )}`}
-          target="_blank"
-          rel="noreferrer"
-          data-testid="navegar-destino"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-4 py-3 font-medium text-base text-primary-700"
-        >
-          <MapPin className="h-4 w-4" aria-hidden />
-          Navegar al destino
-        </a>
-
-        {/* Recogida: solo mientras la carga no subió al camión. Confirmarla
-            mueve el viaje a `en_proceso`, que es lo que destraba la posición
-            en el link de tracking del destinatario y lo que hace que su
-            empresa deje de ver «Por recoger» en Servicios. */}
-        {recogida.sugerida && (
-          // El geofence solo sugiere: <output> anuncia la llegada al punto de
-          // recogida sin disparar nada. El tap sigue siendo del conductor.
-          <output
-            data-testid="sugerencia-recogida"
-            className="block rounded-md border border-primary-200 bg-primary-50 p-2 text-primary-800 text-sm"
-          >
-            Estás en el punto de recogida. Cuando la carga esté arriba del camión, confírmala.
-          </output>
+        {fase === 'por_recoger' && (
+          <>
+            {recogida.sugerida && (
+              // El geofence solo sugiere: <output> anuncia la llegada al punto
+              // de recogida sin disparar nada. El tap sigue siendo del conductor.
+              <output
+                data-testid="sugerencia-recogida"
+                className="block rounded-md border border-primary-200 bg-primary-50 p-2 text-primary-800 text-sm"
+              >
+                Estás en el punto de recogida. Cuando la carga esté arriba del camión, confírmala.
+              </output>
+            )}
+            {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
+                posición en el link de tracking del destinatario y lo que hace que
+                su empresa deje de ver «Por recoger» en Servicios. */}
+            <button
+              type="button"
+              onClick={() => void confirmarRecogida()}
+              disabled={recogida.recogiendo}
+              data-testid="confirmar-recogida"
+              className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
+            >
+              <PackageCheck className="h-4 w-4" aria-hidden />
+              {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+            </button>
+            <a
+              href={mapsHref(a.trip.origin.address_raw)}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="navegar-origen"
+              className={botonSecundario}
+            >
+              <MapPin className="h-4 w-4" aria-hidden />
+              Ir al origen
+            </a>
+            {recogida.error && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
+              >
+                {recogida.error}
+              </div>
+            )}
+            {/* La entrega NO exige recogida previa: la tabla de transiciones
+                permite `asignado → entregado` y bloquearla castigaría al conductor
+                que olvidó apretar el botón anterior. Pero va como enlace discreto,
+                no como botón grande al lado de la recogida. */}
+            <button
+              type="button"
+              onClick={() => void confirmarEntrega()}
+              disabled={entregando}
+              aria-label="Confirmar entrega sin haber confirmado la recogida"
+              data-testid="entrega-sin-recogida"
+              className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
+            </button>
+          </>
         )}
 
-        {!recogida.recogida && (
-          <button
-            type="button"
-            onClick={() => void confirmarRecogida()}
-            disabled={recogida.recogiendo}
-            data-testid="confirmar-recogida"
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700 disabled:opacity-50"
-          >
-            <PackageCheck className="h-4 w-4" aria-hidden />
-            {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
-          </button>
+        {fase === 'en_ruta' && (
+          <>
+            <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
+              Carga recogida. Cuando llegues a destino, confirma la entrega.
+            </output>
+            <button
+              type="button"
+              onClick={() => void confirmarEntrega()}
+              disabled={entregando}
+              data-testid="confirmar-entrega"
+              className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
+            >
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+              {entregando ? 'Confirmando…' : 'Confirmar entrega'}
+            </button>
+            <a
+              href={mapsHref(a.trip.destination.address_raw)}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="navegar-destino"
+              className={botonSecundario}
+            >
+              <MapPin className="h-4 w-4" aria-hidden />
+              Ir al destino
+            </a>
+          </>
         )}
-
-        {recogida.error && (
-          <div
-            role="alert"
-            aria-live="assertive"
-            className="rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-sm"
-          >
-            {recogida.error}
-          </div>
-        )}
-
-        {recogida.recogida && (
-          <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
-            Carga recogida. Cuando llegues a destino, confirma la entrega.
-          </output>
-        )}
-
-        {/* La entrega NO exige recogida previa: la tabla de transiciones
-            permite `asignado → entregado` y bloquearla castigaría al conductor
-            que olvidó apretar el botón anterior. */}
-        <button
-          type="button"
-          onClick={() => void confirmarEntrega()}
-          disabled={entregando}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-success-700 px-4 py-3 font-medium text-base text-white transition hover:bg-success-800 disabled:opacity-50"
-        >
-          <CheckCircle2 className="h-4 w-4" aria-hidden />
-          {entregando ? 'Confirmando…' : 'Confirmar entrega'}
-        </button>
 
         {entregaError && (
           <div
@@ -614,7 +688,7 @@ function AssignmentCard({
             {entregaError}
           </div>
         )}
-        {entregada && (
+        {fase === 'entregada' && (
           // <output> ya tiene role=status implícito: el lector de pantalla
           // anuncia el cierre sin que haya que declararlo a mano.
           <output className="block rounded-md border border-success-200 bg-success-50 p-2 text-sm text-success-800">

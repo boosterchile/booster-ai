@@ -431,6 +431,17 @@ const aparienciaShellRoute = createRoute({
 
 // Preview del flujo de impersonación (picker → banner → salir) con datos mock.
 // Público (como /apariencia); sirve al E2E sin auth/backend ni Firebase.
+// /apariencia/conductor — preview pública de la tarjeta del servicio del Modo
+// Conductor con datos mock (`?fase=por_recoger|en_ruta&teltonika=1|0`).
+const aparienciaConductorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/apariencia/conductor',
+  component: lazyRouteComponent(
+    () => import('./routes/apariencia-conductor.js'),
+    'AparienciaConductorRoute',
+  ),
+});
+
 const aparienciaImpersonacionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/apariencia/impersonacion',
@@ -490,6 +501,7 @@ const routeTree = rootRoute.addChildren([
   solicitarAccesoRoute,
   aparienciaRoute,
   aparienciaShellRoute,
+  aparienciaConductorRoute,
   aparienciaImpersonacionRoute,
 ]);
 

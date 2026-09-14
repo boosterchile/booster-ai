@@ -26,10 +26,14 @@
 **Verificación:**
 
 ```sql
-SELECT id, distance_km_actual, carbon_emissions_kgco2e_actual, coverage_pct
-FROM viajes
-WHERE picked_up_at IS NOT NULL AND delivered_at IS NOT NULL
-ORDER BY delivered_at DESC LIMIT 10;
+SELECT t.codigo_seguimiento, a.recogido_en, a.entregado_en,
+       m.distancia_km_real, m.emisiones_kgco2e_reales, m.fuente_dato_ruta,
+       m.cobertura_pct, m.nivel_certificacion, m.certificado_emitido_en
+FROM asignaciones a
+JOIN viajes t ON t.id = a.viaje_id
+LEFT JOIN metricas_viaje m ON m.viaje_id = t.id
+WHERE a.recogido_en IS NOT NULL AND a.entregado_en IS NOT NULL
+ORDER BY a.entregado_en DESC LIMIT 10;
 ```
 
 Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registrada.

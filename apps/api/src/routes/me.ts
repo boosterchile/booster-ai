@@ -334,6 +334,7 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
         pickupWindowEnd: trips.pickupWindowEnd,
         vehicleId: assignments.vehicleId,
         vehiclePlate: vehicles.plate,
+        vehicleTeltonikaImei: vehicles.teltonikaImei,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
@@ -370,7 +371,15 @@ export function createMeRoutes(opts: { db: Db; logger: Logger }) {
           id: r.empresaId,
           legal_name: r.empresaLegalName,
         },
-        vehicle: r.vehicleId ? { id: r.vehicleId, plate: r.vehiclePlate ?? null } : null,
+        // has_teltonika decide en la PWA si el teléfono debe reportar posición
+        // (sin equipo) o si el camión ya lo hace solo (tarjeta guiada).
+        vehicle: r.vehicleId
+          ? {
+              id: r.vehicleId,
+              plate: r.vehiclePlate ?? null,
+              has_teltonika: r.vehicleTeltonikaImei != null,
+            }
+          : null,
         trip: {
           id: r.tripId,
           tracking_code: r.trackingCode,
