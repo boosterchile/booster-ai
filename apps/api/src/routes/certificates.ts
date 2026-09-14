@@ -28,6 +28,7 @@ import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
 import { tripMetrics, trips } from '../db/schema.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 
 export function createCertificatesRoutes(opts: {
   db: Db;
@@ -96,6 +97,10 @@ export function createCertificatesRoutes(opts: {
         distanceKmActual: tripMetrics.distanceKmActual,
         precisionMethod: tripMetrics.precisionMethod,
         glecVersion: tripMetrics.glecVersion,
+        // ADR-077 §4 — las tres dimensiones de la línea de método.
+        routeDataSource: tripMetrics.routeDataSource,
+        coveragePct: tripMetrics.coveragePct,
+        certificationLevel: tripMetrics.certificationLevel,
         certificateSha256: tripMetrics.certificateSha256,
         certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
@@ -128,6 +133,12 @@ export function createCertificatesRoutes(opts: {
         distance_km: r.distanceKmActual ?? r.distanceKmEstimated,
         precision_method: r.precisionMethod,
         glec_version: r.glecVersion,
+        route_data_source: r.routeDataSource,
+        coverage_pct: r.coveragePct,
+        certification_level: r.certificationLevel,
+        // ADR-077 §4 — derivada acá (misma función que el PDF); la UI no la
+        // reconstruye. null en certs legacy.
+        linea_metodo: lineaMetodoDesdeMetricas(r),
         certificate_sha256: r.certificateSha256,
         certificate_kms_key_version: r.certificateKmsKeyVersion,
         certificate_issued_at: r.certificateIssuedAt,

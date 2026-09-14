@@ -21,9 +21,11 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   DISCLAIMER_SECUNDARIO_LINEAS,
   HEADER_LAYOUT,
+  TAMANO_LINEA_METODO,
   declaracionDistancia,
   formatRouteDataSource,
   formatearNumeroPrincipal,
+  lineaMetodoCert,
   muestraDisclaimerSecundario,
   posicionXMarcaHeader,
   subtituloHeader,
@@ -439,6 +441,25 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
       );
     }
     cursorY -= 30;
+
+    // ADR-077 §4 — línea de método obligatoria, derivada de método × fuente ×
+    // cobertura con vocabulario cerrado. Misma frase en ambas plantillas y en
+    // la app. Ausente solo en certs legacy sin cobertura.
+    const lineaMetodo = lineaMetodoCert(params.metricas);
+    if (lineaMetodo !== null) {
+      drawLabelValue(
+        page,
+        'Método',
+        lineaMetodo,
+        40,
+        cursorY,
+        fontRegular,
+        fontBold,
+        colorMuted,
+        TAMANO_LINEA_METODO,
+      );
+      cursorY -= 30;
+    }
   }
 
   // ADR-028 — Disclaimer prominente solo en certs secundarios. Es el
@@ -605,6 +626,7 @@ function drawLabelValue(
   fontRegular: Font,
   fontBold: Font,
   colorMuted: RGB,
+  valueSize = 11,
 ) {
   page.drawText(label.toUpperCase(), {
     x,
@@ -616,7 +638,7 @@ function drawLabelValue(
   page.drawText(value, {
     x,
     y,
-    size: 11,
+    size: valueSize,
     font: fontBold,
     color: rgb(0.1, 0.1, 0.12),
   });

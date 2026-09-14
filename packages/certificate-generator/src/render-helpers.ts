@@ -6,6 +6,7 @@
  * `pdfStr` no son confiables).
  */
 
+import { lineaMetodoCertificacion } from '@booster-ai/carbon-calculator';
 import type { DatosMetricasCertificado } from './tipos.js';
 
 export type NivelCertificacion = NonNullable<DatosMetricasCertificado['certificationLevel']>;
@@ -154,6 +155,35 @@ export function declaracionDistancia(coveragePct?: number): string {
  * «verificable» está prohibido fuera de `primario_verificable`. El móvil del
  * conductor mide distancia, nunca energía, y nunca es primario.
  */
+/**
+ * Tamaño (pt) de la línea de método en el PDF. Más chica que los demás valores
+ * (11 pt) porque la frase más larga de ADR-077 §4 ronda los 100 caracteres y
+ * debe caber en el ancho útil de A4 (595 − 2×40 pt). `render-helpers.test.ts`
+ * mide las seis frases canónicas con HelveticaBold al mismo tamaño.
+ */
+export const TAMANO_LINEA_METODO = 9;
+
+/**
+ * Línea de método del cert (ADR-077 §4/§5): la MISMA función pura que usa la
+ * app (`lineaMetodoCertificacion`, carbon-calculator), adaptada a
+ * `DatosMetricasCertificado`. `null` en certs legacy sin fuente de ruta o sin
+ * cobertura: no se inventa método.
+ */
+export function lineaMetodoCert(m: {
+  precisionMethod: DatosMetricasCertificado['precisionMethod'];
+  routeDataSource?: DatosMetricasCertificado['routeDataSource'];
+  coveragePct?: DatosMetricasCertificado['coveragePct'];
+}): string | null {
+  if (m.routeDataSource === undefined || m.coveragePct === undefined) {
+    return null;
+  }
+  return lineaMetodoCertificacion({
+    precisionMethod: m.precisionMethod,
+    routeDataSource: m.routeDataSource,
+    coveragePct: m.coveragePct,
+  });
+}
+
 export function formatRouteDataSource(s: string): string {
   switch (s) {
     case 'teltonika_gps':

@@ -138,6 +138,9 @@ describe('GET /certificates (lista)', () => {
             distanceKmActual: '125.0',
             precisionMethod: 'modelado',
             glecVersion: 'v3.0',
+            routeDataSource: 'movil_gps',
+            coveragePct: '100.00',
+            certificationLevel: 'secundario_modeled',
             certificateSha256: 'sha-1',
             certificateKmsKeyVersion: '1',
             certificateIssuedAt: new Date('2026-05-09T12:00:00Z'),
@@ -151,12 +154,59 @@ describe('GET /certificates (lista)', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      certificates: Array<{ kg_co2e: string; distance_km: string }>;
+      certificates: Array<{
+        kg_co2e: string;
+        distance_km: string;
+        route_data_source: string | null;
+        coverage_pct: string | null;
+        certification_level: string | null;
+        linea_metodo: string | null;
+      }>;
       pagination: { limit: number; offset: number };
     };
     expect(body.certificates[0]?.kg_co2e).toBe('38.5'); // actual gana
     expect(body.certificates[0]?.distance_km).toBe('125.0');
     expect(body.pagination.limit).toBe(50);
+    // ADR-077 §4 — la línea de método viaja derivada desde el API (mismo
+    // vocabulario que el PDF); la UI no la reconstruye.
+    expect(body.certificates[0]?.route_data_source).toBe('movil_gps');
+    expect(body.certificates[0]?.certification_level).toBe('secundario_modeled');
+    expect(body.certificates[0]?.linea_metodo).toMatch(/GPS del móvil del conductor/);
+    expect(body.certificates[0]?.linea_metodo).not.toMatch(/verificable/i);
+  });
+
+  it('cert legacy sin fuente de ruta → linea_metodo null (no se inventa método)', async () => {
+    const db = makeDb({
+      selects: [
+        [
+          {
+            tripId: 't2',
+            trackingCode: 'BOO-B',
+            originAddress: 'Stgo',
+            destinationAddress: 'Vpo',
+            cargoType: 'carga_seca',
+            kgco2eEstimated: '40.0',
+            kgco2eActual: null,
+            distanceKmEstimated: '120.0',
+            distanceKmActual: null,
+            precisionMethod: 'modelado',
+            glecVersion: 'v3.0',
+            routeDataSource: null,
+            coveragePct: null,
+            certificationLevel: null,
+            certificateSha256: 'sha-2',
+            certificateKmsKeyVersion: '1',
+            certificateIssuedAt: new Date('2026-05-09T12:00:00Z'),
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request('/certificates', {
+      headers: { 'x-test-userctx': VALID_CTX },
+    });
+    const body = (await res.json()) as { certificates: Array<{ linea_metodo: string | null }> };
+    expect(body.certificates[0]?.linea_metodo).toBeNull();
   });
 
   it('limit fuera de rango se clamps a [1, 100]', async () => {

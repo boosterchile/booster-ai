@@ -36,6 +36,11 @@ interface CertificadoListItem {
   distance_km: string | null;
   precision_method: string | null;
   glec_version: string | null;
+  route_data_source: string | null;
+  coverage_pct: string | null;
+  certification_level: string | null;
+  /** ADR-077 §4 — línea de método derivada por el API; se muestra tal cual. */
+  linea_metodo: string | null;
   certificate_sha256: string | null;
   certificate_kms_key_version: string | null;
   certificate_issued_at: string | null;
@@ -188,6 +193,11 @@ function CertificadosPage({ me }: { me: MeOnboarded }) {
                       <div className="flex flex-col gap-0.5 text-xs">
                         <span>{c.origin_address}</span>
                         <span className="text-neutral-500">→ {c.destination_address}</span>
+                        {c.linea_metodo && (
+                          <span className="text-neutral-500" title="Método de cálculo (ADR-077)">
+                            {c.linea_metodo}
+                          </span>
+                        )}
                       </div>
                     </Td>
                     <Td className="text-xs">{formatCargoType(c.cargo_type)}</Td>

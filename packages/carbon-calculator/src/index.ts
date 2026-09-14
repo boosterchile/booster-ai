@@ -85,6 +85,8 @@ export type {
 export {
   derivarNivelCertificacion,
   calcularFactorIncertidumbre,
+  lineaMetodoCertificacion,
+  type LineaMetodoInput,
   THRESHOLD_PRIMARIO_PCT,
   THRESHOLD_SECUNDARIO_MODELED_PCT,
 } from './certificacion/index.js';
