@@ -132,6 +132,19 @@ describe('Layout — shell con sidebar', () => {
     expect(screen.getByTestId('mobile-drawer')).toBeInTheDocument();
   });
 
+  it('iOS PWA: el header y el drawer reservan el inset superior (pt-safe)', () => {
+    render(
+      <Layout me={buildMe([membership('e-1', 'Naviera Costera')])} title="Inicio">
+        <div>x</div>
+      </Layout>,
+    );
+    // viewport-fit=cover extiende la página bajo la barra de estado en la PWA
+    // standalone de iOS: sin el inset, la hamburguesa queda tapada (2026-09-14).
+    expect(screen.getByRole('banner')).toHaveClass('pt-safe');
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+    expect(screen.getByTestId('mobile-drawer')).toHaveClass('pt-safe', 'pb-safe');
+  });
+
   it('click "Salir" llama signOutUser', () => {
     signOutUserMock.mockClear();
     render(

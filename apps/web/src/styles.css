@@ -36,6 +36,19 @@
  * (el drift-guard de CI lo exige).
  */
 
+/* iOS PWA standalone (manifest display:standalone + viewport-fit=cover): la
+ * página se extiende bajo la barra de estado y el indicador home. Estas
+ * utilities suman el inset que reporta el sistema al padding propio del
+ * elemento; en navegadores sin inset env() vale 0 y no cambian nada. Sin
+ * ellas el header del shell (y la hamburguesa) quedaba tapado por la barra de
+ * estado en iPhone (reporte del PO, 2026-09-14). */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Defaults globales */
 :root {
   font-family: var(--font-sans);

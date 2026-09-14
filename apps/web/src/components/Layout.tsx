@@ -57,7 +57,7 @@ export function Layout({
           {/* El landmark de navegación lo aporta el <nav> interno del Sidebar. */}
           <div
             data-testid="mobile-drawer"
-            className="fixed inset-y-0 left-0 z-50 w-72 border-neutral-200 border-r bg-neutral-0 shadow-xl"
+            className="fixed inset-y-0 left-0 z-50 w-72 border-neutral-200 border-r bg-neutral-0 pt-safe pb-safe shadow-xl"
           >
             <Sidebar me={me} onNavigate={() => setMobileOpen(false)} />
           </div>
@@ -66,17 +66,22 @@ export function Layout({
 
       {/* Columna principal */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-neutral-200 border-b bg-neutral-0 px-4 py-3 sm:px-6">
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Abrir menú"
-            aria-expanded={mobileOpen}
-            className="rounded-md p-2 text-neutral-700 hover:bg-neutral-100 md:hidden"
-          >
-            <Menu className="h-5 w-5" aria-hidden />
-          </button>
-          <span className="font-semibold text-neutral-900">{title}</span>
+        {/* pt-safe: en la PWA standalone de iOS la página corre bajo la barra de
+            estado; el header (con su fondo) reserva ese inset para que la
+            hamburguesa quede visible y tocable. */}
+        <header className="border-neutral-200 border-b bg-neutral-0 pt-safe">
+          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Abrir menú"
+              aria-expanded={mobileOpen}
+              className="rounded-md p-2 text-neutral-700 hover:bg-neutral-100 md:hidden"
+            >
+              <Menu className="h-5 w-5" aria-hidden />
+            </button>
+            <span className="font-semibold text-neutral-900">{title}</span>
+          </div>
         </header>
 
         <ConsentTermsBanner />
