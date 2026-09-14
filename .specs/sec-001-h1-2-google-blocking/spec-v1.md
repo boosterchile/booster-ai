@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-26
-- **Status**: **Draft v1 — INVALIDATED PENDING v2 REDRAFT** (post devils-advocate review + empirical spike 2026-05-26; ver `review.md` + §13 decision log).
+- **Status**: **CERRADO 2026-09-13 — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.** · Estado previo: **Draft v1 — INVALIDATED PENDING v2 REDRAFT** (post devils-advocate review + empirical spike 2026-05-26; ver `review.md` + §13 decision log).
 - **Linked**:
   - Parent spec: [`.specs/sec-001-cierre/spec.md`](../sec-001-cierre/spec.md) §3 H1.2 SC-1.2.2 amendment A3 v3.4 (Google leg TRACKED_RESIDUAL).
   - Predecessor ADR: [`docs/adr/052-signup-migration-admin-sdk-gate.md`](../../docs/adr/052-signup-migration-admin-sdk-gate.md) (Status: Proposed; transición a Accepted post-T13 canary success + 2 h watch).

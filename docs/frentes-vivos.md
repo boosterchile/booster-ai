@@ -3,6 +3,7 @@
 **Ubicación sugerida en el repo:** `docs/frentes-vivos.md`
 **Estado verificado contra:** `main` @ `623ee2b` (2026-08-16)
 **Autor de la verificación:** revisión sobre clon de `main`; los estados marcados ✅/❌ salen de existencia de archivo o de símbolo, no de inferencia.
+**Actualización 2026-09-13** (`main` @ `7e99dc0`): Slot 3 cerrado y reemplazado por «Conductor operativo» (decisión D2 del PO); Slot 1 con F1 cerrado. El conteo del Slot 2 no se re-verificó en esta pasada.
 
 ---
 
@@ -36,6 +37,8 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 **Fuera de alcance (no se hace bajo este frente):** F3 (ETA bifásico), F4 (hitos consignee), alertas sobre señales, dashboards de huella, exportación a stakeholders ESG. Cualquiera de esos entra como frente nuevo y compite por slot.
 
 **Estado de F1+F2:** la fuente es `.specs/medicion-huella-segmento/plan.md` (checkboxes). No se duplica aquí.
+
+**Avance 2026-09-13:** T1–T10 y la migración 0055 (`movil_gps` coherente en enum de BD, shared-schemas, carbon-calculator y certificate-generator, ADR-077) están en `main` (#658–#664, #672, #663). La compuerta F1 está cerrada; lo siguiente es T11. El criterio de término exige además cerrar entregas reales en producción, que hoy dependen del gate documental (ver Slot 3, paso 1).
 
 **Orden de ejecución** (respeta la compuerta dura: F1 completo antes de F2):
 
@@ -82,22 +85,35 @@ Contratos: `packages/shared-schemas/src/site-settings.ts`.
 
 ---
 
-## Slot 3 — Cierre documental de SEC-001
+## Slot 3 — Conductor operativo de punta a punta
 
-**Por qué:** el trabajo está terminado en producción, pero el rastro documental sigue leyéndose como decisión pendiente. Es el frente más barato de cerrar y el que más ruido quita.
+**Por qué:** el Slot 1 mide la huella sobre lo que el conductor hace en ruta, y hoy ningún viaje real puede cerrarse sin que el PO intervenga: el cierre de entrega exigía un documento que ninguna pantalla sube (D1a lo destraba mientras no exista fecha de corte), el reporte GPS del móvil no sobrevive a la pérdida de señal y el conductor no ve ni mapa ni resultado. Entró el 2026-09-13 al cerrarse el slot anterior (decisión D2 del PO; antes figuraba en Congelados como «Despacho / conductor»).
 
-**Hecho verificado:** `.specs/sec-001-h1-2-google-boundary-closure/spec.md` está en `Status: Shipped (2026-06-05)`, código en producción (canary → 100%), `terraform apply` aplicado, **SC-1.2.2 Google leg = MET**.
+**Terminado cuando:** un viaje pasa de creado a cerrado en producción sin intervención manual del PO: un conductor activado por su empresa recibe la asignación, confirma la recogida, reporta posición durante el trayecto, confirma la entrega y el certificado se emite. Y el flujo activar → recogida → posición → entrega → certificado tiene E2E Playwright verde en CI contra el API local.
 
-**Terminado cuando** cada uno de estos documentos declara su estado terminal en el encabezado y ninguno queda en `Draft` o `Proposed` sin nota de resolución:
+**Verificación:**
 
-- `.specs/sec-001-h1-2-google-blocking/` (umbrella + `spec-v1` + `plan-v1/v2/v3` + `plan-review`) → **Superado por `boundary-closure`**
-- `.specs/sec-001-h1-2-google-blocking-a/` → **Entregado; superado en la superficie Gen 2**
-- `.specs/sec-001-h1-2-google-blocking-b/` → **Abandonado en T8; superado**
-- `.specs/sec-001-h1-2-google-blocking-c/` → ya marcado `SUPERSEDED`; sin cambios
-- `docs/adr/054-...` → **No perseguido.** La migración a Gen 2 fue descartada a favor de la Alternativa G. No requiere enmienda.
-- `.specs/sec-001-cierre/plan-sprint-2a.md` y `plan-sprint-2b.md` → estado terminal
+```sql
+SELECT v.id, a.recogido_en, a.entregado_en, m.certificado_emitido_en
+FROM viajes v
+JOIN asignaciones a ON a.viaje_id = v.id
+LEFT JOIN metricas_viaje m ON m.viaje_id = v.id
+WHERE a.conductor_id IS NOT NULL AND a.entregado_en IS NOT NULL
+ORDER BY a.entregado_en DESC LIMIT 5;
+```
 
-**Único trabajo técnico residual:** el modo destructivo del reaper (`REAPER_DESTRUCTIVE=true`) queda tras el gate de primer run destructivo, hoy en pausa con dry-run validado (14 escaneadas, 0 tocadas). **No es parte de este slot.** Entra como frente nuevo cuando se decida ejecutarlo.
+Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO no tocó a mano.
+
+**Orden de ejecución:**
+
+1. **D1a** — el gate documental no aplica sin fecha de corte (`.specs/fix-gate-documental-sin-fecha-de-corte/`). Es lo que permite cerrar entregas hoy.
+2. **Subida del documento de transporte por la oficina** en `/app/asignaciones/:id` (el endpoint `POST /transport-orders/:id/documents` existe; falta la pantalla). Con esto el PO puede fijar `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` y reactivar el guard sobre una cohorte real.
+3. **GPS del móvil resiliente:** un solo watcher por sesión, throttle por tiempo y distancia, cola offline con reintento, arranque al confirmar recogida y parada al entregar. Sin esto la cobertura ≥ 80 % con `movil_gps` es improbable y la huella queda siempre degradada.
+4. **Lo que el conductor ve:** mapa con la ruta sugerida (reusar `AssignmentEcoRouteCard` y `GET /assignments/:id/eco-route`) y, al terminar, la línea de método de ADR-077, los kg CO2e y el certificado (decisión D3: solo lectura).
+5. **Higiene:** cerrar sesión; gate por rol en `/app/conductor`; sin `window.confirm`; los comandos de voz que no están montados salen de la pantalla de configuración; el smoke E2E obsoleto se corrige.
+6. **`connectAuthEmulator` en `apps/web`** y el E2E del flujo completo.
+
+**Fuera de alcance (no se hace bajo este frente):** eco-routing en tiempo real (ADR-012 Capa 1; entra como frente nuevo cuando cierre el Slot 1), certificados PDF más allá de la línea de método que exige ADR-077, onboarding de empresas.
 
 ---
 
@@ -113,7 +129,13 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 **Infraestructura y observabilidad.** No termina, se convierte en operación. Criterio a escribir con esta forma: existe alerta accionable para \<lista cerrada de fallas\>, con runbook asociado.
 
-**Despacho / conductor.** Criterio a escribir con esta forma: un viaje pasa de creado a cerrado en producción sin intervención manual del PO.
+**Despacho / conductor.** Descongelado el 2026-09-13: es el Slot 3 («Conductor operativo de punta a punta»), con ese mismo criterio.
+
+---
+
+## Cerrados
+
+**Cierre documental de SEC-001** — ocupó el Slot 3 hasta el 2026-09-13. Criterio cumplido: los documentos listados en su definición declaran estado terminal en el encabezado (`.specs/sec-001-h1-2-google-blocking/`, `-a/`, `-b/`, `.specs/sec-001-cierre/plan-sprint-2a.md` y `plan-sprint-2b.md`); `-c/` ya estaba `SUPERSEDED`; ADR-054 ya declaraba `Superseded by ADR-057` desde 2026-06-04 y no requirió enmienda. El modo destructivo del reaper sigue fuera de slot, como estaba escrito.
 
 ---
 

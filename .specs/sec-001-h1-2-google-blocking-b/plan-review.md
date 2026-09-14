@@ -1,5 +1,7 @@
 # DA pass — plan-b.md v1 (Sprint 2c-B)
 
+> **Cerrado 2026-09-13** — abandonado en T8; superado por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.
+
 **Date**: 2026-05-27
 **Reviewer**: agent-rigor:devils-advocate
 **Plan under review**: `.specs/sec-001-h1-2-google-blocking-b/plan.md` v1 (14 tasks T1-T14; mix code + operational evidence)
