@@ -54,10 +54,6 @@ async function buildHeaders(extra?: HeadersInit): Promise<Headers> {
     headers.set('X-Empresa-Id', activeEmpresaId);
   }
 
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-
   return headers;
 }
 
@@ -69,6 +65,12 @@ async function request<T>(
 ): Promise<T> {
   const url = `${env.VITE_API_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = await buildHeaders(init?.headers);
+  // Content-Type SOLO cuando hay cuerpo. Mandarlo sin cuerpo hacía que el
+  // validador json del API intentara parsear un body vacío → «Malformed JSON»
+  // (400) que el onError volvía 500 (confirmar-recogida, 2026-09-14).
+  if (body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   // Construido como variable separada para que `body` solo se incluya
   // cuando hay payload — exactOptionalPropertyTypes no acepta `body:

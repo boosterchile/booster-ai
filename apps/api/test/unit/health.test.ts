@@ -1,5 +1,8 @@
+import { zValidator } from '@hono/zod-validator';
+import { HTTPException } from 'hono/http-exception';
 import type pg from 'pg';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { Db } from '../../src/db/client.js';
 
 // Set minimal env before importing modules that parse env.
@@ -76,5 +79,46 @@ describe('health endpoints', () => {
     const app = createServer({ db: stubDb, pool: makeStubPool() });
     const res = await app.request('/does-not-exist');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('onError — una HTTPException conserva su status (regresión 2026-09-14)', () => {
+  // Prod 2026-09-14 13:04Z: PATCH /assignments/:id/confirmar-recogida con
+  // Content-Type json y cuerpo vacío → el validador lanzó HTTPException(400)
+  // «Malformed JSON» y onError lo convirtió en 500 opaco. El 4xx debe llegar
+  // al cliente con su mensaje; solo lo inesperado es 500.
+  it('HTTPException(400) lanzada por un handler → 400 con su mensaje', async () => {
+    const { createServer } = await import('../../src/server.js');
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
+    app.get('/__test/lanza-400', () => {
+      throw new HTTPException(400, { message: 'cuerpo inválido' });
+    });
+    const res = await app.request('/__test/lanza-400');
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('cuerpo inválido');
+  });
+
+  it('zValidator json con Content-Type json y cuerpo vacío → 400, no 500', async () => {
+    const { createServer } = await import('../../src/server.js');
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
+    app.post('/__test/json', zValidator('json', z.object({ x: z.string().optional() })), (c) =>
+      c.json({ ok: true }),
+    );
+    const res = await app.request('/__test/json', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('un Error cualquiera sigue siendo 500 internal_server_error', async () => {
+    const { createServer } = await import('../../src/server.js');
+    const app = createServer({ db: stubDb, pool: makeStubPool() });
+    app.get('/__test/explota', () => {
+      throw new Error('boom');
+    });
+    const res = await app.request('/__test/explota');
+    expect(res.status).toBe(500);
+    expect((await res.json()) as { error: string }).toEqual({ error: 'internal_server_error' });
   });
 });
