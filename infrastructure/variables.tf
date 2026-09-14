@@ -622,5 +622,9 @@ variable "content_sid_ready" {
     "content-sid-chat-unread"  = true
     "content-sid-tracking"     = true
     "content-sid-safety-alert" = true
+    # activacion_conductor_v2 (HX2e4c…991d) — APROBADA por Meta el 2026-08-05
+    # como Utility. La versión 2 del secreto ya tiene el HX real cargado
+    # (versión 1 era el placeholder ROTATE_ME), así que montarla es seguro.
+    "content-sid-activacion-conductor" = true
   }
 }
