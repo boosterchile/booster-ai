@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-26 (sub-spec post-split per G-14)
-- **Status**: Draft
+- **Status**: **CERRADO 2026-09-13 — entregado (handler implementado, evidencia en `sprint-2c-a-evidence/`); superado en la superficie Gen 2 por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.** · Estado previo: Draft
 - **Scope**: Sub-sprint A. Handler implementation **only** (code + tests + emulator integration). **No prod impact**.
 
 ## Relationship to umbrella spec

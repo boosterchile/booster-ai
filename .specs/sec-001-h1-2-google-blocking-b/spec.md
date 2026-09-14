@@ -2,7 +2,7 @@
 
 - **Author**: Felipe Vicencio (with agent-rigor)
 - **Date**: 2026-05-26 (sub-spec post-split per G-14)
-- **Status**: Draft
+- **Status**: **CERRADO 2026-09-13 — abandonado en T8; superado por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.** · Estado previo: Draft
 - **Scope**: Sub-sprint B. Deployment of 2c-A handler + Identity Platform wire + smoke E2E + ghost inventory execution + 7-day watch + ADR-NNN Status flip. **Prod impact via terraform apply**.
 
 ## Relationship to umbrella spec + Sprint 2c-A

@@ -2,7 +2,7 @@
 
 - **Spec**: [`./spec.md`](./spec.md) (Draft sub-spec post-split per umbrella G-14)
 - **Created**: 2026-05-26 (v3)
-- **Status**: Draft v3
+- **Status**: **CERRADO 2026-09-13 — entregado (handler implementado, evidencia en `sprint-2c-a-evidence/`); superado en la superficie Gen 2 por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.** · Estado previo: Draft v3
 - **Linked**:
   - Umbrella: [`../sec-001-h1-2-google-blocking/spec.md`](../sec-001-h1-2-google-blocking/spec.md).
   - DA history v1+v2 of THIS plan: [`./plan-review.md`](./plan-review.md) (v1: 4 P0 + 5 P1 + 5 P2 F-A1..F-A14; v2: 4 P0 + 3 P1 + 2 P2 G-A1..G-A9).

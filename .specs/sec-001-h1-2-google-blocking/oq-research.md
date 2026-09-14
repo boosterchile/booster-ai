@@ -1,5 +1,7 @@
 # OQ-2C-1..9 research findings
 
+> **Cerrado 2026-09-13** — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.
+
 > Resolution of formal blockers from `spec.md` v2 §12. Date: 2026-05-26. Sources consulted: 6 docs.cloud.google.com pages + 2 firebase.google.com pages via WebFetch. All findings cited.
 
 ---

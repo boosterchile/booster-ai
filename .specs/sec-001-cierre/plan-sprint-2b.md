@@ -4,7 +4,7 @@
 - **Plan Sprint 2 META**: `.specs/sec-001-cierre/plan-sprint-2.md`
 - **Plan Sprint 2a**: `.specs/sec-001-cierre/plan-sprint-2a.md` (CERRADO 12/12 2026-05-25)
 - **Created**: 2026-05-25
-- **Status**: **READY FOR /build** (v4, post devils-advocate round 4 APPROVE_WITH_RESERVATIONS_FINAL). 4 rondas convergencia. Trayectoria P0: 7→2→1→0. 15 tasks, 2 PRs, ~58h.
+- **Status**: **CERRADO 2026-09-13 — lo entregado bajo este plan vive en `main` (is-demo enforcement, signup gate); el leg Google de H1.2 cerró por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, SC-1.2.2 MET, ADR-057). Sin trabajo pendiente bajo este plan; el reaper destructivo queda fuera de slot (`docs/frentes-vivos.md`).** · Estado previo: **READY FOR /build** (v4, post devils-advocate round 4 APPROVE_WITH_RESERVATIONS_FINAL). 4 rondas convergencia. Trayectoria P0: 7→2→1→0. 15 tasks, 2 PRs, ~58h.
 
 ## 1. Scope Sprint 2b
 
