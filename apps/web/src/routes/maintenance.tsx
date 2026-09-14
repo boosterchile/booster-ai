@@ -16,7 +16,7 @@ export function MaintenanceRoute() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white">
+      <header className="border-neutral-200 border-b bg-white pt-safe">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-6 py-4">
           <img
             src={config.identity.logo_url ?? '/icons/icon.svg'}

@@ -13,7 +13,7 @@ import { ArrowLeft } from 'lucide-react';
 export function LegalCobraHoyRoute() {
   return (
     <div className="min-h-screen bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white">
+      <header className="border-neutral-200 border-b bg-white pt-safe">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3 sm:px-6">
           <Link
             to="/"
