@@ -580,6 +580,77 @@ describe('conductores routes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /:id — detalle (bug de producción 2026-09-14: 500 en todos los conductores)
+// ---------------------------------------------------------------------------
+// `licencia_vencimiento` es DATE en la base (migración 0021, a propósito) pero
+// el schema Drizzle la declaraba `timestamp`: el driver entrega "2028-09-22",
+// Drizzle le pega "+0000" y produce un Date inválido. La lista lo escondía con
+// `safeDateString` (devolvía null → nadie veía vencimientos); el detalle hacía
+// `.toISOString()` directo → RangeError → 500 en el botón Editar del móvil.
+describe('GET /conductores/:id — detalle', () => {
+  it('sin auth → 401', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db, { role: null });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('con la columna date mapeada como string devuelve license_expiry YYYY-MM-DD', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[{ ...buildConductorListRow(), license_expiry: '2028-09-22' }]],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      conductor: { license_expiry: string | null; user: { rut: string; is_pending: boolean } };
+    };
+    expect(body.conductor.license_expiry).toBe('2028-09-22');
+    expect(body.conductor.user.rut).toBe(VALID_RUT);
+  });
+
+  it('REGRESIÓN 2026-09-14: un Date inválido en license_expiry NO rompe el detalle (200 con null, no 500)', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [{ ...buildConductorListRow(), license_expiry: new Date('fecha-corrupta') }],
+      ],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { conductor: { license_expiry: string | null } };
+    expect(body.conductor.license_expiry).toBeNull();
+  });
+
+  it('fechas de auditoría inválidas tampoco rompen (created_at/updated_at → null)', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            ...buildConductorListRow(),
+            license_expiry: '2028-09-22',
+            created_at: new Date('x'),
+            updated_at: new Date('x'),
+          },
+        ],
+      ],
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { conductor: { created_at: string | null } };
+    expect(body.conductor.created_at).toBeNull();
+  });
+
+  it('fila inexistente → 404 conductor_not_found', async () => {
+    const stub = makeDbStub({ selectQueueRows: [[]] });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bug preexistente encontrado en la prueba e2e de la Fase B (2026-07-31)
 // ---------------------------------------------------------------------------
 // El POST serializaba `license_expiry` con `.toISOString()` directo. Cuando

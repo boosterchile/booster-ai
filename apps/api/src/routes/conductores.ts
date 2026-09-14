@@ -249,15 +249,12 @@ export function createConductoresRoutes(opts: {
         empresa_id: row.empresa_id,
         license_class: row.license_class,
         license_number: row.license_number,
-        license_expiry:
-          row.license_expiry instanceof Date
-            ? row.license_expiry.toISOString().slice(0, 10)
-            : row.license_expiry,
+        license_expiry: safeDateString(row.license_expiry),
         is_extranjero: row.is_extranjero,
         status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        deleted_at: row.deleted_at,
+        created_at: safeIsoString(row.created_at),
+        updated_at: safeIsoString(row.updated_at),
+        deleted_at: safeIsoString(row.deleted_at),
         user: {
           id: row.user_id,
           full_name: row.user_full_name,
@@ -379,7 +376,7 @@ export function createConductoresRoutes(opts: {
             empresaId,
             licenseClass: body.license_class,
             licenseNumber: body.license_number,
-            licenseExpiry: new Date(`${body.license_expiry}T00:00:00.000Z`),
+            licenseExpiry: body.license_expiry,
             isExtranjero: body.is_extranjero,
             driverStatus: 'activo',
           })
@@ -439,7 +436,7 @@ export function createConductoresRoutes(opts: {
             // NaN, y el 500 resultante se lleva puesto el alta entera. El
             // helper ya existía para el GET; el POST no lo usaba (detectado en
             // la prueba end-to-end de la Fase B).
-            license_expiry: safeIsoString(result.driver.licenseExpiry)?.slice(0, 10) ?? null,
+            license_expiry: safeDateString(result.driver.licenseExpiry),
             is_extranjero: result.driver.isExtranjero,
             status: result.driver.driverStatus,
             created_at: result.driver.createdAt,
@@ -514,7 +511,7 @@ export function createConductoresRoutes(opts: {
       updates.licenseNumber = body.license_number;
     }
     if (body.license_expiry !== undefined) {
-      updates.licenseExpiry = new Date(`${body.license_expiry}T00:00:00.000Z`);
+      updates.licenseExpiry = body.license_expiry;
     }
     if (body.is_extranjero !== undefined) {
       updates.isExtranjero = body.is_extranjero;
@@ -540,10 +537,7 @@ export function createConductoresRoutes(opts: {
         empresa_id: driver.empresaId,
         license_class: driver.licenseClass,
         license_number: driver.licenseNumber,
-        license_expiry:
-          driver.licenseExpiry instanceof Date
-            ? driver.licenseExpiry.toISOString().slice(0, 10)
-            : driver.licenseExpiry,
+        license_expiry: safeDateString(driver.licenseExpiry),
         is_extranjero: driver.isExtranjero,
         status: driver.driverStatus,
         created_at: driver.createdAt,
