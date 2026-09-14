@@ -83,6 +83,14 @@ describe('LoginRoute — auth state', () => {
   });
 });
 
+describe('LoginRoute — iOS PWA', () => {
+  it('el header reserva el inset superior sumado a su padding (pt-safe-4)', () => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    render(<LoginRoute />);
+    expect(screen.getByRole('banner')).toHaveClass('pt-safe-4');
+  });
+});
+
 describe('LoginRoute — link a solicitar-acceso', () => {
   it('muestra el link "Solicita acceso" apuntando a /solicitar-acceso', () => {
     useAuthMock.mockReturnValue({ user: null, loading: false });

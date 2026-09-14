@@ -142,7 +142,7 @@ export function LiveTrackingScreen({
       )}
 
       {/* Header flotante — top */}
-      <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/30 to-transparent p-4 pb-8">
+      <div className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-black/30 to-transparent px-4 pt-safe-4 pb-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <Link
             to={backTo}

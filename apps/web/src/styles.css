@@ -48,6 +48,11 @@
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* Para headers que llevan su propio padding vertical (py-4) sin div interno:
+ * inset del sistema + el padding de siempre (4 = 1rem). */
+@utility pt-safe-4 {
+  padding-top: calc(env(safe-area-inset-top, 0px) + calc(var(--spacing) * 4));
+}
 
 /* Defaults globales */
 :root {
