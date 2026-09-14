@@ -593,6 +593,15 @@ export const apiEnvSchema = commonEnvSchema
     ONBOARDING_TOKEN_TTL_HOURS: z.coerce.number().int().positive().default(72),
 
     /**
+     * medicion-huella-segmento Task 8 — radio (metros) del geofence del origen
+     * que sugiere "confirmar recogida" en la PWA del conductor. Default 150 m
+     * (spec: cubre el error típico de GPS urbano + el largo de un camión en
+     * andén sin abarcar la cuadra vecina). Tunable por env sin tocar código;
+     * lo consume `services/geofence-origen.ts` vía el caller (función pura).
+     */
+    GEOFENCE_RADIUS_M: z.coerce.number().int().positive().default(150),
+
+    /**
      * SEC-001 boundary-closure T9 (SC-G5, ADR-057) — modo destructivo del
      * reaper de cuentas IdP inertes.
      *
