@@ -24,11 +24,19 @@ export type PrecisionMethod = z.infer<typeof precisionMethodSchema>;
  *     modeled — el polyline NO está confirmado, se asume.
  *   - manual_declared: cliente declaró origen→destino sin telemetría ni
  *     simulación. Worst case, secundario default.
+ *   - movil_gps: polyline real medido por la Geolocation API del móvil del
+ *     conductor (`posiciones_movil_conductor`), para vehículos sin Teltonika
+ *     (ADR-077 §1, migración 0055). Distancia medida, consumo modelado y sensor
+ *     no fijo al vehículo: NUNCA califica para primario verificable (ADR-077 §2).
+ *
+ * Espejos: `routeDataSourceEnum` (Drizzle, `apps/api/src/db/schema.ts`) y
+ * `RouteDataSource` en `@booster-ai/carbon-calculator` (zero-dep, no importa zod).
  */
 export const routeDataSourceSchema = z.enum([
   'teltonika_gps',
   'maps_directions',
   'manual_declared',
+  'movil_gps',
 ]);
 export type RouteDataSource = z.infer<typeof routeDataSourceSchema>;
 

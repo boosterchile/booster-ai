@@ -1,0 +1,62 @@
+-- Migration 0055 — `movil_gps` en el enum fuente_dato_ruta (ADR-077 §1)
+--
+-- ADR-077 declara la posición del móvil del conductor como fuente de ruta de
+-- PRIMERA CLASE, distinta de `teltonika_gps` y de `maps_directions`: polyline
+-- real recorrido, medido por la Geolocation API del móvil y persistido en
+-- `posiciones_movil_conductor`. No se mapea a `teltonika_gps` (mentiría sobre
+-- el sensor) ni a `maps_directions` (ocultaría que la distancia fue medida);
+-- el certificado y la auditoría deben poder decir de dónde salió cada km.
+-- Requisito de Task 11 del plan `medicion-huella-segmento`: sin este valor, la
+-- primera tarea que persista la fuente no tiene cómo escribirla.
+--
+-- Expand-only (ADR-066 / audit P1-H): un solo ADD VALUE, appendeado al final.
+--   * Sin DROP TYPE, sin CREATE TYPE nuevo + swap, sin RENAME.
+--   * Sin BEFORE/AFTER: no reordena los valores existentes.
+--   * Sin UPDATE ni backfill: ninguna fila existente cambia de valor.
+--   Los tres valores de ADR-028 §1 (`teltonika_gps`, `maps_directions`,
+--   `manual_declared`) quedan intactos, con su mismo enumsortorder. Un enum es
+--   contrato de datos: esos valores ya están escritos en filas de
+--   `metricas_viaje` y los lee `derivarNivelCertificacion`.
+-- Rollback de la revisión Cloud Run seguro: una versión previa del código nunca
+-- produce ni recibe 'movil_gps', y un valor de enum no usado es inerte.
+-- Ver docs/runbooks/db-migration-rollback.md.
+--
+-- --- ALTER TYPE ADD VALUE y transacciones (leer antes de tocar esta cadena) ---
+--
+-- El migrator de Drizzle (`src/db/migrator.ts` → `dialect.migrate`) envuelve
+-- TODAS las migraciones pendientes en UNA sola transacción, y la ruta de
+-- recuperación `applyOutOfOrderPending` también usa `db.transaction`. O sea:
+-- este ADD VALUE corre sí o sí dentro de un bloque de transacción.
+--
+-- Eso es válido en nuestro Postgres. La restricción de que `ADD VALUE` no podía
+-- correr dentro de una transacción es de Postgres < 12; desde 12 el statement
+-- se ejecuta sin problema dentro del bloque. Verificado empíricamente en PG 17
+-- (rig local) y aplicable a prod (Cloud SQL `POSTGRES_16`,
+-- infrastructure/data.tf).
+--
+-- Lo que SIGUE prohibido, y por eso esta migración es un único statement:
+-- el valor nuevo NO se puede USAR hasta que la transacción commitee.
+--
+--     BEGIN;
+--     ALTER TYPE t ADD VALUE 'c';   -- OK
+--     SELECT 'c'::t;                -- ERROR: unsafe use of new value "c" of enum type t
+--                                   -- HINT: New enum values must be committed before they can be used.
+--
+-- Consecuencias operativas, en orden de importancia:
+--   1. Esta migración NO contiene ningún statement que lea, castee, compare ni
+--      escriba 'movil_gps'. Solo lo agrega. La verificación vive en el test de
+--      integración (corre después del commit del migrator), no acá.
+--   2. Ninguna migración POSTERIOR que se aplique en el mismo batch puede usar
+--      'movil_gps' (backfill, DEFAULT, CHECK, índice parcial, UPDATE). En una
+--      BD nueva —CI, rig local, un entorno recién creado— la 0055 y esa futura
+--      migración entran en la MISMA transacción y el batch entero falla con el
+--      error de arriba. Si hace falta poblar o restringir con 'movil_gps', va en
+--      una migración separada Y en un deploy separado, con la 0055 ya commiteada.
+--   3. El batch es atómico: si algo falla, revierte completo y el valor no queda
+--      agregado a medias.
+--
+-- `IF NOT EXISTS` para que la migración sea re-aplicable sin romper: el
+-- reverse manual de `down/0055` NO actualiza `drizzle.__drizzle_migrations`
+-- (ver su cabecera), así que el próximo startup vuelve a correr este archivo.
+
+ALTER TYPE "fuente_dato_ruta" ADD VALUE IF NOT EXISTS 'movil_gps';
