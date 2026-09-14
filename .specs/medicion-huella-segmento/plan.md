@@ -184,11 +184,12 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **Depende de:** Task 6 (handler F1), Task 10.
 **⚠️ ANTI-FALSO-VERDE (precondición obligatoria del test browser):** el test sobre un vehículo **sin Teltonika** DEBE primero ejercer el handler de F1 para activar `'recogido'` — secuencia: crear trip → asignar → **llamar `confirmarRecogidaViaje` (Task 6)** → postear posiciones browser dentro de `[pickedUpAt, deliveredAt]` (el guard de `assignments.ts:438` solo las acepta con status ∈ {asignado,recogido}) → `confirmarEntregaViaje` → recién entonces evaluar la distancia. Sin F1, la tabla browser estaría vacía y el test daría FALSO VERDE de "fallback estimado correcto".
 **Pasos:**
-- [ ] Test (rojo) Teltonika: pings reales en la ventana → `kmCubiertos` = suma haversine de tramos continuos; `coverage_pct` consistente. Ventana anclada a `pickedUpAt`.
-- [ ] Test (rojo) browser (con la precondición anti-falso-verde arriba): tras ejercer F1, posiciones browser en el segmento → `kmCubiertos > 0` desde `posiciones_movil_conductor`.
-- [ ] Implementar: que `calcularCobertura`/`calcularCoberturaPura` reciba `desde=pickedUpAt`, lea vía `resolverPosicionesSegmento`, y retorne `{ coveragePct, kmCubiertos }`.
-- [ ] Verde + commit `feat(api): distancia real (kmCubiertos) sobre el segmento pickup→entrega`.
+- [x] Test (rojo) Teltonika: pings reales en la ventana → `kmCubiertos` = suma haversine de tramos continuos; `coverage_pct` consistente. Ventana anclada a `pickedUpAt`.
+- [x] Test (rojo) browser (con la precondición anti-falso-verde arriba): tras ejercer F1, posiciones browser en el segmento → `kmCubiertos > 0` desde `posiciones_movil_conductor`.
+- [x] Implementar: que `calcularCobertura`/`calcularCoberturaPura` reciba `desde=pickedUpAt`, lea vía `resolverPosicionesSegmento`, y retorne `{ coveragePct, kmCubiertos }`.
+- [x] Verde + commit `feat(api): distancia real (kmCubiertos) sobre el segmento pickup→entrega`.
 **Criterio de hecho:** `kmCubiertos` retornado; ventana anclada al pickup real; test browser pasa por F1 primero.
+> **Ejecutado (2026-09-13):** `calcularCoberturaPura` devuelve `{ coveragePct, kmCubiertos }`; el loader `cargarPingsVentana` se mudó a `posicion-segmento.ts` (módulo de fuentes) y `calcularCobertura` lee vía `resolverPosicionesSegmento` sobre `[pickedUpAt, deliveredAt]`; `recalcularNivelPostEntrega` ancla la ventana a `asignaciones.recogido_en` (fallback declarado `pickup_window_start` → `creado_en`), deja de saltarse los vehículos sin Teltonika y persiste la fuente real (`teltonika_gps` | `movil_gps`, ADR-077 §1) — la degradación a `maps_directions` por cobertura < 80 % queda para Task 12. `EscrituraDistanciaReal` lleva `kmCubiertos` como insumo de T12. Integración anti-falso-verde: el camino móvil pasa por `confirmarRecogidaViaje` real antes de medir; la entrega se registra directo (sin el fan-out post-commit).
 
 ### Task 12 — Cómputo de huella real + umbral binario de cobertura
 **Objetivo:** En el post-commit de la entrega, si la huella está activa (Task 3): cobertura ≥ umbral (vía `derivarNivelCertificacion`) → `kmCubiertos` alimenta `calcularEmisionesViaje` → poblar `distanceKmActual` + `carbonEmissionsKgco2eActual` (nivel primario); cobertura < umbral → distancia estimada + nivel **secundario** (degradación corte #2).

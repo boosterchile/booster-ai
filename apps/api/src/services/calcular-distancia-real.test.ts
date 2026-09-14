@@ -114,6 +114,9 @@ describe('resolverEscrituraDistanciaReal — qué persistir (write consistente +
     const w = resolverEscrituraDistanciaReal(h);
     expect(w.distanciaKmReal).toBe(100);
     expect(w.coveragePct).toBe(60);
+    // T11: la distancia MEDIDA (Σ observado) viaja en la misma escritura para que
+    // T12 alimente el cálculo de huella sin recomputarla.
+    expect(w.kmCubiertos).toBe(h.kmObservado);
     // Consistencia: la fracción medida declarada (X=coverage) sobre la distancia
     // persistida reconstruye los km observados. Si X viniera de otro cálculo,
     // esto NO cerraría — y el cert declararía "medido X%" sobre un número ajeno.
@@ -125,6 +128,7 @@ describe('resolverEscrituraDistanciaReal — qué persistir (write consistente +
     expect(w.distanciaKmReal).toBeNull();
     expect(w.distanciaKmReal).not.toBe(0);
     expect(w.coveragePct).toBe(0);
+    expect(w.kmCubiertos).toBe(0);
   });
 
   it('todos los gaps ≥60s (total>0 pero kmObservado=0) → NO persiste como real (null), cae a estimación', () => {

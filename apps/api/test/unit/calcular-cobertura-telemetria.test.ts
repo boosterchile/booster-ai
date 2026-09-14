@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  CONTINUITY_GAP_S,
-  calcularCobertura,
-  calcularCoberturaPura,
-  haversineKm,
-} from '../../src/services/calcular-cobertura-telemetria.js';
+
+// T11: el wrapper con I/O lee por la fuente ruteada del vehículo (Task 10). Se
+// mockea SOLO el resolver; `fuentePosicionSegmento` queda real.
+vi.mock('../../src/services/posicion-segmento.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/posicion-segmento.js')>()),
+  resolverPosicionesSegmento: vi.fn(),
+}));
+
+const { CONTINUITY_GAP_S, calcularCobertura, calcularCoberturaPura, haversineKm } = await import(
+  '../../src/services/calcular-cobertura-telemetria.js'
+);
+const { resolverPosicionesSegmento } = await import('../../src/services/posicion-segmento.js');
+type Mock = ReturnType<typeof vi.fn>;
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -16,18 +23,6 @@ const noopLogger = {
   fatal: noop,
   child: () => noopLogger,
 } as never;
-
-function makeDb(pings: Array<{ ts: Date; lat: string | null; lng: string | null }>) {
-  return {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          orderBy: vi.fn(async () => pings),
-        })),
-      })),
-    })),
-  };
-}
 
 /**
  * Tests del cálculo puro de cobertura telemétrica (ADR-028 §5).
@@ -75,11 +70,11 @@ describe('haversineKm', () => {
 
 describe('calcularCoberturaPura — casos vacíos / triviales', () => {
   it('0 pings → cobertura 0', () => {
-    expect(calcularCoberturaPura([], 100)).toBe(0);
+    expect(calcularCoberturaPura([], 100).coveragePct).toBe(0);
   });
 
   it('1 ping (no hay pares) → cobertura 0', () => {
-    expect(calcularCoberturaPura([{ tMs: 0, lat: -33.4, lng: -70.6 }], 100)).toBe(0);
+    expect(calcularCoberturaPura([{ tMs: 0, lat: -33.4, lng: -70.6 }], 100).coveragePct).toBe(0);
   });
 
   it('distanciaEstimadaKm = 0 → cobertura 0 (evita división por cero)', () => {
@@ -87,11 +82,11 @@ describe('calcularCoberturaPura — casos vacíos / triviales', () => {
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 30_000, lat: -33.4, lng: -70.65 },
     ];
-    expect(calcularCoberturaPura(pings, 0)).toBe(0);
+    expect(calcularCoberturaPura(pings, 0).coveragePct).toBe(0);
   });
 
   it('distanciaEstimadaKm negativa (defensivo) → cobertura 0', () => {
-    expect(calcularCoberturaPura([], -10)).toBe(0);
+    expect(calcularCoberturaPura([], -10).coveragePct).toBe(0);
   });
 });
 
@@ -104,7 +99,7 @@ describe('calcularCoberturaPura — pings continuos', () => {
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 30_000, lat: -33.4, lng: -70.66 },
     ];
-    const cov = calcularCoberturaPura(pings, 50);
+    const cov = calcularCoberturaPura(pings, 50).coveragePct;
     expect(cov).toBeGreaterThan(10);
     expect(cov).toBeLessThan(13);
   });
@@ -119,7 +114,7 @@ describe('calcularCoberturaPura — pings continuos', () => {
       { tMs: 90_000, lat: -33.4, lng: -70.6324 },
       { tMs: 120_000, lat: -33.4, lng: -70.6432 },
     ];
-    const cov = calcularCoberturaPura(pings, 10);
+    const cov = calcularCoberturaPura(pings, 10).coveragePct;
     // Con cada ping 30s después y < 60s gap, todos cuentan.
     // 4 segmentos × ~1km = ~4km. 4/10 = 40%.
     expect(cov).toBeGreaterThan(35);
@@ -135,7 +130,7 @@ describe('calcularCoberturaPura — gaps de discontinuidad', () => {
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 120_000, lat: -33.4, lng: -70.66 },
     ];
-    const cov = calcularCoberturaPura(pings, 50);
+    const cov = calcularCoberturaPura(pings, 50).coveragePct;
     expect(cov).toBe(0);
   });
 
@@ -150,7 +145,7 @@ describe('calcularCoberturaPura — gaps de discontinuidad', () => {
       { tMs: 150_000, lat: -33.4, lng: -70.7 }, // gap 120s — descarta
       { tMs: 180_000, lat: -33.4, lng: -70.7108 }, // continuo
     ];
-    const cov = calcularCoberturaPura(pings, 10);
+    const cov = calcularCoberturaPura(pings, 10).coveragePct;
     expect(cov).toBeGreaterThan(15);
     expect(cov).toBeLessThan(25);
   });
@@ -163,7 +158,7 @@ describe('calcularCoberturaPura — gaps de discontinuidad', () => {
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 60_000, lat: -33.4, lng: -70.66 }, // gap = 60s → NO cuenta
     ];
-    expect(calcularCoberturaPura(pings, 50)).toBe(0);
+    expect(calcularCoberturaPura(pings, 50).coveragePct).toBe(0);
   });
 
   it('gap 59.9s SI cuenta (boundary)', () => {
@@ -171,7 +166,7 @@ describe('calcularCoberturaPura — gaps de discontinuidad', () => {
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 59_900, lat: -33.4, lng: -70.6108 },
     ];
-    const cov = calcularCoberturaPura(pings, 10);
+    const cov = calcularCoberturaPura(pings, 10).coveragePct;
     expect(cov).toBeGreaterThan(0);
   });
 });
@@ -185,102 +180,166 @@ describe('calcularCoberturaPura — cap', () => {
       { tMs: 0, lat: -33, lng: -70 },
       { tMs: 30_000, lat: -33.5, lng: -70.5 }, // ~70km
     ];
-    const cov = calcularCoberturaPura(pings, 50);
+    const cov = calcularCoberturaPura(pings, 50).coveragePct;
     expect(cov).toBe(100);
   });
 });
 
-describe('calcularCobertura — wrapper con I/O', () => {
-  const VEH_ID = '11111111-1111-1111-1111-111111111111';
-  const PICKUP = new Date('2026-05-01T10:00:00Z');
-  const DELIVERED = new Date('2026-05-01T12:00:00Z');
+describe('calcularCoberturaPura — kmCubiertos (T11: la distancia real ya no se descarta)', () => {
+  // 5 pings cada 30 s, ~1 km entre sí → 4 tramos continuos ≈ 4 km.
+  const continuos = [
+    { tMs: 0, lat: -33.4, lng: -70.6 },
+    { tMs: 30_000, lat: -33.4, lng: -70.6108 },
+    { tMs: 60_000, lat: -33.4, lng: -70.6216 },
+    { tMs: 90_000, lat: -33.4, lng: -70.6324 },
+    { tMs: 120_000, lat: -33.4, lng: -70.6432 },
+  ];
+  const kmEsperados =
+    haversineKm(-33.4, -70.6, -33.4, -70.6108) +
+    haversineKm(-33.4, -70.6108, -33.4, -70.6216) +
+    haversineKm(-33.4, -70.6216, -33.4, -70.6324) +
+    haversineKm(-33.4, -70.6324, -33.4, -70.6432);
 
-  it('distanciaEstimadaKm <= 0 → devuelve 0 sin tocar DB', async () => {
-    const db = makeDb([]);
-    const cov = await calcularCobertura({
-      db: db as never,
+  it('devuelve la suma haversine de los tramos continuos', () => {
+    const r = calcularCoberturaPura(continuos, 10);
+    expect(r.kmCubiertos).toBeCloseTo(kmEsperados, 6);
+    expect(r.coveragePct).toBeCloseTo((kmEsperados / 10) * 100, 6);
+  });
+
+  it('kmCubiertos es independiente del denominador (misma distancia con 10, 1000 o 0 km estimados)', () => {
+    expect(calcularCoberturaPura(continuos, 1000).kmCubiertos).toBeCloseTo(kmEsperados, 6);
+    expect(calcularCoberturaPura(continuos, 0).kmCubiertos).toBeCloseTo(kmEsperados, 6);
+    expect(calcularCoberturaPura(continuos, 0).coveragePct).toBe(0);
+  });
+
+  it('un hueco (gap ≥ 60 s) no suma km: la distancia real solo cuenta lo observado', () => {
+    const conHueco = [
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.4, lng: -70.6108 }, // continuo
+      { tMs: 150_000, lat: -33.4, lng: -70.7 }, // gap 120 s — descarta
+      { tMs: 180_000, lat: -33.4, lng: -70.7108 }, // continuo
+    ];
+    const r = calcularCoberturaPura(conHueco, 10);
+    const esperado =
+      haversineKm(-33.4, -70.6, -33.4, -70.6108) + haversineKm(-33.4, -70.7, -33.4, -70.7108);
+    expect(r.kmCubiertos).toBeCloseTo(esperado, 6);
+  });
+
+  it('el cap a 100 % es solo del porcentaje: kmCubiertos conserva la distancia real', () => {
+    const r = calcularCoberturaPura(
+      [
+        { tMs: 0, lat: -33, lng: -70 },
+        { tMs: 30_000, lat: -33.5, lng: -70.5 }, // ~70 km
+      ],
+      50,
+    );
+    expect(r.coveragePct).toBe(100);
+    expect(r.kmCubiertos).toBeGreaterThan(60);
+  });
+
+  it('0 o 1 ping → kmCubiertos 0 (no hay tramo)', () => {
+    expect(calcularCoberturaPura([], 100).kmCubiertos).toBe(0);
+    expect(calcularCoberturaPura([{ tMs: 0, lat: -33.4, lng: -70.6 }], 100).kmCubiertos).toBe(0);
+  });
+});
+
+describe('calcularCobertura — wrapper con I/O (T11: fuente ruteada + ventana real)', () => {
+  const VEH_MOVIL = {
+    id: '11111111-1111-1111-1111-111111111111',
+    teltonikaImei: null,
+    teltonikaImeiEspejo: null,
+  };
+  const VEH_TELTONIKA = {
+    id: '33333333-3333-3333-3333-333333333333',
+    teltonikaImei: '860693084796730',
+    teltonikaImeiEspejo: null,
+  };
+  const PICKED_UP = new Date('2026-05-01T10:00:00Z');
+  const DELIVERED = new Date('2026-05-01T12:00:00Z');
+  const pingsContinuos = [
+    { tMs: PICKED_UP.getTime(), lat: -33.4, lng: -70.6 },
+    { tMs: PICKED_UP.getTime() + 30_000, lat: -33.4, lng: -70.6108 },
+    { tMs: PICKED_UP.getTime() + 60_000, lat: -33.4, lng: -70.6216 },
+  ];
+
+  it('distanciaEstimadaKm <= 0 → 0/0 sin leer ninguna fuente', async () => {
+    (resolverPosicionesSegmento as Mock).mockClear();
+    const r = await calcularCobertura({
+      db: {} as never,
       logger: noopLogger,
-      vehicleId: VEH_ID,
-      pickupAt: PICKUP,
+      vehicle: VEH_MOVIL,
+      pickedUpAt: PICKED_UP,
       deliveredAt: DELIVERED,
       distanciaEstimadaKm: 0,
     });
-    expect(cov).toBe(0);
-    expect(db.select).not.toHaveBeenCalled();
+    expect(r).toEqual(expect.objectContaining({ coveragePct: 0, kmCubiertos: 0 }));
+    expect(resolverPosicionesSegmento).not.toHaveBeenCalled();
   });
 
-  it('sin pings en la ventana → devuelve 0', async () => {
-    const db = makeDb([]);
-    const cov = await calcularCobertura({
-      db: db as never,
+  it('sin pings en la ventana → 0/0 (y la fuente igual se declara)', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce([]);
+    const r = await calcularCobertura({
+      db: {} as never,
       logger: noopLogger,
-      vehicleId: VEH_ID,
-      pickupAt: PICKUP,
+      vehicle: VEH_MOVIL,
+      pickedUpAt: PICKED_UP,
       deliveredAt: DELIVERED,
       distanciaEstimadaKm: 100,
     });
-    expect(cov).toBe(0);
-    expect(db.select).toHaveBeenCalled();
+    expect(r.coveragePct).toBe(0);
+    expect(r.kmCubiertos).toBe(0);
+    expect(r.fuente).toBe('movil_gps');
   });
 
-  it('pings con lat/lng null → se filtran del cálculo', async () => {
-    const db = makeDb([
-      { ts: new Date(PICKUP.getTime()), lat: null, lng: null },
-      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6' },
-      { ts: new Date(PICKUP.getTime() + 60_000), lat: null, lng: '-70.6' },
-      { ts: new Date(PICKUP.getTime() + 90_000), lat: '-33.4', lng: '-70.6108' },
-    ]);
-    const cov = await calcularCobertura({
-      db: db as never,
-      logger: noopLogger,
-      vehicleId: VEH_ID,
-      pickupAt: PICKUP,
-      deliveredAt: DELIVERED,
-      distanciaEstimadaKm: 10,
-    });
-    // Solo 2 pings válidos (índices 1 y 3), gap = 60s exacto → no cuenta.
-    expect(cov).toBe(0);
-  });
-
-  it('happy path: pings válidos consecutivos → coverage > 0', async () => {
-    const db = makeDb([
-      { ts: new Date(PICKUP.getTime()), lat: '-33.4', lng: '-70.6' },
-      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6108' },
-      { ts: new Date(PICKUP.getTime() + 60_000), lat: '-33.4', lng: '-70.6216' },
-    ]);
-    const cov = await calcularCobertura({
-      db: db as never,
-      logger: noopLogger,
-      vehicleId: VEH_ID,
-      pickupAt: PICKUP,
-      deliveredAt: DELIVERED,
-      distanciaEstimadaKm: 10,
-    });
-    expect(cov).toBeGreaterThan(0);
-    expect(cov).toBeLessThanOrEqual(100);
-  });
-
-  it('logger.info se llama con métricas finales', async () => {
-    const infoSpy = vi.fn();
-    const customLogger = {
-      ...noopLogger,
-      info: infoSpy,
-    } as never;
-    const db = makeDb([
-      { ts: new Date(PICKUP.getTime()), lat: '-33.4', lng: '-70.6' },
-      { ts: new Date(PICKUP.getTime() + 30_000), lat: '-33.4', lng: '-70.6108' },
-    ]);
+  it('lee por la fuente del vehículo con la ventana [pickedUpAt, deliveredAt] (ancla = recogida real)', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pingsContinuos);
     await calcularCobertura({
-      db: db as never,
+      db: {} as never,
+      logger: noopLogger,
+      vehicle: VEH_TELTONIKA,
+      pickedUpAt: PICKED_UP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 10,
+    });
+    expect(resolverPosicionesSegmento).toHaveBeenCalledWith(
+      expect.objectContaining({ vehicle: VEH_TELTONIKA, desde: PICKED_UP, hasta: DELIVERED }),
+    );
+  });
+
+  it('happy path móvil: coveragePct > 0, kmCubiertos = Σ haversine, fuente movil_gps', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pingsContinuos);
+    const r = await calcularCobertura({
+      db: {} as never,
+      logger: noopLogger,
+      vehicle: VEH_MOVIL,
+      pickedUpAt: PICKED_UP,
+      deliveredAt: DELIVERED,
+      distanciaEstimadaKm: 10,
+    });
+    const km =
+      haversineKm(-33.4, -70.6, -33.4, -70.6108) + haversineKm(-33.4, -70.6108, -33.4, -70.6216);
+    expect(r.kmCubiertos).toBeCloseTo(km, 6);
+    expect(r.coveragePct).toBeCloseTo((km / 10) * 100, 6);
+    expect(r.fuente).toBe('movil_gps');
+    expect(r.pingsValidos).toBe(3);
+  });
+
+  it('logger.info se llama con vehicleId, fuente y pings válidos', async () => {
+    const infoSpy = vi.fn();
+    const customLogger = { ...noopLogger, info: infoSpy } as never;
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pingsContinuos.slice(0, 2));
+    await calcularCobertura({
+      db: {} as never,
       logger: customLogger,
-      vehicleId: VEH_ID,
-      pickupAt: PICKUP,
+      vehicle: VEH_TELTONIKA,
+      pickedUpAt: PICKED_UP,
       deliveredAt: DELIVERED,
       distanciaEstimadaKm: 10,
     });
     expect(infoSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        vehicleId: VEH_ID,
+        vehicleId: VEH_TELTONIKA.id,
+        fuente: 'teltonika_gps',
         pingsValidos: 2,
       }),
       expect.stringContaining('cobertura'),
