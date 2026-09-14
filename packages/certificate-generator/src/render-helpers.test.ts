@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 // NO puede declarar "distancia medida" a secas — debe declarar la mezcla
 // "medido X%, estimado (100−X)%", con X = coverage_pct. Sin esto se reintroduce
 // el sesgo direccional a la baja que motivó todo el fix.
-import { declaracionDistancia } from './render-helpers.js';
+import { declaracionDistancia, formatRouteDataSource } from './render-helpers.js';
 
 describe('declaracionDistancia — invariante de honestidad de la distancia', () => {
   it('cobertura 100% → declara medida; NO menciona estimado', () => {
@@ -42,6 +42,33 @@ describe('declaracionDistancia — invariante de honestidad de la distancia', ()
       const d = declaracionDistancia(cov);
       expect(d, `cobertura ${cov}`).toMatch(/estimad/i);
       expect(d.toLowerCase(), `cobertura ${cov}`).not.toMatch(/medid/i);
+    }
+  });
+});
+
+/**
+ * ADR-077 §4 — vocabulario cerrado del certificado por fuente de posición:
+ * «medida» aplica solo a la distancia; «verificable» está prohibido en todo lo
+ * que no sea `primario_verificable`, y el móvil nunca lo es.
+ */
+describe('formatRouteDataSource — fuente de la ruta en el certificado (ADR-077 §4)', () => {
+  it('movil_gps declara la distancia medida por el GPS del móvil del conductor', () => {
+    const texto = formatRouteDataSource('movil_gps');
+    expect(texto).toMatch(/GPS del móvil del conductor/);
+    expect(texto).toMatch(/medida/i);
+    // El literal del enum jamás llega al cliente (hoy el default lo filtra tal cual).
+    expect(texto).not.toBe('movil_gps');
+  });
+
+  it('vocabulario cerrado: ninguna fuente secundaria dice "verificable"', () => {
+    for (const fuente of ['movil_gps', 'maps_directions', 'manual_declared']) {
+      expect(formatRouteDataSource(fuente), fuente).not.toMatch(/verificable/i);
+    }
+  });
+
+  it('las tres fuentes de ADR-028 conservan un texto propio (no el literal)', () => {
+    for (const fuente of ['teltonika_gps', 'maps_directions', 'manual_declared']) {
+      expect(formatRouteDataSource(fuente), fuente).not.toBe(fuente);
     }
   });
 });

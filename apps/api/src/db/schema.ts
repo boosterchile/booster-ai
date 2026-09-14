@@ -349,14 +349,21 @@ export const precisionMethodEnum = pgEnum('metodo_precision', [
  * `coverage_pct` determina si el viaje califica para certificado primario.
  *
  *   - teltonika_gps: pings GPS del dispositivo Teltonika (única fuente
- *     que califica para nivel primario verificable).
+ *     que califica para nivel primario verificable, y solo con CAN bus
+ *     y cobertura ≥ 95 % — ADR-077 §2).
  *   - maps_directions: ruta sintetizada por Google Routes API.
  *   - manual_declared: declaración del cliente sin telemetría ni simulación.
+ *   - movil_gps: polyline real medido por la Geolocation API del móvil del
+ *     conductor (`posiciones_movil_conductor`), para vehículos sin Teltonika
+ *     (ADR-077 §1, migración 0055). Distancia medida pero consumo modelado y
+ *     sensor no fijo al vehículo: NUNCA produce `primario_verificable`,
+ *     sin importar la cobertura (ADR-077 §2).
  */
 export const routeDataSourceEnum = pgEnum('fuente_dato_ruta', [
   'teltonika_gps',
   'maps_directions',
   'manual_declared',
+  'movil_gps',
 ]);
 
 /**

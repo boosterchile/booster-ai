@@ -28,11 +28,27 @@ export interface DriverPositionInput {
   heading_deg?: number | null;
 }
 
+/**
+ * Veredicto del geofence del origen que el API evalúa con cada posición
+ * (T8/T9, medicion-huella-segmento). `sin_origen` = viaje sin geocodificar:
+ * respuesta válida, no error — la recogida se dispara solo por tap.
+ */
+export type GeofenceEstado = 'dentro' | 'fuera' | 'sin_origen' | 'sin_posicion';
+
+export interface DriverPositionResponse {
+  ok: boolean;
+  /** Ausente si el API aún no evalúa geofence (compat hacia atrás). */
+  geofence?: { estado: GeofenceEstado; distancia_m: number | null };
+}
+
 export async function postDriverPosition(
   assignmentId: string,
   input: DriverPositionInput,
-): Promise<{ ok: boolean }> {
-  return await api.post<{ ok: boolean }>(`/assignments/${assignmentId}/driver-position`, input);
+): Promise<DriverPositionResponse> {
+  return await api.post<DriverPositionResponse>(
+    `/assignments/${assignmentId}/driver-position`,
+    input,
+  );
 }
 
 /**

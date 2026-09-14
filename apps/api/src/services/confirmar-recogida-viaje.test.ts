@@ -33,7 +33,11 @@ interface Estado {
   tripStatus: string;
   driverUserId: string | null;
   pickedUpAt: Date | null;
+  /** Aceptación de la oferta: cota inferior del `pickedUpAt` provisto (T9). */
+  acceptedAt?: Date;
 }
+
+const ACCEPTED_AT = new Date('2026-08-01T12:00:00Z');
 
 /**
  * DB falsa que modela lo que importa: el CAS por estado en el WHERE. Un update
@@ -57,6 +61,7 @@ function makeDb(estado: Estado, opts: { assignmentExists?: boolean } = {}) {
                       assignmentStatus: estado.assignmentStatus,
                       driverUserId: estado.driverUserId,
                       pickedUpAt: estado.pickedUpAt,
+                      acceptedAt: estado.acceptedAt ?? ACCEPTED_AT,
                       empresaId: EMPRESA_ID,
                       tripId: TRIP_ID,
                       tripStatus: estado.tripStatus,
@@ -286,5 +291,128 @@ describe('confirmarRecogidaViaje', () => {
       return;
     }
     expect(r.code).toBe('invalid_status');
+  });
+
+  // -------------------------------------------------------------------------
+  // T9 (medicion-huella-segmento): `pickedUpAt` opcional = instante del cruce
+  // del geofence, provisto por el cliente. Ancla la ventana de medición GLEC,
+  // así que se acota en el servidor: ni futuro (más allá del skew de reloj)
+  // ni anterior a la aceptación del servicio. Sin él → now (tap manual).
+  // -------------------------------------------------------------------------
+  describe('pickedUpAt provisto (instante del cruce del geofence)', () => {
+    const CRUCE = new Date('2026-08-02T09:30:00Z');
+
+    it('dentro de cotas → se persiste ESE instante y el evento lo declara de fuente cliente', async () => {
+      const { db, updates, inserts } = makeDb({
+        assignmentStatus: 'asignado',
+        tripStatus: 'asignado',
+        driverUserId: DRIVER_ID,
+        pickedUpAt: null,
+      });
+
+      const r = await confirmarRecogidaViaje({
+        db,
+        logger,
+        assignmentId: ASSIGNMENT_ID,
+        actor,
+        pickedUpAt: CRUCE,
+      });
+
+      expect(r.ok).toBe(true);
+      if (!r.ok) {
+        return;
+      }
+      expect(r.pickedUpAt).toEqual(CRUCE);
+      const asig = updates.find((u) => u.tabla === 'asignaciones');
+      expect(asig?.set.pickedUpAt).toEqual(CRUCE);
+      const payload = inserts[0]?.payload as Record<string, unknown>;
+      expect(payload.picked_up_at).toBe(CRUCE.toISOString());
+      expect(payload.picked_up_at_source).toBe('cliente');
+    });
+
+    it('sin pickedUpAt → now, y el evento lo declara de fuente servidor', async () => {
+      const { db, inserts } = makeDb({
+        assignmentStatus: 'asignado',
+        tripStatus: 'asignado',
+        driverUserId: DRIVER_ID,
+        pickedUpAt: null,
+      });
+
+      const r = await confirmarRecogidaViaje({ db, logger, assignmentId: ASSIGNMENT_ID, actor });
+
+      expect(r.ok).toBe(true);
+      const payload = inserts[0]?.payload as Record<string, unknown>;
+      expect(payload.picked_up_at_source).toBe('servidor');
+    });
+
+    it('en el futuro (más allá de 2 min de skew) → invalid_picked_up_at y NO escribe nada', async () => {
+      const { db, updates, inserts } = makeDb({
+        assignmentStatus: 'asignado',
+        tripStatus: 'asignado',
+        driverUserId: DRIVER_ID,
+        pickedUpAt: null,
+      });
+
+      const r = await confirmarRecogidaViaje({
+        db,
+        logger,
+        assignmentId: ASSIGNMENT_ID,
+        actor,
+        pickedUpAt: new Date(Date.now() + 10 * 60_000),
+      });
+
+      expect(r.ok).toBe(false);
+      if (r.ok) {
+        return;
+      }
+      expect(r.code).toBe('invalid_picked_up_at');
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('anterior a la aceptación del servicio → invalid_picked_up_at y NO escribe nada', async () => {
+      const { db, updates, inserts } = makeDb({
+        assignmentStatus: 'asignado',
+        tripStatus: 'asignado',
+        driverUserId: DRIVER_ID,
+        pickedUpAt: null,
+        acceptedAt: ACCEPTED_AT,
+      });
+
+      const r = await confirmarRecogidaViaje({
+        db,
+        logger,
+        assignmentId: ASSIGNMENT_ID,
+        actor,
+        pickedUpAt: new Date(ACCEPTED_AT.getTime() - 60_000),
+      });
+
+      expect(r.ok).toBe(false);
+      if (r.ok) {
+        return;
+      }
+      expect(r.code).toBe('invalid_picked_up_at');
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('un skew de reloj pequeño (≤ 2 min hacia el futuro) se acepta', async () => {
+      const { db } = makeDb({
+        assignmentStatus: 'asignado',
+        tripStatus: 'asignado',
+        driverUserId: DRIVER_ID,
+        pickedUpAt: null,
+      });
+
+      const r = await confirmarRecogidaViaje({
+        db,
+        logger,
+        assignmentId: ASSIGNMENT_ID,
+        actor,
+        pickedUpAt: new Date(Date.now() + 60_000),
+      });
+
+      expect(r.ok).toBe(true);
+    });
   });
 });
