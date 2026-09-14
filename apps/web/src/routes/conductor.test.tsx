@@ -149,7 +149,7 @@ const sampleAssignment = {
     pickup_window_end: null,
   },
   carrier_empresa: { id: 'emp-c', legal_name: 'Transportes Demo Sur S.A.' },
-  vehicle: { id: 'veh-1', plate: 'DEMO01' },
+  vehicle: { id: 'veh-1', plate: 'DEMO01', has_teltonika: false },
 };
 
 beforeEach(() => {
@@ -244,43 +244,86 @@ describe('ConductorDashboardRoute', () => {
     expect(screen.getByText('BOO-XYZ789')).toBeInTheDocument();
   });
 
-  it('GPS reporter botón "Iniciar" está disabled si geoPermission ≠ granted', async () => {
+  it('sin Teltonika y por recoger, sin permiso: no hay botón de GPS y explica que arranca al recoger', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
     render(<ConductorDashboardRoute />);
-    const startBtn = await screen.findByTestId('gps-start');
-    expect(startBtn).toBeDisabled();
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+    // Antes: botón «Iniciar reporte GPS» deshabilitado + aviso de permisos. El
+    // conductor no sabía si tocarlo o no (reporte del PO, 2026-09-14).
+    expect(screen.queryByTestId('gps-start')).toBeNull();
     expect(
-      screen.getByText(/Para activar el reporte GPS, primero habilita el permiso de ubicación/i),
+      screen.getByText(/Al confirmar la recogida, tu teléfono empezará a reportar/i),
     ).toBeInTheDocument();
+    expect(reporterStartSpy).not.toHaveBeenCalled();
   });
 
-  it('GPS reporter "Iniciar" está habilitado cuando geo=granted y no watching', async () => {
+  it('sin Teltonika, por recoger y permiso ya concedido: reporta solo (para el geofence), sin botón', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'granted', geo: 'granted' });
     render(<ConductorDashboardRoute />);
-    const startBtn = await screen.findByTestId('gps-start');
-    await waitFor(() => expect(startBtn).not.toBeDisabled());
-    fireEvent.click(startBtn);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+    await waitFor(() => expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id));
+    expect(screen.queryByTestId('gps-start')).toBeNull();
+  });
+
+  it('reportando: muestra el contador y NO ofrece detener (para al confirmar la entrega)', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 42 };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText(/42 puntos enviados/)).toBeInTheDocument();
+    expect(screen.queryByTestId('gps-stop')).toBeNull();
+  });
+
+  it('con Teltonika: el camión reporta solo; ni botón ni watch del teléfono', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        { ...sampleAssignment, vehicle: { id: 'veh-1', plate: 'JLKT54', has_teltonika: true } },
+      ],
+    });
+    queryDriverPermissionsSpy.mockResolvedValue({ mic: 'granted', geo: 'granted' });
+    render(<ConductorDashboardRoute />);
+    expect(
+      await screen.findByText(/Tu camión reporta la posición automáticamente/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('gps-start')).toBeNull();
+    expect(reporterStartSpy).not.toHaveBeenCalled();
+  });
+
+  it('sin Teltonika: confirmar la recogida arranca el reporte del teléfono', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('confirmar-recogida'));
+    await waitFor(() => expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id));
+  });
+
+  it('en ruta sin posición: avisa y ofrece reintentar la ubicación', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    const retry = await screen.findByTestId('gps-retry');
+    expect(screen.getByText(/No estamos recibiendo tu posición/i)).toBeInTheDocument();
+    reporterStartSpy.mockClear();
+    fireEvent.click(retry);
     expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id);
   });
 
-  it('GPS reporter watching=true muestra contador + botón Detener', async () => {
-    reporterState = {
-      ...reporterState,
-      isWatching: true,
-      pointsSent: 42,
-    };
+  it('confirmar la entrega detiene el reporte del teléfono', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 7 };
     providedContext = { kind: 'onboarded', me: makeMe() };
-    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
-    queryDriverPermissionsSpy.mockResolvedValue({ mic: 'granted', geo: 'granted' });
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    apiPatchSpy.mockResolvedValue({ ok: true });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
-    expect(await screen.findByText(/42 puntos enviados/)).toBeInTheDocument();
-    const stopBtn = screen.getByTestId('gps-stop');
-    fireEvent.click(stopBtn);
-    expect(reporterStopSpy).toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    await waitFor(() => expect(reporterStopSpy).toHaveBeenCalled());
   });
 
   it('error 404 de /me/assignments → mensaje amable, no stack trace', async () => {
@@ -324,15 +367,27 @@ describe('ConductorDashboardRoute', () => {
 // gate (su empresa es transportista) y termina viendo herramientas de su jefe:
 // "asignar conductor" y el factoring de Cobra hoy.
 describe('ConductorDashboardRoute — acciones del servicio', () => {
-  it('ofrece navegación al destino', async () => {
+  it('por recoger: ofrece ir al ORIGEN, no al destino', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
+    const nav = await screen.findByTestId('navegar-origen');
+    // Antes de recoger, el conductor va al origen. «Navegar al destino» acá
+    // confundía (reporte del PO, 2026-09-14).
+    expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
+    expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Pajaritos 1234'));
+    expect(screen.queryByTestId('navegar-destino')).toBeNull();
+  });
 
+  it('en ruta: ofrece ir al destino', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
     const nav = await screen.findByTestId('navegar-destino');
     // Un conductor necesita abrir el destino en su app de mapas, no copiarlo.
     expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
     expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Brasil 2345'));
+    expect(screen.queryByTestId('navegar-origen')).toBeNull();
   });
 
   it('permite confirmar la entrega desde su propia pantalla', async () => {
@@ -601,17 +656,34 @@ describe('ConductorDashboardRoute — mantenerse al día', () => {
     expect(alerta.textContent ?? '').toMatch(/intenta|señal|nuevamente/i);
   });
 
-  it('si no se puede leer el permiso de GPS, lo dice en vez de dejar el botón muerto', async () => {
+  it('si no se puede leer el permiso de GPS, no queda un botón muerto: explica que arranca al recoger', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     queryDriverPermissionsSpy.mockRejectedValue(new Error('permissions API no disponible'));
     render(<ConductorDashboardRoute />);
-
-    // El `.catch(() => undefined)` dejaba el botón de GPS deshabilitado para
-    // siempre, sin ninguna explicación.
     expect(
-      await screen.findByText(/permiso de ubicación|activar la ubicación/i),
+      await screen.findByText(/Al confirmar la recogida, tu teléfono empezará a reportar/i),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId('gps-start')).toBeNull();
+  });
+
+  it('mientras actualiza, el botón lo dice (no parece muerto)', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByText(/No tienes servicios asignados/i);
+    let resolver: ((v: unknown) => void) | undefined;
+    apiGetSpy.mockReturnValueOnce(
+      new Promise((r) => {
+        resolver = r;
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Actualizar$/i }));
+    // El PO tocó «Actualizar» y «no funcionó»: sí recargaba, pero sin ninguna
+    // señal visible (7 GET /me/assignments en el log, 2026-09-14).
+    expect(await screen.findByRole('button', { name: /Actualizando/i })).toBeDisabled();
+    resolver?.({ assignments: [] });
+    expect(await screen.findByRole('button', { name: /^Actualizar$/i })).not.toBeDisabled();
   });
 });
 
