@@ -25,6 +25,7 @@ import {
 } from '../services/confirmar-entrega-viaje.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
+import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 
@@ -76,6 +77,13 @@ export function createTripRequestsV2Routes(opts: {
    * de corte). Ausente → sin precondición documental.
    */
   documentClosePolicy?: DocumentClosePolicy | undefined;
+  /**
+   * GCP project para Routes API (header X-Goog-User-Project, ADR-038). Si se
+   * provee, al crear un viaje se geocodifica y persiste el origen (ancla del
+   * geofence de recogida — plan medicion-huella-segmento, Task 4). Ausente
+   * (dev sin GCP) → no se intenta; el viaje se crea igual con lat/lng NULL.
+   */
+  routesProjectId?: string | undefined;
 }) {
   const app = new Hono();
 
@@ -171,6 +179,33 @@ export function createTripRequestsV2Routes(opts: {
       },
       'trip created',
     );
+
+    // Geocodificación del origen (Task 4): fuera de la transacción del INSERT,
+    // awaited (acotada por el timeout de Routes API) para que el ancla del
+    // geofence exista antes de que salgan las ofertas. El service degrada a
+    // null y NUNCA lanza; el try/catch es defensa en profundidad — nada de lo
+    // que pase acá puede convertir un viaje ya insertado en un 500.
+    if (opts.routesProjectId) {
+      try {
+        const origen = await geocodificarOrigen({
+          db: opts.db,
+          logger: opts.logger,
+          tripId: trip.id,
+          originAddress: input.origin.address_raw,
+          destinationAddress: input.destination.address_raw,
+          routesProjectId: opts.routesProjectId,
+        });
+        opts.logger.info(
+          { tripId: trip.id, originGeocoded: origen !== null },
+          'trip origin geocoding finished',
+        );
+      } catch (err) {
+        opts.logger.error(
+          { err, tripId: trip.id },
+          'trip origin geocoding threw unexpectedly, trip stays without origin lat/lng',
+        );
+      }
+    }
 
     let matchingResult: Awaited<ReturnType<typeof runMatching>> | null = null;
     try {

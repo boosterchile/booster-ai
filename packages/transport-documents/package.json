@@ -17,7 +17,7 @@
     "@booster-ai/shared-schemas": "workspace:*",
     "@hyzyla/pdfium": "2.1.13",
     "fast-xml-parser": "5.9.2",
-    "sharp": "0.35.1",
+    "sharp": "0.35.4",
     "zxing-wasm": "3.1.0"
   },
   "devDependencies": {

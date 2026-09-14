@@ -67,10 +67,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (migración).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
-- [ ] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
-- [ ] Generar + revisar migración.
-- [ ] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
+- [x] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
+- [x] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
+- [x] Generar + revisar migración.
+- [x] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
 **Criterio de hecho:** columnas presentes nullable `numeric(10,7)`; CI migración verde.
 
 ### Task 3 — Resolver de opt-in efectivo de huella (OR de empresas participantes)
@@ -79,7 +79,7 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 1.
 **Pasos:**
-- [ ] Test (rojo), 7 casos:
+- [x] Test (rojo), 7 casos:
   - `{ tripOverride: true, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `true` (override gana)
   - `{ tripOverride: false, generadorCarbonEnabled: true, transportistaCarbonEnabled: true }` → `false` (override gana)
   - `{ tripOverride: null, generadorCarbonEnabled: true, transportistaCarbonEnabled: false }` → `true` (OR: generador)
@@ -87,8 +87,8 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
   - `{ tripOverride: null, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `false`
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: true }` → `true` (generador null → false, OR transportista)
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: null }` → `false` (todo null → false)
-- [ ] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
-- [ ] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
+- [x] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
+- [x] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
 **Criterio de hecho:** 7 casos verdes; sin acceso a DB (pura); consignee excluido por diseño (no es empresa consultable); generador nullable manejado.
 
 ### Task 4 — Geocodificar y persistir el origen al crear el viaje
@@ -97,10 +97,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (tests required; degradación es crítica).
 **Depende de:** Task 2.
 **Pasos:**
-- [ ] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
-- [ ] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
-- [ ] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
-- [ ] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
+- [x] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
+- [x] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
+- [x] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
+- [x] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
 **Criterio de hecho:** trip nuevo tiene lat/lng del origen; fallo de geocoding no bloquea creación y emite métrica.
 
 ### Task 5 — trip-state-machine: guard de recogida
@@ -109,9 +109,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (máquina de estados).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
-- [ ] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
-- [ ] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
+- [x] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
+- [x] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
+- [x] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
 **Criterio de hecho:** guard derivado de la tabla (no lista paralela); 3 casos verdes.
 
 ### Task 6 — Servicio `confirmar-recogida-viaje.ts` (handler de recogida)
