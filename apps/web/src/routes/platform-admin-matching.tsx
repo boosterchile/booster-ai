@@ -179,7 +179,7 @@ function PlatformAdminMatchingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white">
+      <header className="border-neutral-200 border-b bg-white pt-safe">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary-100 text-primary-700">

@@ -190,6 +190,12 @@ describe('ConductorDashboardRoute', () => {
     expect(cogLink).toHaveAttribute('href', '/app/conductor/configuracion');
   });
 
+  it('iOS PWA: el header del conductor reserva el inset superior (pt-safe)', () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    render(<ConductorDashboardRoute />);
+    expect(screen.getByRole('banner')).toHaveClass('pt-safe');
+  });
+
   it('banner sticky de WhatsApp es visible siempre (no oculto en config)', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<ConductorDashboardRoute />);

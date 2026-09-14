@@ -153,7 +153,7 @@ function WakeWordActiveBanner() {
 
 function ConductorHeader({ fullName }: { fullName: string }) {
   return (
-    <header className="border-neutral-200 border-b bg-white">
+    <header className="border-neutral-200 border-b bg-white pt-safe">
       <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
         <div className="min-w-0 flex-1">
           <div className="text-neutral-500 text-xs">Conductor</div>
