@@ -64,3 +64,29 @@ apuntaba a columnas que no existen en `viajes`; se reemplaza por la real sobre
       ruta pública con datos mock, nueva): una acción principal por fase.
 - [ ] En producción, el PO recorre recogida → entrega en BOO-BKAXIK sin dudar
       qué tocar.
+
+## 5. Pasada 2 (2026-09-14, misma fecha): «Ir al destino» abría un mapa vacío
+
+Reporte del PO en BOO-BKAXIK: «abre el mapa de Google sin mostrar la ruta, inicio y
+destino». Reproducido en escritorio: Google Maps responde «no puede encontrar Ruta 5
+Norte km 470, La Serena». El enlace pedía direcciones bien; la dirección en texto no es
+geocodificable por Maps. En la base ningún viaje (0 de 9) tiene coordenadas de destino,
+y el origen geocodificado (T2/T4) solo aplica a viajes nuevos.
+
+Lo que sí existe: la **ruta eco** de la asignación (`eco_route_polyline_encoded`,
+Routes API), que resolvió ambos extremos. Para BOO-BKAXIK su último punto cae en
+La Serena (-29.90626, -71.25743) y Google Maps sí lo navega («Tu ubicación a Ruta 5,
+La Serena»).
+
+- `conductor.tsx`: la tarjeta lee la ruta eco con el hook existente
+  `useAssignmentEcoRoute` (ya autorizado para el conductor) y usa el primer y el
+  último punto de la polyline como coordenadas de «Ir al origen» e «Ir al destino».
+  Sin ruta eco, cae al texto de la dirección como antes. Se agrega
+  `travelmode=driving&dir_action=navigate` para que la app de Maps arranque la
+  navegación.
+- Sin cambios de API ni migración. Deuda declarada: geocodificar también el destino
+  al crear el viaje (columnas `destino_latitude/longitude`), que además necesitan el
+  ETA y el hito «llegó» al destinatario; requiere aprobación del PO por schema.
+
+Criterios: tests rojo→verde (destino y origen por coordenadas; sin ruta, texto +
+modo auto), suite web, typecheck, biome, build.

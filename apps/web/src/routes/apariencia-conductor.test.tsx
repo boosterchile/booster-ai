@@ -12,6 +12,10 @@ vi.mock('@tanstack/react-router', () => ({
   useSearch: () => searchMock,
 }));
 
+vi.mock('../hooks/use-assignment-eco-route.js', () => ({
+  useAssignmentEcoRoute: () => ({ data: undefined }),
+}));
+
 vi.mock('../hooks/use-driver-position-reporter.js', () => ({
   useDriverPositionReporter: () => ({
     isWatching: false,

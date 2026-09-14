@@ -98,6 +98,14 @@ vi.mock('../hooks/use-driver-position-reporter.js', () => ({
   useDriverPositionReporter: () => reporterState,
 }));
 
+// Ruta eco de la asignación (Routes API): sus extremos son las coordenadas
+// reales de origen y destino, que Google Maps sí entiende aunque la dirección
+// en texto no («Ruta 5 Norte km 470» no la encuentra — reporte del PO).
+let ecoRouteState: { data?: { polyline_encoded: string | null } } = {};
+vi.mock('../hooks/use-assignment-eco-route.js', () => ({
+  useAssignmentEcoRoute: () => ecoRouteState,
+}));
+
 const apiGetSpy = vi.fn();
 const apiPatchSpy = vi.fn();
 vi.mock('../lib/api-client.js', async () => {
@@ -165,6 +173,7 @@ beforeEach(() => {
   };
   queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
   apiGetSpy.mockResolvedValue({ assignments: [] });
+  ecoRouteState = {};
 });
 
 afterEach(() => {
@@ -377,6 +386,40 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
     expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Pajaritos 1234'));
     expect(screen.queryByTestId('navegar-destino')).toBeNull();
+  });
+
+  it('con ruta eco: «Ir al destino» navega a las COORDENADAS del destino, no al texto', async () => {
+    // Polyline de ejemplo de Google: (38.5,-120.2) → (40.7,-120.95) → (43.252,-126.453).
+    ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    const nav = await screen.findByTestId('navegar-destino');
+    const href = nav.getAttribute('href') ?? '';
+    expect(href).toContain(`destination=${encodeURIComponent('43.252,-126.453')}`);
+    expect(href).not.toContain(encodeURIComponent('Av. Brasil 2345'));
+    expect(href).toContain('travelmode=driving');
+  });
+
+  it('con ruta eco: «Ir al origen» navega a las coordenadas del origen', async () => {
+    ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    const nav = await screen.findByTestId('navegar-origen');
+    expect(nav.getAttribute('href') ?? '').toContain(
+      `destination=${encodeURIComponent('38.5,-120.2')}`,
+    );
+  });
+
+  it('sin ruta eco: los enlaces caen al texto de la dirección y piden modo auto', async () => {
+    ecoRouteState = { data: { polyline_encoded: null } };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    const href = (await screen.findByTestId('navegar-origen')).getAttribute('href') ?? '';
+    expect(href).toContain(encodeURIComponent('Av. Pajaritos 1234'));
+    expect(href).toContain('travelmode=driving');
   });
 
   it('en ruta: ofrece ir al destino', async () => {

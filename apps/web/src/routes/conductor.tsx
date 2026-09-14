@@ -11,13 +11,15 @@ import {
   Settings,
   Truck,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { type LatLng, decodePolyline } from '../lib/polyline.js';
 import {
   type PermissionStatus,
   queryDriverPermissions,
@@ -390,8 +392,16 @@ function mensajeDeCierre(err: unknown): string {
 
 type FaseServicio = 'por_recoger' | 'en_ruta' | 'entregada';
 
-function mapsHref(address: string): string {
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+/**
+ * Enlace de navegación a Google Maps. Con coordenadas va a las coordenadas:
+ * el texto de una dirección como «Ruta 5 Norte km 470, La Serena» Google
+ * Maps NO lo encuentra y abre un mapa vacío (reporte del PO, 2026-09-14),
+ * mientras que la ruta eco de la asignación (Routes API) ya resolvió ambos
+ * extremos. `dir_action=navigate` arranca la navegación en la app de Maps.
+ */
+function mapsHref(address: string, coords: LatLng | null): string {
+  const destination = coords ? `${coords.lat},${coords.lng}` : address;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
 }
 
 export function AssignmentCard({
@@ -425,6 +435,20 @@ export function AssignmentCard({
     : recogida.recogida
       ? 'en_ruta'
       : 'por_recoger';
+
+  // Extremos de la ruta eco = coordenadas reales de origen y destino para los
+  // enlaces de navegación (ver mapsHref). Sin ruta, cae al texto.
+  const ecoRoute = useAssignmentEcoRoute(a.id, { enabled: fase !== 'entregada' });
+  const polylineEncoded = ecoRoute.data?.polyline_encoded ?? null;
+  const extremos = useMemo<{ origen: LatLng; destino: LatLng } | null>(() => {
+    if (!polylineEncoded) {
+      return null;
+    }
+    const puntos = decodePolyline(polylineEncoded);
+    const origen = puntos[0];
+    const destino = puntos[puntos.length - 1];
+    return puntos.length >= 2 && origen && destino ? { origen, destino } : null;
+  }, [polylineEncoded]);
 
   // Posición automática (vehículo sin Teltonika). En ruta arranca siempre: es
   // el momento en que iOS pide la ubicación, no antes. Antes de recoger solo
@@ -616,7 +640,7 @@ export function AssignmentCard({
               {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
             </button>
             <a
-              href={mapsHref(a.trip.origin.address_raw)}
+              href={mapsHref(a.trip.origin.address_raw, extremos?.origen ?? null)}
               target="_blank"
               rel="noreferrer"
               data-testid="navegar-origen"
@@ -667,7 +691,7 @@ export function AssignmentCard({
               {entregando ? 'Confirmando…' : 'Confirmar entrega'}
             </button>
             <a
-              href={mapsHref(a.trip.destination.address_raw)}
+              href={mapsHref(a.trip.destination.address_raw, extremos?.destino ?? null)}
               target="_blank"
               rel="noreferrer"
               data-testid="navegar-destino"
