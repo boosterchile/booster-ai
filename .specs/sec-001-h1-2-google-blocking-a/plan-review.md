@@ -1,5 +1,7 @@
 # DA pass — plan-a.md v1 (Sprint 2c-A)
 
+> **Cerrado 2026-09-13** — entregado (handler implementado, evidencia en `sprint-2c-a-evidence/`); superado en la superficie Gen 2 por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.
+
 **Date**: 2026-05-26
 **Reviewer**: agent-rigor:devils-advocate
 **Plan under review**: `.specs/sec-001-h1-2-google-blocking-a/plan.md` v1 (10 tasks T1–T10, post-G-14 split)

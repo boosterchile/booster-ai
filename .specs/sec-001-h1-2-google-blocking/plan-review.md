@@ -1,5 +1,7 @@
 # Devils-advocate review --- sec-001-h1-2-google-blocking plan.md --- 2026-05-26T23:20:00Z
 
+> **Cerrado 2026-09-13** — superado por `.specs/sec-001-h1-2-google-boundary-closure/` (Shipped 2026-06-05, ADR-057). Documento histórico del umbrella; sin trabajo pendiente.
+
 > Adversarial pass on the 14-task breakdown (T1-T14, T6a/b sub-split). I assume the plan is wrong until each load-bearing claim survives. **I found 19 substantive objections** across the 12 requested vectors plus the 7-axis frame. No congratulations, no approval.
 
 ---

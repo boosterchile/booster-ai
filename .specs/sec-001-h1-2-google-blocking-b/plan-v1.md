@@ -2,7 +2,7 @@
 
 - **Spec**: [`./spec.md`](./spec.md) (Draft sub-spec)
 - **Created**: 2026-05-27 (v1)
-- **Status**: Draft
+- **Status**: **CERRADO 2026-09-13 — abandonado en T8; superado por `.specs/sec-001-h1-2-google-boundary-closure/` (ADR-057). Sin trabajo pendiente.** · Estado previo: Draft
 - **Linked**:
   - Umbrella: [`../sec-001-h1-2-google-blocking/spec.md`](../sec-001-h1-2-google-blocking/spec.md).
   - DA history of plan-a (cumulative): [`../sec-001-h1-2-google-blocking-a/plan-review.md`](../sec-001-h1-2-google-blocking-a/plan-review.md) — Sprint 2c-A converged plan v4 lessons inform plan-b structure.
