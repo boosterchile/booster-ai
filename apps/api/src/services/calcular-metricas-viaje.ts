@@ -13,9 +13,13 @@ import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, tripMetrics, trips, vehicles } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
-import { cargarPingsVentana } from './calcular-cobertura-telemetria.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
+import {
+  type VehiculoFuentePosicion,
+  fuentePosicionSegmento,
+  resolverPosicionesSegmento,
+} from './posicion-segmento.js';
 import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 
 /**
@@ -407,6 +411,9 @@ async function calcularMetricasEstimadasInner(
  *  "no aplica" (sin_observacion) de "está roto" (routes_error). */
 type AbortReconstruccion = 'sin_observacion' | 'cap_exceeded' | 'routes_error';
 
+/** De dónde salió el ancla de inicio de la ventana medida (T11, spec Q6). */
+type AnclaVentana = 'recogido_en' | 'pickup_window_start' | 'created_at';
+
 interface RecalcularNivelPostEntregaResult {
   recomputed: boolean;
   /** Nivel resultante (puede ser igual al previo). */
@@ -417,6 +424,12 @@ interface RecalcularNivelPostEntregaResult {
   distanciaKmReal?: number | null;
   /** Motivo del abort para observabilidad; null en éxito. */
   abortReason?: AbortReconstruccion | null;
+  /** Distancia MEDIDA (Σ tramos observados, km); insumo de T12. */
+  kmCubiertos?: number;
+  /** Fuente real de los pings (ADR-077 §1): la que se persiste, nunca disfrazada. */
+  routeDataSource?: RouteDataSource;
+  /** Ancla de inicio de la ventana medida. */
+  pickupAtSource?: AnclaVentana;
 }
 
 export async function recalcularNivelPostEntrega(opts: {
@@ -439,6 +452,9 @@ export async function recalcularNivelPostEntrega(opts: {
         'booster.carbon.coverage_pct': result.coveragePct ?? undefined,
         // Contable: un distancia_km_real=null dice POR QUÉ (no aplica vs roto).
         'booster.carbon.abort_reason': result.abortReason ?? undefined,
+        'booster.carbon.route_data_source': result.routeDataSource ?? undefined,
+        'booster.carbon.pickup_at_source': result.pickupAtSource ?? undefined,
+        'booster.carbon.km_cubiertos': result.kmCubiertos ?? undefined,
       });
       return result;
     },
@@ -481,6 +497,7 @@ async function recalcularNivelPostEntregaInner(opts: {
     .select({
       vehicleId: assignments.vehicleId,
       deliveredAt: assignments.deliveredAt,
+      pickedUpAt: assignments.pickedUpAt,
     })
     .from(assignments)
     .where(eq(assignments.tripId, tripId))
@@ -495,40 +512,54 @@ async function recalcularNivelPostEntregaInner(opts: {
     return { recomputed: false };
   }
 
-  // Si el vehículo no tiene Teltonika, no hay telemetría — el nivel se
-  // queda como secundario_modeled con maps_directions y coverage 0.
-  // Skip silencioso para no escribir un UPDATE no-op.
+  // Fuente de posición por vehículo (Task 10 / ADR-077 §1): con Teltonika lee
+  // `telemetria_puntos`; sin dispositivo lee `posiciones_movil_conductor` (GPS
+  // del móvil del conductor). Un viaje se mide desde UNA sola fuente, y la que
+  // se persiste es la real — nunca se disfraza de otra (ADR-077 §1).
   // rls-allowlist: vehículo scoped por vehicleId del assignment ya validado (censo §2 nota C)
   const vehRows = await db
-    .select({ teltonikaImei: vehicles.teltonikaImei })
+    .select({
+      id: vehicles.id,
+      teltonikaImei: vehicles.teltonikaImei,
+      teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+    })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
     .limit(1);
-  const vehiculo = vehRows[0];
-  if (!vehiculo?.teltonikaImei) {
-    logger.info(
+  const vehiculo: VehiculoFuentePosicion | undefined = vehRows[0];
+  if (!vehiculo) {
+    logger.warn(
       { tripId, vehicleId: assignment.vehicleId },
-      'recalcularNivelPostEntrega: vehicle sin Teltonika — sin upgrade del nivel',
+      'recalcularNivelPostEntrega: vehicle del assignment no existe — skip',
     );
     return { recomputed: false };
   }
+  const routeDataSource: RouteDataSource = fuentePosicionSegmento(vehiculo).fuente;
 
-  // Usar pickupWindowStart como inicio del trip si no hay pickup_at real.
-  // Es conservador: si el pickup real fue después, ampliamos la ventana
-  // de búsqueda y dejamos al cálculo el filtrado por gaps de continuidad.
-  const pickupAt = trip.pickupWindowStart ?? trip.createdAt;
+  // Ventana = segmento REAL `[recogido_en, entregado_en]` (spec Q6, T11): la
+  // huella se mide sobre lo que pasó entre la recogida confirmada (F1) y la
+  // entrega, no sobre la ventana planificada. Fallbacks declarados en cascada
+  // para viajes sin recogida confirmada; el ancla usada queda en el log y el
+  // span para auditoría.
+  const pickupAtSource: AnclaVentana = assignment.pickedUpAt
+    ? 'recogido_en'
+    : trip.pickupWindowStart
+      ? 'pickup_window_start'
+      : 'created_at';
+  const pickupAt = assignment.pickedUpAt ?? trip.pickupWindowStart ?? trip.createdAt;
 
   const precisionMethod =
     (existing.precisionMethod as 'exacto_canbus' | 'modelado' | 'por_defecto' | null) ??
     'por_defecto';
 
   // Reconstrucción de la distancia real (F0-0 paso 1): pings observados +
-  // huecos rellenados por-tramo con Routes.
-  const pings = await cargarPingsVentana({
+  // huecos rellenados por-tramo con Routes. Los pings salen de la fuente
+  // ruteada del vehículo (T11), no de `telemetria_puntos` a secas.
+  const pings = await resolverPosicionesSegmento({
     db,
-    vehicleId: assignment.vehicleId,
-    pickupAt,
-    deliveredAt: assignment.deliveredAt,
+    vehicle: vehiculo,
+    desde: pickupAt,
+    hasta: assignment.deliveredAt,
   });
 
   // Resolver de huecos sobre Routes API (acepta "lat,lng"). Si Routes falla,
@@ -554,20 +585,48 @@ async function recalcularNivelPostEntregaInner(opts: {
   try {
     escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
   } catch (err) {
-    logger.warn({ err, tripId }, 'recalcular: reconstrucción abortada — Routes falló (roto)');
-    return { recomputed: false, abortReason: 'routes_error', distanciaKmReal: null };
+    logger.warn(
+      { err, tripId, routeDataSource, pickupAtSource },
+      'recalcular: reconstrucción abortada — Routes falló (roto)',
+    );
+    return {
+      recomputed: false,
+      abortReason: 'routes_error',
+      distanciaKmReal: null,
+      routeDataSource,
+      pickupAtSource,
+    };
   }
   if (escritura === null) {
-    logger.info({ tripId }, 'recalcular: reconstrucción abortada — demasiados huecos (cap)');
-    return { recomputed: false, abortReason: 'cap_exceeded', distanciaKmReal: null };
+    logger.info(
+      { tripId, routeDataSource, pickupAtSource },
+      'recalcular: reconstrucción abortada — demasiados huecos (cap)',
+    );
+    return {
+      recomputed: false,
+      abortReason: 'cap_exceeded',
+      distanciaKmReal: null,
+      routeDataSource,
+      pickupAtSource,
+    };
   }
   if (escritura.distanciaKmReal === null) {
-    logger.info({ tripId }, 'recalcular: sin observación continua — no aplica upgrade');
-    return { recomputed: false, abortReason: 'sin_observacion', distanciaKmReal: null };
+    logger.info(
+      { tripId, routeDataSource, pickupAtSource, pings: pings.length },
+      'recalcular: sin observación continua en el segmento — no aplica upgrade',
+    );
+    return {
+      recomputed: false,
+      abortReason: 'sin_observacion',
+      distanciaKmReal: null,
+      routeDataSource,
+      pickupAtSource,
+    };
   }
 
-  // Éxito: distancia real + cobertura §5-ext salen de la MISMA híbrida.
-  const routeDataSource: RouteDataSource = 'teltonika_gps';
+  // Éxito: distancia real + cobertura §5-ext salen de la MISMA híbrida. El
+  // nivel sale de la matriz (ADR-028 §2 + ADR-077 §2): con `movil_gps` es
+  // secundario_modeled aunque la cobertura sea 100 %.
   const certificationLevel = derivarNivelCertificacion({
     precisionMethod,
     routeDataSource,
@@ -598,7 +657,11 @@ async function recalcularNivelPostEntregaInner(opts: {
     {
       tripId,
       vehicleId: assignment.vehicleId,
+      routeDataSource,
+      pickupAtSource,
+      pickupAt,
       distanciaKmReal: escritura.distanciaKmReal,
+      kmCubiertos: escritura.kmCubiertos,
       coveragePct: escritura.coveragePct,
       certificationLevel,
       uncertaintyFactor,
@@ -612,6 +675,9 @@ async function recalcularNivelPostEntregaInner(opts: {
     certificationLevel,
     coveragePct: escritura.coveragePct,
     distanciaKmReal: escritura.distanciaKmReal,
+    kmCubiertos: escritura.kmCubiertos,
+    routeDataSource,
+    pickupAtSource,
     abortReason: null,
   };
 }

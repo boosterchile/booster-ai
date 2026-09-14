@@ -9,18 +9,25 @@ import {
 vi.mock('../../src/services/routes-api.js', () => ({
   computeRoutes: vi.fn(),
 }));
-// Mock PARCIAL: solo calcularCobertura + cargarPingsVentana. haversineKm y
-// CONTINUITY_GAP_S quedan REALES — el híbrido (calcularDistanciaHibrida) los usa.
+// Mock PARCIAL: solo calcularCobertura. haversineKm y CONTINUITY_GAP_S quedan
+// REALES — el híbrido (calcularDistanciaHibrida) los usa.
 vi.mock('../../src/services/calcular-cobertura-telemetria.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/services/calcular-cobertura-telemetria.js')>()),
   calcularCobertura: vi.fn(),
-  cargarPingsVentana: vi.fn(),
+}));
+// T11: los pings salen de la fuente ruteada por vehículo (Task 10). Se mockea
+// SOLO el resolver; `fuentePosicionSegmento` (clasificador puro) queda real para
+// que la fuente persistida salga de la regla verdadera.
+vi.mock('../../src/services/posicion-segmento.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/posicion-segmento.js')>()),
+  resolverPosicionesSegmento: vi.fn(),
 }));
 
 const { computeRoutes } = await import('../../src/services/routes-api.js');
-const { calcularCobertura, cargarPingsVentana, haversineKm } = await import(
+const { calcularCobertura, haversineKm } = await import(
   '../../src/services/calcular-cobertura-telemetria.js'
 );
+const { resolverPosicionesSegmento } = await import('../../src/services/posicion-segmento.js');
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -548,13 +555,69 @@ describe('recalcularNivelPostEntrega', () => {
     expect(result.recomputed).toBe(false);
   });
 
-  it('vehículo sin Teltonika → no recomputa, log info', async () => {
+  it('vehículo SIN dispositivo → mide por posiciones del móvil y persiste movil_gps (secundario aunque cobertura 100 %)', async () => {
+    (resolverPosicionesSegmento as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 },
+    ]);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
+        [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: null }],
+      ],
+      updates: [[]],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.recomputed).toBe(true);
+    expect(result.routeDataSource).toBe('movil_gps');
+    expect(result.certificationLevel).toBe('secundario_modeled');
+    expect(result.kmCubiertos).toBeCloseTo(haversineKm(-33.4, -70.6, -33.41, -70.61), 6);
+    const setArg = (db.update as ReturnType<typeof vi.fn>).mock.results[0].value.set.mock
+      .calls[0][0];
+    expect(setArg.routeDataSource).toBe('movil_gps');
+    expect(setArg.certificationLevel).toBe('secundario_modeled');
+    expect(resolverPosicionesSegmento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vehicle: { id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: null },
+      }),
+    );
+  });
+
+  it('vehículo con solo IMEI espejo → teltonika_gps (lee el stream por imei)', async () => {
+    (resolverPosicionesSegmento as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 },
+    ]);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
+        [{ id: VEH_ID, teltonikaImei: null, teltonikaImeiEspejo: '860693084796730' }],
+      ],
+      updates: [[]],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.routeDataSource).toBe('teltonika_gps');
+  });
+
+  it('vehículo del assignment inexistente en BD → recomputed:false', async () => {
     const db = makeDb({
       selects: [
         [TRIP_BASE],
         [{ tripId: TRIP_ID, distanceKmEstimated: '100' }],
-        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
-        [{ teltonikaImei: null }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
+        [],
       ],
     });
     const result = await recalcularNivelPostEntrega({
@@ -563,15 +626,42 @@ describe('recalcularNivelPostEntrega', () => {
       tripId: TRIP_ID,
     });
     expect(result.recomputed).toBe(false);
-    expect(calcularCobertura).not.toHaveBeenCalled();
+    expect(resolverPosicionesSegmento).not.toHaveBeenCalled();
   });
 
-  // Nota: happy-path + interacción de cobertura ahora los cubre el describe
-  // "reconstrucción de distancia real" (abajo) con cargarPingsVentana + Routes.
+  it('VENTANA — anclada a assignments.recogido_en (recogida real), NO a pickup_window_start', async () => {
+    const RECOGIDA_REAL = new Date('2026-05-01T11:15:00Z');
+    (resolverPosicionesSegmento as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 },
+    ]);
+    const db = makeDb({
+      selects: [
+        [TRIP_BASE], // pickupWindowStart 10:00 (planificada)
+        [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: RECOGIDA_REAL }],
+        [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
+      ],
+      updates: [[]],
+    });
+    const result = await recalcularNivelPostEntrega({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      routesProjectId: 'proj',
+    });
+    expect(resolverPosicionesSegmento).toHaveBeenCalledWith(
+      expect.objectContaining({ desde: RECOGIDA_REAL, hasta: ASSIGN_DELIVERED }),
+    );
+    expect(result.pickupAtSource).toBe('recogido_en');
+  });
+
+  // Nota: happy-path + interacción de cobertura los cubre el describe
+  // "reconstrucción de distancia real" (abajo) con el resolver + Routes.
 
   it('precisionMethod null en metrics → default por_defecto (recomputa igual)', async () => {
     // Traza continua (sin huecos) → híbrida sin Routes → distancia persistida.
-    (cargarPingsVentana as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+    (resolverPosicionesSegmento as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 30_000, lat: -33.41, lng: -70.61 },
     ]);
@@ -579,8 +669,8 @@ describe('recalcularNivelPostEntrega', () => {
       selects: [
         [TRIP_BASE],
         [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: null }],
-        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
-        [{ teltonikaImei: '999' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
+        [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
       updates: [[]],
     });
@@ -593,8 +683,8 @@ describe('recalcularNivelPostEntrega', () => {
     expect(result.recomputed).toBe(true);
   });
 
-  it('trip sin pickupWindowStart → cargarPingsVentana usa createdAt', async () => {
-    (cargarPingsVentana as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+  it('sin recogido_en ni pickupWindowStart → la ventana cae a createdAt (fallback declarado)', async () => {
+    (resolverPosicionesSegmento as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 30_000, lat: -33.41, lng: -70.61 },
     ]);
@@ -602,20 +692,21 @@ describe('recalcularNivelPostEntrega', () => {
       selects: [
         [{ ...TRIP_BASE, pickupWindowStart: null }],
         [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
-        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED }],
-        [{ teltonikaImei: '999' }],
+        [{ vehicleId: VEH_ID, deliveredAt: ASSIGN_DELIVERED, pickedUpAt: null }],
+        [{ id: VEH_ID, teltonikaImei: '999', teltonikaImeiEspejo: null }],
       ],
       updates: [[]],
     });
-    await recalcularNivelPostEntrega({
+    const result = await recalcularNivelPostEntrega({
       db: db as never,
       logger: noopLogger,
       tripId: TRIP_ID,
       routesProjectId: 'proj',
     });
-    expect(cargarPingsVentana).toHaveBeenCalledWith(
-      expect.objectContaining({ pickupAt: TRIP_BASE.createdAt }),
+    expect(resolverPosicionesSegmento).toHaveBeenCalledWith(
+      expect.objectContaining({ desde: TRIP_BASE.createdAt }),
     );
+    expect(result.pickupAtSource).toBe('created_at');
   });
 });
 
@@ -644,8 +735,8 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   const selectsTeltonika = () => [
     [TRIP_BASE],
     [{ tripId: TRIP_ID, distanceKmEstimated: '100', precisionMethod: 'modelado' }],
-    [{ vehicleId: VEH_ID, deliveredAt: DELIVERED }],
-    [{ teltonikaImei: '123456789012345' }],
+    [{ vehicleId: VEH_ID, deliveredAt: DELIVERED, pickedUpAt: null }],
+    [{ id: VEH_ID, teltonikaImei: '123456789012345', teltonikaImeiEspejo: null }],
   ];
   const run = (db: unknown) =>
     recalcularNivelPostEntrega({
@@ -656,7 +747,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     } as never);
 
   it('ATOMICIDAD — distancia_km_real + coverage + nivel + uncertainty en UN solo UPDATE', async () => {
-    (cargarPingsVentana as Mock).mockResolvedValueOnce(pings(1));
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(1));
     (computeRoutes as Mock).mockResolvedValue(ruta(5));
     const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
 
@@ -675,7 +766,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   });
 
   it('VALOR ESCRITO — persiste el híbrido (Σ observado + Σ hueco), NO la estimación', async () => {
-    (cargarPingsVentana as Mock).mockResolvedValueOnce(pings(1));
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(1));
     (computeRoutes as Mock).mockResolvedValue(ruta(5));
     const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
 
@@ -692,8 +783,22 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(Number(setArg.distanceKmActual)).not.toBeCloseTo(100, 6);
   });
 
+  it('kmCubiertos en el resultado = Σ tramos observados (excluye los huecos estimados por Routes)', async () => {
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(1));
+    (computeRoutes as Mock).mockResolvedValue(ruta(5));
+    const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
+
+    const res = await run(db);
+
+    const observadoKm = haversineKm(-33.4, -70.6, -33.41, -70.61);
+    expect(res.kmCubiertos).toBeCloseTo(observadoKm, 6);
+    // La distancia persistida sí incluye el hueco; kmCubiertos es solo lo medido.
+    expect(res.distanciaKmReal).toBeCloseTo(observadoKm + 5, 6);
+    expect(res.routeDataSource).toBe('teltonika_gps');
+  });
+
   it('IDEMPOTENCIA — dos corridas sobre los mismos pings convergen al mismo UPDATE', async () => {
-    (cargarPingsVentana as Mock).mockResolvedValue(pings(1));
+    (resolverPosicionesSegmento as Mock).mockResolvedValue(pings(1));
     (computeRoutes as Mock).mockResolvedValue(ruta(5));
 
     const db1 = makeDb({ selects: selectsTeltonika(), updates: [[]] });
@@ -710,7 +815,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   });
 
   it('ABORT (Routes caído) — no-op, abortReason=routes_error, SIN UPDATE (cae a estimación)', async () => {
-    (cargarPingsVentana as Mock).mockResolvedValueOnce(pings(2));
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(2));
     (computeRoutes as Mock).mockRejectedValue(new Error('Routes 503'));
     const db = makeDb({ selects: selectsTeltonika() });
 
@@ -722,7 +827,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
   });
 
   it('ABORT (cap superado) — no-op, abortReason=cap_exceeded, SIN llamar a Routes', async () => {
-    (cargarPingsVentana as Mock).mockResolvedValueOnce(pings(MAX_HUECOS_ROUTES + 1));
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(MAX_HUECOS_ROUTES + 1));
     const db = makeDb({ selects: selectsTeltonika() });
 
     const res = await run(db);
@@ -734,7 +839,7 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
 
   it('ABORT (sin observación continua) — no-op, abortReason=sin_observacion (no aplica ≠ roto)', async () => {
     // todos los tramos son huecos → kmObservado 0 → no hay distancia medida.
-    (cargarPingsVentana as Mock).mockResolvedValueOnce([
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce([
       { tMs: 0, lat: -33.4, lng: -70.6 },
       { tMs: 120_000, lat: -33.42, lng: -70.62 },
     ]);

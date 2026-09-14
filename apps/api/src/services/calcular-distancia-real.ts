@@ -113,6 +113,12 @@ export interface EscrituraDistanciaReal {
    * estimada). 0 cuando no hay observación (fuerza path secundario, ADR-028 §5).
    */
   coveragePct: number;
+  /**
+   * Distancia MEDIDA (Σ tramos observados, gap < 60 s) en km. T11: viaja en la
+   * misma escritura para que el cómputo de huella (T12) la use sin recomputar.
+   * 0 cuando no hay observación.
+   */
+  kmCubiertos: number;
 }
 
 /**
@@ -130,7 +136,7 @@ export function resolverEscrituraDistanciaReal(
   // Sin observación real (sin pings, o todos los tramos son huecos): no hay
   // "distancia medida". No persistir → el cert cae a la estimación.
   if (hibrida.kmObservado <= 0) {
-    return { distanciaKmReal: null, coveragePct: 0 };
+    return { distanciaKmReal: null, coveragePct: 0, kmCubiertos: 0 };
   }
   // Con observación: distancia y cobertura salen de la misma híbrida → "medido
   // X%" corresponde exactamente a la distancia mostrada (X = kmObservado /
@@ -138,6 +144,7 @@ export function resolverEscrituraDistanciaReal(
   return {
     distanciaKmReal: hibrida.distanciaTotalKm,
     coveragePct: hibrida.coberturaObservadaPct,
+    kmCubiertos: hibrida.kmObservado,
   };
 }
 

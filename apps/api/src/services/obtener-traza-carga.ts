@@ -92,7 +92,7 @@ export async function obtenerTrazaCarga(opts: {
   const base = construirResumen(puntos);
   const coberturaPct =
     distanciaEsperadaKm !== null && distanciaEsperadaKm > 0 && puntos.length >= 2
-      ? calcularCoberturaPura(puntos, distanciaEsperadaKm)
+      ? calcularCoberturaPura(puntos, distanciaEsperadaKm).coveragePct
       : null;
   const down = downsampleTraza(puntos, maxPuntos);
 

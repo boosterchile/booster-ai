@@ -13,8 +13,8 @@ import {
   vehicles,
 } from '../db/schema.js';
 import type { NivelCert, ReconstruccionTrip } from './backfill-distancia-real.js';
-import { cargarPingsVentana } from './calcular-cobertura-telemetria.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
+import { cargarPingsVentana } from './posicion-segmento.js';
 import { computeRoutes } from './routes-api.js';
 
 /**

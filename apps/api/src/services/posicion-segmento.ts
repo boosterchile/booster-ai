@@ -33,8 +33,61 @@
 import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { posicionesMovilConductor, telemetryPoints } from '../db/schema.js';
-import { type PingPoint, cargarPingsVentana } from './calcular-cobertura-telemetria.js';
 import { esCoordenadaGpsValida } from './coordenada-gps.js';
+
+/** Punto de posición uniforme para el cálculo (distancia real, cobertura, backfill). */
+export interface PingPoint {
+  /** Timestamp del ping en epoch ms. */
+  tMs: number;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Carga los pings Teltonika del vehículo (por `vehiculo_id`) en la ventana
+ * `pickupAt..deliveredAt`, ordenados asc por timestamp y filtrados de rows sin
+ * fix: lat/lng null Y el "null island" (lat/lng = 0, GPS sin fix — ver
+ * `coordenada-gps.ts`, #622). Sin el filtro 0,0 un solo punto mete una recta de
+ * ~9.000 km al cálculo de distancia/cobertura.
+ *
+ * Vive acá (módulo de FUENTES de posición) desde T11: es la rama
+ * `teltonika_gps por vehicle_id` del enrutamiento, y lo reusa el backfill de
+ * distancia (Teltonika-only por diseño de #624).
+ *
+ * ## Por qué convive con `cargarTrazaPoints` (obtener-traza-vehiculo.ts, #615)
+ *
+ * Son la misma query base (índice `idx_telemetria_vehiculo_ts`, ventana por
+ * `timestamp_device`, orden asc) y comparten el filtro de fix vía
+ * `esCoordenadaGpsValida`, pero **proyectan distinto a propósito**: este loader
+ * trae solo `ts/lat/lng` → alimenta cálculo; `cargarTrazaPoints` trae además
+ * `speed_kmh` e `io_data` y corre `extraerCanAcumulado` por punto → alimenta
+ * display. Unificarlos obligaría a parsear el JSONB `io_data` en cada ping del
+ * write-path para descartarlo acto seguido.
+ */
+export async function cargarPingsVentana(opts: {
+  db: Db;
+  vehicleId: string;
+  pickupAt: Date;
+  deliveredAt: Date;
+}): Promise<PingPoint[]> {
+  const { db, vehicleId, pickupAt, deliveredAt } = opts;
+  const rows = await db
+    .select({
+      ts: telemetryPoints.timestampDevice,
+      lat: telemetryPoints.latitude,
+      lng: telemetryPoints.longitude,
+    })
+    .from(telemetryPoints)
+    .where(
+      and(
+        eq(telemetryPoints.vehicleId, vehicleId),
+        gte(telemetryPoints.timestampDevice, pickupAt),
+        lte(telemetryPoints.timestampDevice, deliveredAt),
+      ),
+    )
+    .orderBy(asc(telemetryPoints.timestampDevice));
+  return proyectarPings(rows);
+}
 
 /** Fuente de ruta que alimenta el segmento (valores de `fuente_dato_ruta`, ADR-077 §1). */
 export type FuentePosicionSegmento = 'teltonika_gps' | 'movil_gps';
@@ -126,7 +179,7 @@ export async function resolverPosicionesSegmento(
   return proyectarPings(rows);
 }
 
-/** Misma proyección/filtro que `cargarPingsVentana`: descarta null y null island. */
+/** Proyección/filtro única de las tres fuentes: descarta null y null island. */
 function proyectarPings(
   rows: ReadonlyArray<{ ts: Date; lat: string | null; lng: string | null }>,
 ): PingPoint[] {

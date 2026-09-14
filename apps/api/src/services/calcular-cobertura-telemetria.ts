@@ -1,23 +1,29 @@
 import type { Logger } from '@booster-ai/logger';
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { telemetryPoints } from '../db/schema.js';
-import { esCoordenadaGpsValida } from './coordenada-gps.js';
+import {
+  type PingPoint,
+  type VehiculoFuentePosicion,
+  fuentePosicionSegmento,
+  resolverPosicionesSegmento,
+} from './posicion-segmento.js';
+
+export type { PingPoint } from './posicion-segmento.js';
 
 /**
- * Cálculo de cobertura telemétrica de un trip (ADR-028 §5).
+ * Cálculo de cobertura telemétrica de un trip (ADR-028 §5) y de la distancia
+ * realmente medida sobre el segmento (T11, plan medicion-huella-segmento).
  *
- * Define qué porcentaje del trip estuvo cubierto por pings GPS continuos
- * del Teltonika. Es la métrica clave para downgrade automático del nivel
- * de certificación cuando el dispositivo perdió señal mid-trip.
+ * Define qué porcentaje del trip estuvo cubierto por pings GPS continuos de
+ * la fuente del vehículo (Teltonika o móvil del conductor, Task 10). Es la
+ * métrica clave para downgrade automático del nivel de certificación cuando
+ * el dispositivo perdió señal mid-trip.
  *
  * Algoritmo:
  *
- *     coverage_pct =
- *       (km_cubiertos_por_pings_continuos / km_totales_estimados) × 100
- *
  *     km_cubiertos = sumatoria de distancias haversine entre pings
  *                    consecutivos cuyo gap temporal < CONTINUITY_GAP_S
+ *
+ *     coverage_pct = (km_cubiertos / km_totales_estimados) × 100
  *
  *     km_totales_estimados = distancia origen→destino (Maps Routes API
  *                            o tabla pre-computada Chile)
@@ -30,6 +36,11 @@ import { esCoordenadaGpsValida } from './coordenada-gps.js';
  *   cobertura. 60s es conservador: el FMC150 reporta cada ~30s en
  *   tracking activo, así que un gap > 60s indica pérdida real de señal.
  *
+ * - **`kmCubiertos` ya no se descarta** (T11; hallazgo F0-0). Es la distancia
+ *   MEDIDA, independiente del denominador: con `distanciaEstimadaKm = 0` el
+ *   porcentaje es 0 pero los km siguen siendo los observados. El cap a 100
+ *   aplica solo al porcentaje.
+ *
  * - **Si no hay pings → coverage = 0**. El servicio devuelve `0`, no
  *   `null`, para que la matriz §2 caiga limpia a secundario sin caso
  *   especial.
@@ -41,9 +52,9 @@ import { esCoordenadaGpsValida } from './coordenada-gps.js';
  *   superiores a la estimación (ej. ruta más larga que la sugerida),
  *   capeamos a 100. Reportar > 100% sería contraintuitivo en el cert.
  *
- * Función con I/O: hace una query a `telemetria_puntos`. Pero la lógica
- * del cálculo (haversine + suma) está extraída en `calcularCoberturaPura`
- * para test independiente del DB.
+ * La lógica del cálculo (haversine + suma) está en `calcularCoberturaPura`
+ * (sin I/O); `calcularCobertura` lee los pings por la fuente ruteada del
+ * vehículo sobre la ventana real `[pickedUpAt, deliveredAt]`.
  */
 
 /** Gap máximo en segundos entre pings consecutivos para considerarlos
@@ -52,83 +63,6 @@ export const CONTINUITY_GAP_S = 60;
 
 /** Radio de la Tierra en km, usado en haversine. WGS84 mean radius. */
 const EARTH_RADIUS_KM = 6371;
-
-export interface PingPoint {
-  /** Timestamp del ping en epoch ms. */
-  tMs: number;
-  lat: number;
-  lng: number;
-}
-
-/**
- * Carga los pings GPS del vehículo en la ventana `pickupAt..deliveredAt`,
- * ordenados asc por timestamp y filtrados de rows sin fix: lat/lng null Y el
- * "null island" (lat/lng = 0, GPS sin fix — ver `coordenada-gps.ts`, #622). Sin
- * el filtro 0,0 un solo punto mete una recta de ~9.000 km al cálculo de
- * distancia/cobertura.
- *
- * Extraído para reuso entre el cálculo de cobertura y la reconstrucción de
- * distancia real (F0-0 paso 1), y para poder **mockearlo** en el test de
- * integración de `recalcularNivelPostEntrega`.
- *
- * ## Por qué convive con `cargarTrazaPoints` (obtener-traza-vehiculo.ts, #615)
- *
- * Son la misma query base (índice `idx_telemetria_vehiculo_ts`, ventana por
- * `timestamp_device`, orden asc) y comparten el filtro de fix vía
- * `esCoordenadaGpsValida`, pero **proyectan distinto a propósito**:
- *
- * - Este loader trae solo `ts/lat/lng` → alimenta cálculo (distancia real,
- *   cobertura, backfill), que no mira CAN ni velocidad.
- * - `cargarTrazaPoints` trae además `speed_kmh` e `io_data`, y corre
- *   `extraerCanAcumulado` (con `safeParse` Zod) por punto → alimenta display
- *   (traza de vehículo y de carga, capa 2).
- *
- * Unificarlos NO es limpieza: obligaría a leer el JSONB `io_data` y parsearlo
- * en cada ping del write-path — un trip largo ronda las decenas de miles de
- * pings (~260k en la ventana viva) — para descartar el resultado acto seguido.
- * La lógica que sí es única (qué coordenada es válida) ya está centralizada en
- * `coordenada-gps.ts` (#622); lo que se repite es el loop de proyección, no la
- * regla. Si algún día el write-path necesita CAN, la unificación correcta es
- * parametrizar el proyectado, no llamar al loader de display.
- */
-export async function cargarPingsVentana(opts: {
-  db: Db;
-  vehicleId: string;
-  pickupAt: Date;
-  deliveredAt: Date;
-}): Promise<PingPoint[]> {
-  const { db, vehicleId, pickupAt, deliveredAt } = opts;
-  const rows = await db
-    .select({
-      ts: telemetryPoints.timestampDevice,
-      lat: telemetryPoints.latitude,
-      lng: telemetryPoints.longitude,
-    })
-    .from(telemetryPoints)
-    .where(
-      and(
-        eq(telemetryPoints.vehicleId, vehicleId),
-        gte(telemetryPoints.timestampDevice, pickupAt),
-        lte(telemetryPoints.timestampDevice, deliveredAt),
-      ),
-    )
-    .orderBy(asc(telemetryPoints.timestampDevice));
-
-  const pings: PingPoint[] = [];
-  for (const p of rows) {
-    if (p.lat === null || p.lng === null) {
-      continue;
-    }
-    const lat = Number(p.lat);
-    const lng = Number(p.lng);
-    // Descarta el "null island" (lat/lng = 0, GPS sin fix) — preserva el fix #622.
-    if (!esCoordenadaGpsValida(lat, lng)) {
-      continue;
-    }
-    pings.push({ tMs: p.ts.getTime(), lat, lng });
-  }
-  return pings;
-}
 
 /**
  * Distancia great-circle entre dos puntos GPS via fórmula haversine.
@@ -146,24 +80,27 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
   return EARTH_RADIUS_KM * c;
 }
 
+export interface CoberturaSegmento {
+  /** coverage_pct ∈ [0, 100]. */
+  coveragePct: number;
+  /** Distancia MEDIDA: Σ haversine de los tramos continuos (km). Sin cap. */
+  kmCubiertos: number;
+}
+
 /**
- * Calcula cobertura sobre una lista de pings (función pura, sin I/O).
+ * Calcula cobertura y distancia medida sobre una lista de pings (función
+ * pura, sin I/O).
  *
  * Recibe pings ordenados ascendentemente por tiempo. Suma distancias
  * haversine entre pings consecutivos cuando el gap < CONTINUITY_GAP_S.
  *
  * @param pings ordenados por tMs ascendente
- * @param distanciaEstimadaKm distancia origen→destino (denominador)
- * @returns coverage_pct ∈ [0, 100]
+ * @param distanciaEstimadaKm distancia origen→destino (denominador del %)
  */
 export function calcularCoberturaPura(
   pings: readonly PingPoint[],
   distanciaEstimadaKm: number,
-): number {
-  if (distanciaEstimadaKm <= 0 || pings.length < 2) {
-    return 0;
-  }
-
+): CoberturaSegmento {
   let kmCubiertos = 0;
   for (let i = 1; i < pings.length; i++) {
     const prev = pings[i - 1];
@@ -177,49 +114,68 @@ export function calcularCoberturaPura(
     }
   }
 
+  if (distanciaEstimadaKm <= 0) {
+    return { coveragePct: 0, kmCubiertos };
+  }
   const pct = (kmCubiertos / distanciaEstimadaKm) * 100;
-  return Math.min(Math.max(pct, 0), 100);
+  return { coveragePct: Math.min(Math.max(pct, 0), 100), kmCubiertos };
+}
+
+export interface CoberturaSegmentoResultado extends CoberturaSegmento {
+  /** Fuente de la que salieron los pings (ADR-077 §1). */
+  fuente: 'teltonika_gps' | 'movil_gps';
+  /** Pings con fix dentro de la ventana. */
+  pingsValidos: number;
 }
 
 /**
- * Carga los pings del vehículo en la ventana del trip y calcula la
- * cobertura. Si el vehículo no tiene pings o la distancia estimada es 0,
- * devuelve 0 sin error.
+ * Lee los pings del vehículo por su fuente (Task 10) sobre el segmento real
+ * `[pickedUpAt, deliveredAt]` y calcula cobertura + distancia medida. Si el
+ * vehículo no tiene pings o la distancia estimada es 0, devuelve 0/0 sin error.
  */
 export async function calcularCobertura(opts: {
   db: Db;
   logger: Logger;
-  vehicleId: string;
-  /** Inicio del trip — usualmente trips.pickup_window_start. */
-  pickupAt: Date;
-  /** Fin del trip — usualmente assignments.delivered_at. */
+  vehicle: VehiculoFuentePosicion;
+  /** Inicio del segmento — `assignments.recogido_en` (recogida real, F1). */
+  pickedUpAt: Date;
+  /** Fin del segmento — `assignments.entregado_en`. */
   deliveredAt: Date;
   /** Distancia origen→destino esperada en km. */
   distanciaEstimadaKm: number;
-}): Promise<number> {
-  const { db, logger, vehicleId, pickupAt, deliveredAt, distanciaEstimadaKm } = opts;
+}): Promise<CoberturaSegmentoResultado> {
+  const { db, logger, vehicle, pickedUpAt, deliveredAt, distanciaEstimadaKm } = opts;
+  const fuente = fuentePosicionSegmento(vehicle).fuente;
 
   if (distanciaEstimadaKm <= 0) {
-    logger.debug({ vehicleId, distanciaEstimadaKm }, 'cobertura=0 (distancia estimada <= 0)');
-    return 0;
+    logger.debug(
+      { vehicleId: vehicle.id, distanciaEstimadaKm },
+      'cobertura=0 (distancia estimada <= 0)',
+    );
+    return { coveragePct: 0, kmCubiertos: 0, fuente, pingsValidos: 0 };
   }
 
-  // Reusa el loader compartido (incluye el filtro null-island de #622).
-  const validPings = await cargarPingsVentana({ db, vehicleId, pickupAt, deliveredAt });
-
-  const coverage = calcularCoberturaPura(validPings, distanciaEstimadaKm);
+  const validPings = await resolverPosicionesSegmento({
+    db,
+    vehicle,
+    desde: pickedUpAt,
+    hasta: deliveredAt,
+  });
+  const cobertura = calcularCoberturaPura(validPings, distanciaEstimadaKm);
 
   logger.info(
     {
-      vehicleId,
-      pickupAt,
+      vehicleId: vehicle.id,
+      fuente,
+      pickedUpAt,
       deliveredAt,
       distanciaEstimadaKm,
       pingsValidos: validPings.length,
-      coveragePct: coverage,
+      coveragePct: cobertura.coveragePct,
+      kmCubiertos: cobertura.kmCubiertos,
     },
     'cobertura telemétrica calculada',
   );
 
-  return coverage;
+  return { ...cobertura, fuente, pingsValidos: validPings.length };
 }
