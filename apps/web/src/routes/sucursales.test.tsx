@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -79,6 +79,13 @@ function buildSucursal(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+// jsdom no implementa scrollIntoView. El hook useScrollToFirstError lo llama
+// al submit con errores; sin stub el test pasa pero vitest reporta error.
+// Mismo workaround que conductores.test.tsx y vehiculos.test.tsx.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   providedContext = { kind: 'unmanaged' };
@@ -133,6 +140,85 @@ describe('SucursalesNuevaRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<SucursalesNuevaRoute />);
     expect(screen.getByText(/Nueva sucursal/)).toBeInTheDocument();
+  });
+});
+
+// El form declara `noValidate`, así que los min/max HTML5 de Latitud y
+// Longitud NO bloquean el submit — la validación debe correr en submit() y el
+// 400 de zValidator del server debe llegar legible. Misma clase de bug que el
+// incidente de vehículos (PR #650). Ver
+// .specs/fix-sucursales-form-validacion/spec.md.
+describe('SucursalForm — validación de coordenadas y 400 legible', () => {
+  function renderNueva() {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<SucursalesNuevaRoute />);
+  }
+
+  function fillBase() {
+    fireEvent.change(screen.getByLabelText(/Nombre/), { target: { value: 'Bodega Maipú' } });
+    fireEvent.change(screen.getByLabelText(/Dirección/), {
+      target: { value: 'Av. Pajaritos 1234' },
+    });
+    fireEvent.change(screen.getByLabelText(/Ciudad \/ Comuna/), { target: { value: 'Maipú' } });
+  }
+
+  it('latitud fuera de rango → error de campo, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ sucursal: buildSucursal() });
+    renderNueva();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Latitud/), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear sucursal' }));
+
+    await waitFor(() => expect(screen.getByText(/entre -90 y 90/)).toBeInTheDocument());
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('longitud fuera de rango → error de campo, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ sucursal: buildSucursal() });
+    renderNueva();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Longitud/), { target: { value: '-200' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear sucursal' }));
+
+    await waitFor(() => expect(screen.getByText(/entre -180 y 180/)).toBeInTheDocument());
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('coordenadas decimales válidas → SÍ llama al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ sucursal: buildSucursal() });
+    renderNueva();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Latitud/), { target: { value: '-33.5111' } });
+    fireEvent.change(screen.getByLabelText(/Longitud/), { target: { value: '-70.7575' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear sucursal' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    expect(postSpy).toHaveBeenCalledWith(
+      '/sucursales',
+      expect.objectContaining({ latitude: -33.5111, longitude: -70.7575 }),
+    );
+  });
+
+  it('400 zValidator del server → banner nombra el campo, no "API error 400"', async () => {
+    // Valores válidos client-side; el server igual responde 400 (drift).
+    // Shape real de @hono/zod-validator sin hook custom.
+    const postSpy = vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(400, undefined, {
+        success: false,
+        error: {
+          name: 'ZodError',
+          issues: [{ path: ['latitude'], message: 'Too big', code: 'too_big' }],
+        },
+      }),
+    );
+    renderNueva();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Latitud/), { target: { value: '45' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear sucursal' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText(/Revisa los campos: Latitud/)).toBeInTheDocument());
+    expect(screen.queryByText(/API error 400/)).toBeNull();
   });
 });
 

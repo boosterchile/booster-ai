@@ -69,6 +69,13 @@ function wrap(node: ReactNode) {
   return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
 }
 
+// jsdom no implementa scrollIntoView. El hook useScrollToFirstError lo llama
+// al submit con errores; sin stub el test pasa pero vitest reporta error.
+// Mismo workaround que conductores.test.tsx.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   providedContext = { kind: 'unmanaged' };
@@ -136,6 +143,100 @@ describe('VehiculosNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+  });
+});
+
+// El form tiene `noValidate`, así que los attributes HTML5 (min/max/required)
+// NO bloquean el submit — la validación de rangos debe correr en submit() y
+// el 400 de zValidator del server debe mapearse a copy legible. Incidente
+// reproducido en prod 2026-08-15: capacity_m3=10000 → banner "API error 400"
+// sin indicación del campo. Ver .specs/fix-vehiculos-form-validacion/spec.md.
+describe('VehicleForm — validación de rangos y 400 legible', () => {
+  function renderNuevo() {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosNuevoRoute />);
+  }
+
+  function fillBase({ capacityKg = '10000' }: { capacityKg?: string } = {}) {
+    fireEvent.change(screen.getByLabelText(/Patente/), { target: { value: 'JLKT54' } });
+    fireEvent.change(screen.getByLabelText(/Capacidad \(kg\)/), {
+      target: { value: capacityKg },
+    });
+  }
+
+  it('capacity_m3 fuera de rango → error de campo, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
+    renderNuevo();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Capacidad \(m³\)/), { target: { value: '10000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() => expect(screen.getByText(/entre 1 y 500/)).toBeInTheDocument());
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('capacity_kg vacío → error de campo, sin mandar NaN al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
+    renderNuevo();
+    fillBase({ capacityKg: '' });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Ingresa la capacidad de carga')).toBeInTheDocument(),
+    );
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('400 zValidator del server → banner nombra el campo, no "API error 400"', async () => {
+    // Valores válidos client-side; el server igual responde 400 (drift de
+    // reglas server-side). Shape real de @hono/zod-validator sin hook custom
+    // — mismo contrato verificado en solicitar-acceso.tsx.
+    const postSpy = vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(400, undefined, {
+        success: false,
+        error: {
+          name: 'ZodError',
+          issues: [{ path: ['capacity_m3'], message: 'Too big', code: 'too_big' }],
+        },
+      }),
+    );
+    renderNuevo();
+    fillBase();
+    fireEvent.change(screen.getByLabelText(/Capacidad \(m³\)/), { target: { value: '400' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByText(/Revisa los campos: Capacidad \(m³\)/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/API error 400/)).toBeNull();
+  });
+
+  it('capacity_kg decimal → exige entero, sin llamar al API', async () => {
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ vehicle: {} });
+    renderNuevo();
+    fillBase({ capacityKg: '12.5' });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() => expect(screen.getByText('Debe ser un número entero')).toBeInTheDocument());
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('409 patente duplicada → copy amigable, no "plate_already_exists"', async () => {
+    // Shape real del 409 en apps/api/src/routes/vehiculos.ts: el `error`
+    // (que se vuelve ApiError.message) es 'plate_already_exists' y el
+    // `code` es 'plate_duplicate' — el copy amigable debe salir del code.
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(409, 'plate_duplicate', undefined, 'plate_already_exists'),
+    );
+    renderNuevo();
+    fillBase();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear vehículo' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Ya existe un vehículo con esa patente.')).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('plate_already_exists')).toBeNull();
   });
 });
 

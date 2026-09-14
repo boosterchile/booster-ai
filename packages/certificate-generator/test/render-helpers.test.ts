@@ -55,9 +55,9 @@ describe('tamanoTitulo', () => {
     expect(tamanoTitulo('primario_verificable')).toBe(18);
   });
 
-  it('secundario usa tamaño 16 (texto "REPORTE ESTIMATIVO..." es más largo)', () => {
-    expect(tamanoTitulo('secundario_modeled')).toBe(16);
-    expect(tamanoTitulo('secundario_default')).toBe(16);
+  it('secundario usa tamaño 14 (texto "REPORTE ESTIMATIVO..." es más largo; a 16 pisaba la marca)', () => {
+    expect(tamanoTitulo('secundario_modeled')).toBe(14);
+    expect(tamanoTitulo('secundario_default')).toBe(14);
   });
 });
 

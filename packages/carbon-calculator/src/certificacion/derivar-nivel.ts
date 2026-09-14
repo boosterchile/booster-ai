@@ -20,7 +20,8 @@ export const THRESHOLD_SECUNDARIO_MODELED_PCT = 80;
 
 /**
  * Deriva el nivel de certificación de un trip a partir de las tres
- * dimensiones ortogonales definidas en ADR-028 §1-§2:
+ * dimensiones ortogonales definidas en ADR-028 §1-§2, extendidas por
+ * ADR-077 §2 con la fuente `movil_gps` (nunca primario):
  *
  *   1. `precisionMethod` (calidad de medición combustible/distancia)
  *   2. `routeDataSource` (origen del polyline real)
@@ -67,6 +68,17 @@ export function derivarNivelCertificacion(input: {
   // ni simulación calibrada, solo declaración del cliente.
   if (routeDataSource === 'manual_declared') {
     return 'secundario_default';
+  }
+
+  // ADR-077 §2 — la posición del móvil del conductor mide la DISTANCIA, no la
+  // energía, y el sensor no está fijo al vehículo. Nunca produce primario, sin
+  // importar el método ni la cobertura. Se corta acá, antes del chequeo de
+  // primario, para que la combinación `exacto_canbus + movil_gps` (imposible
+  // por construcción: el CAN solo llega por Teltonika) jamás fabrique un
+  // primario por un bug de wire. El umbral ~80% decide qué distancia alimenta
+  // el cálculo (medida vs estimada), no el nivel — eso vive en apps/api.
+  if (routeDataSource === 'movil_gps') {
+    return 'secundario_modeled';
   }
 
   // Primario verificable requiere las tres condiciones simultáneas:

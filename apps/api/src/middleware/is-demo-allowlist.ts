@@ -28,46 +28,44 @@ import type { IsDemoAllowlistEntry } from './is-demo-enforcement.js';
 export type { IsDemoAllowlistEntry } from './is-demo-enforcement.js';
 
 export const ALLOWLISTED_PATHS: IsDemoAllowlistEntry[] = [
-  {
-    path: '/demo/login',
-    methods: ['POST'],
-    rationale:
-      'demo login endpoint mintea custom token Firebase para personas demo; sesión demo requiere este path por diseño (no auth previa, no claim is_demo)',
-    reviewBy: '2026-08-25',
-  },
+  // Re-revisión 2026-09-05 (chore-renovar-reviewby-is-demo-allowlist):
+  // `POST /demo/login` retirado del allowlist — la ruta ya no existe
+  // (server.ts: «RETIRADO — chore/retiro-subsistema-demo», PR #593).
   {
     path: '/api/v1/demo/cache-warm/:persona',
-    methods: ['POST'],
+    // Re-revisión 2026-09-05: el router declara `app.get('/cache-warm/:persona')`
+    // (routes/demo-cache-warm.ts); el método real es GET, no POST.
+    methods: ['GET'],
     rationale:
       'Sprint 2a T5 pre-warm cache fire-and-forget desde landing demo (rate-limited 10/min/IP, sin firebase auth, sin claim is_demo); preempty defense',
-    reviewBy: '2026-08-25',
+    reviewBy: '2026-12-04',
   },
   {
     path: '/feature-flags',
     methods: ['GET'],
     rationale:
       'flags fetch read-only boot path para decidir UI (selector RUT vs email/password); público sin firebase auth, sin claim is_demo; preempty defense',
-    reviewBy: '2026-08-25',
+    reviewBy: '2026-12-04',
   },
   {
     path: '/api/v1/signup-request',
     methods: ['POST'],
     rationale:
       'Sprint 2b T8 signup-request endpoint público sin auth previa (admin-approval flow ADR-052); sin claim is_demo, preempty defense para evitar 403 si wire global aplica',
-    reviewBy: '2026-08-25',
+    reviewBy: '2026-12-04',
   },
   {
     path: '/admin/signup-requests/:id/approve',
     methods: ['POST'],
     rationale:
       'Sprint 2b T10 admin-only mutation (signup-request approve via Admin SDK); role check downstream BOOSTER_PLATFORM_ADMIN_EMAILS garantiza no-demo (demo emails NUNCA en allowlist); allowlist permite que el role check sea la única gate',
-    reviewBy: '2026-08-26',
+    reviewBy: '2026-12-04',
   },
   {
     path: '/admin/signup-requests/:id/reject',
     methods: ['POST'],
     rationale:
       'Sprint 2b T10 admin-only mutation (signup-request reject); role check downstream BOOSTER_PLATFORM_ADMIN_EMAILS garantiza no-demo (demo emails NUNCA en allowlist); allowlist permite que el role check sea la única gate',
-    reviewBy: '2026-08-26',
+    reviewBy: '2026-12-04',
   },
 ];

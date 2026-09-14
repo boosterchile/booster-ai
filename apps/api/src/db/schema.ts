@@ -349,14 +349,21 @@ export const precisionMethodEnum = pgEnum('metodo_precision', [
  * `coverage_pct` determina si el viaje califica para certificado primario.
  *
  *   - teltonika_gps: pings GPS del dispositivo Teltonika (única fuente
- *     que califica para nivel primario verificable).
+ *     que califica para nivel primario verificable, y solo con CAN bus
+ *     y cobertura ≥ 95 % — ADR-077 §2).
  *   - maps_directions: ruta sintetizada por Google Routes API.
  *   - manual_declared: declaración del cliente sin telemetría ni simulación.
+ *   - movil_gps: polyline real medido por la Geolocation API del móvil del
+ *     conductor (`posiciones_movil_conductor`), para vehículos sin Teltonika
+ *     (ADR-077 §1, migración 0055). Distancia medida pero consumo modelado y
+ *     sensor no fijo al vehículo: NUNCA produce `primario_verificable`,
+ *     sin importar la cobertura (ADR-077 §2).
  */
 export const routeDataSourceEnum = pgEnum('fuente_dato_ruta', [
   'teltonika_gps',
   'maps_directions',
   'manual_declared',
+  'movil_gps',
 ]);
 
 /**
@@ -1184,6 +1191,14 @@ export const trips = pgTable(
     originAddressRaw: text('origen_direccion_raw').notNull(),
     originRegionCode: varchar('origen_codigo_region', { length: 4 }),
     originComunaCode: varchar('origen_codigo_comuna', { length: 10 }),
+    /**
+     * Lat/lng del origen geocodificado (Task 2, plan medicion-huella-segmento):
+     * ancla del geofence de recogida. NULL = sin geocodificar (viaje previo a
+     * la migración, o geocodificación degradada en T4) — nunca 0/0. Misma
+     * precisión que `posiciones_movil_conductor`. Naming inglés total (PO).
+     */
+    originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 }),
+    originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 }),
     destinationAddressRaw: text('destino_direccion_raw').notNull(),
     destinationRegionCode: varchar('destino_codigo_region', { length: 4 }),
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),

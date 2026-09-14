@@ -54,11 +54,12 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (migración — dominio crítico).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): tras aplicar la migración, `empresas.carbon_measurement_enabled` existe (`boolean NOT NULL DEFAULT false`) y `trips.carbon_measurement_override` existe (`boolean` nullable). Verificar `check-migration-safety` (expand-only, sin `NOT NULL` sin default sobre tabla con datos).
-- [ ] Drizzle: `empresas` → `carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false)`; `trips` → `carbonMeasurementOverride: boolean('carbon_measurement_override')`.
-- [ ] Escribir la migración SQL a mano (el repo congela el snapshot en `0000` y NO usa `db:generate`; seguir la convención de la migración anterior: header en prosa + `ALTER TABLE` + `--> statement-breakpoint`), y actualizar `meta/_journal.json` (idx, when monotónico, tag==filename). Revisar SQL expand-safe.
-- [ ] Verde: migración aplica en DB local; schema coincide.
-- [ ] Commit `feat(carbon): columnas opt-in de huella (empresa + override viaje)`.
+- [x] Test (rojo): tras aplicar la migración, `empresas.carbon_measurement_enabled` existe (`boolean NOT NULL DEFAULT false`) y `trips.carbon_measurement_override` existe (`boolean` nullable). Verificar `check-migration-safety` (expand-only, sin `NOT NULL` sin default sobre tabla con datos).
+- [x] Drizzle: `empresas` → `carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false)`; `trips` → `carbonMeasurementOverride: boolean('carbon_measurement_override')`.
+- [x] Escribir la migración SQL a mano (el repo congela el snapshot en `0000` y NO usa `db:generate`; seguir la convención de la migración anterior: header en prosa + `ALTER TABLE` + `--> statement-breakpoint`), y actualizar `meta/_journal.json` (idx, when monotónico, tag==filename). Revisar SQL expand-safe.
+- [x] Verde: migración aplica en DB local; schema coincide.
+- [x] Commit `feat(carbon): columnas opt-in de huella (empresa + override viaje)`.
+> **Ejecutado (auditoría 2026-09-13):** columnas presentes en `main` — `empresas.carbon_measurement_enabled` y `trips.carbon_measurement_override`, migración `0046_carbon_measurement_opt_in.sql`. Nota: `resolverOptInHuella` (Task 3) sigue sin consumidor de producción hasta Task 12.
 **Criterio de hecho:** columnas presentes con tipos exactos; `Migration safety` CI verde.
 
 ### Task 2 — Migración + schema: origen geocodificado
@@ -67,10 +68,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (migración).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
-- [ ] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
-- [ ] Generar + revisar migración.
-- [ ] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
+- [x] Test (rojo): `trips.origin_latitude` y `trips.origin_longitude` existen como `numeric(10,7)` nullable. Expand-safe.
+- [x] Drizzle: `originLatitude: numeric('origin_latitude', { precision: 10, scale: 7 })`, `originLongitude: numeric('origin_longitude', { precision: 10, scale: 7 })` (nullable, igual precisión que `posicionesMovilConductor`).
+- [x] Generar + revisar migración.
+- [x] Verde + commit `feat(api): columnas lat/lng del origen del viaje`.
 **Criterio de hecho:** columnas presentes nullable `numeric(10,7)`; CI migración verde.
 
 ### Task 3 — Resolver de opt-in efectivo de huella (OR de empresas participantes)
@@ -79,7 +80,7 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 1.
 **Pasos:**
-- [ ] Test (rojo), 7 casos:
+- [x] Test (rojo), 7 casos:
   - `{ tripOverride: true, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `true` (override gana)
   - `{ tripOverride: false, generadorCarbonEnabled: true, transportistaCarbonEnabled: true }` → `false` (override gana)
   - `{ tripOverride: null, generadorCarbonEnabled: true, transportistaCarbonEnabled: false }` → `true` (OR: generador)
@@ -87,8 +88,8 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
   - `{ tripOverride: null, generadorCarbonEnabled: false, transportistaCarbonEnabled: false }` → `false`
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: true }` → `true` (generador null → false, OR transportista)
   - `{ tripOverride: null, generadorCarbonEnabled: null, transportistaCarbonEnabled: null }` → `false` (todo null → false)
-- [ ] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
-- [ ] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
+- [x] Implementar: `export function resolverOptInHuella(o: { tripOverride: boolean | null; generadorCarbonEnabled: boolean | null; transportistaCarbonEnabled: boolean | null }): boolean { return o.tripOverride ?? ((o.generadorCarbonEnabled ?? false) || (o.transportistaCarbonEnabled ?? false)); }`
+- [x] Verde + commit `feat(carbon): resolver opt-in efectivo (override ?? OR generador/transportista)`.
 **Criterio de hecho:** 7 casos verdes; sin acceso a DB (pura); consignee excluido por diseño (no es empresa consultable); generador nullable manejado.
 
 ### Task 4 — Geocodificar y persistir el origen al crear el viaje
@@ -97,10 +98,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (tests required; degradación es crítica).
 **Depende de:** Task 2.
 **Pasos:**
-- [ ] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
-- [ ] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
-- [ ] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
-- [ ] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
+- [x] Test (rojo): dado un origen+destino, `geocodificarOrigen` devuelve `{ lat, lng }` desde `routes.legs[0].startLocation.latLng`; persiste en `trips.origin_latitude/longitude`. Si Routes API falla/timeout → devuelve `null`, **loguea métrica data-quality**, NO lanza (el trip se crea igual con lat/lng null).
+- [x] Extender field-mask de `computeRoutes` para incluir `routes.legs.startLocation` (sin romper consumidores actuales — sigue devolviendo `distanceKm/durationS/polyline`).
+- [x] Wire en `trip-requests-v2.ts`: tras crear el trip, geocodificar y `UPDATE trips SET origin_latitude/longitude`. Structured log + span OTel.
+- [x] Verde + commit `feat(api): geocodificar y persistir el origen del viaje (degradable)`.
 **Criterio de hecho:** trip nuevo tiene lat/lng del origen; fallo de geocoding no bloquea creación y emite métrica.
 
 ### Task 5 — trip-state-machine: guard de recogida
@@ -109,9 +110,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (máquina de estados).
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
-- [ ] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
-- [ ] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
+- [x] Test (rojo): `esConfirmableRecogida('asignado') === true`; `esConfirmableRecogida('en_proceso') === false`; `esConfirmableRecogida('entregado') === false`. (`asignado: ['en_proceso','entregado']` ya existe en la tabla.)
+- [x] Implementar: `export function esConfirmableRecogida(estado: EstadoViaje): boolean { return puedeTransicionar(estado, 'en_proceso'); }`
+- [x] Verde + commit `feat(trip-state-machine): guard esConfirmableRecogida`.
 **Criterio de hecho:** guard derivado de la tabla (no lista paralela); 3 casos verdes.
 
 ### Task 6 — Servicio `confirmar-recogida-viaje.ts` (handler de recogida)
@@ -120,11 +121,12 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (máquina de estados — crítico).
 **Depende de:** Task 5.
 **Pasos:**
-- [ ] Test (rojo) happy path: dado un assignment `asignado`, `confirmarRecogidaViaje({ assignmentId, actor, source, pickedUpAt })` setea `trips.status='en_proceso'` Y `assignments.status='recogido'` Y `assignments.pickedUpAt=<instante>` Y inserta `tripEvents` tipo `recogida_confirmada` (payload con actor/instante/assignment_id) — todo atómico.
-- [ ] Test (rojo) idempotencia: segunda llamada con assignment ya `recogido` → retorna `{ ok:true, alreadyPickedUp:true }` sin duplicar evento ni mover estados.
-- [ ] Test (rojo) CAS: si `assignments.status ≠ 'asignado'` (ej. `entregado`) → `{ ok:false, code:'invalid_status' }`; el `UPDATE … WHERE status='asignado'` no afecta filas.
-- [ ] Implementar el servicio espejando `confirmar-entrega-viaje.ts:210-245` (CAS en el WHERE, `assertTransicion`/`esConfirmableRecogida`, transacción), invirtiendo entrega→recogida.
-- [ ] Verde + commit `feat(api): handler confirmar-recogida-viaje (CAS atómico idempotente)`.
+- [x] Test (rojo) happy path: dado un assignment `asignado`, `confirmarRecogidaViaje({ assignmentId, actor, source, pickedUpAt })` setea `trips.status='en_proceso'` Y `assignments.status='recogido'` Y `assignments.pickedUpAt=<instante>` Y inserta `tripEvents` tipo `recogida_confirmada` (payload con actor/instante/assignment_id) — todo atómico.
+- [x] Test (rojo) idempotencia: segunda llamada con assignment ya `recogido` → retorna `{ ok:true, alreadyPickedUp:true }` sin duplicar evento ni mover estados.
+- [x] Test (rojo) CAS: si `assignments.status ≠ 'asignado'` (ej. `entregado`) → `{ ok:false, code:'invalid_status' }`; el `UPDATE … WHERE status='asignado'` no afecta filas.
+- [x] Implementar el servicio espejando `confirmar-entrega-viaje.ts:210-245` (CAS en el WHERE, `assertTransicion`/`esConfirmableRecogida`, transacción), invirtiendo entrega→recogida.
+- [x] Verde + commit `feat(api): handler confirmar-recogida-viaje (CAS atómico idempotente)`.
+> **Ejecutado con desviación (auditoría 2026-09-13):** implementado en #644 (`.specs/confirmar-recogida/`, commit `adaa45c`) sin el parámetro `pickedUpAt` (siempre `new Date()`). #664 lo agrega como opcional, acotado (no futuro más allá de 2 min de skew, no anterior a `acceptedAt`) → `invalid_picked_up_at` sin escribir nada.
 **Criterio de hecho:** los 3 tests verdes; sin escritura parcial ante estado inválido.
 
 ### Task 7 — Endpoint `PATCH /carrier/assignments/:id/confirmar-recogida`
@@ -133,9 +135,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (boundary del cambio de estado).
 **Depende de:** Task 6.
 **Pasos:**
-- [ ] Test (rojo): `PATCH /carrier/assignments/:id/confirmar-recogida` con el driver asignado → 200, deja `assignments.status='recogido'`; body Zod-validado (`pickedUpAt` ISO opcional, default now); RBAC: 403 si el user no es el driver/carrier del assignment; idempotente (segunda llamada → 200 alreadyPickedUp).
-- [ ] Implementar la ruta (zValidator + requireCarrierAuth), llamando `confirmarRecogidaViaje`. Structured log con `trace_id`, span OTel, métrica `recogidas_confirmadas`.
-- [ ] Verde + commit `feat(api): endpoint confirmar-recogida (carrier)`.
+- [x] Test (rojo): `PATCH /carrier/assignments/:id/confirmar-recogida` con el driver asignado → 200, deja `assignments.status='recogido'`; body Zod-validado (`pickedUpAt` ISO opcional, default now); RBAC: 403 si el user no es el driver/carrier del assignment; idempotente (segunda llamada → 200 alreadyPickedUp).
+- [x] Implementar la ruta (zValidator + requireCarrierAuth), llamando `confirmarRecogidaViaje`. Structured log con `trace_id`, span OTel, métrica `recogidas_confirmadas`.
+- [x] Verde + commit `feat(api): endpoint confirmar-recogida (carrier)`.
+> **Ejecutado con desviación (auditoría 2026-09-13):** path real `PATCH /assignments/:id/confirmar-recogida` (router montado en `/assignments`, no `/carrier/...`). Ruta creada en #644 (`.specs/confirmar-recogida`) sin body ni observabilidad; el body Zod (`picked_up_at` opcional, acotado en el servidor) llegó en #664 y el span `assignments.confirmar_recogida` + métrica `recogidas_confirmadas_total` {via, picked_up_at_source, already_picked_up} se agregaron en #664 (commit de cierre de T7).
 **Criterio de hecho:** endpoint setea `recogido`; RBAC + idempotencia testeadas; observabilidad presente.
 
 ### Task 8 — Detector de geofence + radio configurable
@@ -144,10 +147,10 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ (función pura, test-first).
 **Depende de:** Task 2 (origen lat/lng).
 **Pasos:**
-- [ ] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
-- [ ] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`).
-- [ ] Implementar la función pura.
-- [ ] Verde + commit `feat(api): geofence de origen + GEOFENCE_RADIUS_M`.
+- [x] Test (rojo): `dentroDelGeofence({ pos, origen, radioM: 150 })` → `true` para un punto a ~50 m, `false` a ~500 m, `true` en el borde exacto (≤). Usa `haversineKm` (reusar el de `calcular-cobertura-telemetria.ts`).
+- [x] Config: `GEOFENCE_RADIUS_M` en `packages/config` con Zod (`z.coerce.number().int().positive().default(150)`). *(Nota de ejecución: `packages/config/src/env.ts` no existe; la variable vive en `apps/api/src/config.ts`, donde se declaran las env vars propias del API con este mismo patrón.)*
+- [x] Implementar la función pura.
+- [x] Verde + commit `feat(carbon): detector de geofence del origen` (mensaje fijado por el PO al ejecutar).
 **Criterio de hecho:** dentro/fuera/borde verdes; radio leído de config.
 
 ### Task 9 — Disparo híbrido en la PWA del conductor
@@ -156,9 +159,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** Tests de componente (no critical-domain backend, pero con cobertura).
 **Depende de:** Task 7, Task 8.
 **Pasos:**
-- [ ] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
-- [ ] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición).
-- [ ] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
+- [x] Test (rojo): cuando la posición del conductor entra al geofence del origen, aparece la sugerencia "Confirmar recogida"; al tap, se llama `PATCH …/confirmar-recogida` con `pickedUpAt` = timestamp del cruce. Sin geofence disponible (sin GPS/permiso) → botón manual visible; al tap, `pickedUpAt` = now. La recogida NUNCA se bloquea por falta de señal (degradación corte #1).
+- [x] Implementar hook + UI (reusar `use-driver-position-reporter` para la posición). *(Nota de ejecución — dos contratos del API que el plan no fijaba, aprobados por el PO el 2026-08-17: (a) `POST /assignments/:id/driver-position` responde `geofence: { estado, distancia_m }` evaluado en servidor con `evaluarGeofenceOrigen` (T8) y `config.GEOFENCE_RADIUS_M`; (b) `PATCH /assignments/:id/confirmar-recogida` acepta body opcional `{ picked_up_at }` (Zod) —completa el paso de T7 que no se había implementado—, acotado en `confirmarRecogidaViaje`: ≤ now + 2 min y ≥ `assignments.acceptedAt`, si no `400 invalid_picked_up_at`; el evento registra `picked_up_at_source: cliente|servidor`.)*
+- [x] Verde + commit `feat(web): disparo híbrido de recogida (geofence sugiere + tap)`.
 **Criterio de hecho:** sugerencia aparece con geofence; fallback manual; `pickedUpAt` correcto en ambos caminos.
 
 > **=== GATE: F1 COMPLETO Y TESTEADO (Tasks 1–9). Recién aquí arrancan los tests de F2 sobre vehículos browser. ===**
@@ -169,9 +172,9 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 **TDD:** SÍ.
 **Depende de:** —
 **Pasos:**
-- [ ] Test (rojo): vehículo con `teltonika_imei` → lee de `telemetria_puntos` (por vehicle_id) en `[desde, hasta]`; vehículo con `teltonika_imei_espejo` → `telemetria_puntos` por `imei`; vehículo sin device → `posiciones_movil_conductor` por vehicle_id. Cada vehículo usa UNA sola fuente (sin dedup entre streams).
-- [ ] Implementar `resolverPosicionesSegmento({ db, vehicle, desde, hasta }): Promise<PingPoint[]>` ordenado ascendente por timestamp.
-- [ ] Verde + commit `feat(api): enrutamiento de posición por tipo de vehículo`.
+- [x] Test (rojo): vehículo con `teltonika_imei` → lee de `telemetria_puntos` (por vehicle_id) en `[desde, hasta]`; vehículo con `teltonika_imei_espejo` → `telemetria_puntos` por `imei`; vehículo sin device → `posiciones_movil_conductor` por vehicle_id. Cada vehículo usa UNA sola fuente (sin dedup entre streams).
+- [x] Implementar `resolverPosicionesSegmento({ db, vehicle, desde, hasta }): Promise<PingPoint[]>` ordenado ascendente por timestamp. *(Nota de ejecución: además se exporta el clasificador puro `fuentePosicionSegmento(vehicle)` → `teltonika_gps` | `movil_gps`, para que T11/T12 persistan `fuente_dato_ruta` según [ADR-077](../../docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md) sin re-derivar la regla. La decisión GLEC pre-T10 de `frentes-vivos.md` es ADR-077.)*
+- [x] Verde + commit `feat(api): enrutamiento de posición por tipo de vehículo`.
 **Criterio de hecho:** 3 ramas de routing verdes; salida ordenada; reusa el criterio de partición existente.
 
 ### Task 11 — Distancia real sobre el segmento `[pickedUpAt, deliveredAt]`

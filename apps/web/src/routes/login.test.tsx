@@ -92,6 +92,61 @@ describe('LoginRoute — link a solicitar-acceso', () => {
   });
 });
 
+describe('LoginRoute — escape hatch ?legacy=1 con el flujo universal ON', () => {
+  // TanStack Router parsea los search params con semántica JSON: `?legacy=1`
+  // llega como el NÚMERO 1, no como el string '1'. El escape hatch debe
+  // aceptar ambos (y `true`), si no la pantalla `needs-rotation` de
+  // LoginUniversal ("Usar método anterior" → /login?legacy=1) es un callejón
+  // sin salida para quien todavía no tiene clave numérica.
+  const FLAGS_UNIVERSAL_ON = {
+    flags: {
+      auth_universal_v1_activated: true,
+      wake_word_voice_activated: false,
+      matching_algorithm_v2_activated: false,
+      demo_mode_activated: false,
+    },
+    isLoading: false,
+    isError: false,
+  };
+
+  beforeEach(() => {
+    useAuthMock.mockReturnValue({ user: null, loading: false });
+    useFeatureFlagsMock.mockReturnValue(FLAGS_UNIVERSAL_ON);
+  });
+  afterEach(() => {
+    useFeatureFlagsMock.mockReturnValue({
+      flags: {
+        auth_universal_v1_activated: false,
+        wake_word_voice_activated: false,
+        matching_algorithm_v2_activated: false,
+      },
+      isLoading: false,
+      isError: false,
+    });
+  });
+
+  it('sin ?legacy → flujo universal (no aparece el botón de Google)', () => {
+    render(<LoginRoute />);
+    expect(screen.queryByRole('button', { name: /Continuar con Google/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['número 1 (como lo entrega el router)', 1],
+    ['string "1"', '1'],
+    ['boolean true', true],
+  ])('?legacy como %s → fuerza el formulario legacy (correo + Google)', (_label, legacy) => {
+    useSearchMock.mockReturnValue({ legacy });
+    render(<LoginRoute />);
+    expect(screen.getByRole('button', { name: /Continuar con Google/ })).toBeInTheDocument();
+  });
+
+  it('?legacy=0 NO fuerza el legacy', () => {
+    useSearchMock.mockReturnValue({ legacy: 0 });
+    render(<LoginRoute />);
+    expect(screen.queryByRole('button', { name: /Continuar con Google/ })).not.toBeInTheDocument();
+  });
+});
+
 describe('LoginRoute — flags cargando (anti-flash)', () => {
   const DEFAULT_FLAGS = {
     flags: {
