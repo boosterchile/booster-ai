@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
+import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
 import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter.js';
@@ -567,6 +569,13 @@ export function AssignmentCard({
         )}
       </dl>
 
+      {/* Ruta eco sugerida (Slot 3, paso 4): colapsada, el mapa carga al abrir. */}
+      {fase !== 'entregada' && (
+        <div className="mt-4 overflow-hidden rounded-md border border-success-200">
+          <AssignmentEcoRouteCard assignmentId={a.id} />
+        </div>
+      )}
+
       {/* Posición: nunca un botón para iniciar. */}
       <div className="mt-4 border-neutral-200 border-t pt-4">
         <div className="flex items-center gap-2 text-neutral-700 text-xs uppercase tracking-wide">
@@ -722,9 +731,12 @@ export function AssignmentCard({
         {fase === 'entregada' && (
           // <output> ya tiene role=status implícito: el lector de pantalla
           // anuncia el cierre sin que haya que declararlo a mano.
-          <output className="block rounded-md border border-success-200 bg-success-50 p-2 text-sm text-success-800">
-            Entrega confirmada. ¡Gracias!
-          </output>
+          <>
+            <output className="block rounded-md border border-success-200 bg-success-50 p-2 text-sm text-success-800">
+              Entrega confirmada. ¡Gracias!
+            </output>
+            <ResultadoViaje assignmentId={a.id} />
+          </>
         )}
       </div>
     </article>

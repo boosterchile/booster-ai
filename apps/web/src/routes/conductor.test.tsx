@@ -109,6 +109,19 @@ vi.mock('../hooks/use-assignment-eco-route.js', () => ({
   useAssignmentEcoRoute: () => ecoRouteState,
 }));
 
+vi.mock('../components/scoring/AssignmentEcoRouteCard.js', () => ({
+  AssignmentEcoRouteCard: ({ assignmentId }: { assignmentId: string }) => (
+    <section data-testid="assignment-eco-route-card">ruta eco de {assignmentId}</section>
+  ),
+}));
+
+const resultadoSpy = vi.fn();
+const descargarCertificadoSpy = vi.fn(async (_assignmentId: string) => undefined);
+vi.mock('../services/assignment-resultado.js', () => ({
+  getResultadoAsignacion: (...a: unknown[]) => resultadoSpy(...a),
+  descargarCertificadoDeAsignacion: (id: string) => descargarCertificadoSpy(id),
+}));
+
 const apiGetSpy = vi.fn();
 const apiPatchSpy = vi.fn();
 vi.mock('../lib/api-client.js', async () => {
@@ -177,6 +190,8 @@ beforeEach(() => {
     flush: reporterFlushSpy,
   };
   reporterFlushSpy.mockClear();
+  resultadoSpy.mockReset();
+  descargarCertificadoSpy.mockClear();
   queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
   apiGetSpy.mockResolvedValue({ assignments: [] });
   ecoRouteState = {};
@@ -356,6 +371,106 @@ describe('ConductorDashboardRoute', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
     await waitFor(() => expect(apiPatchSpy).toHaveBeenCalled());
     expect(orden).toEqual(['flush', 'patch']);
+  });
+
+  it('antes de entregar muestra la ruta eco sugerida (colapsable, reusa AssignmentEcoRouteCard)', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByTestId('assignment-eco-route-card')).toHaveTextContent(
+      sampleAssignment.id,
+    );
+  });
+
+  it('tras entregar muestra el resultado: kg CO2e, distancia, cobertura y línea de método (solo lectura)', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    apiPatchSpy.mockResolvedValue({ ok: true });
+    resultadoSpy.mockResolvedValue({
+      assignment: {
+        id: sampleAssignment.id,
+        status: 'entregado',
+        picked_up_at: '2026-09-14T16:44:36Z',
+        delivered_at: '2026-09-14T17:01:57Z',
+      },
+      trip: { id: 'trip-1', tracking_code: 'BOO-ABC123' },
+      metrics: {
+        distance_km_estimated: '500.00',
+        distance_km_actual: '2.51',
+        carbon_emissions_kgco2e_estimated: '33.475',
+        carbon_emissions_kgco2e_actual: '2.691',
+        precision_method: 'modelado',
+        glec_version: '3.0',
+        route_data_source: 'teltonika_gps',
+        coverage_pct: '100.00',
+        certification_level: 'secundario_modeled',
+        linea_metodo:
+          'Distancia medida por GPS del vehículo (cobertura 100 %) · Consumo modelado según GLEC v3.0',
+        certificate_pdf_url: 'gs://x',
+        certificate_sha256: 'abc',
+        certificate_kms_key_version: '1',
+        certificate_issued_at: '2026-09-14T21:40:40Z',
+      },
+      certificate: {
+        issued_at: '2026-09-14T21:40:40Z',
+        sha256: 'abc',
+        verify_url: 'https://api.boosterchile.com/certificates/BOO-ABC123/verify',
+      },
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    await screen.findByText(/kg CO2e/);
+    const panel = screen.getByTestId('resultado-viaje');
+    expect(panel).toHaveTextContent(/2,69 kg CO2e|2.69 kg CO2e/);
+    expect(panel).toHaveTextContent(/2,5 km|2.5 km/);
+    expect(panel).toHaveTextContent(/100 %/);
+    expect(panel).toHaveTextContent(/Distancia medida por GPS del vehículo/);
+    // Solo lectura: ningún botón de acción sobre el viaje además de la descarga.
+    expect(screen.queryByRole('button', { name: /Confirmar/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Descargar certificado/i }));
+    await waitFor(() => expect(descargarCertificadoSpy).toHaveBeenCalledWith(sampleAssignment.id));
+  });
+
+  it('tras entregar, mientras el certificado se emite, lo dice y no ofrece descargar', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    apiPatchSpy.mockResolvedValue({ ok: true });
+    resultadoSpy.mockResolvedValue({
+      assignment: {
+        id: sampleAssignment.id,
+        status: 'entregado',
+        picked_up_at: null,
+        delivered_at: '2026-09-14T17:01:57Z',
+      },
+      trip: { id: 'trip-1', tracking_code: 'BOO-ABC123' },
+      metrics: {
+        distance_km_estimated: '500.00',
+        distance_km_actual: null,
+        carbon_emissions_kgco2e_estimated: '33.475',
+        carbon_emissions_kgco2e_actual: null,
+        precision_method: 'modelado',
+        glec_version: '3.0',
+        route_data_source: 'maps_directions',
+        coverage_pct: '0.00',
+        certification_level: 'secundario_modeled',
+        linea_metodo:
+          'Distancia estimada por ruta (Google Routes) · Consumo modelado según GLEC v3.0',
+        certificate_pdf_url: null,
+        certificate_sha256: null,
+        certificate_kms_key_version: null,
+        certificate_issued_at: null,
+      },
+      certificate: null,
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    await screen.findByText(/Certificado en proceso/i);
+    const panel = screen.getByTestId('resultado-viaje');
+    expect(panel).toHaveTextContent(/Certificado en proceso/i);
+    expect(panel).toHaveTextContent(/estimad/i);
+    expect(screen.queryByRole('button', { name: /Descargar certificado/i })).toBeNull();
   });
 
   it('confirmar la entrega detiene el reporte del teléfono', async () => {

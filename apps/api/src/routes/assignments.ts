@@ -14,6 +14,7 @@
  * ahí ve el assignment como sub-objeto.
  */
 
+import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -53,6 +54,7 @@ import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
 import { obtenerTrazaCarga } from '../services/obtener-traza-carga.js';
 import { INCIDENT_TYPES, reportarIncidente } from '../services/reportar-incidente.js';
 import { safeIsoString } from '../services/safe-iso-string.js';
+import { serializeTripMetrics } from './trip-requests-v2.js';
 
 const trazaCargaConsultasCounter = getBusinessCounter('carga_traza_consultas_total');
 /**
@@ -669,6 +671,140 @@ export function createAssignmentsRoutes(opts: {
     accuracy_m: z.number().positive().max(10_000).nullable().optional(),
     speed_kmh: z.number().min(0).max(300).nullable().optional(),
     heading_deg: z.number().min(0).max(360).nullable().optional(),
+  });
+
+  // ---------------------------------------------------------------------
+  // Slot 3, paso 4 — lo que el conductor ve al terminar (solo lectura, D3).
+  // `GET /trip-requests-v2/:id` y su descarga están acotados al GENERADOR:
+  // el conductor (miembro de la transportista) recibía 404. Estos dos
+  // endpoints leen lo mismo con la autorización de `confirmar-recogida`:
+  // el conductor asignado o un miembro de la transportista con escritura.
+  // Nunca precios. Spec: .specs/conductor-vista-ruta-resultado/.
+  // ---------------------------------------------------------------------
+  async function cargarResultado(assignmentId: string) {
+    const rows = await opts.db
+      .select({
+        assignmentId: assignments.id,
+        assignmentStatus: assignments.status,
+        driverUserId: assignments.driverUserId,
+        empresaId: assignments.empresaId,
+        pickedUpAt: assignments.pickedUpAt,
+        deliveredAt: assignments.deliveredAt,
+        tripId: trips.id,
+        trackingCode: trips.trackingCode,
+        generadorEmpresaId: trips.generadorCargaEmpresaId,
+        metricsTripId: tripMetrics.tripId,
+        distanceKmEstimated: tripMetrics.distanceKmEstimated,
+        distanceKmActual: tripMetrics.distanceKmActual,
+        carbonEmissionsKgco2eEstimated: tripMetrics.carbonEmissionsKgco2eEstimated,
+        carbonEmissionsKgco2eActual: tripMetrics.carbonEmissionsKgco2eActual,
+        precisionMethod: tripMetrics.precisionMethod,
+        glecVersion: tripMetrics.glecVersion,
+        routeDataSource: tripMetrics.routeDataSource,
+        coveragePct: tripMetrics.coveragePct,
+        certificationLevel: tripMetrics.certificationLevel,
+        certificatePdfUrl: tripMetrics.certificatePdfUrl,
+        certificateSha256: tripMetrics.certificateSha256,
+        certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
+        certificateIssuedAt: tripMetrics.certificateIssuedAt,
+      })
+      .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
+      .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .where(eq(assignments.id, assignmentId))
+      .limit(1);
+    return rows[0];
+  }
+
+  function puedeLeerResultado(
+    row: { driverUserId: string | null; empresaId: string },
+    auth: ReturnType<typeof requireCarrierAuth> & { ok: true },
+  ): boolean {
+    const esConductorAsignado = row.driverUserId === auth.userContext.user.id;
+    const role = auth.activeMembership.membership.role;
+    const esCarrierConEscritura =
+      row.empresaId === auth.activeMembership.empresa.id &&
+      (role === 'dueno' || role === 'admin' || role === 'despachador');
+    return esConductorAsignado || esCarrierConEscritura;
+  }
+
+  const toIso = (d: Date | null | undefined): string | null =>
+    d instanceof Date && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+
+  app.get('/:id/resultado', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const row = await cargarResultado(c.req.param('id'));
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (!puedeLeerResultado(row, auth)) {
+      return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
+    }
+    const verifyBase = opts.certConfig?.verifyBaseUrl ?? 'https://api.boosterchile.com';
+    const certificado =
+      row.certificateIssuedAt && row.certificatePdfUrl
+        ? {
+            issued_at: toIso(row.certificateIssuedAt),
+            sha256: row.certificateSha256,
+            verify_url: `${verifyBase}/certificates/${row.trackingCode}/verify`,
+          }
+        : null;
+    return c.json({
+      assignment: {
+        id: row.assignmentId,
+        status: row.assignmentStatus,
+        picked_up_at: toIso(row.pickedUpAt),
+        delivered_at: toIso(row.deliveredAt),
+      },
+      trip: { id: row.tripId, tracking_code: row.trackingCode },
+      metrics: row.metricsTripId ? serializeTripMetrics(row) : null,
+      certificate: certificado,
+    });
+  });
+
+  app.get('/:id/certificate/download', async (c) => {
+    const auth = requireCarrierAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    if (!opts.certConfig?.certificatesBucket) {
+      return c.json({ error: 'certificates_disabled', code: 'certificates_disabled' }, 503);
+    }
+    const row = await cargarResultado(c.req.param('id'));
+    if (!row) {
+      return c.json({ error: 'assignment_not_found', code: 'assignment_not_found' }, 404);
+    }
+    if (!puedeLeerResultado(row, auth)) {
+      return c.json({ error: 'forbidden', code: 'forbidden' }, 403);
+    }
+    // Sin generador no hay certificado (emitirCertificadoViaje lo salta con
+    // `no_shipper`) y tampoco ruta de objeto donde buscarlo.
+    if (!row.certificateIssuedAt || !row.certificatePdfUrl || !row.generadorEmpresaId) {
+      return c.json(
+        {
+          error: 'certificate_not_issued',
+          code: 'certificate_not_issued',
+          message: 'El certificado todavía no fue emitido. Espera unos segundos y reintenta.',
+        },
+        404,
+      );
+    }
+    // Misma ruta de objeto que la descarga del generador: el PDF vive bajo
+    // la empresa generadora, no bajo la transportista.
+    const downloadUrl = await generarSignedUrlPdf({
+      bucket: opts.certConfig.certificatesBucket,
+      empresaId: row.generadorEmpresaId,
+      trackingCode: row.trackingCode,
+      ttlSeconds: 300,
+    });
+    return c.json({
+      download_url: downloadUrl,
+      expires_in_seconds: 300,
+      tracking_code: row.trackingCode,
+    });
   });
 
   app.post('/:id/driver-position', zValidator('json', driverPositionBodySchema), async (c) => {
