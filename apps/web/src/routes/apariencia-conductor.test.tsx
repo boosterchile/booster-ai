@@ -12,6 +12,10 @@ vi.mock('@tanstack/react-router', () => ({
   useSearch: () => searchMock,
 }));
 
+vi.mock('../components/scoring/AssignmentEcoRouteCard.js', () => ({
+  AssignmentEcoRouteCard: () => <section data-testid="assignment-eco-route-card" />,
+}));
+
 vi.mock('../hooks/use-assignment-eco-route.js', () => ({
   useAssignmentEcoRoute: () => ({ data: undefined }),
 }));
