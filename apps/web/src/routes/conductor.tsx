@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -89,6 +89,12 @@ export function ConductorDashboardRoute() {
       {(ctx) => {
         if (ctx.kind !== 'onboarded') {
           return null;
+        }
+        // Gate por rol: la pantalla es del conductor. Un dueño o despachador
+        // que llegue acá (link viejo, URL a mano) vuelve a su shell; el API
+        // igual respondería vacío, pero no tiene por qué ver el panel.
+        if (ctx.me.active_membership?.role !== 'conductor') {
+          return <Navigate to="/app" />;
         }
         return <ConductorDashboardPage me={ctx.me} />;
       }}
@@ -406,6 +412,48 @@ function mapsHref(address: string, coords: LatLng | null): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
 }
 
+/**
+ * Franja de confirmación en la propia tarjeta, en vez del diálogo del
+ * navegador: en la PWA de iOS ese diálogo aparece como alerta del sistema,
+ * sin el estilo de la app, y la respuesta no siempre devuelve el foco a la
+ * página. Dos botones grandes, para operarla con el celular en la mano.
+ */
+function ConfirmacionInline({
+  pregunta,
+  onConfirmar,
+  onCancelar,
+}: {
+  pregunta: string;
+  onConfirmar: () => void;
+  onCancelar: () => void;
+}) {
+  return (
+    <section
+      aria-label="Confirmación"
+      data-testid="confirmacion-inline"
+      className="space-y-3 rounded-md border border-primary-300 bg-primary-50 p-3"
+    >
+      <p className="font-medium text-neutral-900 text-sm">{pregunta}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onConfirmar}
+          className="flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 font-medium text-base text-white transition hover:bg-primary-700"
+        >
+          Sí, confirmar
+        </button>
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="flex items-center justify-center rounded-md border border-neutral-300 bg-white px-4 py-3 font-medium text-base text-neutral-700 transition hover:bg-neutral-100"
+        >
+          No
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function AssignmentCard({
   assignment,
   geoPermission,
@@ -421,6 +469,12 @@ export function AssignmentCard({
   const [entregando, setEntregando] = useState(false);
   const [entregada, setEntregada] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
+  // Acción pendiente de confirmar. Recogida y entrega son irreversibles en
+  // la operación: se confirman antes, para que no las dispare un toque
+  // accidental con el celular en el bolsillo. La confirmación es una franja
+  // dentro de la tarjeta, no un diálogo del navegador: en la PWA de iOS ese
+  // diálogo sale como alerta del sistema, sin estilo y sin devolver el foco.
+  const [confirmando, setConfirmando] = useState<'recogida' | 'entrega' | null>(null);
 
   // Recogida híbrida (T9, medicion-huella-segmento): el geofence del origen
   // —que el API evalúa con cada posición reportada— SUGIERE; el conductor
@@ -473,19 +527,17 @@ export function AssignmentCard({
     iniciarReporte(a.id);
   }, [a.id, fase, geoPermission, hasTeltonika, isWatching, iniciarReporte]);
 
-  async function confirmarRecogida() {
-    if (!window.confirm('¿Confirmas que ya cargaste esta carga en el camión?')) {
-      return;
+  async function ejecutarConfirmacion() {
+    const accion = confirmando;
+    setConfirmando(null);
+    if (accion === 'recogida') {
+      await recogida.confirmar();
+    } else if (accion === 'entrega') {
+      await entregar();
     }
-    await recogida.confirmar();
   }
 
-  async function confirmarEntrega() {
-    // Acción irreversible en la operación: se confirma antes, para que no la
-    // dispare un toque accidental con el celular en el bolsillo.
-    if (!window.confirm('¿Confirmas que entregaste esta carga?')) {
-      return;
-    }
+  async function entregar() {
     setEntregaError(null);
     setEntregando(true);
     try {
@@ -645,16 +697,24 @@ export function AssignmentCard({
             {/* Confirmarla mueve el viaje a `en_proceso`, que es lo que destraba la
                 posición en el link de tracking del destinatario y lo que hace que
                 su empresa deje de ver «Por recoger» en Servicios. */}
-            <button
-              type="button"
-              onClick={() => void confirmarRecogida()}
-              disabled={recogida.recogiendo}
-              data-testid="confirmar-recogida"
-              className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
-            >
-              <PackageCheck className="h-4 w-4" aria-hidden />
-              {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
-            </button>
+            {confirmando === 'recogida' ? (
+              <ConfirmacionInline
+                pregunta="¿Confirmas que ya cargaste esta carga en el camión?"
+                onConfirmar={() => void ejecutarConfirmacion()}
+                onCancelar={() => setConfirmando(null)}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmando('recogida')}
+                disabled={recogida.recogiendo}
+                data-testid="confirmar-recogida"
+                className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
+              >
+                <PackageCheck className="h-4 w-4" aria-hidden />
+                {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+              </button>
+            )}
             <a
               href={mapsHref(a.trip.origin.address_raw, extremos?.origen ?? null)}
               target="_blank"
@@ -678,16 +738,24 @@ export function AssignmentCard({
                 permite `asignado → entregado` y bloquearla castigaría al conductor
                 que olvidó apretar el botón anterior. Pero va como enlace discreto,
                 no como botón grande al lado de la recogida. */}
-            <button
-              type="button"
-              onClick={() => void confirmarEntrega()}
-              disabled={entregando}
-              aria-label="Confirmar entrega sin haber confirmado la recogida"
-              data-testid="entrega-sin-recogida"
-              className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
-            >
-              {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
-            </button>
+            {confirmando === 'entrega' ? (
+              <ConfirmacionInline
+                pregunta="¿Confirmas que entregaste esta carga?"
+                onConfirmar={() => void ejecutarConfirmacion()}
+                onCancelar={() => setConfirmando(null)}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmando('entrega')}
+                disabled={entregando}
+                aria-label="Confirmar entrega sin haber confirmado la recogida"
+                data-testid="entrega-sin-recogida"
+                className="block w-full py-2 text-center text-neutral-500 text-sm underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                {entregando ? 'Confirmando…' : '¿Ya entregaste sin confirmar la recogida?'}
+              </button>
+            )}
           </>
         )}
 
@@ -696,16 +764,24 @@ export function AssignmentCard({
             <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
               Carga recogida. Cuando llegues a destino, confirma la entrega.
             </output>
-            <button
-              type="button"
-              onClick={() => void confirmarEntrega()}
-              disabled={entregando}
-              data-testid="confirmar-entrega"
-              className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
-            >
-              <CheckCircle2 className="h-4 w-4" aria-hidden />
-              {entregando ? 'Confirmando…' : 'Confirmar entrega'}
-            </button>
+            {confirmando === 'entrega' ? (
+              <ConfirmacionInline
+                pregunta="¿Confirmas que entregaste esta carga?"
+                onConfirmar={() => void ejecutarConfirmacion()}
+                onCancelar={() => setConfirmando(null)}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmando('entrega')}
+                disabled={entregando}
+                data-testid="confirmar-entrega"
+                className={`${botonPrimario} bg-success-700 hover:bg-success-800`}
+              >
+                <CheckCircle2 className="h-4 w-4" aria-hidden />
+                {entregando ? 'Confirmando…' : 'Confirmar entrega'}
+              </button>
+            )}
             <a
               href={mapsHref(a.trip.destination.address_raw, extremos?.destino ?? null)}
               target="_blank"

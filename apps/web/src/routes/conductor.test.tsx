@@ -48,6 +48,7 @@ vi.mock('@tanstack/react-router', () => ({
       </a>
     );
   },
+  Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
 }));
 
 const queryDriverPermissionsSpy = vi.fn();
@@ -154,7 +155,20 @@ function makeMe(): MeOnboarded {
       status: 'activo',
     },
     memberships: [],
-    active_membership: null,
+    active_membership: {
+      id: 'm-1',
+      role: 'conductor',
+      status: 'activa',
+      joined_at: null,
+      empresa: {
+        id: 'emp-c',
+        legal_name: 'Transportes Demo Sur S.A.',
+        rut: null,
+        is_generador_carga: false,
+        is_transportista: true,
+        status: 'activa',
+      },
+    },
   } as unknown as MeOnboarded;
 }
 
@@ -208,6 +222,15 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'unmanaged' };
     const { container } = render(<ConductorDashboardRoute />);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('gate por rol: un dueño onboarded NO ve el panel del conductor, va a /app', () => {
+    const me = makeMe();
+    (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
+    providedContext = { kind: 'onboarded', me };
+    render(<ConductorDashboardRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
+    expect(screen.queryByText('Tu próximo servicio')).toBeNull();
   });
 
   it('header muestra full_name del usuario y link a configuración', async () => {
@@ -328,9 +351,9 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByTestId('confirmar-recogida'));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() => expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id));
   });
 
@@ -366,9 +389,9 @@ describe('ConductorDashboardRoute', () => {
       orden.push('patch');
       return { ok: true };
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() => expect(apiPatchSpy).toHaveBeenCalled());
     expect(orden).toEqual(['flush', 'patch']);
   });
@@ -417,9 +440,9 @@ describe('ConductorDashboardRoute', () => {
         verify_url: 'https://api.boosterchile.com/certificates/BOO-ABC123/verify',
       },
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await screen.findByText(/kg CO2e/);
     const panel = screen.getByTestId('resultado-viaje');
     expect(panel).toHaveTextContent(/2,69 kg CO2e|2.69 kg CO2e/);
@@ -463,9 +486,9 @@ describe('ConductorDashboardRoute', () => {
       },
       certificate: null,
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await screen.findByText(/Certificado en proceso/i);
     const panel = screen.getByTestId('resultado-viaje');
     expect(panel).toHaveTextContent(/Certificado en proceso/i);
@@ -478,9 +501,9 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     apiPatchSpy.mockResolvedValue({ ok: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() => expect(reporterStopSpy).toHaveBeenCalled());
   });
 
@@ -586,12 +609,12 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
 
     const btn = await screen.findByRole('button', { name: /Confirmar entrega/i });
     fireEvent.click(btn);
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -600,16 +623,19 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     );
   });
 
-  it('pide confirmación antes de marcar la entrega', async () => {
+  it('pide confirmación inline antes de marcar la entrega; «No» cancela sin PATCH', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
-    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
-
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i })); // sin confirmar
     // Es una acción irreversible en la operación: no puede dispararse por un
-    // toque accidental con el celular en el bolsillo.
+    // toque accidental con el celular en el bolsillo. Y sin window.confirm:
+    // en la PWA de iOS salía como diálogo del sistema, sin estilo ni control.
+    const franja = await screen.findByTestId('confirmacion-inline');
+    expect(franja).toHaveTextContent(/¿Confirmas que entregaste esta carga\?/);
+    expect(apiPatchSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^No$/i }));
+    expect(screen.queryByTestId('confirmacion-inline')).toBeNull();
     expect(apiPatchSpy).not.toHaveBeenCalled();
   });
 
@@ -623,10 +649,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockRejectedValue(new ApiError(409, 'documento_requerido', {}));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').toMatch(/documento|guía|guia|factura/i);
@@ -638,10 +664,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockRejectedValue(new ApiError(409, 'ted_no_decodificado', {}));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').toMatch(/procesando|minutos/i);
@@ -652,10 +678,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockRejectedValue(new TypeError('Failed to fetch'));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').toMatch(/señal|conexión/i);
@@ -667,10 +693,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     apiPatchSpy.mockRejectedValue(
       new ApiError(409, 'invalid_status', { current_status: 'entregado' }),
     );
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar entrega/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').toMatch(/ya .*(entregad|cerrad)/i);
@@ -684,10 +710,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -696,14 +722,16 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     );
   });
 
-  it('pide confirmación antes de marcar la recogida', async () => {
+  it('pide confirmación inline antes de marcar la recogida; «No» cancela sin PATCH', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-
     render(<ConductorDashboardRoute />);
-    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
-
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i })); // sin confirmar
+    const franja = await screen.findByTestId('confirmacion-inline');
+    expect(franja).toHaveTextContent(/¿Confirmas que ya cargaste esta carga en el camión\?/);
+    expect(apiPatchSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^No$/i }));
+    expect(screen.queryByTestId('confirmacion-inline')).toBeNull();
     expect(apiPatchSpy).not.toHaveBeenCalled();
   });
 
@@ -727,12 +755,12 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     const entrega = await screen.findByRole('button', { name: /Confirmar entrega/i });
     expect(entrega).not.toBeDisabled();
     fireEvent.click(entrega);
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -748,7 +776,6 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const cruce = '2026-08-02T09:30:00.000Z';
     reporterState = {
       ...reporterState,
@@ -762,6 +789,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     const sugerencia = await screen.findByTestId('sugerencia-recogida');
     expect(sugerencia.textContent ?? '').toMatch(/punto de recogida/i);
     fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
@@ -775,7 +803,6 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockResolvedValue({ ok: true, already_picked_up: false });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     reporterState = {
       ...reporterState,
       isWatching: true,
@@ -787,6 +814,7 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
 
     expect(screen.queryByTestId('sugerencia-recogida')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
     await waitFor(() =>
       expect(apiPatchSpy).toHaveBeenCalledWith(
         `/assignments/${sampleAssignment.id}/confirmar-recogida`,
@@ -798,10 +826,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     apiPatchSpy.mockRejectedValue(new ApiError(409, 'invalid_status', {}));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<ConductorDashboardRoute />);
     fireEvent.click(await screen.findByRole('button', { name: /Confirmar recogida/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
 
     const alerta = await screen.findByRole('alert');
     expect(alerta.textContent ?? '').not.toMatch(/señal|senal/i);

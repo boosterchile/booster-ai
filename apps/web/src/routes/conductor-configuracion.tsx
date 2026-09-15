@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, Navigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -6,8 +6,6 @@ import {
   HelpCircle,
   Info,
   LogOut,
-  Mic,
-  MicOff,
   Navigation,
   NavigationOff,
   Radio,
@@ -24,7 +22,6 @@ import {
   type PermissionStatus,
   queryDriverPermissions,
   requestGeolocationPermission,
-  requestMicrophonePermission,
 } from '../services/driver-mode-permissions.js';
 import { isWakeWordEnabled, setWakeWordEnabled } from '../services/wake-word-preference.js';
 
@@ -48,14 +45,16 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  *      en voz alta sin que el conductor toque nada (gated por vehículo
  *      parado). OFF = mute, requiere tap manual del play.
  *
- *   2. **Permisos del navegador** — estado actual de mic + GPS con
- *      botones "Permitir" cuando están en `prompt`. Si están `denied`,
- *      muestra instrucción de habilitarlo en settings del browser.
+ *   2. **Permisos del navegador** — estado actual del GPS con botón
+ *      "Permitir" cuando está en `prompt`. Si está `denied`, muestra la
+ *      instrucción de habilitarlo en settings del browser. El micrófono
+ *      ya no se pide acá: /app/conductor no monta ningún control de voz
+ *      (los intents por voz viven en las feature cards de ofertas e
+ *      incidentes, que no están en el panel del conductor), y pedirlo
+ *      confundía —en iOS reaparecía el prompt en cada sesión.
  *
- *   3. **Comandos de voz disponibles** — lista de los 4 intents con
- *      las frases que disparan cada uno. Lectura — el "probar mic" real
- *      vive dentro de cada feature card (DeliveryConfirmCard,
- *      IncidentReportCard, VoiceAcceptOfferControl).
+ *   3. **Activación por voz** — wake-word «Oye Booster» (ADR-036),
+ *      detrás de feature flag.
  *
  *   4. **Cómo funciona** — explainer breve del flujo: detección de
  *      vehículo parado (histeresis 3/8 km/h, HOLD_MS=4000ms), doble
@@ -74,6 +73,11 @@ export function ConductorConfiguracionRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
+        // Gate por rol, igual que /app/conductor: esta configuración es del
+        // conductor; cualquier otro rol vuelve a su shell.
+        if (ctx.me.active_membership?.role !== 'conductor') {
+          return <Navigate to="/app" />;
+        }
         return <ConductorConfiguracionPage me={ctx.me} />;
       }}
     </ProtectedRoute>
@@ -86,7 +90,6 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
     mic: 'unknown',
     geo: 'unknown',
   });
-  const [requestingMic, setRequestingMic] = useState(false);
   const [requestingGeo, setRequestingGeo] = useState(false);
 
   // Initial query de permisos al montar. No dispara prompts — solo lee
@@ -112,16 +115,6 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
   function handleAutoplayToggle(checked: boolean) {
     setAutoplayEnabled(checked);
     saveAutoplayPreference(checked);
-  }
-
-  async function handleRequestMic() {
-    setRequestingMic(true);
-    try {
-      const newStatus = await requestMicrophonePermission();
-      setPermissions((prev) => ({ ...prev, mic: newStatus }));
-    } finally {
-      setRequestingMic(false);
-    }
   }
 
   async function handleRequestGeo() {
@@ -156,21 +149,18 @@ function ConductorConfiguracionPage({ me: _me }: { me: MeOnboarded }) {
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <p className="max-w-xl text-neutral-600 text-sm">
-          Configura una sola vez antes de manejar. Activamos audio, voz y GPS para que puedas operar
-          la app sin tocar la pantalla mientras conduces.
+          Configura una sola vez antes de manejar. Con el audio y el GPS activos la app te avisa
+          sola y mide el viaje sin que tengas que tocar la pantalla.
         </p>
 
         <div className="mt-6 space-y-4">
           <AutoplayCard enabled={autoplayEnabled} onChange={handleAutoplayToggle} />
           <PermissionsCard
             permissions={permissions}
-            onRequestMic={handleRequestMic}
             onRequestGeo={handleRequestGeo}
-            requestingMic={requestingMic}
             requestingGeo={requestingGeo}
           />
           <WakeWordCard />
-          <VoiceCommandsReferenceCard />
           <HowItWorksCard />
         </div>
 
@@ -242,7 +232,7 @@ function AutoplayCard({ enabled, onChange }: AutoplayCardProps) {
             </span>
           </label>
 
-          <p className="mt-2 flex items-start gap-1.5 text-sm text-neutral-500">
+          <p className="mt-2 flex items-start gap-1.5 text-neutral-500 text-sm">
             <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
             Por seguridad, solo arranca cuando el vehículo está detenido (≤3 km/h por 4 s). Si
             comienzas a moverte se pausa.
@@ -259,19 +249,14 @@ function AutoplayCard({ enabled, onChange }: AutoplayCardProps) {
 
 interface PermissionsCardProps {
   permissions: PermissionState;
-  onRequestMic: () => void;
   onRequestGeo: () => void;
-  requestingMic: boolean;
   requestingGeo: boolean;
 }
 
-function PermissionsCard({
-  permissions,
-  onRequestMic,
-  onRequestGeo,
-  requestingMic,
-  requestingGeo,
-}: PermissionsCardProps) {
+// Solo GPS. El micrófono se pedía para comandos de voz que la app del
+// conductor no ejecuta (no hay ningún control de voz montado en
+// /app/conductor); pedirlo confundía y, en iOS, reaparecía en cada sesión.
+function PermissionsCard({ permissions, onRequestGeo, requestingGeo }: PermissionsCardProps) {
   return (
     <section
       aria-label="Permisos del navegador"
@@ -280,26 +265,11 @@ function PermissionsCard({
     >
       <h2 className="font-semibold text-base text-neutral-900">Permisos del navegador</h2>
       <p className="mt-1 text-neutral-600 text-sm">
-        Booster necesita acceso al micrófono (para los comandos de voz) y al GPS (para detectar
-        cuándo estás detenido y reproducir audio de forma segura).
+        Booster necesita acceso al GPS para medir el viaje cuando el camión no tiene equipo
+        instalado y para reproducir audio solo cuando estás detenido.
       </p>
 
       <div className="mt-4 space-y-3">
-        <PermissionRow
-          icon={
-            permissions.mic === 'granted' ? (
-              <Mic className="h-5 w-5 text-success-700" aria-hidden />
-            ) : (
-              <MicOff className="h-5 w-5 text-neutral-500" aria-hidden />
-            )
-          }
-          name="Micrófono"
-          status={permissions.mic}
-          purpose='Para decir "aceptar oferta", "confirmar entrega", "marcar incidente".'
-          onRequest={onRequestMic}
-          requesting={requestingMic}
-          testIdPrefix="mic"
-        />
         <PermissionRow
           icon={
             permissions.geo === 'granted' ? (
@@ -409,44 +379,6 @@ function StatusBadge({ status }: { status: PermissionStatus }) {
 }
 
 // ---------------------------------------------------------------------------
-// Card: Comandos de voz disponibles
-// ---------------------------------------------------------------------------
-
-interface VoiceCommandEntry {
-  intent: string;
-  title: string;
-  phrases: string[];
-  context: string;
-}
-
-const VOICE_COMMANDS: VoiceCommandEntry[] = [
-  {
-    intent: 'aceptar_oferta',
-    title: 'Aceptar oferta',
-    phrases: ['aceptar oferta', 'tomar oferta', 'acepto la oferta'],
-    context: 'En la pantalla de Ofertas, cuando hay una sola oferta pendiente.',
-  },
-  {
-    intent: 'confirmar_entrega',
-    title: 'Confirmar entrega',
-    phrases: ['confirmar entrega', 'ya entregué', 'entrega confirmada'],
-    context: 'En el detalle de la asignación, después de descargar la mercadería.',
-  },
-  {
-    intent: 'marcar_incidente',
-    title: 'Marcar incidente',
-    phrases: ['incidente', 'reportar problema', 'tengo un problema'],
-    context: 'Cualquier momento del viaje. Luego eliges el tipo (accidente, demora, etc.).',
-  },
-  {
-    intent: 'cancelar',
-    title: 'Cancelar',
-    phrases: ['cancelar', 'detente', 'olvídalo'],
-    context: 'Si dijiste algo por error y aún no se procesó, abortas la acción.',
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Card: Activación por voz (ADR-036 — wake-word "Oye Booster")
 // ---------------------------------------------------------------------------
 
@@ -517,7 +449,7 @@ function WakeWordCard() {
             </div>
           )}
 
-          <div className="mt-3 space-y-1 text-sm text-neutral-500">
+          <div className="mt-3 space-y-1 text-neutral-500 text-sm">
             <p className="flex items-start gap-1.5">
               <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
               Hoy la app no usa el micrófono por su cuenta: solo se abre cuando tú tocas el botón de
@@ -530,50 +462,6 @@ function WakeWordCard() {
               apagarse la pantalla o al cambiar de pestaña.
             </p>
           </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function VoiceCommandsReferenceCard() {
-  return (
-    <section
-      aria-label="Comandos de voz disponibles"
-      className="rounded-lg border border-neutral-200 bg-white p-5"
-      data-testid="voice-commands-card"
-    >
-      <div className="flex items-start gap-3">
-        <Mic className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
-        <div className="flex-1">
-          <h2 className="font-semibold text-base text-neutral-900">Comandos de voz disponibles</h2>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Cada acción crítica del viaje se puede ejecutar diciéndola en voz alta. Mantén
-            presionado el botón del micrófono en la card correspondiente y dí la frase.
-          </p>
-
-          <ul className="mt-4 space-y-3">
-            {VOICE_COMMANDS.map((cmd) => (
-              <li
-                key={cmd.intent}
-                className="rounded-md border border-neutral-100 bg-neutral-50 p-3"
-                data-testid={`voice-cmd-${cmd.intent}`}
-              >
-                <p className="font-medium text-neutral-900 text-sm">{cmd.title}</p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {cmd.phrases.map((p) => (
-                    <span
-                      key={p}
-                      className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-sm text-neutral-700 ring-1 ring-neutral-200"
-                    >
-                      "{p}"
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-2 text-neutral-600 text-xs">{cmd.context}</p>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
     </section>
