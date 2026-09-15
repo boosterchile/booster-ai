@@ -23,8 +23,10 @@ vi.mock('../hooks/use-driver-position-reporter.js', () => ({
     lastError: null,
     pointsSent: 0,
     lastGeofence: null,
+    queued: 0,
     start: vi.fn(),
     stop: vi.fn(),
+    flush: vi.fn(async () => ({ enviados: 0, restantes: 0 })),
   }),
 }));
 

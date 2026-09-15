@@ -83,6 +83,7 @@ vi.mock('../services/wake-word-preference.js', () => ({
 
 const reporterStartSpy = vi.fn();
 const reporterStopSpy = vi.fn();
+const reporterFlushSpy = vi.fn(async () => ({ enviados: 0, restantes: 0 }));
 type GeofenceLectura = import('../hooks/use-driver-position-reporter.js').GeofenceLectura;
 let reporterState = {
   isWatching: false,
@@ -90,8 +91,10 @@ let reporterState = {
   lastError: null as string | null,
   pointsSent: 0,
   lastGeofence: null as GeofenceLectura | null,
+  queued: 0,
   start: reporterStartSpy,
   stop: reporterStopSpy,
+  flush: reporterFlushSpy,
 };
 
 vi.mock('../hooks/use-driver-position-reporter.js', () => ({
@@ -168,9 +171,12 @@ beforeEach(() => {
     lastError: null,
     pointsSent: 0,
     lastGeofence: null,
+    queued: 0,
     start: reporterStartSpy,
     stop: reporterStopSpy,
+    flush: reporterFlushSpy,
   };
+  reporterFlushSpy.mockClear();
   queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
   apiGetSpy.mockResolvedValue({ assignments: [] });
   ecoRouteState = {};
@@ -322,6 +328,34 @@ describe('ConductorDashboardRoute', () => {
     reporterStartSpy.mockClear();
     fireEvent.click(retry);
     expect(reporterStartSpy).toHaveBeenCalledWith(sampleAssignment.id);
+  });
+
+  it('con cola pendiente muestra cuántas posiciones esperan señal', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 3, queued: 4 };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText(/4 pendientes de envío/)).toBeInTheDocument();
+  });
+
+  it('confirmar la entrega DRENA la cola antes del PATCH (las posiciones sin señal cuentan)', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 3, queued: 2 };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    const orden: string[] = [];
+    reporterFlushSpy.mockImplementation(async () => {
+      orden.push('flush');
+      return { enviados: 2, restantes: 0 };
+    });
+    apiPatchSpy.mockImplementation(async () => {
+      orden.push('patch');
+      return { ok: true };
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Confirmar entrega$/i }));
+    await waitFor(() => expect(apiPatchSpy).toHaveBeenCalled());
+    expect(orden).toEqual(['flush', 'patch']);
   });
 
   it('confirmar la entrega detiene el reporte del teléfono', async () => {
