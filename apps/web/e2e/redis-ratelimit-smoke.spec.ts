@@ -38,7 +38,9 @@ test.describe('redis rate-limit prod smoke', () => {
   }) => {
     // 1. Smoke de browser: la PWA y la pantalla de conductor cargan.
     await page.goto('/login/conductor');
-    await expect(page.getByRole('heading', { name: 'Acceso conductor' })).toBeVisible();
+    // Desde ADR-035 (login universal) /login/conductor es la ACTIVACIÓN del
+    // conductor y su título es «Activa tu cuenta» (antes «Acceso conductor»).
+    await expect(page.getByRole('heading', { name: 'Activa tu cuenta' })).toBeVisible();
 
     // 2. Ejercita el path Redis: 6 POST seguidos (límite = 5/15min por RUT).
     const statuses: number[] = [];

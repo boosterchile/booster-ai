@@ -32,6 +32,7 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
 }));
 
 const queryDriverPermissionsSpy = vi.fn();
@@ -100,7 +101,20 @@ function makeMe(): MeOnboarded {
       status: 'activo',
     },
     memberships: [],
-    active_membership: null,
+    active_membership: {
+      id: 'm-1',
+      role: 'conductor',
+      status: 'activa',
+      joined_at: null,
+      empresa: {
+        id: 'emp-c',
+        legal_name: 'Transportes Demo Sur S.A.',
+        rut: null,
+        is_generador_carga: false,
+        is_transportista: true,
+        status: 'activa',
+      },
+    },
   } as unknown as MeOnboarded;
 }
 
@@ -128,13 +142,13 @@ describe('ConductorConfiguracionRoute', () => {
     expect(screen.getByRole('banner')).toHaveClass('pt-safe');
   });
 
-  it('contexto onboarded → renderiza las 5 cards de configuración', async () => {
+  it('contexto onboarded → renderiza las 4 cards de configuración (sin comandos de voz)', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<ConductorConfiguracionRoute />);
     expect(screen.getByTestId('autoplay-card')).toBeInTheDocument();
     expect(screen.getByTestId('permissions-card')).toBeInTheDocument();
     expect(screen.getByTestId('wake-word-card')).toBeInTheDocument();
-    expect(screen.getByTestId('voice-commands-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('voice-commands-card')).toBeNull();
     expect(screen.getByTestId('how-it-works-card')).toBeInTheDocument();
     await waitFor(() => expect(queryDriverPermissionsSpy).toHaveBeenCalled());
   });
@@ -257,9 +271,7 @@ describe('ConductorConfiguracionRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'granted', geo: 'granted' });
     render(<ConductorConfiguracionRoute />);
-    await waitFor(() => expect(screen.getByTestId('mic-granted-pill')).toBeInTheDocument());
-    expect(screen.getByTestId('geo-granted-pill')).toBeInTheDocument();
-    expect(screen.queryByTestId('mic-request-btn')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('geo-granted-pill')).toBeInTheDocument());
     expect(screen.queryByTestId('geo-request-btn')).not.toBeInTheDocument();
   });
 
@@ -267,19 +279,7 @@ describe('ConductorConfiguracionRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     queryDriverPermissionsSpy.mockResolvedValue({ mic: 'denied', geo: 'denied' });
     render(<ConductorConfiguracionRoute />);
-    await waitFor(() => expect(screen.getByTestId('mic-denied-help')).toBeInTheDocument());
-    expect(screen.getByTestId('geo-denied-help')).toBeInTheDocument();
-  });
-
-  it('click "Permitir" del mic dispara requestMicrophonePermission y actualiza estado', async () => {
-    providedContext = { kind: 'onboarded', me: makeMe() };
-    queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
-    requestMicrophonePermissionSpy.mockResolvedValue('granted');
-    render(<ConductorConfiguracionRoute />);
-    await waitFor(() => expect(screen.getByTestId('mic-request-btn')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('mic-request-btn'));
-    await waitFor(() => expect(requestMicrophonePermissionSpy).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByTestId('mic-granted-pill')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('geo-denied-help')).toBeInTheDocument());
   });
 
   it('click "Permitir" del GPS dispara requestGeolocationPermission y actualiza estado', async () => {
@@ -293,14 +293,24 @@ describe('ConductorConfiguracionRoute', () => {
     await waitFor(() => expect(screen.getByTestId('geo-granted-pill')).toBeInTheDocument());
   });
 
-  it('muestra los 4 comandos de voz con sus frases canónicas', () => {
+  it('no ofrece comandos de voz ni pide micrófono: en /app/conductor no hay ningún control de voz montado', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
+    queryDriverPermissionsSpy.mockResolvedValue({ mic: 'prompt', geo: 'prompt' });
     render(<ConductorConfiguracionRoute />);
-    expect(screen.getByTestId('voice-cmd-aceptar_oferta')).toBeInTheDocument();
-    expect(screen.getByTestId('voice-cmd-confirmar_entrega')).toBeInTheDocument();
-    expect(screen.getByTestId('voice-cmd-marcar_incidente')).toBeInTheDocument();
-    expect(screen.getByTestId('voice-cmd-cancelar')).toBeInTheDocument();
-    expect(screen.getAllByText(/"aceptar oferta"/i).length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => expect(screen.getByTestId('geo-request-btn')).toBeInTheDocument());
+    expect(screen.queryByTestId('voice-commands-card')).toBeNull();
+    expect(screen.queryByTestId('mic-request-btn')).toBeNull();
+    expect(screen.getByTestId('permissions-card')).not.toHaveTextContent(/micrófono/i);
+    expect(screen.queryByText(/Activamos audio, voz y GPS/)).toBeNull();
+  });
+
+  it('gate por rol: un dueño onboarded no entra a la configuración del conductor, va a /app', () => {
+    const me = makeMe();
+    (me as unknown as { active_membership: { role: string } }).active_membership.role = 'dueno';
+    providedContext = { kind: 'onboarded', me };
+    render(<ConductorConfiguracionRoute />);
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/app');
+    expect(screen.queryByTestId('autoplay-card')).toBeNull();
   });
 
   it('muestra explainer del flujo en how-it-works card', () => {
