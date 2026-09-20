@@ -7,16 +7,19 @@ import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { api } from '../lib/api-client.js';
+import { type PositionSource, etaLine, positionSourceLabel } from '../lib/live-tracking.js';
 
 /**
  * /app/cargas/:id/track — pantalla full-screen estilo Uber para que el
  * shipper vea EN TIEMPO REAL dónde va su carga.
  *
- * Backend: GET /trip-requests-v2/:id ya devuelve assignment.ubicacion_actual
- * (último punto del vehículo asignado) — ver routes/trip-requests-v2.ts.
+ * Backend: GET /trip-requests-v2/:id devuelve assignment.ubicacion_actual
+ * (última posición viva: GPS del vehículo si reportó hace <30 min o, si no,
+ * teléfono del conductor), assignment.position_source y assignment.eta_minutes
+ * — ver routes/trip-requests-v2.ts y `.specs/tracking-live-unificado/`.
  *
- * Si no hay asignación todavía o el vehículo no tiene Teltonika, fallback
- * a "Sin posición GPS aún" del LiveTrackingScreen.
+ * Si no hay asignación todavía o nadie reporta posición fresca, fallback a
+ * "Sin posición GPS aún" del LiveTrackingScreen.
  */
 interface TripDetailResponse {
   trip_request: {
@@ -41,6 +44,9 @@ interface TripDetailResponse {
       speed_kmh: number | null;
       angle_deg: number | null;
     } | null;
+    /** Opcionales: un API anterior a `tracking-live-unificado` no los envía. */
+    position_source?: PositionSource | null;
+    eta_minutes?: number | null;
   } | null;
 }
 
@@ -73,6 +79,8 @@ function CargaTrackPage() {
   const assignment = tripQ.data?.assignment;
   const ubicacion = assignment?.ubicacion_actual;
   const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
+  const hasPos = ubicacion?.latitude != null && ubicacion?.longitude != null;
+  const sourceLabel = positionSourceLabel(assignment?.position_source);
 
   return (
     <>
@@ -96,24 +104,34 @@ function CargaTrackPage() {
         onRefresh={() => void tripQ.refetch()}
         bottomExtra={
           assignment ? (
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <div className="flex items-center gap-2 text-neutral-700">
-                <Building2 className="h-4 w-4 text-neutral-500" aria-hidden />
-                <span>{assignment.empresa_legal_name ?? '—'}</span>
-              </div>
-              {assignment.driver_name && (
-                <div className="flex items-center gap-2 text-neutral-700">
-                  <UserIcon className="h-4 w-4 text-neutral-500" aria-hidden />
-                  <span>{assignment.driver_name}</span>
+            <div className="space-y-2">
+              {hasPos && (
+                <div>
+                  <p className="font-semibold text-neutral-900 text-sm">
+                    {etaLine(assignment.eta_minutes)}
+                  </p>
+                  {sourceLabel && <p className="text-neutral-600 text-xs">{sourceLabel}</p>}
                 </div>
               )}
-              <Link
-                to="/app/cargas/$id"
-                params={{ id }}
-                className="rounded-md border border-neutral-300 px-3 py-1 font-medium text-neutral-700 text-xs transition hover:bg-neutral-100"
-              >
-                Ver detalle
-              </Link>
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <div className="flex items-center gap-2 text-neutral-700">
+                  <Building2 className="h-4 w-4 text-neutral-500" aria-hidden />
+                  <span>{assignment.empresa_legal_name ?? '—'}</span>
+                </div>
+                {assignment.driver_name && (
+                  <div className="flex items-center gap-2 text-neutral-700">
+                    <UserIcon className="h-4 w-4 text-neutral-500" aria-hidden />
+                    <span>{assignment.driver_name}</span>
+                  </div>
+                )}
+                <Link
+                  to="/app/cargas/$id"
+                  params={{ id }}
+                  className="rounded-md border border-neutral-300 px-3 py-1 font-medium text-neutral-700 text-xs transition hover:bg-neutral-100"
+                >
+                  Ver detalle
+                </Link>
+              </div>
             </div>
           ) : tripQ.isLoading ? null : (
             <div className="text-center text-neutral-600 text-sm">

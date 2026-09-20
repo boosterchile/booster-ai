@@ -2,6 +2,8 @@
  * Endpoint público para tracking del shipper / consignee (Phase 5 PR-L1).
  *
  * GET /public/tracking/:token  → estado del trip + posición reciente
+ *   (Teltonika fresco o, si no, móvil del conductor; `position_source` dice
+ *   cuál — `.specs/tracking-live-unificado/`)
  *
  * **No requiere auth** — la defensa es la opacidad del token. El handler
  * NUNCA expone:
@@ -53,7 +55,8 @@ export function createPublicTrackingRoutes(opts: {
     }
 
     // Cache 30s en CDN/browser. El position se actualiza cada ~30s
-    // típicamente (Teltonika emite cada 10-30s en movimiento), y queremos
+    // típicamente (Teltonika emite cada 10-30s en movimiento; el móvil del
+    // conductor cada 10-25s), y queremos
     // evitar bombardeo si el consignee abre el link y refresh repetido.
     c.header('Cache-Control', 'public, max-age=30');
 

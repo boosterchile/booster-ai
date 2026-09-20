@@ -39,6 +39,7 @@ import {
   usePublicTracking,
 } from '../hooks/use-public-tracking.js';
 import { ApiError } from '../lib/api-client.js';
+import { etaLine, positionSourceLabel } from '../lib/live-tracking.js';
 
 export function PublicTrackingRoute() {
   const { token } = useParams({ strict: false }) as { token: string };
@@ -137,7 +138,13 @@ function TrackingContent({
       <RouteCard data={data} />
       <VehicleCard data={data} />
       <PositionCard data={data} />
-      {data.progress && <ProgressCard progress={data.progress} />}
+      {data.progress && (
+        <ProgressCard
+          progress={data.progress}
+          etaMinutes={data.eta_minutes}
+          hasPosition={data.position !== null}
+        />
+      )}
       <Footer />
     </div>
   );
@@ -282,6 +289,7 @@ function PositionCard({ data }: { data: PublicTrackingFoundResponse }) {
     data.position.speed_kmh !== null && data.position.speed_kmh > 0
       ? `${data.position.speed_kmh} km/h`
       : 'detenido';
+  const sourceLabel = positionSourceLabel(data.position_source);
 
   return (
     <section
@@ -297,6 +305,7 @@ function PositionCard({ data }: { data: PublicTrackingFoundResponse }) {
           <p className="mt-1 font-mono text-neutral-900 text-xs">
             {data.position.latitude.toFixed(5)}, {data.position.longitude.toFixed(5)}
           </p>
+          {sourceLabel && <p className="mt-1 text-neutral-600 text-xs">{sourceLabel}</p>}
           <a
             href={mapsUrl}
             target="_blank"
@@ -313,8 +322,12 @@ function PositionCard({ data }: { data: PublicTrackingFoundResponse }) {
 
 function ProgressCard({
   progress,
+  etaMinutes,
+  hasPosition,
 }: {
   progress: NonNullable<PublicTrackingFoundResponse['progress']>;
+  etaMinutes: number | null;
+  hasPosition: boolean;
 }) {
   return (
     <section
@@ -326,6 +339,9 @@ function ProgressCard({
         <Gauge className="mt-0.5 h-5 w-5 shrink-0 text-neutral-500" aria-hidden />
         <div className="flex-1 space-y-2">
           <p className="font-semibold text-neutral-500 text-xs uppercase tracking-wide">Progreso</p>
+          {hasPosition && (
+            <p className="font-semibold text-neutral-900 text-sm">{etaLine(etaMinutes)}</p>
+          )}
           {progress.avg_speed_kmh_last_15min !== null && (
             <p className="text-neutral-700 text-sm">
               Velocidad promedio (últimos 15 min):{' '}

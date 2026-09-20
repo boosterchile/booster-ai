@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api-client.js';
+import type { PositionSource } from '../lib/live-tracking.js';
 
 /**
  * Hook que consume el endpoint público de tracking del consignee/shipper
@@ -44,6 +45,11 @@ export interface PublicTrackingFoundResponse {
     plate_partial: string;
   };
   position: PublicTrackingPosition | null;
+  /**
+   * Fuente de `position`: GPS del vehículo o teléfono del conductor. Opcional:
+   * un API anterior a `tracking-live-unificado` no lo envía.
+   */
+  position_source?: PositionSource | null;
   /** Opcional — disponible cuando #121 merge. */
   progress?: PublicTrackingProgress;
   eta_minutes: number | null;
