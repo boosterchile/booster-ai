@@ -12,7 +12,10 @@
  *   - `ColaPosiciones`: FIFO persistida en localStorage por asignación. Lo que
  *     no se pudo enviar (sin señal) queda con su `timestamp_device` original y
  *     se reenvía en orden; el servidor calcula cobertura con ese timestamp, así
- *     que un tramo sin señal NO queda como hueco.
+ *     que un tramo sin señal NO queda como hueco. Un punto que el API rechaza
+ *     para siempre (400/422, o `accuracy_m` fuera del tope) se descarta y el
+ *     drenaje sigue: un ping grosero no puede congelar los válidos de detrás
+ *     (BOO-KJHITL, `.specs/gps-cola-rechazo-no-bloquea/`).
  */
 import type { DriverPositionInput, DriverPositionResponse } from './driver-position.js';
 
@@ -86,10 +89,15 @@ export interface OpcionesCola {
 export interface ResultadoDrenaje {
   enviados: number;
   restantes: number;
-  /** Por qué paró antes de vaciar: fallo de red (se reintenta después) o
+  /** Cabezas tiradas por no enviables o por 400/422 del API. */
+  descartados: number;
+  /** Por qué paró antes de vaciar: fallo transitorio (se reintenta después) o
    *  asignación cerrada (409, la cola se descarta). `null` = vació todo. */
   detenido: null | 'fallo' | 'asignacion_cerrada';
 }
+
+/** Tope de `accuracy_m` en POST /assignments/:id/driver-position (Zod `.max`). */
+export const ACCURACY_M_MAX = 10_000;
 
 export const COLA_TOPE_DEFAULT = 3000;
 
@@ -100,6 +108,39 @@ export function esAsignacionCerrada(err: unknown): boolean {
   }
   const e = err as { status?: unknown; code?: unknown };
   return e.status === 409 && e.code === 'assignment_not_active';
+}
+
+/** 400/422: el punto no va a pasar aunque reintentemos (validación Zod). */
+export function esRechazoPermanente(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+  const e = err as { status?: unknown };
+  return e.status === 400 || e.status === 422;
+}
+
+/**
+ * Espejo del body Zod de `POST /assignments/:id/driver-position`.
+ * `accuracy_m` ausente o nulo es válido; si viene, `0 < x ≤ 10_000`.
+ * Un radio de miles de km hace las coords inútiles: se tira el punto entero,
+ * no se manda sin `accuracy_m`.
+ */
+export function esPuntoEnviable(p: PuntoEnCola): boolean {
+  if (!Number.isFinite(p.latitude) || p.latitude < -90 || p.latitude > 90) {
+    return false;
+  }
+  if (!Number.isFinite(p.longitude) || p.longitude < -180 || p.longitude > 180) {
+    return false;
+  }
+  if (!Number.isFinite(Date.parse(p.timestamp_device))) {
+    return false;
+  }
+  if (p.accuracy_m != null) {
+    if (!Number.isFinite(p.accuracy_m) || p.accuracy_m <= 0 || p.accuracy_m > ACCURACY_M_MAX) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function almacenPorDefecto(): AlmacenCola | null {
@@ -145,12 +186,17 @@ export class ColaPosiciones {
     return this.items[0] ?? null;
   }
 
-  encolar(punto: PuntoEnCola): void {
+  /** `false` si el punto no es enviable: no entra a la cola. */
+  encolar(punto: PuntoEnCola): boolean {
+    if (!esPuntoEnviable(punto)) {
+      return false;
+    }
     this.items.push(punto);
     if (this.items.length > this.tope) {
       this.items.splice(0, this.items.length - this.tope);
     }
     this.persistir();
+    return true;
   }
 
   vaciar(): void {
@@ -158,32 +204,46 @@ export class ColaPosiciones {
     this.persistir();
   }
 
-  /** Envía en orden (el más viejo primero). Se detiene en el primer fallo y
-   *  conserva el resto; ante 409 asignación cerrada descarta todo. */
+  /** Envía en orden (el más viejo primero). Se detiene en el primer fallo
+   *  transitorio y conserva el resto; 400/422 o punto no enviable tiran la
+   *  cabeza y siguen; 409 asignación cerrada descarta todo. */
   async drenar(
     enviar: (punto: PuntoEnCola) => Promise<DriverPositionResponse>,
   ): Promise<ResultadoDrenaje> {
     let enviados = 0;
+    let descartados = 0;
     while (this.items.length > 0) {
       const punto = this.items[0];
       if (!punto) {
         break;
+      }
+      if (!esPuntoEnviable(punto)) {
+        this.items.shift();
+        descartados += 1;
+        this.persistir();
+        continue;
       }
       try {
         await enviar(punto);
       } catch (err) {
         if (esAsignacionCerrada(err)) {
           this.vaciar();
-          return { enviados, restantes: 0, detenido: 'asignacion_cerrada' };
+          return { enviados, restantes: 0, descartados, detenido: 'asignacion_cerrada' };
+        }
+        if (esRechazoPermanente(err)) {
+          this.items.shift();
+          descartados += 1;
+          this.persistir();
+          continue;
         }
         this.persistir();
-        return { enviados, restantes: this.items.length, detenido: 'fallo' };
+        return { enviados, restantes: this.items.length, descartados, detenido: 'fallo' };
       }
       this.items.shift();
       enviados += 1;
     }
     this.persistir();
-    return { enviados, restantes: 0, detenido: null };
+    return { enviados, restantes: 0, descartados, detenido: null };
   }
 
   private leer(): PuntoEnCola[] {
