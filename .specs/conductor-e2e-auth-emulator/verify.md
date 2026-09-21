@@ -45,7 +45,7 @@ seed T2 conductor E2E listo
 
 - Flujo: login T2 → `/app/conductor` → `POST …/driver-position` → confirmar recogida → confirmar entrega → resultado visible.
 - Gate rol: dueño generador en `/app/conductor` vuelve a `/app`.
-- **CI**: el mismo target corre en el job `e2e-conductor` de `.github/workflows/e2e-pr.yml`.
+- **CI**: el mismo target corre en el job `e2e-conductor-run` de `.github/workflows/e2e-pr.yml`. El check `E2E conductor (Auth emulator + API local)` se publica en todo PR a `main` (skip documentado si el diff no toca superficie E2E) y queda listo para required en branch protection; Slot 3 CI cierra tras ese setting (ops humana de GitHub).
 
 ## 3. Certificado (FAIL_ENV honesto)
 

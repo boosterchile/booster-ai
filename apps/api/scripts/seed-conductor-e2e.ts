@@ -3,7 +3,9 @@
  *
  * Idempotente: upsert de empresas/usuarios/membresía/vehículo por RUT
  * canónico; cancela asignaciones E2E viejas (`codigo_seguimiento` LIKE
- * 'E2E%'); inserta un viaje `asignado` sin Teltonika.
+ * 'E2E%'); cancela leftovers activos del conductor T2 que no son el
+ * viaje E2E de esta corrida (`asignado|recogido`); inserta un viaje
+ * `asignado` sin Teltonika.
  *
  * Credenciales (referencia smoke del PO):
  *   Gen 72727272-0 · Tra 70707070-6 · Cond 71717171-3 · clave 482913
@@ -19,7 +21,7 @@
 process.env.FIREBASE_AUTH_EMULATOR_HOST ??= '127.0.0.1:9099';
 
 import { createLogger } from '@booster-ai/logger';
-import { eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import {
@@ -33,6 +35,12 @@ import {
   vehicles,
 } from '../src/db/schema.js';
 import { hashClaveNumerica } from '../src/services/clave-numerica.js';
+import {
+  ACTIVE_ASSIGNMENT_STATUSES,
+  isLeftoverActiveAssignment,
+  leftoverCancellationPatch,
+  requireSafeDatabaseUrl,
+} from './seed-conductor-e2e-cleanup.js';
 
 const CLAVE = '482913';
 const RUT_GEN = '72727272-0';
@@ -48,18 +56,7 @@ const logger = createLogger({
 });
 
 function requireDatabaseUrl(): string {
-  const url = process.env.DATABASE_URL ?? process.env.TEST_DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      'DATABASE_URL (o TEST_DATABASE_URL) no está definido. El seed T2 no corre contra una URL implícita.',
-    );
-  }
-  if (/prod|staging/i.test(url)) {
-    throw new Error(
-      `DATABASE_URL parece prod/staging. Aborto. URL: ${url.replace(/:[^:@]*@/, ':***@')}`,
-    );
-  }
-  return url;
+  return requireSafeDatabaseUrl(process.env.DATABASE_URL ?? process.env.TEST_DATABASE_URL);
 }
 
 function trackingCode(): string {
@@ -315,6 +312,41 @@ async function main(): Promise<void> {
         .update(assignments)
         .set({ status: 'cancelado' })
         .where(inArray(assignments.tripId, e2eTripIds));
+    }
+
+    // Smoke local: el conductor T2 puede tener asignaciones activas de
+    // viajes que no son E2E (tracking ≠ E2E%). El dashboard las lista
+    // junto a la de esta corrida y el Playwright flakea (confirmar-recogida
+    // no aparece o apunta al leftover).
+    const activeOfDriver = await db
+      .select({
+        id: assignments.id,
+        tripId: assignments.tripId,
+        status: assignments.status,
+        driverUserId: assignments.driverUserId,
+        trackingCode: trips.trackingCode,
+      })
+      .from(assignments)
+      .innerJoin(trips, eq(trips.id, assignments.tripId))
+      .where(
+        and(
+          eq(assignments.driverUserId, condId),
+          inArray(assignments.status, [...ACTIVE_ASSIGNMENT_STATUSES]),
+        ),
+      );
+    const leftoverIds = activeOfDriver
+      .filter((row) => isLeftoverActiveAssignment(row, { conductorUserId: condId }))
+      .map((row) => row.id);
+    if (leftoverIds.length > 0) {
+      const cancelled = await db
+        .update(assignments)
+        .set(leftoverCancellationPatch(new Date()))
+        .where(inArray(assignments.id, leftoverIds))
+        .returning({ id: assignments.id });
+      logger.info(
+        { cancelled: cancelled.length, conductor: RUT_COND },
+        'seed T2: leftovers activos del conductor cancelados',
+      );
     }
 
     const code = trackingCode();

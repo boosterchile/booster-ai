@@ -39,6 +39,7 @@ GPS resiliente (#686), vista ruta/resultado (#687) e higiene (#688) ya están en
 **CI**
 
 - Job en `.github/workflows/e2e-pr.yml` (workflow Playwright de PR ya existente; no se tocan quality gates de `ci.yml`). Postgres + Redis services, Auth emulator, API local, seed, Playwright Chromium. Exit 0 en PR a `main`.
+- El check `E2E conductor (Auth emulator + API local)` se publica en **todo** `pull_request` a `main` (skip documentado `exit 0` si el diff no toca superficie E2E). Queda listo para required en branch protection; Slot 3 CI cierra cuando ops humana de GitHub marque ese check.
 
 ## 4. Criterios de salida
 
