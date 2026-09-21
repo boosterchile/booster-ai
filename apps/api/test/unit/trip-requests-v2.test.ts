@@ -830,6 +830,41 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.eta_minutes).toBeNull();
   });
 
+  it('en_proceso sin destinatario → la proyección incluye public_tracking_token', async () => {
+    const token = '550e8400-e29b-4114-a716-446655440000';
+    const db = makeQueryDb({
+      limitRows: [
+        [
+          {
+            ...liveTripRow('en_proceso'),
+            consigneeName: null,
+            consigneeWhatsappE164: null,
+          },
+        ],
+        [{ ...LIVE_ASSIGNMENT, public_tracking_token: token }],
+        [],
+        [],
+      ],
+      orderByRows: [[]],
+    });
+    const app = await buildAppWith({ db, userContext: buildUserContext() });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      assignment: { public_tracking_token: string | null } | null;
+    };
+    expect(body.assignment?.public_tracking_token).toBe(token);
+
+    const projections = (db.select as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+      (call) => call[0],
+    );
+    const assignmentSelect = projections.find(
+      (projection): projection is Record<string, unknown> =>
+        typeof projection === 'object' && projection !== null && 'vehicle_plate' in projection,
+    );
+    expect(assignmentSelect).toHaveProperty('public_tracking_token');
+  });
+
   it('entregado → corta la posición viva aunque el vehículo siga reportando (misma regla que el público)', async () => {
     const body = await getLive({
       status: 'entregado',

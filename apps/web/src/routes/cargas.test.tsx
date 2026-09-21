@@ -171,6 +171,51 @@ describe('CargasDetalleRoute', () => {
     await waitFor(() => expect(screen.getAllByText(/BST-999/).length).toBeGreaterThan(0));
   });
 
+  it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {
+    const token = '550e8400-e29b-4114-a716-446655440000';
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 'trip-1',
+        tracking_code: 'BOO-PMGQWN',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+        cargo_type: 'carga_seca',
+        cargo_weight_kg: 5000,
+        cargo_volume_m3: null,
+        pickup_window_start: null,
+        pickup_window_end: null,
+        created_at: '2026-05-10T10:00:00Z',
+      },
+      events: [],
+      assignment: {
+        id: 'a1',
+        status: 'en_proceso',
+        agreed_price_clp: 1000,
+        accepted_at: '2026-05-10T11:00:00Z',
+        picked_up_at: null,
+        delivered_at: null,
+        cancelled_at: null,
+        empresa_id: 'e2',
+        empresa_legal_name: 'Van Oosterwyk',
+        vehicle_id: 'v1',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion',
+        driver_user_id: null,
+        driver_name: null,
+        ubicacion_actual: null,
+        public_tracking_token: token,
+      },
+      metrics: null,
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasDetalleRoute />);
+    const link = await screen.findByRole('link', { name: /seguimiento público/i });
+    expect(link).toHaveAttribute('href', `http://localhost:3000/tracking/${token}`);
+  });
+
   it('con métricas → muestra «Método de cálculo» con la línea que entrega el API (ADR-077 §4)', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
       trip_request: {
