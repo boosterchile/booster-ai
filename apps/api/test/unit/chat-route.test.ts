@@ -191,6 +191,43 @@ describe('POST /chat/:id/messages', () => {
     expect(res.status).toBe(409);
   });
 
+  it('assignment status cancelado → 409 chat_closed', async () => {
+    const db = makeDb({
+      selects: [[{ ...ACCESS_ROW_SHIPPER, assignmentStatus: 'cancelado' }]],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
+      body: JSON.stringify({ type: 'texto', text: 'hola' }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  // Viaje T2 en_proceso = assignment.recogido (estado_asignacion no tiene en_proceso).
+  it('assignment status recogido (viaje en_proceso) → 201, se puede escribir', async () => {
+    const db = makeDb({
+      selects: [[{ ...ACCESS_ROW_SHIPPER, assignmentStatus: 'recogido' }]],
+      inserts: [
+        [
+          {
+            id: 'msg-en-ruta',
+            messageType: 'texto',
+            textContent: 'ya cargué',
+            createdAt: new Date(),
+          },
+        ],
+      ],
+    });
+    const app = await buildApp({ db });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
+      body: JSON.stringify({ type: 'texto', text: 'ya cargué' }),
+    });
+    expect(res.status).toBe(201);
+  });
+
   it('happy path texto: 201 con message serializado', async () => {
     const db = makeDb({
       selects: [[ACCESS_ROW_SHIPPER]],
@@ -407,6 +444,19 @@ describe('POST /chat/:id/messages/photo-upload-url', () => {
       body: JSON.stringify({ content_type: 'image/jpeg' }),
     });
     expect(res.status).toBe(409);
+  });
+
+  it('assignment recogido → photo-upload-url 200 (chat abierto en ruta)', async () => {
+    const db = makeDb({
+      selects: [[{ ...ACCESS_ROW_SHIPPER, assignmentStatus: 'recogido' }]],
+    });
+    const app = await buildApp({ db, attachmentsBucket: 'my-bucket' });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages/photo-upload-url`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-userctx': SHIPPER_CTX },
+      body: JSON.stringify({ content_type: 'image/jpeg' }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it('content_type inválido → 400 zod', async () => {

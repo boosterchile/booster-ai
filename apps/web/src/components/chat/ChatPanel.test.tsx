@@ -122,10 +122,12 @@ describe('ChatPanel — header', () => {
     expect(screen.getByText('Carga BST-001')).toBeInTheDocument();
   });
 
-  it('isLive=false → muestra "Reconectando…"', () => {
+  it('isLive=false → muestra "Actualizando" (polling honesto, no Reconectando infinito)', () => {
     useChatMessagesMock.mockReturnValue(defaultHookReturn({ isLive: false }));
     renderPanel();
-    expect(screen.getByText('Reconectando…')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-live-status')).toHaveTextContent('Actualizando');
+    expect(screen.queryByText('Reconectando…')).not.toBeInTheDocument();
+    expect(screen.queryByText('En vivo')).not.toBeInTheDocument();
   });
 
   it('onClose presente → renderiza X', () => {
@@ -156,7 +158,7 @@ describe('ChatPanel — estados de la lista', () => {
 
   it('lista vacía + readOnly=false → empezar conversación', () => {
     renderPanel();
-    expect(screen.getByText(/Empezá la conversación/)).toBeInTheDocument();
+    expect(screen.getByText(/Empieza la conversación/)).toBeInTheDocument();
   });
 
   it('lista vacía + readOnly=true → "Este chat ya está cerrado"', () => {

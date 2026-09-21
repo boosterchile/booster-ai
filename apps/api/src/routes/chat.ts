@@ -16,7 +16,9 @@
  *   - Cualquier otro user → 403 forbidden.
  *
  * Estados que permiten escritura:
- *   - assignment.status ∈ {asignado, en_proceso}: ambos lados pueden escribir.
+ *   - assignment.status ∈ {asignado, recogido}: ambos lados pueden escribir.
+ *     (Viaje T2 `asignado` / `en_proceso`. `estado_asignacion` NO tiene
+ *     `en_proceso` — ese valor es del viaje.)
  *   - assignment.status ∈ {entregado, cancelado}: read-only (los GET y PATCH
  *     read funcionan, pero POST nuevo mensaje devuelve 409 chat_closed).
  *
@@ -78,6 +80,16 @@ const photoUploadUrlBodySchema = z.object({
   content_type: z.enum(['image/jpeg', 'image/png', 'image/webp']),
 });
 
+/**
+ * Assignment statuses that allow sending. Trip `en_proceso` maps to
+ * assignment `recogido` — never check for `en_proceso` here.
+ */
+const CHAT_WRITABLE_ASSIGNMENT_STATUSES = new Set(['asignado', 'recogido']);
+
+function chatAllowsWrite(assignmentStatus: string): boolean {
+  return CHAT_WRITABLE_ASSIGNMENT_STATUSES.has(assignmentStatus);
+}
+
 const listQuerySchema = z.object({
   /** Mensaje id desde el cual paginar hacia atrás (más viejos). */
   cursor: z.string().uuid().optional(),
@@ -101,7 +113,8 @@ export function createChatRoutes(opts: {
   /**
    * Pub/Sub topic para realtime (P3.b). Si está ausente, POST igual
    * inserta en DB pero no publica al topic; GET /stream devuelve 503.
-   * En dev sin Pub/Sub, la UI cae a polling como fallback.
+   * En dev sin Pub/Sub, GET /stream 503; la UI degrada a polling (~4 s)
+   * y no afirma "En vivo".
    */
   pubsubTopic?: string;
   /**
@@ -208,7 +221,7 @@ export function createChatRoutes(opts: {
 
     // Solo se puede escribir mientras el assignment esté activo. Una vez
     // entregado/cancelado el chat queda read-only.
-    if (!['asignado', 'en_proceso'].includes(access.assignmentStatus)) {
+    if (!chatAllowsWrite(access.assignmentStatus)) {
       return c.json(
         {
           error: 'chat_closed',
@@ -569,7 +582,7 @@ export function createChatRoutes(opts: {
       }
 
       // Solo permitir mientras el chat esté activo (consistente con POST /messages).
-      if (!['asignado', 'en_proceso'].includes(access.assignmentStatus)) {
+      if (!chatAllowsWrite(access.assignmentStatus)) {
         return c.json(
           {
             error: 'chat_closed',

@@ -352,6 +352,14 @@ const asignacionDetalleRoute = createRoute({
   ),
 });
 
+// Deep-link de WhatsApp unread + Web Push (chat-in-app-viaje). El chat
+// in-app es el sistema de registro; esta ruta solo aterriza el aviso.
+const chatViajeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/chat/$id',
+  component: lazyRouteComponent(() => import('./routes/chat-viaje.js'), 'ChatViajeRoute'),
+});
+
 // Phase 5 PR-L4 — Surface pública del consignee/shipper con un link
 // opaco UUID v4. Sin auth, sin app shell — layout dedicado mobile-first.
 // Path raíz `/tracking/$token` (NO `/app/...`) para no quedar bajo el
@@ -491,6 +499,7 @@ const routeTree = rootRoute.addChildren([
   cargaTrackRoute,
   certificadosRoute,
   asignacionDetalleRoute,
+  chatViajeRoute,
   publicTrackingRoute,
   legalTerminosRoute,
   cobraHoyHistorialRoute,

@@ -52,6 +52,8 @@ interface UseChatMessagesResult {
 }
 
 const PAGE_SIZE = 50;
+/** Refetch when SSE is down so A→B appears in < ~5 s without claiming "En vivo". */
+export const CHAT_POLL_INTERVAL_MS = 4_000;
 
 export function useChatMessages(
   assignmentId: string,
@@ -74,6 +76,9 @@ export function useChatMessages(
         limit: PAGE_SIZE,
       }),
     getNextPageParam: (lastPage: ChatMessagesResponse) => lastPage.next_cursor ?? undefined,
+    // SSE es el path live. Si no hay stream (Redis/Pub/Sub down, 401/403
+    // permanente, o todavía no conectó), no mentimos "En vivo": poll.
+    refetchInterval: isLive ? false : CHAT_POLL_INTERVAL_MS,
   });
 
   // Mark-as-read mutation. Solo importa la parte fire-and-forget; no

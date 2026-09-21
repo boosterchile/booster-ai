@@ -86,12 +86,13 @@ export function ChatPanel({
               isLive ? 'text-emerald-600' : 'text-neutral-400'
             }`}
             aria-live="polite"
+            data-testid="chat-live-status"
           >
             <span
               className={`h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-neutral-400'}`}
               aria-hidden
             />
-            {isLive ? 'En vivo' : 'Reconectando…'}
+            {isLive ? 'En vivo' : 'Actualizando'}
           </span>
         </div>
       </header>
@@ -106,7 +107,9 @@ export function ChatPanel({
           <div className="flex h-full flex-col items-center justify-center p-8 text-center">
             <p className="font-medium text-neutral-900">Sin mensajes todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
-              {readOnly ? 'Este chat ya está cerrado.' : 'Empezá la conversación con el otro lado.'}
+              {readOnly
+                ? 'Este chat ya está cerrado.'
+                : 'Empieza la conversación con el otro lado.'}
             </p>
           </div>
         )}
