@@ -15,15 +15,15 @@
  *     entra a la cola y se drena de inmediato; si falla, queda y se reintenta
  *     al volver `online`, al volver la pestaña a `visible`, cada `drainEveryMs`
  *     y en `flush()` (la tarjeta lo llama antes de confirmar la entrega).
- *   - Wake lock de pantalla mientras observa, si el navegador lo ofrece: con la
- *     pantalla apagada iOS suspende la PWA y no hay posiciones. Reportar con la
- *     app cerrada —o con Google Maps en primer plano, que suspende este
- *     documento— no es posible en un sitio web: el service worker no tiene
- *     geolocalización y el wake lock se suelta al ocultar la página. Salir de
- *     la ruta del conductor NO para el watcher (vive en este módulo, no en el
- *     componente). Al pasar a segundo plano se anota la pausa; al volver a
- *     `visible` o en `pageshow` se rearma el watch. iOS no reanuda el
- *     `watchPosition` que quedó vivo en memoria.
+ *   - Wake lock de pantalla mientras observa y Conductor está montado, si el
+ *     navegador lo ofrece. Se suelta al entregar, al desmontar la última
+ *     pantalla, o al ocultar el documento (la API no lo retiene en `hidden`).
+ *     Si el sistema lo suelta solo, se olvida el sentinel y se vuelve a pedir
+ *     al quedar `visible`. No mantiene el GPS con la app cerrada ni con Maps
+ *     al frente. Salir de la ruta NO para el watcher (vive en este módulo).
+ *     Al pasar a segundo plano se anota la pausa; al volver a `visible` o en
+ *     `pageshow` se rearma el watch. iOS no reanuda el `watchPosition` que
+ *     quedó vivo en memoria.
  */
 import {
   COLA_TOPE_DEFAULT,
@@ -75,7 +75,10 @@ const INICIAL: ReporterSnapshot = {
   avisoPausa: false,
 };
 
-type WakeLockSentinel = { release(): Promise<void> };
+type WakeLockSentinel = {
+  release(): Promise<void>;
+  addEventListener?(type: 'release', listener: () => void): void;
+};
 type NavigatorConWakeLock = Navigator & {
   wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinel> };
 };
@@ -94,6 +97,14 @@ let drenando: Promise<{ enviados: number; restantes: number }> | null = null;
 /** Llegó un punto mientras se drenaba: el ciclo en vuelo debe repetir. */
 let volverADrenar = false;
 let wakeLock: WakeLockSentinel | null = null;
+/** Sube en cada suelta para que un `request` tardío no deje el lock tomado. */
+let generacionWake = 0;
+/** Un solo `request` en vuelo. Quien llega mientras tanto espera y reintenta. */
+let pedidoWake: Promise<void> | null = null;
+/** Pantallas de Conductor montadas. Cero y con la UI enganchada: no hay lock. */
+let pantallasConductor = 0;
+/** True desde el primer montaje. Los tests del módulo no montan la UI. */
+let uiEnganchada = false;
 let domListeners: { online: () => void; visibility: () => void; pageshow: () => void } | null =
   null;
 /** Evita dos rearmes seguidos cuando `visibilitychange` y `pageshow` llegan juntos. */
@@ -161,6 +172,7 @@ function geolocation(): Geolocation | null {
 
 export function start(assignmentId: string): void {
   if (watcherId != null && snapshot.assignmentId === assignmentId) {
+    void pedirWakeLock(); // el lock pudo soltarse con la pantalla oculta
     return; // idempotente: ya observa esta asignación
   }
   if (watcherId != null) {
@@ -426,6 +438,9 @@ function instalarListenersDom(): void {
         fixesMientrasOculto = 0;
         marcarSegundoPlano(snapshot.assignmentId);
         emit({ enSegundoPlano: true });
+        // La API suelta el lock al ocultar el documento. Lo pedimos de nuevo
+        // al volver a `visible` (notarVueltaAPrimerPlano).
+        void soltarWakeLock();
         return;
       }
       if (document.visibilityState === 'visible') {
@@ -449,32 +464,100 @@ function quitarListenersDom(): void {
   domListeners = null;
 }
 
+function documentoVisible(): boolean {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden';
+}
+
+/** El lock solo vale con el watcher vivo, el documento visible y Conductor
+ *  en pantalla (si alguna vez se montó). */
+function debeTenerWakeLock(): boolean {
+  if (watcherId == null || !documentoVisible()) {
+    return false;
+  }
+  if (uiEnganchada && pantallasConductor === 0) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * La pantalla de Conductor está montada. Varias tarjetas comparten el conteo:
+ * solo al desmontar la última se suelta el lock. No para el watcher GPS.
+ */
+export function retainScreenWakeLock(): () => void {
+  uiEnganchada = true;
+  pantallasConductor += 1;
+  void pedirWakeLock();
+  return () => {
+    pantallasConductor = Math.max(0, pantallasConductor - 1);
+    if (pantallasConductor === 0) {
+      void soltarWakeLock();
+    }
+  };
+}
+
 async function pedirWakeLock(): Promise<void> {
-  if (watcherId == null || wakeLock || typeof navigator === 'undefined') {
-    return;
-  }
-  const wl = (navigator as NavigatorConWakeLock).wakeLock;
-  if (!wl) {
-    return; // capacidad opcional del navegador, no un error del reporte
-  }
-  try {
-    wakeLock = await wl.request('screen');
-  } catch {
-    // El navegador lo negó (batería baja, pestaña oculta). Se vuelve a pedir
-    // al volver a `visible`; el reporte sigue igual mientras la app esté abierta.
-    wakeLock = null;
+  for (;;) {
+    if (pedidoWake) {
+      await pedidoWake;
+      continue;
+    }
+    if (!debeTenerWakeLock() || wakeLock || typeof navigator === 'undefined') {
+      return;
+    }
+    const api = (navigator as NavigatorConWakeLock).wakeLock;
+    if (!api) {
+      return; // capacidad opcional del navegador, no un error del reporte
+    }
+    const gen = generacionWake;
+    let marcarListo: () => void = () => undefined;
+    const listo = new Promise<void>((resolve) => {
+      marcarListo = resolve;
+    });
+    pedidoWake = listo;
+    try {
+      let sentinel: WakeLockSentinel;
+      try {
+        sentinel = await api.request('screen');
+      } catch {
+        // Negado (batería, documento oculto). El reporte sigue igual.
+        return;
+      }
+      if (gen !== generacionWake || !debeTenerWakeLock()) {
+        try {
+          await sentinel.release();
+        } catch {
+          // El sistema ya lo había soltado.
+        }
+        return;
+      }
+      sentinel.addEventListener?.('release', () => {
+        if (wakeLock === sentinel) {
+          wakeLock = null;
+        }
+      });
+      wakeLock = sentinel;
+      return;
+    } finally {
+      if (pedidoWake === listo) {
+        pedidoWake = null;
+      }
+      marcarListo();
+    }
   }
 }
 
 async function soltarWakeLock(): Promise<void> {
-  const wl = wakeLock;
+  generacionWake += 1;
+  const actual = wakeLock;
   wakeLock = null;
-  if (wl) {
-    try {
-      await wl.release();
-    } catch {
-      // Ya estaba liberado por el sistema: nada que hacer.
-    }
+  if (!actual) {
+    return;
+  }
+  try {
+    await actual.release();
+  } catch {
+    // Ya estaba liberado por el sistema: nada que hacer.
   }
 }
 
@@ -492,5 +575,8 @@ export function __resetForTests(): void {
   fixesMientrasOculto = 0;
   drenando = null;
   volverADrenar = false;
+  pantallasConductor = 0;
+  uiEnganchada = false;
+  pedidoWake = null;
   snapshot = INICIAL;
 }
