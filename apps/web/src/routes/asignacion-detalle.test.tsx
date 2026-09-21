@@ -42,6 +42,16 @@ vi.mock('../components/scoring/DeliveryConfirmCard.js', () => ({
   DeliveryConfirmCard: () => <div data-testid="delivery-confirm" />,
 }));
 
+vi.mock('../components/transport-documents/TransportDocumentsPanel.js', () => ({
+  TransportDocumentsPanel: (props: { tripId: string; canWrite: boolean }) => (
+    <div
+      data-testid="transport-docs-panel"
+      data-trip-id={props.tripId}
+      data-can-write={String(props.canWrite)}
+    />
+  ),
+}));
+
 const { AsignacionDetalleRoute } = await import('./asignacion-detalle.js');
 
 function makeMe(isTransportista: boolean): MeOnboarded {
@@ -120,6 +130,8 @@ describe('AsignacionDetalleRoute', () => {
     renderRoute();
     await waitFor(() => expect(screen.getByTestId('delivery-confirm')).toBeInTheDocument());
     expect(screen.queryByTestId('behavior-score')).not.toBeInTheDocument();
+    expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', 't1');
+    expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-can-write', 'true');
   });
 
   it('transportista + status entregado → BehaviorScoreCard + chat readOnly', async () => {
@@ -141,6 +153,7 @@ describe('AsignacionDetalleRoute', () => {
     await waitFor(() => expect(screen.getByTestId('behavior-score')).toBeInTheDocument());
     expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-readonly', 'true');
     expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
+    expect(screen.getByTestId('transport-docs-panel')).toHaveAttribute('data-trip-id', 't1');
   });
 
   it('shipper_legal_name null → chat title con fallback', async () => {
@@ -167,11 +180,12 @@ describe('AsignacionDetalleRoute', () => {
     );
   });
 
-  it('sin data (loading) → tracking code es slice del assignment id', () => {
+  it('sin data (loading) → tracking code es slice del assignment id y aún no monta docs', () => {
     vi.spyOn(api, 'get').mockImplementation(() => new Promise<never>(() => undefined));
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
     // El header siempre se renderiza con fallback al assignmentId.slice(0,8).
     expect(screen.getByText(/asn-uuid/)).toBeInTheDocument();
+    expect(screen.queryByTestId('transport-docs-panel')).toBeNull();
   });
 });

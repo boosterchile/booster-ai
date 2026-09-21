@@ -40,14 +40,42 @@ vi.mock('../components/chat/PushSubscribeBanner.js', () => ({
   PushSubscribeBanner: () => <div data-testid="push-banner" />,
 }));
 
+vi.mock('../components/transport-documents/TransportDocumentsPanel.js', () => ({
+  TransportDocumentsPanel: (props: { tripId: string; canWrite: boolean; compact?: boolean }) => (
+    <div
+      data-testid="transport-docs-panel"
+      data-trip-id={props.tripId}
+      data-can-write={String(props.canWrite)}
+      data-compact={String(props.compact ?? false)}
+    />
+  ),
+}));
+
 const { CargaTrackRoute } = await import('./carga-track.js');
 
-function makeMe(): MeOnboarded {
+function makeMe(
+  role?: 'dueno' | 'admin' | 'despachador' | 'conductor' | 'visualizador',
+): MeOnboarded {
   return {
     needs_onboarding: false,
     user: { id: 'u', full_name: 'F' } as MeOnboarded['user'],
     memberships: [],
-    active_membership: null,
+    active_membership: role
+      ? ({
+          id: 'm',
+          role,
+          status: 'activa',
+          joined_at: null,
+          empresa: {
+            id: 'e',
+            legal_name: 'E',
+            rut: '76',
+            is_generador_carga: true,
+            is_transportista: false,
+            status: 'activa',
+          },
+        } as MeOnboarded['active_membership'])
+      : null,
   } as MeOnboarded;
 }
 
@@ -98,6 +126,10 @@ describe('CargaTrackRoute', () => {
     await waitFor(() =>
       expect(screen.getByTestId('live-tracking')).toHaveAttribute('data-has-pos', 'false'),
     );
+    const docs = screen.getByTestId('transport-docs-panel');
+    expect(docs).toHaveAttribute('data-trip-id', 'trip-1');
+    expect(docs).toHaveAttribute('data-compact', 'true');
+    expect(docs).toHaveAttribute('data-can-write', 'false');
   });
 
   it('onboarded + asignación con ubicación → LiveTrackingScreen con plate en title', async () => {
@@ -234,5 +266,33 @@ describe('CargaTrackRoute', () => {
     const btn = await screen.findByRole('button', { name: /Abrir chat/ });
     fireEvent.click(btn);
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+  });
+
+  it('generador dueño → panel documental con tripId de ruta y canWrite', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno') };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'en_proceso',
+        empresa_legal_name: 'TA',
+        vehicle_plate: null,
+        vehicle_type: null,
+        driver_name: null,
+        ubicacion_actual: null,
+      },
+    });
+    renderRoute();
+    const docs = await screen.findByTestId('transport-docs-panel');
+    expect(docs).toHaveAttribute('data-trip-id', 'trip-1');
+    expect(docs).toHaveAttribute('data-can-write', 'true');
+    expect(docs).toHaveAttribute('data-compact', 'true');
   });
 });

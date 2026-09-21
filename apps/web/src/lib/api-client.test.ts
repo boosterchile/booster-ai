@@ -143,6 +143,39 @@ describe('api.post', () => {
   });
 });
 
+describe('api.postForm', () => {
+  it('manda FormData sin Content-Type json (el browser pone el boundary)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ document_id: 'd1' }), {
+        status: 202,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const form = new FormData();
+    form.append('file', new File(['%PDF'], 'guia.pdf', { type: 'application/pdf' }));
+    await api.postForm('/transport-orders/t1/documents', form);
+    const call = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect(call.method).toBe('POST');
+    expect(call.body).toBe(form);
+    expect(new Headers(call.headers).get('content-type')).toBeNull();
+  });
+
+  it('503 storage_unavailable → ApiError con code', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'storage_unavailable', code: 'storage_unavailable' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const form = new FormData();
+    form.append('file', new File(['x'], 'a.pdf', { type: 'application/pdf' }));
+    await expect(api.postForm('/transport-orders/t1/documents', form)).rejects.toMatchObject({
+      status: 503,
+      code: 'storage_unavailable',
+    });
+  });
+});
+
 describe('api.patch / api.put', () => {
   it('patch con body', async () => {
     const fetchSpy = vi
