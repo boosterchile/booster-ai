@@ -3,6 +3,13 @@ import { sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 
 /**
+ * Días que el cron conserva en `posiciones_movil_conductor`. El scorecard de
+ * medio plazo no lee más atrás: pasado este piso los puntos ya no están
+ * (salvo la última posición por vehículo, que no reconstruye el tramo).
+ */
+export const RETENCION_POSICIONES_MOVIL_DIAS = 30;
+
+/**
  * Purga de retención de `posiciones_movil_conductor` (GPS de browser,
  * ~1 punto/10s por conductor activo; spec feat-retencion-posiciones-movil).
  *
@@ -17,7 +24,7 @@ export async function purgarPosicionesMovil(opts: {
   retentionDays?: number;
 }): Promise<{ deleted: number; retentionDays: number }> {
   const { db, logger } = opts;
-  const retentionDays = opts.retentionDays ?? 30;
+  const retentionDays = opts.retentionDays ?? RETENCION_POSICIONES_MOVIL_DIAS;
 
   const result = await db.execute(sql`
     DELETE FROM posiciones_movil_conductor
