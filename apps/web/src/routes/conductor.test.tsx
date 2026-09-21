@@ -107,9 +107,18 @@ vi.mock('../hooks/use-driver-position-reporter.js', () => ({
 // Ruta eco de la asignación (Routes API): sus extremos son las coordenadas
 // reales de origen y destino, que Google Maps sí entiende aunque la dirección
 // en texto no («Ruta 5 Norte km 470» no la encuentra — reporte del PO).
-let ecoRouteState: { data?: { polyline_encoded: string | null } } = {};
+let ecoRouteState: {
+  data?: { polyline_encoded: string | null };
+  isPending?: boolean;
+} = {};
 vi.mock('../hooks/use-assignment-eco-route.js', () => ({
   useAssignmentEcoRoute: () => ecoRouteState,
+}));
+
+vi.mock('../components/offers/EcoRouteMapPreview.js', () => ({
+  EcoRouteMapPreview: ({ polylineEncoded }: { polylineEncoded: string }) => (
+    <div data-testid="eco-route-map">{polylineEncoded}</div>
+  ),
 }));
 
 vi.mock('../components/scoring/AssignmentEcoRouteCard.js', () => ({
@@ -583,55 +592,116 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     render(<ConductorDashboardRoute />);
     const nav = await screen.findByTestId('navegar-origen');
     // Antes de recoger, el conductor va al origen. «Navegar al destino» acá
-    // confundía (reporte del PO, 2026-09-14).
-    expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
-    expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Pajaritos 1234'));
+    // confundía (reporte del PO, 2026-09-14). El botón principal se queda en
+    // esta pantalla: Maps es el enlace secundario, con el aviso de pausa.
+    expect(nav.tagName).toBe('BUTTON');
+    expect(nav).not.toHaveAttribute('href');
     expect(screen.queryByTestId('navegar-destino')).toBeNull();
+    const maps = screen.getByTestId('abrir-maps-origen');
+    expect(maps.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Pajaritos 1234'));
+    expect(maps).toHaveTextContent(/pausa el reporte GPS/);
   });
 
-  it('con ruta eco: «Ir al destino» navega a las COORDENADAS del destino, no al texto', async () => {
+  it('«Ir al destino» abre la ruta en la pantalla y no sale a Maps', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    const nav = await screen.findByTestId('navegar-destino');
+    expect(nav.tagName).toBe('BUTTON');
+    expect(nav).not.toHaveAttribute('href');
+    expect(screen.queryByTestId('ruta-en-app')).toBeNull();
+    fireEvent.click(nav);
+    expect(open).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('ruta-en-app')).toBeInTheDocument();
+    expect(screen.getByTestId('eco-route-map')).toHaveTextContent('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+    const maps = screen.getByTestId('abrir-maps-destino');
+    expect(maps).toHaveTextContent('Abrir en Maps (pausa el reporte GPS)');
+    expect(screen.queryByRole('link', { name: /^Ir al destino$/ })).toBeNull();
+  });
+
+  it('con ruta eco: Maps (secundario) va a las COORDENADAS del destino, no al texto', async () => {
     // Polyline de ejemplo de Google: (38.5,-120.2) → (40.7,-120.95) → (43.252,-126.453).
     ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     render(<ConductorDashboardRoute />);
-    const nav = await screen.findByTestId('navegar-destino');
-    const href = nav.getAttribute('href') ?? '';
+    const maps = await screen.findByTestId('abrir-maps-destino');
+    const href = maps.getAttribute('href') ?? '';
     expect(href).toContain(`destination=${encodeURIComponent('43.252,-126.453')}`);
     expect(href).not.toContain(encodeURIComponent('Av. Brasil 2345'));
     expect(href).toContain('travelmode=driving');
+    expect(screen.getByTestId('navegar-destino').tagName).toBe('BUTTON');
   });
 
-  it('con ruta eco: «Ir al origen» navega a las coordenadas del origen', async () => {
+  it('con ruta eco: Maps del origen va a las coordenadas del origen', async () => {
     ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    const nav = await screen.findByTestId('navegar-origen');
-    expect(nav.getAttribute('href') ?? '').toContain(
+    const maps = await screen.findByTestId('abrir-maps-origen');
+    expect(maps.getAttribute('href') ?? '').toContain(
       `destination=${encodeURIComponent('38.5,-120.2')}`,
     );
+    expect(screen.getByTestId('navegar-origen').tagName).toBe('BUTTON');
   });
 
-  it('sin ruta eco: los enlaces caen al texto de la dirección y piden modo auto', async () => {
+  it('sin ruta eco: Maps cae al texto de la dirección y el panel lo dice', async () => {
     ecoRouteState = { data: { polyline_encoded: null } };
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
-    const href = (await screen.findByTestId('navegar-origen')).getAttribute('href') ?? '';
+    const href = (await screen.findByTestId('abrir-maps-origen')).getAttribute('href') ?? '';
     expect(href).toContain(encodeURIComponent('Av. Pajaritos 1234'));
     expect(href).toContain('travelmode=driving');
+    fireEvent.click(screen.getByTestId('navegar-origen'));
+    expect(await screen.findByTestId('ruta-en-app-sin-dibujo')).toHaveTextContent(
+      'Av. Pajaritos 1234',
+    );
+    expect(screen.queryByTestId('eco-route-map')).toBeNull();
   });
 
-  it('en ruta: ofrece ir al destino', async () => {
+  it('mientras carga la ruta, el panel no dice que no hay dibujo', async () => {
+    ecoRouteState = { isPending: true };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('navegar-origen'));
+    expect(await screen.findByTestId('ruta-en-app-cargando')).toBeInTheDocument();
+    expect(screen.queryByTestId('ruta-en-app-sin-dibujo')).toBeNull();
+    expect(screen.queryByTestId('eco-route-map')).toBeNull();
+  });
+
+  it('en ruta: ofrece ir al destino dentro de la pantalla', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     render(<ConductorDashboardRoute />);
     const nav = await screen.findByTestId('navegar-destino');
-    // Un conductor necesita abrir el destino en su app de mapas, no copiarlo.
-    expect(nav.getAttribute('href') ?? '').toMatch(/maps|geo:/i);
-    expect(nav.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Brasil 2345'));
+    expect(nav.tagName).toBe('BUTTON');
+    expect(nav).toHaveTextContent(/Ir al destino/);
     expect(screen.queryByTestId('navegar-origen')).toBeNull();
+    const maps = screen.getByTestId('abrir-maps-destino');
+    expect(maps.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Brasil 2345'));
+    expect(maps).toHaveTextContent(/pausa el reporte GPS/);
+  });
+
+  it('con Teltonika: Maps no dice que pausa el GPS del teléfono', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          status: 'recogido',
+          vehicle: { id: 'veh-1', plate: 'JLKT54', has_teltonika: true },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    const maps = await screen.findByTestId('abrir-maps-destino');
+    expect(maps).toHaveTextContent('Abrir en Maps');
+    expect(maps).not.toHaveTextContent(/pausa el reporte GPS/);
+    expect(screen.getByTestId('navegar-destino').tagName).toBe('BUTTON');
   });
 
   it('permite confirmar la entrega desde su propia pantalla', async () => {

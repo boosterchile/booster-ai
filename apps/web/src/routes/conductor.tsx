@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
+import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
 import { useConfirmarRecogida } from '../hooks/use-confirmar-recogida.js';
@@ -403,15 +404,106 @@ function mensajeDeCierre(err: unknown): string {
 type FaseServicio = 'por_recoger' | 'en_ruta' | 'entregada';
 
 /**
- * Enlace de navegación a Google Maps. Con coordenadas va a las coordenadas:
+ * Enlace secundario a Google Maps. Con coordenadas va a las coordenadas:
  * el texto de una dirección como «Ruta 5 Norte km 470, La Serena» Google
  * Maps NO lo encuentra y abre un mapa vacío (reporte del PO, 2026-09-14),
  * mientras que la ruta eco de la asignación (Routes API) ya resolvió ambos
- * extremos. `dir_action=navigate` arranca la navegación en la app de Maps.
+ * extremos. No es el camino principal: abrir Maps deja el documento oculto
+ * y el browser corta `watchPosition` (BOO-83ND2C).
  */
 function mapsHref(address: string, coords: LatLng | null): string {
   const destination = coords ? `${coords.lat},${coords.lng}` : address;
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
+}
+
+/**
+ * Ruta dentro de la tarjeta. El botón principal no sale de Conductor, así
+ * el teléfono sigue siendo el reportero. Maps queda en un enlace aparte y,
+ * cuando el teléfono es la fuente, el texto dice que eso pausa el GPS.
+ */
+function NavegacionEnPantalla({
+  etiqueta,
+  testId,
+  mapsTestId,
+  address,
+  coords,
+  polylineEncoded,
+  cargandoRuta,
+  pausaGps,
+  className,
+}: {
+  etiqueta: string;
+  testId: string;
+  mapsTestId: string;
+  address: string;
+  coords: LatLng | null;
+  polylineEncoded: string | null;
+  cargandoRuta: boolean;
+  pausaGps: boolean;
+  className: string;
+}) {
+  const [abierta, setAbierta] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!abierta) {
+      return;
+    }
+    const el = panelRef.current;
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [abierta]);
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        data-testid={testId}
+        className={className}
+        aria-expanded={abierta}
+        onClick={() => setAbierta((v) => !v)}
+      >
+        <MapPin className="h-4 w-4" aria-hidden />
+        {etiqueta}
+      </button>
+      {abierta && (
+        <section
+          ref={panelRef}
+          data-testid="ruta-en-app"
+          aria-label="Ruta en esta pantalla"
+          className="space-y-2 rounded-md border border-neutral-200 bg-white p-2"
+        >
+          <p className="font-medium text-neutral-900 text-sm">{address}</p>
+          {polylineEncoded ? (
+            <EcoRouteMapPreview polylineEncoded={polylineEncoded} height={260} />
+          ) : cargandoRuta ? (
+            <p className="text-neutral-700 text-sm" data-testid="ruta-en-app-cargando">
+              Cargando la ruta…
+            </p>
+          ) : (
+            <p className="text-neutral-700 text-sm" data-testid="ruta-en-app-sin-dibujo">
+              Todavía no hay un dibujo de la ruta. El punto es {address}.
+            </p>
+          )}
+          <p className="text-neutral-600 text-sm">
+            {pausaGps
+              ? 'La ruta queda en esta pantalla y el teléfono sigue enviando la posición.'
+              : 'La ruta queda en esta pantalla.'}
+          </p>
+        </section>
+      )}
+      <a
+        href={mapsHref(address, coords)}
+        target="_blank"
+        rel="noreferrer"
+        data-testid={mapsTestId}
+        className="block w-full py-1 text-center text-neutral-500 text-sm underline-offset-2 hover:underline"
+      >
+        {pausaGps ? 'Abrir en Maps (pausa el reporte GPS)' : 'Abrir en Maps'}
+      </a>
+    </div>
+  );
 }
 
 /**
@@ -773,16 +865,17 @@ export function AssignmentCard({
                 {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
               </button>
             )}
-            <a
-              href={mapsHref(a.trip.origin.address_raw, extremos?.origen ?? null)}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="navegar-origen"
+            <NavegacionEnPantalla
+              etiqueta="Ir al origen"
+              testId="navegar-origen"
+              mapsTestId="abrir-maps-origen"
+              address={a.trip.origin.address_raw}
+              coords={extremos?.origen ?? null}
+              polylineEncoded={polylineEncoded}
+              cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
+              pausaGps={!hasTeltonika}
               className={botonSecundario}
-            >
-              <MapPin className="h-4 w-4" aria-hidden />
-              Ir al origen
-            </a>
+            />
             {recogida.error && (
               <div
                 role="alert"
@@ -840,16 +933,17 @@ export function AssignmentCard({
                 {entregando ? 'Confirmando…' : 'Confirmar entrega'}
               </button>
             )}
-            <a
-              href={mapsHref(a.trip.destination.address_raw, extremos?.destino ?? null)}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="navegar-destino"
+            <NavegacionEnPantalla
+              etiqueta="Ir al destino"
+              testId="navegar-destino"
+              mapsTestId="abrir-maps-destino"
+              address={a.trip.destination.address_raw}
+              coords={extremos?.destino ?? null}
+              polylineEncoded={polylineEncoded}
+              cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
+              pausaGps={!hasTeltonika}
               className={botonSecundario}
-            >
-              <MapPin className="h-4 w-4" aria-hidden />
-              Ir al destino
-            </a>
+            />
           </>
         )}
 
