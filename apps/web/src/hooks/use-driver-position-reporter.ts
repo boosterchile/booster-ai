@@ -10,12 +10,16 @@
  *   - `queued`: posiciones esperando señal.
  *   - `start(assignmentId)` idempotente; `stop()`; `flush()` drena la cola
  *     (la tarjeta lo llama antes de confirmar la entrega).
+ *   - Mientras este hook está montado retiene el wake lock de pantalla, si
+ *     el reporter observa. Al desmontar la última tarjeta se suelta. No
+ *     para el watcher: salir de Conductor no corta el GPS del módulo.
  */
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import {
   type GeofenceLectura,
   flush,
   getSnapshot,
+  retainScreenWakeLock,
   start,
   stop,
   subscribe,
@@ -39,6 +43,7 @@ export interface UseDriverPositionReporterResult {
 
 export function useDriverPositionReporter(): UseDriverPositionReporterResult {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  useEffect(() => retainScreenWakeLock(), []);
   return {
     isWatching: snap.isWatching,
     lastPosition: snap.lastPosition,

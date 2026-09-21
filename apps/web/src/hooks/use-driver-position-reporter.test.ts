@@ -62,6 +62,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, 'wakeLock');
+  __resetForTests();
 });
 
 describe('useDriverPositionReporter — lastGeofence', () => {
@@ -113,5 +115,42 @@ describe('useDriverPositionReporter — lastGeofence', () => {
     act(() => result.current.stop());
     act(() => result.current.start('asg-2'));
     expect(result.current.lastGeofence).toBeNull();
+  });
+});
+
+describe('useDriverPositionReporter — wake lock', () => {
+  it('al desmontar suelta el lock y al volver lo pide si sigue reportando', async () => {
+    installFakeGeolocation();
+    const sentinels: Array<{ release: ReturnType<typeof vi.fn> }> = [];
+    const request = vi.fn(async () => {
+      const release = vi.fn(async () => undefined);
+      const sentinel = {
+        release,
+        addEventListener() {
+          return undefined;
+        },
+      };
+      sentinels.push(sentinel);
+      return sentinel;
+    });
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request },
+    });
+
+    const primero = renderHook(() => useDriverPositionReporter());
+    act(() => primero.result.current.start('asg-1'));
+    await waitFor(() => expect(request).toHaveBeenCalledWith('screen'));
+    expect(request).toHaveBeenCalledTimes(1);
+
+    primero.unmount();
+    await waitFor(() => expect(sentinels[0]?.release).toHaveBeenCalledTimes(1));
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(1);
+
+    renderHook(() => useDriverPositionReporter());
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
   });
 });
