@@ -24,8 +24,8 @@ import type { UserContext } from '../services/user-context.js';
  *   POST /admin/signup-requests/:id/reject  → mark rechazado (no user creado)
  *
  * Audiencia: platform-admin Booster (BOOSTER_PLATFORM_ADMIN_EMAILS allowlist).
- * Auth chain (wireada en server.ts): firebaseAuthMiddleware + demoExpires +
- * isDemoEnforcement + userContext. Cada handler valida el role via
+ * Auth chain (wireada en server.ts): firebaseAuthMiddleware + userContext.
+ * Cada handler valida el role via
  * `requirePlatformAdmin` helper (paridad admin-stakeholder-orgs).
  *
  * Feature flag gate: si `SIGNUP_REQUEST_FLOW_ACTIVATED=false` (default),
