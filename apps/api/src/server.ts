@@ -51,6 +51,7 @@ import { createInternalSafetyEventsRoutes } from './routes/internal-safety-event
 import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
+import { createMeEmpresaRoutes } from './routes/me-empresa.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
@@ -406,6 +407,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
     meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    // Opt-in de huella — GET/PATCH /me/empresa. userContext precede el mount;
+    // el empresaId sale de la membresía activa (nunca del cliente).
+    app.use('/me/empresa', userContextMiddlewareForMe);
+    app.use('/me/empresa/*', userContextMiddlewareForMe);
+    meRouter.route('/empresa', createMeEmpresaRoutes({ db: opts.db, logger }));
     // CRUD zonas de matching del transportista. userContext precede el mount;
     // el empresaId sale de la membresía activa (nunca del cliente).
     app.use('/me/zonas', userContextMiddlewareForMe);

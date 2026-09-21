@@ -53,7 +53,11 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
     return [{ items: [INICIO, { label: 'Zonas', to: '/app/stakeholder/zonas', icon: MapPinned }] }];
   }
 
-  const sections: NavSection[] = [{ items: [INICIO] }];
+  const inicioItems: NavItem[] = [INICIO];
+  if (empresa && isAdmin) {
+    inicioItems.push({ label: 'Empresa', to: '/app/empresa', icon: Leaf });
+  }
+  const sections: NavSection[] = [{ items: inicioItems }];
 
   if (empresa?.is_transportista) {
     const transporte: NavItem[] = [

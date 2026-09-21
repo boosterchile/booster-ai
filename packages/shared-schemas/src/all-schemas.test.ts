@@ -688,6 +688,21 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
     ).toBe('pendiente_verificacion');
     expect(() => empresa.empresaEstadoPatchSchema.parse({ estado: 'borrada' })).toThrow();
   });
+
+  it('empresaCarbonMeasurementPatchSchema solo acepta boolean', () => {
+    expect(
+      empresa.empresaCarbonMeasurementPatchSchema.parse({ carbon_measurement_enabled: true })
+        .carbon_measurement_enabled,
+    ).toBe(true);
+    expect(
+      empresa.empresaCarbonMeasurementPatchSchema.parse({ carbon_measurement_enabled: false })
+        .carbon_measurement_enabled,
+    ).toBe(false);
+    expect(() =>
+      empresa.empresaCarbonMeasurementPatchSchema.parse({ carbon_measurement_enabled: 'true' }),
+    ).toThrow();
+    expect(() => empresa.empresaCarbonMeasurementPatchSchema.parse({})).toThrow();
+  });
 });
 
 describe('zoneCreateBodySchema — boundary romano del matching', () => {
