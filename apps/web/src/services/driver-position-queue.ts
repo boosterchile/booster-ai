@@ -17,7 +17,11 @@
  *     drenaje sigue: un ping grosero no puede congelar los válidos de detrás
  *     (BOO-KJHITL, `.specs/gps-cola-rechazo-no-bloquea/`).
  */
-import type { DriverPositionInput, DriverPositionResponse } from './driver-position.js';
+import {
+  type DriverPositionInput,
+  type DriverPositionResponse,
+  normalizarAccuracyM,
+} from './driver-position.js';
 
 export type PuntoEnCola = DriverPositionInput;
 
@@ -121,9 +125,8 @@ export function esRechazoPermanente(err: unknown): boolean {
 
 /**
  * Espejo del body Zod de `POST /assignments/:id/driver-position`.
- * `accuracy_m` ausente o nulo es válido; si viene, `0 < x ≤ 10_000`.
- * Un radio de miles de km hace las coords inútiles: se tira el punto entero,
- * no se manda sin `accuracy_m`.
+ * `accuracy_m` 0 / NaN / null = desconocida (se manda null, el punto vale).
+ * Un radio > 10 km hace las coords inútiles: se tira el punto entero.
  */
 export function esPuntoEnviable(p: PuntoEnCola): boolean {
   if (!Number.isFinite(p.latitude) || p.latitude < -90 || p.latitude > 90) {
@@ -135,12 +138,12 @@ export function esPuntoEnviable(p: PuntoEnCola): boolean {
   if (!Number.isFinite(Date.parse(p.timestamp_device))) {
     return false;
   }
-  if (p.accuracy_m != null) {
-    if (!Number.isFinite(p.accuracy_m) || p.accuracy_m <= 0 || p.accuracy_m > ACCURACY_M_MAX) {
-      return false;
-    }
-  }
-  return true;
+  const acc = normalizarAccuracyM(p.accuracy_m);
+  return acc == null || acc <= ACCURACY_M_MAX;
+}
+
+function puntoParaEnviar(p: PuntoEnCola): PuntoEnCola {
+  return { ...p, accuracy_m: normalizarAccuracyM(p.accuracy_m) };
 }
 
 function almacenPorDefecto(): AlmacenCola | null {
@@ -188,10 +191,11 @@ export class ColaPosiciones {
 
   /** `false` si el punto no es enviable: no entra a la cola. */
   encolar(punto: PuntoEnCola): boolean {
-    if (!esPuntoEnviable(punto)) {
+    const normalizado = puntoParaEnviar(punto);
+    if (!esPuntoEnviable(normalizado)) {
       return false;
     }
-    this.items.push(punto);
+    this.items.push(normalizado);
     if (this.items.length > this.tope) {
       this.items.splice(0, this.items.length - this.tope);
     }
@@ -217,14 +221,15 @@ export class ColaPosiciones {
       if (!punto) {
         break;
       }
-      if (!esPuntoEnviable(punto)) {
+      const paraEnviar = puntoParaEnviar(punto);
+      if (!esPuntoEnviable(paraEnviar)) {
         this.items.shift();
         descartados += 1;
         this.persistir();
         continue;
       }
       try {
-        await enviar(punto);
+        await enviar(paraEnviar);
       } catch (err) {
         if (esAsignacionCerrada(err)) {
           this.vaciar();

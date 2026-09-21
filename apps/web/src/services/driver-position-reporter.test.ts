@@ -281,4 +281,20 @@ describe('driver-position-reporter — cola offline con reintento', () => {
     );
     expect(reporter.getSnapshot().pointsSent).toBe(1);
   });
+
+  // Playwright setGeolocation usa accuracy 0. El API rechaza 0 (Zod positive);
+  // hay que POSTear con accuracy_m null para que el e2e conductor vea el POST.
+  it('un fix con accuracy 0 se POSTea con accuracy_m null', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(-33.4372, -70.6506, T0, 0);
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(1);
+    expect(postDriverPositionSpy).toHaveBeenCalledWith(
+      'asg-1',
+      expect.objectContaining({ latitude: -33.4372, longitude: -70.6506, accuracy_m: null }),
+    );
+    expect(reporter.getSnapshot().queued).toBe(0);
+    expect(reporter.getSnapshot().pointsSent).toBe(1);
+  });
 });

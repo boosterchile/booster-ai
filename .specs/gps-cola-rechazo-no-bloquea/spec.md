@@ -20,7 +20,10 @@ Un solo ping basura no puede congelar la cobertura del tramo.
 **Sin cambio de contrato HTTP ni de schema.** El API sigue rechazando precisión > 10 km (no queremos persistir Filadelfia como si fuera Valparaíso). El arreglo es la cola del cliente.
 
 - `apps/web/src/services/driver-position-queue.ts`
-  - `esPuntoEnviable`: espejo del body Zod del API. `accuracy_m` ausente o nulo es válido; si viene, debe ser `0 < x ≤ 10_000`. Lat/lng en rango WGS84; `timestamp_device` parseable.
+  - `esPuntoEnviable`: espejo del body Zod del API. `accuracy_m` 0 / NaN / null
+    = precisión desconocida (se manda `null`; Playwright y varios dispositivos
+    reportan 0). Un radio > 10 km tira el punto entero. Lat/lng en rango WGS84;
+    `timestamp_device` parseable.
   - `encolar` no persiste un punto no enviable (el grosero no entra).
   - `drenar`: antes de POST, descarta la cabeza no enviable y sigue. Si el POST responde **400 o 422** (rechazo permanente de validación), descarta esa cabeza y sigue con las siguientes. 409 `assignment_not_active` sigue vaciando toda la cola. Red / 5xx / 401 / 403 / 429 siguen deteniendo el ciclo y reintentando la cabeza después.
 - `apps/web/src/services/driver-position-reporter.ts`: si `encolar` rechaza el fix, no actualiza `ultimoEnviado` (el throttle no se ancla a basura). Un descarte no pone `lastError` «Sin señal».
