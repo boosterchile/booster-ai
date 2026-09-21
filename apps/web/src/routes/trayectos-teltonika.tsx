@@ -78,9 +78,9 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
           Historial de trayectos
         </h1>
         <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-          Mirá los trayectos de tus Teltonika: la distancia y el consumo (km/L y L/100 km) te sirven
-          para controlar el costo de operación, y el aviso marca si el combustible bajó de golpe con
-          el vehículo detenido.
+          Mirá los trayectos de tus Teltonika: litros, km/L y L/100 km. Con eso armás el costo de
+          operación por tu cuenta, y el aviso marca si el combustible bajó de golpe con el vehículo
+          detenido.
         </p>
       </header>
 
@@ -154,7 +154,7 @@ function ListadoTrayectos({
       {data.cta_sensor ? (
         <p className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 text-sm">
           Tus Teltonika no reportan sensor de combustible. Conectá el sensor para ver litros, km/L y
-          L/100 km —te sirven para controlar el costo de operación— y el aviso de posible robo.
+          L/100 km —con eso armás el costo de operación por tu cuenta— y el aviso de posible robo.
         </p>
       ) : null}
       {data.truncado ? (

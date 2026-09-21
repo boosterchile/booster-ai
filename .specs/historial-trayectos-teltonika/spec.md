@@ -85,4 +85,4 @@ Segmentación, por vehículo, puntos en orden temporal:
 
 ## Fuera de alcance
 
-Alertas push o en vivo, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, overrides de U/Y por empresa, columna nueva de capacidad de estanque.
+Alertas push o en vivo, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, overrides de U/Y por empresa, columna nueva de capacidad de estanque. Tampoco precio de combustible ni costo en CLP: el precio fluctúa y el transportista lo calcula con los litros y el km/L. El MVP muestra L, km/L y L/100 km, sin input de precio ni estimación de costo.

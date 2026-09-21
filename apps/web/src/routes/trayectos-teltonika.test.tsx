@@ -154,7 +154,10 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
     // 10 L / 42,5 km × 100 = 23,529… → un decimal
     expect(screen.getByText('23,5 L/100 km')).toBeInTheDocument();
-    expect(screen.getByText(/costo de operación/)).toBeInTheDocument();
+    expect(screen.getByText(/armás el costo de operación por tu cuenta/)).toBeInTheDocument();
+    expect(screen.queryByText(/CLP|\$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('sin sensor muestra la CTA y no inventa km/L', async () => {
