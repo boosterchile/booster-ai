@@ -5,23 +5,19 @@ name: E2E PR (local)
 # cascada CSS computada y foco reales, que jsdom no puede (p.ej. blindaje #576).
 #
 # Distinto de `e2e-staging.yml` (nightly + on-demand contra PROD, 4 browsers, se
-# salta en PRs a propósito): éste corre en CADA PR relevante, contra un server
-# local. NO-required: es un workflow nuevo, no está en branch protection; su
-# promoción a required es decisión posterior del PO.
+# salta en PRs a propósito): éste corre en CADA PR a main.
+#
+# Branch protection: el job `e2e-conductor` SIEMPRE publica el check
+# `E2E conductor (Auth emulator + API local)` en PRs a main (sin path
+# filter a nivel workflow). Un job skipped NO satisface required checks;
+# por eso este job corre siempre y hace `exit 0` en skip documentado.
+# El Playwright pesado vive en `e2e-conductor-run` (Postgres/Redis/Auth)
+# y solo arranca si el diff toca superficie E2E — barato en minutos CI.
+# Listo para marcarse required; el setting lo aplica ops humana de GitHub.
 
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'apps/web/**'
-      - 'apps/api/scripts/seed-conductor-e2e.ts'
-      - 'apps/api/src/services/firebase.ts'
-      - 'packages/ui-components/**'
-      - 'packages/ui-tokens/**'
-      - '.github/workflows/e2e-pr.yml'
-      - 'firebase.json'
-      - '.firebaserc'
-      - '.specs/conductor-e2e-auth-emulator/**'
 
 permissions:
   contents: read
@@ -31,8 +27,42 @@ env:
   PNPM_VERSION: '10.34.4'
 
 jobs:
+  e2e-paths:
+    name: E2E path filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      local: ${{ steps.filter.outputs.local }}
+      conductor: ${{ steps.filter.outputs.conductor }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detectar paths E2E
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            local:
+              - 'apps/web/**'
+              - 'packages/ui-components/**'
+              - 'packages/ui-tokens/**'
+              - '.github/workflows/e2e-pr.yml'
+            conductor:
+              - 'apps/web/**'
+              - 'apps/api/scripts/seed-conductor-e2e.ts'
+              - 'apps/api/scripts/seed-conductor-e2e-cleanup.ts'
+              - 'apps/api/test/scripts/seed-conductor-e2e-cleanup.test.ts'
+              - 'apps/api/src/services/firebase.ts'
+              - 'packages/ui-components/**'
+              - 'packages/ui-tokens/**'
+              - '.github/workflows/e2e-pr.yml'
+              - 'firebase.json'
+              - '.firebaserc'
+              - '.specs/conductor-e2e-auth-emulator/**'
+
   e2e-local:
     name: E2E local (Chromium) — /apariencia
+    needs: e2e-paths
+    if: needs.e2e-paths.outputs.local == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -68,10 +98,13 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # Slot 3 paso 6 — flujo conductor contra API local + Auth emulator :9099.
-  # Reusa este workflow (no un YAML nuevo ni quality gates de ci.yml).
-  e2e-conductor:
-    name: E2E conductor (Auth emulator + API local)
+  # Playwright pesado: solo si el diff toca superficie E2E conductor.
+  # El check required NO es este job (un skip lo dejaría "Skipped" y
+  # bloquearía el merge). Ver `e2e-conductor` abajo.
+  e2e-conductor-run:
+    name: E2E conductor Playwright
+    needs: e2e-paths
+    if: needs.e2e-paths.outputs.conductor == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -190,3 +223,37 @@ jobs:
             /tmp/api-e2e.log
           retention-days: 14
           if-no-files-found: ignore
+
+  # Check estable para branch protection. Nombre EXACTO del job verde de #693.
+  # Corre siempre (no `if:` de skip). `always()` es necesario para que no se
+  # skippee cuando `e2e-conductor-run` no corre.
+  e2e-conductor:
+    name: E2E conductor (Auth emulator + API local)
+    needs: [e2e-paths, e2e-conductor-run]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Skip documentado o propagar resultado
+        run: |
+          set -euo pipefail
+          paths_result='${{ needs.e2e-paths.result }}'
+          conductor='${{ needs.e2e-paths.outputs.conductor }}'
+          run_result='${{ needs.e2e-conductor-run.result }}'
+          if [ "$paths_result" != 'success' ]; then
+            echo "E2E path filter falló (result=$paths_result)." >&2
+            exit 1
+          fi
+          if [ "$conductor" != 'true' ]; then
+            echo "Skip documentado: el diff no toca superficie E2E conductor."
+            echo "El check 'E2E conductor (Auth emulator + API local)' se reporta verde"
+            echo "para poder marcarse required en branch protection (ops humana de GitHub)."
+            echo "Paths que disparan el Playwright: apps/web, seed T2, firebase API/emulator, UI tokens/components, este workflow, spec conductor-e2e-auth-emulator."
+            exit 0
+          fi
+          echo "e2e-conductor-run result=$run_result"
+          if [ "$run_result" = 'success' ]; then
+            exit 0
+          fi
+          echo "E2E conductor Playwright no pasó (result=$run_result). Ver el job 'E2E conductor Playwright'." >&2
+          exit 1
