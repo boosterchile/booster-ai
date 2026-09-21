@@ -60,15 +60,15 @@ photo-upload-url aceptan escritura en `asignado` y `recogido`. Sigue 409 en
 
 ## 4. Criterios de salida
 
-- [ ] Generador, oficina y conductor envían/leen texto en assignment `asignado` y
+- [x] Generador, oficina y conductor envían/leen texto en assignment `asignado` y
       `recogido` (viaje T2 `asignado`/`en_proceso`), mismo `resolveChatAccess`.
-- [ ] Mensaje A→B visible por SSE o refetch &lt; ~5 s.
-- [ ] Sin «Reconectando…» eterno; degrade honesto a polling; tests de reconnect
+- [x] Mensaje A→B visible por SSE o refetch &lt; ~5 s.
+- [x] Sin «Reconectando…» eterno; degrade honesto a polling; tests de reconnect
       con ticket nuevo (single-use).
-- [ ] Tras `entregado`: `readOnly` en conductor/oficina/generador; API 409
+- [x] Tras `entregado`: `readOnly` en conductor/oficina/generador; API 409
       `chat_closed` (política documentada para el deep-link si no conoce el estado).
-- [ ] WA opcional notify-only; in-app es SoR.
-- [ ] Tests + PR con evidencia (rojo exhibido del 409/`recogido`, lint, typecheck,
+- [x] WA opcional notify-only; in-app es SoR.
+- [x] Tests + PR con evidencia (rojo exhibido del 409/`recogido`, lint, typecheck,
       build).
 
 ## 5. Fuera de alcance
