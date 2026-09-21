@@ -109,6 +109,24 @@ describe('humanizeTransportDocumentError', () => {
     expect(humanizeTransportDocumentError(new ApiError(403, 'forbidden', null))).toMatch(
       /No tenés/,
     );
+    expect(humanizeTransportDocumentError(new ApiError(400, 'mime_mismatch', null))).toMatch(
+      /PDF, JPEG o PNG/,
+    );
+    expect(humanizeTransportDocumentError(new ApiError(400, 'file_missing', null))).toMatch(
+      /Elegí un archivo/,
+    );
+    expect(humanizeTransportDocumentError(new ApiError(404, 'trip_not_found', null))).toMatch(
+      /No encontramos/,
+    );
+    expect(humanizeTransportDocumentError(new ApiError(500, 'persist_failed', null))).toMatch(
+      /No se pudo guardar/,
+    );
+    expect(humanizeTransportDocumentError(new ApiError(500, 'upload_failed', null))).toMatch(
+      /storage/,
+    );
+    expect(humanizeTransportDocumentError(new ApiError(500, 'invalid_response', null))).toMatch(
+      /no se pudo leer/,
+    );
   });
 
   it('error desconocido → genérico vos', () => {
@@ -142,6 +160,13 @@ describe('listTransportDocuments', () => {
     expect(docs[0]?.extractionStatus).toBe('pendiente');
     expect(docs[0]?.docType).toBe('52');
   });
+
+  it('respuesta inválida del listado → ApiError invalid_response', async () => {
+    vi.spyOn(api, 'get').mockResolvedValueOnce({ documents: [{ id: 'no-uuid' }] });
+    await expect(listTransportDocuments(TRIP_ID)).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+  });
 });
 
 describe('uploadTransportDocument', () => {
@@ -166,6 +191,17 @@ describe('uploadTransportDocument', () => {
     const file = new File(['x'], 'a.gif', { type: 'image/gif' });
     await expect(uploadTransportDocument(TRIP_ID, file)).rejects.toMatchObject({
       code: 'mime_not_allowed',
+    });
+    expect(postForm).not.toHaveBeenCalled();
+  });
+
+  it('archivo >15 MB no pega al API', async () => {
+    const postForm = vi.spyOn(api, 'postForm');
+    const big = new File([new Uint8Array(15 * 1024 * 1024 + 1)], 'a.pdf', {
+      type: 'application/pdf',
+    });
+    await expect(uploadTransportDocument(TRIP_ID, big)).rejects.toMatchObject({
+      code: 'file_too_large',
     });
     expect(postForm).not.toHaveBeenCalled();
   });

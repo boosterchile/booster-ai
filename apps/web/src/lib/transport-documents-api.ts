@@ -33,7 +33,8 @@ export function canWriteTransportDocuments(role: string | null | undefined): boo
   return role != null && (WRITE_TRANSPORT_DOCUMENT_ROLES as readonly string[]).includes(role);
 }
 
-const isoish = z.preprocess((v) => (v instanceof Date ? v.toISOString() : v), z.string().min(1));
+/** ISO datetime o date string que llega por JSON (nunca `Date` en fetch). */
+const isoish = z.string().min(1);
 
 /** GET /transport-orders/:id/documents — camelCase Drizzle. */
 const listItemRawSchema = z.object({

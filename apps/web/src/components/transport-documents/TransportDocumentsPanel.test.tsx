@@ -154,11 +154,67 @@ describe('TransportDocumentsPanel', () => {
     await waitFor(() => expect(downloadMock).toHaveBeenCalledWith(DOC_ID));
   });
 
-  it('compacto usa details con el mismo tripId', async () => {
+  it('error de lista → mensaje vos, no crash', async () => {
+    listMock.mockRejectedValue(new ApiError(403, 'forbidden', null));
+    renderPanel();
+    expect(await screen.findByText(/No tenés permiso para este viaje/)).toBeInTheDocument();
+  });
+
+  it('Descargá con storage null → banner de error', async () => {
+    listMock.mockResolvedValue([makeDoc()]);
+    downloadMock.mockRejectedValue(new ApiError(503, 'storage_unavailable', null));
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Descargá' }));
+    expect(
+      await screen.findByText('El archivo no se pudo guardar (storage). Reintentá más tarde.'),
+    ).toBeInTheDocument();
+  });
+
+  it('manual-entry llena ruts/fecha/monto y cambia tipo; error se muestra', async () => {
+    listMock.mockResolvedValue([makeDoc({ extractionStatus: 'fallido' })]);
+    manualMock.mockRejectedValue(new ApiError(500, 'update_failed', null));
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Completar a mano' }));
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: '33' } });
+    fireEvent.change(screen.getByLabelText('Folio'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('RUT emisor'), { target: { value: '76.000.000-0' } });
+    fireEvent.change(screen.getByLabelText('RUT receptor'), { target: { value: '11.111.111-1' } });
+    fireEvent.change(screen.getByLabelText('Fecha de emisión'), {
+      target: { value: '2026-09-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Monto'), { target: { value: '1500.50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardá' }));
+    await waitFor(() =>
+      expect(manualMock).toHaveBeenCalledWith(
+        DOC_ID,
+        expect.objectContaining({
+          doc_type: '33',
+          folio: '9',
+          rut_emisor: '76.000.000-0',
+          rut_receptor: '11.111.111-1',
+          fecha_emision: '2026-09-01',
+          monto_total: '1500.50',
+        }),
+      ),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se pudo guardar/);
+  });
+
+  it('Cancelar cierra el form manual', async () => {
+    listMock.mockResolvedValue([makeDoc({ extractionStatus: 'pendiente' })]);
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Completar a mano' }));
+    expect(screen.getByTestId('manual-entry-form')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByTestId('manual-entry-form')).toBeNull();
+  });
+
+  it('compacto con docs muestra el conteo en el summary', async () => {
+    listMock.mockResolvedValue([
+      makeDoc(),
+      makeDoc({ id: '33333333-3333-4333-8333-333333333333' }),
+    ]);
     renderPanel({ compact: true });
-    const panel = await screen.findByTestId('transport-docs-panel');
-    expect(panel.tagName).toBe('DETAILS');
-    expect(panel).toHaveAttribute('data-trip-id', TRIP_ID);
-    expect(screen.getByText(/Documentos de transporte/)).toBeInTheDocument();
+    expect(await screen.findByText(/Documentos de transporte \(2\)/)).toBeInTheDocument();
   });
 });
