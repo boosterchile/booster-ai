@@ -5,8 +5,12 @@
  *
  * Qué hace además de `watchPosition`:
  *   - Throttle por tiempo y distancia con latido (`decidirReporte`).
- *   - Latido activo: si en `heartbeatMs` no llegó ningún fix (camión detenido,
- *     `watchPosition` calla), pide `getCurrentPosition` y lo envía igual.
+ *   - Latido activo: si en `heartbeatMs` no llegó un fix con `timestamp`
+ *     nuevo (camión detenido, `watchPosition` calla, o el browser repite el
+ *     mismo `GeolocationPosition` cacheado), pide `getCurrentPosition` con
+ *     `maximumAge: 0` y lo envía igual. Un callback repetido no reinicia el
+ *     reloj: si lo hiciera, el latido no correría y el tracking se quedaría
+ *     con el primer ping. Al volver la pestaña a `visible` pide un fix fresco.
  *   - Cola offline persistida (`ColaPosiciones`): todo lo que se decide enviar
  *     entra a la cola y se drena de inmediato; si falla, queda y se reintenta
  *     al volver `online`, al volver la pestaña a `visible`, cada `drainEveryMs`
@@ -69,6 +73,8 @@ let watcherId: number | null = null;
 let cola: ColaPosiciones | null = null;
 let ultimoEnviado: PuntoEnCola | null = null;
 let ultimoFixWallMs = 0;
+/** Último `timestamp_device` observado. Un callback con el mismo valor no es un fix nuevo. */
+let ultimoTimestampObservadoMs = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let drainTimer: ReturnType<typeof setInterval> | null = null;
 let drenando: Promise<{ enviados: number; restantes: number }> | null = null;
@@ -114,6 +120,7 @@ export function start(assignmentId: string): void {
   cola = new ColaPosiciones(assignmentId, { tope: REPORTER_OPTS.queueCap });
   ultimoEnviado = null;
   ultimoFixWallMs = Date.now();
+  ultimoTimestampObservadoMs = 0;
   emit({
     assignmentId,
     isWatching: true,
@@ -184,8 +191,12 @@ function onErrorGeolocation(err: GeolocationPositionError): void {
 }
 
 function onFix(pos: GeolocationPosition, esLatido: boolean): void {
-  ultimoFixWallMs = Date.now();
   const body = geoPositionToBody(pos);
+  const ts = Date.parse(body.timestamp_device);
+  if (Number.isFinite(ts) && ts > ultimoTimestampObservadoMs) {
+    ultimoTimestampObservadoMs = ts;
+    ultimoFixWallMs = Date.now();
+  }
   emit({
     lastPosition: {
       latitude: body.latitude,
@@ -207,20 +218,25 @@ function onFix(pos: GeolocationPosition, esLatido: boolean): void {
   void drenar();
 }
 
-/** Sin fix en `heartbeatMs`: el camión está detenido y `watchPosition` calla.
- *  Un `getCurrentPosition` reciente mantiene el tramo cubierto (< 60 s). */
+/** Sin un timestamp nuevo en `heartbeatMs`: `watchPosition` calló, o solo
+ *  repite un fix cacheado. `maximumAge: 0` pide una lectura nueva; si el
+ *  browser igual devuelve la vieja, el reloj no se reinicia y se reintenta. */
 function latido(): void {
-  const geo = geolocation();
-  if (!geo || typeof geo.getCurrentPosition !== 'function') {
+  if (Date.now() - ultimoFixWallMs < REPORTER_OPTS.heartbeatMs) {
     return;
   }
-  if (Date.now() - ultimoFixWallMs < REPORTER_OPTS.heartbeatMs) {
+  pedirFixFresco();
+}
+
+function pedirFixFresco(): void {
+  const geo = geolocation();
+  if (!geo || watcherId == null || typeof geo.getCurrentPosition !== 'function') {
     return;
   }
   geo.getCurrentPosition((pos) => onFix(pos, true), onErrorGeolocation, {
     enableHighAccuracy: true,
     timeout: 10_000,
-    maximumAge: 20_000,
+    maximumAge: 0,
   });
 }
 
@@ -287,6 +303,7 @@ function instalarListenersDom(): void {
       if (document.visibilityState === 'visible') {
         void drenar();
         void pedirWakeLock();
+        pedirFixFresco();
       }
     },
   };
@@ -340,6 +357,7 @@ export function __resetForTests(): void {
   cola = null;
   ultimoEnviado = null;
   ultimoFixWallMs = 0;
+  ultimoTimestampObservadoMs = 0;
   drenando = null;
   volverADrenar = false;
   snapshot = INICIAL;

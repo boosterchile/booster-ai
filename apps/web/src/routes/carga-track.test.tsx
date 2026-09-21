@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { LIVE_TRACKING_FETCH } from '../lib/live-tracking.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -266,6 +267,52 @@ describe('CargaTrackRoute', () => {
     const btn = await screen.findByRole('button', { name: /Abrir chat/ });
     fireEvent.click(btn);
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument();
+  });
+
+  it('en_proceso vuelve a pedir la ubicación dentro de 15s y sin caché HTTP', async () => {
+    vi.useFakeTimers();
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue({
+      trip_request: {
+        id: 't1',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'recogido',
+        empresa_legal_name: 'Transportes Andes',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion',
+        driver_name: 'Pedro',
+        ubicacion_actual: {
+          timestamp_device: '2026-09-21T19:00:00.000Z',
+          latitude: -33.39729,
+          longitude: -70.79487,
+          speed_kmh: 29.02,
+          angle_deg: 90,
+        },
+        position_source: 'mobile',
+        eta_minutes: 114,
+      },
+    });
+    try {
+      renderRoute();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      expect(getSpy).toHaveBeenCalledWith('/trip-requests-v2/trip-1', LIVE_TRACKING_FETCH);
+      const afterFirst = getSpy.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(getSpy.mock.calls.length).toBeGreaterThan(afterFirst);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('generador dueño → panel documental con tripId de ruta y canWrite', async () => {

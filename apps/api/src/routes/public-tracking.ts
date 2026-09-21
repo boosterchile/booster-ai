@@ -54,11 +54,12 @@ export function createPublicTrackingRoutes(opts: {
       return c.json({ error: 'not_found' }, 404);
     }
 
-    // Cache 30s en CDN/browser. El position se actualiza cada ~30s
-    // típicamente (Teltonika emite cada 10-30s en movimiento; el móvil del
-    // conductor cada 10-25s), y queremos
-    // evitar bombardeo si el consignee abre el link y refresh repetido.
-    c.header('Cache-Control', 'public, max-age=30');
+    // El body incluye la edad del último ping, calculada en este request.
+    // `public, max-age=30` dejaba al browser (y a un caché compartido)
+    // repetir el snapshot: el poll y el botón Refrescar no veían la
+    // posición nueva hasta que vencía el max-age. El cliente ya pollea
+    // cada 30s en un viaje activo; el rate-limit acota el resto.
+    c.header('Cache-Control', 'private, no-store');
 
     return c.json(result);
   });

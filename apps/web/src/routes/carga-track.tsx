@@ -7,8 +7,15 @@ import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
+import { useRefetchWhenVisible } from '../hooks/use-refetch-when-visible.js';
 import { api } from '../lib/api-client.js';
-import { type PositionSource, etaLine, positionSourceLabel } from '../lib/live-tracking.js';
+import {
+  LIVE_TRACKING_FETCH,
+  LIVE_TRACKING_QUERY,
+  type PositionSource,
+  etaLine,
+  positionSourceLabel,
+} from '../lib/live-tracking.js';
 import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 /**
@@ -73,10 +80,12 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
   const tripQ = useQuery({
     queryKey: ['trip-requests-v2', id, 'track'],
     queryFn: async () => {
-      return await api.get<TripDetailResponse>(`/trip-requests-v2/${id}`);
+      return await api.get<TripDetailResponse>(`/trip-requests-v2/${id}`, LIVE_TRACKING_FETCH);
     },
     refetchInterval: 15_000,
+    ...LIVE_TRACKING_QUERY,
   });
+  useRefetchWhenVisible(() => void tripQ.refetch(), id.length > 0);
 
   const trip = tripQ.data?.trip_request;
   const assignment = tripQ.data?.assignment;

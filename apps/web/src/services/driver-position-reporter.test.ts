@@ -154,6 +154,40 @@ describe('driver-position-reporter — throttle y latido', () => {
     await flushMicrotasks();
     expect(postDriverPositionSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('watchPosition repitiendo el mismo timestamp no apaga el latido', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(-33.39729, -70.79487, T0);
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(1);
+    for (let i = 1; i <= 20; i++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      geo.emit(-33.39729, -70.79487, T0);
+    }
+    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(geo.getCurrentPosition.mock.calls[0]?.[2]).toMatchObject({ maximumAge: 0 });
+    const cb = geo.getCurrentPosition.mock.calls[0]?.[0] as (p: GeolocationPosition) => void;
+    cb(geo.pos(-33.41, -70.8, T0 + 25_000));
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(2);
+    expect(postDriverPositionSpy).toHaveBeenLastCalledWith(
+      'asg-1',
+      expect.objectContaining({ latitude: -33.41, longitude: -70.8 }),
+    );
+  });
+
+  it('al volver a visible pide un fix fresco sin esperar el latido', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(-33.39729, -70.79487, T0);
+    await flushMicrotasks();
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(geo.getCurrentPosition.mock.calls[0]?.[2]).toMatchObject({ maximumAge: 0 });
+  });
 });
 
 describe('driver-position-reporter — cola offline con reintento', () => {
