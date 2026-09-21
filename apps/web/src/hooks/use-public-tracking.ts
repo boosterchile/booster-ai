@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api-client.js';
-import type { PositionSource } from '../lib/live-tracking.js';
+import {
+  LIVE_TRACKING_FETCH,
+  LIVE_TRACKING_QUERY,
+  type PositionSource,
+} from '../lib/live-tracking.js';
+import { useRefetchWhenVisible } from './use-refetch-when-visible.js';
 
 /**
  * Hook que consume el endpoint público de tracking del consignee/shipper
@@ -11,10 +16,10 @@ import type { PositionSource } from '../lib/live-tracking.js';
  * no lo lee. La defensa es la opacidad del token UUID v4.
  *
  * Auto-poll: cuando el trip está activo (asignado | en_proceso) la
- * posición se actualiza cada ~30s. Browser respeta `Cache-Control:
- * max-age=30` del response, así que polls intermedios pueden venir del
- * cache. Cuando el trip está cerrado (entregado | cancelado) bajamos
- * el polling a 5min — la posición ya no cambia.
+ * posición se vuelve a pedir cada 30s, también con la pestaña en segundo
+ * plano, y al volver a primer plano (Safari móvil pausa los timers).
+ * El fetch va con `cache: 'no-store'`. Cuando el trip está cerrado
+ * (entregado | cancelado) el polling baja a 5min — la posición ya no cambia.
  */
 
 /** Espejo del shape del response server-side (apps/api/src/services/get-public-tracking.ts). */
@@ -57,16 +62,18 @@ export interface PublicTrackingFoundResponse {
 
 const ACTIVE_TRIP_STATUSES = new Set(['asignado', 'en_proceso']);
 
-/** 30s para trips activos (alineado con Cache-Control del endpoint). */
+/** 30s para trips activos: tope del requisito de seguimiento en vivo. */
 const POLL_ACTIVE_MS = 30_000;
 /** 5min para trips cerrados — la posición no cambia. */
 const POLL_CLOSED_MS = 300_000;
 
 export function usePublicTracking(token: string, opts: { enabled?: boolean } = {}) {
-  return useQuery<PublicTrackingFoundResponse>({
+  const enabled = opts.enabled !== false && token.length > 0;
+  const query = useQuery<PublicTrackingFoundResponse>({
     queryKey: ['public-tracking', token],
-    queryFn: () => api.get<PublicTrackingFoundResponse>(`/public/tracking/${token}`),
-    enabled: opts.enabled !== false && token.length > 0,
+    queryFn: () =>
+      api.get<PublicTrackingFoundResponse>(`/public/tracking/${token}`, LIVE_TRACKING_FETCH),
+    enabled,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) {
@@ -74,6 +81,7 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
       }
       return ACTIVE_TRIP_STATUSES.has(data.trip.status) ? POLL_ACTIVE_MS : POLL_CLOSED_MS;
     },
+    ...LIVE_TRACKING_QUERY,
     retry: (failureCount, error) => {
       // 404 = token no existe / formato inválido. No retry.
       if (error instanceof ApiError && error.status === 404) {
@@ -81,8 +89,7 @@ export function usePublicTracking(token: string, opts: { enabled?: boolean } = {
       }
       return failureCount < 2;
     },
-    // staleTime corto (alineado con el polling) — al volver a focus,
-    // se refetch automáticamente.
-    staleTime: 15_000,
   });
+  useRefetchWhenVisible(() => void query.refetch(), enabled);
+  return query;
 }

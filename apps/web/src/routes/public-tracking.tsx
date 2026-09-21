@@ -22,7 +22,6 @@
  *   - Precio acordado
  */
 
-import { useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import {
   AlertCircle,
@@ -43,11 +42,10 @@ import { etaLine, positionSourceLabel } from '../lib/live-tracking.js';
 
 export function PublicTrackingRoute() {
   const { token } = useParams({ strict: false }) as { token: string };
-  const queryClient = useQueryClient();
   const query = usePublicTracking(token);
 
   const handleRefresh = (): void => {
-    void queryClient.invalidateQueries({ queryKey: ['public-tracking', token] });
+    void query.refetch();
   };
 
   return (

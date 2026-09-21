@@ -30,6 +30,8 @@ export interface UseDriverPositionReporterResult {
   pointsSent: number;
   lastGeofence: GeofenceLectura | null;
   queued: number;
+  enSegundoPlano: boolean;
+  avisoPausa: boolean;
   start: (assignmentId: string) => void;
   stop: () => void;
   flush: () => Promise<{ enviados: number; restantes: number }>;
@@ -44,6 +46,8 @@ export function useDriverPositionReporter(): UseDriverPositionReporterResult {
     pointsSent: snap.pointsSent,
     lastGeofence: snap.lastGeofence,
     queued: snap.queued,
+    enSegundoPlano: snap.enSegundoPlano,
+    avisoPausa: snap.avisoPausa,
     start,
     stop,
     flush: () => flush(),

@@ -26,6 +26,11 @@
  *   - Teltonika se lee por `vehiculo_id`, como ya hacía el tracking público;
  *     un vehículo solo con `teltonika_imei_espejo` cae al móvil.
  *   - `numeric` llega como string desde Drizzle y se convierte con `Number`.
+ *   - Dos pings con el mismo `timestamp_device` se desempatan por `id` DESC.
+ *     La migración 0025 no pone UNIQUE en el timestamp del móvil y el índice
+ *     `(vehiculo_id, timestamp_device)` no garantiza cuál fila gana el empate:
+ *     sin `id`, un insert más nuevo con el mismo reloj GPS puede perder y el
+ *     tracking se queda en la primera coordenada.
  */
 
 import { and, desc, eq, gte } from 'drizzle-orm';
@@ -97,7 +102,7 @@ export async function resolverPosicionEnVivo(opts: {
           gte(telemetryPoints.timestampDevice, cutoff),
         ),
       )
-      .orderBy(desc(telemetryPoints.timestampDevice))
+      .orderBy(desc(telemetryPoints.timestampDevice), desc(telemetryPoints.id))
       .limit(MAX_PINGS),
   );
   if (teltonika.length > 0) {
@@ -126,7 +131,7 @@ export async function resolverPosicionEnVivo(opts: {
           gte(posicionesMovilConductor.timestampDevice, cutoff),
         ),
       )
-      .orderBy(desc(posicionesMovilConductor.timestampDevice))
+      .orderBy(desc(posicionesMovilConductor.timestampDevice), desc(posicionesMovilConductor.id))
       .limit(MAX_PINGS),
   );
   if (mobile.length > 0) {
