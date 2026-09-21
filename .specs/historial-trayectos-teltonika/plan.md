@@ -6,7 +6,7 @@ Función pura en `apps/api/src/domain/segmentar-trayectos-teltonika.ts` (mismo p
 
 No hay migración: no existe capacidad de estanque y el brief no pide persistir trayectos. El cálculo es on-read.
 
-Refinamiento 2026-09-21 (badge): no se exige ignición apagada; el gate de movimiento es v ≤ 5 km/h. La ventana de 5 min compara `timestamp_device`, así un AVL bufferizado sin señal celular marca igual cuando llega.
+AC 3 (texto cerrado, 2026-09-21): puntos ordenados por timestamp de dispositivo; ΔL ≤ −U en 5 min con v ≤ 5 km/h; ignición on u off; badge en el historial. U = max(15 L, 3 % del estanque) si hay capacidad, si no 15 L. El buffer sin celular se evalúa al estar ingerido, con la hora del dispositivo. Sin push. No se marca consumo en marcha.
 
 ## Orden TDD
 

@@ -62,14 +62,22 @@ Segmentación, por vehículo, puntos en orden temporal:
 4. 250 = 1/0 solo estira el borde si cae a ≤ 2 min del inicio/fin ya detectado.
 5. Distancia = Σ haversine entre coordenadas válidas (se salta 0,0 y null; no se inventa tramo).
 6. L ini / L fin = primera y última lectura válida de 84 dentro del trayecto. `km/L = distancia_km / max(L_ini − L_fin, ε)` solo si `L_ini − L_fin > 0`. Si no, `km_por_litro = null` y nota en vos.
-7. Badge `posible_robo_combustible` si existe un par de lecturas 84 válidas con `ΔL ≤ −U` en ≤ 5 min y todos los puntos del intervalo tienen velocidad conocida ≤ 5 km/h. La ignición apagada no es requisito: el robo puede ocurrir con el motor encendido si el vehículo está detenido. La ventana de 5 min se mide con `timestamp_device` (hora del AVL), no con la hora de recepción: un lote que el Teltonika bufferizó sin señal celular y subió después igual marca. `U = max(15, 0.03 × capacidad)` si la capacidad es un número > 0; si no, 15. El badge se pega al trayecto que solapa la ventana, o al que terminó justo antes. Solo historial: no hay push ni alerta en vivo.
+7. Badge según el criterio 3 (texto cerrado abajo). El reloj es `timestamp_device`. `timestamp_recibido_en` no entra en la ventana ni en el orden.
 8. Sensor del vehículo en la ventana: algún 84 válido → `presente`. Algún 83/84/89 sin 84 válido → `degradado` (sin litros, sin badge, nota explícita). Ninguno → `ausente` (trayectos y km sí; sin km/L ni badge; CTA de conectar sensor).
 
 ## Criterios de éxito
 
 1. Dueño|admin transportista ve la lista en `/app/trayectos`: inicio, fin, distancia, vehículo; scope `empresa_id`; reciente primero; paginada.
 2. Con 84 válido al inicio y al final y ΔL > 0: L ini, L fin y km/L según la fórmula. Si ΔL ≤ 0: km/L «—» y nota.
-3. Badge «posible robo combustible» con ΔL ≤ −U en ≤ 5 min y v ≤ 5 km/h. La ignición puede estar encendida. La ventana usa la hora del dispositivo, también si los puntos llegaron tarde por buffer. Solo en el historial (sin push).
+3. Given Teltonika points ordered by **device timestamp** (not receive/GPRS time), When within window Y=5 min (device ts) fuel drops ΔL ≤ −U with v≤5 km/h — **ignition on OR off both valid** — Then badge «posible robo combustible» on that trip in historial.
+
+   U = max(15 L, 3% tank capacity) if capacity known, else 15 L.
+
+   Mandatory: offline-tolerant — if device buffered without cellular and later uploads via GPRS, ΔL is detected on ingest using device ts (must not miss due to server delay).
+
+   Still out of MVP: live/push alerts. Still in: v≈0 so we don't badge consumption while moving.
+
+   Cumplimiento en código: `listar-trayectos-teltonika.ts` lee y ordena `telemetria_puntos.timestamp_device` (no `timestamp_recibido_en`) y pasa ese instante como `tMs`. `segmentar-trayectos-teltonika.ts` reordena por `tMs`, exige ΔL ≤ −U en ≤ 5 min y velocidad conocida ≤ 5 km/h en todo el intervalo, y no mira la ignición. El badge se calcula al leer el historial sobre los puntos ya ingeridos; un upload GPRS tardío no se pierde por la demora del servidor. No hay push.
 4. Teltonika sin sensor (sin 83/84/89): trayectos y km; sin km/L ni badge; CTA «conectar sensor combustible».
 5. Empresa sin vehículos Teltonika: lista vacía + CTA de vincular. HTTP 200, no error.
 6. Conductor, despachador, visualizador, generador puro: 403 y el ítem no está en el nav.

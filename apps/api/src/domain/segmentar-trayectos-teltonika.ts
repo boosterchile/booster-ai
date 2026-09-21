@@ -9,8 +9,9 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * El 250 acerca bordes, no abre un trayecto por su cuenta.
  * Los litros salen solo del AVL 84 (×0.1). El 89 (%) y el 83 (acumulado)
  * no se convierten a un nivel.
- * El badge de robo no exige ignición apagada: basta ΔL y v ≤ 5 km/h.
- * Los instantes son los del dispositivo (`tMs`), no los de recepción.
+ * Badge (AC 3): puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
+ * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
+ * `tMs` es la hora del AVL, no la de recepción GPRS.
  */
 
 export const UMBRAL_ROBO_BASE_L = 15;
