@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { confirmarEntregaViaje } from '../../src/services/confirmar-entrega-viaje.js';
 
+const { viajesEntregadosAdd } = vi.hoisted(() => ({
+  viajesEntregadosAdd: vi.fn(),
+}));
+
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: (name: string) => ({
+    add: name === 'viajes_entregados_total' ? viajesEntregadosAdd : vi.fn(),
+  }),
+}));
+
 // Mock emitirCertificadoViaje porque es fire-and-forget post-commit y
 // requiere KMS+GCS. Aquí solo probamos el flujo de confirmar.
 vi.mock('../../src/services/emitir-certificado-viaje.js', () => ({
@@ -279,6 +289,79 @@ describe('confirmarEntregaViaje', () => {
       throw new Error('expected ok=true');
     }
     expect(result.alreadyDelivered).toBe(false);
+  });
+
+  it('métrica norte: primera entrega del shipper desde asignado suma 1', async () => {
+    const db = makeDb({
+      selects: [[TRIP_BASE], [ASSIGNMENT_BASE]],
+      inserts: [[]],
+    });
+    const result = await confirmarEntregaViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'shipper',
+      actor: { empresaId: SHIPPER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+    expect(result.ok).toBe(true);
+    expect(viajesEntregadosAdd).toHaveBeenCalledTimes(1);
+    expect(viajesEntregadosAdd).toHaveBeenCalledWith(1, {
+      confirmed_via: 'shipper',
+      estado_previo: 'asignado',
+    });
+  });
+
+  it('métrica norte: entrega del carrier desde en_proceso etiqueta el paso por recogida', async () => {
+    const db = makeDb({
+      selects: [[{ ...TRIP_BASE, status: 'en_proceso' }], [ASSIGNMENT_BASE]],
+      inserts: [[]],
+    });
+    await confirmarEntregaViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'carrier',
+      actor: { empresaId: CARRIER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+    expect(viajesEntregadosAdd).toHaveBeenCalledTimes(1);
+    expect(viajesEntregadosAdd).toHaveBeenCalledWith(1, {
+      confirmed_via: 'carrier',
+      estado_previo: 'en_proceso',
+    });
+  });
+
+  it('métrica norte: repetición idempotente y rechazo no incrementan', async () => {
+    const past = new Date('2026-04-01T00:00:00Z');
+    const yaEntregado = makeDb({
+      selects: [
+        [{ ...TRIP_BASE, status: 'entregado' }],
+        [{ ...ASSIGNMENT_BASE, deliveredAt: past }],
+      ],
+    });
+    await confirmarEntregaViaje({
+      db: yaEntregado as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'shipper',
+      actor: { empresaId: SHIPPER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+
+    const cancelado = makeDb({
+      selects: [[{ ...TRIP_BASE, status: 'cancelado' }], [ASSIGNMENT_BASE]],
+    });
+    await confirmarEntregaViaje({
+      db: cancelado as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      source: 'carrier',
+      actor: { empresaId: CARRIER_EMP_ID, userId: USER_ID },
+      config: {},
+    });
+
+    expect(viajesEntregadosAdd).not.toHaveBeenCalled();
   });
 
   it('shipper sin assignment + status confirmable → no_assignment', async () => {

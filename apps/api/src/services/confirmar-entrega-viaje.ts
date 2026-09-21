@@ -36,6 +36,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { assignments, transportDocuments, tripEvents, trips } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { actualizarFactorMatchingViaje } from './actualizar-factor-matching.js';
 import { recalcularNivelPostEntrega } from './calcular-metricas-viaje.js';
 import { calcularScoreConduccionViaje } from './calcular-score-conduccion-viaje.js';
@@ -58,7 +59,13 @@ import {
 export type ConfirmarEntregaSource = 'shipper' | 'carrier';
 
 export type ConfirmarEntregaResult =
-  | { ok: true; alreadyDelivered: false; deliveredAt: Date }
+  | {
+      ok: true;
+      alreadyDelivered: false;
+      deliveredAt: Date;
+      /** `viajes.estado` bajo el lock, antes del UPDATE a `entregado`. */
+      estadoPrevio: string;
+    }
   | { ok: true; alreadyDelivered: true; deliveredAt: Date }
   | {
       ok: false;
@@ -78,6 +85,14 @@ export type ConfirmarEntregaResult =
  * (backward-compat: equivalente a `requireDocumentToClose=false`).
  */
 export interface DocumentClosePolicy extends FlagsCierreDocumental {}
+
+/**
+ * Métrica norte (`.specs/viajes-entregados-total`): +1 por cada primera
+ * transición a `entregado` hecha por este servicio. Labels `confirmed_via`
+ * (`shipper`|`carrier`) y `estado_previo` (`asignado`|`en_proceso`).
+ * No cuenta idempotencia, rechazos ni parches fuera de este write-path.
+ */
+const viajesEntregadosCounter = getBusinessCounter('viajes_entregados_total');
 
 export async function confirmarEntregaViaje(opts: {
   db: Db;
@@ -249,6 +264,7 @@ export async function confirmarEntregaViaje(opts: {
       ok: true as const,
       alreadyDelivered: false as const,
       deliveredAt: now,
+      estadoPrevio: trip.status,
     };
   });
 
@@ -257,6 +273,10 @@ export async function confirmarEntregaViaje(opts: {
   // re-disparamos (el cert ya debería existir; si no, un job de backfill
   // lo retoma).
   if (txResult.ok && !txResult.alreadyDelivered) {
+    viajesEntregadosCounter.add(1, {
+      confirmed_via: source,
+      estado_previo: txResult.estadoPrevio,
+    });
     // ADR-028 §5 — re-derivar nivel de certificación con telemetría real
     // ANTES de emitir el cert. Esto convierte un trip que se persistió
     // como secundario_modeled (al asignar) en primario_verificable o
