@@ -25,8 +25,11 @@ queda casi siempre `degradada_cobertura`.
     ≥ `heartbeatMs` (25 s) sin enviar. Decide con `timestamp_device`, no con reloj de pared.
   - `ColaPosiciones`: cola FIFO persistida en `localStorage` por asignación
     (`booster.posiciones.<assignmentId>`), tope 3000 puntos (se descarta el más viejo).
-    `drenar(enviar)` manda en orden, se detiene en el primer fallo y conserva el resto; ante
-    `409 assignment_not_active` vacía la cola (la asignación ya cerró).
+    `drenar(enviar)` manda en orden, se detiene en el primer **fallo transitorio**
+    (red / 5xx / 401 / 403 / 429) y conserva el resto; ante `409 assignment_not_active`
+    vacía la cola (la asignación ya cerró). Enmienda 2026-09-21 (BOO-KJHITL): un 400/422
+    de validación o un punto no enviable (`accuracy_m` > 10 km) se descarta y el drenaje
+    sigue — ver `.specs/gps-cola-rechazo-no-bloquea/`.
 - `services/driver-position-reporter.ts`: **un solo reporter por sesión** (store de módulo,
   `useSyncExternalStore`). `start(assignmentId)` es idempotente; con otra asignación cierra el
   watcher anterior. Cada fix pasa por `decidirReporte`; lo que se envía va primero a la cola y
