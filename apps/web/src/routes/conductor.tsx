@@ -686,8 +686,13 @@ export function AssignmentCard({
             Tu camión reporta la posición automáticamente. No necesitas hacer nada.
           </output>
         ) : reporter.isWatching ? (
-          <output className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700">
-            Reportando posición en vivo · {reporter.pointsSent} puntos enviados
+          <output
+            data-testid="posicion-en-vivo"
+            className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700"
+          >
+            {reporter.avisoPausa
+              ? `El reporte se pausó al salir de esta pantalla. Ya volvió a enviar · ${reporter.pointsSent} puntos enviados`
+              : `Reportando mientras esta pantalla está al frente · ${reporter.pointsSent} puntos enviados`}
             {reporter.queued > 0 ? ` · ${reporter.queued} pendientes de envío` : ''}
           </output>
         ) : fase === 'por_recoger' ? (
@@ -715,6 +720,12 @@ export function AssignmentCard({
             </button>
           </div>
         ) : null}
+        {!hasTeltonika && fase !== 'entregada' && (
+          <p data-testid="aviso-maps-pausa" className="mt-2 text-neutral-600 text-sm">
+            Si abres Maps, el teléfono deja de enviar la posición hasta que vuelvas a esta pantalla.
+            El seguimiento muestra la última que alcanzó a salir.
+          </p>
+        )}
         {!hasTeltonika && reporter.lastError && (
           <div className="mt-2 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
             {reporter.lastError}

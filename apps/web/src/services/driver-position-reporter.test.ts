@@ -206,6 +206,67 @@ describe('driver-position-reporter — throttle y latido', () => {
     expect(geo.watchPosition).toHaveBeenCalledTimes(2);
     expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
   });
+
+  it('pasar a segundo plano no corta el watch', () => {
+    const geo = fakeGeo();
+    const visibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    try {
+      reporter.start('asg-1');
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(geo.clearWatch).not.toHaveBeenCalled();
+      expect(reporter.getSnapshot().isWatching).toBe(true);
+      expect(reporter.getSnapshot().enSegundoPlano).toBe(true);
+      expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBe(String(T0));
+    } finally {
+      if (visibility) {
+        Object.defineProperty(document, 'visibilityState', visibility);
+      } else {
+        Reflect.deleteProperty(document, 'visibilityState');
+      }
+    }
+  });
+
+  it('segundo plano largo sin fixes avisa al volver; un fix oculto no es pausa', () => {
+    const geo = fakeGeo();
+    let state: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => state,
+    });
+    try {
+      reporter.start('asg-1');
+      state = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      geo.emit(-33.41, -70.8, T0 + 5_000);
+      vi.setSystemTime(T0 + 20 * 60_000);
+      state = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(reporter.getSnapshot().avisoPausa).toBe(false);
+      expect(reporter.getSnapshot().enSegundoPlano).toBe(false);
+
+      reporter.__resetForTests();
+      localStorage.clear();
+      reporter.start('asg-1');
+      state = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.setSystemTime(T0 + 40 * 60_000);
+      state = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(reporter.getSnapshot().avisoPausa).toBe(true);
+      expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBeNull();
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('al reabrir la pantalla, una pausa persistida (página muerta en Maps) se avisa', () => {
+    localStorage.setItem('booster.reporte.segundo-plano.asg-1', String(T0 - 16 * 60_000));
+    fakeGeo();
+    reporter.start('asg-1');
+    expect(reporter.getSnapshot().avisoPausa).toBe(true);
+    expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBeNull();
+  });
 });
 
 describe('driver-position-reporter — cola offline con reintento', () => {

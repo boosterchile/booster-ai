@@ -74,9 +74,30 @@ no explica BOO-83ND2C —ahí el ETA sí cambió— y queda cerrado igual.
 - Tests de normalización, desempate, rearme, poll y POST. Lint y typecheck
   limpios en lo tocado.
 
+## Rechequeo del conductor (~16:33)
+
+Felipe, en la pantalla del viaje: «Reportando posición en vivo · 17 puntos
+enviados». Los puntos empezaron a contarse al abrir esa ventana. Mientras
+navegaba en Google Maps el teléfono no posteaba, y el seguimiento se quedó
+en el último ping de antes.
+
+El watcher no está atado al montaje de la tarjeta: vive en el módulo y
+`stop()` solo corre al confirmar la entrega o si niegan el permiso. Salir a
+otra ruta de Booster no lo apaga. Lo que lo apaga es el browser: con Maps en
+primer plano la página se suspende. Un service worker no puede llamar a
+`geolocation`, y el wake lock se suelta al ocultar el documento. No hay forma
+web de seguir posteando en ese rato (`.specs/conductor-gps-resiliente/` §3).
+
+La pantalla lo decía al revés: «en vivo» mientras los 17 puntos eran solo los
+de tener esta ventana abierta. Ahora el texto es «mientras esta pantalla está
+al frente». Si el documento pasa a `hidden` ≥15 s sin un fix, al volver (o al
+reabrir, si alcanzó a persistir la marca) dice que el reporte se pausó. El
+watch no se corta al ocultar: si el browser igual entrega un punto, no hay
+aviso. Junto a la posición, sin Teltonika: abrir Maps pausa el envío hasta
+volver.
+
 ## Fuera de alcance
 
-Mientras Google Maps (u otra app) está en primer plano, esta página no puede
-postear posiciones: no hay geolocalización en background en el sitio. Al
-volver a Booster el watch se rearma. Traza Teltonika «sin telemetría», link
-de compartir (#697), `es_demo` (#698), deploy. No se consultaron logs de prod.
+Geolocalización con Maps u otra app en primer plano, o con el teléfono
+bloqueado: hace falta app nativa o Teltonika. Traza «sin telemetría», link de
+compartir (#697), `es_demo` (#698), deploy. No se consultaron logs de prod.

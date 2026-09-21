@@ -18,9 +18,12 @@
  *   - Wake lock de pantalla mientras observa, si el navegador lo ofrece: con la
  *     pantalla apagada iOS suspende la PWA y no hay posiciones. Reportar con la
  *     app cerrada —o con Google Maps en primer plano, que suspende este
- *     documento— no es posible en un sitio web. Al volver a `visible` o en
- *     `pageshow` se rearma el watch: iOS no reanuda el `watchPosition` que
- *     quedó vivo en memoria, y `isWatching` impediría un `start()` nuevo.
+ *     documento— no es posible en un sitio web: el service worker no tiene
+ *     geolocalización y el wake lock se suelta al ocultar la página. Salir de
+ *     la ruta del conductor NO para el watcher (vive en este módulo, no en el
+ *     componente). Al pasar a segundo plano se anota la pausa; al volver a
+ *     `visible` o en `pageshow` se rearma el watch. iOS no reanuda el
+ *     `watchPosition` que quedó vivo en memoria.
  */
 import {
   COLA_TOPE_DEFAULT,
@@ -46,6 +49,11 @@ export interface ReporterSnapshot {
   lastGeofence: GeofenceLectura | null;
   /** Puntos en cola esperando señal. */
   queued: number;
+  /** El documento no está al frente. El watcher no se corta: si el browser
+   *  igual entrega un fix, se cuenta. */
+  enSegundoPlano: boolean;
+  /** Hubo un segundo plano de ≥15 s sin ningún fix. La UI lo dice al volver. */
+  avisoPausa: boolean;
 }
 
 export const REPORTER_OPTS = {
@@ -63,6 +71,8 @@ const INICIAL: ReporterSnapshot = {
   pointsSent: 0,
   lastGeofence: null,
   queued: 0,
+  enSegundoPlano: false,
+  avisoPausa: false,
 };
 
 type WakeLockSentinel = { release(): Promise<void> };
@@ -89,6 +99,43 @@ let domListeners: { online: () => void; visibility: () => void; pageshow: () => 
 /** Evita dos rearmes seguidos cuando `visibilitychange` y `pageshow` llegan juntos. */
 let ultimoRearmeMs = 0;
 const REARME_MIN_MS = 1_000;
+/** Por debajo de esto un cambio de app no merece el aviso (aún no es un hueco de ruta). */
+const PAUSA_AVISO_MS = 15_000;
+let ocultoDesdeMs = 0;
+let fixesMientrasOculto = 0;
+
+function clavePausa(assignmentId: string): string {
+  return `booster.reporte.segundo-plano.${assignmentId}`;
+}
+
+function marcarSegundoPlano(assignmentId: string): void {
+  try {
+    localStorage.setItem(clavePausa(assignmentId), String(Date.now()));
+  } catch {
+    // Storage bloqueado: el aviso vive solo en memoria de esta sesión.
+  }
+}
+
+function leerPausaPersistida(assignmentId: string): number | null {
+  try {
+    const raw = localStorage.getItem(clavePausa(assignmentId));
+    if (!raw) {
+      return null;
+    }
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function olvidarPausa(assignmentId: string): void {
+  try {
+    localStorage.removeItem(clavePausa(assignmentId));
+  } catch {
+    // Nada que limpiar si el storage no está.
+  }
+}
 
 function emit(patch: Partial<ReporterSnapshot>): void {
   snapshot = { ...snapshot, ...patch };
@@ -128,12 +175,21 @@ export function start(assignmentId: string): void {
   ultimoEnviado = null;
   ultimoFixWallMs = Date.now();
   ultimoTimestampObservadoMs = 0;
+  ocultoDesdeMs = 0;
+  fixesMientrasOculto = 0;
+  // La página pudo morir con Maps al frente: el `visibilitychange` de esa
+  // sesión no llega. La marca en localStorage sí, si el browser alcanzó a
+  // escribirla antes de suspender.
+  const pausaPrevia = leerPausaPersistida(assignmentId);
+  olvidarPausa(assignmentId);
   emit({
     assignmentId,
     isWatching: true,
     lastError: null,
     lastGeofence: null,
     queued: cola.pendientes(),
+    enSegundoPlano: false,
+    avisoPausa: pausaPrevia != null && Date.now() - pausaPrevia >= PAUSA_AVISO_MS,
   });
   watcherId = geo.watchPosition((pos) => onFix(pos, false), onErrorGeolocation, {
     enableHighAccuracy: true,
@@ -148,8 +204,13 @@ export function start(assignmentId: string): void {
 }
 
 export function stop(): void {
+  if (snapshot.assignmentId) {
+    olvidarPausa(snapshot.assignmentId);
+  }
   detenerObservacion();
-  emit({ isWatching: false });
+  ocultoDesdeMs = 0;
+  fixesMientrasOculto = 0;
+  emit({ isWatching: false, enSegundoPlano: false, avisoPausa: false });
 }
 
 /** Drena la cola ahora. Acotado: si no alcanza, devuelve lo que quedó. */
@@ -199,6 +260,13 @@ function onErrorGeolocation(err: GeolocationPositionError): void {
 
 function onFix(pos: GeolocationPosition, esLatido: boolean): void {
   const body = geoPositionToBody(pos);
+  if (snapshot.enSegundoPlano) {
+    // El browser entregó un fix con la página oculta: no fue una pausa.
+    fixesMientrasOculto += 1;
+    if (snapshot.assignmentId) {
+      olvidarPausa(snapshot.assignmentId);
+    }
+  }
   const ts = Date.parse(body.timestamp_device);
   if (Number.isFinite(ts) && ts > ultimoTimestampObservadoMs) {
     ultimoTimestampObservadoMs = ts;
@@ -324,23 +392,47 @@ async function drenar(): Promise<{ enviados: number; restantes: number }> {
   }
 }
 
+function notarVueltaAPrimerPlano(): void {
+  const pausaSinFix =
+    snapshot.enSegundoPlano &&
+    fixesMientrasOculto === 0 &&
+    ocultoDesdeMs > 0 &&
+    Date.now() - ocultoDesdeMs >= PAUSA_AVISO_MS;
+  if (snapshot.assignmentId) {
+    olvidarPausa(snapshot.assignmentId);
+  }
+  emit({
+    enSegundoPlano: false,
+    avisoPausa: snapshot.avisoPausa || pausaSinFix,
+  });
+  ocultoDesdeMs = 0;
+  fixesMientrasOculto = 0;
+  void drenar();
+  void pedirWakeLock();
+  rearmarWatch();
+}
+
 function instalarListenersDom(): void {
   if (domListeners || typeof window === 'undefined' || typeof document === 'undefined') {
     return;
   }
-  const alVolver = (): void => {
-    void drenar();
-    void pedirWakeLock();
-    rearmarWatch();
-  };
   domListeners = {
     online: () => void drenar(),
     visibility: () => {
+      if (document.visibilityState === 'hidden' && snapshot.isWatching && snapshot.assignmentId) {
+        // No se corta el watch: en Android a veces sigue llegando un fix.
+        // En iOS el proceso se suspende y no hay POST hasta volver.
+        ocultoDesdeMs = Date.now();
+        fixesMientrasOculto = 0;
+        marcarSegundoPlano(snapshot.assignmentId);
+        emit({ enSegundoPlano: true });
+        return;
+      }
       if (document.visibilityState === 'visible') {
-        alVolver();
+        notarVueltaAPrimerPlano();
       }
     },
-    pageshow: () => alVolver(),
+    pageshow: () => notarVueltaAPrimerPlano(),
   };
   window.addEventListener('online', domListeners.online);
   document.addEventListener('visibilitychange', domListeners.visibility);
@@ -396,6 +488,8 @@ export function __resetForTests(): void {
   ultimoFixWallMs = 0;
   ultimoTimestampObservadoMs = 0;
   ultimoRearmeMs = 0;
+  ocultoDesdeMs = 0;
+  fixesMientrasOculto = 0;
   drenando = null;
   volverADrenar = false;
   snapshot = INICIAL;
