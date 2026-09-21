@@ -217,7 +217,7 @@ q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementació
 - [x] Implementar la rama condicional (no usar `?? 0` en el cómputo real de huella).
 - [x] Verde + commit `feat(carbon): degradación explícita por peso ausente (nunca 0)`.
 **Criterio de hecho:** peso ausente con huella activa nunca produce emisiones `0`; métrica emitida.
-> **Ejecutado (2026-09-13, mismo PR que T12):** en el path real `carga_peso_kg` ausente con huella activa → `emisiones_kgco2e_reales = null` + métrica `huella_peso_ausente_total{fuente}` (assert explícito de que no es `0`); la distancia medida sí se persiste. El path estimado conserva `?? 0` a propósito (es un preview pre-asignación). "Exigir peso en el punto de activación" queda pendiente hasta que exista un endpoint/UI de activación del opt-in (hoy solo columnas, Task 1).
+> **Ejecutado (2026-09-13, mismo PR que T12):** en el path real `carga_peso_kg` ausente con huella activa → `emisiones_kgco2e_reales = null` + métrica `huella_peso_ausente_total{fuente}` (assert explícito de que no es `0`); la distancia medida sí se persiste. El path estimado conserva `?? 0` a propósito (es un preview pre-asignación). El endpoint/UI de activación del opt-in (el pendiente de "exigir peso en el punto de activación") vive en `.specs/activar-opt-in-huella/`: el PATCH no bloquea por peso (el cómputo ya degrada, nunca `0`); el copy de la UI lo declara.
 
 ---
 

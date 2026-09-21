@@ -105,6 +105,12 @@ const perfilRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/perfil.js'), 'PerfilRoute'),
 });
 
+const empresaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/empresa',
+  component: lazyRouteComponent(() => import('./routes/empresa.js'), 'EmpresaRoute'),
+});
+
 // Dashboard del conductor — vista principal post-login del conductor
 // (rol='conductor'). Lista de servicios asignados + alerta preventiva
 // de WhatsApp + reporte GPS móvil + acceso a configuración.
@@ -475,6 +481,7 @@ const routeTree = rootRoute.addChildren([
   ofertasRoute,
   serviciosRoute,
   perfilRoute,
+  empresaRoute,
   conductorDashboardRoute,
   conductorConfiguracionRoute,
   adminDispositivosRoute,

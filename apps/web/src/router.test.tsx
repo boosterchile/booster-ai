@@ -25,6 +25,7 @@ describe('router', () => {
         'app',
         'app/ofertas',
         'app/perfil',
+        'app/empresa',
         'app/admin/dispositivos',
         'app/vehiculos',
         'app/vehiculos/nuevo',

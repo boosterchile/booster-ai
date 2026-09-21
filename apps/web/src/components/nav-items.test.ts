@@ -46,9 +46,16 @@ function labels(sections: ReturnType<typeof navSectionsForMe>): string[] {
 }
 
 describe('navSectionsForMe', () => {
-  it('generador → Inicio + Crear carga/Mis cargas/Sucursales/Certificados', () => {
+  it('generador → Inicio + Empresa + Crear carga/Mis cargas/Sucursales/Certificados', () => {
     const l = labels(navSectionsForMe(buildMe({ generador: true })));
-    expect(l).toEqual(['Inicio', 'Crear carga', 'Mis cargas', 'Sucursales', 'Certificados']);
+    expect(l).toEqual([
+      'Inicio',
+      'Empresa',
+      'Crear carga',
+      'Mis cargas',
+      'Sucursales',
+      'Certificados',
+    ]);
   });
 
   it('transportista dueño → Inicio + transporte + Zonas de matching + Dispositivos', () => {
@@ -72,6 +79,18 @@ describe('navSectionsForMe', () => {
   it('generador puro NO ve Servicios (no despacha nada)', () => {
     const l = labels(navSectionsForMe(buildMe({ generador: true })));
     expect(l).not.toContain('Servicios');
+  });
+
+  it('dueño/admin ve Empresa; despachador no', () => {
+    expect(labels(navSectionsForMe(buildMe({ generador: true, role: 'dueno' })))).toContain(
+      'Empresa',
+    );
+    expect(labels(navSectionsForMe(buildMe({ generador: true, role: 'admin' })))).toContain(
+      'Empresa',
+    );
+    expect(
+      labels(navSectionsForMe(buildMe({ generador: true, role: 'despachador' }))),
+    ).not.toContain('Empresa');
   });
 
   it('transportista NO admin (despachador) → sin Dispositivos ni Zonas de matching', () => {

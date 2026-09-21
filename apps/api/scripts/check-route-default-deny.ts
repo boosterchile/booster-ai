@@ -114,6 +114,10 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // (app.use('/me/empresa/miembros', userContextMiddlewareForMe)); la
   // autorización es la membresía activa del caller y el rol (dueno/admin).
   createMeEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
+  // Opt-in de huella — /me/empresa: userContext precede el mount
+  // (app.use('/me/empresa', userContextMiddlewareForMe)); autorización =
+  // membresía activa + rol dueno|admin. El empresaId nunca viene del cliente.
+  createMeEmpresaRoutes: { category: 'ENFORCED', rationale: '' },
   // CRUD zonas de matching — /me/zonas: userContext precede el mount
   // (app.use('/me/zonas', userContextMiddlewareForMe)); autorización =
   // membresía activa + empresa transportista + rol dueno|admin.

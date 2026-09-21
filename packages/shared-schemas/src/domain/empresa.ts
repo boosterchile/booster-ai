@@ -120,3 +120,13 @@ export const empresaEstadoPatchSchema = z.object({
   estado: empresaStatusSchema,
 });
 export type EmpresaEstadoPatch = z.infer<typeof empresaEstadoPatchSchema>;
+
+/**
+ * PATCH de `empresas.carbon_measurement_enabled` (dueño/admin de la
+ * empresa activa). El `empresa_id` NO viaja en el body: sale de la
+ * membresía activa. Idempotente si el valor pedido es el actual.
+ */
+export const empresaCarbonMeasurementPatchSchema = z.object({
+  carbon_measurement_enabled: z.boolean(),
+});
+export type EmpresaCarbonMeasurementPatch = z.infer<typeof empresaCarbonMeasurementPatchSchema>;
