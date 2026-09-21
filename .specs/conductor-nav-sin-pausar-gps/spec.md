@@ -1,6 +1,6 @@
 # Navegar sin soltar el reporte GPS del teléfono
 
-**Estado**: aceptada como bugfix de producción (BOO-83ND2C, mandato de Felipe, 2026-09-21).
+**Estado**: criterios de aceptación cerrados (OK de producto, 2026-09-21). No se reabren.
 **Slot**: 3 «Conductor operativo». Endurece la tarjeta de `.specs/conductor-tarjeta-guiada/`
 y deja intacta la honestidad de pausa/rearme de `.specs/fix-tracking-snapshot-congelado/` (#699).
 
@@ -28,18 +28,37 @@ Sin API, sin schema, sin app nativa.
   `travelmode=driving`.
 - Con Teltonika el camión sigue reportando: el enlace secundario dice
   «Abrir en Maps», sin atribuirle una pausa al teléfono.
-- El aviso de #699 (`aviso-maps-pausa`) y el texto de rearme al volver
-  (`avisoPausa`) no se tocan.
+- El aviso previo de #699 (`aviso-maps-pausa`) y la frase de rearme
+  («El reporte se pausó… Ya volvió a enviar») se conservan. Esa frase ya no
+  va en el verde de «al frente»: es el estado degradado.
 
 ## Fuera de alcance
 
-App nativa / Capacitor, geolocalización con Maps en primer plano, split de
-Android, cobertura %, Slot 1.
+- SDK nativo (Capacitor u otro) y geolocalización con Maps en primer plano.
+- Instalar o exigir Teltonika.
+- Descongelar flota (Slot 2) ni ningún frente que no sea este.
+- Split de Android, cobertura %, Slot 1.
 
-## Criterios de salida
+## Criterios de aceptación (cerrados)
 
-- El control `navegar-destino` / `navegar-origen` no es un enlace externo.
-- Tocarlo muestra `ruta-en-app` y no llama a `window.open`.
-- El único enlace a Google Maps de esa fase lleva el aviso de pausa cuando
-  el teléfono es la fuente, y sigue yendo a las coordenadas de la ruta eco.
-- Tests de la tarjeta, typecheck y biome del archivo tocado.
+OK de producto, 2026-09-21. Un cambio que no cumpla uno de estos no cierra.
+
+1. **Primario.** El conductor navega sin salir del flujo de Conductor y la
+   traza del teléfono sigue actualizándose. «Ir al origen» / «Ir al destino»
+   son botones: abren la ruta en la tarjeta, no llaman a `window.open` ni
+   `stop()` del reportero. Mientras el documento está al frente, el estado
+   sigue siendo «Reportando mientras esta pantalla está al frente».
+2. **Maps solo secundario.** El deep link no es la acción principal. El
+   único enlace a Google Maps dice «Abrir en Maps (pausa el reporte GPS)»
+   cuando el teléfono es la fuente. El default es seguir reportando.
+3. **Si elige Maps, el degradado es explícito.** Ve el aviso de pausa antes
+   de salir. Al ocultarse la pantalla, el estado deja de ser el reporte sano
+   (`posicion-degradada`: pausado, última posición). Al volver, el texto de
+   #699 («El reporte se pausó… Ya volvió a enviar») sigue, en el mismo estado
+   degradado, no en el verde de «al frente».
+
+**Terminado cuando:** Conductor navega en el flujo y la traza sigue; si elige
+Maps ve el aviso de pausa y el estado degradado es explícito.
+
+Con Teltonika el camión reporta solo: el enlace secundario dice «Abrir en
+Maps» y no se atribuye una pausa al teléfono.

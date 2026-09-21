@@ -361,11 +361,25 @@ describe('ConductorDashboardRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
     render(<ConductorDashboardRoute />);
-    expect(
-      await screen.findByText(/El reporte se pausó al salir de esta pantalla\. Ya volvió a enviar/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/17 puntos enviados/)).toBeInTheDocument();
+    const degradada = await screen.findByTestId('posicion-degradada');
+    expect(degradada).toHaveTextContent(
+      /El reporte se pausó al salir de esta pantalla\. Ya volvió a enviar/,
+    );
+    expect(degradada).toHaveTextContent(/17 puntos enviados/);
+    expect(screen.queryByTestId('posicion-en-vivo')).toBeNull();
+    expect(screen.queryByText(/mientras esta pantalla está al frente/)).toBeNull();
     expect(screen.getByTestId('aviso-maps-pausa')).toHaveTextContent(/Si abres Maps/);
+  });
+
+  it('con la pantalla en segundo plano el estado dice que el reporte está pausado', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 3, enSegundoPlano: true };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    const degradada = await screen.findByTestId('posicion-degradada');
+    expect(degradada).toHaveTextContent(/El reporte está pausado/);
+    expect(degradada).toHaveTextContent(/última posición/);
+    expect(screen.queryByTestId('posicion-en-vivo')).toBeNull();
   });
 
   it('con Teltonika: el camión reporta solo; ni botón ni watch del teléfono', async () => {
@@ -619,6 +633,24 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     const maps = screen.getByTestId('abrir-maps-destino');
     expect(maps).toHaveTextContent('Abrir en Maps (pausa el reporte GPS)');
     expect(screen.queryByRole('link', { name: /^Ir al destino$/ })).toBeNull();
+  });
+
+  it('la ruta en la pantalla no detiene el reporte del teléfono', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 4 };
+    ecoRouteState = { data: { polyline_encoded: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('navegar-destino'));
+    expect(await screen.findByTestId('ruta-en-app')).toHaveTextContent(
+      /el teléfono sigue enviando la posición/,
+    );
+    expect(reporterStopSpy).not.toHaveBeenCalled();
+    const vivo = screen.getByTestId('posicion-en-vivo');
+    expect(vivo).toHaveTextContent(/mientras esta pantalla está al frente/);
+    expect(vivo).toHaveTextContent(/4 puntos enviados/);
+    expect(screen.getByTestId('navegar-destino').tagName).toBe('BUTTON');
+    expect(screen.getByTestId('abrir-maps-destino')).toHaveTextContent(/pausa el reporte GPS/);
   });
 
   it('con ruta eco: Maps (secundario) va a las COORDENADAS del destino, no al texto', async () => {

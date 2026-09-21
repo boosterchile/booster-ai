@@ -778,15 +778,25 @@ export function AssignmentCard({
             Tu camión reporta la posición automáticamente. No necesitas hacer nada.
           </output>
         ) : reporter.isWatching ? (
-          <output
-            data-testid="posicion-en-vivo"
-            className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700"
-          >
-            {reporter.avisoPausa
-              ? `El reporte se pausó al salir de esta pantalla. Ya volvió a enviar · ${reporter.pointsSent} puntos enviados`
-              : `Reportando mientras esta pantalla está al frente · ${reporter.pointsSent} puntos enviados`}
-            {reporter.queued > 0 ? ` · ${reporter.queued} pendientes de envío` : ''}
-          </output>
+          reporter.enSegundoPlano || reporter.avisoPausa ? (
+            <output
+              data-testid="posicion-degradada"
+              className="mt-2 block rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 text-sm"
+            >
+              {reporter.enSegundoPlano
+                ? `El reporte está pausado: esta pantalla no está al frente. El seguimiento muestra la última posición que alcanzó a salir · ${reporter.pointsSent} puntos enviados`
+                : `El reporte se pausó al salir de esta pantalla. Ya volvió a enviar · ${reporter.pointsSent} puntos enviados`}
+              {reporter.queued > 0 ? ` · ${reporter.queued} pendientes de envío` : ''}
+            </output>
+          ) : (
+            <output
+              data-testid="posicion-en-vivo"
+              className="mt-2 block rounded-md bg-success-50 px-3 py-2 text-sm text-success-700"
+            >
+              {`Reportando mientras esta pantalla está al frente · ${reporter.pointsSent} puntos enviados`}
+              {reporter.queued > 0 ? ` · ${reporter.queued} pendientes de envío` : ''}
+            </output>
+          )
         ) : fase === 'por_recoger' ? (
           <p className="mt-2 text-neutral-600 text-sm">
             Al confirmar la recogida, tu teléfono empezará a reportar la posición. Si te lo pide,
