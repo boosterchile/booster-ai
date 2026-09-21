@@ -19,6 +19,25 @@ export function positionSourceLabel(source: PositionSource | null | undefined): 
   return null;
 }
 
+/**
+ * El GET de tracking no se puede cachear: el body trae la edad del ping
+ * (`last_position_age_seconds` / `timestamp_device`) y un `Cache-Control`
+ * fresco haría que el poll y el botón Refrescar repitieran el primer snapshot.
+ */
+export const LIVE_TRACKING_FETCH: RequestInit = { cache: 'no-store' };
+
+/**
+ * El QueryClient de la app apaga `refetchOnWindowFocus`. TanStack, además,
+ * salta el `refetchInterval` mientras `document.hidden`. En Safari móvil el
+ * seguimiento quedaba en el primer snapshot al volver de segundo plano.
+ * Estas opciones valen para el link público y para `/app/cargas/$id/track`.
+ */
+export const LIVE_TRACKING_QUERY = {
+  staleTime: 0,
+  refetchOnWindowFocus: 'always' as const,
+  refetchIntervalInBackground: true,
+};
+
 /** Estados en los que GET /public/tracking devuelve posición viva. */
 const LIVE_PUBLIC_TRACKING_STATUSES = new Set(['asignado', 'en_proceso']);
 

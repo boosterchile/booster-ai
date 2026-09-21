@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../lib/api-client.js';
+import { LIVE_TRACKING_FETCH } from '../lib/live-tracking.js';
 import { usePublicTracking } from './use-public-tracking.js';
 
 function makeWrapper() {
@@ -43,7 +44,7 @@ describe('usePublicTracking', () => {
     const { result } = renderHook(() => usePublicTracking(VALID_TOKEN), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(getSpy).toHaveBeenCalledWith(`/public/tracking/${VALID_TOKEN}`);
+    expect(getSpy).toHaveBeenCalledWith(`/public/tracking/${VALID_TOKEN}`, LIVE_TRACKING_FETCH);
     expect(result.current.data?.trip.tracking_code).toBe('BOO-X1');
   });
 
@@ -94,5 +95,105 @@ describe('usePublicTracking', () => {
     const { result } = renderHook(() => usePublicTracking(VALID_TOKEN), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.progress?.avg_speed_kmh_last_15min).toBe(65);
+  });
+});
+
+function foundTrip(status: string) {
+  return {
+    status: 'found' as const,
+    trip: {
+      tracking_code: 'BOO-83ND2C',
+      status,
+      origin_address: 'A',
+      destination_address: 'B',
+      cargo_type: 'carga_seca',
+    },
+    vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
+    position: {
+      timestamp: '2026-09-21T19:00:00.000Z',
+      latitude: -33.39729,
+      longitude: -70.79487,
+      speed_kmh: 29.02,
+    },
+    progress: { avg_speed_kmh_last_15min: 29, last_position_age_seconds: 120 },
+    eta_minutes: 114,
+  };
+}
+
+/**
+ * Mismos defaults que `main.tsx`: sin refetch al foco y staleTime 30s.
+ * El hook tiene que ganarle a eso, si no el seguimiento se queda con el
+ * primer snapshot al volver de segundo plano.
+ */
+function makeProdWrapper() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0, staleTime: 30_000, refetchOnWindowFocus: false },
+    },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+}
+
+describe('usePublicTracking — poll mientras el viaje sigue en curso', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('en_proceso vuelve a pedir la posición dentro de 30s, con la pestaña oculta y sin caché HTTP', async () => {
+    vi.useFakeTimers();
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue(foundTrip('en_proceso'));
+    const hidden = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    try {
+      renderHook(() => usePublicTracking(VALID_TOKEN), { wrapper: makeProdWrapper() });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20);
+      });
+      expect(getSpy).toHaveBeenCalledTimes(1);
+      expect(getSpy).toHaveBeenCalledWith(`/public/tracking/${VALID_TOKEN}`, LIVE_TRACKING_FETCH);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(getSpy.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      if (hidden) {
+        Object.defineProperty(Document.prototype, 'visibilityState', hidden);
+      }
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('al volver a primer plano pide de nuevo, aunque el cliente global apague el refetch al foco', async () => {
+    vi.useFakeTimers();
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue(foundTrip('en_proceso'));
+    renderHook(() => usePublicTracking(VALID_TOKEN), { wrapper: makeProdWrapper() });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(getSpy).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(getSpy.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('entregado no vuelve a pedir a los 30s', async () => {
+    vi.useFakeTimers();
+    const getSpy = vi.spyOn(api, 'get').mockResolvedValue(foundTrip('entregado'));
+    renderHook(() => usePublicTracking(VALID_TOKEN), { wrapper: makeProdWrapper() });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    const afterFirst = getSpy.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(getSpy.mock.calls.length).toBe(afterFirst);
   });
 });

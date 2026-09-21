@@ -77,7 +77,7 @@ describe('GET /public/tracking/:token', () => {
     const app = createPublicTrackingRoutes({ db: {} as never, logger: noopLogger });
     const res = await app.request(`/${VALID_TOKEN}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toContain('max-age=30');
+    expect(res.headers.get('cache-control')).toContain('no-store');
     const body = (await res.json()) as { trip: { tracking_code: string } };
     expect(body.trip.tracking_code).toBe('BOO-X1');
   });

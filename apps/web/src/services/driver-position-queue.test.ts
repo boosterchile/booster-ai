@@ -121,6 +121,27 @@ describe('ColaPosiciones — FIFO persistida por asignación', () => {
     expect(r).toEqual({ enviados: 1, restantes: 0, descartados: 0, detenido: null });
   });
 
+  it('drenar anula speed/heading fuera de rango ya persistidos y envía las coordenadas', async () => {
+    const mem = almacen();
+    mem.setItem(
+      'booster.posiciones.asg-1',
+      JSON.stringify([{ ...punto(-33.397288, -70.79487, T0), speed_kmh: -3.6, heading_deg: -1 }]),
+    );
+    const q = new ColaPosiciones('asg-1', { almacen: mem });
+    const enviados: PuntoEnCola[] = [];
+    const r = await q.drenar(async (p) => {
+      enviados.push(p);
+      return { ok: true };
+    });
+    expect(r).toMatchObject({ enviados: 1, descartados: 0, detenido: null });
+    expect(enviados[0]).toMatchObject({
+      latitude: -33.397288,
+      longitude: -70.79487,
+      speed_kmh: null,
+      heading_deg: null,
+    });
+  });
+
   it('drenar normaliza accuracy_m 0 ya persistido y lo envía', async () => {
     const st = almacen();
     st.setItem(

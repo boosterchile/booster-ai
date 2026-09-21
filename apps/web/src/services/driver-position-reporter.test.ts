@@ -14,7 +14,11 @@ const T0 = Date.parse('2026-09-15T12:00:00.000Z');
 function fakeGeo() {
   let watchCb: ((p: GeolocationPosition) => void) | null = null;
   const watchPosition = vi.fn(
-    (cb: (p: GeolocationPosition) => void, _onError?: (e: GeolocationPositionError) => void) => {
+    (
+      cb: (p: GeolocationPosition) => void,
+      _onError?: (e: GeolocationPositionError) => void,
+      _opts?: PositionOptions,
+    ) => {
       watchCb = cb;
       return 7;
     },
@@ -153,6 +157,115 @@ describe('driver-position-reporter — throttle y latido', () => {
     cb(geo.pos(-33.4, -70.6, T0 + 25_000));
     await flushMicrotasks();
     expect(postDriverPositionSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('watchPosition repitiendo el mismo timestamp no apaga el latido', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(-33.39729, -70.79487, T0);
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(1);
+    for (let i = 1; i <= 20; i++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      geo.emit(-33.39729, -70.79487, T0);
+    }
+    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(geo.getCurrentPosition.mock.calls[0]?.[2]).toMatchObject({ maximumAge: 0 });
+    const cb = geo.getCurrentPosition.mock.calls[0]?.[0] as (p: GeolocationPosition) => void;
+    cb(geo.pos(-33.41, -70.8, T0 + 25_000));
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(2);
+    expect(postDriverPositionSpy).toHaveBeenLastCalledWith(
+      'asg-1',
+      expect.objectContaining({ latitude: -33.41, longitude: -70.8 }),
+    );
+  });
+
+  it('al volver a visible rearma el watch y pide un fix fresco sin esperar el latido', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(-33.39729, -70.79487, T0);
+    await flushMicrotasks();
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(geo.clearWatch).toHaveBeenCalledWith(7);
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+    expect(geo.watchPosition.mock.calls[1]?.[2]).toMatchObject({ maximumAge: 0 });
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(geo.getCurrentPosition.mock.calls[0]?.[2]).toMatchObject({ maximumAge: 0 });
+    window.dispatchEvent(new Event('pageshow'));
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('pageshow rearma el watch muerto tras suspender la página', () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    window.dispatchEvent(new Event('pageshow'));
+    expect(geo.clearWatch).toHaveBeenCalledTimes(1);
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it('pasar a segundo plano no corta el watch', () => {
+    const geo = fakeGeo();
+    const visibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    try {
+      reporter.start('asg-1');
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(geo.clearWatch).not.toHaveBeenCalled();
+      expect(reporter.getSnapshot().isWatching).toBe(true);
+      expect(reporter.getSnapshot().enSegundoPlano).toBe(true);
+      expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBe(String(T0));
+    } finally {
+      if (visibility) {
+        Object.defineProperty(document, 'visibilityState', visibility);
+      } else {
+        Reflect.deleteProperty(document, 'visibilityState');
+      }
+    }
+  });
+
+  it('segundo plano largo sin fixes avisa al volver; un fix oculto no es pausa', () => {
+    const geo = fakeGeo();
+    let state: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => state,
+    });
+    try {
+      reporter.start('asg-1');
+      state = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      geo.emit(-33.41, -70.8, T0 + 5_000);
+      vi.setSystemTime(T0 + 20 * 60_000);
+      state = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(reporter.getSnapshot().avisoPausa).toBe(false);
+      expect(reporter.getSnapshot().enSegundoPlano).toBe(false);
+
+      reporter.__resetForTests();
+      localStorage.clear();
+      reporter.start('asg-1');
+      state = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.setSystemTime(T0 + 40 * 60_000);
+      state = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(reporter.getSnapshot().avisoPausa).toBe(true);
+      expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBeNull();
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('al reabrir la pantalla, una pausa persistida (página muerta en Maps) se avisa', () => {
+    localStorage.setItem('booster.reporte.segundo-plano.asg-1', String(T0 - 16 * 60_000));
+    fakeGeo();
+    reporter.start('asg-1');
+    expect(reporter.getSnapshot().avisoPausa).toBe(true);
+    expect(localStorage.getItem('booster.reporte.segundo-plano.asg-1')).toBeNull();
   });
 });
 

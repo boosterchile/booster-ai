@@ -93,6 +93,8 @@ let reporterState = {
   pointsSent: 0,
   lastGeofence: null as GeofenceLectura | null,
   queued: 0,
+  enSegundoPlano: false,
+  avisoPausa: false,
   start: reporterStartSpy,
   stop: reporterStopSpy,
   flush: reporterFlushSpy,
@@ -210,6 +212,8 @@ beforeEach(() => {
     pointsSent: 0,
     lastGeofence: null,
     queued: 0,
+    enSegundoPlano: false,
+    avisoPausa: false,
     start: reporterStartSpy,
     stop: reporterStopSpy,
     flush: reporterFlushSpy,
@@ -339,7 +343,20 @@ describe('ConductorDashboardRoute', () => {
     apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
     render(<ConductorDashboardRoute />);
     expect(await screen.findByText(/42 puntos enviados/)).toBeInTheDocument();
+    expect(screen.getByText(/mientras esta pantalla está al frente/)).toBeInTheDocument();
     expect(screen.queryByTestId('gps-stop')).toBeNull();
+  });
+
+  it('tras Maps: dice que el reporte se pausó, no que venía enviando en vivo', async () => {
+    reporterState = { ...reporterState, isWatching: true, pointsSent: 17, avisoPausa: true };
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    expect(
+      await screen.findByText(/El reporte se pausó al salir de esta pantalla\. Ya volvió a enviar/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/17 puntos enviados/)).toBeInTheDocument();
+    expect(screen.getByTestId('aviso-maps-pausa')).toHaveTextContent(/Si abres Maps/);
   });
 
   it('con Teltonika: el camión reporta solo; ni botón ni watch del teléfono', async () => {
@@ -355,6 +372,7 @@ describe('ConductorDashboardRoute', () => {
       await screen.findByText(/Tu camión reporta la posición automáticamente/i),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('gps-start')).toBeNull();
+    expect(screen.queryByTestId('aviso-maps-pausa')).toBeNull();
     expect(reporterStartSpy).not.toHaveBeenCalled();
   });
 

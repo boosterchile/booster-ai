@@ -21,8 +21,32 @@ const hace = (min: number) => new Date(NOW - min * 60_000);
  * DB stub: cada `.select().from(tabla)` registra la tabla y resuelve, vía
  * `.limit()`, las filas configuradas para ESA tabla.
  */
+/** Primera columna Drizzle dentro de un `desc(...)`: tiene `name` y `table`. */
+function columnaOrden(arg: unknown): string | null {
+  const vistos = new Set<unknown>();
+  const buscar = (v: unknown): string | null => {
+    if (v == null || typeof v !== 'object' || vistos.has(v)) {
+      return null;
+    }
+    vistos.add(v);
+    const o = v as Record<string, unknown>;
+    if (typeof o.name === 'string' && 'table' in o) {
+      return o.name;
+    }
+    for (const hijo of Array.isArray(v) ? v : Object.values(o)) {
+      const hallada = buscar(hijo);
+      if (hallada) {
+        return hallada;
+      }
+    }
+    return null;
+  };
+  return buscar(arg);
+}
+
 function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[] }) {
   const tablas: string[] = [];
+  const ordenes: string[][] = [];
   const select = vi.fn(() => {
     let tabla = '';
     const chain: Record<string, unknown> = {};
@@ -32,7 +56,10 @@ function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[] }) {
       return chain;
     });
     chain.where = vi.fn(() => chain);
-    chain.orderBy = vi.fn(() => chain);
+    chain.orderBy = vi.fn((...args: unknown[]) => {
+      ordenes.push(args.map(columnaOrden).filter((n): n is string => n != null));
+      return chain;
+    });
     chain.limit = vi.fn(() =>
       Promise.resolve(
         tabla === 'telemetria_puntos' ? (filas.telemetria ?? []) : (filas.movil ?? []),
@@ -40,14 +67,14 @@ function makeDb(filas: { telemetria?: unknown[]; movil?: unknown[] }) {
     );
     return chain;
   });
-  return { db: { select } as unknown as Db, tablas, select };
+  return { db: { select } as unknown as Db, tablas, ordenes, select };
 }
 
 const BASE = { assignmentId: 'asg-1', vehicleId: 'veh-1', nowMs: NOW };
 
 describe('resolverPosicionEnVivo', () => {
   it('solo GPS del móvil fresco → source mobile, numeric→number, DESC preservado', async () => {
-    const { db, tablas } = makeDb({
+    const { db, tablas, ordenes } = makeDb({
       telemetria: [],
       movil: [
         {
@@ -70,6 +97,8 @@ describe('resolverPosicionEnVivo', () => {
     const r = await resolverPosicionEnVivo({ db, ...BASE, tripStatus: 'en_proceso' });
 
     expect(tablas).toEqual(['telemetria_puntos', 'posiciones_movil_conductor']);
+    expect(ordenes[0]).toEqual(['timestamp_device', 'id']);
+    expect(ordenes[1]).toEqual(['timestamp_device', 'id']);
     expect(r.source).toBe('mobile');
     expect(r.pings).toEqual([
       {
