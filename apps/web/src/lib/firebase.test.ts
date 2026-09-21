@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const initializeAppMock = vi.fn(() => ({ name: '[DEFAULT]' }));
 const getAuthMock = vi.fn(() => ({ name: 'auth' }));
 const setPersistenceMock = vi.fn(async () => undefined);
+const connectAuthEmulatorMock = vi.fn();
 const browserLocalPersistenceMock = { type: 'LOCAL' };
 const setCustomParametersMock = vi.fn();
 function GoogleAuthProviderStub(this: { setCustomParameters: typeof setCustomParametersMock }) {
@@ -33,6 +34,7 @@ vi.mock('firebase/app-check', () => ({
 vi.mock('firebase/auth', () => ({
   getAuth: getAuthMock,
   setPersistence: setPersistenceMock,
+  connectAuthEmulator: connectAuthEmulatorMock,
   browserLocalPersistence: browserLocalPersistenceMock,
   GoogleAuthProvider: GoogleAuthProviderStub,
 }));
@@ -42,11 +44,14 @@ beforeEach(() => {
   initializeAppMock.mockClear();
   getAuthMock.mockClear();
   setPersistenceMock.mockClear();
+  connectAuthEmulatorMock.mockClear();
   setCustomParametersMock.mockClear();
   initializeAppCheckMock.mockClear();
   reCaptchaV3ProviderMock.mockClear();
   // Reset del flag global entre tests (lo setea el bloque DEV de firebase.ts).
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = undefined;
+  vi.stubEnv('VITE_USE_AUTH_EMULATOR', 'false');
+  vi.stubEnv('VITE_AUTH_EMULATOR_URL', '');
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -120,5 +125,34 @@ describe('lib/firebase', () => {
     vi.stubEnv('DEV', true);
     await import('./firebase.js');
     expect(self.FIREBASE_APPCHECK_DEBUG_TOKEN).toBe(true);
+  });
+
+  it('flag OFF: no llama connectAuthEmulator y sí inicializa App Check', async () => {
+    vi.stubEnv('VITE_USE_AUTH_EMULATOR', 'false');
+    await import('./firebase.js');
+    expect(connectAuthEmulatorMock).not.toHaveBeenCalled();
+    expect(initializeAppCheckMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('flag ON: connectAuthEmulator a 127.0.0.1:9099 y NO inicializa App Check', async () => {
+    vi.stubEnv('VITE_USE_AUTH_EMULATOR', 'true');
+    await import('./firebase.js');
+    expect(connectAuthEmulatorMock).toHaveBeenCalledTimes(1);
+    expect(connectAuthEmulatorMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'http://127.0.0.1:9099',
+      expect.objectContaining({ disableWarnings: true }),
+    );
+    expect(initializeAppCheckMock).not.toHaveBeenCalled();
+    expect(self.FIREBASE_APPCHECK_DEBUG_TOKEN).toBeUndefined();
+    const mod = await import('./firebase.js');
+    expect(mod.appCheck).toBeNull();
+  });
+
+  it('flag ON con host no-loopback: throw (nunca Identity Platform)', async () => {
+    vi.stubEnv('VITE_USE_AUTH_EMULATOR', 'true');
+    vi.stubEnv('VITE_AUTH_EMULATOR_URL', 'https://identitytoolkit.googleapis.com');
+    await expect(import('./firebase.js')).rejects.toThrow(/loopback|Identity Platform/i);
+    expect(connectAuthEmulatorMock).not.toHaveBeenCalled();
   });
 });

@@ -14,9 +14,14 @@ on:
     branches: [main]
     paths:
       - 'apps/web/**'
+      - 'apps/api/scripts/seed-conductor-e2e.ts'
+      - 'apps/api/src/services/firebase.ts'
       - 'packages/ui-components/**'
       - 'packages/ui-tokens/**'
       - '.github/workflows/e2e-pr.yml'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.specs/conductor-e2e-auth-emulator/**'
 
 permissions:
   contents: read
@@ -60,5 +65,128 @@ jobs:
           path: |
             apps/web/playwright-report-local/
             apps/web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Slot 3 paso 6 — flujo conductor contra API local + Auth emulator :9099.
+  # Reusa este workflow (no un YAML nuevo ni quality gates de ci.yml).
+  e2e-conductor:
+    name: E2E conductor (Auth emulator + API local)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: development
+      PORT: '8080'
+      SERVICE_NAME: booster-ai-api
+      SERVICE_VERSION: 0.0.0-e2e
+      LOG_LEVEL: warn
+      GOOGLE_CLOUD_PROJECT: booster-ai-dev
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+      REDIS_TLS: 'false'
+      FIREBASE_PROJECT_ID: booster-ai-dev
+      FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099'
+      JWT_ISSUER: booster-ai
+      API_AUDIENCE: https://api.boosterchile.com
+      ALLOWED_CALLER_SA: e2e-api@booster-ai-dev.iam.gserviceaccount.com
+      OBSERVABILITY_DASHBOARD_ACTIVATED: 'false'
+      AUTH_UNIVERSAL_V1_ACTIVATED: 'true'
+      STRICT_MIGRATION_ORDERING: 'true'
+      VITE_USE_AUTH_EMULATOR: 'true'
+      VITE_AUTH_EMULATOR_URL: http://127.0.0.1:9099
+      VITE_API_URL: http://localhost:8080
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: pnpm install --frozen-lockfile
+      - name: Enable pgcrypto
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=test psql -h localhost -U test -d test -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
+      - name: Start Auth emulator :9099
+        run: |
+          nohup npx --yes firebase-tools@14.7.0 emulators:start --only auth --project booster-ai-dev --non-interactive > /tmp/auth-emulator.log 2>&1 &
+          for i in $(seq 1 45); do
+            if curl -s http://127.0.0.1:9099 >/dev/null 2>&1; then
+              echo "Auth emulator listo"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Auth emulator no levantó en :9099" >&2
+          tail -n 80 /tmp/auth-emulator.log >&2 || true
+          exit 1
+      - name: Provide web env (placeholders + Auth emulator)
+        run: |
+          cp apps/web/.env.example apps/web/.env
+          {
+            echo 'VITE_USE_AUTH_EMULATOR=true'
+            echo 'VITE_AUTH_EMULATOR_URL=http://127.0.0.1:9099'
+            echo 'VITE_API_URL=http://localhost:8080'
+          } >> apps/web/.env
+      - name: Start API :8080
+        working-directory: apps/api
+        run: |
+          nohup pnpm exec tsx src/main.ts > /tmp/api-e2e.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/health >/dev/null; then
+              echo "API lista"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API no levantó en :8080" >&2
+          tail -n 120 /tmp/api-e2e.log >&2 || true
+          exit 1
+      - name: Install Playwright Chromium
+        run: pnpm --filter @booster-ai/web exec playwright install --with-deps chromium
+      - name: Run E2E conductor
+        run: pnpm --filter @booster-ai/web test:e2e:conductor
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-conductor-report
+          path: |
+            apps/web/playwright-report-conductor/
+            apps/web/test-results/
+            /tmp/auth-emulator.log
+            /tmp/api-e2e.log
           retention-days: 14
           if-no-files-found: ignore

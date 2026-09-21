@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   _resetFirebaseSingletonsForTests();
   getAppsMock.mockReturnValue([]);
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '';
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -50,6 +51,14 @@ describe('getFirebaseApp', () => {
     const app = getFirebaseApp({ projectId: 'p' });
     expect(initializeAppMock).not.toHaveBeenCalled();
     expect(app).toBe(existing);
+  });
+
+  it('FIREBASE_AUTH_EMULATOR_HOST seteado: initializeApp SIN applicationDefault (ADC)', () => {
+    process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+    const app = getFirebaseApp({ projectId: 'booster-ai-dev' });
+    expect(applicationDefaultMock).not.toHaveBeenCalled();
+    expect(initializeAppMock).toHaveBeenCalledWith({ projectId: 'booster-ai-dev' });
+    expect(app).toEqual({ name: 'app-instance' });
   });
 });
 

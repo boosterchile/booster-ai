@@ -70,6 +70,7 @@ coverage/
 test-results/
 playwright-report/
 playwright-report-local/
+playwright-report-conductor/
 playwright/.cache/
 .playwright-mcp/
 blob-report/

@@ -4,10 +4,13 @@ import {
   type Auth,
   GoogleAuthProvider,
   browserLocalPersistence,
+  connectAuthEmulator,
   getAuth,
   setPersistence,
 } from 'firebase/auth';
+import { resolveAuthEmulatorOrigin } from './auth-emulator.js';
 import { env } from './env.js';
+import { logger } from './logger.js';
 
 declare global {
   interface Window {
@@ -25,6 +28,12 @@ declare global {
  *
  * Persistence local — el user queda logueado entre tabs y reloads. Para
  * logout explícito usar `firebaseAuth.signOut()` desde useAuth().
+ *
+ * Auth emulator (Slot 3 paso 6): con `VITE_USE_AUTH_EMULATOR=true` se llama
+ * `connectAuthEmulator` a loopback y NO se inicializa App Check (reCAPTCHA
+ * pegaría a Google). Con el flag off el cableado es el de prod: App Check
+ * ANTES de getAuth. El flag on nunca cae a Identity Platform — si el origin
+ * no es loopback, `resolveAuthEmulatorOrigin` tira en boot.
  */
 const firebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY,
@@ -39,31 +48,46 @@ const firebaseConfig = {
 
 export const firebaseApp: FirebaseApp = initializeApp(firebaseConfig);
 
+const useAuthEmulator = env.VITE_USE_AUTH_EMULATOR === true;
+const authEmulatorOrigin = useAuthEmulator
+  ? resolveAuthEmulatorOrigin(env.VITE_AUTH_EMULATOR_URL)
+  : null;
+
 // App Check debe inicializarse INMEDIATAMENTE después de `initializeApp` y
 // ANTES de cualquier otro servicio Firebase (auth, firestore, storage…) para
 // que sus requests lleven el token de attestation reCAPTCHA v3.
 //
-// Debug token: solo en desarrollo. `import.meta.env.DEV` es `true` en `vite dev`
-// y en tests, y se reemplaza estáticamente por `false` en `vite build` — el
-// bloque queda como `if (false)` y desaparece del bundle por tree-shaking, así
-// que NUNCA se activa en producción.
+// Con Auth emulator el attestation no aplica: el emulador no verifica App
+// Check y reCAPTCHA v3 pegaría a Google. Skip explícito, no fallback.
+//
+// Debug token: solo en desarrollo Y sin emulador. `import.meta.env.DEV` es
+// `true` en `vite dev` y en tests, y se reemplaza estáticamente por `false`
+// en `vite build` — el bloque queda como `if (false)` y desaparece del
+// bundle por tree-shaking, así que NUNCA se activa en producción.
 //
 // La primera carga en local imprime un debug token en la consola del navegador.
 // Hay que copiarlo y registrarlo manualmente en:
 //   Firebase Console → App Check → Apps → (web app) → Manage debug tokens.
 // Sin ese registro, App Check rechaza las requests del entorno local.
-if (import.meta.env.DEV) {
+if (!useAuthEmulator && import.meta.env.DEV) {
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 }
 
-export const appCheck: AppCheck = initializeAppCheck(firebaseApp, {
-  provider: new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY),
-  // Nombre real de la opción en el SDK Firebase v12 (la doc/uso coloquial la
-  // llama "isTokenAutoRefresh"): refresca el token de App Check en background.
-  isTokenAutoRefreshEnabled: true,
-});
+export const appCheck: AppCheck | null = useAuthEmulator
+  ? null
+  : initializeAppCheck(firebaseApp, {
+      provider: new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY),
+      // Nombre real de la opción en el SDK Firebase v12 (la doc/uso coloquial la
+      // llama "isTokenAutoRefresh"): refresca el token de App Check en background.
+      isTokenAutoRefreshEnabled: true,
+    });
 
 export const firebaseAuth: Auth = getAuth(firebaseApp);
+
+if (authEmulatorOrigin) {
+  connectAuthEmulator(firebaseAuth, authEmulatorOrigin, { disableWarnings: true });
+  logger.info({ origin: authEmulatorOrigin }, '[auth] usando Auth emulator (loopback)');
+}
 
 // Persistencia local (default browser) — sobrevive cierres de tab.
 void setPersistence(firebaseAuth, browserLocalPersistence);
