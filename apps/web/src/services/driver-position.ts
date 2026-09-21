@@ -51,6 +51,11 @@ export async function postDriverPosition(
   );
 }
 
+/** Tope de `speed_kmh` en POST /assignments/:id/driver-position. */
+export const SPEED_KMH_MAX = 300;
+/** Tope de `heading_deg` en el mismo POST (0–360 inclusive). */
+export const HEADING_DEG_MAX = 360;
+
 /**
  * El API exige `accuracy_m` positivo o null (Zod `.positive().max(10_000)`).
  * `0` / NaN / no finito = precisión desconocida (Playwright y varios
@@ -64,6 +69,38 @@ export function normalizarAccuracyM(accuracy_m: number | null | undefined): numb
 }
 
 /**
+ * Velocidad fuera de 0..300 km/h se manda `null`, no se rechaza el punto.
+ * Varios WebView reportan `coords.speed = -1` cuando no hay velocidad: eso
+ * es -3.6 km/h y el Zod `.min(0)` respondía 400 a TODO el body, así que la
+ * coordenada nueva nunca se insertaba y el tracking se quedaba en el último
+ * ping válido (BOO-83ND2C).
+ */
+export function normalizarSpeedKmh(speed_kmh: number | null | undefined): number | null {
+  if (
+    speed_kmh == null ||
+    !Number.isFinite(speed_kmh) ||
+    speed_kmh < 0 ||
+    speed_kmh > SPEED_KMH_MAX
+  ) {
+    return null;
+  }
+  return Math.round(speed_kmh * 100) / 100;
+}
+
+/** Rumbo fuera de 0..360 (p. ej. heading -1) → `null`. Misma razón que la velocidad. */
+export function normalizarHeadingDeg(heading_deg: number | null | undefined): number | null {
+  if (
+    heading_deg == null ||
+    !Number.isFinite(heading_deg) ||
+    heading_deg < 0 ||
+    heading_deg > HEADING_DEG_MAX
+  ) {
+    return null;
+  }
+  return Math.round(heading_deg);
+}
+
+/**
  * Convierte una `GeolocationPosition` del browser al body que espera el API.
  * Convierte speed m/s → km/h (el browser usa SI; el API español usa km/h).
  */
@@ -74,11 +111,7 @@ export function geoPositionToBody(pos: GeolocationPosition): DriverPositionInput
     latitude: pos.coords.latitude,
     longitude: pos.coords.longitude,
     accuracy_m: normalizarAccuracyM(pos.coords.accuracy),
-    speed_kmh:
-      speedMs != null && Number.isFinite(speedMs) ? Math.round(speedMs * 3.6 * 100) / 100 : null,
-    heading_deg:
-      pos.coords.heading != null && Number.isFinite(pos.coords.heading)
-        ? Math.round(pos.coords.heading)
-        : null,
+    speed_kmh: normalizarSpeedKmh(speedMs == null ? null : speedMs * 3.6),
+    heading_deg: normalizarHeadingDeg(pos.coords.heading),
   };
 }

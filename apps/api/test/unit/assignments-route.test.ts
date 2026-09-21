@@ -916,6 +916,32 @@ describe('POST /assignments/:id/driver-position — geofence del origen', () => 
     expect(json.geofence.distancia_m).toBeCloseTo(500, -1);
   });
 
+  it('speed -3.6 y heading -1 no responden 400: se persisten null y la coordenada queda', async () => {
+    const db = makeDb({ selects: [[assignmentRow(ORIGEN)]] });
+    const app = await buildApp({ db });
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/driver-position`, {
+      method: 'POST',
+      headers: { 'x-test-userctx': DRIVER_CTX, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        timestamp_device: '2026-08-02T09:30:00.000Z',
+        latitude: -33.397288,
+        longitude: -70.79487,
+        accuracy_m: 8,
+        speed_kmh: -3.6,
+        heading_deg: -1,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(db.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        latitude: '-33.397288',
+        longitude: '-70.79487',
+        speedKmh: null,
+        headingDeg: null,
+      }),
+    );
+  });
+
   it('viaje sin origen geocodificado (NULL) → 200 con geofence.estado=sin_origen, nunca error', async () => {
     const db = makeDb({
       selects: [[assignmentRow({ originLatitude: null, originLongitude: null })]],

@@ -14,7 +14,11 @@ const T0 = Date.parse('2026-09-15T12:00:00.000Z');
 function fakeGeo() {
   let watchCb: ((p: GeolocationPosition) => void) | null = null;
   const watchPosition = vi.fn(
-    (cb: (p: GeolocationPosition) => void, _onError?: (e: GeolocationPositionError) => void) => {
+    (
+      cb: (p: GeolocationPosition) => void,
+      _onError?: (e: GeolocationPositionError) => void,
+      _opts?: PositionOptions,
+    ) => {
       watchCb = cb;
       return 7;
     },
@@ -179,14 +183,28 @@ describe('driver-position-reporter — throttle y latido', () => {
     );
   });
 
-  it('al volver a visible pide un fix fresco sin esperar el latido', async () => {
+  it('al volver a visible rearma el watch y pide un fix fresco sin esperar el latido', async () => {
     const geo = fakeGeo();
     reporter.start('asg-1');
     geo.emit(-33.39729, -70.79487, T0);
     await flushMicrotasks();
     document.dispatchEvent(new Event('visibilitychange'));
+    expect(geo.clearWatch).toHaveBeenCalledWith(7);
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+    expect(geo.watchPosition.mock.calls[1]?.[2]).toMatchObject({ maximumAge: 0 });
     expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
     expect(geo.getCurrentPosition.mock.calls[0]?.[2]).toMatchObject({ maximumAge: 0 });
+    window.dispatchEvent(new Event('pageshow'));
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('pageshow rearma el watch muerto tras suspender la página', () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    window.dispatchEvent(new Event('pageshow'));
+    expect(geo.clearWatch).toHaveBeenCalledTimes(1);
+    expect(geo.watchPosition).toHaveBeenCalledTimes(2);
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
   });
 });
 

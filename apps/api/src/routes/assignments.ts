@@ -664,13 +664,23 @@ export function createAssignmentsRoutes(opts: {
   // del activeMembership (un user puede tener rol conductor en empresa X y
   // dueño en empresa Y; lo importante es que es EL driver de este viaje).
   // ---------------------------------------------------------------------
+  // Speed/heading fuera de rango (WebView: speed -1 m/s, heading -1) NO
+  // rechazan el POST. Un 400 tira la coordenada entera y el tracking se
+  // queda en el último ping que sí pasó el Zod (BOO-83ND2C).
+  const enRangoONull = (min: number, max: number) =>
+    z
+      .number()
+      .nullable()
+      .optional()
+      .transform((v) => (v != null && Number.isFinite(v) && v >= min && v <= max ? v : null));
+
   const driverPositionBodySchema = z.object({
     timestamp_device: z.string().datetime(),
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
     accuracy_m: z.number().positive().max(10_000).nullable().optional(),
-    speed_kmh: z.number().min(0).max(300).nullable().optional(),
-    heading_deg: z.number().min(0).max(360).nullable().optional(),
+    speed_kmh: enRangoONull(0, 300),
+    heading_deg: enRangoONull(0, 360),
   });
 
   // ---------------------------------------------------------------------

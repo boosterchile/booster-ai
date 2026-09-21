@@ -21,6 +21,8 @@ import {
   type DriverPositionInput,
   type DriverPositionResponse,
   normalizarAccuracyM,
+  normalizarHeadingDeg,
+  normalizarSpeedKmh,
 } from './driver-position.js';
 
 export type PuntoEnCola = DriverPositionInput;
@@ -143,7 +145,14 @@ export function esPuntoEnviable(p: PuntoEnCola): boolean {
 }
 
 function puntoParaEnviar(p: PuntoEnCola): PuntoEnCola {
-  return { ...p, accuracy_m: normalizarAccuracyM(p.accuracy_m) };
+  return {
+    ...p,
+    accuracy_m: normalizarAccuracyM(p.accuracy_m),
+    // Un body ya encolado con speed/heading fuera de rango (cliente viejo o
+    // WebView) no puede 400 el POST: se anulan y las coordenadas siguen.
+    speed_kmh: normalizarSpeedKmh(p.speed_kmh),
+    heading_deg: normalizarHeadingDeg(p.heading_deg),
+  };
 }
 
 function almacenPorDefecto(): AlmacenCola | null {

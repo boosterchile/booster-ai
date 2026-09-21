@@ -17,7 +17,10 @@
  *     y en `flush()` (la tarjeta lo llama antes de confirmar la entrega).
  *   - Wake lock de pantalla mientras observa, si el navegador lo ofrece: con la
  *     pantalla apagada iOS suspende la PWA y no hay posiciones. Reportar con la
- *     app cerrada no es posible en un sitio web (fuera de alcance, spec §3).
+ *     app cerrada —o con Google Maps en primer plano, que suspende este
+ *     documento— no es posible en un sitio web. Al volver a `visible` o en
+ *     `pageshow` se rearma el watch: iOS no reanuda el `watchPosition` que
+ *     quedó vivo en memoria, y `isWatching` impediría un `start()` nuevo.
  */
 import {
   COLA_TOPE_DEFAULT,
@@ -81,7 +84,11 @@ let drenando: Promise<{ enviados: number; restantes: number }> | null = null;
 /** Llegó un punto mientras se drenaba: el ciclo en vuelo debe repetir. */
 let volverADrenar = false;
 let wakeLock: WakeLockSentinel | null = null;
-let domListeners: { online: () => void; visibility: () => void } | null = null;
+let domListeners: { online: () => void; visibility: () => void; pageshow: () => void } | null =
+  null;
+/** Evita dos rearmes seguidos cuando `visibilitychange` y `pageshow` llegan juntos. */
+let ultimoRearmeMs = 0;
+const REARME_MIN_MS = 1_000;
 
 function emit(patch: Partial<ReporterSnapshot>): void {
   snapshot = { ...snapshot, ...patch };
@@ -240,6 +247,30 @@ function pedirFixFresco(): void {
   });
 }
 
+/**
+ * Tras una suspensión (Maps en primer plano, Safari en background) el id de
+ * `watchPosition` sigue en memoria pero el callback no vuelve a disparar.
+ * `clearWatch` + un watch nuevo con `maximumAge: 0` es lo que iOS acepta.
+ */
+function rearmarWatch(): void {
+  const geo = geolocation();
+  if (!geo || watcherId == null) {
+    return;
+  }
+  const ahora = Date.now();
+  if (ahora - ultimoRearmeMs < REARME_MIN_MS) {
+    return;
+  }
+  ultimoRearmeMs = ahora;
+  geo.clearWatch(watcherId);
+  watcherId = geo.watchPosition((pos) => onFix(pos, false), onErrorGeolocation, {
+    enableHighAccuracy: true,
+    timeout: 15_000,
+    maximumAge: 0,
+  });
+  pedirFixFresco();
+}
+
 async function drenar(): Promise<{ enviados: number; restantes: number }> {
   if (!cola || !snapshot.assignmentId) {
     return { enviados: 0, restantes: 0 };
@@ -297,18 +328,23 @@ function instalarListenersDom(): void {
   if (domListeners || typeof window === 'undefined' || typeof document === 'undefined') {
     return;
   }
+  const alVolver = (): void => {
+    void drenar();
+    void pedirWakeLock();
+    rearmarWatch();
+  };
   domListeners = {
     online: () => void drenar(),
     visibility: () => {
       if (document.visibilityState === 'visible') {
-        void drenar();
-        void pedirWakeLock();
-        pedirFixFresco();
+        alVolver();
       }
     },
+    pageshow: () => alVolver(),
   };
   window.addEventListener('online', domListeners.online);
   document.addEventListener('visibilitychange', domListeners.visibility);
+  window.addEventListener('pageshow', domListeners.pageshow);
 }
 
 function quitarListenersDom(): void {
@@ -317,6 +353,7 @@ function quitarListenersDom(): void {
   }
   window.removeEventListener('online', domListeners.online);
   document.removeEventListener('visibilitychange', domListeners.visibility);
+  window.removeEventListener('pageshow', domListeners.pageshow);
   domListeners = null;
 }
 
@@ -358,6 +395,7 @@ export function __resetForTests(): void {
   ultimoEnviado = null;
   ultimoFixWallMs = 0;
   ultimoTimestampObservadoMs = 0;
+  ultimoRearmeMs = 0;
   drenando = null;
   volverADrenar = false;
   snapshot = INICIAL;
