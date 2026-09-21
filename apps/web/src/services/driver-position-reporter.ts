@@ -197,8 +197,12 @@ function onFix(pos: GeolocationPosition, esLatido: boolean): void {
   if (decision === 'omitir' || !cola) {
     return;
   }
+  if (!cola.encolar(body)) {
+    // Fix grosero (p. ej. accuracy de miles de km): no anclar el throttle
+    // ni ensuciar la cola. El siguiente válido se trata como primer envío.
+    return;
+  }
   ultimoEnviado = body;
-  cola.encolar(body);
   emit({ queued: cola.pendientes() });
   void drenar();
 }

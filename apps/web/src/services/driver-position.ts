@@ -52,6 +52,18 @@ export async function postDriverPosition(
 }
 
 /**
+ * El API exige `accuracy_m` positivo o null (Zod `.positive().max(10_000)`).
+ * `0` / NaN / no finito = precisión desconocida (Playwright y varios
+ * dispositivos reportan 0), no un radio de 0 m: se manda `null`.
+ */
+export function normalizarAccuracyM(accuracy_m: number | null | undefined): number | null {
+  if (accuracy_m == null || !Number.isFinite(accuracy_m) || accuracy_m <= 0) {
+    return null;
+  }
+  return accuracy_m;
+}
+
+/**
  * Convierte una `GeolocationPosition` del browser al body que espera el API.
  * Convierte speed m/s → km/h (el browser usa SI; el API español usa km/h).
  */
@@ -61,7 +73,7 @@ export function geoPositionToBody(pos: GeolocationPosition): DriverPositionInput
     timestamp_device: new Date(pos.timestamp).toISOString(),
     latitude: pos.coords.latitude,
     longitude: pos.coords.longitude,
-    accuracy_m: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null,
+    accuracy_m: normalizarAccuracyM(pos.coords.accuracy),
     speed_kmh:
       speedMs != null && Number.isFinite(speedMs) ? Math.round(speedMs * 3.6 * 100) / 100 : null,
     heading_deg:
