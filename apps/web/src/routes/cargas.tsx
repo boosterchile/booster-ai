@@ -19,6 +19,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
+import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
@@ -27,6 +28,7 @@ import {
   CertNotIssuedError,
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
+import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -125,6 +127,8 @@ interface TripAssignment {
   vehicle_type: string | null;
   driver_user_id: string | null;
   driver_name: string | null;
+  /** UUID del seguimiento público. Ausente en respuestas anteriores a este campo. */
+  public_tracking_token?: string | null;
   /**
    * Última posición GPS del vehículo asignado (si tiene Teltonika y ya
    * reportó al menos un packet). Null si el vehículo no tiene Teltonika
@@ -1193,6 +1197,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
 
   const trip = tripQ.data?.trip_request;
   const canCancel = trip ? CANCELLABLE_STATUSES.includes(trip.status) : false;
+  const shareUrl = publicTrackingShareUrl(
+    tripQ.data?.assignment?.public_tracking_token,
+    trip?.status,
+    window.location.origin,
+  );
 
   return (
     <Layout me={me} title="Detalle carga">
@@ -1396,6 +1405,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
                   <DataRow label="Conductor">{tripQ.data.assignment.driver_name}</DataRow>
                 )}
               </div>
+              {shareUrl && (
+                <div className="mt-4">
+                  <PublicTrackingShare url={shareUrl} />
+                </div>
+              )}
 
               {/* Mapa movido arriba como hero — ver bloque inicial del detail. */}
             </DataCard>

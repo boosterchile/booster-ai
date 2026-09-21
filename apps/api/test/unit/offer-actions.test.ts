@@ -75,9 +75,13 @@ function makeDb(queues: DbQueues = {}) {
     return chain;
   };
 
+  const insertedValues: unknown[] = [];
   const buildInsertChain = () => {
     const chain: Record<string, unknown> = {
-      values: vi.fn(() => chain),
+      values: vi.fn((row: unknown) => {
+        insertedValues.push(row);
+        return chain;
+      }),
       returning: vi.fn(async () => inserts.shift() ?? []),
     };
     chain.then = (resolve: (v: unknown) => unknown) => {
@@ -98,6 +102,7 @@ function makeDb(queues: DbQueues = {}) {
     update: tx.update,
     insert: tx.insert,
     forSpy,
+    insertedValues,
   };
 }
 
@@ -311,6 +316,35 @@ describe('acceptOffer', () => {
         userId: USER_ID,
       }),
     ).rejects.toThrow(/Insert assignment returned no row/);
+  });
+
+  it('acuña tracking_token_publico UUID v4 aunque el viaje no traiga destinatario', async () => {
+    // El SELECT del trip en el accept solo trae id + status. No hay
+    // destinatario_nombre / destinatario_whatsapp en esta fila: el token
+    // no puede depender de esos campos.
+    const db = makeDb({
+      selects: [[VALID_OFFER], [VALID_TRIP]],
+      updates: [[{ ...VALID_OFFER, status: 'aceptada' }], [], [{ id: TRIP_ID }]],
+      inserts: [[{ id: 'assign-1', tripId: TRIP_ID, vehicleId: 'veh-uuid-1' }], []],
+    });
+    await acceptOffer({
+      db: db as never,
+      logger: noopLogger,
+      offerId: OFFER_ID,
+      empresaId: EMPRESA_ID,
+      userId: USER_ID,
+    });
+    const assignmentInsert = db.insertedValues[0];
+    expect(assignmentInsert).toEqual(
+      expect.objectContaining({
+        tripId: TRIP_ID,
+        publicTrackingToken: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      }),
+    );
+    expect(VALID_TRIP).not.toHaveProperty('consigneeName');
+    expect(VALID_TRIP).not.toHaveProperty('consigneeWhatsappE164');
   });
 
   it('suggestedVehicleId null → assignment.vehicleId queda como string vacío', async () => {
