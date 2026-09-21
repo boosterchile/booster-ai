@@ -233,16 +233,15 @@ export const apiEnvSchema = commonEnvSchema
 
     /**
      * Content SID del template Twilio `chat_unread_v1` para el fallback
-     * WhatsApp del chat (P3.d). Variables (1-based):
+     * WhatsApp del chat (P3.d). Notify-only: no hay bot bidireccional;
+     * el sistema de registro es el chat in-app. Variables (1-based):
      *   {{1}} → tracking_code
      *   {{2}} → sender_name (display name del que escribió)
      *   {{3}} → message_preview (primeros ~80 chars o "📷 foto"/"📍 ubicación")
-     *   {{4}} → URL al chat (deep-link al PWA)
+     *   {{4}} → URL al chat (deep-link `/app/chat/{assignmentId}`)
      *
-     * Optional para no romper startup mientras Meta aprueba el template
-     * (24-48h post-submit). Mientras esté vacío, el cron de fallback
-     * loggea warn y skipea — los push notifs (P3.c) y SSE (P3.b) cubren
-     * el caso real-time; el WhatsApp es solo para users sin push.
+     * Optional: sin SID el cron skipea. Push (P3.c), SSE/polling (P3.b) y
+     * REST cubren el path real; WhatsApp no es requisito de operación.
      */
     CONTENT_SID_CHAT_UNREAD: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),

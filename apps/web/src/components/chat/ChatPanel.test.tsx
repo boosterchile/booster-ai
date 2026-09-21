@@ -122,10 +122,12 @@ describe('ChatPanel — header', () => {
     expect(screen.getByText('Carga BST-001')).toBeInTheDocument();
   });
 
-  it('isLive=false → muestra "Reconectando…"', () => {
+  it('isLive=false → muestra "Actualizando" (polling honesto, no Reconectando infinito)', () => {
     useChatMessagesMock.mockReturnValue(defaultHookReturn({ isLive: false }));
     renderPanel();
-    expect(screen.getByText('Reconectando…')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-live-status')).toHaveTextContent('Actualizando');
+    expect(screen.queryByText('Reconectando…')).not.toBeInTheDocument();
+    expect(screen.queryByText('En vivo')).not.toBeInTheDocument();
   });
 
   it('onClose presente → renderiza X', () => {

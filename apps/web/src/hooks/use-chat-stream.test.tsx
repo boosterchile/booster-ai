@@ -209,13 +209,28 @@ describe('useChatStream', () => {
   });
 
   it('reconnect tras onerror pide un ticket NUEVO (single-use) — SC-4', async () => {
+    vi.useFakeTimers();
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ ticket: 'ticket-1', expires_in_sec: 60 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ ticket: 'ticket-2', expires_in_sec: 60 }),
+      });
     renderHook(() => useChatStream({ assignmentId: 'a1', onMessage: vi.fn() }));
-    await waitFor(() => expect(lastEventSource).not.toBeNull());
-    expect(fetchMock).toHaveBeenCalledTimes(1); // primer mint
+    await vi.advanceTimersByTimeAsync(50);
+    expect(lastEventSource?.url).toContain('ticket=ticket-1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     lastEventSource?.onerror?.();
-    // El backoff reagenda connect → debe pedir OTRO ticket (el anterior ya se
-    // consumió). Esperamos a que el segundo mint ocurra.
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    // onerror duplica backoff (1000→2000) y reagenda connect.
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(lastEventSource?.url).toContain('ticket=ticket-2');
+    expect(lastEventSource?.url).not.toContain('ticket=ticket-1');
   });
 
   it('cleanup en unmount → close + cancela reconnect timer', async () => {

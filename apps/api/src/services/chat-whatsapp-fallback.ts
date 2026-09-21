@@ -1,6 +1,13 @@
 /**
  * Fallback WhatsApp para mensajes de chat no leídos (P3.d).
  *
+ * Contrato de producto (chat-in-app-viaje): el chat IN-APP es el sistema de
+ * registro. WhatsApp es SOLO notificación (alerta de no leído + deep-link a
+ * `/app/chat/{assignmentId}`). No hay bot bidireccional: no se aceptan
+ * respuestas por WhatsApp ni la operación del viaje depende de Twilio/Meta.
+ * Si Twilio, ContentSid o whatsapp_e164 faltan, se skipea — el POST/GET
+ * in-app y el SSE/polling cubren el path principal.
+ *
  * Disparado por Cloud Scheduler cada 1 min via POST /admin/jobs/chat-whatsapp-fallback.
  *
  * Flujo:

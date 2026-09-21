@@ -23,7 +23,7 @@ vi.mock('./use-chat-stream.js', () => ({
   },
 }));
 
-const { useChatMessages } = await import('./use-chat-messages.js');
+const { useChatMessages, CHAT_POLL_INTERVAL_MS } = await import('./use-chat-messages.js');
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -163,5 +163,42 @@ describe('useChatMessages — markRead inicial', () => {
     renderHook(() => useChatMessages('a1', { enabled: false }), { wrapper: makeWrapper() });
     await new Promise((r) => setTimeout(r, 30));
     expect(markChatReadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useChatMessages — polling cuando SSE no está live', () => {
+  it('!isLive → refetch periódico <5s (degrada honesto)', async () => {
+    vi.useFakeTimers();
+    fetchChatMessagesMock.mockResolvedValue(PAGE_1);
+    markChatReadMock.mockResolvedValue(undefined);
+    renderHook(() => useChatMessages('a1'), { wrapper: makeWrapper() });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(fetchChatMessagesMock).toHaveBeenCalled();
+    const afterFirst = fetchChatMessagesMock.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CHAT_POLL_INTERVAL_MS + 100);
+    });
+    expect(fetchChatMessagesMock.mock.calls.length).toBeGreaterThan(afterFirst);
+  });
+
+  it('SSE conectado (isLive) → no poll; no afirma live sin stream', async () => {
+    vi.useFakeTimers();
+    fetchChatMessagesMock.mockResolvedValue(PAGE_1);
+    markChatReadMock.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useChatMessages('a1'), { wrapper: makeWrapper() });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    act(() => {
+      chatStreamOpts?.onConnect?.();
+    });
+    expect(result.current.isLive).toBe(true);
+    fetchChatMessagesMock.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CHAT_POLL_INTERVAL_MS + 100);
+    });
+    expect(fetchChatMessagesMock).not.toHaveBeenCalled();
   });
 });

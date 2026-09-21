@@ -36,6 +36,7 @@ describe('router', () => {
         'app/cargas/$id/track',
         'app/certificados',
         'app/asignaciones/$id',
+        'app/chat/$id',
         'solicitar-acceso',
       ]),
     );

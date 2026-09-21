@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Inbox,
   MapPin,
+  MessageCircle,
   Mic,
   Navigation,
   PackageCheck,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
@@ -454,6 +456,51 @@ function ConfirmacionInline({
   );
 }
 
+/**
+ * Chat in-app del viaje (sistema de registro). Overlay mobile-first: el
+ * conductor coordina con el generador desde su pantalla, no desde la de
+ * la oficina. Tras entregar, el mismo overlay queda read-only.
+ */
+function ConductorChat({
+  assignmentId,
+  readOnly,
+  buttonClassName,
+}: {
+  assignmentId: string;
+  readOnly: boolean;
+  buttonClassName: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        data-testid="abrir-chat-viaje"
+        aria-label="Abrir chat con el generador de carga"
+        className={buttonClassName}
+      >
+        <MessageCircle className="h-4 w-4" aria-hidden />
+        Chat con el generador
+      </button>
+      {open ? (
+        <div
+          className="fixed inset-0 z-40 flex flex-col bg-white pt-safe"
+          data-testid="chat-viaje-overlay"
+        >
+          <ChatPanel
+            assignmentId={assignmentId}
+            title="Chat con el generador de carga"
+            readOnly={readOnly}
+            onClose={() => setOpen(false)}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function AssignmentCard({
   assignment,
   geoPermission,
@@ -814,6 +861,11 @@ export function AssignmentCard({
             <ResultadoViaje assignmentId={a.id} />
           </>
         )}
+        <ConductorChat
+          assignmentId={a.id}
+          readOnly={fase === 'entregada'}
+          buttonClassName={botonSecundario}
+        />
       </div>
     </article>
   );

@@ -116,6 +116,17 @@ vi.mock('../components/scoring/AssignmentEcoRouteCard.js', () => ({
   ),
 }));
 
+vi.mock('../components/chat/ChatPanel.js', () => ({
+  ChatPanel: (props: { assignmentId: string; title?: string; readOnly?: boolean }) => (
+    <div
+      data-testid="chat-panel"
+      data-assignment-id={props.assignmentId}
+      data-title={props.title ?? ''}
+      data-readonly={String(props.readOnly ?? false)}
+    />
+  ),
+}));
+
 const resultadoSpy = vi.fn();
 const descargarCertificadoSpy = vi.fn(async (_assignmentId: string) => undefined);
 vi.mock('../services/assignment-resultado.js', () => ({
@@ -843,6 +854,42 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
 
     const links = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'));
     expect(links.some((h) => h?.includes('/app/asignaciones/'))).toBe(false);
+  });
+});
+
+describe('ConductorDashboardRoute — chat in-app del viaje', () => {
+  it('con servicio asignado ofrece chat con el generador (mismo ChatPanel)', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [sampleAssignment] });
+    render(<ConductorDashboardRoute />);
+    const btn = await screen.findByTestId('abrir-chat-viaje');
+    expect(btn).toHaveAttribute('aria-label', 'Abrir chat con el generador de carga');
+    fireEvent.click(btn);
+    const panel = screen.getByTestId('chat-panel');
+    expect(panel).toHaveAttribute('data-assignment-id', sampleAssignment.id);
+    expect(panel).toHaveAttribute('data-readonly', 'false');
+  });
+
+  it('tras entregar el chat queda read-only', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [{ ...sampleAssignment, status: 'recogido' }],
+    });
+    apiPatchSpy.mockResolvedValue({});
+    render(<ConductorDashboardRoute />);
+    fireEvent.click(await screen.findByTestId('confirmar-entrega'));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, confirmar/i }));
+    await waitFor(() => expect(apiPatchSpy).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('abrir-chat-viaje'));
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute('data-readonly', 'true');
+  });
+
+  it('sin servicios no hay chat', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByText(/No tienes servicios asignados/i);
+    expect(screen.queryByTestId('abrir-chat-viaje')).not.toBeInTheDocument();
   });
 });
 
