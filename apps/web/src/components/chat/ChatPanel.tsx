@@ -107,9 +107,7 @@ export function ChatPanel({
           <div className="flex h-full flex-col items-center justify-center p-8 text-center">
             <p className="font-medium text-neutral-900">Sin mensajes todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
-              {readOnly
-                ? 'Este chat ya está cerrado.'
-                : 'Empieza la conversación con el otro lado.'}
+              {readOnly ? 'Este chat ya está cerrado.' : 'Empezá la conversación con el otro lado.'}
             </p>
           </div>
         )}

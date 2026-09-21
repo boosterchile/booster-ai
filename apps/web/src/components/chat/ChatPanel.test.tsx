@@ -158,7 +158,7 @@ describe('ChatPanel — estados de la lista', () => {
 
   it('lista vacía + readOnly=false → empezar conversación', () => {
     renderPanel();
-    expect(screen.getByText(/Empieza la conversación/)).toBeInTheDocument();
+    expect(screen.getByText(/Empezá la conversación/)).toBeInTheDocument();
   });
 
   it('lista vacía + readOnly=true → "Este chat ya está cerrado"', () => {
