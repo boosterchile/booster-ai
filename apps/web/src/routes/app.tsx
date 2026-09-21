@@ -5,6 +5,7 @@ import {
   Banknote,
   Building2,
   Bus,
+  Fuel,
   Leaf,
   type LucideIcon,
   MapPinned,
@@ -202,12 +203,20 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
             <DashboardCard key={c.to} {...c} />
           ))}
           {isAdmin && (
-            <DashboardCard
-              to="/app/admin/dispositivos"
-              icon={Radio}
-              title="Dispositivos pendientes"
-              desc="Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos."
-            />
+            <>
+              <DashboardCard
+                to="/app/trayectos"
+                icon={Fuel}
+                title="Trayectos Teltonika"
+                desc="Historial de distancia, litros y posible robo de combustible."
+              />
+              <DashboardCard
+                to="/app/admin/dispositivos"
+                icon={Radio}
+                title="Dispositivos pendientes"
+                desc="Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos."
+              />
+            </>
           )}
         </section>
       )}

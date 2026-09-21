@@ -3,6 +3,7 @@ import {
   Building2,
   Bus,
   ClipboardList,
+  Fuel,
   Home,
   Leaf,
   type LucideIcon,
@@ -80,6 +81,11 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Liquidaciones', to: '/app/liquidaciones', icon: Receipt },
     ];
     if (isAdmin) {
+      transporte.splice(1, 0, {
+        label: 'Trayectos',
+        to: '/app/trayectos',
+        icon: Fuel,
+      });
       transporte.push(
         { label: 'Zonas de matching', to: '/app/zonas', icon: MapPinned },
         { label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio },

@@ -167,6 +167,15 @@ const flotaRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/flota.js'), 'FlotaRoute'),
 });
 
+const trayectosTeltonikaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/trayectos',
+  component: lazyRouteComponent(
+    () => import('./routes/trayectos-teltonika.js'),
+    'TrayectosTeltonikaRoute',
+  ),
+});
+
 // D8 — CRUD de conductores del carrier. Solo accesible desde la interfaz
 // transportista (no es self-signup driver). Roles dueno/admin/despachador
 // crean y editan; conductor + visualizador solo leen.
@@ -491,6 +500,7 @@ const routeTree = rootRoute.addChildren([
   vehiculoLiveRoute,
   vehiculoHistorialRoute,
   flotaRoute,
+  trayectosTeltonikaRoute,
   equipoRoute,
   zonasMatchingRoute,
   activarRoute,
