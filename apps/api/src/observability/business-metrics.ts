@@ -1,4 +1,4 @@
-import { type Attributes, type Counter, metrics } from '@opentelemetry/api';
+import { type Attributes, type Counter, type Histogram, metrics } from '@opentelemetry/api';
 
 /**
  * Helper para métricas de NEGOCIO (contadores), hermano de `business-span.ts`
@@ -16,8 +16,14 @@ export const BUSINESS_METER_NAME = 'booster-ai-api/business';
 
 const meter = metrics.getMeter(BUSINESS_METER_NAME);
 
-/** Cache de instrumentos por nombre — un Counter debe crearse una sola vez por proceso, no por request. */
+/** Cache de instrumentos por nombre — un instrumento se crea una sola vez por proceso, no por request. */
 const counterCache = new Map<string, Counter>();
+const histogramCache = new Map<string, Histogram>();
+
+export interface BusinessHistogramOptions {
+  description?: string;
+  unit?: string;
+}
 
 /**
  * Obtiene (memoizado) un Counter de negocio por nombre. Los labels van en
@@ -31,6 +37,22 @@ export function getBusinessCounter(name: string): Counter {
     counterCache.set(name, counter);
   }
   return counter;
+}
+
+/**
+ * Obtiene (memoizado) un Histogram de negocio. La primera llamada fija
+ * description/unit; las siguientes devuelven el mismo instrumento.
+ */
+export function getBusinessHistogram(name: string, options?: BusinessHistogramOptions): Histogram {
+  let histogram = histogramCache.get(name);
+  if (!histogram) {
+    histogram = meter.createHistogram(name, {
+      ...(options?.description ? { description: options.description } : {}),
+      ...(options?.unit ? { unit: options.unit } : {}),
+    });
+    histogramCache.set(name, histogram);
+  }
+  return histogram;
 }
 
 export type BusinessCounterAttributes = Attributes;
