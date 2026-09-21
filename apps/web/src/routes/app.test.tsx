@@ -122,6 +122,7 @@ describe('AppRoute', () => {
     };
     renderWithQueryClient(<AppRoute />);
     expect(screen.getByText(/Dispositivos pendientes/)).toBeInTheDocument();
+    expect(screen.getByText(/Trayectos Teltonika/)).toBeInTheDocument();
   });
 
   it('no admin → no muestra admin dispositivos', () => {
@@ -132,6 +133,7 @@ describe('AppRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     renderWithQueryClient(<AppRoute />);
     expect(screen.queryByText(/Dispositivos pendientes/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Trayectos Teltonika/)).not.toBeInTheDocument();
   });
 
   it('rol conductor → redirige a /app/conductor (D9 surface guard)', () => {

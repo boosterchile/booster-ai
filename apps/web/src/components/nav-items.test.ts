@@ -64,6 +64,7 @@ describe('navSectionsForMe', () => {
     expect(l).toContain('Liquidaciones');
     expect(l).toContain('Zonas de matching');
     expect(l).toContain('Dispositivos'); // admin
+    expect(l).toContain('Trayectos');
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
 
@@ -97,6 +98,7 @@ describe('navSectionsForMe', () => {
     const l = labels(navSectionsForMe(buildMe({ transportista: true, role: 'despachador' })));
     expect(l).toContain('Ofertas');
     expect(l).not.toContain('Dispositivos');
+    expect(l).not.toContain('Trayectos');
     expect(l).not.toContain('Zonas de matching');
   });
 

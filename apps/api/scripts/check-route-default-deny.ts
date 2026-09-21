@@ -91,6 +91,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // requirePlatformAdmin (allowlist + flag IMPERSONATION_V1_ACTIVATED) + rate-limit.
   createAuthImpersonateRoutes: { category: 'ENFORCED', rationale: '' },
   createVehiculosRoutes: { category: 'ENFORCED', rationale: '' },
+  createTrayectosTeltonikaRoutes: { category: 'ENFORCED', rationale: '' },
   createConductoresRoutes: { category: 'ENFORCED', rationale: '' },
   createSucursalesRoutes: { category: 'ENFORCED', rationale: '' },
   createDocumentosRoutes: { category: 'ENFORCED', rationale: '' },

@@ -62,6 +62,7 @@ import {
 import { createStakeholderZonasRoutes } from './routes/stakeholder-zonas.js';
 import { createSucursalesRoutes } from './routes/sucursales.js';
 import { createTransportDocumentsRoutes } from './routes/transport-documents.js';
+import { createTrayectosTeltonikaRoutes } from './routes/trayectos-teltonika.js';
 import { createTripRequestsV2Routes } from './routes/trip-requests-v2.js';
 import { createTripRequestsRoutes } from './routes/trip-requests.js';
 import { createVehiculosRoutes } from './routes/vehiculos.js';
@@ -767,6 +768,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/vehiculos/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use('/vehiculos', firebaseAuthMiddleware);
     app.use('/vehiculos', userContextMiddleware, impersonationWriteGuardMiddleware);
+    // Historial de trayectos Teltonika. Misma surface multi-tenant que vehículos.
+    app.use('/trayectos-teltonika/*', firebaseAuthMiddleware);
+    app.use('/trayectos-teltonika/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/trayectos-teltonika', firebaseAuthMiddleware);
+    app.use('/trayectos-teltonika', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/trayectos-teltonika', createTrayectosTeltonikaRoutes({ db: opts.db, logger }));
+
     app.route(
       '/vehiculos',
       createVehiculosRoutes({
