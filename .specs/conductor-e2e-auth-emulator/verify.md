@@ -34,8 +34,18 @@ $ biome check <archivos tocados>            # 16 files, No fixes applied
 
 E2E Playwright: `pnpm --filter @booster-ai/web test:e2e:conductor`
 
-- **CI**: job `e2e-conductor` en `.github/workflows/e2e-pr.yml` (Postgres 15 + Redis 7 + Auth emulator `:9099` + API `:8080` + Chromium). Exit 0 esperado en PRs que toquen `apps/web/**` o este spec.
-- **Local** (Mac de Felipe / cualquier clone): Postgres + Redis + `FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` + `VITE_USE_AUTH_EMULATOR=true` + API `:8080`. Esta VM de agente no tiene Docker/Postgres/Redis; el camino de evidencia del flujo browser es el job de CI.
+Corrido en esta VM contra Postgres 16 local + Redis 7 + Auth emulator `:9099` + API `:8080` + preview `:5173` (2026-09-21):
+
+```
+> playwright test -c playwright.conductor.config.ts
+seed T2 conductor E2E listo
+  2 passed (14.8s)
+::notice title=🎭 Playwright Run Summary::  2 passed (14.8s)
+```
+
+- Flujo: login T2 → `/app/conductor` → `POST …/driver-position` → confirmar recogida → confirmar entrega → resultado visible.
+- Gate rol: dueño generador en `/app/conductor` vuelve a `/app`.
+- **CI**: el mismo target corre en el job `e2e-conductor` de `.github/workflows/e2e-pr.yml`.
 
 ## 3. Certificado (FAIL_ENV honesto)
 
