@@ -9,6 +9,7 @@
 import { Download, Leaf, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
+  type MotivoCoberturaCero,
   type ResultadoAsignacion,
   descargarCertificadoDeAsignacion,
   getResultadoAsignacion,
@@ -31,6 +32,88 @@ function numero(valor: string | null, decimales: number): string | null {
   return Number.isFinite(n)
     ? n.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: decimales })
     : null;
+}
+
+/** Un valor entre 0 y 1 no se redondea a «0 %»: eso es el mismo cero mentiroso. */
+function textoPorcentaje(valor: string | null): string {
+  if (valor == null) {
+    return 'Sin dato';
+  }
+  const n = Number.parseFloat(valor);
+  if (!Number.isFinite(n)) {
+    return 'Sin dato';
+  }
+  if (n > 0 && n < 1) {
+    return `${n.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+  }
+  return `${n.toLocaleString('es-CL', { maximumFractionDigits: 0 })} %`;
+}
+
+const MOTIVOS = new Set<MotivoCoberturaCero>([
+  'sin_puntos',
+  'fuera_de_tramo',
+  'sin_tramo_continuo',
+  'sin_desplazamiento',
+  'sin_telemetria_dispositivo',
+  'medicion_no_cerrada',
+]);
+
+function esMotivo(valor: string): valor is MotivoCoberturaCero {
+  return MOTIVOS.has(valor as MotivoCoberturaCero);
+}
+
+/**
+ * Texto del cero. No dice «0 %» cuando hubo puntos: el porcentaje guardado
+ * sigue siendo 0 (ADR-028), pero la tarjeta explica la regla.
+ */
+export function textoMotivoCobertura(
+  motivo: MotivoCoberturaCero,
+  fuente: 'teltonika_gps' | 'movil_gps',
+  puntosTelefono: number,
+  puntosEnTramo: number,
+): string {
+  const delTelefono = fuente === 'movil_gps';
+  const quien = delTelefono ? 'del teléfono' : 'del dispositivo';
+  let base: string;
+  switch (motivo) {
+    case 'sin_telemetria_dispositivo':
+      base = `Sin telemetría del dispositivo en el tramo. Los ${puntosTelefono} puntos del teléfono no entran en esta cobertura.`;
+      break;
+    case 'fuera_de_tramo':
+      base = `Llegaron ${puntosTelefono} puntos del teléfono y ninguno cae entre la recogida y la entrega.`;
+      break;
+    case 'sin_tramo_continuo':
+      base =
+        puntosEnTramo < 2
+          ? `Hay ${puntosEnTramo} punto ${quien} en el tramo. Hacen falta al menos dos, a menos de un minuto, para medir.`
+          : `Hay ${puntosEnTramo} puntos ${quien} en el tramo, con más de un minuto entre ellos. No alcanzan para medir un tramo continuo.`;
+      break;
+    case 'sin_desplazamiento':
+      base = `Hay ${puntosEnTramo} puntos ${quien} en el tramo, sin desplazamiento medible entre ellos.`;
+      break;
+    case 'medicion_no_cerrada':
+      base =
+        delTelefono && puntosTelefono > 0
+          ? `Llegaron ${puntosTelefono} puntos del teléfono. Hay posición en el tramo, pero no se pudo cerrar la distancia. No se publica un porcentaje.`
+          : 'Hay posición en el tramo, pero no se pudo cerrar la distancia. No se publica un porcentaje.';
+      break;
+    case 'sin_puntos':
+      base = 'Sin telemetría del dispositivo ni puntos del teléfono en el tramo.';
+      break;
+    default: {
+      const _nunca: never = motivo;
+      base = String(_nunca);
+    }
+  }
+  if (
+    fuente === 'teltonika_gps' &&
+    puntosTelefono > 0 &&
+    motivo !== 'sin_telemetria_dispositivo' &&
+    motivo !== 'sin_puntos'
+  ) {
+    return `${base} Los ${puntosTelefono} puntos del teléfono no entran en esta cobertura.`;
+  }
+  return base;
 }
 
 export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
@@ -116,7 +199,8 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
     2,
   );
   const km = numero(m?.distance_km_actual ?? m?.distance_km_estimated ?? null, 1);
-  const cobertura = numero(m?.coverage_pct ?? null, 0);
+  const motivoRaw = resultado.cobertura?.motivo;
+  const motivo = motivoRaw && esMotivo(motivoRaw) ? motivoRaw : null;
   const nivel = m?.certification_level ? NIVEL_EN_PALABRAS[m.certification_level] : null;
 
   return (
@@ -133,7 +217,11 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-neutral-800">
           <div className="col-span-2">
             <dt className="text-neutral-500 text-xs">
-              {medida ? 'Huella medida' : 'Huella estimada (cobertura insuficiente para medir)'}
+              {medida
+                ? 'Huella medida'
+                : motivo
+                  ? 'Huella estimada'
+                  : 'Huella estimada (cobertura insuficiente para medir)'}
             </dt>
             <dd className="font-semibold text-lg">{kg != null ? `${kg} kg CO2e` : 'Sin dato'}</dd>
           </div>
@@ -143,9 +231,18 @@ export function ResultadoViaje({ assignmentId }: { assignmentId: string }) {
             </dt>
             <dd className="font-medium">{km != null ? `${km} km` : 'Sin dato'}</dd>
           </div>
-          <div>
+          <div className={motivo ? 'col-span-2' : undefined}>
             <dt className="text-neutral-500 text-xs">Cobertura de posición</dt>
-            <dd className="font-medium">{cobertura != null ? `${cobertura} %` : 'Sin dato'}</dd>
+            <dd className="font-medium" data-testid="cobertura-posicion">
+              {motivo && resultado.cobertura
+                ? textoMotivoCobertura(
+                    motivo,
+                    resultado.cobertura.fuente,
+                    resultado.cobertura.puntos_telefono,
+                    resultado.cobertura.puntos_en_tramo,
+                  )
+                : textoPorcentaje(m?.coverage_pct ?? null)}
+            </dd>
           </div>
           {nivel && (
             <div className="col-span-2">

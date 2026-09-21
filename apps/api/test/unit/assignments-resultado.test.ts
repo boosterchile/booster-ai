@@ -196,6 +196,49 @@ describe('GET /assignments/:id/resultado', () => {
     expect(body.certificate).toBeNull();
   });
 
+  it('17 puntos del teléfono a más de 60 s → motivo sin_tramo_continuo, no un 0 mudo', async () => {
+    const t0 = Date.parse('2026-09-21T18:00:00Z');
+    const pings = Array.from({ length: 17 }, (_, i) => ({
+      ts: new Date(t0 + i * 120_000),
+      lat: (-33.4 - i * 0.001).toFixed(7),
+      lng: '-70.6000000',
+    }));
+    const row = {
+      ...ROW,
+      trackingCode: 'BOO-83ND2C',
+      vehicleId: 'veh-sin-imei',
+      teltonikaImei: null,
+      teltonikaImeiEspejo: null,
+      coveragePct: '0.00',
+      distanceKmActual: null,
+      carbonEmissionsKgco2eActual: null,
+      routeDataSource: 'maps_directions',
+      certificateIssuedAt: null,
+      certificatePdfUrl: null,
+    };
+    const app = await buildApp(makeDb([[row], [{ n: 17 }], pings]));
+    const res = await app.request(`/assignments/${ASSIGNMENT_ID}/resultado`, {
+      headers: { 'x-test-userctx': ctx(DRIVER_USER, 'conductor') },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      cobertura: {
+        motivo: string;
+        fuente: string;
+        puntos_telefono: number;
+        puntos_en_tramo: number;
+      };
+      metrics: { coverage_pct: string };
+    };
+    expect(body.metrics.coverage_pct).toBe('0.00');
+    expect(body.cobertura).toEqual({
+      motivo: 'sin_tramo_continuo',
+      fuente: 'movil_gps',
+      puntos_telefono: 17,
+      puntos_en_tramo: 17,
+    });
+  });
+
   it('asignación inexistente → 404', async () => {
     const app = await buildApp(makeDb([[]]));
     const res = await app.request(`/assignments/${ASSIGNMENT_ID}/resultado`, {

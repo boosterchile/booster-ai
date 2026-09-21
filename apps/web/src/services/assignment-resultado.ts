@@ -23,6 +23,25 @@ export interface MetricasResultado {
   certificate_issued_at: string | null;
 }
 
+/**
+ * Por qué el cierre guardó cobertura 0. No es el conteo de POST: es la regla
+ * que dejó el porcentaje en cero (ADR-028 §5 / ADR-077, sin mezclar fuentes).
+ */
+export type MotivoCoberturaCero =
+  | 'sin_puntos'
+  | 'fuera_de_tramo'
+  | 'sin_tramo_continuo'
+  | 'sin_desplazamiento'
+  | 'sin_telemetria_dispositivo'
+  | 'medicion_no_cerrada';
+
+export interface CoberturaExplicada {
+  motivo: MotivoCoberturaCero | null;
+  fuente: 'teltonika_gps' | 'movil_gps';
+  puntos_telefono: number;
+  puntos_en_tramo: number;
+}
+
 export interface ResultadoAsignacion {
   assignment: {
     id: string;
@@ -32,6 +51,8 @@ export interface ResultadoAsignacion {
   };
   trip: { id: string; tracking_code: string };
   metrics: MetricasResultado | null;
+  /** Ausente en respuestas viejas. `null` si la cobertura persistida ya es > 0. */
+  cobertura?: CoberturaExplicada | null;
   certificate: { issued_at: string | null; sha256: string | null; verify_url: string } | null;
 }
 

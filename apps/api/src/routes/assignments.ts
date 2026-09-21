@@ -42,6 +42,7 @@ import {
   DriverNotInCarrierError,
   asignarConductorAAssignment,
 } from '../services/asignar-conductor-a-assignment.js';
+import { explicarCoberturaCero } from '../services/clasificar-cobertura-cero.js';
 import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
@@ -717,10 +718,14 @@ export function createAssignmentsRoutes(opts: {
         certificateSha256: tripMetrics.certificateSha256,
         certificateKmsKeyVersion: tripMetrics.certificateKmsKeyVersion,
         certificateIssuedAt: tripMetrics.certificateIssuedAt,
+        vehicleId: assignments.vehicleId,
+        teltonikaImei: vehicles.teltonikaImei,
+        teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
       })
       .from(assignments)
       .innerJoin(trips, eq(trips.id, assignments.tripId))
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .leftJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
       .where(eq(assignments.id, assignmentId))
       .limit(1);
     return rows[0];
@@ -762,6 +767,41 @@ export function createAssignmentsRoutes(opts: {
             verify_url: `${verifyBase}/certificates/${row.trackingCode}/verify`,
           }
         : null;
+    // Cobertura 0 no es «no llegó ningún punto». Se explica solo en ese caso:
+    // con cobertura > 0 el porcentaje ya dice lo que midió la fuente del vehículo.
+    const coverageNum = row.coveragePct != null ? Number(row.coveragePct) : null;
+    const vehicle =
+      row.vehicleId != null
+        ? {
+            id: row.vehicleId,
+            teltonikaImei: row.teltonikaImei ?? null,
+            teltonikaImeiEspejo: row.teltonikaImeiEspejo ?? null,
+          }
+        : null;
+    const cobertura =
+      row.metricsTripId && vehicle && coverageNum != null && coverageNum <= 0
+        ? await explicarCoberturaCero({
+            db: opts.db,
+            assignmentId: row.assignmentId,
+            vehicle,
+            desde: row.pickedUpAt,
+            hasta: row.deliveredAt,
+            coveragePct: coverageNum,
+          })
+        : null;
+    if (cobertura?.motivo) {
+      opts.logger.info(
+        {
+          assignmentId: row.assignmentId,
+          tripId: row.tripId,
+          motivo: cobertura.motivo,
+          fuente: cobertura.fuente,
+          puntosTelefono: cobertura.puntos_telefono,
+          puntosEnTramo: cobertura.puntos_en_tramo,
+        },
+        'cobertura cero explicada al conductor',
+      );
+    }
     return c.json({
       assignment: {
         id: row.assignmentId,
@@ -771,6 +811,7 @@ export function createAssignmentsRoutes(opts: {
       },
       trip: { id: row.tripId, tracking_code: row.trackingCode },
       metrics: row.metricsTripId ? serializeTripMetrics(row) : null,
+      cobertura,
       certificate: certificado,
     });
   });
