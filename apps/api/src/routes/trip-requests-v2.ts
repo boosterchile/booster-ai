@@ -377,6 +377,10 @@ export function createTripRequestsV2Routes(opts: {
         vehicle_type: vehicles.vehicleType,
         driver_user_id: assignments.driverUserId,
         driver_name: usersTable.fullName,
+        // El token se acuña en el accept, sin mirar al destinatario. Si no
+        // sale en este detalle, el generador no tiene enlace público cuando
+        // el WhatsApp no tiene a quién escribir.
+        public_tracking_token: assignments.publicTrackingToken,
       })
       .from(assignments)
       .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
@@ -437,6 +441,8 @@ export function createTripRequestsV2Routes(opts: {
       assignment: assignmentRow
         ? {
             ...assignmentRow,
+            // Siempre presente (uuid o null). Un destinatario vacío no lo omite.
+            public_tracking_token: assignmentRow.public_tracking_token ?? null,
             ubicacion_actual: ubicacionActual,
             position_source: positionSource,
             eta_minutes: etaMinutes,

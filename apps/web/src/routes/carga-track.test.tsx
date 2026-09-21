@@ -315,6 +315,61 @@ describe('CargaTrackRoute', () => {
     }
   });
 
+  it('en_proceso sin destinatario y con token → muestra el enlace público', async () => {
+    const token = '550e8400-e29b-4114-a716-446655440000';
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'en_proceso',
+        empresa_legal_name: 'Van Oosterwyk',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion',
+        driver_name: null,
+        ubicacion_actual: null,
+        public_tracking_token: token,
+      },
+    });
+    renderRoute();
+    const link = await screen.findByRole('link', { name: /seguimiento público/i });
+    expect(link).toHaveAttribute('href', `http://localhost:3000/tracking/${token}`);
+  });
+
+  it('en_proceso sin token → no muestra enlace', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce({
+      trip_request: {
+        id: 't1',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'V',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'en_proceso',
+        empresa_legal_name: 'Van Oosterwyk',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: null,
+        driver_name: null,
+        ubicacion_actual: null,
+        public_tracking_token: null,
+      },
+    });
+    renderRoute();
+    expect(await screen.findByText('Van Oosterwyk')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /seguimiento público/i })).toBeNull();
+  });
+
   it('generador dueño → panel documental con tripId de ruta y canWrite', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno') };
     vi.spyOn(api, 'get').mockResolvedValueOnce({

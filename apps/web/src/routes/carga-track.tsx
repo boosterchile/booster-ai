@@ -6,6 +6,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
+import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { useRefetchWhenVisible } from '../hooks/use-refetch-when-visible.js';
 import { api } from '../lib/api-client.js';
@@ -15,6 +16,7 @@ import {
   type PositionSource,
   etaLine,
   positionSourceLabel,
+  publicTrackingShareUrl,
 } from '../lib/live-tracking.js';
 import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
@@ -56,6 +58,8 @@ interface TripDetailResponse {
     /** Opcionales: un API anterior a `tracking-live-unificado` no los envía. */
     position_source?: PositionSource | null;
     eta_minutes?: number | null;
+    /** UUID del seguimiento público. Null en asignaciones anteriores a la columna. */
+    public_tracking_token?: string | null;
   } | null;
 }
 
@@ -93,6 +97,11 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
   const isClosed = trip?.status === 'entregado' || trip?.status === 'cancelado';
   const hasPos = ubicacion?.latitude != null && ubicacion?.longitude != null;
   const sourceLabel = positionSourceLabel(assignment?.position_source);
+  const shareUrl = publicTrackingShareUrl(
+    assignment?.public_tracking_token,
+    trip?.status,
+    window.location.origin,
+  );
 
   return (
     <>
@@ -152,6 +161,7 @@ function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
                 oferta, verás su vehículo aquí en tiempo real.
               </div>
             )}
+            {shareUrl && <PublicTrackingShare url={shareUrl} />}
             <TransportDocumentsPanel tripId={id} canWrite={canWriteDocs} compact />
           </div>
         }
