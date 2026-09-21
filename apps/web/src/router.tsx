@@ -172,6 +172,12 @@ const equipoRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/equipo.js'), 'EquipoRoute'),
 });
 
+const zonasMatchingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/zonas',
+  component: lazyRouteComponent(() => import('./routes/zonas.js'), 'ZonasRoute'),
+});
+
 // /activar — pública por diseño: la usa alguien que su empresa dio de alta y
 // que todavía no tiene credencial; la está creando acá.
 const activarRoute = createRoute({
@@ -479,6 +485,7 @@ const routeTree = rootRoute.addChildren([
   vehiculoHistorialRoute,
   flotaRoute,
   equipoRoute,
+  zonasMatchingRoute,
   activarRoute,
   conductoresListRoute,
   conductoresNuevoRoute,

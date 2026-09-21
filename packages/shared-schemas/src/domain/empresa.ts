@@ -110,3 +110,13 @@ export const invitarMiembroEmpresaSchema = z.object({
   rol: rolInvitacionEmpresaSchema,
 });
 export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;
+
+/**
+ * PATCH de `empresas.estado` (platform-admin). Los tres valores del enum
+ * son alcanzables entre sí; no hay transición ilegal. Idempotente si el
+ * valor pedido es el actual.
+ */
+export const empresaEstadoPatchSchema = z.object({
+  estado: empresaStatusSchema,
+});
+export type EmpresaEstadoPatch = z.infer<typeof empresaEstadoPatchSchema>;

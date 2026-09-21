@@ -52,6 +52,7 @@ import { createMeClaveNumericaRoutes } from './routes/me-clave-numerica.js';
 import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
+import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
@@ -405,6 +406,11 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
     meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    // CRUD zonas de matching del transportista. userContext precede el mount;
+    // el empresaId sale de la membresía activa (nunca del cliente).
+    app.use('/me/zonas', userContextMiddlewareForMe);
+    app.use('/me/zonas/*', userContextMiddlewareForMe);
+    meRouter.route('/zonas', createMeZonasRoutes({ db: opts.db, logger }));
 
     app.route('/me', meRouter);
 
@@ -728,11 +734,18 @@ export function createServer(opts: CreateServerOptions): Hono {
     // cubre (RUT registrado → 409). Mismo chain que signup-requests; la
     // autorización real la da `requirePlatformAdmin` dentro del handler.
     app.use(
+      '/admin/empresas',
+      firebaseAuthMiddleware,
+      demoExpiresMiddleware,
+      isDemoEnforcementMiddleware,
+    );
+    app.use(
       '/admin/empresas/*',
       firebaseAuthMiddleware,
       demoExpiresMiddleware,
       isDemoEnforcementMiddleware,
     );
+    app.use('/admin/empresas', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/empresas',

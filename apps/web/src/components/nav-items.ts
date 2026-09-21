@@ -76,7 +76,10 @@ export function navSectionsForMe(me: MeOnboarded): NavSection[] {
       { label: 'Liquidaciones', to: '/app/liquidaciones', icon: Receipt },
     ];
     if (isAdmin) {
-      transporte.push({ label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio });
+      transporte.push(
+        { label: 'Zonas de matching', to: '/app/zonas', icon: MapPinned },
+        { label: 'Dispositivos', to: '/app/admin/dispositivos', icon: Radio },
+      );
     }
     sections.push({ heading: 'Transporte', items: transporte });
   }

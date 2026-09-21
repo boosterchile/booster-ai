@@ -1,5 +1,9 @@
 import type { Logger } from '@booster-ai/logger';
-import { invitarMiembroEmpresaSchema } from '@booster-ai/shared-schemas';
+import {
+  empresaEstadoPatchSchema,
+  empresaStatusSchema,
+  invitarMiembroEmpresaSchema,
+} from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, eq } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
@@ -8,11 +12,16 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { empresas, memberships, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — sumar personas a una empresa EXISTENTE.
  *
- *   POST /admin/empresas/:id/miembros → invita a alguien con un rol
+ *   GET   /admin/empresas              → lista (filtro opcional `?estado=`)
+ *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
+ *                                        pendiente_verificacion)
+ *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
  *
  * **Por qué existe**: `onboardEmpresa` solo sabe crear empresa + dueño de cero.
  * Con el RUT ya registrado devuelve 409 `rut_already_registered`
@@ -44,16 +53,25 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
 }): Hono {
   const app = new Hono();
 
-  // GET /admin/empresas — listado para elegir destino de la invitación. Sin
-  // esto el admin tendría que conocer el UUID de la empresa de memoria.
-  app.get('/', async (c) => {
+  const listQuerySchema = z.object({
+    estado: empresaStatusSchema.optional(),
+  });
+
+  const idParamSchema = z.object({ id: z.string().uuid() });
+
+  // GET /admin/empresas — listado para elegir destino de la invitación y para
+  // activar/suspender. Sin esto el admin tendría que conocer el UUID de
+  // memoria o filtrar a mano en SQL.
+  app.get('/', zValidator('query', listQuerySchema), async (c) => {
     const admin = requirePlatformAdmin(c);
     if (!admin.ok) {
       return admin.response;
     }
 
+    const { estado } = c.req.valid('query');
+
     // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-    const rows = await opts.db
+    const base = opts.db
       .select({
         id: empresas.id,
         razonSocial: empresas.legalName,
@@ -62,9 +80,11 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         esTransportista: empresas.isTransportista,
         esGeneradorCarga: empresas.isGeneradorCarga,
       })
-      .from(empresas)
-      .orderBy(empresas.legalName)
-      .limit(500);
+      .from(empresas);
+
+    const rows = estado
+      ? await base.where(eq(empresas.status, estado)).orderBy(empresas.legalName).limit(500)
+      : await base.orderBy(empresas.legalName).limit(500);
 
     return c.json({
       empresas: rows.map((r) => ({
@@ -77,6 +97,103 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
       })),
     });
   });
+
+  // PATCH /admin/empresas/:id — cambia estado. Cierra el hueco 0→1: el
+  // onboarding deja `pendiente_verificacion` y matching exige `activa`.
+  // Sin este endpoint ops activaba con SQL.
+  //
+  // Transiciones: los tres valores del enum son alcanzables entre sí.
+  // No hay transición ilegal. Mismo valor = 200 idempotente.
+  app.patch(
+    '/:id',
+    zValidator('param', idParamSchema),
+    zValidator('json', empresaEstadoPatchSchema),
+    async (c) => {
+      const admin = requirePlatformAdmin(c);
+      if (!admin.ok) {
+        return admin.response;
+      }
+
+      const { id } = c.req.valid('param');
+      const { estado: nuevoEstado } = c.req.valid('json');
+
+      return await withBusinessSpan(
+        {
+          name: 'empresa.cambiar_estado',
+          attributes: {
+            'booster.empresa_id': id,
+            'booster.empresa.estado_nuevo': nuevoEstado,
+          },
+        },
+        async (span) => {
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const existingRows = await opts.db
+            .select({
+              id: empresas.id,
+              status: empresas.status,
+            })
+            .from(empresas)
+            .where(eq(empresas.id, id))
+            .limit(1);
+          const existing = existingRows[0];
+          if (!existing) {
+            return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+          }
+
+          const estadoAnterior = existing.status;
+          const unchanged = estadoAnterior === nuevoEstado;
+
+          if (!unchanged) {
+            // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+            const updated = await opts.db
+              .update(empresas)
+              .set({ status: nuevoEstado, updatedAt: new Date() })
+              .where(eq(empresas.id, id))
+              .returning({ id: empresas.id, status: empresas.status });
+            if (!updated[0]) {
+              opts.logger.error(
+                { empresaId: id, nuevoEstado },
+                'admin-empresas: UPDATE estado no devolvió fila',
+              );
+              return c.json({ error: 'internal_server_error', code: 'estado_update_failed' }, 500);
+            }
+          }
+
+          opts.logger.info(
+            {
+              empresaId: id,
+              estadoAnterior,
+              estadoNuevo: nuevoEstado,
+              unchanged,
+              adminEmail: admin.adminEmail,
+              actorUserId: admin.userContext.user.id,
+            },
+            unchanged
+              ? 'admin-empresas: estado sin cambio (idempotente)'
+              : 'admin-empresas: estado actualizado',
+          );
+
+          getBusinessCounter('empresa_estado_cambios_total').add(1, {
+            from: estadoAnterior,
+            to: nuevoEstado,
+            unchanged: String(unchanged),
+          });
+          setResultAttributes(span, {
+            'booster.empresa.estado_anterior': estadoAnterior,
+            'booster.empresa.unchanged': unchanged,
+          });
+
+          return c.json({
+            ok: true,
+            id,
+            estado: nuevoEstado,
+            estado_anterior: estadoAnterior,
+            unchanged,
+          });
+        },
+      );
+    },
+  );
 
   app.post('/:id/miembros', zValidator('json', invitarMiembroEmpresaSchema), async (c) => {
     const admin = requirePlatformAdmin(c);

@@ -118,8 +118,10 @@ describe('primitives/chile', () => {
     expect(() => chile.chileanPhoneSchema.parse('+1234')).toThrow();
   });
 
-  it('regionCodeSchema acepta XIII y rechaza XX', () => {
+  it('regionCodeSchema acepta XIII (romano) y rechaza 13 (arábigo) y XX', () => {
     expect(chile.regionCodeSchema.parse('XIII')).toBe('XIII');
+    expect(() => chile.regionCodeSchema.parse('13')).toThrow();
+    expect(() => chile.regionCodeSchema.parse('RM')).toThrow();
     expect(() => chile.regionCodeSchema.parse('XX')).toThrow();
   });
 
@@ -674,6 +676,33 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
       plan_id: VALID_UUID,
     });
     expect(created.status).toBe('pendiente_verificacion');
+  });
+
+  it('empresaEstadoPatchSchema solo acepta los tres estados del enum', () => {
+    expect(empresa.empresaEstadoPatchSchema.parse({ estado: 'activa' }).estado).toBe('activa');
+    expect(empresa.empresaEstadoPatchSchema.parse({ estado: 'suspendida' }).estado).toBe(
+      'suspendida',
+    );
+    expect(
+      empresa.empresaEstadoPatchSchema.parse({ estado: 'pendiente_verificacion' }).estado,
+    ).toBe('pendiente_verificacion');
+    expect(() => empresa.empresaEstadoPatchSchema.parse({ estado: 'borrada' })).toThrow();
+  });
+});
+
+describe('zoneCreateBodySchema — boundary romano del matching', () => {
+  it('acepta XIII / ambos y rechaza 13', () => {
+    expect(
+      zone.zoneCreateBodySchema.parse({ region_code: 'XIII', zone_type: 'ambos' }).region_code,
+    ).toBe('XIII');
+    expect(() =>
+      zone.zoneCreateBodySchema.parse({ region_code: '13', zone_type: 'ambos' }),
+    ).toThrow();
+  });
+
+  it('zoneUpdateBodySchema rechaza patch vacío', () => {
+    expect(() => zone.zoneUpdateBodySchema.parse({})).toThrow();
+    expect(zone.zoneUpdateBodySchema.parse({ is_active: false }).is_active).toBe(false);
   });
 });
 

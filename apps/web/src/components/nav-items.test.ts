@@ -51,10 +51,11 @@ describe('navSectionsForMe', () => {
     expect(l).toEqual(['Inicio', 'Crear carga', 'Mis cargas', 'Sucursales', 'Certificados']);
   });
 
-  it('transportista dueño → Inicio + 7 items de transporte + Dispositivos', () => {
+  it('transportista dueño → Inicio + transporte + Zonas de matching + Dispositivos', () => {
     const l = labels(navSectionsForMe(buildMe({ transportista: true, role: 'dueno' })));
     expect(l).toContain('Ofertas');
     expect(l).toContain('Liquidaciones');
+    expect(l).toContain('Zonas de matching');
     expect(l).toContain('Dispositivos'); // admin
     expect(l).not.toContain('Mis cargas'); // no es generador
   });
@@ -73,10 +74,11 @@ describe('navSectionsForMe', () => {
     expect(l).not.toContain('Servicios');
   });
 
-  it('transportista NO admin (despachador) → sin Dispositivos', () => {
+  it('transportista NO admin (despachador) → sin Dispositivos ni Zonas de matching', () => {
     const l = labels(navSectionsForMe(buildMe({ transportista: true, role: 'despachador' })));
     expect(l).toContain('Ofertas');
     expect(l).not.toContain('Dispositivos');
+    expect(l).not.toContain('Zonas de matching');
   });
 
   it('empresa dual (transportista + generador) → ambas secciones', () => {

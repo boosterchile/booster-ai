@@ -37,6 +37,7 @@ describe('router', () => {
         'app/certificados',
         'app/asignaciones/$id',
         'app/chat/$id',
+        'app/zonas',
         'solicitar-acceso',
       ]),
     );
