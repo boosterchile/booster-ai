@@ -11,7 +11,8 @@
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:e2e": "playwright test",
-    "test:e2e:local": "playwright test -c playwright.local.config.ts"
+    "test:e2e:local": "playwright test -c playwright.local.config.ts",
+    "test:e2e:conductor": "playwright test -c playwright.conductor.config.ts"
   },
   "dependencies": {
     "@booster-ai/shared-schemas": "workspace:*",

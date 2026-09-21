@@ -15,7 +15,8 @@
     "pretest:integration": "pnpm run test:integration:lint",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "test:all": "pnpm run test && pnpm run test:integration",
-    "load-test:smoke": "k6 run test/load/smoke.k6.js"
+    "load-test:smoke": "k6 run test/load/smoke.k6.js",
+    "seed:conductor-e2e": "tsx scripts/seed-conductor-e2e.ts"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",

@@ -52,6 +52,34 @@ const envSchema = z.object({
    * inyecta con el commit SHA; en dev queda ausente.
    */
   VITE_RELEASE: z.string().optional(),
+
+  /**
+   * Cablea `connectAuthEmulator` al Auth emulator local (Slot 3 paso 6).
+   * Default OFF. Anti-footgun: `"false"` no puede parsear true
+   * (`z.coerce.boolean` lo haría). Nunca se setea en Cloud Build / prod.
+   * Con ON, el cliente NO pega Identity Platform: solo loopback.
+   */
+  VITE_USE_AUTH_EMULATOR: z
+    .preprocess((v) => {
+      if (typeof v === 'boolean') {
+        return v;
+      }
+      if (typeof v !== 'string') {
+        return false;
+      }
+      const normalized = v.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') {
+        return true;
+      }
+      return false;
+    }, z.boolean())
+    .default(false),
+
+  /**
+   * Origin del Auth emulator. Solo se usa con `VITE_USE_AUTH_EMULATOR=true`.
+   * Default `http://127.0.0.1:9099`. Host no-loopback → throw en boot.
+   */
+  VITE_AUTH_EMULATOR_URL: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
