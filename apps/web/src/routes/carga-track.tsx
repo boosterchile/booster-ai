@@ -6,8 +6,10 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { PushSubscribeBanner } from '../components/chat/PushSubscribeBanner.js';
 import { LiveTrackingScreen } from '../components/map/LiveTrackingScreen.js';
+import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
 import { type PositionSource, etaLine, positionSourceLabel } from '../lib/live-tracking.js';
+import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 /**
  * /app/cargas/:id/track — pantalla full-screen estilo Uber para que el
@@ -57,13 +59,14 @@ export function CargaTrackRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        return <CargaTrackPage />;
+        const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
+        return <CargaTrackPage canWriteDocs={canWriteDocs} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function CargaTrackPage() {
+function CargaTrackPage({ canWriteDocs }: { canWriteDocs: boolean }) {
   const { id } = useParams({ strict: false }) as { id: string };
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -103,42 +106,45 @@ function CargaTrackPage() {
         isFetching={tripQ.isFetching}
         onRefresh={() => void tripQ.refetch()}
         bottomExtra={
-          assignment ? (
-            <div className="space-y-2">
-              {hasPos && (
-                <div>
-                  <p className="font-semibold text-neutral-900 text-sm">
-                    {etaLine(assignment.eta_minutes)}
-                  </p>
-                  {sourceLabel && <p className="text-neutral-600 text-xs">{sourceLabel}</p>}
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-4 text-sm">
-                <div className="flex items-center gap-2 text-neutral-700">
-                  <Building2 className="h-4 w-4 text-neutral-500" aria-hidden />
-                  <span>{assignment.empresa_legal_name ?? '—'}</span>
-                </div>
-                {assignment.driver_name && (
-                  <div className="flex items-center gap-2 text-neutral-700">
-                    <UserIcon className="h-4 w-4 text-neutral-500" aria-hidden />
-                    <span>{assignment.driver_name}</span>
+          <div className="space-y-3">
+            {assignment ? (
+              <div className="space-y-2">
+                {hasPos && (
+                  <div>
+                    <p className="font-semibold text-neutral-900 text-sm">
+                      {etaLine(assignment.eta_minutes)}
+                    </p>
+                    {sourceLabel && <p className="text-neutral-600 text-xs">{sourceLabel}</p>}
                   </div>
                 )}
-                <Link
-                  to="/app/cargas/$id"
-                  params={{ id }}
-                  className="rounded-md border border-neutral-300 px-3 py-1 font-medium text-neutral-700 text-xs transition hover:bg-neutral-100"
-                >
-                  Ver detalle
-                </Link>
+                <div className="flex items-center justify-between gap-4 text-sm">
+                  <div className="flex items-center gap-2 text-neutral-700">
+                    <Building2 className="h-4 w-4 text-neutral-500" aria-hidden />
+                    <span>{assignment.empresa_legal_name ?? '—'}</span>
+                  </div>
+                  {assignment.driver_name && (
+                    <div className="flex items-center gap-2 text-neutral-700">
+                      <UserIcon className="h-4 w-4 text-neutral-500" aria-hidden />
+                      <span>{assignment.driver_name}</span>
+                    </div>
+                  )}
+                  <Link
+                    to="/app/cargas/$id"
+                    params={{ id }}
+                    className="rounded-md border border-neutral-300 px-3 py-1 font-medium text-neutral-700 text-xs transition hover:bg-neutral-100"
+                  >
+                    Ver detalle
+                  </Link>
+                </div>
               </div>
-            </div>
-          ) : tripQ.isLoading ? null : (
-            <div className="text-center text-neutral-600 text-sm">
-              Esta carga todavía no tiene transportista asignado. Cuando un carrier acepte la
-              oferta, verás su vehículo aquí en tiempo real.
-            </div>
-          )
+            ) : tripQ.isLoading ? null : (
+              <div className="text-center text-neutral-600 text-sm">
+                Esta carga todavía no tiene transportista asignado. Cuando un carrier acepte la
+                oferta, verás su vehículo aquí en tiempo real.
+              </div>
+            )}
+            <TransportDocumentsPanel tripId={id} canWrite={canWriteDocs} compact />
+          </div>
         }
       />
       {/* FAB chat — solo si hay assignment activo. */}

@@ -62,13 +62,15 @@ async function request<T>(
   path: string,
   body?: unknown,
   init?: RequestInit,
+  asForm = false,
 ): Promise<T> {
   const url = `${env.VITE_API_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = await buildHeaders(init?.headers);
-  // Content-Type SOLO cuando hay cuerpo. Mandarlo sin cuerpo hacía que el
+  // Content-Type SOLO cuando hay cuerpo JSON. Mandarlo sin cuerpo hacía que el
   // validador json del API intentara parsear un body vacío → «Malformed JSON»
   // (400) que el onError volvía 500 (confirmar-recogida, 2026-09-14).
-  if (body !== undefined && !headers.has('Content-Type')) {
+  // FormData: el browser pone multipart + boundary; no lo pises.
+  if (body !== undefined && !asForm && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -79,7 +81,7 @@ async function request<T>(
     ...init,
     method,
     headers,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(body !== undefined ? { body: asForm ? (body as FormData) : JSON.stringify(body) } : {}),
   };
 
   const res = await fetch(url, fetchInit);
@@ -119,6 +121,12 @@ export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>('GET', path, undefined, init),
   post: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>('POST', path, body, init),
+  /**
+   * POST multipart. No setea Content-Type: el browser agrega el boundary.
+   * Usado por el gestor documental del viaje (`file` PDF/JPEG/PNG).
+   */
+  postForm: <T>(path: string, form: FormData, init?: RequestInit) =>
+    request<T>('POST', path, form, init, true),
   patch: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>('PATCH', path, body, init),
   put: <T>(path: string, body?: unknown, init?: RequestInit) => request<T>('PUT', path, body, init),

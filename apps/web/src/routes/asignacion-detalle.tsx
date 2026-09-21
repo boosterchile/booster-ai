@@ -27,7 +27,9 @@ import { DeliveryConfirmCard } from '../components/scoring/DeliveryConfirmCard.j
 import { DriverAssignmentCard } from '../components/scoring/DriverAssignmentCard.js';
 import { IncidentReportCard } from '../components/scoring/IncidentReportCard.js';
 import { TrazaCargaCard } from '../components/scoring/TrazaCargaCard.js';
+import { TransportDocumentsPanel } from '../components/transport-documents/TransportDocumentsPanel.js';
 import { api } from '../lib/api-client.js';
+import { canWriteTransportDocuments } from '../lib/transport-documents-api.js';
 
 interface AssignmentDetail {
   trip_request: {
@@ -73,13 +75,14 @@ export function AsignacionDetalleRoute() {
             </div>
           );
         }
-        return <AsignacionDetallePage />;
+        const canWriteDocs = canWriteTransportDocuments(ctx.me.active_membership?.role);
+        return <AsignacionDetallePage canWriteDocs={canWriteDocs} />;
       }}
     </ProtectedRoute>
   );
 }
 
-function AsignacionDetallePage() {
+function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
   const { id: assignmentId } = useParams({ strict: false }) as { id: string };
 
   // GET /assignments/:id devuelve trip + assignment metadata.
@@ -191,6 +194,9 @@ function AsignacionDetallePage() {
           </div>
         </div>
       )}
+
+      {/* Gestor documental F4-4a — tripId es el viaje, no el assignment. */}
+      {trip?.id && <TransportDocumentsPanel tripId={trip.id} canWrite={canWriteDocs} />}
 
       {/* ChatPanel fullscreen (sin onClose porque acá es la surface dedicada) */}
       <div className="flex-1 overflow-hidden">
