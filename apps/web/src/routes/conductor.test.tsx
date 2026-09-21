@@ -656,8 +656,10 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     expect(href).toContain(encodeURIComponent('Av. Pajaritos 1234'));
     expect(href).toContain('travelmode=driving');
     fireEvent.click(screen.getByTestId('navegar-origen'));
-    expect(await screen.findByTestId('ruta-en-app-sin-dibujo')).toHaveTextContent(
-      'Av. Pajaritos 1234',
+    const panel = await screen.findByTestId('ruta-en-app');
+    expect(panel).toHaveTextContent('Av. Pajaritos 1234');
+    expect(screen.getByTestId('ruta-en-app-sin-dibujo')).toHaveTextContent(
+      'Todavía no hay un dibujo de la ruta.',
     );
     expect(screen.queryByTestId('eco-route-map')).toBeNull();
   });

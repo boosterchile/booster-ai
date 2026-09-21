@@ -483,7 +483,7 @@ function NavegacionEnPantalla({
             </p>
           ) : (
             <p className="text-neutral-700 text-sm" data-testid="ruta-en-app-sin-dibujo">
-              Todavía no hay un dibujo de la ruta. El punto es {address}.
+              Todavía no hay un dibujo de la ruta.
             </p>
           )}
           <p className="text-neutral-600 text-sm">
