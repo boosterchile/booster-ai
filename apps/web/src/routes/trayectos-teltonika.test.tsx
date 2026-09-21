@@ -143,7 +143,7 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('muestra inicio, fin, distancia, vehículo, litros, km/L y el badge', async () => {
+  it('muestra inicio, fin, distancia, vehículo, litros, km/L, L/100 km y el badge', async () => {
     vi.spyOn(api, 'get').mockResolvedValue(listadoConRobo);
     renderPage();
     expect(await screen.findByRole('table')).toBeInTheDocument();
@@ -151,7 +151,10 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getByText('posible robo combustible')).toBeInTheDocument();
     expect(screen.getByText('80,0 L')).toBeInTheDocument();
     expect(screen.getByText('70,0 L')).toBeInTheDocument();
-    expect(screen.getByText('4,25')).toBeInTheDocument();
+    expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
+    // 10 L / 42,5 km × 100 = 23,529… → un decimal
+    expect(screen.getByText('23,5 L/100 km')).toBeInTheDocument();
+    expect(screen.getByText(/costo de operación/)).toBeInTheDocument();
   });
 
   it('sin sensor muestra la CTA y no inventa km/L', async () => {
@@ -174,6 +177,8 @@ describe('TrayectosTeltonikaRoute', () => {
     });
     renderPage();
     expect(await screen.findByText(/Conectá el sensor para ver litros/)).toBeInTheDocument();
+    expect(screen.getAllByText(/costo de operación/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\d[\d.,]* L\/100 km/)).not.toBeInTheDocument();
     expect(screen.getByText('ABCD12')).toBeInTheDocument();
     expect(screen.queryByText('posible robo combustible')).not.toBeInTheDocument();
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);

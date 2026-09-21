@@ -78,8 +78,9 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
           Historial de trayectos
         </h1>
         <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-          Mirá los trayectos de tus Teltonika: distancia, litros y un aviso si el combustible bajó
-          de golpe con el vehículo detenido.
+          Mirá los trayectos de tus Teltonika: la distancia y el consumo (km/L y L/100 km) te sirven
+          para controlar el costo de operación, y el aviso marca si el combustible bajó de golpe con
+          el vehículo detenido.
         </p>
       </header>
 
@@ -153,7 +154,7 @@ function ListadoTrayectos({
       {data.cta_sensor ? (
         <p className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 text-sm">
           Tus Teltonika no reportan sensor de combustible. Conectá el sensor para ver litros, km/L y
-          el aviso de posible robo.
+          L/100 km —te sirven para controlar el costo de operación— y el aviso de posible robo.
         </p>
       ) : null}
       {data.truncado ? (
@@ -191,7 +192,7 @@ function ListadoTrayectos({
                   L fin
                 </th>
                 <th scope="col" className="py-2 font-medium">
-                  km/L
+                  Consumo
                 </th>
               </tr>
             </thead>
@@ -217,18 +218,7 @@ function ListadoTrayectos({
                   <td className="py-3 pr-3">{fmtLitros(t.litros_iniciales)}</td>
                   <td className="py-3 pr-3">{fmtLitros(t.litros_finales)}</td>
                   <td className="py-3">
-                    {t.km_por_litro == null ? (
-                      <span>
-                        —
-                        {t.nota_combustible ? (
-                          <span className="mt-1 block text-neutral-600 text-xs">
-                            {t.nota_combustible}
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : (
-                      fmtNum(t.km_por_litro, 2)
-                    )}
+                    <ConsumoCelda trayecto={t} />
                   </td>
                 </tr>
               ))}
@@ -261,6 +251,42 @@ function ListadoTrayectos({
       ) : null}
     </div>
   );
+}
+
+function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {
+  if (trayecto.km_por_litro == null) {
+    return (
+      <span>
+        —
+        {trayecto.nota_combustible ? (
+          <span className="mt-1 block text-neutral-600 text-xs">{trayecto.nota_combustible}</span>
+        ) : null}
+      </span>
+    );
+  }
+  const porCien = litrosPorCienKm(trayecto);
+  return (
+    <span>
+      {fmtNum(trayecto.km_por_litro, 2)} km/L
+      {porCien == null ? null : (
+        <span className="mt-1 block text-neutral-600 text-xs">{fmtNum(porCien, 1)} L/100 km</span>
+      )}
+    </span>
+  );
+}
+
+/** L/100 km = (L ini − L fin) / km × 100. Solo con km/L y distancia mayor que cero. */
+function litrosPorCienKm(trayecto: Trayecto): number | null {
+  const ini = trayecto.litros_iniciales;
+  const fin = trayecto.litros_finales;
+  if (ini == null || fin == null || !(trayecto.distancia_km > 0)) {
+    return null;
+  }
+  const delta = ini - fin;
+  if (!(delta > 0)) {
+    return null;
+  }
+  return (delta / trayecto.distancia_km) * 100;
 }
 
 function fmtFecha(iso: string): string {

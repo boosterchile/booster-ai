@@ -208,7 +208,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 to="/app/trayectos"
                 icon={Fuel}
                 title="Trayectos Teltonika"
-                desc="Historial de distancia, litros y posible robo de combustible."
+                desc="Distancia y consumo (km/L) para el costo de operación, y aviso de posible robo de combustible."
               />
               <DashboardCard
                 to="/app/admin/dispositivos"
