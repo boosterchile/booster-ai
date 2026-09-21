@@ -216,6 +216,52 @@ describe('runMatching', () => {
     expect(result.offersCreated).toBe(0);
   });
 
+  it('origen XIII + zona compatible + empresa activa → candidato (contrato romano)', async () => {
+    const offer = {
+      id: 'offer-1',
+      tripId: TRIP_ID,
+      empresaId: 'emp-1',
+      suggestedVehicleId: 'veh-1',
+      score: 950,
+      status: 'pendiente',
+      proposedPriceClp: 250000,
+    };
+    const db = makeDb({
+      selects: [
+        [{ ...TRIP_BASE, originRegionCode: 'XIII' }],
+        [{ empresaId: 'emp-1' }], // zona XIII recogida/ambos activa
+        [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
+        [{ id: 'veh-1', empresaId: 'emp-1', capacityKg: 5500, vehicleStatus: 'activo' }],
+      ],
+      inserts: [[], [offer], []],
+    });
+    const result = await runMatching({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.candidatesEvaluated).toBe(1);
+    expect(result.offersCreated).toBe(1);
+    expect(result.offers[0]?.empresaId).toBe('emp-1');
+  });
+
+  it('origen XIII sin zona en esa región → 0 candidatos (región distinta no entra)', async () => {
+    const db = makeDb({
+      selects: [
+        [{ ...TRIP_BASE, originRegionCode: 'XIII' }],
+        [], // ninguna zona con codigo_region = XIII
+      ],
+      inserts: [[], []],
+    });
+    const result = await runMatching({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+    });
+    expect(result.candidatesEvaluated).toBe(0);
+    expect(result.offersCreated).toBe(0);
+  });
+
   it('happy path 1 candidato: crea 1 offer, trip a ofertas_enviadas', async () => {
     const offer = {
       id: 'offer-1',

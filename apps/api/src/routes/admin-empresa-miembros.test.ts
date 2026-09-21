@@ -44,30 +44,44 @@ interface DbOpts {
   empresaRows?: unknown[];
   userByEmailRows?: unknown[];
   existingMembershipRows?: unknown[];
+  updatedRows?: unknown[];
 }
 
 function makeDb(opts: DbOpts = {}) {
   const selectQueue = [
-    opts.empresaRows ?? [{ id: EMPRESA_ID, razonSocial: 'Transportes Van Oosterwyk' }],
+    opts.empresaRows ?? [
+      {
+        id: EMPRESA_ID,
+        razonSocial: 'Transportes Van Oosterwyk',
+        status: 'pendiente_verificacion',
+      },
+    ],
     opts.userByEmailRows ?? [],
     opts.existingMembershipRows ?? [],
   ];
   const insertedUsers: Record<string, unknown>[] = [];
   const insertedMemberships: Record<string, unknown>[] = [];
+  const updates: Record<string, unknown>[] = [];
 
-  // Dos formas de query conviven: el listado (`from().orderBy().limit()`) y
-  // los lookups puntuales (`from().where().limit()`), que consumen la cola.
+  // Listado (`from().orderBy().limit()` y `from().where().orderBy().limit()`)
+  // y lookups (`from().where().limit()`).
   const listRows = opts.empresaRows ?? [];
-  const select = vi.fn(() => ({
-    from: vi.fn(() => ({
-      where: vi.fn(() => ({
-        limit: vi.fn(async () => selectQueue.shift() ?? []),
-      })),
-      orderBy: vi.fn(() => ({
-        limit: vi.fn(async () => listRows),
-      })),
-    })),
-  }));
+  const selectChain = () => {
+    const chain: Record<string, unknown> = {};
+    chain.from = vi.fn(() => chain);
+    chain.where = vi.fn(() => chain);
+    chain.orderBy = vi.fn(() => chain);
+    chain.limit = vi.fn(async () => {
+      // Si el caller pidió orderBy (listado), devolvemos listRows.
+      // Si no, consume la cola de lookups.
+      if ((chain.orderBy as ReturnType<typeof vi.fn>).mock.calls.length > 0) {
+        return listRows;
+      }
+      return selectQueue.shift() ?? [];
+    });
+    return chain;
+  };
+  const select = vi.fn(() => selectChain());
 
   const insert = vi.fn((table: { _: { name?: string } } | unknown) => ({
     values: vi.fn((vals: Record<string, unknown>) => ({
@@ -84,10 +98,24 @@ function makeDb(opts: DbOpts = {}) {
     _table: table,
   }));
 
+  const update = vi.fn(() => ({
+    set: vi.fn((vals: Record<string, unknown>) => {
+      updates.push(vals);
+      return {
+        where: vi.fn(() => ({
+          returning: vi.fn(
+            async () => opts.updatedRows ?? [{ id: EMPRESA_ID, status: vals.status }],
+          ),
+        })),
+      };
+    }),
+  }));
+
   return {
-    db: { select, insert } as never,
+    db: { select, insert, update } as never,
     insertedUsers,
     insertedMemberships,
+    updates,
   };
 }
 
@@ -306,5 +334,150 @@ describe('POST /admin/empresas/:id/miembros', () => {
     const json = (await res.json()) as { membership_id: string; access_link?: string };
     expect(json.membership_id).toBe('membership-uuid');
     expect(json.access_link).toBeUndefined();
+  });
+});
+
+describe('PATCH /admin/empresas/:id — activar sin SQL', () => {
+  it('pasa pendiente_verificacion → activa y audita quién', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      empresaRows: [{ id: EMPRESA_ID, status: 'pendiente_verificacion' }],
+      updatedRows: [{ id: EMPRESA_ID, status: 'activa' }],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ estado: 'activa' }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      estado: string;
+      estado_anterior: string;
+      unchanged: boolean;
+    };
+    expect(json.ok).toBe(true);
+    expect(json.estado).toBe('activa');
+    expect(json.estado_anterior).toBe('pendiente_verificacion');
+    expect(json.unchanged).toBe(false);
+    expect(d.updates[0]).toEqual(expect.objectContaining({ status: 'activa' }));
+    expect(noopLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        empresaId: EMPRESA_ID,
+        estadoAnterior: 'pendiente_verificacion',
+        estadoNuevo: 'activa',
+        adminEmail: ADMIN_EMAIL,
+        actorUserId: 'admin-id',
+        unchanged: false,
+      }),
+      'admin-empresas: estado actualizado',
+    );
+  });
+
+  it('idempotente: mismo estado → 200 sin UPDATE', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      empresaRows: [{ id: EMPRESA_ID, status: 'activa' }],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ estado: 'activa' }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { unchanged: boolean; estado: string };
+    expect(json.unchanged).toBe(true);
+    expect(json.estado).toBe('activa');
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('404 si la empresa no existe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ empresaRows: [] });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ estado: 'activa' }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('niega a quien no es platform-admin', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth, 'ajeno@otra.cl');
+
+    const res = await app.request(`/${EMPRESA_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ estado: 'activa' }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('rechaza un estado fuera del enum', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request(`/${EMPRESA_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ estado: 'borrada' }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /admin/empresas?estado=', () => {
+  it('filtra por estado pendiente_verificacion', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      empresaRows: [
+        {
+          id: EMPRESA_ID,
+          razonSocial: 'Pendiente SpA',
+          rut: '76653720-0',
+          estado: 'pendiente_verificacion',
+          esTransportista: true,
+          esGeneradorCarga: false,
+        },
+      ],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/?estado=pendiente_verificacion', { method: 'GET' });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { empresas: Array<{ estado: string }> };
+    expect(json.empresas[0]?.estado).toBe('pendiente_verificacion');
+  });
+
+  it('rechaza un filtro de estado ilegal', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/?estado=borrada', { method: 'GET' });
+    expect(res.status).toBe(400);
   });
 });

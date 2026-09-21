@@ -31,3 +31,31 @@ export const zoneSchema = z.object({
   updated_at: z.string().datetime(),
 });
 export type Zone = z.infer<typeof zoneSchema>;
+
+/**
+ * Alta de zona operativa. `region_code` es romano (`XIII`, no `13`).
+ * `comuna_codes` null/omitido = toda la región (alcance 0→1).
+ */
+export const zoneCreateBodySchema = z.object({
+  region_code: regionCodeSchema,
+  zone_type: zoneTypeSchema,
+  comuna_codes: z.array(z.string().min(1)).nullable().optional(),
+  is_active: z.boolean().optional(),
+});
+export type ZoneCreateBody = z.infer<typeof zoneCreateBodySchema>;
+
+/**
+ * PATCH de zona. No se cambia `region_code` (se crea otra fila).
+ * Al menos un campo tiene que venir.
+ */
+export const zoneUpdateBodySchema = z
+  .object({
+    zone_type: zoneTypeSchema.optional(),
+    comuna_codes: z.array(z.string().min(1)).nullable().optional(),
+    is_active: z.boolean().optional(),
+  })
+  .refine(
+    (v) => v.zone_type !== undefined || v.comuna_codes !== undefined || v.is_active !== undefined,
+    { message: 'empty_patch' },
+  );
+export type ZoneUpdateBody = z.infer<typeof zoneUpdateBodySchema>;

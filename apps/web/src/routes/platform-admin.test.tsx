@@ -37,7 +37,16 @@ vi.mock('../components/ImpersonationPicker.js', () => ({
 }));
 
 vi.mock('../lib/api-client.js', () => ({
-  api: { get: vi.fn().mockResolvedValue({ organizations: [] }), post: vi.fn() },
+  api: {
+    get: vi.fn(async (path: string) => {
+      if (typeof path === 'string' && path.startsWith('/admin/empresas')) {
+        return { empresas: [] };
+      }
+      return { organizations: [] };
+    }),
+    post: vi.fn(),
+    patch: vi.fn(),
+  },
   ApiError: class ApiError extends Error {},
 }));
 
@@ -72,5 +81,6 @@ describe('/app/platform-admin — entradas del panel', () => {
       'href',
       '/app/platform-admin/site-settings',
     );
+    expect(screen.getByRole('heading', { name: 'Empresas' })).toBeInTheDocument();
   });
 });
