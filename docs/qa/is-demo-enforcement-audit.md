@@ -1,5 +1,7 @@
 # Audit: is-demo enforcement coverage (Sprint 2b T2a)
 
+> **Supersedido 2026-09-21** (`.specs/retiro-es-demo-auth-hot-path/`): el chain productivo ya no monta este enforcement. El inventario de abajo es histórico. Re-cablearlo en `server.ts` falla `check-is-demo-wire-completeness`.
+
 > **Generado**: 2026-05-26 contra `main` HEAD (`aed2572` feat(api) T1 commit + amendments).
 >
 > **Spec**: `.specs/sec-001-cierre/spec.md` §3 H1.3 SC-1.3.1..1.3.8 (v3.4 amendment 2026-05-25).

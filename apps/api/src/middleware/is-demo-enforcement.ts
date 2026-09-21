@@ -1,3 +1,9 @@
+/**
+ * Fuera del request path productivo (slice retiro-es-demo-auth-hot-path).
+ * `server.ts` no lo monta. El guard `check-is-demo-wire-completeness` falla
+ * si vuelve a importarse o montarse ahí. Los tests de este archivo cubren
+ * el módulo en aislamiento.
+ */
 import type { Logger } from '@booster-ai/logger';
 import type { MiddlewareHandler } from 'hono';
 import type { FirebaseClaims } from './firebase-auth.js';

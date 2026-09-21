@@ -435,9 +435,8 @@ export function createChatRoutes(opts: {
       opts.logger.error({ path: c.req.path }, 'stream-ticket without userContext');
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    // Restituimos is_demo en el ticket para que el SSE corra demoExpires igual
-    // que un request por header (review 2026-06-14). Acá ya pasó demoExpires,
-    // así que una demo expirada ni siquiera llega a mintear.
+    // El ticket conserva el snapshot is_demo del claim. El chain productivo
+    // no branchea sobre él; el campo sigue en el contrato del ticket.
     const claims = c.get('firebaseClaims') as { custom?: Record<string, unknown> } | undefined;
     const isDemo = claims?.custom?.is_demo === true;
     try {

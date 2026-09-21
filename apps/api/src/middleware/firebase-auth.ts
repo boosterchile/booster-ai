@@ -75,9 +75,9 @@ export function createFirebaseAuthMiddleware(opts: {
         return c.json({ error: 'Unauthorized' }, 401);
       }
       // El ticket prueba la identidad; userContextMiddleware resuelve el user
-      // por uid (solo necesita claims.uid). Restituimos `is_demo` para que
-      // demoExpires/isDemoEnforcement enforquen igual que en un request por
-      // header (sin esto, el stream se saltaba el demo-expiry — review 2026-06-14).
+      // por uid (solo necesita claims.uid). El snapshot is_demo se restituye
+      // para no cambiar el contrato del ticket. El chain productivo no
+      // branchea sobre ese claim.
       c.set('firebaseClaims', {
         uid: consumed.uid,
         email: undefined,

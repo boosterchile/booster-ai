@@ -1,28 +1,16 @@
 #!/usr/bin/env tsx
 /**
- * T3 SC-1.3.2 audit-completeness CI gate (Sprint 2b SEC-001).
+ * Guard del hot path de auth (Slot 2, slice retiro-es-demo-auth-hot-path).
  *
- * Spec sec-001-cierre §3 SC-1.3.2 v3.4 amendment A1 + plan-sprint-2b §3
- * T3 acceptance:
+ * Invertido respecto del gate SC-1.3.2 original: ese exigía
+ * `isDemoEnforcementMiddleware` + `demoExpiresMiddleware` en cada mount
+ * con `firebaseAuthMiddleware`. El login demo ya no existe y el branch
+ * corría en cada request autenticado (passthrough si el claim no era
+ * demo). Ahora el script falla si `server.ts` vuelve a importar o montar
+ * ese enforcement.
  *
- *   Parsea `apps/api/src/server.ts` → identifica mount points que
- *   aplican `firebaseAuthMiddleware` (auth-required) → verifica que
- *   cada uno también aplica `isDemoEnforcementMiddleware` en el chain.
- *   Exit 1 si algún path auth-required NO tiene enforcement (defense-
- *   in-depth coverage gap).
- *
- * Esto previene incomplete coverage shipping en future PRs: si un dev
- * agrega un mount point nuevo con `firebaseAuth` pero olvida wired el
- * is-demo-enforcement, CI lo flaggea.
- *
- * Diseño: regex parser (mismo enfoque que T6c). server.ts usa shape
- * canónica `app.use('/path', m1, m2, ...)`. El script:
- *   1. Detecta todos los `app.use('/path', ...)` calls (single + multi
- *      line, via brace-tracking).
- *   2. Por cada path, acumula la lista de middlewares mencionados en
- *      todos sus app.use calls.
- *   3. Filtra paths que mencionan `firebaseAuthMiddleware`.
- *   4. Reporta los que NO mencionan `isDemoEnforcementMiddleware`.
+ * `collectMiddlewaresPerPath` se conserva: lo reutiliza el gate de
+ * impersonación.
  *
  * Ejecución directa:
  *   pnpm exec tsx apps/api/scripts/check-is-demo-wire-completeness.ts
@@ -32,12 +20,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const SERVER_FILE = new URL('../src/server.ts', import.meta.url).pathname;
-const FIREBASE_AUTH_IDENTIFIER = 'firebaseAuthMiddleware';
-const IS_DEMO_ENFORCEMENT_IDENTIFIER = 'isDemoEnforcementMiddleware';
-// Review 2026-06-11 (gap /certificates, Sprint 2c track-1): demo-expires
-// también es REQUERIDO en todo mount auth-required — el gap original
-// existió porque ningún gate lo exigía.
-const DEMO_EXPIRES_IDENTIFIER = 'demoExpiresMiddleware';
 
 /**
  * Map path → list de middleware identifiers mencionados en sus app.use
@@ -101,47 +83,60 @@ function extractMiddlewareIdentifiers(argsBlock: string): string[] {
   return ids;
 }
 
+const HOT_PATH_DEMO_MARKERS = [
+  'createDemoExpiresMiddleware',
+  'createIsDemoEnforcementMiddleware',
+  'demoExpiresMiddleware',
+  'isDemoEnforcementMiddleware',
+  "from './middleware/demo-expires",
+  'from "./middleware/demo-expires',
+  "from './middleware/is-demo-enforcement",
+  'from "./middleware/is-demo-enforcement',
+] as const;
+
 /**
- * Identifica paths con firebaseAuthMiddleware pero SIN
- * isDemoEnforcementMiddleware. Retorna array vacío si coverage completa.
+ * Quita comentarios para que una nota histórica no dispare el guard.
+ * No interpreta strings: estos markers no aparecen en literales de server.ts.
  */
-export function findMissingEnforcement(source: string): string[] {
-  const map = collectMiddlewaresPerPath(source);
-  const missing: string[] = [];
-  for (const [path, middlewares] of map.entries()) {
-    const hasFirebase = middlewares.includes(FIREBASE_AUTH_IDENTIFIER);
-    if (!hasFirebase) {
-      continue;
-    }
-    if (!middlewares.includes(IS_DEMO_ENFORCEMENT_IDENTIFIER)) {
-      missing.push(`${path} (falta ${IS_DEMO_ENFORCEMENT_IDENTIFIER})`);
-    }
-    if (!middlewares.includes(DEMO_EXPIRES_IDENTIFIER)) {
-      missing.push(`${path} (falta ${DEMO_EXPIRES_IDENTIFIER})`);
+export function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
+/**
+ * Markers de enforcement demo presentes en código (no en comentarios).
+ * Array vacío = el request path de `server.ts` no monta ni importa el chain.
+ * Cualquier hit es una reintroducción: el guard debe fallar.
+ */
+export function findHotPathDemoEnforcement(source: string): string[] {
+  const code = stripComments(source);
+  const hits: string[] = [];
+  for (const marker of HOT_PATH_DEMO_MARKERS) {
+    if (code.includes(marker)) {
+      hits.push(marker);
     }
   }
-  return missing;
+  return hits;
 }
 
 function main(): void {
   const source = readFileSync(SERVER_FILE, 'utf-8');
-  const missing = findMissingEnforcement(source);
+  const hits = findHotPathDemoEnforcement(source);
 
-  if (missing.length > 0) {
+  if (hits.length > 0) {
     console.error(
-      '[check-is-demo-wire-completeness] FAIL — auth-required mount points con middleware demo faltante:',
+      '[check-is-demo-wire-completeness] FAIL — enforcement demo reintroducido en el hot path de server.ts:',
     );
-    for (const path of missing) {
-      console.error(`  - ${path}`);
+    for (const hit of hits) {
+      console.error(`  - ${hit}`);
     }
     console.error(
-      `\n${missing.length} coverage gap(s) en ${SERVER_FILE}. Fix: agregar el middleware faltante al chain (per-group, post-firebase-auth).`,
+      `\n${hits.length} marker(s) en ${SERVER_FILE}. El chain productivo no monta demoExpires ni isDemoEnforcement.`,
     );
     process.exit(1);
   }
 
   console.log(
-    '[check-is-demo-wire-completeness] OK — todos los mount points auth-required en server.ts tienen isDemoEnforcement + demoExpires wired.',
+    '[check-is-demo-wire-completeness] OK — server.ts no monta ni importa enforcement demo en el hot path.',
   );
 }
 
