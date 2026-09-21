@@ -464,11 +464,11 @@ export const apiEnvSchema = commonEnvSchema
      *
      * NOTA (chore/retiro-subsistema-demo, Fase 2): la superficie de
      * login/seed demo (`POST /demo/login`, el auto-seed de startup y los
-     * endpoints `/admin/seed/demo`) fue RETIRADA. Este flag queda sin
-     * consumidor de ruta; se conserva por compat de env validado y lo lee
-     * aún la maquinaria de enforcement `is-demo` que sobrevive en Tier 1.
-     * Su retiro total (junto a `es_demo` y la maquinaria) va en un PR
-     * posterior con su propio ADR.
+     * endpoints `/admin/seed/demo`) fue RETIRADA. El enforcement ya no
+     * corre en el chain de auth (slice retiro-es-demo-auth-hot-path).
+     * El flag se conserva por compat de env y lo expone `/feature-flags`.
+     * El retiro total de la columna y la maquinaria queda para el cierre
+     * del Slot 2.
      */
     DEMO_MODE_ACTIVATED: booleanFlag(false),
 
