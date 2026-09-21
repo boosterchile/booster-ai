@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ColaPosiciones,
   type PuntoEnCola,
-  esPuntoEnviable,
-  esRechazoPermanente,
   decidirReporte,
   distanciaHaversineM,
+  esPuntoEnviable,
+  esRechazoPermanente,
 } from './driver-position-queue.js';
 
 const T0 = Date.parse('2026-09-15T12:00:00.000Z');
@@ -132,8 +132,10 @@ describe('ColaPosiciones — FIFO persistida por asignación', () => {
     q.encolar({ ...punto(-33.047, -71.613, T0), accuracy_m: 12 });
     q.encolar({ ...punto(-33.048, -71.614, T0 + 15_000), accuracy_m: 8 });
     const enviados: string[] = [];
+    let intentos = 0;
     const r = await q.drenar(async (p) => {
-      if (enviados.length === 0) {
+      intentos += 1;
+      if (intentos === 1) {
         throw Object.assign(new Error('validation'), { status: 400 });
       }
       enviados.push(p.timestamp_device);
@@ -176,7 +178,12 @@ describe('ColaPosiciones — FIFO persistida por asignación', () => {
     const r = await q.drenar(async () => {
       throw Object.assign(new Error('409'), { status: 409, code: 'assignment_not_active' });
     });
-    expect(r).toEqual({ enviados: 0, restantes: 0, descartados: 0, detenido: 'asignacion_cerrada' });
+    expect(r).toEqual({
+      enviados: 0,
+      restantes: 0,
+      descartados: 0,
+      detenido: 'asignacion_cerrada',
+    });
     expect(q.pendientes()).toBe(0);
   });
 

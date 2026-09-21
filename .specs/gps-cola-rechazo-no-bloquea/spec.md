@@ -34,6 +34,6 @@ Un solo ping basura no puede congelar la cobertura del tramo.
 
 ## 4. Criterios de salida
 
-- [ ] Rojo exhibido: test de cola (cabeza `accuracy_m` ~4.7e6 + puntos Valparaíso; drenaje envía solo los válidos) y test de reporter (400 en la cabeza no deja `queued` ni «Sin señal» con puntos buenos detrás).
-- [ ] Verde: esos tests + suite `apps/web` tocada, typecheck, biome.
+- [x] Rojo exhibido: test de cola (cabeza `accuracy_m` ~4.7e6 + puntos Valparaíso; drenaje envía solo los válidos) y test de reporter (400 en la cabeza no deja `queued` ni «Sin señal» con puntos buenos detrás).
+- [x] Verde: esos tests + suite `apps/web` tocada, typecheck, biome.
 - [ ] En producción, un fix grosero encolado no impide que los puntos posteriores del mismo viaje lleguen al API.
