@@ -19,6 +19,29 @@ export function positionSourceLabel(source: PositionSource | null | undefined): 
   return null;
 }
 
+/** Estados en los que GET /public/tracking devuelve posición viva. */
+const LIVE_PUBLIC_TRACKING_STATUSES = new Set(['asignado', 'en_proceso']);
+
+/**
+ * Enlace absoluto `/tracking/:token` para compartir el seguimiento.
+ * Null si no hay token o el viaje no está en seguimiento vivo. El
+ * destinatario no entra en la decisión: el token existe desde el accept.
+ */
+export function publicTrackingShareUrl(
+  token: string | null | undefined,
+  tripStatus: string | null | undefined,
+  origin: string,
+): string | null {
+  if (token == null || token.length === 0) {
+    return null;
+  }
+  if (tripStatus == null || !LIVE_PUBLIC_TRACKING_STATUSES.has(tripStatus)) {
+    return null;
+  }
+  const base = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+  return `${base}/tracking/${token}`;
+}
+
 /** "en 12 min", "en 1 h 35 min", "en 2 h". */
 export function formatEta(minutes: number): string {
   const total = Math.max(1, Math.round(minutes));
