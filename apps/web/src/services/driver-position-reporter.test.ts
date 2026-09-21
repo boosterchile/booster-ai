@@ -58,6 +58,50 @@ async function flushMicrotasks() {
   }
 }
 
+type SentinelFalso = {
+  release: ReturnType<typeof vi.fn>;
+  soltarDesdeSistema: () => void;
+};
+
+function installWakeLock(mode: 'ok' | 'denied' = 'ok') {
+  const sentinels: SentinelFalso[] = [];
+  const request = vi.fn(async (type: 'screen') => {
+    if (type !== 'screen') {
+      throw new DOMException('tipo no soportado', 'NotSupportedError');
+    }
+    if (mode === 'denied') {
+      throw new DOMException('Wake Lock permission denied', 'NotAllowedError');
+    }
+    const subs = new Set<() => void>();
+    const release = vi.fn(async () => {
+      for (const cb of subs) {
+        cb();
+      }
+    });
+    sentinels.push({
+      release,
+      soltarDesdeSistema() {
+        for (const cb of subs) {
+          cb();
+        }
+      },
+    });
+    return {
+      release,
+      addEventListener(event: 'release', cb: () => void) {
+        if (event === 'release') {
+          subs.add(cb);
+        }
+      },
+    };
+  });
+  Object.defineProperty(navigator, 'wakeLock', {
+    configurable: true,
+    value: { request },
+  });
+  return { request, sentinels };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(T0);
@@ -69,6 +113,8 @@ beforeEach(() => {
 afterEach(() => {
   reporter.__resetForTests();
   vi.useRealTimers();
+  Reflect.deleteProperty(navigator, 'wakeLock');
+  Reflect.deleteProperty(document, 'visibilityState');
 });
 
 describe('driver-position-reporter — un solo watcher por sesión', () => {
@@ -409,5 +455,151 @@ describe('driver-position-reporter — cola offline con reintento', () => {
     );
     expect(reporter.getSnapshot().queued).toBe(0);
     expect(reporter.getSnapshot().pointsSent).toBe(1);
+  });
+});
+
+describe('driver-position-reporter — wake lock de pantalla', () => {
+  it('start pide el lock de pantalla una sola vez mientras observa', async () => {
+    fakeGeo();
+    const wl = installWakeLock();
+    reporter.start('asg-1');
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(1);
+    expect(wl.request).toHaveBeenCalledWith('screen');
+    expect(reporter.getSnapshot().isWatching).toBe(true);
+  });
+
+  it('sin Wake Lock API el reporte sigue y no marca error', () => {
+    fakeGeo();
+    Reflect.deleteProperty(navigator, 'wakeLock');
+    expect(() => reporter.start('asg-1')).not.toThrow();
+    expect(reporter.getSnapshot().isWatching).toBe(true);
+    expect(reporter.getSnapshot().lastError).toBeNull();
+  });
+
+  it('si el navegador niega el lock, el reporte sigue y lastError no cambia', async () => {
+    fakeGeo();
+    installWakeLock('denied');
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(reporter.getSnapshot().isWatching).toBe(true);
+    expect(reporter.getSnapshot().lastError).toBeNull();
+  });
+
+  it('stop suelta el lock', async () => {
+    fakeGeo();
+    const wl = installWakeLock();
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    reporter.stop();
+    await flushMicrotasks();
+    expect(wl.sentinels[0]?.release).toHaveBeenCalledTimes(1);
+    expect(reporter.getSnapshot().isWatching).toBe(false);
+  });
+
+  it('PERMISSION_DENIED suelta el lock', async () => {
+    const geo = fakeGeo();
+    const wl = installWakeLock();
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    const onError = geo.watchPosition.mock.calls[0]?.[1] as (e: GeolocationPositionError) => void;
+    onError({
+      code: 1,
+      message: 'User denied Geolocation',
+      PERMISSION_DENIED: 1,
+      POSITION_UNAVAILABLE: 2,
+      TIMEOUT: 3,
+    } as GeolocationPositionError);
+    await flushMicrotasks();
+    expect(wl.sentinels[0]?.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('al ocultar el documento suelta el lock y al volver lo pide de nuevo', async () => {
+    fakeGeo();
+    const wl = installWakeLock();
+    let state: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => state,
+    });
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(1);
+    state = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+    expect(wl.sentinels[0]?.release).toHaveBeenCalledTimes(1);
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('si el sistema suelta el sentinel, al volver a visible se pide otro', async () => {
+    fakeGeo();
+    const wl = installWakeLock();
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    wl.sentinels[0]?.soltarDesdeSistema();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('si stop llega antes de que request resuelva, ese sentinel se suelta', async () => {
+    fakeGeo();
+    const releaseTardio = vi.fn(async () => undefined);
+    let resolveReq: (sentinel: { release: () => Promise<void> }) => void = () => undefined;
+    let primera = true;
+    const request = vi.fn(() => {
+      if (primera) {
+        primera = false;
+        return new Promise<{ release: () => Promise<void> }>((resolve) => {
+          resolveReq = resolve;
+        });
+      }
+      return Promise.resolve({
+        release: vi.fn(async () => undefined),
+        addEventListener() {
+          return undefined;
+        },
+      });
+    });
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request },
+    });
+    reporter.start('asg-1');
+    reporter.stop();
+    resolveReq({ release: releaseTardio });
+    await flushMicrotasks();
+    expect(releaseTardio).toHaveBeenCalledTimes(1);
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('la última pantalla suelta el lock; oculto no lo repide; al montar de nuevo sí', async () => {
+    fakeGeo();
+    const wl = installWakeLock();
+    const soltarA = reporter.retainScreenWakeLock();
+    const soltarB = reporter.retainScreenWakeLock();
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(1);
+    soltarA();
+    await flushMicrotasks();
+    expect(wl.sentinels[0]?.release).not.toHaveBeenCalled();
+    soltarB();
+    await flushMicrotasks();
+    expect(wl.sentinels[0]?.release).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(1);
+    const soltarC = reporter.retainScreenWakeLock();
+    await flushMicrotasks();
+    expect(wl.request).toHaveBeenCalledTimes(2);
+    soltarC();
   });
 });
