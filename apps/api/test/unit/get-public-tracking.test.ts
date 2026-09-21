@@ -115,6 +115,17 @@ describe('getPublicTracking', () => {
       longitude: string | null;
       speedKmh: number | null;
     }>;
+    /**
+     * Pings de `posiciones_movil_conductor` (3er select). Solo se consulta si
+     * Teltonika no trae nada fresco; `velocidad_kmh` es numeric → string.
+     */
+    mobilePings?: Array<{
+      timestamp: Date;
+      latitude: string;
+      longitude: string;
+      speedKmh: string | null;
+      angleDeg?: number | null;
+    }>;
   }) {
     const row = opts.assignmentRow
       ? {
@@ -125,7 +136,11 @@ describe('getPublicTracking', () => {
           ...opts.assignmentRow,
         }
       : null;
-    const responses: Array<unknown[]> = [row ? [row] : [], opts.pings ?? []];
+    const responses: Array<unknown[]> = [
+      row ? [row] : [],
+      opts.pings ?? [],
+      opts.mobilePings ?? [],
+    ];
     let callIdx = 0;
 
     const limitFn = vi.fn(() => Promise.resolve(responses[callIdx++] ?? []));
@@ -136,7 +151,7 @@ describe('getPublicTracking', () => {
     const fromFn = vi.fn(() => ({ innerJoin: innerJoin1, where: whereFn }));
     const selectFn = vi.fn(() => ({ from: fromFn }));
 
-    return { db: { select: selectFn } as never };
+    return { db: { select: selectFn } as never, selectFn };
   }
 
   beforeEach(() => {
@@ -271,6 +286,159 @@ describe('getPublicTracking', () => {
       expect(result.vehicle.plate_partial).toBe('*******ET99');
       expect(result.vehicle.plate_partial).not.toContain('TOPSECRET');
     }
+  });
+
+  // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
+
+  const ACTIVE_ROW = {
+    assignmentId: 'a1',
+    tripStatus: 'en_proceso',
+    trackingCode: 'BOO-XDIPN3',
+    originAddr: 'origen',
+    destAddr: 'destino',
+    destRegionCode: 'IV',
+    cargoType: 'carga_seca',
+    vehicleId: 'v1',
+    vehicleType: 'camion_3_4',
+    vehiclePlate: 'GR-AS12',
+  };
+
+  it('solo GPS del móvil (sin Teltonika) → position no null + position_source mobile + ETA', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const ts = new Date(now - 30_000);
+    const { db } = makeDbStub({
+      assignmentRow: ACTIVE_ROW,
+      pings: [],
+      mobilePings: [
+        { timestamp: ts, latitude: '-33.4172000', longitude: '-70.6063000', speedKmh: '62.00' },
+        {
+          timestamp: new Date(now - 4 * 60_000),
+          latitude: '-33.4300000',
+          longitude: '-70.6200000',
+          speedKmh: '58.00',
+        },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position_source).toBe('mobile');
+      expect(result.position).toEqual({
+        timestamp: ts.toISOString(),
+        latitude: -33.4172,
+        longitude: -70.6063,
+        speed_kmh: 62,
+      });
+      expect(result.progress.avg_speed_kmh_last_15min).toBeCloseTo(60, 1);
+      expect(result.progress.last_position_age_seconds).toBeGreaterThanOrEqual(29);
+      // Sin routesProjectId → ETA de centroide (Santiago → La Serena a 60 km/h).
+      expect(result.eta_minutes).toBeGreaterThan(60);
+    }
+  });
+
+  it('móvil sin velocidad reportada → posición sí, ETA null (degradación explícita)', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db } = makeDbStub({
+      assignmentRow: ACTIVE_ROW,
+      pings: [],
+      mobilePings: [
+        {
+          timestamp: new Date(now - 20_000),
+          latitude: '-33.4172000',
+          longitude: '-70.6063000',
+          speedKmh: null,
+        },
+        {
+          timestamp: new Date(now - 60_000),
+          latitude: '-33.4180000',
+          longitude: '-70.6070000',
+          speedKmh: null,
+        },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position_source).toBe('mobile');
+      expect(result.position?.speed_kmh).toBeNull();
+      expect(result.progress.avg_speed_kmh_last_15min).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+    }
+  });
+
+  it('Teltonika fresco → position_source teltonika y el móvil no se consulta', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db, selectFn } = makeDbStub({
+      assignmentRow: ACTIVE_ROW,
+      pings: [
+        {
+          timestamp: new Date(now - 60_000),
+          latitude: '-33.4500000',
+          longitude: '-70.6600000',
+          speedKmh: 70,
+        },
+      ],
+      mobilePings: [
+        {
+          timestamp: new Date(now - 5_000),
+          latitude: '-33.0000000',
+          longitude: '-70.0000000',
+          speedKmh: '10.00',
+        },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position_source).toBe('teltonika');
+      expect(result.position?.latitude).toBeCloseTo(-33.45, 4);
+    }
+    // assignment + telemetría; nunca el 3er select (móvil).
+    expect(selectFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('sin Teltonika ni móvil → position null, position_source null, eta null', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const { db } = makeDbStub({ assignmentRow: ACTIVE_ROW, pings: [], mobilePings: [] });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position).toBeNull();
+      expect(result.position_source).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+    }
+  });
+
+  it('estado entregado con móvil reciente → position_source null y sin consultas de posición', async () => {
+    const { getPublicTracking } = await import('../../src/services/get-public-tracking.js');
+    const now = Date.now();
+    const { db, selectFn } = makeDbStub({
+      assignmentRow: {
+        ...ACTIVE_ROW,
+        tripStatus: 'entregado',
+        deliveredAt: new Date(now - 3_600_000),
+      },
+      pings: [],
+      mobilePings: [
+        {
+          timestamp: new Date(now - 5_000),
+          latitude: '-33.4172000',
+          longitude: '-70.6063000',
+          speedKmh: '30.00',
+        },
+      ],
+    });
+    const result = await getPublicTracking({ db, logger: noopLogger, token: VALID_TOKEN });
+    expect(result.status).toBe('found');
+    if (result.status === 'found') {
+      expect(result.position).toBeNull();
+      expect(result.position_source).toBeNull();
+      expect(result.eta_minutes).toBeNull();
+    }
+    expect(selectFn).toHaveBeenCalledTimes(1);
   });
 
   // ---- Fix privacidad: corte de posición por estado + TTL/revocación ----

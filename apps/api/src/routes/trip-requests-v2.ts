@@ -12,7 +12,6 @@ import {
   assignments,
   empresas as empresasTable,
   offers,
-  telemetryPoints,
   tripEvents,
   tripMetrics,
   trips,
@@ -23,12 +22,13 @@ import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
-import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
+import { computeLiveTracking } from '../services/get-public-tracking.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
+import type { LivePositionSource } from '../services/posicion-en-vivo.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -391,52 +391,57 @@ export function createTripRequestsV2Routes(opts: {
       .where(eq(tripMetrics.tripId, id))
       .limit(1);
 
-    // Si hay asignación con vehículo, traer última ubicación del vehículo.
-    // Permite al shipper saber en tiempo real dónde va su carga sin
-    // exponer otros datos del transportista. Si el vehículo no tiene
-    // Teltonika asociado o no recibió packets aún, ubicacion_actual es null.
+    // Posición viva del viaje: misma lectura que el tracking público
+    // (`computeLiveTracking`, spec tracking-live-unificado). Teltonika fresco
+    // (<30 min) o, si no, GPS del móvil del conductor de ESTA asignación; solo
+    // en `asignado | en_proceso` — terminado el viaje el vehículo puede estar
+    // en otra carga. Sin posición fresca: ubicacion_actual/eta null.
     let ubicacionActual: {
-      timestamp_device: Date;
+      timestamp_device: string;
       latitude: number | null;
       longitude: number | null;
       speed_kmh: number | null;
       angle_deg: number | null;
     } | null = null;
+    let positionSource: LivePositionSource | null = null;
+    let etaMinutes: number | null = null;
     if (assignmentRow?.vehicle_id) {
-      const [last] = await opts.db
-        .select({
-          timestamp_device: telemetryPoints.timestampDevice,
-          longitude: telemetryPoints.longitude,
-          latitude: telemetryPoints.latitude,
-          speed_kmh: telemetryPoints.speedKmh,
-          angle_deg: telemetryPoints.angleDeg,
-        })
-        .from(telemetryPoints)
-        // Última posición VÁLIDA: descarta null + "null island" (0,0, GPS sin
-        // fix) para no plantar el marcador en el Golfo de Guinea.
-        .where(
-          and(
-            eq(telemetryPoints.vehicleId, assignmentRow.vehicle_id),
-            coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
-          ),
-        )
-        .orderBy(desc(telemetryPoints.timestampDevice))
-        .limit(1);
-      if (last) {
+      const live = await computeLiveTracking({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId: assignmentRow.id,
+        vehicleId: assignmentRow.vehicle_id,
+        tripId: trip.id,
+        tripStatus: trip.status,
+        destinationAddress: trip.destinationAddressRaw,
+        destRegionCode: trip.destinationRegionCode,
+        routesProjectId: opts.routesProjectId,
+        nowMs: Date.now(),
+      });
+      if (live.position) {
         ubicacionActual = {
-          timestamp_device: last.timestamp_device,
-          latitude: last.latitude != null ? Number.parseFloat(last.latitude) : null,
-          longitude: last.longitude != null ? Number.parseFloat(last.longitude) : null,
-          speed_kmh: last.speed_kmh,
-          angle_deg: last.angle_deg,
+          timestamp_device: live.position.timestamp,
+          latitude: live.position.latitude,
+          longitude: live.position.longitude,
+          speed_kmh: live.position.speed_kmh,
+          angle_deg: live.angleDeg,
         };
       }
+      positionSource = live.positionSource;
+      etaMinutes = live.etaMinutes;
     }
 
     return c.json({
       trip_request: serializeTripDetail(trip),
       events,
-      assignment: assignmentRow ? { ...assignmentRow, ubicacion_actual: ubicacionActual } : null,
+      assignment: assignmentRow
+        ? {
+            ...assignmentRow,
+            ubicacion_actual: ubicacionActual,
+            position_source: positionSource,
+            eta_minutes: etaMinutes,
+          }
+        : null,
       metrics: metricsRow ? serializeTripMetrics(metricsRow) : null,
     });
   });

@@ -682,6 +682,171 @@ describe('GET /trip-requests-v2/:id', () => {
     expect(body.assignment?.empresa_legal_name).toBe('Transportes Acme');
     expect(body.metrics).toBeNull();
   });
+
+  // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
+  // limitRows: trip, assignment, metrics, telemetría (Teltonika) y —solo si la
+  // anterior viene vacía— posiciones del móvil del conductor.
+
+  type LiveBody = {
+    assignment: {
+      ubicacion_actual: {
+        timestamp_device: string;
+        latitude: number | null;
+        longitude: number | null;
+        speed_kmh: number | null;
+        angle_deg: number | null;
+      } | null;
+      position_source: 'teltonika' | 'mobile' | null;
+      eta_minutes: number | null;
+    } | null;
+  };
+
+  function liveTripRow(status: string) {
+    return {
+      id: 'trip-1',
+      trackingCode: 'BOO-XDIPN3',
+      status,
+      originAddressRaw: 'origen',
+      originRegionCode: 'XIII',
+      originComunaCode: null,
+      destinationAddressRaw: 'destino',
+      destinationRegionCode: 'IV',
+      destinationComunaCode: null,
+      cargoType: 'carga_seca',
+      cargoWeightKg: 1500,
+      cargoVolumeM3: null,
+      cargoDescription: null,
+      pickupWindowStart: new Date('2026-05-05T08:00:00Z'),
+      pickupWindowEnd: new Date('2026-05-05T18:00:00Z'),
+      proposedPriceClp: 250_000,
+      createdAt: new Date('2026-05-02T15:00:00Z'),
+      updatedAt: new Date('2026-05-02T15:00:00Z'),
+    };
+  }
+
+  const LIVE_ASSIGNMENT = {
+    id: 'asg-1',
+    status: 'recogido',
+    agreed_price_clp: 240_000,
+    empresa_id: 'carrier-1',
+    empresa_legal_name: 'Transportes Acme',
+    vehicle_id: 'veh-1',
+    vehicle_plate: 'AB-CD-12',
+    vehicle_type: 'camion_pequeno',
+    driver_user_id: 'driver-1',
+    driver_name: 'Conductor Uno',
+  };
+
+  async function getLive(opts: {
+    status: string;
+    teltonika?: Record<string, unknown>[];
+    mobile?: Record<string, unknown>[];
+  }): Promise<LiveBody> {
+    const app = await buildAppWith({
+      db: makeQueryDb({
+        limitRows: [
+          [liveTripRow(opts.status)],
+          [LIVE_ASSIGNMENT],
+          [],
+          opts.teltonika ?? [],
+          opts.mobile ?? [],
+        ],
+        orderByRows: [[]],
+      }),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/trip-1');
+    expect(res.status).toBe(200);
+    return (await res.json()) as LiveBody;
+  }
+
+  it('solo GPS del móvil en en_proceso → ubicacion_actual + position_source mobile + eta_minutes', async () => {
+    const now = Date.now();
+    const ts = new Date(now - 30_000);
+    const body = await getLive({
+      status: 'en_proceso',
+      teltonika: [],
+      mobile: [
+        {
+          timestamp: ts,
+          latitude: '-33.4172000',
+          longitude: '-70.6063000',
+          speedKmh: '62.00',
+          angleDeg: 270,
+        },
+        {
+          timestamp: new Date(now - 4 * 60_000),
+          latitude: '-33.4300000',
+          longitude: '-70.6200000',
+          speedKmh: '58.00',
+          angleDeg: 268,
+        },
+      ],
+    });
+    expect(body.assignment?.position_source).toBe('mobile');
+    expect(body.assignment?.ubicacion_actual).toEqual({
+      timestamp_device: ts.toISOString(),
+      latitude: -33.4172,
+      longitude: -70.6063,
+      speed_kmh: 62,
+      angle_deg: 270,
+    });
+    // Sin routesProjectId → ETA de centroide (Santiago → La Serena a 60 km/h).
+    expect(body.assignment?.eta_minutes).toBeGreaterThan(60);
+  });
+
+  it('Teltonika fresco → position_source teltonika (gana sobre el móvil)', async () => {
+    const now = Date.now();
+    const body = await getLive({
+      status: 'asignado',
+      teltonika: [
+        {
+          timestamp: new Date(now - 60_000),
+          latitude: '-33.4500000',
+          longitude: '-70.6600000',
+          speedKmh: 70,
+          angleDeg: 90,
+        },
+      ],
+      mobile: [
+        {
+          timestamp: new Date(now - 5_000),
+          latitude: '-33.0000000',
+          longitude: '-70.0000000',
+          speedKmh: '10.00',
+          angleDeg: 1,
+        },
+      ],
+    });
+    expect(body.assignment?.position_source).toBe('teltonika');
+    expect(body.assignment?.ubicacion_actual?.latitude).toBeCloseTo(-33.45, 4);
+    expect(body.assignment?.ubicacion_actual?.angle_deg).toBe(90);
+  });
+
+  it('sin Teltonika ni móvil → ubicacion_actual null, position_source null, eta_minutes null', async () => {
+    const body = await getLive({ status: 'en_proceso' });
+    expect(body.assignment?.ubicacion_actual).toBeNull();
+    expect(body.assignment?.position_source).toBeNull();
+    expect(body.assignment?.eta_minutes).toBeNull();
+  });
+
+  it('entregado → corta la posición viva aunque el vehículo siga reportando (misma regla que el público)', async () => {
+    const body = await getLive({
+      status: 'entregado',
+      teltonika: [
+        {
+          timestamp: new Date(Date.now() - 60_000),
+          latitude: '-33.4500000',
+          longitude: '-70.6600000',
+          speedKmh: 70,
+          angleDeg: 90,
+        },
+      ],
+    });
+    expect(body.assignment?.ubicacion_actual).toBeNull();
+    expect(body.assignment?.position_source).toBeNull();
+    expect(body.assignment?.eta_minutes).toBeNull();
+  });
 });
 
 // =============================================================================

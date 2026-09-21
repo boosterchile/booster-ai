@@ -135,6 +135,80 @@ describe('CargaTrackRoute', () => {
     });
   });
 
+  // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
+
+  function liveDetail(over: {
+    ubicacion: boolean;
+    position_source: 'teltonika' | 'mobile' | null;
+    eta_minutes: number | null;
+  }) {
+    return {
+      trip_request: {
+        id: 't1',
+        status: 'en_proceso',
+        origin_address_raw: 'A',
+        origin_region_code: 'XIII',
+        destination_address_raw: 'B',
+        destination_region_code: 'IV',
+      },
+      assignment: {
+        id: 'a1',
+        status: 'recogido',
+        empresa_legal_name: 'Transportes Andes',
+        vehicle_plate: 'ABCD12',
+        vehicle_type: 'camion',
+        driver_name: 'Pedro',
+        ubicacion_actual: over.ubicacion
+          ? {
+              timestamp_device: '2026-09-20T15:00:00Z',
+              latitude: -33.45,
+              longitude: -70.65,
+              speed_kmh: 50,
+              angle_deg: 90,
+            }
+          : null,
+        position_source: over.position_source,
+        eta_minutes: over.eta_minutes,
+      },
+    };
+  }
+
+  it('solo GPS del móvil → posición + «Llegada estimada» + «teléfono del conductor»', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce(
+      liveDetail({ ubicacion: true, position_source: 'mobile', eta_minutes: 42 }),
+    );
+    renderRoute();
+    await waitFor(() =>
+      expect(screen.getByTestId('live-tracking')).toHaveAttribute('data-has-pos', 'true'),
+    );
+    expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('en 42 min');
+    expect(screen.getByText(/teléfono del conductor/i)).toBeInTheDocument();
+  });
+
+  it('Teltonika sin ETA → «GPS del vehículo» y «no disponible aún»', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce(
+      liveDetail({ ubicacion: true, position_source: 'teltonika', eta_minutes: null }),
+    );
+    renderRoute();
+    await waitFor(() => expect(screen.getByText(/GPS del vehículo/i)).toBeInTheDocument());
+    expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('no disponible aún');
+  });
+
+  it('sin posición → no promete ETA ni fuente', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    vi.spyOn(api, 'get').mockResolvedValueOnce(
+      liveDetail({ ubicacion: false, position_source: null, eta_minutes: null }),
+    );
+    renderRoute();
+    // Esperar la tarjeta del assignment: `data-has-pos=false` también es cierto mientras carga.
+    expect(await screen.findByText('Transportes Andes')).toBeInTheDocument();
+    expect(screen.getByTestId('live-tracking')).toHaveAttribute('data-has-pos', 'false');
+    expect(screen.queryByText(/Llegada estimada/i)).toBeNull();
+    expect(screen.queryByText(/Posición reportada/i)).toBeNull();
+  });
+
   it('click "Chat con transportista" abre ChatPanel overlay', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     vi.spyOn(api, 'get').mockResolvedValueOnce({

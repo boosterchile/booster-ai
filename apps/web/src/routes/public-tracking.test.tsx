@@ -176,6 +176,62 @@ describe('PublicTrackingRoute', () => {
     expect(screen.getByText(/hace 1 min/i)).toBeInTheDocument();
   });
 
+  // ---- Tracking en vivo unificado (.specs/tracking-live-unificado/) ----
+
+  function liveResponse(over: {
+    position_source: 'teltonika' | 'mobile' | null;
+    eta_minutes: number | null;
+  }) {
+    return {
+      status: 'found',
+      trip: {
+        tracking_code: 'BOO-XDIPN3',
+        status: 'en_proceso',
+        origin_address: 'A',
+        destination_address: 'B',
+        cargo_type: 'carga_seca',
+      },
+      vehicle: { type: 'camion_3_4', plate_partial: '***AS12' },
+      position: {
+        timestamp: '2026-09-20T15:00:00Z',
+        latitude: -33.4172,
+        longitude: -70.6063,
+        speed_kmh: 60,
+      },
+      progress: { avg_speed_kmh_last_15min: 60, last_position_age_seconds: 20 },
+      ...over,
+    };
+  }
+
+  it('fuente móvil + ETA → «Llegada estimada» y «teléfono del conductor»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(
+      liveResponse({ position_source: 'mobile', eta_minutes: 95 }),
+    );
+    render(renderWithRouter(VALID_TOKEN));
+    await waitFor(() => expect(screen.getByTestId('progress-card')).toBeInTheDocument());
+    expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('en 1 h 35 min');
+    expect(screen.getByText(/teléfono del conductor/i)).toBeInTheDocument();
+  });
+
+  it('fuente Teltonika → «GPS del vehículo»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(
+      liveResponse({ position_source: 'teltonika', eta_minutes: 12 }),
+    );
+    render(renderWithRouter(VALID_TOKEN));
+    await waitFor(() => expect(screen.getByTestId('progress-card')).toBeInTheDocument());
+    expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('en 12 min');
+    expect(screen.getByText(/GPS del vehículo/i)).toBeInTheDocument();
+  });
+
+  it('con posición pero sin ETA → degradación explícita «no disponible aún»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(
+      liveResponse({ position_source: 'mobile', eta_minutes: null }),
+    );
+    render(renderWithRouter(VALID_TOKEN));
+    await waitFor(() => expect(screen.getByTestId('progress-card')).toBeInTheDocument());
+    expect(screen.getByText(/Llegada estimada/i)).toHaveTextContent('no disponible aún');
+  });
+
   it('botón refresh dispara invalidate (visible)', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       status: 'found',

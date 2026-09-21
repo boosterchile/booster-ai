@@ -11,7 +11,8 @@
  * **Datos expuestos por design**:
  *   - Trip: tracking_code, status, origen / destino (texto), tipo de carga
  *   - Vehículo: tipo + plate parcial (últimos 4 chars) + posición
- *     reciente (lat/lng + speed) si <30 min vieja
+ *     reciente (lat/lng + speed) si <30 min vieja, de Teltonika o —si no hay
+ *     Teltonika fresco— del móvil del conductor (`posicion-en-vivo.ts`)
  *   - Progress (PR-L2): avg_speed_kmh_last_15min + last_position_age_seconds
  *     para que el consignee pueda interpretar el progreso ("se está
  *     moviendo", "lleva 5 min sin reportar")
@@ -27,12 +28,12 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, telemetryPoints, trips, vehicles } from '../db/schema.js';
+import { assignments, trips, vehicles } from '../db/schema.js';
 import { haversineKm } from './calcular-cobertura-telemetria.js';
 import { computeRouteEta } from './compute-route-eta.js';
-import { coordenadaGpsValidaSql } from './coordenada-gps.js';
+import { type LivePositionSource, resolverPosicionEnVivo } from './posicion-en-vivo.js';
 
 /**
  * Centroides aproximados (capital regional) para las 16 regiones de
@@ -129,6 +130,12 @@ export interface PublicTrackingResponse {
   };
   /** Posición reciente del vehículo. null si no hay lectura <30min. */
   position: PublicTrackingPosition | null;
+  /**
+   * De dónde sale `position` (y `progress`/`eta_minutes`, que se calculan sobre
+   * la misma fuente): `teltonika` = GPS del vehículo; `mobile` = teléfono del
+   * conductor. null si no hay posición. Live ≠ certificación (ADR-077).
+   */
+  position_source: LivePositionSource | null;
   /** Señales de progreso (PR-L2). */
   progress: PublicTrackingProgress;
   /**
@@ -145,20 +152,8 @@ export interface PublicTrackingResponse {
 
 export type PublicTrackingResult = PublicTrackingResponse | { status: 'not_found' };
 
-/** Threshold de "telemetría reciente". Las posiciones más viejas no se exponen. */
-const POSITION_FRESH_MINUTES = 30;
 /** Ventana para calcular avg_speed_kmh_last_15min. */
 const AVG_SPEED_WINDOW_MINUTES = 15;
-
-/**
- * Estados de fulfillment activo donde el vehículo cumple ESTE viaje y su
- * posición/progreso viva es legítima. **Allowlist fail-closed**: cualquier otro
- * estado (terminal `entregado`/`cancelado`/`expirado`, pre-activo
- * `esperando_match`/…, o cualquier estado futuro) NO expone `position`/
- * `progress`/`eta_minutes` — el vehículo puede estar en otra carga (fuga de
- * ubicación). Espeja `ACTIVE_TRIP_STATUSES` del front (`use-public-tracking.ts`).
- */
-const POSITION_VISIBLE_STATUSES = new Set(['asignado', 'en_proceso']);
 
 const DAY_MS = 86_400_000;
 /**
@@ -267,87 +262,20 @@ export async function getPublicTracking(opts: {
     return { status: 'not_found' };
   }
 
-  // Corte de posición (fix privacidad): los datos vivos (position/progress/eta)
-  // se exponen SOLO en estados de fulfillment activo. En terminal/pre-activo se
-  // siguen viendo ruta+direcciones+estado+vehículo, pero NUNCA la ubicación
-  // viva del vehículo (que puede estar ya en otra carga).
-  let position: PublicTrackingPosition | null = null;
-  let progress: PublicTrackingProgress = {
-    avg_speed_kmh_last_15min: null,
-    last_position_age_seconds: null,
-  };
-  let etaMinutes: number | null = null;
-
-  if (POSITION_VISIBLE_STATUSES.has(row.tripStatus)) {
-    // Pings de la ventana de fresh-position (30min); avg_speed usa la sub-ventana
-    // de 15min (computeProgress). La última posición es el primer elemento (DESC).
-    const positionCutoff = new Date(now - POSITION_FRESH_MINUTES * 60_000);
-    const pings = await db
-      .select({
-        timestamp: telemetryPoints.timestampDevice,
-        latitude: telemetryPoints.latitude,
-        longitude: telemetryPoints.longitude,
-        speedKmh: telemetryPoints.speedKmh,
-      })
-      .from(telemetryPoints)
-      .where(
-        and(
-          eq(telemetryPoints.vehicleId, row.vehicleId),
-          // Descarta null + "null island" (0,0, GPS sin fix) → la última
-          // posición nunca cae en el Golfo de Guinea. Ver `coordenada-gps.ts`.
-          coordenadaGpsValidaSql(telemetryPoints.latitude, telemetryPoints.longitude),
-          gte(telemetryPoints.timestampDevice, positionCutoff),
-        ),
-      )
-      .orderBy(desc(telemetryPoints.timestampDevice))
-      .limit(200); // cap defensivo: 200 pings cubre ~30min a 1Hz
-
-    const latest = pings[0];
-    position =
-      latest && latest.latitude !== null && latest.longitude !== null
-        ? {
-            timestamp: latest.timestamp.toISOString(),
-            latitude: Number(latest.latitude),
-            longitude: Number(latest.longitude),
-            speed_kmh: latest.speedKmh,
-          }
-        : null;
-
-    progress = computeProgress({
-      pings: pings.map((p) => ({ timestamp: p.timestamp, speedKmh: p.speedKmh })),
-      nowMs: now,
-    });
-
-    // Phase 5 PR-L2b — ETA al centroide regional (fallback de PR-L2c).
-    const fallbackEtaMinutes = computeEtaMinutes({
-      currentLat: position?.latitude ?? null,
-      currentLng: position?.longitude ?? null,
-      destRegionCode: row.destRegionCode,
-      avgSpeedKmh: progress.avg_speed_kmh_last_15min,
-      tripStatus: row.tripStatus,
-    });
-
-    // Phase 5 PR-L2c — upgrade a Routes API on-demand (distancia real por
-    // carretera al destino), con fallback automático al centroide.
-    etaMinutes = fallbackEtaMinutes;
-    if (!NO_ETA_STATUSES.has(row.tripStatus)) {
-      const routeEtaResult = await computeRouteEta({
-        logger,
-        tripId: row.tripId,
-        currentLat: position?.latitude ?? null,
-        currentLng: position?.longitude ?? null,
-        destinationAddress: row.destAddr,
-        avgSpeedKmh: progress.avg_speed_kmh_last_15min,
-        fallbackEtaMinutes,
-        routesProjectId,
-      });
-      etaMinutes = routeEtaResult.etaMinutes;
-      logger.debug(
-        { tripId: row.tripId, etaMinutes, source: routeEtaResult.source },
-        'public tracking eta computed',
-      );
-    }
-  }
+  // Datos vivos (position/progress/eta): una sola lectura, compartida con el
+  // detalle del generador. El corte por estado (fix privacidad) vive adentro.
+  const live = await computeLiveTracking({
+    db,
+    logger,
+    assignmentId: row.assignmentId,
+    vehicleId: row.vehicleId,
+    tripId: row.tripId,
+    tripStatus: row.tripStatus,
+    destinationAddress: row.destAddr,
+    destRegionCode: row.destRegionCode,
+    routesProjectId,
+    nowMs: now,
+  });
 
   return {
     status: 'found',
@@ -362,9 +290,108 @@ export async function getPublicTracking(opts: {
       type: row.vehicleType,
       plate_partial: maskPlate(row.vehiclePlate),
     },
+    position: live.position,
+    position_source: live.positionSource,
+    progress: live.progress,
+    eta_minutes: live.etaMinutes,
+  };
+}
+
+export interface LiveTracking {
+  position: PublicTrackingPosition | null;
+  positionSource: LivePositionSource | null;
+  /** Rumbo de la última posición. No va al público; lo usa el mapa del generador. */
+  angleDeg: number | null;
+  progress: PublicTrackingProgress;
+  etaMinutes: number | null;
+}
+
+/**
+ * Lectura ÚNICA de los datos vivos de un viaje: última posición (Teltonika
+ * fresco o, si no, móvil del conductor — `resolverPosicionEnVivo`), progreso y
+ * ETA, todos sobre la misma fuente. La comparten el tracking público y el
+ * detalle del generador (`GET /trip-requests-v2/:id`).
+ *
+ * Corte de posición (fix privacidad): fuera de `asignado | en_proceso` todo es
+ * null y no se consulta nada — el vehículo puede estar ya en otra carga. Se
+ * siguen viendo ruta+direcciones+estado+vehículo, que arma el caller.
+ */
+export async function computeLiveTracking(opts: {
+  db: Db;
+  logger: Logger;
+  assignmentId: string;
+  vehicleId: string;
+  tripId: string;
+  tripStatus: string;
+  destinationAddress: string;
+  destRegionCode: string | null;
+  routesProjectId?: string | undefined;
+  nowMs: number;
+}): Promise<LiveTracking> {
+  const { db, logger, tripId, tripStatus, nowMs } = opts;
+
+  const live = await resolverPosicionEnVivo({
+    db,
+    assignmentId: opts.assignmentId,
+    vehicleId: opts.vehicleId,
+    tripStatus,
+    nowMs,
+  });
+
+  // La última posición es el primer elemento (DESC). avg_speed usa la
+  // sub-ventana de 15min (computeProgress) sobre los pings de la MISMA fuente.
+  const latest = live.pings[0];
+  const position: PublicTrackingPosition | null = latest
+    ? {
+        timestamp: latest.timestamp.toISOString(),
+        latitude: latest.latitude,
+        longitude: latest.longitude,
+        speed_kmh: latest.speedKmh,
+      }
+    : null;
+
+  const progress = computeProgress({
+    pings: live.pings.map((p) => ({ timestamp: p.timestamp, speedKmh: p.speedKmh })),
+    nowMs,
+  });
+
+  // Phase 5 PR-L2b — ETA al centroide regional (fallback de PR-L2c).
+  const fallbackEtaMinutes = computeEtaMinutes({
+    currentLat: position?.latitude ?? null,
+    currentLng: position?.longitude ?? null,
+    destRegionCode: opts.destRegionCode,
+    avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+    tripStatus,
+  });
+
+  // Phase 5 PR-L2c — upgrade a Routes API on-demand (distancia real por
+  // carretera al destino), con fallback automático al centroide. Sin posición
+  // no hay nada que mejorar.
+  let etaMinutes = fallbackEtaMinutes;
+  if (position && !NO_ETA_STATUSES.has(tripStatus)) {
+    const routeEtaResult = await computeRouteEta({
+      logger,
+      tripId,
+      currentLat: position.latitude,
+      currentLng: position.longitude,
+      destinationAddress: opts.destinationAddress,
+      avgSpeedKmh: progress.avg_speed_kmh_last_15min,
+      fallbackEtaMinutes,
+      routesProjectId: opts.routesProjectId,
+    });
+    etaMinutes = routeEtaResult.etaMinutes;
+    logger.debug(
+      { tripId, etaMinutes, source: routeEtaResult.source, positionSource: live.source },
+      'live tracking eta computed',
+    );
+  }
+
+  return {
     position,
+    positionSource: live.source,
+    angleDeg: latest?.angleDeg ?? null,
     progress,
-    eta_minutes: etaMinutes,
+    etaMinutes,
   };
 }
 
