@@ -25,13 +25,13 @@ function fakeGeo() {
     value: { watchPosition, clearWatch, getCurrentPosition },
     configurable: true,
   });
-  const pos = (lat: number, lng: number, tMs: number) =>
+  const pos = (lat: number, lng: number, tMs: number, accuracy = 8) =>
     ({
       timestamp: tMs,
       coords: {
         latitude: lat,
         longitude: lng,
-        accuracy: 8,
+        accuracy,
         altitude: null,
         altitudeAccuracy: null,
         heading: null,
@@ -39,7 +39,8 @@ function fakeGeo() {
       },
     }) as GeolocationPosition;
   return {
-    emit: (lat: number, lng: number, tMs: number) => watchCb?.(pos(lat, lng, tMs)),
+    emit: (lat: number, lng: number, tMs: number, accuracy = 8) =>
+      watchCb?.(pos(lat, lng, tMs, accuracy)),
     pos,
     watchPosition,
     clearWatch,
@@ -206,5 +207,78 @@ describe('driver-position-reporter — cola offline con reintento', () => {
     geo.emit(-33.4, -70.6, T0);
     await flushMicrotasks();
     expect(reporter.getSnapshot().queued).toBe(0);
+  });
+
+  // BOO-KJHITL: cabeza grosera persistida + puntos Valparaíso detrás.
+  it('una cabeza con accuracy rechazada no deja la cola ni «Sin señal»', async () => {
+    localStorage.setItem(
+      'booster.posiciones.asg-1',
+      JSON.stringify([
+        {
+          timestamp_device: new Date(T0).toISOString(),
+          latitude: 39.95,
+          longitude: -75.3,
+          accuracy_m: 4_700_000,
+        },
+        {
+          timestamp_device: new Date(T0 + 15_000).toISOString(),
+          latitude: -33.047,
+          longitude: -71.613,
+          accuracy_m: 12,
+        },
+        {
+          timestamp_device: new Date(T0 + 30_000).toISOString(),
+          latitude: -33.048,
+          longitude: -71.614,
+          accuracy_m: 8,
+        },
+      ]),
+    );
+    fakeGeo();
+    reporter.start('asg-1');
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(2);
+    expect(postDriverPositionSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ latitude: -33.047, accuracy_m: 12 }),
+    );
+    expect(reporter.getSnapshot().queued).toBe(0);
+    expect(reporter.getSnapshot().pointsSent).toBe(2);
+    expect(reporter.getSnapshot().lastError).toBeNull();
+  });
+
+  it('400 del API en un punto válido no bloquea el siguiente ni marca Sin señal', async () => {
+    const geo = fakeGeo();
+    postDriverPositionSpy.mockRejectedValueOnce(
+      Object.assign(new Error('validation'), { status: 400 }),
+    );
+    reporter.start('asg-1');
+    geo.emit(-33.047, -71.613, T0);
+    await flushMicrotasks();
+    geo.emit(-33.048, -71.614, T0 + 15_000);
+    await flushMicrotasks();
+    expect(reporter.getSnapshot().queued).toBe(0);
+    expect(reporter.getSnapshot().pointsSent).toBe(1);
+    expect(reporter.getSnapshot().lastError).toBeNull();
+    expect(postDriverPositionSpy).toHaveBeenLastCalledWith(
+      'asg-1',
+      expect.objectContaining({ latitude: -33.048 }),
+    );
+  });
+
+  it('un fix grosero en vivo no se encola y el siguiente válido sí se envía', async () => {
+    const geo = fakeGeo();
+    reporter.start('asg-1');
+    geo.emit(39.95, -75.3, T0, 4_700_000);
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).not.toHaveBeenCalled();
+    expect(reporter.getSnapshot().queued).toBe(0);
+    geo.emit(-33.047, -71.613, T0 + 5_000);
+    await flushMicrotasks();
+    expect(postDriverPositionSpy).toHaveBeenCalledTimes(1);
+    expect(postDriverPositionSpy).toHaveBeenCalledWith(
+      'asg-1',
+      expect.objectContaining({ latitude: -33.047, accuracy_m: 8 }),
+    );
+    expect(reporter.getSnapshot().pointsSent).toBe(1);
   });
 });
