@@ -6,6 +6,8 @@ Función pura en `apps/api/src/domain/segmentar-trayectos-teltonika.ts` (mismo p
 
 No hay migración: no existe capacidad de estanque y el brief no pide persistir trayectos. El cálculo es on-read.
 
+Refinamiento 2026-09-21 (badge): no se exige ignición apagada; el gate de movimiento es v ≤ 5 km/h. La ventana de 5 min compara `timestamp_device`, así un AVL bufferizado sin señal celular marca igual cuando llega.
+
 ## Orden TDD
 
 1. Tests de la función pura (segmentación, km/L, umbral U, badge, sensor ausente/degradado, DIN1 vs 239, 250 de apoyo).

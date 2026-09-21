@@ -9,6 +9,8 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * El 250 acerca bordes, no abre un trayecto por su cuenta.
  * Los litros salen solo del AVL 84 (×0.1). El 89 (%) y el 83 (acumulado)
  * no se convierten a un nivel.
+ * El badge de robo no exige ignición apagada: basta ΔL y v ≤ 5 km/h.
+ * Los instantes son los del dispositivo (`tMs`), no los de recepción.
  */
 
 export const UMBRAL_ROBO_BASE_L = 15;
@@ -465,7 +467,7 @@ function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | nul
       if (caida + 1e-9 < umbral) {
         continue;
       }
-      if (!ventanaLentaYApagada(puntos, inicio.tMs, fin.tMs)) {
+      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
         continue;
       }
       robos.push({ desdeMs: inicio.tMs, hastaMs: fin.tMs });
@@ -475,7 +477,8 @@ function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | nul
   return robos;
 }
 
-function ventanaLentaYApagada(puntos: PuntoResuelto[], desdeMs: number, hastaMs: number): boolean {
+/** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
+function ventanaDetenida(puntos: PuntoResuelto[], desdeMs: number, hastaMs: number): boolean {
   let vistos = 0;
   for (const punto of puntos) {
     if (punto.tMs < desdeMs || punto.tMs > hastaMs) {
@@ -483,9 +486,6 @@ function ventanaLentaYApagada(puntos: PuntoResuelto[], desdeMs: number, hastaMs:
     }
     vistos += 1;
     if (punto.velocidad == null || punto.velocidad > VELOCIDAD_ROBO_MAX_KMH) {
-      return false;
-    }
-    if (punto.ignicion === true) {
       return false;
     }
   }

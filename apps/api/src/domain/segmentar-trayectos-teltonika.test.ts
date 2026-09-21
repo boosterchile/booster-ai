@@ -303,7 +303,36 @@ describe('segmentarTrayectosTeltonika', () => {
     expect(trayectos[0]?.litrosFinales).toBe(79);
   });
 
-  it('no marca robo si la caída es en marcha, con ignición on, o demora más de 5 min', () => {
+  it('marca robo con ignición encendida si el vehículo está detenido', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 90_000, speedKmh: 5, io: { '239': 1, '240': 0, '84': 800 } }),
+      punto({ tMs: T0 + 120_000, speedKmh: 5, io: { '239': 1, '240': 0, '84': 500 } }),
+    ]);
+    expect(trayectos).toHaveLength(1);
+    expect(trayectos[0]?.posibleRoboCombustible).toBe(true);
+  });
+
+  it('un lote bufferizado marca por timestamp de dispositivo aunque llegue desordenado', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0 + 12 * 60_000,
+        speedKmh: 0,
+        io: { '239': 1, '240': 0, '84': 500 },
+      }),
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 800 } }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        speedKmh: 0,
+        io: { '239': 1, '240': 0, '84': 800 },
+      }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 800 } }),
+    ]);
+    expect(trayectos[0]?.posibleRoboCombustible).toBe(true);
+  });
+
+  it('no marca robo si la caída es en marcha o demora más de 5 min', () => {
     const enMarcha = segmentarTrayectosTeltonika([
       punto({ tMs: T0, speedKmh: 40, io: { '239': 1, '240': 1, '84': 800 } }),
       punto({
@@ -314,14 +343,6 @@ describe('segmentarTrayectosTeltonika', () => {
       }),
     ]);
     expect(enMarcha[0]?.posibleRoboCombustible).toBe(false);
-
-    const ignOn = segmentarTrayectosTeltonika([
-      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 90_000, speedKmh: 0, io: { '239': 1, '240': 0, '84': 800 } }),
-      punto({ tMs: T0 + 120_000, speedKmh: 0, io: { '239': 1, '240': 0, '84': 500 } }),
-    ]);
-    expect(ignOn.every((t) => t.posibleRoboCombustible === false)).toBe(true);
 
     const lento = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),

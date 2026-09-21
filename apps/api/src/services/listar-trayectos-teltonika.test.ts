@@ -96,6 +96,57 @@ describe('listarTrayectosTeltonika', () => {
     expect(lista.ctaSensor).toBe(true);
   });
 
+  it('marca robo con ignición on usando la hora del dispositivo, no el orden de subida', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 12 * 60_000),
+          latitude: '-33.46',
+          longitude: '-70.66',
+          speedKmh: 0,
+          ioData: { '239': 1, '240': 0, '84': 500 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.451',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 10 * 60_000),
+          latitude: '-33.46',
+          longitude: '-70.66',
+          speedKmh: 0,
+          ioData: { '239': 1, '240': 0, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(lista.trayectos[0]?.posibleRoboCombustible).toBe(true);
+  });
+
   it('avisa si io_data no es un objeto y no inventa litros', async () => {
     const t0 = Date.parse('2026-09-02T12:00:00.000Z');
     const db = makeDb(

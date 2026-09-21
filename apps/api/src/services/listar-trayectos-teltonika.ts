@@ -97,6 +97,8 @@ export async function listarTrayectosTeltonika(opts: {
       empresaId: vehiculo.empresaId,
       patente: vehiculo.plate,
       capacidadEstanqueL: null,
+      // Hora del AVL, no `timestamp_recibido_en`: un buffer sin señal celular
+      // llega tarde y la ventana de robo (5 min) tiene que usar este reloj.
       tMs: fila.timestampDevice.getTime(),
       lat: aNumero(fila.latitude),
       lng: aNumero(fila.longitude),
