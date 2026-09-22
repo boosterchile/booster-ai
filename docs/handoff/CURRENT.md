@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-09-22 · `main` = `cf76ea8` al verificar (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`; luego entró #710, `80c2682`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 3 PRs detrás de `main`**: #706 y #707, con la migración 0056, y #710 (trayectos: litros del CAN, sin migración; mergeado el 2026-09-22 después del corte de esta verificación), sin desplegar. **PRs abiertos**: #708 (Routes API) y #709 (este handoff). Horas en UTC; Santiago = UTC−3.
+**Última actualización**: 2026-09-22 · `main` = `cf76ea8` al verificar (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`; luego entró #710, `80c2682`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 3 PRs detrás de `main`**: #706 y #707, con la migración 0056, y #710 (trayectos: litros del CAN, sin migración; mergeado el 2026-09-22 después del corte de esta verificación), sin desplegar. **PRs abiertos**: #708 (Routes API), #709 (este handoff) y #711 (Slot 2: código demo sin lector). Horas en UTC; Santiago = UTC−3.
 **Anterior**: 2026-07-25, archivado en [`2026-09-22-snapshot-current-2026-07.md`](2026-09-22-snapshot-current-2026-07.md). Dos afirmaciones de ese CURRENT ya no valen (se marcan con «corrige»).
 **Método**: solo lectura. GCP por REST con token ADC y `X-Goog-User-Project: booster-ai-494222`; BD con `scripts/db/agent-query.sh` (solo SELECT, sin `-y`). Lo que no se verificó se dice explícitamente.
 **Documento vivo**: el detalle histórico está en los snapshots fechados (ver §Snapshots archivados). Contrato de trabajo: `CLAUDE.md`. Slots de trabajo: `docs/frentes-vivos.md`.
@@ -57,6 +57,8 @@
   - El grep del criterio literal (frentes-vivos.md:64) da **52 archivos**, de los que 3 son migraciones históricas en `apps/api/drizzle` y 8 tienen «imperson» en la ruta. La línea 66 todavía dice «40».
   - `demo.boosterchile.com` sigue vivo (A `34.36.187.195`, HTTPS 200).
   - #698 (`d7d799a`) retiró el enforcement `es_demo` del request path.
+  - **#711** (abierto) retira el código demo sin lector: `demo-expires`, `isDemo` del ticket SSE, `DemoBanner`/`useIsDemo` y la excepción demo del modal. El grep baja de 52 a 45.
+  - Las **4 cuentas de `cuentas_demo` siguen habilitadas** en Identity Platform (`is_demo: true`, `expires_at` vencido el 2026-06-24, sin login). Desde #698 el API no rechaza el vencimiento; deshabilitarlas es acción del PO.
   - **Todo lo que queda necesita permiso del PO**: jobs de `security.yml`, schema/endpoints/UI, y Terraform/DNS/IAM (pendientes 13-15).
 - **Slot 3 — flujo del conductor punta a punta**.
   - La query (frentes-vivos.md:100-107) devuelve 5 filas con conductor, recogida, entrega y certificado.
