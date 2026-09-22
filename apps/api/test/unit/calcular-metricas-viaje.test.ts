@@ -864,6 +864,11 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(res.recomputed).toBe(false);
     expect(res.abortReason).toBe('routes_error');
     expect(db.update).not.toHaveBeenCalled();
+    // El logger serializa `err` sin `message`: el motivo viaja aparte.
+    expect(noopLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ errMessage: 'Routes 503' }),
+      expect.stringContaining('Routes falló'),
+    );
   });
 
   it('ABORT (cap superado) — no-op, abortReason=cap_exceeded, SIN llamar a Routes', async () => {

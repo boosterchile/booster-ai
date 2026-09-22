@@ -145,7 +145,7 @@ describe('reconstruirTripBackfill — relleno de huecos con Routes', () => {
 
     expect(r.resultado).toEqual({ ok: false, abortReason: 'routes_error', llamadasRoutes: 1 });
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ tripId: 't9', err: expect.any(Error) }),
+      expect.objectContaining({ tripId: 't9', err: expect.any(Error), errMessage: 'Routes 503' }),
       expect.stringContaining('Routes'),
     );
   });

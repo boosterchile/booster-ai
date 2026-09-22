@@ -302,6 +302,33 @@ describe('computeRoutes — response parsing', () => {
 });
 
 describe('computeRoutes — errores HTTP', () => {
+  it('non-2xx con body ilegible → igual loguea y lanza (el catch no traga en silencio)', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({}),
+      text: async () => {
+        throw new Error('stream cortado');
+      },
+    })) as unknown as typeof fetch;
+    const warn = vi.fn();
+    const logger = { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() };
+
+    await expect(
+      computeRoutes({
+        projectId: 'test-project',
+        origin: 'A',
+        destination: 'B',
+        fetchImpl,
+        logger: logger as never,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_request', httpStatus: 400 });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ httpStatus: 400, errMessage: 'stream cortado' }),
+      'Routes API: no se pudo leer el body del error',
+    );
+  });
+
   it('400 → invalid_request', async () => {
     const fetchImpl = makeFetchError(400, 'Origin not parseable');
     await expect(
