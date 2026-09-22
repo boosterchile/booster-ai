@@ -27,6 +27,12 @@ AC 3 (texto cerrado, 2026-09-21): puntos ordenados por timestamp de dispositivo;
 - `apps/web/src/router.tsx`
 - `apps/web/src/components/nav-items.ts` + test
 
+## Slice — pin del aviso
+
+Sin migración y sin endpoint nuevo. `segmentar-trayectos-teltonika` adjunta `eventLat`/`eventLon` al marcar el badge: primer fix válido (`esCoordenadaGpsValida`) dentro de la ventana de ΔL, ordenado por `tMs`, prefiriendo el inicio. Si la primera ventana no tiene fix, se usa la siguiente caída del mismo trayecto que sí lo tenga. Si ninguna lo tiene, null.
+
+La ruta serializa `event_lat`/`event_lon`. La página `/app/trayectos` acepta `?detalle=<id>` (y `page` si no es la primera). Con geo, el detalle monta `EventoCombustibleMap` centrado en ese punto. Sin geo, badge + «sin ubicación», sin mapa. El listado usa «Ver en el mapa» o «Ver detalle» según haya fix.
+
 ## Observabilidad
 
 Span `trayectos_teltonika.listar` y contador `trayectos_teltonika_consultas_total`. Log estructurado con `empresa_id`, totales y `truncado`. Sin `console.*`. Sin PII en atributos del span.

@@ -12,6 +12,9 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * Badge (AC 3): puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
  * `tMs` es la hora del AVL, no la de recepción GPRS.
+ * Pin (AC geo): `eventLat`/`eventLon` salen del primer punto con fix válido
+ * dentro de la ventana de caída, en orden de `tMs` (se prefiere el inicio).
+ * Sin fix usable en esa ventana quedan en null: no se copia la traza del trayecto.
  */
 
 export const UMBRAL_ROBO_BASE_L = 15;
@@ -58,6 +61,12 @@ export interface TrayectoTeltonika {
   kmPorLitro: number | null;
   notaCombustible: string | null;
   posibleRoboCombustible: boolean;
+  /**
+   * Fix del inicio de la ventana de caída (primer punto con lat/lon válida
+   * ordenado por timestamp de dispositivo). Null sin badge o sin fix usable.
+   */
+  eventLat: number | null;
+  eventLon: number | null;
   sensorCombustible: SensorCombustible;
   ctaSensor: boolean;
 }
@@ -136,7 +145,7 @@ function segmentarVehiculo(puntos: PuntoSegmentacion[]): TrayectoTeltonika[] {
   const crudos: Array<{
     inicioMs: number;
     finMs: number;
-    trayecto: Omit<TrayectoTeltonika, 'posibleRoboCombustible'>;
+    trayecto: Omit<TrayectoTeltonika, 'posibleRoboCombustible' | 'eventLat' | 'eventLon'>;
   }> = [];
 
   for (const racha of rachas) {
@@ -173,16 +182,27 @@ function segmentarVehiculo(puntos: PuntoSegmentacion[]): TrayectoTeltonika[] {
   }
 
   const marcados = new Set<number>();
+  const geoEvento = new Map<number, { lat: number; lon: number }>();
   if (sensor === 'presente') {
     for (const robo of robos) {
-      marcarRobo(crudos, robo, marcados);
+      for (const indice of indicesDelRobo(crudos, robo)) {
+        marcados.add(indice);
+        if (!geoEvento.has(indice) && robo.eventLat != null && robo.eventLon != null) {
+          geoEvento.set(indice, { lat: robo.eventLat, lon: robo.eventLon });
+        }
+      }
     }
   }
 
-  return crudos.map((c, i) => ({
-    ...c.trayecto,
-    posibleRoboCombustible: marcados.has(i),
-  }));
+  return crudos.map((c, i) => {
+    const geo = geoEvento.get(i);
+    return {
+      ...c.trayecto,
+      posibleRoboCombustible: marcados.has(i),
+      eventLat: geo?.lat ?? null,
+      eventLon: geo?.lon ?? null,
+    };
+  });
 }
 
 function resolverPuntos(puntos: PuntoSegmentacion[]): PuntoResuelto[] {
@@ -439,6 +459,8 @@ function resolverCombustible(
 interface VentanaRobo {
   desdeMs: number;
   hastaMs: number;
+  eventLat: number | null;
+  eventLon: number | null;
 }
 
 function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | null): VentanaRobo[] {
@@ -471,7 +493,13 @@ function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | nul
       if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
         continue;
       }
-      robos.push({ desdeMs: inicio.tMs, hastaMs: fin.tMs });
+      const geo = geoAlInicioDeVentana(puntos, inicio.tMs, fin.tMs);
+      robos.push({
+        desdeMs: inicio.tMs,
+        hastaMs: fin.tMs,
+        eventLat: geo?.lat ?? null,
+        eventLon: geo?.lon ?? null,
+      });
       break;
     }
   }
@@ -493,24 +521,47 @@ function ventanaDetenida(puntos: PuntoResuelto[], desdeMs: number, hastaMs: numb
   return vistos > 0;
 }
 
-function marcarRobo(
+/**
+ * Primer fix válido de la ventana, en orden de timestamp de dispositivo.
+ * Se prefiere el inicio de la caída; si ese punto no tiene lat/lon usable
+ * (null o null island), el siguiente dentro de la misma ventana. Fuera de
+ * `[desdeMs, hastaMs]` no se mira.
+ */
+function geoAlInicioDeVentana(
+  puntos: readonly PuntoResuelto[],
+  desdeMs: number,
+  hastaMs: number,
+): { lat: number; lon: number } | null {
+  for (const punto of puntos) {
+    if (punto.tMs < desdeMs) {
+      continue;
+    }
+    if (punto.tMs > hastaMs) {
+      break;
+    }
+    if (punto.lat != null && punto.lng != null && esCoordenadaGpsValida(punto.lat, punto.lng)) {
+      return { lat: punto.lat, lon: punto.lng };
+    }
+  }
+  return null;
+}
+
+function indicesDelRobo(
   trayectos: Array<{ inicioMs: number; finMs: number }>,
   robo: VentanaRobo,
-  marcados: Set<number>,
-): void {
-  let solapo = false;
+): number[] {
+  const solapados: number[] = [];
   for (let i = 0; i < trayectos.length; i++) {
     const trayecto = trayectos[i];
     if (!trayecto) {
       continue;
     }
     if (trayecto.finMs >= robo.desdeMs && trayecto.inicioMs <= robo.hastaMs) {
-      marcados.add(i);
-      solapo = true;
+      solapados.push(i);
     }
   }
-  if (solapo) {
-    return;
+  if (solapados.length > 0) {
+    return solapados;
   }
   let mejor: number | null = null;
   for (let i = 0; i < trayectos.length; i++) {
@@ -522,9 +573,7 @@ function marcarRobo(
       mejor = i;
     }
   }
-  if (mejor != null) {
-    marcados.add(mejor);
-  }
+  return mejor == null ? [] : [mejor];
 }
 
 function redondear(valor: number, decimales: number): number {

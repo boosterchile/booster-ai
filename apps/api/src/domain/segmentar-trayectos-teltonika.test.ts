@@ -430,6 +430,160 @@ describe('segmentarTrayectosTeltonika', () => {
     expect(trayectos[0]?.posibleRoboCombustible).toBe(false);
   });
 
+  it('sin badge no expone coordenadas del evento', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, lat: -33.45, lng: -70.66 }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, lng: -70.67 }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
+  it('el pin es el inicio de la ventana de caída, por timestamp de dispositivo', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0 + 12 * 60_000,
+        lat: -33.48,
+        lng: -70.7,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 590 },
+      }),
+      punto({ tMs: T0, lat: -33.45, lng: -70.66, io: { '239': 1, '240': 1, '84': 800 } }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        lat: -33.4,
+        lng: -70.6,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 800 },
+      }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: -33.451,
+        lng: -70.66,
+        io: { '239': 1, '240': 1, '84': 790 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.4,
+      eventLon: -70.6,
+    });
+  });
+
+  it('si el inicio de la ventana no tiene fix, usa el primer punto válido dentro de ella', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 800 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 790 } }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        lat: null,
+        lng: null,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 800 },
+      }),
+      punto({
+        tMs: T0 + 11 * 60_000,
+        lat: -33.41,
+        lng: -70.61,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 700 },
+      }),
+      punto({
+        tMs: T0 + 12 * 60_000,
+        lat: -33.49,
+        lng: -70.71,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 590 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('no inventa pin con el trayecto, el null island ni un punto fuera de la ventana', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, lat: -33.45, lng: -70.66, io: { '239': 1, '240': 1, '84': 800 } }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: -33.451,
+        lng: -70.66,
+        io: { '239': 1, '240': 1, '84': 790 },
+      }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        lat: 0,
+        lng: 0,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 800 },
+      }),
+      punto({
+        tMs: T0 + 12 * 60_000,
+        lat: null,
+        lng: null,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 590 },
+      }),
+      punto({
+        tMs: T0 + 16 * 60_000,
+        lat: -33.7,
+        lng: -70.8,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 590 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
+  it('si la primera ventana no tiene fix, el pin sale de la siguiente caída que sí lo tiene', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 800 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 790 } }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        lat: null,
+        lng: null,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 800 },
+      }),
+      punto({
+        tMs: T0 + 12 * 60_000,
+        lat: null,
+        lng: null,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 600 },
+      }),
+      punto({
+        tMs: T0 + 13 * 60_000,
+        lat: -33.42,
+        lng: -70.62,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 600 },
+      }),
+      punto({
+        tMs: T0 + 14 * 60_000,
+        lat: -33.49,
+        lng: -70.69,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 400 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.42,
+      eventLon: -70.62,
+    });
+  });
+
   it('no mezcla el arrastre de ignición entre dos vehículos', () => {
     const otro = '33333333-3333-4333-8333-333333333333';
     const trayectos = segmentarTrayectosTeltonika([

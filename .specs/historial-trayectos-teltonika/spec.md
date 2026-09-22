@@ -46,6 +46,7 @@ No hay columna de capacidad de estanque. `U = 15 L` salvo que el llamador pase l
     inicio, fin, distancia_km,
     litros_iniciales, litros_finales, km_por_litro,
     nota_combustible, posible_robo_combustible,
+    event_lat, event_lon,
     sensor_combustible: "ausente" | "presente" | "degradado",
     cta_sensor
   }]
@@ -63,7 +64,8 @@ Segmentación, por vehículo, puntos en orden temporal:
 5. Distancia = Σ haversine entre coordenadas válidas (se salta 0,0 y null; no se inventa tramo).
 6. L ini / L fin = primera y última lectura válida de 84 dentro del trayecto. `km/L = distancia_km / max(L_ini − L_fin, ε)` solo si `L_ini − L_fin > 0`. Si no, `km_por_litro = null` y nota en vos.
 7. Badge según el criterio 3 (texto cerrado abajo). El reloj es `timestamp_device`. `timestamp_recibido_en` no entra en la ventana ni en el orden.
-8. Sensor del vehículo en la ventana: algún 84 válido → `presente`. Algún 83/84/89 sin 84 válido → `degradado` (sin litros, sin badge, nota explícita). Ninguno → `ausente` (trayectos y km sí; sin km/L ni badge; CTA de conectar sensor).
+8. Pin del aviso: `event_lat` / `event_lon` se calculan al leer, sobre los mismos puntos. Elección documentada: **el inicio de la ventana de caída**. Dentro de `[desde, hasta]` de esa ventana, el primer punto con lat/lon usable ordenado por timestamp de dispositivo. Si el punto de inicio no tiene fix (null o 0,0), el siguiente dentro de la misma ventana. Si ninguna ventana del badge tiene fix usable, ambos campos van en `null`. Sin badge también van en `null`. No se usa la traza del trayecto ni un punto fuera de la ventana.
+9. Sensor del vehículo en la ventana: algún 84 válido → `presente`. Algún 83/84/89 sin 84 válido → `degradado` (sin litros, sin badge, nota explícita). Ninguno → `ausente` (trayectos y km sí; sin km/L ni badge; CTA de conectar sensor).
 
 ## Criterios de éxito
 
@@ -82,7 +84,14 @@ Segmentación, por vehículo, puntos en orden temporal:
 5. Empresa sin vehículos Teltonika: lista vacía + CTA de vincular. HTTP 200, no error.
 6. Conductor, despachador, visualizador, generador puro: 403 y el ítem no está en el nav.
 7. IO de combustible ausente o inválido: no se inventan litros ni badge; la UI lo dice.
+8. Given a theft badge on a trip, When ≥1 Teltonika point has lat/lon in the ΔL detection window (ordered by device timestamp, not receive time), Then expose `event_lat`/`event_lon` (prefer the start of the drop window) and show a pin on the trip detail map.
+   Given badge but no usable geo in that window, When opening detail, Then badge still visible + honest copy «sin ubicación» — never invent a pin.
+   Given list `/app/trayectos`, When an event has geo, Then user can open map centered on that pin.
+
+   Cumplimiento: mismo cálculo on-read. El pin es el primer fix válido de la ventana, por `tMs`, empezando por el inicio de la caída. La UI en `/app/trayectos?detalle=` muestra el mapa centrado en ese punto, o «sin ubicación» si `event_lat`/`event_lon` son null. La lista enlaza «Ver en el mapa» cuando hay geo y «Ver detalle» cuando el badge no tiene fix.
 
 ## Fuera de alcance
 
 Alertas push o en vivo, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, overrides de U/Y por empresa, columna nueva de capacidad de estanque. Tampoco precio de combustible ni costo en CLP: el precio fluctúa y el transportista lo calcula con los litros y el km/L. El MVP muestra L, km/L y L/100 km, sin input de precio ni estimación de costo.
+
+Fuera de este slice de pin: bajar el umbral a 8 L, robo hormiga, alertas in-app y score de confianza. U, Y, ignición y la authz dueño|admin transportista no se tocan.

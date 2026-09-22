@@ -145,6 +145,115 @@ describe('listarTrayectosTeltonika', () => {
       pageSize: 20,
     });
     expect(lista.trayectos[0]?.posibleRoboCombustible).toBe(true);
+    expect(lista.trayectos[0]?.eventLat).toBeCloseTo(-33.46, 5);
+    expect(lista.trayectos[0]?.eventLon).toBeCloseTo(-70.66, 5);
+  });
+
+  it('expone el inicio de la ventana y null si esa ventana no tiene fix', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const conGeo = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 12 * 60_000),
+          latitude: '-33.48',
+          longitude: '-70.70',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 590 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 10 * 60_000),
+          latitude: '-33.40',
+          longitude: '-70.60',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.451',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 790 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+      ],
+    );
+    const listaGeo = await listarTrayectosTeltonika({
+      db: conGeo.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(listaGeo.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.4,
+      eventLon: -70.6,
+    });
+
+    const sinGeo = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 12 * 60_000),
+          latitude: null,
+          longitude: null,
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 590 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 10 * 60_000),
+          latitude: '0',
+          longitude: '0',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.451',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 790 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+      ],
+    );
+    const listaSin = await listarTrayectosTeltonika({
+      db: sinGeo.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(listaSin.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: null,
+      eventLon: null,
+    });
   });
 
   it('avisa si io_data no es un objeto y no inventa litros', async () => {

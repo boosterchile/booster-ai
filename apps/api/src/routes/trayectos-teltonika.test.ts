@@ -159,12 +159,124 @@ describe('GET /trayectos-teltonika', () => {
       litros_iniciales: 50,
       litros_finales: 40,
       posible_robo_combustible: false,
+      event_lat: null,
+      event_lon: null,
     });
     expect(body.trayectos[0]?.distancia_km).toBeGreaterThan(0);
     expect(body.trayectos[0]?.km_por_litro).toBeGreaterThan(0);
     expect(Date.parse(body.trayectos[0]?.fin ?? '')).toBeGreaterThan(
       Date.parse(body.trayectos[0]?.inicio ?? ''),
     );
+  });
+
+  it('con badge devuelve el pin del inicio de la ventana de caída', async () => {
+    const t0 = new Date('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 12 * 60_000),
+          latitude: '-33.48',
+          longitude: '-70.70',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 590 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 60_000),
+          latitude: '-33.451',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 790 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 10 * 60_000),
+          latitude: '-33.40',
+          longitude: '-70.60',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: t0,
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+      ],
+    );
+    const res = await buildApp(db, { rol: 'dueno' }).request('/');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      trayectos: Array<{
+        posible_robo_combustible: boolean;
+        event_lat: number | null;
+        event_lon: number | null;
+      }>;
+    };
+    expect(body.trayectos[0]).toMatchObject({
+      posible_robo_combustible: true,
+      event_lat: -33.4,
+      event_lon: -70.6,
+    });
+  });
+
+  it('con badge y sin fix en la ventana devuelve event_lat y event_lon nulos', async () => {
+    const t0 = new Date('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 12 * 60_000),
+          latitude: null,
+          longitude: null,
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 590 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 10 * 60_000),
+          latitude: '0',
+          longitude: '0',
+          speedKmh: 0,
+          ioData: { '239': 0, '240': 0, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 60_000),
+          latitude: '-33.451',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 790 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: t0,
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+      ],
+    );
+    const res = await buildApp(db, { rol: 'admin' }).request('/');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      trayectos: Array<{
+        posible_robo_combustible: boolean;
+        event_lat: number | null;
+        event_lon: number | null;
+      }>;
+    };
+    expect(body.trayectos[0]).toMatchObject({
+      posible_robo_combustible: true,
+      event_lat: null,
+      event_lon: null,
+    });
   });
 
   it('422 si la ventana supera 31 días', async () => {
