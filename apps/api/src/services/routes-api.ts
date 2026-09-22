@@ -17,7 +17,9 @@ import { GoogleAuth } from 'google-auth-library';
  *   - Función pura (toma `fetch` inyectable para tests).
  *   - Devuelve estructura normalizada que oculta detalles del wire
  *     protocol de Google (microliters → liters, distanceMeters → km).
- *   - Acepta direcciones como strings (Routes API geocodifica internamente).
+ *   - Acepta direcciones como strings (Routes API geocodifica internamente)
+ *     o coordenadas `{ lat, lng }` (van como `location.latLng`: Routes API
+ *     rechaza «lat,lng» como Address Waypoint con 400 INVALID_ARGUMENT).
  *
  * Costo: ~$5 USD por 1000 requests con extras computations habilitados.
  *
@@ -45,6 +47,13 @@ export interface RouteLatLng {
   lat: number;
   lng: number;
 }
+
+/**
+ * Punto de la ruta: dirección textual (Routes API la geocodifica) o coordenada
+ * exacta. Una coordenada NUNCA se manda como texto «lat,lng»: Routes API la
+ * rechaza como Address Waypoint (400 INVALID_ARGUMENT, prod 2026-09-21).
+ */
+export type RouteWaypoint = string | RouteLatLng;
 
 /** Una ruta alternativa devuelta por Routes API, normalizada a unidades SI. */
 export interface RouteSuggestion {
@@ -81,10 +90,10 @@ export interface ComputeRoutesParams {
    * el cargo).
    */
   projectId: string;
-  /** Origen — dirección textual (Routes API la geocodifica). */
-  origin: string;
-  /** Destino — dirección textual. */
-  destination: string;
+  /** Origen — dirección textual (Routes API la geocodifica) o coordenada. */
+  origin: RouteWaypoint;
+  /** Destino — dirección textual o coordenada. */
+  destination: RouteWaypoint;
   /**
    * Tipo de motor del vehículo, para que Routes API estime
    * `fuelConsumptionMicroliters`. Si se omite, no se solicita
@@ -151,8 +160,8 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
   } = params;
 
   const body: Record<string, unknown> = {
-    origin: { address: origin },
-    destination: { address: destination },
+    origin: toWaypoint(origin),
+    destination: toWaypoint(destination),
     travelMode: 'DRIVE',
     routingPreference: 'TRAFFIC_AWARE_OPTIMAL',
     computeAlternativeRoutes: computeAlternatives,
@@ -160,8 +169,10 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
 
   // Solo agregamos vehicleInfo + extraComputations si tenemos emission
   // type — sin esto Routes API no calcula fuelConsumption (cobra menos).
+  // `vehicleInfo` vive en `routeModifiers`: en la raíz del body Routes API
+  // responde 400 «Unknown name "vehicleInfo"» (reproducido 2026-09-22).
   if (emissionType) {
-    body.vehicleInfo = { emissionType };
+    body.routeModifiers = { vehicleInfo: { emissionType } };
     body.extraComputations = ['FUEL_CONSUMPTION'];
   }
 
@@ -288,6 +299,17 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
       startLocation: parseLatLng(r.legs?.[0]?.startLocation?.latLng),
     };
   });
+}
+
+/**
+ * `google.maps.routing.v2.Waypoint`: un texto va como `address` (Routes API lo
+ * geocodifica); una coordenada va como `location.latLng`.
+ */
+function toWaypoint(waypoint: RouteWaypoint): Record<string, unknown> {
+  if (typeof waypoint === 'string') {
+    return { address: waypoint };
+  }
+  return { location: { latLng: { latitude: waypoint.lat, longitude: waypoint.lng } } };
 }
 
 /**

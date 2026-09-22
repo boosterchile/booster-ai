@@ -145,13 +145,15 @@ const DISTANCIAS_REGIONALES_KM: Record<string, Record<string, number>> = {
  * - Si origen == destino → DISTANCIA_INTRA_REGIONAL_KM (30 km).
  * - Si algún código no está en la tabla → DISTANCIA_DEFAULT_KM (500 km).
  * - Caso normal → busca en la tabla, símetricamente.
+ * - `XIII` (código canónico de `regionCodeSchema`) es la Región Metropolitana,
+ *   que la tabla registra como `RM`.
  */
 export function estimarDistanciaKm(origen: string | null, destino: string | null): number {
   if (!origen || !destino) {
     return DISTANCIA_DEFAULT_KM;
   }
-  const o = origen.toUpperCase();
-  const d = destino.toUpperCase();
+  const o = normalizarCodigoRegion(origen);
+  const d = normalizarCodigoRegion(destino);
   if (o === d) {
     return DISTANCIA_INTRA_REGIONAL_KM;
   }
@@ -165,4 +167,14 @@ export function estimarDistanciaKm(origen: string | null, destino: string | null
     return filaInversa[o];
   }
   return DISTANCIA_DEFAULT_KM;
+}
+
+/**
+ * La tabla usa `RM` para la Región Metropolitana; `regionCodeSchema` (lo que
+ * persisten los viajes) usa `XIII`. Sin este alias todo viaje XIII → otra
+ * región caía al default de 500 km (BOO-KJHITL XIII→V, prod 2026-09-21).
+ */
+function normalizarCodigoRegion(codigo: string): string {
+  const upper = codigo.toUpperCase();
+  return upper === 'XIII' ? 'RM' : upper;
 }

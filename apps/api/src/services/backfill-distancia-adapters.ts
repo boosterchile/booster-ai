@@ -116,7 +116,7 @@ export async function reconstruirTripBackfill(opts: {
   routesProjectId?: string | undefined;
   candidato: CandidatoBackfill;
 }): Promise<ReconstruccionTrip> {
-  const { db, routesProjectId, candidato } = opts;
+  const { db, logger, routesProjectId, candidato } = opts;
   const before = {
     tripId: candidato.tripId,
     coveragePctAntes: candidato.coveragePctAntes,
@@ -135,8 +135,9 @@ export async function reconstruirTripBackfill(opts: {
     llamadasRoutes++;
     const rutas = await computeRoutes({
       projectId: routesProjectId ?? '',
-      origin: `${desde.lat},${desde.lng}`,
-      destination: `${hasta.lat},${hasta.lng}`,
+      origin: { lat: desde.lat, lng: desde.lng },
+      destination: { lat: hasta.lat, lng: hasta.lng },
+      logger,
     });
     const mejor = rutas[0];
     if (!mejor || mejor.distanceKm <= 0) {
@@ -148,7 +149,11 @@ export async function reconstruirTripBackfill(opts: {
   let escritura: Awaited<ReturnType<typeof computarEscrituraDistanciaReal>>;
   try {
     escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
-  } catch {
+  } catch (err) {
+    logger.warn(
+      { err, tripId: candidato.tripId, llamadasRoutes },
+      'backfill: reconstrucción abortada — Routes falló',
+    );
     return { ...before, resultado: { ok: false, abortReason: 'routes_error', llamadasRoutes } };
   }
   if (escritura === null) {
