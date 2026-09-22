@@ -400,6 +400,8 @@ describe('calcularMetricasEstimadas — Routes API integration', () => {
       expect.objectContaining({
         projectId: 'test-project',
         emissionType: 'DIESEL',
+        // Sin logger el errBody de un 400 no queda en ningún log (2026-09-21).
+        logger: noopLogger,
       }),
     );
   });
@@ -828,6 +830,28 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(s1.coveragePct).toBe(s2.coveragePct);
     expect(s1.certificationLevel).toBe(s2.certificationLevel);
     expect(s1.uncertaintyFactor).toBe(s2.uncertaintyFactor);
+  });
+
+  it('HUECO → Routes recibe coordenadas, no el string «lat,lng» (400 Address Waypoint)', async () => {
+    // Prod 2026-09-21: `origin: "-33.48,-70.59"` → Routes 400 INVALID_ARGUMENT →
+    // abortReason=routes_error en todo viaje con un hueco ≥60 s.
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(1));
+    (computeRoutes as Mock).mockResolvedValue(ruta(5));
+    const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
+
+    await run(db);
+
+    const arg = (computeRoutes as Mock).mock.lastCall?.[0] as {
+      origin: unknown;
+      destination: { lat: number; lng: number };
+      logger: unknown;
+    };
+    expect(arg.origin).toEqual({ lat: -33.41, lng: -70.61 });
+    expect(typeof arg.destination).toBe('object');
+    expect(arg.destination.lat).toBeCloseTo(-33.43, 9);
+    expect(arg.destination.lng).toBe(-70.61);
+    // Un 400 futuro deja su errBody en el log (el logger pierde err.message).
+    expect(arg.logger).toBe(noopLogger);
   });
 
   it('ABORT (Routes caído) — no-op, abortReason=routes_error, SIN UPDATE (cae a estimación)', async () => {

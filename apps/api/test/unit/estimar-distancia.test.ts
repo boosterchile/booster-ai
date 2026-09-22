@@ -30,6 +30,14 @@ describe('estimarDistanciaKm', () => {
     expect(estimarDistanciaKm('RM', 'V')).toBeLessThan(200); // valor real ~115km
   });
 
+  it('XIII (código canónico de regionCodeSchema) es la Región Metropolitana, no el default 500', () => {
+    // Prod 2026-09-21: BOO-KJHITL XIII→V quedó con distancia_km_estimada 500.
+    expect(estimarDistanciaKm('XIII', 'V')).toBe(estimarDistanciaKm('RM', 'V'));
+    expect(estimarDistanciaKm('IV', 'XIII')).toBe(estimarDistanciaKm('IV', 'RM'));
+    expect(estimarDistanciaKm('xiii', 'viii')).toBe(estimarDistanciaKm('RM', 'VIII'));
+    expect(estimarDistanciaKm('XIII', 'RM')).toBe(30);
+  });
+
   it('lookup simétrico V→RM funciona via filaInversa', () => {
     const ab = estimarDistanciaKm('RM', 'V');
     const ba = estimarDistanciaKm('V', 'RM');

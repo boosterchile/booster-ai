@@ -69,6 +69,55 @@ describe('computeRoutes — request body', () => {
     expect(parsed.routingPreference).toBe('TRAFFIC_AWARE_OPTIMAL');
   });
 
+  it('una coordenada viaja como location.latLng, no como address', async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ routes: [] }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    await computeRoutes({
+      projectId: 'test-project',
+      origin: { lat: -33.4828167, lng: -70.5966552 },
+      destination: { lat: -33.47, lng: -70.59 },
+      fetchImpl: fetchSpy,
+    });
+
+    const init = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
+    // Routes API rechaza «lat,lng» como Address Waypoint (400 INVALID_ARGUMENT).
+    expect(parsed.origin).toEqual({
+      location: { latLng: { latitude: -33.4828167, longitude: -70.5966552 } },
+    });
+    expect(parsed.destination).toEqual({
+      location: { latLng: { latitude: -33.47, longitude: -70.59 } },
+    });
+  });
+
+  it('mezcla coordenada de origen con dirección textual de destino', async () => {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ routes: [] }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    await computeRoutes({
+      projectId: 'test-project',
+      origin: { lat: -33.45, lng: -70.66 },
+      destination: 'Av Ejemplo 123, Concepción',
+      fetchImpl: fetchSpy,
+    });
+
+    const init = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(parsed.origin).toEqual({
+      location: { latLng: { latitude: -33.45, longitude: -70.66 } },
+    });
+    expect(parsed.destination).toEqual({ address: 'Av Ejemplo 123, Concepción' });
+  });
+
   it('incluye vehicleInfo + extraComputations cuando hay emissionType', async () => {
     const fetchSpy = vi.fn(async () => ({
       ok: true,
@@ -87,7 +136,10 @@ describe('computeRoutes — request body', () => {
 
     const init = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
     const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
-    expect(parsed.vehicleInfo).toEqual({ emissionType: 'DIESEL' });
+    // Routes API v2: `vehicleInfo` vive en `routeModifiers`. En la raíz el API
+    // responde 400 «Unknown name "vehicleInfo"» (reproducido 2026-09-22).
+    expect(parsed.routeModifiers).toEqual({ vehicleInfo: { emissionType: 'DIESEL' } });
+    expect(parsed).not.toHaveProperty('vehicleInfo');
     expect(parsed.extraComputations).toEqual(['FUEL_CONSUMPTION']);
 
     const headers = init.headers as Record<string, string>;
@@ -114,6 +166,7 @@ describe('computeRoutes — request body', () => {
     const init = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
     const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(parsed.vehicleInfo).toBeUndefined();
+    expect(parsed.routeModifiers).toBeUndefined();
     expect(parsed.extraComputations).toBeUndefined();
     const headers = init.headers as Record<string, string>;
     expect(headers['X-Goog-FieldMask']).not.toContain('fuelConsumption');
