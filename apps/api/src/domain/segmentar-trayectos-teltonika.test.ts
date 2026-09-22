@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
   GAP_CORTE_MS,
+  KM_MINIMOS_KM_POR_LITRO,
+  LITROS_MINIMOS_KM_POR_LITRO,
+  NOTA_COBERTURA_PARCIAL,
   NOTA_NIVEL_SUBIO,
   NOTA_SIN_BAJA,
   NOTA_SIN_LECTURA,
   type PuntoSegmentacion,
   UMBRAL_ROBO_BASE_L,
+  resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
   umbralHormigaLitros,
   umbralRoboLitros,
@@ -216,11 +220,11 @@ describe('segmentarTrayectosTeltonika', () => {
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
       punto({
         tMs: T0 + 60_000,
-        lat: -33.46,
+        lat: -33.55,
         io: { '239': 1, '240': 1, '84': 800 },
       }),
     ]);
-    const dist = haversineKm(-33.45, -70.66, -33.46, -70.66);
+    const dist = haversineKm(-33.45, -70.66, -33.55, -70.66);
     expect(trayectos[0]).toMatchObject({
       litrosIniciales: 100,
       litrosFinales: 80,
@@ -285,18 +289,22 @@ describe('segmentarTrayectosTeltonika', () => {
     });
   });
 
-  it('solo el porcentaje 89 no se convierte a litros', () => {
+  it('solo el porcentaje 89 muestra el nivel en % y no lo convierte a litros', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '89': 80 } }),
       punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '89': 40 } }),
     ]);
     expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: 'nivel_porcentaje',
+      nivelPctInicial: 80,
+      nivelPctFinal: 40,
       litrosIniciales: null,
       litrosFinales: null,
+      litrosConsumidos: null,
       kmPorLitro: null,
       posibleRoboCombustible: false,
       sensorCombustible: 'degradado',
-      notaCombustible: NOTA_SIN_LECTURA,
+      notaCombustible: null,
     });
   });
 
@@ -839,5 +847,202 @@ describe('segmentarTrayectosTeltonika', () => {
     ]);
     expect(trayectos).toHaveLength(1);
     expect(trayectos[0]?.vehiculoId).toBe(VEHICULO);
+  });
+});
+
+describe('fuentes de combustible CAN (slice 2026-09-22)', () => {
+  // ~11,1 km: por encima del mínimo de 10 km para calcular km/L.
+  const distancia = haversineKm(-33.45, -70.66, -33.55, -70.66);
+
+  it('sin 84, el Δ del contador 83 da litros consumidos y km/L; L ini y L fin quedan null', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520, '89': 60 } }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: -33.55,
+        io: { '239': 1, '240': 1, '83': 581_570, '89': 58 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: 'consumo_can',
+      litrosConsumidos: 5,
+      litrosIniciales: null,
+      litrosFinales: null,
+      nivelPctInicial: 60,
+      nivelPctFinal: 58,
+      notaCombustible: null,
+      sensorCombustible: 'degradado',
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      ctaSensor: false,
+    });
+    expect(trayectos[0]?.kmPorLitro).toBeCloseTo(distancia / 5, 2);
+  });
+
+  it('con menos de 5 L o de 10 km no calcula litros ni km/L, y no pone nota por fila', () => {
+    expect(LITROS_MINIMOS_KM_POR_LITRO).toBe(5);
+    expect(KM_MINIMOS_KM_POR_LITRO).toBe(10);
+    const sinSubir = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '83': 581_520 } }),
+    ]);
+    const pocosLitros = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '83': 581_560 } }),
+    ]);
+    const pocosKm = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '83': 581_620 } }),
+    ]);
+    const nivelChico = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 980 } }),
+    ]);
+    for (const [trayecto, fuente] of [
+      [sinSubir[0], 'consumo_can'],
+      [pocosLitros[0], 'consumo_can'],
+      [pocosKm[0], 'consumo_can'],
+      [nivelChico[0], 'nivel_litros'],
+    ] as const) {
+      expect(trayecto).toMatchObject({
+        fuenteCombustible: fuente,
+        litrosConsumidos: null,
+        kmPorLitro: null,
+        notaCombustible: null,
+      });
+    }
+    expect(nivelChico[0]).toMatchObject({ litrosIniciales: 100, litrosFinales: 98 });
+  });
+
+  it('una sola lectura del 83, sin 89, no alcanza: el trayecto queda sin dato', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1 } }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: null,
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      notaCombustible: NOTA_SIN_LECTURA,
+    });
+  });
+
+  it('si el trayecto trae 84, el nivel en litros manda aunque venga el 83', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000, '83': 100 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 800, '83': 400 } }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: 100,
+      litrosFinales: 80,
+      litrosConsumidos: 20,
+      sensorCombustible: 'presente',
+    });
+    expect(trayectos[0]?.kmPorLitro).toBeCloseTo(distancia / 20, 2);
+  });
+
+  it('si la lectura cubre menos del 90 % de la distancia, no calcula litros ni km/L', () => {
+    const consumo = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 100 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '83': 250 } }),
+      punto({ tMs: T0 + 120_000, lat: -33.6, io: { '239': 1, '240': 1 } }),
+    ]);
+    expect(consumo[0]).toMatchObject({
+      fuenteCombustible: 'consumo_can',
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      notaCombustible: NOTA_COBERTURA_PARCIAL,
+    });
+
+    const nivel = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 900 } }),
+      punto({ tMs: T0 + 120_000, lat: -33.6, io: { '239': 1, '240': 1 } }),
+    ]);
+    expect(nivel[0]).toMatchObject({
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: 100,
+      litrosFinales: 90,
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      notaCombustible: NOTA_COBERTURA_PARCIAL,
+    });
+  });
+
+  it('con cobertura ≥ 90 %, el km/L usa la distancia del tramo leído', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 100 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '83': 200 } }),
+      punto({ tMs: T0 + 120_000, lat: -33.555, io: { '239': 1, '240': 1 } }),
+    ]);
+    expect(trayectos[0]?.litrosConsumidos).toBe(10);
+    expect(trayectos[0]?.kmPorLitro).toBeCloseTo(distancia / 10, 2);
+    expect(trayectos[0]?.distanciaKm).toBeGreaterThan(distancia);
+  });
+
+  it('sin ninguna clave de combustible el trayecto no tiene fuente', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0 }),
+      punto({ tMs: T0 + 60_000, lat: -33.46 }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: null,
+      litrosConsumidos: null,
+      nivelPctInicial: null,
+      nivelPctFinal: null,
+    });
+  });
+
+  it('con el 239 en 0 y RPM CAN > 0 el motor gira: abre el trayecto', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 0, '240': 1, '85': 1200 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 0, '240': 1, '85': 1300 } }),
+      punto({ tMs: T0 + 120_000, speedKmh: 0, io: { '239': 0, '240': 0 } }),
+    ]);
+    expect(trayectos).toHaveLength(1);
+    expect(trayectos[0]?.fin).toBe(new Date(T0 + 60_000).toISOString());
+  });
+
+  it('con el 239 en 0 y RPM en 0 o fuera de rango, sigue apagado', () => {
+    const rpmCero = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 0, '240': 1, '85': 0 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 0, '240': 1, '85': 0 } }),
+    ]);
+    expect(rpmCero).toHaveLength(0);
+
+    const rpmInvalido = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 0, '240': 1, '85': 99_999 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 0, '240': 1, '85': 99_999 } }),
+    ]);
+    expect(rpmInvalido).toHaveLength(0);
+  });
+});
+
+describe('resumirCombustibleVehiculos', () => {
+  const OTRO = '33333333-3333-4333-8333-333333333333';
+  const TERCERO = '44444444-4444-4444-8444-444444444444';
+  const CUARTO = '55555555-5555-4555-8555-555555555555';
+
+  it('toma la mejor fuente de la ventana por vehículo: 84 > 83 > 89 > sin sensor', () => {
+    const resumen = resumirCombustibleVehiculos([
+      punto({ tMs: T0, io: { '83': 10 } }),
+      punto({ tMs: T0 + 1, io: { '84': 500 } }),
+      punto({ tMs: T0, vehiculoId: OTRO, patente: 'BBBB22', io: { '89': 50 } }),
+      punto({ tMs: T0 + 1, vehiculoId: OTRO, patente: 'BBBB22', io: { '83': 10 } }),
+      punto({ tMs: T0, vehiculoId: TERCERO, patente: 'CCCC33', io: { '89': 50 } }),
+      punto({ tMs: T0, vehiculoId: CUARTO, patente: 'DDDD44', io: { '239': 1 } }),
+    ]);
+    expect(resumen).toEqual([
+      { vehiculoId: VEHICULO, patente: 'ABCD12', combustible: 'nivel_litros' },
+      { vehiculoId: OTRO, patente: 'BBBB22', combustible: 'consumo_can' },
+      { vehiculoId: TERCERO, patente: 'CCCC33', combustible: 'nivel_porcentaje' },
+      { vehiculoId: CUARTO, patente: 'DDDD44', combustible: 'sin_sensor' },
+    ]);
+  });
+
+  it('una clave de combustible fuera de rango no cuenta como sensor', () => {
+    const resumen = resumirCombustibleVehiculos([punto({ tMs: T0, io: { '84': 99_999 } })]);
+    expect(resumen[0]?.combustible).toBe('sin_sensor');
   });
 });
