@@ -65,7 +65,7 @@
 
 ## PRs abiertos
 
-**#708** `fix/routes-api-body-invalido` (head `4f239e8`, abierto 2026-09-22T18:44:13Z). Es el único PR abierto (`gh pr list --state open`).
+**#708** `fix/routes-api-body-invalido` (abierto 2026-09-22T18:44:13Z). Es el único PR abierto (`gh pr list --state open`).
 - **Estado** (2026-09-22): MERGEABLE/CLEAN, 25 checks en verde y 0 en rojo. Tiene 6 commits sobre main: spec, dos rojos (`e93548a`, `23d72c7`) con sus fixes, y docs. El required «E2E conductor (Auth emulator + API local)» pasó; el job «E2E conductor Playwright» quedó SKIPPED por el filtro de paths.
 - **Defectos que corrige** (spec §1-§5, `git show 4f239e8:.specs/fix-routes-api-body-invalido/spec.md`):
   - (A) Una coordenada viaja como `address`.
@@ -73,17 +73,13 @@
   - (C) La tabla de respaldo usa `RM` y no `XIII`, así que XIII→otra región cae a 500 km: KJHITL y BKAXIK tienen `distancia_km_estimada = 500,00`.
 - **Alcance**: no cambia contratos, schema ni fórmulas GLEC, y los 5 certificados emitidos no se tocan. Con este PR, el camino híbrido de #624 se activa por primera vez en prod.
 - **Criterio de prod abierto**: cero logs «Address Waypoint» y «Unknown name vehicleInfo» tras el deploy.
-- **Bloqueo**: la decisión §6 del PO (pendiente 1).
+- **§6 (hueco con el vehículo detenido)**: el PO la decidió el 2026-09-22 con la opción (a). Extremos idénticos valen 0 km, no llaman a Routes y no cuentan para el tope. Implementada en #708 y registrada como enmienda en `.specs/distancia-real-hibrida/spec.md`. Falta: merge y release.
 
 ## Pendientes del PO (priorizados)
 
-> Orden: prioridad del inventario. El ítem 1 y el plazo del 30-09 (ítem 2) los adelantó el agente por criterio propio. Merge, deploy, apply y DML los ejecuta el PO.
+> Orden: prioridad del inventario. El ítem 1 y el plazo del 30-09 (ítem 2) los adelantó el agente por criterio propio. Merge, apply y DML los ejecuta el PO; el release lo dispara el orquestador.
 
-1. **#708, decisión §6 (hueco con el vehículo detenido).**
-   - El problema: con origen = destino, Routes responde 200 sin `distanceMeters`, eso se normaliza a 0 km y el resolver de #624 lo trata como «sin ruta». Un solo hueco ≥ 60 s con el vehículo detenido aborta el viaje con `routes_error`.
-   - Frecuencia: 2151 de 2539 huecos Teltonika ≥ 60 s en 14 días; KJHITL tiene uno.
-   - Opciones: (a) 0 km sin llamar a Routes (enmienda los criterios 1, 2 y 6 de distancia-real-hibrida); (b) aceptar la ruta de 0 m (enmienda el criterio 1 y sigue gastando llamadas); (c) mantener el abort y declararlo.
-   - Después: merge y deploy de #708 (spec.md:101-111).
+1. **Merge de #708** (§6 ya decidida: opción (a), implementada). El release lo dispara el orquestador. Después, verificar cero logs «Address Waypoint» y «Unknown name vehicleInfo», y ningún `routes_error` en el próximo viaje con huecos.
 2. **Plazo 2026-09-30: backfill F0-0.**
    - Hecho: «Backstop: 2026-09-30» con retiro de `bitacora_backfill_distancia` (hoy 0 filas; `0053_bitacora_backfill_distancia.sql:14-17`). Es una fecha de revisión documentada, sin enforcement en tests, workflows ni scripts.
    - Decidir: retirar la tabla (migración contract, con TDD) o hacer un dry-run y extender el plazo; y qué hacer con `SYN-PLFL5701` (entregado sin certificado).
