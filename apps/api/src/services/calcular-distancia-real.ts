@@ -52,7 +52,8 @@ export interface DistanciaHibridaResultado {
 
 /**
  * Estimador de la distancia de un hueco entre dos pings. En producción se
- * implementa sobre `computeRoutes` (Routes API acepta `"lat,lng"`); en tests
+ * implementa sobre `computeRoutes` con coordenadas `{ lat, lng }` (viajan como
+ * `location.latLng`; como texto «lat,lng» Routes API responde 400); en tests
  * se inyecta un mock. Rechaza si Routes falla/timeout → el caller cae al
  * fallback declarado.
  */

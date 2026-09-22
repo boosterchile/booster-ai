@@ -666,8 +666,15 @@ async function recalcularNivelPostEntregaInner(opts: {
   try {
     escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
   } catch (err) {
+    // El logger serializa `err` sin `message`: el motivo viaja en `errMessage`.
     logger.warn(
-      { err, tripId, fuente, pickupAtSource },
+      {
+        err,
+        errMessage: err instanceof Error ? err.message : String(err),
+        tripId,
+        fuente,
+        pickupAtSource,
+      },
       'recalcular: reconstrucción abortada — Routes falló (roto)',
     );
     abortReason = 'routes_error';

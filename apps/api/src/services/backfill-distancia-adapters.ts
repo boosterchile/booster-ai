@@ -151,7 +151,12 @@ export async function reconstruirTripBackfill(opts: {
     escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
   } catch (err) {
     logger.warn(
-      { err, tripId: candidato.tripId, llamadasRoutes },
+      {
+        err,
+        errMessage: err instanceof Error ? err.message : String(err),
+        tripId: candidato.tripId,
+        llamadasRoutes,
+      },
       'backfill: reconstrucción abortada — Routes falló',
     );
     return { ...before, resultado: { ok: false, abortReason: 'routes_error', llamadasRoutes } };

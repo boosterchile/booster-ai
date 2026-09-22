@@ -252,8 +252,15 @@ export async function computeRoutes(params: ComputeRoutesParams): Promise<RouteS
     let errBody = '';
     try {
       errBody = await response.text();
-    } catch {
-      // ignore
+    } catch (readErr) {
+      // El error HTTP igual se lanza abajo; acá solo se pierde el detalle.
+      logger?.warn(
+        {
+          httpStatus: response.status,
+          errMessage: readErr instanceof Error ? readErr.message : String(readErr),
+        },
+        'Routes API: no se pudo leer el body del error',
+      );
     }
     const code = mapHttpStatusToCode(response.status);
     logger?.warn(
