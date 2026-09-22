@@ -366,6 +366,40 @@ describe('TrayectosTeltonikaRoute', () => {
     );
   });
 
+  it('el aviso de hormiga es otro texto y también abre el mapa', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 1,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          posible_robo_combustible: false,
+          posible_robo_hormiga: true,
+          event_lat: -33.41,
+          event_lon: -70.61,
+        },
+      ],
+    });
+    const view = renderPage();
+    expect(await screen.findByText('posible robo hormiga')).toBeInTheDocument();
+    expect(screen.queryByText('posible robo combustible')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver en el mapa' })).toHaveAttribute(
+      'href',
+      '/app/trayectos?detalle=t-1',
+    );
+    routerState.search = { detalle: 't-1' };
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <TrayectosTeltonikaRoute />
+      </QueryClientProvider>,
+    );
+    const mapa = await screen.findByTestId('mapa-evento');
+    expect(mapa).toHaveAttribute('data-lat', '-33.41');
+    expect(mapa).toHaveAttribute('data-lng', '-70.61');
+    expect(screen.getByText('posible robo hormiga')).toBeInTheDocument();
+    expect(screen.queryByText(/no tiene un aviso de posible robo/)).not.toBeInTheDocument();
+  });
+
   it('pagina hacia los trayectos más viejos', async () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue(listadoConRobo);
     renderPage();

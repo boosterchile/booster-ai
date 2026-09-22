@@ -29,12 +29,22 @@ function cadena(rows: unknown[]) {
   return chain;
 }
 
-function makeDb(vehiculos: unknown[], puntos: unknown[] = []) {
+function makeDb(
+  vehiculos: unknown[],
+  puntos: unknown[] = [],
+  umbrales: unknown[] = [{ umbralRoboGolpeL: null, umbralRoboHormigaL: null }],
+) {
   let llamadas = 0;
   return {
     select: vi.fn(() => {
       llamadas += 1;
-      return cadena(llamadas === 1 ? vehiculos : puntos);
+      if (llamadas === 1) {
+        return cadena(vehiculos);
+      }
+      if (llamadas === 2 && vehiculos.length > 0) {
+        return cadena(umbrales);
+      }
+      return cadena(puntos);
     }),
   } as never;
 }
@@ -159,6 +169,7 @@ describe('GET /trayectos-teltonika', () => {
       litros_iniciales: 50,
       litros_finales: 40,
       posible_robo_combustible: false,
+      posible_robo_hormiga: false,
       event_lat: null,
       event_lon: null,
     });

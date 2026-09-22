@@ -22,6 +22,7 @@ interface Trayecto {
   km_por_litro: number | null;
   nota_combustible: string | null;
   posible_robo_combustible: boolean;
+  posible_robo_hormiga?: boolean;
   event_lat: number | null;
   event_lon: number | null;
   sensor_combustible: 'ausente' | 'presente' | 'degradado';
@@ -85,8 +86,7 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
         </h1>
         <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
           Mirá los trayectos de tus Teltonika: litros, km/L y L/100 km. Con eso armás el costo de
-          operación por tu cuenta, y el aviso marca si el combustible bajó de golpe con el vehículo
-          detenido.
+          operación por tu cuenta. El aviso de golpe y el de hormiga son distintos.
         </p>
       </header>
 
@@ -216,11 +216,9 @@ function ListadoTrayectos({
                   <td className="py-3 pr-3">{fmtFecha(t.fin)}</td>
                   <td className="py-3 pr-3">
                     <div className="font-medium text-neutral-900">{t.patente}</div>
-                    {t.posible_robo_combustible ? (
+                    {tieneAviso(t) ? (
                       <div className="mt-1 flex flex-col items-start gap-1">
-                        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
-                          posible robo combustible
-                        </span>
+                        <Avisos trayecto={t} />
                         <Link
                           to="/app/trayectos"
                           search={searchDetalle(t.id, page)}
@@ -306,21 +304,21 @@ function DetalleEncontrado({ trayecto }: { trayecto: Trayecto }) {
       <p className="mt-1 text-neutral-600 text-sm">
         {fmtFecha(trayecto.inicio)} – {fmtFecha(trayecto.fin)}
       </p>
-      {trayecto.posible_robo_combustible ? (
-        <span className="mt-3 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
-          posible robo combustible
-        </span>
+      {tieneAviso(trayecto) ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Avisos trayecto={trayecto} />
+        </div>
       ) : (
         <p className="mt-3 text-neutral-700">
           Este trayecto no tiene un aviso de posible robo de combustible.
         </p>
       )}
-      {trayecto.posible_robo_combustible && lat != null && lon != null ? (
+      {tieneAviso(trayecto) && lat != null && lon != null ? (
         <div className="mt-4">
           <EventoCombustibleMap latitude={lat} longitude={lon} />
         </div>
       ) : null}
-      {trayecto.posible_robo_combustible && !geo ? (
+      {tieneAviso(trayecto) && !geo ? (
         <div className="mt-4 max-w-xl rounded-lg border border-neutral-200 bg-neutral-50 p-4">
           <p className="font-medium text-neutral-900">sin ubicación</p>
           <p className="mt-1 text-neutral-600 text-sm">
@@ -330,6 +328,27 @@ function DetalleEncontrado({ trayecto }: { trayecto: Trayecto }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function tieneAviso(trayecto: Trayecto): boolean {
+  return trayecto.posible_robo_combustible || trayecto.posible_robo_hormiga === true;
+}
+
+function Avisos({ trayecto }: { trayecto: Trayecto }) {
+  return (
+    <>
+      {trayecto.posible_robo_combustible ? (
+        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
+          posible robo combustible
+        </span>
+      ) : null}
+      {trayecto.posible_robo_hormiga ? (
+        <span className="inline-flex rounded bg-orange-100 px-1.5 py-0.5 text-orange-950 text-xs">
+          posible robo hormiga
+        </span>
+      ) : null}
+    </>
   );
 }
 

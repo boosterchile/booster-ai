@@ -28,6 +28,8 @@ interface EmpresaRow {
   id: string;
   legalName: string;
   carbonMeasurementEnabled: boolean;
+  umbralRoboGolpeL?: number | null;
+  umbralRoboHormigaL?: number | null;
 }
 
 interface DbOpts {
@@ -79,6 +81,10 @@ function makeDb(opts: DbOpts = {}) {
                       typeof v.carbonMeasurementEnabled === 'boolean'
                         ? v.carbonMeasurementEnabled
                         : current.carbonMeasurementEnabled,
+                    umbralRoboGolpeL:
+                      'umbralRoboGolpeL' in v ? v.umbralRoboGolpeL : current.umbralRoboGolpeL,
+                    umbralRoboHormigaL:
+                      'umbralRoboHormigaL' in v ? v.umbralRoboHormigaL : current.umbralRoboHormigaL,
                   },
                 ];
               }),
@@ -313,5 +319,85 @@ describe('PATCH /me/empresa', () => {
     const json = (await res.json()) as { code: string };
     expect(json.code).toBe('empresa_not_found');
     expect(d.updates).toHaveLength(0);
+  });
+});
+
+function patchUmbrales(app: Hono, body: unknown) {
+  return app.request('/umbrales-combustible', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('PATCH /me/empresa/umbrales-combustible', () => {
+  it('persiste golpe y hormiga dentro de rango', async () => {
+    const d = makeDb();
+    const res = await patchUmbrales(buildApp(d.db), {
+      umbral_robo_golpe_l: 5,
+      umbral_robo_hormiga_l: 30,
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      umbral_robo_golpe_l: number;
+      umbral_robo_hormiga_l: number;
+      unchanged: boolean;
+    };
+    expect(json.umbral_robo_golpe_l).toBe(5);
+    expect(json.umbral_robo_hormiga_l).toBe(30);
+    expect(json.unchanged).toBe(false);
+    expect(d.updates[0]).toEqual(
+      expect.objectContaining({ umbralRoboGolpeL: 5, umbralRoboHormigaL: 30 }),
+    );
+  });
+
+  it('rechaza menos de 5 L, más de 20 L y hormiga fuera de 8–30', async () => {
+    const d = makeDb();
+    for (const body of [
+      { umbral_robo_golpe_l: 4 },
+      { umbral_robo_golpe_l: 21 },
+      { umbral_robo_golpe_l: 5.5 },
+      { umbral_robo_hormiga_l: 7 },
+      { umbral_robo_hormiga_l: 31 },
+      {},
+    ]) {
+      const res = await patchUmbrales(buildApp(d.db), body);
+      expect(res.status).toBe(400);
+    }
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('null vuelve al default sin borrar el otro umbral', async () => {
+    const d = makeDb({
+      selectRows: [
+        {
+          id: EMPRESA,
+          legalName: 'Transportes Demo',
+          carbonMeasurementEnabled: false,
+          umbralRoboGolpeL: 12,
+          umbralRoboHormigaL: 15,
+        },
+      ],
+    });
+    const res = await patchUmbrales(buildApp(d.db), { umbral_robo_golpe_l: null });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      umbral_robo_golpe_l: number | null;
+      umbral_robo_hormiga_l: number | null;
+    };
+    expect(json.umbral_robo_golpe_l).toBeNull();
+    expect(json.umbral_robo_hormiga_l).toBe(15);
+  });
+
+  it('la authz sigue en dueno|admin: conductor, despachador y visualizador reciben 403', async () => {
+    for (const rol of ['conductor', 'despachador', 'visualizador'] as const) {
+      const d = makeDb();
+      const res = await patchUmbrales(buildApp(d.db, { rol }), {
+        umbral_robo_golpe_l: 8,
+      });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe('admin_required');
+      expect(d.updates).toHaveLength(0);
+    }
   });
 });

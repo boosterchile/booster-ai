@@ -22,7 +22,9 @@ vi.mock('../components/Layout.js', () => ({
 
 const { EmpresaRoute } = await import('./empresa.js');
 
-function makeMe(over: { role?: string; empresa?: boolean } = {}): MeOnboarded {
+function makeMe(
+  over: { role?: string; empresa?: boolean; transportista?: boolean } = {},
+): MeOnboarded {
   return {
     needs_onboarding: false,
     user: { id: 'u1', email: 'jefe@x.cl', full_name: 'Jefa', rut: '11111111-1' },
@@ -35,7 +37,7 @@ function makeMe(over: { role?: string; empresa?: boolean } = {}): MeOnboarded {
           : {
               id: 'e1',
               legal_name: 'Transportes X',
-              is_transportista: true,
+              is_transportista: over.transportista ?? true,
               is_generador_carga: true,
             },
     },
@@ -103,6 +105,55 @@ describe('/app/empresa', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/no se pudo guardar/i);
     expect(sw).not.toBeChecked();
+  });
+
+  it('el transportista guarda los umbrales y no se ofrece menos de 5 L', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      id: 'e1',
+      legal_name: 'Transportes X',
+      carbon_measurement_enabled: false,
+      umbral_robo_golpe_l: null,
+      umbral_robo_hormiga_l: 12,
+    });
+    const patchSpy = vi.spyOn(api, 'patch').mockResolvedValue({
+      ok: true,
+      umbral_robo_golpe_l: 5,
+      umbral_robo_hormiga_l: 12,
+      unchanged: false,
+    });
+
+    render(<EmpresaRoute />);
+    const golpe = await screen.findByLabelText('Umbral de golpe único');
+    const textos = Array.from(golpe.querySelectorAll('option')).map((opcion) => opcion.textContent);
+    expect(textos).toContain('5 L');
+    expect(textos).toContain('20 L');
+    expect(textos).not.toContain('4 L');
+    expect(screen.getByLabelText('Umbral de robo hormiga')).toHaveValue('12');
+
+    fireEvent.change(golpe, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar umbrales' }));
+
+    await waitFor(() => {
+      expect(patchSpy).toHaveBeenCalledWith('/me/empresa/umbrales-combustible', {
+        umbral_robo_golpe_l: 5,
+        umbral_robo_hormiga_l: 12,
+      });
+    });
+    expect(await screen.findByText(/Guardamos los umbrales/)).toBeInTheDocument();
+  });
+
+  it('un generador puro no configura los umbrales de combustible', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe({ transportista: false }) };
+    vi.spyOn(api, 'get').mockResolvedValue({
+      id: 'e1',
+      legal_name: 'Transportes X',
+      carbon_measurement_enabled: false,
+      umbral_robo_golpe_l: null,
+      umbral_robo_hormiga_l: null,
+    });
+    render(<EmpresaRoute />);
+    expect(await screen.findByRole('switch', { name: /Medí la huella/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Umbral de golpe único')).not.toBeInTheDocument();
   });
 
   it('despachador no gestiona el opt-in', async () => {

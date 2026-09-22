@@ -130,3 +130,54 @@ export const empresaCarbonMeasurementPatchSchema = z.object({
   carbon_measurement_enabled: z.boolean(),
 });
 export type EmpresaCarbonMeasurementPatch = z.infer<typeof empresaCarbonMeasurementPatchSchema>;
+
+/**
+ * Golpe único: litros mínimos que el dueño|admin puede fijar para toda la
+ * flota. Por debajo de 5 L el sensor hace ruido y no se ofrece.
+ * Null en la columna = default de dominio (8 L).
+ */
+export const UMBRAL_ROBO_GOLPE_MIN_L = 5;
+export const UMBRAL_ROBO_GOLPE_MAX_L = 20;
+export const UMBRAL_ROBO_GOLPE_DEFAULT_L = 8;
+
+/**
+ * Hormiga: suma de episodios. Rango de configuración 8–30 L. Null = 10 L.
+ */
+export const UMBRAL_ROBO_HORMIGA_MIN_L = 8;
+export const UMBRAL_ROBO_HORMIGA_MAX_L = 30;
+export const UMBRAL_ROBO_HORMIGA_DEFAULT_L = 10;
+
+/** Piso de capacidad de estanque para el golpe único (2 %). */
+export const PORCENTAJE_ESTANQUE_ROBO = 0.02;
+
+const umbralGolpeSchema = z
+  .number()
+  .int()
+  .min(UMBRAL_ROBO_GOLPE_MIN_L)
+  .max(UMBRAL_ROBO_GOLPE_MAX_L)
+  .nullable();
+
+const umbralHormigaSchema = z
+  .number()
+  .int()
+  .min(UMBRAL_ROBO_HORMIGA_MIN_L)
+  .max(UMBRAL_ROBO_HORMIGA_MAX_L)
+  .nullable();
+
+/**
+ * PATCH de los umbrales de aviso de combustible de la empresa activa.
+ * `null` vuelve al default. Al menos un campo. El `empresa_id` no viaja
+ * en el body: sale de la membresía.
+ */
+export const empresaUmbralesRoboCombustiblePatchSchema = z
+  .object({
+    umbral_robo_golpe_l: umbralGolpeSchema.optional(),
+    umbral_robo_hormiga_l: umbralHormigaSchema.optional(),
+  })
+  .refine(
+    (valor) => valor.umbral_robo_golpe_l !== undefined || valor.umbral_robo_hormiga_l !== undefined,
+    { message: 'indicá al menos un umbral' },
+  );
+export type EmpresaUmbralesRoboCombustiblePatch = z.infer<
+  typeof empresaUmbralesRoboCombustiblePatchSchema
+>;

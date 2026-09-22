@@ -6,7 +6,13 @@ Función pura en `apps/api/src/domain/segmentar-trayectos-teltonika.ts` (mismo p
 
 No hay migración: no existe capacidad de estanque y el brief no pide persistir trayectos. El cálculo es on-read.
 
-AC 3 (texto cerrado, 2026-09-21): puntos ordenados por timestamp de dispositivo; ΔL ≤ −U en 5 min con v ≤ 5 km/h; ignición on u off; badge en el historial. U = max(15 L, 3 % del estanque) si hay capacidad, si no 15 L. El buffer sin celular se evalúa al estar ingerido, con la hora del dispositivo. Sin push. No se marca consumo en marcha.
+AC 3 (texto cerrado, 2026-09-21, umbral actualizado en el slice 2): puntos ordenados por timestamp de dispositivo; ΔL ≤ −U en 5 min con v ≤ 5 km/h; ignición on u off; badge en el historial. U = max(U_empresa, 2 % del estanque) si hay capacidad, si no U_empresa. Default 8 L. Config empresa 5–20 L. El buffer sin celular se evalúa al estar ingerido, con la hora del dispositivo. Sin push. No se marca consumo en marcha.
+
+## Slice 2 — golpe configurable + hormiga
+
+La función pura recibe `ConfigRoboCombustible` (`uGolpeL`, `uHormigaL`; null = default). El servicio la lee de `empresas` (migración 0056, columnas nullable). El PATCH vive en `/me/empresa/umbrales-combustible` con el mismo gate dueño|admin que el opt-in de huella. La hormiga no cruza trayectos: cada episodio se cuelga del trayecto con el mismo criterio que el golpe, y dentro de ese trayecto una ventana de 6 h evita sumar un día entero. El pin del golpe no se pisa si también hay hormiga.
+
+Fuera de este slice: alertas in-app y score de confianza.
 
 ## Orden TDD
 

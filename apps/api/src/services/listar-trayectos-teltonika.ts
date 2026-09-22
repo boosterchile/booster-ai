@@ -2,8 +2,9 @@ import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { telemetryPoints, vehicles } from '../db/schema.js';
+import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
 import {
+  type ConfigRoboCombustible,
   type PuntoSegmentacion,
   type TrayectoTeltonika,
   segmentarTrayectosTeltonika,
@@ -56,6 +57,7 @@ export async function listarTrayectosTeltonika(opts: {
 
   const ids = vehiculos.map((v) => v.id);
   const porId = new Map(vehiculos.map((v) => [v.id, v]));
+  const config = await leerUmbrales(opts.db, opts.empresaId);
 
   // rls-allowlist: puntos de esos vehículos, ventana acotada, índice vehiculo+ts.
   const filas = await opts.db
@@ -114,7 +116,7 @@ export async function listarTrayectosTeltonika(opts: {
     );
   }
 
-  const todos = segmentarTrayectosTeltonika(puntos);
+  const todos = segmentarTrayectosTeltonika(puntos, config);
   const inicio = (opts.page - 1) * opts.pageSize;
   const pagina = todos.slice(inicio, inicio + opts.pageSize);
 
@@ -130,6 +132,23 @@ export async function listarTrayectosTeltonika(opts: {
     pageSize: opts.pageSize,
     total: todos.length,
     trayectos: pagina,
+  };
+}
+
+async function leerUmbrales(db: Db, empresaId: string): Promise<ConfigRoboCombustible> {
+  // rls-allowlist: umbrales de la empresa de la membresía activa.
+  const rows = await db
+    .select({
+      umbralRoboGolpeL: empresas.umbralRoboGolpeL,
+      umbralRoboHormigaL: empresas.umbralRoboHormigaL,
+    })
+    .from(empresas)
+    .where(eq(empresas.id, empresaId))
+    .limit(1);
+  const row = rows[0];
+  return {
+    uGolpeL: row?.umbralRoboGolpeL ?? null,
+    uHormigaL: row?.umbralRoboHormigaL ?? null,
   };
 }
 

@@ -393,6 +393,13 @@
       "when": 1780876800019,
       "tag": "0055_fuente_dato_ruta_movil_gps",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1780876800020,
+      "tag": "0056_empresas_umbrales_robo_combustible",
+      "breakpoints": true
     }
   ]
 }
