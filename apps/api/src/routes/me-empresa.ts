@@ -1,5 +1,8 @@
 import type { Logger } from '@booster-ai/logger';
-import { empresaCarbonMeasurementPatchSchema } from '@booster-ai/shared-schemas';
+import {
+  empresaCarbonMeasurementPatchSchema,
+  empresaUmbralesRoboCombustiblePatchSchema,
+} from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -25,6 +28,7 @@ import type { UserContext } from '../services/user-context.js';
 const ROLES_QUE_GESTIONAN = new Set(['dueno', 'admin']);
 
 const huellaOptInCounter = getBusinessCounter('huella_opt_in_cambios_total');
+const umbralesRoboCounter = getBusinessCounter('umbrales_robo_combustible_cambios_total');
 
 export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
@@ -75,6 +79,8 @@ export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
         id: empresas.id,
         legalName: empresas.legalName,
         carbonMeasurementEnabled: empresas.carbonMeasurementEnabled,
+        umbralRoboGolpeL: empresas.umbralRoboGolpeL,
+        umbralRoboHormigaL: empresas.umbralRoboHormigaL,
       })
       .from(empresas)
       .where(eq(empresas.id, auth.empresaId))
@@ -88,6 +94,8 @@ export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
       id: row.id,
       legal_name: row.legalName,
       carbon_measurement_enabled: row.carbonMeasurementEnabled,
+      umbral_robo_golpe_l: row.umbralRoboGolpeL ?? null,
+      umbral_robo_hormiga_l: row.umbralRoboHormigaL ?? null,
     });
   });
 
@@ -178,6 +186,105 @@ export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
       },
     );
   });
+
+  app.patch(
+    '/umbrales-combustible',
+    zValidator('json', empresaUmbralesRoboCombustiblePatchSchema),
+    async (c) => {
+      const auth = requireEmpresaAdmin(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const body = c.req.valid('json');
+
+      return await withBusinessSpan(
+        {
+          name: 'empresa.umbrales_robo_combustible',
+          attributes: { 'booster.empresa_id': auth.empresaId },
+        },
+        async (span) => {
+          // rls-allowlist: scoped a la empresa de la membresía activa del caller.
+          const existingRows = await opts.db
+            .select({
+              id: empresas.id,
+              umbralRoboGolpeL: empresas.umbralRoboGolpeL,
+              umbralRoboHormigaL: empresas.umbralRoboHormigaL,
+            })
+            .from(empresas)
+            .where(eq(empresas.id, auth.empresaId))
+            .limit(1);
+          const existing = existingRows[0];
+          if (!existing) {
+            return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+          }
+
+          const golpe =
+            body.umbral_robo_golpe_l === undefined
+              ? existing.umbralRoboGolpeL
+              : body.umbral_robo_golpe_l;
+          const hormiga =
+            body.umbral_robo_hormiga_l === undefined
+              ? existing.umbralRoboHormigaL
+              : body.umbral_robo_hormiga_l;
+          const unchanged =
+            golpe === existing.umbralRoboGolpeL && hormiga === existing.umbralRoboHormigaL;
+
+          if (!unchanged) {
+            const updated = await opts.db
+              .update(empresas)
+              .set({
+                umbralRoboGolpeL: golpe,
+                umbralRoboHormigaL: hormiga,
+                updatedAt: new Date(),
+              })
+              .where(eq(empresas.id, auth.empresaId))
+              .returning({
+                id: empresas.id,
+                umbralRoboGolpeL: empresas.umbralRoboGolpeL,
+                umbralRoboHormigaL: empresas.umbralRoboHormigaL,
+              });
+            if (!updated[0]) {
+              opts.logger.error(
+                { empresaId: auth.empresaId, golpe, hormiga },
+                'me-empresa: UPDATE umbrales de robo no devolvió fila',
+              );
+              return c.json(
+                { error: 'internal_server_error', code: 'umbrales_robo_update_failed' },
+                500,
+              );
+            }
+          }
+
+          opts.logger.info(
+            {
+              empresaId: auth.empresaId,
+              umbralRoboGolpeL: golpe,
+              umbralRoboHormigaL: hormiga,
+              unchanged,
+              actorUserId: auth.actorUserId,
+            },
+            unchanged
+              ? 'me-empresa: umbrales de robo sin cambio (idempotente)'
+              : 'me-empresa: umbrales de robo actualizados',
+          );
+          umbralesRoboCounter.add(1, { unchanged: String(unchanged) });
+          setResultAttributes(span, {
+            'booster.umbral_robo_golpe_l': golpe ?? undefined,
+            'booster.umbral_robo_hormiga_l': hormiga ?? undefined,
+            'booster.umbrales_robo.unchanged': unchanged,
+          });
+
+          return c.json({
+            ok: true,
+            id: auth.empresaId,
+            umbral_robo_golpe_l: golpe,
+            umbral_robo_hormiga_l: hormiga,
+            unchanged,
+          });
+        },
+      );
+    },
+  );
 
   return app;
 }

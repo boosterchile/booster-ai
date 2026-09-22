@@ -1,6 +1,6 @@
 import { Card, CardBody, CardHeader } from '@booster-ai/ui-components';
 import { Leaf } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -12,6 +12,8 @@ interface EmpresaHuella {
   id: string;
   legal_name: string;
   carbon_measurement_enabled: boolean;
+  umbral_robo_golpe_l: number | null;
+  umbral_robo_hormiga_l: number | null;
 }
 
 /**
@@ -50,7 +52,11 @@ function EmpresaPage({ me }: { me: MeOnboarded }) {
     setError(null);
     try {
       const res = await api.get<EmpresaHuella>('/me/empresa');
-      setHuella(res);
+      setHuella({
+        ...res,
+        umbral_robo_golpe_l: res.umbral_robo_golpe_l ?? null,
+        umbral_robo_hormiga_l: res.umbral_robo_hormiga_l ?? null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -117,6 +123,23 @@ function EmpresaPage({ me }: { me: MeOnboarded }) {
           </p>
         )}
 
+        {canManage && empresa?.is_transportista && !loading && huella ? (
+          <UmbralesCombustible
+            golpeL={huella.umbral_robo_golpe_l}
+            hormigaL={huella.umbral_robo_hormiga_l}
+            onGuardado={(golpe, hormiga) =>
+              setHuella((prev) =>
+                prev
+                  ? { ...prev, umbral_robo_golpe_l: golpe, umbral_robo_hormiga_l: hormiga }
+                  : prev,
+              )
+            }
+          />
+        ) : null}
+        {canManage && empresa?.is_transportista && (loading || !huella) ? (
+          <p className="mt-8 text-neutral-500 text-sm">Cargando umbrales…</p>
+        ) : null}
+
         {canManage && (
           <Card className="mt-8">
             <CardHeader>Huella de carbono</CardHeader>
@@ -171,4 +194,143 @@ function EmpresaPage({ me }: { me: MeOnboarded }) {
       </div>
     </Layout>
   );
+}
+
+function UmbralesCombustible({
+  golpeL,
+  hormigaL,
+  onGuardado,
+}: {
+  golpeL: number | null;
+  hormigaL: number | null;
+  onGuardado: (golpe: number | null, hormiga: number | null) => void;
+}) {
+  const [golpe, setGolpe] = useState(golpeL == null ? '' : String(golpeL));
+  const [hormiga, setHormiga] = useState(hormigaL == null ? '' : String(hormigaL));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    setGolpe(golpeL == null ? '' : String(golpeL));
+    setHormiga(hormigaL == null ? '' : String(hormigaL));
+  }, [golpeL, hormigaL]);
+
+  async function guardar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    const golpeNum = golpe === '' ? null : Number(golpe);
+    const hormigaNum = hormiga === '' ? null : Number(hormiga);
+    try {
+      const res = await api.patch<{
+        umbral_robo_golpe_l: number | null;
+        umbral_robo_hormiga_l: number | null;
+      }>('/me/empresa/umbrales-combustible', {
+        umbral_robo_golpe_l: golpeNum,
+        umbral_robo_hormiga_l: hormigaNum,
+      });
+      onGuardado(res.umbral_robo_golpe_l, res.umbral_robo_hormiga_l);
+      setSuccess('Listo. Guardamos los umbrales para toda la flota.');
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? 'No se pudieron guardar los umbrales. Probá de nuevo.'
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="mt-8">
+      <CardHeader>Avisos de combustible</CardHeader>
+      <CardBody>
+        <form onSubmit={(event) => void guardar(event)}>
+          <fieldset className="flex flex-col gap-4" disabled={saving}>
+            <legend className="font-medium text-neutral-900 text-sm">Umbrales de la empresa</legend>
+            <div>
+              <label htmlFor="umbral-golpe" className="font-medium text-neutral-900 text-sm">
+                Umbral de golpe único
+              </label>
+              <p id="umbral-golpe-help" className="mt-1 text-neutral-600 text-sm">
+                Si el combustible baja de una, con el vehículo quieto, marcamos «posible robo
+                combustible». Menos de 5 L no se ofrece: el sensor hace ruido. Si no elegís nada,
+                usamos 8 L (o el 2 % del estanque, si lo conocemos).
+              </p>
+              <select
+                id="umbral-golpe"
+                name="umbral_robo_golpe_l"
+                className="mt-2 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                value={golpe}
+                aria-describedby="umbral-golpe-help"
+                onChange={(event) => setGolpe(event.target.value)}
+              >
+                <option value="">Predeterminado (8 L)</option>
+                {rango(5, 20).map((litros) => (
+                  <option key={litros} value={String(litros)}>
+                    {litros} L
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="umbral-hormiga" className="font-medium text-neutral-900 text-sm">
+                Umbral de robo hormiga
+              </label>
+              <p id="umbral-hormiga-help" className="mt-1 text-neutral-600 text-sm">
+                Varias bajas chicas, separadas, suman este umbral y marcamos «posible robo hormiga».
+                Es otro aviso, distinto del golpe. Si no elegís nada, usamos 10 L.
+              </p>
+              <select
+                id="umbral-hormiga"
+                name="umbral_robo_hormiga_l"
+                className="mt-2 block rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                value={hormiga}
+                aria-describedby="umbral-hormiga-help"
+                onChange={(event) => setHormiga(event.target.value)}
+              >
+                <option value="">Predeterminado (10 L)</option>
+                {rango(8, 30).map((litros) => (
+                  <option key={litros} value={String(litros)}>
+                    {litros} L
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="inline-flex w-fit rounded-md bg-neutral-900 px-3 py-2 text-sm text-white disabled:opacity-40"
+              disabled={saving}
+            >
+              Guardar umbrales
+            </button>
+          </fieldset>
+          {error ? (
+            <p role="alert" className="mt-4 text-danger-700 text-sm">
+              {error}
+            </p>
+          ) : null}
+          {success ? (
+            <output className="mt-4 block text-sm text-success-700">{success}</output>
+          ) : null}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+function rango(desde: number, hasta: number): number[] {
+  const valores: number[] = [];
+  for (let litros = desde; litros <= hasta; litros++) {
+    valores.push(litros);
+  }
+  return valores;
 }

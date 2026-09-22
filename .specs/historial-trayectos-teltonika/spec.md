@@ -28,7 +28,7 @@ Censo `.specs/telemetria-fmc150/delta.md` (260k filas, 2026-05-03→2026-07-13) 
 | Fuel consumed | **83** | Igual | Contador acumulado. No se usa como nivel. Si llega sin 84 válido → degradación. |
 | Velocidad CAN / GPS IO | **81** / **24** | 81 no en el censo; 24 sí | Respaldo de velocidad solo si `velocidad_kmh` es null. |
 
-No hay columna de capacidad de estanque. `U = 15 L` salvo que el llamador pase litros de estanque (la fórmula `max(15, 3 %)` queda testeada; el servicio de hoy pasa `null`).
+No hay columna de capacidad de estanque. El golpe usa `U = max(U_empresa, 2 %)` si hay capacidad, si no `U_empresa`. Sin config, `U_empresa = 8 L`. La empresa puede persistir `umbral_robo_golpe_l` (5–20) y `umbral_robo_hormiga_l` (8–30); NULL es el default.
 
 ## Salidas
 
@@ -45,7 +45,7 @@ No hay columna de capacidad de estanque. `U = 15 L` salvo que el llamador pase l
     id, vehiculo_id, empresa_id, patente,
     inicio, fin, distancia_km,
     litros_iniciales, litros_finales, km_por_litro,
-    nota_combustible, posible_robo_combustible,
+    nota_combustible, posible_robo_combustible, posible_robo_hormiga,
     event_lat, event_lon,
     sensor_combustible: "ausente" | "presente" | "degradado",
     cta_sensor
@@ -63,8 +63,8 @@ Segmentación, por vehículo, puntos en orden temporal:
 4. 250 = 1/0 solo estira el borde si cae a ≤ 2 min del inicio/fin ya detectado.
 5. Distancia = Σ haversine entre coordenadas válidas (se salta 0,0 y null; no se inventa tramo).
 6. L ini / L fin = primera y última lectura válida de 84 dentro del trayecto. `km/L = distancia_km / max(L_ini − L_fin, ε)` solo si `L_ini − L_fin > 0`. Si no, `km_por_litro = null` y nota en vos.
-7. Badge según el criterio 3 (texto cerrado abajo). El reloj es `timestamp_device`. `timestamp_recibido_en` no entra en la ventana ni en el orden.
-8. Pin del aviso: `event_lat` / `event_lon` se calculan al leer, sobre los mismos puntos. Elección documentada: **el inicio de la ventana de caída**. Dentro de `[desde, hasta]` de esa ventana, el primer punto con lat/lon usable ordenado por timestamp de dispositivo. Si el punto de inicio no tiene fix (null o 0,0), el siguiente dentro de la misma ventana. Si ninguna ventana del badge tiene fix usable, ambos campos van en `null`. Sin badge también van en `null`. No se usa la traza del trayecto ni un punto fuera de la ventana.
+7. Badges según los criterios 3 y 9. El reloj es `timestamp_device`. `timestamp_recibido_en` no entra en la ventana ni en el orden.
+8. Pin del aviso: `event_lat` / `event_lon` se calculan al leer, sobre los mismos puntos. Si hay golpe, el pin es **el inicio de la ventana de esa caída** (se conserva el comportamiento de #706). Si solo hay hormiga, el pin es el inicio de la ventana del primer episodio que entra en la suma. Dentro de `[desde, hasta]` de esa ventana, el primer punto con lat/lon usable ordenado por timestamp de dispositivo. Si el punto de inicio no tiene fix (null o 0,0), el siguiente dentro de la misma ventana. Si ninguna ventana del aviso tiene fix usable, ambos campos van en `null`. Sin aviso también van en `null`. No se usa la traza del trayecto ni un punto fuera de la ventana.
 9. Sensor del vehículo en la ventana: algún 84 válido → `presente`. Algún 83/84/89 sin 84 válido → `degradado` (sin litros, sin badge, nota explícita). Ninguno → `ausente` (trayectos y km sí; sin km/L ni badge; CTA de conectar sensor).
 
 ## Criterios de éxito
@@ -73,13 +73,13 @@ Segmentación, por vehículo, puntos en orden temporal:
 2. Con 84 válido al inicio y al final y ΔL > 0: L ini, L fin y km/L según la fórmula. Si ΔL ≤ 0: km/L «—» y nota.
 3. Given Teltonika points ordered by **device timestamp** (not receive/GPRS time), When within window Y=5 min (device ts) fuel drops ΔL ≤ −U with v≤5 km/h — **ignition on OR off both valid** — Then badge «posible robo combustible» on that trip in historial.
 
-   U = max(15 L, 3% tank capacity) if capacity known, else 15 L.
+   U = max(U_empresa, 2% tank capacity) if capacity known, else U_empresa. Default U_empresa = 8 L. Dueño|admin configura U_empresa en [5, 20] L para toda la flota. Por debajo de 5 L no se ofrece (ruido del sensor). El 2 % sigue de piso: `max(U_empresa, 2 %)` cuando hay capacidad.
 
    Mandatory: offline-tolerant — if device buffered without cellular and later uploads via GPRS, ΔL is detected on ingest using device ts (must not miss due to server delay).
 
    Still out of MVP: live/push alerts. Still in: v≈0 so we don't badge consumption while moving.
 
-   Cumplimiento en código: `listar-trayectos-teltonika.ts` lee y ordena `telemetria_puntos.timestamp_device` (no `timestamp_recibido_en`) y pasa ese instante como `tMs`. `segmentar-trayectos-teltonika.ts` reordena por `tMs`, exige ΔL ≤ −U en ≤ 5 min y velocidad conocida ≤ 5 km/h en todo el intervalo, y no mira la ignición. El badge se calcula al leer el historial sobre los puntos ya ingeridos; un upload GPRS tardío no se pierde por la demora del servidor. No hay push.
+   Cumplimiento en código: `listar-trayectos-teltonika.ts` lee y ordena `telemetria_puntos.timestamp_device` (no `timestamp_recibido_en`) y pasa ese instante como `tMs`. Lee `empresas.umbral_robo_golpe_l` (NULL → 8). `segmentar-trayectos-teltonika.ts` reordena por `tMs`, exige ΔL ≤ −U en ≤ 5 min y velocidad conocida ≤ 5 km/h en todo el intervalo, y no mira la ignición. El badge se calcula al leer el historial sobre los puntos ya ingeridos; un upload GPRS tardío no se pierde por la demora del servidor. No hay push.
 4. Teltonika sin sensor (sin 83/84/89): trayectos y km; sin km/L ni badge; CTA «conectar sensor combustible».
 5. Empresa sin vehículos Teltonika: lista vacía + CTA de vincular. HTTP 200, no error.
 6. Conductor, despachador, visualizador, generador puro: 403 y el ítem no está en el nav.
@@ -88,10 +88,11 @@ Segmentación, por vehículo, puntos en orden temporal:
    Given badge but no usable geo in that window, When opening detail, Then badge still visible + honest copy «sin ubicación» — never invent a pin.
    Given list `/app/trayectos`, When an event has geo, Then user can open map centered on that pin.
 
-   Cumplimiento: mismo cálculo on-read. El pin es el primer fix válido de la ventana, por `tMs`, empezando por el inicio de la caída. La UI en `/app/trayectos?detalle=` muestra el mapa centrado en ese punto, o «sin ubicación» si `event_lat`/`event_lon` son null. La lista enlaza «Ver en el mapa» cuando hay geo y «Ver detalle» cuando el badge no tiene fix.
+   Cumplimiento: mismo cálculo on-read. El pin del golpe es el primer fix válido de la ventana, por `tMs`, empezando por el inicio de la caída. La UI en `/app/trayectos?detalle=` muestra el mapa centrado en ese punto, o «sin ubicación» si `event_lat`/`event_lon` son null. La lista enlaza «Ver en el mapa» cuando hay geo y «Ver detalle» cuando el aviso no tiene fix. El mismo pin sirve para la hormiga cuando no hay golpe.
+9. Hormiga, distinto del golpe. Dentro del trayecto al que se atribuye cada episodio (el mismo criterio que el golpe: solapa el trayecto o es la parada posterior, sin cruzar al trayecto siguiente): ≥2 episodios, cada uno con ΔL ≤ −2 L en ≤5 min y v≤5, fines separados ≥10 min. Se suma |ΔL|. Si la suma ≥ U_hormiga → badge «posible robo hormiga». U_hormiga default 10 L; la empresa lo configura en 8–30 L (`empresas.umbral_robo_hormiga_l`, NULL = 10). En un trayecto largo la suma mira una ventana móvil de 6 h por timestamp de dispositivo. Un solo episodio, aunque esté bajo el U del golpe, no marca hormiga. Una baja de menos de 2 L o con v>5 no es episodio.
+
+   Configuración: `GET /me/empresa` devuelve los dos umbrales (null = default). `PATCH /me/empresa/umbrales-combustible` los persiste. Solo dueño|admin. Zod rechaza fuera de rango. La UI en `/app/empresa` ofrece el rango con un `<select>` (5–20 y 8–30); menos de 5 L no está en la lista. Y sigue en 5 min y no se configura.
 
 ## Fuera de alcance
 
-Alertas push o en vivo, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, overrides de U/Y por empresa, columna nueva de capacidad de estanque. Tampoco precio de combustible ni costo en CLP: el precio fluctúa y el transportista lo calcula con los litros y el km/L. El MVP muestra L, km/L y L/100 km, sin input de precio ni estimación de costo.
-
-Fuera de este slice de pin: bajar el umbral a 8 L, robo hormiga, alertas in-app y score de confianza. U, Y, ignición y la authz dueño|admin transportista no se tocan.
+Alertas push o en vivo, alertas in-app, score de confianza, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, override de Y por empresa, columna nueva de capacidad de estanque. Tampoco precio de combustible ni costo en CLP: el precio fluctúa y el transportista lo calcula con los litros y el km/L. El MVP muestra L, km/L y L/100 km, sin input de precio ni estimación de costo. La authz de `GET /trayectos-teltonika` (dueño|admin transportista) no cambia.

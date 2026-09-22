@@ -155,6 +155,7 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
       km_por_litro: t.kmPorLitro,
       nota_combustible: t.notaCombustible,
       posible_robo_combustible: t.posibleRoboCombustible,
+      posible_robo_hormiga: t.posibleRoboHormiga,
       event_lat: t.eventLat,
       event_lon: t.eventLon,
       sensor_combustible: t.sensorCombustible,

@@ -703,6 +703,43 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
     ).toThrow();
     expect(() => empresa.empresaCarbonMeasurementPatchSchema.parse({})).toThrow();
   });
+
+  it('empresaUmbralesRoboCombustiblePatchSchema acota golpe 5–20 y hormiga 8–30', () => {
+    expect(
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({
+        umbral_robo_golpe_l: 5,
+        umbral_robo_hormiga_l: 8,
+      }),
+    ).toEqual({ umbral_robo_golpe_l: 5, umbral_robo_hormiga_l: 8 });
+    expect(
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({
+        umbral_robo_golpe_l: 20,
+        umbral_robo_hormiga_l: 30,
+      }),
+    ).toEqual({ umbral_robo_golpe_l: 20, umbral_robo_hormiga_l: 30 });
+    expect(
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({
+        umbral_robo_golpe_l: null,
+        umbral_robo_hormiga_l: null,
+      }),
+    ).toEqual({ umbral_robo_golpe_l: null, umbral_robo_hormiga_l: null });
+    expect(() =>
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({ umbral_robo_golpe_l: 4 }),
+    ).toThrow();
+    expect(() =>
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({ umbral_robo_golpe_l: 21 }),
+    ).toThrow();
+    expect(() =>
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({ umbral_robo_golpe_l: 5.5 }),
+    ).toThrow();
+    expect(() =>
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({ umbral_robo_hormiga_l: 7 }),
+    ).toThrow();
+    expect(() =>
+      empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({ umbral_robo_hormiga_l: 31 }),
+    ).toThrow();
+    expect(() => empresa.empresaUmbralesRoboCombustiblePatchSchema.parse({})).toThrow();
+  });
 });
 
 describe('zoneCreateBodySchema — boundary romano del matching', () => {

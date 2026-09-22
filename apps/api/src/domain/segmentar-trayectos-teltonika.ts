@@ -1,4 +1,14 @@
-import { AVL_ID_CAN, interpretCanLvcan } from '@booster-ai/shared-schemas';
+import {
+  AVL_ID_CAN,
+  PORCENTAJE_ESTANQUE_ROBO,
+  UMBRAL_ROBO_GOLPE_DEFAULT_L,
+  UMBRAL_ROBO_GOLPE_MAX_L,
+  UMBRAL_ROBO_GOLPE_MIN_L,
+  UMBRAL_ROBO_HORMIGA_DEFAULT_L,
+  UMBRAL_ROBO_HORMIGA_MAX_L,
+  UMBRAL_ROBO_HORMIGA_MIN_L,
+  interpretCanLvcan,
+} from '@booster-ai/shared-schemas';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
 
@@ -9,16 +19,27 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * El 250 acerca bordes, no abre un trayecto por su cuenta.
  * Los litros salen solo del AVL 84 (×0.1). El 89 (%) y el 83 (acumulado)
  * no se convierten a un nivel.
- * Badge (AC 3): puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
+ * Golpe único: puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
+ * U = max(U_empresa, 2 % del estanque) si hay capacidad; si no, U_empresa.
+ * U_empresa null o fuera de [5, 20] → 8 L.
+ * Hormiga: dentro del trayecto al que se atribuye el episodio (mismo criterio
+ * que el golpe), ≥2 caídas de al menos 2 L, v ≤ 5, fines separados ≥10 min,
+ * suma ≥ U_hormiga (default 10, config 8–30). Si el tramo es largo, la suma
+ * mira una ventana móvil de 6 h por timestamp de dispositivo. No cruza
+ * trayectos. Un solo episodio no es hormiga.
  * `tMs` es la hora del AVL, no la de recepción GPRS.
- * Pin (AC geo): `eventLat`/`eventLon` salen del primer punto con fix válido
- * dentro de la ventana de caída, en orden de `tMs` (se prefiere el inicio).
- * Sin fix usable en esa ventana quedan en null: no se copia la traza del trayecto.
+ * Pin: `eventLat`/`eventLon` salen del primer punto con fix válido dentro de
+ * la ventana de la caída del golpe, en orden de `tMs`. Si no hay golpe y sí
+ * hormiga, el pin es el del primer episodio que califica y tiene fix. Sin fix
+ * usable quedan en null: no se copia la traza del trayecto.
  */
 
-export const UMBRAL_ROBO_BASE_L = 15;
-export const PORCENTAJE_ESTANQUE = 0.03;
+export const UMBRAL_ROBO_BASE_L = UMBRAL_ROBO_GOLPE_DEFAULT_L;
+export const PORCENTAJE_ESTANQUE = PORCENTAJE_ESTANQUE_ROBO;
+export const UMBRAL_EPISODIO_HORMIGA_L = 2;
+export const SEPARACION_EPISODIO_MS = 10 * 60 * 1000;
+export const VENTANA_HORMIGA_MS = 6 * 60 * 60 * 1000;
 export const VENTANA_ROBO_MS = 5 * 60 * 1000;
 export const VELOCIDAD_ROBO_MAX_KMH = 5;
 export const UMBRAL_MOVIMIENTO_KMH = 5;
@@ -37,7 +58,7 @@ export interface PuntoSegmentacion {
   vehiculoId: string;
   empresaId: string;
   patente: string;
-  /** Litros de estanque si se conocen. `null` → U = 15 L. */
+  /** Litros de estanque si se conocen. `null` → U = U_empresa o 8 L. */
   capacidadEstanqueL: number | null;
   tMs: number;
   lat: number | null;
@@ -61,6 +82,8 @@ export interface TrayectoTeltonika {
   kmPorLitro: number | null;
   notaCombustible: string | null;
   posibleRoboCombustible: boolean;
+  /** Varias caídas chicas en el mismo trayecto. Distinto del golpe único. */
+  posibleRoboHormiga: boolean;
   /**
    * Fix del inicio de la ventana de caída (primer punto con lat/lon válida
    * ordenado por timestamp de dispositivo). Null sin badge o sin fix usable.
@@ -82,19 +105,56 @@ interface Racha {
   endIdx: number;
 }
 
-export function umbralRoboLitros(capacidadEstanqueL: number | null): number {
+/** Umbrales de la empresa. `null` = default de dominio. */
+export interface ConfigRoboCombustible {
+  uGolpeL: number | null;
+  uHormigaL: number | null;
+}
+
+export const CONFIG_ROBO_DEFAULT: ConfigRoboCombustible = {
+  uGolpeL: null,
+  uHormigaL: null,
+};
+
+export function umbralRoboLitros(
+  capacidadEstanqueL: number | null,
+  uEmpresaL: number | null = null,
+): number {
+  const base = litrosEnRango(
+    uEmpresaL,
+    UMBRAL_ROBO_GOLPE_MIN_L,
+    UMBRAL_ROBO_GOLPE_MAX_L,
+    UMBRAL_ROBO_BASE_L,
+  );
   if (
     capacidadEstanqueL == null ||
     !Number.isFinite(capacidadEstanqueL) ||
     capacidadEstanqueL <= 0
   ) {
-    return UMBRAL_ROBO_BASE_L;
+    return base;
   }
-  return Math.max(UMBRAL_ROBO_BASE_L, PORCENTAJE_ESTANQUE * capacidadEstanqueL);
+  return Math.max(base, PORCENTAJE_ESTANQUE * capacidadEstanqueL);
+}
+
+export function umbralHormigaLitros(uEmpresaL: number | null): number {
+  return litrosEnRango(
+    uEmpresaL,
+    UMBRAL_ROBO_HORMIGA_MIN_L,
+    UMBRAL_ROBO_HORMIGA_MAX_L,
+    UMBRAL_ROBO_HORMIGA_DEFAULT_L,
+  );
+}
+
+function litrosEnRango(valor: number | null, min: number, max: number, fallback: number): number {
+  if (valor == null || !Number.isFinite(valor) || valor < min || valor > max) {
+    return fallback;
+  }
+  return valor;
 }
 
 export function segmentarTrayectosTeltonika(
   puntos: readonly PuntoSegmentacion[],
+  config: ConfigRoboCombustible = CONFIG_ROBO_DEFAULT,
 ): TrayectoTeltonika[] {
   const porVehiculo = new Map<string, PuntoSegmentacion[]>();
   for (const punto of puntos) {
@@ -109,7 +169,7 @@ export function segmentarTrayectosTeltonika(
   const trayectos: TrayectoTeltonika[] = [];
   for (const delVehiculo of porVehiculo.values()) {
     delVehiculo.sort((a, b) => a.tMs - b.tMs);
-    trayectos.push(...segmentarVehiculo(delVehiculo));
+    trayectos.push(...segmentarVehiculo(delVehiculo, config));
   }
 
   trayectos.sort((a, b) => {
@@ -132,7 +192,10 @@ export function segmentarTrayectosTeltonika(
   return trayectos;
 }
 
-function segmentarVehiculo(puntos: PuntoSegmentacion[]): TrayectoTeltonika[] {
+function segmentarVehiculo(
+  puntos: PuntoSegmentacion[],
+  config: ConfigRoboCombustible,
+): TrayectoTeltonika[] {
   if (puntos.length === 0) {
     return [];
   }
@@ -140,12 +203,18 @@ function segmentarVehiculo(puntos: PuntoSegmentacion[]): TrayectoTeltonika[] {
   const sensor = clasificarSensor(resueltos);
   const rachas = aplicarIo250(resueltos, rachasActivas(resueltos));
   const robos =
-    sensor === 'presente' ? detectarRobos(resueltos, puntos[0]?.capacidadEstanqueL ?? null) : [];
+    sensor === 'presente'
+      ? detectarRobos(resueltos, puntos[0]?.capacidadEstanqueL ?? null, config.uGolpeL)
+      : [];
+  const episodios = sensor === 'presente' ? detectarEpisodiosHormiga(resueltos) : [];
 
   const crudos: Array<{
     inicioMs: number;
     finMs: number;
-    trayecto: Omit<TrayectoTeltonika, 'posibleRoboCombustible' | 'eventLat' | 'eventLon'>;
+    trayecto: Omit<
+      TrayectoTeltonika,
+      'posibleRoboCombustible' | 'posibleRoboHormiga' | 'eventLat' | 'eventLon'
+    >;
   }> = [];
 
   for (const racha of rachas) {
@@ -194,11 +263,41 @@ function segmentarVehiculo(puntos: PuntoSegmentacion[]): TrayectoTeltonika[] {
     }
   }
 
+  const marcadosHormiga = new Set<number>();
+  if (sensor === 'presente' && episodios.length > 0) {
+    const umbralHormiga = umbralHormigaLitros(config.uHormigaL);
+    const porTrayecto = new Map<number, Episodio[]>();
+    for (const episodio of episodios) {
+      for (const indice of indicesDelRobo(crudos, episodio)) {
+        const lista = porTrayecto.get(indice);
+        if (lista) {
+          lista.push(episodio);
+        } else {
+          porTrayecto.set(indice, [episodio]);
+        }
+      }
+    }
+    for (const [indice, delTrayecto] of porTrayecto) {
+      const califica = episodiosEnVentanaHormiga(delTrayecto, umbralHormiga);
+      if (!califica) {
+        continue;
+      }
+      marcadosHormiga.add(indice);
+      if (!geoEvento.has(indice)) {
+        const geo = primerGeoEpisodio(califica);
+        if (geo) {
+          geoEvento.set(indice, geo);
+        }
+      }
+    }
+  }
+
   return crudos.map((c, i) => {
     const geo = geoEvento.get(i);
     return {
       ...c.trayecto,
       posibleRoboCombustible: marcados.has(i),
+      posibleRoboHormiga: marcadosHormiga.has(i),
       eventLat: geo?.lat ?? null,
       eventLon: geo?.lon ?? null,
     };
@@ -463,8 +562,12 @@ interface VentanaRobo {
   eventLon: number | null;
 }
 
-function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | null): VentanaRobo[] {
-  const umbral = umbralRoboLitros(capacidadEstanqueL);
+function detectarRobos(
+  puntos: PuntoResuelto[],
+  capacidadEstanqueL: number | null,
+  uEmpresaL: number | null,
+): VentanaRobo[] {
+  const umbral = umbralRoboLitros(capacidadEstanqueL, uEmpresaL);
   const muestras: Array<{ tMs: number; litros: number }> = [];
   for (const punto of puntos) {
     const litros = litrosDe(punto.io);
@@ -504,6 +607,125 @@ function detectarRobos(puntos: PuntoResuelto[], capacidadEstanqueL: number | nul
     }
   }
   return robos;
+}
+
+interface Episodio extends VentanaRobo {
+  deltaL: number;
+}
+
+/**
+ * Caídas de al menos 2 L en ≤5 min con v ≤ 5. Los fines a menos de 10 min
+ * son el mismo episodio (se queda el ΔL mayor). No es el golpe único.
+ */
+function detectarEpisodiosHormiga(puntos: PuntoResuelto[]): Episodio[] {
+  const muestras: Array<{ tMs: number; litros: number }> = [];
+  for (const punto of puntos) {
+    const litros = litrosDe(punto.io);
+    if (litros != null) {
+      muestras.push({ tMs: punto.tMs, litros });
+    }
+  }
+  const candidatos: Episodio[] = [];
+  for (let j = 1; j < muestras.length; j++) {
+    const fin = muestras[j];
+    if (!fin) {
+      continue;
+    }
+    let mejor: { desdeMs: number; deltaL: number } | null = null;
+    for (let k = j - 1; k >= 0; k--) {
+      const inicio = muestras[k];
+      if (!inicio) {
+        continue;
+      }
+      if (fin.tMs - inicio.tMs > VENTANA_ROBO_MS) {
+        break;
+      }
+      const caida = inicio.litros - fin.litros;
+      if (caida + 1e-9 < UMBRAL_EPISODIO_HORMIGA_L) {
+        continue;
+      }
+      if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+        continue;
+      }
+      if (!mejor || caida > mejor.deltaL) {
+        mejor = { desdeMs: inicio.tMs, deltaL: caida };
+      }
+    }
+    if (!mejor) {
+      continue;
+    }
+    const geo = geoAlInicioDeVentana(puntos, mejor.desdeMs, fin.tMs);
+    candidatos.push({
+      desdeMs: mejor.desdeMs,
+      hastaMs: fin.tMs,
+      deltaL: mejor.deltaL,
+      eventLat: geo?.lat ?? null,
+      eventLon: geo?.lon ?? null,
+    });
+  }
+  return colapsarEpisodios(candidatos);
+}
+
+function colapsarEpisodios(candidatos: Episodio[]): Episodio[] {
+  const ordenados = [...candidatos].sort((a, b) => a.hastaMs - b.hastaMs || b.deltaL - a.deltaL);
+  const kept: Episodio[] = [];
+  for (const candidato of ordenados) {
+    const ultimo = kept[kept.length - 1];
+    if (!ultimo || candidato.hastaMs - ultimo.hastaMs >= SEPARACION_EPISODIO_MS) {
+      kept.push(candidato);
+      continue;
+    }
+    if (candidato.deltaL > ultimo.deltaL) {
+      const previo = kept[kept.length - 2];
+      if (!previo || candidato.hastaMs - previo.hastaMs >= SEPARACION_EPISODIO_MS) {
+        kept[kept.length - 1] = candidato;
+      }
+    }
+  }
+  return kept;
+}
+
+/**
+ * Primera ventana de 6 h (por el fin del episodio) con ≥2 episodios cuya
+ * suma de |ΔL| alcanza el umbral. Los episodios ya están acotados al trayecto.
+ */
+function episodiosEnVentanaHormiga(episodios: Episodio[], umbral: number): Episodio[] | null {
+  const ordenados = [...episodios].sort((a, b) => a.hastaMs - b.hastaMs);
+  for (let i = 0; i < ordenados.length; i++) {
+    const fin = ordenados[i];
+    if (!fin) {
+      continue;
+    }
+    const enVentana: Episodio[] = [];
+    for (let j = i; j >= 0; j--) {
+      const episodio = ordenados[j];
+      if (!episodio) {
+        continue;
+      }
+      if (fin.hastaMs - episodio.hastaMs > VENTANA_HORMIGA_MS) {
+        break;
+      }
+      enVentana.push(episodio);
+    }
+    enVentana.reverse();
+    if (enVentana.length < 2) {
+      continue;
+    }
+    const suma = enVentana.reduce((total, episodio) => total + episodio.deltaL, 0);
+    if (suma + 1e-9 >= umbral) {
+      return enVentana;
+    }
+  }
+  return null;
+}
+
+function primerGeoEpisodio(episodios: readonly Episodio[]): { lat: number; lon: number } | null {
+  for (const episodio of episodios) {
+    if (episodio.eventLat != null && episodio.eventLon != null) {
+      return { lat: episodio.eventLat, lon: episodio.eventLon };
+    }
+  }
+  return null;
 }
 
 /** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */

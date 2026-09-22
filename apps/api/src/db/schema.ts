@@ -578,6 +578,17 @@ export const empresas = pgTable(
      * columna en inglés, divergiendo a propósito de las legadas en español.
      */
     carbonMeasurementEnabled: boolean('carbon_measurement_enabled').notNull().default(false),
+    /**
+     * Umbral de golpe único (L) para el aviso «posible robo combustible».
+     * NULL = default de dominio (8 L). Rango persistible 5–20. El 2 % del
+     * estanque, si se conoce, sigue como piso al evaluar.
+     */
+    umbralRoboGolpeL: integer('umbral_robo_golpe_l'),
+    /**
+     * Umbral de robo hormiga (L). NULL = default de dominio (10 L).
+     * Rango persistible 8–30. Aplica a todos los vehículos de la empresa.
+     */
+    umbralRoboHormigaL: integer('umbral_robo_hormiga_l'),
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id),
@@ -603,6 +614,14 @@ export const empresas = pgTable(
     statusIdx: index('idx_empresas_estado').on(table.status),
     isGeneradorCargaIdx: index('idx_empresas_es_generador_carga').on(table.isGeneradorCarga),
     isTransportistaIdx: index('idx_empresas_es_transportista').on(table.isTransportista),
+    umbralGolpeCheck: check(
+      'empresas_umbral_robo_golpe_l_rango',
+      sql`${table.umbralRoboGolpeL} IS NULL OR (${table.umbralRoboGolpeL} >= 5 AND ${table.umbralRoboGolpeL} <= 20)`,
+    ),
+    umbralHormigaCheck: check(
+      'empresas_umbral_robo_hormiga_l_rango',
+      sql`${table.umbralRoboHormigaL} IS NULL OR (${table.umbralRoboHormigaL} >= 8 AND ${table.umbralRoboHormigaL} <= 30)`,
+    ),
   }),
 );
 

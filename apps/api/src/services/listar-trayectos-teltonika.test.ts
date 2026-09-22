@@ -28,14 +28,24 @@ function cadena(rows: unknown[]) {
   return chain;
 }
 
-function makeDb(vehiculos: unknown[], puntos: unknown[]) {
+function makeDb(
+  vehiculos: unknown[],
+  puntos: unknown[],
+  umbrales: unknown[] = [{ umbralRoboGolpeL: null, umbralRoboHormigaL: null }],
+) {
   let llamadas = 0;
   return {
     llamadas: () => llamadas,
     db: {
       select: vi.fn(() => {
         llamadas += 1;
-        return cadena(llamadas === 1 ? vehiculos : puntos);
+        if (llamadas === 1) {
+          return cadena(vehiculos);
+        }
+        if (llamadas === 2 && vehiculos.length > 0) {
+          return cadena(umbrales);
+        }
+        return cadena(puntos);
       }),
     } as never,
   };
@@ -300,5 +310,73 @@ describe('listarTrayectosTeltonika', () => {
     expect(warn).toHaveBeenCalledOnce();
     expect(lista.trayectos[0]?.litrosIniciales).toBeNull();
     expect(lista.trayectos[0]?.posibleRoboCombustible).toBe(false);
+    expect(lista.trayectos[0]?.posibleRoboHormiga).toBe(false);
+  });
+
+  it('aplica el U_empresa persistido: 5 L marca y el default de 8 L no', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const puntos = [
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 12 * 60_000),
+        latitude: '-33.42',
+        longitude: '-70.62',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 450 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 10 * 60_000),
+        latitude: '-33.42',
+        longitude: '-70.62',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 500 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.451',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 500 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 500 },
+      },
+    ];
+    const vehiculo = [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }];
+    const conDefault = makeDb(vehiculo, puntos);
+    const sinMarca = await listarTrayectosTeltonika({
+      db: conDefault.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(sinMarca.trayectos[0]?.posibleRoboCombustible).toBe(false);
+
+    const conCinco = makeDb(vehiculo, puntos, [{ umbralRoboGolpeL: 5, umbralRoboHormigaL: null }]);
+    const marcado = await listarTrayectosTeltonika({
+      db: conCinco.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(marcado.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      posibleRoboHormiga: false,
+      eventLat: -33.42,
+      eventLon: -70.62,
+    });
   });
 });

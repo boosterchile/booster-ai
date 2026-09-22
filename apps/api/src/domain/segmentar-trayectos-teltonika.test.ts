@@ -8,6 +8,7 @@ import {
   type PuntoSegmentacion,
   UMBRAL_ROBO_BASE_L,
   segmentarTrayectosTeltonika,
+  umbralHormigaLitros,
   umbralRoboLitros,
 } from './segmentar-trayectos-teltonika.js';
 
@@ -29,16 +30,78 @@ function punto(partial: Partial<PuntoSegmentacion> & { tMs: number }): PuntoSegm
   };
 }
 
+function movimiento(tMs: number, litrosRaw: number): PuntoSegmentacion[] {
+  return [
+    punto({ tMs, io: { '239': 1, '240': 1, '84': litrosRaw } }),
+    punto({
+      tMs: tMs + 60_000,
+      lat: -33.451,
+      io: { '239': 1, '240': 1, '84': litrosRaw },
+    }),
+  ];
+}
+
+function caida(
+  tMs: number,
+  litrosIniRaw: number,
+  litrosFinRaw: number,
+  lat: number,
+  lng: number,
+): PuntoSegmentacion[] {
+  return [
+    punto({
+      tMs,
+      lat,
+      lng,
+      speedKmh: 0,
+      io: { '239': 0, '240': 0, '84': litrosIniRaw },
+    }),
+    punto({
+      tMs: tMs + 2 * 60_000,
+      lat,
+      lng,
+      speedKmh: 0,
+      io: { '239': 0, '240': 0, '84': litrosFinRaw },
+    }),
+  ];
+}
+
 describe('umbralRoboLitros', () => {
-  it('sin capacidad conocida usa 15 L', () => {
-    expect(umbralRoboLitros(null)).toBe(UMBRAL_ROBO_BASE_L);
-    expect(umbralRoboLitros(0)).toBe(UMBRAL_ROBO_BASE_L);
-    expect(umbralRoboLitros(Number.NaN)).toBe(UMBRAL_ROBO_BASE_L);
+  it('sin capacidad conocida usa 8 L', () => {
+    expect(UMBRAL_ROBO_BASE_L).toBe(8);
+    expect(umbralRoboLitros(null)).toBe(8);
+    expect(umbralRoboLitros(0)).toBe(8);
+    expect(umbralRoboLitros(Number.NaN)).toBe(8);
   });
 
-  it('con estanque, U = max(15, 3 % de la capacidad)', () => {
-    expect(umbralRoboLitros(400)).toBe(15);
-    expect(umbralRoboLitros(1000)).toBe(30);
+  it('con estanque, U = max(8, 2 % de la capacidad)', () => {
+    expect(umbralRoboLitros(300)).toBe(8);
+    expect(umbralRoboLitros(500)).toBe(10);
+    expect(umbralRoboLitros(1000)).toBe(20);
+  });
+
+  it('U_empresa en [5, 20] aplica a la flota y el 2 % sigue de piso', () => {
+    expect(umbralRoboLitros(null, 5)).toBe(5);
+    expect(umbralRoboLitros(null, 20)).toBe(20);
+    expect(umbralRoboLitros(200, 12)).toBe(12);
+    expect(umbralRoboLitros(1000, 12)).toBe(20);
+    expect(umbralRoboLitros(1000, 5)).toBe(20);
+  });
+
+  it('por debajo de 5 L o por encima de 20 L no se usa: vuelve al default', () => {
+    expect(umbralRoboLitros(null, 4)).toBe(8);
+    expect(umbralRoboLitros(null, 21)).toBe(8);
+    expect(umbralRoboLitros(null, Number.NaN)).toBe(8);
+  });
+});
+
+describe('umbralHormigaLitros', () => {
+  it('default 10 L y la config queda en 8–30', () => {
+    expect(umbralHormigaLitros(null)).toBe(10);
+    expect(umbralHormigaLitros(8)).toBe(8);
+    expect(umbralHormigaLitros(30)).toBe(30);
+    expect(umbralHormigaLitros(7)).toBe(10);
+    expect(umbralHormigaLitros(31)).toBe(10);
   });
 });
 
@@ -361,7 +424,7 @@ describe('segmentarTrayectosTeltonika', () => {
     expect(lento[0]?.posibleRoboCombustible).toBe(false);
   });
 
-  it('con estanque de 1000 L el umbral sube a 30 L', () => {
+  it('con estanque de 1000 L el umbral sube al 2 % (20 L)', () => {
     const base = {
       capacidadEstanqueL: 1000,
     };
@@ -383,7 +446,7 @@ describe('segmentarTrayectosTeltonika', () => {
         ...base,
         tMs: T0 + 12 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 600 },
+        io: { '239': 0, '240': 0, '84': 610 },
       }),
     ]);
     expect(corto[0]?.posibleRoboCombustible).toBe(false);
@@ -400,7 +463,7 @@ describe('segmentarTrayectosTeltonika', () => {
         ...base,
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 1000 },
+        io: { '239': 0, '240': 0, '84': 800 },
       }),
       punto({
         ...base,
@@ -412,7 +475,7 @@ describe('segmentarTrayectosTeltonika', () => {
     expect(suficiente[0]?.posibleRoboCombustible).toBe(true);
   });
 
-  it('una caída de menos de 15 L no marca robo si no hay capacidad', () => {
+  it('una caída de menos de 8 L no marca robo si no hay capacidad', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
       punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
@@ -424,10 +487,28 @@ describe('segmentarTrayectosTeltonika', () => {
       punto({
         tMs: T0 + 12 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 360 },
+        io: { '239': 0, '240': 0, '84': 430 },
       }),
     ]);
     expect(trayectos[0]?.posibleRoboCombustible).toBe(false);
+  });
+
+  it('una caída de 8 L exactos marca el golpe único', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({
+        tMs: T0 + 10 * 60_000,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 500 },
+      }),
+      punto({
+        tMs: T0 + 12 * 60_000,
+        speedKmh: 0,
+        io: { '239': 0, '240': 0, '84': 420 },
+      }),
+    ]);
+    expect(trayectos[0]?.posibleRoboCombustible).toBe(true);
   });
 
   it('sin badge no expone coordenadas del evento', () => {
@@ -581,6 +662,157 @@ describe('segmentarTrayectosTeltonika', () => {
       posibleRoboCombustible: true,
       eventLat: -33.42,
       eventLon: -70.62,
+    });
+  });
+
+  it('dos caídas chicas en el mismo trayecto marcan hormiga y no el golpe', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 24 * 60_000, 940, 900, -33.49, -70.69),
+    ]);
+    expect(trayectos).toHaveLength(1);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: true,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('un solo episodio por debajo del golpe no es hormiga', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
+  it('una baja de menos de 2 L o con el vehículo en marcha no cuenta como episodio', () => {
+    const ruidoLitros = segmentarTrayectosTeltonika(
+      [
+        ...movimiento(T0, 1000),
+        ...caida(T0 + 10 * 60_000, 1000, 930, -33.41, -70.61),
+        ...caida(T0 + 30 * 60_000, 930, 911, -33.42, -70.62),
+      ],
+      { uGolpeL: null, uHormigaL: 8 },
+    );
+    expect(ruidoLitros[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+    });
+
+    const ruidoVelocidad = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      punto({
+        tMs: T0 + 30 * 60_000,
+        speedKmh: 40,
+        io: { '239': 1, '240': 1, '84': 940 },
+      }),
+      punto({
+        tMs: T0 + 32 * 60_000,
+        lat: -33.42,
+        lng: -70.62,
+        speedKmh: 40,
+        io: { '239': 1, '240': 1, '84': 900 },
+      }),
+    ]);
+    expect(ruidoVelocidad[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+    });
+  });
+
+  it('un episodio de 6 L y otro de 2 L suman hormiga si el umbral de la empresa es 8', () => {
+    const trayectos = segmentarTrayectosTeltonika(
+      [
+        ...movimiento(T0, 1000),
+        ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+        ...caida(T0 + 30 * 60_000, 940, 920, -33.42, -70.62),
+      ],
+      { uGolpeL: null, uHormigaL: 8 },
+    );
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: true,
+    });
+  });
+
+  it('fines a menos de 10 min son un solo episodio', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 19 * 60_000, 940, 880, -33.42, -70.62),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+    });
+  });
+
+  it('no junta episodios de dos trayectos distintos', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...movimiento(T0 + 40 * 60_000, 940),
+      ...caida(T0 + 55 * 60_000, 940, 880, -33.43, -70.63),
+    ]);
+    expect(trayectos).toHaveLength(2);
+    expect(trayectos.every((t) => t.posibleRoboHormiga === false)).toBe(true);
+    expect(trayectos.every((t) => t.posibleRoboCombustible === false)).toBe(true);
+  });
+
+  it('en un trayecto largo la ventana de hormiga es de 6 h', () => {
+    const lejos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 10 * 60_000 + 7 * 60 * 60_000, 940, 880, -33.44, -70.64),
+    ]);
+    expect(lejos[0]?.posibleRoboHormiga).toBe(false);
+
+    const dentro = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61),
+      ...caida(T0 + 10 * 60_000 + 5 * 60 * 60_000, 940, 880, -33.44, -70.64),
+    ]);
+    expect(dentro[0]).toMatchObject({
+      posibleRoboHormiga: true,
+      posibleRoboCombustible: false,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('si hay golpe y hormiga, el pin sigue siendo el de la caída del golpe', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...movimiento(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 900, -33.41, -70.61),
+      ...caida(T0 + 30 * 60_000, 900, 800, -33.48, -70.68),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      posibleRoboHormiga: true,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('U_empresa de 5 L marca un golpe de 5 L en todos los puntos de la empresa', () => {
+    const trayectos = segmentarTrayectosTeltonika(
+      [...movimiento(T0, 500), ...caida(T0 + 10 * 60_000, 500, 450, -33.41, -70.61)],
+      { uGolpeL: 5, uHormigaL: null },
+    );
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      posibleRoboHormiga: false,
+      eventLat: -33.41,
+      eventLon: -70.61,
     });
   });
 
