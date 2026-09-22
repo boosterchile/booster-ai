@@ -24,8 +24,37 @@ vi.mock('../components/Layout.js', () => ({
   Layout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+const routerState = vi.hoisted(() => ({
+  search: {} as { detalle?: string; page?: number },
+}));
+
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    to,
+    search,
+  }: {
+    children: ReactNode;
+    to: string;
+    search?: { detalle?: string; page?: number };
+  }) => {
+    const params = new URLSearchParams();
+    if (search?.detalle) {
+      params.set('detalle', search.detalle);
+    }
+    if (search?.page != null) {
+      params.set('page', String(search.page));
+    }
+    const qs = params.toString();
+    return <a href={qs ? `${to}?${qs}` : to}>{children}</a>;
+  },
+  useSearch: () => routerState.search,
+}));
+
+vi.mock('../components/map/EventoCombustibleMap.js', () => ({
+  EventoCombustibleMap: ({ latitude, longitude }: { latitude: number; longitude: number }) => (
+    <div data-testid="mapa-evento" data-lat={String(latitude)} data-lng={String(longitude)} />
+  ),
 }));
 
 const { TrayectosTeltonikaRoute } = await import('./trayectos-teltonika.js');
@@ -64,11 +93,14 @@ function meDe(role: Role, transportista: boolean): MeOnboarded {
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <TrayectosTeltonikaRoute />
-    </QueryClientProvider>,
-  );
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <TrayectosTeltonikaRoute />
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 const listadoConRobo = {
@@ -94,6 +126,8 @@ const listadoConRobo = {
       km_por_litro: 4.25,
       nota_combustible: null,
       posible_robo_combustible: true,
+      event_lat: null,
+      event_lon: null,
       sensor_combustible: 'presente',
       cta_sensor: false,
     },
@@ -102,6 +136,7 @@ const listadoConRobo = {
 
 beforeEach(() => {
   estado.me = meDe('dueno', true);
+  routerState.search = {};
   vi.restoreAllMocks();
 });
 
@@ -113,6 +148,8 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(
       screen.getByText('No tenés permiso para ver el historial de trayectos.'),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ver en el mapa' })).not.toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -214,6 +251,119 @@ describe('TrayectosTeltonikaRoute', () => {
     vi.spyOn(api, 'get').mockRejectedValue(new ApiError(403, 'rol_no_autorizado', null));
     renderPage();
     expect(await screen.findByText(/No tenés permiso/)).toBeInTheDocument();
+  });
+
+  it('con geo, el listado abre el mapa centrado en el pin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 1,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          event_lat: -33.4,
+          event_lon: -70.6,
+        },
+      ],
+    });
+    const view = renderPage();
+    const link = await screen.findByRole('link', { name: 'Ver en el mapa' });
+    expect(link).toHaveAttribute('href', '/app/trayectos?detalle=t-1');
+    routerState.search = { detalle: 't-1' };
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <TrayectosTeltonikaRoute />
+      </QueryClientProvider>,
+    );
+    const mapa = await screen.findByTestId('mapa-evento');
+    expect(mapa).toHaveAttribute('data-lat', '-33.4');
+    expect(mapa).toHaveAttribute('data-lng', '-70.6');
+    expect(screen.getByText('posible robo combustible')).toBeInTheDocument();
+    expect(screen.queryByText('sin ubicación')).not.toBeInTheDocument();
+  });
+
+  it('con badge y sin geo, el detalle dice sin ubicación y no pone pin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ ...listadoConRobo, total: 1 });
+    routerState.search = { detalle: 't-1' };
+    renderPage();
+    expect(await screen.findByText('posible robo combustible')).toBeInTheDocument();
+    expect(screen.getByText('sin ubicación')).toBeInTheDocument();
+    expect(screen.getByText(/no marcamos un pin/)).toBeInTheDocument();
+    expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Volver al historial' })).toHaveAttribute(
+      'href',
+      '/app/trayectos',
+    );
+  });
+
+  it('abre el detalle en la página que vino en la URL', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 1,
+      page: 2,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          event_lat: -33.4,
+          event_lon: -70.6,
+        },
+      ],
+    });
+    routerState.search = { detalle: 't-1', page: 2 };
+    renderPage();
+    expect(await screen.findByTestId('mapa-evento')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20');
+    expect(screen.getByRole('link', { name: 'Volver al historial' })).toHaveAttribute(
+      'href',
+      '/app/trayectos?page=2',
+    );
+  });
+
+  it('un detalle sin aviso no muestra pin ni «sin ubicación»', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 1,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          posible_robo_combustible: false,
+        },
+      ],
+    });
+    routerState.search = { detalle: 't-1' };
+    renderPage();
+    expect(
+      await screen.findByText(/no tiene un aviso de posible robo de combustible/),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
+    expect(screen.queryByText('sin ubicación')).not.toBeInTheDocument();
+  });
+
+  it('un detalle que no está en la página no inventa un pin', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ ...listadoConRobo, total: 1 });
+    routerState.search = { detalle: 'no-esta' };
+    renderPage();
+    expect(await screen.findByText(/No encontramos ese trayecto/)).toBeInTheDocument();
+    expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
+    expect(screen.queryByText('sin ubicación')).not.toBeInTheDocument();
+  });
+
+  it('en la página 2 el enlace al mapa conserva la página', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          event_lat: -33.4,
+          event_lon: -70.6,
+        },
+      ],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Siguiente' }));
+    expect(await screen.findByRole('link', { name: 'Ver en el mapa' })).toHaveAttribute(
+      'href',
+      '/app/trayectos?detalle=t-1&page=2',
+    );
   });
 
   it('pagina hacia los trayectos más viejos', async () => {

@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { EventoCombustibleMap } from '../components/map/EventoCombustibleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -21,6 +22,8 @@ interface Trayecto {
   km_por_litro: number | null;
   nota_combustible: string | null;
   posible_robo_combustible: boolean;
+  event_lat: number | null;
+  event_lon: number | null;
   sensor_combustible: 'ausente' | 'presente' | 'degradado';
   cta_sensor: boolean;
 }
@@ -63,7 +66,10 @@ function puedeVer(me: MeOnboarded): boolean {
 }
 
 export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
-  const [page, setPage] = useState(1);
+  const search = (useSearch({ strict: false }) ?? {}) as { detalle?: string; page?: number };
+  const [page, setPage] = useState(() =>
+    search.page != null && search.page >= 1 ? search.page : 1,
+  );
   const permitido = puedeVer(me);
   const q = useQuery({
     queryKey: ['trayectos-teltonika', page],
@@ -90,7 +96,14 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
       ) : null}
       {permitido && q.isError ? <ErrorCarga error={q.error} /> : null}
       {permitido && q.data ? (
-        <ListadoTrayectos data={q.data} page={page} onPage={(siguiente) => setPage(siguiente)} />
+        search.detalle ? (
+          <DetalleTrayecto
+            trayecto={q.data.trayectos.find((t) => t.id === search.detalle) ?? null}
+            page={page}
+          />
+        ) : (
+          <ListadoTrayectos data={q.data} page={page} onPage={(siguiente) => setPage(siguiente)} />
+        )
       ) : null}
     </Layout>
   );
@@ -204,9 +217,18 @@ function ListadoTrayectos({
                   <td className="py-3 pr-3">
                     <div className="font-medium text-neutral-900">{t.patente}</div>
                     {t.posible_robo_combustible ? (
-                      <span className="mt-1 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
-                        posible robo combustible
-                      </span>
+                      <div className="mt-1 flex flex-col items-start gap-1">
+                        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
+                          posible robo combustible
+                        </span>
+                        <Link
+                          to="/app/trayectos"
+                          search={searchDetalle(t.id, page)}
+                          className="text-amber-950 text-xs underline"
+                        >
+                          {tieneGeo(t) ? 'Ver en el mapa' : 'Ver detalle'}
+                        </Link>
+                      </div>
                     ) : null}
                     {t.cta_sensor && !data.cta_sensor ? (
                       <p className="mt-1 text-neutral-600 text-xs">
@@ -251,6 +273,82 @@ function ListadoTrayectos({
       ) : null}
     </div>
   );
+}
+
+function DetalleTrayecto({ trayecto, page }: { trayecto: Trayecto | null; page: number }) {
+  return (
+    <section className="mt-8 max-w-3xl" aria-label="Detalle del trayecto">
+      <Link
+        to="/app/trayectos"
+        search={searchLista(page)}
+        className="text-neutral-700 text-sm underline"
+      >
+        Volver al historial
+      </Link>
+      {trayecto == null ? (
+        <p className="mt-4 text-neutral-700">
+          No encontramos ese trayecto en esta página del historial.
+        </p>
+      ) : (
+        <DetalleEncontrado trayecto={trayecto} />
+      )}
+    </section>
+  );
+}
+
+function DetalleEncontrado({ trayecto }: { trayecto: Trayecto }) {
+  const lat = trayecto.event_lat;
+  const lon = trayecto.event_lon;
+  const geo = lat != null && lon != null;
+  return (
+    <div className="mt-4">
+      <h2 className="font-semibold text-neutral-900 text-xl">{trayecto.patente}</h2>
+      <p className="mt-1 text-neutral-600 text-sm">
+        {fmtFecha(trayecto.inicio)} – {fmtFecha(trayecto.fin)}
+      </p>
+      {trayecto.posible_robo_combustible ? (
+        <span className="mt-3 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
+          posible robo combustible
+        </span>
+      ) : (
+        <p className="mt-3 text-neutral-700">
+          Este trayecto no tiene un aviso de posible robo de combustible.
+        </p>
+      )}
+      {trayecto.posible_robo_combustible && lat != null && lon != null ? (
+        <div className="mt-4">
+          <EventoCombustibleMap latitude={lat} longitude={lon} />
+        </div>
+      ) : null}
+      {trayecto.posible_robo_combustible && !geo ? (
+        <div className="mt-4 max-w-xl rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+          <p className="font-medium text-neutral-900">sin ubicación</p>
+          <p className="mt-1 text-neutral-600 text-sm">
+            En la ventana de la caída no hay un punto del Teltonika con coordenadas, así que no
+            marcamos un pin.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function tieneGeo(trayecto: Trayecto): boolean {
+  return trayecto.event_lat != null && trayecto.event_lon != null;
+}
+
+function searchDetalle(id: string, page: number): { detalle: string; page?: number } {
+  if (page > 1) {
+    return { detalle: id, page };
+  }
+  return { detalle: id };
+}
+
+function searchLista(page: number): { page?: number } {
+  if (page > 1) {
+    return { page };
+  }
+  return {};
 }
 
 function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {

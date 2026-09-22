@@ -170,11 +170,34 @@ const flotaRoute = createRoute({
 const trayectosTeltonikaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/trayectos',
+  validateSearch: searchTrayectos,
   component: lazyRouteComponent(
     () => import('./routes/trayectos-teltonika.js'),
     'TrayectosTeltonikaRoute',
   ),
 });
+
+function searchTrayectos(search: Record<string, unknown>): {
+  detalle?: string;
+  page?: number;
+} {
+  const out: { detalle?: string; page?: number } = {};
+  const detalle = search.detalle;
+  if (typeof detalle === 'string' && detalle.length > 0 && detalle.length <= 180) {
+    out.detalle = detalle;
+  }
+  const pageRaw = search.page;
+  const pageNum =
+    typeof pageRaw === 'number'
+      ? pageRaw
+      : typeof pageRaw === 'string'
+        ? Number(pageRaw)
+        : Number.NaN;
+  if (Number.isInteger(pageNum) && pageNum >= 1 && pageNum <= 10_000) {
+    out.page = pageNum;
+  }
+  return out;
+}
 
 // D8 — CRUD de conductores del carrier. Solo accesible desde la interfaz
 // transportista (no es self-signup driver). Roles dueno/admin/despachador
