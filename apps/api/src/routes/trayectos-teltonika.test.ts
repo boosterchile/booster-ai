@@ -206,7 +206,7 @@ describe('GET /trayectos-teltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0.getTime() + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },
@@ -269,7 +269,7 @@ describe('GET /trayectos-teltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0.getTime() + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },

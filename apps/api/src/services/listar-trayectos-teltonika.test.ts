@@ -125,7 +125,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 800 },
@@ -186,7 +186,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },
@@ -238,7 +238,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },
@@ -339,7 +339,7 @@ describe('listarTrayectosTeltonika', () => {
       {
         vehicleId: VEHICULO,
         timestampDevice: new Date(t0 + 60_000),
-        latitude: '-33.451',
+        latitude: '-33.47',
         longitude: '-70.66',
         speedKmh: 40,
         ioData: { '239': 1, '240': 1, '84': 500 },
@@ -470,6 +470,112 @@ describe('listarTrayectosTeltonika', () => {
     expect(sinDato.total).toBe(1);
     expect(sinDato.trayectos.map((t) => t.patente)).toEqual(['KZBB26']);
     expect(sinDato.trayectos[0]?.fuenteCombustible).toBeNull();
+  });
+
+  it('no emite el aviso si el trayecto es corto o el AVL 89 está bajo 14 %', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const vehiculo = [{ id: VEHICULO, plate: 'JLKT54', empresaId: EMPRESA }];
+    const corto = makeDb(vehiculo, [
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 12 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 600, '89': 30 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 10 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 800, '89': 40 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.451',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 800, '89': 40 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 800, '89': 40 },
+      },
+    ]);
+    const sinBadgeCorto = await listarTrayectosTeltonika({
+      db: corto.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(sinBadgeCorto.trayectos[0]?.distanciaKm).toBeLessThan(1);
+    expect(sinBadgeCorto.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+
+    const tanqueBajo = makeDb(vehiculo, [
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 12 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 1600, '89': 8 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 10 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 2000, '89': 10 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.47',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 2000, '89': 10 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 2000, '89': 10 },
+      },
+    ]);
+    const sinBadgeBajo = await listarTrayectosTeltonika({
+      db: tanqueBajo.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(sinBadgeBajo.trayectos[0]?.distanciaKm).toBeGreaterThanOrEqual(1);
+    expect(sinBadgeBajo.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
   });
 
   it('sin vehículos devuelve los totales en cero y el resumen vacío', async () => {

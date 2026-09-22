@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
+  DISTANCIA_MINIMA_AVISO_ROBO_KM,
   GAP_CORTE_MS,
   KM_MINIMOS_KM_POR_LITRO,
   LITROS_MINIMOS_KM_POR_LITRO,
+  LITROS_MINIMOS_NIVEL_AVISO_ROBO,
+  NIVEL_PCT_MINIMO_AVISO_ROBO,
   NOTA_COBERTURA_PARCIAL,
   NOTA_NIVEL_SUBIO,
   NOTA_SIN_BAJA,
@@ -39,7 +42,7 @@ function movimiento(tMs: number, litrosRaw: number): PuntoSegmentacion[] {
     punto({ tMs, io: { '239': 1, '240': 1, '84': litrosRaw } }),
     punto({
       tMs: tMs + 60_000,
-      lat: -33.451,
+      lat: -33.46,
       io: { '239': 1, '240': 1, '84': litrosRaw },
     }),
   ];
@@ -51,6 +54,7 @@ function caida(
   litrosFinRaw: number,
   lat: number,
   lng: number,
+  extraIo: Record<string, number> = {},
 ): PuntoSegmentacion[] {
   return [
     punto({
@@ -58,14 +62,38 @@ function caida(
       lat,
       lng,
       speedKmh: 0,
-      io: { '239': 0, '240': 0, '84': litrosIniRaw },
+      io: { '239': 0, '240': 0, '84': litrosIniRaw, ...extraIo },
     }),
     punto({
       tMs: tMs + 2 * 60_000,
       lat,
       lng,
       speedKmh: 0,
-      io: { '239': 0, '240': 0, '84': litrosFinRaw },
+      io: { '239': 0, '240': 0, '84': litrosFinRaw, ...extraIo },
+    }),
+  ];
+}
+
+/** ~2,2 km: por encima del piso de 1 km del aviso. */
+function viajeLargo(tMs: number, litrosRaw: number): PuntoSegmentacion[] {
+  return [
+    punto({ tMs, io: { '239': 1, '240': 1, '84': litrosRaw } }),
+    punto({
+      tMs: tMs + 60_000,
+      lat: -33.47,
+      io: { '239': 1, '240': 1, '84': litrosRaw },
+    }),
+  ];
+}
+
+/** ~0,11 km: maniobra o cola, por debajo del piso de 1 km. */
+function viajeCorto(tMs: number, litrosRaw: number): PuntoSegmentacion[] {
+  return [
+    punto({ tMs, io: { '239': 1, '240': 1, '84': litrosRaw } }),
+    punto({
+      tMs: tMs + 60_000,
+      lat: -33.451,
+      io: { '239': 1, '240': 1, '84': litrosRaw },
     }),
   ];
 }
@@ -377,7 +405,7 @@ describe('segmentarTrayectosTeltonika', () => {
   it('marca robo con ignición encendida si el vehículo está detenido', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 200 } }),
       punto({ tMs: T0 + 90_000, speedKmh: 5, io: { '239': 1, '240': 0, '84': 800 } }),
       punto({ tMs: T0 + 120_000, speedKmh: 5, io: { '239': 1, '240': 0, '84': 500 } }),
     ]);
@@ -417,7 +445,7 @@ describe('segmentarTrayectosTeltonika', () => {
 
     const lento = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 200 } }),
       punto({
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
@@ -433,51 +461,52 @@ describe('segmentarTrayectosTeltonika', () => {
   });
 
   it('con estanque de 1000 L el umbral sube al 2 % (20 L)', () => {
+    // 500 L en 1000 L es 50 %: por encima del piso del 14 %, así el caso aísla el 2 %.
     const base = {
       capacidadEstanqueL: 1000,
     };
     const corto = segmentarTrayectosTeltonika([
-      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 5000 } }),
       punto({
         ...base,
         tMs: T0 + 30_000,
-        lat: -33.451,
-        io: { '239': 1, '240': 1, '84': 200 },
+        lat: -33.46,
+        io: { '239': 1, '240': 1, '84': 5000 },
       }),
       punto({
         ...base,
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 800 },
+        io: { '239': 0, '240': 0, '84': 5000 },
       }),
       punto({
         ...base,
         tMs: T0 + 12 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 610 },
+        io: { '239': 0, '240': 0, '84': 4810 },
       }),
     ]);
     expect(corto[0]?.posibleRoboCombustible).toBe(false);
 
     const suficiente = segmentarTrayectosTeltonika([
-      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 5000 } }),
       punto({
         ...base,
         tMs: T0 + 30_000,
-        lat: -33.451,
-        io: { '239': 1, '240': 1, '84': 200 },
+        lat: -33.46,
+        io: { '239': 1, '240': 1, '84': 5000 },
       }),
       punto({
         ...base,
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 800 },
+        io: { '239': 0, '240': 0, '84': 5000 },
       }),
       punto({
         ...base,
         tMs: T0 + 12 * 60_000,
         speedKmh: 0,
-        io: { '239': 0, '240': 0, '84': 600 },
+        io: { '239': 0, '240': 0, '84': 4800 },
       }),
     ]);
     expect(suficiente[0]?.posibleRoboCombustible).toBe(true);
@@ -486,7 +515,7 @@ describe('segmentarTrayectosTeltonika', () => {
   it('una caída de menos de 8 L no marca robo si no hay capacidad', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 200 } }),
       punto({
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
@@ -504,7 +533,7 @@ describe('segmentarTrayectosTeltonika', () => {
   it('una caída de 8 L exactos marca el golpe único', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 200 } }),
-      punto({ tMs: T0 + 30_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 200 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 200 } }),
       punto({
         tMs: T0 + 10 * 60_000,
         speedKmh: 0,
@@ -550,7 +579,7 @@ describe('segmentarTrayectosTeltonika', () => {
       }),
       punto({
         tMs: T0 + 60_000,
-        lat: -33.451,
+        lat: -33.46,
         lng: -70.66,
         io: { '239': 1, '240': 1, '84': 790 },
       }),
@@ -565,7 +594,7 @@ describe('segmentarTrayectosTeltonika', () => {
   it('si el inicio de la ventana no tiene fix, usa el primer punto válido dentro de ella', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 800 } }),
-      punto({ tMs: T0 + 60_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 790 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 790 } }),
       punto({
         tMs: T0 + 10 * 60_000,
         lat: null,
@@ -600,7 +629,7 @@ describe('segmentarTrayectosTeltonika', () => {
       punto({ tMs: T0, lat: -33.45, lng: -70.66, io: { '239': 1, '240': 1, '84': 800 } }),
       punto({
         tMs: T0 + 60_000,
-        lat: -33.451,
+        lat: -33.46,
         lng: -70.66,
         io: { '239': 1, '240': 1, '84': 790 },
       }),
@@ -636,7 +665,7 @@ describe('segmentarTrayectosTeltonika', () => {
   it('si la primera ventana no tiene fix, el pin sale de la siguiente caída que sí lo tiene', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 800 } }),
-      punto({ tMs: T0 + 60_000, lat: -33.451, io: { '239': 1, '240': 1, '84': 790 } }),
+      punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 1, '240': 1, '84': 790 } }),
       punto({
         tMs: T0 + 10 * 60_000,
         lat: null,
@@ -1016,6 +1045,182 @@ describe('fuentes de combustible CAN (slice 2026-09-22)', () => {
       punto({ tMs: T0 + 60_000, lat: -33.46, io: { '239': 0, '240': 1, '85': 99_999 } }),
     ]);
     expect(rpmInvalido).toHaveLength(0);
+  });
+});
+
+describe('credibilidad del aviso de robo', () => {
+  const pisoRaw = LITROS_MINIMOS_NIVEL_AVISO_ROBO * 10;
+
+  it('un golpe a mitad de estanque, en un trayecto de al menos 1 km y detenido, marca y conserva el pin', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 800, -30.3078, -71.5117, { '89': 50 }),
+    ]);
+    expect(trayectos[0]?.distanciaKm).toBeGreaterThanOrEqual(DISTANCIA_MINIMA_AVISO_ROBO_KM);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      posibleRoboHormiga: false,
+      eventLat: -30.3078,
+      eventLon: -71.5117,
+    });
+  });
+
+  it('un trayecto de menos de 1 km no emite el badge ni el pin aunque la caída supere U', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeCorto(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 800, -30.3078, -71.5117, { '89': 50 }),
+    ]);
+    expect(trayectos[0]?.distanciaKm).toBeLessThan(DISTANCIA_MINIMA_AVISO_ROBO_KM);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
+  it('sin capacidad, un AVL 89 bajo 14 % no emite el aviso aunque los litros superen el piso absoluto', () => {
+    const bajo = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 800),
+      ...caida(T0 + 10 * 60_000, 800, 600, -33.41, -70.61, {
+        '89': NIVEL_PCT_MINIMO_AVISO_ROBO - 1,
+      }),
+    ]);
+    expect(bajo[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      eventLat: null,
+      eventLon: null,
+    });
+
+    const enElPiso = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 800),
+      ...caida(T0 + 10 * 60_000, 800, 600, -33.41, -70.61, {
+        '89': NIVEL_PCT_MINIMO_AVISO_ROBO,
+      }),
+    ]);
+    expect(enElPiso[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('sin capacidad ni AVL 89, un nivel bajo el piso absoluto no emite el aviso', () => {
+    const bajo = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, pisoRaw - 1),
+      ...caida(T0 + 10 * 60_000, pisoRaw - 1, pisoRaw - 1 - 80, -33.41, -70.61),
+    ]);
+    expect(bajo[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      eventLat: null,
+      eventLon: null,
+    });
+
+    const enElPiso = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, pisoRaw),
+      ...caida(T0 + 10 * 60_000, pisoRaw, pisoRaw - 80, -33.42, -70.62),
+    ]);
+    expect(enElPiso[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.42,
+      eventLon: -70.62,
+    });
+  });
+
+  it('con capacidad conocida manda el 14 % del estanque, no el AVL 89 ni el piso absoluto', () => {
+    const base = { capacidadEstanqueL: 1000 };
+    const bajo = segmentarTrayectosTeltonika([
+      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 1000, '89': 50 } }),
+      punto({
+        ...base,
+        tMs: T0 + 60_000,
+        lat: -33.47,
+        io: { '239': 1, '240': 1, '84': 1000, '89': 50 },
+      }),
+      ...caida(T0 + 10 * 60_000, 1000, 700, -33.41, -70.61, { '89': 50 }).map((p) => ({
+        ...p,
+        ...base,
+      })),
+    ]);
+    expect(bajo[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      eventLat: null,
+      eventLon: null,
+    });
+
+    const enElPiso = segmentarTrayectosTeltonika([
+      punto({ ...base, tMs: T0, io: { '239': 1, '240': 1, '84': 1400, '89': 10 } }),
+      punto({
+        ...base,
+        tMs: T0 + 60_000,
+        lat: -33.47,
+        io: { '239': 1, '240': 1, '84': 1400, '89': 10 },
+      }),
+      ...caida(T0 + 10 * 60_000, 1400, 1200, -33.42, -70.62, { '89': 10 }).map((p) => ({
+        ...p,
+        ...base,
+      })),
+    ]);
+    expect(enElPiso[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.42,
+      eventLon: -70.62,
+    });
+  });
+
+  it('sin capacidad, un AVL 89 a mitad de estanque habilita el aviso aunque los litros queden bajo el piso absoluto', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 200),
+      ...caida(T0 + 10 * 60_000, 200, 120, -33.41, -70.61, { '89': 50 }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      eventLat: -33.41,
+      eventLon: -70.61,
+    });
+  });
+
+  it('una caída con el estanque bajo no pisa el pin de un golpe creíble posterior', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 2000),
+      ...caida(T0 + 10 * 60_000, 200, 100, -33.41, -70.61),
+      ...caida(T0 + 30 * 60_000, 1000, 800, -33.48, -70.68),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: true,
+      posibleRoboHormiga: false,
+      eventLat: -33.48,
+      eventLon: -70.68,
+    });
+  });
+
+  it('la hormiga en un trayecto de menos de 1 km no se emite', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeCorto(T0, 1000),
+      ...caida(T0 + 10 * 60_000, 1000, 940, -33.41, -70.61, { '89': 50 }),
+      ...caida(T0 + 30 * 60_000, 940, 880, -33.42, -70.62, { '89': 47 }),
+    ]);
+    expect(trayectos[0]?.distanciaKm).toBeLessThan(DISTANCIA_MINIMA_AVISO_ROBO_KM);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
+  it('episodios de hormiga con el AVL 89 bajo 14 % no se suman', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      ...viajeLargo(T0, 800),
+      ...caida(T0 + 10 * 60_000, 800, 740, -33.41, -70.61, { '89': 10 }),
+      ...caida(T0 + 30 * 60_000, 740, 680, -33.42, -70.62, { '89': 9 }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
   });
 });
 
