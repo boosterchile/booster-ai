@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-09-22 · `main` = `cf76ea8` (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 2 PRs detrás de `main`**: #706 y #707, con la migración 0056, sin desplegar. **1 PR abierto**: #708 (Routes API). Horas en UTC; Santiago = UTC−3.
+**Última actualización**: 2026-09-22 · `main` = `cf76ea8` (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 2 PRs detrás de `main`**: #706 y #707, con la migración 0056, sin desplegar. **PRs abiertos**: #708 (Routes API) y #709 (este handoff). Horas en UTC; Santiago = UTC−3.
 **Anterior**: 2026-07-25, archivado en [`2026-09-22-snapshot-current-2026-07.md`](2026-09-22-snapshot-current-2026-07.md). Dos afirmaciones de ese CURRENT ya no valen (se marcan con «corrige»).
 **Método**: solo lectura. GCP por REST con token ADC y `X-Goog-User-Project: booster-ai-494222`; BD con `scripts/db/agent-query.sh` (solo SELECT, sin `-y`). Lo que no se verificó se dice explícitamente.
 **Documento vivo**: el detalle histórico está en los snapshots fechados (ver §Snapshots archivados). Contrato de trabajo: `CLAUDE.md`. Slots de trabajo: `docs/frentes-vivos.md`.
@@ -52,7 +52,7 @@
 - **Slot 1 — huella medida** (criterio en frentes-vivos.md:24: 2 viajes reales, uno con FMC150 y otro sin él, con `*Actual` poblado o con degradación explícita).
   - Con Teltonika: BKAXIK tiene emisiones reales 2,691 y certificado.
   - Sin Teltonika: los 4 del 21-09 tienen `*Actual` = null y certificado `secundario_modeled`, **pero** (a) la degradación la causa el bug de Routes que corrige #708 (no mergeado ni desplegado), (b) el generador es de prueba y (c) no hay métrica data-quality en Monitoring.
-  - **Falta**: merge y deploy de #708, la decisión §6, la decisión ADR-077 estricta vs híbrida (`plan.md:207`) y la decisión sobre la métrica OTel.
+  - **Falta**: merge y release de #708 (§6 ya decidida), la decisión ADR-077 estricta vs híbrida (`plan.md:207`) y la decisión sobre la métrica OTel.
 - **Slot 2 — retiro del subsistema demo**.
   - El grep del criterio literal (frentes-vivos.md:64) da **52 archivos**, de los que 3 son migraciones históricas en `apps/api/drizzle` y 8 tienen «imperson» en la ruta. La línea 66 todavía dice «40».
   - `demo.boosterchile.com` sigue vivo (A `34.36.187.195`, HTTPS 200).
@@ -65,7 +65,7 @@
 
 ## PRs abiertos
 
-**#708** `fix/routes-api-body-invalido` (abierto 2026-09-22T18:44:13Z). Es el único PR abierto (`gh pr list --state open`).
+**#708** `fix/routes-api-body-invalido` (abierto 2026-09-22T18:44:13Z). Al redactar este documento era el único PR abierto además de #709 (`gh pr list --state open`).
 - **Estado** (2026-09-22): MERGEABLE/CLEAN, 25 checks en verde y 0 en rojo. Tiene 6 commits sobre main: spec, dos rojos (`e93548a`, `23d72c7`) con sus fixes, y docs. El required «E2E conductor (Auth emulator + API local)» pasó; el job «E2E conductor Playwright» quedó SKIPPED por el filtro de paths.
 - **Defectos que corrige** (spec §1-§5, `git show 4f239e8:.specs/fix-routes-api-body-invalido/spec.md`):
   - (A) Una coordenada viaja como `address`.
