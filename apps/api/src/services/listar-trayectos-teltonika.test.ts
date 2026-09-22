@@ -96,9 +96,12 @@ describe('listarTrayectosTeltonika', () => {
       page: 1,
       pageSize: 1,
       maxPuntos: 3,
+      combustible: 'sin_dato',
     });
     expect(lista.truncado).toBe(true);
     expect(lista.total).toBe(1);
+    expect(lista.totalSinCombustible).toBe(1);
+    expect(lista.totalConCombustible).toBe(0);
     expect(lista.trayectos).toHaveLength(1);
     expect(lista.trayectos[0]?.patente).toBe('ABCD12');
     expect(lista.trayectos[0]?.empresaId).toBe(EMPRESA);
@@ -306,6 +309,7 @@ describe('listarTrayectosTeltonika', () => {
       hasta,
       page: 1,
       pageSize: 20,
+      combustible: 'sin_dato',
     });
     expect(warn).toHaveBeenCalledOnce();
     expect(lista.trayectos[0]?.litrosIniciales).toBeNull();
@@ -377,6 +381,114 @@ describe('listarTrayectosTeltonika', () => {
       posibleRoboHormiga: false,
       eventLat: -33.42,
       eventLon: -70.62,
+    });
+  });
+
+  it('separa los trayectos con dato de combustible de los sin dato y resume cada vehículo', async () => {
+    const OTRO = '33333333-3333-4333-8333-333333333333';
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const puntos = [
+      {
+        vehicleId: OTRO,
+        timestampDevice: new Date(t0 + 3 * 60_000),
+        latitude: '-33.50',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1 },
+      },
+      {
+        vehicleId: OTRO,
+        timestampDevice: new Date(t0 + 2 * 60_000),
+        latitude: '-33.49',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.56',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 0, '240': 1, '85': 1200, '83': 581_570, '89': 58 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 0, '240': 1, '85': 1100, '83': 581_520, '89': 60 },
+      },
+    ];
+    const vehiculos = [
+      { id: VEHICULO, plate: 'RCPC20', empresaId: EMPRESA },
+      { id: OTRO, plate: 'KZBB26', empresaId: EMPRESA },
+    ];
+
+    const conDato = await listarTrayectosTeltonika({
+      db: makeDb(vehiculos, puntos).db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(conDato).toMatchObject({
+      combustible: 'con_dato',
+      total: 1,
+      totalConCombustible: 1,
+      totalSinCombustible: 1,
+      ctaSensor: false,
+      vehiculos: [
+        { vehiculoId: OTRO, patente: 'KZBB26', combustible: 'sin_sensor' },
+        { vehiculoId: VEHICULO, patente: 'RCPC20', combustible: 'consumo_can' },
+      ],
+    });
+    expect(conDato.trayectos).toHaveLength(1);
+    expect(conDato.trayectos[0]).toMatchObject({
+      patente: 'RCPC20',
+      fuenteCombustible: 'consumo_can',
+      litrosConsumidos: 5,
+      nivelPctInicial: 60,
+      nivelPctFinal: 58,
+    });
+    expect(conDato.trayectos[0]?.kmPorLitro).toBeGreaterThan(0);
+
+    const sinDato = await listarTrayectosTeltonika({
+      db: makeDb(vehiculos, puntos).db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+    });
+    expect(sinDato.combustible).toBe('sin_dato');
+    expect(sinDato.total).toBe(1);
+    expect(sinDato.trayectos.map((t) => t.patente)).toEqual(['KZBB26']);
+    expect(sinDato.trayectos[0]?.fuenteCombustible).toBeNull();
+  });
+
+  it('sin vehículos devuelve los totales en cero y el resumen vacío', async () => {
+    const lista = await listarTrayectosTeltonika({
+      db: makeDb([], []).db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+    });
+    expect(lista).toMatchObject({
+      combustible: 'sin_dato',
+      total: 0,
+      totalConCombustible: 0,
+      totalSinCombustible: 0,
+      vehiculos: [],
     });
   });
 });

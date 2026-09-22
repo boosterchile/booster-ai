@@ -1,5 +1,8 @@
 import {
   AVL_ID_CAN,
+  type AvlIdCan,
+  type CanLvcanTelemetry,
+  type MinimalIoEntry,
   PORCENTAJE_ESTANQUE_ROBO,
   UMBRAL_ROBO_GOLPE_DEFAULT_L,
   UMBRAL_ROBO_GOLPE_MAX_L,
@@ -15,10 +18,16 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
 /**
  * Segmenta trayectos de flota a partir de pings Teltonika ya leídos.
  * Pura: sin I/O. La ignición primaria es el AVL 239 (presente en el censo
- * de `io_data`); el DIN1 (AVL 1) solo entra si ese punto no trae 239.
+ * de `io_data`). RPM CAN (85) > 0 también cuenta como encendido: hay camiones
+ * con el 239 siempre en 0 porque el cable de ignición no está conectado.
+ * El DIN1 (AVL 1) solo entra si ese punto no trae 239 ni RPM > 0.
  * El 250 acerca bordes, no abre un trayecto por su cuenta.
- * Los litros salen solo del AVL 84 (×0.1). El 89 (%) y el 83 (acumulado)
- * no se convierten a un nivel.
+ * Fuente de combustible por trayecto: nivel en litros (84, ×0.1); si no hay,
+ * litros consumidos por el Δ del contador 83 (×0.1); si no, nivel en % (89).
+ * El 89 no se convierte a litros y el 83 no es un nivel. Los litros y el km/L
+ * se calculan sobre el tramo entre la primera y la última lectura, solo si
+ * ese tramo cubre ≥ 90 % de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
+ * El aviso de robo solo existe con el 84: un robo no pasa por el contador 83.
  * Golpe único: puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
  * U = max(U_empresa, 2 % del estanque) si hay capacidad; si no, U_empresa.
@@ -46,13 +55,33 @@ export const UMBRAL_MOVIMIENTO_KMH = 5;
 export const GAP_CORTE_MS = 15 * 60 * 1000;
 export const VENTANA_IO250_MS = 2 * 60 * 1000;
 export const EPSILON_L = 1e-6;
+/** Fracción mínima de la distancia del trayecto que tiene que cubrir la lectura. */
+export const COBERTURA_MINIMA = 0.9;
+/**
+ * Muestra mínima para un km/L: el 83 viene en pasos de 0,5 L y el 84 oscila
+ * con el oleaje. Con menos litros o menos km el número no es confiable.
+ */
+export const LITROS_MINIMOS_KM_POR_LITRO = 5;
+export const KM_MINIMOS_KM_POR_LITRO = 10;
 
 export const NOTA_SIN_BAJA = 'El nivel no bajó en este trayecto, así que no calculamos km/L.';
 export const NOTA_NIVEL_SUBIO = 'El nivel subió en este trayecto. No calculamos km/L.';
 export const NOTA_SIN_LECTURA =
   'No hay una lectura válida de litros en este trayecto. No calculamos km/L.';
+export const NOTA_COBERTURA_PARCIAL =
+  'El camión no informó combustible durante todo el trayecto. No calculamos km/L.';
 
 export type SensorCombustible = 'ausente' | 'presente' | 'degradado';
+/** De dónde salen los datos de combustible de un trayecto. */
+export type FuenteCombustible = 'nivel_litros' | 'consumo_can' | 'nivel_porcentaje';
+/** Mejor fuente que informó un vehículo en la ventana. */
+export type CombustibleVehiculo = FuenteCombustible | 'sin_sensor';
+
+export interface ResumenCombustibleVehiculo {
+  vehiculoId: string;
+  patente: string;
+  combustible: CombustibleVehiculo;
+}
 
 export interface PuntoSegmentacion {
   vehiculoId: string;
@@ -80,6 +109,13 @@ export interface TrayectoTeltonika {
   litrosIniciales: number | null;
   litrosFinales: number | null;
   kmPorLitro: number | null;
+  /** `null` = el trayecto no trae ninguna lectura de combustible usable. */
+  fuenteCombustible: FuenteCombustible | null;
+  /** ΔL del 84 o Δ del contador 83 en el tramo leído. Null sin baja, sin cobertura o bajo 5 L / 10 km. */
+  litrosConsumidos: number | null;
+  /** AVL 89 (%) al inicio y al final del trayecto, si viene. */
+  nivelPctInicial: number | null;
+  nivelPctFinal: number | null;
   notaCombustible: string | null;
   posibleRoboCombustible: boolean;
   /** Varias caídas chicas en el mismo trayecto. Distinto del golpe único. */
@@ -192,6 +228,49 @@ export function segmentarTrayectosTeltonika(
   return trayectos;
 }
 
+const RANGO_COMBUSTIBLE: Record<CombustibleVehiculo, number> = {
+  sin_sensor: 0,
+  nivel_porcentaje: 1,
+  consumo_can: 2,
+  nivel_litros: 3,
+};
+
+/**
+ * Mejor fuente de combustible que informó cada vehículo en la ventana
+ * (84 > 83 > 89 > ninguna). Un IO fuera de rango no cuenta. Orden por patente.
+ */
+export function resumirCombustibleVehiculos(
+  puntos: readonly PuntoSegmentacion[],
+): ResumenCombustibleVehiculo[] {
+  const porVehiculo = new Map<string, ResumenCombustibleVehiculo>();
+  for (const punto of puntos) {
+    const actual = porVehiculo.get(punto.vehiculoId) ?? {
+      vehiculoId: punto.vehiculoId,
+      patente: punto.patente,
+      combustible: 'sin_sensor' as const,
+    };
+    const delPunto = combustibleDelPunto(punto.io);
+    if (RANGO_COMBUSTIBLE[delPunto] > RANGO_COMBUSTIBLE[actual.combustible]) {
+      actual.combustible = delPunto;
+    }
+    porVehiculo.set(punto.vehiculoId, actual);
+  }
+  return [...porVehiculo.values()].sort((a, b) => a.patente.localeCompare(b.patente, 'es'));
+}
+
+function combustibleDelPunto(io: Record<string, number>): CombustibleVehiculo {
+  if (litrosDe(io) != null) {
+    return 'nivel_litros';
+  }
+  if (consumoAcumuladoDe(io) != null) {
+    return 'consumo_can';
+  }
+  if (nivelPctDe(io) != null) {
+    return 'nivel_porcentaje';
+  }
+  return 'sin_sensor';
+}
+
 function segmentarVehiculo(
   puntos: PuntoSegmentacion[],
   config: ConfigRoboCombustible,
@@ -227,8 +306,6 @@ function segmentarVehiculo(
     if (!primero || !ultimo) {
       continue;
     }
-    const litros = litrosDelTrayecto(slice);
-    const combustible = resolverCombustible(sensor, litros, distanciaDe(slice));
     crudos.push({
       inicioMs: primero.tMs,
       finMs: ultimo.tMs,
@@ -239,11 +316,7 @@ function segmentarVehiculo(
         patente: primero.patente,
         inicio: new Date(primero.tMs).toISOString(),
         fin: new Date(ultimo.tMs).toISOString(),
-        distanciaKm: combustible.distanciaKm,
-        litrosIniciales: combustible.litrosIniciales,
-        litrosFinales: combustible.litrosFinales,
-        kmPorLitro: combustible.kmPorLitro,
-        notaCombustible: combustible.notaCombustible,
+        ...combustibleDelTrayecto(sensor, slice),
         sensorCombustible: sensor,
         ctaSensor: sensor === 'ausente',
       },
@@ -325,8 +398,17 @@ function resolverPuntos(puntos: PuntoSegmentacion[]): PuntoResuelto[] {
 }
 
 function leerIgnicion(io: Record<string, number>): boolean | null {
+  const ignicion239 = Object.hasOwn(io, '239') ? leerBinario(io, '239') : null;
+  if (ignicion239 === true) {
+    return true;
+  }
+  // El motor gira aunque el 239 diga 0: el cable de ignición no está leyendo.
+  const rpm = rpmDe(io);
+  if (rpm != null && rpm > 0) {
+    return true;
+  }
   if (Object.hasOwn(io, '239')) {
-    return leerBinario(io, '239');
+    return ignicion239;
   }
   if (Object.hasOwn(io, '1')) {
     return leerBinario(io, '1');
@@ -353,14 +435,7 @@ function resolverVelocidad(punto: PuntoSegmentacion): number | null {
   if (io24 != null && Number.isFinite(io24) && io24 >= 0 && io24 <= 350) {
     return io24;
   }
-  const io81 = punto.io['81'];
-  if (io81 === undefined) {
-    return null;
-  }
-  const { telemetry } = interpretCanLvcan([
-    { id: AVL_ID_CAN.CAN_VEHICLE_SPEED, value: io81, byteSize: 2 },
-  ]);
-  return telemetry.vehicleSpeedKmh ?? null;
+  return leerCan(punto.io, AVL_ID_CAN.CAN_VEHICLE_SPEED).vehicleSpeedKmh ?? null;
 }
 
 function enMovimiento(movimiento: boolean | null, velocidad: number | null): boolean {
@@ -460,36 +535,59 @@ function clasificarSensor(puntos: PuntoResuelto[]): SensorCombustible {
 }
 
 function litrosDe(io: Record<string, number>): number | null {
-  const raw = io['84'];
+  return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_L).fuelLevelL ?? null;
+}
+
+function consumoAcumuladoDe(io: Record<string, number>): number | null {
+  return leerCan(io, AVL_ID_CAN.CAN_FUEL_CONSUMED_L).fuelConsumedL ?? null;
+}
+
+function nivelPctDe(io: Record<string, number>): number | null {
+  return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_PCT).fuelLevelPct ?? null;
+}
+
+function rpmDe(io: Record<string, number>): number | null {
+  return leerCan(io, AVL_ID_CAN.CAN_ENGINE_RPM).engineRpm ?? null;
+}
+
+const BYTES_CAN: Record<AvlIdCan, NonNullable<MinimalIoEntry['byteSize']>> = {
+  [AVL_ID_CAN.CAN_VEHICLE_SPEED]: 2,
+  [AVL_ID_CAN.CAN_FUEL_CONSUMED_L]: 4,
+  [AVL_ID_CAN.CAN_FUEL_LEVEL_L]: 2,
+  [AVL_ID_CAN.CAN_ENGINE_RPM]: 2,
+  [AVL_ID_CAN.CAN_TOTAL_MILEAGE]: 4,
+  [AVL_ID_CAN.CAN_FUEL_LEVEL_PCT]: 1,
+};
+
+/** Un IO CAN validado por el catálogo `can-lvcan`. Ausente o fuera de rango → vacío. */
+function leerCan(io: Record<string, number>, id: AvlIdCan): CanLvcanTelemetry {
+  const raw = io[String(id)];
   if (raw === undefined || !Number.isFinite(raw)) {
-    return null;
+    return {};
   }
-  const { telemetry } = interpretCanLvcan([
-    { id: AVL_ID_CAN.CAN_FUEL_LEVEL_L, value: raw, byteSize: 2 },
-  ]);
-  return telemetry.fuelLevelL ?? null;
+  return interpretCanLvcan([{ id, value: raw, byteSize: BYTES_CAN[id] }]).telemetry;
 }
 
-function litrosDelTrayecto(puntos: PuntoResuelto[]): { ini: number; fin: number } | null {
-  let ini: number | null = null;
-  let fin: number | null = null;
-  for (const punto of puntos) {
-    const litros = litrosDe(punto.io);
-    if (litros == null) {
-      continue;
-    }
-    if (ini == null) {
-      ini = litros;
-    }
-    fin = litros;
-  }
-  if (ini == null || fin == null) {
-    return null;
-  }
-  return { ini, fin };
+interface Lectura {
+  idx: number;
+  valor: number;
 }
 
-function distanciaDe(puntos: PuntoResuelto[]): number {
+function lecturasDe(
+  puntos: readonly PuntoResuelto[],
+  leer: (io: Record<string, number>) => number | null,
+): Lectura[] {
+  const lecturas: Lectura[] = [];
+  for (let idx = 0; idx < puntos.length; idx++) {
+    const valor = leer(puntos[idx]?.io ?? {});
+    if (valor != null) {
+      lecturas.push({ idx, valor });
+    }
+  }
+  return lecturas;
+}
+
+function distanciaDe(puntos: readonly PuntoResuelto[]): number {
   let km = 0;
   let previo: { lat: number; lng: number } | null = null;
   for (const punto of puntos) {
@@ -504,54 +602,108 @@ function distanciaDe(puntos: PuntoResuelto[]): number {
   return km;
 }
 
-function resolverCombustible(
+type CombustibleTrayecto = Pick<
+  TrayectoTeltonika,
+  | 'distanciaKm'
+  | 'litrosIniciales'
+  | 'litrosFinales'
+  | 'kmPorLitro'
+  | 'fuenteCombustible'
+  | 'litrosConsumidos'
+  | 'nivelPctInicial'
+  | 'nivelPctFinal'
+  | 'notaCombustible'
+>;
+
+/**
+ * Fuente por trayecto: 84 (nivel en L) > Δ del 83 (litros consumidos, ≥ 2
+ * lecturas) > 89 (nivel en %). Sin ninguna, el trayecto queda sin dato.
+ */
+function combustibleDelTrayecto(
   sensor: SensorCombustible,
-  litros: { ini: number; fin: number } | null,
-  distanciaKm: number,
-): {
-  distanciaKm: number;
-  litrosIniciales: number | null;
-  litrosFinales: number | null;
-  kmPorLitro: number | null;
-  notaCombustible: string | null;
-} {
-  const distancia = redondear(distanciaKm, 3);
-  if (sensor === 'ausente') {
+  puntos: PuntoResuelto[],
+): CombustibleTrayecto {
+  const distanciaKm = distanciaDe(puntos);
+  const porcentaje = lecturasDe(puntos, nivelPctDe);
+  const base: CombustibleTrayecto = {
+    distanciaKm: redondear(distanciaKm, 3),
+    litrosIniciales: null,
+    litrosFinales: null,
+    kmPorLitro: null,
+    fuenteCombustible: null,
+    litrosConsumidos: null,
+    nivelPctInicial: porcentaje[0]?.valor ?? null,
+    nivelPctFinal: porcentaje[porcentaje.length - 1]?.valor ?? null,
+    notaCombustible: null,
+  };
+
+  const nivel = lecturasDe(puntos, litrosDe);
+  const primerNivel = nivel[0];
+  const ultimoNivel = nivel[nivel.length - 1];
+  if (primerNivel && ultimoNivel) {
+    const conNivel: CombustibleTrayecto = {
+      ...base,
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: redondear(primerNivel.valor, 1),
+      litrosFinales: redondear(ultimoNivel.valor, 1),
+    };
+    const delta = primerNivel.valor - ultimoNivel.valor;
+    if (!(delta > 0)) {
+      return { ...conNivel, notaCombustible: delta < 0 ? NOTA_NIVEL_SUBIO : NOTA_SIN_BAJA };
+    }
     return {
-      distanciaKm: distancia,
-      litrosIniciales: null,
-      litrosFinales: null,
-      kmPorLitro: null,
-      notaCombustible: null,
+      ...conNivel,
+      ...consumoCubierto(puntos, primerNivel.idx, ultimoNivel.idx, delta, distanciaKm),
     };
   }
-  if (sensor === 'degradado' || !litros) {
+
+  const consumo = lecturasDe(puntos, consumoAcumuladoDe);
+  const primerConsumo = consumo[0];
+  const ultimoConsumo = consumo[consumo.length - 1];
+  if (consumo.length >= 2 && primerConsumo && ultimoConsumo) {
     return {
-      distanciaKm: distancia,
-      litrosIniciales: null,
-      litrosFinales: null,
-      kmPorLitro: null,
-      notaCombustible: NOTA_SIN_LECTURA,
+      ...base,
+      fuenteCombustible: 'consumo_can',
+      ...consumoCubierto(
+        puntos,
+        primerConsumo.idx,
+        ultimoConsumo.idx,
+        ultimoConsumo.valor - primerConsumo.valor,
+        distanciaKm,
+      ),
     };
   }
-  const delta = litros.ini - litros.fin;
-  const litrosIniciales = redondear(litros.ini, 1);
-  const litrosFinales = redondear(litros.fin, 1);
-  if (delta > 0) {
-    return {
-      distanciaKm: distancia,
-      litrosIniciales,
-      litrosFinales,
-      kmPorLitro: redondear(distanciaKm / Math.max(delta, EPSILON_L), 2),
-      notaCombustible: null,
-    };
+
+  if (porcentaje.length > 0) {
+    return { ...base, fuenteCombustible: 'nivel_porcentaje' };
+  }
+  return { ...base, notaCombustible: sensor === 'ausente' ? null : NOTA_SIN_LECTURA };
+}
+
+/**
+ * Litros y km/L sobre el tramo leído, con la distancia de ese mismo tramo.
+ * Si cubre menos del 90 % del trayecto, el CAN se cortó en el camino: no se
+ * calcula, para no inflar el km/L con kilómetros sin litros. Bajo 5 L o 10 km
+ * tampoco, y sin nota por fila: la UI lo explica una vez.
+ */
+function consumoCubierto(
+  puntos: PuntoResuelto[],
+  desdeIdx: number,
+  hastaIdx: number,
+  litros: number,
+  distanciaTotalKm: number,
+): Pick<TrayectoTeltonika, 'litrosConsumidos' | 'kmPorLitro' | 'notaCombustible'> {
+  const cubiertaKm = distanciaDe(puntos.slice(desdeIdx, hastaIdx + 1));
+  if (cubiertaKm + 1e-9 < COBERTURA_MINIMA * distanciaTotalKm) {
+    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: NOTA_COBERTURA_PARCIAL };
+  }
+  if (litros + 1e-9 < LITROS_MINIMOS_KM_POR_LITRO || cubiertaKm + 1e-9 < KM_MINIMOS_KM_POR_LITRO) {
+    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: null };
   }
   return {
-    distanciaKm: distancia,
-    litrosIniciales,
-    litrosFinales,
-    kmPorLitro: null,
-    notaCombustible: delta < 0 ? NOTA_NIVEL_SUBIO : NOTA_SIN_BAJA,
+    litrosConsumidos: redondear(litros, 1),
+    kmPorLitro: redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2),
+    notaCombustible: null,
   };
 }
 

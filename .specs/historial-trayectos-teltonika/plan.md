@@ -42,3 +42,13 @@ La ruta serializa `event_lat`/`event_lon`. La página `/app/trayectos` acepta `?
 ## Observabilidad
 
 Span `trayectos_teltonika.listar` y contador `trayectos_teltonika_consultas_total`. Log estructurado con `empresa_id`, totales y `truncado`. Sin `console.*`. Sin PII en atributos del span.
+
+## Slice — fuentes CAN y vista limpia (2026-09-22)
+
+Sin migración. Criterios 10–13 de la spec.
+
+- Dominio (`segmentar-trayectos-teltonika.ts`): `combustibleDelTrayecto` elige la fuente (84 > Δ83 > 89), aplica cobertura ≥ 90 % y mínimo 5 L / 10 km sobre el tramo leído. `leerIgnicion` acepta RPM 85 > 0. `resumirCombustibleVehiculos` da la mejor fuente por vehículo. Todo IO CAN pasa por `interpretCanLvcan` (rango del catálogo).
+- Servicio: `combustible` = `con_dato` | `sin_dato`, pagina solo ese filtro y devuelve los dos totales y el resumen por vehículo.
+- Ruta: query `combustible` validado con Zod; serializa los campos nuevos. Span con `booster.trayectos.con_combustible` / `sin_combustible`.
+- Web: pestañas «Con combustible» / «Sin dato de combustible», columnas Nivel ini/fin (L o %), Litros y Consumo. Un mensaje por causa (leyenda por fuente, sin sensor, sin lectura, tramo corto). Sin pestañas si la API no trae los totales (canary con API vieja).
+- TDD: rojo exhibido en dominio, servicio, ruta y web antes de implementar. Validación extra: la función corrida sobre la semana real de Van Oosterwyk (export read-only a scratchpad, no versionado).

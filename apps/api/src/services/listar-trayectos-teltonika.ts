@@ -6,7 +6,9 @@ import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
 import {
   type ConfigRoboCombustible,
   type PuntoSegmentacion,
+  type ResumenCombustibleVehiculo,
   type TrayectoTeltonika,
+  resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
 } from '../domain/segmentar-trayectos-teltonika.js';
 
@@ -14,6 +16,12 @@ import {
 export const MAX_PUNTOS_TRAYECTO = 20_000;
 
 const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
+
+/**
+ * `con_dato`: trayectos con alguna fuente de combustible (84, 83 o 89).
+ * `sin_dato`: el resto. Se pagina solo el filtro pedido.
+ */
+export type FiltroCombustible = 'con_dato' | 'sin_dato';
 
 export interface ListadoTrayectosTeltonika {
   empresaId: string;
@@ -23,9 +31,15 @@ export interface ListadoTrayectosTeltonika {
   truncado: boolean;
   cta: 'vincular_teltonika' | null;
   ctaSensor: boolean;
+  combustible: FiltroCombustible;
   page: number;
   pageSize: number;
+  /** Trayectos del filtro pedido. */
   total: number;
+  totalConCombustible: number;
+  totalSinCombustible: number;
+  /** Mejor fuente de combustible de cada vehículo con puntos en la ventana. */
+  vehiculos: ResumenCombustibleVehiculo[];
   trayectos: TrayectoTeltonika[];
 }
 
@@ -37,9 +51,11 @@ export async function listarTrayectosTeltonika(opts: {
   hasta: Date;
   page: number;
   pageSize: number;
+  combustible?: FiltroCombustible;
   maxPuntos?: number;
 }): Promise<ListadoTrayectosTeltonika> {
   const maxPuntos = opts.maxPuntos ?? MAX_PUNTOS_TRAYECTO;
+  const combustible = opts.combustible ?? 'con_dato';
 
   // rls-allowlist: solo vehículos de la empresa de la membresía activa.
   const vehiculos = await opts.db
@@ -52,7 +68,7 @@ export async function listarTrayectosTeltonika(opts: {
     .where(and(eq(vehicles.empresaId, opts.empresaId), isNotNull(vehicles.teltonikaImei)));
 
   if (vehiculos.length === 0) {
-    return vacio(opts, 0, false);
+    return vacio({ ...opts, combustible }, 0, false);
   }
 
   const ids = vehiculos.map((v) => v.id);
@@ -117,8 +133,11 @@ export async function listarTrayectosTeltonika(opts: {
   }
 
   const todos = segmentarTrayectosTeltonika(puntos, config);
+  const conDato = todos.filter((t) => t.fuenteCombustible != null);
+  const sinDato = todos.filter((t) => t.fuenteCombustible == null);
+  const filtrados = combustible === 'con_dato' ? conDato : sinDato;
   const inicio = (opts.page - 1) * opts.pageSize;
-  const pagina = todos.slice(inicio, inicio + opts.pageSize);
+  const pagina = filtrados.slice(inicio, inicio + opts.pageSize);
 
   return {
     empresaId: opts.empresaId,
@@ -128,9 +147,13 @@ export async function listarTrayectosTeltonika(opts: {
     truncado,
     cta: null,
     ctaSensor: todos.length > 0 && todos.every((t) => t.ctaSensor),
+    combustible,
     page: opts.page,
     pageSize: opts.pageSize,
-    total: todos.length,
+    total: filtrados.length,
+    totalConCombustible: conDato.length,
+    totalSinCombustible: sinDato.length,
+    vehiculos: resumirCombustibleVehiculos(puntos),
     trayectos: pagina,
   };
 }
@@ -153,7 +176,14 @@ async function leerUmbrales(db: Db, empresaId: string): Promise<ConfigRoboCombus
 }
 
 function vacio(
-  opts: { empresaId: string; desde: Date; hasta: Date; page: number; pageSize: number },
+  opts: {
+    empresaId: string;
+    desde: Date;
+    hasta: Date;
+    page: number;
+    pageSize: number;
+    combustible: FiltroCombustible;
+  },
   vehiculosTeltonika: number,
   ctaSensor: boolean,
 ): ListadoTrayectosTeltonika {
@@ -165,9 +195,13 @@ function vacio(
     truncado: false,
     cta: vehiculosTeltonika === 0 ? 'vincular_teltonika' : null,
     ctaSensor,
+    combustible: opts.combustible,
     page: opts.page,
     pageSize: opts.pageSize,
     total: 0,
+    totalConCombustible: 0,
+    totalSinCombustible: 0,
+    vehiculos: [],
     trayectos: [],
   };
 }
