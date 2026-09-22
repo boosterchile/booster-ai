@@ -12,7 +12,7 @@ import type { UserContext } from '../services/user-context.js';
 /**
  * Historial de trayectos Teltonika de la flota del transportista.
  *
- *   GET /trayectos-teltonika
+ *   GET /trayectos-teltonika?combustible=con_dato|sin_dato
  *
  * Solo dueño|admin de una empresa transportista. El `empresa_id` sale de la
  * membresía activa. No está atado a una carga de Booster.
@@ -27,6 +27,7 @@ const querySchema = z.object({
   hasta: z.string().datetime({ offset: true }).optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional(),
+  combustible: z.enum(['con_dato', 'sin_dato']).optional(),
 });
 
 const consultas = getBusinessCounter('trayectos_teltonika_consultas_total');
@@ -97,12 +98,16 @@ export function createTrayectosTeltonikaRoutes(opts: { db: Db; logger: Logger })
           hasta,
           page,
           pageSize,
+          combustible: query.combustible ?? 'con_dato',
         });
 
         opts.logger.info(
           {
             empresaId: auth.empresaId,
             total: lista.total,
+            totalConCombustible: lista.totalConCombustible,
+            totalSinCombustible: lista.totalSinCombustible,
+            combustible: lista.combustible,
             truncado: lista.truncado,
             vehiculosTeltonika: lista.vehiculosTeltonika,
             page,
@@ -120,6 +125,8 @@ export function createTrayectosTeltonikaRoutes(opts: { db: Db; logger: Logger })
           'booster.trayectos.total': lista.total,
           'booster.trayectos.truncado': lista.truncado,
           'booster.trayectos.vehiculos': lista.vehiculosTeltonika,
+          'booster.trayectos.con_combustible': lista.totalConCombustible,
+          'booster.trayectos.sin_combustible': lista.totalSinCombustible,
         });
 
         return c.json(aJson(lista));
@@ -139,9 +146,17 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
     truncado: lista.truncado,
     cta: lista.cta,
     cta_sensor: lista.ctaSensor,
+    combustible: lista.combustible,
     page: lista.page,
     page_size: lista.pageSize,
     total: lista.total,
+    total_con_combustible: lista.totalConCombustible,
+    total_sin_combustible: lista.totalSinCombustible,
+    vehiculos: lista.vehiculos.map((v) => ({
+      vehiculo_id: v.vehiculoId,
+      patente: v.patente,
+      combustible: v.combustible,
+    })),
     trayectos: lista.trayectos.map((t) => ({
       id: t.id,
       vehiculo_id: t.vehiculoId,
@@ -153,6 +168,10 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
       litros_iniciales: t.litrosIniciales,
       litros_finales: t.litrosFinales,
       km_por_litro: t.kmPorLitro,
+      fuente_combustible: t.fuenteCombustible,
+      litros_consumidos: t.litrosConsumidos,
+      nivel_pct_inicial: t.nivelPctInicial,
+      nivel_pct_final: t.nivelPctFinal,
       nota_combustible: t.notaCombustible,
       posible_robo_combustible: t.posibleRoboCombustible,
       posible_robo_hormiga: t.posibleRoboHormiga,

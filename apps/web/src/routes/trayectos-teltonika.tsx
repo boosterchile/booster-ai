@@ -20,6 +20,10 @@ interface Trayecto {
   litros_iniciales: number | null;
   litros_finales: number | null;
   km_por_litro: number | null;
+  fuente_combustible?: FuenteCombustible | null;
+  litros_consumidos?: number | null;
+  nivel_pct_inicial?: number | null;
+  nivel_pct_final?: number | null;
   nota_combustible: string | null;
   posible_robo_combustible: boolean;
   posible_robo_hormiga?: boolean;
@@ -27,6 +31,16 @@ interface Trayecto {
   event_lon: number | null;
   sensor_combustible: 'ausente' | 'presente' | 'degradado';
   cta_sensor: boolean;
+}
+
+type FuenteCombustible = 'nivel_litros' | 'consumo_can' | 'nivel_porcentaje';
+type CombustibleVehiculo = FuenteCombustible | 'sin_sensor';
+type FiltroCombustible = 'con_dato' | 'sin_dato';
+
+interface VehiculoCombustible {
+  vehiculo_id: string;
+  patente: string;
+  combustible: CombustibleVehiculo;
 }
 
 interface Listado {
@@ -38,6 +52,10 @@ interface Listado {
   page: number;
   page_size: number;
   total: number;
+  /** Ausentes en una API anterior a las pestañas: la página se muestra sin ellas. */
+  total_con_combustible?: number;
+  total_sin_combustible?: number;
+  vehiculos?: VehiculoCombustible[];
   trayectos: Trayecto[];
 }
 
@@ -71,11 +89,12 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
   const [page, setPage] = useState(() =>
     search.page != null && search.page >= 1 ? search.page : 1,
   );
+  const [combustible, setCombustible] = useState<FiltroCombustible>('con_dato');
   const permitido = puedeVer(me);
   const q = useQuery({
-    queryKey: ['trayectos-teltonika', page],
+    queryKey: ['trayectos-teltonika', combustible, page],
     enabled: permitido,
-    queryFn: () => api.get<Listado>(`/trayectos-teltonika?page=${page}&page_size=${PAGE_SIZE}`),
+    queryFn: () => api.get<Listado>(urlListado(page, combustible)),
   });
 
   return (
@@ -102,7 +121,16 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
             page={page}
           />
         ) : (
-          <ListadoTrayectos data={q.data} page={page} onPage={(siguiente) => setPage(siguiente)} />
+          <ListadoTrayectos
+            data={q.data}
+            page={page}
+            combustible={combustible}
+            onPage={(siguiente) => setPage(siguiente)}
+            onCombustible={(filtro) => {
+              setCombustible(filtro);
+              setPage(1);
+            }}
+          />
         )
       ) : null}
     </Layout>
@@ -126,14 +154,23 @@ function ErrorCarga({ error }: { error: unknown }) {
   );
 }
 
+function urlListado(page: number, combustible: FiltroCombustible): string {
+  const base = `/trayectos-teltonika?page=${page}&page_size=${PAGE_SIZE}`;
+  return combustible === 'sin_dato' ? `${base}&combustible=sin_dato` : base;
+}
+
 function ListadoTrayectos({
   data,
   page,
+  combustible,
   onPage,
+  onCombustible,
 }: {
   data: Listado;
   page: number;
+  combustible: FiltroCombustible;
   onPage: (page: number) => void;
+  onCombustible: (filtro: FiltroCombustible) => void;
 }) {
   if (data.cta === 'vincular_teltonika') {
     return (
@@ -161,6 +198,9 @@ function ListadoTrayectos({
   }
 
   const paginas = Math.max(1, Math.ceil(data.total / data.page_size));
+  const conPestanas = data.total_con_combustible != null && data.total_sin_combustible != null;
+  const sinDato = conPestanas && combustible === 'sin_dato';
+  const vehiculos = data.vehiculos ?? [];
 
   return (
     <div className="mt-8">
@@ -176,75 +216,37 @@ function ListadoTrayectos({
           trayecto viejo.
         </p>
       ) : null}
-      {data.trayectos.length === 0 ? (
-        <p className="text-neutral-700">No hay trayectos en este período.</p>
+      {conPestanas ? (
+        <PestanasCombustible
+          activa={combustible}
+          totalCon={data.total_con_combustible ?? 0}
+          totalSin={data.total_sin_combustible ?? 0}
+          onCambiar={onCombustible}
+        />
+      ) : null}
+      {sinDato ? (
+        <AvisoSinDato vehiculos={vehiculos} trayectos={data.trayectos} />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
-            <caption className="sr-only">
-              Trayectos Teltonika de la flota, del más reciente al más viejo
-            </caption>
-            <thead>
-              <tr className="border-neutral-200 border-b text-neutral-500">
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  Inicio
-                </th>
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  Fin
-                </th>
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  Vehículo
-                </th>
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  Distancia
-                </th>
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  L ini
-                </th>
-                <th scope="col" className="py-2 pr-3 font-medium">
-                  L fin
-                </th>
-                <th scope="col" className="py-2 font-medium">
-                  Consumo
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.trayectos.map((t) => (
-                <tr key={t.id} className="border-neutral-100 border-b align-top">
-                  <td className="py-3 pr-3">{fmtFecha(t.inicio)}</td>
-                  <td className="py-3 pr-3">{fmtFecha(t.fin)}</td>
-                  <td className="py-3 pr-3">
-                    <div className="font-medium text-neutral-900">{t.patente}</div>
-                    {tieneAviso(t) ? (
-                      <div className="mt-1 flex flex-col items-start gap-1">
-                        <Avisos trayecto={t} />
-                        <Link
-                          to="/app/trayectos"
-                          search={searchDetalle(t.id, page)}
-                          className="text-amber-950 text-xs underline"
-                        >
-                          {tieneGeo(t) ? 'Ver en el mapa' : 'Ver detalle'}
-                        </Link>
-                      </div>
-                    ) : null}
-                    {t.cta_sensor && !data.cta_sensor ? (
-                      <p className="mt-1 text-neutral-600 text-xs">
-                        Conectá el sensor de combustible.
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="py-3 pr-3">{fmtNum(t.distancia_km, 1)} km</td>
-                  <td className="py-3 pr-3">{fmtLitros(t.litros_iniciales)}</td>
-                  <td className="py-3 pr-3">{fmtLitros(t.litros_finales)}</td>
-                  <td className="py-3">
-                    <ConsumoCelda trayecto={t} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <LeyendaFuentes vehiculos={vehiculos} />
+      )}
+      {data.trayectos.length === 0 ? (
+        <p className="text-neutral-700">
+          {conPestanas && !sinDato
+            ? 'No hay trayectos con dato de combustible en este período.'
+            : 'No hay trayectos en este período.'}
+        </p>
+      ) : sinDato ? (
+        <TablaSinDato trayectos={data.trayectos} />
+      ) : (
+        <>
+          <TablaConDato trayectos={data.trayectos} page={page} />
+          {data.trayectos.some(esTramoCorto) ? (
+            <p className="mt-3 text-neutral-600 text-xs">
+              Sin litros ni km/L en trayectos de menos de 10 km o 5 L: con tan poca muestra el
+              número no es confiable.
+            </p>
+          ) : null}
+        </>
       )}
       {data.total > data.page_size ? (
         <div className="mt-4 flex items-center gap-3">
@@ -271,6 +273,262 @@ function ListadoTrayectos({
       ) : null}
     </div>
   );
+}
+
+function PestanasCombustible({
+  activa,
+  totalCon,
+  totalSin,
+  onCambiar,
+}: {
+  activa: FiltroCombustible;
+  totalCon: number;
+  totalSin: number;
+  onCambiar: (filtro: FiltroCombustible) => void;
+}) {
+  const clase = (filtro: FiltroCombustible) =>
+    activa === filtro
+      ? 'rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white'
+      : 'rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-800 text-sm';
+  return (
+    <fieldset className="mb-4 flex flex-wrap gap-2">
+      <legend className="sr-only">Filtrar por combustible</legend>
+      <button
+        type="button"
+        aria-pressed={activa === 'con_dato'}
+        className={clase('con_dato')}
+        onClick={() => onCambiar('con_dato')}
+      >
+        Con combustible ({totalCon})
+      </button>
+      <button
+        type="button"
+        aria-pressed={activa === 'sin_dato'}
+        className={clase('sin_dato')}
+        onClick={() => onCambiar('sin_dato')}
+      >
+        Sin dato de combustible ({totalSin})
+      </button>
+    </fieldset>
+  );
+}
+
+/**
+ * Una línea por fuente, con las patentes. Solo aparece si algún camión
+ * informa algo distinto del nivel en litros: si no, no hay nada que aclarar.
+ */
+function LeyendaFuentes({ vehiculos }: { vehiculos: VehiculoCombustible[] }) {
+  const nivel = patentesCon(vehiculos, 'nivel_litros');
+  const consumo = patentesCon(vehiculos, 'consumo_can');
+  const porcentaje = patentesCon(vehiculos, 'nivel_porcentaje');
+  if (consumo.length === 0 && porcentaje.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      aria-label="Qué informa cada camión"
+      className="mb-4 max-w-2xl space-y-1 text-neutral-600 text-sm"
+    >
+      {nivel.length > 0 ? (
+        <p>
+          {listaPatentes(nivel)} {verbo(nivel, 'informa', 'informan')} el nivel del estanque en
+          litros: ves litros, km/L y el aviso de posible robo.
+        </p>
+      ) : null}
+      {consumo.length > 0 ? (
+        <p>
+          {listaPatentes(consumo)} {verbo(consumo, 'informa', 'informan')} los litros consumidos:
+          ves litros y km/L. El aviso de posible robo necesita el nivel en litros.
+        </p>
+      ) : null}
+      {porcentaje.length > 0 ? (
+        <p>
+          {listaPatentes(porcentaje)} {verbo(porcentaje, 'informa', 'informan')} el nivel en %, no
+          en litros: sin la capacidad del estanque no calculamos litros ni km/L.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/** Un mensaje por causa: sin sensor en la flota, o sin lectura en estos trayectos. */
+function AvisoSinDato({
+  vehiculos,
+  trayectos,
+}: {
+  vehiculos: VehiculoCombustible[];
+  trayectos: Trayecto[];
+}) {
+  const sinSensor = patentesCon(vehiculos, 'sin_sensor');
+  const conSensor = new Set(
+    vehiculos.filter((v) => v.combustible !== 'sin_sensor').map((v) => v.vehiculo_id),
+  );
+  const sinLectura = [
+    ...new Set(trayectos.filter((t) => conSensor.has(t.vehiculo_id)).map((t) => t.patente)),
+  ].sort(compararPatentes);
+  if (sinSensor.length === 0 && sinLectura.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      aria-label="Por qué no hay dato de combustible"
+      className="mb-4 max-w-2xl space-y-1 text-neutral-600 text-sm"
+    >
+      {sinSensor.length > 0 ? (
+        <p>
+          {listaPatentes(sinSensor)} no {verbo(sinSensor, 'tiene', 'tienen')} sensor de combustible
+          conectado. Acá ves sus trayectos y kilómetros.
+        </p>
+      ) : null}
+      {sinLectura.length > 0 ? (
+        <p>En estos trayectos de {listaPatentes(sinLectura)} no llegó lectura de combustible.</p>
+      ) : null}
+    </section>
+  );
+}
+
+function TablaConDato({ trayectos, page }: { trayectos: Trayecto[]; page: number }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
+        <caption className="sr-only">
+          Trayectos Teltonika con dato de combustible, del más reciente al más viejo
+        </caption>
+        <thead>
+          <tr className="border-neutral-200 border-b text-neutral-500">
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Inicio
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Fin
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Vehículo
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Distancia
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Nivel ini
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Nivel fin
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Litros
+            </th>
+            <th scope="col" className="py-2 font-medium">
+              Consumo
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {trayectos.map((t) => (
+            <tr key={t.id} className="border-neutral-100 border-b align-top">
+              <td className="py-3 pr-3">{fmtFecha(t.inicio)}</td>
+              <td className="py-3 pr-3">{fmtFecha(t.fin)}</td>
+              <td className="py-3 pr-3">
+                <div className="font-medium text-neutral-900">{t.patente}</div>
+                {tieneAviso(t) ? (
+                  <div className="mt-1 flex flex-col items-start gap-1">
+                    <Avisos trayecto={t} />
+                    <Link
+                      to="/app/trayectos"
+                      search={searchDetalle(t.id, page)}
+                      className="text-amber-950 text-xs underline"
+                    >
+                      {tieneGeo(t) ? 'Ver en el mapa' : 'Ver detalle'}
+                    </Link>
+                  </div>
+                ) : null}
+              </td>
+              <td className="py-3 pr-3">{fmtNum(t.distancia_km, 1)} km</td>
+              <td className="py-3 pr-3">{fmtNivel(t.litros_iniciales, t.nivel_pct_inicial)}</td>
+              <td className="py-3 pr-3">{fmtNivel(t.litros_finales, t.nivel_pct_final)}</td>
+              <td className="py-3 pr-3">{fmtLitros(t.litros_consumidos ?? null)}</td>
+              <td className="py-3">
+                <ConsumoCelda trayecto={t} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TablaSinDato({ trayectos }: { trayectos: Trayecto[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+        <caption className="sr-only">
+          Trayectos Teltonika sin dato de combustible, del más reciente al más viejo
+        </caption>
+        <thead>
+          <tr className="border-neutral-200 border-b text-neutral-500">
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Inicio
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Fin
+            </th>
+            <th scope="col" className="py-2 pr-3 font-medium">
+              Vehículo
+            </th>
+            <th scope="col" className="py-2 font-medium">
+              Distancia
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {trayectos.map((t) => (
+            <tr key={t.id} className="border-neutral-100 border-b align-top">
+              <td className="py-3 pr-3">{fmtFecha(t.inicio)}</td>
+              <td className="py-3 pr-3">{fmtFecha(t.fin)}</td>
+              <td className="py-3 pr-3 font-medium text-neutral-900">{t.patente}</td>
+              <td className="py-3">{fmtNum(t.distancia_km, 1)} km</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Trae litros (nivel en L o contador CAN) pero la API no calculó km/L ni dejó
+ * nota: el tramo quedó bajo el mínimo de 5 L o 10 km.
+ */
+function esTramoCorto(trayecto: Trayecto): boolean {
+  const fuente = trayecto.fuente_combustible;
+  return (
+    (fuente === 'nivel_litros' || fuente === 'consumo_can') &&
+    trayecto.km_por_litro == null &&
+    trayecto.nota_combustible == null
+  );
+}
+
+function patentesCon(vehiculos: VehiculoCombustible[], combustible: CombustibleVehiculo): string[] {
+  return vehiculos
+    .filter((v) => v.combustible === combustible)
+    .map((v) => v.patente)
+    .sort(compararPatentes);
+}
+
+function compararPatentes(a: string, b: string): number {
+  return a.localeCompare(b, 'es');
+}
+
+/** «A», «A y B», «A, B y C». */
+function listaPatentes(patentes: string[]): string {
+  if (patentes.length <= 1) {
+    return patentes[0] ?? '';
+  }
+  return `${patentes.slice(0, -1).join(', ')} y ${patentes[patentes.length - 1]}`;
+}
+
+function verbo(patentes: string[], singular: string, plural: string): string {
+  return patentes.length === 1 ? singular : plural;
 }
 
 function DetalleTrayecto({ trayecto, page }: { trayecto: Trayecto | null; page: number }) {
@@ -392,18 +650,13 @@ function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {
   );
 }
 
-/** L/100 km = (L ini − L fin) / km × 100. Solo con km/L y distancia mayor que cero. */
+/** L/100 km = 100 / km/L: sale del mismo tramo leído que el km/L. */
 function litrosPorCienKm(trayecto: Trayecto): number | null {
-  const ini = trayecto.litros_iniciales;
-  const fin = trayecto.litros_finales;
-  if (ini == null || fin == null || !(trayecto.distancia_km > 0)) {
+  const kmPorLitro = trayecto.km_por_litro;
+  if (kmPorLitro == null || !(kmPorLitro > 0)) {
     return null;
   }
-  const delta = ini - fin;
-  if (!(delta > 0)) {
-    return null;
-  }
-  return (delta / trayecto.distancia_km) * 100;
+  return 100 / kmPorLitro;
 }
 
 function fmtFecha(iso: string): string {
@@ -422,4 +675,15 @@ function fmtLitros(valor: number | null): string {
     return '—';
   }
   return `${fmtNum(valor, 1)} L`;
+}
+
+/** Nivel en litros si el camión lo informa; si no, en %. */
+function fmtNivel(litros: number | null, porcentaje: number | null | undefined): string {
+  if (litros != null) {
+    return fmtLitros(litros);
+  }
+  if (porcentaje != null) {
+    return `${fmtNum(porcentaje, 0)} %`;
+  }
+  return '—';
 }

@@ -410,3 +410,217 @@ describe('TrayectosTeltonikaRoute', () => {
     });
   });
 });
+
+const trayectoBase = listadoConRobo.trayectos[0];
+
+const flotaMixta = [
+  { vehiculo_id: 'v-1', patente: 'JLKT54', combustible: 'nivel_litros' },
+  { vehiculo_id: 'v-2', patente: 'JWTH77', combustible: 'nivel_porcentaje' },
+  { vehiculo_id: 'v-3', patente: 'KFKW23', combustible: 'consumo_can' },
+  { vehiculo_id: 'v-4', patente: 'KZBB26', combustible: 'sin_sensor' },
+  { vehiculo_id: 'v-5', patente: 'PLFL57', combustible: 'consumo_can' },
+  { vehiculo_id: 'v-6', patente: 'RCPC20', combustible: 'consumo_can' },
+  { vehiculo_id: 'v-7', patente: 'VFZH-68', combustible: 'sin_sensor' },
+];
+
+const listadoConDato = {
+  ...listadoConRobo,
+  combustible: 'con_dato',
+  total: 2,
+  total_con_combustible: 2,
+  total_sin_combustible: 3,
+  vehiculos: flotaMixta,
+  trayectos: [
+    {
+      ...trayectoBase,
+      id: 't-rcpc',
+      vehiculo_id: 'v-6',
+      patente: 'RCPC20',
+      distancia_km: 348.9,
+      litros_iniciales: null,
+      litros_finales: null,
+      km_por_litro: 2.54,
+      fuente_combustible: 'consumo_can',
+      litros_consumidos: 137.5,
+      nivel_pct_inicial: 90,
+      nivel_pct_final: 58,
+      posible_robo_combustible: false,
+      sensor_combustible: 'degradado',
+    },
+    {
+      ...trayectoBase,
+      id: 't-jwth',
+      vehiculo_id: 'v-2',
+      patente: 'JWTH77',
+      distancia_km: 120,
+      litros_iniciales: null,
+      litros_finales: null,
+      km_por_litro: null,
+      fuente_combustible: 'nivel_porcentaje',
+      litros_consumidos: null,
+      nivel_pct_inicial: 77,
+      nivel_pct_final: 52,
+      posible_robo_combustible: false,
+      sensor_combustible: 'degradado',
+    },
+  ],
+};
+
+const listadoSinDato = {
+  ...listadoConDato,
+  combustible: 'sin_dato',
+  total: 2,
+  trayectos: [
+    {
+      ...trayectoBase,
+      id: 't-kzbb',
+      vehiculo_id: 'v-4',
+      patente: 'KZBB26',
+      litros_iniciales: null,
+      litros_finales: null,
+      km_por_litro: null,
+      fuente_combustible: null,
+      litros_consumidos: null,
+      nivel_pct_inicial: null,
+      nivel_pct_final: null,
+      nota_combustible: null,
+      posible_robo_combustible: false,
+      sensor_combustible: 'ausente',
+      cta_sensor: true,
+    },
+    {
+      ...trayectoBase,
+      id: 't-plfl',
+      vehiculo_id: 'v-5',
+      patente: 'PLFL57',
+      litros_iniciales: null,
+      litros_finales: null,
+      km_por_litro: null,
+      fuente_combustible: null,
+      litros_consumidos: null,
+      nivel_pct_inicial: null,
+      nivel_pct_final: null,
+      nota_combustible: 'No hay una lectura válida de litros en este trayecto. No calculamos km/L.',
+      posible_robo_combustible: false,
+      sensor_combustible: 'degradado',
+    },
+  ],
+};
+
+describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
+  it('con litros consumidos del CAN muestra litros, km/L y el nivel en %', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(listadoConDato);
+    renderPage();
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(screen.getByText('RCPC20')).toBeInTheDocument();
+    expect(screen.getByText('137,5 L')).toBeInTheDocument();
+    expect(screen.getByText('2,54 km/L')).toBeInTheDocument();
+    expect(screen.getByText('39,4 L/100 km')).toBeInTheDocument();
+    expect(screen.getByText('90 %')).toBeInTheDocument();
+    expect(screen.getByText('58 %')).toBeInTheDocument();
+    expect(screen.getByText('77 %')).toBeInTheDocument();
+    expect(screen.queryByText(/No hay una lectura válida/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Conectá el sensor de combustible/)).not.toBeInTheDocument();
+  });
+
+  it('explica una vez por causa qué informa cada camión, sin los que no tienen sensor', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(listadoConDato);
+    renderPage();
+    const leyenda = await screen.findByRole('region', { name: 'Qué informa cada camión' });
+    expect(leyenda).toHaveTextContent(
+      'JLKT54 informa el nivel del estanque en litros: ves litros, km/L y el aviso de posible robo.',
+    );
+    expect(leyenda).toHaveTextContent(
+      'KFKW23, PLFL57 y RCPC20 informan los litros consumidos: ves litros y km/L. El aviso de posible robo necesita el nivel en litros.',
+    );
+    expect(leyenda).toHaveTextContent(
+      'JWTH77 informa el nivel en %, no en litros: sin la capacidad del estanque no calculamos litros ni km/L.',
+    );
+    expect(leyenda).not.toHaveTextContent('KZBB26');
+    expect(leyenda).not.toHaveTextContent('VFZH-68');
+  });
+
+  it('los trayectos sin dato van en otra pestaña, con un mensaje por causa', async () => {
+    const get = vi
+      .spyOn(api, 'get')
+      .mockImplementation(async (url: string) =>
+        url.includes('combustible=sin_dato') ? listadoSinDato : listadoConDato,
+      );
+    renderPage();
+    expect(
+      await screen.findByRole('button', { name: 'Con combustible (2)', pressed: true }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sin dato de combustible (3)' }));
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledWith(
+        '/trayectos-teltonika?page=1&page_size=20&combustible=sin_dato',
+      );
+    });
+    expect(
+      await screen.findByText(
+        'KZBB26 y VFZH-68 no tienen sensor de combustible conectado. Acá ves sus trayectos y kilómetros.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('En estos trayectos de PLFL57 no llegó lectura de combustible.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No hay una lectura válida/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Litros' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sin dato de combustible (3)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('sin trayectos con combustible lo dice y deja ver la otra pestaña', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConDato,
+      total: 0,
+      total_con_combustible: 0,
+      total_sin_combustible: 3,
+      trayectos: [],
+    });
+    renderPage();
+    expect(
+      await screen.findByText('No hay trayectos con dato de combustible en este período.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sin dato de combustible (3)' })).toBeEnabled();
+  });
+
+  it('si la API no trae los totales, no muestra pestañas', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(listadoConRobo);
+    renderPage();
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Con combustible/ })).not.toBeInTheDocument();
+  });
+
+  it('explica una sola vez por qué un tramo corto no tiene litros ni km/L', async () => {
+    const corto = {
+      ...listadoConDato.trayectos[0],
+      distancia_km: 0.4,
+      km_por_litro: null,
+      litros_consumidos: null,
+      nota_combustible: null,
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConDato,
+      trayectos: [
+        { ...corto, id: 'c-1' },
+        { ...corto, id: 'c-2' },
+      ],
+    });
+    renderPage();
+    expect(
+      await screen.findAllByText(
+        'Sin litros ni km/L en trayectos de menos de 10 km o 5 L: con tan poca muestra el número no es confiable.',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('sin tramos cortos no muestra esa aclaración', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue(listadoConDato);
+    renderPage();
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    expect(screen.queryByText(/con tan poca muestra/)).not.toBeInTheDocument();
+  });
+});
