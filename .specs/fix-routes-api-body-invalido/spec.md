@@ -96,9 +96,10 @@ En ambos casos el catch cae a la tabla por regiones y la estimación nunca vino 
   - (C) `estimarDistanciaKm('XIII', 'V')` es igual a `RM → V`, no 500.
 - [x] Rojo de los logs (`23d72c7`, 4 tests): `errBody` ilegible, `errMessage` en los abort, `logger` en el eco-preview.
 - [x] Verde: esos tests más la suite de `apps/api`, `tsc --noEmit`, biome y build, con el output en `## Evidencia` del PR. Además, `computeRoutes` corregido contra la API real (smoke local con ADC): coordenada→coordenada 2,0 km; coordenada→dirección 132,5 km; dirección + DIESEL 121,0 km (antes: 400 en los tres).
-- [ ] En prod, tras el deploy manual del PO: cero logs «cannot be specified as an Address Waypoint» y «Unknown name "vehicleInfo"», y el próximo viaje con huecos **en movimiento** no aborta con `routes_error`. Los huecos con el vehículo detenido siguen abortando hasta que se resuelva la §6.
+- [x] §6 decidida por el PO: opción (a). Rojo `610202a`: 3 tests (núcleo, tope y `recalcular` con un hueco detenido como el de KJHITL). Verde después del cambio en `calcular-distancia-real.ts`.
+- [ ] En prod, tras el deploy manual del PO: cero logs «cannot be specified as an Address Waypoint» y «Unknown name "vehicleInfo"», y el próximo viaje con huecos, en movimiento o detenido, no aborta con `routes_error`.
 
-## 6. Decisión pendiente del PO: hueco con el vehículo detenido
+## 6. Hueco con el vehículo detenido: decisión del PO del 2026-09-22, opción (a)
 
 La revisión adversarial lo encontró y lo reproduje contra la API real. Con origen idéntico al destino, Routes responde **200 con una ruta sin `distanceMeters`**, porque proto3 omite el 0. `computeRoutes` lo normaliza a `distanceKm: 0`, y el resolver de huecos de #624 (`!mejor || mejor.distanceKm <= 0 → throw`) lo trata como «sin ruta». Así, un solo hueco ≥ 60 s de camión detenido aborta el viaje entero con `routes_error`.
 
@@ -109,4 +110,5 @@ La revisión adversarial lo encontró y lo reproduje contra la API real. Con ori
   - (a) Un hueco con extremos idénticos vale 0 km, sin llamar a Routes y sin contar para el tope. Es determinista y no tiene costo; enmienda los criterios 1, 2 y 6 para ese caso.
   - (b) Aceptar la ruta de 0 m que devuelve Routes y abortar solo con `routes: []` o con error. Enmienda solo el criterio 1, pero cada parada sigue gastando una llamada y cuenta para el tope de 20.
   - (c) Mantener el abort y declararlo.
+- **Decisión (PO, 2026-09-22): (a).** Implementada en `calcular-distancia-real.ts` (`esHuecoDetenido`: igualdad exacta de lat/lng). Registrada como enmienda en `.specs/distancia-real-hibrida/spec.md`. En BOO-KJHITL el resultado pasa a ser `sin_observacion` legítimo y ya no `routes_error`, porque los 4 pings son idénticos y no hay distancia observada.
 
