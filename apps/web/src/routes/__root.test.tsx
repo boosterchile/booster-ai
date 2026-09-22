@@ -10,8 +10,10 @@ vi.mock('@tanstack/react-router', () => ({
 // (useIsDemo() / useImpersonation()). En el test del root no inyectamos
 // provider de Firebase auth ni QueryClient, así que mockeamos ambos hooks
 // al path "no banner".
+// Sesión con claim is_demo residual: el banner demo ya no existe (spec
+// retiro-demo-codigo-muerto), aunque el claim esté presente.
 vi.mock('../hooks/use-is-demo.js', () => ({
-  useIsDemo: () => false,
+  useIsDemo: () => true,
 }));
 vi.mock('../hooks/use-impersonation.js', () => ({
   useImpersonation: () => ({ active: false, impersonatedBy: null }),
@@ -30,7 +32,7 @@ describe('RootComponent', () => {
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
   });
 
-  it('no muestra DemoBanner cuando useIsDemo() = false', () => {
+  it('no monta el banner demo aunque la sesión traiga el claim is_demo', () => {
     render(<RootComponent />);
     expect(screen.queryByTestId('demo-banner')).not.toBeInTheDocument();
   });

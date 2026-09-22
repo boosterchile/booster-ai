@@ -193,7 +193,10 @@ describe('ProtectedRoute', () => {
     expect(screen.getByTestId('kind').textContent).toBe('pre-onboarding');
   });
 
-  it('require-onboarded + sesión demo (is_demo=true) + sin clave_numerica → NO muestra RotarClaveModal', () => {
+  it('require-onboarded + claim is_demo residual + flag universal ON + sin clave → SÍ muestra RotarClaveModal (sin excepción demo)', () => {
+    // /demo/login está retirado: la excepción demo del modal quedó sin población
+    // (spec retiro-demo-codigo-muerto). Una sesión con claim residual se trata
+    // como cualquier usuario.
     useAuthMock.mockReturnValue({ user: { uid: 'u-demo' }, loading: false });
     useMeMock.mockReturnValue({
       data: {
@@ -206,15 +209,12 @@ describe('ProtectedRoute', () => {
       error: null,
     });
     useIsDemoMock.mockReturnValue(true);
-    render(
-      <ProtectedRoute>{() => <div data-testid="children">contenido demo</div>}</ProtectedRoute>,
-      {
-        wrapper: makeWrapper(),
-      },
-    );
-    // Children renderizado sin modal montado encima.
+    useFeatureFlagsMock.mockReturnValue(flagsWith({ auth_universal_v1_activated: true }));
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
     expect(screen.getByTestId('children')).toBeInTheDocument();
-    expect(screen.queryByText('Crea tu clave numérica')).not.toBeInTheDocument();
+    expect(screen.getByText('Crea tu clave numérica')).toBeInTheDocument();
   });
 
   it('require-onboarded + usuario real (no demo, no impersonación) + flag universal ON + sin clave → SÍ muestra RotarClaveModal', () => {

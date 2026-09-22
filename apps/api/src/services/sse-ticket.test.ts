@@ -91,6 +91,19 @@ describe('sse-ticket', () => {
     });
   });
 
+  it('ticket de la revisión anterior (payload con isDemo) se consume y devuelve solo { uid }', async () => {
+    // Convivencia en el canary: una revisión vieja acuña con `isDemo`; la nueva
+    // lo ignora (sin lector desde #698, spec retiro-demo-codigo-muerto).
+    const redis = makeRedis();
+    (redis as unknown as { store: Map<string, string> }).store.set(
+      'sse-ticket:legacy',
+      JSON.stringify({ uid: UID, assignmentId: ASSIGNMENT, isDemo: true }),
+    );
+    expect(
+      await consumeStreamTicket({ redis, ticket: 'legacy', assignmentId: ASSIGNMENT }),
+    ).toEqual({ uid: UID });
+  });
+
   it('Redis caído en consume → null (fail-closed, no throw)', async () => {
     const redis = {
       async getdel() {
