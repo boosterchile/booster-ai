@@ -854,6 +854,24 @@ describe('recalcularNivelPostEntrega — reconstrucción de distancia real (F0-0
     expect(arg.logger).toBe(noopLogger);
   });
 
+  it('PARADA (hueco con extremos idénticos) → NO aborta con routes_error ni llama a Routes', async () => {
+    // BOO-KJHITL 2026-09-21: hueco de 207 s en el mismo punto. Routes responde
+    // 200 con 0 m y el resolver abortaba el viaje entero (#708 §6, decisión (a)).
+    (resolverPosicionesSegmento as Mock).mockResolvedValueOnce([
+      { tMs: 0, lat: -33.4, lng: -70.6 },
+      { tMs: 30_000, lat: -33.41, lng: -70.61 },
+      { tMs: 237_000, lat: -33.41, lng: -70.61 },
+    ]);
+    (computeRoutes as Mock).mockRejectedValue(new Error('no debe llamarse'));
+    const db = makeDb({ selects: selectsTeltonika(), updates: [[]] });
+
+    const res = await run(db);
+
+    expect(computeRoutes).not.toHaveBeenCalled();
+    expect(res.abortReason).toBeNull();
+    expect(res.recomputed).toBe(true);
+  });
+
   it('ABORT (Routes caído) — no-op, abortReason=routes_error, SIN UPDATE (cae a estimación)', async () => {
     (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings(2));
     (computeRoutes as Mock).mockRejectedValue(new Error('Routes 503'));
