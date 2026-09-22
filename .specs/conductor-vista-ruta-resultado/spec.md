@@ -45,4 +45,4 @@ PR para que el PO lo ratifique):**
       3 de la tarjeta (ruta eco antes de entregar; resultado con descarga; certificado en proceso).
 - [x] Verde: suites `apps/api` (170/2076) y `apps/web` (136/1362), typecheck, biome, build.
 - [x] Preview `/apariencia/conductor`: «Ruta eco-eficiente sugerida» colapsada en `por_recoger` (375×812).
-- [ ] En producción, en el viaje sin Teltonika: el conductor ve el resultado y descarga el PDF.
+- [ ] En producción, en el viaje sin Teltonika: el conductor ve el resultado y descarga el PDF. — evidencia parcial (2026-09-22): BOO-LCTSE5 y BOO-83ND2C (KXSV65, sin Teltonika; api 00607-xow, web 00380-gxx). PATCH confirmar-entrega → 200 con actor_user_id = conductor asignado (rol único `conductor`); luego, desde la misma IP y el mismo UA iPhone, GET /resultado 200 ×2 y GET …/certificate/download 200; y en GCS, `storage.objects.get` del PDF con ese UA (15:51:18Z y 19:40:57Z del 21-09). Falta el uid o rol de quien pidió /resultado y /download: el log de request no lo trae, y el mismo UA aparece también en sesiones de oficina y de generador.

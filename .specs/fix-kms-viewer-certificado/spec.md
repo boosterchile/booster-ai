@@ -27,6 +27,6 @@ firma ni cifrado adicionales.
 
 - [x] `terraform fmt -check` y `terraform validate` en local (sin backend, sin estado).
 - [ ] `terraform plan` del PO muestra exactamente **1 to add, 0 to change, 0 to destroy**.
-- [ ] `terraform apply` (PO).
+- [ ] `terraform apply` (PO). — 2026-09-22, evidencia parcial: el binding `roles/cloudkms.viewer` → booster-cloudrun-sa existe (getIamPolicy), pero lo creó `gcloud kms keys add-iam-policy-binding` (audit SetIamPolicy 2026-09-14T17:07:35Z, dev@boosterchile.com), no Terraform: sigue fuera del state (drift run 35747885290: «will be created»).
 - [ ] Backfill: `backfill-certificados.ts --dry-run` lista BOO-BKAXIK; sin `--dry-run`
-      emite el PDF, y `metricas_viaje.certificado_emitido_en` queda poblado.
+      emite el PDF, y `metricas_viaje.certificado_emitido_en` queda poblado. — 2026-09-22, evidencia parcial: el resultado existe (certificado_emitido_en 2026-09-14 21:40:40.91Z, PDF en el bucket, /verify 200), pero no hay registro de que saliera de `backfill-certificados.ts` (#685 describe un script manual acotado a BKAXIK); el `--dry-run` no es verificable.
