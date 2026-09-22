@@ -1,6 +1,6 @@
 # Estado actual del proyecto — Booster AI
 
-**Última actualización**: 2026-09-22 · `main` = `cf76ea8` (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 2 PRs detrás de `main`**: #706 y #707, con la migración 0056, sin desplegar. **PRs abiertos**: #708 (Routes API) y #709 (este handoff). Horas en UTC; Santiago = UTC−3.
+**Última actualización**: 2026-09-22 · `main` = `cf76ea8` al verificar (`git ls-remote origin refs/heads/main` → `cf76ea81aeed`; luego entró #710, `80c2682`) · prod Cloud Run = imagen `428ff51` (api rev `booster-ai-api-00610-qaw`) · gateway GKE = `33d179d`. **Prod está 3 PRs detrás de `main`**: #706 y #707, con la migración 0056, y #710 (trayectos: litros del CAN, sin migración; mergeado el 2026-09-22 después del corte de esta verificación), sin desplegar. **PRs abiertos**: #708 (Routes API) y #709 (este handoff). Horas en UTC; Santiago = UTC−3.
 **Anterior**: 2026-07-25, archivado en [`2026-09-22-snapshot-current-2026-07.md`](2026-09-22-snapshot-current-2026-07.md). Dos afirmaciones de ese CURRENT ya no valen (se marcan con «corrige»).
 **Método**: solo lectura. GCP por REST con token ADC y `X-Goog-User-Project: booster-ai-494222`; BD con `scripts/db/agent-query.sh` (solo SELECT, sin `-y`). Lo que no se verificó se dice explícitamente.
 **Documento vivo**: el detalle histórico está en los snapshots fechados (ver §Snapshots archivados). Contrato de trabajo: `CLAUDE.md`. Slots de trabajo: `docs/frentes-vivos.md`.
