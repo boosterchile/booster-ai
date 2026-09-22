@@ -45,7 +45,6 @@ function makeWrapper() {
 beforeEach(() => {
   vi.clearAllMocks();
   useMeMock.mockReturnValue({ data: undefined, isLoading: false, error: null });
-  // Default a "no demo" — los tests existentes asumen flujo normal.
   // Default a "no impersonación" y flag universal apagado — los tests
   // existentes asumen flujo normal sin modal de clave.
   useImpersonationMock.mockReturnValue({ active: false, impersonatedBy: null });
@@ -188,6 +187,33 @@ describe('ProtectedRoute', () => {
       { wrapper: makeWrapper() },
     );
     expect(screen.getByTestId('kind').textContent).toBe('pre-onboarding');
+  });
+
+  it('require-onboarded + token con claim is_demo residual + flag ON + sin clave → SÍ muestra RotarClaveModal (sin excepción demo)', async () => {
+    // Guarda del retiro (spec retiro-demo-codigo-muerto): ProtectedRoute ya no
+    // lee `is_demo`; una sesión con el claim ve el modal como cualquier usuario.
+    useAuthMock.mockReturnValue({
+      user: {
+        uid: 'u-demo',
+        getIdTokenResult: async () => ({ claims: { is_demo: true } }),
+      },
+      loading: false,
+    });
+    useMeMock.mockReturnValue({
+      data: {
+        needs_onboarding: false,
+        user: { id: 'u-uuid-demo', has_clave_numerica: false },
+        memberships: [],
+        active_membership: null,
+      },
+      isLoading: false,
+      error: null,
+    });
+    useFeatureFlagsMock.mockReturnValue(flagsWith({ auth_universal_v1_activated: true }));
+    render(<ProtectedRoute>{() => <div data-testid="children">contenido</div>}</ProtectedRoute>, {
+      wrapper: makeWrapper(),
+    });
+    expect(await screen.findByText('Crea tu clave numérica')).toBeInTheDocument();
   });
 
   it('require-onboarded + usuario real (no demo, no impersonación) + flag universal ON + sin clave → SÍ muestra RotarClaveModal', () => {

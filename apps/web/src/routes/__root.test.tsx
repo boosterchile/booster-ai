@@ -8,8 +8,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ImpersonationBanner se monta global pero se self-gatea (useImpersonation()).
 // En el test del root no inyectamos provider de Firebase auth ni QueryClient,
-// así que mockeamos el hook al path "no banner". El banner demo ya no existe
-// (spec retiro-demo-codigo-muerto).
+// así que mockeamos el hook al path "no banner".
 vi.mock('../hooks/use-impersonation.js', () => ({
   useImpersonation: () => ({ active: false, impersonatedBy: null }),
 }));
@@ -25,11 +24,6 @@ describe('RootComponent', () => {
   it('renderiza <Outlet />', () => {
     render(<RootComponent />);
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
-  });
-
-  it('no monta el banner demo (retirado)', () => {
-    render(<RootComponent />);
-    expect(screen.queryByTestId('demo-banner')).not.toBeInTheDocument();
   });
 
   it('no muestra ImpersonationBanner cuando la sesión no es impersonada', () => {

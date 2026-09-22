@@ -32,7 +32,8 @@ Borrar el código demo que #698 dejó desmontado o sin lector, sin tocar schema,
 - `middleware/firebase-auth.ts`: el camino del ticket SSE deja de restituir `custom.is_demo` y el tipo de `sseTicketStore` pasa a `{ uid }`.
 - `ProtectedRoute.tsx`: sin `useIsDemo` ni la excepción demo del modal; la excepción de impersonación queda igual.
 - `routes/__root.tsx`: sin `<DemoBanner />`.
-- Comentarios que nombran `demo-expires` en `server.ts`, `skip-public-verify.ts` y `demo-cache-warm.ts`.
+- Comentarios que nombran lo retirado: `server.ts`, `skip-public-verify.ts`, `demo-cache-warm.ts` (más su mensaje de log), `routes/index.tsx`, `ImpersonationBanner.tsx` y `use-impersonation.ts`.
+- Tests: `sse-ticket.test.ts`, `firebase-auth.test.ts`, `chat-route.test.ts` (test nuevo de `stream-ticket`), `ProtectedRoute.test.tsx` (guarda verde con claim `is_demo` en el token), `__root.test.tsx`, `index.test.tsx`, y comentarios de `ImpersonationBanner.test.tsx` y `use-impersonation.test.ts`.
 
 **No se tocan:** `is-demo-enforcement*`, `is-demo-allowlist*`, `scripts/check-is-demo-*` (los usa `security.yml`), `demo-cache-warm` (ruta montada), `harden-demo-accounts`, `cuentas-demo`, `seed-demo*`, schema/drizzle, `feature-flags` / `site-settings`, `cargar-gps-scorecard.ts` (el filtro `es_demo` de #704 va aparte, con decisión del PO), `.github/`, `infrastructure/`, Identity Platform.
 
@@ -47,6 +48,8 @@ Borrar el código demo que #698 dejó desmontado o sin lector, sin tocar schema,
 - Grep a 0 del Slot 2: quedan los jobs de `security.yml`, schema y endpoints, UI de flags y Terraform/DNS.
 - **Deshabilitar las 4 cuentas demo** en Identity Platform. Desde #698 el API ya no rechaza su `expires_at` vencido. Es una acción del PO (cuentas e IAM) y se reporta en el PR.
 - Validar el payload del ticket con Zod y loguear el `catch` de Redis en `consumeStreamTicket`. Ambos son anteriores y el diff no los cambia.
+- Quedan en el grep, a propósito: el test de convivencia del ticket (`sse-ticket.test.ts`, que usa el literal `isDemo` del payload viejo) y su comentario en `sse-ticket.ts`. Se retiran cuando ya no conviva ninguna revisión anterior. También quedan `demo-cache-warm` (la ruta montada) y sus menciones.
+- Base del conteo: `git grep -l -E 'es_demo|isDemo|DEMO_|demo\.boosterchile' -- apps packages infrastructure`, igual que el criterio de `frentes-vivos.md`. Da 52 sobre `origin/main` (cf76ea8 y 80c2682), no los 40 del documento; actualizar ese inventario es del PO.
 
 ## 6. Criterios de salida
 

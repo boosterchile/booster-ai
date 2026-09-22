@@ -4,10 +4,8 @@ import { useAuth } from '../hooks/use-auth.js';
 /**
  * `/` — landing redirect.
  *
- *   - Host `demo.boosterchile.com` + no logueado → /demo (selector personas)
- *   - Host `demo.boosterchile.com` + logueado    → /app
- *   - Otros hosts no logueado                    → /login
- *   - Otros hosts logueado                       → /app
+ *   - No logueado → /login (también en `demo.boosterchile.com`: /demo retirado)
+ *   - Logueado    → /app
  *
  * Mientras useAuth().loading=true mostramos splash mínimo.
  */

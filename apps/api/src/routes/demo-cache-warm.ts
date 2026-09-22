@@ -13,10 +13,9 @@ import { extractClientIp } from '../middleware/client-ip.js';
  *
  * `GET /api/v1/demo/cache-warm/:persona` — pre-warm el cache Redis del
  * middleware demo-expires, hoy retirado (key `demo-claim:<uid>`; ya no hay
- * consumidor — spec retiro-demo-codigo-muerto). Llamado fire-and-
- * forget desde el landing demo (`apps/web/src/routes/demo.tsx`) en
- * useEffect on mount, así el primer click del usuario en una card demo
- * tiene latencia cached (~5ms p95) en vez de uncached (~200ms).
+ * consumidor ni llamador web — spec retiro-demo-codigo-muerto; el retiro de
+ * la ruta es decisión del PO, Slot 2). Lo llamaba fire-and-forget el landing
+ * demo, también retirado.
  *
  * Diseño per spec sec-001-cierre §3 H1.1 SC-1.1.2b:
  *   1. Lookup `firebase_uid` from `cuentas_demo` WHERE persona=X AND
@@ -129,10 +128,9 @@ export function createDemoCacheWarmRoutes(opts: DemoCacheWarmOptions): Hono {
     } catch (err) {
       opts.logger.warn(
         { err, persona, firebaseUid },
-        'demo-cache-warm: failed to fetch/cache Firebase user (degraded, middleware will fetch live on first hit)',
+        'demo-cache-warm: failed to fetch/cache Firebase user (degraded, sin consumidor del cache)',
       );
-      // 503 porque el endpoint es best-effort. Caller fire-and-forget no
-      // necesita conocer el detalle.
+      // 503 = no se pudo precalentar; el detalle queda en el log.
       return c.body(null, 503);
     }
   });
