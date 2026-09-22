@@ -50,11 +50,11 @@ Borrar el código demo que #698 dejó desmontado o sin lector, sin tocar schema,
 
 ## 6. Criterios de salida
 
-- [ ] Rojo exhibido (dominio auth):
+- [x] Rojo exhibido (dominio auth), commit `9e13e56`: API 3 failed | 55 passed y web 2 failed | 16 passed, cada uno por la causa correcta (salida en el PR):
   - (1) el ticket acuñado no persiste `isDemo`;
   - (2) un ticket de la revisión anterior, con `isDemo: true`, se consume y devuelve solo `{ uid }`;
   - (3) el camino SSE de `firebase-auth` no restituye `custom.is_demo`;
   - (4) sesión con claim `is_demo`, sin clave numérica y con el flag activo → `RotarClaveModal` visible;
   - (5) `__root` no monta el banner demo.
-- [ ] Verde en `apps/api` y `apps/web` (node 24), más `tsc`, `pnpm lint` y build de ambos. El script `check-is-demo-wire-completeness.ts` e `impersonation-wire-completeness` quedan OK.
-- [ ] El grep del Slot 2 antes (52) y después, en la `## Evidencia`. El diff no toca `.github/`, `infrastructure/` ni `apps/api/drizzle/`.
+- [x] Verde (node 24.17.0): `apps/api` 182 archivos / 2242 tests y `apps/web` 148 / 1501. Typecheck y build de ambos, más `pnpm lint` (1195 archivos, lint-rls ✅). `check-is-demo-wire-completeness.ts` OK y `check-is-demo-allowlist-comments.ts` exit 0; `impersonation-wire-completeness.test.ts` corre dentro de la suite del API.
+- [x] Grep del Slot 2: 52 → **45** archivos. El diff no toca `.github/`, `infrastructure/` ni `apps/api/drizzle/`.

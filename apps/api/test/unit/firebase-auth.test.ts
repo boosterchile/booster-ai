@@ -157,10 +157,7 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
 
   async function buildStreamApp(opts: {
     auth: Auth;
-    sseTicketStore?: (
-      ticket: string,
-      assignmentId: string,
-    ) => Promise<{ uid: string; isDemo: boolean } | null>;
+    sseTicketStore?: (ticket: string, assignmentId: string) => Promise<{ uid: string } | null>;
   }): Promise<Hono> {
     const { createFirebaseAuthMiddleware } = await import('../../src/middleware/firebase-auth.js');
     const app = new Hono();
@@ -183,13 +180,13 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
 
   it('ticket válido → resuelve uid del store y NO llama verifyIdToken', async () => {
     const auth = stubFirebaseAuth({ succeed: {} });
-    const store = vi.fn(async () => ({ uid: 'uid-from-ticket', isDemo: false }));
+    const store = vi.fn(async () => ({ uid: 'uid-from-ticket' }));
     const app = await buildStreamApp({ auth, sseTicketStore: store });
     const res = await app.request(`${STREAM_PATH}?ticket=abc123`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { uid: string; isDemo: boolean };
+    const body = (await res.json()) as { uid: string; isDemo?: unknown };
     expect(body.uid).toBe('uid-from-ticket');
-    expect(body.isDemo).toBe(false);
+    expect(body.isDemo).toBeUndefined();
     expect(store).toHaveBeenCalledWith('abc123', ASSIGNMENT);
     expect(auth.verifyIdToken).not.toHaveBeenCalled();
   });

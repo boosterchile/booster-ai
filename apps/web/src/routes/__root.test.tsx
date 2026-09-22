@@ -6,15 +6,10 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => () => undefined,
 }));
 
-// DemoBanner e ImpersonationBanner se montan global pero se self-gatean
-// (useIsDemo() / useImpersonation()). En el test del root no inyectamos
-// provider de Firebase auth ni QueryClient, así que mockeamos ambos hooks
-// al path "no banner".
-// Sesión con claim is_demo residual: el banner demo ya no existe (spec
-// retiro-demo-codigo-muerto), aunque el claim esté presente.
-vi.mock('../hooks/use-is-demo.js', () => ({
-  useIsDemo: () => true,
-}));
+// ImpersonationBanner se monta global pero se self-gatea (useImpersonation()).
+// En el test del root no inyectamos provider de Firebase auth ni QueryClient,
+// así que mockeamos el hook al path "no banner". El banner demo ya no existe
+// (spec retiro-demo-codigo-muerto).
 vi.mock('../hooks/use-impersonation.js', () => ({
   useImpersonation: () => ({ active: false, impersonatedBy: null }),
 }));
@@ -32,7 +27,7 @@ describe('RootComponent', () => {
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
   });
 
-  it('no monta el banner demo aunque la sesión traiga el claim is_demo', () => {
+  it('no monta el banner demo (retirado)', () => {
     render(<RootComponent />);
     expect(screen.queryByTestId('demo-banner')).not.toBeInTheDocument();
   });
