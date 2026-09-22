@@ -129,7 +129,7 @@ describe('GET /trayectos-teltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0.getTime() + 60_000),
-          latitude: '-33.46',
+          latitude: '-33.56',
           longitude: '-70.66',
           speedKmh: 50,
           ioData: { '239': 1, '240': 1, '84': 400 },
@@ -163,11 +163,21 @@ describe('GET /trayectos-teltonika', () => {
     };
     expect(body.cta).toBeNull();
     expect(body.total).toBe(1);
+    expect(body).toMatchObject({
+      combustible: 'con_dato',
+      total_con_combustible: 1,
+      total_sin_combustible: 0,
+      vehiculos: [{ vehiculo_id: VEHICULO, patente: 'ABCD12', combustible: 'nivel_litros' }],
+    });
     expect(body.trayectos[0]).toMatchObject({
       patente: 'ABCD12',
       empresa_id: EMPRESA,
       litros_iniciales: 50,
       litros_finales: 40,
+      fuente_combustible: 'nivel_litros',
+      litros_consumidos: 10,
+      nivel_pct_inicial: null,
+      nivel_pct_final: null,
       posible_robo_combustible: false,
       posible_robo_hormiga: false,
       event_lat: null,
@@ -296,5 +306,53 @@ describe('GET /trayectos-teltonika', () => {
     );
     expect(res.status).toBe(422);
     expect(((await res.json()) as { code: string }).code).toBe('ventana_demasiado_amplia');
+  });
+
+  it('?combustible=sin_dato devuelve los trayectos sin lectura de combustible', async () => {
+    const t0 = new Date('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'KZBB26', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 60_000),
+          latitude: '-33.46',
+          longitude: '-70.66',
+          speedKmh: 50,
+          ioData: { '239': 1, '240': 1 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: t0,
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 50,
+          ioData: { '239': 1, '240': 1 },
+        },
+      ],
+    );
+    const res = await buildApp(db).request('/?combustible=sin_dato');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      combustible: string;
+      total: number;
+      total_con_combustible: number;
+      total_sin_combustible: number;
+      vehiculos: unknown[];
+      trayectos: Array<{ patente: string; fuente_combustible: string | null }>;
+    };
+    expect(body).toMatchObject({
+      combustible: 'sin_dato',
+      total: 1,
+      total_con_combustible: 0,
+      total_sin_combustible: 1,
+      vehiculos: [{ vehiculo_id: VEHICULO, patente: 'KZBB26', combustible: 'sin_sensor' }],
+    });
+    expect(body.trayectos[0]).toMatchObject({ patente: 'KZBB26', fuente_combustible: null });
+  });
+
+  it('400 si combustible no es un filtro conocido', async () => {
+    const res = await buildApp(makeDb([])).request('/?combustible=todos');
+    expect(res.status).toBe(400);
   });
 });
