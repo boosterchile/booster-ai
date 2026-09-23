@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { CONECTADO_HASTA_S } from '../lib/estado-dispositivo.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -1200,6 +1201,42 @@ describe('VehiculoDetallePage — hub', () => {
       false,
     );
   });
+
+  it.each([
+    { caso: 'dentro', edadS: CONECTADO_HASTA_S - 60, valor: /conectado/i, edad: /hace 29 min/ },
+    { caso: 'fuera', edadS: CONECTADO_HASTA_S + 60, valor: /sin señal/i, edad: /hace 31 min/ },
+  ])(
+    'la píldora de dispositivo usa la ventana de conexión de la lista ($caso)',
+    async ({ edadS, valor, edad }) => {
+      vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+        if (path === '/vehiculos/veh-1') {
+          return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+        }
+        if (path.includes('/ubicacion')) {
+          return {
+            ubicacion: {
+              timestamp_device: new Date(Date.now() - edadS * 1000).toISOString(),
+              latitude: -33.4,
+              longitude: -70.6,
+              speed_kmh: 0,
+            },
+          };
+        }
+        return {} as never;
+      });
+      const me = makeMe();
+      providedContext = {
+        kind: 'onboarded',
+        me: {
+          ...me,
+          active_membership: { ...me.active_membership, role: 'conductor' },
+        } as MeOnboarded,
+      };
+      wrap(<VehiculosDetalleRoute />);
+      await waitFor(() => expect(screen.getByTestId('hub-estado')).toHaveTextContent(edad));
+      expect(screen.getByTestId('hub-estado')).toHaveTextContent(valor);
+    },
+  );
 
   it('mientras cargan los trayectos el bloque operativo está ocupado', async () => {
     let resolver: (value: unknown) => void = () => undefined;

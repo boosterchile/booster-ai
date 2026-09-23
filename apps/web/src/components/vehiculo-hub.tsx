@@ -5,11 +5,15 @@ import { AlertTriangle, Gauge, History, Navigation, Route as RouteIcon } from 'l
 import { type ReactNode, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, api } from '../lib/api-client.js';
+import {
+  type EstadoDispositivo,
+  estadoDispositivo,
+  etiquetaDispositivo,
+} from '../lib/estado-dispositivo.js';
 import { ageSeconds, formatAge } from '../lib/freshness.js';
 import { TrazaMapPreview } from './map/TrazaMapPreview.js';
 import { VehicleMap } from './map/VehicleMap.js';
 
-const CONECTADO_HASTA_S = 30 * 60;
 const VENTANA_MS = 30 * 24 * 60 * 60 * 1000;
 const MAPA_ALTO_ESCRITORIO = 200;
 const MAPA_ALTO_MOVIL = 160;
@@ -149,7 +153,7 @@ export function VehiculoHub({
     }
   }
 
-  const estado = estadoTeltonika(conImei, ubicacionQ.data ?? null, ubicacionQ.isError);
+  const estado = estadoTeltonika(teltonikaImei, ubicacionQ.data ?? null, ubicacionQ.isError);
 
   return (
     <section data-testid="hub-vehiculo" className="mb-6 min-w-0">
@@ -768,32 +772,23 @@ function Badges({ trayecto }: { trayecto: TrayectoHub }) {
   );
 }
 
-type Estado = { codigo: 'sin_imei' | 'conectado' | 'sin_senal'; detalle: string | null };
+type Estado = { codigo: EstadoDispositivo; detalle: string | null };
 
-function estadoTeltonika(conImei: boolean, ubicacion: UbicacionHub | null, error: boolean): Estado {
-  if (!conImei) {
-    return { codigo: 'sin_imei', detalle: null };
+/**
+ * El estado sale de `lib/estado-dispositivo`, la misma regla de la lista;
+ * el hub solo le agrega la edad del último reporte.
+ */
+function estadoTeltonika(
+  teltonikaImei: string | null,
+  ubicacion: UbicacionHub | null,
+  error: boolean,
+): Estado {
+  const timestampDevice = error ? null : (ubicacion?.ubicacion.timestamp_device ?? null);
+  const codigo = estadoDispositivo({ teltonikaImei, timestampDevice });
+  if (codigo === 'sin_dispositivo') {
+    return { codigo, detalle: null };
   }
-  const ts = ubicacion?.ubicacion.timestamp_device ?? null;
-  const segundos = ageSeconds(ts);
-  if (error || segundos == null) {
-    return { codigo: 'sin_senal', detalle: 'sin reportes' };
-  }
-  const edad = formatAge(segundos);
-  if (segundos < CONECTADO_HASTA_S) {
-    return { codigo: 'conectado', detalle: edad };
-  }
-  return { codigo: 'sin_senal', detalle: edad };
-}
-
-function etiquetaDispositivo(codigo: Estado['codigo']): string {
-  if (codigo === 'sin_imei') {
-    return 'Sin dispositivo';
-  }
-  if (codigo === 'conectado') {
-    return 'Conectado';
-  }
-  return 'Sin señal';
+  return { codigo, detalle: formatAge(ageSeconds(timestampDevice)) ?? 'sin reportes' };
 }
 
 function tonoDispositivo(codigo: Estado['codigo']): string {
