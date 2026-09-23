@@ -435,16 +435,11 @@ export function createChatRoutes(opts: {
       opts.logger.error({ path: c.req.path }, 'stream-ticket without userContext');
       return c.json({ error: 'Unauthorized' }, 401);
     }
-    // El ticket conserva el snapshot is_demo del claim. El chain productivo
-    // no branchea sobre él; el campo sigue en el contrato del ticket.
-    const claims = c.get('firebaseClaims') as { custom?: Record<string, unknown> } | undefined;
-    const isDemo = claims?.custom?.is_demo === true;
     try {
       const { ticket, expiresInSec } = await mintStreamTicket({
         redis: opts.redis,
         uid: userContext.user.firebaseUid,
         assignmentId,
-        isDemo,
       });
       return c.json({ ticket, expires_in_sec: expiresInSec });
     } catch (err) {

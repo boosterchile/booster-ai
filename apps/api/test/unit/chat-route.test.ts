@@ -111,6 +111,7 @@ async function buildApp(opts: {
   attachmentsBucket?: string;
   pubsubTopic?: string;
   webAppUrl?: string;
+  redis?: unknown;
 }) {
   const { createChatRoutes } = await import('../../src/routes/chat.js');
   const app = new Hono();
@@ -118,6 +119,10 @@ async function buildApp(opts: {
     const ctx = c.req.header('x-test-userctx');
     if (ctx) {
       c.set('userContext', JSON.parse(ctx));
+    }
+    const claims = c.req.header('x-test-claims');
+    if (claims) {
+      c.set('firebaseClaims', JSON.parse(claims));
     }
     await next();
   });
@@ -346,6 +351,32 @@ describe('POST /chat/:id/messages', () => {
       body: JSON.stringify({ type: 'texto', text: 'hola' }),
     });
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /chat/:id/messages/stream-ticket', () => {
+  it('sesión con claim is_demo residual → el ticket guardado NO lleva isDemo', async () => {
+    const stored: string[] = [];
+    const redis = {
+      async set(_key: string, value: string) {
+        stored.push(value);
+        return 'OK';
+      },
+    };
+    const app = await buildApp({ db: makeDb({ selects: [[ACCESS_ROW_SHIPPER]] }), redis });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages/stream-ticket`, {
+      method: 'POST',
+      headers: {
+        'x-test-userctx': JSON.stringify({
+          user: { id: USER_ID, firebaseUid: 'fb-uid' },
+          activeMembership: { empresa: { id: SHIPPER_EMP } },
+        }),
+        'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { is_demo: true } }),
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(stored).toHaveLength(1);
+    expect(JSON.parse(stored[0] ?? '{}')).toEqual({ uid: 'fb-uid', assignmentId: ASSIGN_ID });
   });
 });
 

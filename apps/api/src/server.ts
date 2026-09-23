@@ -217,9 +217,10 @@ export function createServer(opts: CreateServerOptions): Hono {
   // POST /demo/login (modo demo subdominio) RETIRADO — chore/retiro-subsistema-demo.
   if (opts.firebaseAuth) {
     // T5 SEC-001 Sprint 2a — GET /api/v1/demo/cache-warm/:persona
-    // (pre-warm del cache del middleware demo-expires, llamado fire-
-    // and-forget desde el landing demo). IP rate-limited inline (10/
-    // min/IP). Public — no firebase auth required.
+    // (pre-warm del cache `demo-claim:<uid>`; su consumidor, el middleware
+    // demo-expires, está retirado — el retiro de esta ruta es decisión del
+    // PO, Slot 2). IP rate-limited inline (10/min/IP). Public — no firebase
+    // auth required.
     app.route(
       '/api/v1/demo',
       createDemoCacheWarmRoutes({

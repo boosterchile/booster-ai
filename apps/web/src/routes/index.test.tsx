@@ -48,7 +48,7 @@ describe('IndexRoute', () => {
     vi.unstubAllGlobals();
   });
 
-  it('host demo.boosterchile.com + user presente → redirect /app (banner se muestra global)', () => {
+  it('host demo.boosterchile.com + user presente → redirect /app', () => {
     useAuthMock.mockReturnValue({ user: { uid: 'u' }, loading: false });
     vi.stubGlobal('location', { hostname: 'demo.boosterchile.com' });
     render(<IndexRoute />);
