@@ -1224,6 +1224,80 @@ describe('credibilidad del aviso de robo', () => {
   });
 });
 
+describe('km/L imposible (JLKT54, estanque virtual de 200 L)', () => {
+  it('reproduce 12,29 km/L con la firma de JLKT54 y el piso del gate no lo frena', () => {
+    // Censo: raw 84 = 20 × raw 89 → el ×0.1 del catálogo es un estanque virtual
+    // de 200 L (litros = 2 × Δ%). 80 % → 75 % son 10 L, no el consumo del motor.
+    const latFin = -34.55482;
+    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
+    const litrosVirtuales = (1600 - 1500) * 0.1;
+    expect(litrosVirtuales).toBe(10);
+    expect(Math.round((km / litrosVirtuales + Number.EPSILON) * 100) / 100).toBe(12.29);
+
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1600, '89': 80, '83': 581_520 },
+      }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: latFin,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1500, '89': 75, '83': 582_011 },
+      }),
+    ]);
+    // El Δ del 83 sería 49,1 L (~2,5 km/L). El 84 manda y publica el imposible.
+    expect(trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: 160,
+      litrosFinales: 150,
+      litrosConsumidos: 10,
+      nivelPctInicial: 80,
+      nivelPctFinal: 75,
+      kmPorLitro: 12.29,
+      notaCombustible: null,
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+    });
+  });
+
+  it.fails('no publica 12,29 km/L: el Δ del estanque virtual no es el consumo del camión', () => {
+    const latFin = -34.55482;
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1600, '89': 80, '83': 581_520 },
+      }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: latFin,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1500, '89': 75, '83': 582_011 },
+      }),
+    ]);
+    const kmPorLitro = trayectos[0]?.kmPorLitro ?? null;
+    expect(kmPorLitro == null || kmPorLitro <= 8).toBe(true);
+  });
+
+  it('el mínimo de 5 L y 10 km también deja pasar 12,29 km/L sin el 89', () => {
+    const latFin = -34.00262;
+    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
+    expect(Math.round((km / 5 + Number.EPSILON) * 100) / 100).toBe(12.29);
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({ tMs: T0 + 60_000, lat: latFin, io: { '239': 1, '240': 1, '84': 950 } }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: 5,
+      kmPorLitro: 12.29,
+      notaCombustible: null,
+    });
+  });
+});
+
 describe('resumirCombustibleVehiculos', () => {
   const OTRO = '33333333-3333-4333-8333-333333333333';
   const TERCERO = '44444444-4444-4444-8444-444444444444';
