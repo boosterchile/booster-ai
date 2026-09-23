@@ -157,7 +157,7 @@ Inventario exacto de `local.secret_names` (nombres y propósito; sin valores):
 
 ### Proveedores de IA y mapas
 
-- `anthropic-api-key` — fallback Claude en el ai-provider.
+- `anthropic-api-key` — secreto reservado en `security.tf`. No hay package `ai-provider` en el repo y el código de producto no lo lee.
 - `backend-legacy-maps-key` — Geocoding + Elevation (ADR-009 del 2.0), en [APIs Credentials](https://console.cloud.google.com/apis/credentials).
 - `frontend-maps-key` — Maps JavaScript API con restricción por HTTP referrer.
 

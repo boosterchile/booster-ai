@@ -1,6 +1,6 @@
-# AGENTS.md — Contrato cross-tool para agentes de IA
+# AGENTS.md — Índice cross-tool para agentes de IA
 
-Este repo está diseñado para ser trabajado primariamente con **Claude** (ver [`CLAUDE.md`](./CLAUDE.md)), pero también es compatible con otros agentes (GitHub Copilot, Cursor, Windsurf, Codex CLI). Este archivo es el subconjunto estable y agnóstico de convenciones que cualquier agente debe respetar.
+El contrato normativo —frontera de decisiones, ciclo de trabajo, frentes, evidencia y archivos protegidos— vive en [`CLAUDE.md`](./CLAUDE.md) y aplica a cualquier agente (Claude, Cursor, Copilot, Windsurf, Codex CLI). Este archivo es el índice estable: stack, comandos y el puntero a ese contrato.
 
 ## Principios no negociables
 
@@ -49,7 +49,8 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
-- Los plugins `superpowers` y `booster-skills` son apoyo opcional cuando estén disponibles (conocimiento de dominio y refuerzo de proceso); la disciplina normativa vive íntegra en `CLAUDE.md` + CI + gates humanos (ADR-072).
+- El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks de Claude Code (ADR-078).
+- El agente no mergea a `main`. La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
 - Antes de introducir una dependencia nueva: crear ADR.
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
 
