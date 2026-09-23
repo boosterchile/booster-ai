@@ -12,7 +12,8 @@ export interface ResumenHubVehiculo {
   litrosRecientes: number | null;
   /**
    * km/L del trayecto más reciente que ya lo trae. Null si ninguno lo trae:
-   * no se divide km/L a mano (el segmentador lo omite bajo 5 L o 10 km).
+   * no se divide km/L a mano (el segmentador lo omite bajo 5 L, bajo 10 km
+   * o por encima de 6,25 km/L).
    */
   kmPorLitro: number | null;
   /** True si hay trayectos y todos piden conectar el sensor. */
