@@ -5,8 +5,8 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
-import { type ReactNode, useRef, useState } from 'react';
+import { ArrowLeft, ChevronDown, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ChileanPlate } from '../components/ChileanPlate.js';
@@ -410,6 +410,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const [guardado, setGuardado] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [configAbierta, setConfigAbierta] = useState(false);
+  const [enfocarConfig, setEnfocarConfig] = useState(false);
   const configRef = useRef<HTMLDetailsElement>(null);
 
   const role = me.active_membership?.role;
@@ -426,10 +427,23 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   function abrirConfig() {
     setConfigAbierta(true);
-    requestAnimationFrame(() => {
-      configRef.current?.scrollIntoView({ block: 'start' });
-    });
+    setEnfocarConfig(true);
   }
+
+  useEffect(() => {
+    if (!enfocarConfig || !configAbierta) {
+      return;
+    }
+    const raiz = configRef.current;
+    if (!raiz) {
+      return;
+    }
+    raiz.scrollIntoView({ block: 'start' });
+    const imei = raiz.querySelector<HTMLElement>('[data-config-imei]');
+    const destino = imei ?? raiz.querySelector('summary');
+    destino?.focus();
+    setEnfocarConfig(false);
+  }, [enfocarConfig, configAbierta]);
 
   const vehicleQ = useQuery({
     queryKey: ['vehiculos', id],
@@ -532,12 +546,18 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             data-testid="configuracion-vehiculo"
             open={configAbierta}
             onToggle={(event) => setConfigAbierta(event.currentTarget.open)}
-            className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white"
+            className="group scroll-mt-20 rounded-lg border border-neutral-200 bg-white"
           >
-            <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-neutral-900">
-              Configuración
-              <span className="mt-0.5 block font-normal text-neutral-600 text-sm">
-                IMEI, capacidades, tipo y combustible.
+            <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+              <ChevronDown
+                className="mt-1 h-4 w-4 shrink-0 text-neutral-500 transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+              <span>
+                <span className="font-semibold text-neutral-900">Configuración</span>
+                <span className="mt-0.5 block font-normal text-neutral-600 text-sm">
+                  IMEI, capacidades, tipo y combustible.
+                </span>
               </span>
             </summary>
             <div className="space-y-6 border-neutral-200 border-t px-4 py-4">
@@ -767,6 +787,7 @@ function DispositivoSection({
             render={({ id, describedBy }) => (
               <input
                 id={id}
+                data-config-imei=""
                 aria-describedby={describedBy}
                 type="text"
                 inputMode="numeric"

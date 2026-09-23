@@ -736,6 +736,10 @@ describe('VehiculoDetallePage — hub', () => {
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(resumen.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin IMEI/i);
+    expect(screen.getByTestId('hub-estado')).toHaveAttribute('aria-live', 'polite');
+    const configCerrada = screen.getByTestId('configuracion-vehiculo');
+    expect(configCerrada).not.toHaveAttribute('open');
+    expect(configCerrada.querySelector('summary svg')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('heading', { level: 1 }).querySelector('svg')).toBeNull();
     expect(screen.queryByText('CHILE')).toBeNull();
     expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
@@ -873,7 +877,11 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
     expect(screen.getByText('—')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /conectá el sensor/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    const config = screen.getByTestId('configuracion-vehiculo');
+    expect(config).toHaveAttribute('open');
+    expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
     expect(screen.queryByText(/km\/L/)).toBeNull();
     expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin señal/i);
   });
@@ -905,9 +913,80 @@ describe('VehiculoDetallePage — hub', () => {
       'to',
       '/app/vehiculos/$id/live',
     );
+    expect(screen.getByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/historial',
+    );
     expect(get.mock.calls.some((call) => String(call[0]).includes('trayectos-teltonika'))).toBe(
       false,
     );
+  });
+
+  it('el despachador conserva el atajo a recorrido y no consulta trayectos', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    const me = makeMe();
+    providedContext = {
+      kind: 'onboarded',
+      me: {
+        ...me,
+        active_membership: { ...me.active_membership, role: 'despachador' },
+      } as MeOnboarded,
+    };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/historial',
+    );
+    expect(screen.getByRole('link', { name: /ver en vivo/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /ver trayectos/i })).toBeNull();
+    expect(get.mock.calls.some((call) => String(call[0]).includes('trayectos-teltonika'))).toBe(
+      false,
+    );
+  });
+
+  it('mientras cargan los trayectos el bloque operativo está ocupado', async () => {
+    let resolver: (value: unknown) => void = () => undefined;
+    const pendiente = new Promise((resolve) => {
+      resolver = resolve;
+    });
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return pendiente;
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const operacion = await screen.findByTestId('hub-operacion');
+    expect(operacion).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
+    resolver({
+      resumen_vehiculo: {
+        ultimo_trayecto: null,
+        recientes: [],
+        km_recientes: 0,
+        litros_recientes: null,
+        km_por_litro: null,
+        cta_sensor: false,
+        alertas_total: 0,
+        alerta_ultima: null,
+      },
+    });
+    await waitFor(() => expect(operacion).toHaveAttribute('aria-busy', 'false'));
   });
 
   it('guardar capacidades deja el hub y confirma sin salir', async () => {

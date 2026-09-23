@@ -152,6 +152,16 @@ export function VehiculoHub({
               Ver en vivo
             </Link>
           ) : null}
+          {conImei ? (
+            <Link
+              to="/app/vehiculos/$id/historial"
+              params={{ id: vehicleId }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50"
+            >
+              <RouteIcon className="h-4 w-4" aria-hidden />
+              Recorrido
+            </Link>
+          ) : null}
           {puedeVerTrayectos ? (
             <Link
               to="/app/trayectos"
@@ -205,7 +215,7 @@ function Operacion({
   onAbrirConfig: () => void;
 }) {
   return (
-    <>
+    <div data-testid="hub-operacion" aria-busy={cargando}>
       <div data-testid="hub-resumen" className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <TarjetaUltimo
           vehicleId={vehicleId}
@@ -220,7 +230,6 @@ function Operacion({
           cargando={cargando}
           error={error}
           conImei={conImei}
-          vehicleId={vehicleId}
           onAbrirConfig={onAbrirConfig}
         />
         <TarjetaAlertas
@@ -250,7 +259,7 @@ function Operacion({
         conImei={conImei}
         onAbrirConfig={onAbrirConfig}
       />
-    </>
+    </div>
   );
 }
 
@@ -300,14 +309,12 @@ function TarjetaConsumo({
   cargando,
   error,
   conImei,
-  vehicleId,
   onAbrirConfig,
 }: {
   resumen: ResumenHub | null;
   cargando: boolean;
   error: boolean;
   conImei: boolean;
-  vehicleId: string;
   onAbrirConfig: () => void;
 }) {
   const hay = resumen != null && resumen.recientes.length > 0;
@@ -336,13 +343,13 @@ function TarjetaConsumo({
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
           </p>
           {resumen.cta_sensor ? (
-            <Link
-              to="/app/trayectos"
-              search={{ vehiculo: vehicleId }}
-              className="mt-2 inline-block text-primary-700 text-sm underline"
+            <button
+              type="button"
+              onClick={onAbrirConfig}
+              className="mt-2 text-primary-700 text-sm underline"
             >
               Conectá el sensor
-            </Link>
+            </button>
           ) : null}
           {resumen.km_por_litro == null && !resumen.cta_sensor ? (
             <p className="mt-2 text-neutral-600 text-xs">
@@ -465,20 +472,9 @@ function MapaPreview({
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="font-medium text-neutral-500 text-xs uppercase tracking-wide">
-          {ultimo ? 'Último trayecto en el mapa' : 'Última posición'}
-        </h2>
-        {conImei ? (
-          <Link
-            to="/app/vehiculos/$id/historial"
-            params={{ id: vehicleId }}
-            className="text-neutral-600 text-sm underline"
-          >
-            Recorrido
-          </Link>
-        ) : null}
-      </div>
+      <h2 className="mb-2 font-medium text-neutral-500 text-xs uppercase tracking-wide">
+        {ultimo ? 'Último trayecto en el mapa' : 'Última posición'}
+      </h2>
       {hayTraza ? <TrazaMapPreview points={puntos} height={180} /> : null}
       {!hayTraza && ubicacion && lat != null && lng != null ? (
         <VehicleMap
@@ -643,6 +639,7 @@ function EstadoPill({ estado }: { estado: Estado }) {
   return (
     <span
       data-testid="hub-estado"
+      aria-live="polite"
       className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs ${clase}`}
     >
       {texto}
