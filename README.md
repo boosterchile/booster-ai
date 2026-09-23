@@ -21,7 +21,7 @@
 - Email, FCM push, Web Push, SMS fallback
 
 **Telemetría**:
-- Dispositivos Teltonika FMS150 con protocolo Codec8 (TCP) — fuente primaria 24/7
+- Dispositivos Teltonika FMC150 con protocolo Codec8 (TCP) — fuente primaria 24/7
 - PWA del driver como fuente complementaria durante trip activo
 
 **Gestión documental obligatoria Chile**:
@@ -113,7 +113,7 @@ packages/
 
 infrastructure/              # Terraform (GCP)
 .claude/                     # Plugins config + ledger + worktrees (post-ADR-049/060)
-docs/adr/                    # Architecture Decision Records (001..065)
+docs/adr/                    # Architecture Decision Records (001..080)
 ```
 
 ## Desarrollo con agentes de IA

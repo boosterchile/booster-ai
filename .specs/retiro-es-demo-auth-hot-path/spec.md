@@ -16,11 +16,11 @@ Verificado en `apps/api/src/server.ts`: ambos middlewares se instancian una vez 
 
 ## 3. Success criteria
 
-- [ ] `server.ts` no importa, no instancia y no monta `createDemoExpiresMiddleware` ni `createIsDemoEnforcementMiddleware`.
-- [ ] Un request autenticado de cuenta real sigue el mismo chain (firebase auth, userContext, impersonation-write-guard) sin un branch que lea `is_demo`.
-- [ ] El script `check-is-demo-wire-completeness.ts` sale 1 si `server.ts` vuelve a mencionar esos middlewares en código (comentarios no cuentan). El test de vitest sobre el `server.ts` real falla en el mismo caso.
-- [ ] Cuentas reales: sin cambio de contrato HTTP (siguen sin recibir `forbidden_demo` ni `demo_account_expired`).
-- [ ] No se toca Identity Platform, DNS, Terraform, ni `.github/workflows/*`.
+- [x] `server.ts` no importa, no instancia y no monta `createDemoExpiresMiddleware` ni `createIsDemoEnforcementMiddleware`. — verificado 2026-09-22: `git grep` en cf76ea8 de los factories, de `demoExpiresMiddleware`/`isDemoEnforcementMiddleware` y de los imports `demo-expires`/`is-demo-enforcement` en `apps/api/src/server.ts` → solo el comentario de la línea 220; retirado en #698 (d7d799a).
+- [x] Un request autenticado de cuenta real sigue el mismo chain (firebase auth, userContext, impersonation-write-guard) sin un branch que lea `is_demo`. — verificado 2026-09-22: en cf76ea8 los `app.use` de `server.ts` encadenan `firebaseAuthMiddleware` → `userContextMiddleware` → `impersonationWriteGuardMiddleware` sin middleware demo; fuera de tests y de los módulos no montados, `is_demo` solo aparece en `firebase-auth.ts:87` y `chat.ts:441` (copian el snapshot del ticket SSE, sin branch) y en `harden-demo-accounts.ts` (escribe el claim).
+- [x] El script `check-is-demo-wire-completeness.ts` sale 1 si `server.ts` vuelve a mencionar esos middlewares en código (comentarios no cuentan). El test de vitest sobre el `server.ts` real falla en el mismo caso. — verificado 2026-09-22: script de cf76ea8 corrido sobre una copia: `server.ts` de main → exit 0; ese mismo `server.ts` + import/factory/mount de demoExpires → exit 1 (3 markers). `test/scripts/auth-hot-path-no-demo-enforcement.test.ts` (5 tests, lee el `server.ts` real con la misma función) verde en CI de #698 y #707.
+- [x] Cuentas reales: sin cambio de contrato HTTP (siguen sin recibir `forbidden_demo` ni `demo_account_expired`). — verificado 2026-09-22: en cf76ea8 esos códigos solo los emiten `is-demo-enforcement.ts:75` y `demo-expires.ts:222/233`, módulos que ningún archivo no-test importa (salvo un tipo en `is-demo-allowlist.ts`); el api en prod `00610-qaw` (imagen 428ff51) contiene d7d799a.
+- [x] No se toca Identity Platform, DNS, Terraform, ni `.github/workflows/*`. — verificado 2026-09-22: `gh pr view 698 --json files` → 16 archivos, todos en `.specs/retiro-es-demo-auth-hot-path/`, `apps/api/` y `docs/qa/`; ninguno en `infrastructure/` ni en `.github/workflows/`.
 
 ## 4. User-visible behaviour
 

@@ -22,6 +22,6 @@ que el rojo nunca apareció. Producción nunca había llegado a este paso (IAM f
 ## 3. Criterios de salida
 
 - [x] Rojo exhibido con la librería real (`Error: Signer implementation expected.`); verde tras el cambio (11 archivos / 102 tests del paquete).
-- [ ] Suite de `packages/certificate-generator` + `apps/api`, typecheck, biome.
-- [ ] En prod (tras deploy o vía el script manual): `certificado_emitido_en` de BOO-BKAXIK
-      poblado, PDF en el bucket, `GET /certificates/BOO-BKAXIK/verify` 200.
+- [x] Suite de `packages/certificate-generator` + `apps/api`, typecheck, biome. — verificado 2026-09-22: CI run 34899899228 de #685 (head bc5759a, success): certificate-generator 11 archivos/102 tests y api 169/2066 (cache miss), Typecheck (tsc) y Lint (Biome) en pass.
+- [x] En prod (tras deploy o vía el script manual): `certificado_emitido_en` de BOO-BKAXIK
+      poblado, PDF en el bucket, `GET /certificates/BOO-BKAXIK/verify` 200. — verificado 2026-09-22: certificado_emitido_en 2026-09-14 21:40:40.91Z (agent-query); gs://booster-ai-494222-certificates-prod/certificates/d277a221-…/BOO-BKAXIK.pdf 40305 B + .sig (GCS JSON API); /verify → 200 valid:true (curl 18:48Z).

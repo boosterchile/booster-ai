@@ -1,4 +1,4 @@
-q# Medición de huella sobre el segmento real (F1+F2) — Plan de implementación
+# Medición de huella sobre el segmento real (F1+F2) — Plan de implementación
 
 > **Para workers agénticos:** SUB-SKILL REQUERIDA: usar `superpowers:subagent-driven-development` (recomendado) o `superpowers:executing-plans` para ejecutar tarea por tarea. Los pasos usan checkbox (`- [ ]`). Ejecutable por `/goal` (BUILD) tarea a tarea, en orden.
 
