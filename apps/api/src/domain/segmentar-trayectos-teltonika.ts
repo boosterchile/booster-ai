@@ -362,6 +362,10 @@ function combustibleDelVehiculo(puntos: readonly PuntoSegmentacion[]): Combustib
     return 'consumo_can';
   }
   if (fuente === '89') {
+    const hayPct = puntos.some((punto) => nivelPctDe(punto.io) != null);
+    if (hayPct && capacidadConocida(puntos[0]?.capacidadEstanqueL ?? null)) {
+      return 'nivel_litros';
+    }
     return 'nivel_porcentaje';
   }
   const hayPct = puntos.some((punto) => porcentajeDeIo84(punto.io) != null);
@@ -670,7 +674,11 @@ function clasificarSensor(puntos: PuntoResuelto[], ctx: ContextoCombustible): Se
     return puntos.some((punto) => consumoAcumuladoDe(punto.io) != null) ? 'presente' : 'degradado';
   }
   if (ctx.fuente === '89') {
-    return puntos.some((punto) => nivelPctDe(punto.io) != null) ? 'presente' : 'degradado';
+    const hayPct = puntos.some((punto) => nivelPctDe(punto.io) != null);
+    if (hayPct && capacidadConocida(ctx.capacidadEstanqueL)) {
+      return 'presente';
+    }
+    return 'degradado';
   }
   let claveCombustible = false;
   for (const punto of puntos) {
@@ -694,10 +702,11 @@ function lectorLitrosNivel(
   if (ctx.fuente === 'auto') {
     return litrosDe;
   }
-  if (ctx.fuente === '84' && capacidadConocida(ctx.capacidadEstanqueL)) {
+  if ((ctx.fuente === '84' || ctx.fuente === '89') && capacidadConocida(ctx.capacidadEstanqueL)) {
     const capacidad = ctx.capacidadEstanqueL;
+    const leerPct = ctx.fuente === '84' ? porcentajeDeIo84 : nivelPctDe;
     return (io) => {
-      const pct = porcentajeDeIo84(io);
+      const pct = leerPct(io);
       if (pct == null) {
         return null;
       }
@@ -825,18 +834,12 @@ function combustibleSegunFuente(
   const base = baseCombustible(distanciaKm, null, null);
 
   if (fuente === '89') {
-    const porcentaje = lecturasDe(puntos, nivelPctDe);
-    const primera = porcentaje[0];
-    const ultima = porcentaje[porcentaje.length - 1];
-    if (!primera || !ultima) {
-      return { ...base, notaCombustible: NOTA_IO89_INUSABLE };
-    }
-    return {
-      ...base,
-      fuenteCombustible: 'nivel_porcentaje',
-      nivelPctInicial: primera.valor,
-      nivelPctFinal: ultima.valor,
-    };
+    return combustibleDesdeNivelPct(
+      puntos,
+      lecturasDe(puntos, nivelPctDe),
+      capacidadEstanqueL,
+      NOTA_IO89_INUSABLE,
+    );
   }
 
   if (fuente === '83') {
@@ -861,11 +864,31 @@ function combustibleSegunFuente(
     };
   }
 
-  const porcentajes = lecturasDe(puntos, porcentajeDeIo84);
+  return combustibleDesdeNivelPct(
+    puntos,
+    lecturasDe(puntos, porcentajeDeIo84),
+    capacidadEstanqueL,
+    NOTA_IO84_INUSABLE,
+  );
+}
+
+/**
+ * Porcentaje de estanque × capacidad. Sin N no hay litros.
+ * El km/L sale del consumo cubierto que ya existe; el guardrail de economía
+ * no se duplica acá.
+ */
+function combustibleDesdeNivelPct(
+  puntos: PuntoResuelto[],
+  porcentajes: Lectura[],
+  capacidadEstanqueL: number | null,
+  notaInusable: string,
+): CombustibleTrayecto {
+  const distanciaKm = distanciaDe(puntos);
+  const base = baseCombustible(distanciaKm, null, null);
   const primerPct = porcentajes[0];
   const ultimoPct = porcentajes[porcentajes.length - 1];
   if (!primerPct || !ultimoPct) {
-    return { ...base, notaCombustible: NOTA_IO84_INUSABLE };
+    return { ...base, notaCombustible: notaInusable };
   }
   if (!capacidadConocida(capacidadEstanqueL)) {
     return {

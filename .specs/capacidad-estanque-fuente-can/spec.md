@@ -19,13 +19,13 @@
 - Create sin esos campos: capacidad null y fuente `sin_sensor`. Nunca se persiste `84` por omisión.
 - `≤ 0`, no numérico o `> 2000` → 400 con mensaje claro. Fuente fuera del conjunto → 400.
 - Otro rol que mande estos campos → 403 `admin_required`.
-- Trayectos: la fuente configurada es la única que entra al cálculo. `sin_sensor` no inventa litros (km + CTA de sensor, igual que hoy sin sensor). `84` con IO usable y capacidad N convierte porcentaje × N. Sin capacidad, no hay litros y la nota dice que falta la capacidad, con CTA a la configuración. `83` y `89` usan solo ese IO; si no sirve, degradación explícita y sin litros inventados.
+- Trayectos: la fuente configurada es la única que entra al cálculo. `sin_sensor` no inventa litros (km + CTA de sensor, igual que hoy sin sensor). `84` y `89` con IO usable y capacidad N convierten porcentaje × N. Sin capacidad, no hay litros y la nota dice que falta la capacidad, con CTA a la configuración. `83` usa solo el contador; si el IO no sirve, degradación explícita y sin litros inventados. El guardrail de km/L no se implementa en este frente.
 
 ## Mapeo AVL (Data Ops puede afinar después; este PR no pisa backfills manuales)
 
 - **84 (JLKT54):** el raw del censo vale `20 × porcentaje` (el firmware asume estanque de 200 L). Porcentaje = `raw / 20`, válido solo en 0–100. Litros = `porcentaje / 100 × capacidad_estanque_l`. Con N = 200 L coincide con `raw × 0.1`. Fuera de 0–100 el IO no se usa.
 - **83:** contador acumulado, `raw × 0.1` L, igual que el catálogo vigente. Se usa el Δ. No es nivel y no habilita el aviso de robo.
-- **89:** porcentaje 0–100 directo. No se convierte a litros aunque haya capacidad (JWTH77).
+- **89:** porcentaje 0–100 directo. Si la fuente es `89` y hay capacidad N, litros = `porcentaje / 100 × N`. Data Ops (JLKT54): el IO 84 está deprimido ~4× frente a 89 × estanque (~200 L de firmware); por eso, con fuente 89, no se usa el 84. Sin capacidad no hay litros. JWTH77 sigue sin litros mientras la fuente quede en `sin_sensor`.
 
 ## Anti-robo
 

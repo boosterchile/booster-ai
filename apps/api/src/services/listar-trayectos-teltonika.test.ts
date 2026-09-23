@@ -769,4 +769,56 @@ describe('listarTrayectosTeltonika', () => {
       fuenteCombustible: 'nivel_litros',
     });
   });
+
+  it('fuente 89 y capacidad 200 L prefieren 89 × capacidad, no el 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JLKT54',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: '89',
+          capacidadEstanqueL: 200,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 80, '84': 400 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 60, '84': 300 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      litrosIniciales: 160,
+      litrosFinales: 120,
+      litrosConsumidos: 40,
+      nivelPctInicial: 80,
+      nivelPctFinal: 60,
+      fuenteCombustible: 'nivel_litros',
+    });
+    expect(lista.vehiculos[0]?.combustible).toBe('nivel_litros');
+  });
 });

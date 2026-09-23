@@ -1381,23 +1381,52 @@ describe('provisioning de fuente CAN y capacidad de estanque', () => {
     });
   });
 
-  it('fuente 89 (JWTH77) no fuerza litros aunque haya capacidad y un 84 al lado', () => {
+  it('fuente 89 usa 89 × capacidad y no el IO 84 deprimido', () => {
     const trayectos = segmentarTrayectosTeltonika([
-      conFuente({ tMs: T0, io: { '239': 1, '240': 1, '89': 50, '84': 1000 } }, '89', 200),
+      conFuente({ tMs: T0, io: { '239': 1, '240': 1, '89': 80, '84': 400 } }, '89', 200),
       conFuente(
-        { tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '89': 40, '84': 800 } },
+        { tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '89': 60, '84': 300 } },
         '89',
         200,
       ),
     ]);
     expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: 'nivel_litros',
+      nivelPctInicial: 80,
+      nivelPctFinal: 60,
+      litrosIniciales: 160,
+      litrosFinales: 120,
+      litrosConsumidos: 40,
+      sensorCombustible: 'presente',
+      ctaCapacidadEstanque: false,
+      notaCombustible: null,
+      posibleRoboCombustible: false,
+    });
+    expect(
+      resumirCombustibleVehiculos([
+        conFuente({ tMs: T0, io: { '89': 80, '84': 400 } }, '89', 200),
+      ])[0]?.combustible,
+    ).toBe('nivel_litros');
+  });
+
+  it('fuente 89 sin capacidad no calcula litros y pide la capacidad', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      conFuente({ tMs: T0, io: { '239': 1, '240': 1, '89': 80, '84': 400 } }, '89', null),
+      conFuente(
+        { tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '89': 60, '84': 300 } },
+        '89',
+        null,
+      ),
+    ]);
+    expect(trayectos[0]).toMatchObject({
       fuenteCombustible: 'nivel_porcentaje',
-      nivelPctInicial: 50,
-      nivelPctFinal: 40,
       litrosIniciales: null,
       litrosConsumidos: null,
       kmPorLitro: null,
-      notaCombustible: null,
+      nivelPctInicial: 80,
+      nivelPctFinal: 60,
+      notaCombustible: NOTA_FALTA_CAPACIDAD,
+      ctaCapacidadEstanque: true,
       posibleRoboCombustible: false,
     });
   });
