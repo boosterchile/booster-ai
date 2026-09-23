@@ -28,6 +28,9 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional(),
   page_size: z.coerce.number().int().min(1).max(50).optional(),
   combustible: z.enum(['con_dato', 'sin_dato']).optional(),
+  vehiculo_id: z.string().uuid().optional(),
+  /** Id de trayecto (`vehiculoId:inicio`) para incluirlo en la página del detalle. */
+  detalle: z.string().min(1).max(180).optional(),
 });
 
 const consultas = getBusinessCounter('trayectos_teltonika_consultas_total');
@@ -99,6 +102,8 @@ export function createTrayectosTeltonikaRoutes(opts: { db: Db; logger: Logger })
           page,
           pageSize,
           combustible: query.combustible ?? 'con_dato',
+          vehiculoId: query.vehiculo_id,
+          detalleId: query.detalle,
         });
 
         opts.logger.info(
@@ -121,6 +126,9 @@ export function createTrayectosTeltonikaRoutes(opts: { db: Db; logger: Logger })
           resultado = 'truncado';
         }
         consultas.add(1, { resultado });
+        if (query.vehiculo_id) {
+          span.setAttribute('booster.vehicle_id', query.vehiculo_id);
+        }
         setResultAttributes(span, {
           'booster.trayectos.total': lista.total,
           'booster.trayectos.truncado': lista.truncado,
@@ -157,28 +165,50 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
       patente: v.patente,
       combustible: v.combustible,
     })),
-    trayectos: lista.trayectos.map((t) => ({
-      id: t.id,
-      vehiculo_id: t.vehiculoId,
-      empresa_id: t.empresaId,
-      patente: t.patente,
-      inicio: t.inicio,
-      fin: t.fin,
-      distancia_km: t.distanciaKm,
-      litros_iniciales: t.litrosIniciales,
-      litros_finales: t.litrosFinales,
-      km_por_litro: t.kmPorLitro,
-      fuente_combustible: t.fuenteCombustible,
-      litros_consumidos: t.litrosConsumidos,
-      nivel_pct_inicial: t.nivelPctInicial,
-      nivel_pct_final: t.nivelPctFinal,
-      nota_combustible: t.notaCombustible,
-      posible_robo_combustible: t.posibleRoboCombustible,
-      posible_robo_hormiga: t.posibleRoboHormiga,
-      event_lat: t.eventLat,
-      event_lon: t.eventLon,
-      sensor_combustible: t.sensorCombustible,
-      cta_sensor: t.ctaSensor,
-    })),
+    trayectos: lista.trayectos.map(serializarTrayecto),
+    resumen_vehiculo: lista.resumenVehiculo
+      ? {
+          ultimo_trayecto: lista.resumenVehiculo.ultimo
+            ? serializarTrayecto(lista.resumenVehiculo.ultimo)
+            : null,
+          recientes: lista.resumenVehiculo.recientes.map(serializarTrayecto),
+          km_recientes: lista.resumenVehiculo.kmRecientes,
+          litros_recientes: lista.resumenVehiculo.litrosRecientes,
+          km_por_litro: lista.resumenVehiculo.kmPorLitro,
+          cta_sensor: lista.resumenVehiculo.ctaSensor,
+          alertas_total: lista.resumenVehiculo.alertasTotal,
+          alerta_ultima: lista.resumenVehiculo.alertaUltima
+            ? serializarTrayecto(lista.resumenVehiculo.alertaUltima)
+            : null,
+        }
+      : null,
+  };
+}
+
+function serializarTrayecto(
+  t: Awaited<ReturnType<typeof listarTrayectosTeltonika>>['trayectos'][number],
+) {
+  return {
+    id: t.id,
+    vehiculo_id: t.vehiculoId,
+    empresa_id: t.empresaId,
+    patente: t.patente,
+    inicio: t.inicio,
+    fin: t.fin,
+    distancia_km: t.distanciaKm,
+    litros_iniciales: t.litrosIniciales,
+    litros_finales: t.litrosFinales,
+    km_por_litro: t.kmPorLitro,
+    fuente_combustible: t.fuenteCombustible,
+    litros_consumidos: t.litrosConsumidos,
+    nivel_pct_inicial: t.nivelPctInicial,
+    nivel_pct_final: t.nivelPctFinal,
+    nota_combustible: t.notaCombustible,
+    posible_robo_combustible: t.posibleRoboCombustible,
+    posible_robo_hormiga: t.posibleRoboHormiga,
+    event_lat: t.eventLat,
+    event_lon: t.eventLon,
+    sensor_combustible: t.sensorCombustible,
+    cta_sensor: t.ctaSensor,
   };
 }

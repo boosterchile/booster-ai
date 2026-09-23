@@ -16,7 +16,21 @@ vi.mock('../components/ProtectedRoute.js', () => ({
 }));
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
+  Link: ({
+    children,
+    search,
+    ...props
+  }: {
+    children: ReactNode;
+    search?: Record<string, string | number | undefined>;
+  }) => {
+    const destino = 'to' in props && typeof props.to === 'string' ? props.to : undefined;
+    return (
+      <a href={destino} {...props} data-search={search ? JSON.stringify(search) : undefined}>
+        {children}
+      </a>
+    );
+  },
   useNavigate: () => vi.fn(),
   useParams: () => ({ id: 'veh-1' }),
 }));
@@ -36,6 +50,10 @@ vi.mock('../components/EmptyState.js', () => ({
 
 vi.mock('../components/map/VehicleMap.js', () => ({
   VehicleMap: () => <div data-testid="vehicle-map" />,
+}));
+
+vi.mock('../components/map/TrazaMapPreview.js', () => ({
+  TrazaMapPreview: () => <div data-testid="traza-map" />,
 }));
 
 const { VehiculosListRoute, VehiculosNuevoRoute, VehiculosDetalleRoute } = await import(
@@ -288,7 +306,14 @@ describe('VehiculosDetalleRoute', () => {
 // Dispositivo Teltonika (W2b) — sección self-service en VehiculoDetallePage
 // =============================================================================
 
-function makeVehicleRow(overrides: Partial<{ teltonika_imei: string | null }> = {}) {
+function makeVehicleRow(
+  overrides: Partial<{
+    teltonika_imei: string | null;
+    brand: string | null;
+    model: string | null;
+    capacity_kg: number;
+  }> = {},
+) {
   return {
     id: 'veh-1',
     plate: 'ABCD12',
@@ -699,5 +724,284 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
 
     await waitFor(() => expect(screen.getByText(/fecha desconocida/i)).toBeInTheDocument());
     expect(screen.getByText(/¿reasociar de todas formas\?/i)).toBeInTheDocument();
+  });
+});
+
+describe('VehiculoDetallePage — hub', () => {
+  it('dueño ve el hub antes del formulario de IMEI y sin placa decorativa', async () => {
+    mockDetalleGet(null);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const resumen = await screen.findByTestId('hub-resumen');
+    const config = screen.getByTestId('configuracion-vehiculo');
+    expect(resumen.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin IMEI/i);
+    expect(screen.getByTestId('hub-estado')).toHaveAttribute('aria-live', 'polite');
+    const configCerrada = screen.getByTestId('configuracion-vehiculo');
+    expect(configCerrada).not.toHaveAttribute('open');
+    expect(configCerrada.querySelector('summary svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('heading', { level: 1 }).querySelector('svg')).toBeNull();
+    expect(screen.queryByText('CHILE')).toBeNull();
+    expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
+    expect(
+      screen.getAllByRole('button', { name: /configurar dispositivo/i }).length,
+    ).toBeGreaterThan(0);
+    expect(config.querySelector('input[placeholder="15 dígitos"]')).not.toBeNull();
+  });
+
+  it('con trayectos muestra km, litros, alerta y los destinos de vivo y detalle', async () => {
+    const trayecto = {
+      id: 't-1',
+      vehiculo_id: 'veh-1',
+      patente: 'ABCD12',
+      inicio: '2026-09-02T15:00:00.000Z',
+      fin: '2026-09-02T16:00:00.000Z',
+      distancia_km: 42.5,
+      litros_consumidos: 10,
+      km_por_litro: 4.25,
+      posible_robo_combustible: true,
+      posible_robo_hormiga: false,
+      event_lat: -33.4,
+      event_lon: -70.6,
+    };
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return {
+          vehicle: makeVehicleRow({
+            teltonika_imei: IMEI_VALIDO,
+            brand: 'Volvo',
+            model: 'FH',
+          }),
+        };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: trayecto,
+            recientes: [trayecto],
+            km_recientes: 42.5,
+            litros_recientes: 10,
+            km_por_litro: 4.25,
+            cta_sensor: false,
+            alertas_total: 1,
+            alerta_ultima: trayecto,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        return {
+          ubicacion: {
+            timestamp_device: new Date().toISOString(),
+            latitude: -33.4,
+            longitude: -70.6,
+            speed_kmh: 12,
+          },
+        };
+      }
+      if (path.includes('/traza')) {
+        return {
+          puntos: [
+            { lat: -33.4, lng: -70.6 },
+            { lat: -33.5, lng: -70.7 },
+          ],
+        };
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('AB·CD·12');
+    expect(screen.getByText('Volvo FH')).toBeInTheDocument();
+    expect(await screen.findByText(/conectado/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('posible robo combustible').length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 alerta en 30 días/)).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/live',
+    );
+    const trayectos = screen.getByRole('link', { name: /ver trayectos/i });
+    expect(trayectos).toHaveAttribute('to', '/app/trayectos');
+    expect(trayectos.getAttribute('data-search')).toContain('"vehiculo":"veh-1"');
+    const detalle = screen.getAllByRole('link', { name: 'Ver detalle' })[0];
+    expect(detalle?.getAttribute('data-search')).toContain('"detalle":"t-1"');
+    expect(detalle?.getAttribute('data-search')).toContain('"vehiculo":"veh-1"');
+    expect(screen.getByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/historial',
+    );
+  });
+
+  it('sin sensor muestra km y el CTA, sin inventar km/L', async () => {
+    const trayecto = {
+      id: 't-2',
+      vehiculo_id: 'veh-1',
+      patente: 'ABCD12',
+      inicio: '2026-09-02T15:00:00.000Z',
+      fin: '2026-09-02T16:00:00.000Z',
+      distancia_km: 18,
+      litros_consumidos: null,
+      km_por_litro: null,
+      posible_robo_combustible: false,
+      posible_robo_hormiga: false,
+      event_lat: null,
+      event_lon: null,
+    };
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: trayecto,
+            recientes: [trayecto],
+            km_recientes: 18,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: true,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    const config = screen.getByTestId('configuracion-vehiculo');
+    expect(config).toHaveAttribute('open');
+    expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
+    expect(screen.queryByText(/km\/L/)).toBeNull();
+    expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin señal/i);
+  });
+
+  it('el conductor no consulta trayectos y conserva ver en vivo', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    const me = makeMe();
+    providedContext = {
+      kind: 'onboarded',
+      me: {
+        ...me,
+        active_membership: { ...me.active_membership, role: 'conductor' },
+      } as MeOnboarded,
+    };
+    wrap(<VehiculosDetalleRoute />);
+    expect(
+      await screen.findByText(/no tenés permiso para ver el historial de trayectos/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-resumen')).toBeNull();
+    expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/live',
+    );
+    expect(screen.getByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/historial',
+    );
+    expect(get.mock.calls.some((call) => String(call[0]).includes('trayectos-teltonika'))).toBe(
+      false,
+    );
+  });
+
+  it('el despachador conserva el atajo a recorrido y no consulta trayectos', async () => {
+    const get = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    const me = makeMe();
+    providedContext = {
+      kind: 'onboarded',
+      me: {
+        ...me,
+        active_membership: { ...me.active_membership, role: 'despachador' },
+      } as MeOnboarded,
+    };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/historial',
+    );
+    expect(screen.getByRole('link', { name: /ver en vivo/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /ver trayectos/i })).toBeNull();
+    expect(get.mock.calls.some((call) => String(call[0]).includes('trayectos-teltonika'))).toBe(
+      false,
+    );
+  });
+
+  it('mientras cargan los trayectos el bloque operativo está ocupado', async () => {
+    let resolver: (value: unknown) => void = () => undefined;
+    const pendiente = new Promise((resolve) => {
+      resolver = resolve;
+    });
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return pendiente;
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const operacion = await screen.findByTestId('hub-operacion');
+    expect(operacion).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
+    resolver({
+      resumen_vehiculo: {
+        ultimo_trayecto: null,
+        recientes: [],
+        km_recientes: 0,
+        litros_recientes: null,
+        km_por_litro: null,
+        cta_sensor: false,
+        alertas_total: 0,
+        alerta_ultima: null,
+      },
+    });
+    await waitFor(() => expect(operacion).toHaveAttribute('aria-busy', 'false'));
+  });
+
+  it('guardar capacidades deja el hub y confirma sin salir', async () => {
+    mockDetalleGet(null);
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({
+      vehicle: { ...makeVehicleRow(), capacity_kg: 6000 },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const capacidad = await screen.findByLabelText(/capacidad \(kg\)/i);
+    fireEvent.change(capacidad, { target: { value: '6000' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('AB·CD·12');
+    expect(screen.getByText('Cambios guardados.')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-vehiculo')).toBeInTheDocument();
   });
 });
