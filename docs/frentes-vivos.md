@@ -119,7 +119,7 @@ Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO 
 5. **Higiene** — gate por rol, confirmación inline y sin voz, en `main` (#688).
 6. **`connectAuthEmulator`** — en `apps/web/src/lib/firebase.ts`. El E2E del flujo está en el repo (`3a02622`); su verde en CI no se re-verificó en esta pasada.
 
-**Fuera de alcance (no se hace bajo este frente):** eco-routing en tiempo real (ADR-012 Capa 1; entra como frente nuevo cuando cierre el Slot 1), certificados PDF más allá de la línea de método que exige ADR-077, onboarding de empresas.
+**Fuera de alcance (no se hace bajo este frente):** la capa en tiempo real del eco-routing (ADR-012). El eco-routing de la asignación —ruta sugerida, polyline y mapa— es característica esencial y ya está en el producto. También quedan fuera los certificados PDF más allá de la línea de método que exige ADR-077, y el onboarding de empresas.
 
 ---
 

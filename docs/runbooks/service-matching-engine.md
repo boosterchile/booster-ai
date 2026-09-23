@@ -13,7 +13,7 @@
 
 | Síntoma | Dónde |
 |---|---|
-| "No salieron ofertas para una carga", carrier esperaba una oferta y no la recibió, scoring raro | `apps/api` → **`service-api.md`** + skill `booster-skills:empty-leg-matching` (algoritmo transparente/determinista). El log/decisión de matching está en los logs del `booster-ai-api`. |
+| "No salieron ofertas para una carga", carrier esperaba una oferta y no la recibió, scoring raro | `apps/api` → **`service-api.md`**. El algoritmo está en `packages/matching-algorithm` y corre en `apps/api/src/services/matching.ts`. |
 | La revisión `booster-ai-matching-engine` está caída / no arranca | impacto **nulo** en el producto hoy (no procesa tráfico). Ver abajo. |
 
 ## Diagnóstico del skeleton (si alguien pregunta por la revisión)
@@ -41,13 +41,13 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 
 ## Cuando se implemente
 
-Al extraer el matching a este servicio (seguir skill `booster-skills:adding-cloud-run-service`), este runbook debe crecer con: subscriptions Pub/Sub que consume y su DLQ, configuración de consumer pull (si aplica, mismo cuidado `min-instances>=1` + CPU always-on que `service-telemetry-processor.md`), métricas de matching, y rollback. Hasta entonces, **el matching es `apps/api`**.
+Al extraer el matching a este servicio, este runbook debe crecer con: subscriptions Pub/Sub que consume y su DLQ, configuración de consumer pull (si aplica, mismo cuidado `min-instances>=1` + CPU always-on que `service-telemetry-processor.md`), métricas de matching, y rollback. Hasta entonces, **el matching es `apps/api`**.
 
 ## Escalación
 
-- **Operador único** (`dev@boosterchile.com`). Para problemas reales de matching → `service-api.md` + `booster-skills:empty-leg-matching`. La caída del skeleton en sí no escala (sin impacto productivo); registrarla en `docs/handoff/CURRENT.md` si llama la atención.
+- **Operador único** (`dev@boosterchile.com`). Para problemas reales de matching → `service-api.md`. La caída del skeleton en sí no escala (sin impacto productivo); registrarla en `docs/handoff/CURRENT.md` si llama la atención.
 
 ## Refs
 
-- Matching real: `service-api.md`, skill `booster-skills:empty-leg-matching`, `apps/api/src/services/matching.ts`, `packages/matching-algorithm`.
-- Plan de extracción: ADR-004, skill `booster-skills:adding-cloud-run-service`. README: `apps/matching-engine/README.md`.
+- Matching real: `service-api.md`, `apps/api/src/services/matching.ts`, `packages/matching-algorithm`.
+- Plan de extracción: ADR-004. README: `apps/matching-engine/README.md`.

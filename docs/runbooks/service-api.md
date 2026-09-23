@@ -175,11 +175,11 @@ Alertas `routes_api_rate`, `routes_api_daily_volume`, `gemini_api_rate` (`api-co
 - **Operador único** (`dev@boosterchile.com`): no hay segundo equipo. El único notification channel es email (`monitoring.tf`); no hay Slack/PagerDuty.
 - Si no se resuelve en **30 min**, registrar estado en `docs/handoff/CURRENT.md` antes de seguir.
 - Decisiones disruptivas (promover un PITR clone, cambiar `DATABASE_URL`, tocar IAM/infra) → **coordinar con el PO**, no ejecutar en silencio. Operaciones de credenciales/prod las corre el owner.
-- Para un incidente productivo en regla seguir la skill `booster-skills:incident-response` (detectar → estabilizar → entender).
+- Para un incidente productivo: detectar, estabilizar, entender, y dejar el estado en `docs/handoff/CURRENT.md`.
 
 ## Refs
 
-- Deploy / canary / rollback: skill `booster-deploy-cloud-run`; `cloudbuild.production.yaml`.
+- Deploy / canary / rollback: `CLAUDE.md` (deploy manual) y `cloudbuild.production.yaml`.
 - Migraciones: `db-migration-rollback.md`, ADR-066.
 - Ingress sólo-GCLB: ADR-062. Webhooks vía LB: ADR-063.
 - Config y env: `apps/api/src/config.ts`. Migrator: `apps/api/src/db/migrator.ts`.

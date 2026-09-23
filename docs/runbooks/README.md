@@ -46,4 +46,4 @@
 | [`agent-query-prod.md`](agent-query-prod.md) | Cómo consultar prod de forma segura (REST + ADC). |
 | [`goal-templates.md`](goal-templates.md) | Plantillas de objetivos (coaching). |
 
-> Para un incidente productivo en regla, además seguir la skill `booster-skills:incident-response` (detectar → estabilizar → entender). El estándar de "terminado" anti-parches: `booster-skills:definicion-de-terminado`.
+> Para un incidente productivo: detectar, estabilizar, entender, y dejar el estado en `docs/handoff/CURRENT.md`. El criterio de terminado está en `CLAUDE.md`.

@@ -16,12 +16,12 @@ Una sola PWA, cinco roles. En código y en base de datos los nombres vigentes so
 
 ## Qué hace el sistema hoy
 
-- **Huella.** `@booster-ai/carbon-calculator` calcula GLEC sin I/O. La fuente puede ser CAN de un Teltonika **FMC150** (Codec 8, TCP, cluster GKE) o el GPS del móvil del conductor. El nivel de certificación depende de la fuente ([ADR-077](./docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md)).
+- **Huella.** `@booster-ai/carbon-calculator` calcula GLEC sin I/O. El equipo en uso es el Teltonika **FMC150** (Codec 8 / 8E, TCP, cluster GKE). Sus capacidades máximas —GNSS, hasta 4 Dallas, CAN LVCAN y eventos— están declaradas en `extraerCapacidadesMaximas` (`packages/shared-schemas`). Otro equipo entra con su detalle: el techo es lo que ese detalle declara y lo que el catálogo ya sabe leer. Sin equipo, la fuente es el GPS del móvil del conductor. El nivel de certificación depende de la fuente ([ADR-077](./docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md)).
+- **Eco-routing.** Es una característica esencial del producto. Hoy la ruta sugerida se calcula al aceptar la oferta, se guarda en la asignación y se muestra en el mapa (`GET /assignments/:id/eco-route`). La capa en tiempo real del [ADR-012](./docs/adr/012-urban-observatory-digital-twins.md) profundiza esa misma característica.
 - **Viaje.** El ciclo vive en `@booster-ai/trip-state-machine`. El API lo aplica.
 - **Matching.** El algoritmo puro está en `@booster-ai/matching-algorithm` y lo ejecuta `apps/api` (`src/services/matching.ts`). `apps/matching-engine` es un proceso reservado: arranca y no matchea.
 - **Documentos.** Booster no emite DTE ([ADR-069](./docs/adr/069-booster-deja-de-emitir-dte-remocion-sovos.md)). `apps/document-service` archiva y decodifica el TED de documentos de terceros. No hay package `dte-provider`.
 - **Avisos.** Web Push, WhatsApp (Twilio) y el resto salen desde `apps/api`, con formato en `@booster-ai/notification-fan-out`. `apps/notification-service` es un proceso reservado: arranca y no envía.
-- **Eco-routing en tiempo real** ([ADR-012](./docs/adr/012-urban-observatory-digital-twins.md)) está decidido y congelado hasta que cierre la huella punta a punta. No es una capacidad en servicio.
 
 WhatsApp existe como canal de aviso y como `apps/whatsapp-bot`. No es la superficie que los tres frentes vivos están cerrando.
 

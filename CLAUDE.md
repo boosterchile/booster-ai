@@ -49,7 +49,7 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 ## Herramientas de apoyo
 
-El repo no activa plugins ni hooks de Claude Code ([ADR-078](docs/adr/078-retiro-config-plugins-hooks-claude-code.md)). Instalar `superpowers` o `booster-skills` es decisión del operador, fuera de este repo. Si no están instalados, no se buscan ni se simulan. Checklists en `references/`; decisiones de producto en `playbooks/`. La disciplina la hacen cumplir este contrato, el pre-commit, CI y el gate de deploy.
+El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks de Claude Code ([ADR-078](docs/adr/078-retiro-config-plugins-hooks-claude-code.md)). Checklists en `references/`; decisiones de producto en `playbooks/`. La disciplina la hacen cumplir este contrato, el pre-commit, CI y el gate de deploy.
 
 ## Archivos que nunca se tocan sin permiso explícito
 

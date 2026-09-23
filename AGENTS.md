@@ -49,7 +49,7 @@ Conventional Commits estricto: `feat`, `fix`, `chore`, `docs`, `test`, `refactor
 ## Cómo los agentes deben colaborar
 
 - Antes de modificar código: leer [`CLAUDE.md`](./CLAUDE.md).
-- El repo no activa plugins ni hooks de Claude Code (ADR-078). `superpowers` y `booster-skills` no se buscan ni se simulan si el operador no los instaló fuera del repo.
+- El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks de Claude Code (ADR-078).
 - El agente no mergea a `main`. La protección de la rama son los checks (ADR-076). El gate humano queda en el deploy a producción.
 - Antes de introducir una dependencia nueva: crear ADR.
 - Al terminar una tarea: generar evidencia (test output, screenshots, curl, traces).
