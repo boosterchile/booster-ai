@@ -1,15 +1,30 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Navigation, Route as RouteIcon } from 'lucide-react';
+import { AlertTriangle, Gauge, History, Navigation, Route as RouteIcon } from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, api } from '../lib/api-client.js';
+import {
+  type EstadoDispositivo,
+  estadoDispositivo,
+  etiquetaDispositivo,
+} from '../lib/estado-dispositivo.js';
 import { ageSeconds, formatAge } from '../lib/freshness.js';
 import { TrazaMapPreview } from './map/TrazaMapPreview.js';
 import { VehicleMap } from './map/VehicleMap.js';
 
-const CONECTADO_HASTA_S = 30 * 60;
 const VENTANA_MS = 30 * 24 * 60 * 60 * 1000;
+const MAPA_ALTO_ESCRITORIO = 200;
+const MAPA_ALTO_MOVIL = 160;
+
+const BTN_LLENO =
+  'inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700 sm:w-auto';
+const BTN_CONTORNO =
+  'inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50 sm:w-auto';
+const BTN_TEXTO =
+  'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-50 sm:w-auto';
+const CTA_TEXTO = 'mt-2 inline-flex text-primary-700 text-sm underline';
 
 const trayectoSchema = z.object({
   id: z.string(),
@@ -60,15 +75,20 @@ const trazaSchema = z.object({
   puntos: z.array(z.object({ lat: z.number(), lng: z.number() })),
 });
 
+export type EstadoFlotaHub = 'activo' | 'mantenimiento' | 'retirado';
+
 export interface VehiculoHubProps {
   vehicleId: string;
   plate: string;
   typeLabel: string;
   brand: string | null;
   model: string | null;
+  status: EstadoFlotaHub;
   teltonikaImei: string | null;
   /** Dueño o admin de un transportista: puede ver el historial Teltonika. */
   puedeVerTrayectos: boolean;
+  /** Dueño o admin: puede abrir la configuración y editar el IMEI. */
+  puedeConfigurar: boolean;
   onAbrirConfig: () => void;
 }
 
@@ -82,8 +102,10 @@ export function VehiculoHub({
   typeLabel,
   brand,
   model,
+  status,
   teltonikaImei,
   puedeVerTrayectos,
+  puedeConfigurar,
   onAbrirConfig,
 }: VehiculoHubProps) {
   const alias = [brand, model]
@@ -92,6 +114,7 @@ export function VehiculoHub({
     .join(' ');
   const patente = formatPlateForDisplay(normalizePlate(plate));
   const conImei = teltonikaImei != null && teltonikaImei.length > 0;
+  const alturaMapa = useAlturaMapa();
 
   const ubicacionQ = useQuery({
     queryKey: ['vehiculos', vehicleId, 'ubicacion', 'hub'],
@@ -123,17 +146,38 @@ export function VehiculoHub({
     },
   });
 
-  const estado = estadoTeltonika(conImei, ubicacionQ.data ?? null, ubicacionQ.isError);
+  function reintentar() {
+    void ubicacionQ.refetch();
+    if (puedeVerTrayectos) {
+      void resumenQ.refetch();
+    }
+  }
+
+  const estado = estadoTeltonika(teltonikaImei, ubicacionQ.data ?? null, ubicacionQ.isError);
 
   return (
-    <section data-testid="hub-vehiculo" className="mb-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section data-testid="hub-vehiculo" className="mb-6 min-w-0">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-semibold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
-              {patente}
-            </h1>
-            <EstadoPill estado={estado} />
+          <h1 className="font-semibold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
+            {patente}
+          </h1>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <EstadoPill
+              testId="hub-estado"
+              etiqueta="Dispositivo"
+              valor={etiquetaDispositivo(estado.codigo)}
+              detalle={estado.detalle}
+              tono={tonoDispositivo(estado.codigo)}
+              live
+            />
+            <EstadoPill
+              testId="hub-flota"
+              etiqueta="Flota"
+              valor={etiquetaFlota(status)}
+              detalle={null}
+              tono={tonoFlota(status)}
+            />
           </div>
           <p className="mt-1 text-neutral-600 text-sm">
             {alias ? <span className="text-neutral-800">{alias}</span> : null}
@@ -141,13 +185,12 @@ export function VehiculoHub({
             <span>{typeLabel}</span>
           </p>
         </div>
-        <div className="flex flex-wrap gap-2" data-testid="hub-acciones">
+        <div
+          className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end"
+          data-testid="hub-acciones"
+        >
           {conImei ? (
-            <Link
-              to="/app/vehiculos/$id/live"
-              params={{ id: vehicleId }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
-            >
+            <Link to="/app/vehiculos/$id/live" params={{ id: vehicleId }} className={BTN_LLENO}>
               <Navigation className="h-4 w-4" aria-hidden />
               Ver en vivo
             </Link>
@@ -156,21 +199,21 @@ export function VehiculoHub({
             <Link
               to="/app/vehiculos/$id/historial"
               params={{ id: vehicleId }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50"
+              className={BTN_CONTORNO}
             >
               <RouteIcon className="h-4 w-4" aria-hidden />
               Recorrido
             </Link>
           ) : null}
-          {puedeVerTrayectos ? (
-            <Link
-              to="/app/trayectos"
-              search={{ vehiculo: vehicleId }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50"
-            >
-              <RouteIcon className="h-4 w-4" aria-hidden />
+          {conImei && puedeVerTrayectos ? (
+            <Link to="/app/trayectos" search={{ vehiculo: vehicleId }} className={BTN_TEXTO}>
               Ver trayectos
             </Link>
+          ) : null}
+          {!conImei && puedeConfigurar ? (
+            <button type="button" onClick={onAbrirConfig} className={BTN_LLENO}>
+              Configurar dispositivo
+            </button>
           ) : null}
         </div>
       </div>
@@ -180,18 +223,38 @@ export function VehiculoHub({
           vehicleId={vehicleId}
           plate={plate}
           conImei={conImei}
+          puedeConfigurar={puedeConfigurar}
           resumen={resumenQ.data ?? null}
           cargando={conImei && resumenQ.isLoading}
           error={conImei && resumenQ.isError}
           ubicacion={ubicacionQ.data ?? null}
+          ubicacionError={conImei && ubicacionQ.isError}
+          alturaMapa={alturaMapa}
           onAbrirConfig={onAbrirConfig}
+          onReintentar={reintentar}
         />
       ) : (
-        <p className="mt-4 text-neutral-700 text-sm">
-          No tenés permiso para ver el historial de trayectos.
-        </p>
+        <HistorialLimitado conImei={conImei} />
       )}
     </section>
+  );
+}
+
+function HistorialLimitado({ conImei }: { conImei: boolean }) {
+  return (
+    <div
+      data-testid="hub-historial-limitado"
+      className="mt-4 rounded-lg border border-neutral-200 border-dashed bg-neutral-50 px-4 py-4"
+    >
+      <p className="font-medium text-neutral-900 text-sm">
+        El historial lo ve el admin de tu flota
+      </p>
+      <p className="mt-1 text-neutral-600 text-sm">
+        {conImei
+          ? 'El vivo y el recorrido siguen acá arriba.'
+          : 'Cuando haya un dispositivo, vas a poder ver dónde está.'}
+      </p>
+    </div>
   );
 }
 
@@ -199,20 +262,28 @@ function Operacion({
   vehicleId,
   plate,
   conImei,
+  puedeConfigurar,
   resumen,
   cargando,
   error,
   ubicacion,
+  ubicacionError,
+  alturaMapa,
   onAbrirConfig,
+  onReintentar,
 }: {
   vehicleId: string;
   plate: string;
   conImei: boolean;
+  puedeConfigurar: boolean;
   resumen: ResumenHub | null;
   cargando: boolean;
   error: boolean;
   ubicacion: UbicacionHub | null;
+  ubicacionError: boolean;
+  alturaMapa: number;
   onAbrirConfig: () => void;
+  onReintentar: () => void;
 }) {
   return (
     <div data-testid="hub-operacion" aria-busy={cargando}>
@@ -223,14 +294,19 @@ function Operacion({
           cargando={cargando}
           error={error}
           conImei={conImei}
+          puedeConfigurar={puedeConfigurar}
           onAbrirConfig={onAbrirConfig}
+          onReintentar={onReintentar}
         />
         <TarjetaConsumo
+          vehicleId={vehicleId}
           resumen={resumen}
           cargando={cargando}
           error={error}
           conImei={conImei}
+          puedeConfigurar={puedeConfigurar}
           onAbrirConfig={onAbrirConfig}
+          onReintentar={onReintentar}
         />
         <TarjetaAlertas
           vehicleId={vehicleId}
@@ -238,7 +314,9 @@ function Operacion({
           cargando={cargando}
           error={error}
           conImei={conImei}
+          puedeConfigurar={puedeConfigurar}
           onAbrirConfig={onAbrirConfig}
+          onReintentar={onReintentar}
         />
       </div>
       <div className="mt-4" data-testid="hub-mapa">
@@ -246,9 +324,13 @@ function Operacion({
           vehicleId={vehicleId}
           plate={plate}
           conImei={conImei}
+          puedeConfigurar={puedeConfigurar}
           ultimo={resumen?.ultimo_trayecto ?? null}
           ubicacion={ubicacion}
+          ubicacionError={ubicacionError}
+          altura={alturaMapa}
           onAbrirConfig={onAbrirConfig}
+          onReintentar={onReintentar}
         />
       </div>
       <ListaTrayectos
@@ -257,7 +339,9 @@ function Operacion({
         cargando={cargando}
         error={error}
         conImei={conImei}
+        puedeConfigurar={puedeConfigurar}
         onAbrirConfig={onAbrirConfig}
+        onReintentar={onReintentar}
       />
     </div>
   );
@@ -269,24 +353,31 @@ function TarjetaUltimo({
   cargando,
   error,
   conImei,
+  puedeConfigurar,
   onAbrirConfig,
-}: {
-  vehicleId: string;
-  resumen: ResumenHub | null;
-  cargando: boolean;
-  error: boolean;
-  conImei: boolean;
-  onAbrirConfig: () => void;
-}) {
+  onReintentar,
+}: TarjetaProps) {
   const ultimo = resumen?.ultimo_trayecto ?? null;
   return (
-    <article className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="font-medium text-neutral-500 text-xs uppercase tracking-wide">
-        Último trayecto
-      </h2>
-      {cuerpoTarjeta(cargando, error, conImei, onAbrirConfig, 'Sin IMEI no hay trayectos.')}
+    <article
+      data-testid="hub-tarjeta-ultimo"
+      className="rounded-lg border border-neutral-200 bg-white p-4"
+    >
+      <EncabezadoTarjeta icono={<History className="h-3.5 w-3.5" aria-hidden />} titulo="Último" />
+      {cuerpoTarjeta(
+        cargando,
+        error,
+        conImei,
+        puedeConfigurar,
+        onAbrirConfig,
+        onReintentar,
+        'Sin dispositivo no hay trayectos.',
+      )}
       {conImei && !cargando && !error && ultimo == null ? (
-        <p className="mt-2 text-neutral-800 text-sm">Todavía no hay trayectos en 30 días.</p>
+        <div className="mt-2">
+          <p className="text-neutral-800 text-sm">Todavía no hay trayectos en 30 días.</p>
+          <LinkEnVivo vehicleId={vehicleId} />
+        </div>
       ) : null}
       {ultimo ? (
         <div className="mt-2">
@@ -305,33 +396,38 @@ function TarjetaUltimo({
 }
 
 function TarjetaConsumo({
+  vehicleId,
   resumen,
   cargando,
   error,
   conImei,
+  puedeConfigurar,
   onAbrirConfig,
-}: {
-  resumen: ResumenHub | null;
-  cargando: boolean;
-  error: boolean;
-  conImei: boolean;
-  onAbrirConfig: () => void;
-}) {
+  onReintentar,
+}: TarjetaProps) {
   const hay = resumen != null && resumen.recientes.length > 0;
   return (
-    <article className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="font-medium text-neutral-500 text-xs uppercase tracking-wide">Consumo</h2>
+    <article
+      data-testid="hub-tarjeta-consumo"
+      className="rounded-lg border border-neutral-200 bg-white p-4"
+    >
+      <EncabezadoTarjeta icono={<Gauge className="h-3.5 w-3.5" aria-hidden />} titulo="Consumo" />
       {cuerpoTarjeta(
         cargando,
         error,
         conImei,
+        puedeConfigurar,
         onAbrirConfig,
-        'Asociá un Teltonika para medir consumo.',
+        onReintentar,
+        'Asociá un dispositivo para medir consumo.',
       )}
       {conImei && !cargando && !error && !hay ? (
-        <p className="mt-2 text-neutral-800 text-sm">
-          Sin trayectos para calcular consumo. El km/L aparece cuando el Teltonika lo informa.
-        </p>
+        <div className="mt-2">
+          <p className="text-neutral-800 text-sm">
+            Sin trayectos para calcular consumo. El km/L aparece cuando el dispositivo lo informa.
+          </p>
+          <LinkEnVivo vehicleId={vehicleId} />
+        </div>
       ) : null}
       {hay && resumen ? (
         <div className="mt-2">
@@ -343,11 +439,7 @@ function TarjetaConsumo({
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
           </p>
           {resumen.cta_sensor ? (
-            <button
-              type="button"
-              onClick={onAbrirConfig}
-              className="mt-2 text-primary-700 text-sm underline"
-            >
+            <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
               Conectá el sensor
             </button>
           ) : null}
@@ -368,25 +460,35 @@ function TarjetaAlertas({
   cargando,
   error,
   conImei,
+  puedeConfigurar,
   onAbrirConfig,
-}: {
-  vehicleId: string;
-  resumen: ResumenHub | null;
-  cargando: boolean;
-  error: boolean;
-  conImei: boolean;
-  onAbrirConfig: () => void;
-}) {
+  onReintentar,
+}: TarjetaProps) {
   const ultima = resumen?.alerta_ultima ?? null;
   const total = resumen?.alertas_total ?? 0;
+  const hayAlertas = conImei && !cargando && !error && total > 0;
   return (
-    <article className="rounded-lg border border-neutral-200 bg-white p-4">
-      <h2 className="font-medium text-neutral-500 text-xs uppercase tracking-wide">Alertas</h2>
-      {cuerpoTarjeta(cargando, error, conImei, onAbrirConfig, 'Sin IMEI no hay alertas.')}
+    <article
+      data-testid="hub-tarjeta-alertas"
+      className={`rounded-lg border bg-white p-4 ${hayAlertas ? 'border-amber-200' : 'border-neutral-200'}`}
+    >
+      <EncabezadoTarjeta
+        icono={<AlertTriangle className="h-3.5 w-3.5" aria-hidden />}
+        titulo="Alertas"
+      />
+      {cuerpoTarjeta(
+        cargando,
+        error,
+        conImei,
+        puedeConfigurar,
+        onAbrirConfig,
+        onReintentar,
+        'Sin dispositivo no hay alertas.',
+      )}
       {conImei && !cargando && !error && total === 0 ? (
         <p className="mt-2 text-neutral-800 text-sm">Sin alertas de combustible en 30 días.</p>
       ) : null}
-      {conImei && !cargando && !error && total > 0 && ultima ? (
+      {hayAlertas && ultima ? (
         <div className="mt-2">
           <p className="font-semibold text-neutral-900">
             {total} {total === 1 ? 'alerta' : 'alertas'} en 30 días
@@ -401,24 +503,44 @@ function TarjetaAlertas({
   );
 }
 
+interface TarjetaProps {
+  vehicleId: string;
+  resumen: ResumenHub | null;
+  cargando: boolean;
+  error: boolean;
+  conImei: boolean;
+  puedeConfigurar: boolean;
+  onAbrirConfig: () => void;
+  onReintentar: () => void;
+}
+
+function EncabezadoTarjeta({ icono, titulo }: { icono: ReactNode; titulo: string }) {
+  return (
+    <h2 className="flex items-center gap-1.5 font-medium text-neutral-500 text-xs uppercase tracking-wide">
+      {icono}
+      {titulo}
+    </h2>
+  );
+}
+
 function cuerpoTarjeta(
   cargando: boolean,
   error: boolean,
   conImei: boolean,
+  puedeConfigurar: boolean,
   onAbrirConfig: () => void,
+  onReintentar: () => void,
   sinImei: string,
 ) {
   if (!conImei) {
     return (
       <div className="mt-2">
         <p className="text-neutral-800 text-sm">{sinImei}</p>
-        <button
-          type="button"
-          onClick={onAbrirConfig}
-          className="mt-2 text-primary-700 text-sm underline"
-        >
-          Configurar dispositivo
-        </button>
+        {puedeConfigurar ? (
+          <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
+            Configurar dispositivo
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -427,9 +549,14 @@ function cuerpoTarjeta(
   }
   if (error) {
     return (
-      <p className="mt-2 text-neutral-700 text-sm" role="alert">
-        No pudimos cargar los trayectos. Probá de nuevo.
-      </p>
+      <div className="mt-2">
+        <p className="text-neutral-700 text-sm" role="alert">
+          No pudimos cargar los trayectos.
+        </p>
+        <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+          Reintentar
+        </button>
+      </div>
     );
   }
   return null;
@@ -439,16 +566,24 @@ function MapaPreview({
   vehicleId,
   plate,
   conImei,
+  puedeConfigurar,
   ultimo,
   ubicacion,
+  ubicacionError,
+  altura,
   onAbrirConfig,
+  onReintentar,
 }: {
   vehicleId: string;
   plate: string;
   conImei: boolean;
+  puedeConfigurar: boolean;
   ultimo: TrayectoHub | null;
   ubicacion: UbicacionHub | null;
+  ubicacionError: boolean;
+  altura: number;
   onAbrirConfig: () => void;
+  onReintentar: () => void;
 }) {
   const trazaQ = useQuery({
     queryKey: ['vehiculos', vehicleId, 'traza', ultimo?.inicio ?? '', ultimo?.fin ?? ''],
@@ -475,36 +610,43 @@ function MapaPreview({
       <h2 className="mb-2 font-medium text-neutral-500 text-xs uppercase tracking-wide">
         {ultimo ? 'Último trayecto en el mapa' : 'Última posición'}
       </h2>
-      {hayTraza ? <TrazaMapPreview points={puntos} height={180} /> : null}
-      {!hayTraza && ubicacion && lat != null && lng != null ? (
-        <VehicleMap
-          latitude={lat}
-          longitude={lng}
-          plate={plate}
-          speedKmh={ubicacion.ubicacion.speed_kmh}
-          timestampDevice={ubicacion.ubicacion.timestamp_device}
-          height={180}
-        />
-      ) : null}
-      {!hayTraza && !hayPunto ? (
-        <div className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4">
-          <p className="font-medium text-neutral-900 text-sm">Sin posición GPS todavía</p>
-          <p className="mt-1 text-neutral-600 text-sm">
-            {conImei
-              ? 'Cuando el Teltonika reporte una coordenada, la ves acá.'
-              : 'Asociá un dispositivo para ver la posición.'}
-          </p>
-          {conImei ? null : (
-            <button
-              type="button"
-              onClick={onAbrirConfig}
-              className="mt-2 text-primary-700 text-sm underline"
-            >
-              Configurar dispositivo
-            </button>
-          )}
-        </div>
-      ) : null}
+      <div data-testid="hub-mapa-alto" data-altura={altura}>
+        {hayTraza ? <TrazaMapPreview points={puntos} height={altura} /> : null}
+        {!hayTraza && ubicacion && lat != null && lng != null ? (
+          <VehicleMap
+            latitude={lat}
+            longitude={lng}
+            plate={plate}
+            speedKmh={ubicacion.ubicacion.speed_kmh}
+            timestampDevice={ubicacion.ubicacion.timestamp_device}
+            height={altura}
+          />
+        ) : null}
+        {!hayTraza && !hayPunto ? (
+          <div
+            className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
+            style={{ minHeight: altura }}
+          >
+            <p className="font-medium text-neutral-900 text-sm">Sin posición GPS todavía</p>
+            <p className="mt-1 text-neutral-600 text-sm">
+              {conImei
+                ? 'Cuando el dispositivo reporte una coordenada, la ves acá.'
+                : 'Asociá un dispositivo para ver la posición.'}
+            </p>
+            {ubicacionError ? (
+              <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+                Reintentar
+              </button>
+            ) : null}
+            {!conImei && puedeConfigurar ? (
+              <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
+                Configurar dispositivo
+              </button>
+            ) : null}
+            {conImei && !ubicacionError ? <LinkEnVivo vehicleId={vehicleId} /> : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -515,14 +657,18 @@ function ListaTrayectos({
   cargando,
   error,
   conImei,
+  puedeConfigurar,
   onAbrirConfig,
+  onReintentar,
 }: {
   vehicleId: string;
   resumen: ResumenHub | null;
   cargando: boolean;
   error: boolean;
   conImei: boolean;
+  puedeConfigurar: boolean;
   onAbrirConfig: () => void;
+  onReintentar: () => void;
 }) {
   const recientes = resumen?.recientes ?? [];
   return (
@@ -530,22 +676,35 @@ function ListaTrayectos({
       <h2 className="font-semibold text-neutral-900">Últimos trayectos</h2>
       {conImei ? null : (
         <p className="mt-2 text-neutral-700 text-sm">
-          Sin IMEI no hay historial.{' '}
-          <button type="button" onClick={onAbrirConfig} className="text-primary-700 underline">
-            Configurar dispositivo
-          </button>
+          Sin dispositivo no hay historial.
+          {puedeConfigurar ? (
+            <>
+              {' '}
+              <button type="button" onClick={onAbrirConfig} className="text-primary-700 underline">
+                Configurar dispositivo
+              </button>
+            </>
+          ) : null}
         </p>
       )}
       {conImei && cargando ? <p className="mt-2 text-neutral-600 text-sm">Cargando…</p> : null}
       {conImei && error ? (
-        <p className="mt-2 text-neutral-700 text-sm" role="alert">
-          No pudimos cargar los trayectos. Probá de nuevo.
-        </p>
+        <div className="mt-2">
+          <p className="text-neutral-700 text-sm" role="alert">
+            No pudimos cargar los trayectos.
+          </p>
+          <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+            Reintentar
+          </button>
+        </div>
       ) : null}
       {conImei && !cargando && !error && recientes.length === 0 ? (
-        <p className="mt-2 text-neutral-700 text-sm">
-          Cuando este Teltonika cierre un trayecto, aparece acá.
-        </p>
+        <div className="mt-2">
+          <p className="text-neutral-700 text-sm">
+            Cuando este dispositivo cierre un trayecto, aparece acá.
+          </p>
+          <LinkEnVivo vehicleId={vehicleId} />
+        </div>
       ) : null}
       {recientes.length > 0 ? (
         <ul className="mt-2 divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
@@ -573,6 +732,14 @@ function ListaTrayectos({
   );
 }
 
+function LinkEnVivo({ vehicleId }: { vehicleId: string }) {
+  return (
+    <Link to="/app/vehiculos/$id/live" params={{ id: vehicleId }} className={CTA_TEXTO}>
+      Ver en vivo
+    </Link>
+  );
+}
+
 function LinkDetalle({ vehicleId, trayectoId }: { vehicleId: string; trayectoId: string }) {
   return (
     <Link
@@ -592,60 +759,116 @@ function Badges({ trayecto }: { trayecto: TrayectoHub }) {
   return (
     <span className="mt-1 flex flex-wrap gap-1">
       {trayecto.posible_robo_combustible ? (
-        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-amber-950 text-xs">
-          posible robo combustible
+        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-950 text-xs">
+          Combustible
         </span>
       ) : null}
       {trayecto.posible_robo_hormiga ? (
-        <span className="inline-flex rounded bg-orange-100 px-1.5 py-0.5 text-orange-950 text-xs">
-          posible robo hormiga
+        <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-950 text-xs">
+          Hormiga
         </span>
       ) : null}
     </span>
   );
 }
 
-type Estado = { codigo: 'sin_imei' | 'conectado' | 'sin_senal'; detalle: string | null };
+type Estado = { codigo: EstadoDispositivo; detalle: string | null };
 
-function estadoTeltonika(conImei: boolean, ubicacion: UbicacionHub | null, error: boolean): Estado {
-  if (!conImei) {
-    return { codigo: 'sin_imei', detalle: null };
+/**
+ * El estado sale de `lib/estado-dispositivo`, la misma regla de la lista;
+ * el hub solo le agrega la edad del último reporte.
+ */
+function estadoTeltonika(
+  teltonikaImei: string | null,
+  ubicacion: UbicacionHub | null,
+  error: boolean,
+): Estado {
+  const timestampDevice = error ? null : (ubicacion?.ubicacion.timestamp_device ?? null);
+  const codigo = estadoDispositivo({ teltonikaImei, timestampDevice });
+  if (codigo === 'sin_dispositivo') {
+    return { codigo, detalle: null };
   }
-  const ts = ubicacion?.ubicacion.timestamp_device ?? null;
-  const segundos = ageSeconds(ts);
-  if (error || segundos == null) {
-    return { codigo: 'sin_senal', detalle: 'sin reportes' };
-  }
-  const edad = formatAge(segundos);
-  if (segundos < CONECTADO_HASTA_S) {
-    return { codigo: 'conectado', detalle: edad };
-  }
-  return { codigo: 'sin_senal', detalle: edad };
+  return { codigo, detalle: formatAge(ageSeconds(timestampDevice)) ?? 'sin reportes' };
 }
 
-function EstadoPill({ estado }: { estado: Estado }) {
-  const clase =
-    estado.codigo === 'conectado'
-      ? 'bg-emerald-50 text-emerald-800'
-      : estado.codigo === 'sin_senal'
-        ? 'bg-amber-50 text-amber-950'
-        : 'bg-neutral-100 text-neutral-700';
-  const texto =
-    estado.codigo === 'sin_imei'
-      ? 'sin IMEI'
-      : estado.codigo === 'conectado'
-        ? 'conectado'
-        : 'sin señal';
+function tonoDispositivo(codigo: Estado['codigo']): string {
+  if (codigo === 'conectado') {
+    return 'bg-emerald-50 text-emerald-800';
+  }
+  if (codigo === 'sin_senal') {
+    return 'bg-amber-50 text-amber-950';
+  }
+  return 'bg-neutral-100 text-neutral-700';
+}
+
+function etiquetaFlota(status: EstadoFlotaHub): string {
+  if (status === 'mantenimiento') {
+    return 'Mantención';
+  }
+  if (status === 'retirado') {
+    return 'Retirado';
+  }
+  return 'Activo';
+}
+
+function tonoFlota(status: EstadoFlotaHub): string {
+  if (status === 'activo') {
+    return 'bg-success-50 text-success-700';
+  }
+  if (status === 'mantenimiento') {
+    return 'bg-amber-50 text-amber-800';
+  }
+  return 'bg-neutral-100 text-neutral-600';
+}
+
+function EstadoPill({
+  testId,
+  etiqueta,
+  valor,
+  detalle,
+  tono,
+  live,
+}: {
+  testId: string;
+  etiqueta: string;
+  valor: string;
+  detalle: string | null;
+  tono: string;
+  live?: boolean;
+}) {
   return (
     <span
-      data-testid="hub-estado"
-      aria-live="polite"
-      className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs ${clase}`}
+      data-testid={testId}
+      aria-live={live ? 'polite' : undefined}
+      className={`inline-flex max-w-full flex-wrap items-center gap-1 rounded-full px-2 py-0.5 text-xs ${tono}`}
     >
-      {texto}
-      {estado.detalle ? <span className="ml-1 font-normal">· {estado.detalle}</span> : null}
+      <span className="font-medium uppercase tracking-wide">{etiqueta}</span>
+      <span className="font-semibold">{valor}</span>
+      {detalle ? <span className="font-normal">· {detalle}</span> : null}
     </span>
   );
+}
+
+function useAlturaMapa(): number {
+  const [altura, setAltura] = useState(alturaMapaInicial);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const mq = window.matchMedia('(min-width: 768px)');
+    const aplicar = () => setAltura(mq.matches ? MAPA_ALTO_ESCRITORIO : MAPA_ALTO_MOVIL);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
+  }, []);
+  return altura;
+}
+
+function alturaMapaInicial(): number {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return MAPA_ALTO_ESCRITORIO;
+  }
+  return window.matchMedia('(min-width: 768px)').matches ? MAPA_ALTO_ESCRITORIO : MAPA_ALTO_MOVIL;
 }
 
 function urlResumen(vehicleId: string): string {

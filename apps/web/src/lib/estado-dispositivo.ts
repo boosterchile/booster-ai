@@ -1,9 +1,7 @@
 /**
- * Estado operativo del dispositivo en la lista de vehículos.
- *
- * La ventana de «conectado» es la misma del hub (`vehiculo-hub.tsx`,
- * 30 minutos): el listado no importa ese módulo para no acoplar la lista
- * al detalle. Si esa ventana cambia, hay que cambiar las dos.
+ * Estado operativo del dispositivo, compartido por la lista de vehículos y el
+ * hub del detalle (`vehiculo-hub.tsx`). La ventana de «conectado» (30 minutos)
+ * se define solo aquí.
  */
 export const CONECTADO_HASTA_S = 30 * 60;
 
