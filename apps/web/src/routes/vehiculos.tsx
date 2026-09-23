@@ -5,25 +5,16 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  ChevronDown,
-  MoreHorizontal,
-  Navigation,
-  Pencil,
-  Plus,
-  Trash2,
-  Truck,
-} from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, ChevronDown, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { ChileanPlate } from '../components/ChileanPlate.js';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { VehiculoHub } from '../components/vehiculo-hub.js';
+import { VehiculosLista } from '../components/vehiculos-lista.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -105,12 +96,6 @@ const STATUS_LABELS: Record<VehicleStatus, string> = {
   retirado: 'Retirado',
 };
 
-const STATUS_COLORS: Record<VehicleStatus, string> = {
-  activo: 'bg-success-50 text-success-700',
-  mantenimiento: 'bg-amber-50 text-amber-700',
-  retirado: 'bg-neutral-100 text-neutral-600',
-};
-
 // =============================================================================
 // /app/vehiculos — lista
 // =============================================================================
@@ -129,201 +114,12 @@ export function VehiculosListRoute() {
 }
 
 function VehiculosListPage({ me }: { me: MeOnboarded }) {
-  const navigate = useNavigate();
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
 
-  const vehiclesQ = useQuery({
-    queryKey: ['vehiculos'],
-    queryFn: async () => {
-      const res = await api.get<{ vehicles: Vehicle[] }>('/vehiculos');
-      return res.vehicles;
-    },
-  });
-
   return (
     <Layout me={me} title="Vehículos">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículos</h1>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Gestiona la flota de tu empresa: capacidad, combustible, asociación a Teltonika.
-          </p>
-        </div>
-        {canWrite && (
-          <Link
-            to="/app/vehiculos/nuevo"
-            className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Nuevo vehículo
-          </Link>
-        )}
-      </div>
-
-      {vehiclesQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {vehiclesQ.error && <p className="mt-6 text-danger-700">Error al cargar vehículos.</p>}
-      {vehiclesQ.data && vehiclesQ.data.length === 0 && (
-        <div className="mt-6 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
-          <Truck className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-          <p className="mt-3 font-medium text-neutral-900">Aún no tienes vehículos</p>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Agrega tu primer vehículo para asociar dispositivos Teltonika y recibir ofertas
-            adecuadas.
-          </p>
-          {canWrite && (
-            <Link
-              to="/app/vehiculos/nuevo"
-              className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Agregar vehículo
-            </Link>
-          )}
-        </div>
-      )}
-
-      {vehiclesQ.data && vehiclesQ.data.length > 0 && (
-        <>
-          {/* Desktop (md+): tabla densa con 8 columnas. Oculta en mobile
-              porque hace overflow horizontal a 375px (BUG-006). */}
-          <div className="mt-6 hidden overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm md:block">
-            <table className="min-w-full divide-y divide-neutral-200">
-              <thead className="bg-neutral-50">
-                <tr>
-                  <Th>Patente</Th>
-                  <Th>Tipo</Th>
-                  <Th>Capacidad</Th>
-                  <Th>Marca / Modelo</Th>
-                  <Th>Combustible</Th>
-                  <Th>IMEI</Th>
-                  <Th>Estado</Th>
-                  <Th>{''}</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 bg-white">
-                {vehiclesQ.data.map((v) => (
-                  // biome-ignore lint/a11y/useKeyWithClickEvents: row es shortcut visual; el link "Ver" en la última columna es el control accesible primario.
-                  <tr
-                    key={v.id}
-                    className="cursor-pointer hover:bg-neutral-50"
-                    onClick={() =>
-                      void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })
-                    }
-                  >
-                    <Td>
-                      <ChileanPlate plate={v.plate} size="sm" />
-                    </Td>
-                    <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
-                    <Td>
-                      {v.capacity_kg.toLocaleString('es-CL')} kg
-                      {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
-                    </Td>
-                    <Td>
-                      {v.brand || v.model
-                        ? `${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
-                        : '—'}
-                    </Td>
-                    <Td>{v.fuel_type ? FUEL_TYPE_LABELS[v.fuel_type] : '—'}</Td>
-                    <Td className="font-mono text-xs">{v.teltonika_imei ?? '—'}</Td>
-                    <Td>
-                      <span
-                        className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
-                      >
-                        {STATUS_LABELS[v.status]}
-                      </span>
-                    </Td>
-                    <Td>
-                      <div className="flex items-center gap-3">
-                        <Link
-                          to="/app/vehiculos/$id/live"
-                          params={{ id: v.id }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-primary-700 hover:underline"
-                          aria-label={`Ver ubicación en vivo de ${v.plate}`}
-                        >
-                          <Navigation className="h-3.5 w-3.5" aria-hidden />
-                          Ubicación
-                        </Link>
-                        <Link
-                          to="/app/vehiculos/$id"
-                          params={{ id: v.id }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                        >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden />
-                          {canWrite ? 'Editar' : 'Ver'}
-                        </Link>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile (<md): cards apiladas con la misma data. */}
-          <ul className="mt-6 space-y-3 md:hidden">
-            {vehiclesQ.data.map((v) => (
-              <li
-                key={v.id}
-                className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <ChileanPlate plate={v.plate} size="md" />
-                  <span
-                    className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
-                  >
-                    {STATUS_LABELS[v.status]}
-                  </span>
-                </div>
-                <div className="mt-2 text-neutral-700 text-sm">
-                  {VEHICLE_TYPE_LABELS[v.type]}
-                  {v.brand || v.model
-                    ? ` · ${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
-                    : ''}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-neutral-500 text-xs">
-                  <span>
-                    {v.capacity_kg.toLocaleString('es-CL')} kg
-                    {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
-                  </span>
-                  {v.fuel_type && (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>{FUEL_TYPE_LABELS[v.fuel_type]}</span>
-                    </>
-                  )}
-                  {v.teltonika_imei && (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="font-mono">IMEI {v.teltonika_imei}</span>
-                    </>
-                  )}
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <Link
-                    to="/app/vehiculos/$id/live"
-                    params={{ id: v.id }}
-                    className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-50"
-                  >
-                    <Navigation className="h-3.5 w-3.5" aria-hidden />
-                    Ubicación
-                  </Link>
-                  <Link
-                    to="/app/vehiculos/$id"
-                    params={{ id: v.id }}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100"
-                  >
-                    <Pencil className="h-3.5 w-3.5" aria-hidden />
-                    {canWrite ? 'Editar' : 'Ver detalle'}
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <VehiculosLista canWrite={canWrite} />
     </Layout>
   );
 }
@@ -1412,18 +1208,6 @@ function NoPermission() {
       </Link>
     </div>
   );
-}
-
-function Th({ children }: { children: ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left font-semibold text-neutral-600 text-xs uppercase tracking-wider">
-      {children}
-    </th>
-  );
-}
-
-function Td({ className = '', children }: { className?: string; children: ReactNode }) {
-  return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
 }
 
 // D3 — Las antiguas secciones UbicacionSection y TelemetriaSection vivían acá

@@ -44,7 +44,21 @@ vi.mock('../components/Layout.js', () => ({
 }));
 
 vi.mock('../components/EmptyState.js', () => ({
-  EmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,
+  EmptyState: ({
+    title,
+    description,
+    action,
+  }: {
+    title: string;
+    description?: string;
+    action?: ReactNode;
+  }) => (
+    <div data-testid="empty-state">
+      <p>{title}</p>
+      {description ? <p>{description}</p> : null}
+      {action}
+    </div>
+  ),
   emptyStateActionClass: 'btn',
 }));
 
@@ -102,52 +116,233 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const IMEI_LISTA = '356307042441013';
+
+function vehiculoLista(
+  overrides: Partial<{
+    id: string;
+    plate: string;
+    type: string;
+    capacity_kg: number;
+    capacity_m3: number | null;
+    brand: string | null;
+    model: string | null;
+    teltonika_imei: string | null;
+    status: 'activo' | 'mantenimiento' | 'retirado';
+  }> = {},
+) {
+  return {
+    id: 'v1',
+    plate: 'ABCD12',
+    type: 'camion_pequeno',
+    capacity_kg: 5000,
+    capacity_m3: null,
+    brand: null,
+    model: null,
+    teltonika_imei: null,
+    status: 'activo' as const,
+    ...overrides,
+  };
+}
+
+function mockLista(
+  vehicles: ReturnType<typeof vehiculoLista>[],
+  fleet: Array<{
+    id: string;
+    position: { timestamp_device: string } | null;
+  }> = [],
+) {
+  return vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+    if (path === '/vehiculos/flota') {
+      return { fleet };
+    }
+    if (path === '/vehiculos') {
+      return { vehicles };
+    }
+    return {} as never;
+  });
+}
+
 describe('VehiculosListRoute', () => {
   it('no onboarded → no renderiza', () => {
     const { container } = wrap(<VehiculosListRoute />);
     expect(container.querySelector('[data-testid="layout"]')).toBeNull();
   });
 
-  it('onboarded + lista vacía → mensaje "Aún no tienes vehículos"', async () => {
-    vi.spyOn(api, 'get').mockResolvedValueOnce({ vehicles: [] });
+  it('onboarded + lista vacía → frase corta, CTA y enlace al mapa', async () => {
+    mockLista([]);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosListRoute />);
     await waitFor(() => expect(screen.getByText(/Aún no tienes vehículos/)).toBeInTheDocument());
+    expect(screen.getByText(/Cuando sumes el primero/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
+    expect(screen.getAllByRole('link', { name: /nuevo vehículo/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
-  it('onboarded + vehículos → renderiza plate', async () => {
-    vi.spyOn(api, 'get').mockResolvedValueOnce({
-      vehicles: [
-        {
-          id: 'v1',
-          plate: 'ABCD12',
-          type: 'camion_pequeno',
-          capacity_kg: 5000,
-          capacity_m3: null,
-          year: 2020,
-          brand: null,
-          model: null,
-          fuel_type: 'diesel',
-          curb_weight_kg: null,
-          consumption_l_per_100km_baseline: null,
+  it('sin IMEI → pill Sin dispositivo, sin el identificador y sin ver en vivo', async () => {
+    mockLista([vehiculoLista({ teltonika_imei: null })]);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosListRoute />);
+    await waitFor(() => expect(screen.getAllByText('Sin dispositivo').length).toBeGreaterThan(0));
+    expect(screen.queryByText(/IMEI/i)).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Combustible' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Dispositivo' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^editar$/i })).toBeNull();
+    const tabla = screen.getByTestId('vehiculos-tabla');
+    expect(tabla).toHaveClass('hidden', 'lg:block');
+    expect(tabla.className).not.toMatch(/overflow-x-auto/);
+    expect(within(tabla).getByRole('link', { name: /^abrir$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id',
+    );
+    const cards = screen.getByTestId('vehiculos-cards');
+    expect(cards).toHaveClass('lg:hidden');
+    expect(cards.querySelector('table')).toBeNull();
+    expect(within(cards).getByRole('link', { name: /abrir/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /más acciones/i }));
+    expect(screen.getByRole('menuitem', { name: /^editar$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id',
+    );
+    expect(screen.queryByRole('menuitem', { name: /ver en vivo/i })).toBeNull();
+  });
+
+  it('con IMEI fresco muestra Conectado y Ver en vivo; el IMEI no se imprime', async () => {
+    mockLista(
+      [vehiculoLista({ teltonika_imei: IMEI_LISTA, brand: 'Volvo', model: 'FH' })],
+      [{ id: 'v1', position: { timestamp_device: new Date().toISOString() } }],
+    );
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosListRoute />);
+    await waitFor(() => expect(screen.getAllByText('Conectado').length).toBeGreaterThan(0));
+    expect(screen.queryByText(IMEI_LISTA)).toBeNull();
+    expect(screen.getAllByText('Volvo FH').length).toBeGreaterThan(0);
+    const cards = screen.getByTestId('vehiculos-cards');
+    expect(within(cards).getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/live',
+    );
+    expect(
+      within(screen.getByTestId('vehiculos-tabla')).queryByRole('link', { name: /ver en vivo/i }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /más acciones/i }));
+    expect(screen.getByRole('menuitem', { name: /ver en vivo/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/live',
+    );
+  });
+
+  it('con IMEI y sin punto fresco muestra Sin señal', async () => {
+    mockLista([vehiculoLista({ teltonika_imei: IMEI_LISTA })], [{ id: 'v1', position: null }]);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosListRoute />);
+    await waitFor(() => expect(screen.getAllByText('Sin señal').length).toBeGreaterThan(0));
+    expect(screen.queryByText(IMEI_LISTA)).toBeNull();
+  });
+
+  it('los chips muestran conteos y filtran; Limpiar vuelve a la flota', async () => {
+    mockLista(
+      [
+        vehiculoLista({ id: 'v1', plate: 'ABCD12', status: 'activo', teltonika_imei: null }),
+        vehiculoLista({
+          id: 'v2',
+          plate: 'XYZW99',
+          status: 'mantenimiento',
+          teltonika_imei: IMEI_LISTA,
+          brand: 'Volvo',
+          model: 'FH',
+        }),
+        vehiculoLista({
+          id: 'v3',
+          plate: 'JKLM11',
+          status: 'retirado',
           teltonika_imei: null,
-          rut: null,
-          status: 'activo',
-          available_for_assignment: true,
-          notes: null,
-          created_at: '2026-05-10T10:00:00Z',
-        },
+        }),
       ],
+      [{ id: 'v2', position: null }],
+    );
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosListRoute />);
+    await waitFor(() => expect(screen.getByTestId('filtro-sin_senal')).toHaveTextContent('1'));
+    const activos = screen.getByTestId('filtro-activos');
+    expect(activos).toHaveTextContent('Activos');
+    expect(activos).toHaveTextContent('1');
+    expect(screen.getByTestId('filtro-todos')).toHaveTextContent('3');
+    expect(screen.getByTestId('filtro-mantencion')).toHaveTextContent('1');
+    expect(screen.getByTestId('filtro-retirados')).toHaveTextContent('1');
+    expect(screen.getByTestId('filtro-sin_dispositivo')).toHaveTextContent('2');
+    expect(screen.getByTestId('filtro-sin_senal')).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByTestId('filtro-mantencion'));
+    expect(screen.getAllByText(/XY/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/JK/)).toBeNull();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /buscar vehículos/i }), {
+      target: { value: 'zzzz' },
+    });
+    expect(screen.getByText(/ningún vehículo coincide/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^limpiar$/i }));
+    expect(screen.getByTestId('filtro-todos')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByText(/AB/).length).toBeGreaterThan(0);
+  });
+
+  it('error de carga ofrece Reintentar', async () => {
+    let fallar = true;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos' && fallar) {
+        throw new Error('red');
+      }
+      if (path === '/vehiculos') {
+        return { vehicles: [vehiculoLista()] };
+      }
+      return { fleet: [] };
     });
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosListRoute />);
-    // formatPlateForDisplay puede insertar espacios/separadores; basta verificar
-    // que el dígito de patente quede visible en la página.
-    await waitFor(() =>
-      expect(
-        screen.getAllByText((_t, n) => n?.textContent?.includes('AB·CD·12') ?? false).length,
-      ).toBeGreaterThan(0),
+    const reintentar = await screen.findByRole('button', { name: /reintentar/i });
+    expect(screen.getByRole('alert')).toHaveTextContent(/no pudimos cargar los vehículos/i);
+    fallar = false;
+    fireEvent.click(reintentar);
+    await waitFor(() => expect(screen.getAllByText('Sin dispositivo').length).toBeGreaterThan(0));
+  });
+
+  it('mientras carga muestra skeleton y no la tabla', () => {
+    vi.spyOn(api, 'get').mockImplementation(() => new Promise(() => undefined));
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosListRoute />);
+    expect(screen.getByTestId('vehiculos-cargando')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByTestId('vehiculos-cards')).toBeNull();
+  });
+
+  it('conductor no ve Nuevo vehículo ni Editar; con IMEI sí ve en vivo', async () => {
+    mockLista(
+      [vehiculoLista({ teltonika_imei: IMEI_LISTA })],
+      [{ id: 'v1', position: { timestamp_device: new Date().toISOString() } }],
     );
+    const me = makeMe();
+    providedContext = {
+      kind: 'onboarded',
+      me: {
+        ...me,
+        active_membership: { ...me.active_membership, role: 'conductor' },
+      } as MeOnboarded,
+    };
+    wrap(<VehiculosListRoute />);
+    await waitFor(() => expect(screen.getAllByText('Conectado').length).toBeGreaterThan(0));
+    expect(screen.queryByRole('link', { name: /nuevo vehículo/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
+    expect(
+      within(screen.getByTestId('vehiculos-cards')).getByRole('link', { name: /ver en vivo/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /más acciones/i }));
+    expect(screen.getByRole('menuitem', { name: /ver en vivo/i })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /^editar$/i })).toBeNull();
   });
 });
 
