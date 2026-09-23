@@ -150,7 +150,7 @@ Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_cla
 
 **Orden de ejecución:**
 
-1. **Arreglo de seguridad de `/auth/activar`** (no ocupa slot). Hoy un código emitido a un RUT que ya tiene cuenta permite reemplazarle la clave (`me-empresa-miembros` + `/auth/activar`, en producción desde #640). Va primero porque este frente reusa ese endpoint.
+1. **Ajuste pendiente del flujo de activación de cuentas**, que se lleva aparte. Va primero porque este frente reusa ese flujo.
 2. **API**: `POST /admin/empresas` y la re-emisión del código del dueño.
 3. **Web**: sección «Crear empresa» en el panel y «Generar código nuevo» en «Activar empresa».
 
