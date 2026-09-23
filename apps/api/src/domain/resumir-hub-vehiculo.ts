@@ -11,8 +11,10 @@ export interface ResumenHubVehiculo {
   /** Suma de litros ya calculados en `recientes`. Null si ninguno trae litros. */
   litrosRecientes: number | null;
   /**
-   * km/L del trayecto más reciente que ya lo trae. Null si ninguno lo trae:
-   * no se divide km/L a mano (el segmentador lo omite bajo 5 L o 10 km).
+   * Σkm / ΣL de los trayectos de la ventana con litros confiables.
+   * No es el km/L de un trayecto ni el promedio de esos cocientes.
+   * Un trayecto con `economiaConfiable === false` no entra: sus litros
+   * medidos siguen en la fila, pero no arman el KPI.
    */
   kmPorLitro: number | null;
   /** True si hay trayectos y todos piden conectar el sensor. */
@@ -36,7 +38,8 @@ function tieneAlerta(trayecto: TrayectoTeltonika): boolean {
 
 /**
  * Arma el resumen del hub a partir de trayectos ya segmentados.
- * No detecta robos ni recalcula combustible: solo ordena y suma.
+ * No detecta robos ni recalcula litros. El km/L de la ventana es Σkm/ΣL
+ * de los trayectos con litros confiables.
  */
 export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): ResumenHubVehiculo {
   const ordenados = [...trayectos].sort(porFinDesc);
@@ -48,7 +51,10 @@ export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): Res
     conLitros.length > 0
       ? conLitros.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0)
       : null;
-  const kmPorLitro = ordenados.find((t) => t.kmPorLitro != null)?.kmPorLitro ?? null;
+  const paraEconomia = ordenados.filter(entraEnEconomia);
+  const kmEconomia = paraEconomia.reduce((suma, t) => suma + t.distanciaKm, 0);
+  const litrosEconomia = paraEconomia.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0);
+  const kmPorLitro = litrosEconomia > 0 ? redondear2(kmEconomia / litrosEconomia) : null;
   const conAlerta = ordenados.filter(tieneAlerta);
   return {
     ultimo,
@@ -60,4 +66,16 @@ export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): Res
     alertasTotal: conAlerta.length,
     alertaUltima: conAlerta[0] ?? null,
   };
+}
+
+function entraEnEconomia(trayecto: TrayectoTeltonika): boolean {
+  return (
+    trayecto.economiaConfiable !== false &&
+    trayecto.litrosConsumidos != null &&
+    trayecto.litrosConsumidos > 0
+  );
+}
+
+function redondear2(valor: number): number {
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
 }

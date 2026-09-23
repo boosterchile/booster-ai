@@ -73,6 +73,7 @@ export async function listarTrayectosTeltonika(opts: {
       id: vehicles.id,
       plate: vehicles.plate,
       empresaId: vehicles.empresaId,
+      consumptionLPer100kmBaseline: vehicles.consumptionLPer100kmBaseline,
     })
     .from(vehicles)
     .where(and(eq(vehicles.empresaId, opts.empresaId), isNotNull(vehicles.teltonikaImei)));
@@ -129,6 +130,7 @@ export async function listarTrayectosTeltonika(opts: {
       empresaId: vehiculo.empresaId,
       patente: vehiculo.plate,
       capacidadEstanqueL: null,
+      consumoLPor100kmBase: consumoBaseDe(vehiculo.consumptionLPer100kmBaseline),
       // Hora del AVL, no `timestamp_recibido_en`: un buffer sin señal celular
       // llega tarde y la ventana de robo (5 min) tiene que usar este reloj.
       tMs: fila.timestampDevice.getTime(),
@@ -227,6 +229,18 @@ function vacio(
     trayectos: [],
     resumenVehiculo,
   };
+}
+
+/** `numeric` de Postgres llega como string. Sin base, o ≤ 0, no hay tope. */
+function consumoBaseDe(valor: string | number | null | undefined): number | null {
+  if (valor == null || valor === '') {
+    return null;
+  }
+  const n = typeof valor === 'number' ? valor : Number(valor);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return n;
 }
 
 function ioNumerico(ioData: unknown): Record<string, number> | null {

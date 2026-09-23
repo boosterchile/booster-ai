@@ -22,11 +22,15 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * con el 239 siempre en 0 porque el cable de ignición no está conectado.
  * El DIN1 (AVL 1) solo entra si ese punto no trae 239 ni RPM > 0.
  * El 250 acerca bordes, no abre un trayecto por su cuenta.
- * Fuente de combustible por trayecto: nivel en litros (84, ×0.1); si no hay,
- * litros consumidos por el Δ del contador 83 (×0.1); si no, nivel en % (89).
- * El 89 no se convierte a litros y el 83 no es un nivel. Los litros y el km/L
- * se calculan sobre el tramo entre la primera y la última lectura, solo si
- * ese tramo cubre ≥ 90 % de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
+ * Fuente de combustible por trayecto: si hay capacidad de estanque y AVL 89,
+ * los litros son Δ% × capacidad. Si no, nivel en litros (84, ×0.1); si no hay,
+ * litros consumidos por el Δ del contador 83 (×0.1); si no, nivel en % (89)
+ * sin convertir. El 83 no es un nivel. Los litros y el km/L se calculan sobre
+ * el tramo entre la primera y la última lectura, solo si ese tramo cubre ≥ 90 %
+ * de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
+ * Sin capacidad, un km/L por encima de 2 × (100 / consumo base L/100 km) no se
+ * publica: el 84 de JLKT54 informa un estanque de firmware ~200 L (raw ≈ 20 × 89)
+ * y deprime los litros. No se inventan litros; se oculta el km/L.
  * El aviso de robo solo existe con el 84: un robo no pasa por el contador 83.
  * Golpe único: puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
@@ -70,6 +74,16 @@ export const COBERTURA_MINIMA = 0.9;
 export const LITROS_MINIMOS_KM_POR_LITRO = 5;
 export const KM_MINIMOS_KM_POR_LITRO = 10;
 /**
+ * Tope del km/L respecto del consumo base del vehículo (L/100 km).
+ * Data Ops 2026-09-23, JLKT54: GPS 294,93 km y Δ del 84 = 24,0 L dan 12,29 km/L.
+ * La base del vehículo es 32 L/100 km (esperado ~3,13 km/L, ~94 L en ese tramo).
+ * El 84 está deprimido ~4× (firmware ~200 L, raw 84 ≈ 20 × raw 89). El GPS
+ * coincide con el odómetro 87, así que la distancia se queda. Por encima de
+ * 2 × (100 / base) —con base 32, 6,25 km/L— el km/L no se muestra. No se
+ * reemplaza el Δ medido por los ~94 L del modelo.
+ */
+export const FACTOR_TOPE_KM_POR_LITRO = 2;
+/**
  * Por debajo de esto el trayecto es una maniobra o una cola. No se emite
  * el aviso de golpe ni el de hormiga, ni el pin.
  */
@@ -93,6 +107,8 @@ export const NOTA_SIN_LECTURA =
   'No hay una lectura válida de litros en este trayecto. No calculamos km/L.';
 export const NOTA_COBERTURA_PARCIAL =
   'El camión no informó combustible durante todo el trayecto. No calculamos km/L.';
+export const NOTA_KM_POR_LITRO_NO_CONFIABLE =
+  'Este km/L no es confiable: supera el doble del consumo base del camión. No lo mostramos.';
 
 export type SensorCombustible = 'ausente' | 'presente' | 'degradado';
 /** De dónde salen los datos de combustible de un trayecto. */
@@ -112,6 +128,11 @@ export interface PuntoSegmentacion {
   patente: string;
   /** Litros de estanque si se conocen. `null` → U = U_empresa o 8 L. */
   capacidadEstanqueL: number | null;
+  /**
+   * Consumo base del vehículo, L/100 km (`consumo_l_por_100km_base`).
+   * `null` o ausente: no hay tope de km/L. No se inventa una base.
+   */
+  consumoLPor100kmBase?: number | null;
   tMs: number;
   lat: number | null;
   lng: number | null;
@@ -132,6 +153,11 @@ export interface TrayectoTeltonika {
   litrosIniciales: number | null;
   litrosFinales: number | null;
   kmPorLitro: number | null;
+  /**
+   * False cuando el km/L superó el tope de la base. Los litros medidos siguen
+   * en `litrosConsumidos`; no entran al KPI Σkm/ΣL.
+   */
+  economiaConfiable: boolean;
   /** `null` = el trayecto no trae ninguna lectura de combustible usable. */
   fuenteCombustible: FuenteCombustible | null;
   /** ΔL del 84 o Δ del contador 83 en el tramo leído. Null sin baja, sin cobertura o bajo 5 L / 10 km. */
@@ -202,6 +228,18 @@ export function umbralHormigaLitros(uEmpresaL: number | null): number {
     UMBRAL_ROBO_HORMIGA_MAX_L,
     UMBRAL_ROBO_HORMIGA_DEFAULT_L,
   );
+}
+
+/** km/L máximo creíble. `null` si el vehículo no tiene consumo base. */
+export function topeKmPorLitro(consumoLPor100kmBase: number | null | undefined): number | null {
+  if (
+    consumoLPor100kmBase == null ||
+    !Number.isFinite(consumoLPor100kmBase) ||
+    consumoLPor100kmBase <= 0
+  ) {
+    return null;
+  }
+  return FACTOR_TOPE_KM_POR_LITRO * (100 / consumoLPor100kmBase);
 }
 
 function litrosEnRango(valor: number | null, min: number, max: number, fallback: number): number {
@@ -642,6 +680,7 @@ type CombustibleTrayecto = Pick<
   | 'litrosIniciales'
   | 'litrosFinales'
   | 'kmPorLitro'
+  | 'economiaConfiable'
   | 'fuenteCombustible'
   | 'litrosConsumidos'
   | 'nivelPctInicial'
@@ -650,8 +689,9 @@ type CombustibleTrayecto = Pick<
 >;
 
 /**
- * Fuente por trayecto: 84 (nivel en L) > Δ del 83 (litros consumidos, ≥ 2
- * lecturas) > 89 (nivel en %). Sin ninguna, el trayecto queda sin dato.
+ * Fuente por trayecto: con capacidad y AVL 89, litros = Δ% × capacidad.
+ * Si no: 84 (nivel en L) > Δ del 83 (litros consumidos, ≥ 2 lecturas) > 89
+ * (nivel en %, sin litros). Sin ninguna, el trayecto queda sin dato.
  */
 function combustibleDelTrayecto(
   sensor: SensorCombustible,
@@ -659,17 +699,41 @@ function combustibleDelTrayecto(
 ): CombustibleTrayecto {
   const distanciaKm = distanciaDe(puntos);
   const porcentaje = lecturasDe(puntos, nivelPctDe);
+  const capacidad = puntos[0]?.capacidadEstanqueL ?? null;
+  const consumoBase = puntos[0]?.consumoLPor100kmBase ?? null;
   const base: CombustibleTrayecto = {
     distanciaKm: redondear(distanciaKm, 3),
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
+    economiaConfiable: true,
     fuenteCombustible: null,
     litrosConsumidos: null,
     nivelPctInicial: porcentaje[0]?.valor ?? null,
     nivelPctFinal: porcentaje[porcentaje.length - 1]?.valor ?? null,
     notaCombustible: null,
   };
+
+  const primerPct = porcentaje[0];
+  const ultimoPct = porcentaje[porcentaje.length - 1];
+  if (capacidadConocida(capacidad) && primerPct && ultimoPct && porcentaje.length >= 2) {
+    const litrosIni = (primerPct.valor / 100) * capacidad;
+    const litrosFin = (ultimoPct.valor / 100) * capacidad;
+    const conCapacidad: CombustibleTrayecto = {
+      ...base,
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: redondear(litrosIni, 1),
+      litrosFinales: redondear(litrosFin, 1),
+    };
+    const delta = litrosIni - litrosFin;
+    if (!(delta > 0)) {
+      return { ...conCapacidad, notaCombustible: delta < 0 ? NOTA_NIVEL_SUBIO : NOTA_SIN_BAJA };
+    }
+    return {
+      ...conCapacidad,
+      ...consumoCubierto(puntos, primerPct.idx, ultimoPct.idx, delta, distanciaKm, consumoBase),
+    };
+  }
 
   const nivel = lecturasDe(puntos, litrosDe);
   const primerNivel = nivel[0];
@@ -687,7 +751,7 @@ function combustibleDelTrayecto(
     }
     return {
       ...conNivel,
-      ...consumoCubierto(puntos, primerNivel.idx, ultimoNivel.idx, delta, distanciaKm),
+      ...consumoCubierto(puntos, primerNivel.idx, ultimoNivel.idx, delta, distanciaKm, consumoBase),
     };
   }
 
@@ -704,6 +768,7 @@ function combustibleDelTrayecto(
         ultimoConsumo.idx,
         ultimoConsumo.valor - primerConsumo.valor,
         distanciaKm,
+        consumoBase,
       ),
     };
   }
@@ -719,6 +784,8 @@ function combustibleDelTrayecto(
  * Si cubre menos del 90 % del trayecto, el CAN se cortó en el camino: no se
  * calcula, para no inflar el km/L con kilómetros sin litros. Bajo 5 L o 10 km
  * tampoco, y sin nota por fila: la UI lo explica una vez.
+ * Si el cociente supera `topeKmPorLitro`, se conservan los litros medidos y
+ * se oculta el km/L. No se sustituyen por el consumo base.
  */
 function consumoCubierto(
   puntos: PuntoResuelto[],
@@ -726,18 +793,43 @@ function consumoCubierto(
   hastaIdx: number,
   litros: number,
   distanciaTotalKm: number,
-): Pick<TrayectoTeltonika, 'litrosConsumidos' | 'kmPorLitro' | 'notaCombustible'> {
+  consumoLPor100kmBase: number | null,
+): Pick<
+  TrayectoTeltonika,
+  'litrosConsumidos' | 'kmPorLitro' | 'notaCombustible' | 'economiaConfiable'
+> {
   const cubiertaKm = distanciaDe(puntos.slice(desdeIdx, hastaIdx + 1));
   if (cubiertaKm + 1e-9 < COBERTURA_MINIMA * distanciaTotalKm) {
-    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: NOTA_COBERTURA_PARCIAL };
+    return {
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      notaCombustible: NOTA_COBERTURA_PARCIAL,
+      economiaConfiable: true,
+    };
   }
   if (litros + 1e-9 < LITROS_MINIMOS_KM_POR_LITRO || cubiertaKm + 1e-9 < KM_MINIMOS_KM_POR_LITRO) {
-    return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: null };
+    return {
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      notaCombustible: null,
+      economiaConfiable: true,
+    };
+  }
+  const kmPorLitro = redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2);
+  const tope = topeKmPorLitro(consumoLPor100kmBase);
+  if (tope != null && kmPorLitro > tope) {
+    return {
+      litrosConsumidos: redondear(litros, 1),
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+      economiaConfiable: false,
+    };
   }
   return {
     litrosConsumidos: redondear(litros, 1),
-    kmPorLitro: redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2),
+    kmPorLitro,
     notaCombustible: null,
+    economiaConfiable: true,
   };
 }
 

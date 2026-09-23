@@ -14,6 +14,7 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
+    economiaConfiable: true,
     fuenteCombustible: null,
     litrosConsumidos: null,
     nivelPctInicial: null,
@@ -42,24 +43,51 @@ describe('resumirHubVehiculo', () => {
     expect(resumen.alertaUltima).toBeNull();
   });
 
-  it('no calcula km/L aunque haya km y litros', () => {
+  it('arma el km/L con los km y los litros del trayecto, aunque la fila no traiga cociente', () => {
     const resumen = resumirHubVehiculo([
       trayecto({ distanciaKm: 100, litrosConsumidos: 25, kmPorLitro: null, ctaSensor: false }),
     ]);
-    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.kmPorLitro).toBe(4);
     expect(resumen.kmRecientes).toBe(100);
     expect(resumen.litrosRecientes).toBe(25);
     expect(resumen.ctaSensor).toBe(false);
   });
 
-  it('el km/L del hub es el del trayecto reciente, no el cociente de la ventana', () => {
+  it('el km/L de la ventana es Σkm/ΣL de los trayectos con litros confiables', () => {
     const resumen = resumirHubVehiculo([
       trayecto({
         id: 'reciente',
         fin: '2026-09-03T13:00:00.000Z',
-        distanciaKm: 122.85,
-        litrosConsumidos: 10,
-        kmPorLitro: 12.29,
+        distanciaKm: 294.93,
+        litrosConsumidos: 24,
+        kmPorLitro: null,
+        economiaConfiable: false,
+        ctaSensor: false,
+        fuenteCombustible: 'nivel_litros',
+      }),
+      trayecto({
+        id: 'anterior',
+        fin: '2026-09-02T13:00:00.000Z',
+        distanciaKm: 200,
+        litrosConsumidos: 80,
+        kmPorLitro: 2.5,
+        economiaConfiable: true,
+        ctaSensor: false,
+        fuenteCombustible: 'nivel_litros',
+      }),
+    ]);
+    expect(resumen.kmPorLitro).toBe(2.5);
+    expect(resumen.litrosRecientes).toBe(104);
+  });
+
+  it('suma los km y los litros confiables, no promedia los km/L', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'reciente',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
         ctaSensor: false,
         fuenteCombustible: 'nivel_litros',
       }),
@@ -73,36 +101,39 @@ describe('resumirHubVehiculo', () => {
         fuenteCombustible: 'nivel_litros',
       }),
     ]);
-    expect(resumen.kmPorLitro).toBe(12.29);
-    const litros = resumen.litrosRecientes ?? 0;
-    const cocienteVentana = resumen.kmRecientes / litros;
-    expect(cocienteVentana).toBeCloseTo((122.85 + 200) / 90, 2);
-    expect(resumen.kmPorLitro).not.toBeCloseTo(cocienteVentana, 1);
+    expect(resumen.kmPorLitro).toBe(3);
+    expect(resumen.kmPorLitro).not.toBe(5);
+    expect(resumen.kmPorLitro).not.toBe(3.75);
   });
 
-  it('toma el km/L del trayecto más reciente que ya lo trae', () => {
+  it('el km/L de la ventana es la suma, también cuando hay un trayecto sin litros', () => {
     const resumen = resumirHubVehiculo([
       trayecto({
         id: 'viejo',
         fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 30,
+        litrosConsumidos: 10,
         kmPorLitro: 3,
         ctaSensor: false,
       }),
       trayecto({
         id: 'nuevo',
         fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 12,
         kmPorLitro: null,
         ctaSensor: false,
       }),
       trayecto({
         id: 'medio',
         fin: '2026-09-02T13:00:00.000Z',
+        distanciaKm: 45,
+        litrosConsumidos: 10,
         kmPorLitro: 4.5,
         ctaSensor: false,
       }),
     ]);
     expect(resumen.ultimo?.id).toBe('nuevo');
-    expect(resumen.kmPorLitro).toBe(4.5);
+    expect(resumen.kmPorLitro).toBe(3.75);
     expect(resumen.recientes.map((t) => t.id)).toEqual(['nuevo', 'medio', 'viejo']);
   });
 

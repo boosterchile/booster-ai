@@ -816,6 +816,11 @@ describe('VehiculoDetallePage — hub', () => {
     expect(await screen.findByText(/conectado/i)).toBeInTheDocument();
     expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(
+        'Suma de los km y los litros confiables de la ventana, no de un trayecto solo.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('posible robo combustible').length).toBeGreaterThan(0);
     expect(screen.getByText(/1 alerta en 30 días/)).toBeInTheDocument();
 

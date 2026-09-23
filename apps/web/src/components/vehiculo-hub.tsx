@@ -338,6 +338,11 @@ function TarjetaConsumo({
           <p className="font-semibold text-neutral-900">
             {resumen.km_por_litro != null ? `${fmtNum(resumen.km_por_litro, 2)} km/L` : '—'}
           </p>
+          {resumen.km_por_litro != null ? (
+            <p className="mt-1 text-neutral-600 text-xs">
+              Suma de los km y los litros confiables de la ventana, no de un trayecto solo.
+            </p>
+          ) : null}
           <p className="mt-1 text-neutral-700 text-sm">
             {fmtKm(resumen.km_recientes)} en los últimos trayectos
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}

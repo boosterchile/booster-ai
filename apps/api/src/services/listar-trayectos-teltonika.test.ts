@@ -667,4 +667,54 @@ describe('listarTrayectosTeltonika', () => {
     expect(lista.trayectos.map((t) => t.id)).toContain(idViejo);
     expect(lista.trayectos[0]?.id).not.toBe(lista.trayectos[1]?.id);
   });
+
+  it('pasa el consumo base del vehículo y oculta el km/L del 84 deprimido', async () => {
+    const t0 = Date.parse('2026-09-22T21:11:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JLKT54',
+          empresaId: EMPRESA,
+          consumptionLPer100kmBaseline: '32.00',
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-36.102365',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 1360, '89': 68 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 1600, '89': 80 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde: new Date('2026-09-22T00:00:00.000Z'),
+      hasta: new Date('2026-09-23T12:00:00.000Z'),
+      page: 1,
+      pageSize: 20,
+      vehiculoId: VEHICULO,
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      distanciaKm: 294.93,
+      litrosConsumidos: 24,
+      kmPorLitro: null,
+      economiaConfiable: false,
+    });
+    expect(lista.resumenVehiculo?.kmPorLitro).toBeNull();
+  });
 });

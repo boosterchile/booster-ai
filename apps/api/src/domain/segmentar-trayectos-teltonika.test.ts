@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
   DISTANCIA_MINIMA_AVISO_ROBO_KM,
+  FACTOR_TOPE_KM_POR_LITRO,
   GAP_CORTE_MS,
   KM_MINIMOS_KM_POR_LITRO,
   LITROS_MINIMOS_KM_POR_LITRO,
   LITROS_MINIMOS_NIVEL_AVISO_ROBO,
   NIVEL_PCT_MINIMO_AVISO_ROBO,
   NOTA_COBERTURA_PARCIAL,
+  NOTA_KM_POR_LITRO_NO_CONFIABLE,
   NOTA_NIVEL_SUBIO,
   NOTA_SIN_BAJA,
   NOTA_SIN_LECTURA,
@@ -15,6 +17,7 @@ import {
   UMBRAL_ROBO_BASE_L,
   resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
+  topeKmPorLitro,
   umbralHormigaLitros,
   umbralRoboLitros,
 } from './segmentar-trayectos-teltonika.js';
@@ -1224,77 +1227,84 @@ describe('credibilidad del aviso de robo', () => {
   });
 });
 
-describe('km/L imposible (JLKT54, estanque virtual de 200 L)', () => {
-  it('reproduce 12,29 km/L con la firma de JLKT54 y el piso del gate no lo frena', () => {
-    // Censo: raw 84 = 20 × raw 89 → el ×0.1 del catálogo es un estanque virtual
-    // de 200 L (litros = 2 × Δ%). 80 % → 75 % son 10 L, no el consumo del motor.
-    const latFin = -34.55482;
-    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
-    const litrosVirtuales = (1600 - 1500) * 0.1;
-    expect(litrosVirtuales).toBe(10);
-    expect(Math.round((km / litrosVirtuales + Number.EPSILON) * 100) / 100).toBe(12.29);
+describe('km/L de JLKT54 (294,93 km / 24,0 L)', () => {
+  // Mismo haversine que el trayecto 2026-09-22 21:11 → 2026-09-23 01:07 SCL.
+  const latFin = -36.102365;
+  const base32 = { consumoLPor100kmBase: 32 };
 
-    const trayectos = segmentarTrayectosTeltonika([
+  function tramo(extra: Partial<PuntoSegmentacion> = {}) {
+    return segmentarTrayectosTeltonika([
       punto({
+        ...extra,
         tMs: T0,
         patente: 'JLKT54',
-        io: { '239': 1, '240': 1, '84': 1600, '89': 80, '83': 581_520 },
+        io: { '239': 1, '240': 1, '84': 1600, '89': 80 },
       }),
       punto({
+        ...extra,
         tMs: T0 + 60_000,
         lat: latFin,
         patente: 'JLKT54',
-        io: { '239': 1, '240': 1, '84': 1500, '89': 75, '83': 582_011 },
+        io: { '239': 1, '240': 1, '84': 1360, '89': 68 },
       }),
     ]);
-    // El Δ del 83 sería 49,1 L (~2,5 km/L). El 84 manda y publica el imposible.
+  }
+
+  it('sin consumo base el 84 publica 12,29 km/L y deja los 24,0 L medidos', () => {
+    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
+    expect(Math.round((km + Number.EPSILON) * 1000) / 1000).toBe(294.93);
+    expect(Math.round((km / 24 + Number.EPSILON) * 100) / 100).toBe(12.29);
+    const trayectos = tramo();
     expect(trayectos[0]).toMatchObject({
       patente: 'JLKT54',
+      distanciaKm: 294.93,
       fuenteCombustible: 'nivel_litros',
       litrosIniciales: 160,
-      litrosFinales: 150,
-      litrosConsumidos: 10,
+      litrosFinales: 136,
+      litrosConsumidos: 24,
       nivelPctInicial: 80,
-      nivelPctFinal: 75,
+      nivelPctFinal: 68,
       kmPorLitro: 12.29,
+      economiaConfiable: true,
       notaCombustible: null,
-      posibleRoboCombustible: false,
-      posibleRoboHormiga: false,
     });
   });
 
-  it.fails('no publica 12,29 km/L: el Δ del estanque virtual no es el consumo del camión', () => {
-    const latFin = -34.55482;
-    const trayectos = segmentarTrayectosTeltonika([
-      punto({
-        tMs: T0,
-        patente: 'JLKT54',
-        io: { '239': 1, '240': 1, '84': 1600, '89': 80, '83': 581_520 },
-      }),
-      punto({
-        tMs: T0 + 60_000,
-        lat: latFin,
-        patente: 'JLKT54',
-        io: { '239': 1, '240': 1, '84': 1500, '89': 75, '83': 582_011 },
-      }),
-    ]);
-    const kmPorLitro = trayectos[0]?.kmPorLitro ?? null;
-    expect(kmPorLitro == null || kmPorLitro <= 8).toBe(true);
-  });
-
-  it('el mínimo de 5 L y 10 km también deja pasar 12,29 km/L sin el 89', () => {
-    const latFin = -34.00262;
-    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
-    expect(Math.round((km / 5 + Number.EPSILON) * 100) / 100).toBe(12.29);
-    const trayectos = segmentarTrayectosTeltonika([
-      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
-      punto({ tMs: T0 + 60_000, lat: latFin, io: { '239': 1, '240': 1, '84': 950 } }),
-    ]);
+  it('con base 32 L/100 km oculta el 12,29 y no inventa los ~94 L', () => {
+    expect(FACTOR_TOPE_KM_POR_LITRO).toBe(2);
+    expect(topeKmPorLitro(32)).toBeCloseTo(6.25, 5);
+    expect(294.93 * (32 / 100)).toBeCloseTo(94.38, 2);
+    const trayectos = tramo(base32);
     expect(trayectos[0]).toMatchObject({
-      litrosConsumidos: 5,
-      kmPorLitro: 12.29,
+      distanciaKm: 294.93,
+      litrosConsumidos: 24,
+      litrosIniciales: 160,
+      litrosFinales: 136,
+      kmPorLitro: null,
+      economiaConfiable: false,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    });
+    expect(trayectos[0]?.litrosConsumidos).not.toBeCloseTo(94.4, 0);
+  });
+
+  it('con capacidad de estanque los litros salen del 89 y el km/L queda bajo el tope', () => {
+    const capacidadEstanqueL = 800;
+    const trayectos = tramo({ ...base32, capacidadEstanqueL });
+    const litros = ((80 - 68) / 100) * capacidadEstanqueL;
+    expect(litros).toBe(96);
+    expect(trayectos[0]).toMatchObject({
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: 640,
+      litrosFinales: 544,
+      litrosConsumidos: 96,
+      nivelPctInicial: 80,
+      nivelPctFinal: 68,
+      economiaConfiable: true,
       notaCombustible: null,
     });
+    expect(trayectos[0]?.kmPorLitro).toBeCloseTo(294.93 / 96, 2);
+    expect(trayectos[0]?.kmPorLitro ?? 0).toBeLessThan(topeKmPorLitro(32) ?? 0);
+    expect(trayectos[0]?.litrosConsumidos).not.toBe(24);
   });
 });
 

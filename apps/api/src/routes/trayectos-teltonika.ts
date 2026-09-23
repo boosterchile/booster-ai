@@ -199,6 +199,7 @@ function serializarTrayecto(
     litros_iniciales: t.litrosIniciales,
     litros_finales: t.litrosFinales,
     km_por_litro: t.kmPorLitro,
+    economia_confiable: t.economiaConfiable,
     fuente_combustible: t.fuenteCombustible,
     litros_consumidos: t.litrosConsumidos,
     nivel_pct_inicial: t.nivelPctInicial,
