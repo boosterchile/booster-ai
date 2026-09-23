@@ -355,4 +355,54 @@ describe('GET /trayectos-teltonika', () => {
     const res = await buildApp(makeDb([])).request('/?combustible=todos');
     expect(res.status).toBe(400);
   });
+
+  it('400 si vehiculo_id no es uuid', async () => {
+    const res = await buildApp(makeDb([])).request('/?vehiculo_id=veh-1');
+    expect(res.status).toBe(400);
+  });
+
+  it('vehiculo_id devuelve resumen del hub y el conductor sigue en 403', async () => {
+    const t0 = new Date('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0.getTime() + 60_000),
+          latitude: '-33.56',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: t0,
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1 },
+        },
+      ],
+    );
+    const prohibido = await buildApp(makeDb([]), { rol: 'conductor' }).request(
+      `/?vehiculo_id=${VEHICULO}`,
+    );
+    expect(prohibido.status).toBe(403);
+
+    const res = await buildApp(db).request(`/?vehiculo_id=${VEHICULO}&combustible=sin_dato`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      resumen_vehiculo: {
+        km_por_litro: number | null;
+        cta_sensor: boolean;
+        alertas_total: number;
+        recientes: Array<{ patente: string; distancia_km: number }>;
+      };
+    };
+    expect(body.resumen_vehiculo.km_por_litro).toBeNull();
+    expect(body.resumen_vehiculo.cta_sensor).toBe(true);
+    expect(body.resumen_vehiculo.alertas_total).toBe(0);
+    expect(body.resumen_vehiculo.recientes[0]?.patente).toBe('ABCD12');
+    expect(body.resumen_vehiculo.recientes[0]?.distancia_km).toBeGreaterThan(0);
+  });
 });

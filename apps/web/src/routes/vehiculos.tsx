@@ -5,16 +5,8 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  Navigation,
-  Pencil,
-  Plus,
-  Route as RouteIcon,
-  Trash2,
-  Truck,
-} from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { ArrowLeft, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import { type ReactNode, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ChileanPlate } from '../components/ChileanPlate.js';
@@ -22,6 +14,7 @@ import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { VehiculoHub } from '../components/vehiculo-hub.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -414,7 +407,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [guardado, setGuardado] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [configAbierta, setConfigAbierta] = useState(false);
+  const configRef = useRef<HTMLDetailsElement>(null);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -423,6 +419,17 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
   // separado en su propia constante para no acoplar semánticas distintas.
   const canManageDispositivo = role === 'dueno' || role === 'admin';
+  const empresa = me.active_membership?.empresa;
+  const puedeVerTrayectos = Boolean(
+    empresa?.is_transportista && (role === 'dueno' || role === 'admin'),
+  );
+
+  function abrirConfig() {
+    setConfigAbierta(true);
+    requestAnimationFrame(() => {
+      configRef.current?.scrollIntoView({ block: 'start' });
+    });
+  }
 
   const vehicleQ = useQuery({
     queryKey: ['vehiculos', id],
@@ -439,7 +446,8 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
       queryClient.invalidateQueries({ queryKey: ['vehiculos', id] });
-      void navigate({ to: '/app/vehiculos' });
+      setGuardado(true);
+      setError(null);
     },
     onError: (err: Error) => {
       setError(vehicleMutationErrorMessage(err));
@@ -459,17 +467,14 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   return (
     <Layout me={me} title="Detalle vehículo">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <Link to="/app/vehiculos" className="text-neutral-500 hover:text-neutral-900">
-            <ArrowLeft className="h-5 w-5" aria-hidden />
-          </Link>
-          {vehicleQ.data?.plate ? (
-            <ChileanPlate plate={vehicleQ.data.plate} size="lg" />
-          ) : (
-            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículo</h1>
-          )}
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <Link
+          to="/app/vehiculos"
+          className="inline-flex items-center gap-1 text-neutral-500 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Flota
+        </Link>
         {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' && (
           <div className="flex items-center gap-2">
             {confirmDelete ? (
@@ -510,43 +515,72 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
       {vehicleQ.data && (
         <>
-          {/* D3 — La ubicación en vivo y el histórico de telemetría se
-              movieron a /app/flota y /app/vehiculos/:id/live. Esta página
-              ahora es pure-edit. El link rápido al tracking vive dentro de
-              DispositivoSection (W2b), junto a la gestión del IMEI. */}
-          <DispositivoSection
+          <VehiculoHub
             vehicleId={vehicleQ.data.id}
-            currentImei={vehicleQ.data.teltonika_imei}
-            canManage={canManageDispositivo}
+            plate={vehicleQ.data.plate}
+            typeLabel={VEHICLE_TYPE_LABELS[vehicleQ.data.type] ?? vehicleQ.data.type}
+            brand={vehicleQ.data.brand}
+            model={vehicleQ.data.model}
+            teltonikaImei={vehicleQ.data.teltonika_imei}
+            puedeVerTrayectos={puedeVerTrayectos}
+            onAbrirConfig={abrirConfig}
           />
 
-          <div>
-            <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
-            <p className="mt-1 text-neutral-600 text-sm">
-              Capacidad, combustible, asociación a Teltonika.
-            </p>
-            <div className="mt-4">
-              <VehicleForm
-                mode="edit"
-                initial={vehicleToFormValues(vehicleQ.data)}
-                onSubmit={(values) => {
-                  setError(null);
-                  updateM.mutate(values);
-                }}
-                submitting={updateM.isPending}
-                submitLabel="Guardar cambios"
-                error={error}
-                disabled={!canWrite}
+          <details
+            ref={configRef}
+            id="configuracion"
+            data-testid="configuracion-vehiculo"
+            open={configAbierta}
+            onToggle={(event) => setConfigAbierta(event.currentTarget.open)}
+            className="scroll-mt-20 rounded-lg border border-neutral-200 bg-white"
+          >
+            <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-neutral-900">
+              Configuración
+              <span className="mt-0.5 block font-normal text-neutral-600 text-sm">
+                IMEI, capacidades, tipo y combustible.
+              </span>
+            </summary>
+            <div className="space-y-6 border-neutral-200 border-t px-4 py-4">
+              <DispositivoSection
+                vehicleId={vehicleQ.data.id}
+                currentImei={vehicleQ.data.teltonika_imei}
+                canManage={canManageDispositivo}
+              />
+
+              <div>
+                <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
+                <p className="mt-1 text-neutral-600 text-sm">
+                  Capacidad, combustible, asociación a Teltonika.
+                </p>
+                {guardado ? (
+                  <output className="mt-3 block text-primary-800 text-sm">
+                    Cambios guardados.
+                  </output>
+                ) : null}
+                <div className="mt-4">
+                  <VehicleForm
+                    mode="edit"
+                    initial={vehicleToFormValues(vehicleQ.data)}
+                    onSubmit={(values) => {
+                      setError(null);
+                      setGuardado(false);
+                      updateM.mutate(values);
+                    }}
+                    submitting={updateM.isPending}
+                    submitLabel="Guardar cambios"
+                    error={error}
+                    disabled={!canWrite}
+                  />
+                </div>
+              </div>
+
+              <DocumentosSection
+                entityType="vehiculo"
+                entityId={vehicleQ.data.id}
+                canWrite={canWrite}
               />
             </div>
-          </div>
-
-          {/* D6 — Documentos del vehículo (revisión técnica, SOAP, etc.). */}
-          <DocumentosSection
-            entityType="vehiculo"
-            entityId={vehicleQ.data.id}
-            canWrite={canWrite}
-          />
+          </details>
         </>
       )}
     </Layout>
@@ -722,26 +756,6 @@ function DispositivoSection({
             <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>
           </p>
         </div>
-        {currentImei && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              to="/app/vehiculos/$id/historial"
-              params={{ id: vehicleId }}
-              className="flex items-center gap-2 rounded-md border border-primary-600 px-4 py-2 font-medium text-primary-700 text-sm transition hover:bg-primary-50"
-            >
-              <RouteIcon className="h-4 w-4" aria-hidden />
-              Recorrido
-            </Link>
-            <Link
-              to="/app/vehiculos/$id/live"
-              params={{ id: vehicleId }}
-              className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
-            >
-              <Navigation className="h-4 w-4" aria-hidden />
-              Ver en vivo
-            </Link>
-          </div>
-        )}
       </div>
 
       {canManage && (

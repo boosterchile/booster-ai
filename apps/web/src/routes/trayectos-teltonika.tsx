@@ -85,16 +85,21 @@ function puedeVer(me: MeOnboarded): boolean {
 }
 
 export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
-  const search = (useSearch({ strict: false }) ?? {}) as { detalle?: string; page?: number };
+  const search = (useSearch({ strict: false }) ?? {}) as {
+    detalle?: string;
+    page?: number;
+    vehiculo?: string;
+  };
   const [page, setPage] = useState(() =>
     search.page != null && search.page >= 1 ? search.page : 1,
   );
   const [combustible, setCombustible] = useState<FiltroCombustible>('con_dato');
   const permitido = puedeVer(me);
+  const vehiculo = search.vehiculo;
   const q = useQuery({
-    queryKey: ['trayectos-teltonika', combustible, page],
+    queryKey: ['trayectos-teltonika', combustible, page, vehiculo ?? '', search.detalle ?? ''],
     enabled: permitido,
-    queryFn: () => api.get<Listado>(urlListado(page, combustible)),
+    queryFn: () => api.get<Listado>(urlListado(page, combustible, vehiculo, search.detalle)),
   });
 
   return (
@@ -114,17 +119,20 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
         <p className="mt-8 text-neutral-600">Cargando trayectos…</p>
       ) : null}
       {permitido && q.isError ? <ErrorCarga error={q.error} /> : null}
+      {permitido && vehiculo ? <FiltroVehiculo /> : null}
       {permitido && q.data ? (
         search.detalle ? (
           <DetalleTrayecto
             trayecto={q.data.trayectos.find((t) => t.id === search.detalle) ?? null}
             page={page}
+            vehiculo={vehiculo}
           />
         ) : (
           <ListadoTrayectos
             data={q.data}
             page={page}
             combustible={combustible}
+            vehiculo={vehiculo}
             onPage={(siguiente) => setPage(siguiente)}
             onCombustible={(filtro) => {
               setCombustible(filtro);
@@ -154,21 +162,50 @@ function ErrorCarga({ error }: { error: unknown }) {
   );
 }
 
-function urlListado(page: number, combustible: FiltroCombustible): string {
+function urlListado(
+  page: number,
+  combustible: FiltroCombustible,
+  vehiculo?: string,
+  detalle?: string,
+): string {
   const base = `/trayectos-teltonika?page=${page}&page_size=${PAGE_SIZE}`;
-  return combustible === 'sin_dato' ? `${base}&combustible=sin_dato` : base;
+  const combustibleQs = combustible === 'sin_dato' ? '&combustible=sin_dato' : '';
+  if (!vehiculo) {
+    return `${base}${combustibleQs}`;
+  }
+  const hasta = new Date();
+  const desde = new Date(hasta.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ventana =
+    `&vehiculo_id=${encodeURIComponent(vehiculo)}` +
+    `&desde=${encodeURIComponent(desde.toISOString())}` +
+    `&hasta=${encodeURIComponent(hasta.toISOString())}`;
+  const detalleQs = detalle ? `&detalle=${encodeURIComponent(detalle)}` : '';
+  return `${base}${combustibleQs}${ventana}${detalleQs}`;
+}
+
+function FiltroVehiculo() {
+  return (
+    <p className="mt-4 text-neutral-700 text-sm">
+      Estás viendo los trayectos de este vehículo, últimos 30 días.{' '}
+      <Link to="/app/trayectos" className="underline">
+        Ver toda la flota
+      </Link>
+    </p>
+  );
 }
 
 function ListadoTrayectos({
   data,
   page,
   combustible,
+  vehiculo,
   onPage,
   onCombustible,
 }: {
   data: Listado;
   page: number;
   combustible: FiltroCombustible;
+  vehiculo?: string | undefined;
   onPage: (page: number) => void;
   onCombustible: (filtro: FiltroCombustible) => void;
 }) {
@@ -231,15 +268,17 @@ function ListadoTrayectos({
       )}
       {data.trayectos.length === 0 ? (
         <p className="text-neutral-700">
-          {conPestanas && !sinDato
-            ? 'No hay trayectos con dato de combustible en este período.'
-            : 'No hay trayectos en este período.'}
+          {vehiculo
+            ? 'Este vehículo no tiene trayectos en este período.'
+            : conPestanas && !sinDato
+              ? 'No hay trayectos con dato de combustible en este período.'
+              : 'No hay trayectos en este período.'}
         </p>
       ) : sinDato ? (
         <TablaSinDato trayectos={data.trayectos} />
       ) : (
         <>
-          <TablaConDato trayectos={data.trayectos} page={page} />
+          <TablaConDato trayectos={data.trayectos} page={page} vehiculo={vehiculo} />
           {data.trayectos.some(esTramoCorto) ? (
             <p className="mt-3 text-neutral-600 text-xs">
               Sin litros ni km/L en trayectos de menos de 10 km o 5 L: con tan poca muestra el
@@ -387,7 +426,15 @@ function AvisoSinDato({
   );
 }
 
-function TablaConDato({ trayectos, page }: { trayectos: Trayecto[]; page: number }) {
+function TablaConDato({
+  trayectos,
+  page,
+  vehiculo,
+}: {
+  trayectos: Trayecto[];
+  page: number;
+  vehiculo?: string | undefined;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
@@ -434,7 +481,7 @@ function TablaConDato({ trayectos, page }: { trayectos: Trayecto[]; page: number
                     <Avisos trayecto={t} />
                     <Link
                       to="/app/trayectos"
-                      search={searchDetalle(t.id, page)}
+                      search={searchDetalle(t.id, page, vehiculo)}
                       className="text-amber-950 text-xs underline"
                     >
                       {tieneGeo(t) ? 'Ver en el mapa' : 'Ver detalle'}
@@ -531,12 +578,20 @@ function verbo(patentes: string[], singular: string, plural: string): string {
   return patentes.length === 1 ? singular : plural;
 }
 
-function DetalleTrayecto({ trayecto, page }: { trayecto: Trayecto | null; page: number }) {
+function DetalleTrayecto({
+  trayecto,
+  page,
+  vehiculo,
+}: {
+  trayecto: Trayecto | null;
+  page: number;
+  vehiculo?: string | undefined;
+}) {
   return (
     <section className="mt-8 max-w-3xl" aria-label="Detalle del trayecto">
       <Link
         to="/app/trayectos"
-        search={searchLista(page)}
+        search={searchLista(page, vehiculo)}
         className="text-neutral-700 text-sm underline"
       >
         Volver al historial
@@ -614,18 +669,30 @@ function tieneGeo(trayecto: Trayecto): boolean {
   return trayecto.event_lat != null && trayecto.event_lon != null;
 }
 
-function searchDetalle(id: string, page: number): { detalle: string; page?: number } {
+function searchDetalle(
+  id: string,
+  page: number,
+  vehiculo?: string,
+): { detalle: string; page?: number; vehiculo?: string } {
+  const out: { detalle: string; page?: number; vehiculo?: string } = { detalle: id };
   if (page > 1) {
-    return { detalle: id, page };
+    out.page = page;
   }
-  return { detalle: id };
+  if (vehiculo) {
+    out.vehiculo = vehiculo;
+  }
+  return out;
 }
 
-function searchLista(page: number): { page?: number } {
+function searchLista(page: number, vehiculo?: string): { page?: number; vehiculo?: string } {
+  const out: { page?: number; vehiculo?: string } = {};
   if (page > 1) {
-    return { page };
+    out.page = page;
   }
-  return {};
+  if (vehiculo) {
+    out.vehiculo = vehiculo;
+  }
+  return out;
 }
 
 function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {

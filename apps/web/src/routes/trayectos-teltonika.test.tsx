@@ -25,7 +25,7 @@ vi.mock('../components/Layout.js', () => ({
 }));
 
 const routerState = vi.hoisted(() => ({
-  search: {} as { detalle?: string; page?: number },
+  search: {} as { detalle?: string; page?: number; vehiculo?: string },
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -36,7 +36,7 @@ vi.mock('@tanstack/react-router', () => ({
   }: {
     children: ReactNode;
     to: string;
-    search?: { detalle?: string; page?: number };
+    search?: { detalle?: string; page?: number; vehiculo?: string };
   }) => {
     const params = new URLSearchParams();
     if (search?.detalle) {
@@ -44,6 +44,9 @@ vi.mock('@tanstack/react-router', () => ({
     }
     if (search?.page != null) {
       params.set('page', String(search.page));
+    }
+    if (search?.vehiculo) {
+      params.set('vehiculo', search.vehiculo);
     }
     const qs = params.toString();
     return <a href={qs ? `${to}?${qs}` : to}>{children}</a>;
@@ -622,5 +625,29 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     renderPage();
     expect(await screen.findByRole('table')).toBeInTheDocument();
     expect(screen.queryByText(/con tan poca muestra/)).not.toBeInTheDocument();
+  });
+
+  it('con vehiculo en la URL pide ese vehículo y conserva el filtro en el detalle', async () => {
+    const vehiculo = '11111111-1111-4111-8111-111111111111';
+    routerState.search = { vehiculo };
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 1,
+      trayectos: [
+        {
+          ...listadoConRobo.trayectos[0],
+          event_lat: -33.4,
+          event_lon: -70.6,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText(/trayectos de este vehículo/i)).toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'Ver en el mapa' });
+    const url = String(get.mock.calls[0]?.[0]);
+    expect(url).toContain(`vehiculo_id=${vehiculo}`);
+    expect(url).toContain('desde=');
+    expect(url).not.toContain('detalle=');
+    expect(link).toHaveAttribute('href', `/app/trayectos?detalle=t-1&vehiculo=${vehiculo}`);
   });
 });

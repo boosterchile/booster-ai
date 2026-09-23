@@ -158,9 +158,8 @@ const vehiculosListRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/vehiculos.js'), 'VehiculosListRoute'),
 });
 
-// D3 — Surface dedicada de seguimiento de flota. Reemplaza el patrón
-// anterior en el que la ubicación del vehículo se accedía desde el form
-// de edición (`/app/vehiculos/$id`). El detalle quedó pure-edit.
+// Seguimiento de flota. El detalle (`/app/vehiculos/$id`) es el hub del
+// vehículo; el vivo sigue en `/app/vehiculos/$id/live`.
 const flotaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/flota',
@@ -177,14 +176,21 @@ const trayectosTeltonikaRoute = createRoute({
   ),
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function searchTrayectos(search: Record<string, unknown>): {
   detalle?: string;
   page?: number;
+  vehiculo?: string;
 } {
-  const out: { detalle?: string; page?: number } = {};
+  const out: { detalle?: string; page?: number; vehiculo?: string } = {};
   const detalle = search.detalle;
   if (typeof detalle === 'string' && detalle.length > 0 && detalle.length <= 180) {
     out.detalle = detalle;
+  }
+  const vehiculo = search.vehiculo;
+  if (typeof vehiculo === 'string' && UUID_RE.test(vehiculo)) {
+    out.vehiculo = vehiculo;
   }
   const pageRaw = search.page;
   const pageNum =

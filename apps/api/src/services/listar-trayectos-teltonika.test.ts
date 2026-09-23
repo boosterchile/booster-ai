@@ -595,6 +595,76 @@ describe('listarTrayectosTeltonika', () => {
       totalConCombustible: 0,
       totalSinCombustible: 0,
       vehiculos: [],
+      resumenVehiculo: null,
     });
+  });
+
+  it('vehiculoId deja solo ese vehículo y arma el resumen sin inventar km/L', async () => {
+    const otro = '33333333-3333-4333-8333-333333333333';
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const punto = (vehicleId: string, offsetMin: number) => ({
+      vehicleId,
+      timestampDevice: new Date(t0 + offsetMin * 60_000),
+      latitude: String(-33.45 - offsetMin * 0.01),
+      longitude: '-70.66',
+      speedKmh: 40,
+      ioData: { '239': 1, '240': 1 },
+    });
+    const db = makeDb(
+      [
+        { id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA },
+        { id: otro, plate: 'ZZZZ99', empresaId: EMPRESA },
+      ],
+      [punto(VEHICULO, 0), punto(VEHICULO, 1), punto(otro, 0), punto(otro, 1)],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+      vehiculoId: VEHICULO,
+    });
+    expect(lista.trayectos.map((t) => t.patente)).toEqual(['ABCD12']);
+    expect(lista.resumenVehiculo?.recientes.map((t) => t.patente)).toEqual(['ABCD12']);
+    expect(lista.resumenVehiculo?.kmPorLitro).toBeNull();
+    expect(lista.resumenVehiculo?.ctaSensor).toBe(true);
+    expect(lista.resumenVehiculo?.kmRecientes).toBeGreaterThan(0);
+    expect(lista.cta).toBeNull();
+  });
+
+  it('detalleId mete en la página un trayecto que el page size habría cortado', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const punto = (offsetMin: number) => ({
+      vehicleId: VEHICULO,
+      timestampDevice: new Date(t0 + offsetMin * 60_000),
+      latitude: String(-33.45 - offsetMin * 0.01),
+      longitude: '-70.66',
+      speedKmh: 40,
+      ioData: { '239': 1, '240': 1 },
+    });
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [punto(0), punto(1), punto(40), punto(41)],
+    );
+    const idViejo = `${VEHICULO}:${new Date(t0).toISOString()}`;
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 1,
+      combustible: 'sin_dato',
+      vehiculoId: VEHICULO,
+      detalleId: idViejo,
+    });
+    expect(lista.total).toBe(2);
+    expect(lista.trayectos.map((t) => t.id)).toContain(idViejo);
+    expect(lista.trayectos[0]?.id).not.toBe(lista.trayectos[1]?.id);
   });
 });
