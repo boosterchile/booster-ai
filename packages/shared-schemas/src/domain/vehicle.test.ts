@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MENSAJE_CAPACIDAD_ESTANQUE,
+  MENSAJE_FUENTE_COMBUSTIBLE_CAN,
   type VehicleUnitConfigInput,
   bodyTypeSchema,
+  capacidadEstanqueLInputSchema,
   derivarUnidadDesdeTipoLegacy,
   esConfiguracionCompatible,
+  fuenteCombustibleCanSchema,
   unitCategorySchema,
   unitTypeSchema,
   validarCoherenciaUnidadVehiculo,
@@ -391,5 +395,36 @@ describe('esConfiguracionCompatible — compatibilidad tracto↔semirremolque / 
   it('camioneta/furgon no llevan arrastre hoy (D1.3, W4c decide cuándo se habilita)', () => {
     expect(esConfiguracionCompatible('camioneta', 'semirremolque')).toBe(false);
     expect(esConfiguracionCompatible('furgon', 'remolque')).toBe(false);
+  });
+});
+
+describe('capacidad de estanque y fuente CAN', () => {
+  it('acepta null, un valor dentro de rango y las cuatro fuentes', () => {
+    expect(capacidadEstanqueLInputSchema.parse(undefined)).toBeUndefined();
+    expect(capacidadEstanqueLInputSchema.parse(null)).toBeNull();
+    expect(capacidadEstanqueLInputSchema.parse(0.5)).toBe(0.5);
+    expect(capacidadEstanqueLInputSchema.parse(2000)).toBe(2000);
+    expect(fuenteCombustibleCanSchema.parse('sin_sensor')).toBe('sin_sensor');
+    expect(fuenteCombustibleCanSchema.parse('84')).toBe('84');
+    expect(fuenteCombustibleCanSchema.parse('83')).toBe('83');
+    expect(fuenteCombustibleCanSchema.parse('89')).toBe('89');
+  });
+
+  it('rechaza capacidad ≤ 0, no numérica o sobre 2000 con mensaje claro', () => {
+    for (const valor of [0, -1, 2000.01, Number.POSITIVE_INFINITY, '200', 'abc']) {
+      const parsed = capacidadEstanqueLInputSchema.safeParse(valor);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.message).toBe(MENSAJE_CAPACIDAD_ESTANQUE);
+      }
+    }
+  });
+
+  it('rechaza una fuente fuera del conjunto', () => {
+    const parsed = fuenteCombustibleCanSchema.safeParse('85');
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(MENSAJE_FUENTE_COMBUSTIBLE_CAN);
+    }
   });
 });

@@ -6,6 +6,7 @@ import { empresas, telemetryPoints, vehicles } from '../db/schema.js';
 import { type ResumenHubVehiculo, resumirHubVehiculo } from '../domain/resumir-hub-vehiculo.js';
 import {
   type ConfigRoboCombustible,
+  type FuenteCombustibleCan,
   type PuntoSegmentacion,
   type ResumenCombustibleVehiculo,
   type TrayectoTeltonika,
@@ -32,6 +33,8 @@ export interface ListadoTrayectosTeltonika {
   truncado: boolean;
   cta: 'vincular_teltonika' | null;
   ctaSensor: boolean;
+  /** Algún trayecto de la ventana tiene % del 84 y le falta la capacidad. */
+  ctaCapacidadEstanque: boolean;
   combustible: FiltroCombustible;
   page: number;
   pageSize: number;
@@ -73,6 +76,8 @@ export async function listarTrayectosTeltonika(opts: {
       id: vehicles.id,
       plate: vehicles.plate,
       empresaId: vehicles.empresaId,
+      capacidadEstanqueL: vehicles.capacidadEstanqueL,
+      fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
     })
     .from(vehicles)
     .where(and(eq(vehicles.empresaId, opts.empresaId), isNotNull(vehicles.teltonikaImei)));
@@ -128,7 +133,8 @@ export async function listarTrayectosTeltonika(opts: {
       vehiculoId: fila.vehicleId,
       empresaId: vehiculo.empresaId,
       patente: vehiculo.plate,
-      capacidadEstanqueL: null,
+      capacidadEstanqueL: aNumero(vehiculo.capacidadEstanqueL ?? null),
+      fuenteCombustibleCan: fuenteDesdeFila(vehiculo.fuenteCombustibleCan),
       // Hora del AVL, no `timestamp_recibido_en`: un buffer sin señal celular
       // llega tarde y la ventana de robo (5 min) tiene que usar este reloj.
       tMs: fila.timestampDevice.getTime(),
@@ -167,6 +173,7 @@ export async function listarTrayectosTeltonika(opts: {
     truncado,
     cta: null,
     ctaSensor: todos.length > 0 && todos.every((t) => t.ctaSensor),
+    ctaCapacidadEstanque: todos.some((t) => t.ctaCapacidadEstanque),
     combustible,
     page: opts.page,
     pageSize: opts.pageSize,
@@ -217,6 +224,7 @@ function vacio(
     truncado: false,
     cta: vehiculosTeltonika === 0 ? 'vincular_teltonika' : null,
     ctaSensor,
+    ctaCapacidadEstanque: false,
     combustible: opts.combustible,
     page: opts.page,
     pageSize: opts.pageSize,
@@ -241,6 +249,22 @@ function ioNumerico(ioData: unknown): Record<string, number> | null {
     }
   }
   return io;
+}
+
+const FUENTES_CAN = new Set<FuenteCombustibleCan>(['84', '83', '89', 'sin_sensor']);
+
+/**
+ * `undefined` (el mock de un test que no selecciona la columna) conserva el
+ * camino legado. `null` y cualquier valor fuera del conjunto = sin_sensor.
+ */
+function fuenteDesdeFila(valor: string | null | undefined): FuenteCombustibleCan | undefined {
+  if (valor === undefined) {
+    return undefined;
+  }
+  if (valor != null && FUENTES_CAN.has(valor as FuenteCombustibleCan)) {
+    return valor as FuenteCombustibleCan;
+  }
+  return 'sin_sensor';
 }
 
 function aNumero(valor: string | number | null): number | null {

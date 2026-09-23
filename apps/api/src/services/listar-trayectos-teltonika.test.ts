@@ -667,4 +667,106 @@ describe('listarTrayectosTeltonika', () => {
     expect(lista.trayectos.map((t) => t.id)).toContain(idViejo);
     expect(lista.trayectos[0]?.id).not.toBe(lista.trayectos[1]?.id);
   });
+
+  it('fuente sin_sensor no inventa litros aunque el IO traiga 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JWTH77',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: 'sin_sensor',
+          capacidadEstanqueL: null,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 50, '84': 1000 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 40, '84': 800 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JWTH77',
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      fuenteCombustible: null,
+      ctaSensor: true,
+    });
+    expect(lista.trayectos[0]?.distanciaKm).toBeGreaterThan(0);
+    expect(lista.vehiculos[0]?.combustible).toBe('sin_sensor');
+    expect(lista.ctaSensor).toBe(true);
+  });
+
+  it('fuente 84 y capacidad 200 L convierten el porcentaje del AVL 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JLKT54',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: '84',
+          capacidadEstanqueL: 200,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 1000 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      litrosIniciales: 100,
+      litrosFinales: 80,
+      litrosConsumidos: 20,
+      fuenteCombustible: 'nivel_litros',
+    });
+  });
 });

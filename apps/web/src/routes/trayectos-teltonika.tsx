@@ -31,6 +31,7 @@ interface Trayecto {
   event_lon: number | null;
   sensor_combustible: 'ausente' | 'presente' | 'degradado';
   cta_sensor: boolean;
+  cta_capacidad_estanque?: boolean;
 }
 
 type FuenteCombustible = 'nivel_litros' | 'consumo_can' | 'nivel_porcentaje';
@@ -504,6 +505,21 @@ function TablaConDato({
   );
 }
 
+/**
+ * En «Sin dato» la nota genérica de lectura se explica una vez en el aviso.
+ * Las notas del provisioning (IO inutilizable o falta de capacidad) sí van
+ * en la fila.
+ */
+function notaProvisionEnSinDato(nota: string | null) {
+  if (
+    nota == null ||
+    nota === 'No hay una lectura válida de litros en este trayecto. No calculamos km/L.'
+  ) {
+    return null;
+  }
+  return <span className="mt-1 block text-neutral-600 text-xs">{nota}</span>;
+}
+
 function TablaSinDato({ trayectos }: { trayectos: Trayecto[] }) {
   return (
     <div className="overflow-x-auto">
@@ -533,7 +549,10 @@ function TablaSinDato({ trayectos }: { trayectos: Trayecto[] }) {
               <td className="py-3 pr-3">{fmtFecha(t.inicio)}</td>
               <td className="py-3 pr-3">{fmtFecha(t.fin)}</td>
               <td className="py-3 pr-3 font-medium text-neutral-900">{t.patente}</td>
-              <td className="py-3">{fmtNum(t.distancia_km, 1)} km</td>
+              <td className="py-3">
+                {fmtNum(t.distancia_km, 1)} km
+                {notaProvisionEnSinDato(t.nota_combustible)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -702,6 +721,16 @@ function ConsumoCelda({ trayecto }: { trayecto: Trayecto }) {
         —
         {trayecto.nota_combustible ? (
           <span className="mt-1 block text-neutral-600 text-xs">{trayecto.nota_combustible}</span>
+        ) : null}
+        {trayecto.cta_capacidad_estanque ? (
+          <Link
+            to="/app/vehiculos/$id"
+            params={{ id: trayecto.vehiculo_id }}
+            hash="configuracion"
+            className="mt-1 block text-primary-700 text-xs underline"
+          >
+            Completar en la configuración
+          </Link>
         ) : null}
       </span>
     );

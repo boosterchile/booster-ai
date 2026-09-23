@@ -25,6 +25,7 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     eventLon: null,
     sensorCombustible: 'ausente',
     ctaSensor: true,
+    ctaCapacidadEstanque: false,
     ...overrides,
   };
 }

@@ -17,6 +17,8 @@ export interface ResumenHubVehiculo {
   kmPorLitro: number | null;
   /** True si hay trayectos y todos piden conectar el sensor. */
   ctaSensor: boolean;
+  /** Algún trayecto tiene porcentaje del 84 y le falta la capacidad. */
+  ctaCapacidadEstanque: boolean;
   /** Trayectos con badge de golpe u hormiga en toda la ventana, no solo `recientes`. */
   alertasTotal: number;
   alertaUltima: TrayectoTeltonika | null;
@@ -57,6 +59,7 @@ export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): Res
     litrosRecientes,
     kmPorLitro,
     ctaSensor: ordenados.length > 0 && ordenados.every((t) => t.ctaSensor),
+    ctaCapacidadEstanque: ordenados.some((t) => t.ctaCapacidadEstanque),
     alertasTotal: conAlerta.length,
     alertaUltima: conAlerta[0] ?? null,
   };

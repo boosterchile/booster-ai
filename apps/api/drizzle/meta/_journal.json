@@ -400,6 +400,13 @@
       "when": 1780876800020,
       "tag": "0056_empresas_umbrales_robo_combustible",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1780876800021,
+      "tag": "0057_vehiculos_estanque_fuente_can",
+      "breakpoints": true
     }
   ]
 }
