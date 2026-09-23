@@ -44,7 +44,7 @@ Un viaje con Teltonika y uno sin él, ambos con valor o con degradación registr
 
 **Estado de F1+F2:** la fuente es `.specs/medicion-huella-segmento/plan.md` (checkboxes). No se duplica aquí.
 
-**Avance 2026-09-13:** T1–T10 y la migración 0055 (`movil_gps` coherente en enum de BD, shared-schemas, carbon-calculator y certificate-generator, ADR-077) están en `main` (#658–#664, #672, #663). La compuerta F1 está cerrada; lo siguiente es T11. El criterio de término exige además cerrar entregas reales en producción, que hoy dependen del gate documental (ver Slot 3, paso 1).
+**Avance 2026-09-13:** T1–T10 y la migración 0055 (`movil_gps` coherente en enum de BD, shared-schemas, carbon-calculator y certificate-generator, ADR-077) están en `main` (#658–#664, #672, #663). La compuerta F1 está cerrada; lo siguiente es T11. El criterio de término exige además cerrar entregas reales en producción, que hoy dependen del gate documental (ver Slot 3, paso 1). El código posterior a esta fecha está en la sección «Código en main después del 2026-09-13»; ese corte no se reescribe aquí.
 
 **Orden de ejecución** (respeta la compuerta dura: F1 completo antes de F2):
 
@@ -110,18 +110,27 @@ ORDER BY a.entregado_en DESC LIMIT 5;
 
 Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO no tocó a mano.
 
-**Orden de ejecución:**
+**Orden de ejecución.** El código de los seis pasos está en `main`. Sigue abierto el criterio de término: un viaje real cerrado sin el PO, y el E2E verde en CI.
 
-1. **D1a** — el gate documental no aplica sin fecha de corte (`.specs/fix-gate-documental-sin-fecha-de-corte/`). Es lo que permite cerrar entregas hoy.
-2. **Subida del documento de transporte por la oficina** en `/app/asignaciones/:id` (el endpoint `POST /transport-orders/:id/documents` existe; falta la pantalla). Con esto el PO puede fijar `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` y reactivar el guard sobre una cohorte real.
-3. **GPS del móvil resiliente:** un solo watcher por sesión, throttle por tiempo y distancia, cola offline con reintento, arranque al confirmar recogida y parada al entregar. Sin esto la cobertura ≥ 80 % con `movil_gps` es improbable y la huella queda siempre degradada.
-4. **Lo que el conductor ve:** mapa con la ruta sugerida (reusar `AssignmentEcoRouteCard` y `GET /assignments/:id/eco-route`) y, al terminar, la línea de método de ADR-077, los kg CO2e y el certificado (decisión D3: solo lectura).
-5. **Higiene:** cerrar sesión; gate por rol en `/app/conductor`; sin `window.confirm`; los comandos de voz que no están montados salen de la pantalla de configuración; el smoke E2E obsoleto se corrige.
-6. **`connectAuthEmulator` en `apps/web`** y el E2E del flujo completo.
+1. **D1a** — en `main` (#674). El gate documental no aplica sin fecha de corte.
+2. **Subida del documento de transporte** — el panel está en la asignación (`TransportDocumentsPanel`, `POST /transport-orders/:id/documents`). Falta comprobar el corte `REQUIRE_DOCUMENT_TO_CLOSE_SINCE` sobre una cohorte real.
+3. **GPS del móvil** — en `main` (#686), con arreglos posteriores de cola y Wake Lock (#696, #701, #703).
+4. **Lo que el conductor ve** — ruta sugerida y resultado al terminar, en `main` (#687).
+5. **Higiene** — gate por rol, confirmación inline y sin voz, en `main` (#688).
+6. **`connectAuthEmulator`** — en `apps/web/src/lib/firebase.ts`. El E2E del flujo está en el repo (`3a02622`); su verde en CI no se re-verificó en esta pasada.
 
 **Fuera de alcance (no se hace bajo este frente):** eco-routing en tiempo real (ADR-012 Capa 1; entra como frente nuevo cuando cierre el Slot 1), certificados PDF más allá de la línea de método que exige ADR-077, onboarding de empresas.
 
 ---
+
+## Código en main después del 2026-09-13
+
+Verificado por los mensajes de commit hasta `4c72aec` (#719, 2026-09-23). No re-ejecuta los criterios de término y no cierra ningún slot.
+
+- **Slot 1.** Huella del segmento (#675–#677) y opt-in (#695). Los dos viajes reales en producción no se comprobaron.
+- **Slot 2.** #698 retiró el enforcement `es_demo` del request path. El conteo a cero archivos no se rehizo.
+- **Slot 3.** Gate documental sin fecha de corte (#674), GPS resiliente (#686), ruta y resultado (#687), higiene (#688), E2E con emulador de Auth (`3a02622`) y gestor documental (`34f000a`). El viaje cerrado en producción sin el PO no se comprobó.
+- **Fuera de esos criterios:** hub de vehículos (#714–#719) e historial de trayectos con combustible (#705–#713).
 
 ## Congelados
 
@@ -147,4 +156,4 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 ## Deuda de documentación (no es frente; se corrige al pasar)
 
-`README.md` está desactualizado y es la cara pública del repo: dice Node 22 (es 24), pnpm 9 (es 10), lista `agent-rigor` como parte del stack (descontinuado por ADR-072), dice "ADRs 001..050" (van 074), y escribe "FMS150" donde el equipo es **FMC150**.
+`README.md` se alineó el 2026-09-23 con el árbol real: FMC150, sin emisión de DTE, sin `dte-provider` ni `ai-provider`, ADR hasta 080, y sin plugins. Los ADR históricos no se reescriben; una etiqueta `Accepted` o `Proposed` no certifica vigencia (ADR-076).

@@ -28,6 +28,6 @@ Sigue manual (`release.yml` en `workflow_dispatch` desde 2026-07-10). El último
 
 No re-verificados el 2026-09-23: el backfill de distancia (re-deriva certificados; gate del PO), el rollout del api (`revision → null`) y la reparación física del CAN de PLFL57. Desde entonces hay chequeo read-only de salud CAN (#634) y de silencio AVL (#716). Eso no sustituye la reparación de campo.
 
-## Deuda de documentación
+## Cara pública
 
-`README.md` sigue desactualizado, como ya declara `docs/frentes-vivos.md`: Node, pnpm, `agent-rigor`, el conteo de ADRs y «FMS150» donde el equipo es FMC150. No se corrigió en este handoff.
+`README.md` quedó alineado el 2026-09-23 con el árbol del repo (FMC150, sin emisión de DTE, sin packages inexistentes, ADR hasta 080). Los encabezados viejos de los ADR no se migraron.

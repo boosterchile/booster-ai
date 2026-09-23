@@ -1,150 +1,121 @@
 # Booster AI
 
-> **Plataforma tipo Uber para transporte de carga sostenible en Chile**. Conecta generadores de carga con transportistas, optimiza retornos vacíos, y certifica huella de carbono bajo estándares internacionales (GLEC v3.0, GHG Protocol, ISO 14064-2). Opera sobre WhatsApp como canal primario y cumple gestión documental obligatoria SII.
+Marketplace B2B de carga en Chile. Conecta generadores de carga con transportistas, aprovecha retornos vacíos y certifica huella bajo GLEC v3.0, GHG Protocol e ISO 14064-2. La superficie que el código cierra hoy es la PWA en `app.boosterchile.com`.
 
-**Project status**: greenfield — kick-off 2026-04-23.
-**Successor of**: Booster 2.0 (proyecto archivado). Ver [`docs/adr/001-stack-selection.md`](./docs/adr/001-stack-selection.md) para contexto de la reescritura.
+**Estado**: en producción sobre GCP (Cloud Run + GKE de telemetría). Reescritura de Booster 2.0 iniciada el 2026-04-23. Qué se construye ahora: [`docs/frentes-vivos.md`](./docs/frentes-vivos.md). Estado breve: [`docs/handoff/CURRENT.md`](./docs/handoff/CURRENT.md).
 
-## Arquitectura de alto nivel
+## Roles
 
-**Cinco roles, cinco interfaces, una sola PWA**:
+Una sola PWA, cinco roles. En código y en base de datos los nombres vigentes son `GeneradorCarga` y `Transportista` (`shipper` / `carrier` quedaron en desuso).
 
-- **Shipper** — publica carga, rastrea, paga, califica
-- **Carrier** — recibe ofertas, acepta, asigna driver, supervisa flota, factura
-- **Driver** — ejecuta viaje, captura documentos, reporta incidencias
-- **Admin** — staff Booster (configuración, disputas, auditoría)
-- **Sustainability Stakeholder** — mandante corporativo, stakeholder ESG, auditor, regulador o inversor que consume datos de huella de carbono (read-only, con consent explícito y audit trail)
+- **GeneradorCarga** — publica carga, sigue el viaje y ve la huella.
+- **Transportista** — recibe ofertas, asigna conductor y supervisa la flota.
+- **Conductor** — ejecuta el viaje desde la PWA: recogida, posición y entrega.
+- **Admin** — operación de la plataforma.
+- **Stakeholder** — lee huella con consentimiento y rastro de auditoría.
 
-**Canales de interacción**:
-- Web PWA multi-rol (apps/web)
-- WhatsApp Business Cloud API (apps/whatsapp-bot) — canal primario para el segmento micro/pequeño/mediano
-- Email, FCM push, Web Push, SMS fallback
+## Qué hace el sistema hoy
 
-**Telemetría**:
-- Dispositivos Teltonika FMS150 con protocolo Codec8 (TCP) — fuente primaria 24/7
-- PWA del driver como fuente complementaria durante trip activo
+- **Huella.** `@booster-ai/carbon-calculator` calcula GLEC sin I/O. La fuente puede ser CAN de un Teltonika **FMC150** (Codec 8, TCP, cluster GKE) o el GPS del móvil del conductor. El nivel de certificación depende de la fuente ([ADR-077](./docs/adr/077-nivel-certificacion-por-fuente-de-posicion.md)).
+- **Viaje.** El ciclo vive en `@booster-ai/trip-state-machine`. El API lo aplica.
+- **Matching.** El algoritmo puro está en `@booster-ai/matching-algorithm` y lo ejecuta `apps/api` (`src/services/matching.ts`). `apps/matching-engine` es un proceso reservado: arranca y no matchea.
+- **Documentos.** Booster no emite DTE ([ADR-069](./docs/adr/069-booster-deja-de-emitir-dte-remocion-sovos.md)). `apps/document-service` archiva y decodifica el TED de documentos de terceros. No hay package `dte-provider`.
+- **Avisos.** Web Push, WhatsApp (Twilio) y el resto salen desde `apps/api`, con formato en `@booster-ai/notification-fan-out`. `apps/notification-service` es un proceso reservado: arranca y no envía.
+- **Eco-routing en tiempo real** ([ADR-012](./docs/adr/012-urban-observatory-digital-twins.md)) está decidido y congelado hasta que cierre la huella punta a punta. No es una capacidad en servicio.
 
-**Gestión documental obligatoria Chile**:
-- DTE Guía de Despacho (SII) vía provider acreditado
-- Factura electrónica
-- Carta de Porte Ley 18.290
-- Acta de entrega con firma digital
-- Retención legal 6 años en Cloud Storage con Object Retention Lock
+WhatsApp existe como canal de aviso y como `apps/whatsapp-bot`. No es la superficie que los tres frentes vivos están cerrando.
 
-**Diferenciadores defensibles vs competencia** (ver [ADR-009](./docs/adr/009-competitive-analysis-and-differentiators.md)):
-- Medición certificada de carbono (GLEC v3.0) con datos reales Teltonika CAN bus
-- WhatsApp como canal primario (cultura sector chileno)
-- Gestión documental SII integrada
-- Eco-routing en tiempo real + observatorio urbano + gemelos digitales ([ADR-012](./docs/adr/012-urban-observatory-digital-twins.md))
-- Sustainability Stakeholder como rol con consent-based scope
+## Presencia
 
-**Canales de presencia**:
-- `www.boosterchile.com` — landing comercial + pricing + signup + e-commerce ([ADR-010](./docs/adr/010-marketing-site-and-commerce.md))
-- `app.boosterchile.com` — PWA del producto (5 roles)
-- WhatsApp Business — canal conversacional primario
+- `app.boosterchile.com` — PWA del producto.
+- Este repo no contiene `apps/marketing`. El sitio comercial de [ADR-010](./docs/adr/010-marketing-site-and-commerce.md) no está en este árbol.
 
-Ver ADRs completos en [`docs/adr/`](./docs/adr/).
-
----
+Los ADR van del 001 al 080 en [`docs/adr/`](./docs/adr/). Una etiqueta vieja (`Accepted`, `Proposed`) no certifica vigencia: manda el ADR posterior que la supersede ([ADR-076](./docs/adr/076-gobernanza-operador-unico.md)).
 
 ## Quick start
 
-### Prerequisites
-
-- Node.js 24 (`.nvmrc` pin). Usa `nvm use` si tienes nvm.
-- pnpm 10+ — `corepack enable` activa la versión fijada en `packageManager` (`pnpm@10.34.4`; ver ADR-075)
-- Docker Desktop (para Postgres + Redis locales)
-- `gcloud` CLI (opcional para ambientes GCP)
-
-### Setup local
+- Node.js 24 (`.nvmrc`).
+- pnpm 10. La versión fijada es `pnpm@10.34.4` (`packageManager`; [ADR-075](./docs/adr/075-migracion-pnpm-10.md)).
+- Docker, para Postgres y Redis locales.
+- `gcloud`, solo si se usan integraciones GCP en local.
 
 ```bash
-# 1. Instalar dependencias
 pnpm install
-
-# 2. Arrancar servicios locales (Postgres + Redis)
 docker compose -f docker-compose.dev.yml up -d
-
-# 3. Variables de entorno
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
-# Editar según instrucciones en cada archivo .env.example
-
-# 4. Credenciales GCP (solo si usas integraciones GCP local)
-# Seguir .env.example para GOOGLE_APPLICATION_CREDENTIALS
-
-# 5. Migraciones de BD
 pnpm --filter @booster-ai/api db:migrate
-
-# 6. Arrancar dev server (todas las apps en paralelo)
 pnpm dev
 ```
 
-## Estructura (v2 — ampliada tras ADR-004..008)
+## Estructura
 
 ```
 apps/
-├── api/                     # Backend principal (Hono + Drizzle + Postgres)
-├── web/                     # PWA multi-rol (shipper/carrier/driver/admin)
-├── matching-engine/         # Matching carrier-based (Pub/Sub consumer)
-├── telemetry-tcp-gateway/   # TCP server Teltonika Codec8 (GKE Autopilot)
-├── telemetry-processor/     # Dedup + enrich (Pub/Sub consumer)
-├── notification-service/    # Fan-out Web Push/FCM/WhatsApp/Email/SMS
-├── whatsapp-bot/            # Webhook Meta + NLU Gemini
-└── document-service/        # DTE + Carta Porte + OCR + retention
+├── api/                      # Hono + Drizzle. Aquí corre el producto.
+├── web/                      # PWA multi-rol
+├── telemetry-tcp-gateway/    # TCP Codec 8 (GKE)
+├── telemetry-processor/      # Dedup y enriquecimiento
+├── document-service/         # Archivo de documentos de terceros. No emite DTE.
+├── whatsapp-bot/             # Webhook de WhatsApp
+├── sms-fallback-gateway/     # SMS de respaldo
+├── matching-engine/          # Proceso reservado. El matching está en apps/api.
+└── notification-service/     # Proceso reservado. Los avisos salen de apps/api.
 
 packages/
-├── shared-schemas/          # Zod compartido
-├── logger/                  # Pino wrapper
-├── ai-provider/             # Abstracción Gemini/Claude
-├── config/                  # Env + constants
-├── trip-state-machine/      # XState machines
-├── codec8-parser/           # Parser Teltonika
-├── pricing-engine/          # Cálculo determinístico de precios
-├── matching-algorithm/      # Scoring multifactor
-├── carbon-calculator/       # GLEC v3.0 puro
-├── whatsapp-client/         # Meta Cloud API tipado + NLU prompts
-├── dte-provider/            # Abstracción Bsale/Paperless
-├── carta-porte-generator/   # PDF generator
-├── document-indexer/        # CRUD docs
-├── notification-fan-out/    # Orquestador canales
-├── ui-tokens/               # Design tokens
-└── ui-components/           # shadcn/ui + componentes Booster
+├── shared-schemas/           # Zod, incluido el dominio
+├── carbon-calculator/        # GLEC v3.0 puro
+├── matching-algorithm/       # Scoring
+├── pricing-engine/           # Precio determinístico
+├── factoring-engine/         # Anticipo
+├── trip-state-machine/       # Ciclo del viaje
+├── codec8-parser/            # Teltonika Codec 8
+├── certificate-generator/    # Certificado de huella
+├── carta-porte-generator/    # Carta de porte
+├── transport-documents/      # TED y documentos de transporte
+├── document-indexer/
+├── notification-fan-out/
+├── whatsapp-client/
+├── coaching-generator/
+├── driver-scoring/
+├── logger/                   # Pino
+├── otel-bootstrap/
+├── config/
+├── ui-tokens/
+└── ui-components/
 
-infrastructure/              # Terraform (GCP)
-.claude/                     # Plugins config + ledger + worktrees (post-ADR-049/060)
-docs/adr/                    # Architecture Decision Records (001..065)
+infrastructure/               # Terraform (GCP)
+docs/adr/                     # ADR 001..080
 ```
 
-## Desarrollo con agentes de IA
+No existen `packages/dte-provider` ni `packages/ai-provider`.
 
-Este repo está diseñado para ser trabajado con Claude como agente principal:
+## Agentes
 
-- [`CLAUDE.md`](./CLAUDE.md) — contrato de trabajo detallado
-- [`AGENTS.md`](./AGENTS.md) — subconjunto cross-tool (Copilot, Cursor, etc.)
-- Plugins `superpowers` + `booster-skills` — disciplina de ingeniería y dominio Booster como plugins de Claude Code (ver [ADR-049](./docs/adr/049-claude-code-plugin-system-adoption.md) y [ADR-060](./docs/adr/060-superpowers-replaces-agent-rigor.md))
+El contrato está en [`CLAUDE.md`](./CLAUDE.md). El índice de stack y comandos está en [`AGENTS.md`](./AGENTS.md). El repo no activa plugins ni hooks de Claude Code ([ADR-078](./docs/adr/078-retiro-config-plugins-hooks-claude-code.md)). La disciplina es el contrato, el pre-commit y CI ([ADR-072](./docs/adr/072-disciplina-inline-plugins-como-conocimiento-opcional.md)).
 
-## Comandos canónicos
+## Comandos
 
 ```bash
-pnpm dev          # dev server
-pnpm lint         # Biome check
-pnpm format       # Biome format
-pnpm typecheck    # tsc --noEmit
-pnpm test         # Vitest unit + integration
+pnpm dev          # todas las apps
+pnpm lint         # Biome
+pnpm format
+pnpm typecheck
+pnpm test
 pnpm test:e2e     # Playwright
-pnpm build        # build de producción
-pnpm ci           # pipeline completo (lint + typecheck + test + build)
+pnpm build
+pnpm ci           # lint + typecheck + test + build
 ```
 
 ## Calidad
 
-- **Coverage mínimo**: 80% (bloqueante en CI)
-- **Linter**: Biome con reglas estrictas
-- **Type safety**: strict mode + `noExplicitAny: error`
-- **Security**: gitleaks pre-commit + CodeQL + npm audit CI
-- **A11y**: axe-core integrado en Playwright
+- Coverage mínimo 80 % en código nuevo. CI lo bloquea.
+- Biome, con `noExplicitAny` en error.
+- TypeScript strict.
+- Secretos: gitleaks en pre-commit y en CI; CodeQL, Trivy y npm audit en CI.
+- Accesibilidad: axe-core en Playwright.
+- Deploy a producción: manual, `workflow_dispatch` de `release.yml`. Un merge a `main` no despliega.
 
 ## Licencia
 
-TBD
+Monorepo privado. No hay licencia de distribución.
