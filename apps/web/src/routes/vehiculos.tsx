@@ -5,7 +5,16 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { ArrowLeft, ChevronDown, Navigation, Pencil, Plus, Trash2, Truck } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  MoreHorizontal,
+  Navigation,
+  Pencil,
+  Plus,
+  Trash2,
+  Truck,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -408,10 +417,11 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [guardado, setGuardado] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menuRetiro, setMenuRetiro] = useState<'cerrado' | 'abierto' | 'confirmar'>('cerrado');
   const [configAbierta, setConfigAbierta] = useState(false);
   const [enfocarConfig, setEnfocarConfig] = useState(false);
   const configRef = useRef<HTMLDetailsElement>(null);
+  const menuRetiroRef = useRef<HTMLDivElement>(null);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -444,6 +454,28 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
     destino?.focus();
     setEnfocarConfig(false);
   }, [enfocarConfig, configAbierta]);
+
+  useEffect(() => {
+    if (menuRetiro === 'cerrado') {
+      return;
+    }
+    function onClick(event: MouseEvent) {
+      if (menuRetiroRef.current && !menuRetiroRef.current.contains(event.target as Node)) {
+        setMenuRetiro('cerrado');
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMenuRetiro('cerrado');
+      }
+    }
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuRetiro]);
 
   const vehicleQ = useQuery({
     queryKey: ['vehiculos', id],
@@ -481,47 +513,70 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   return (
     <Layout me={me} title="Detalle vehículo">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
         <Link
           to="/app/vehiculos"
-          className="inline-flex items-center gap-1 text-neutral-500 text-sm hover:text-neutral-900"
+          className="inline-flex min-w-0 items-center gap-1 text-neutral-500 text-sm hover:text-neutral-900"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Flota
+          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+          Vehículos
         </Link>
-        {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' && (
-          <div className="flex items-center gap-2">
-            {confirmDelete ? (
-              <>
-                <span className="text-neutral-700 text-sm">¿Retirar este vehículo?</span>
-                <button
-                  type="button"
-                  onClick={() => deleteM.mutate()}
-                  disabled={deleteM.isPending}
-                  className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
-                >
-                  Sí, retirar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                >
-                  Cancelar
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
+        {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' ? (
+          <div ref={menuRetiroRef} className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Más acciones"
+              aria-haspopup="menu"
+              aria-expanded={menuRetiro !== 'cerrado'}
+              onClick={() =>
+                setMenuRetiro((actual) => (actual === 'cerrado' ? 'abierto' : 'cerrado'))
+              }
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </button>
+            {menuRetiro !== 'cerrado' ? (
+              <div
+                role="menu"
+                aria-label="Acciones del vehículo"
+                className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
               >
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Retirar
-              </button>
-            )}
+                {menuRetiro === 'abierto' ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setMenuRetiro('confirmar')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-danger-700 text-sm hover:bg-danger-50"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                    Retirar
+                  </button>
+                ) : (
+                  <div className="px-2 py-2">
+                    <p className="text-neutral-800 text-sm">¿Retirar este vehículo?</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => deleteM.mutate()}
+                        disabled={deleteM.isPending}
+                        className="rounded-md bg-danger-600 px-2.5 py-1 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
+                      >
+                        Sí, retirar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMenuRetiro('cerrado')}
+                        className="rounded-md border border-neutral-300 px-2.5 py-1 text-neutral-700 text-sm hover:bg-neutral-100"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
 
       {vehicleQ.isLoading && <p className="text-neutral-500">Cargando…</p>}
@@ -535,8 +590,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
             typeLabel={VEHICLE_TYPE_LABELS[vehicleQ.data.type] ?? vehicleQ.data.type}
             brand={vehicleQ.data.brand}
             model={vehicleQ.data.model}
+            status={vehicleQ.data.status}
             teltonikaImei={vehicleQ.data.teltonika_imei}
             puedeVerTrayectos={puedeVerTrayectos}
+            puedeConfigurar={canManageDispositivo}
             onAbrirConfig={abrirConfig}
           />
 
@@ -568,10 +625,8 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
               />
 
               <div>
-                <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
-                <p className="mt-1 text-neutral-600 text-sm">
-                  Capacidad, combustible, asociación a Teltonika.
-                </p>
+                <h2 className="font-semibold text-neutral-900 text-xl">Datos</h2>
+                <p className="mt-1 text-neutral-600 text-sm">Capacidad, tipo y combustible.</p>
                 {guardado ? (
                   <output className="mt-3 block text-primary-800 text-sm">
                     Cambios guardados.
@@ -770,7 +825,7 @@ function DispositivoSection({
     <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo Teltonika</h2>
+          <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo</h2>
           <p className="mt-1 text-neutral-600 text-sm">
             <strong>IMEI actual:</strong>{' '}
             <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -312,6 +312,7 @@ function makeVehicleRow(
     brand: string | null;
     model: string | null;
     capacity_kg: number;
+    status: 'activo' | 'mantenimiento' | 'retirado';
   }> = {},
 ) {
   return {
@@ -350,7 +351,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
     mockDetalleGet(null);
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosDetalleRoute />);
-    await waitFor(() => expect(screen.getByText(/sin dispositivo/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
     expect(screen.queryByText(/ver en vivo/i)).toBeNull();
     expect(screen.queryByText(/recorrido/i)).toBeNull();
   });
@@ -360,7 +361,9 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosDetalleRoute />);
     await waitFor(() => expect(screen.getAllByText(IMEI_VALIDO).length).toBeGreaterThan(0));
-    expect(screen.getByText(/ver en vivo/i)).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('hub-acciones')).getByText(/ver en vivo/i),
+    ).toBeInTheDocument();
     // Link "Recorrido" → /app/vehiculos/$id/historial (puerta de entrada al historial).
     const recorrido = screen.getByText(/recorrido/i).closest('a');
     expect(recorrido).toHaveAttribute('to', '/app/vehiculos/$id/historial');
@@ -377,7 +380,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
       } as MeOnboarded,
     };
     wrap(<VehiculosDetalleRoute />);
-    await waitFor(() => expect(screen.getByText(/sin dispositivo/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
     expect(screen.queryByPlaceholderText('15 dígitos')).toBeNull();
   });
 
@@ -478,7 +481,7 @@ describe('VehiculoDetallePage — Dispositivo Teltonika (W2b)', () => {
         teltonika_imei: null,
       }),
     );
-    await waitFor(() => expect(screen.getByText(/sin dispositivo/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText(/sin dispositivo/i).length).toBeGreaterThan(0));
 
     // El input debe quedar vacío, no conservar el IMEI recién quitado.
     await waitFor(() => expect(input.value).toBe(''));
@@ -735,18 +738,46 @@ describe('VehiculoDetallePage — hub', () => {
     const resumen = await screen.findByTestId('hub-resumen');
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(resumen.compareDocumentPosition(config) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin IMEI/i);
-    expect(screen.getByTestId('hub-estado')).toHaveAttribute('aria-live', 'polite');
+    const dispositivo = screen.getByTestId('hub-estado');
+    expect(dispositivo).toHaveTextContent(/dispositivo/i);
+    expect(dispositivo).toHaveTextContent(/sin dispositivo/i);
+    expect(dispositivo).toHaveAttribute('aria-live', 'polite');
+    const flota = screen.getByTestId('hub-flota');
+    expect(flota).toHaveTextContent(/flota/i);
+    expect(flota).toHaveTextContent(/activo/i);
     const configCerrada = screen.getByTestId('configuracion-vehiculo');
     expect(configCerrada).not.toHaveAttribute('open');
     expect(configCerrada.querySelector('summary svg')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByRole('heading', { level: 1 }).querySelector('svg')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('AB·CD·12');
     expect(screen.queryByText('CHILE')).toBeNull();
     expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^recorrido$/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /^vehículos$/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos',
+    );
+    expect(screen.queryByRole('link', { name: /^flota$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^retirar$/i })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /retirar/i })).toBeNull();
+    const acciones = screen.getByTestId('hub-acciones');
+    const primaria = within(acciones).getByRole('button', { name: /configurar dispositivo/i });
+    expect(primaria.className).toContain('bg-primary-600');
+    expect(acciones.querySelectorAll('.bg-primary-600')).toHaveLength(1);
+    const tituloDispositivo = screen.getByRole('heading', { name: 'Dispositivo' });
+    const tituloDatos = screen.getByRole('heading', { name: 'Datos' });
+    const tituloDocumentos = screen.getByRole('heading', { name: /documentos/i });
     expect(
-      screen.getAllByRole('button', { name: /configurar dispositivo/i }).length,
-    ).toBeGreaterThan(0);
+      tituloDispositivo.compareDocumentPosition(tituloDatos) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      tituloDatos.compareDocumentPosition(tituloDocumentos) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByText(/asociación a teltonika/i)).toBeNull();
     expect(config.querySelector('input[placeholder="15 dígitos"]')).not.toBeNull();
+    fireEvent.click(primaria);
+    expect(screen.getByTestId('configuracion-vehiculo')).toHaveAttribute('open');
+    expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
   });
 
   it('con trayectos muestra km, litros, alerta y los destinos de vivo y detalle', async () => {
@@ -760,7 +791,7 @@ describe('VehiculoDetallePage — hub', () => {
       litros_consumidos: 10,
       km_por_litro: 4.25,
       posible_robo_combustible: true,
-      posible_robo_hormiga: false,
+      posible_robo_hormiga: true,
       event_lat: -33.4,
       event_lon: -70.6,
     };
@@ -816,8 +847,29 @@ describe('VehiculoDetallePage — hub', () => {
     expect(await screen.findByText(/conectado/i)).toBeInTheDocument();
     expect(screen.getAllByText(/42,5 km/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/10,0 L/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('posible robo combustible').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Combustible').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Hormiga').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/posible robo/i)).toBeNull();
     expect(screen.getByText(/1 alerta en 30 días/)).toBeInTheDocument();
+    expect(screen.getByTestId('hub-tarjeta-alertas').className).toContain('border-amber-200');
+
+    const acciones = screen.getByTestId('hub-acciones');
+    const llenos = acciones.querySelectorAll('.bg-primary-600');
+    expect(llenos).toHaveLength(1);
+    expect(llenos[0]).toHaveTextContent(/ver en vivo/i);
+    expect(within(acciones).getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
+      'to',
+      '/app/vehiculos/$id/live',
+    );
+    expect(within(acciones).getByRole('link', { name: /^recorrido$/i }).className).toContain(
+      'border',
+    );
+    expect(within(acciones).getByRole('link', { name: /^recorrido$/i }).className).not.toContain(
+      'bg-primary-600',
+    );
+    const trayectosTexto = within(acciones).getByRole('link', { name: /ver trayectos/i });
+    expect(trayectosTexto.className).not.toContain('border');
+    expect(trayectosTexto.className).not.toContain('bg-primary-600');
 
     expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
       'to',
@@ -905,10 +957,10 @@ describe('VehiculoDetallePage — hub', () => {
       } as MeOnboarded,
     };
     wrap(<VehiculosDetalleRoute />);
-    expect(
-      await screen.findByText(/no tenés permiso para ver el historial de trayectos/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
     expect(screen.queryByTestId('hub-resumen')).toBeNull();
+    expect(screen.queryByRole('button', { name: /más acciones/i })).toBeNull();
     expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
       'to',
       '/app/vehiculos/$id/live',
@@ -941,6 +993,8 @@ describe('VehiculoDetallePage — hub', () => {
       } as MeOnboarded,
     };
     wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
     expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
       'to',
       '/app/vehiculos/$id/historial',
@@ -1003,5 +1057,106 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('AB·CD·12');
     expect(screen.getByText('Cambios guardados.')).toBeInTheDocument();
     expect(screen.getByTestId('hub-vehiculo')).toBeInTheDocument();
+  });
+
+  it('retirar solo aparece dentro del menú de más acciones', async () => {
+    mockDetalleGet(null);
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    await screen.findByTestId('hub-vehiculo');
+    expect(screen.queryByRole('button', { name: /^retirar$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /más acciones/i }));
+    expect(screen.getByRole('menuitem', { name: /retirar/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /retirar/i }));
+    expect(screen.getByRole('button', { name: /sí, retirar/i })).toBeInTheDocument();
+  });
+
+  it('un vehículo retirado no ofrece el menú y la flota dice Retirado', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ status: 'retirado' }) };
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByTestId('hub-flota')).toHaveTextContent(/retirado/i);
+    expect(screen.queryByRole('button', { name: /más acciones/i })).toBeNull();
+  });
+
+  it('en mantención la píldora de flota dice Mantención', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ status: 'mantenimiento' }) };
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByTestId('hub-flota')).toHaveTextContent('Mantención');
+    expect(screen.getByTestId('hub-flota')).not.toHaveTextContent('Mantenimiento');
+  });
+
+  it('si fallan los trayectos, Reintentar vuelve a pedirlos', async () => {
+    let fallar = true;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        if (fallar) {
+          throw new Error('red');
+        }
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const reintentar = await screen.findAllByRole('button', { name: /^reintentar$/i });
+    const primero = reintentar[0];
+    if (!primero) {
+      throw new Error('falta el botón Reintentar');
+    }
+    fallar = false;
+    fireEvent.click(primero);
+    expect(await screen.findByText(/todavía no hay trayectos en 30 días/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /ver en vivo/i }).length).toBeGreaterThan(1);
+  });
+
+  it('el mapa del hub mide 160px en un viewport móvil', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    try {
+      mockDetalleGet(null);
+      providedContext = { kind: 'onboarded', me: makeMe() };
+      wrap(<VehiculosDetalleRoute />);
+      expect(await screen.findByTestId('hub-mapa-alto')).toHaveAttribute('data-altura', '160');
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });
