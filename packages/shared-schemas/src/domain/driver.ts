@@ -73,8 +73,8 @@ export const createDriverBodySchema = z.object({
   /**
    * Teléfono móvil en E.164. **Obligatorio** desde 2026-08-03: WhatsApp es el
    * canal principal hacia el conductor — los conductores chilenos de camión
-   * usan WhatsApp, no correo. Por acá le llega su PIN y el enlace de
-   * activación.
+   * usan WhatsApp, no correo. Por acá le llega el enlace de activación.
+   * El PIN no viaja por WhatsApp.
    *
    * Era `nullable().optional()`. Medido en prod: 2 de 7 conductores quedaron
    * sin número, o sea inalcanzables por el canal que más van a usar. Mismo

@@ -4,10 +4,11 @@ import {
   buildOfferTemplateVariables,
 } from '@booster-ai/notification-fan-out';
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { empresas, memberships, offers, trips, users } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { pickOperationalWhatsappRecipients } from './pick-whatsapp-recipients.js';
 
 /**
  * Configuración del dispatcher de notificaciones de oferta.
@@ -88,36 +89,32 @@ async function notifyOfferToCarrierInner(
     return { offerId, skipped: true, reason: 'already_notified' };
   }
 
-  // 2. Encontrar al dueño activo del transportista (más antiguo si hay varios).
-  const ownerRows = await db
-    .select({ user: users })
+  // 2. Despachadores activos con WhatsApp. Si no hay, los dueños.
+  const memberRows = await db
+    .select({
+      userId: users.id,
+      role: memberships.role,
+      whatsappE164: users.whatsappE164,
+    })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
         eq(memberships.empresaId, row.empresa.id),
-        eq(memberships.role, 'dueno'),
+        inArray(memberships.role, ['despachador', 'dueno']),
         eq(memberships.status, 'activa'),
       ),
     )
-    .orderBy(memberships.createdAt)
-    .limit(1);
+    .limit(20);
 
-  const owner = ownerRows[0]?.user;
-  if (!owner) {
+  const recipients = pickOperationalWhatsappRecipients(memberRows);
+  if (recipients.length === 0) {
+    const reason = memberRows.length === 0 ? 'no_owner' : 'no_whatsapp';
     logger.warn(
-      { offerId, empresaId: row.empresa.id },
-      'notifyOfferToCarrier: empresa transportista sin dueño activo',
+      { offerId, empresaId: row.empresa.id, reason },
+      'notifyOfferToCarrier: sin destinatario de WhatsApp',
     );
-    return { offerId, skipped: true, reason: 'no_owner' };
-  }
-
-  if (!owner.whatsappE164) {
-    logger.warn(
-      { offerId, ownerUserId: owner.id, empresaId: row.empresa.id },
-      'notifyOfferToCarrier: dueño sin whatsapp_e164',
-    );
-    return { offerId, skipped: true, reason: 'no_whatsapp' };
+    return { offerId, skipped: true, reason };
   }
 
   // 3. Render variables del template usando el helper del package.
@@ -129,12 +126,19 @@ async function notifyOfferToCarrierInner(
     webAppUrl,
   });
 
-  // 4. Disparar el template.
-  const response = await twilioClient.sendContent({
-    to: owner.whatsappE164,
-    contentSid: contentSidOfferNew,
-    contentVariables: variables,
-  });
+  // 4. Un envío por número. El sid que devolvemos es el primero.
+  let responseSid = '';
+  for (const recipient of recipients) {
+    const response = await twilioClient.sendContent({
+      to: recipient.whatsappE164,
+      contentSid: contentSidOfferNew,
+      contentVariables: variables,
+    });
+    if (!responseSid) {
+      responseSid = response.sid;
+    }
+  }
+  const response = { sid: responseSid };
 
   // 5. Marcar notificado_en con guard isNull para no pisar concurrentes.
   await db
@@ -145,7 +149,7 @@ async function notifyOfferToCarrierInner(
   logger.info(
     {
       offerId,
-      ownerUserId: owner.id,
+      recipientUserIds: recipients.map((recipient) => recipient.userId),
       empresaId: row.empresa.id,
       trackingCode: row.trip.trackingCode,
       twilioSid: response.sid,
