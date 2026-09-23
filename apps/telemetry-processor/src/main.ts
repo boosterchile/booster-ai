@@ -6,7 +6,7 @@ import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import { buildCrashSafetyEvent } from './build-crash-safety-event.js';
+import { buildCrashSafetyEvent, shouldNotifyCustomerCrash } from './build-crash-safety-event.js';
 import { loadConfig } from './config.js';
 import {
   createBigQueryCrashTraceIndexer,
@@ -226,15 +226,22 @@ async function main(): Promise<void> {
           logger,
         });
 
-        void publishSafetyEvent({
-          topicName: config.SAFETY_EVENTS_TOPIC,
-          event: buildCrashSafetyEvent({
-            imei: parsed.data.imei,
-            vehicleId: parsed.data.vehicleId,
-            occurredAtMs: Number(trace.crashTimestampMs),
-          }),
-          logger,
-        });
+        if (shouldNotifyCustomerCrash(trace.peakGForce)) {
+          void publishSafetyEvent({
+            topicName: config.SAFETY_EVENTS_TOPIC,
+            event: buildCrashSafetyEvent({
+              imei: parsed.data.imei,
+              vehicleId: parsed.data.vehicleId,
+              occurredAtMs: Number(trace.crashTimestampMs),
+            }),
+            logger,
+          });
+        } else {
+          logger.info(
+            { imei: parsed.data.imei, peakGForce: trace.peakGForce, messageId: message.id },
+            'crash bajo 3 G: traza archivada, sin aviso al cliente',
+          );
+        }
 
         message.ack();
         logger.info(

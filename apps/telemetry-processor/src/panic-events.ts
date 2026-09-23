@@ -12,10 +12,12 @@ import type { RecordMessage } from './persist.js';
  * alertas P0 no podían disparar (auditoría 2026-06-09, riesgo alto).
  * No renombrar los literales sin actualizar el Terraform.
  *
- * Se emite por RECORD (no solo por record-evento): durante una condición
- * sostenida (jamming) los records periódicos siguen trayendo el IO y la
- * métrica debe seguir contando; además cubre el path SMS fallback que
- * trae un solo IO y no siempre marca eventIoId (spec §8.B).
+ * El LOG (logPanicEvents) se emite por RECORD: durante una condición
+ * sostenida los puntos periódicos siguen trayendo el IO y la métrica de
+ * operación debe seguir contando. El aviso al cliente
+ * (selectCustomerPanicEvents) solo sale en el record-evento, y el jamming
+ * solo en crítico (2). El SMS de respaldo marca eventIoId con el AVL del
+ * pánico (wire.ts), así que ese camino sí avisa.
  */
 
 /** AVL 252 — External power unplugged (1 = desconectado). Tamper. */
@@ -32,8 +34,8 @@ export interface PanicEvent {
 export function detectPanicEvents(msg: RecordMessage): PanicEvent[] {
   const events: PanicEvent[] = [];
   for (const entry of msg.record.io.entries) {
-    const value = typeof entry.value === 'string' ? Number(entry.value) : entry.value;
-    if (!Number.isFinite(value)) {
+    const value = readIoNumber(entry.value);
+    if (value === null) {
       continue;
     }
     if (entry.id === AVL_UNPLUG && value === 1) {
@@ -46,19 +48,53 @@ export function detectPanicEvents(msg: RecordMessage): PanicEvent[] {
   return events;
 }
 
+/**
+ * Subconjunto que sí se avisa al cliente (push + WhatsApp).
+ *
+ * Teltonika repite el último IO en cada punto periódico (`eventIoId` 0 u
+ * otro). Un cable desconectado o un warning de GPS urbano se quedaba
+ * pegado y el cliente recibía el mismo aviso cada 10 minutos.
+ *
+ * - Unplug: solo el record cuyo evento es el 252.
+ * - Jamming: solo crítico (2) y solo el record cuyo evento es el 318.
+ *   El warning (1) queda en el log de operación; no es un bloqueo.
+ */
+export function selectCustomerPanicEvents(msg: RecordMessage): PanicEvent[] {
+  const eventIoId = msg.record.io.eventIoId;
+  const events: PanicEvent[] = [];
+  for (const entry of msg.record.io.entries) {
+    const value = readIoNumber(entry.value);
+    if (value === null) {
+      continue;
+    }
+    if (entry.id === AVL_UNPLUG && value === 1 && eventIoId === AVL_UNPLUG) {
+      events.push({ eventName: 'Unplug', avlId: entry.id, rawValue: value });
+    }
+    if (entry.id === AVL_GNSS_JAMMING && value === 2 && eventIoId === AVL_GNSS_JAMMING) {
+      events.push({ eventName: 'GnssJamming', avlId: entry.id, rawValue: value });
+    }
+  }
+  return events;
+}
+
+function readIoNumber(value: number | string): number | null {
+  const numeric = typeof value === 'string' ? Number(value) : value;
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 const EVENT_NAME_TO_TYPE: Record<'Unplug' | 'GnssJamming', SafetyEvent['eventType']> = {
   Unplug: 'unplug',
   GnssJamming: 'jamming',
 };
 
-/** Publica un SafetyEvent por cada panic detectado. `publish` inyectable para tests. */
+/** Publica un SafetyEvent por cada panic que sí se avisa al cliente. */
 export async function publishPanicEvents(opts: {
   msg: RecordMessage;
   topicName: string;
   logger: Logger;
   publish: (a: { topicName: string; event: SafetyEvent; logger: Logger }) => Promise<void>;
 }): Promise<void> {
-  const events = detectPanicEvents(opts.msg);
+  const events = selectCustomerPanicEvents(opts.msg);
   for (const e of events) {
     const event: SafetyEvent = {
       eventType: EVENT_NAME_TO_TYPE[e.eventName],

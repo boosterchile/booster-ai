@@ -236,7 +236,7 @@ describe('notifyTrackingLinkAtAssignment', () => {
     });
   });
 
-  it('PR-L3b — consignee opt-in: envía DIRECTO al consignee (no al shipper)', async () => {
+  it('consignee con otro número: el generador y el destinatario reciben el link', async () => {
     const { notifyTrackingLinkAtAssignment } = await import(
       '../../src/services/notify-tracking-link.js'
     );
@@ -263,11 +263,45 @@ describe('notifyTrackingLinkAtAssignment', () => {
     );
     expect(result.skipped).toBe(false);
     expect(result.recipient).toBe('consignee');
-    // El destino es el phone del consignee, NO del shipper.
+    expect(sendContent).toHaveBeenCalledTimes(2);
+    expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56912345678' }));
     expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56987654321' }));
   });
 
-  it('PR-L3b — consignee + shipper ambos presentes: gana consignee', async () => {
+  it('consignee con el mismo número del generador: un solo envío', async () => {
+    const { notifyTrackingLinkAtAssignment } = await import(
+      '../../src/services/notify-tracking-link.js'
+    );
+    const { db } = makeDbStub({
+      row: baseRow({
+        consigneeWhatsapp: '+56912345678',
+        shipperWhatsapp: '+56912345678',
+      }),
+    });
+    const sendContent = vi.fn().mockResolvedValue({
+      sid: 'SM_same',
+      status: 'queued',
+      to: 'x',
+      from: 'x',
+      body: '',
+      date_created: 'x',
+    });
+    const twilio = makeTwilioStub({ sendContent });
+    const result = await notifyTrackingLinkAtAssignment(
+      {
+        db,
+        logger: noopLogger,
+        twilioClient: twilio,
+        contentSidTracking: VALID_SID,
+      },
+      { assignmentId: ASSIGNMENT_ID },
+    );
+    expect(result.skipped).toBe(false);
+    expect(sendContent).toHaveBeenCalledTimes(1);
+    expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56912345678' }));
+  });
+
+  it('PR-L3b — consignee + shipper ambos presentes: ambos números', async () => {
     const { notifyTrackingLinkAtAssignment } = await import(
       '../../src/services/notify-tracking-link.js'
     );
@@ -296,6 +330,8 @@ describe('notifyTrackingLinkAtAssignment', () => {
       { assignmentId: ASSIGNMENT_ID },
     );
     expect(result.recipient).toBe('consignee');
+    expect(sendContent).toHaveBeenCalledTimes(2);
+    expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56912345678' }));
     expect(sendContent).toHaveBeenCalledWith(expect.objectContaining({ to: '+56987654321' }));
   });
 

@@ -17,7 +17,7 @@
  *      LIMIT N (cap por run para no saturar Twilio).
  *   2. Por cada mensaje:
  *      a. Resolver destinatario (lado contrario).
- *      b. Buscar dueño activo de la empresa contraria con whatsapp_e164.
+ *      b. Avisar a los despachadores de la empresa contraria; si no hay, a los dueños.
  *      c. Mandar template Twilio `chat_unread_v1` con variables.
  *      d. Marcar whatsapp_notif_enviado_en = now() para idempotencia.
  *
@@ -42,9 +42,10 @@ import {
   buildOfferTemplateVariables,
 } from '@booster-ai/notification-fan-out';
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
-import { and, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, chatMessages, memberships, trips, users } from '../db/schema.js';
+import { pickOperationalWhatsappRecipients } from './pick-whatsapp-recipients.js';
 
 void buildOfferTemplateVariables; // re-export silencioso para linter (no se usa acá pero comparte file de fan-out futura)
 
@@ -143,11 +144,11 @@ export async function procesarMensajesNoLeidos(opts: {
         continue;
       }
 
-      // Dueño activo de la empresa destinataria (más antiguo si hay varios).
-      // Mismo patrón que notify-offer.ts.
-      const ownerRows = await db
+      // Despachadores del lado que no leyó. Si no hay, los dueños.
+      const memberRows = await db
         .select({
           userId: users.id,
+          role: memberships.role,
           whatsappE164: users.whatsappE164,
         })
         .from(memberships)
@@ -155,22 +156,19 @@ export async function procesarMensajesNoLeidos(opts: {
         .where(
           and(
             eq(memberships.empresaId, recipientEmpresaId),
-            eq(memberships.role, 'dueno'),
+            inArray(memberships.role, ['despachador', 'dueno']),
             eq(memberships.status, 'activa'),
           ),
         )
-        .orderBy(memberships.createdAt)
-        .limit(1);
+        .limit(20);
 
-      const owner = ownerRows[0];
-      if (!owner) {
-        skippedNoOwner += 1;
-        await markNotifSent(db, c.messageId);
-        continue;
-      }
-
-      if (!owner.whatsappE164) {
-        skippedNoWhatsapp += 1;
+      const recipients = pickOperationalWhatsappRecipients(memberRows);
+      if (recipients.length === 0) {
+        if (memberRows.length === 0) {
+          skippedNoOwner += 1;
+        } else {
+          skippedNoWhatsapp += 1;
+        }
         await markNotifSent(db, c.messageId);
         continue;
       }
@@ -184,23 +182,25 @@ export async function procesarMensajesNoLeidos(opts: {
         c.senderName ?? (c.senderRole === 'transportista' ? 'Transportista' : 'Generador de carga');
       const chatUrl = `${webAppUrl.replace(/\/$/, '')}/app/chat/${c.assignmentId}`;
 
-      await twilioClient.sendContent({
-        to: owner.whatsappE164,
-        contentSid,
-        contentVariables: {
-          '1': c.trackingCode,
-          '2': senderLabel,
-          '3': preview,
-          '4': chatUrl,
-        },
-      });
+      for (const recipient of recipients) {
+        await twilioClient.sendContent({
+          to: recipient.whatsappE164,
+          contentSid,
+          contentVariables: {
+            '1': c.trackingCode,
+            '2': senderLabel,
+            '3': preview,
+            '4': chatUrl,
+          },
+        });
+      }
 
       notified += 1;
       logger.info(
         {
           messageId: c.messageId,
           assignmentId: c.assignmentId,
-          recipientUserId: owner.userId,
+          recipientUserIds: recipients.map((recipient) => recipient.userId),
           trackingCode: c.trackingCode,
         },
         'chat fallback WhatsApp enviado',
