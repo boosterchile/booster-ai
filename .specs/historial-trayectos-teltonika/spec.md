@@ -130,6 +130,20 @@ Brief del PO del 2026-09-22: en prod, RCPC20 y JWTH77 muestran «No hay una lect
     - Nada de esto se decide por patente en el código: la clasificación sale de `io_data`.
 13. Given un punto con el 239 en 0 y RPM CAN (85) > 0, When se segmenta, Then cuenta como ignición on. El motor gira, así que el cable de ignición no está leyendo. Sin RPM > 0, el 239 en 0 sigue siendo off.
 
+14. Filtro de credibilidad, al leer, sobre el mismo cálculo del badge. No se emite el aviso (ni golpe ni hormiga) ni el pin cuando el trayecto al que se atribuiría no es creíble:
+
+    - distancia del trayecto < 1 km, o
+    - el nivel al inicio de la caída está bajo:
+      - con capacidad conocida (`capacidadEstanqueL` > 0): litros / capacidad < 14 %;
+      - sin capacidad, si la ventana de la caída trae AVL 89: ese % < 14. En producción no hay columna de estanque, así que este es el porcentaje que ve el aviso;
+      - sin capacidad ni 89: litros al inicio < 28 L.
+
+    28 L es el 14 % del estanque de 200 L que JLKT54 deriva en el equipo (raw del 84 = 20 × raw del 89). Un 89 ≥ 14 habilita el aviso aunque los litros queden bajo 28 (estanque chico a mitad). Con capacidad conocida manda ese 14 % y el 89 no lo pisa.
+
+    U y U_hormiga de #707 no cambian. Un golpe a mitad de estanque, detenido, ΔL ≤ −U, en un trayecto ≥ 1 km, sigue marcando y conserva el pin si hay fix. Sin fix en esa ventana, el badge creíble sigue y la UI dice «sin ubicación».
+
+    Constantes en `segmentar-trayectos-teltonika.ts`: `DISTANCIA_MINIMA_AVISO_ROBO_KM = 1`, `NIVEL_PCT_MINIMO_AVISO_ROBO = 14`, `LITROS_MINIMOS_NIVEL_AVISO_ROBO = 28`.
+
 ## Fuera de alcance
 
 Alertas push o en vivo, alertas in-app, score de confianza, app nativa, GPS del teléfono, cruce con cargas Booster, descongelar Fleet, override de Y por empresa, columna nueva de capacidad de estanque. Tampoco precio de combustible ni costo en CLP: el precio fluctúa y el transportista lo calcula con los litros y el km/L. El MVP muestra L, km/L y L/100 km, sin input de precio ni estimación de costo. La authz de `GET /trayectos-teltonika` (dueño|admin transportista) no cambia.
@@ -138,5 +152,5 @@ Fuera del slice del 2026-09-22 (declarado, no resuelto en silencio):
 
 - El tope de 20 000 puntos por consulta. Con 8 camiones, una semana trae ~147 000 y la vista queda en el último día. La UI pide «acotá las fechas» y no hay selector.
 - Los micro-trayectos. Cualquier punto detenido corta el trayecto, y en la semana del censo 176 de 368 trayectos miden < 0,5 km (colas y maniobras). Unir paradas cortas cambia la segmentación de la que cuelgan el golpe y la hormiga (#706/#707).
-- El 84 de JLKT54. Vale exactamente 20 × el 89 (el %), o sea litros derivados de una capacidad de 200 L configurada en el equipo. Oscila con el estanque bajo: 4 de sus 5 avisos de la semana caen con el 89 bajo 14 % y en trayectos de < 1 km, y su km/L va de 0,8 a 10.
+- El km/L de JLKT54. El 84 vale exactamente 20 × el 89 (capacidad de 200 L en el equipo) y en la semana del censo el km/L iba de 0,8 a 10. El aviso falso por trayecto < 1 km o estanque bajo 14 % queda en el criterio 14. Unir micro-trayectos y la columna de capacidad siguen fuera.
 - La capacidad de estanque para convertir el 89 a litros (JWTH77).

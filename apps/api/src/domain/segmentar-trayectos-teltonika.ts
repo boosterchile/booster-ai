@@ -37,6 +37,12 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * suma ≥ U_hormiga (default 10, config 8–30). Si el tramo es largo, la suma
  * mira una ventana móvil de 6 h por timestamp de dispositivo. No cruza
  * trayectos. Un solo episodio no es hormiga.
+ * Credibilidad: no se emite el badge ni el pin si el trayecto atribuido
+ * mide menos de 1 km, o si el nivel al inicio de la caída está bajo.
+ * Con capacidad conocida, bajo el 14 % de esa capacidad. Sin capacidad, si
+ * la ventana trae AVL 89, bajo 14 %. Si no hay capacidad ni 89, bajo 28 L
+ * (14 % del estanque de 200 L que JLKT54 deriva: el raw del 84 vale 20 ×
+ * el raw del 89). U y U_hormiga no cambian.
  * `tMs` es la hora del AVL, no la de recepción GPRS.
  * Pin: `eventLat`/`eventLon` salen del primer punto con fix válido dentro de
  * la ventana de la caída del golpe, en orden de `tMs`. Si no hay golpe y sí
@@ -63,6 +69,23 @@ export const COBERTURA_MINIMA = 0.9;
  */
 export const LITROS_MINIMOS_KM_POR_LITRO = 5;
 export const KM_MINIMOS_KM_POR_LITRO = 10;
+/**
+ * Por debajo de esto el trayecto es una maniobra o una cola. No se emite
+ * el aviso de golpe ni el de hormiga, ni el pin.
+ */
+export const DISTANCIA_MINIMA_AVISO_ROBO_KM = 1;
+/**
+ * Estanque casi vacío: el 84 oscila (censo JLKT54, AVL 89 bajo 14 %).
+ * Con capacidad conocida se compara el nivel al inicio de la caída contra
+ * este porcentaje. Sin capacidad, si la ventana trae AVL 89, se usa ese %.
+ */
+export const NIVEL_PCT_MINIMO_AVISO_ROBO = 14;
+/**
+ * Sin capacidad y sin AVL 89. 28 L es el 14 % del estanque de 200 L que el
+ * único equipo con AVL 84 del censo (JLKT54) deriva en el firmware
+ * (el raw del 84 vale 20 × el raw del 89).
+ */
+export const LITROS_MINIMOS_NIVEL_AVISO_ROBO = 28;
 
 export const NOTA_SIN_BAJA = 'El nivel no bajó en este trayecto, así que no calculamos km/L.';
 export const NOTA_NIVEL_SUBIO = 'El nivel subió en este trayecto. No calculamos km/L.';
@@ -285,7 +308,10 @@ function segmentarVehiculo(
     sensor === 'presente'
       ? detectarRobos(resueltos, puntos[0]?.capacidadEstanqueL ?? null, config.uGolpeL)
       : [];
-  const episodios = sensor === 'presente' ? detectarEpisodiosHormiga(resueltos) : [];
+  const episodios =
+    sensor === 'presente'
+      ? detectarEpisodiosHormiga(resueltos, puntos[0]?.capacidadEstanqueL ?? null)
+      : [];
 
   const crudos: Array<{
     inicioMs: number;
@@ -328,6 +354,10 @@ function segmentarVehiculo(
   if (sensor === 'presente') {
     for (const robo of robos) {
       for (const indice of indicesDelRobo(crudos, robo)) {
+        const crudo = crudos[indice];
+        if (!crudo || !trayectoCreibleParaAviso(crudo.trayecto.distanciaKm)) {
+          continue;
+        }
         marcados.add(indice);
         if (!geoEvento.has(indice) && robo.eventLat != null && robo.eventLon != null) {
           geoEvento.set(indice, { lat: robo.eventLat, lon: robo.eventLon });
@@ -342,6 +372,10 @@ function segmentarVehiculo(
     const porTrayecto = new Map<number, Episodio[]>();
     for (const episodio of episodios) {
       for (const indice of indicesDelRobo(crudos, episodio)) {
+        const crudo = crudos[indice];
+        if (!crudo || !trayectoCreibleParaAviso(crudo.trayecto.distanciaKm)) {
+          continue;
+        }
         const lista = porTrayecto.get(indice);
         if (lista) {
           lista.push(episodio);
@@ -748,6 +782,9 @@ function detectarRobos(
       if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
         continue;
       }
+      if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
+        continue;
+      }
       const geo = geoAlInicioDeVentana(puntos, inicio.tMs, fin.tMs);
       robos.push({
         desdeMs: inicio.tMs,
@@ -769,7 +806,10 @@ interface Episodio extends VentanaRobo {
  * Caídas de al menos 2 L en ≤5 min con v ≤ 5. Los fines a menos de 10 min
  * son el mismo episodio (se queda el ΔL mayor). No es el golpe único.
  */
-function detectarEpisodiosHormiga(puntos: PuntoResuelto[]): Episodio[] {
+function detectarEpisodiosHormiga(
+  puntos: PuntoResuelto[],
+  capacidadEstanqueL: number | null,
+): Episodio[] {
   const muestras: Array<{ tMs: number; litros: number }> = [];
   for (const punto of puntos) {
     const litros = litrosDe(punto.io);
@@ -797,6 +837,9 @@ function detectarEpisodiosHormiga(puntos: PuntoResuelto[]): Episodio[] {
         continue;
       }
       if (!ventanaDetenida(puntos, inicio.tMs, fin.tMs)) {
+        continue;
+      }
+      if (!nivelCreibleParaAviso(puntos, inicio.tMs, fin.tMs, inicio.litros, capacidadEstanqueL)) {
         continue;
       }
       if (!mejor || caida > mejor.deltaL) {
@@ -878,6 +921,61 @@ function primerGeoEpisodio(episodios: readonly Episodio[]): { lat: number; lon: 
     }
   }
   return null;
+}
+
+function capacidadConocida(capacidadEstanqueL: number | null): capacidadEstanqueL is number {
+  return (
+    capacidadEstanqueL != null && Number.isFinite(capacidadEstanqueL) && capacidadEstanqueL > 0
+  );
+}
+
+/**
+ * Nivel al inicio de la caída. Con capacidad, el 14 % de esa capacidad
+ * (el AVL 89 no pisa ese cálculo). Sin capacidad, el primer 89 de la
+ * ventana —en un ping ordenado, el inicio— si viene. Si no hay ninguno
+ * de los dos, el piso absoluto en litros.
+ */
+function nivelCreibleParaAviso(
+  puntos: readonly PuntoResuelto[],
+  desdeMs: number,
+  hastaMs: number,
+  litrosInicio: number,
+  capacidadEstanqueL: number | null,
+): boolean {
+  if (capacidadConocida(capacidadEstanqueL)) {
+    const piso = (NIVEL_PCT_MINIMO_AVISO_ROBO / 100) * capacidadEstanqueL;
+    return litrosInicio + 1e-9 >= piso;
+  }
+  const pct = pctEnVentana(puntos, desdeMs, hastaMs);
+  if (pct != null) {
+    return pct + 1e-9 >= NIVEL_PCT_MINIMO_AVISO_ROBO;
+  }
+  return litrosInicio + 1e-9 >= LITROS_MINIMOS_NIVEL_AVISO_ROBO;
+}
+
+/** Primer AVL 89 de la ventana, en orden de timestamp de dispositivo. */
+function pctEnVentana(
+  puntos: readonly PuntoResuelto[],
+  desdeMs: number,
+  hastaMs: number,
+): number | null {
+  for (const punto of puntos) {
+    if (punto.tMs < desdeMs) {
+      continue;
+    }
+    if (punto.tMs > hastaMs) {
+      break;
+    }
+    const pct = nivelPctDe(punto.io);
+    if (pct != null) {
+      return pct;
+    }
+  }
+  return null;
+}
+
+function trayectoCreibleParaAviso(distanciaKm: number): boolean {
+  return distanciaKm + 1e-9 >= DISTANCIA_MINIMA_AVISO_ROBO_KM;
 }
 
 /** v ≤ 5 km/h en todo el intervalo. La ignición no entra en el gate. */
