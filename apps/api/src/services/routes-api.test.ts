@@ -142,7 +142,9 @@ describe('computeRoutes', () => {
   it('con emissionType pide FUEL_CONSUMPTION y convierte microlitros a litros', async () => {
     const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
-      expect(body.vehicleInfo).toEqual({ emissionType: 'DIESEL' });
+      // En la raíz Routes API responde 400 «Unknown name "vehicleInfo"».
+      expect(body.routeModifiers).toEqual({ vehicleInfo: { emissionType: 'DIESEL' } });
+      expect(body).not.toHaveProperty('vehicleInfo');
       expect(body.extraComputations).toContain('FUEL_CONSUMPTION');
       const fieldMask = (init?.headers as Record<string, string>)['X-Goog-FieldMask'];
       expect(fieldMask).toContain('fuelConsumptionMicroliters');

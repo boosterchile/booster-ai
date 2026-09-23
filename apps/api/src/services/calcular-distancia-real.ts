@@ -52,7 +52,8 @@ export interface DistanciaHibridaResultado {
 
 /**
  * Estimador de la distancia de un hueco entre dos pings. En producción se
- * implementa sobre `computeRoutes` (Routes API acepta `"lat,lng"`); en tests
+ * implementa sobre `computeRoutes` con coordenadas `{ lat, lng }` (viajan como
+ * `location.latLng`; como texto «lat,lng» Routes API responde 400); en tests
  * se inyecta un mock. Rechaza si Routes falla/timeout → el caller cae al
  * fallback declarado.
  */
@@ -80,6 +81,15 @@ export async function calcularDistanciaHibrida(
       const rectaKm = haversineKm(desde.lat, desde.lng, hasta.lat, hasta.lng);
       segmentos.push({ tipo: 'observado', desde, hasta, km: rectaKm });
       kmObservado += rectaKm;
+      continue;
+    }
+
+    // Hueco con el vehículo detenido (extremos idénticos): 0 km, sin Routes.
+    // Decisión del PO 2026-09-22 (#708, spec §6): Routes responde 200 sin
+    // `distanceMeters` para origen == destino y el resolver lo trataba como
+    // «sin ruta» → abortaba el viaje entero por una parada.
+    if (esHuecoDetenido(desde, hasta)) {
+      segmentos.push({ tipo: 'estimado', desde, hasta, km: 0 });
       continue;
     }
 
@@ -149,6 +159,16 @@ export function resolverEscrituraDistanciaReal(
 }
 
 /**
+ * Hueco con el vehículo detenido: los dos pings reportan exactamente la misma
+ * coordenada (Teltonika repite el fix con el camión parado; el móvil entrega el
+ * fix en caché). La distancia recorrida es 0 km por definición, sin umbral ni
+ * llamada a Routes (enmienda 2026-09-22 a `.specs/distancia-real-hibrida/`).
+ */
+function esHuecoDetenido(desde: PingGps, hasta: PingGps): boolean {
+  return desde.lat === hasta.lat && desde.lng === hasta.lng;
+}
+
+/**
  * Cota de huecos por trip. Cada hueco = 1 llamada a Routes (~$5/1000, ~ms de
  * latencia). Un trip con GPS muy fragmentado puede tener decenas → costo y
  * latencia sin control. Por encima de esta cota el trip se considera demasiado
@@ -183,7 +203,8 @@ export async function computarEscrituraDistanciaReal(
     if (!desde || !hasta) {
       continue;
     }
-    if ((hasta.tMs - desde.tMs) / 1000 >= CONTINUITY_GAP_S) {
+    // Un hueco detenido no llama a Routes → no cuenta para la cota de costo.
+    if ((hasta.tMs - desde.tMs) / 1000 >= CONTINUITY_GAP_S && !esHuecoDetenido(desde, hasta)) {
       huecos++;
     }
   }

@@ -203,6 +203,7 @@ async function obtenerDistanciaKm(opts: {
         origin: origenDireccion,
         destination: destinoDireccion,
         emissionType,
+        logger,
       });
       const best = routes[0];
       if (best && best.distanceKm > 0) {
@@ -638,13 +639,15 @@ async function recalcularNivelPostEntregaInner(opts: {
     hasta: assignment.deliveredAt,
   });
 
-  // Resolver de huecos sobre Routes API (acepta "lat,lng"). Si Routes falla,
-  // PROPAGA → abortamos (no un número parte-medido parte-inventado).
+  // Resolver de huecos sobre Routes API con coordenadas (`location.latLng`;
+  // como texto «lat,lng» Routes responde 400). Si Routes falla, PROPAGA →
+  // abortamos (no un número parte-medido parte-inventado).
   const estimarHuecoKm: EstimarHuecoKm = async (desde, hasta) => {
     const rutas = await computeRoutes({
       projectId: routesProjectId ?? '',
-      origin: `${desde.lat},${desde.lng}`,
-      destination: `${hasta.lat},${hasta.lng}`,
+      origin: { lat: desde.lat, lng: desde.lng },
+      destination: { lat: hasta.lat, lng: hasta.lng },
+      logger,
     });
     const mejor = rutas[0];
     if (!mejor || mejor.distanceKm <= 0) {
@@ -663,8 +666,15 @@ async function recalcularNivelPostEntregaInner(opts: {
   try {
     escritura = await computarEscrituraDistanciaReal(pings, estimarHuecoKm);
   } catch (err) {
+    // El logger serializa `err` sin `message`: el motivo viaja en `errMessage`.
     logger.warn(
-      { err, tripId, fuente, pickupAtSource },
+      {
+        err,
+        errMessage: err instanceof Error ? err.message : String(err),
+        tripId,
+        fuente,
+        pickupAtSource,
+      },
       'recalcular: reconstrucción abortada — Routes falló (roto)',
     );
     abortReason = 'routes_error';
