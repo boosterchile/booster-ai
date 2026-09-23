@@ -1,4 +1,5 @@
 import {
+  MENSAJE_CAPACIDAD_ESTANQUE,
   chileanPlateSchema,
   normalizePlate,
   teltonikaImeiSchema,
@@ -48,6 +49,14 @@ type FuelType =
   | 'hidrogeno';
 
 type VehicleStatus = 'activo' | 'mantenimiento' | 'retirado';
+type FuenteCombustibleCan = '84' | '83' | '89' | 'sin_sensor';
+
+const FUENTE_CAN_LABELS: Record<FuenteCombustibleCan, string> = {
+  sin_sensor: 'Sin sensor',
+  '84': 'IO 84 — nivel en porcentaje',
+  '83': 'IO 83 — consumo acumulado',
+  '89': 'IO 89 — nivel en porcentaje',
+};
 
 interface Vehicle {
   id: string;
@@ -61,6 +70,8 @@ interface Vehicle {
   fuel_type: FuelType | null;
   curb_weight_kg: number | null;
   consumption_l_per_100km_baseline: string | null;
+  capacidad_estanque_l?: number | null;
+  fuente_combustible_can?: FuenteCombustibleCan | null;
   teltonika_imei: string | null;
   status: VehicleStatus;
   created_at: string;
@@ -153,10 +164,15 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const role = me.active_membership?.role;
+  const canEditEstanque = role === 'dueno' || role === 'admin';
 
   const createM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
-      return await api.post<{ vehicle: Vehicle }>('/vehiculos', vehicleFormToBody(input));
+      return await api.post<{ vehicle: Vehicle }>(
+        '/vehiculos',
+        vehicleFormToBody(input, canEditEstanque),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
@@ -178,6 +194,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
 
       <VehicleForm
         mode="create"
+        canEditEstanque={canEditEstanque}
         onSubmit={(values) => {
           setError(null);
           createM.mutate(values);
@@ -214,7 +231,9 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const [error, setError] = useState<string | null>(null);
   const [guardado, setGuardado] = useState(false);
   const [menuRetiro, setMenuRetiro] = useState<'cerrado' | 'abierto' | 'confirmar'>('cerrado');
-  const [configAbierta, setConfigAbierta] = useState(false);
+  const [configAbierta, setConfigAbierta] = useState(
+    () => typeof window !== 'undefined' && window.location.hash === '#configuracion',
+  );
   const [enfocarConfig, setEnfocarConfig] = useState(false);
   const configRef = useRef<HTMLDetailsElement>(null);
   const menuRetiroRef = useRef<HTMLDivElement>(null);
@@ -283,7 +302,10 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   const updateM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
-      return await api.patch<{ vehicle: Vehicle }>(`/vehiculos/${id}`, vehicleFormToBody(input));
+      return await api.patch<{ vehicle: Vehicle }>(
+        `/vehiculos/${id}`,
+        vehicleFormToBody(input, canManageDispositivo),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
@@ -432,6 +454,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
                   <VehicleForm
                     mode="edit"
                     initial={vehicleToFormValues(vehicleQ.data)}
+                    canEditEstanque={canManageDispositivo}
                     onSubmit={(values) => {
                       setError(null);
                       setGuardado(false);
@@ -761,6 +784,8 @@ interface VehicleFormValues {
   fuel_type: '' | FuelType;
   curb_weight_kg: string;
   consumption_l_per_100km_baseline: string;
+  capacidad_estanque_l: string;
+  fuente_combustible_can: FuenteCombustibleCan;
   vehicle_status?: VehicleStatus;
 }
 
@@ -775,6 +800,8 @@ const EMPTY_FORM: VehicleFormValues = {
   fuel_type: '',
   curb_weight_kg: '',
   consumption_l_per_100km_baseline: '',
+  capacidad_estanque_l: '',
+  fuente_combustible_can: 'sin_sensor',
 };
 
 function vehicleToFormValues(v: Vehicle): VehicleFormValues {
@@ -789,6 +816,8 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
     fuel_type: v.fuel_type ?? '',
     curb_weight_kg: v.curb_weight_kg != null ? String(v.curb_weight_kg) : '',
     consumption_l_per_100km_baseline: v.consumption_l_per_100km_baseline ?? '',
+    capacidad_estanque_l: v.capacidad_estanque_l != null ? String(v.capacidad_estanque_l) : '',
+    fuente_combustible_can: v.fuente_combustible_can ?? 'sin_sensor',
     vehicle_status: v.status,
   };
 }
@@ -841,6 +870,8 @@ const API_FIELD_LABELS: Record<string, string> = {
   fuel_type: 'Combustible',
   curb_weight_kg: 'Peso vacío (kg)',
   consumption_l_per_100km_baseline: 'Consumo base (L / 100 km)',
+  capacidad_estanque_l: 'Capacidad del estanque (L)',
+  fuente_combustible_can: 'Fuente CAN de combustible',
   vehicle_status: 'Estado',
 };
 
@@ -861,7 +892,10 @@ function vehicleMutationErrorMessage(err: Error): string {
   return serverValidationFieldsMessage(err, API_FIELD_LABELS) ?? err.message;
 }
 
-function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
+function vehicleFormToBody(
+  v: VehicleFormValues,
+  incluirEstanque: boolean,
+): Record<string, unknown> {
   // El servidor también normaliza vía chileanPlateSchema, pero normalizar
   // del lado del cliente nos da consistencia visual: si el usuario ingresa
   // "bcdf12", el body que viaja es "BCDF12".
@@ -894,12 +928,18 @@ function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
   if (v.vehicle_status) {
     body.vehicle_status = v.vehicle_status;
   }
+  if (incluirEstanque) {
+    const capacidad = v.capacidad_estanque_l.trim();
+    body.capacidad_estanque_l = capacidad === '' ? null : Number(capacidad);
+    body.fuente_combustible_can = v.fuente_combustible_can;
+  }
   return body;
 }
 
 function VehicleForm({
   mode,
   initial,
+  canEditEstanque,
   onSubmit,
   submitting,
   submitLabel,
@@ -908,6 +948,7 @@ function VehicleForm({
 }: {
   mode: 'create' | 'edit';
   initial?: VehicleFormValues;
+  canEditEstanque: boolean;
   onSubmit: (values: VehicleFormValues) => void;
   submitting: boolean;
   submitLabel: string;
@@ -952,6 +993,16 @@ function VehicleForm({
       if (message) {
         setError(field, { type: 'manual', message });
         hasError = true;
+      }
+    }
+    if (canEditEstanque) {
+      const capacidad = values.capacidad_estanque_l.trim();
+      if (capacidad !== '') {
+        const litros = Number(capacidad);
+        if (!Number.isFinite(litros) || litros <= 0 || litros > 2000) {
+          setError('capacidad_estanque_l', { type: 'manual', message: MENSAJE_CAPACIDAD_ESTANQUE });
+          hasError = true;
+        }
       }
     }
     if (hasError) {
@@ -1103,6 +1154,57 @@ function VehicleForm({
             )}
           />
         </div>
+
+        <fieldset
+          disabled={disabled || !canEditEstanque}
+          className="grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2"
+        >
+          <legend className="col-span-full mb-1 font-medium text-neutral-900 text-sm">
+            Estanque y fuente CAN
+          </legend>
+          <FormField
+            label="Capacidad del estanque (L)"
+            error={errors.capacidad_estanque_l?.message}
+            hint="Vacío si no la conocés. Si la indicás, tiene que ser mayor que 0 y de hasta 2000 litros."
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min={0.1}
+                max={2000}
+                {...register('capacidad_estanque_l')}
+                className={fieldInputClass(!!errors.capacidad_estanque_l)}
+              />
+            )}
+          />
+          <FormField
+            label="Fuente CAN de combustible"
+            hint="Sin sensor no calculamos litros. No adivinamos el IO."
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('fuente_combustible_can')}
+                className={fieldInputClass(false)}
+              >
+                {(Object.keys(FUENTE_CAN_LABELS) as FuenteCombustibleCan[]).map((fuente) => (
+                  <option key={fuente} value={fuente}>
+                    {FUENTE_CAN_LABELS[fuente]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+        </fieldset>
+        {!disabled && !canEditEstanque ? (
+          <p className="text-neutral-600 text-sm">
+            Solo el dueño o un administrador puede cambiar la capacidad del estanque y la fuente
+            CAN.
+          </p>
+        ) : null}
 
         <details className="rounded-md border border-neutral-200 p-3">
           <summary className="cursor-pointer font-medium text-neutral-700 text-sm">

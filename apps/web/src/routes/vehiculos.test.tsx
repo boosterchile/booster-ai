@@ -509,6 +509,8 @@ function makeVehicleRow(
     model: string | null;
     capacity_kg: number;
     status: 'activo' | 'mantenimiento' | 'retirado';
+    capacidad_estanque_l: number | null;
+    fuente_combustible_can: '84' | '83' | '89' | 'sin_sensor';
   }> = {},
 ) {
   return {
@@ -1390,5 +1392,76 @@ describe('VehiculoDetallePage — hub', () => {
     } finally {
       window.matchMedia = original;
     }
+  });
+
+  it('dueño ve capacidad y fuente CAN guardadas, y el PATCH las persiste', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return {
+          vehicle: makeVehicleRow({
+            capacidad_estanque_l: 200,
+            fuente_combustible_can: '84',
+          }),
+        };
+      }
+      return {} as never;
+    });
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({
+      vehicle: makeVehicleRow(),
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    const capacidad = await screen.findByLabelText('Capacidad del estanque (L)');
+    expect(capacidad).toHaveValue(200);
+    expect(screen.getByLabelText('Fuente CAN de combustible')).toHaveValue('84');
+    fireEvent.change(capacidad, { target: { value: '180' } });
+    fireEvent.change(screen.getByLabelText('Fuente CAN de combustible'), {
+      target: { value: '83' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const body = patch.mock.calls[0]?.[1] as {
+      capacidad_estanque_l: number;
+      fuente_combustible_can: string;
+      capacity_kg: number;
+    };
+    expect(body.capacidad_estanque_l).toBe(180);
+    expect(body.fuente_combustible_can).toBe('83');
+    expect(body.capacity_kg).toBe(5000);
+  });
+
+  it('despachador ve el estanque pero no puede editarlo ni mandarlo', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return {
+          vehicle: makeVehicleRow({
+            capacidad_estanque_l: 200,
+            fuente_combustible_can: '89',
+          }),
+        };
+      }
+      return {} as never;
+    });
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({ vehicle: makeVehicleRow() });
+    const me = makeMe();
+    providedContext = {
+      kind: 'onboarded',
+      me: {
+        ...me,
+        active_membership: { ...me.active_membership, role: 'despachador' },
+      } as MeOnboarded,
+    };
+    wrap(<VehiculosDetalleRoute />);
+    const capacidad = await screen.findByLabelText('Capacidad del estanque (L)');
+    expect(capacidad).toBeDisabled();
+    expect(capacidad).toHaveValue(200);
+    expect(screen.getByLabelText('Fuente CAN de combustible')).toBeDisabled();
+    expect(screen.getByText(/solo el dueño o un administrador puede cambiar/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /guardar cambios/i }));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const body = patch.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body.capacidad_estanque_l).toBeUndefined();
+    expect(body.fuente_combustible_can).toBeUndefined();
+    expect(body.capacity_kg).toBe(5000);
   });
 });

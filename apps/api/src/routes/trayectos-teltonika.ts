@@ -154,6 +154,7 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
     truncado: lista.truncado,
     cta: lista.cta,
     cta_sensor: lista.ctaSensor,
+    cta_capacidad_estanque: lista.ctaCapacidadEstanque,
     combustible: lista.combustible,
     page: lista.page,
     page_size: lista.pageSize,
@@ -176,6 +177,7 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
           litros_recientes: lista.resumenVehiculo.litrosRecientes,
           km_por_litro: lista.resumenVehiculo.kmPorLitro,
           cta_sensor: lista.resumenVehiculo.ctaSensor,
+          cta_capacidad_estanque: lista.resumenVehiculo.ctaCapacidadEstanque,
           alertas_total: lista.resumenVehiculo.alertasTotal,
           alerta_ultima: lista.resumenVehiculo.alertaUltima
             ? serializarTrayecto(lista.resumenVehiculo.alertaUltima)
@@ -210,5 +212,6 @@ function serializarTrayecto(
     event_lon: t.eventLon,
     sensor_combustible: t.sensorCombustible,
     cta_sensor: t.ctaSensor,
+    cta_capacidad_estanque: t.ctaCapacidadEstanque,
   };
 }

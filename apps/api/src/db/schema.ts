@@ -890,6 +890,20 @@ export const vehicles = pgTable(
      * Desacoplado de `bodyType='refrigerado'` (carrocería ≠ sonda cableada).
      */
     tieneSensorTemperatura: boolean('tiene_sensor_temperatura').notNull().default(false),
+    /**
+     * Litros del estanque (migración 0057). NULL = no declarada: un AVL 84
+     * leído como porcentaje no se convierte a litros. Rango (0, 2000].
+     */
+    capacidadEstanqueL: numeric('capacidad_estanque_l', {
+      precision: 7,
+      scale: 2,
+      mode: 'number',
+    }),
+    /**
+     * IO CAN que se puede usar para combustible. `sin_sensor` (default) no
+     * inventa litros aunque el ping traiga 84/83/89. NULL legado = sin_sensor.
+     */
+    fuenteCombustibleCan: text('fuente_combustible_can').default('sin_sensor'),
     lastInspectionAt: timestamp('ultima_inspeccion_en', { withTimezone: true }),
     inspectionExpiresAt: timestamp('inspeccion_expira_en', { withTimezone: true }),
     vehicleStatus: vehicleStatusEnum('estado_vehiculo').notNull().default('activo'),
@@ -940,6 +954,14 @@ export const vehicles = pgTable(
     tipoCategoriaCheck: check(
       'chk_vehiculos_tipo_categoria',
       sql`${table.unitType} IS NULL OR ((${table.unitCategory} = 'arrastre') = (${table.unitType} IN ('semirremolque', 'remolque')))`,
+    ),
+    capacidadEstanqueCheck: check(
+      'chk_vehiculos_capacidad_estanque_l',
+      sql`${table.capacidadEstanqueL} IS NULL OR (${table.capacidadEstanqueL} > 0 AND ${table.capacidadEstanqueL} <= 2000)`,
+    ),
+    fuenteCombustibleCanCheck: check(
+      'chk_vehiculos_fuente_combustible_can',
+      sql`${table.fuenteCombustibleCan} IS NULL OR ${table.fuenteCombustibleCan} IN ('84', '83', '89', 'sin_sensor')`,
     ),
   }),
 );

@@ -50,6 +50,7 @@ const resumenSchema = z.object({
   litros_recientes: z.number().nullable(),
   km_por_litro: z.number().nullable(),
   cta_sensor: z.boolean(),
+  cta_capacidad_estanque: z.boolean().optional(),
   alertas_total: z.number().int(),
   alerta_ultima: trayectoSchema.nullable(),
 });
@@ -441,6 +442,15 @@ function TarjetaConsumo({
           {resumen.cta_sensor ? (
             <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
               Conectá el sensor
+            </button>
+          ) : null}
+          {resumen.cta_capacidad_estanque ? (
+            <button
+              type="button"
+              onClick={onAbrirConfig}
+              className="mt-2 block text-left text-primary-700 text-sm underline"
+            >
+              Completá la capacidad del estanque
             </button>
           ) : null}
           {resumen.km_por_litro == null && !resumen.cta_sensor ? (
