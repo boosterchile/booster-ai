@@ -9,6 +9,8 @@
 
 ## Regla de operación
 
+Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producción, seguridad, el contrato del agente, y lo que el PO pida en el mensaje. Un frente de producto fuera de estos tres slots se declara y se detiene.
+
 1. **Máximo tres frentes vivos.** Todo lo demás está congelado por escrito, no de facto.
 2. **Ningún frente entra sin criterio de término escrito.** Si el criterio no se puede formular en términos observables y verificables por un tercero, el trabajo está en exploración y la exploración no ocupa slot.
 3. **Un frente sale de la lista solo cumpliendo su criterio**, no por pérdida de interés ni por aparición de otro más urgente.
