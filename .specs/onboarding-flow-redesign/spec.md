@@ -5,6 +5,7 @@
 - Status: Approved (2026-06-08, v2 — post devils-advocate, P0 de seguridad resuelto)
 - Linked: SEC-001 (`.specs/sec-001-cierre/`), ADR-052 (signup admin-approval gate), ADR-057 (Google boundary + reaper), `.specs/_followups/onboarding-flow-redesign.md` (stub origen), fundamento `wf_62beeb56-2a3`, review `review.md`
 - **Naturaleza: PROGRAMA fraseado.** PLAN lo descompone en fases entregables.
+- **Enmienda 2026-09-23 (§8, alternativa C) — propuesta, pendiente de aceptación del PO**: el admin puede crear la empresa con su dueño desde el panel. Detalle en `.specs/alta-desde-panel-admin/spec.md`; ver §8 y §13.
 
 ---
 
@@ -74,6 +75,10 @@ El flujo está **roto en cadena**: `approveSignupRequest` precrea un `users` row
 - **Predicado por email (sin token)** — rechazado: reabre SEC-001 (review P0-1, vector Google sign-in).
 - **Predicado por `firebase_uid` matcheado** — requiere migrar `solicitudes_registro` para guardar el uid del Admin-SDK user; más frágil que el token y no cubre el cambio de uid (Google vs Admin-SDK). El token es superior.
 - **Captura de datos B (extender signup-request público)** / **C (admin tipea)** — rechazadas (anti-enumeration / data-entry frágil).
+  - **Enmienda 2026-09-23 — C reabierta por decisión del PO** (pendiente de aceptación de `.specs/alta-desde-panel-admin/spec.md`). B sigue rechazada. C vuelve como una segunda vía, que no reemplaza al alta por enlace. Lo que cambió desde el rechazo:
+    1. Desde #640 (2026-07-31), un tercero puede dar de alta a una persona sin fijarle la credencial: código de un solo uso + `/activar`, donde la persona elige su clave. El admin tipea datos, nunca la clave.
+    2. El tipeo frágil se acota con el dígito verificador del RUT, una confirmación antes de crear, y el estado `pendiente_verificacion`: la empresa no opera hasta que el admin la activa.
+    3. SEC-001 no se reabre. El autoservicio sigue cerrado y el endpoint nuevo es solo de platform-admin.
 - **409 via 3.2 (`onboardEmpresa` reutiliza el row)** — rechazada: complica el invariante de seguridad del service.
 
 ## 9. Risks and mitigations
@@ -121,3 +126,4 @@ El flujo está **roto en cadena**: `approveSignupRequest` precrea un `users` row
 - 2026-06-08 — **v2 tras devils-advocate**: P0-1 (reapertura SEC-001 por predicado-email + Google sign-in) → predicado redefinido como **token de un solo uso** (decisión en §6, no OQ). Incorporados: kill-switch propio (R2), `emailVerified` (R3), corrección del riesgo del reaper (R4), journey demo devuelto a out-of-scope (R5), corrección §11 admin-congelado (R6), clasificación boundary ADR-057, email como swap del contrato existente. SC2 reescrito alrededor del token (medible).
 - 2026-07-30 — **OQ4 cerrada: Resend** (decisión del PO). Proveedor propio, distinto del que confirma DTE; dominio verificado de `boosterchile.com`. Implementación = swap `EmailSignupRequestNotifier` sobre el contrato existente, con inyección condicional y degradación a `LoggingSignupRequestNotifier` cuando falten credenciales (mismo patrón que `TwilioWhatsAppClient` en `main.ts`).
 - 2026-07-30 — **DESVIACIÓN del criterio de cierre, declarada**: §7 exige encender los flags cuando Fase 1 **+ email** funcionen end-to-end. El PO decidió encender `SIGNUP_REQUEST_FLOW_ACTIVATED` y `ADMIN_PROVISIONED_ONBOARDING_ENABLED` ese día **con Fase 2 sin construir**, para desbloquear el alta del primer cliente real. Consecuencia asumida mientras dure: cada aprobación exige que el admin copie el link one-shot y lo entregue por fuera del producto, y que el aprobado descubra por su cuenta cómo fijar contraseña (el approve crea la cuenta Firebase sin password y con `emailVerified=false`, que es lo que el gate del route rechaza con 403). **No es deuda silenciosa**: se cierra con Fase 2 (email real) + la tarea T2.0 (link de acceso emitido junto al de onboarding).
+- 2026-09-23 — **Enmienda §8, alternativa C (propuesta)**: el PO pidió en sesión que el admin cree desde `/app/platform-admin` generadores de carga y transportistas, sin que el cliente llene el formulario. La spec hija `.specs/alta-desde-panel-admin/spec.md` define criterios, enfoque y riesgos. La enmienda rige cuando el PO la acepta. Queda fuera de ella el acceso de miembros stakeholder (SC7 de este programa, Fase 5): la spec hija registra cuatro bloqueos verificados y lo propone como frente propio.

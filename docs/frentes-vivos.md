@@ -4,6 +4,7 @@
 **Estado verificado contra:** `main` @ `623ee2b` (2026-08-16)
 **Autor de la verificación:** revisión sobre clon de `main`; los estados marcados ✅/❌ salen de existencia de archivo o de símbolo, no de inferencia.
 **Actualización 2026-09-13** (`main` @ `7e99dc0`): Slot 3 cerrado y reemplazado por «Conductor operativo» (decisión D2 del PO); Slot 1 con F1 cerrado. El conteo del Slot 2 no se re-verificó en esta pasada.
+**Actualización 2026-09-23** (`main` @ `550b742`): por pedido del PO entra, fuera de slot, «Alta de empresas desde el panel de administración». Los tres slots no cambian.
 
 ---
 
@@ -121,13 +122,54 @@ Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO 
 
 ---
 
+## Fuera de slot — Alta de empresas desde el panel de administración
+
+**Por qué:** pedido explícito del PO el 2026-09-23. Hoy una empresa solo nace si el cliente llena el formulario de alta por enlace; el admin no puede crearla aunque tenga todos sus datos.
+
+**Cómo entra:** no ocupa ninguno de los tres slots. Es un pedido del PO en el mensaje, excepción que el PR #720 lleva al contrato (`CLAUDE.md`). Mientras #720 no esté en `main`, queda como excepción a la regla 1, declarada por el PO. Como cualquier frente, sale de esta lista solo cumpliendo su criterio (regla 3).
+
+**Terminado cuando:** se cumplen las dos condiciones:
+
+1. En producción, el admin crea desde `/app/platform-admin` la empresa de un cliente (generadora de carga, transportista o ambas) sin que el cliente llene el formulario de alta. Su dueño activa en `/activar` con su RUT y el código, elige su clave y después entra con RUT y esa clave por el login normal. Sin SQL ni intervención fuera del panel.
+2. La cadena crear → activar → `login-rut` tiene test de integración verde en CI.
+
+**Verificación:**
+
+```sql
+SELECT e.razon_social, e.creado_en, m.estado AS membresia_dueno,
+       u.clave_numerica_hash IS NOT NULL AS dueno_con_clave,
+       m.unido_en, u.ultimo_login_en
+FROM empresas e
+JOIN membresias m ON m.empresa_id = e.id AND m.rol = 'dueno'
+JOIN usuarios u ON u.id = m.usuario_id
+WHERE m.invitado_por_id IS NOT NULL
+ORDER BY e.creado_en DESC LIMIT 5;
+```
+
+Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
+
+**Orden de ejecución:**
+
+1. **Arreglo de seguridad de `/auth/activar`** (no ocupa slot). Hoy un código emitido a un RUT que ya tiene cuenta permite reemplazarle la clave (`me-empresa-miembros` + `/auth/activar`, en producción desde #640). Va primero porque este frente reusa ese endpoint.
+2. **API**: `POST /admin/empresas` y la re-emisión del código del dueño.
+3. **Web**: sección «Crear empresa» en el panel y «Generar código nuevo» en «Activar empresa».
+
+**Spec:** `.specs/alta-desde-panel-admin/spec.md`. Enmienda §8 (alternativa C) de `.specs/onboarding-flow-redesign/`.
+
+**Fuera de alcance (no se hace bajo este frente):**
+
+- Stakeholders: crear la organización ya funciona; el ingreso de sus miembros tiene cuatro bloqueos, listados en la spec (§5).
+- Envío del código por correo (Fase 2 del programa de onboarding).
+- Empresas de prueba.
+- Corregir datos legales de una empresa ya creada.
+
 ## Congelados
 
 No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición explícita de descongelamiento.
 
 **Sistema de diseño D1/D2.** Las primitivas existentes se usan donde ya están; no se agregan primitivas, tokens, acentos ni olas nuevas. Descongela cuando el Slot 1 cierre, y entra con criterio de cobertura sobre una lista cerrada de pantallas —nunca sobre número de primitivas—.
 
-**Onboarding / alta de empresas.** Congelado como frente de construcción. La necesidad operativa (probar con empresas ficticias) se cubre hoy con impersonación sobre `es_usuario_prueba`. Descongela solo si esa vía resulta insuficiente en uso real, y en ese caso el criterio es: una empresa de prueba se crea por el flujo estándar, opera de punta a punta y no aparece en ningún reporte ni cobro.
+**Onboarding / alta de empresas.** Congelado como frente de construcción. La necesidad operativa (probar con empresas ficticias) se cubre hoy con impersonación sobre `es_usuario_prueba`. Descongela solo si esa vía resulta insuficiente en uso real, y en ese caso el criterio es: una empresa de prueba se crea por el flujo estándar, opera de punta a punta y no aparece en ningún reporte ni cobro. El alta de empresas de clientes desde el panel de administración salió de aquí el 2026-09-23, como frente fuera de slot (ver arriba). Lo demás sigue congelado.
 
 **Certificados PDF.** Criterio a escribir cuando descongele, con esta forma: el PDF de \<tipo\> con \<campos\> se genera y valida contra el formato exigido por \<quién lo recibe\>.
 
