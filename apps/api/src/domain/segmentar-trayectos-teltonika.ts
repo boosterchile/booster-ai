@@ -32,6 +32,9 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * Los litros y el km/L
  * se calculan sobre el tramo entre la primera y la última lectura, solo si
  * ese tramo cubre ≥ 90 % de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
+ * Si el km/L redondeado supera 2 × (100 / 32) = 6,25, no se muestra: la nota
+ * es «dato no confiable» y los litros sí. Con capacidad 200 L, 89 × N
+ * coincide con el 84 deprimido y el 12,29 se repite; no se cambia la fuente.
  * El aviso de robo solo existe con el 84: un robo no pasa por el contador 83.
  * Golpe único: puntos por timestamp de dispositivo; ΔL ≤ −U en 5 min
  * con v ≤ 5 km/h; ignición on u off, las dos valen. No se marca en marcha.
@@ -74,6 +77,18 @@ export const COBERTURA_MINIMA = 0.9;
  */
 export const LITROS_MINIMOS_KM_POR_LITRO = 5;
 export const KM_MINIMOS_KM_POR_LITRO = 10;
+/**
+ * Baseline diésel del diagnóstico JLKT54 (32 L/100 km → 3,125 km/L).
+ * Por encima de 2× ese rendimiento el km/L no se publica.
+ */
+export const CONSUMO_BASE_DIESEL_L_POR_100_KM = 32;
+export const FACTOR_MAX_KM_POR_LITRO_CONFIABLE = 2;
+export const NOTA_KM_POR_LITRO_NO_CONFIABLE = 'dato no confiable';
+
+/** 2 × (100 / 32) = 6,25 km/L. El valor redondeado que iguala el tope se muestra. */
+export function kmPorLitroMaxConfiable(): number {
+  return FACTOR_MAX_KM_POR_LITRO_CONFIABLE * (100 / CONSUMO_BASE_DIESEL_L_POR_100_KM);
+}
 /**
  * Por debajo de esto el trayecto es una maniobra o una cola. No se emite
  * el aviso de golpe ni el de hormiga, ni el pin.
@@ -874,8 +889,7 @@ function combustibleSegunFuente(
 
 /**
  * Porcentaje de estanque × capacidad. Sin N no hay litros.
- * El km/L sale del consumo cubierto que ya existe; el guardrail de economía
- * no se duplica acá.
+ * El km/L sale de `consumoCubierto`, que aplica el guardrail de economía.
  */
 function combustibleDesdeNivelPct(
   puntos: PuntoResuelto[],
@@ -992,7 +1006,8 @@ function combustibleDelTrayecto(
  * Litros y km/L sobre el tramo leído, con la distancia de ese mismo tramo.
  * Si cubre menos del 90 % del trayecto, el CAN se cortó en el camino: no se
  * calcula, para no inflar el km/L con kilómetros sin litros. Bajo 5 L o 10 km
- * tampoco, y sin nota por fila: la UI lo explica una vez.
+ * tampoco, y sin nota por fila: la UI lo explica una vez. Por encima de
+ * 6,25 km/L el número no se publica y la fila dice que el dato no es confiable.
  */
 function consumoCubierto(
   puntos: PuntoResuelto[],
@@ -1008,9 +1023,17 @@ function consumoCubierto(
   if (litros + 1e-9 < LITROS_MINIMOS_KM_POR_LITRO || cubiertaKm + 1e-9 < KM_MINIMOS_KM_POR_LITRO) {
     return { litrosConsumidos: null, kmPorLitro: null, notaCombustible: null };
   }
+  const kmPorLitro = redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2);
+  if (kmPorLitro > kmPorLitroMaxConfiable()) {
+    return {
+      litrosConsumidos: redondear(litros, 1),
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    };
+  }
   return {
     litrosConsumidos: redondear(litros, 1),
-    kmPorLitro: redondear(cubiertaKm / Math.max(litros, EPSILON_L), 2),
+    kmPorLitro,
     notaCombustible: null,
   };
 }
