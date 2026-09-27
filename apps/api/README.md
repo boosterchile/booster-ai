@@ -34,7 +34,5 @@ src/
 ├── routes/              # endpoints HTTP
 │   └── health.ts        # /health + /ready
 ├── middleware/          # middlewares Hono
-└── services/            # lógica de negocio (TODO)
+└── services/            # lógica de negocio
 ```
-
-Seguir la skill `booster-skills:adding-cloud-run-service`.

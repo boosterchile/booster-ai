@@ -132,14 +132,14 @@ Configurado en `.github/dependabot.yml`:
 
 1. Revisar artifact `coverage-report` descargado
 2. Identificar archivos sin cobertura: `coverage/lcov-report/index.html`
-3. Añadir tests siguiendo `agent-rigor:31-test-driven-development` (skill del plugin agent-rigor)
+3. Añadir tests con el ciclo de `CLAUDE.md`. En dominio crítico, el rojo del test va en la Evidencia del PR.
 4. Si justificado excluir del umbral: añadir a `coverage.exclude` en `vitest.config.ts` con comentario
 
 ### Gitleaks detectó falso positivo
 
 1. Investigar caso
 2. Si realmente es falso positivo: añadir a `.gitleaks.toml` con `[allowlist]`
-3. Si es real: seguir `booster-skills:incident-response`
+3. Si es real: no dejar el secreto en el commit. Rotarlo en Secret Manager y seguir el runbook del servicio en `docs/runbooks/`.
 
 ### Deploy production falla
 

@@ -146,3 +146,11 @@ export {
   type CanLvcanTelemetry,
   type CanLvcanInterpretResult,
 } from './interpret-can-lvcan.js';
+
+export {
+  extraerCapacidadesMaximas,
+  type CapacidadesEquipo,
+  type CapacidadCan,
+  type DetalleEquipo,
+  type RangoDallas,
+} from './equipo-telemetria.js';

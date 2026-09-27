@@ -7,4 +7,4 @@ Webhook Meta WhatsApp Cloud API + NLU Gemini. Canal primario (ADR-006).
 
 ## Implementación pendiente
 
-Seguir la skill `booster-skills:adding-cloud-run-service` (o adaptado para GKE si aplica) y los ADRs relacionados.
+El alta de un servicio Cloud Run sigue `CLAUDE.md` y los ADR del servicio. No hay plugin de deploy.

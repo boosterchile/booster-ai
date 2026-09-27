@@ -138,7 +138,7 @@ El plan (`.specs/onboarding-flow-redesign/plan.md`, "Cierre Fase 1") exige 2 act
 ### Acta de sign-off — modelo bearer-token (onboarding admin-provisioned)
 
 - Fecha: __________
-- Revisor: __________ (security-auditor / booster-skills:security-scanner)
+- Revisor: __________
 - Modelo revisado: token HMAC-SHA256 one-shot entregado vía link de email/WhatsApp;
   el link en sí mismo es el trust anchor (quien lo posee, se autentica).
 - Riesgo residual aceptado: link interceptado dentro del TTL (72h) permite
@@ -246,7 +246,7 @@ Checklist manual contra producción (no hay staging):
 
 ## Paso 8 — Monitoreo 2h post-deploy
 
-Estándar `booster-deploy-cloud-run`:
+Monitoreo 2h post-deploy, el mismo estándar de `CLAUDE.md`:
 
 - [ ] Error rate de `booster-ai-api` (Cloud Monitoring) sin spike tras el deploy.
 - [ ] Latencia P95 de `/admin/signup-requests/:id/approve` y `/empresas/onboarding-admin` dentro de lo normal.

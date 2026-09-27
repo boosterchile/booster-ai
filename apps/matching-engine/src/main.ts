@@ -9,5 +9,7 @@ const logger = createLogger({
 
 logger.info({ runtime: 'cloud-run' }, '@booster-ai/matching-engine starting (skeleton)');
 
-// TODO: implementar según el ADR correspondiente.
-// Ver docs/adr/ y plugin booster-skills para el plan de implementación.
+// Proceso reservado. El matching productivo corre en apps/api
+// (src/services/matching.ts) con @booster-ai/matching-algorithm.
+// Runbook: docs/runbooks/service-matching-engine.md
+// Extraer el algoritmo a este proceso no es un frente abierto.

@@ -101,7 +101,7 @@ La PWA usa `autoUpdate` (vite-plugin-pwa). El mecanismo que garantiza que el usu
 
 ## Refs
 
-- Deploy: skill `booster-deploy-cloud-run`; `cloudbuild.production.yaml` (build-args `_VITE_*`).
+- Deploy: `CLAUDE.md` (deploy manual) y `cloudbuild.production.yaml` (build-args `_VITE_*`).
 - Rotación de la Maps API key (referrer-restricted): `rotacion-maps-api-key.md`.
 - Ingress sólo-GCLB: ADR-062.
 - Config frontend: `apps/web/src/lib/api-url.ts`, `apps/web/nginx.conf.template`, `apps/web/Dockerfile`.

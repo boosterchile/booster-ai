@@ -47,7 +47,7 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 
 ## Cuando se implemente
 
-Al extraer el fan-out a este servicio (skill `booster-skills:adding-cloud-run-service`), este runbook debe crecer con: subscription `notification-events` + DLQ, manejo por canal (Web Push/FCM/WhatsApp/Email/SMS) y su degradación independiente, idempotencia (no notificar dos veces), y rollback. Hasta entonces, **las notificaciones son `apps/api`**.
+Al extraer el fan-out a este servicio, este runbook debe crecer con: subscription `notification-events` + DLQ, manejo por canal (Web Push/FCM/WhatsApp/Email/SMS) y su degradación independiente, idempotencia (no notificar dos veces), y rollback. Hasta entonces, **las notificaciones son `apps/api`**.
 
 ## Escalación
 
@@ -57,4 +57,4 @@ Al extraer el fan-out a este servicio (skill `booster-skills:adding-cloud-run-se
 
 - Envío real: `service-api.md`, `service-whatsapp-bot.md`, `load-content-sids.md`.
 - Safety fan-out: `oncall-telemetry-incidents.md`, `apps/api/src/services/dispatch-safety-notification.ts`.
-- Plan de extracción: skill `booster-skills:adding-cloud-run-service`. README: `apps/notification-service/README.md`.
+- Plan de extracción: ADR-048. README: `apps/notification-service/README.md`.

@@ -9,5 +9,7 @@ const logger = createLogger({
 
 logger.info({ runtime: 'cloud-run' }, '@booster-ai/notification-service starting (skeleton)');
 
-// TODO: implementar según el ADR correspondiente.
-// Ver docs/adr/ y plugin booster-skills para el plan de implementación.
+// Proceso reservado. Los avisos productivos salen de apps/api
+// (Web Push, WhatsApp Twilio, safety) con @booster-ai/notification-fan-out.
+// Runbook: docs/runbooks/service-notification-service.md
+// Extraer el fan-out a este proceso no es un frente abierto.
