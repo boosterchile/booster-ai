@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Copy, RotateCcwIcon, UserPlusIcon, XCircle } from 'lucide-react';
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -451,13 +451,29 @@ function OnboardingLinkPanel({
   const [clipboardFailed, setClipboardFailed] = useState(false);
   const [accessCopied, setAccessCopied] = useState(false);
   const [accessClipboardFailed, setAccessClipboardFailed] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current !== null) {
+        clearTimeout(copyTimer.current);
+      }
+      if (accessTimer.current !== null) {
+        clearTimeout(accessTimer.current);
+      }
+    };
+  }, []);
 
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(info.link);
       setClipboardFailed(false);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2500);
+      if (copyTimer.current !== null) {
+        clearTimeout(copyTimer.current);
+      }
+      copyTimer.current = setTimeout(() => setCopied(false), 2500);
     } catch {
       // Sin clipboard API (http local, permiso denegado, navegador viejo) —
       // fallback: input readonly seleccionable para copiar manualmente.
@@ -474,7 +490,10 @@ function OnboardingLinkPanel({
       await navigator.clipboard.writeText(info.accessLink);
       setAccessClipboardFailed(false);
       setAccessCopied(true);
-      window.setTimeout(() => setAccessCopied(false), 2500);
+      if (accessTimer.current !== null) {
+        clearTimeout(accessTimer.current);
+      }
+      accessTimer.current = setTimeout(() => setAccessCopied(false), 2500);
     } catch {
       setAccessClipboardFailed(true);
     }
