@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Copy, RotateCcwIcon, UserPlusIcon, XCircle } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ApiError, api } from '../lib/api-client.js';
 
@@ -219,6 +219,14 @@ function PlatformAdminSignupRequestsPage() {
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6">
+        {state.kind === 'loaded' ? (
+          <AltaExencionForm
+            onIssued={(solicitudId, info) => {
+              setOnboardingLinks((prev) => ({ ...prev, [solicitudId]: info }));
+            }}
+          />
+        ) : null}
+
         {Object.entries(onboardingLinks).map(([id, info]) => (
           <OnboardingLinkPanel key={id} info={info} onDismiss={() => dismissOnboardingLink(id)} />
         ))}
@@ -312,6 +320,126 @@ function PlatformAdminSignupRequestsPage() {
  * perder este panel sin copiarlo obliga al admin a re-emitir (no hay replay
  * server-side posible ni deseable).
  */
+function mensajeExencion(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'email_already_registered') {
+      return 'Ese correo ya tiene una cuenta en Booster.';
+    }
+    if (err.code === 'alta_ya_emitida') {
+      return 'Ya se emitió un alta para ese correo. Si el enlace venció, hay que revisarlo a mano.';
+    }
+    if (err.code === 'solicitud_pendiente') {
+      return 'Ese correo ya tiene una solicitud pendiente. Apruébala en la lista.';
+    }
+    if (err.code === 'firebase_user_already_exists') {
+      return 'Ese correo ya existe en el acceso. Hay que revisarlo a mano.';
+    }
+    if (err.status === 503) {
+      return 'El alta por enlace no está activada en este entorno.';
+    }
+    if (err.status === 400) {
+      return 'Revisa el nombre y el correo.';
+    }
+  }
+  return 'No se pudo emitir el enlace.';
+}
+
+interface ExencionResponse {
+  ok: boolean;
+  outcome: string;
+  firebase_uid: string;
+  solicitud_id: string;
+  onboarding_link: string;
+  onboarding_link_expires_at: string;
+}
+
+/**
+ * Alta por exención (`.specs/alta-membresia` fase 1). El admin emite el mismo
+ * enlace de un solo uso sin que la persona haya pasado por `/solicitar-acceso`.
+ * La persona elige su RUT y su clave en `/onboarding-admin`. El cobro de la
+ * membresía no entra por este formulario.
+ */
+function AltaExencionForm({
+  onIssued,
+}: {
+  onIssued: (solicitudId: string, info: OnboardingLinkInfo) => void;
+}) {
+  const [nombreCompleto, setNombreCompleto] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await api.post<ExencionResponse>('/admin/signup-requests/exencion', {
+        email: email.trim(),
+        nombreCompleto: nombreCompleto.trim(),
+        admision: 'exencion_admin',
+      });
+      onIssued(res.solicitud_id, {
+        email: email.trim(),
+        nombreCompleto: nombreCompleto.trim(),
+        link: res.onboarding_link,
+        expiresAt: res.onboarding_link_expires_at,
+      });
+      setNombreCompleto('');
+      setEmail('');
+    } catch (err) {
+      setError(mensajeExencion(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const canSubmit = nombreCompleto.trim().length > 0 && email.trim().length > 0 && !submitting;
+
+  return (
+    <form
+      onSubmit={(event) => void handleSubmit(event)}
+      className="mb-4 rounded-lg border border-primary-200 bg-white p-4"
+    >
+      <h2 className="font-semibold text-neutral-900">Alta sin cobro de membresía</h2>
+      <p className="mt-1 max-w-3xl text-neutral-600 text-sm">
+        Emite el enlace para un cliente que no pasa por caja: piloto, camión exento o factura por
+        transferencia. La persona completa su empresa, su RUT y elige su clave de 6 dígitos. La
+        empresa queda pendiente de verificación hasta que la actives.
+      </p>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-neutral-700 text-sm">
+          Nombre
+          <input
+            value={nombreCompleto}
+            onChange={(event) => setNombreCompleto(event.target.value)}
+            autoComplete="name"
+            className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
+          />
+        </label>
+        <label className="flex flex-1 flex-col gap-1 text-neutral-700 text-sm">
+          Correo
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="inline-flex cursor-pointer items-center justify-center rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? 'Emitiendo…' : 'Emitir enlace de alta'}
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-red-700 text-sm">{error}</p> : null}
+    </form>
+  );
+}
+
 function OnboardingLinkPanel({
   info,
   onDismiss,

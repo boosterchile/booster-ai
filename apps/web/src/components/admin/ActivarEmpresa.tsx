@@ -33,7 +33,7 @@ const ESTADO_LABEL: Record<EmpresaAdminRow['estado'], string> = {
   suspendida: 'Suspendida',
 };
 
-export function ActivarEmpresa() {
+export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) {
   const [filtro, setFiltro] = useState<EstadoFiltro>('pendiente_verificacion');
   const [empresas, setEmpresas] = useState<EmpresaAdminRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,9 +54,10 @@ export function ActivarEmpresa() {
     }
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken solo invalida la lista
   useEffect(() => {
     void cargar(filtro);
-  }, [cargar, filtro]);
+  }, [cargar, filtro, refreshToken]);
 
   async function cambiarEstado(id: string, estado: EmpresaAdminRow['estado']) {
     setPendingId(id);
