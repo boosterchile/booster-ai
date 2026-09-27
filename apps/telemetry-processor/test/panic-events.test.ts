@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { detectPanicEvents, logPanicEvents } from '../src/panic-events.js';
+import {
+  detectPanicEvents,
+  logPanicEvents,
+  selectCustomerPanicEvents,
+} from '../src/panic-events.js';
 import type { RecordMessage } from '../src/persist.js';
 
-function makeMsg(entries: Array<{ id: number; value: number | string }>): RecordMessage {
+function makeMsg(
+  entries: Array<{ id: number; value: number | string }>,
+  eventIoId?: number,
+): RecordMessage {
   return {
     imei: '356307042441013',
     vehicleId: '11111111-2222-3333-4444-555555555555',
@@ -18,7 +25,7 @@ function makeMsg(entries: Array<{ id: number; value: number | string }>): Record
         speedKmh: 0,
       },
       io: {
-        eventIoId: entries[0]?.id ?? 0,
+        eventIoId: eventIoId ?? entries[0]?.id ?? 0,
         totalIo: entries.length,
         entries: entries.map((e) => ({ ...e, byteSize: 1 as const })),
       },
@@ -49,6 +56,20 @@ describe('detectPanicEvents', () => {
   it('IO 318 valor 0 → nada; valor no numérico → nada sin throw (T4)', () => {
     expect(detectPanicEvents(makeMsg([{ id: 318, value: 0 }]))).toEqual([]);
     expect(detectPanicEvents(makeMsg([{ id: 318, value: 'garbage' }]))).toEqual([]);
+  });
+
+  it('318=1 sigue en la detección de log, y no en el aviso al cliente', () => {
+    const warning = makeMsg([{ id: 318, value: 1 }], 318);
+    expect(detectPanicEvents(warning)).toEqual([
+      { eventName: 'GnssJamming', avlId: 318, rawValue: 1 },
+    ]);
+    expect(selectCustomerPanicEvents(warning)).toEqual([]);
+  });
+
+  it('252=1 pegado en un punto periódico no se avisa al cliente', () => {
+    const sticky = makeMsg([{ id: 252, value: 1 }], 0);
+    expect(detectPanicEvents(sticky)).toHaveLength(1);
+    expect(selectCustomerPanicEvents(sticky)).toEqual([]);
   });
 
   it('IOs no-panic (240, 253) → nada', () => {

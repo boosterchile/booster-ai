@@ -147,7 +147,7 @@ describe('procesarMensajesNoLeidos', () => {
 
   it('dueño existe pero whatsappE164 null → skippedNoWhatsapp', async () => {
     const db = makeDb({
-      selects: [[CAND_BASE], [{ userId: 'owner-1', whatsappE164: null }]],
+      selects: [[CAND_BASE], [{ userId: 'owner-1', role: 'dueno', whatsappE164: null }]],
       updates: [[]],
     });
     const result = await procesarMensajesNoLeidos({
@@ -162,7 +162,7 @@ describe('procesarMensajesNoLeidos', () => {
   it('happy path: notif enviada via Twilio sendContent', async () => {
     const twilio = makeTwilio();
     const db = makeDb({
-      selects: [[CAND_BASE], [{ userId: 'owner-1', whatsappE164: '+56912345678' }]],
+      selects: [[CAND_BASE], [{ userId: 'owner-1', role: 'dueno', whatsappE164: '+56912345678' }]],
       updates: [[]], // markNotifSent
     });
     const result = await procesarMensajesNoLeidos({
@@ -191,7 +191,7 @@ describe('procesarMensajesNoLeidos', () => {
       }),
     } as unknown as TwilioWhatsAppClient;
     const db = makeDb({
-      selects: [[CAND_BASE], [{ userId: 'owner', whatsappE164: '+56912345678' }]],
+      selects: [[CAND_BASE], [{ userId: 'owner', role: 'dueno', whatsappE164: '+56912345678' }]],
       updates: [[]],
     });
     const result = await procesarMensajesNoLeidos({
@@ -208,7 +208,7 @@ describe('procesarMensajesNoLeidos', () => {
     const db = makeDb({
       selects: [
         [{ ...CAND_BASE, messageType: 'foto', textContent: null }],
-        [{ userId: 'owner', whatsappE164: '+56912345678' }],
+        [{ userId: 'owner', role: 'dueno', whatsappE164: '+56912345678' }],
       ],
       updates: [[]],
     });
@@ -227,7 +227,7 @@ describe('procesarMensajesNoLeidos', () => {
     const db = makeDb({
       selects: [
         [{ ...CAND_BASE, messageType: 'ubicacion', textContent: null }],
-        [{ userId: 'owner', whatsappE164: '+56912345678' }],
+        [{ userId: 'owner', role: 'dueno', whatsappE164: '+56912345678' }],
       ],
       updates: [[]],
     });
@@ -246,7 +246,7 @@ describe('procesarMensajesNoLeidos', () => {
     const db = makeDb({
       selects: [
         [{ ...CAND_BASE, senderName: null }],
-        [{ userId: 'owner', whatsappE164: '+56912345678' }],
+        [{ userId: 'owner', role: 'dueno', whatsappE164: '+56912345678' }],
       ],
       updates: [[]],
     });
