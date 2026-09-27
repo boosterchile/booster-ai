@@ -37,5 +37,5 @@
       tests de `createServer` (HTTPException 400 → 400; validador json con
       cuerpo vacío → 400; Error genérico → 500).
 - [x] Verde: esos tests + suites de `apps/web` y `apps/api`, typecheck, biome.
-- [ ] En producción: el tap «Confirmar recogida» en BOO-BKAXIK registra la
-      recogida (asignación en `recogido`, `recogido_en` poblado).
+- [x] En producción: el tap «Confirmar recogida» en BOO-BKAXIK registra la
+      recogida (asignación en `recogido`, `recogido_en` poblado). — verificado 2026-09-22: PATCH 200 2026-09-14T16:44:35Z en api-00590-bik (commit 2388bb43 ⊇ #681); evento recogida_confirmada (picked_up_at_source=servidor = tap sin cuerpo, fvp@live.cl), recogido_en 16:44:36Z; hoy `entregado` (17:01:57Z); 0 respuestas 500 en confirmar-recogida desde el fix (Cloud Logging).
