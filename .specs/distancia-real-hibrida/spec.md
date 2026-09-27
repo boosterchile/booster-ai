@@ -74,6 +74,19 @@ re-derivarlos, el resultado es distancia real para el futuro y **estimación par
    trip demasiado fragmentado → **aborta sin llamar a Routes** → cae a la estimación. Cota el costo a
    ≤20 llamadas/trip.
 
+## Enmienda 2026-09-22 — hueco con el vehículo detenido (decisión del PO, #708)
+
+Hasta #708 el relleno de huecos nunca corrió en prod: toda llamada terminaba en 400 porque las coordenadas viajaban como `address`. Al corregirlo apareció un caso que los criterios no contemplaban. Con origen == destino, Routes responde **200 sin `distanceMeters`** (proto3 omite el 0), y el resolver lo trataba como «sin ruta», con lo que abortaba el viaje entero con `routes_error`. Es el caso normal de una parada: 2151 de 2539 huecos ≥ 60 s de Teltonika en 14 días tienen extremos idénticos. El PO eligió la opción (a) el 2026-09-22 (`.specs/fix-routes-api-body-invalido/spec.md` §6):
+
+- Un hueco (gap ≥ 60 s) **con extremos de coordenadas idénticas** vale **0 km**, se registra como segmento `estimado` y **no llama al resolver**. La igualdad es exacta, sin umbral.
+- Ese hueco **no cuenta** para `MAX_HUECOS_ROUTES`.
+- Excepciones a los criterios originales, **solo** para ese caso:
+  - Criterio 1: la distancia puede ser igual a `kmObservado`.
+  - Criterio 2: no se llama al resolver.
+  - Criterio 6: no se cuenta como llamada.
+
+  Para cualquier otro hueco, los criterios siguen vigentes sin cambio.
+
 ## Diseño (para el verde; no se implementa en este commit)
 - Función pura-inyectable `calcularDistanciaHibrida(pings, estimarHuecoKm)` en
   `apps/api/src/services/calcular-distancia-real.ts` (sibling de `calcular-cobertura-telemetria.ts`,

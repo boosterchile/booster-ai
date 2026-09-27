@@ -172,6 +172,7 @@ export async function generarEcoPreview(opts: {
         origin: trip.originAddressRaw,
         destination: trip.destinationAddressRaw,
         emissionType,
+        logger,
       });
       const best: RouteSuggestion | undefined = routes[0];
       if (best && best.distanceKm > 0) {
