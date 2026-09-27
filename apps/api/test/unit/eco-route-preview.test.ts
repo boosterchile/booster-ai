@@ -258,6 +258,8 @@ describe('generarEcoPreview — Routes API path', () => {
         emissionType: 'DIESEL',
         origin: TRIP_BASE.originAddressRaw,
         destination: TRIP_BASE.destinationAddressRaw,
+        // Sin logger el errBody de un 400 no queda en ningún log.
+        logger: noopLogger,
       }),
     );
   });

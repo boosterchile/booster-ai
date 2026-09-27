@@ -58,6 +58,23 @@ describe('calcularDistanciaHibrida', () => {
     expect(r.distanciaTotalKm).toBeGreaterThan(r.kmObservado);
   });
 
+  it('hueco con el vehículo DETENIDO (extremos idénticos) → 0 km sin llamar a Routes', async () => {
+    // Decisión del PO 2026-09-22 (#708, spec §6): Routes responde 200 sin
+    // distanceMeters (0 m) para origen == destino y el resolver lo trataba como
+    // «sin ruta» → abortaba el viaje entero. Un punto que no se movió recorrió 0 km.
+    const parado: PingGps = { tMs: p1.tMs + 207_000, lat: p1.lat, lng: p1.lng };
+    const estimarHueco = vi.fn(async () => 999); // no debe usarse
+    const r = await calcularDistanciaHibrida([p0, p1, parado], estimarHueco);
+
+    expect(estimarHueco).not.toHaveBeenCalled();
+    const obs = haversineKm(p0.lat, p0.lng, p1.lat, p1.lng);
+    expect(r.kmObservado).toBeCloseTo(obs, 6);
+    expect(r.kmEstimado).toBe(0);
+    expect(r.distanciaTotalKm).toBeCloseTo(obs, 6);
+    expect(r.coberturaObservadaPct).toBe(100);
+    expect(r.segmentos.at(-1)).toMatchObject({ tipo: 'estimado', km: 0 });
+  });
+
   it('criterio 4 — cobertura consistente: coverage == kmObservado/total y ∈ [0,100]', async () => {
     const estimarHueco = vi.fn(async () => 7);
     const r = await calcularDistanciaHibrida([p0, p1, p2], estimarHueco);
@@ -221,6 +238,24 @@ describe('computarEscrituraDistanciaReal — integración: política de fallo y 
     );
     expect(w).toBeNull(); // cae a la estimación
     expect(estimarHueco).not.toHaveBeenCalled(); // costo acotado: 0 llamadas
+  });
+
+  it('CAP — los huecos con el vehículo detenido no cuentan para MAX_HUECOS_ROUTES ni llaman a Routes', async () => {
+    // MAX huecos en movimiento + 5 paradas en el mismo punto: no supera el tope.
+    const pings = pingsConHuecos(MAX_HUECOS_ROUTES);
+    const ultimo = pings[pings.length - 1];
+    if (!ultimo) {
+      throw new Error('fixture sin pings');
+    }
+    for (let i = 1; i <= 5; i++) {
+      pings.push({ tMs: ultimo.tMs + i * 120_000, lat: ultimo.lat, lng: ultimo.lng });
+    }
+    const estimarHueco = vi.fn(async () => 5);
+
+    const w = await computarEscrituraDistanciaReal(pings, estimarHueco);
+
+    expect(w).not.toBeNull();
+    expect(estimarHueco).toHaveBeenCalledTimes(MAX_HUECOS_ROUTES);
   });
 
   it('éxito — todos los huecos resuelven → payload con distancia real + coverage acoplados', async () => {

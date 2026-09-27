@@ -204,13 +204,11 @@ export async function computeRouteEta(input: ComputeRouteEtaInput): Promise<Comp
 
   // Cache miss o stale → fetch fresh.
   try {
-    // computeRoutes acepta string origin/destination (geocoded). Para
-    // mejor precisión pasamos lat,lng como string en origin — Routes API
-    // lo interpreta como punto exacto sin geocoding.
-    const origin = `${currentLat},${currentLng}`;
+    // El origen es la posición actual como coordenada (`location.latLng`):
+    // como texto «lat,lng» Routes API responde 400 (no es un Address Waypoint).
     const routes = await computeRoutes({
       projectId: routesProjectId,
-      origin,
+      origin: { lat: currentLat, lng: currentLng },
       destination: destinationAddress,
       computeAlternatives: false,
       ...(fetchImpl ? { fetchImpl } : {}),
