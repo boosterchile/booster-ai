@@ -30,6 +30,15 @@ El panel aprueba solicitudes que llegan por `/solicitar-acceso`, pero no puede a
 - [ ] SC8 — La persona activa con el flujo que ya existe: `POST /auth/activar` (RUT + código + clave propia) y después entra con RUT + clave.
 - [ ] SC9 — La pantalla «Agregar persona a una empresa» muestra el código copiable, no un enlace de reset de contraseña.
 
+### Fase 4 — la ficha legal desde el panel
+
+SC5 sigue vigente para la exención: ese endpoint no inserta `empresas`. Esta fase es el alta de la ficha, sin persona y sin clave.
+
+- [ ] SC10 — Un platform-admin envía `POST /admin/empresas` con razón social, RUT, contacto, dirección y al menos uno de `is_generador_carga` / `is_transportista`. La empresa nace en `pendiente_verificacion`. La respuesta no incluye usuario, contraseña ni código. `es_demo` queda en falso.
+- [ ] SC11 — RUT de empresa ya usado → 409 `rut_already_registered`. Ningún rol marcado → 400. Sin sesión, 401. Fuera del allowlist, 403. Plan inexistente o inactivo → 400 `invalid_plan`.
+- [ ] SC12 — Si `is_transportista` es verdadero, se crea `carrier_memberships` tier `free` en `activa` (mismo efecto que el onboarding). El plan por defecto es el slug `gratis`.
+- [ ] SC13 — En `/app/platform-admin` el formulario «Crear empresa» deja elegir generador de carga, transportista o ambos. Las organizaciones stakeholder se siguen creando con el botón que ya existe («Crear organización»); no hay un segundo sistema.
+
 Siguen fuera de este corte: el pago confirmado como admisor (`admision: "pago_confirmado"`) y la suspensión por impago. No hay medio de pago real que enganchar.
 
 ### Fase 3 — no entra en este corte
@@ -39,6 +48,8 @@ Siguen fuera de este corte: el pago confirmado como admisor (`admision: "pago_co
 ## 4. User-visible behaviour
 
 En Solicitudes de registro, arriba de la lista, el admin carga nombre y correo y pulsa «Emitir enlace de alta». Copia el enlace y se lo entrega. La persona completa empresa, RUT y clave de 6 dígitos, y entra. La empresa queda pendiente hasta que el admin la active con el control que ya existe.
+
+En Operaciones de plataforma, «Crear empresa» da de alta la ficha legal sin esperar ese formulario. Un generador de carga es esa ficha con el rol de generador; un transportista, con el suyo. La persona se suma después, con el código de activación. Un stakeholder (regulador, gremio, ONG, observatorio, ESG) se crea en «Organizaciones stakeholder», que no es una empresa del marketplace.
 
 ## 5. Out of scope
 
@@ -53,3 +64,4 @@ En Solicitudes de registro, arriba de la lista, el admin carga nombre y correo y
 2. La credencial la elige la persona (RUT + clave). El admin no la escribe ni la recibe.
 3. Zod en el body. Cero `any` nuevo. Log estructurado sin el token ni el correo en claro. Span `alta.exencion` y contador `alta_exencion_emitidas_total`.
 4. Reuso de `approveSignupRequest` en modo admin-provisioned. Sin mecanismo nuevo de auth.
+5. El alta de la ficha no enciende `EMPRESA_SELF_ONBOARDING_ENABLED` ni crea la credencial de la persona. Span `alta.crear_empresa` y contador `alta_empresa_admin_total`.

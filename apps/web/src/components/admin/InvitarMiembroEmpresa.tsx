@@ -11,9 +11,9 @@ import { ApiError, api } from '../../lib/api-client.js';
  * camino de producto: se resolvía con INSERT a mano en producción. Caso que lo
  * motivó: el gestor de Transportes Van Oosterwyk.
  *
- * El link de acceso que devuelve el backend se muestra para entregarlo — sin él
- * la persona no puede fijar su contraseña ni verificar su correo, y sin eso no
- * puede aceptar los T&C, que es lo que destraba la facturación de sus viajes.
+ * El código de un solo uso se muestra para entregarlo. La persona lo usa en
+ * Activar cuenta, junto con su RUT, y elige su clave. El código no es la
+ * contraseña. `refreshToken` recarga la lista cuando el panel crea una empresa.
  */
 
 interface EmpresaOption {
@@ -42,7 +42,13 @@ const ROLES = [
   { value: 'dueno', label: 'Dueño — titular de la empresa' },
 ] as const;
 
-export function InvitarMiembroEmpresa() {
+export function InvitarMiembroEmpresa({
+  refreshToken = 0,
+  preferEmpresaId,
+}: {
+  refreshToken?: number;
+  preferEmpresaId?: string | undefined;
+}) {
   const [empresas, setEmpresas] = useState<EmpresaOption[]>([]);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [empresaId, setEmpresaId] = useState('');
@@ -55,13 +61,18 @@ export function InvitarMiembroEmpresa() {
   const [result, setResult] = useState<InvitarResponse | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken solo invalida la lista
   useEffect(() => {
     let cancelled = false;
+    setLoadingEmpresas(true);
     api
       .get<{ empresas: EmpresaOption[] }>('/admin/empresas')
       .then((res) => {
         if (!cancelled) {
           setEmpresas(res.empresas);
+          if (preferEmpresaId && res.empresas.some((e) => e.id === preferEmpresaId)) {
+            setEmpresaId(preferEmpresaId);
+          }
         }
       })
       .catch((err) => {
@@ -77,7 +88,7 @@ export function InvitarMiembroEmpresa() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshToken, preferEmpresaId]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

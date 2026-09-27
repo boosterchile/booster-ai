@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
   empresaStatusSchema,
   invitarMiembroEmpresaSchema,
@@ -10,7 +11,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { empresas, memberships, users } from '../db/schema.js';
+import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -20,6 +21,8 @@ import { generateActivationPin, hashActivationPin } from '../services/activation
  * Fase 3.5 (onboarding-flow-redesign) — sumar personas a una empresa EXISTENTE.
  *
  *   GET   /admin/empresas              → lista (filtro opcional `?estado=`)
+ *   POST  /admin/empresas              → crea la ficha legal (generador y/o
+ *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
@@ -94,6 +97,152 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         es_generador_carga: r.esGeneradorCarga,
       })),
     });
+  });
+
+  // POST /admin/empresas — ficha legal sin persona. Un generador de carga es
+  // esta fila con `es_generador_carga`; un transportista, con el otro flag.
+  // La credencial de quien entra se emite después, con el código de
+  // activación. La empresa queda en verificación: matching exige `activa`.
+  app.post('/', zValidator('json', crearEmpresaAdminSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan(
+      {
+        name: 'alta.crear_empresa',
+        attributes: {
+          'alta.es_generador_carga': body.is_generador_carga,
+          'alta.es_transportista': body.is_transportista,
+          'alta.plan_slug': body.plan_slug,
+        },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('alta_empresa_admin_total').add(1, { resultado });
+          setResultAttributes(span, { 'alta.resultado': resultado });
+        };
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const planRows = await opts.db
+          .select({ id: plans.id, isActive: plans.isActive })
+          .from(plans)
+          .where(eq(plans.slug, body.plan_slug))
+          .limit(1);
+        const plan = planRows[0];
+        if (!plan || !plan.isActive) {
+          record('invalid_plan');
+          return c.json({ error: 'invalid_plan', code: 'invalid_plan' }, 400);
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const duplicada = await opts.db
+          .select({ id: empresas.id })
+          .from(empresas)
+          .where(eq(empresas.rut, body.rut))
+          .limit(1);
+        if (duplicada[0]) {
+          record('rut_already_registered');
+          return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+
+        try {
+          const creada = await opts.db.transaction(async (tx) => {
+            const inserted = await tx
+              .insert(empresas)
+              .values({
+                legalName: body.legal_name,
+                rut: body.rut,
+                contactEmail: body.contact_email.toLowerCase(),
+                contactPhone: body.contact_phone,
+                addressStreet: body.address_street,
+                addressCity: body.address_city,
+                addressRegion: body.address_region,
+                ...(body.address_postal_code
+                  ? { addressPostalCode: body.address_postal_code }
+                  : {}),
+                isGeneradorCarga: body.is_generador_carga,
+                isTransportista: body.is_transportista,
+                isDemo: false,
+                planId: plan.id,
+                status: 'pendiente_verificacion',
+                timezone: 'America/Santiago',
+              })
+              .returning({
+                id: empresas.id,
+                legalName: empresas.legalName,
+                rut: empresas.rut,
+                status: empresas.status,
+                isGeneradorCarga: empresas.isGeneradorCarga,
+                isTransportista: empresas.isTransportista,
+              });
+            const empresa = inserted[0];
+            if (!empresa) {
+              return null;
+            }
+            if (body.is_transportista) {
+              const carrier = await tx
+                .insert(carrierMemberships)
+                .values({
+                  empresaId: empresa.id,
+                  tierSlug: 'free',
+                  status: 'activa',
+                })
+                .returning({ id: carrierMemberships.id });
+              if (!carrier[0]) {
+                throw new Error('Insert carrier_memberships returned no row');
+              }
+            }
+            return empresa;
+          });
+
+          if (!creada) {
+            opts.logger.error({}, 'admin-empresas: insert empresa vacío');
+            record('empresa_create_failed');
+            return c.json({ error: 'internal_server_error', code: 'empresa_create_failed' }, 500);
+          }
+
+          opts.logger.info(
+            {
+              empresaId: creada.id,
+              planSlug: body.plan_slug,
+              isGeneradorCarga: creada.isGeneradorCarga,
+              isTransportista: creada.isTransportista,
+              invitedBy: admin.adminEmail,
+            },
+            'admin-empresas: ficha creada',
+          );
+          record('created');
+
+          return c.json(
+            {
+              ok: true,
+              empresa_id: creada.id,
+              razon_social: creada.legalName,
+              rut: creada.rut,
+              estado: creada.status,
+              es_generador_carga: creada.isGeneradorCarga,
+              es_transportista: creada.isTransportista,
+              plan_slug: body.plan_slug,
+            },
+            201,
+          );
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            record('rut_already_registered');
+            return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+          }
+          opts.logger.error(
+            { err, errMessage: err instanceof Error ? err.message : String(err) },
+            'admin-empresas: fallo al crear la ficha',
+          );
+          throw err;
+        }
+      },
+    );
   });
 
   // PATCH /admin/empresas/:id — cambia estado. Cierra el hueco 0→1: el
@@ -348,4 +497,17 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   });
 
   return app;
+}
+
+function pgErrorCode(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) {
+    return undefined;
+  }
+  if ('code' in err && typeof err.code === 'string') {
+    return err.code;
+  }
+  if ('cause' in err) {
+    return pgErrorCode(err.cause);
+  }
+  return undefined;
 }

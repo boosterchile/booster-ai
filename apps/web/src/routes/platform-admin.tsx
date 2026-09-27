@@ -10,6 +10,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ActivarEmpresa } from '../components/admin/ActivarEmpresa.js';
+import { CrearEmpresa } from '../components/admin/CrearEmpresa.js';
 import { InvitarMiembroEmpresa } from '../components/admin/InvitarMiembroEmpresa.js';
 import { signOutUser } from '../hooks/use-auth.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -34,8 +35,16 @@ export function PlatformAdminRoute() {
 }
 
 function PlatformAdminPage() {
+  const [empresasVersion, setEmpresasVersion] = useState(0);
+  const [empresaCreadaId, setEmpresaCreadaId] = useState<string | undefined>(undefined);
+
   async function handleSignOut() {
     await signOutUser();
+  }
+
+  function handleEmpresaCreada(empresaId: string) {
+    setEmpresaCreadaId(empresaId);
+    setEmpresasVersion((v) => v + 1);
   }
 
   return (
@@ -78,9 +87,9 @@ function PlatformAdminPage() {
               Operaciones de plataforma
             </h1>
             <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-              Herramientas internas de Booster: alta de clientes nuevos, comparación de algoritmo de
-              asignación, observabilidad, configuración del sitio, organizaciones stakeholder e
-              impersonación auditada.
+              Herramientas internas de Booster: alta de empresas (generador de carga o
+              transportista), organizaciones stakeholder, comparación de algoritmo de asignación,
+              observabilidad, configuración del sitio e impersonación auditada.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -141,9 +150,11 @@ function PlatformAdminPage() {
           </Link>
         </div>
 
-        <ActivarEmpresa />
+        <CrearEmpresa onCreated={handleEmpresaCreada} />
 
-        <InvitarMiembroEmpresa />
+        <ActivarEmpresa refreshToken={empresasVersion} />
+
+        <InvitarMiembroEmpresa refreshToken={empresasVersion} preferEmpresaId={empresaCreadaId} />
 
         <StakeholderOrgsSection />
 
@@ -214,9 +225,9 @@ function StakeholderOrgsSection() {
           <div>
             <h2 className="font-semibold text-neutral-900">Organizaciones stakeholder</h2>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Reguladores, gremios, observatorios académicos, ONGs y departamentos ESG corporativos
-              que reciben datos agregados del marketplace (k-anonimidad ≥ 5). Alta solo desde aquí
-              (ADR-034).
+              Reguladores, gremios, observatorios académicos, ONGs y departamentos ESG corporativos.
+              No son empresas del marketplace: no publican ni transportan cargas. Reciben datos
+              agregados (k-anonimidad ≥ 5). Alta solo desde aquí (ADR-034).
             </p>
           </div>
         </div>

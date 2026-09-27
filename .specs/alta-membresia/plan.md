@@ -18,3 +18,7 @@ El path cuelga de `/admin/signup-requests/*`, que ya pasa por Firebase auth y us
 1. Rojo: `decidirAltaExencion` no existe → el test del servicio falla al importar.
 2. Verde: unit del decisor + route del endpoint + test de la pantalla.
 3. `biome check` sobre los archivos tocados, typecheck de `api` y `web`.
+
+## Fase 4 — ficha legal
+
+`POST /admin/empresas` en el router que ya monta `/admin/empresas`. Sin persona, sin clave, estado `pendiente_verificacion`. Plan slug `gratis`. Si es transportista, `carrier_memberships` tier `free`. El formulario vive en platform-admin. Stakeholders siguen en `POST /admin/stakeholder-orgs`.
