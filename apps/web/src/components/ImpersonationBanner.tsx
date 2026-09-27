@@ -7,8 +7,7 @@ import { useMe } from '../hooks/use-me.js';
 /**
  * Banner de impersonación auditada (backend #584). Fijo arriba, imposible de
  * ignorar (`role="alert"`, tono `danger`), visible durante toda la sesión
- * impersonada. Reusa el patrón de `DemoBanner` pero en D2 (Button + tokens
- * semánticos, sin hardcode de color).
+ * impersonada. D2: Button + tokens semánticos, sin hardcode de color.
  *
  * El botón **Salir** cierra la sesión (signOut) y devuelve al login —
  * re-autenticación como admin, sin guardar/restaurar sesión (decisión sellada

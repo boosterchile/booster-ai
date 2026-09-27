@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 /**
  * Tests de useImpersonation — lee el custom claim `impersonated_by` del ID
- * token (patrón de useIsDemo). El backend #584 lo emite sobre el UID del
+ * token. El backend #584 lo emite sobre el UID del
  * target; la presencia del claim = sesión impersonada.
  */
 
