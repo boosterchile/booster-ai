@@ -48,7 +48,9 @@ interface OfferJoin {
 }
 
 interface OwnerJoin {
-  user: { id: string; whatsappE164: string | null };
+  userId: string;
+  role: 'dueno' | 'despachador';
+  whatsappE164: string | null;
 }
 
 /**
@@ -123,10 +125,11 @@ function baseOfferJoin(notifiedAt: Date | null = null): OfferJoin {
   };
 }
 
-function baseOwnerJoin(whatsappE164: string | null = '+56912345678'): OwnerJoin {
-  return {
-    user: { id: OWNER_USER_ID, whatsappE164 },
-  };
+function baseOwnerJoin(
+  whatsappE164: string | null = '+56912345678',
+  role: OwnerJoin['role'] = 'dueno',
+): OwnerJoin {
+  return { userId: OWNER_USER_ID, role, whatsappE164 };
 }
 
 describe('notifyOfferToCarrier', () => {

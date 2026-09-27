@@ -74,6 +74,8 @@ function buildVehicleRow(overrides: Partial<Record<string, unknown>> = {}) {
     fuelType: null,
     curbWeightKg: null,
     consumptionLPer100kmBaseline: null,
+    capacidadEstanqueL: null,
+    fuenteCombustibleCan: 'sin_sensor',
     teltonikaImei: null,
     lastInspectionAt: null,
     inspectionExpiresAt: null,
@@ -2069,5 +2071,121 @@ describe('vehiculos routes', () => {
       expect(body.puntos_devueltos).toBeLessThanOrEqual(10);
       expect(body.puntos.length).toBeLessThanOrEqual(10);
     });
+  });
+});
+
+describe('capacidad de estanque y fuente CAN', () => {
+  const base = {
+    plate: 'ABCD12',
+    vehicle_type: 'camion_pequeno',
+    unit_type: 'camion_rigido',
+    capacity_kg: 3500,
+  };
+
+  async function post(body: Record<string, unknown>, role: 'dueno' | 'despachador' = 'dueno') {
+    const stub = makeDbStub({ insertRows: [buildVehicleRow()] });
+    const app = await buildApp(stub.db, { role });
+    const res = await app.request('/vehiculos', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { res, stub };
+  }
+
+  it('create sin datos persiste sin_sensor y capacidad null', async () => {
+    const { res, stub } = await post(base);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      vehicle: { capacidad_estanque_l: number | null; fuente_combustible_can: string };
+    };
+    expect(body.vehicle.fuente_combustible_can).toBe('sin_sensor');
+    expect(body.vehicle.capacidad_estanque_l).toBeNull();
+    const inserted = stub.spies.valuesInsert.mock.calls[0]?.[0] as {
+      fuenteCombustibleCan: string;
+      capacidadEstanqueL: number | null;
+    };
+    expect(inserted.fuenteCombustibleCan).toBe('sin_sensor');
+    expect(inserted.capacidadEstanqueL).toBeNull();
+  });
+
+  it('persiste capacidad válida y la fuente, y el GET de detalle las devuelve', async () => {
+    const stub = makeDbStub({
+      insertRows: [buildVehicleRow({ capacidadEstanqueL: 200, fuenteCombustibleCan: '84' })],
+      selectRows: [buildVehicleRow({ capacidadEstanqueL: 200, fuenteCombustibleCan: '84' })],
+    });
+    const app = await buildApp(stub.db);
+    const created = await app.request('/vehiculos', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...base, capacidad_estanque_l: 200, fuente_combustible_can: '84' }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as {
+      vehicle: { capacidad_estanque_l: number; fuente_combustible_can: string };
+    };
+    expect(createdBody.vehicle).toMatchObject({
+      capacidad_estanque_l: 200,
+      fuente_combustible_can: '84',
+    });
+
+    const detail = await app.request(`/vehiculos/${VEHICLE_ID}`);
+    expect(detail.status).toBe(200);
+    const detailBody = (await detail.json()) as {
+      vehicle: {
+        capacidad_estanque_l: number;
+        fuente_combustible_can: string;
+        capacity_kg: number;
+      };
+    };
+    expect(detailBody.vehicle.capacidad_estanque_l).toBe(200);
+    expect(detailBody.vehicle.fuente_combustible_can).toBe('84');
+    expect(detailBody.vehicle.capacity_kg).toBe(3500);
+  });
+
+  it('capacidad ≤ 0 o no numérica → 400 con mensaje claro', async () => {
+    for (const capacidad of [0, -5, 2001, 'no-es-numero']) {
+      const { res } = await post({ ...base, capacidad_estanque_l: capacidad });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { issues: Array<{ message: string }> } };
+      expect(body.error.issues[0]?.message).toMatch(/capacidad del estanque/i);
+    }
+  });
+
+  it('fuente fuera del conjunto → 400', async () => {
+    const { res } = await post({ ...base, fuente_combustible_can: '85' });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { issues: Array<{ message: string }> } };
+    expect(body.error.issues[0]?.message).toMatch(/fuente CAN/i);
+  });
+
+  it('despachador no puede editar estanque ni fuente, y sí puede cambiar kg', async () => {
+    const prohibido = await post({ ...base, capacidad_estanque_l: 200 }, 'despachador');
+    expect(prohibido.res.status).toBe(403);
+    const prohibidoBody = (await prohibido.res.json()) as { code: string; message: string };
+    expect(prohibidoBody.code).toBe('admin_required');
+    expect(prohibidoBody.message).toMatch(/dueño o un administrador/i);
+
+    const stub = makeDbStub({
+      selectRows: [buildVehicleRow()],
+      updateRows: [buildVehicleRow({ capacityKg: 4000, capacityM3: 12 })],
+    });
+    const app = await buildApp(stub.db, { role: 'despachador' });
+    const ok = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ capacity_kg: 4000, capacity_m3: 12 }),
+    });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { vehicle: { capacity_kg: number; capacity_m3: number } };
+    expect(body.vehicle.capacity_kg).toBe(4000);
+    expect(body.vehicle.capacity_m3).toBe(12);
+
+    const no = await app.request(`/vehiculos/${VEHICLE_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fuente_combustible_can: '89' }),
+    });
+    expect(no.status).toBe(403);
   });
 });

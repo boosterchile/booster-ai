@@ -8,8 +8,10 @@ import {
   type UnitCategory,
   type UnitType,
   bodyTypeSchema,
+  capacidadEstanqueLInputSchema,
   chileanPlateSchema,
   derivarUnidadDesdeTipoLegacy,
+  fuenteCombustibleCanSchema,
   interpretCanLvcan,
   interpretDallasTemperature,
   teltonikaImeiSchema,
@@ -125,6 +127,8 @@ const createBodySchema = z.object({
   fuel_type: z.enum(fuelTypes).nullable().optional(),
   curb_weight_kg: z.number().int().positive().max(50_000).nullable().optional(),
   consumption_l_per_100km_baseline: z.number().positive().max(99.99).nullable().optional(),
+  capacidad_estanque_l: capacidadEstanqueLInputSchema,
+  fuente_combustible_can: fuenteCombustibleCanSchema.optional(),
 });
 
 const updateBodySchema = createBodySchema.partial().extend({
@@ -436,6 +440,29 @@ export function createVehiculosRoutes(opts: {
   // (requireAdmin). Compartido por DELETE /:id y PATCH /:id/dispositivo
   // (W2 self-service, más abajo); antes solo lo usaba DELETE (de ahí el
   // nombre previo `requireDeleteRole`, renombrado acá al generalizarse).
+  function estanqueSoloDuenoAdmin(
+    role: string,
+    body: {
+      capacidad_estanque_l?: number | null | undefined;
+      fuente_combustible_can?: string | undefined;
+    },
+  ): boolean {
+    const toca =
+      body.capacidad_estanque_l !== undefined || body.fuente_combustible_can !== undefined;
+    return toca && role !== 'dueno' && role !== 'admin';
+  }
+
+  const respuestaEstanqueProhibido = (c: Context) =>
+    c.json(
+      {
+        error: 'forbidden',
+        code: 'admin_required',
+        message:
+          'Solo el dueño o un administrador puede editar la capacidad del estanque y la fuente CAN.',
+      },
+      403,
+    );
+
   // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
   function requireOwnerOrAdminRole(c: Context<any, any, any>) {
     const auth = requireAuth(c);
@@ -475,6 +502,8 @@ export function createVehiculosRoutes(opts: {
         brand: vehicles.brand,
         model: vehicles.model,
         fuel_type: vehicles.fuelType,
+        capacidad_estanque_l: vehicles.capacidadEstanqueL,
+        fuente_combustible_can: vehicles.fuenteCombustibleCan,
         curb_weight_kg: vehicles.curbWeightKg,
         consumption_l_per_100km_baseline: vehicles.consumptionLPer100kmBaseline,
         teltonika_imei: vehicles.teltonikaImei,
@@ -486,7 +515,13 @@ export function createVehiculosRoutes(opts: {
       .where(eq(vehicles.empresaId, auth.activeMembership.empresa.id))
       .orderBy(asc(vehicles.plate));
 
-    return c.json({ vehicles: rows });
+    return c.json({
+      vehicles: rows.map((row) => ({
+        ...row,
+        capacidad_estanque_l: row.capacidad_estanque_l ?? null,
+        fuente_combustible_can: row.fuente_combustible_can ?? 'sin_sensor',
+      })),
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -680,6 +715,9 @@ export function createVehiculosRoutes(opts: {
     }
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
+    if (estanqueSoloDuenoAdmin(auth.activeMembership.membership.role, body)) {
+      return respuestaEstanqueProhibido(c);
+    }
 
     // Fix C1 (review W4a, decisión PO opción b, 2026-07-06): si `unit_type`
     // no vino en el body (el form web actual todavía no lo manda), derivar
@@ -738,6 +776,8 @@ export function createVehiculosRoutes(opts: {
           brand: body.brand ?? null,
           model: body.model ?? null,
           fuelType: body.fuel_type ?? null,
+          capacidadEstanqueL: body.capacidad_estanque_l ?? null,
+          fuenteCombustibleCan: body.fuente_combustible_can ?? 'sin_sensor',
           curbWeightKg: body.curb_weight_kg ?? null,
           consumptionLPer100kmBaseline:
             body.consumption_l_per_100km_baseline != null
@@ -815,6 +855,9 @@ export function createVehiculosRoutes(opts: {
     const id = c.req.param('id');
     const body = c.req.valid('json');
     const empresaId = auth.activeMembership.empresa.id;
+    if (estanqueSoloDuenoAdmin(auth.activeMembership.membership.role, body)) {
+      return respuestaEstanqueProhibido(c);
+    }
 
     // Verificar ownership antes del update. Trae también el estado actual
     // relevante para la coherencia tipo↔categoría (D4): un PATCH parcial
@@ -871,6 +914,12 @@ export function createVehiculosRoutes(opts: {
     }
     if (body.fuel_type !== undefined) {
       updates.fuelType = body.fuel_type;
+    }
+    if (body.capacidad_estanque_l !== undefined) {
+      updates.capacidadEstanqueL = body.capacidad_estanque_l;
+    }
+    if (body.fuente_combustible_can !== undefined) {
+      updates.fuenteCombustibleCan = body.fuente_combustible_can;
     }
     if (body.curb_weight_kg !== undefined) {
       updates.curbWeightKg = body.curb_weight_kg;
@@ -1704,6 +1753,8 @@ function serializeVehicle(row: typeof vehicles.$inferSelect) {
     brand: row.brand,
     model: row.model,
     fuel_type: row.fuelType,
+    capacidad_estanque_l: row.capacidadEstanqueL ?? null,
+    fuente_combustible_can: row.fuenteCombustibleCan ?? 'sin_sensor',
     curb_weight_kg: row.curbWeightKg,
     consumption_l_per_100km_baseline: row.consumptionLPer100kmBaseline,
     teltonika_imei: row.teltonikaImei,

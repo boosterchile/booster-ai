@@ -1,6 +1,22 @@
 import type { SafetyEvent } from '@booster-ai/shared-schemas';
 import { describe, expect, it } from 'vitest';
-import { buildCrashSafetyEvent } from './build-crash-safety-event.js';
+import { buildCrashSafetyEvent, shouldNotifyCustomerCrash } from './build-crash-safety-event.js';
+
+describe('shouldNotifyCustomerCrash', () => {
+  it('un pico bajo 3 G no avisa al cliente', () => {
+    expect(shouldNotifyCustomerCrash(1)).toBe(false);
+    expect(shouldNotifyCustomerCrash(2.9)).toBe(false);
+  });
+
+  it('3 G o más sí avisa', () => {
+    expect(shouldNotifyCustomerCrash(3)).toBe(true);
+    expect(shouldNotifyCustomerCrash(8.2)).toBe(true);
+  });
+
+  it('sin acelerómetro parseado (pico 0) sí avisa', () => {
+    expect(shouldNotifyCustomerCrash(0)).toBe(true);
+  });
+});
 
 describe('buildCrashSafetyEvent', () => {
   it('construye un SafetyEvent crash con vehicleId cuando está presente', () => {

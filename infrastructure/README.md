@@ -19,7 +19,7 @@ Toda la infraestructura GCP de Booster AI declarada en Terraform. Cumple los pri
 | `outputs.tf` | Valores a configurar en GitHub Actions + DNS nameservers |
 | `project.tf` | Proyecto GCP + billing + 32 APIs habilitadas + budget alerts |
 | `iam.tf` | Humanos (Owner) + SAs (runtime, deployer) + Workload Identity Federation |
-| `security.tf` | KMS keyring + 15 secrets shell (valores se llenan con gcloud) |
+| `security.tf` | KMS keyring + 26 secrets shell en `local.secret_names` (valores se llenan con gcloud) |
 | `data.tf` | VPC + Cloud SQL + Memorystore + Firestore + 5 BigQuery datasets |
 | `messaging.tf` | 7 Pub/Sub topics + DLQ |
 | `storage.tf` | Artifact Registry + 3 buckets (documents CMEK + Retention Lock 6 años, uploads-raw, public-assets) |
@@ -138,31 +138,85 @@ terraform output wif_service_account_deploy
 > hasta entonces, y el preflight `check-validated-secret-placeholders` (gate en
 > `terraform-drift.yml`) ataja el caso.
 
-Terraform crea los shells vacíos. Los valores reales se agregan via gcloud (nunca via código):
+Terraform crea los shells de `local.secret_names` en `security.tf` (26 nombres). Los valores reales se agregan con gcloud, nunca en código. `database-url` y `redis-auth` no reciben placeholder `ROTATE_ME_*`: su versión real la gestiona `data.tf` (password de Cloud SQL y `auth_string` de Memorystore). El resto nace con `ROTATE_ME_<NOMBRE>_PLACEHOLDER`; `ignore_changes` evita que un apply posterior pise el valor ya rotado.
 
 ```bash
-# Ejemplo — para cada secret, agregar su valor real:
-echo -n "<valor_real>" | gcloud secrets versions add gemini-api-key --data-file=-
-echo -n "<valor_real>" | gcloud secrets versions add whatsapp-access-token --data-file=-
-# ... etc para el resto de secrets
+# Ejemplo — valor real, nunca el placeholder ROTATE_ME_*:
+echo -n "<valor>" | gcloud secrets versions add <nombre> --data-file=-
+# Si imprime "ROTATE_ME_...", el valor real aún no está cargado:
+gcloud secrets versions access latest --secret=<nombre>
 ```
 
-Lista completa de secrets a poblar:
+Inventario exacto de `local.secret_names` (nombres y propósito; sin valores):
 
-- `firebase-admin-key` — JSON de service account Firebase (si aplica local)
-- `database-url` — autopoblado por Terraform al crear Cloud SQL
-- `gemini-api-key` — obtener en [AI Studio](https://aistudio.google.com/apikey)
-- `anthropic-api-key` — opcional, para fallback Claude
-- `backend-legacy-maps-key` — obtener en [APIs Credentials](https://console.cloud.google.com/apis/credentials) (Geocoding + Elevation, ver ADR-009 2.0)
-- `frontend-maps-key` — Maps JavaScript API con HTTP referrer restriction
-- `whatsapp-app-secret` — Meta Business Manager
-- `whatsapp-access-token` — Meta (token de larga duración)
-- `whatsapp-phone-number-id` — Meta
-- `whatsapp-business-account-id` — Meta
-- `flow-api-key` — [Flow.cl](https://www.flow.cl/docs/api.html)
-- `flow-secret-key` — Flow
-- `jwt-signing-key` — `openssl rand -base64 64` local
-- `sentry-dsn` — opcional
+### Firebase y datos
+
+- `firebase-admin-key` — JSON del service account Firebase Admin, si hace falta fuera de Cloud Run.
+- `database-url` — versión real en `data.tf`. Sin placeholder.
+- `redis-auth` — `auth_string` de Memorystore; versión real `redis_auth` en `data.tf`. Sin placeholder.
+
+### Proveedores de IA y mapas
+
+- `anthropic-api-key` — fallback Claude en el ai-provider.
+- `backend-legacy-maps-key` — Geocoding + Elevation (ADR-009 del 2.0), en [APIs Credentials](https://console.cloud.google.com/apis/credentials).
+- `frontend-maps-key` — Maps JavaScript API con restricción por HTTP referrer.
+
+### WhatsApp Business — Meta Cloud API (DEPRECATED, Fase 6.4)
+
+Conservados como fallback si se cancela Twilio. **No se montan** en ningún Cloud Run service (tampoco en notification-service: esos mounts salieron en la migración a Twilio). Ver amendment de ADR-006.
+
+**REVIEW: 2026-10-30.** Si para esa fecha siguen sin uso, sacarlos de este local y de la versión placeholder, y correr `terraform apply` para destruirlos.
+
+- `whatsapp-app-secret`
+- `whatsapp-access-token`
+- `whatsapp-phone-number-id`
+- `whatsapp-business-account-id`
+- `whatsapp-webhook-verify-token` — handshake del webhook Meta. Mismo gate de revisión **2026-10-30**.
+
+### Twilio WhatsApp BSP (Fase 6.4)
+
+El número físico está en Twilio. El auth token sirve para Basic auth del envío y para el HMAC del webhook. `twilio-account-sid` se valida con `^AC`: el placeholder `ROTATE_ME_*` montado tumba el arranque.
+
+- `twilio-account-sid`
+- `twilio-auth-token`
+
+### Content SIDs de Twilio (gate `var.content_sid_ready`)
+
+Templates WhatsApp aprobados por Meta, formato `HX` + hex. Cada uno se carga con `gcloud secrets versions add` (procedimiento en [`docs/runbooks/load-content-sids.md`](../docs/runbooks/load-content-sids.md)).
+
+El mount en `service_api` lo gatea `var.content_sid_ready` (A7, INC-2026-06-19): `true` monta el secret; `false` o ausente lo deja sin montar. Montar el placeholder `ROTATE_ME_*` no degrada a solo-push: `config.ts` exige `^HX[a-fA-F0-9]+$` y el servicio responde «Refusing to start». Solo el valor ausente (no montado) o vacío degrada.
+
+- `content-sid-offer-new` — notificación de oferta al transportista (B.8).
+- `content-sid-chat-unread` — fallback WhatsApp de mensajes no leídos (P3.d).
+- `content-sid-tracking` — template `tracking_link_v1` (link público de tracking al asignar un viaje).
+- `content-sid-safety-alert` — template `safety_alert` (crash / unplug / jamming). Gate explícito: `var.content_sid_ready["content-sid-safety-alert"]`. No montar hasta tener el `HX` real.
+- `content-sid-activacion-conductor` — WhatsApp de activación del conductor (`activacion_conductor_v2`, Utility, sin PIN). Mismo candado: el placeholder no se monta; el flag `content_sid_ready` autoriza el mount solo con el `HX` aprobado. Detalle en el runbook de content SIDs.
+
+### Pagos, JWT y observabilidad
+
+- `flow-api-key` — [Flow.cl](https://www.flow.cl/docs/api.html) (ADR-010).
+- `flow-secret-key` — Flow.cl.
+- `jwt-signing-key` — firma backend-to-backend, complementaria a Firebase. Generar en local con `openssl rand -base64 64`.
+- `sentry-dsn` — opcional.
+- `datadog-api-key` — Agent de Datadog en GKE (ADR-071: infra + logs, sin APM). **No se monta** en Cloud Run. El Secret de Kubernetes `datadog-secret` se materializa en el bootstrap del cluster: `setup-datadog.sh` lee `gcloud secrets versions access latest --secret=datadog-api-key`. GSM es la fuente; el owner rota el placeholder con `echo -n "<dd-api-key>" | gcloud secrets versions add datadog-api-key --data-file=-`.
+
+### Web Push VAPID (P3.c)
+
+Par generado post-deploy con `npx web-push generate-vapid-keys` y subido con `gcloud secrets versions add`. La pública va al api (envío) y al web (suscripción del browser). La privada va solo al api.
+
+- `webpush-vapid-public-key`
+- `webpush-vapid-private-key`
+
+### Onboarding admin-provisioned (W1.5)
+
+- `onboarding-token-signing-secret` — HMAC del token one-shot (`ONBOARDING_TOKEN_SIGNING_SECRET`, `apps/api/src/services/onboarding-token.ts`). El placeholder `ROTATE_ME_*` mide ≥ 32 bytes (pasa el min-length) y cae en la denylist del prefijo `ROTATE_ME_`. El preflight `check-validated-secret-placeholders` no cubre este secret (solo formatos con regex). Antes del flip, verificar a mano que `gcloud secrets versions access latest --secret=onboarding-token-signing-secret` no imprime `ROTATE_ME_...`. Runbook: [`docs/corfo/hito-2/runbook-activacion-onboarding.md`](../docs/corfo/hito-2/runbook-activacion-onboarding.md).
+
+### Fuera de `local.secret_names` (no recrear)
+
+- `gemini-api-key` — eliminada (ADR-037). Gemini va por Vertex AI con ADC del SA `cloud_run_runtime`.
+- Secretos del proveedor DTE (Bsale u otros) — retirados (ADR-069). El endpoint se removió; ya no están en el local.
+- `google-workspace-admin-credentials` — reemplazado por IAM Credentials `signJwt` (org policy `iam.disableServiceAccountKeyCreation`). El SA `observability-workspace-reader` vive en `iam.tf`.
+- `google-routes-api-key` — eliminada (ADR-038). Routes API usa ADC y el header `X-Goog-User-Project`.
 
 ## Post-apply — configurar DNS del dominio
 

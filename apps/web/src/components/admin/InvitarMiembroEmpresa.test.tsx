@@ -37,8 +37,9 @@ describe('InvitarMiembroEmpresa', () => {
       user_id: 'user-uuid',
       membership_id: 'membership-uuid',
       rol: 'admin',
-      estado: 'activa',
-      access_link: 'https://app.boosterchile.com/__/auth/action?oobCode=inv',
+      estado: 'pendiente_invitacion',
+      codigo_activacion: '482915',
+      expira_en: '2026-10-04T00:00:00.000Z',
     });
     stubClipboard(vi.fn(async () => undefined));
 
@@ -50,6 +51,7 @@ describe('InvitarMiembroEmpresa', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
       target: { value: 'Javier Vicencio' },
     });
+    fireEvent.change(screen.getByLabelText(/^RUT$/i), { target: { value: '12345678-5' } });
     fireEvent.change(screen.getByLabelText(/Email/i), {
       target: { value: 'fvicencio@me.com' },
     });
@@ -60,17 +62,12 @@ describe('InvitarMiembroEmpresa', () => {
       expect(post).toHaveBeenCalledWith(`/admin/empresas/${EMPRESAS[0]?.id}/miembros`, {
         email: 'fvicencio@me.com',
         full_name: 'Javier Vicencio',
+        rut: '12345678-5',
         rol: 'admin',
       }),
     );
 
-    // El link de acceso queda visible para entregárselo — sin él la persona
-    // no puede fijar contraseña ni verificar su correo.
-    await waitFor(() =>
-      expect(
-        screen.getByText('https://app.boosterchile.com/__/auth/action?oobCode=inv'),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('482915')).toBeInTheDocument());
   });
 
   it('avisa cuando la persona ya es miembro, sin dejar el form colgado', async () => {
@@ -86,6 +83,7 @@ describe('InvitarMiembroEmpresa', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
       target: { value: 'Javier Vicencio' },
     });
+    fireEvent.change(screen.getByLabelText(/^RUT$/i), { target: { value: '12345678-5' } });
     fireEvent.change(screen.getByLabelText(/Email/i), {
       target: { value: 'fvicencio@me.com' },
     });

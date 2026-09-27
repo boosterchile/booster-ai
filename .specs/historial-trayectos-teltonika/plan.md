@@ -52,3 +52,9 @@ Sin migración. Criterios 10–13 de la spec.
 - Ruta: query `combustible` validado con Zod; serializa los campos nuevos. Span con `booster.trayectos.con_combustible` / `sin_combustible`.
 - Web: pestañas «Con combustible» / «Sin dato de combustible», columnas Nivel ini/fin (L o %), Litros y Consumo. Un mensaje por causa (leyenda por fuente, sin sensor, sin lectura, tramo corto). Sin pestañas si la API no trae los totales (canary con API vieja).
 - TDD: rojo exhibido en dominio, servicio, ruta y web antes de implementar. Validación extra: la función corrida sobre la semana real de Van Oosterwyk (export read-only a scratchpad, no versionado).
+
+## Slice — filtro de credibilidad del aviso (2026-09-22)
+
+Sin migración y sin strings de UI. Criterio 14 de la spec.
+
+`detectarRobos` y `detectarEpisodiosHormiga` descartan la caída si el nivel al inicio no es creíble (14 % de la capacidad, o AVL 89 < 14 si no hay capacidad, o 28 L si no hay ninguno de los dos). Al atribuir el aviso, un trayecto de menos de 1 km tampoco emite badge ni pin. U y U_hormiga quedan como en #707.
