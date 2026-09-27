@@ -6,13 +6,9 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => () => undefined,
 }));
 
-// DemoBanner e ImpersonationBanner se montan global pero se self-gatean
-// (useIsDemo() / useImpersonation()). En el test del root no inyectamos
-// provider de Firebase auth ni QueryClient, así que mockeamos ambos hooks
-// al path "no banner".
-vi.mock('../hooks/use-is-demo.js', () => ({
-  useIsDemo: () => false,
-}));
+// ImpersonationBanner se monta global pero se self-gatea (useImpersonation()).
+// En el test del root no inyectamos provider de Firebase auth ni QueryClient,
+// así que mockeamos el hook al path "no banner".
 vi.mock('../hooks/use-impersonation.js', () => ({
   useImpersonation: () => ({ active: false, impersonatedBy: null }),
 }));
@@ -28,11 +24,6 @@ describe('RootComponent', () => {
   it('renderiza <Outlet />', () => {
     render(<RootComponent />);
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
-  });
-
-  it('no muestra DemoBanner cuando useIsDemo() = false', () => {
-    render(<RootComponent />);
-    expect(screen.queryByTestId('demo-banner')).not.toBeInTheDocument();
   });
 
   it('no muestra ImpersonationBanner cuando la sesión no es impersonada', () => {

@@ -14,8 +14,7 @@ export interface ImpersonationState {
 
 /**
  * Hook que indica si la sesión actual es una impersonación auditada (backend
- * #584). Lee el custom claim `impersonated_by` del ID token — el mismo patrón
- * que `useIsDemo` con `is_demo`. El backend mintea el token sobre el UID del
+ * #584). Lee el custom claim `impersonated_by` del ID token. El backend mintea el token sobre el UID del
  * TARGET, así que el resto de la app (useMe, etc.) ya opera como el target; la
  * presencia del claim solo señala que hay un admin detrás.
  *
