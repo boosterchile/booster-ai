@@ -2,6 +2,8 @@ import {
   type OrganizacionStakeholder,
   STAKEHOLDER_ORG_TYPE_LABEL,
   type StakeholderOrgType,
+  ensureRutHasDash,
+  rutSchema,
 } from '@booster-ai/shared-schemas';
 import { RegisterProvider } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
@@ -511,12 +513,17 @@ function InviteStakeholderMemberForm({
     e.preventDefault();
     setError(null);
     setCodigo(null);
+    const rutNormalizado = ensureRutHasDash(form.rut);
+    if (!rutSchema.safeParse(rutNormalizado).success) {
+      setError('RUT inválido (ej: 76.274.900-9)');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post<{ codigo_activacion: string }>(
         `/admin/stakeholder-orgs/${orgId}/invitar`,
         {
-          rut: form.rut,
+          rut: rutNormalizado,
           email: form.email,
           full_name: form.full_name,
         },

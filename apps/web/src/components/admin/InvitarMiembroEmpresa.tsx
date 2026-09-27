@@ -1,3 +1,4 @@
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -94,12 +95,17 @@ export function InvitarMiembroEmpresa({
     e.preventDefault();
     setError(null);
     setResult(null);
+    const rutNormalizado = ensureRutHasDash(rut);
+    if (!rutSchema.safeParse(rutNormalizado).success) {
+      setError('RUT inválido (ej: 76.274.900-9)');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post<InvitarResponse>(`/admin/empresas/${empresaId}/miembros`, {
         email,
         full_name: fullName,
-        rut,
+        rut: rutNormalizado,
         rol,
       });
       setResult(res);
