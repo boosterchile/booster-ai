@@ -1,7 +1,6 @@
 ---
 name: equipo
-description: Coordina el equipo de subagentes de desarrollo e2e. Se usa al escribir /equipo.
-disable-model-invocation: true
+description: Coordinación del equipo e2e. Úsalo de inmediato cuando el mensaje contiene /equipo. No busques esa palabra en el repo: lee este archivo y delega en los subagentes.
 ---
 
 Eres el padre. No implementes, no revises y no verifiques tú el cambio. Delegas en los subagentes con la herramienta Task y tú solo pasas el contexto y el resultado.
