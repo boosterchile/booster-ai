@@ -149,6 +149,20 @@ describe('computeRouteEta — Routes API happy paths', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('la posición actual viaja como location.latLng, no como address «lat,lng»', async () => {
+    // Routes API rechaza «-33.45,-70.66» como Address Waypoint (400
+    // INVALID_ARGUMENT): con el string el ETA nunca salía de Routes.
+    const fetchImpl = makeFetchOk(200_000);
+    await computeRouteEta(baseInput({ fetchImpl, cacheStore: makeCache() }));
+
+    const init = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(parsed.origin).toEqual({
+      location: { latLng: { latitude: -33.45, longitude: -70.66 } },
+    });
+    expect(parsed.destination).toEqual({ address: 'Av Ejemplo 123, Concepción' });
+  });
+
   it('segunda llamada misma posición → cache hit (sin fetch)', async () => {
     const fetchImpl = makeFetchOk(150_000); // 150km → @60kmh = 150min
     const cache = makeCache();
