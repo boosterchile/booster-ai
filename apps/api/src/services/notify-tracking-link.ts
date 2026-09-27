@@ -8,14 +8,10 @@
  *   - Botón "Ver seguimiento" → https://app.boosterchile.com/tracking/<token>
  *
  * **Recipient resolution** (Phase 5 PR-L3b):
- *   Si el trip tiene `consigneeWhatsappE164` (capturado opt-in en el
- *   form de crear carga), el link va DIRECTO al consignee — patrón
- *   "Uber-like" donde el destinatario sigue el envío sin involucrar
- *   al shipper.
- *
- *   Si el campo está NULL (default — shipper no quiso compartir el
- *   phone del recipient), fallback al shipper user (createdByUserId).
- *   El shipper forwarda manualmente.
+ *   El generador (createdByUserId) recibe la confirmación en su
+ *   whatsapp_e164. Si la carga tiene destinatario_whatsapp_e164 y es
+ *   otro número, esa persona también recibe el link. El mismo número
+ *   recibe un solo mensaje.
  *
  *   Esta política se reporta en el resultado vía `recipient` para
  *   audit/analytics.
@@ -112,14 +108,16 @@ export async function notifyTrackingLinkAtAssignment(
     return { assignmentId, skipped: true, reason: 'no_token' };
   }
 
-  // Phase 5 PR-L3b — recipient resolution: preferir consignee si opt-in.
-  // El consignee es siempre el destinatario más relevante para tracking;
-  // el shipper queda como fallback si el campo está NULL.
-  const recipient: { phone: string; role: 'consignee' | 'shipper' } | null = row.consigneeWhatsapp
-    ? { phone: row.consigneeWhatsapp, role: 'consignee' }
-    : row.shipperWhatsapp
-      ? { phone: row.shipperWhatsapp, role: 'shipper' }
-      : null;
+  // El generador recibe la confirmación. El destinatario recibe el link
+  // solo si dejó un teléfono distinto: un mismo número, un solo mensaje.
+  const recipients: { phone: string; role: 'consignee' | 'shipper' }[] = [];
+  if (row.shipperWhatsapp) {
+    recipients.push({ phone: row.shipperWhatsapp, role: 'shipper' });
+  }
+  if (row.consigneeWhatsapp && row.consigneeWhatsapp !== row.shipperWhatsapp) {
+    recipients.push({ phone: row.consigneeWhatsapp, role: 'consignee' });
+  }
+  const recipient = recipients.find((item) => item.role === 'consignee') ?? recipients[0] ?? null;
 
   if (!recipient) {
     if (!row.shipperUserId) {
@@ -144,11 +142,18 @@ export async function notifyTrackingLinkAtAssignment(
     publicTrackingToken: row.publicToken,
   });
 
-  const response = await twilioClient.sendContent({
-    to: recipient.phone,
-    contentSid: contentSidTracking,
-    contentVariables: variables,
-  });
+  let responseSid = '';
+  for (const target of recipients) {
+    const sent = await twilioClient.sendContent({
+      to: target.phone,
+      contentSid: contentSidTracking,
+      contentVariables: variables,
+    });
+    if (!responseSid) {
+      responseSid = sent.sid;
+    }
+  }
+  const response = { sid: responseSid };
 
   logger.info(
     {

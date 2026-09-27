@@ -77,21 +77,20 @@ export async function routeSafetyRecipients(opts: {
 
   const trackingCode = activeAssignmentRows[0]?.trackingCode ?? null;
 
-  // 3. Resolver los dueños activos del transportista.
-  //    Patrón copiado de notify-offer.ts:72-81 (memberships innerJoin users,
-  //    role='dueno', status='activa') con la diferencia de que acá devolvemos
-  //    TODOS los dueños (sin .limit(1)) porque safety notifications van a todos.
+  // 3. Dueños y despachadores activos. El canal es whatsapp_e164.
+  //    El conductor queda fuera: la alerta no va al volante.
   const duenoRows = await db
     .select({
       userId: memberships.userId,
-      phoneE164: users.phone,
+      role: memberships.role,
+      phoneE164: users.whatsappE164,
     })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
         eq(memberships.empresaId, vehicle.empresaId),
-        eq(memberships.role, 'dueno'),
+        inArray(memberships.role, ['dueno', 'despachador']),
         eq(memberships.status, 'activa'),
       ),
     );
