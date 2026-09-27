@@ -31,7 +31,8 @@ interface InvitarResponse {
   membership_id: string;
   rol: string;
   estado: string;
-  access_link?: string;
+  codigo_activacion: string;
+  expira_en: string;
 }
 
 const ROLES = [
@@ -46,6 +47,7 @@ export function InvitarMiembroEmpresa() {
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [empresaId, setEmpresaId] = useState('');
   const [fullName, setFullName] = useState('');
+  const [rut, setRut] = useState('');
   const [email, setEmail] = useState('');
   const [rol, setRol] = useState<string>('admin');
   const [submitting, setSubmitting] = useState(false);
@@ -86,19 +88,19 @@ export function InvitarMiembroEmpresa() {
       const res = await api.post<InvitarResponse>(`/admin/empresas/${empresaId}/miembros`, {
         email,
         full_name: fullName,
+        rut,
         rol,
       });
       setResult(res);
       setFullName('');
+      setRut('');
       setEmail('');
     } catch (err) {
       const code = (err as { code?: string } | null)?.code;
       if (code === 'already_member') {
         setError('Esa persona ya es miembro de la empresa seleccionada.');
-      } else if (code === 'firebase_user_already_exists') {
-        setError(
-          'Ese correo ya tiene cuenta pero no figura en la base. Revisalo antes de reintentar.',
-        );
+      } else if (code === 'email_already_registered') {
+        setError('Ese correo ya pertenece a otra persona.');
       } else {
         setError(err instanceof ApiError ? `${err.status}: ${err.message}` : String(err));
       }
@@ -120,7 +122,11 @@ export function InvitarMiembroEmpresa() {
   }
 
   const canSubmit =
-    empresaId !== '' && fullName.trim() !== '' && email.trim() !== '' && !submitting;
+    empresaId !== '' &&
+    fullName.trim() !== '' &&
+    rut.trim() !== '' &&
+    email.trim() !== '' &&
+    !submitting;
 
   return (
     <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
@@ -129,8 +135,9 @@ export function InvitarMiembroEmpresa() {
         <div>
           <h2 className="font-semibold text-neutral-900">Agregar persona a una empresa</h2>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-            Para clientes que ya existen en la plataforma. Crea su cuenta, la deja como miembro con
-            el rol elegido y devuelve el enlace con el que la persona define su contraseña.
+            Para clientes que ya existen. Deja a la persona pendiente en la empresa y muestra un
+            código de un solo uso. Ella lo ingresa en Activar cuenta, junto con su RUT, y elige su
+            clave. El código no es su contraseña.
           </p>
         </div>
       </div>
@@ -162,6 +169,17 @@ export function InvitarMiembroEmpresa() {
             onChange={(e) => setFullName(e.target.value)}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
             placeholder="Ej: Javier Vicencio"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium text-neutral-700 text-sm">RUT</span>
+          <input
+            type="text"
+            value={rut}
+            onChange={(e) => setRut(e.target.value)}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+            placeholder="12.345.678-5"
           />
         </label>
 
@@ -224,34 +242,28 @@ export function InvitarMiembroEmpresa() {
       {result && (
         <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
           <div className="font-semibold text-amber-900">
-            Listo — la persona quedó como {result.rol} de la empresa
+            Código de activación — quedó como {result.rol}, pendiente de activar
           </div>
-          {result.access_link ? (
-            <>
-              <p className="mt-1 text-amber-800 text-sm">
-                Envíale este enlace para que defina su contraseña. Al usarlo queda verificado su
-                correo, que es lo que le permite entrar.
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 overflow-x-auto rounded-md border border-amber-300 bg-white px-3 py-2 font-mono text-neutral-900 text-xs">
-                  {result.access_link}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleCopy(result.access_link as string)}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
-                >
-                  <Copy className="h-3 w-3" aria-hidden />
-                  {copied ? 'Copiado ✓' : 'Copiar enlace'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="mt-1 text-amber-800 text-sm">
-              No se pudo generar el enlace de acceso. La persona ya es miembro: pedile que use
-              “¿olvidaste tu contraseña?” en el login con este correo.
-            </p>
-          )}
+          <p className="mt-1 text-amber-800 text-sm">
+            Entrégaselo por tu canal habitual. En Activar cuenta escribe su RUT, este código y elige
+            su clave de 6 dígitos. El código sirve una sola vez y no es su contraseña.
+          </p>
+          <p className="mt-1 text-amber-700 text-xs">
+            Vence el {new Date(result.expira_en).toLocaleDateString('es-CL')}.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
+              {result.codigo_activacion}
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopy(result.codigo_activacion)}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
+            >
+              <Copy className="h-3 w-3" aria-hidden />
+              {copied ? 'Copiado ✓' : 'Copiar código'}
+            </button>
+          </div>
         </div>
       )}
     </section>

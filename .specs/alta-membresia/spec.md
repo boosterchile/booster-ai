@@ -24,11 +24,13 @@ El panel aprueba solicitudes que llegan por `/solicitar-acceso`, pero no puede a
 - [ ] SC5 — `EMPRESA_SELF_ONBOARDING_ENABLED` permanece apagado. Este endpoint no crea `usuarios` ni `empresas`: eso lo hace el formulario `/onboarding-admin` que ya existe, y la empresa nace en `pendiente_verificacion`.
 - [ ] SC6 — La pantalla `/app/platform-admin/signup-requests` muestra el formulario, emite el enlace y lo deja copiable en el mismo panel que el approve.
 
-### Fase 2 — no entra en este corte
+### Fase 2 — invitación desde el panel
 
-- El pago confirmado de la suscripción (factura en UF, ADR-079) llama al mismo emisor de enlace con `admision: "pago_confirmado"`.
-- Impago suspende la empresa; el login sigue vivo para poder pagar.
-- Invitación de un segundo miembro por enlace de un solo uso, con RUT y clave propios. Hoy esa invitación devuelve un reset de contraseña.
+- [ ] SC7 — `POST /admin/empresas/:id/miembros` exige RUT. Crea la persona con `firebase_uid` `pending-rut:<rut>` (o reusa el RUT existente), membresía `pendiente_invitacion`, y responde `codigo_activacion` de 6 dígitos. No llama a Firebase `createUser` ni devuelve `access_link`.
+- [ ] SC8 — La persona activa con el flujo que ya existe: `POST /auth/activar` (RUT + código + clave propia) y después entra con RUT + clave.
+- [ ] SC9 — La pantalla «Agregar persona a una empresa» muestra el código copiable, no un enlace de reset de contraseña.
+
+Siguen fuera de este corte: el pago confirmado como admisor (`admision: "pago_confirmado"`) y la suspensión por impago. No hay medio de pago real que enganchar.
 
 ### Fase 3 — no entra en este corte
 
@@ -43,8 +45,7 @@ En Solicitudes de registro, arriba de la lista, el admin carga nombre y correo y
 - Checkout, webhook de pago, factura de suscripción nueva.
 - Encender `EMPRESA_SELF_ONBOARDING_ENABLED`.
 - Botón de Gmail en el login.
-- Reemplazar el reset de contraseña de `POST /admin/empresas/:id/miembros`.
-- Envío del enlace por correo.
+- Envío del código o del enlace por correo.
 
 ## 6. Constraints
 

@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Oosterwyk, empresa creada en mayo con 8 vehículos y 6 conductores) no había
  * camino de producto — se resolvía con INSERT a mano en prod.
  *
- * Reusa el link de acceso de T2.0: la cuenta que crea el Admin SDK no tiene
- * contraseña ni email verificado, así que sin ese link el invitado no entra.
+ * El alta de admin emite el mismo código de activación que el equipo de la
+ * empresa: la persona lo usa en POST /auth/activar y elige su clave. No se
+ * crea usuario Firebase ni se devuelve un reset de contraseña.
  */
 
 const ADMIN_EMAIL = 'dev@boosterchile.com';
@@ -145,7 +146,12 @@ async function loadMod() {
   return import('./admin-empresa-miembros.js');
 }
 
-const BODY = { email: 'fvicencio@me.com', full_name: 'Javier Vicencio', rol: 'admin' };
+const BODY = {
+  email: 'fvicencio@me.com',
+  full_name: 'Javier Vicencio',
+  rut: '12345678-5',
+  rol: 'admin',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -191,7 +197,7 @@ describe('GET /admin/empresas', () => {
 });
 
 describe('POST /admin/empresas/:id/miembros', () => {
-  it('crea usuario + membresía y devuelve el link de acceso', async () => {
+  it('crea la persona pendiente y devuelve un código de activación, no un reset', async () => {
     const mod = await loadMod();
     const d = makeDb();
     const a = makeAuthStub();
@@ -208,24 +214,30 @@ describe('POST /admin/empresas/:id/miembros', () => {
       user_id: string;
       membership_id: string;
       rol: string;
+      estado: string;
+      codigo_activacion?: string;
       access_link?: string;
     };
     expect(json.membership_id).toBe('membership-uuid');
     expect(json.rol).toBe('admin');
-    expect(json.access_link).toBe(
-      'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=inv',
-    );
+    expect(json.estado).toBe('pendiente_invitacion');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    expect(json.access_link).toBeUndefined();
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
 
-    // Cuenta Firebase real (no un placeholder `pending-rut:`): el invitado
-    // tiene que poder autenticarse de verdad.
-    expect(a.spies.createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ email: 'fvicencio@me.com', emailVerified: false }),
-    );
-    // La membresía queda en la empresa indicada, con el rol pedido y auditando
-    // quién invitó.
+    const user = d.insertedUsers[0] as Record<string, unknown>;
+    expect(user.firebaseUid).toBe('pending-rut:12345678-5');
+    expect(user.rut).toBe('12345678-5');
+    expect(user.email).toBe('fvicencio@me.com');
+    expect(user.status).toBe('pendiente_verificacion');
+    expect(typeof user.activationPinHash).toBe('string');
+    expect(user.activationPinHash).not.toBe(json.codigo_activacion);
+
     const m = d.insertedMemberships[0] as Record<string, unknown>;
     expect(m.empresaId).toBe(EMPRESA_ID);
     expect(m.role).toBe('admin');
+    expect(m.status).toBe('pendiente_invitacion');
     expect(m.invitedByUserId).toBe('admin-id');
   });
 
@@ -298,8 +310,15 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(201);
     expect(a.spies.createUser).not.toHaveBeenCalled();
     expect(d.insertedUsers.length).toBe(0);
-    const json = (await res.json()) as { user_id: string };
+    const json = (await res.json()) as { user_id: string; codigo_activacion: string };
     expect(json.user_id).toBe('user-existente');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    expect(d.updates[0]).toEqual(
+      expect.objectContaining({ activationPinHash: expect.any(String) }),
+    );
+    expect(d.insertedMemberships[0]).toEqual(
+      expect.objectContaining({ status: 'pendiente_invitacion', userId: 'user-existente' }),
+    );
   });
 
   it('rechaza rol conductor: tiene su propio alta con licencia y vencimientos', async () => {
@@ -317,11 +336,30 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(400);
   });
 
-  it('el alta sobrevive si Firebase no puede generar el link de acceso', async () => {
+  it('sin RUT → 400 y no crea persona', async () => {
     const mod = await loadMod();
     const d = makeDb();
     const a = makeAuthStub();
-    a.spies.generatePasswordResetLink.mockRejectedValueOnce(new Error('firebase down'));
+    const app = buildApp(mod, d.db, a.auth);
+    const { rut: _rut, ...sinRut } = BODY;
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sinRut),
+    });
+
+    expect(res.status).toBe(400);
+    expect(d.insertedUsers.length).toBe(0);
+  });
+
+  it('correo de otra persona → 409 email_already_registered', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      userByEmailRows: [],
+      existingMembershipRows: [{ id: 'otro-user' }],
+    });
+    const a = makeAuthStub();
     const app = buildApp(mod, d.db, a.auth);
 
     const res = await app.request(`/${EMPRESA_ID}/miembros`, {
@@ -330,10 +368,9 @@ describe('POST /admin/empresas/:id/miembros', () => {
       body: JSON.stringify(BODY),
     });
 
-    expect(res.status).toBe(201);
-    const json = (await res.json()) as { membership_id: string; access_link?: string };
-    expect(json.membership_id).toBe('membership-uuid');
-    expect(json.access_link).toBeUndefined();
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(d.insertedUsers.length).toBe(0);
   });
 });
 

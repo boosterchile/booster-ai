@@ -101,12 +101,14 @@ export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
  * Existe porque el onboarding solo sabe crear empresa + dueño de cero: con el
  * RUT ya registrado devuelve 409 `rut_already_registered`, así que no había
  * forma de darle acceso a la segunda persona de un cliente. El backend crea la
- * cuenta Firebase (si el email es nuevo), la fila `usuarios` y la membresía, y
- * devuelve el link de acceso para que la persona fije su contraseña.
+ * fila `usuarios` (si el RUT es nuevo) y la membresía en `pendiente_invitacion`,
+ * y devuelve un código de 6 dígitos de un solo uso. La persona lo usa en
+ * `/activar` para elegir su propia clave. El código no es la contraseña.
  */
 export const invitarMiembroEmpresaSchema = z.object({
   email: z.string().email().max(320),
   full_name: z.string().min(2).max(200),
+  rut: rutSchema,
   rol: rolInvitacionEmpresaSchema,
 });
 export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;
