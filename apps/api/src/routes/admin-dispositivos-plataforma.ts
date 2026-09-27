@@ -174,6 +174,7 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
         const reconciliacion = pending ? 'aprobado' : 'sin_registro';
         try {
           await opts.db.transaction(async (tx) => {
+            // rls-allowlist: admin platform-wide — protegido por requirePlatformAdmin.
             await tx
               .update(vehicles)
               .set({ teltonikaImei: imei, updatedAt: new Date() })
