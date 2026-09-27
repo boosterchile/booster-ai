@@ -8,7 +8,7 @@ import type { SafetyEvent } from '@booster-ai/shared-schemas';
 const LABELS: Record<SafetyEvent['eventType'], string> = {
   crash: 'Posible colisión',
   unplug: 'Desconexión de energía (manipulación)',
-  jamming: 'Interferencia de señal GPS',
+  jamming: 'Bloqueo de GPS',
 };
 
 export function safetyEventLabel(eventType: SafetyEvent['eventType']): string {

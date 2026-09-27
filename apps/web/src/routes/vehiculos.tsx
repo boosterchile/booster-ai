@@ -1,27 +1,21 @@
 import {
+  MENSAJE_CAPACIDAD_ESTANQUE,
   chileanPlateSchema,
   normalizePlate,
   teltonikaImeiSchema,
 } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  Navigation,
-  Pencil,
-  Plus,
-  Route as RouteIcon,
-  Trash2,
-  Truck,
-} from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { ArrowLeft, ChevronDown, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { ChileanPlate } from '../components/ChileanPlate.js';
 import { DocumentosSection } from '../components/DocumentosSection.js';
 import { FormField, inputClass as fieldInputClass } from '../components/FormField.js';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { VehiculoHub } from '../components/vehiculo-hub.js';
+import { VehiculosLista } from '../components/vehiculos-lista.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
@@ -55,6 +49,14 @@ type FuelType =
   | 'hidrogeno';
 
 type VehicleStatus = 'activo' | 'mantenimiento' | 'retirado';
+type FuenteCombustibleCan = '84' | '83' | '89' | 'sin_sensor';
+
+const FUENTE_CAN_LABELS: Record<FuenteCombustibleCan, string> = {
+  sin_sensor: 'Sin sensor',
+  '84': 'IO 84 — nivel en porcentaje',
+  '83': 'IO 83 — consumo acumulado',
+  '89': 'IO 89 — nivel en porcentaje',
+};
 
 interface Vehicle {
   id: string;
@@ -68,6 +70,8 @@ interface Vehicle {
   fuel_type: FuelType | null;
   curb_weight_kg: number | null;
   consumption_l_per_100km_baseline: string | null;
+  capacidad_estanque_l?: number | null;
+  fuente_combustible_can?: FuenteCombustibleCan | null;
   teltonika_imei: string | null;
   status: VehicleStatus;
   created_at: string;
@@ -103,12 +107,6 @@ const STATUS_LABELS: Record<VehicleStatus, string> = {
   retirado: 'Retirado',
 };
 
-const STATUS_COLORS: Record<VehicleStatus, string> = {
-  activo: 'bg-success-50 text-success-700',
-  mantenimiento: 'bg-amber-50 text-amber-700',
-  retirado: 'bg-neutral-100 text-neutral-600',
-};
-
 // =============================================================================
 // /app/vehiculos — lista
 // =============================================================================
@@ -127,201 +125,12 @@ export function VehiculosListRoute() {
 }
 
 function VehiculosListPage({ me }: { me: MeOnboarded }) {
-  const navigate = useNavigate();
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
 
-  const vehiclesQ = useQuery({
-    queryKey: ['vehiculos'],
-    queryFn: async () => {
-      const res = await api.get<{ vehicles: Vehicle[] }>('/vehiculos');
-      return res.vehicles;
-    },
-  });
-
   return (
     <Layout me={me} title="Vehículos">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículos</h1>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Gestiona la flota de tu empresa: capacidad, combustible, asociación a Teltonika.
-          </p>
-        </div>
-        {canWrite && (
-          <Link
-            to="/app/vehiculos/nuevo"
-            className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-xs transition hover:bg-primary-700"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Nuevo vehículo
-          </Link>
-        )}
-      </div>
-
-      {vehiclesQ.isLoading && <p className="mt-6 text-neutral-500">Cargando…</p>}
-      {vehiclesQ.error && <p className="mt-6 text-danger-700">Error al cargar vehículos.</p>}
-      {vehiclesQ.data && vehiclesQ.data.length === 0 && (
-        <div className="mt-6 rounded-md border border-neutral-200 border-dashed bg-white p-10 text-center">
-          <Truck className="mx-auto h-10 w-10 text-neutral-400" aria-hidden />
-          <p className="mt-3 font-medium text-neutral-900">Aún no tienes vehículos</p>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Agrega tu primer vehículo para asociar dispositivos Teltonika y recibir ofertas
-            adecuadas.
-          </p>
-          {canWrite && (
-            <Link
-              to="/app/vehiculos/nuevo"
-              className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Agregar vehículo
-            </Link>
-          )}
-        </div>
-      )}
-
-      {vehiclesQ.data && vehiclesQ.data.length > 0 && (
-        <>
-          {/* Desktop (md+): tabla densa con 8 columnas. Oculta en mobile
-              porque hace overflow horizontal a 375px (BUG-006). */}
-          <div className="mt-6 hidden overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm md:block">
-            <table className="min-w-full divide-y divide-neutral-200">
-              <thead className="bg-neutral-50">
-                <tr>
-                  <Th>Patente</Th>
-                  <Th>Tipo</Th>
-                  <Th>Capacidad</Th>
-                  <Th>Marca / Modelo</Th>
-                  <Th>Combustible</Th>
-                  <Th>IMEI</Th>
-                  <Th>Estado</Th>
-                  <Th>{''}</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 bg-white">
-                {vehiclesQ.data.map((v) => (
-                  // biome-ignore lint/a11y/useKeyWithClickEvents: row es shortcut visual; el link "Ver" en la última columna es el control accesible primario.
-                  <tr
-                    key={v.id}
-                    className="cursor-pointer hover:bg-neutral-50"
-                    onClick={() =>
-                      void navigate({ to: '/app/vehiculos/$id', params: { id: v.id } })
-                    }
-                  >
-                    <Td>
-                      <ChileanPlate plate={v.plate} size="sm" />
-                    </Td>
-                    <Td>{VEHICLE_TYPE_LABELS[v.type]}</Td>
-                    <Td>
-                      {v.capacity_kg.toLocaleString('es-CL')} kg
-                      {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
-                    </Td>
-                    <Td>
-                      {v.brand || v.model
-                        ? `${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
-                        : '—'}
-                    </Td>
-                    <Td>{v.fuel_type ? FUEL_TYPE_LABELS[v.fuel_type] : '—'}</Td>
-                    <Td className="font-mono text-xs">{v.teltonika_imei ?? '—'}</Td>
-                    <Td>
-                      <span
-                        className={`inline-flex rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
-                      >
-                        {STATUS_LABELS[v.status]}
-                      </span>
-                    </Td>
-                    <Td>
-                      <div className="flex items-center gap-3">
-                        <Link
-                          to="/app/vehiculos/$id/live"
-                          params={{ id: v.id }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-primary-700 hover:underline"
-                          aria-label={`Ver ubicación en vivo de ${v.plate}`}
-                        >
-                          <Navigation className="h-3.5 w-3.5" aria-hidden />
-                          Ubicación
-                        </Link>
-                        <Link
-                          to="/app/vehiculos/$id"
-                          params={{ id: v.id }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-primary-600 text-sm hover:underline"
-                        >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden />
-                          {canWrite ? 'Editar' : 'Ver'}
-                        </Link>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile (<md): cards apiladas con la misma data. */}
-          <ul className="mt-6 space-y-3 md:hidden">
-            {vehiclesQ.data.map((v) => (
-              <li
-                key={v.id}
-                className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <ChileanPlate plate={v.plate} size="md" />
-                  <span
-                    className={`shrink-0 rounded-md px-2 py-0.5 font-medium text-xs ${STATUS_COLORS[v.status]}`}
-                  >
-                    {STATUS_LABELS[v.status]}
-                  </span>
-                </div>
-                <div className="mt-2 text-neutral-700 text-sm">
-                  {VEHICLE_TYPE_LABELS[v.type]}
-                  {v.brand || v.model
-                    ? ` · ${v.brand ?? ''}${v.brand && v.model ? ' ' : ''}${v.model ?? ''}`
-                    : ''}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-neutral-500 text-xs">
-                  <span>
-                    {v.capacity_kg.toLocaleString('es-CL')} kg
-                    {v.capacity_m3 ? ` · ${v.capacity_m3} m³` : ''}
-                  </span>
-                  {v.fuel_type && (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>{FUEL_TYPE_LABELS[v.fuel_type]}</span>
-                    </>
-                  )}
-                  {v.teltonika_imei && (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span className="font-mono">IMEI {v.teltonika_imei}</span>
-                    </>
-                  )}
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <Link
-                    to="/app/vehiculos/$id/live"
-                    params={{ id: v.id }}
-                    className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 text-sm transition hover:bg-neutral-50"
-                  >
-                    <Navigation className="h-3.5 w-3.5" aria-hidden />
-                    Ubicación
-                  </Link>
-                  <Link
-                    to="/app/vehiculos/$id"
-                    params={{ id: v.id }}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm transition hover:bg-primary-100"
-                  >
-                    <Pencil className="h-3.5 w-3.5" aria-hidden />
-                    {canWrite ? 'Editar' : 'Ver detalle'}
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <VehiculosLista canWrite={canWrite} />
     </Layout>
   );
 }
@@ -355,10 +164,15 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const role = me.active_membership?.role;
+  const canEditEstanque = role === 'dueno' || role === 'admin';
 
   const createM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
-      return await api.post<{ vehicle: Vehicle }>('/vehiculos', vehicleFormToBody(input));
+      return await api.post<{ vehicle: Vehicle }>(
+        '/vehiculos',
+        vehicleFormToBody(input, canEditEstanque),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
@@ -380,6 +194,7 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
 
       <VehicleForm
         mode="create"
+        canEditEstanque={canEditEstanque}
         onSubmit={(values) => {
           setError(null);
           createM.mutate(values);
@@ -414,7 +229,14 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [guardado, setGuardado] = useState(false);
+  const [menuRetiro, setMenuRetiro] = useState<'cerrado' | 'abierto' | 'confirmar'>('cerrado');
+  const [configAbierta, setConfigAbierta] = useState(
+    () => typeof window !== 'undefined' && window.location.hash === '#configuracion',
+  );
+  const [enfocarConfig, setEnfocarConfig] = useState(false);
+  const configRef = useRef<HTMLDetailsElement>(null);
+  const menuRetiroRef = useRef<HTMLDivElement>(null);
 
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
@@ -423,6 +245,52 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
   // (requireOwnerOrAdminRole, vehiculos.ts) — misma frontera que canDelete,
   // separado en su propia constante para no acoplar semánticas distintas.
   const canManageDispositivo = role === 'dueno' || role === 'admin';
+  const empresa = me.active_membership?.empresa;
+  const puedeVerTrayectos = Boolean(
+    empresa?.is_transportista && (role === 'dueno' || role === 'admin'),
+  );
+
+  function abrirConfig() {
+    setConfigAbierta(true);
+    setEnfocarConfig(true);
+  }
+
+  useEffect(() => {
+    if (!enfocarConfig || !configAbierta) {
+      return;
+    }
+    const raiz = configRef.current;
+    if (!raiz) {
+      return;
+    }
+    raiz.scrollIntoView({ block: 'start' });
+    const imei = raiz.querySelector<HTMLElement>('[data-config-imei]');
+    const destino = imei ?? raiz.querySelector('summary');
+    destino?.focus();
+    setEnfocarConfig(false);
+  }, [enfocarConfig, configAbierta]);
+
+  useEffect(() => {
+    if (menuRetiro === 'cerrado') {
+      return;
+    }
+    function onClick(event: MouseEvent) {
+      if (menuRetiroRef.current && !menuRetiroRef.current.contains(event.target as Node)) {
+        setMenuRetiro('cerrado');
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMenuRetiro('cerrado');
+      }
+    }
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuRetiro]);
 
   const vehicleQ = useQuery({
     queryKey: ['vehiculos', id],
@@ -434,12 +302,16 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   const updateM = useMutation({
     mutationFn: async (input: VehicleFormValues) => {
-      return await api.patch<{ vehicle: Vehicle }>(`/vehiculos/${id}`, vehicleFormToBody(input));
+      return await api.patch<{ vehicle: Vehicle }>(
+        `/vehiculos/${id}`,
+        vehicleFormToBody(input, canManageDispositivo),
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehiculos'] });
       queryClient.invalidateQueries({ queryKey: ['vehiculos', id] });
-      void navigate({ to: '/app/vehiculos' });
+      setGuardado(true);
+      setError(null);
     },
     onError: (err: Error) => {
       setError(vehicleMutationErrorMessage(err));
@@ -459,50 +331,70 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
   return (
     <Layout me={me} title="Detalle vehículo">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <Link to="/app/vehiculos" className="text-neutral-500 hover:text-neutral-900">
-            <ArrowLeft className="h-5 w-5" aria-hidden />
-          </Link>
-          {vehicleQ.data?.plate ? (
-            <ChileanPlate plate={vehicleQ.data.plate} size="lg" />
-          ) : (
-            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículo</h1>
-          )}
-        </div>
-        {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' && (
-          <div className="flex items-center gap-2">
-            {confirmDelete ? (
-              <>
-                <span className="text-neutral-700 text-sm">¿Retirar este vehículo?</span>
-                <button
-                  type="button"
-                  onClick={() => deleteM.mutate()}
-                  disabled={deleteM.isPending}
-                  className="rounded-md bg-danger-600 px-3 py-1.5 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
-                >
-                  Sí, retirar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 text-sm hover:bg-neutral-100"
-                >
-                  Cancelar
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1 rounded-md border border-danger-300 px-3 py-1.5 text-danger-700 text-sm hover:bg-danger-50"
+      <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
+        <Link
+          to="/app/vehiculos"
+          className="inline-flex min-w-0 items-center gap-1 text-neutral-500 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+          Vehículos
+        </Link>
+        {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' ? (
+          <div ref={menuRetiroRef} className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Más acciones"
+              aria-haspopup="menu"
+              aria-expanded={menuRetiro !== 'cerrado'}
+              onClick={() =>
+                setMenuRetiro((actual) => (actual === 'cerrado' ? 'abierto' : 'cerrado'))
+              }
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </button>
+            {menuRetiro !== 'cerrado' ? (
+              <div
+                role="menu"
+                aria-label="Acciones del vehículo"
+                className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-neutral-200 bg-white p-1 shadow-lg"
               >
-                <Trash2 className="h-4 w-4" aria-hidden />
-                Retirar
-              </button>
-            )}
+                {menuRetiro === 'abierto' ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setMenuRetiro('confirmar')}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-danger-700 text-sm hover:bg-danger-50"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                    Retirar
+                  </button>
+                ) : (
+                  <div className="px-2 py-2">
+                    <p className="text-neutral-800 text-sm">¿Retirar este vehículo?</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => deleteM.mutate()}
+                        disabled={deleteM.isPending}
+                        className="rounded-md bg-danger-600 px-2.5 py-1 text-sm text-white hover:bg-danger-700 disabled:opacity-50"
+                      >
+                        Sí, retirar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMenuRetiro('cerrado')}
+                        className="rounded-md border border-neutral-300 px-2.5 py-1 text-neutral-700 text-sm hover:bg-neutral-100"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
 
       {vehicleQ.isLoading && <p className="text-neutral-500">Cargando…</p>}
@@ -510,43 +402,79 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
 
       {vehicleQ.data && (
         <>
-          {/* D3 — La ubicación en vivo y el histórico de telemetría se
-              movieron a /app/flota y /app/vehiculos/:id/live. Esta página
-              ahora es pure-edit. El link rápido al tracking vive dentro de
-              DispositivoSection (W2b), junto a la gestión del IMEI. */}
-          <DispositivoSection
+          <VehiculoHub
             vehicleId={vehicleQ.data.id}
-            currentImei={vehicleQ.data.teltonika_imei}
-            canManage={canManageDispositivo}
+            plate={vehicleQ.data.plate}
+            typeLabel={VEHICLE_TYPE_LABELS[vehicleQ.data.type] ?? vehicleQ.data.type}
+            brand={vehicleQ.data.brand}
+            model={vehicleQ.data.model}
+            status={vehicleQ.data.status}
+            teltonikaImei={vehicleQ.data.teltonika_imei}
+            puedeVerTrayectos={puedeVerTrayectos}
+            puedeConfigurar={canManageDispositivo}
+            onAbrirConfig={abrirConfig}
           />
 
-          <div>
-            <h2 className="font-semibold text-neutral-900 text-xl">Datos del vehículo</h2>
-            <p className="mt-1 text-neutral-600 text-sm">
-              Capacidad, combustible, asociación a Teltonika.
-            </p>
-            <div className="mt-4">
-              <VehicleForm
-                mode="edit"
-                initial={vehicleToFormValues(vehicleQ.data)}
-                onSubmit={(values) => {
-                  setError(null);
-                  updateM.mutate(values);
-                }}
-                submitting={updateM.isPending}
-                submitLabel="Guardar cambios"
-                error={error}
-                disabled={!canWrite}
+          <details
+            ref={configRef}
+            id="configuracion"
+            data-testid="configuracion-vehiculo"
+            open={configAbierta}
+            onToggle={(event) => setConfigAbierta(event.currentTarget.open)}
+            className="group scroll-mt-20 rounded-lg border border-neutral-200 bg-white"
+          >
+            <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+              <ChevronDown
+                className="mt-1 h-4 w-4 shrink-0 text-neutral-500 transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+              <span>
+                <span className="font-semibold text-neutral-900">Configuración</span>
+                <span className="mt-0.5 block font-normal text-neutral-600 text-sm">
+                  IMEI, capacidades, tipo y combustible.
+                </span>
+              </span>
+            </summary>
+            <div className="space-y-6 border-neutral-200 border-t px-4 py-4">
+              <DispositivoSection
+                vehicleId={vehicleQ.data.id}
+                currentImei={vehicleQ.data.teltonika_imei}
+                canManage={canManageDispositivo}
+              />
+
+              <div>
+                <h2 className="font-semibold text-neutral-900 text-xl">Datos</h2>
+                <p className="mt-1 text-neutral-600 text-sm">Capacidad, tipo y combustible.</p>
+                {guardado ? (
+                  <output className="mt-3 block text-primary-800 text-sm">
+                    Cambios guardados.
+                  </output>
+                ) : null}
+                <div className="mt-4">
+                  <VehicleForm
+                    mode="edit"
+                    initial={vehicleToFormValues(vehicleQ.data)}
+                    canEditEstanque={canManageDispositivo}
+                    onSubmit={(values) => {
+                      setError(null);
+                      setGuardado(false);
+                      updateM.mutate(values);
+                    }}
+                    submitting={updateM.isPending}
+                    submitLabel="Guardar cambios"
+                    error={error}
+                    disabled={!canWrite}
+                  />
+                </div>
+              </div>
+
+              <DocumentosSection
+                entityType="vehiculo"
+                entityId={vehicleQ.data.id}
+                canWrite={canWrite}
               />
             </div>
-          </div>
-
-          {/* D6 — Documentos del vehículo (revisión técnica, SOAP, etc.). */}
-          <DocumentosSection
-            entityType="vehiculo"
-            entityId={vehicleQ.data.id}
-            canWrite={canWrite}
-          />
+          </details>
         </>
       )}
     </Layout>
@@ -716,32 +644,12 @@ function DispositivoSection({
     <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo Teltonika</h2>
+          <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo</h2>
           <p className="mt-1 text-neutral-600 text-sm">
             <strong>IMEI actual:</strong>{' '}
             <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>
           </p>
         </div>
-        {currentImei && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              to="/app/vehiculos/$id/historial"
-              params={{ id: vehicleId }}
-              className="flex items-center gap-2 rounded-md border border-primary-600 px-4 py-2 font-medium text-primary-700 text-sm transition hover:bg-primary-50"
-            >
-              <RouteIcon className="h-4 w-4" aria-hidden />
-              Recorrido
-            </Link>
-            <Link
-              to="/app/vehiculos/$id/live"
-              params={{ id: vehicleId }}
-              className="flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white shadow-sm transition hover:bg-primary-700"
-            >
-              <Navigation className="h-4 w-4" aria-hidden />
-              Ver en vivo
-            </Link>
-          </div>
-        )}
       </div>
 
       {canManage && (
@@ -753,6 +661,7 @@ function DispositivoSection({
             render={({ id, describedBy }) => (
               <input
                 id={id}
+                data-config-imei=""
                 aria-describedby={describedBy}
                 type="text"
                 inputMode="numeric"
@@ -875,6 +784,8 @@ interface VehicleFormValues {
   fuel_type: '' | FuelType;
   curb_weight_kg: string;
   consumption_l_per_100km_baseline: string;
+  capacidad_estanque_l: string;
+  fuente_combustible_can: FuenteCombustibleCan;
   vehicle_status?: VehicleStatus;
 }
 
@@ -889,6 +800,8 @@ const EMPTY_FORM: VehicleFormValues = {
   fuel_type: '',
   curb_weight_kg: '',
   consumption_l_per_100km_baseline: '',
+  capacidad_estanque_l: '',
+  fuente_combustible_can: 'sin_sensor',
 };
 
 function vehicleToFormValues(v: Vehicle): VehicleFormValues {
@@ -903,6 +816,8 @@ function vehicleToFormValues(v: Vehicle): VehicleFormValues {
     fuel_type: v.fuel_type ?? '',
     curb_weight_kg: v.curb_weight_kg != null ? String(v.curb_weight_kg) : '',
     consumption_l_per_100km_baseline: v.consumption_l_per_100km_baseline ?? '',
+    capacidad_estanque_l: v.capacidad_estanque_l != null ? String(v.capacidad_estanque_l) : '',
+    fuente_combustible_can: v.fuente_combustible_can ?? 'sin_sensor',
     vehicle_status: v.status,
   };
 }
@@ -955,6 +870,8 @@ const API_FIELD_LABELS: Record<string, string> = {
   fuel_type: 'Combustible',
   curb_weight_kg: 'Peso vacío (kg)',
   consumption_l_per_100km_baseline: 'Consumo base (L / 100 km)',
+  capacidad_estanque_l: 'Capacidad del estanque (L)',
+  fuente_combustible_can: 'Fuente CAN de combustible',
   vehicle_status: 'Estado',
 };
 
@@ -975,7 +892,10 @@ function vehicleMutationErrorMessage(err: Error): string {
   return serverValidationFieldsMessage(err, API_FIELD_LABELS) ?? err.message;
 }
 
-function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
+function vehicleFormToBody(
+  v: VehicleFormValues,
+  incluirEstanque: boolean,
+): Record<string, unknown> {
   // El servidor también normaliza vía chileanPlateSchema, pero normalizar
   // del lado del cliente nos da consistencia visual: si el usuario ingresa
   // "bcdf12", el body que viaja es "BCDF12".
@@ -1008,12 +928,18 @@ function vehicleFormToBody(v: VehicleFormValues): Record<string, unknown> {
   if (v.vehicle_status) {
     body.vehicle_status = v.vehicle_status;
   }
+  if (incluirEstanque) {
+    const capacidad = v.capacidad_estanque_l.trim();
+    body.capacidad_estanque_l = capacidad === '' ? null : Number(capacidad);
+    body.fuente_combustible_can = v.fuente_combustible_can;
+  }
   return body;
 }
 
 function VehicleForm({
   mode,
   initial,
+  canEditEstanque,
   onSubmit,
   submitting,
   submitLabel,
@@ -1022,6 +948,7 @@ function VehicleForm({
 }: {
   mode: 'create' | 'edit';
   initial?: VehicleFormValues;
+  canEditEstanque: boolean;
   onSubmit: (values: VehicleFormValues) => void;
   submitting: boolean;
   submitLabel: string;
@@ -1066,6 +993,16 @@ function VehicleForm({
       if (message) {
         setError(field, { type: 'manual', message });
         hasError = true;
+      }
+    }
+    if (canEditEstanque) {
+      const capacidad = values.capacidad_estanque_l.trim();
+      if (capacidad !== '') {
+        const litros = Number(capacidad);
+        if (!Number.isFinite(litros) || litros <= 0 || litros > 2000) {
+          setError('capacidad_estanque_l', { type: 'manual', message: MENSAJE_CAPACIDAD_ESTANQUE });
+          hasError = true;
+        }
       }
     }
     if (hasError) {
@@ -1218,6 +1155,57 @@ function VehicleForm({
           />
         </div>
 
+        <fieldset
+          disabled={disabled || !canEditEstanque}
+          className="grid grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2"
+        >
+          <legend className="col-span-full mb-1 font-medium text-neutral-900 text-sm">
+            Estanque y fuente CAN
+          </legend>
+          <FormField
+            label="Capacidad del estanque (L)"
+            error={errors.capacidad_estanque_l?.message}
+            hint="Vacío si no la conocés. Si la indicás, tiene que ser mayor que 0 y de hasta 2000 litros."
+            render={({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                min={0.1}
+                max={2000}
+                {...register('capacidad_estanque_l')}
+                className={fieldInputClass(!!errors.capacidad_estanque_l)}
+              />
+            )}
+          />
+          <FormField
+            label="Fuente CAN de combustible"
+            hint="Sin sensor no calculamos litros. No adivinamos el IO."
+            render={({ id, describedBy }) => (
+              <select
+                id={id}
+                aria-describedby={describedBy}
+                {...register('fuente_combustible_can')}
+                className={fieldInputClass(false)}
+              >
+                {(Object.keys(FUENTE_CAN_LABELS) as FuenteCombustibleCan[]).map((fuente) => (
+                  <option key={fuente} value={fuente}>
+                    {FUENTE_CAN_LABELS[fuente]}
+                  </option>
+                ))}
+              </select>
+            )}
+          />
+        </fieldset>
+        {!disabled && !canEditEstanque ? (
+          <p className="text-neutral-600 text-sm">
+            Solo el dueño o un administrador puede cambiar la capacidad del estanque y la fuente
+            CAN.
+          </p>
+        ) : null}
+
         <details className="rounded-md border border-neutral-200 p-3">
           <summary className="cursor-pointer font-medium text-neutral-700 text-sm">
             Datos avanzados (huella de carbono)
@@ -1322,18 +1310,6 @@ function NoPermission() {
       </Link>
     </div>
   );
-}
-
-function Th({ children }: { children: ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left font-semibold text-neutral-600 text-xs uppercase tracking-wider">
-      {children}
-    </th>
-  );
-}
-
-function Td({ className = '', children }: { className?: string; children: ReactNode }) {
-  return <td className={`px-4 py-3 text-neutral-800 text-sm ${className}`}>{children}</td>;
 }
 
 // D3 — Las antiguas secciones UbicacionSection y TelemetriaSection vivían acá
