@@ -74,6 +74,9 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createOfferRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyAssignmentsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminDispositivosRoutes: { category: 'ENFORCED', rationale: '' },
+  // Platform-admin asocia Teltonika sin membresía de la empresa. firebaseAuth
+  // + userContext preceden el mount; gate adicional requirePlatformAdmin.
+  createAdminDispositivosPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminCobraHoyRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSignupRequestsRoutes: { category: 'ENFORCED', rationale: '' },

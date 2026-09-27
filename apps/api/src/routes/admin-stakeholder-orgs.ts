@@ -12,6 +12,8 @@ import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import type { UserContext } from '../services/user-context.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
@@ -213,6 +215,8 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'invalid_id' }, 400);
     }
     const body = c.req.valid('json');
+    const codigo = generateActivationPin();
+    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     // Normalizar RUT.
     const rutParsed = rutSchema.safeParse(body.rut);
@@ -241,20 +245,20 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       .where(eq(users.rut, rut))
       .limit(1);
     let userId: string;
+    const usuarioNuevo = !existingUsers[0];
     if (existingUsers[0]) {
       userId = existingUsers[0].id;
     } else {
-      // Crear placeholder user. firebase_uid es `pending-rut:<rut>` hasta
-      // que active sus credenciales. Auth de stakeholder pre-Wave 4 es
-      // email/password — el admin asignará la primera password al user
-      // por canal seguro fuera de banda (o el user usará reset password).
+      // firebase_uid `pending-rut:<rut>` hasta que active en /activar.
+      // El código no es la clave: la elige la persona.
       const [created] = await opts.db
         .insert(users)
         .values({
           firebaseUid: `${PENDING_FIREBASE_UID_PREFIX}${rut}`,
-          email: body.email,
+          email: body.email.toLowerCase(),
           fullName: body.full_name,
           rut,
+          activationPinHash: hashActivationPin(codigo),
           status: 'pendiente_verificacion',
         })
         .returning({ id: users.id });
@@ -274,6 +278,13 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'already_member', membership_id: existingMembership[0].id }, 409);
     }
 
+    if (!usuarioNuevo) {
+      await opts.db
+        .update(users)
+        .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+        .where(eq(users.id, userId));
+    }
+
     // Crear membership pending. Status `activa` cuando el user complete
     // auth (post-Wave 4 será automático tras login universal).
     const [membership] = await opts.db
@@ -285,6 +296,7 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         role: STAKEHOLDER_MEMBERSHIP_ROLE,
         status: 'pendiente_invitacion',
         invitedByUserId: auth.adminUserId,
+        invitedAt: new Date(),
       })
       .returning({ id: memberships.id });
     if (!membership) {
@@ -301,6 +313,7 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       },
       'org_stakeholder.member_invited',
     );
+    getBusinessCounter('alta_invitacion_stakeholder_total').add(1, { resultado: 'issued' });
 
     return c.json(
       {
@@ -310,6 +323,8 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         email: body.email,
         full_name: body.full_name,
         status: 'pendiente_invitacion',
+        codigo_activacion: codigo,
+        expira_en: expiraEn.toISOString(),
       },
       201,
     );

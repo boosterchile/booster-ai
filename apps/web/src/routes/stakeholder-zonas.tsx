@@ -266,6 +266,33 @@ function StakeholderZonasPage({ me }: { me: MeOnboarded }) {
         </div>
       )}
 
+      <section
+        className="mt-6 rounded-md border border-neutral-200 bg-white p-4"
+        data-testid="stakeholder-funcionalidades"
+      >
+        <h2 className="font-semibold text-neutral-900">Qué puedes conocer de Booster</h2>
+        <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+          Esta cuenta recorre el producto por el resultado agregado. No entra a la mesa de un
+          generador ni de un transportista: ahí viven las cargas, la flota y los viajes de cada
+          empresa.
+        </p>
+        <ul className="mt-3 grid gap-2 text-neutral-800 text-sm sm:grid-cols-2">
+          <li>Cargas: las publica el generador. Aquí ves el flujo por zona, no la carga suelta.</li>
+          <li>Flota y Teltonika: los opera el transportista. Aquí no se enciende un camión.</li>
+          <li>
+            Matching: asigna viaje y camión dentro de la empresa. Aquí no se ofrece ni se acepta.
+          </li>
+          <li>
+            Huella y certificados: el viaje cierra con kg CO2e. Aquí el dato sale si hay al menos 5
+            viajes en la celda.
+          </li>
+          <li className="sm:col-span-2">
+            Zonas de esta pantalla: puertos, mercados y polos, con ámbito nacional o regional de tu
+            organización.
+          </li>
+        </ul>
+      </section>
+
       <div className="mt-6 rounded-md border border-amber-200 bg-amber-50/60 p-4 text-sm">
         <div className="flex items-start gap-2 text-amber-900">
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
