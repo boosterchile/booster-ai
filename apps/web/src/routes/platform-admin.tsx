@@ -109,9 +109,9 @@ function PlatformAdminPage() {
             <div>
               <h3 className="font-semibold text-neutral-900">Solicitudes de registro</h3>
               <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-                Aprueba o rechaza las cuentas nuevas que llegan por <code>/solicitar-acceso</code>.
-                Al aprobar se emite el link de alta de un solo uso (vive 72 h): hay que copiarlo en
-                ese momento y entregárselo al cliente, porque no se envía por correo.
+                Aprueba solicitudes de <code>/solicitar-acceso</code> o emite un enlace de alta sin
+                que la persona haya pedido acceso. El enlace es de un solo uso (vive 72 h): hay que
+                copiarlo en ese momento y entregárselo al cliente, porque no se envía por correo.
               </p>
             </div>
           </div>

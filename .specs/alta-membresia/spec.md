@@ -1,0 +1,54 @@
+# Spec: alta-membresia
+
+- Author: Felipe Vicencio (PO) + agente
+- Date: 2026-09-27
+- Status: Accepted — fase 1 (exención desde el panel). El PO ordenó «comienza el trabajo» sobre el modelo acordado en la misma fecha.
+- Linked: ADR-052 (alta pública gateada), ADR-035 (RUT + clave de 6 dígitos), ADR-057 (Google no autoriza), ADR-079 (suscripción en UF por empresa o por camión), `.specs/alta-cliente-autocontenida/spec.md`
+
+## 1. Objective
+
+Que una empresa pueda empezar a existir en Booster por dos admisores que emiten **el mismo** enlace de un solo uso, y que la persona termine el alta eligiendo su RUT y su clave. Nadie más conoce esa clave. Gmail es un segundo ingreso, posterior, sobre una persona que ya existe.
+
+## 2. Why now
+
+El panel aprueba solicitudes que llegan por `/solicitar-acceso`, pero no puede abrir un alta si el cliente no pasó por ese formulario. La membresía de pago (ADR-079) va a ser el admisor automático; hasta que exista el cobro, la vía operable es la exención que el platform-admin dispara a mano (piloto, camión exento, factura por transferencia).
+
+## 3. Success criteria
+
+### Fase 1 — este corte
+
+- [ ] SC1 — Un platform-admin envía `POST /admin/signup-requests/exencion` con correo, nombre y `admision: "exencion_admin"`, y recibe `onboarding_link` de un solo uso. La respuesta no incluye contraseña, clave ni `access_link`.
+- [ ] SC2 — Quien no está en `BOOSTER_PLATFORM_ADMIN_EMAILS` recibe 403. Sin sesión, 401.
+- [ ] SC3 — Con `SIGNUP_REQUEST_FLOW_ACTIVATED` apagado, o con el alta por token apagada o sin secreto, el endpoint responde 503 y no crea fila ni usuario Firebase.
+- [ ] SC4 — Correo ya presente en `usuarios` → 409 `email_already_registered`. Solicitud ya `aprobado` → 409 `alta_ya_emitida`. Solicitud `pendiente_aprobacion` → 409 `solicitud_pendiente` (se aprueba desde la lista, no se duplica). Solo rechazadas, o ninguna → se crea y se aprueba.
+- [ ] SC5 — `EMPRESA_SELF_ONBOARDING_ENABLED` permanece apagado. Este endpoint no crea `usuarios` ni `empresas`: eso lo hace el formulario `/onboarding-admin` que ya existe, y la empresa nace en `pendiente_verificacion`.
+- [ ] SC6 — La pantalla `/app/platform-admin/signup-requests` muestra el formulario, emite el enlace y lo deja copiable en el mismo panel que el approve.
+
+### Fase 2 — no entra en este corte
+
+- El pago confirmado de la suscripción (factura en UF, ADR-079) llama al mismo emisor de enlace con `admision: "pago_confirmado"`.
+- Impago suspende la empresa; el login sigue vivo para poder pagar.
+- Invitación de un segundo miembro por enlace de un solo uso, con RUT y clave propios. Hoy esa invitación devuelve un reset de contraseña.
+
+### Fase 3 — no entra en este corte
+
+- Vincular Gmail a la persona ya dada de alta. Entrar con Google abre esa persona. Una cuenta Google sin fila sigue sin datos (ADR-057). Hace falta un ADR nuevo: ADR-035 fija el ingreso en RUT + clave.
+
+## 4. User-visible behaviour
+
+En Solicitudes de registro, arriba de la lista, el admin carga nombre y correo y pulsa «Emitir enlace de alta». Copia el enlace y se lo entrega. La persona completa empresa, RUT y clave de 6 dígitos, y entra. La empresa queda pendiente hasta que el admin la active con el control que ya existe.
+
+## 5. Out of scope
+
+- Checkout, webhook de pago, factura de suscripción nueva.
+- Encender `EMPRESA_SELF_ONBOARDING_ENABLED`.
+- Botón de Gmail en el login.
+- Reemplazar el reset de contraseña de `POST /admin/empresas/:id/miembros`.
+- Envío del enlace por correo.
+
+## 6. Constraints
+
+1. SEC-001 intacto: el predicado de autorización del alta sigue siendo el token de un solo uso.
+2. La credencial la elige la persona (RUT + clave). El admin no la escribe ni la recibe.
+3. Zod en el body. Cero `any` nuevo. Log estructurado sin el token ni el correo en claro. Span `alta.exencion` y contador `alta_exencion_emitidas_total`.
+4. Reuso de `approveSignupRequest` en modo admin-provisioned. Sin mecanismo nuevo de auth.
