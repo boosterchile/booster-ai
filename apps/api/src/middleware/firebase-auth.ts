@@ -41,7 +41,7 @@ export interface FirebaseClaims {
 export type SseTicketStore = (
   ticket: string,
   assignmentId: string,
-) => Promise<{ uid: string; isDemo: boolean } | null>;
+) => Promise<{ uid: string } | null>;
 
 const STREAM_PATH_RE = /^\/assignments\/([^/]+)\/messages\/stream$/;
 
@@ -74,17 +74,17 @@ export function createFirebaseAuthMiddleware(opts: {
         opts.logger.warn({ path: c.req.path }, 'SSE ticket inválido/ausente');
         return c.json({ error: 'Unauthorized' }, 401);
       }
-      // El ticket prueba la identidad; userContextMiddleware resuelve el user
-      // por uid (solo necesita claims.uid). El snapshot is_demo se restituye
-      // para no cambiar el contrato del ticket. El chain productivo no
-      // branchea sobre ese claim.
+      // El ticket prueba la identidad y solo transporta el uid;
+      // userContextMiddleware resuelve el user por uid. Sin claims custom,
+      // userContext ve impersonatedBy=null en este GET de solo lectura (el
+      // write-guard no aplica a GET), igual que antes del retiro de is_demo.
       c.set('firebaseClaims', {
         uid: consumed.uid,
         email: undefined,
         emailVerified: false,
         name: undefined,
         picture: undefined,
-        custom: { is_demo: consumed.isDemo },
+        custom: {},
       } satisfies FirebaseClaims);
       await next();
       return;
