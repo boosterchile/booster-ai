@@ -660,3 +660,236 @@ describe('POST /:id/approve con ADMIN_PROVISIONED_ONBOARDING_ENABLED=true (W1.4 
     expect(serializedLogs.includes(rawToken as string)).toBe(false);
   });
 });
+
+describe('POST /exencion — alta por exención (alta-membresia fase 1)', () => {
+  const SOLICITUD_ID = '11111111-1111-4111-8111-111111111111';
+  const SIGNING_SECRET = 'b'.repeat(48);
+
+  function approveRow() {
+    return {
+      id: SOLICITUD_ID,
+      email: 'ana@cliente.cl',
+      nombreCompleto: 'Ana Pérez',
+      estado: 'pendiente_aprobacion' as const,
+      solicitadoEn: new Date(),
+      aprobadoPor: null,
+      aprobadoEn: null,
+    };
+  }
+
+  function makeExencionDb(limitResults: unknown[][]) {
+    const queue = [...limitResults];
+    const selectLimit = vi.fn(async () => queue.shift() ?? []);
+    const selectWhere = vi.fn(() => ({
+      limit: selectLimit,
+      orderBy: vi.fn(() => ({ limit: selectLimit })),
+    }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const updateReturning = vi.fn(async () => [{ id: SOLICITUD_ID }]);
+    const update = vi.fn(() => ({
+      set: vi.fn(() => ({ where: vi.fn(() => ({ returning: updateReturning })) })),
+    }));
+    const insert = vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn(async () => [{ id: SOLICITUD_ID }]),
+      })),
+    }));
+    type DbStub = Parameters<typeof createAdminSignupRequestsRoutes>[0]['db'];
+    return {
+      db: { select, update, insert } as unknown as DbStub,
+      spies: { insert, update },
+    };
+  }
+
+  async function loadProvisioned() {
+    vi.resetModules();
+    vi.doMock('../config.js', () => ({
+      config: {
+        BOOSTER_PLATFORM_ADMIN_EMAILS: ['dev@boosterchile.com'],
+        SIGNUP_REQUEST_FLOW_ACTIVATED: true,
+        ADMIN_PROVISIONED_ONBOARDING_ENABLED: true,
+        ONBOARDING_TOKEN_SIGNING_SECRET: SIGNING_SECRET,
+        ONBOARDING_TOKEN_TTL_HOURS: 72,
+      },
+    }));
+    return import('./admin-signup-requests.js');
+  }
+
+  function build(
+    mod: Awaited<ReturnType<typeof loadProvisioned>>,
+    db: ReturnType<typeof makeExencionDb>['db'],
+    auth: Auth,
+    email: string | null = ADMIN_EMAIL,
+  ) {
+    const routes = mod.createAdminSignupRequestsRoutes({
+      db,
+      logger: noopLogger,
+      auth,
+      notifier: makeNotifierStub(),
+    });
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      if (email) {
+        (c as unknown as { set: (key: string, value: unknown) => void }).set('userContext', {
+          user: { id: 'admin-user-id', email },
+        });
+      }
+      await next();
+    });
+    app.route('/', routes);
+    return app;
+  }
+
+  const body = {
+    email: 'Ana@Cliente.cl',
+    nombreCompleto: 'Ana Pérez',
+    admision: 'exencion_admin' as const,
+  };
+
+  it('emite onboarding_link y no devuelve access_link ni la clave', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [], [approveRow()]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      outcome: string;
+      onboarding_link: string;
+      access_link?: string;
+      solicitud_id: string;
+    };
+    expect(json.outcome).toBe('issued');
+    expect(json.solicitud_id).toBe(SOLICITUD_ID);
+    expect(json.onboarding_link).toMatch(
+      /^https:\/\/app\.boosterchile\.com\/onboarding-admin\?token=.+$/,
+    );
+    expect(json.access_link).toBeUndefined();
+    expect(JSON.stringify(json).includes('clave')).toBe(false);
+    expect(a.spies.createUser).toHaveBeenCalledTimes(1);
+    expect(d.spies.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it('correo ya en usuarios → 409 email_already_registered sin createUser', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[{ id: 'user-1' }]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('email_already_registered');
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('solicitud pendiente → 409 solicitud_pendiente', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [{ id: 'pend-1', estado: 'pendiente_aprobacion' }]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('solicitud_pendiente');
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('solicitud aprobada → 409 alta_ya_emitida', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([[], [{ id: 'apr-1', estado: 'aprobado' }]]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('alta_ya_emitida');
+  });
+
+  it('sin userContext → 401', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth, null);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('email fuera del allowlist → 403', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth, 'otro@no-admin.cl');
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader('otro@no-admin.cl'),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('admision distinta de exencion_admin → 400', async () => {
+    const mod = await loadProvisioned();
+    const d = makeExencionDb([]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify({ ...body, admision: 'pago_confirmado' }),
+    });
+    expect(res.status).toBe(400);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('alta por token apagada → 503 onboarding_misconfigured', async () => {
+    vi.resetModules();
+    vi.doMock('../config.js', () => ({
+      config: {
+        BOOSTER_PLATFORM_ADMIN_EMAILS: ['dev@boosterchile.com'],
+        SIGNUP_REQUEST_FLOW_ACTIVATED: true,
+        ADMIN_PROVISIONED_ONBOARDING_ENABLED: false,
+        ONBOARDING_TOKEN_TTL_HOURS: 72,
+      },
+    }));
+    const mod = await import('./admin-signup-requests.js');
+    const d = makeExencionDb([]);
+    const a = makeAuthStub();
+    const app = build(mod, d.db, a.auth);
+
+    const res = await app.request('/exencion', {
+      method: 'POST',
+      headers: userContextHeader(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { code: string }).code).toBe('onboarding_misconfigured');
+    expect(d.spies.insert).not.toHaveBeenCalled();
+  });
+});

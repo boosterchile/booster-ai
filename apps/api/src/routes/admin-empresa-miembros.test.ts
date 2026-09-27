@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Oosterwyk, empresa creada en mayo con 8 vehículos y 6 conductores) no había
  * camino de producto — se resolvía con INSERT a mano en prod.
  *
- * Reusa el link de acceso de T2.0: la cuenta que crea el Admin SDK no tiene
- * contraseña ni email verificado, así que sin ese link el invitado no entra.
+ * El alta de admin emite el mismo código de activación que el equipo de la
+ * empresa: la persona lo usa en POST /auth/activar y elige su clave. No se
+ * crea usuario Firebase ni se devuelve un reset de contraseña.
  */
 
 const ADMIN_EMAIL = 'dev@boosterchile.com';
@@ -45,10 +46,12 @@ interface DbOpts {
   userByEmailRows?: unknown[];
   existingMembershipRows?: unknown[];
   updatedRows?: unknown[];
+  /** Cola de `select().limit()` cuando el test no usa el orden del invite. */
+  lookupQueue?: unknown[][];
 }
 
 function makeDb(opts: DbOpts = {}) {
-  const selectQueue = [
+  const selectQueue: unknown[][] = opts.lookupQueue ?? [
     opts.empresaRows ?? [
       {
         id: EMPRESA_ID,
@@ -61,6 +64,8 @@ function makeDb(opts: DbOpts = {}) {
   ];
   const insertedUsers: Record<string, unknown>[] = [];
   const insertedMemberships: Record<string, unknown>[] = [];
+  const insertedEmpresas: Record<string, unknown>[] = [];
+  const insertedCarrierMemberships: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
 
   // Listado (`from().orderBy().limit()` y `from().where().orderBy().limit()`)
@@ -86,7 +91,24 @@ function makeDb(opts: DbOpts = {}) {
   const insert = vi.fn((table: { _: { name?: string } } | unknown) => ({
     values: vi.fn((vals: Record<string, unknown>) => ({
       returning: vi.fn(async () => {
-        // Distingue por forma del payload: la membresía trae `empresaId`.
+        if ('legalName' in vals) {
+          insertedEmpresas.push(vals);
+          return [
+            {
+              id: 'empresa-nueva-uuid',
+              legalName: vals.legalName,
+              rut: vals.rut,
+              status: 'pendiente_verificacion',
+              isGeneradorCarga: vals.isGeneradorCarga,
+              isTransportista: vals.isTransportista,
+            },
+          ];
+        }
+        if ('tierSlug' in vals) {
+          insertedCarrierMemberships.push(vals);
+          return [{ id: 'carrier-membership-uuid' }];
+        }
+        // La membresía de persona trae `empresaId` y `userId`.
         if ('empresaId' in vals) {
           insertedMemberships.push(vals);
           return [{ id: 'membership-uuid' }];
@@ -111,10 +133,16 @@ function makeDb(opts: DbOpts = {}) {
     }),
   }));
 
+  const db = { select, insert, update };
   return {
-    db: { select, insert, update } as never,
+    db: {
+      ...db,
+      transaction: async (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
+    } as never,
     insertedUsers,
     insertedMemberships,
+    insertedEmpresas,
+    insertedCarrierMemberships,
     updates,
   };
 }
@@ -145,7 +173,12 @@ async function loadMod() {
   return import('./admin-empresa-miembros.js');
 }
 
-const BODY = { email: 'fvicencio@me.com', full_name: 'Javier Vicencio', rol: 'admin' };
+const BODY = {
+  email: 'fvicencio@me.com',
+  full_name: 'Javier Vicencio',
+  rut: '12345678-5',
+  rol: 'admin',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -191,7 +224,7 @@ describe('GET /admin/empresas', () => {
 });
 
 describe('POST /admin/empresas/:id/miembros', () => {
-  it('crea usuario + membresía y devuelve el link de acceso', async () => {
+  it('crea la persona pendiente y devuelve un código de activación, no un reset', async () => {
     const mod = await loadMod();
     const d = makeDb();
     const a = makeAuthStub();
@@ -208,24 +241,30 @@ describe('POST /admin/empresas/:id/miembros', () => {
       user_id: string;
       membership_id: string;
       rol: string;
+      estado: string;
+      codigo_activacion?: string;
       access_link?: string;
     };
     expect(json.membership_id).toBe('membership-uuid');
     expect(json.rol).toBe('admin');
-    expect(json.access_link).toBe(
-      'https://app.boosterchile.com/__/auth/action?mode=resetPassword&oobCode=inv',
-    );
+    expect(json.estado).toBe('pendiente_invitacion');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    expect(json.access_link).toBeUndefined();
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.generatePasswordResetLink).not.toHaveBeenCalled();
 
-    // Cuenta Firebase real (no un placeholder `pending-rut:`): el invitado
-    // tiene que poder autenticarse de verdad.
-    expect(a.spies.createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ email: 'fvicencio@me.com', emailVerified: false }),
-    );
-    // La membresía queda en la empresa indicada, con el rol pedido y auditando
-    // quién invitó.
+    const user = d.insertedUsers[0] as Record<string, unknown>;
+    expect(user.firebaseUid).toBe('pending-rut:12345678-5');
+    expect(user.rut).toBe('12345678-5');
+    expect(user.email).toBe('fvicencio@me.com');
+    expect(user.status).toBe('pendiente_verificacion');
+    expect(typeof user.activationPinHash).toBe('string');
+    expect(user.activationPinHash).not.toBe(json.codigo_activacion);
+
     const m = d.insertedMemberships[0] as Record<string, unknown>;
     expect(m.empresaId).toBe(EMPRESA_ID);
     expect(m.role).toBe('admin');
+    expect(m.status).toBe('pendiente_invitacion');
     expect(m.invitedByUserId).toBe('admin-id');
   });
 
@@ -298,8 +337,15 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(201);
     expect(a.spies.createUser).not.toHaveBeenCalled();
     expect(d.insertedUsers.length).toBe(0);
-    const json = (await res.json()) as { user_id: string };
+    const json = (await res.json()) as { user_id: string; codigo_activacion: string };
     expect(json.user_id).toBe('user-existente');
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    expect(d.updates[0]).toEqual(
+      expect.objectContaining({ activationPinHash: expect.any(String) }),
+    );
+    expect(d.insertedMemberships[0]).toEqual(
+      expect.objectContaining({ status: 'pendiente_invitacion', userId: 'user-existente' }),
+    );
   });
 
   it('rechaza rol conductor: tiene su propio alta con licencia y vencimientos', async () => {
@@ -317,11 +363,30 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(400);
   });
 
-  it('el alta sobrevive si Firebase no puede generar el link de acceso', async () => {
+  it('sin RUT → 400 y no crea persona', async () => {
     const mod = await loadMod();
     const d = makeDb();
     const a = makeAuthStub();
-    a.spies.generatePasswordResetLink.mockRejectedValueOnce(new Error('firebase down'));
+    const app = buildApp(mod, d.db, a.auth);
+    const { rut: _rut, ...sinRut } = BODY;
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sinRut),
+    });
+
+    expect(res.status).toBe(400);
+    expect(d.insertedUsers.length).toBe(0);
+  });
+
+  it('correo de otra persona → 409 email_already_registered', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      userByEmailRows: [],
+      existingMembershipRows: [{ id: 'otro-user' }],
+    });
+    const a = makeAuthStub();
     const app = buildApp(mod, d.db, a.auth);
 
     const res = await app.request(`/${EMPRESA_ID}/miembros`, {
@@ -330,10 +395,9 @@ describe('POST /admin/empresas/:id/miembros', () => {
       body: JSON.stringify(BODY),
     });
 
-    expect(res.status).toBe(201);
-    const json = (await res.json()) as { membership_id: string; access_link?: string };
-    expect(json.membership_id).toBe('membership-uuid');
-    expect(json.access_link).toBeUndefined();
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+    expect(d.insertedUsers.length).toBe(0);
   });
 });
 
@@ -479,5 +543,143 @@ describe('GET /admin/empresas?estado=', () => {
 
     const res = await app.request('/?estado=borrada', { method: 'GET' });
     expect(res.status).toBe(400);
+  });
+});
+
+const EMPRESA_BODY = {
+  legal_name: 'Retail Norte SpA',
+  rut: '12345678-5',
+  contact_email: 'contacto@retailnorte.cl',
+  contact_phone: '+56912345678',
+  address_street: 'Av. Apoquindo 3000',
+  address_city: 'Santiago',
+  address_region: 'XIII',
+  is_generador_carga: true,
+  is_transportista: false,
+};
+
+describe('POST /admin/empresas', () => {
+  it('crea un generador de carga pendiente, sin usuario ni clave', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(EMPRESA_BODY),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as {
+      ok: boolean;
+      empresa_id: string;
+      estado: string;
+      es_generador_carga: boolean;
+      es_transportista: boolean;
+      codigo_activacion?: string;
+    };
+    expect(json.ok).toBe(true);
+    expect(json.empresa_id).toBe('empresa-nueva-uuid');
+    expect(json.estado).toBe('pendiente_verificacion');
+    expect(json.es_generador_carga).toBe(true);
+    expect(json.es_transportista).toBe(false);
+    expect(json.codigo_activacion).toBeUndefined();
+    expect(d.insertedUsers).toHaveLength(0);
+    expect(d.insertedEmpresas[0]).toMatchObject({
+      legalName: 'Retail Norte SpA',
+      rut: '12345678-5',
+      isGeneradorCarga: true,
+      isTransportista: false,
+      planId: 'plan-gratis',
+      status: 'pendiente_verificacion',
+      isDemo: false,
+    });
+    expect(d.insertedCarrierMemberships).toHaveLength(0);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+  });
+
+  it('abre carrier_memberships free cuando la empresa es transportista', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], []],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...EMPRESA_BODY,
+        is_generador_carga: false,
+        is_transportista: true,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(d.insertedCarrierMemberships[0]).toMatchObject({
+      empresaId: 'empresa-nueva-uuid',
+      tierSlug: 'free',
+      status: 'activa',
+    });
+  });
+
+  it('rechaza el RUT de empresa ya registrado', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[{ id: 'plan-gratis', isActive: true }], [{ id: 'ya-existe' }]],
+    });
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(EMPRESA_BODY),
+    });
+
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('rut_already_registered');
+    expect(d.insertedEmpresas).toHaveLength(0);
+  });
+
+  it('rechaza una ficha que no es generador ni transportista', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth);
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...EMPRESA_BODY,
+        is_generador_carga: false,
+        is_transportista: false,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(d.insertedEmpresas).toHaveLength(0);
+  });
+
+  it('no crea empresas a quien no es platform-admin', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const a = makeAuthStub();
+    const app = buildApp(mod, d.db, a.auth, 'ajeno@otra.cl');
+
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(EMPRESA_BODY),
+    });
+
+    expect(res.status).toBe(403);
   });
 });
