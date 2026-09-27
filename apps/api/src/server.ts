@@ -22,6 +22,7 @@ import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
+import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
@@ -621,6 +622,25 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.route(
       '/admin/dispositivos-pendientes',
       createAdminDispositivosRoutes({ db: opts.db, logger }),
+    );
+
+    // Platform-admin asocia un Teltonika pendiente a un camión de cualquier
+    // transportista. Mismo chain que empresas: el path exacto y el `/*`.
+    app.use('/admin/plataforma/dispositivos', firebaseAuthMiddleware);
+    app.use('/admin/plataforma/dispositivos/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/plataforma/dispositivos',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/plataforma/dispositivos/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/plataforma/dispositivos',
+      createAdminDispositivosPlataformaRoutes({ db: opts.db, logger }),
     );
 
     // Admin platform-wide: gestión de adelantos Cobra Hoy (ADR-029 v1 /
