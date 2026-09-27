@@ -7,6 +7,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { emitirAltaExencion } from '../services/emitir-alta-exencion.js';
 import type { SignupRequestNotifier } from '../services/notifications/signup-request-email.js';
 import {
   approveSignupRequest,
@@ -54,6 +57,17 @@ const onboardingLinkBaseUrlSchema = z
 
 const approveBodySchema = z.object({
   loginLinkUrl: z.string().url().optional(),
+  onboardingLinkBaseUrl: onboardingLinkBaseUrlSchema.optional(),
+});
+
+/**
+ * Alta por exención (`.specs/alta-membresia` fase 1). `admision` es literal
+ * a propósito: el pago confirmado no entra por esta ruta.
+ */
+const exencionBodySchema = z.object({
+  email: z.string().email().max(320),
+  nombreCompleto: z.string().min(1).max(200),
+  admision: z.literal('exencion_admin'),
   onboardingLinkBaseUrl: onboardingLinkBaseUrlSchema.optional(),
 });
 
@@ -148,6 +162,84 @@ export function createAdminSignupRequestsRoutes(opts: {
         solicitado_en: r.solicitadoEn.toISOString(),
       })),
     });
+  });
+
+  app.post('/exencion', zValidator('json', exencionBodySchema), async (c) => {
+    const correlationId = c.req.header('x-correlation-id') ?? randomUUID();
+    return await withBusinessSpan(
+      { name: 'alta.exencion', attributes: { 'alta.admision': 'exencion_admin' } },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('alta_exencion_emitidas_total').add(1, { resultado });
+          setResultAttributes(span, { 'alta.resultado': resultado });
+        };
+
+        const auth = requirePlatformAdmin(c);
+        if (!auth.ok) {
+          record('forbidden');
+          return auth.response;
+        }
+        const gate = requireFlowActivated(c, correlationId);
+        if (!gate.ok) {
+          record('signup_flow_disabled');
+          return gate.response;
+        }
+        if (
+          !appConfig.ADMIN_PROVISIONED_ONBOARDING_ENABLED ||
+          !appConfig.ONBOARDING_TOKEN_SIGNING_SECRET
+        ) {
+          opts.logger.error(
+            { correlationId },
+            'admin-signup-requests.exencion: alta por token apagada o sin secreto (fail-closed)',
+          );
+          record('onboarding_misconfigured');
+          return c.json({ error: 'service_unavailable', code: 'onboarding_misconfigured' }, 503);
+        }
+
+        const body = c.req.valid('json');
+        const signingSecret = appConfig.ONBOARDING_TOKEN_SIGNING_SECRET;
+        try {
+          const result = await emitirAltaExencion(opts.db, opts.logger, opts.auth, opts.notifier, {
+            email: body.email,
+            nombreCompleto: body.nombreCompleto,
+            approverEmail: auth.adminEmail,
+            correlationId,
+            loginLinkUrl: DEFAULT_LOGIN_LINK_URL,
+            adminProvisionedOnboarding: {
+              signingSecret,
+              ttlMs: appConfig.ONBOARDING_TOKEN_TTL_HOURS * 60 * 60 * 1000,
+            },
+          });
+          if (result.outcome !== 'issued') {
+            record(result.outcome);
+            return c.json({ error: 'conflict', code: result.outcome }, 409);
+          }
+          record('issued');
+          return c.json(
+            {
+              ok: true,
+              outcome: 'issued',
+              firebase_uid: result.firebaseUid,
+              solicitud_id: result.solicitudId,
+              onboarding_link: buildOnboardingLink(
+                body.onboardingLinkBaseUrl,
+                result.onboardingToken,
+              ),
+              onboarding_link_expires_at: result.onboardingTokenExpiresAt.toISOString(),
+            },
+            200,
+          );
+        } catch (err) {
+          span.recordException(err instanceof Error ? err : new Error(String(err)));
+          opts.logger.error(
+            { err, correlationId },
+            'admin-signup-requests.exencion: unexpected error',
+          );
+          record('error');
+          return c.json({ error: 'service_unavailable', code: 'service_unavailable' }, 503);
+        }
+      },
+    );
   });
 
   app.post(

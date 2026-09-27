@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../lib/api-client.js';
+import { ApiError, api } from '../lib/api-client.js';
 
 /**
  * Tests del route `/app/platform-admin/signup-requests` — W1.4 (hito-2-corfo-mes-8,
@@ -340,5 +340,52 @@ describe('PlatformAdminSignupRequestsRoute — W1.4 onboarding_link', () => {
     expect(
       screen.getByText('https://app.boosterchile.com/onboarding-admin?token=abc.def'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('PlatformAdminSignupRequestsRoute — alta por exención', () => {
+  it('emite el enlace y lo muestra copiable', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [] });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      outcome: 'issued',
+      firebase_uid: 'fb-uid',
+      solicitud_id: 'sol-1',
+      onboarding_link: 'https://app.boosterchile.com/onboarding-admin?token=exencion',
+      onboarding_link_expires_at: '2026-10-01T00:00:00.000Z',
+    });
+    stubClipboard(vi.fn(async () => undefined));
+
+    render(<PlatformAdminSignupRequestsRoute />);
+    await waitFor(() => screen.getByRole('button', { name: /Emitir enlace de alta/ }));
+
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana Pérez' } });
+    fireEvent.change(screen.getByLabelText('Correo'), { target: { value: 'ana@cliente.cl' } });
+    fireEvent.click(screen.getByRole('button', { name: /Emitir enlace de alta/ }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/admin/signup-requests/exencion', {
+        email: 'ana@cliente.cl',
+        nombreCompleto: 'Ana Pérez',
+        admision: 'exencion_admin',
+      }),
+    );
+    expect(
+      screen.getByText('https://app.boosterchile.com/onboarding-admin?token=exencion'),
+    ).toBeInTheDocument();
+  });
+
+  it('solicitud pendiente → muestra el mensaje para aprobarla en la lista', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ signup_requests: [] });
+    vi.spyOn(api, 'post').mockRejectedValue(new ApiError(409, 'solicitud_pendiente', null));
+
+    render(<PlatformAdminSignupRequestsRoute />);
+    await waitFor(() => screen.getByRole('button', { name: /Emitir enlace de alta/ }));
+
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana Pérez' } });
+    fireEvent.change(screen.getByLabelText('Correo'), { target: { value: 'ana@cliente.cl' } });
+    fireEvent.click(screen.getByRole('button', { name: /Emitir enlace de alta/ }));
+
+    await waitFor(() => expect(screen.getByText(/Apruébala en la lista/)).toBeInTheDocument());
   });
 });
