@@ -10,6 +10,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ActivarEmpresa } from '../components/admin/ActivarEmpresa.js';
+import { AsociarTeltonika } from '../components/admin/AsociarTeltonika.js';
 import { CrearEmpresa } from '../components/admin/CrearEmpresa.js';
 import { InvitarMiembroEmpresa } from '../components/admin/InvitarMiembroEmpresa.js';
 import { signOutUser } from '../hooks/use-auth.js';
@@ -156,6 +157,8 @@ function PlatformAdminPage() {
 
         <InvitarMiembroEmpresa refreshToken={empresasVersion} preferEmpresaId={empresaCreadaId} />
 
+        <AsociarTeltonika />
+
         <StakeholderOrgsSection />
 
         <RegisterProvider register="operador" density="comoda" className="mt-8 block">
@@ -179,6 +182,7 @@ function StakeholderOrgsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [creandoCorfo, setCreandoCorfo] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshTick es un trigger de refresh intencional (handleCreated lo incrementa); el efecto no lo lee, pero debe re-ejecutarse cuando cambia.
@@ -217,6 +221,24 @@ function StakeholderOrgsSection() {
     setRefreshTick((t) => t + 1);
   }
 
+  async function crearCorfo() {
+    setCreandoCorfo(true);
+    setError(null);
+    try {
+      await api.post('/admin/stakeholder-orgs', {
+        nombre_legal: 'Corfo',
+        tipo: 'regulador',
+      });
+      setRefreshTick((t) => t + 1);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+      setError(msg);
+    } finally {
+      setCreandoCorfo(false);
+    }
+  }
+
   return (
     <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -231,15 +253,28 @@ function StakeholderOrgsSection() {
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
-          data-testid="stakeholder-org-create-toggle"
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          {showCreate ? 'Cancelar' : 'Crear organización'}
-        </button>
+        <div className="flex shrink-0 flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void crearCorfo()}
+            disabled={
+              creandoCorfo || orgs.some((o) => o.nombre_legal.trim().toLowerCase() === 'corfo')
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 font-medium text-primary-700 text-sm hover:bg-primary-100 disabled:opacity-50"
+            data-testid="stakeholder-crear-corfo"
+          >
+            {creandoCorfo ? 'Creando Corfo…' : 'Crear Corfo'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreate((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700"
+            data-testid="stakeholder-org-create-toggle"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            {showCreate ? 'Cancelar' : 'Crear organización'}
+          </button>
+        </div>
       </div>
 
       {showCreate && <CreateStakeholderOrgForm onCreated={handleCreated} />}
@@ -470,17 +505,24 @@ function InviteStakeholderMemberForm({
   const [form, setForm] = useState<InviteFormState>({ rut: '', email: '', full_name: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [codigo, setCodigo] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setCodigo(null);
     setSubmitting(true);
     try {
-      await api.post(`/admin/stakeholder-orgs/${orgId}/invitar`, {
-        rut: form.rut,
-        email: form.email,
-        full_name: form.full_name,
-      });
+      const res = await api.post<{ codigo_activacion: string }>(
+        `/admin/stakeholder-orgs/${orgId}/invitar`,
+        {
+          rut: form.rut,
+          email: form.email,
+          full_name: form.full_name,
+        },
+      );
+      setCodigo(res.codigo_activacion);
+      setForm({ rut: '', email: '', full_name: '' });
       onInvited();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'already_member') {
@@ -553,10 +595,17 @@ function InviteStakeholderMemberForm({
               Invitando…
             </>
           ) : (
-            'Enviar invitación'
+            'Crear usuario'
           )}
         </button>
       </div>
+      {codigo && (
+        <p className="text-neutral-800 text-xs sm:col-span-3" data-testid="stakeholder-codigo">
+          Código de activación: <span className="font-mono text-base">{codigo}</span>. La persona lo
+          usa en Activar cuenta, con su RUT, y elige su clave. Después entra como stakeholder y ve
+          las zonas agregadas y el mapa de funcionalidades. El código no es la contraseña.
+        </p>
+      )}
     </form>
   );
 }

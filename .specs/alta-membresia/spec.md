@@ -38,6 +38,8 @@ SC5 sigue vigente para la exención: ese endpoint no inserta `empresas`. Esta fa
 - [ ] SC11 — RUT de empresa ya usado → 409 `rut_already_registered`. Ningún rol marcado → 400. Sin sesión, 401. Fuera del allowlist, 403. Plan inexistente o inactivo → 400 `invalid_plan`.
 - [ ] SC12 — Si `is_transportista` es verdadero, se crea `carrier_memberships` tier `free` en `activa` (mismo efecto que el onboarding). El plan por defecto es el slug `gratis`.
 - [ ] SC13 — En `/app/platform-admin` el formulario «Crear empresa» deja elegir generador de carga, transportista o ambos. Las organizaciones stakeholder se siguen creando con el botón que ya existe («Crear organización»); no hay un segundo sistema.
+- [ ] SC14 — `POST /admin/stakeholder-orgs/:id/invitar` deja a la persona en `pendiente_invitacion` y responde `codigo_activacion`. No crea usuario Firebase ni devuelve contraseña. La persona entra por `/activar` y después con RUT + clave. La pantalla muestra el código. Un botón crea la organización Corfo (tipo regulador, ámbito nacional) si todavía no existe.
+- [ ] SC15 — La cuenta stakeholder ve las zonas agregadas y un mapa de las funcionalidades de Booster (cargas, flota, Teltonika, matching, huella, certificados). No abre las mesas de una empresa: esos datos siguen en el tenant.
 
 Siguen fuera de este corte: el pago confirmado como admisor (`admision: "pago_confirmado"`) y la suspensión por impago. No hay medio de pago real que enganchar.
 
