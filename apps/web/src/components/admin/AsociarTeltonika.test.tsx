@@ -8,23 +8,10 @@ beforeEach(() => {
 });
 
 describe('AsociarTeltonika', () => {
-  it('asocia un pendiente al camión del transportista elegido', async () => {
+  it('escribe el IMEI instalado en el camión elegido', async () => {
     vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
       if (path.startsWith('/admin/plataforma/dispositivos/vehiculos')) {
         return { vehiculos: [{ id: 'veh-1', patente: 'ABCD12', teltonika_imei: null }] };
-      }
-      if (path === '/admin/plataforma/dispositivos') {
-        return {
-          devices: [
-            {
-              id: 'dev-1',
-              imei: '356307042441013',
-              ultima_conexion_en: '2026-09-27T00:00:00.000Z',
-              modelo_detectado: 'FMC150',
-              cantidad_conexiones: 2,
-            },
-          ],
-        };
       }
       return {
         empresas: [
@@ -39,23 +26,26 @@ describe('AsociarTeltonika', () => {
     });
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       patente: 'ABCD12',
-      imei: '356307042441013',
+      teltonika_imei: '356307042441013',
     });
 
     render(<AsociarTeltonika />);
 
-    await screen.findByRole('option', { name: /356307042441013/ });
-    fireEvent.change(screen.getByTestId('teltonika-device'), { target: { value: 'dev-1' } });
+    await screen.findByRole('option', { name: /Transportes Sur E2E SpA/ });
     fireEvent.change(screen.getByTestId('teltonika-empresa'), { target: { value: 'emp-1' } });
     await screen.findByRole('option', { name: /ABCD12/ });
     fireEvent.change(screen.getByTestId('teltonika-vehiculo'), { target: { value: 'veh-1' } });
+    fireEvent.change(screen.getByTestId('teltonika-imei'), {
+      target: { value: '356307042441013' },
+    });
     fireEvent.click(screen.getByTestId('teltonika-asociar'));
 
     await waitFor(() =>
-      expect(post).toHaveBeenCalledWith('/admin/plataforma/dispositivos/dev-1/asociar', {
+      expect(post).toHaveBeenCalledWith('/admin/plataforma/dispositivos/asignar', {
         vehiculo_id: 'veh-1',
+        teltonika_imei: '356307042441013',
       }),
     );
-    expect(await screen.findByTestId('teltonika-ok')).toHaveTextContent('ABCD12');
+    expect(await screen.findByTestId('teltonika-ok')).toHaveTextContent('356307042441013');
   });
 });

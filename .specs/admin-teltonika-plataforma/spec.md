@@ -7,15 +7,15 @@
 
 ## 1. Objective
 
-Que un platform-admin asocie un Teltonika que ya se conectó al gateway con un camión de cualquier transportista, sin iniciar sesión en esa empresa.
+Que un platform-admin escriba el IMEI de un Teltonika ya instalado y configurado en un camión que ya existe, sin iniciar sesión en la cuenta del transportista y sin esperar a que el equipo aparezca como pendiente del gateway.
 
 ## 2. Success criteria
 
 - [ ] SC1 — `GET /admin/plataforma/dispositivos` lista los pendientes. Sin sesión, 401. Fuera del allowlist, 403. No exige membresía de empresa.
 - [ ] SC2 — `GET /admin/plataforma/dispositivos/vehiculos?empresa_id=` lista patentes e IMEI actual de esa empresa.
-- [ ] SC3 — `POST /admin/plataforma/dispositivos/:id/asociar` con `vehiculo_id` escribe `vehiculos.teltonika_imei` y deja el pendiente en `aprobado`, aunque el admin no pertenezca a esa empresa.
-- [ ] SC4 — Camión con otro IMEI → 409 `vehicle_has_other_device`. IMEI ya usado por otro camión → 409 `imei_en_uso`. Dispositivo que no está pendiente → 409 `device_not_pending`.
-- [ ] SC5 — El panel `/app/platform-admin` muestra la lista, el transportista, el camión y el botón de asociar.
+- [ ] SC3 — `POST /admin/plataforma/dispositivos/asignar` con `vehiculo_id` y `teltonika_imei` (15 dígitos) escribe `vehiculos.teltonika_imei`. Si el IMEI no tiene fila en `dispositivos_pendientes`, igual queda asignado (`sin_registro`): el alta es interna, el equipo ya está instalado.
+- [ ] SC4 — IMEI ya usado por otro camión → 409 `imei_en_uso`. IMEI con formato inválido → 400. Camión con IMEI espejo → 422 `imei_espejo_activo`.
+- [ ] SC5 — El panel pide transportista, patente e IMEI. No exige elegir un pendiente del gateway.
 
 ## 3. Out of scope
 

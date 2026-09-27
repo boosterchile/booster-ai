@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { teltonikaImeiSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -18,11 +19,15 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
  *
  *   GET  /admin/plataforma/dispositivos
  *   GET  /admin/plataforma/dispositivos/vehiculos?empresa_id=
- *   POST /admin/plataforma/dispositivos/:id/asociar   { vehiculo_id }
+ *   POST /admin/plataforma/dispositivos/asignar  { vehiculo_id, teltonika_imei }
+ *
+ * El IMEI lo escribe el operador: el Teltonika ya está instalado y
+ * configurado en el camión. No hace falta que haya llamado al gateway.
  */
 
-const asociarBodySchema = z.object({
+const asignarBodySchema = z.object({
   vehiculo_id: z.string().uuid(),
+  teltonika_imei: teltonikaImeiSchema,
 });
 
 const vehiculosQuerySchema = z.object({
@@ -91,20 +96,16 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
     });
   });
 
-  app.post('/:id/asociar', zValidator('json', asociarBodySchema), async (c) => {
+  app.post('/asignar', zValidator('json', asignarBodySchema), async (c) => {
     const admin = requirePlatformAdmin(c);
     if (!admin.ok) {
       return admin.response;
     }
-    const deviceId = c.req.param('id');
-    if (!z.string().uuid().safeParse(deviceId).success) {
-      return c.json({ error: 'invalid_id', code: 'invalid_id' }, 400);
-    }
-    const { vehiculo_id: vehiculoId } = c.req.valid('json');
+    const { vehiculo_id: vehiculoId, teltonika_imei: imei } = c.req.valid('json');
 
     return await withBusinessSpan(
       {
-        name: 'dispositivo.asociar_plataforma',
+        name: 'dispositivo.asignar_plataforma',
         attributes: { 'booster.vehiculo_id': vehiculoId },
       },
       async (span) => {
@@ -114,35 +115,13 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
         };
 
         // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-        const deviceRows = await opts.db
-          .select({
-            id: pendingDevices.id,
-            imei: pendingDevices.imei,
-            status: pendingDevices.status,
-          })
-          .from(pendingDevices)
-          .where(eq(pendingDevices.id, deviceId))
-          .limit(1);
-        const device = deviceRows[0];
-        if (!device) {
-          record('device_not_found');
-          return c.json({ error: 'not_found', code: 'device_not_found' }, 404);
-        }
-        if (device.status !== 'pendiente') {
-          record('device_not_pending');
-          return c.json(
-            { error: 'conflict', code: 'device_not_pending', current_status: device.status },
-            409,
-          );
-        }
-
-        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
         const vehicleRows = await opts.db
           .select({
             id: vehicles.id,
             plate: vehicles.plate,
             empresaId: vehicles.empresaId,
             teltonikaImei: vehicles.teltonikaImei,
+            teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
           })
           .from(vehicles)
           .where(eq(vehicles.id, vehiculoId))
@@ -152,70 +131,121 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
           record('vehicle_not_found');
           return c.json({ error: 'not_found', code: 'vehicle_not_found' }, 404);
         }
-        if (vehicle.teltonikaImei && vehicle.teltonikaImei !== device.imei) {
-          record('vehicle_has_other_device');
-          return c.json(
-            {
-              error: 'conflict',
-              code: 'vehicle_has_other_device',
-              current_imei: vehicle.teltonikaImei,
-            },
-            409,
-          );
+        if (vehicle.teltonikaImeiEspejo !== null) {
+          record('imei_espejo_activo');
+          return c.json({ error: 'conflict', code: 'imei_espejo_activo' }, 422);
         }
 
         // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
         const ocupado = await opts.db
           .select({ id: vehicles.id })
           .from(vehicles)
-          .where(and(eq(vehicles.teltonikaImei, device.imei), ne(vehicles.id, vehicle.id)))
+          .where(and(eq(vehicles.teltonikaImei, imei), ne(vehicles.id, vehicle.id)))
           .limit(1);
         if (ocupado[0]) {
           record('imei_en_uso');
           return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
         }
 
-        await opts.db.transaction(async (tx) => {
-          await tx
-            .update(vehicles)
-            .set({ teltonikaImei: device.imei, updatedAt: new Date() })
-            .where(eq(vehicles.id, vehicle.id));
-          await tx
-            .update(pendingDevices)
-            .set({
-              status: 'aprobado',
-              assignedToVehicleId: vehicle.id,
-              assignedAt: new Date(),
-              assignedByUserId: admin.userContext.user.id,
-              updatedAt: new Date(),
-            })
-            .where(and(eq(pendingDevices.id, device.id), eq(pendingDevices.status, 'pendiente')));
-        });
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const pendingRows = await opts.db
+          .select({
+            id: pendingDevices.id,
+            status: pendingDevices.status,
+            assignedToVehicleId: pendingDevices.assignedToVehicleId,
+          })
+          .from(pendingDevices)
+          .where(eq(pendingDevices.imei, imei))
+          .limit(1);
+        const pending = pendingRows[0];
+        if (
+          pending?.status === 'aprobado' &&
+          pending.assignedToVehicleId !== null &&
+          pending.assignedToVehicleId !== vehicle.id
+        ) {
+          record('imei_en_uso');
+          return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
+        }
+        if (pending?.status === 'rechazado') {
+          record('imei_rechazado');
+          return c.json({ error: 'conflict', code: 'imei_rechazado' }, 409);
+        }
+
+        const reconciliacion = pending ? 'aprobado' : 'sin_registro';
+        try {
+          await opts.db.transaction(async (tx) => {
+            await tx
+              .update(vehicles)
+              .set({ teltonikaImei: imei, updatedAt: new Date() })
+              .where(eq(vehicles.id, vehicle.id));
+            if (vehicle.teltonikaImei !== null && vehicle.teltonikaImei !== imei) {
+              await tx
+                .update(pendingDevices)
+                .set({ status: 'reemplazado', updatedAt: new Date() })
+                .where(
+                  and(
+                    eq(pendingDevices.imei, vehicle.teltonikaImei),
+                    eq(pendingDevices.status, 'aprobado'),
+                    eq(pendingDevices.assignedToVehicleId, vehicle.id),
+                  ),
+                );
+            }
+            if (pending && (pending.status === 'pendiente' || pending.status === 'reemplazado')) {
+              await tx
+                .update(pendingDevices)
+                .set({
+                  status: 'aprobado',
+                  assignedToVehicleId: vehicle.id,
+                  assignedAt: new Date(),
+                  assignedByUserId: admin.userContext.user.id,
+                  updatedAt: new Date(),
+                })
+                .where(eq(pendingDevices.id, pending.id));
+            }
+          });
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            record('imei_en_uso');
+            return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
+          }
+          throw err;
+        }
 
         opts.logger.info(
           {
-            deviceId: device.id,
-            imei: device.imei,
             vehicleId: vehicle.id,
             empresaId: vehicle.empresaId,
+            reconciliacion,
             asignadoPor: admin.adminEmail,
           },
-          'dispositivo asociado desde platform-admin',
+          'IMEI Teltonika asignado desde platform-admin',
         );
-        record('asociado');
+        record(reconciliacion);
 
         return c.json({
           ok: true,
-          device_id: device.id,
-          imei: device.imei,
           vehiculo_id: vehicle.id,
           patente: vehicle.plate,
           empresa_id: vehicle.empresaId,
-          estado: 'aprobado',
+          teltonika_imei: imei,
+          reconciliacion,
         });
       },
     );
   });
 
   return app;
+}
+
+function pgErrorCode(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) {
+    return undefined;
+  }
+  if ('code' in err && typeof err.code === 'string') {
+    return err.code;
+  }
+  if ('cause' in err) {
+    return pgErrorCode(err.cause);
+  }
+  return undefined;
 }

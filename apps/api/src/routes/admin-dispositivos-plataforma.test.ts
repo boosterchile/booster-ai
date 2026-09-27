@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ADMIN_EMAIL = 'dev@boosterchile.com';
-const DEVICE_ID = '11111111-1111-4111-8111-111111111111';
 const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
 const EMPRESA_ID = '33333333-3333-4333-8333-333333333333';
+const IMEI = '356307042441013';
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -70,64 +70,121 @@ async function loadMod() {
   return import('./admin-dispositivos-plataforma.js');
 }
 
+const BODY = { vehiculo_id: VEHICLE_ID, teltonika_imei: IMEI };
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('POST /admin/plataforma/dispositivos/:id/asociar', () => {
-  it('habilita el camión de un transportista sin ser miembro de esa empresa', async () => {
+describe('POST /admin/plataforma/dispositivos/asignar', () => {
+  it('escribe el IMEI en el camión aunque el Teltonika no haya llamado al gateway', async () => {
     const mod = await loadMod();
     const d = makeDb([
-      [{ id: DEVICE_ID, imei: '356307042441013', status: 'pendiente' }],
-      [{ id: VEHICLE_ID, plate: 'ABCD12', empresaId: EMPRESA_ID, teltonikaImei: null }],
+      [
+        {
+          id: VEHICLE_ID,
+          plate: 'ABCD12',
+          empresaId: EMPRESA_ID,
+          teltonikaImei: null,
+          teltonikaImeiEspejo: null,
+        },
+      ],
+      [],
       [],
     ]);
     const app = buildApp(mod, d.db);
 
-    const res = await app.request(`/${DEVICE_ID}/asociar`, {
+    const res = await app.request('/asignar', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vehiculo_id: VEHICLE_ID }),
+      body: JSON.stringify(BODY),
     });
 
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { patente: string; imei: string; empresa_id: string };
+    const json = (await res.json()) as { patente: string; reconciliacion: string };
     expect(json.patente).toBe('ABCD12');
-    expect(json.imei).toBe('356307042441013');
-    expect(json.empresa_id).toBe(EMPRESA_ID);
-    expect(d.updates[0]).toMatchObject({ teltonikaImei: '356307042441013' });
-    expect(d.updates[1]).toMatchObject({ status: 'aprobado', assignedToVehicleId: VEHICLE_ID });
+    expect(json.reconciliacion).toBe('sin_registro');
+    expect(d.updates[0]).toMatchObject({ teltonikaImei: IMEI });
   });
 
-  it('rechaza un camión que ya tiene otro dispositivo', async () => {
+  it('rechaza un IMEI que ya está en otro camión', async () => {
     const mod = await loadMod();
     const d = makeDb([
-      [{ id: DEVICE_ID, imei: '356307042441013', status: 'pendiente' }],
-      [{ id: VEHICLE_ID, plate: 'ABCD12', empresaId: EMPRESA_ID, teltonikaImei: '999' }],
+      [
+        {
+          id: VEHICLE_ID,
+          plate: 'ABCD12',
+          empresaId: EMPRESA_ID,
+          teltonikaImei: null,
+          teltonikaImeiEspejo: null,
+        },
+      ],
+      [{ id: 'otro-camion' }],
     ]);
     const app = buildApp(mod, d.db);
 
-    const res = await app.request(`/${DEVICE_ID}/asociar`, {
+    const res = await app.request('/asignar', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vehiculo_id: VEHICLE_ID }),
+      body: JSON.stringify(BODY),
     });
 
     expect(res.status).toBe(409);
     const json = (await res.json()) as { code: string };
-    expect(json.code).toBe('vehicle_has_other_device');
+    expect(json.code).toBe('imei_en_uso');
     expect(d.updates).toHaveLength(0);
   });
 
-  it('no asocia quien no es platform-admin', async () => {
+  it('no escribe un IMEI propio si el camión mira el GPS de otro equipo', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [
+        {
+          id: VEHICLE_ID,
+          plate: 'ABCD12',
+          empresaId: EMPRESA_ID,
+          teltonikaImei: null,
+          teltonikaImeiEspejo: '356307042441013',
+        },
+      ],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/asignar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(BODY),
+    });
+
+    expect(res.status).toBe(422);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('imei_espejo_activo');
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('rechaza un IMEI que no tiene 15 dígitos', async () => {
+    const mod = await loadMod();
+    const d = makeDb([]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/asignar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, teltonika_imei: '123' }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('no asigna quien no es platform-admin', async () => {
     const mod = await loadMod();
     const d = makeDb([]);
     const app = buildApp(mod, d.db, 'ajeno@otra.cl');
 
-    const res = await app.request(`/${DEVICE_ID}/asociar`, {
+    const res = await app.request('/asignar', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vehiculo_id: VEHICLE_ID }),
+      body: JSON.stringify(BODY),
     });
 
     expect(res.status).toBe(403);
