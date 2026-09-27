@@ -33,7 +33,7 @@ vencimientos no se ven en las tarjetas); el detalle hacía `.toISOString()` dire
 - [x] Verde: detalle 200 con `"2028-09-22"`; lista vuelve a mostrar el vencimiento;
       suite unitaria y de integración de `apps/api`, typecheck, biome.
 - [ ] En producción tras el deploy: el botón Editar abre el detalle de cualquier conductor
-      y las tarjetas muestran el vencimiento de licencia.
+      y las tarjetas muestran el vencimiento de licencia. — evidencia parcial (2026-09-22): desde api 00587-ruf (919d9bb9, contiene #678) hay 0 × 500 en GET /conductores/:id y 4 × 200, pero todos de 1 de los 7 conductores (df2a728f); los otros 6 que daban 500 no se volvieron a abrir. La lista pasó de 4457 a 4513 B (+56 = 7 × 8, coherente con null → "YYYY-MM-DD"), pero las tarjetas en la UI no se observaron.
 
 ## 4. Deuda observada (no se arregla aquí)
 
