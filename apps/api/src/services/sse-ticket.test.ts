@@ -32,7 +32,6 @@ describe('sse-ticket', () => {
       redis,
       uid: UID,
       assignmentId: ASSIGNMENT,
-      isDemo: false,
     });
     expect(ticket).toMatch(/^[0-9a-f]{64}$/); // 32 bytes hex = 256 bits
     expect(expiresInSec).toBe(60);
@@ -45,12 +44,10 @@ describe('sse-ticket', () => {
       redis,
       uid: UID,
       assignmentId: ASSIGNMENT,
-      isDemo: false,
     });
 
     expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toEqual({
       uid: UID,
-      isDemo: false,
     });
     // Segundo consumo: ya fue borrado (GETDEL) → replay imposible.
     expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toBeNull();
@@ -70,25 +67,23 @@ describe('sse-ticket', () => {
       redis,
       uid: UID,
       assignmentId: ASSIGNMENT,
-      isDemo: false,
     });
     expect(
       await consumeStreamTicket({ redis, ticket, assignmentId: 'otro-assignment' }),
     ).toBeNull();
   });
 
-  it('preserva isDemo=true en el round-trip (demo enforcement del SSE)', async () => {
+  it('ticket de la revisión anterior (payload con isDemo) se consume y devuelve solo { uid }', async () => {
+    // Convivencia en el canary: una revisión vieja acuña con `isDemo`; la nueva
+    // lo ignora (sin lector desde #698, spec retiro-demo-codigo-muerto).
     const redis = makeRedis();
-    const { ticket } = await mintStreamTicket({
-      redis,
-      uid: UID,
-      assignmentId: ASSIGNMENT,
-      isDemo: true,
-    });
-    expect(await consumeStreamTicket({ redis, ticket, assignmentId: ASSIGNMENT })).toEqual({
-      uid: UID,
-      isDemo: true,
-    });
+    (redis as unknown as { store: Map<string, string> }).store.set(
+      'sse-ticket:legacy',
+      JSON.stringify({ uid: UID, assignmentId: ASSIGNMENT, isDemo: true }),
+    );
+    expect(
+      await consumeStreamTicket({ redis, ticket: 'legacy', assignmentId: ASSIGNMENT }),
+    ).toEqual({ uid: UID });
   });
 
   it('Redis caído en consume → null (fail-closed, no throw)', async () => {

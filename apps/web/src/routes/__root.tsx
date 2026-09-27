@@ -1,5 +1,4 @@
 import { Outlet } from '@tanstack/react-router';
-import { DemoBanner } from '../components/DemoBanner.js';
 import { ImpersonationBanner } from '../components/ImpersonationBanner.js';
 
 /**
@@ -9,14 +8,12 @@ import { ImpersonationBanner } from '../components/ImpersonationBanner.js';
  * No agrego layout aquí porque Login y Onboarding tienen layouts
  * distintos al app autenticado.
  *
- * `DemoBanner` e `ImpersonationBanner` se montan global y se self-gatean
- * (via `useIsDemo()` / `useImpersonation()`) — usuarios sin el claim
- * correspondiente no ven el banner.
+ * `ImpersonationBanner` se monta global y se self-gatea (via
+ * `useImpersonation()`) — sesiones sin el claim no ven el banner.
  */
 export function RootComponent() {
   return (
     <>
-      <DemoBanner />
       <ImpersonationBanner />
       <Outlet />
     </>
