@@ -108,11 +108,14 @@ export async function dispatchSafetyNotification(opts: {
   }
 
   // 5. WhatsApp (solo si contentSidSafety está configurado).
+  //    Un número, un mensaje, aunque dos fichas lo compartan.
   if (contentSidSafety !== undefined) {
+    const seenPhones = new Set<string>();
     for (const recipient of routing.recipients) {
-      if (recipient.phoneE164 === null) {
+      if (recipient.phoneE164 === null || seenPhones.has(recipient.phoneE164)) {
         continue;
       }
+      seenPhones.add(recipient.phoneE164);
 
       try {
         await sendWhatsapp({

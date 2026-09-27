@@ -125,7 +125,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 800 },
@@ -186,7 +186,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },
@@ -238,7 +238,7 @@ describe('listarTrayectosTeltonika', () => {
         {
           vehicleId: VEHICULO,
           timestampDevice: new Date(t0 + 60_000),
-          latitude: '-33.451',
+          latitude: '-33.47',
           longitude: '-70.66',
           speedKmh: 40,
           ioData: { '239': 1, '240': 1, '84': 790 },
@@ -339,7 +339,7 @@ describe('listarTrayectosTeltonika', () => {
       {
         vehicleId: VEHICULO,
         timestampDevice: new Date(t0 + 60_000),
-        latitude: '-33.451',
+        latitude: '-33.47',
         longitude: '-70.66',
         speedKmh: 40,
         ioData: { '239': 1, '240': 1, '84': 500 },
@@ -472,6 +472,112 @@ describe('listarTrayectosTeltonika', () => {
     expect(sinDato.trayectos[0]?.fuenteCombustible).toBeNull();
   });
 
+  it('no emite el aviso si el trayecto es corto o el AVL 89 está bajo 14 %', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const vehiculo = [{ id: VEHICULO, plate: 'JLKT54', empresaId: EMPRESA }];
+    const corto = makeDb(vehiculo, [
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 12 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 600, '89': 30 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 10 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 800, '89': 40 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.451',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 800, '89': 40 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 800, '89': 40 },
+      },
+    ]);
+    const sinBadgeCorto = await listarTrayectosTeltonika({
+      db: corto.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(sinBadgeCorto.trayectos[0]?.distanciaKm).toBeLessThan(1);
+    expect(sinBadgeCorto.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+
+    const tanqueBajo = makeDb(vehiculo, [
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 12 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 1600, '89': 8 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 10 * 60_000),
+        latitude: '-30.3078',
+        longitude: '-71.5117',
+        speedKmh: 0,
+        ioData: { '239': 0, '240': 0, '84': 2000, '89': 10 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0 + 60_000),
+        latitude: '-33.47',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 2000, '89': 10 },
+      },
+      {
+        vehicleId: VEHICULO,
+        timestampDevice: new Date(t0),
+        latitude: '-33.45',
+        longitude: '-70.66',
+        speedKmh: 40,
+        ioData: { '239': 1, '240': 1, '84': 2000, '89': 10 },
+      },
+    ]);
+    const sinBadgeBajo = await listarTrayectosTeltonika({
+      db: tanqueBajo.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(sinBadgeBajo.trayectos[0]?.distanciaKm).toBeGreaterThanOrEqual(1);
+    expect(sinBadgeBajo.trayectos[0]).toMatchObject({
+      posibleRoboCombustible: false,
+      posibleRoboHormiga: false,
+      eventLat: null,
+      eventLon: null,
+    });
+  });
+
   it('sin vehículos devuelve los totales en cero y el resumen vacío', async () => {
     const lista = await listarTrayectosTeltonika({
       db: makeDb([], []).db,
@@ -489,6 +595,230 @@ describe('listarTrayectosTeltonika', () => {
       totalConCombustible: 0,
       totalSinCombustible: 0,
       vehiculos: [],
+      resumenVehiculo: null,
     });
+  });
+
+  it('vehiculoId deja solo ese vehículo y arma el resumen sin inventar km/L', async () => {
+    const otro = '33333333-3333-4333-8333-333333333333';
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const punto = (vehicleId: string, offsetMin: number) => ({
+      vehicleId,
+      timestampDevice: new Date(t0 + offsetMin * 60_000),
+      latitude: String(-33.45 - offsetMin * 0.01),
+      longitude: '-70.66',
+      speedKmh: 40,
+      ioData: { '239': 1, '240': 1 },
+    });
+    const db = makeDb(
+      [
+        { id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA },
+        { id: otro, plate: 'ZZZZ99', empresaId: EMPRESA },
+      ],
+      [punto(VEHICULO, 0), punto(VEHICULO, 1), punto(otro, 0), punto(otro, 1)],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+      vehiculoId: VEHICULO,
+    });
+    expect(lista.trayectos.map((t) => t.patente)).toEqual(['ABCD12']);
+    expect(lista.resumenVehiculo?.recientes.map((t) => t.patente)).toEqual(['ABCD12']);
+    expect(lista.resumenVehiculo?.kmPorLitro).toBeNull();
+    expect(lista.resumenVehiculo?.ctaSensor).toBe(true);
+    expect(lista.resumenVehiculo?.kmRecientes).toBeGreaterThan(0);
+    expect(lista.cta).toBeNull();
+  });
+
+  it('detalleId mete en la página un trayecto que el page size habría cortado', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const punto = (offsetMin: number) => ({
+      vehicleId: VEHICULO,
+      timestampDevice: new Date(t0 + offsetMin * 60_000),
+      latitude: String(-33.45 - offsetMin * 0.01),
+      longitude: '-70.66',
+      speedKmh: 40,
+      ioData: { '239': 1, '240': 1 },
+    });
+    const db = makeDb(
+      [{ id: VEHICULO, plate: 'ABCD12', empresaId: EMPRESA }],
+      [punto(0), punto(1), punto(40), punto(41)],
+    );
+    const idViejo = `${VEHICULO}:${new Date(t0).toISOString()}`;
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 1,
+      combustible: 'sin_dato',
+      vehiculoId: VEHICULO,
+      detalleId: idViejo,
+    });
+    expect(lista.total).toBe(2);
+    expect(lista.trayectos.map((t) => t.id)).toContain(idViejo);
+    expect(lista.trayectos[0]?.id).not.toBe(lista.trayectos[1]?.id);
+  });
+
+  it('fuente sin_sensor no inventa litros aunque el IO traiga 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JWTH77',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: 'sin_sensor',
+          capacidadEstanqueL: null,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 50, '84': 1000 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 40, '84': 800 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+      combustible: 'sin_dato',
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JWTH77',
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      fuenteCombustible: null,
+      ctaSensor: true,
+    });
+    expect(lista.trayectos[0]?.distanciaKm).toBeGreaterThan(0);
+    expect(lista.vehiculos[0]?.combustible).toBe('sin_sensor');
+    expect(lista.ctaSensor).toBe(true);
+  });
+
+  it('fuente 84 y capacidad 200 L convierten el porcentaje del AVL 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JLKT54',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: '84',
+          capacidadEstanqueL: 200,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 800 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '84': 1000 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      litrosIniciales: 100,
+      litrosFinales: 80,
+      litrosConsumidos: 20,
+      fuenteCombustible: 'nivel_litros',
+    });
+  });
+
+  it('fuente 89 y capacidad 200 L prefieren 89 × capacidad, no el 84', async () => {
+    const t0 = Date.parse('2026-09-02T12:00:00.000Z');
+    const db = makeDb(
+      [
+        {
+          id: VEHICULO,
+          plate: 'JLKT54',
+          empresaId: EMPRESA,
+          fuenteCombustibleCan: '89',
+          capacidadEstanqueL: 200,
+        },
+      ],
+      [
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0),
+          latitude: '-33.45',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 80, '84': 400 },
+        },
+        {
+          vehicleId: VEHICULO,
+          timestampDevice: new Date(t0 + 60_000),
+          latitude: '-33.55',
+          longitude: '-70.66',
+          speedKmh: 40,
+          ioData: { '239': 1, '240': 1, '89': 60, '84': 300 },
+        },
+      ],
+    );
+    const lista = await listarTrayectosTeltonika({
+      db: db.db,
+      logger,
+      empresaId: EMPRESA,
+      desde,
+      hasta,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(lista.trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      litrosIniciales: 160,
+      litrosFinales: 120,
+      litrosConsumidos: 40,
+      nivelPctInicial: 80,
+      nivelPctFinal: 60,
+      fuenteCombustible: 'nivel_litros',
+    });
+    expect(lista.vehiculos[0]?.combustible).toBe('nivel_litros');
   });
 });
