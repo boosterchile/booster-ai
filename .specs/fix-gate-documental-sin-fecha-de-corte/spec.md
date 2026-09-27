@@ -39,8 +39,8 @@ cohorte a la que aplicarla. Este fix alinea el código con el ADR; no lo reabre.
 - [x] Test rojo exhibido para `null` → cierra sin documento (y sin exigir TED).
 - [x] Test de no-regresión con fecha configurada → sigue exigiendo documento.
 - [x] Suite unitaria completa de `apps/api`, typecheck y biome en verde.
-- [ ] Verificación en prod tras el próximo deploy manual: una entrega real
-      cierra sin 409 mientras `_SINCE` siga ausente.
+- [x] Verificación en prod tras el próximo deploy manual: una entrega real
+      cierra sin 409 mientras `_SINCE` siga ausente. — verificado 2026-09-22: BOO-BKAXIK (0 documentos) PATCH confirmar-entrega → 200 el 2026-09-14T17:01:57Z en api 00590-bik (2388bb43, contiene #674); Cloud Logging 13–22-09: 5/5 confirmar-entrega = 200, 0 × 409; env de 00590-bik, 00607-xow y 00610-qaw sin REQUIRE_DOCUMENT_TO_CLOSE_SINCE.
 
 ## 5. Fuera de alcance
 

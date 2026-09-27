@@ -43,11 +43,11 @@ GPS resiliente (#686), vista ruta/resultado (#687) e higiene (#688) ya están en
 
 ## 4. Criterios de salida
 
-- [ ] Flag + `connectAuthEmulator` cableado; tests unitarios: on → emulador loopback y sin App Check; off → Identity Platform / App Check como hoy; host no-loopback → throw (no prod).
-- [ ] Spec en `.specs/conductor-e2e-auth-emulator/`.
-- [ ] E2E Playwright: login conductor T2 → asignación en `/app/conductor` → confirmar recogida → ≥1 `POST …/driver-position` (geolocation mock) → confirmar entrega → resultado visible (métricas y/o «Certificado en proceso» / degradación). Gate rol cubierto.
-- [ ] Typecheck + biome + harness OK.
-- [ ] PR draft a `main` con `## Evidencia`.
+- [x] Flag + `connectAuthEmulator` cableado; tests unitarios: on → emulador loopback y sin App Check; off → Identity Platform / App Check como hoy; host no-loopback → throw (no prod). — verificado 2026-09-22: `apps/web/src/lib/firebase.ts:51-90` + `firebase.test.ts:130-157` en cf76ea8; `firebase.test.ts` (11) y `auth-emulator.test.ts` (4) verdes en Test + Coverage del PR #707 (run 35672607011).
+- [x] Spec en `.specs/conductor-e2e-auth-emulator/`. — verificado 2026-09-22: spec.md, plan.md y verify.md en origin/main cf76ea8 (entraron con #693, 3a02622).
+- [x] E2E Playwright: login conductor T2 → asignación en `/app/conductor` → confirmar recogida → ≥1 `POST …/driver-position` (geolocation mock) → confirmar entrega → resultado visible (métricas y/o «Certificado en proceso» / degradación). Gate rol cubierto. — verificado 2026-09-22: `flujo-conductor.spec.ts` + `gate-rol.spec.ts`, «2 passed» en «E2E conductor Playwright» del PR #707 (run 35672607005; squash cf76ea8 = tip de main); el check «E2E conductor (Auth emulator + API local)» es required en la branch protection de main. Desvío: la aserción final (`flujo-conductor.spec.ts:62-64`) también acepta «Sin dato» y «Tu empresa lo verá» (el estado de error de `ResultadoViaje.tsx:143`), así que no exige métricas ni certificado; y el ≥1 POST se exige antes de confirmar la recogida, no después.
+- [x] Typecheck + biome + harness OK. — verificado 2026-09-22: «Typecheck (tsc)», «Lint (Biome)» y «route default-deny harness (SC-G1b T15)» en pass en #693 (runs 35563212763/35563212742) y en #707 (runs 35672607011/35672606986). «harness» se lee como ese check porque la spec no lo define.
+- [x] PR draft a `main` con `## Evidencia`. — verificado 2026-09-22: #693 (base main; creado como draft el 2026-09-21T04:58Z, ready_for_review 05:10:31Z, mergeado 05:10:37Z como 3a02622) con sección `## Evidencia`.
 
 ## 5. Fuera de alcance
 
