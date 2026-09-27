@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
   empresaStatusSchema,
   invitarMiembroEmpresaSchema,
@@ -10,15 +11,18 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { empresas, memberships, users } from '../db/schema.js';
+import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — sumar personas a una empresa EXISTENTE.
  *
  *   GET   /admin/empresas              → lista (filtro opcional `?estado=`)
+ *   POST  /admin/empresas              → crea la ficha legal (generador y/o
+ *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
@@ -31,18 +35,15 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
  * con flota y conductores cargados, cuyo único acceso era una cuenta de Booster
  * dentro del tenant del cliente.
  *
- * **Diferencia con `admin-stakeholder-orgs.ts`** (mismo patrón, un escalón
- * mejor): aquel crea un usuario placeholder con `firebase_uid = pending-rut:…`
- * y deja el acceso "fuera de banda". Acá se crea la cuenta Firebase real y se
- * devuelve el link de acceso (mismo mecanismo que T2.0), porque una membresía
- * sin forma de entrar no sirve de nada.
+ * **Mismo mecanismo que `POST /me/empresa/miembros`**: no se crea la cuenta
+ * Firebase con el correo real ni se devuelve un reset de contraseña. Se emite
+ * un código de 6 dígitos (hash en `activation_pin_hash`). La persona lo usa en
+ * `POST /auth/activar` junto con el RUT y elige su clave. El código no queda
+ * como contraseña y no se loguea.
  *
- * **Estado de la membresía**: `activa`, no `pendiente_invitacion`. El invitado
- * debe poder operar apenas fija su contraseña; una membresía pendiente lo
- * dejaría entrando a una app vacía (el `userContext` resuelve empresa activa
- * sobre membresías activas). La trazabilidad de la invitación queda igual en
- * `invitado_por_id` / `invitado_en`, y `unido_en` se mantiene null hasta que
- * la persona entre.
+ * **Estado de la membresía**: `pendiente_invitacion` hasta que active. Ahí
+ * `/auth/activar` la pasa a `activa`. La trazabilidad queda en
+ * `invitado_por_id` / `invitado_en`.
  *
  * Audiencia: platform-admin (allowlist `BOOSTER_PLATFORM_ADMIN_EMAILS`).
  */
@@ -96,6 +97,152 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         es_generador_carga: r.esGeneradorCarga,
       })),
     });
+  });
+
+  // POST /admin/empresas — ficha legal sin persona. Un generador de carga es
+  // esta fila con `es_generador_carga`; un transportista, con el otro flag.
+  // La credencial de quien entra se emite después, con el código de
+  // activación. La empresa queda en verificación: matching exige `activa`.
+  app.post('/', zValidator('json', crearEmpresaAdminSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan(
+      {
+        name: 'alta.crear_empresa',
+        attributes: {
+          'alta.es_generador_carga': body.is_generador_carga,
+          'alta.es_transportista': body.is_transportista,
+          'alta.plan_slug': body.plan_slug,
+        },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('alta_empresa_admin_total').add(1, { resultado });
+          setResultAttributes(span, { 'alta.resultado': resultado });
+        };
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const planRows = await opts.db
+          .select({ id: plans.id, isActive: plans.isActive })
+          .from(plans)
+          .where(eq(plans.slug, body.plan_slug))
+          .limit(1);
+        const plan = planRows[0];
+        if (!plan || !plan.isActive) {
+          record('invalid_plan');
+          return c.json({ error: 'invalid_plan', code: 'invalid_plan' }, 400);
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const duplicada = await opts.db
+          .select({ id: empresas.id })
+          .from(empresas)
+          .where(eq(empresas.rut, body.rut))
+          .limit(1);
+        if (duplicada[0]) {
+          record('rut_already_registered');
+          return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+
+        try {
+          const creada = await opts.db.transaction(async (tx) => {
+            const inserted = await tx
+              .insert(empresas)
+              .values({
+                legalName: body.legal_name,
+                rut: body.rut,
+                contactEmail: body.contact_email.toLowerCase(),
+                contactPhone: body.contact_phone,
+                addressStreet: body.address_street,
+                addressCity: body.address_city,
+                addressRegion: body.address_region,
+                ...(body.address_postal_code
+                  ? { addressPostalCode: body.address_postal_code }
+                  : {}),
+                isGeneradorCarga: body.is_generador_carga,
+                isTransportista: body.is_transportista,
+                isDemo: false,
+                planId: plan.id,
+                status: 'pendiente_verificacion',
+                timezone: 'America/Santiago',
+              })
+              .returning({
+                id: empresas.id,
+                legalName: empresas.legalName,
+                rut: empresas.rut,
+                status: empresas.status,
+                isGeneradorCarga: empresas.isGeneradorCarga,
+                isTransportista: empresas.isTransportista,
+              });
+            const empresa = inserted[0];
+            if (!empresa) {
+              return null;
+            }
+            if (body.is_transportista) {
+              const carrier = await tx
+                .insert(carrierMemberships)
+                .values({
+                  empresaId: empresa.id,
+                  tierSlug: 'free',
+                  status: 'activa',
+                })
+                .returning({ id: carrierMemberships.id });
+              if (!carrier[0]) {
+                throw new Error('Insert carrier_memberships returned no row');
+              }
+            }
+            return empresa;
+          });
+
+          if (!creada) {
+            opts.logger.error({}, 'admin-empresas: insert empresa vacío');
+            record('empresa_create_failed');
+            return c.json({ error: 'internal_server_error', code: 'empresa_create_failed' }, 500);
+          }
+
+          opts.logger.info(
+            {
+              empresaId: creada.id,
+              planSlug: body.plan_slug,
+              isGeneradorCarga: creada.isGeneradorCarga,
+              isTransportista: creada.isTransportista,
+              invitedBy: admin.adminEmail,
+            },
+            'admin-empresas: ficha creada',
+          );
+          record('created');
+
+          return c.json(
+            {
+              ok: true,
+              empresa_id: creada.id,
+              razon_social: creada.legalName,
+              rut: creada.rut,
+              estado: creada.status,
+              es_generador_carga: creada.isGeneradorCarga,
+              es_transportista: creada.isTransportista,
+              plan_slug: body.plan_slug,
+            },
+            201,
+          );
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            record('rut_already_registered');
+            return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+          }
+          opts.logger.error(
+            { err, errMessage: err instanceof Error ? err.message : String(err) },
+            'admin-empresas: fallo al crear la ficha',
+          );
+          throw err;
+        }
+      },
+    );
   });
 
   // PATCH /admin/empresas/:id — cambia estado. Cierra el hueco 0→1: el
@@ -207,152 +354,160 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
     }
     const body = c.req.valid('json');
     const email = body.email.toLowerCase();
+    const codigo = generateActivationPin();
+    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    // La empresa se valida ANTES de tocar Firebase: crear la cuenta y después
-    // descubrir que la empresa no existe dejaría un usuario huérfano que nadie
-    // limpia (el reaper T1.7 solo persigue huérfanos del flujo con token).
-    // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-    const empresaRows = await opts.db
-      .select({ id: empresas.id, razonSocial: empresas.legalName })
-      .from(empresas)
-      .where(eq(empresas.id, empresaId))
-      .limit(1);
-    const empresa = empresaRows[0];
-    if (!empresa) {
-      return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
-    }
+    return await withBusinessSpan(
+      {
+        name: 'alta.invitar_miembro',
+        attributes: { 'booster.empresa_id': empresaId, 'alta.rol': body.rol },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('alta_invitacion_admin_total').add(1, { resultado });
+          setResultAttributes(span, { 'alta.resultado': resultado });
+        };
 
-    // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-    const existingUsers = await opts.db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    const existingUser = existingUsers[0];
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const empresaRows = await opts.db
+          .select({ id: empresas.id, razonSocial: empresas.legalName })
+          .from(empresas)
+          .where(eq(empresas.id, empresaId))
+          .limit(1);
+        const empresa = empresaRows[0];
+        if (!empresa) {
+          record('empresa_not_found');
+          return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+        }
 
-    if (existingUser) {
-      // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
-      const existingMembership = await opts.db
-        .select({ id: memberships.id })
-        .from(memberships)
-        .where(and(eq(memberships.userId, existingUser.id), eq(memberships.empresaId, empresaId)))
-        .limit(1);
-      if (existingMembership[0]) {
+        // La identidad es el RUT, igual que el alta que hace la propia empresa.
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const porRut = await opts.db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.rut, body.rut))
+          .limit(1);
+        const existente = porRut[0];
+
+        let userId: string;
+        if (existente) {
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const existingMembership = await opts.db
+            .select({ id: memberships.id })
+            .from(memberships)
+            .where(and(eq(memberships.userId, existente.id), eq(memberships.empresaId, empresaId)))
+            .limit(1);
+          if (existingMembership[0]) {
+            record('already_member');
+            return c.json(
+              {
+                error: 'conflict',
+                code: 'already_member',
+                membership_id: existingMembership[0].id,
+              },
+              409,
+            );
+          }
+          await opts.db
+            .update(users)
+            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+            .where(eq(users.id, existente.id));
+          userId = existente.id;
+        } else {
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const porEmail = await opts.db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.email, email))
+            .limit(1);
+          if (porEmail[0]) {
+            record('email_already_registered');
+            return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+          }
+
+          const inserted = await opts.db
+            .insert(users)
+            .values({
+              firebaseUid: `pending-rut:${body.rut}`,
+              email,
+              fullName: body.full_name,
+              rut: body.rut,
+              activationPinHash: hashActivationPin(codigo),
+              status: 'pendiente_verificacion',
+              isPlatformAdmin: false,
+            })
+            .returning({ id: users.id });
+          const created = inserted[0];
+          if (!created) {
+            opts.logger.error({ empresaId }, 'admin-empresa-miembros: insert user vacío');
+            record('user_create_failed');
+            return c.json({ error: 'internal_server_error', code: 'user_create_failed' }, 500);
+          }
+          userId = created.id;
+        }
+
+        const insertedMembership = await opts.db
+          .insert(memberships)
+          .values({
+            userId,
+            empresaId,
+            role: body.rol,
+            status: 'pendiente_invitacion',
+            invitedByUserId: admin.userContext.user.id,
+            invitedAt: new Date(),
+            joinedAt: null,
+          })
+          .returning({ id: memberships.id });
+        const membership = insertedMembership[0];
+        if (!membership) {
+          opts.logger.error(
+            { empresaId, userId },
+            'admin-empresa-miembros: insert membresía vacío',
+          );
+          record('membership_create_failed');
+          return c.json({ error: 'internal_server_error', code: 'membership_create_failed' }, 500);
+        }
+
+        opts.logger.info(
+          {
+            empresaId,
+            userId,
+            membershipId: membership.id,
+            rol: body.rol,
+            invitedBy: admin.adminEmail,
+          },
+          'admin-empresa-miembros: invitación emitida (código no logueado)',
+        );
+        record('issued');
+
         return c.json(
           {
-            error: 'conflict',
-            code: 'already_member',
-            membership_id: existingMembership[0].id,
+            ok: true,
+            user_id: userId,
+            membership_id: membership.id,
+            rol: body.rol,
+            estado: 'pendiente_invitacion',
+            codigo_activacion: codigo,
+            expira_en: expiraEn.toISOString(),
           },
-          409,
+          201,
         );
-      }
-    }
-
-    // Cuenta Firebase solo para emails nuevos: si la persona ya existe en la
-    // plataforma (p.ej. trabaja en dos empresas), se le suma la membresía sin
-    // duplicar su identidad.
-    let userId: string;
-    if (existingUser) {
-      userId = existingUser.id;
-    } else {
-      let firebaseUid: string;
-      try {
-        const fbUser = await opts.auth.createUser({
-          email,
-          displayName: body.full_name,
-          emailVerified: false,
-        });
-        firebaseUid = fbUser.uid;
-      } catch (err) {
-        const code = (err as { code?: string } | null)?.code;
-        if (code === 'auth/email-already-exists') {
-          // Existe en Firebase pero no en nuestra BD (alta a medias previa).
-          // No lo resolvemos por adivinanza: que el admin lo revise.
-          opts.logger.warn(
-            { empresaId, firebaseErrorCode: code },
-            'admin-empresa-miembros: email ya existe en Firebase sin fila en usuarios',
-          );
-          return c.json({ error: 'conflict', code: 'firebase_user_already_exists' }, 409);
-        }
-        opts.logger.error({ err, empresaId }, 'admin-empresa-miembros: Firebase createUser falló');
-        return c.json({ error: 'service_unavailable', code: 'firebase_unavailable' }, 503);
-      }
-
-      const inserted = await opts.db
-        .insert(users)
-        .values({
-          firebaseUid,
-          email,
-          fullName: body.full_name,
-          status: 'activo',
-          isPlatformAdmin: false,
-        })
-        .returning({ id: users.id });
-      const created = inserted[0];
-      if (!created) {
-        opts.logger.error({ empresaId, firebaseUid }, 'admin-empresa-miembros: insert user vacío');
-        return c.json({ error: 'internal_server_error', code: 'user_create_failed' }, 500);
-      }
-      userId = created.id;
-    }
-
-    const insertedMembership = await opts.db
-      .insert(memberships)
-      .values({
-        userId,
-        empresaId,
-        role: body.rol,
-        status: 'activa',
-        invitedByUserId: admin.userContext.user.id,
-        invitedAt: new Date(),
-        joinedAt: null,
-      })
-      .returning({ id: memberships.id });
-    const membership = insertedMembership[0];
-    if (!membership) {
-      opts.logger.error({ empresaId, userId }, 'admin-empresa-miembros: insert membresía vacío');
-      return c.json({ error: 'internal_server_error', code: 'membership_create_failed' }, 500);
-    }
-
-    // Link de acceso (T2.0): la cuenta no tiene contraseña ni email verificado.
-    // Degrada sin romper — la membresía ya existe y el admin puede disparar el
-    // reset desde el login. El link NUNCA se loguea: es credencial de un uso.
-    let accessLink: string | undefined;
-    try {
-      accessLink = await opts.auth.generatePasswordResetLink(email);
-    } catch (err) {
-      opts.logger.error(
-        { err, empresaId, userId },
-        'admin-empresa-miembros: generatePasswordResetLink falló; miembro creado sin link',
-      );
-    }
-
-    opts.logger.info(
-      {
-        empresaId,
-        empresaRazonSocial: empresa.razonSocial,
-        userId,
-        membershipId: membership.id,
-        rol: body.rol,
-        invitedBy: admin.adminEmail,
-        accessLinkIssued: accessLink !== undefined,
       },
-      'admin-empresa-miembros: miembro agregado a empresa existente',
-    );
-
-    return c.json(
-      {
-        ok: true,
-        user_id: userId,
-        membership_id: membership.id,
-        rol: body.rol,
-        estado: 'activa',
-        ...(accessLink ? { access_link: accessLink } : {}),
-      },
-      201,
     );
   });
 
   return app;
+}
+
+function pgErrorCode(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) {
+    return undefined;
+  }
+  if ('code' in err && typeof err.code === 'string') {
+    return err.code;
+  }
+  if ('cause' in err) {
+    return pgErrorCode(err.cause);
+  }
+  return undefined;
 }
