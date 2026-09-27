@@ -7,8 +7,8 @@ import { RotarClaveModal } from './auth/RotarClaveModal.js';
 
 /**
  * Tests del ImpersonationBanner (impersonación auditada, frontend). Banner fijo
- * arriba, imposible de ignorar, con botón Salir → login. Reusa el patrón de
- * DemoBanner. En D2 (primitivas + tokens, sin hardcode).
+ * arriba, imposible de ignorar, con botón Salir → login. En D2 (primitivas +
+ * tokens, sin hardcode).
  */
 
 const navigateMock = vi.fn();
