@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { chileanPhoneSchema, rutSchema } from '../primitives/chile.js';
 import { addressSchema } from '../primitives/geo.js';
 import { empresaIdSchema, planIdSchema } from '../primitives/ids.js';
+import { planSlugSchema } from './plan.js';
 import { reportingStandardSchema } from './stakeholder.js';
 
 /**
@@ -84,6 +85,34 @@ export const empresaCreateSchema = empresaSchema
 export type EmpresaCreate = z.infer<typeof empresaCreateSchema>;
 
 /**
+ * Alta de la ficha legal desde platform-admin.
+ *
+ * No crea persona ni clave: eso sigue en la invitación con código. El plan
+ * viaja como slug (`gratis` por defecto) porque el admin no conoce el UUID
+ * de `planes`. La región cabe en `direccion_region` (varchar 4): códigos
+ * romanos del catálogo de Chile (`XIII`, `RM` no).
+ */
+export const crearEmpresaAdminSchema = z
+  .object({
+    legal_name: z.string().min(1).max(200),
+    rut: rutSchema,
+    contact_email: z.string().email().max(255),
+    contact_phone: chileanPhoneSchema,
+    address_street: z.string().min(1).max(200),
+    address_city: z.string().min(1).max(100),
+    address_region: z.string().min(1).max(4),
+    address_postal_code: z.string().min(1).max(20).optional(),
+    is_generador_carga: z.boolean(),
+    is_transportista: z.boolean(),
+    plan_slug: planSlugSchema.default('gratis'),
+  })
+  .refine((data) => data.is_generador_carga || data.is_transportista, {
+    message: 'La empresa debe operar al menos como generador de carga o como transportista',
+    path: ['is_generador_carga'],
+  });
+export type CrearEmpresaAdmin = z.infer<typeof crearEmpresaAdminSchema>;
+
+/**
  * Roles asignables al invitar a alguien a una empresa EXISTENTE.
  *
  * Excluye dos del enum de `membresias.rol`:
@@ -101,12 +130,14 @@ export type RolInvitacionEmpresa = z.infer<typeof rolInvitacionEmpresaSchema>;
  * Existe porque el onboarding solo sabe crear empresa + dueño de cero: con el
  * RUT ya registrado devuelve 409 `rut_already_registered`, así que no había
  * forma de darle acceso a la segunda persona de un cliente. El backend crea la
- * cuenta Firebase (si el email es nuevo), la fila `usuarios` y la membresía, y
- * devuelve el link de acceso para que la persona fije su contraseña.
+ * fila `usuarios` (si el RUT es nuevo) y la membresía en `pendiente_invitacion`,
+ * y devuelve un código de 6 dígitos de un solo uso. La persona lo usa en
+ * `/activar` para elegir su propia clave. El código no es la contraseña.
  */
 export const invitarMiembroEmpresaSchema = z.object({
   email: z.string().email().max(320),
   full_name: z.string().min(2).max(200),
+  rut: rutSchema,
   rol: rolInvitacionEmpresaSchema,
 });
 export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;
