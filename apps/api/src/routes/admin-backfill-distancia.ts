@@ -102,7 +102,7 @@ export function createAdminBackfillDistanciaRoutes(opts: {
           error: decision.razon,
           trips_esperados: decision.tripsEsperados,
           trips_reales: decision.tripsReales,
-          hint: 'Corré el dry-run de nuevo y reintentá con el trips_esperados actualizado.',
+          hint: 'Corre el dry-run de nuevo y reintenta con el trips_esperados actualizado.',
         },
         409,
       );

@@ -102,7 +102,7 @@ function PlatformAdminPage() {
         Operaciones de plataforma
       </h1>
       <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-        Elegí la función. Cada una abre su página y desde ahí se vuelve a este índice.
+        Elige la función. Cada una abre su página y desde ahí se vuelve a este índice.
       </p>
       <ul className="mt-6 space-y-3">
         {ACCESOS.map((acceso) => (

@@ -39,7 +39,7 @@ describe('canWriteTransportDocuments', () => {
   });
 });
 
-describe('labels vos', () => {
+describe('labels tuteo', () => {
   it('status en español humano', () => {
     expect(EXTRACTION_STATUS_LABEL.pendiente).toBe('Pendiente');
     expect(EXTRACTION_STATUS_LABEL.fallido).toBe('Falló la lectura');
@@ -92,7 +92,7 @@ describe('isAllowedTransportDocumentFile', () => {
 describe('humanizeTransportDocumentError', () => {
   it('503 storage_unavailable → copy contratado', () => {
     expect(humanizeTransportDocumentError(new ApiError(503, 'storage_unavailable', null))).toBe(
-      'El archivo no se pudo guardar (storage). Reintentá más tarde.',
+      'El archivo no se pudo guardar (storage). Inténtalo más tarde.',
     );
   });
 
@@ -104,16 +104,16 @@ describe('humanizeTransportDocumentError', () => {
       /15 MB/,
     );
     expect(humanizeTransportDocumentError(new ApiError(403, 'write_role_required', null))).toMatch(
-      /Pedile/,
+      /Pídele/,
     );
     expect(humanizeTransportDocumentError(new ApiError(403, 'forbidden', null))).toMatch(
-      /No tenés/,
+      /No tienes/,
     );
     expect(humanizeTransportDocumentError(new ApiError(400, 'mime_mismatch', null))).toMatch(
       /PDF, JPEG o PNG/,
     );
     expect(humanizeTransportDocumentError(new ApiError(400, 'file_missing', null))).toMatch(
-      /Elegí un archivo/,
+      /Elige un archivo/,
     );
     expect(humanizeTransportDocumentError(new ApiError(404, 'trip_not_found', null))).toMatch(
       /No encontramos/,
@@ -129,9 +129,9 @@ describe('humanizeTransportDocumentError', () => {
     );
   });
 
-  it('error desconocido → genérico vos', () => {
+  it('error desconocido → genérico tuteo', () => {
     expect(humanizeTransportDocumentError(new Error('boom'))).toBe(
-      'Algo salió mal. Reintentá más tarde.',
+      'Algo salió mal. Inténtalo más tarde.',
     );
   });
 });

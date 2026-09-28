@@ -58,9 +58,9 @@ describe('declaracionDistancia — invariante de honestidad de la distancia', ()
  * que no sea `primario_verificable`, y el móvil nunca lo es.
  */
 describe('formatRouteDataSource — fuente de la ruta en el certificado (ADR-077 §4)', () => {
-  it('movil_gps declara la distancia medida por el GPS del móvil del conductor', () => {
+  it('movil_gps declara la distancia medida por el GPS del celular del conductor', () => {
     const texto = formatRouteDataSource('movil_gps');
-    expect(texto).toMatch(/GPS del móvil del conductor/);
+    expect(texto).toMatch(/GPS del celular del conductor/);
     expect(texto).toMatch(/medida/i);
     // El literal del enum jamás llega al cliente (hoy el default lo filtra tal cual).
     expect(texto).not.toBe('movil_gps');
@@ -85,13 +85,13 @@ describe('formatRouteDataSource — fuente de la ruta en el certificado (ADR-077
  * adapta `DatosMetricasCertificado` (campos opcionales en certs legacy).
  */
 describe('lineaMetodoCert — línea de método en el PDF (ADR-077 §4)', () => {
-  it('movil_gps → «GPS del móvil del conductor», nunca «verificable»', () => {
+  it('movil_gps → «GPS del celular del conductor», nunca «verificable»', () => {
     const linea = lineaMetodoCert({
       precisionMethod: 'modelado',
       routeDataSource: 'movil_gps',
       coveragePct: 100,
     });
-    expect(linea).toMatch(/GPS del móvil del conductor/);
+    expect(linea).toMatch(/GPS del celular del conductor/);
     expect(linea).not.toMatch(/verificable/i);
   });
 

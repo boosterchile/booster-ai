@@ -214,7 +214,7 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
                 to="/app/admin/dispositivos"
                 icon={Radio}
                 title="Dispositivos pendientes"
-                desc="Aprueba dispositivos Teltonika que conectaron y asignalos a vehículos."
+                desc="Aprueba dispositivos Teltonika que conectaron y asígnalos a vehículos."
               />
             </>
           )}

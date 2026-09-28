@@ -61,7 +61,7 @@ export function ImpersonationPickerView({
         ) : null}
         {state === 'disabled' ? (
           <p className="text-neutral-600 text-sm">
-            La impersonación está <span className="font-medium">desactivada</span>. Activá el flag{' '}
+            La impersonación está <span className="font-medium">desactivada</span>. Activa el flag{' '}
             <code>IMPERSONATION_V1_ACTIVATED</code> para usarla.
           </p>
         ) : state === 'loading' ? (
@@ -70,7 +70,7 @@ export function ImpersonationPickerView({
           <p className="text-danger-700 text-sm">No pudimos cargar los usuarios de prueba.</p>
         ) : targets.length === 0 ? (
           <p className="text-neutral-500 text-sm">
-            No hay usuarios de empresas de prueba. Sembrá el demo primero.
+            No hay usuarios de empresas de prueba. Siembra el demo primero.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

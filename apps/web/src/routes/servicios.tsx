@@ -129,7 +129,7 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
           <EmptyState
             icon={<Inbox className="h-10 w-10" aria-hidden />}
             title="No tienes servicios en curso"
-            description="Cuando aceptes una oferta, la carga aparece acá para que le asignes conductor y vehículo."
+            description="Cuando aceptes una oferta, la carga aparece aquí para que le asignes conductor y vehículo."
             action={
               <Link
                 to="/app/ofertas"

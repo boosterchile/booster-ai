@@ -1126,8 +1126,8 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
     expect(screen.getByText('—')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    expect(screen.queryByRole('link', { name: /conecta el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conecta el sensor/i }));
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(config).toHaveAttribute('open');
     expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
@@ -1155,7 +1155,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(screen.queryByTestId('hub-resumen')).toBeNull();
     expect(screen.queryByRole('button', { name: /más acciones/i })).toBeNull();
     expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
@@ -1191,7 +1191,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
       'to',
       '/app/vehiculos/$id/historial',

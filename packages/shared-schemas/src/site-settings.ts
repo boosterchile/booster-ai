@@ -134,7 +134,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
       highlights: [
         'Modo Conductor full-screen',
         'Ruta eco-eficiente sugerida',
-        'GPS móvil cuando no hay Teltonika',
+        'GPS celular cuando no hay Teltonika',
       ],
     },
     {

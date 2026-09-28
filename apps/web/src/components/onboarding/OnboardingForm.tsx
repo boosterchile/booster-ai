@@ -296,7 +296,7 @@ export function OnboardingForm({
               )}
             />
             <FormField
-              label="Teléfono móvil"
+              label="Teléfono celular"
               hint="Dato de contacto, formato +56 9 XXXX XXXX. Los avisos no salen por este número."
               error={errors.user?.phone?.message}
               render={({ id, describedBy }) => (
@@ -313,7 +313,7 @@ export function OnboardingForm({
             />
             <FormField
               label="WhatsApp"
-              hint="Por acá llegan las ofertas, los chats sin leer y las alertas del camión si despachas o eres dueño. Celular chileno (+56 9...)."
+              hint="Por aquí llegan las ofertas, los chats sin leer y las alertas del camión si despachas o eres dueño. Celular chileno (+56 9...)."
               error={errors.user?.whatsapp_e164?.message}
               render={({ id, describedBy }) => (
                 <input

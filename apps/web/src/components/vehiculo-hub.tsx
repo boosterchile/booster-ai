@@ -252,7 +252,7 @@ function HistorialLimitado({ conImei }: { conImei: boolean }) {
       </p>
       <p className="mt-1 text-neutral-600 text-sm">
         {conImei
-          ? 'El vivo y el recorrido siguen acá arriba.'
+          ? 'El vivo y el recorrido siguen aquí arriba.'
           : 'Cuando haya un dispositivo, vas a poder ver dónde está.'}
       </p>
     </div>
@@ -420,7 +420,7 @@ function TarjetaConsumo({
         puedeConfigurar,
         onAbrirConfig,
         onReintentar,
-        'Asociá un dispositivo para medir consumo.',
+        'Asocia un dispositivo para medir consumo.',
       )}
       {conImei && !cargando && !error && !hay ? (
         <div className="mt-2">
@@ -441,7 +441,7 @@ function TarjetaConsumo({
           </p>
           {resumen.cta_sensor ? (
             <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
-              Conectá el sensor
+              Conecta el sensor
             </button>
           ) : null}
           {resumen.cta_capacidad_estanque ? (
@@ -450,7 +450,7 @@ function TarjetaConsumo({
               onClick={onAbrirConfig}
               className="mt-2 block text-left text-primary-700 text-sm underline"
             >
-              Completá la capacidad del estanque
+              Completa la capacidad del estanque
             </button>
           ) : null}
           {resumen.km_por_litro == null && !resumen.cta_sensor ? (
@@ -640,8 +640,8 @@ function MapaPreview({
             <p className="font-medium text-neutral-900 text-sm">Sin posición GPS todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
               {conImei
-                ? 'Cuando el dispositivo reporte una coordenada, la ves acá.'
-                : 'Asociá un dispositivo para ver la posición.'}
+                ? 'Cuando el dispositivo reporte una coordenada, la ves aquí.'
+                : 'Asocia un dispositivo para ver la posición.'}
             </p>
             {ubicacionError ? (
               <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
@@ -711,7 +711,7 @@ function ListaTrayectos({
       {conImei && !cargando && !error && recientes.length === 0 ? (
         <div className="mt-2">
           <p className="text-neutral-700 text-sm">
-            Cuando este dispositivo cierre un trayecto, aparece acá.
+            Cuando este dispositivo cierre un trayecto, aparece aquí.
           </p>
           <LinkEnVivo vehicleId={vehicleId} />
         </div>

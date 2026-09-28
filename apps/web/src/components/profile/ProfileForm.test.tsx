@@ -41,7 +41,7 @@ describe('ProfileForm — render', () => {
   it('precarga valores iniciales en los inputs', () => {
     renderForm(INITIAL_DEFAULT);
     expect(screen.getByLabelText(/Nombre completo/)).toHaveValue('Felipe Vicencio');
-    expect(screen.getByLabelText(/Teléfono móvil/)).toHaveValue('+56912345678');
+    expect(screen.getByLabelText(/Teléfono celular/)).toHaveValue('+56912345678');
     expect(screen.getByLabelText(/WhatsApp/)).toHaveValue('+56912345678');
   });
 
@@ -61,7 +61,7 @@ describe('ProfileForm — render', () => {
 describe('ProfileForm — validación', () => {
   it('teléfono inválido → error onBlur', async () => {
     renderForm(INITIAL_DEFAULT);
-    const input = screen.getByLabelText(/Teléfono móvil/);
+    const input = screen.getByLabelText(/Teléfono celular/);
     fireEvent.change(input, { target: { value: 'no-es-tel' } });
     fireEvent.blur(input);
     expect(await screen.findByText(/Número de teléfono Chile inválido/)).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('ProfileForm — submit', () => {
   it('cambia phone (válido) → PATCH solo con phone', async () => {
     const spy = vi.spyOn(api, 'patch').mockResolvedValueOnce({});
     renderForm(INITIAL_DEFAULT);
-    fireEvent.change(screen.getByLabelText(/Teléfono móvil/), {
+    fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
       target: { value: '+56987654321' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Guardar cambios/ }));

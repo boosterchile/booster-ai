@@ -176,9 +176,7 @@ describe('Equipo — alta', () => {
     await abrirFormYCompletar();
     fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(/no tenés permiso|no tienes permiso/i),
-    );
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/no tienes permiso/i));
   });
 });
 

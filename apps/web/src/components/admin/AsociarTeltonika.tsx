@@ -187,7 +187,7 @@ export function AsociarTeltonika() {
     }
     const kilos = Number.parseInt(capacidad, 10);
     if (!Number.isInteger(kilos) || kilos < 1 || kilos > 100_000) {
-      setError('Ingresá la capacidad de carga en kilos, entre 1 y 100.000.');
+      setError('Ingresa la capacidad de carga en kilos, entre 1 y 100.000.');
       return;
     }
     const tara = pesoVacio.trim() === '' ? null : Number.parseInt(pesoVacio, 10);
@@ -321,7 +321,7 @@ export function AsociarTeltonika() {
                 className={inputClass}
                 data-testid="teltonika-empresa"
               >
-                <option value="">Elegí la empresa</option>
+                <option value="">Elige la empresa</option>
                 {empresas.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.razon_social} · {e.rut}
@@ -341,7 +341,7 @@ export function AsociarTeltonika() {
                   data-testid="teltonika-vehiculo"
                 >
                   <option value="">
-                    {empresaId === '' ? 'Primero la empresa' : 'Elegí la patente'}
+                    {empresaId === '' ? 'Primero la empresa' : 'Elige la patente'}
                   </option>
                   {vehiculos.map((v) => (
                     <option key={v.id} value={v.id}>
