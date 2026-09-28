@@ -1,12 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  type MiembroPendienteAdmin,
   crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
   empresaStatusSchema,
   invitarMiembroEmpresaSchema,
+  reemitirCodigoActivacionResponseSchema,
 } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -17,15 +19,47 @@ import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 
+const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function fechaDe(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function miembroPendienteDe(row: {
+  userId: string;
+  membershipId: string;
+  nombre: string;
+  rut: string | null;
+  email: string;
+  rol: MiembroPendienteAdmin['rol'];
+  invitadoEn: Date | string;
+}): MiembroPendienteAdmin {
+  const invitado = fechaDe(row.invitadoEn);
+  return {
+    user_id: row.userId,
+    membership_id: row.membershipId,
+    nombre: row.nombre,
+    rut: row.rut ?? '',
+    email: row.email,
+    rol: row.rol,
+    invitado_en: invitado.toISOString(),
+    expira_en: new Date(invitado.getTime() + SIETE_DIAS_MS).toISOString(),
+  };
+}
+
 /**
  * Fase 3.5 (onboarding-flow-redesign) — sumar personas a una empresa EXISTENTE.
  *
  *   GET   /admin/empresas              → lista (filtro opcional `?estado=`)
+ *                                        con las invitaciones pendientes
  *   POST  /admin/empresas              → crea la ficha legal (generador y/o
  *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
+ *   POST  /admin/empresas/:id/miembros/:membershipId/codigo
+ *                                      → emite un código nuevo para una
+ *                                        invitación que sigue pendiente
  *
  * **Por qué existe**: `onboardEmpresa` solo sabe crear empresa + dueño de cero.
  * Con el RUT ya registrado devuelve 409 `rut_already_registered`
@@ -59,6 +93,10 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   });
 
   const idParamSchema = z.object({ id: z.string().uuid() });
+  const reemitirCodigoParamSchema = z.object({
+    id: z.string().uuid(),
+    membershipId: z.string().uuid(),
+  });
 
   // GET /admin/empresas — listado para elegir destino de la invitación y para
   // activar/suspender. Sin esto el admin tendría que conocer el UUID de
@@ -87,15 +125,67 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
       ? await base.where(eq(empresas.status, estado)).orderBy(empresas.legalName).limit(500)
       : await base.orderBy(empresas.legalName).limit(500);
 
+    if (rows.length === 0) {
+      return c.json({ empresas: [] });
+    }
+
+    const empresaIds = rows.map((r) => r.id);
+    // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+    const pendientes = await opts.db
+      .select({
+        membershipId: memberships.id,
+        userId: memberships.userId,
+        empresaId: memberships.empresaId,
+        nombre: users.fullName,
+        rut: users.rut,
+        email: users.email,
+        rol: memberships.role,
+        invitadoEn: memberships.invitedAt,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        and(
+          eq(memberships.status, 'pendiente_invitacion'),
+          inArray(memberships.empresaId, empresaIds),
+        ),
+      )
+      .orderBy(memberships.invitedAt)
+      // El listado trae a lo sumo 500 empresas; esta cota cubre sus pendientes.
+      .limit(2000);
+
+    const porEmpresa = new Map<string, typeof pendientes>();
+    for (const row of pendientes) {
+      if (row.empresaId === null) {
+        continue;
+      }
+      const grupo = porEmpresa.get(row.empresaId) ?? [];
+      grupo.push(row);
+      porEmpresa.set(row.empresaId, grupo);
+    }
+
     return c.json({
-      empresas: rows.map((r) => ({
-        id: r.id,
-        razon_social: r.razonSocial,
-        rut: r.rut,
-        estado: r.estado,
-        es_transportista: r.esTransportista,
-        es_generador_carga: r.esGeneradorCarga,
-      })),
+      empresas: rows.map((r) => {
+        const ordenados = [...(porEmpresa.get(r.id) ?? [])].sort((a, b) => {
+          const delta = fechaDe(a.invitadoEn).getTime() - fechaDe(b.invitadoEn).getTime();
+          if (delta !== 0) {
+            return delta;
+          }
+          return a.membershipId.localeCompare(b.membershipId);
+        });
+        const miembros = ordenados.map((row) => miembroPendienteDe(row));
+        const dueno = miembros.find((m) => m.rol === 'dueno') ?? null;
+        return {
+          id: r.id,
+          razon_social: r.razonSocial,
+          rut: r.rut,
+          estado: r.estado,
+          es_transportista: r.esTransportista,
+          es_generador_carga: r.esGeneradorCarga,
+          miembros_pendientes: miembros,
+          dueno_pendiente: dueno,
+        };
+      }),
     });
   });
 
@@ -495,6 +585,105 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
       },
     );
   });
+
+  // Reemite el código de una invitación que sigue pendiente. No recupera el
+  // PIN anterior: genera otro, reemplaza el hash y reinicia `invitado_en`.
+  // Sin body a propósito: un zValidator json rechazaría el POST vacío.
+  app.post(
+    '/:id/miembros/:membershipId/codigo',
+    zValidator('param', reemitirCodigoParamSchema),
+    async (c) => {
+      const admin = requirePlatformAdmin(c);
+      if (!admin.ok) {
+        return admin.response;
+      }
+
+      const { id: empresaId, membershipId } = c.req.valid('param');
+
+      return await withBusinessSpan(
+        {
+          name: 'alta.reemitir_codigo',
+          attributes: { 'booster.empresa_id': empresaId },
+        },
+        async (span) => {
+          const record = (resultado: string) => {
+            getBusinessCounter('alta_reemision_codigo_total').add(1, { resultado });
+            setResultAttributes(span, { 'alta.resultado': resultado });
+          };
+
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const filas = await opts.db
+            .select({
+              membershipId: memberships.id,
+              userId: memberships.userId,
+              rol: memberships.role,
+              estado: memberships.status,
+              claveNumericaHash: users.claveNumericaHash,
+              firebaseUid: users.firebaseUid,
+            })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(and(eq(memberships.id, membershipId), eq(memberships.empresaId, empresaId)))
+            .limit(1);
+          const fila = filas[0];
+          if (!fila) {
+            record('membership_not_found');
+            return c.json({ error: 'not_found', code: 'membership_not_found' }, 404);
+          }
+
+          const siguePendiente =
+            fila.estado === 'pendiente_invitacion' &&
+            fila.claveNumericaHash === null &&
+            fila.firebaseUid.startsWith('pending-rut:');
+          if (!siguePendiente) {
+            record('already_activated');
+            return c.json({ error: 'conflict', code: 'already_activated' }, 409);
+          }
+
+          const codigo = generateActivationPin();
+          const ahora = new Date();
+          const expiraEn = new Date(ahora.getTime() + SIETE_DIAS_MS);
+
+          await opts.db.transaction(async (tx) => {
+            // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+            await tx
+              .update(users)
+              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: ahora })
+              .where(eq(users.id, fila.userId));
+            // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+            await tx
+              .update(memberships)
+              .set({ invitedAt: ahora, updatedAt: ahora })
+              .where(eq(memberships.id, fila.membershipId));
+          });
+
+          opts.logger.info(
+            {
+              empresaId,
+              userId: fila.userId,
+              membershipId: fila.membershipId,
+              rol: fila.rol,
+              invitedBy: admin.adminEmail,
+            },
+            'admin-empresa-miembros: código reemitido (código no logueado)',
+          );
+          record('issued');
+
+          return c.json(
+            reemitirCodigoActivacionResponseSchema.parse({
+              codigo_activacion: codigo,
+              expira_en: expiraEn.toISOString(),
+              membership_id: fila.membershipId,
+              user_id: fila.userId,
+              rol: fila.rol,
+              estado: 'pendiente_invitacion',
+            }),
+            200,
+          );
+        },
+      );
+    },
+  );
 
   return app;
 }
