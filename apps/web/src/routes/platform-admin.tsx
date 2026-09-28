@@ -5,17 +5,11 @@ import {
   ensureRutHasDash,
   rutSchema,
 } from '@booster-ai/shared-schemas';
-import { RegisterProvider } from '@booster-ai/ui-components';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Building2, Loader2, LogOut, Plus, ShieldCheck, UserPlus } from 'lucide-react';
+import { ArrowRight, Building2, Loader2, Plus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
-import { ImpersonationPicker } from '../components/ImpersonationPicker.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
-import { ActivarEmpresa } from '../components/admin/ActivarEmpresa.js';
-import { AsociarTeltonika } from '../components/admin/AsociarTeltonika.js';
-import { CrearEmpresa } from '../components/admin/CrearEmpresa.js';
-import { InvitarMiembroEmpresa } from '../components/admin/InvitarMiembroEmpresa.js';
-import { signOutUser } from '../hooks/use-auth.js';
+import { PlatformAdminFrame } from '../components/admin/PlatformAdminFrame.js';
 import { ApiError, api } from '../lib/api-client.js';
 
 /**
@@ -37,137 +31,109 @@ export function PlatformAdminRoute() {
   return <ProtectedRoute meRequirement="skip">{() => <PlatformAdminPage />}</ProtectedRoute>;
 }
 
+const ACCESOS: ReadonlyArray<{
+  to:
+    | '/app/platform-admin/signup-requests'
+    | '/app/platform-admin/empresas'
+    | '/app/platform-admin/teltonika'
+    | '/app/platform-admin/stakeholders'
+    | '/app/platform-admin/matching'
+    | '/app/platform-admin/observability'
+    | '/app/platform-admin/site-settings'
+    | '/app/platform-admin/impersonar';
+  title: string;
+  desc: string;
+  testId: string;
+}> = [
+  {
+    to: '/app/platform-admin/signup-requests',
+    title: 'Solicitudes de registro',
+    desc: 'Aprueba una solicitud o emite un enlace de alta de un solo uso.',
+    testId: 'signup-requests-link',
+  },
+  {
+    to: '/app/platform-admin/empresas',
+    title: 'Empresas',
+    desc: 'Crea una empresa, actívala e invita a quien la va a operar.',
+    testId: 'empresas-link',
+  },
+  {
+    to: '/app/platform-admin/teltonika',
+    title: 'Teltonika',
+    desc: 'Carga el vehículo de una empresa de transportes o escribe el IMEI si ella ya lo cargó.',
+    testId: 'teltonika-link',
+  },
+  {
+    to: '/app/platform-admin/stakeholders',
+    title: 'Organizaciones stakeholder',
+    desc: 'Reguladores, gremios y observatorios. No operan en el marketplace.',
+    testId: 'stakeholders-link',
+  },
+  {
+    to: '/app/platform-admin/matching',
+    title: 'Algoritmo de asignación',
+    desc: 'Compara un algoritmo nuevo sobre viajes reales antes de activarlo.',
+    testId: 'matching-backtest-link',
+  },
+  {
+    to: '/app/platform-admin/observability',
+    title: 'Observabilidad',
+    desc: 'Costos, salud técnica y forecast de la plataforma.',
+    testId: 'observability-dashboard-link',
+  },
+  {
+    to: '/app/platform-admin/site-settings',
+    title: 'Configuración del sitio',
+    desc: 'Marca y textos del sitio. Los cambios aplican sin redeploy.',
+    testId: 'site-settings-link',
+  },
+  {
+    to: '/app/platform-admin/impersonar',
+    title: 'Entrar como un usuario',
+    desc: 'Impersonación auditada para ver la plataforma con la sesión de un cliente.',
+    testId: 'impersonar-link',
+  },
+];
+
 function PlatformAdminPage() {
-  const [empresasVersion, setEmpresasVersion] = useState(0);
-  const [empresaCreadaId, setEmpresaCreadaId] = useState<string | undefined>(undefined);
-
-  async function handleSignOut() {
-    await signOutUser();
-  }
-
-  function handleEmpresaCreada(empresaId: string) {
-    setEmpresaCreadaId(empresaId);
-    setEmpresasVersion((v) => v + 1);
-  }
-
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-neutral-200 border-b bg-white pt-safe">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary-100 text-primary-700">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="font-semibold text-neutral-900">Booster · Platform Admin</div>
-              <div className="text-neutral-500 text-xs">Operaciones internas de plataforma</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+    <PlatformAdminFrame volver={{ to: '/login', label: 'Volver al login' }}>
+      <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
+        Operaciones de plataforma
+      </h1>
+      <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
+        Elegí la función. Cada una abre su página y desde ahí se vuelve a este índice.
+      </p>
+      <ul className="mt-6 space-y-3">
+        {ACCESOS.map((acceso) => (
+          <li key={acceso.to}>
             <Link
-              to="/login"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neutral-700 text-sm transition hover:bg-neutral-100"
+              to={acceso.to}
+              data-testid={acceso.testId}
+              className="flex items-center justify-between gap-4 rounded-lg border border-neutral-200 bg-white p-4 transition hover:border-primary-300"
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
-              Volver al login normal
+              <span>
+                <span className="block font-semibold text-neutral-900">{acceso.title}</span>
+                <span className="mt-1 block text-neutral-600 text-sm">{acceso.desc}</span>
+              </span>
+              <ArrowRight className="h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
             </Link>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-neutral-600 text-sm transition hover:bg-neutral-100"
-            >
-              <LogOut className="h-4 w-4" aria-hidden />
-              Salir
-            </button>
-          </div>
-        </div>
-      </header>
+          </li>
+        ))}
+      </ul>
+    </PlatformAdminFrame>
+  );
+}
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
-              Operaciones de plataforma
-            </h1>
-            <p className="mt-2 max-w-2xl text-neutral-600 text-sm">
-              Herramientas internas de Booster: alta de empresas (generador de carga o
-              transportista), organizaciones stakeholder, comparación de algoritmo de asignación,
-              observabilidad, configuración del sitio e impersonación auditada.
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Link
-              to="/app/platform-admin/matching"
-              className="inline-flex items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
-              data-testid="matching-backtest-link"
-            >
-              Comparar algoritmo de asignación →
-            </Link>
-            <Link
-              to="/app/platform-admin/observability"
-              className="inline-flex items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
-              data-testid="observability-dashboard-link"
-            >
-              Observabilidad de plataforma →
-            </Link>
-          </div>
-        </div>
-
-        {/* Alta de clientes: primera card porque es la operación recurrente del
-            panel desde que el flujo quedó activo (runbook paso 5, 2026-07-30). */}
-        <div className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-primary-200 bg-white p-4">
-          <div className="flex items-start gap-3">
-            <UserPlus className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
-            <div>
-              <h3 className="font-semibold text-neutral-900">Solicitudes de registro</h3>
-              <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-                Aprueba solicitudes de <code>/solicitar-acceso</code> o emite un enlace de alta sin
-                que la persona haya pedido acceso. El enlace es de un solo uso (vive 72 h): hay que
-                copiarlo en ese momento y entregárselo al cliente, porque no se envía por correo.
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/app/platform-admin/signup-requests"
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
-            data-testid="signup-requests-link"
-          >
-            Ver solicitudes →
-          </Link>
-        </div>
-
-        <div className="mt-4 flex items-start justify-between gap-4 rounded-lg border border-neutral-200 bg-white p-4">
-          <div>
-            <h3 className="font-semibold text-neutral-900">Configuración del sitio (ADR-039)</h3>
-            <p className="mt-1 text-neutral-600 text-sm">
-              Editor de marca y copy del demo landing (logo, hero, certificaciones, cards de
-              personas). Cambios aplican en runtime con cache 5 min — sin redeploy.
-            </p>
-          </div>
-          <Link
-            to="/app/platform-admin/site-settings"
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-primary-300 bg-primary-50 px-3 py-2 font-medium text-primary-700 text-sm hover:bg-primary-100"
-            data-testid="site-settings-link"
-          >
-            Editar sitio →
-          </Link>
-        </div>
-
-        <CrearEmpresa onCreated={handleEmpresaCreada} />
-
-        <ActivarEmpresa refreshToken={empresasVersion} />
-
-        <InvitarMiembroEmpresa refreshToken={empresasVersion} preferEmpresaId={empresaCreadaId} />
-
-        <AsociarTeltonika />
-
-        <StakeholderOrgsSection />
-
-        <RegisterProvider register="operador" density="comoda" className="mt-8 block">
-          <ImpersonationPicker />
-        </RegisterProvider>
-      </main>
-    </div>
+export function PlatformAdminStakeholdersRoute() {
+  return (
+    <ProtectedRoute meRequirement="skip">
+      {() => (
+        <PlatformAdminFrame volver={{ to: '/app/platform-admin', label: 'Volver' }}>
+          <StakeholderOrgsSection />
+        </PlatformAdminFrame>
+      )}
+    </ProtectedRoute>
   );
 }
 

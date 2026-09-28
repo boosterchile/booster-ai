@@ -130,6 +130,13 @@ function VehiculosListPage({ me }: { me: MeOnboarded }) {
 
   return (
     <Layout me={me} title="Vehículos">
+      <Link
+        to="/app"
+        className="mb-4 inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-neutral-900"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Volver al inicio
+      </Link>
       <VehiculosLista canWrite={canWrite} />
     </Layout>
   );
@@ -186,8 +193,12 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Nuevo vehículo">
       <div className="mb-6 flex items-center gap-3">
-        <Link to="/app/vehiculos" className="text-neutral-500 hover:text-neutral-900">
-          <ArrowLeft className="h-5 w-5" aria-hidden />
+        <Link
+          to="/app/vehiculos"
+          className="inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver
         </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Nuevo vehículo</h1>
       </div>
@@ -342,7 +353,7 @@ function VehiculoDetallePage({ me }: { me: MeOnboarded }) {
           className="inline-flex min-w-0 items-center gap-1 text-neutral-500 text-sm hover:text-neutral-900"
         >
           <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-          Vehículos
+          Volver
         </Link>
         {canDelete && vehicleQ.data && vehicleQ.data.status !== 'retirado' ? (
           <div ref={menuRetiroRef} className="relative shrink-0">

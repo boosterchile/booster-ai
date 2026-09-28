@@ -336,6 +336,42 @@ const platformAdminSignupRequestsRoute = createRoute({
   ),
 });
 
+const platformAdminEmpresasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/empresas',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-empresas.js'),
+    'PlatformAdminEmpresasRoute',
+  ),
+});
+
+const platformAdminTeltonikaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/teltonika',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-teltonika.js'),
+    'PlatformAdminTeltonikaRoute',
+  ),
+});
+
+const platformAdminStakeholdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/stakeholders',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin.js'),
+    'PlatformAdminStakeholdersRoute',
+  ),
+});
+
+const platformAdminImpersonarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/impersonar',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-impersonar.js'),
+    'PlatformAdminImpersonarRoute',
+  ),
+});
+
 const vehiculosNuevoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/vehiculos/nuevo',
@@ -546,6 +582,10 @@ const routeTree = rootRoute.addChildren([
   platformAdminSiteSettingsRoute,
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
+  platformAdminEmpresasRoute,
+  platformAdminTeltonikaRoute,
+  platformAdminStakeholdersRoute,
+  platformAdminImpersonarRoute,
   cargasListRoute,
   cargasNuevaRoute,
   cargasDetalleRoute,
