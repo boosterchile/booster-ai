@@ -94,4 +94,39 @@ describe('AsociarTeltonika', () => {
     );
     expect(await screen.findByTestId('teltonika-ok')).toHaveTextContent('Transportes Sur E2E SpA');
   });
+
+  it('avisa cuando la patente ya existía y quedó en el cliente nuevo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [
+        {
+          id: 'emp-1',
+          razon_social: 'Sociedad de Transportes TransJavier Limitada',
+          rut: '76274900-9',
+          es_transportista: true,
+        },
+      ],
+    });
+    vi.spyOn(api, 'post').mockResolvedValue({
+      patente: 'RCPC20',
+      razon_social: 'Sociedad de Transportes TransJavier Limitada',
+      teltonika_imei: '860693088328266',
+      ya_existia: true,
+      movido: true,
+    });
+
+    render(<AsociarTeltonika />);
+
+    await screen.findByRole('option', { name: /TransJavier/ });
+    fireEvent.change(screen.getByTestId('teltonika-empresa'), { target: { value: 'emp-1' } });
+    fireEvent.change(screen.getByTestId('teltonika-patente'), { target: { value: 'rcpc20' } });
+    fireEvent.change(screen.getByTestId('teltonika-capacidad'), { target: { value: '20000' } });
+    fireEvent.change(screen.getByTestId('teltonika-imei'), {
+      target: { value: '860693088328266' },
+    });
+    fireEvent.click(screen.getByTestId('teltonika-habilitar'));
+
+    expect(await screen.findByTestId('teltonika-ok')).toHaveTextContent(
+      'El camión RCPC20 ya existía en otra empresa. Quedó en Sociedad de Transportes TransJavier Limitada con el IMEI 860693088328266.',
+    );
+  });
 });
