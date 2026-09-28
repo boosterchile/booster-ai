@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { chileanPhoneSchema, rutSchema } from '../primitives/chile.js';
 import { addressSchema } from '../primitives/geo.js';
 import { empresaIdSchema, planIdSchema } from '../primitives/ids.js';
+import { membershipRoleSchema } from './membership.js';
 import { planSlugSchema } from './plan.js';
 import { reportingStandardSchema } from './stakeholder.js';
 
@@ -141,6 +142,59 @@ export const invitarMiembroEmpresaSchema = z.object({
   rol: rolInvitacionEmpresaSchema,
 });
 export type InvitarMiembroEmpresaInput = z.infer<typeof invitarMiembroEmpresaSchema>;
+
+/**
+ * Persona invitada que todavía no activó, tal como la ve el platform-admin.
+ * No trae el código: ese solo sale en la respuesta de emisión o reemisión.
+ */
+export const miembroPendienteAdminSchema = z.object({
+  user_id: z.string().uuid(),
+  membership_id: z.string().uuid(),
+  nombre: z.string(),
+  rut: z.string(),
+  email: z.string().email(),
+  rol: membershipRoleSchema,
+  invitado_en: z.string().datetime(),
+  expira_en: z.string().datetime(),
+});
+export type MiembroPendienteAdmin = z.infer<typeof miembroPendienteAdminSchema>;
+
+/** Dueño pendiente más antiguo, o null si esa empresa no tiene uno. */
+export const duenoPendienteAdminSchema = miembroPendienteAdminSchema.nullable();
+export type DuenoPendienteAdmin = z.infer<typeof duenoPendienteAdminSchema>;
+
+/**
+ * Ítem de `GET /admin/empresas`. Conserva la ficha y suma las invitaciones
+ * que siguen pendientes. `dueno_pendiente` es el mismo objeto del dueño
+ * dentro de `miembros_pendientes`, o null.
+ */
+export const empresaAdminListItemSchema = z.object({
+  id: z.string().uuid(),
+  razon_social: z.string(),
+  rut: z.string(),
+  estado: empresaStatusSchema,
+  es_transportista: z.boolean(),
+  es_generador_carga: z.boolean(),
+  miembros_pendientes: z.array(miembroPendienteAdminSchema),
+  dueno_pendiente: duenoPendienteAdminSchema,
+});
+export type EmpresaAdminListItem = z.infer<typeof empresaAdminListItemSchema>;
+
+/**
+ * `POST /admin/empresas/:id/miembros/:membershipId/codigo` no tiene body.
+ * El PIN en claro vive solo en esta respuesta.
+ */
+export const reemitirCodigoActivacionResponseSchema = z.object({
+  codigo_activacion: z.string().regex(/^\d{6}$/),
+  expira_en: z.string().datetime(),
+  membership_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  rol: membershipRoleSchema,
+  estado: z.literal('pendiente_invitacion'),
+});
+export type ReemitirCodigoActivacionResponse = z.infer<
+  typeof reemitirCodigoActivacionResponseSchema
+>;
 
 /**
  * PATCH de `empresas.estado` (platform-admin). Los tres valores del enum

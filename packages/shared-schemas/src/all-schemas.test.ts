@@ -678,6 +678,58 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
     expect(created.status).toBe('pendiente_verificacion');
   });
 
+  it('empresaAdminListItemSchema acepta un dueño pendiente y también dueño nulo', () => {
+    const miembro = {
+      user_id: VALID_UUID,
+      membership_id: VALID_UUID,
+      nombre: 'Javier Vicencio',
+      rut: VALID_RUT,
+      email: VALID_EMAIL,
+      rol: 'dueno' as const,
+      invitado_en: VALID_DATE,
+      expira_en: VALID_DATE,
+    };
+    const conDueno = empresa.empresaAdminListItemSchema.parse({
+      id: VALID_UUID,
+      razon_social: 'Test SpA',
+      rut: VALID_RUT,
+      estado: 'pendiente_verificacion',
+      es_transportista: true,
+      es_generador_carga: false,
+      miembros_pendientes: [miembro],
+      dueno_pendiente: miembro,
+    });
+    expect(conDueno.dueno_pendiente).toEqual(miembro);
+    expect(conDueno.miembros_pendientes).toEqual([miembro]);
+
+    const sinDueno = empresa.empresaAdminListItemSchema.parse({
+      id: VALID_UUID,
+      razon_social: 'Test SpA',
+      rut: VALID_RUT,
+      estado: 'activa',
+      es_transportista: false,
+      es_generador_carga: true,
+      miembros_pendientes: [],
+      dueno_pendiente: null,
+    });
+    expect(sinDueno.dueno_pendiente).toBeNull();
+    expect(sinDueno.miembros_pendientes).toEqual([]);
+  });
+
+  it('reemitirCodigoActivacionResponseSchema acepta el PIN de una reemisión', () => {
+    const parsed = empresa.reemitirCodigoActivacionResponseSchema.parse({
+      codigo_activacion: '482915',
+      expira_en: VALID_DATE,
+      membership_id: VALID_UUID,
+      user_id: VALID_UUID,
+      rol: 'dueno',
+      estado: 'pendiente_invitacion',
+    });
+    expect(parsed.codigo_activacion).toBe('482915');
+    expect(parsed.estado).toBe('pendiente_invitacion');
+    expect(parsed.membership_id).toBe(VALID_UUID);
+  });
+
   it('empresaEstadoPatchSchema solo acepta los tres estados del enum', () => {
     expect(empresa.empresaEstadoPatchSchema.parse({ estado: 'activa' }).estado).toBe('activa');
     expect(empresa.empresaEstadoPatchSchema.parse({ estado: 'suspendida' }).estado).toBe(
