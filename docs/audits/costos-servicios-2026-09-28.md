@@ -144,8 +144,8 @@ Pedido posterior: revisar en profundidad y cortar. El detalle de la revisión y 
 
 | Palanca | Resultado |
 |---|---|
-| Clúster DR, subnet, IP pública, DNS `telemetry-dr`, NAT de `us-central1`, worker pool DR, manifiestos K8s de esa región | Sacados del código. El apply a producción no corrió: no hay credenciales de `booster-ai-494222` y ADR-076 pide un `terraform plan` registrado antes. Hasta ese apply la factura no baja |
-| Processor 2 vCPU → 1 vCPU | En `compute.tf` y en el deploy de Cloud Build. Mismos `min_instances=1` y CPU siempre asignada. Tampoco está aplicado en la revisión viva hasta el apply o el próximo deploy |
+| Clúster DR, subnet, IP pública, DNS `telemetry-dr`, NAT de `us-central1`, worker pool DR, manifiestos K8s de esa región | Aplicado el 2026-09-28. Quedan el clúster y el NAT de Santiago. Evidencia en `.specs/recorte-piso-gcp/ship.md` |
+| Processor 2 vCPU → 1 vCPU | Aplicado. Revisión `booster-ai-telemetry-processor-00390-qqf`: 1 vCPU, 1 Gi, `minScale=1`, sin CPU throttling |
 | Rango de peering del pool DR | Se queda. Quitarlo recrea el peering de Cloud SQL |
 | Cloud SQL, Redis, VPC connector, clúster de Santiago, Datadog, Workspace, Twilio | Revisados y no cortados. Los motivos están en la spec |
 | Booster 2.0 (`big-cabinet-482101-s3`) y `gen-lang-client-0486421631` | La superficie pública ya es de Booster AI. El proyecto no se borra aquí: sin billing export no se sabe si sigue pagando. Revisión en `docs/audits/booster-2-0-2026-09-28.md` |

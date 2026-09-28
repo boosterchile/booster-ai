@@ -1,6 +1,6 @@
 # Spec — Recorte del piso fijo de GCP
 
-**Estado:** código en la rama; apply a producción pendiente del plan en seco (ADR-076)
+**Estado:** aplicado en producción el 2026-09-28. Evidencia en `ship.md`
 **Fecha:** 2026-09-28
 **Owner:** Felipe Vicencio (`dev@boosterchile.com`)
 **Origen:** revisión `docs/audits/costos-servicios-2026-09-28.md` y el pedido de ejecutar los cortes que esa revisión sostiene.
