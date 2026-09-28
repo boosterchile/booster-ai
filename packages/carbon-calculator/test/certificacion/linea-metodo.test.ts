@@ -47,7 +47,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
     );
   });
 
-  it('secundario + movil_gps → distancia medida por GPS del móvil del conductor, consumo modelado', () => {
+  it('secundario + movil_gps → distancia medida por GPS del celular del conductor, consumo modelado', () => {
     expect(
       lineaMetodoCertificacion({
         precisionMethod: 'modelado',
@@ -55,7 +55,7 @@ describe('lineaMetodoCertificacion — tabla ADR-077 §4', () => {
         coveragePct: 100,
       }),
     ).toBe(
-      'Distancia medida por GPS del móvil del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
+      'Distancia medida por GPS del celular del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
     );
   });
 
@@ -163,7 +163,7 @@ describe('lineaMetodoCertificacion — vocabulario cerrado (ADR-077 §4)', () =>
       routeDataSource: 'movil_gps',
       coveragePct: 100,
     });
-    expect(linea).toMatch(/GPS del móvil del conductor/);
+    expect(linea).toMatch(/GPS del celular del conductor/);
     expect(linea).not.toMatch(/verificable/i);
     expect(linea).not.toMatch(/Ruta GPS del vehículo/);
   });
