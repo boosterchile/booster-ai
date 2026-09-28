@@ -219,11 +219,191 @@ const ALTA = {
   model: 'FH',
 };
 
+const EMPRESA_ANTERIOR = '44444444-4444-4444-8444-444444444444';
+
+function vehiculoExistente(empresaId = EMPRESA_ANTERIOR, imei: string | null = null) {
+  return {
+    id: VEHICLE_ID,
+    plate: 'ABCD12',
+    empresaId,
+    teltonikaImei: imei,
+    teltonikaImeiEspejo: null,
+  };
+}
+
 describe('POST /admin/plataforma/dispositivos/habilitar', () => {
+  it('mueve el vehículo que ya tiene esa patente a la empresa elegida', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente()],
+      [],
+      [],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      vehiculo_id: string;
+      empresa_id: string;
+      ya_existia: boolean;
+      movido: boolean;
+    };
+    expect(json.vehiculo_id).toBe(VEHICLE_ID);
+    expect(json.empresa_id).toBe(EMPRESA_ID);
+    expect(json.ya_existia).toBe(true);
+    expect(json.movido).toBe(true);
+    expect(d.inserted).toHaveLength(0);
+    expect(d.updates[0]).toMatchObject({
+      empresaId: EMPRESA_ID,
+      teltonikaImei: IMEI,
+      vehicleStatus: 'activo',
+      brand: 'Volvo',
+      capacityKg: 3500,
+      unitType: 'camion_rigido',
+    });
+  });
+
+  it('deja el vehículo en la misma empresa si la patente ya era de ese cliente', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente(EMPRESA_ID)],
+      [],
+      [],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ya_existia: boolean; movido: boolean };
+    expect(json.ya_existia).toBe(true);
+    expect(json.movido).toBe(false);
+    expect(d.inserted).toHaveLength(0);
+    expect(d.updates[0]).toMatchObject({ empresaId: EMPRESA_ID, teltonikaImei: IMEI });
+  });
+
+  it('no le pone un IMEI propio a un camión que mira el GPS de otro', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [{ ...vehiculoExistente(), teltonikaImeiEspejo: '356307042441099' }],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(422);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('imei_espejo_activo');
+    expect(d.inserted).toHaveLength(0);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('no mueve el camión si el IMEI ya está en otro vehículo', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente()],
+      [{ id: 'otro-camion' }],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('imei_en_uso');
+    expect(d.inserted).toHaveLength(0);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('acepta el IMEI que ya tiene ese mismo camión', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente(EMPRESA_ANTERIOR, IMEI)],
+      [{ id: VEHICLE_ID }],
+      [],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { movido: boolean };
+    expect(json.movido).toBe(true);
+    expect(d.inserted).toHaveLength(0);
+  });
+
+  it('marca reemplazado el IMEI anterior del camión que se mueve', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente(EMPRESA_ANTERIOR, '356307042441099')],
+      [],
+      [],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(d.updates[1]).toMatchObject({ status: 'reemplazado' });
+  });
+
+  it('permite el IMEI pendiente ya aprobado en ese mismo camión', async () => {
+    const mod = await loadMod();
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [vehiculoExistente()],
+      [],
+      [{ id: 'pd-1', status: 'aprobado', assignedToVehicleId: VEHICLE_ID }],
+    ]);
+    const app = buildApp(mod, d.db);
+
+    const res = await app.request('/habilitar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ALTA),
+    });
+
+    expect(res.status).toBe(200);
+    expect(d.inserted).toHaveLength(0);
+    expect(d.updates.some((u) => u.status === 'aprobado')).toBe(false);
+  });
+
   it('crea el vehículo en la empresa y le escribe el IMEI aunque el equipo no haya llamado al gateway', async () => {
     const mod = await loadMod();
     const d = makeDb(
-      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], []],
+      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], [], []],
       {
         insertRow: {
           id: VEHICLE_ID,
@@ -285,6 +465,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
     const mod = await loadMod();
     const d = makeDb([
       [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [],
       [{ id: 'otro-camion' }],
     ]);
     const app = buildApp(mod, d.db);
@@ -304,7 +485,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
   it('rechaza una patente que ya existe', async () => {
     const mod = await loadMod();
     const d = makeDb(
-      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], []],
+      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], [], []],
       { insertError: { code: '23505', constraint: 'vehiculos_patente_key' } },
     );
     const app = buildApp(mod, d.db);
@@ -359,6 +540,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
     const d = makeDb([
       [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
       [],
+      [],
       [{ id: 'pd-1', status: 'rechazado', assignedToVehicleId: null }],
     ]);
     const app = buildApp(mod, d.db);
@@ -380,6 +562,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
     const d = makeDb(
       [
         [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+        [],
         [],
         [{ id: 'pd-1', status: 'pendiente', assignedToVehicleId: null }],
       ],
@@ -427,6 +610,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
     const d = makeDb([
       [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
       [],
+      [],
       [{ id: 'pd-1', status: 'aprobado', assignedToVehicleId: 'otro-camion' }],
     ]);
     const app = buildApp(mod, d.db);
@@ -449,6 +633,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
       [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
       [],
       [],
+      [],
     ]);
     const app = buildApp(mod, d.db);
 
@@ -466,7 +651,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
   it('trata como IMEI en uso un unique que no es de patente, aunque venga anidado', async () => {
     const mod = await loadMod();
     const d = makeDb(
-      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], []],
+      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], [], []],
       { insertError: { cause: { code: '23505', constraint: 'vehiculos_teltonika_imei_key' } } },
     );
     const app = buildApp(mod, d.db);
@@ -485,7 +670,7 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
   it('deja pasar un error de base que no es unique', async () => {
     const mod = await loadMod();
     const d = makeDb(
-      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], []],
+      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], [], []],
       { insertError: { nope: true } },
     );
     const app = buildApp(mod, d.db);
