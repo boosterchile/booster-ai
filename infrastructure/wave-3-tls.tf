@@ -11,10 +11,8 @@
 #   - Workload Identity binding: el K8s SA `cert-manager` del namespace
 #     `cert-manager` impersona al GCP SA. Sin esto cert-manager no puede
 #     llamar a Cloud DNS API.
-#   - DR mirror: la zona DR (`telemetry-dr.boosterchile.com`) ya está en
-#     dr-region.tf y reutiliza la misma SA — un solo binding sirve para
-#     ambos clusters porque cert-manager corre en namespace cert-manager
-#     en cada cluster con el mismo nombre de K8s SA.
+#   - El clúster DR y su DNS salieron en ADR-081. Esta SA sigue siendo la
+#     de cert-manager del clúster de Santiago.
 
 # =============================================================================
 # IP estática externa para el TLS endpoint primary
@@ -127,28 +125,8 @@ resource "google_compute_router_nat" "primary_nat" {
   }
 }
 
-resource "google_compute_router" "dr_nat" {
-  name    = "booster-ai-nat-router-dr"
-  project = google_project.booster_ai.project_id
-  region  = var.dr_region
-  network = google_compute_network.vpc.id
-
-  description = "Router para Cloud NAT en la región DR. Mismo rationale que primary."
-}
-
-resource "google_compute_router_nat" "dr_nat" {
-  name                               = "booster-ai-nat-dr"
-  project                            = google_project.booster_ai.project_id
-  router                             = google_compute_router.dr_nat.name
-  region                             = var.dr_region
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
-
-  log_config {
-    enable = false
-    filter = "ERRORS_ONLY"
-  }
-}
+# Cloud NAT de us-central1 (`dr_nat`) salió con el clúster DR (ADR-081).
+# El NAT de Santiago se queda: los pods del gateway no tienen IP pública.
 
 # =============================================================================
 # OUTPUTS

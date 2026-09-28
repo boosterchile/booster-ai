@@ -69,7 +69,8 @@ GCP-0033
 
 # GCP-0050: "Checks for service account defined for GKE nodes"
 #
-# Aplicado a clusters Autopilot (telemetry, telemetry_dr). En Autopilot,
+# Aplicado al clúster Autopilot de Santiago (telemetry). El clúster DR salió
+# en ADR-081. En Autopilot,
 # Google gestiona los node pools internamente — el operador NO puede
 # customizar el node SA via google_container_cluster.node_config.service_account
 # (esa key es ignorada por el provider para Autopilot).

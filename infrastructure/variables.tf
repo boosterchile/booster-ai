@@ -32,11 +32,9 @@ variable "region" {
 
 variable "dr_region" {
   description = <<-EOT
-    Región GCP de disaster recovery (Wave 3 D4). Default us-central1
-    para latency LATAM (~150ms desde Santiago vs ~200ms us-east1) y
-    disponibilidad de servicios (us-central1 es el primer-class GCP
-    region). El device FMC150 hace failover al backup tras 5 timeouts
-    consecutivos al primary.
+    Región que usaba el DR frío (ADR-081 la retiró). La variable se
+    conserva para que un tfvars que todavía la setee no falle el plan.
+    Ningún recurso la lee. Reactivar DR es un ADR nuevo.
   EOT
   type        = string
   default     = "us-central1"

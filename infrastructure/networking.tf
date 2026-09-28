@@ -85,8 +85,9 @@ resource "google_compute_managed_ssl_certificate" "main" {
     # ANTES de incluirlo acá (en local.cert_domains arriba), sino el cert
     # queda en FAILED_NOT_VISIBLE (lección de task #34).
     #
-    # apex/www siguen en Booster 2.0 (AWS GA, Google Sites) y no se sirven
-    # desde este LB. demo se migró al LB en 2026-05-13 (modo demo PWA).
+    # apex, www, app y demo se sirven desde este LB (Booster AI). El
+    # comentario que los dejaba en Booster 2.0 quedó viejo: el DNS público
+    # ya no apunta ahí (revisión 2026-09-28).
     domains = local.cert_domains
   }
 
@@ -487,13 +488,14 @@ resource "google_compute_global_forwarding_rule" "http_redirect" {
 # DNS RECORDS
 # =============================================================================
 #
-# `boosterchile.com` es zona compartida entre Booster 2.0 (legacy) y Booster AI.
-# Decisión post-migración (runbook docs/runbooks/dns-migration-godaddy-to-cloud-dns.md):
+# `boosterchile.com` es la zona de Booster AI más el correo de Workspace.
+# El runbook de 2026-04-29 proponía dejar apex/www/app/demo en Booster 2.0.
+# El estado vivo (2026-09-28, docs/audits/booster-2-0-2026-09-28.md):
 #
-#   apex / www / app / demo  → Booster 2.0 (preservar destinos actuales).
-#   api / telemetry          → Booster AI (LB global + telemetry gateway).
-#   marketing (futuro)        → Booster AI (cuando exista el sitio).
-#   MX, SPF, DKIM, DMARC, verifications → email Workspace.
+#   apex / www / app / demo / api → LB global de Booster AI.
+#   telemetry / telemetry-tls     → gateway de Santiago.
+#   MX, SPF, verifications        → Google Workspace.
+#   Booster 2.0                   → sin records públicos.
 #
 # TTL en 3600s (1h) — valor de producción. Durante la migración (Fase 5 del
 # runbook) estuvo en 300s para permitir rollback rápido; tras validar E2E
@@ -550,8 +552,8 @@ resource "google_dns_record_set" "www" {
 #
 # Histórico: hasta 2026-05-02 este record era CNAME → big-cabinet-482101-s3
 # .web.app (Firebase Hosting de Booster 2.0). Migrado al LB cuando la PWA
-# nueva quedó deployada. Booster 2.0 sigue accesible directamente en
-# https://big-cabinet-482101-s3.web.app si se necesita rescatar algo.
+# nueva quedó deployada. El 2026-09-28 esa URL responde «Site Not Found»;
+# no es un respaldo desde donde rescatar la app.
 #
 # IMPORTANTE: agregar app.${var.domain} a domains del cert managed
 # (google_compute_managed_ssl_certificate.main) en un APPLY POSTERIOR,
