@@ -256,6 +256,8 @@ describe('CargasDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasDetalleRoute />);
     expect(await screen.findByText('Método de cálculo')).toBeInTheDocument();
-    expect(screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
+    ).toBeInTheDocument();
   });
 });

@@ -42,7 +42,9 @@ async function fillStep1AndAdvance() {
   fireEvent.change(screen.getByLabelText(/Nombre completo/), {
     target: { value: 'Felipe Vicencio' },
   });
-  fireEvent.change(screen.getByLabelText(/Teléfono celular/), { target: { value: '+56912345678' } });
+  fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
+    target: { value: '+56912345678' },
+  });
   fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
   // RUT y clave son obligatorios desde alta-cliente-autocontenida: juntos son
   // la credencial con la que la persona vuelve a entrar (ADR-035).

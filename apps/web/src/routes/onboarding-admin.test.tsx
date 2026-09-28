@@ -63,7 +63,9 @@ async function fillFullForm() {
   fireEvent.change(screen.getByLabelText(/Nombre completo/), {
     target: { value: 'Felipe Vicencio' },
   });
-  fireEvent.change(screen.getByLabelText(/Teléfono celular/), { target: { value: '+56912345678' } });
+  fireEvent.change(screen.getByLabelText(/Teléfono celular/), {
+    target: { value: '+56912345678' },
+  });
   fireEvent.change(screen.getByLabelText(/^WhatsApp/), { target: { value: '+56912345678' } });
   fireEvent.change(screen.getByLabelText(/^RUT/), { target: { value: '11.111.111-1' } });
   // alta-cliente-autocontenida: la persona elige acá su clave de acceso.

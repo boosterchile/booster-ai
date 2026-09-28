@@ -662,9 +662,9 @@ function DispositivoSection({
         <div>
           <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo</h2>
           <p className="mt-1 text-neutral-600 text-sm">
-            Booster instala el equipo en el vehículo. Si ya cargaste los datos, escribe aquí su IMEI.
-            Si el vehículo todavía no está en la flota, dalo de alta primero. Booster también puede
-            hacer las dos cosas.
+            Booster instala el equipo en el vehículo. Si ya cargaste los datos, escribe aquí su
+            IMEI. Si el vehículo todavía no está en la flota, dalo de alta primero. Booster también
+            puede hacer las dos cosas.
           </p>
           <p className="mt-1 text-neutral-600 text-sm">
             <strong>IMEI actual:</strong>{' '}
