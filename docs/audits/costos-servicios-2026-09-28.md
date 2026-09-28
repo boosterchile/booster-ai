@@ -63,7 +63,7 @@ Cloud Run con `min_instances=0` (api, web, whatsapp-bot, sms-fallback, matching-
 | **`big-cabinet-482101-s3` (Booster 2.0)** | Pestaña Costos → por proyecto | El dominio ya no lo sirve (revisión `docs/audits/booster-2-0-2026-09-28.md`). En mayo eran ~USD 80–150/mes. Hoy no se pudo leer el billing: si el proyecto sigue linked, es piso sin audiencia |
 | **`gen-lang-client-0486421631`** | Pestaña Costos → por proyecto | API key Gemini «Booster 1.0». En mayo era ~USD 0–5, pero una key sin tope sube sola |
 | **Rutas, Geocoding, Places, Document AI, Gemini** | Pestaña Costos, SKU de esas APIs | En mayo Routes tenía 16 llamadas/30 días. Hay alertas de runaway en `api-cost-guardrails.tf`. No recortar: vigilar que no aparezcan en el top de SKUs |
-| **Dominio `boosterchile.com` y `demo.boosterchile.com`** | Registrador, no GCP | El demo sigue resolviendo. El costo de DNS es despreciable; el costo es de producto (Slot 2), no de esta factura |
+| **Dominio `boosterchile.com`** | GoDaddy, solo la compra del dominio | El PO lo confirmó el 2026-09-28: no hay servicios pagos de GoDaddy. La renovación del dominio se queda. `demo` sigue resolviendo en Cloud DNS; eso es producto (Slot 2), no una factura de GoDaddy |
 | **Teltonika** | Contrato de hardware / comodato (ADR-026) | No sale en el billing de GCP |
 
 ---
