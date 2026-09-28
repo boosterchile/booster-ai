@@ -42,7 +42,7 @@ Manifiestos que solo servían a ese clúster (`telemetry-tcp-gateway-dr.yaml`, `
 - El processor queda en 1 vCPU con `min_instances=1` y `cpu_idle=false`.
 - `google_service_networking_connection.private_vpc` no cambia de lista.
 - Ningún recurso de IAM, Billing, service account, KMS ni firewall se modifica.
-- El apply a producción no corre en esta sesión: no hay credenciales de `booster-ai-494222`, y ADR-076 exige plan en seco con salida registrada antes de un apply. El runbook de apply queda en `ship.md`.
+- El apply a producción corrió el 2026-09-28 después del plan registrado. El detalle está en `ship.md`.
 
 ## 5. Riesgo aceptado
 
