@@ -1126,8 +1126,8 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
     expect(screen.getByText('—')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    expect(screen.queryByRole('link', { name: /conecta el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conecta el sensor/i }));
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(config).toHaveAttribute('open');
     expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
