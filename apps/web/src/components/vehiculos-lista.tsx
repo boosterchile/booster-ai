@@ -232,8 +232,10 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículos</h1>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Quién reporta, quién está en mantención y a quién le falta el dispositivo.
+          <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+            Cargá los datos de cada vehículo para que quede en tu empresa. Si Booster instaló un
+            Teltonika, el equipo se asocia en la configuración. Booster también puede cargar estos
+            datos desde su panel.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -271,7 +273,7 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
           <EmptyState
             icon={<Truck className="h-10 w-10" aria-hidden />}
             title="Aún no tienes vehículos"
-            description="Cuando sumes el primero, acá ves quién reporta y a quién le falta el dispositivo."
+            description="Cuando sumes el primero, queda asignado a tu empresa. Si Booster instaló un Teltonika, el equipo se asocia en la configuración."
             action={
               canWrite ? (
                 <Link to="/app/vehiculos/nuevo" className={emptyStateActionClass}>

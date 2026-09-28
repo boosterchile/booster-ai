@@ -176,6 +176,7 @@ describe('VehiculosListRoute', () => {
     wrap(<VehiculosListRoute />);
     await waitFor(() => expect(screen.getByText(/Aún no tienes vehículos/)).toBeInTheDocument());
     expect(screen.getByText(/Cuando sumes el primero/)).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar estos datos/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
     expect(screen.getAllByRole('link', { name: /nuevo vehículo/i }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('table')).toBeNull();
@@ -357,6 +358,7 @@ describe('VehiculosNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar el vehículo/)).toBeInTheDocument();
   });
 });
 

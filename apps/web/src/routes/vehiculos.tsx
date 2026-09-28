@@ -191,6 +191,11 @@ function VehiculoNuevoPage({ me }: { me: MeOnboarded }) {
         </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Nuevo vehículo</h1>
       </div>
+      <p className="mb-6 max-w-2xl text-neutral-600 text-sm">
+        Estos datos dejan el vehículo asignado a tu empresa. Si Booster ya instaló un Teltonika, el
+        IMEI se escribe después, en la configuración. Booster también puede cargar el vehículo desde
+        su panel de administración.
+      </p>
 
       <VehicleForm
         mode="create"
@@ -645,6 +650,11 @@ function DispositivoSection({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo</h2>
+          <p className="mt-1 text-neutral-600 text-sm">
+            Booster instala el equipo en el vehículo. Si ya cargaste los datos, escribí acá su IMEI.
+            Si el vehículo todavía no está en la flota, dalo de alta primero. Booster también puede
+            hacer las dos cosas.
+          </p>
           <p className="mt-1 text-neutral-600 text-sm">
             <strong>IMEI actual:</strong>{' '}
             <span className="font-mono">{currentImei ?? 'Sin dispositivo'}</span>
