@@ -6,7 +6,9 @@
 
 Backup on-demand de `booster-ai-pg-07d9e939`: id `1790597034016`, SUCCESSFUL, 2026-09-28T12:03:54Z–12:06:56Z.
 
-`terraform plan` completo: 1 add, 2 change, 7 destroy. Los 7 destroy eran el clúster DR, la subnet, la IP, el DNS `telemetry-dr`, el router, el NAT y el worker pool. El processor pasaba de 2 vCPU a 1. El plan también quería crear `google_kms_crypto_key_iam_member.cloud_run_certificate_version_viewer` y montar `CONTENT_SID_ACTIVACION_CONDUCTOR` en `booster-ai-api`. Esos dos no son el recorte: no se aplicaron.
+`terraform plan` completo: 1 add, 2 change, 7 destroy. Los 7 destroy eran el clúster DR, la subnet, la IP, el DNS `telemetry-dr`, el router, el NAT y el worker pool. El processor pasaba de 2 vCPU a 1. El plan también quería crear `google_kms_crypto_key_iam_member.cloud_run_certificate_version_viewer` y montar `CONTENT_SID_ACTIVACION_CONDUCTOR` en `booster-ai-api`. Esos dos quedaron fuera del primer apply acotado.
+
+Un segundo `terraform apply` del plan guardado, el 2026-09-28T12:46Z, los aplicó: `1 added, 1 changed, 0 destroyed`. El permiso KMS `roles/cloudkms.viewer` ya estaba en la clave y Terraform lo adoptó. El API creó la revisión `booster-ai-api-00439-r9t` con el secreto montado (valor `HX`, no placeholder) y en el mismo update el canary pasó de 99/1 a 100/0. Se restauró de inmediato a 99 % `booster-ai-api-00639-del` y 1 % `booster-ai-api-00643-luf`. `https://api.boosterchile.com/health` respondió 200. El plan siguiente dice `No changes`.
 
 Antes del destroy, `deletion_protection` del clúster pasó de true a false con `-target=google_container_cluster.telemetry_dr` (0 added, 1 changed, 0 destroyed). El apply acotado siguiente: `Apply complete! Resources: 0 added, 1 changed, 7 destroyed.`
 
@@ -24,7 +26,7 @@ Verificación en vivo:
 - [x] `terraform plan` completo. Los 7 destroy eran clúster `telemetry_dr`, subnet `dr_private`, address `telemetry_dr_lb`, DNS `telemetry_dr`, router `dr_nat`, NAT `dr_nat` y worker pool `production_dr`.
 - [x] El plan no mostró replace de `google_service_networking_connection.private_vpc` ni de `google_sql_database_instance.main`.
 - [x] El processor quedó `cpu = "2" -> "1"` in-place, con `minScale = 1` y sin CPU throttling.
-- [x] El apply acotado no incluyó IAM, service accounts, KMS ni firewall. El plan completo sí proponía un binding KMS y un env del api; se dejaron fuera.
+- [x] El primer apply no incluyó el binding KMS ni el env del API. El segundo apply, pedido aparte, los aplicó y el canary se restauró a 99/1. No hubo cambios de firewall ni de service accounts.
 - [x] El clúster de Santiago no se tocó.
 
 ## Runbook de apply (dos pasos por `deletion_protection`)
