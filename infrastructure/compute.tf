@@ -503,10 +503,14 @@ module "service_telemetry_processor" {
   # Causa del incidente 2026-06-07 (telemetría caída ~26h con la config previa min=0 +
   # "push consumer"). La recurrencia ahora la detecta `telemetry_consumer_stalled_p1`
   # (telemetry-monitoring.tf) en ~35min. Coincide con el fix de runtime (revisión 00312).
+  #
+  # cpu=1 (ADR-081): 2 vCPU always-on eran ~USD 95/mes para una flota de un
+  # dígito de Teltonika. 1 vCPU + 1 Gi mantiene el pull vivo y corta ~la mitad
+  # de ese CPU. No bajar de 1 ni volver a cpu_idle=true.
   min_instances = 1
   max_instances = 50
   cpu_idle      = false
-  cpu           = "2"
+  cpu           = "1"
   memory        = "1Gi"
   concurrency   = 10 # control de rate a Firestore/BigQuery
 

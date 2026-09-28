@@ -78,7 +78,7 @@ Ninguna de estas se aplica desde este documento. `terraform apply`, borrar un pr
 
 **Por qué ahora**: el gateway DR está en 0 réplicas. Cloud SQL no tiene réplica en otra región, así que ese clúster nunca levantaba el producto entero ante una caída de Santiago. ADR-058 ya lo dijo. Conservar subnet, IP y clúster «por si hay que reactivar» igual paga el fee de Autopilot todos los meses. Reactivar desde Terraform es más lento (horas, no 15–40 minutos) y es el costo de esta palanca.
 
-**Qué borrar, junto**: `google_container_cluster.telemetry_dr`, la subnet `booster-ai-dr-private`, `google_compute_router_nat.dr_nat`, la IP `telemetry_dr_lb`, el worker pool `booster-production-pool-dr` y su rango de peering. El gateway primario, su NAT y sus dos LB se quedan: sin ellos no hay TCP de Teltonika.
+**Qué borrar, junto**: `google_container_cluster.telemetry_dr`, la subnet `booster-ai-dr-private`, `google_compute_router_nat.dr_nat`, la IP `telemetry_dr_lb` y el worker pool `booster-production-pool-dr`. El rango de peering interno de ese pool se queda: sacarlo recrea el peering de Cloud SQL. El gateway primario, su NAT y sus dos LB se quedan: sin ellos no hay TCP de Teltonika.
 
 **No hacer**: comprar CUD de GKE o de Cloud Run antes de esta decisión. Congelaría el clúster que conviene apagar.
 
@@ -136,7 +136,18 @@ El presupuesto de USD 500 queda holgado solo después de sacar el DR. Antes, el 
 
 ---
 
-## 5. Cómo contrastar esto en el dashboard (15 minutos)
+## 5. Qué se ejecutó el 2026-09-28, y qué no
+
+Pedido posterior: revisar en profundidad y cortar. El detalle de la revisión y el runbook de apply están en `.specs/recorte-piso-gcp/` y en ADR-081.
+
+| Palanca | Resultado |
+|---|---|
+| Clúster DR, subnet, IP pública, DNS `telemetry-dr`, NAT de `us-central1`, worker pool DR, manifiestos K8s de esa región | Sacados del código. El apply a producción no corrió: no hay credenciales de `booster-ai-494222` y ADR-076 pide un `terraform plan` registrado antes. Hasta ese apply la factura no baja |
+| Processor 2 vCPU → 1 vCPU | En `compute.tf` y en el deploy de Cloud Build. Mismos `min_instances=1` y CPU siempre asignada. Tampoco está aplicado en la revisión viva hasta el apply o el próximo deploy |
+| Rango de peering del pool DR | Se queda. Quitarlo recrea el peering de Cloud SQL |
+| Cloud SQL, Redis, VPC connector, clúster de Santiago, Datadog, Booster 2.0, Workspace, Twilio | Revisados y no cortados. Los motivos están en la spec. Booster 2.0 no se borra sin medir tráfico otra vez: en mayo tenía 259.000 requests / 30 días y esta sesión no pudo repetir la consulta |
+
+## 6. Cómo contrastar esto en el dashboard (15 minutos)
 
 1. Platform Admin → Observabilidad → **Costos**. Anotar mes a la fecha, mes anterior completo y el Δ contra el mismo periodo.
 2. En el donut, confirmar que Kubernetes Engine, Cloud SQL, Cloud Run y Networking son los cuatro grandes. Si Logging o una API de Maps está arriba, esa fila pasa delante de las palancas de la sección 3.

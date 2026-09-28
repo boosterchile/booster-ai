@@ -510,6 +510,8 @@ steps:
       - --platform=managed
       - --min-instances=1
       - --no-cpu-throttling
+      - --cpu=1
+      - --memory=1Gi
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-telemetry-processor]
 
