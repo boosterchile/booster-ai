@@ -85,8 +85,12 @@ function AdminDispositivosBody({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Dispositivos pendientes">
       <div className="mb-6 flex items-center gap-3">
-        <Link to="/app" className="text-neutral-500 hover:text-neutral-900">
-          <ArrowLeft className="h-5 w-5" />
+        <Link
+          to="/app"
+          className="inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver
         </Link>
         <h1 className="font-bold text-3xl">Dispositivos pendientes</h1>
       </div>
