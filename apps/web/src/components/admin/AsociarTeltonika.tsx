@@ -187,7 +187,7 @@ export function AsociarTeltonika() {
     }
     const kilos = Number.parseInt(capacidad, 10);
     if (!Number.isInteger(kilos) || kilos < 1 || kilos > 100_000) {
-      setError('Ingresá la capacidad de carga en kilos, entre 1 y 100.000.');
+      setError('Ingresa la capacidad de carga en kilos, entre 1 y 100.000.');
       return;
     }
     const tara = pesoVacio.trim() === '' ? null : Number.parseInt(pesoVacio, 10);

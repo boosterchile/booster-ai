@@ -282,7 +282,7 @@ function PrimitivasDemo() {
       <Input aria-label="Buscar carga" placeholder="Buscar carga…" />
 
       {/* Modal (D2 Ola 2) — RAC headless. Responde al registro re-aplicado en el
-          portal (probá togglear a Conductor y abrir: el modal crece) y hereda el
+          portal (prueba togglear a Conductor y abrir: el modal crece) y hereda el
           acento de :root. Optimizado operador. */}
       <div className="flex flex-wrap items-center" style={{ gap: 'var(--gap)' }}>
         <Button data-testid="open-modal" variant="primary" onClick={() => setModalOpen(true)}>
