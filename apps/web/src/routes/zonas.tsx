@@ -86,7 +86,7 @@ function ZonasPage({ me }: { me: MeOnboarded }) {
       await cargar();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'zona_duplicada') {
-        setError('Ya tenés una zona de ese tipo en esa región. Activála o cambialé el tipo.');
+        setError('Ya tienes una zona de ese tipo en esa región. Actívala o cámbiale el tipo.');
       } else {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -120,7 +120,7 @@ function ZonasPage({ me }: { me: MeOnboarded }) {
               Zonas de matching
             </h1>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Definí las regiones donde podés recoger carga. Si el origen de un viaje no cae en una
+              Define las regiones donde puedes recoger carga. Si el origen de un viaje no cae en una
               zona activa, no te llega la oferta.
             </p>
           </div>
@@ -193,7 +193,7 @@ function ZonasPage({ me }: { me: MeOnboarded }) {
 
             {!loading && zonas.length === 0 && (
               <p className="mt-6 text-neutral-500 text-sm" data-testid="zona-empty">
-                Todavía no tenés zonas. Agregá al menos la región Metropolitana (XIII) para que te
+                Todavía no tienes zonas. Agrega al menos la región Metropolitana (XIII) para que te
                 lleguen ofertas de Santiago.
               </p>
             )}

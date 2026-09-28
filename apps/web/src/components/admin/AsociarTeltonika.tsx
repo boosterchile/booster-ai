@@ -321,7 +321,7 @@ export function AsociarTeltonika() {
                 className={inputClass}
                 data-testid="teltonika-empresa"
               >
-                <option value="">Elegí la empresa</option>
+                <option value="">Elige la empresa</option>
                 {empresas.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.razon_social} · {e.rut}
@@ -341,7 +341,7 @@ export function AsociarTeltonika() {
                   data-testid="teltonika-vehiculo"
                 >
                   <option value="">
-                    {empresaId === '' ? 'Primero la empresa' : 'Elegí la patente'}
+                    {empresaId === '' ? 'Primero la empresa' : 'Elige la patente'}
                   </option>
                   {vehiculos.map((v) => (
                     <option key={v.id} value={v.id}>

@@ -630,7 +630,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
             label="Teléfono"
             required
             error={errors.phone?.message}
-            hint="Su WhatsApp. Por acá le llega el enlace para activar la cuenta. El PIN va por correo y queda en esta pantalla."
+            hint="Su WhatsApp. Por aquí le llega el enlace para activar la cuenta. El PIN va por correo y queda en esta pantalla."
             render={({ id, describedBy }) => (
               <input
                 id={id}

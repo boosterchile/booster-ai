@@ -96,7 +96,7 @@ function EquipoPage() {
           <div>
             <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Equipo</h1>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Las personas de tu empresa que usan Booster. Al agregar a alguien recibís un código
+              Las personas de tu empresa que usan Booster. Al agregar a alguien recibes un código
               para entregarle; con ese código crea su propia clave de acceso.
             </p>
           </div>
@@ -134,7 +134,7 @@ function EquipoPage() {
         )}
         {!cargando && !errorLista && miembros.length === 0 && (
           <p className="p-5 text-neutral-500 text-sm">
-            Todavía no agregaste a nadie. Usá “Agregar persona” para sumar a alguien de tu equipo.
+            Todavía no agregaste a nadie. Usa “Agregar persona” para sumar a alguien de tu equipo.
           </p>
         )}
         {!cargando && !errorLista && miembros.length > 0 && (
@@ -199,7 +199,7 @@ function CodigoEntregable({
           {/* Que quien lo entrega entienda qué es: un código de un solo uso, no
               una clave. La clave la elige la persona y nadie más la conoce. */}
           <p className="mt-1 text-amber-800 text-sm">
-            Entregáselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
+            Entrégaselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
             usarlo, elegirá su propia clave de 6 dígitos, que solo conocerá ella.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
@@ -256,7 +256,7 @@ function FormAlta({
     if (!rutParsed.success) {
       setError(
         rutParsed.error.issues[0]?.message ??
-          'El RUT no es válido. Revisá los dígitos y el verificador.',
+          'El RUT no es válido. Revisa los dígitos y el verificador.',
       );
       return;
     }

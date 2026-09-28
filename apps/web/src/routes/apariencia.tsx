@@ -48,7 +48,7 @@ export function AparienciaRoute() {
       <div className="w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
         <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Apariencia</h1>
         <p className="mt-1 text-neutral-600 text-sm">
-          Elegí el color de acento de tu Booster. Cambia al instante.
+          Elige el color de acento de tu Booster. Cambia al instante.
         </p>
 
         {/* Toggle de paleta (en la app lo fija el rol; acá se demuestra) */}

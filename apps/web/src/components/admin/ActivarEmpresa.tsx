@@ -167,7 +167,7 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
         <div>
           <h2 className="font-semibold text-neutral-900">Empresas</h2>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-            Activá una empresa pendiente para que entre al matching. Mientras esté en verificación,
+            Activa una empresa pendiente para que entre al matching. Mientras esté en verificación,
             no le llegan ofertas aunque tenga zonas y flota.
           </p>
         </div>

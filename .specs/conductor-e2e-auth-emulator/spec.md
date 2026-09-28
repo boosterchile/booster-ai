@@ -21,7 +21,7 @@ GPS resiliente (#686), vista ruta/resultado (#687) e higiene (#688) ya están en
 - Certificado: en CI/local **no** se exige PDF emitido si falta `CERTIFICATES_BUCKET` / KMS. Basta entrega confirmada + métricas visibles y/o «Certificado en proceso» / degradación explícita. Un 503 de storage **no** tumba el E2E (mismo FAIL_ENV honesto que #692).
 - Gate de rol: usuario ≠ conductor en `/app/conductor` → redirect `/app`.
 - Waits explícitos (`expect` / `waitForURL` / `waitForRequest`); cero `waitForTimeout` ciego.
-- Copy vos rioplatense solo en strings **nuevos** de UI. Este paso no agrega pantallas; el copy existente del conductor queda.
+- Copy tuteo chileno solo en strings **nuevos** de UI. Este paso no agrega pantallas; el copy existente del conductor queda.
 
 ## 3. Entradas y salidas
 

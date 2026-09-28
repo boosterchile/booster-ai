@@ -662,7 +662,7 @@ function DispositivoSection({
         <div>
           <h2 className="font-semibold text-neutral-900 text-xl">Dispositivo</h2>
           <p className="mt-1 text-neutral-600 text-sm">
-            Booster instala el equipo en el vehículo. Si ya cargaste los datos, escribí acá su IMEI.
+            Booster instala el equipo en el vehículo. Si ya cargaste los datos, escribe aquí su IMEI.
             Si el vehículo todavía no está en la flota, dalo de alta primero. Booster también puede
             hacer las dos cosas.
           </p>
@@ -1186,7 +1186,7 @@ function VehicleForm({
           <FormField
             label="Capacidad del estanque (L)"
             error={errors.capacidad_estanque_l?.message}
-            hint="Vacío si no la conocés. Si la indicás, tiene que ser mayor que 0 y de hasta 2000 litros."
+            hint="Vacío si no la conoces. Si la indicas, tiene que ser mayor que 0 y de hasta 2000 litros."
             render={({ id, describedBy }) => (
               <input
                 id={id}

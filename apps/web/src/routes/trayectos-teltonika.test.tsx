@@ -149,7 +149,7 @@ describe('TrayectosTeltonikaRoute', () => {
     const get = vi.spyOn(api, 'get');
     renderPage();
     expect(
-      screen.getByText('No tenés permiso para ver el historial de trayectos.'),
+      screen.getByText('No tienes permiso para ver el historial de trayectos.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('mapa-evento')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ver en el mapa' })).not.toBeInTheDocument();
@@ -159,7 +159,7 @@ describe('TrayectosTeltonikaRoute', () => {
   it('el despachador tampoco entra', () => {
     estado.me = meDe('despachador', true);
     renderPage();
-    expect(screen.getByText(/No tenés permiso/)).toBeInTheDocument();
+    expect(screen.getByText(/No tienes permiso/)).toBeInTheDocument();
   });
 
   it('sin Teltonika muestra el vacío y el enlace para vincular', async () => {
@@ -175,7 +175,7 @@ describe('TrayectosTeltonikaRoute', () => {
       trayectos: [],
     });
     renderPage();
-    expect(await screen.findByText(/Todavía no tenés un Teltonika/)).toBeInTheDocument();
+    expect(await screen.findByText(/Todavía no tienes un Teltonika/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Vincular Teltonika' })).toHaveAttribute(
       'href',
       '/app/admin/dispositivos',
@@ -194,7 +194,7 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(screen.getByText('4,25 km/L')).toBeInTheDocument();
     // 10 L / 42,5 km × 100 = 23,529… → un decimal
     expect(screen.getByText('23,5 L/100 km')).toBeInTheDocument();
-    expect(screen.getByText(/armás el costo de operación por tu cuenta/)).toBeInTheDocument();
+    expect(screen.getByText(/armas el costo de operación por tu cuenta/)).toBeInTheDocument();
     expect(screen.queryByText(/CLP|\$/)).not.toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
@@ -219,7 +219,7 @@ describe('TrayectosTeltonikaRoute', () => {
       ],
     });
     renderPage();
-    expect(await screen.findByText(/Conectá el sensor para ver litros/)).toBeInTheDocument();
+    expect(await screen.findByText(/Conecta el sensor para ver litros/)).toBeInTheDocument();
     expect(screen.getAllByText(/costo de operación/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/\d[\d.,]* L\/100 km/)).not.toBeInTheDocument();
     expect(screen.getByText('ABCD12')).toBeInTheDocument();
@@ -247,13 +247,13 @@ describe('TrayectosTeltonikaRoute', () => {
   it('si la consulta falla, pide reintentar', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(new Error('red'));
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Probá de nuevo/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Prueba de nuevo/);
   });
 
   it('un 403 de la API también se lee como falta de permiso', async () => {
     vi.spyOn(api, 'get').mockRejectedValue(new ApiError(403, 'rol_no_autorizado', null));
     renderPage();
-    expect(await screen.findByText(/No tenés permiso/)).toBeInTheDocument();
+    expect(await screen.findByText(/No tienes permiso/)).toBeInTheDocument();
   });
 
   it('con geo, el listado abre el mapa centrado en el pin', async () => {
@@ -523,7 +523,7 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     expect(screen.getByText('58 %')).toBeInTheDocument();
     expect(screen.getByText('77 %')).toBeInTheDocument();
     expect(screen.queryByText(/No hay una lectura válida/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Conectá el sensor de combustible/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Conecta el sensor de combustible/)).not.toBeInTheDocument();
   });
 
   it('explica una vez por causa qué informa cada camión, sin los que no tienen sensor', async () => {
@@ -561,7 +561,7 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     });
     expect(
       await screen.findByText(
-        'KZBB26 y VFZH-68 no tienen sensor de combustible conectado. Acá ves sus trayectos y kilómetros.',
+        'KZBB26 y VFZH-68 no tienen sensor de combustible conectado. Aquí ves sus trayectos y kilómetros.',
       ),
     ).toBeInTheDocument();
     expect(

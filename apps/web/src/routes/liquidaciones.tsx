@@ -75,7 +75,7 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
 
       {forbidden && (
         <output className="mt-6 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
-          Las liquidaciones son exclusivas de empresas transportistas. Si tu rol cambió, contactá al
+          Las liquidaciones son exclusivas de empresas transportistas. Si tu rol cambió, contacta al
           admin de tu empresa.
         </output>
       )}

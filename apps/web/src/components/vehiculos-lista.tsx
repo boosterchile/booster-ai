@@ -233,7 +233,7 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
         <div className="min-w-0">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículos</h1>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-            Cargá los datos de cada vehículo para que quede en tu empresa. Si Booster instaló un
+            Carga los datos de cada vehículo para que quede en tu empresa. Si Booster instaló un
             Teltonika, el equipo se asocia en la configuración. Booster también puede cargar estos
             datos desde su panel.
           </p>
