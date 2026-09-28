@@ -261,7 +261,7 @@ export const empresaUmbralesRoboCombustiblePatchSchema = z
   })
   .refine(
     (valor) => valor.umbral_robo_golpe_l !== undefined || valor.umbral_robo_hormiga_l !== undefined,
-    { message: 'indicá al menos un umbral' },
+    { message: 'indica al menos un umbral' },
   );
 export type EmpresaUmbralesRoboCombustiblePatch = z.infer<
   typeof empresaUmbralesRoboCombustiblePatchSchema

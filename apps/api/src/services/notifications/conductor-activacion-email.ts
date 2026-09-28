@@ -36,7 +36,7 @@ export async function enviarCorreoActivacionConductor(opts: {
     '',
     `${empresa} te dio de alta como conductor en Booster.`,
     '',
-    'Para entrar por primera vez, activa tu cuenta acá:',
+    'Para entrar por primera vez, activa tu cuenta aquí:',
     enlace,
     '',
     `Tu RUT: ${rut}`,
@@ -55,7 +55,7 @@ export async function enviarCorreoActivacionConductor(opts: {
   const html = [
     `<p>Hola ${nombre},</p>`,
     `<p><strong>${empresa}</strong> te dio de alta como conductor en Booster.</p>`,
-    `<p><a href="${enlace}">Activa tu cuenta acá</a></p>`,
+    `<p><a href="${enlace}">Activa tu cuenta aquí</a></p>`,
     `<p>Tu RUT: <strong>${rut}</strong><br>Tu PIN de activación: <strong>${pin}</strong></p>`,
     '<p>El PIN sirve una sola vez. Al usarlo vas a crear <strong>tu propia clave</strong> de 6 dígitos, que solo sabes tú: ni tu empresa ni Booster pueden verla. De ahí en adelante entras siempre con tu RUT y esa clave.</p>',
     '<p>Si no reconoces a esta empresa, ignora este correo y avísanos a soporte@boosterchile.com.</p>',

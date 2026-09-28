@@ -506,7 +506,7 @@ export function createTripRequestsV2Routes(opts: {
           code: 'certificate_not_issued',
           // Útil para el frontend mostrar "pendiente" vs "no aplica".
           message:
-            'El certificado todavía no fue emitido. Si el viaje está entregado, esperá unos segundos y reintentá.',
+            'El certificado todavía no fue emitido. Si el viaje está entregado, espera unos segundos e inténtalo.',
         },
         404,
       );
