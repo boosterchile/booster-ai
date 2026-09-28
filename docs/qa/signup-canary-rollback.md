@@ -38,6 +38,7 @@ Cloud Build promueve **automáticamente** vía step `deploy-api` cuando:
 
 - `canary-verify` exit 0.
 - Alert policy `signup_probe_failure` NO disparó durante el `canary-sleep` window.
+- Muestra bajo `_CANARY_MIN_REQUESTS` (30) también es exit 0: WARN y promover, sin evaluar p95. El canario al 1 % no junta 30 requests con el tráfico actual. Un error rate o un p95 fuera de umbral solo abortan cuando la muestra alcanza el piso.
 
 No requiere human intervention. El human-on-call recibe el job-success notification 30+ min después del push.
 
@@ -45,7 +46,7 @@ No requiere human intervention. El human-on-call recibe el job-success notificat
 
 Cloud Build aborta el job cuando:
 
-- `canary-verify` exit 1 (error_rate o p95_latency exceden thresholds).
+- `canary-verify` exit 1 (la muestra alcanza el piso y error_rate o p95_latency exceden thresholds).
 - El step `deploy-api` NO ejecuta — la revision anterior sigue con 99% del traffic.
 - El canary tag `canary-signup-<sha>` queda con 1% — **drift implícito**: el traffic split no vuelve a 100%/0% automáticamente. Human-on-call DEBE ejecutar manualmente:
 

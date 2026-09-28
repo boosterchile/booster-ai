@@ -119,6 +119,32 @@ describe('api.get', () => {
     }
   });
 
+  it('error 400 con ZodError en payload.error muestra el texto del primer issue', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            name: 'ZodError',
+            issues: [
+              {
+                code: 'invalid_string',
+                message: 'RUT con formato inválido (ej: 12345678-5)',
+                path: ['rut'],
+              },
+            ],
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    await expect(api.post('/admin/empresas', { rut: 'no-es-rut' })).rejects.toMatchObject({
+      status: 400,
+      code: 'validation_error',
+      message: 'rut: RUT con formato inválido (ej: 12345678-5)',
+    });
+  });
+
   it('error sin code en payload → ApiError code=undefined', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response('plain text error', { status: 500 }),

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
+import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
@@ -106,6 +107,13 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Trayectos">
       <header>
+        <Link
+          to="/app"
+          className="mb-3 inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver al inicio
+        </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
           Historial de trayectos
         </h1>

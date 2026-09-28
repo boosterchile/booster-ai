@@ -57,6 +57,46 @@ async function buildHeaders(extra?: HeadersInit): Promise<Headers> {
   return headers;
 }
 
+/**
+ * zValidator (Hono) responde 400 con `{ error: ZodError }`. El primer issue
+ * se muestra como `path: message` para que la UI no quede en «400».
+ */
+function messageFromFirstZodIssue(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null || !('error' in payload)) {
+    return undefined;
+  }
+  const { error } = payload;
+  if (typeof error !== 'object' || error === null || !('issues' in error)) {
+    return undefined;
+  }
+  const { issues } = error;
+  if (!Array.isArray(issues)) {
+    return undefined;
+  }
+  const first = issues[0];
+  if (typeof first !== 'object' || first === null || !('message' in first)) {
+    return undefined;
+  }
+  if (typeof first.message !== 'string' || first.message.length === 0) {
+    return undefined;
+  }
+  const path = zodIssuePath(first);
+  return path.length > 0 ? `${path}: ${first.message}` : first.message;
+}
+
+function zodIssuePath(issue: object): string {
+  if (!('path' in issue) || !Array.isArray(issue.path)) {
+    return '';
+  }
+  const parts: string[] = [];
+  for (const segment of issue.path) {
+    if (typeof segment === 'string' || typeof segment === 'number') {
+      parts.push(String(segment));
+    }
+  }
+  return parts.join('.');
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -97,20 +137,24 @@ async function request<T>(
     : await res.text().catch(() => null);
 
   if (!res.ok) {
+    const zodMessage = messageFromFirstZodIssue(payload);
     const errCode =
-      typeof payload === 'object' &&
-      payload !== null &&
-      'code' in payload &&
-      typeof payload.code === 'string'
-        ? payload.code
-        : undefined;
+      zodMessage !== undefined
+        ? 'validation_error'
+        : typeof payload === 'object' &&
+            payload !== null &&
+            'code' in payload &&
+            typeof payload.code === 'string'
+          ? payload.code
+          : undefined;
     const errMessage =
-      typeof payload === 'object' &&
+      zodMessage ??
+      (typeof payload === 'object' &&
       payload !== null &&
       'error' in payload &&
       typeof payload.error === 'string'
         ? payload.error
-        : undefined;
+        : undefined);
     throw new ApiError(res.status, errCode, payload, errMessage);
   }
 

@@ -50,7 +50,10 @@ vi.mock('../lib/api-client.js', () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-const { PlatformAdminRoute } = await import('./platform-admin.js');
+const { PlatformAdminRoute, PlatformAdminStakeholdersRoute } = await import('./platform-admin.js');
+const { PlatformAdminEmpresasRoute } = await import('./platform-admin-empresas.js');
+const { PlatformAdminTeltonikaRoute } = await import('./platform-admin-teltonika.js');
+const { PlatformAdminImpersonarRoute } = await import('./platform-admin-impersonar.js');
 
 describe('/app/platform-admin — entradas del panel', () => {
   it('enlaza a Solicitudes de registro con la ruta correcta', () => {
@@ -81,6 +84,66 @@ describe('/app/platform-admin — entradas del panel', () => {
       'href',
       '/app/platform-admin/site-settings',
     );
-    expect(screen.getByRole('heading', { name: 'Empresas' })).toBeInTheDocument();
+    expect(screen.getByTestId('empresas-link')).toHaveAttribute(
+      'href',
+      '/app/platform-admin/empresas',
+    );
+    expect(screen.getByTestId('teltonika-link')).toHaveAttribute(
+      'href',
+      '/app/platform-admin/teltonika',
+    );
+    expect(screen.getByTestId('stakeholders-link')).toHaveAttribute(
+      'href',
+      '/app/platform-admin/stakeholders',
+    );
+    expect(screen.getByTestId('impersonar-link')).toHaveAttribute(
+      'href',
+      '/app/platform-admin/impersonar',
+    );
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute('href', '/login');
+    expect(screen.getByTestId('platform-admin-volver')).toHaveTextContent('Volver al login');
+    expect(screen.queryByTestId('teltonika-empresa')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Crear empresa' })).not.toBeInTheDocument();
+  });
+});
+
+describe('páginas de Admin — volver al índice', () => {
+  it('empresas vuelve al índice y muestra el alta', () => {
+    render(<PlatformAdminEmpresasRoute />);
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute(
+      'href',
+      '/app/platform-admin',
+    );
+    expect(screen.getByTestId('platform-admin-volver')).toHaveTextContent('Volver');
+    expect(screen.getByRole('heading', { name: 'Crear empresa' })).toBeInTheDocument();
+  });
+
+  it('teltonika vuelve al índice', async () => {
+    render(<PlatformAdminTeltonikaRoute />);
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute(
+      'href',
+      '/app/platform-admin',
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Dispositivos Teltonika' }),
+    ).toBeInTheDocument();
+  });
+
+  it('stakeholders vuelve al índice', () => {
+    render(<PlatformAdminStakeholdersRoute />);
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute(
+      'href',
+      '/app/platform-admin',
+    );
+    expect(screen.getByRole('heading', { name: 'Organizaciones stakeholder' })).toBeInTheDocument();
+  });
+
+  it('impersonar vuelve al índice', () => {
+    render(<PlatformAdminImpersonarRoute />);
+    expect(screen.getByTestId('platform-admin-volver')).toHaveAttribute(
+      'href',
+      '/app/platform-admin',
+    );
+    expect(screen.getByTestId('impersonation-picker-stub')).toBeInTheDocument();
   });
 });
