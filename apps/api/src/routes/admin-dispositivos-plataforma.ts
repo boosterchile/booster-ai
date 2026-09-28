@@ -32,8 +32,10 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
  *
  * Dos caminos. Si la empresa ya cargó el vehículo, `asignar` solo escribe
  * el IMEI. Si no, `habilitar` crea el vehículo en esa empresa y le escribe
- * el IMEI. La empresa puede hacer el alta desde su flota. El Teltonika ya
- * está instalado: no hace falta que haya llamado al gateway.
+ * el IMEI. Si la patente ya existe, actualiza esa fila y la deja en la
+ * empresa elegida: la patente es única en el país y no se inserta otra.
+ * La empresa puede hacer el alta desde su flota. El Teltonika ya está
+ * instalado: no hace falta que haya llamado al gateway.
  */
 
 const asignarBodySchema = z.object({
@@ -321,12 +323,34 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
         }
 
         // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const existentes = await opts.db
+          .select({
+            id: vehicles.id,
+            plate: vehicles.plate,
+            empresaId: vehicles.empresaId,
+            teltonikaImei: vehicles.teltonikaImei,
+            teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+          })
+          .from(vehicles)
+          .where(eq(vehicles.plate, body.plate))
+          .limit(1);
+        const existente = existentes[0];
+        if (existente !== undefined && existente.teltonikaImeiEspejo !== null) {
+          record('imei_espejo_activo');
+          return c.json({ error: 'conflict', code: 'imei_espejo_activo' }, 422);
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const ocupadoWhere = existente
+          ? and(eq(vehicles.teltonikaImei, body.teltonika_imei), ne(vehicles.id, existente.id))
+          : eq(vehicles.teltonikaImei, body.teltonika_imei);
         const ocupado = await opts.db
           .select({ id: vehicles.id })
           .from(vehicles)
-          .where(eq(vehicles.teltonikaImei, body.teltonika_imei))
+          .where(ocupadoWhere)
           .limit(1);
-        if (ocupado[0]) {
+        const otroConImei = ocupado[0];
+        if (otroConImei && otroConImei.id !== existente?.id) {
           record('imei_en_uso');
           return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
         }
@@ -342,7 +366,11 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
           .where(eq(pendingDevices.imei, body.teltonika_imei))
           .limit(1);
         const pending = pendingRows[0];
-        if (pending?.status === 'aprobado' && pending.assignedToVehicleId !== null) {
+        const imeiAprobadoEnOtro =
+          pending?.status === 'aprobado' &&
+          pending.assignedToVehicleId !== null &&
+          pending.assignedToVehicleId !== existente?.id;
+        if (imeiAprobadoEnOtro) {
           record('imei_en_uso');
           return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
         }
@@ -352,30 +380,55 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
         }
 
         const reconciliacion = pending ? 'aprobado' : 'sin_registro';
-        let created: { id: string; plate: string } | undefined;
+        const datosVehiculo = {
+          empresaId: empresa.id,
+          vehicleType: body.vehicle_type,
+          unitCategory: derivado.unitCategory,
+          unitType: derivado.unitType,
+          bodyType: derivado.bodyType,
+          capacityKg: body.capacity_kg,
+          capacityM3: body.capacity_m3 ?? null,
+          year: body.year ?? null,
+          brand: body.brand ?? null,
+          model: body.model ?? null,
+          fuelType: body.fuel_type ?? null,
+          curbWeightKg: body.curb_weight_kg ?? null,
+          teltonikaImei: body.teltonika_imei,
+          vehicleStatus: 'activo' as const,
+        };
+        let guardado: { id: string; plate: string } | undefined;
         try {
-          created = await opts.db.transaction(async (tx) => {
+          guardado = await opts.db.transaction(async (tx) => {
             // rls-allowlist: admin platform-wide — protegido por requirePlatformAdmin.
-            const inserted = await tx
-              .insert(vehicles)
-              .values({
-                empresaId: empresa.id,
-                plate: body.plate,
-                vehicleType: body.vehicle_type,
-                unitCategory: derivado.unitCategory,
-                unitType: derivado.unitType,
-                bodyType: derivado.bodyType,
-                capacityKg: body.capacity_kg,
-                capacityM3: body.capacity_m3 ?? null,
-                year: body.year ?? null,
-                brand: body.brand ?? null,
-                model: body.model ?? null,
-                fuelType: body.fuel_type ?? null,
-                curbWeightKg: body.curb_weight_kg ?? null,
-                teltonikaImei: body.teltonika_imei,
-              })
-              .returning({ id: vehicles.id, plate: vehicles.plate });
-            const row = inserted[0];
+            let row: { id: string; plate: string } | undefined;
+            if (existente) {
+              await tx
+                .update(vehicles)
+                .set({ ...datosVehiculo, updatedAt: new Date() })
+                .where(eq(vehicles.id, existente.id));
+              row = { id: existente.id, plate: existente.plate };
+              if (
+                existente.teltonikaImei !== null &&
+                existente.teltonikaImei !== body.teltonika_imei
+              ) {
+                await tx
+                  .update(pendingDevices)
+                  .set({ status: 'reemplazado', updatedAt: new Date() })
+                  .where(
+                    and(
+                      eq(pendingDevices.imei, existente.teltonikaImei),
+                      eq(pendingDevices.status, 'aprobado'),
+                      eq(pendingDevices.assignedToVehicleId, existente.id),
+                    ),
+                  );
+              }
+            } else {
+              const inserted = await tx
+                .insert(vehicles)
+                .values({ ...datosVehiculo, plate: body.plate })
+                .returning({ id: vehicles.id, plate: vehicles.plate });
+              row = inserted[0];
+            }
             if (!row) {
               return undefined;
             }
@@ -403,16 +456,21 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
           throw err;
         }
 
-        if (!created) {
+        if (!guardado) {
           opts.logger.error({ empresaId: empresa.id }, 'insert vehiculo no devolvió row');
           record('insert_failed');
           return c.json({ error: 'insert_failed' }, 500);
         }
 
+        const yaExistia = existente !== undefined;
+        const movido = yaExistia && existente.empresaId !== empresa.id;
         opts.logger.info(
           {
-            vehicleId: created.id,
+            vehicleId: guardado.id,
             empresaId: empresa.id,
+            empresaAnteriorId: existente?.empresaId,
+            yaExistia,
+            movido,
             vehicleType: body.vehicle_type,
             derivedUnitCategory: derivado.unitCategory,
             derivedUnitType: derivado.unitType,
@@ -420,21 +478,29 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
             reconciliacion,
             asignadoPor: admin.adminEmail,
           },
-          'vehículo habilitado con Teltonika desde platform-admin',
+          yaExistia
+            ? 'vehículo existente reasignado con Teltonika desde platform-admin'
+            : 'vehículo habilitado con Teltonika desde platform-admin',
         );
         record(reconciliacion);
+        setResultAttributes(span, {
+          'dispositivo.ya_existia': yaExistia,
+          'dispositivo.movido': movido,
+        });
 
         return c.json(
           {
             ok: true,
-            vehiculo_id: created.id,
-            patente: created.plate,
+            vehiculo_id: guardado.id,
+            patente: guardado.plate,
             empresa_id: empresa.id,
             razon_social: empresa.legalName,
             teltonika_imei: body.teltonika_imei,
             reconciliacion,
+            ya_existia: yaExistia,
+            movido,
           },
-          201,
+          yaExistia ? 200 : 201,
         );
       },
     );

@@ -213,6 +213,8 @@ export function AsociarTeltonika() {
         patente: string;
         razon_social: string;
         teltonika_imei: string;
+        ya_existia?: boolean;
+        movido?: boolean;
       }>('/admin/plataforma/dispositivos/habilitar', {
         empresa_id: empresaId,
         teltonika_imei: imei.trim(),
@@ -225,9 +227,19 @@ export function AsociarTeltonika() {
         ...(combustible !== '' && tipo !== 'semi_remolque' ? { fuel_type: combustible } : {}),
         ...(tara !== null ? { curb_weight_kg: tara } : {}),
       });
-      setOk(
-        `El camión ${res.patente} quedó en ${res.razon_social} con el IMEI ${res.teltonika_imei}.`,
-      );
+      if (res.ya_existia && res.movido) {
+        setOk(
+          `El camión ${res.patente} ya existía en otra empresa. Quedó en ${res.razon_social} con el IMEI ${res.teltonika_imei}.`,
+        );
+      } else if (res.ya_existia) {
+        setOk(
+          `El camión ${res.patente} ya estaba en ${res.razon_social}. Quedó con el IMEI ${res.teltonika_imei}.`,
+        );
+      } else {
+        setOk(
+          `El camión ${res.patente} quedó en ${res.razon_social} con el IMEI ${res.teltonika_imei}.`,
+        );
+      }
       setImei('');
       setPatente('');
       setCapacidad('');
@@ -256,7 +268,8 @@ export function AsociarTeltonika() {
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Booster instala el Teltonika en el vehículo y después lo habilita para la empresa de
             transportes. Habilitarlo es cargar los datos del vehículo para que quede asignado a esa
-            empresa, junto con el IMEI. La empresa también puede cargar esos datos desde su flota.
+            empresa, junto con el IMEI. Si la patente ya está en Booster, ese vehículo pasa a la
+            empresa elegida. La empresa también puede cargar esos datos desde su flota.
           </p>
         </div>
       </div>
