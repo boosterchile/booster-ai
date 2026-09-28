@@ -60,7 +60,7 @@ Cloud Run con `min_instances=0` (api, web, whatsapp-bot, sms-fallback, matching-
 | **Google Workspace** | Pestaña Uso | Asientos pagos vs. gente que entra. Cada asiento sin uso es el precio del plan (Starter/Standard/Plus) todos los meses |
 | **Twilio (WhatsApp)** | Pestaña Uso | Saldo, número y categorías. Con el volumen actual (pocos mensajes de operación) el fijo del sender puede ser más grande que el uso |
 | **Datadog** (`us5.datadoghq.com`) | Factura de Datadog, no el dashboard | ADR-071 lo dejó en infra + logs, con `containerCollectAll: true`, encima de Cloud Logging y Cloud Trace que ya existen. Si el agente está instalado en el clúster, cobra hosts y GB de log aunque nadie abra la UI |
-| **`big-cabinet-482101-s3` (Booster 2.0)** | Pestaña Costos → por proyecto | El 2026-05-13 facturaba ~USD 80–150/mes y `booster-backend` en `us-central1` tenía 259.000 requests/30 días. Si sigue en el billing, es un segundo producto entero |
+| **`big-cabinet-482101-s3` (Booster 2.0)** | Pestaña Costos → por proyecto | El dominio ya no lo sirve (revisión `docs/audits/booster-2-0-2026-09-28.md`). En mayo eran ~USD 80–150/mes. Hoy no se pudo leer el billing: si el proyecto sigue linked, es piso sin audiencia |
 | **`gen-lang-client-0486421631`** | Pestaña Costos → por proyecto | API key Gemini «Booster 1.0». En mayo era ~USD 0–5, pero una key sin tope sube sola |
 | **Rutas, Geocoding, Places, Document AI, Gemini** | Pestaña Costos, SKU de esas APIs | En mayo Routes tenía 16 llamadas/30 días. Hay alertas de runaway en `api-cost-guardrails.tf`. No recortar: vigilar que no aparezcan en el top de SKUs |
 | **Dominio `boosterchile.com` y `demo.boosterchile.com`** | Registrador, no GCP | El demo sigue resolviendo. El costo de DNS es despreciable; el costo es de producto (Slot 2), no de esta factura |
@@ -90,11 +90,13 @@ Ninguna de estas se aplica desde este documento. `terraform apply`, borrar un pr
 
 **Riesgo**: si el CPU de esa instancia se pega a 100 % en la pestaña Capacity, no bajar. Con 8 dispositivos no debería.
 
-### P1 — Confirmar si Booster 2.0 sigue vivo
+### P1 — Cerrar Booster 2.0 si el proyecto todavía factura
 
-**Ahorro**: USD 80–150/mes (CLP 77.000–145.000) si `big-cabinet-482101-s3` sigue vinculado y ya no tiene tráfico, más el proyecto `gen-lang-client-0486421631`.
+**Ahorro**: USD 80–150/mes (CLP 77.000–145.000) si `big-cabinet-482101-s3` sigue vinculado, más USD 0–5 de `gen-lang-client-0486421631`. Si el desglose de 30 días ya está en cero, ese ahorro ya ocurrió.
 
-**Cómo**: en Costos → por proyecto, últimos 30 días. Si `big-cabinet` sigue con decenas de miles de requests, no se apaga: es el producto que todavía usan. Si está en cero, agendar el corte y `gcloud projects delete` de los dos. En mayo ese backend sí tenía tráfico; hay que medirlo de nuevo, no asumir.
+**Qué se midió el 2026-09-28**: apex, www, app, api y demo responden Booster AI. Firebase `big-cabinet-482101-s3.web.app` responde «Site Not Found» (el mismo 404 que un proyecto inexistente: no prueba el delete). Los subdominios de rol no resuelven. El detalle y el orden de corte están en `docs/audits/booster-2-0-2026-09-28.md`.
+
+**Cómo cerrarlo**: Costos → por proyecto, últimos 30 días. Costo > 0 y sin requests de usuarios: export de BigQuery si hace falta, después `gcloud projects delete` de los dos. Esta sesión no lo ejecuta: no hay ADC y el delete es irreversible.
 
 ### P2 — Datadog, solo si nadie lo usa
 
@@ -127,7 +129,7 @@ Sin número hasta abrir la pestaña Uso. Criterio: asiento sin login en 30 días
 | Piso actual de `booster-ai-494222` (sección 2.1) | 590–820 | 570.000–790.000 |
 | Menos DR frío | −145 a −190 | −140.000 a −183.000 |
 | Menos 1 vCPU del processor | −47 | −45.000 |
-| Menos Booster 2.0, solo si el proyecto ya no tiene tráfico | −80 a −150 | −77.000 a −145.000 |
+| Menos Booster 2.0, solo si el proyecto sigue facturando | −80 a −150 | −77.000 a −145.000 |
 | **Piso resultante, sin Workspace, Twilio ni Datadog** | **~300–550** | **~290.000–530.000** |
 
 Workspace, Twilio y Datadog se suman encima. Esos tres no están en la tabla porque su monto sale de la pestaña Uso y de la factura de Datadog, no de Terraform.
@@ -145,7 +147,8 @@ Pedido posterior: revisar en profundidad y cortar. El detalle de la revisión y 
 | Clúster DR, subnet, IP pública, DNS `telemetry-dr`, NAT de `us-central1`, worker pool DR, manifiestos K8s de esa región | Sacados del código. El apply a producción no corrió: no hay credenciales de `booster-ai-494222` y ADR-076 pide un `terraform plan` registrado antes. Hasta ese apply la factura no baja |
 | Processor 2 vCPU → 1 vCPU | En `compute.tf` y en el deploy de Cloud Build. Mismos `min_instances=1` y CPU siempre asignada. Tampoco está aplicado en la revisión viva hasta el apply o el próximo deploy |
 | Rango de peering del pool DR | Se queda. Quitarlo recrea el peering de Cloud SQL |
-| Cloud SQL, Redis, VPC connector, clúster de Santiago, Datadog, Booster 2.0, Workspace, Twilio | Revisados y no cortados. Los motivos están en la spec. Booster 2.0 no se borra sin medir tráfico otra vez: en mayo tenía 259.000 requests / 30 días y esta sesión no pudo repetir la consulta |
+| Cloud SQL, Redis, VPC connector, clúster de Santiago, Datadog, Workspace, Twilio | Revisados y no cortados. Los motivos están en la spec |
+| Booster 2.0 (`big-cabinet-482101-s3`) y `gen-lang-client-0486421631` | La superficie pública ya es de Booster AI. El proyecto no se borra aquí: sin billing export no se sabe si sigue pagando. Revisión en `docs/audits/booster-2-0-2026-09-28.md` |
 
 ## 6. Cómo contrastar esto en el dashboard (15 minutos)
 

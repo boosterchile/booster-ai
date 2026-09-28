@@ -30,7 +30,7 @@ Manifiestos que solo servían a ese clúster (`telemetry-tcp-gateway-dr.yaml`, `
 | `min_instances=0` en el processor | Se queda | Incidente 2026-06-07: el pull se apaga y la telemetría cae ~26 h |
 | Clúster y NAT de Santiago, los dos LB del gateway (5027 y 5061) | Se queda | Son el TCP de Teltonika. Cloud Run no sostiene esa conexión |
 | Datadog | Se queda | ADR-071 lo eligió el PO para infra y logs del gateway. Esta sesión no tiene la factura de Datadog ni `kubectl` al clúster. Borrar el manifiesto no baja la factura si el agente ya está instalado, y desinstalarlo sin ver el costo contradice una decisión vigente |
-| Proyectos `big-cabinet-482101-s3` y `gen-lang-client-0486421631` | Se queda | El 2026-05-13 el backend de Booster 2.0 tenía 259.000 requests / 30 días. Esta sesión no tiene ADC de producción para repetir la medición. Borrar el proyecto a ciegas puede apagar el producto que todavía se usa |
+| Proyectos `big-cabinet-482101-s3` y `gen-lang-client-0486421631` | Se queda | El 2026-09-28 el dominio ya sirve Booster AI y el hosting Firebase del proyecto legacy responde Site Not Found. Eso no prueba que el proyecto GCP esté borrado, y esta sesión no tiene ADC para leer el billing. El delete queda para cuando Costos → por proyecto muestre el neto de 30 días. Revisión: `docs/audits/booster-2-0-2026-09-28.md` |
 | Workspace y Twilio | Se queda | No hay credenciales de esas consolas. El corte es de asientos y categorías en la pestaña Uso, no de Terraform |
 | Cloud Run placeholder con `min_instances=0` | Se queda | El costo idle es ~0 |
 | CUD a 1 o 3 años | Se queda | ADR-058 los pospuso. Comprarlos antes de destruir el DR congela el fee que se quiere eliminar |
