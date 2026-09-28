@@ -445,10 +445,11 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
 
   it('responde 500 si el insert no devuelve la fila', async () => {
     const mod = await loadMod();
-    const d = makeDb(
-      [[{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }], [], []],
-      { insertRow: undefined },
-    );
+    const d = makeDb([
+      [{ id: EMPRESA_ID, isTransportista: true, legalName: 'Transportes Sur' }],
+      [],
+      [],
+    ]);
     const app = buildApp(mod, d.db);
 
     const res = await app.request('/habilitar', {
