@@ -2,6 +2,8 @@
 
 **Estado:** código listo. Apply a producción **no ejecutado** en la sesión del 2026-09-28.
 
+`terraform validate` (1.9.8, `init -backend=false`) salió Success. `terraform fmt -check` limpio. No hubo `terraform plan`: sin credenciales del state de producción.
+
 ## Por qué no hubo apply
 
 ADR-076: `terraform apply` en producción exige lista de verificación escrita y un `terraform plan` con la salida registrada, antes de ejecutarlo. Esta sesión no tiene `gcloud` ni ADC de `booster-ai-494222` (`GOOGLE_CLOUD_PROJECT` del entorno es `booster-ai-dev` y no hay metadata de GCP). Sin plan no hay apply. La factura no baja hasta que corra el runbook de abajo.
