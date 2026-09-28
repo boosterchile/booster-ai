@@ -18,7 +18,7 @@
  * provider-linking (`translateProviderAuthError`, abajo) vive en ESTE mismo
  * módulo pero como función separada — el copy en español DIFIERE
  * deliberadamente por dominio (ej. `auth/email-already-in-use`: login dice
- * "Inicia sesión", linking dice "Cerrá sesión y entrá con esa cuenta"). Dos
+ * "Inicia sesión", linking dice "Cierra sesión y entra con esa cuenta"). Dos
  * tablas, un archivo: la divergencia es visible y se evita el drift de tener
  * la función inline en el componente.
  */
@@ -57,7 +57,7 @@ export function translateLoginAuthError(code: string | undefined, message?: stri
  * Mensajes en español para el dominio de **provider-linking** (vincular/
  * desvincular/re-link de providers OAuth en el perfil). Copy diferenciado del
  * dominio de login: aquí los errores apuntan a la cuenta del usuario (ej.
- * "Cerrá sesión y entrá con esa cuenta directamente"), no al flujo de signup.
+ * "Cierra sesión y entra con esa cuenta directamente"), no al flujo de signup.
  *
  * Extraído verbatim desde `AuthProvidersSection.tsx` (translate-auth-error-unify
  * Opción B). Si un código gana copy en ambos dominios, mantenerlos separados es
@@ -67,11 +67,11 @@ export function translateProviderAuthError(code: string | undefined): string | n
   switch (code) {
     case 'auth/credential-already-in-use':
     case 'auth/email-already-in-use':
-      return 'Esa cuenta ya pertenece a otro usuario de Booster. Cerrá sesión y entrá con esa cuenta directamente.';
+      return 'Esa cuenta ya pertenece a otro usuario de Booster. Cierra sesión y entra con esa cuenta directamente.';
     case 'auth/provider-already-linked':
       return 'Este proveedor ya está vinculado a tu cuenta.';
     case 'auth/weak-password':
-      return 'La contraseña es muy débil. Usá al menos 6 caracteres.';
+      return 'La contraseña es muy débil. Usa al menos 6 caracteres.';
     case 'auth/invalid-email':
       return 'El email no es válido.';
     case 'auth/wrong-password':

@@ -74,7 +74,7 @@ export function ActivarRoute() {
       // revelar qué RUTs existen. La UI no inventa un diagnóstico que el
       // backend evita dar.
       setError(
-        'No pudimos activar la cuenta. Revisa tu RUT y el código; si venció, pedile a tu empresa que te genere uno nuevo.',
+        'No pudimos activar la cuenta. Revisa tu RUT y el código; si venció, pídele a tu empresa que te genere uno nuevo.',
       );
     } finally {
       setEnviando(false);
@@ -112,7 +112,7 @@ export function ActivarRoute() {
         </div>
         <p className="mt-2 text-neutral-600 text-sm">
           Tu empresa te dio de alta en Booster y te entregó un código. Úsalo una vez para crear tu
-          clave: de ahí en adelante entrás con tu RUT y esa clave.
+          clave: de ahí en adelante entras con tu RUT y esa clave.
         </p>
 
         <div className="mt-5 space-y-4">
@@ -145,7 +145,7 @@ export function ActivarRoute() {
           <div className="rounded-lg border border-primary-200 bg-primary-50/50 p-4">
             <p className="font-medium text-neutral-900 text-sm">Crea tu clave</p>
             <p className="mt-1 text-neutral-600 text-xs">
-              6 dígitos, como la de tu banco. Solo la conocés vos: ni Booster ni tu empresa pueden
+              6 dígitos, como la de tu banco. Solo la conoces tú: ni Booster ni tu empresa pueden
               verla.
             </p>
             <div className="mt-3 space-y-4">

@@ -307,7 +307,7 @@ function PasswordLinkForm({
             <div>
               <div className="font-medium text-neutral-900">Email + contraseña</div>
               <div className="mt-0.5 text-neutral-600 text-sm">
-                Agregá una contraseña para iniciar sesión sin Google.
+                Agrega una contraseña para iniciar sesión sin Google.
               </div>
             </div>
           </div>
@@ -333,7 +333,7 @@ function PasswordLinkForm({
         <div>
           <div className="font-medium text-neutral-900">Vincular email + contraseña</div>
           <div className="mt-0.5 text-neutral-600 text-sm">
-            Usá tu email actual o cualquier otro tuyo. Mínimo 6 caracteres en la contraseña.
+            Usa tu email actual o cualquier otro tuyo. Mínimo 6 caracteres en la contraseña.
           </div>
         </div>
       </div>
