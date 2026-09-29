@@ -1,4 +1,4 @@
-import type { TrayectoTeltonika } from './segmentar-trayectos-teltonika.js';
+import { type TrayectoTeltonika, kmPorLitroMaxConfiable } from './segmentar-trayectos-teltonika.js';
 
 /** Cuántos trayectos muestra el hub. El conteo de alertas mira la ventana completa. */
 export const RECIENTES_HUB = 10;
@@ -11,8 +11,9 @@ export interface ResumenHubVehiculo {
   /** Suma de litros ya calculados en `recientes`. Null si ninguno trae litros. */
   litrosRecientes: number | null;
   /**
-   * km/L del trayecto más reciente que ya lo trae. Null si ninguno lo trae:
-   * no se divide km/L a mano (el segmentador lo omite bajo 5 L o 10 km).
+   * Σkm / ΣL de los trayectos de la ventana con litros consumidos.
+   * No es el km/L de un trayecto ni el promedio de esos cocientes.
+   * Null si no hay litros, o si el cociente supera el tope del diésel.
    */
   kmPorLitro: number | null;
   /** True si hay trayectos y todos piden conectar el sensor. */
@@ -36,9 +37,23 @@ function tieneAlerta(trayecto: TrayectoTeltonika): boolean {
   return trayecto.posibleRoboCombustible || trayecto.posibleRoboHormiga;
 }
 
+function kmPorLitroDeVentana(trayectos: readonly TrayectoTeltonika[]): number | null {
+  const conLitros = trayectos.filter((t) => t.litrosConsumidos != null && t.litrosConsumidos > 0);
+  const litros = conLitros.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0);
+  if (!(litros > 0)) {
+    return null;
+  }
+  const km = conLitros.reduce((suma, t) => suma + t.distanciaKm, 0);
+  const kmPorLitro = Math.round((km / litros + Number.EPSILON) * 100) / 100;
+  if (kmPorLitro > kmPorLitroMaxConfiable()) {
+    return null;
+  }
+  return kmPorLitro;
+}
+
 /**
  * Arma el resumen del hub a partir de trayectos ya segmentados.
- * No detecta robos ni recalcula combustible: solo ordena y suma.
+ * No detecta robos ni recalcula litros. El km/L de la ventana es Σkm/ΣL.
  */
 export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): ResumenHubVehiculo {
   const ordenados = [...trayectos].sort(porFinDesc);
@@ -50,7 +65,7 @@ export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): Res
     conLitros.length > 0
       ? conLitros.reduce((suma, t) => suma + (t.litrosConsumidos ?? 0), 0)
       : null;
-  const kmPorLitro = ordenados.find((t) => t.kmPorLitro != null)?.kmPorLitro ?? null;
+  const kmPorLitro = kmPorLitroDeVentana(ordenados);
   const conAlerta = ordenados.filter(tieneAlerta);
   return {
     ultimo,
