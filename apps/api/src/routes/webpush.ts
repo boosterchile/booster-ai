@@ -15,7 +15,7 @@
 
 import type { Logger } from '@booster-ai/logger';
 import { zValidator } from '@hono/zod-validator';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -107,27 +107,18 @@ export function createMePushSubscriptionRoutes(opts: { db: Db; logger: Logger })
     }
     const body = c.req.valid('json');
 
-    // Hard-delete: el user pidió explícitamente. No es un soft-disable
-    // por revocación (esos van a 'inactiva' desde web-push.ts).
+    // Hard-delete solo de la fila de este usuario. El endpoint va en el
+    // WHERE junto con userId: borrar primero y mirar el dueño después
+    // eliminaba la suscripción de otra persona.
     const deleted = await opts.db
       .delete(pushSubscriptions)
-      .where(eq(pushSubscriptions.endpoint, body.endpoint))
-      .returning({ id: pushSubscriptions.id, userId: pushSubscriptions.userId });
-
-    // Validar ownership por seguridad (el endpoint llegó del cliente).
-    const row = deleted[0];
-    if (!row) {
-      return c.json({ ok: true, removed: 0 });
-    }
-    if (row.userId !== auth.userId) {
-      // El endpoint pertenece a otro user. No debería pasar (cada endpoint
-      // es único por device + browser), pero si pasa, lo loggeamos como
-      // posible abuso.
-      opts.logger.warn(
-        { userId: auth.userId, ownerUserId: row.userId },
-        'DELETE push-subscription: endpoint pertenece a otro user (ya borrado igualmente)',
-      );
-    }
+      .where(
+        and(
+          eq(pushSubscriptions.endpoint, body.endpoint),
+          eq(pushSubscriptions.userId, auth.userId),
+        ),
+      )
+      .returning({ id: pushSubscriptions.id });
 
     return c.json({ ok: true, removed: deleted.length });
   });

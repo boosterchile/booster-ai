@@ -476,7 +476,15 @@ describe('POST /admin/empresas/:id/miembros', () => {
   it('reusa el usuario existente en vez de duplicarlo en Firebase', async () => {
     const mod = await loadMod();
     const d = makeDb({
-      userByEmailRows: [{ id: 'user-existente', email: 'fvicencio@me.com' }],
+      userByEmailRows: [
+        {
+          id: 'user-existente',
+          email: 'fvicencio@me.com',
+          firebaseUid: 'fb-real',
+          claveNumericaHash: 'hash-clave',
+          activationPinHash: null,
+        },
+      ],
     });
     const a = makeAuthStub();
     const app = buildApp(mod, d.db, a.auth);
@@ -490,14 +498,19 @@ describe('POST /admin/empresas/:id/miembros', () => {
     expect(res.status).toBe(201);
     expect(a.spies.createUser).not.toHaveBeenCalled();
     expect(d.insertedUsers.length).toBe(0);
-    const json = (await res.json()) as { user_id: string; codigo_activacion: string };
+    const json = (await res.json()) as {
+      user_id: string;
+      codigo_activacion: string | null;
+      estado: string;
+      vinculo: string;
+    };
     expect(json.user_id).toBe('user-existente');
-    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
-    expect(d.updates[0]).toEqual(
-      expect.objectContaining({ activationPinHash: expect.any(String) }),
-    );
+    expect(json.codigo_activacion).toBeNull();
+    expect(json.estado).toBe('activa');
+    expect(json.vinculo).toBe('cuenta_activa');
+    expect(d.updates).toEqual([]);
     expect(d.insertedMemberships[0]).toEqual(
-      expect.objectContaining({ status: 'pendiente_invitacion', userId: 'user-existente' }),
+      expect.objectContaining({ status: 'activa', userId: 'user-existente' }),
     );
   });
 

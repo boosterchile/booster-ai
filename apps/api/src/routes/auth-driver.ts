@@ -9,8 +9,7 @@ import type { Db } from '../db/client.js';
 import { conductores, memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
-
-const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
+import { cuentaYaActivada } from '../services/vinculo-persona.js';
 
 /**
  * Genera el email sintético usado por los users-conductores en Firebase
@@ -104,6 +103,7 @@ export function createDriverAuthRoutes(opts: {
         email: users.email,
         rut: users.rut,
         activationPinHash: users.activationPinHash,
+        claveNumericaHash: users.claveNumericaHash,
       })
       .from(users)
       .where(eq(users.rut, rut))
@@ -115,8 +115,9 @@ export function createDriverAuthRoutes(opts: {
       return c.json({ error: 'invalid_credentials', code: 'invalid_credentials' }, 401);
     }
 
-    // 2. Si ya está activado (firebase_uid real), no podemos activar de nuevo.
-    if (!user.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX)) {
+    // 2. Si ya está activado (firebase_uid real o clave elegida), no podemos
+    //    activar de nuevo. Un pin ajeno no reescribe la credencial.
+    if (cuentaYaActivada(user)) {
       return c.json(
         {
           error: 'already_activated',

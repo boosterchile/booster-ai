@@ -15,6 +15,7 @@ import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import type { UserContext } from '../services/user-context.js';
+import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
@@ -215,8 +216,6 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'invalid_id' }, 400);
     }
     const body = c.req.valid('json');
-    const codigo = generateActivationPin();
-    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     // Normalizar RUT.
     const rutParsed = rutSchema.safeParse(body.rut);
@@ -240,15 +239,27 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
     // Buscar usuario existente por RUT.
     // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
     const existingUsers = await opts.db
-      .select({ id: users.id, email: users.email })
+      .select({
+        id: users.id,
+        email: users.email,
+        firebaseUid: users.firebaseUid,
+        claveNumericaHash: users.claveNumericaHash,
+        activationPinHash: users.activationPinHash,
+      })
       .from(users)
       .where(eq(users.rut, rut))
       .limit(1);
     let userId: string;
-    const usuarioNuevo = !existingUsers[0];
-    if (existingUsers[0]) {
-      userId = existingUsers[0].id;
+    let vinculo: VinculoPersona;
+    let codigoEmitido: string | null = null;
+    const existente = existingUsers[0];
+    if (existente) {
+      userId = existente.id;
+      vinculo = clasificarVinculoPersona(existente);
     } else {
+      vinculo = 'nueva';
+      const codigo = generateActivationPin();
+      codigoEmitido = codigo;
       // firebase_uid `pending-rut:<rut>` hasta que active en /activar.
       // El código no es la clave: la elige la persona.
       const [created] = await opts.db
@@ -278,15 +289,17 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       return c.json({ error: 'already_member', membership_id: existingMembership[0].id }, 409);
     }
 
-    if (!usuarioNuevo) {
+    if (vinculo === 'provisoria_sin_codigo') {
+      const codigo = generateActivationPin();
+      codigoEmitido = codigo;
       await opts.db
         .update(users)
         .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
         .where(eq(users.id, userId));
     }
 
-    // Crear membership pending. Status `activa` cuando el user complete
-    // auth (post-Wave 4 será automático tras login universal).
+    // Cuenta viva: la membresía nace activa. No hay código que reescriba su clave.
+    const yaActiva = vinculo === 'cuenta_activa';
     const [membership] = await opts.db
       .insert(memberships)
       .values({
@@ -294,9 +307,10 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         empresaId: null,
         organizacionStakeholderId: orgId,
         role: STAKEHOLDER_MEMBERSHIP_ROLE,
-        status: 'pendiente_invitacion',
+        status: yaActiva ? 'activa' : 'pendiente_invitacion',
         invitedByUserId: auth.adminUserId,
         invitedAt: new Date(),
+        joinedAt: yaActiva ? new Date() : null,
       })
       .returning({ id: memberships.id });
     if (!membership) {
@@ -315,6 +329,9 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
     );
     getBusinessCounter('alta_invitacion_stakeholder_total').add(1, { resultado: 'issued' });
 
+    const expiraEn =
+      codigoEmitido === null ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     return c.json(
       {
         membership_id: membership.id,
@@ -322,9 +339,10 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
         rut,
         email: body.email,
         full_name: body.full_name,
-        status: 'pendiente_invitacion',
-        codigo_activacion: codigo,
-        expira_en: expiraEn.toISOString(),
+        status: yaActiva ? 'activa' : 'pendiente_invitacion',
+        codigo_activacion: codigoEmitido,
+        expira_en: expiraEn,
+        vinculo,
       },
       201,
     );

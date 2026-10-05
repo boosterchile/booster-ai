@@ -206,14 +206,86 @@ describe('POST /me/empresa/miembros', () => {
     expect(m.empresaId).toBe(OTRA_EMPRESA);
   });
 
-  it('reusa la persona si su RUT ya existe, sin duplicar identidad', async () => {
-    const d = makeDb({ userByRut: [{ id: 'user-existente', email: 'gobe00@gmail.com' }] });
+  it('reusa una cuenta ya activa sin pisar su código ni su clave', async () => {
+    const d = makeDb({
+      userByRut: [
+        {
+          id: 'user-existente',
+          email: 'gobe00@gmail.com',
+          firebaseUid: 'fb-real',
+          claveNumericaHash: 'hash-clave',
+          activationPinHash: null,
+        },
+      ],
+    });
     const res = await post(buildApp(d.db));
 
     expect(res.status).toBe(201);
     expect(d.insertedUsers.length).toBe(0);
-    const json = (await res.json()) as { user_id: string };
+    expect(d.updates).toEqual([]);
+    const json = (await res.json()) as {
+      user_id: string;
+      codigo_activacion: string | null;
+      estado: string;
+      vinculo: string;
+    };
     expect(json.user_id).toBe('user-existente');
+    expect(json.codigo_activacion).toBeNull();
+    expect(json.estado).toBe('activa');
+    expect(json.vinculo).toBe('cuenta_activa');
+    const m = d.insertedMemberships[0] as Record<string, unknown>;
+    expect(m.status).toBe('activa');
+    expect(m.joinedAt).toBeInstanceOf(Date);
+  });
+
+  it('no reemplaza el código de una persona que todavía no activa', async () => {
+    const d = makeDb({
+      userByRut: [
+        {
+          id: 'user-pendiente',
+          email: 'gobe00@gmail.com',
+          firebaseUid: 'pending-rut:8601693-1',
+          claveNumericaHash: null,
+          activationPinHash: 'hash-previo',
+        },
+      ],
+    });
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(201);
+    expect(d.updates).toEqual([]);
+    const json = (await res.json()) as {
+      codigo_activacion: string | null;
+      estado: string;
+      vinculo: string;
+    };
+    expect(json.codigo_activacion).toBeNull();
+    expect(json.estado).toBe('pendiente_invitacion');
+    expect(json.vinculo).toBe('codigo_vigente');
+  });
+
+  it('emite código si la persona provisoria no tiene uno', async () => {
+    const d = makeDb({
+      userByRut: [
+        {
+          id: 'user-pendiente',
+          email: 'gobe00@gmail.com',
+          firebaseUid: 'pending-rut:8601693-1',
+          claveNumericaHash: null,
+          activationPinHash: null,
+        },
+      ],
+    });
+    const res = await post(buildApp(d.db));
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string; vinculo: string };
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    expect(json.vinculo).toBe('provisoria_sin_codigo');
+    expect(d.updates[0]).toEqual(
+      expect.objectContaining({ activationPinHash: expect.any(String) }),
+    );
+    expect(JSON.stringify(d.updates[0])).not.toContain(json.codigo_activacion);
   });
 
   it('409 si esa persona ya es miembro de la empresa', async () => {

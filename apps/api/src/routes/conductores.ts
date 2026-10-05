@@ -15,6 +15,7 @@ import { generateActivationPin, hashActivationPin } from '../services/activation
 import { enviarCorreoActivacionConductor } from '../services/notifications/conductor-activacion-email.js';
 import { enviarWhatsAppActivacionConductor } from '../services/notifications/conductor-activacion-whatsapp.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
+import { clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 /**
  * Endpoints CRUD de conductores. Solo accesibles desde la interfaz del
@@ -306,6 +307,8 @@ export function createConductoresRoutes(opts: {
             id: users.id,
             fullName: users.fullName,
             firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            activationPinHash: users.activationPinHash,
           })
           .from(users)
           .where(eq(users.rut, rut))
@@ -331,10 +334,9 @@ export function createConductoresRoutes(opts: {
             return { ok: false as const, code: 'user_already_driver' };
           }
 
-          // D10 — Si el user existente todavía es placeholder, seteamos PIN.
-          // Si ya está activado (UID real), saltamos el PIN — flujo
-          // dueño-conductor o conductor que también opera en otra empresa.
-          if (existingUser.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX)) {
+          // Solo el primer código. Una cuenta viva o un placeholder que ya
+          // tiene pin no se reescribe: otra empresa no elige su clave.
+          if (clasificarVinculoPersona(existingUser) === 'provisoria_sin_codigo') {
             activationPin = generateActivationPin();
             await tx
               .update(users)

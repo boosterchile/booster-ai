@@ -157,6 +157,26 @@ describe('Equipo — alta', () => {
     ).toBeInTheDocument();
   });
 
+  it('si la persona ya tiene cuenta, no muestra un código nuevo', async () => {
+    vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      user_id: 'u9',
+      membership_id: 'm9',
+      rol: 'admin',
+      estado: 'activa',
+      codigo_activacion: null,
+      expira_en: null,
+      vinculo: 'cuenta_activa',
+    } as never);
+
+    await abrirFormYCompletar();
+    fireEvent.click(screen.getByRole('button', { name: /Agregar a mi equipo/i }));
+
+    expect(await screen.findByText(/ya tiene cuenta/i)).toBeInTheDocument();
+    expect(screen.getByText(/su clave no cambia/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Copiar código/i })).not.toBeInTheDocument();
+  });
+
   it('avisa si esa persona ya es miembro', async () => {
     vi.spyOn(api, 'post').mockRejectedValue(
       Object.assign(new Error('conflict'), { code: 'already_member', status: 409 }),
