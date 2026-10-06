@@ -37,7 +37,7 @@ Cinco condiciones, observables por un tercero:
 4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
 5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); (4) completo (bloques B y E: cursor de chat cerrado, 103 `rls-allowlist` auditados); y la mitad de (2) (código de 0058 y del 409 listos).
+Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); (4) completo (bloques B y E: cursor de chat cerrado, 103 `rls-allowlist` auditados); y de (2) todo salvo el índice en prod: código de 0058 y del 409 listos, y la cadena alta → activar → `login-rut` con test de integración verde (bloque F).
 
 ## 2. Bloques, en orden
 
@@ -116,6 +116,8 @@ Tabla en `verify.md` de este directorio: archivo:línea, razón escrita, categor
 
 Al terminar, la misma cadena cubre el RUT ya activo: membresía `activa`, `codigo_activacion` null, la clave anterior sigue sirviendo.
 
+**Cerrado el 2026-10-06** en esta rama: `apps/api/test/integration/alta-admin-cadena.integration.test.ts`, 4 casos verdes contra Postgres. Recorre las cinco llamadas reales: `POST /admin/empresas` (queda `pendiente_verificacion`), `PATCH /admin/empresas/:id` a `activa`, `POST /admin/empresas/:id/miembros` con rol dueño (201, `vinculo: 'nueva'`, código de 6 dígitos, hash en BD, sin clave), `POST /auth/activar` (clave propia hasheada, `activacion_pin_hash` a null, Firebase real, membresía `activa` con `unido_en`, custom token) y `POST /auth/login-rut` (200). Después: el código ya usado responde 401 y no toca la clave; una clave equivocada responde 401; invitar el mismo RUT ya activo a otra empresa da 201 con `vinculo: 'cuenta_activa'`, membresía `activa`, `codigo_activacion: null`, misma clave y mismo `firebase_uid`, y el login sigue entrando. Firebase se inyecta: las tres rutas ya reciben `Auth` por opts, así que un Auth en memoria basta (decisión §3.4 resuelta en (i), sin emulador en el job de integración). RUTs con `rut-aleatorio.ts`.
+
 ### G. Rechazo de pending solo en plataforma — operación, S
 
 La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `POST /admin/plataforma/dispositivos/:id/rechazar` con `requirePlatformAdmin`, mismo `UPDATE` que antes hacía la empresa (solo si sigue `pendiente`). UI en el panel de plataforma. El override de dos pasos del `PATCH /vehiculos/:id/dispositivo` se queda. Verificación: test de ruta 403 empresa / 200 plataforma / 409 si ya no está pendiente.
@@ -133,7 +135,7 @@ La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `PO
 1. **Flag de migraciones para el deploy de 0058.** Hoy `STRICT_MIGRATION_ORDERING=false` en prod (`variables.tf:191` default, sin tfvars que lo cambie; confirmado en `CURRENT.md` 2026-09-22). Con `false`, si `CREATE UNIQUE INDEX` falla, Drizzle revierte todo el lote, loguea ERROR y el servidor arranca igual: canary verde, índice ausente, 409 sin sustento. Opciones: (a) `strict_migration_ordering = true` con `terraform apply` previo, fail-closed; (b) seguir en `false` y aceptar la verificación post-deploy de A.4 como gate humano. Recomendación del agente: (a), porque es la única que hace verdad «el deploy no queda sano»; (b) es aceptable si el apply no cabe en la urgencia.
 2. **Diagnóstico de prod.** Correr `scripts/sql/diag-tenant-rut-0058.sql` o autorizar al agente a correrlo con `agent-query.sh` (solo `SELECT`).
 3. **Cuenta E2E con dos empresas** para el Playwright del criterio 3. Si no la hay, el criterio 3 se cumple con la fábrica de claves y su test; el E2E queda declarado como pendiente, no como hecho.
-4. **Firebase en T6**: seam (i) o emulador (ii).
+4. **Firebase en T6**: resuelta en (i). Las rutas de alta, activación y login ya reciben `Auth` por opts; el test inyecta un Auth en memoria. No hace falta decisión.
 
 ## 4. Esfuerzo y camino crítico
 
