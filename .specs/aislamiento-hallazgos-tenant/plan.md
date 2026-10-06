@@ -37,7 +37,7 @@ Cinco condiciones, observables por un tercero:
 4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
 5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); (4) completo (bloques B y E: cursor de chat cerrado, 103 `rls-allowlist` auditados); y de (2) todo salvo el índice en prod: código de 0058 y del 409 listos, y la cadena alta → activar → `login-rut` con test de integración verde (bloque F).
+Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); (5) (bloque H); (4) completo (bloques B y E: cursor de chat cerrado, 103 `rls-allowlist` auditados); y de (2) todo salvo el índice en prod: código de 0058 y del 409 listos, y la cadena alta → activar → `login-rut` con test de integración verde (bloque F).
 
 ## 2. Bloques, en orden
 
@@ -129,6 +129,24 @@ La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `PO
 - Marcar criterios en `alta-desde-panel-admin`, `equipo-de-la-empresa` y `aislamiento-vinculo-persona` con la evidencia (PR, test) o dejar explícito qué falta. El Status deja de ser `Draft` donde el PO lo acepte.
 - `frentes-vivos.md`: entrada «Booster multi-tenant» con el criterio de §1, cómo entró (pedido del PO en el mensaje) y qué queda fuera.
 - Coverage del paquete API sobre los archivos del frente contra el gate real de CI (líneas 80 / ramas 75 / funciones 80; `vitest.config.ts` dice funciones 75, manda CI).
+
+**Cerrado el 2026-10-06** en esta rama. Specs: `aislamiento-vinculo-persona` marca SC1–SC6 con su test; `equipo-de-la-empresa` marca SC1–SC7 (SC8 queda como estaba); `alta-desde-panel-admin` marca SC3–SC8 y deja SC1, SC2, SC9 y SC10 con evidencia parcial explícita. En las tres el Status lo cierra el PO. `docs/frentes-vivos.md` registra este frente con el criterio de §1 y marca cumplida la condición 2 del frente de alta admin. Coverage del paquete API (`pnpm test:coverage`, 2026-10-06): líneas 88.65 %, ramas 81.77 %, funciones 91.6 %, sobre el gate de CI (80 / 75 / 80). Archivos del frente:
+
+| Archivo | Líneas | Ramas | Funciones |
+|---|---|---|---|
+| `db/pg-error.ts` | 91.66 | 90 | 100 |
+| `routes/admin-dispositivos-plataforma.ts` | 85.31 | 81.14 | 78.94 |
+| `routes/admin-dispositivos.ts` | 48.07 | 34.61 | 71.42 |
+| `routes/admin-empresa-miembros.ts` | 80.51 | 68.68 | 95.65 |
+| `routes/admin-stakeholder-orgs.ts` | 1.86 | 0 | 0 |
+| `routes/auth-activar.ts` | 84.44 | 83.33 | 85.71 |
+| `routes/chat.ts` | 77.05 | 82.29 | 61.9 |
+| `routes/conductores.ts` | 85.1 | 70.4 | 100 |
+| `routes/me-empresa-miembros.ts` | 89.85 | 81.57 | 100 |
+| `routes/stakeholder-zonas.ts` | 90.58 | 80.43 | 87.5 |
+| `routes/webpush.ts` | 100 | 100 | 100 |
+| `services/consent.ts` | 97.5 | 97.05 | 100 |
+| `services/vinculo-persona.ts` | 100 | 91.66 | 100 |
 
 ## 3. Decisiones que solo el PO puede tomar
 
