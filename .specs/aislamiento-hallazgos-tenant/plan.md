@@ -37,7 +37,7 @@ Cinco condiciones, observables por un tercero:
 4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
 5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-Ya cumple: la parte estática de (4) (`lint:rls` 0 findings) y la mitad de (2) (código de 0058 y del 409 listos).
+Ya cumple: (1) desde el 2026-10-05 (bloque C), la parte estática de (4) (`lint:rls` 0 findings) más el cursor de chat (bloque B), y la mitad de (2) (código de 0058 y del 409 listos).
 
 ## 2. Bloques, en orden
 
@@ -87,6 +87,8 @@ Test de integración `apps/api/test/integration/aislamiento-dos-empresas.integra
 - Un caso de usuario con membresía en A y B: con header de A no ve B, y viceversa.
 
 Es el criterio 1 de §1. También prueba en runtime el «acotado por id ya validado» de la capa `services/`, que el linter solo acepta por anotación.
+
+**Cerrado el 2026-10-05** en esta rama: `apps/api/test/integration/aislamiento-dos-empresas.integration.test.ts`, 49 casos verdes contra Postgres con todas las migraciones. 11 listas (200 y sin ids de B), 28 sondas de detalle y escritura sobre recursos de B (todas 403 o 404; ningún 2xx, 4xx de validación ni 5xx), 1 verificación de que las filas de B quedan intactas, 8 controles positivos (los mismos recursos con sesión de B responden 200) y 1 caso de usuario con membresía en A y B. **Ninguna fuga encontrada.** Notas del arnés: las empresas del fixture nacen `activa` (las rutas de asignaciones exigen `empresa.status = 'activa'`); `FACTORING_V1_ACTIVATED` y `PRICING_V2_ACTIVATED` se encienden antes de importar las rutas, porque con el flag apagado responden 503 y la sonda sería vacía; `GET /vehiculos/:id/traza` lleva ventana `desde`/`hasta` porque sin ella el 400 de Zod tapa la verificación de tenant. Hallazgo colateral: `liquidaciones.tier_slug_aplicado` es NOT NULL en la BD y nullable en `schema.ts` (`.specs/_followups/liquidaciones-tier-slug-drift-schema-db.md`).
 
 ### D. Caché del cliente sin mezcla de empresas — S/M
 
