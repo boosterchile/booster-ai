@@ -37,7 +37,7 @@ Cinco condiciones, observables por un tercero:
 4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
 5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); la parte estática de (4) (`lint:rls` 0 findings) más el cursor de chat (bloque B); y la mitad de (2) (código de 0058 y del 409 listos).
+Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); (4) completo (bloques B y E: cursor de chat cerrado, 103 `rls-allowlist` auditados); y la mitad de (2) (código de 0058 y del 409 listos).
 
 ## 2. Bloques, en orden
 
@@ -104,6 +104,8 @@ Es el criterio 1 de §1. También prueba en runtime el «acotado por id ya valid
 ### E. Auditoría de los 103 `rls-allowlist` — M
 
 Tabla en `verify.md` de este directorio: archivo:línea, razón escrita, categoría (platform-admin / cross-tenant por diseño / acotado por id validado / pre-tenant), veredicto (se sostiene / no se sostiene). Distribución actual: `admin-empresa-miembros.ts` 13, `site-settings.ts` 11, `admin-dispositivos-plataforma.ts` 11, `calcular-metricas-viaje.ts` 6, `admin-stakeholder-orgs.ts` 6, `admin-cobra-hoy.ts` 5, resto ≤4. Los «no se sostiene» se corrigen en el mismo bloque o pasan a C como caso de prueba. Sin esto, el 0 del linter es un 0 por declaración.
+
+**Cerrado el 2026-10-06**: tabla completa en `verify.md` de este directorio. 103 anotaciones, todas se sostienen: 46 platform-admin (45 verificadas por script: `requirePlatformAdmin(` dentro del handler; más el backtest), 49 acotadas por id ya validado (`WHERE` por `tripId`/`assignmentId`/`vehicleId` leído una a una), 9 redundantes (sí filtran por la empresa activa; el linter no reconoce `auth.empresaId`), 5 cross-tenant por diseño, 4 pre-tenant/identidad global, 1 público, 1 falso positivo del regex. Sin fugas; mejora opcional del linter anotada en `verify.md`.
 
 ### F. Cadena de alta contra Postgres (T6) — M
 
