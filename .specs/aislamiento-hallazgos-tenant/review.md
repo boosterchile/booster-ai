@@ -26,6 +26,8 @@ Tiene tres problemas que cambian el orden o la ejecución:
 
 **Acción.** Antes del bloque 1: RUT aleatorio por test o limpieza en `afterEach` en ese fixture. Revisar también `bootstrap-platform-admin.integration.test.ts`, que usa `'12345678-5'` en tres lugares (hoy pasa, pero conviene confirmar que limpia).
 
+**Cerrado el 2026-10-05**, en esta misma rama: el fixture usa `rutAleatorio()` (`apps/api/test/helpers/rut-aleatorio.ts`, dígito verificador real). Verificado contra Postgres local con 0058 aplicada: 2 tests pasan. `bootstrap-platform-admin` sí limpia: su `beforeEach` borra los usuarios por patrón de email, por eso no choca.
+
 ### H2 — Bloque 1: «el deploy no queda sano» es falso en producción
 
 **Evidencia.**
