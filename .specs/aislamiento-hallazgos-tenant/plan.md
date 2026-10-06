@@ -148,6 +148,8 @@ La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `PO
 | `services/consent.ts` | 97.5 | 97.05 | 100 |
 | `services/vinculo-persona.ts` | 100 | 91.66 | 100 |
 
+Complemento del 2026-10-06, tras la tabla: los dos archivos del frente bajo el piso recibieron tests de ruta. `admin-dispositivos.ts`: 6 casos de `POST /:id/asociar` (200 con IMEI al vehículo y pending aprobado, 403 vehículo ajeno, 409 no pendiente, 404, 409 otro IMEI, 403 conductor) → líneas 92.3 %, ramas 84.61 %. `admin-stakeholder-orgs.ts`: primer archivo de test, 7 casos de `POST /:id/invitar` (403, 404, nueva, cuenta viva, código vigente, provisoria sin código, ya miembro) → líneas 53.27 %, ramas 43.93 %; lo que falta de ese archivo son los handlers de listar, crear, detalle y borrar, anteriores a esta rama. El flujo de vínculo de persona, que es lo que esta rama cambió ahí, queda cubierto.
+
 ## 3. Decisiones que solo el PO puede tomar
 
 1. **Flag de migraciones para el deploy de 0058.** Hoy `STRICT_MIGRATION_ORDERING=false` en prod (`variables.tf:191` default, sin tfvars que lo cambie; confirmado en `CURRENT.md` 2026-09-22). Con `false`, si `CREATE UNIQUE INDEX` falla, Drizzle revierte todo el lote, loguea ERROR y el servidor arranca igual: canary verde, índice ausente, 409 sin sustento. Opciones: (a) `strict_migration_ordering = true` con `terraform apply` previo, fail-closed; (b) seguir en `false` y aceptar la verificación post-deploy de A.4 como gate humano. Recomendación del agente: (a), porque es la única que hace verdad «el deploy no queda sano»; (b) es aceptable si el apply no cabe en la urgencia.

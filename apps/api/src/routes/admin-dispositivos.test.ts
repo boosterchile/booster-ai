@@ -146,3 +146,117 @@ describe('POST /admin/dispositivos-pendientes/:id/rechazar', () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST /:id/asociar — la única acción que la empresa conserva sobre un pending:
+// atarlo a un vehículo que sea suyo.
+// ---------------------------------------------------------------------------
+
+const VEHICLE_ID = '22222222-2222-4222-8222-222222222222';
+
+function vehicleRow(over: Partial<Record<string, unknown>> = {}) {
+  return { id: VEHICLE_ID, plate: 'ABCD12', empresaId: 'emp-1', teltonikaImei: null, ...over };
+}
+
+function makeTxDb(selects: unknown[][]) {
+  const queue = [...selects];
+  const sets: Array<Record<string, unknown>> = [];
+  const select = vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    chain.from = vi.fn(() => chain);
+    chain.where = vi.fn(() => chain);
+    chain.limit = vi.fn(async () => queue.shift() ?? []);
+    return chain;
+  });
+  const update = vi.fn(() => ({
+    set: vi.fn((vals: Record<string, unknown>) => {
+      sets.push(vals);
+      return { where: vi.fn(async () => undefined) };
+    }),
+  }));
+  const tx = { select, update };
+  const db = {
+    select,
+    update,
+    transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  } as unknown as Db;
+  return { db, sets };
+}
+
+function asociar(db: Db, role: 'dueno' | 'admin' | 'conductor' = 'dueno') {
+  return makeApp(db, role).request('/d1/asociar', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ vehiculo_id: VEHICLE_ID }),
+  });
+}
+
+describe('POST /admin/dispositivos-pendientes/:id/asociar', () => {
+  it('el dueño ata el pending a un vehículo de su empresa: IMEI al vehículo, pending aprobado', async () => {
+    const { db, sets } = makeTxDb([[deviceRow()], [vehicleRow()]]);
+    const res = await asociar(db);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      device_id: 'd1',
+      imei: IMEI,
+      vehiculo_id: VEHICLE_ID,
+      plate: 'ABCD12',
+      estado: 'aprobado',
+    });
+    expect(sets[0]).toMatchObject({ teltonikaImei: IMEI });
+    expect(sets[1]).toMatchObject({
+      status: 'aprobado',
+      assignedToVehicleId: VEHICLE_ID,
+      assignedByUserId: 'user-1',
+    });
+  });
+
+  it('un vehículo que no es de la empresa activa responde 403 y nada se escribe', async () => {
+    // El WHERE lleva empresaId de la sesión: el vehículo ajeno no aparece.
+    const { db, sets } = makeTxDb([[deviceRow()], []]);
+    const res = await asociar(db);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'vehicle_forbidden' });
+    expect(sets).toHaveLength(0);
+  });
+
+  it('un pending que ya no está pendiente responde 409 con su estado', async () => {
+    const { db, sets } = makeTxDb([[{ ...deviceRow(), status: 'aprobado' }]]);
+    const res = await asociar(db);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'device_not_pending',
+      current_status: 'aprobado',
+    });
+    expect(sets).toHaveLength(0);
+  });
+
+  it('un pending que no existe responde 404', async () => {
+    const { db, sets } = makeTxDb([[]]);
+    const res = await asociar(db);
+    expect(res.status).toBe(404);
+    expect(sets).toHaveLength(0);
+  });
+
+  it('un vehículo que ya tiene otro IMEI responde 409 y no lo pisa', async () => {
+    const { db, sets } = makeTxDb([
+      [deviceRow()],
+      [vehicleRow({ teltonikaImei: '999999999999999' })],
+    ]);
+    const res = await asociar(db);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'vehicle_has_other_device',
+      current_imei: '999999999999999',
+    });
+    expect(sets).toHaveLength(0);
+  });
+
+  it('un conductor no puede asociar: 403 admin_required', async () => {
+    const { db, sets } = makeTxDb([[deviceRow()], [vehicleRow()]]);
+    const res = await asociar(db, 'conductor');
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'admin_required' });
+    expect(sets).toHaveLength(0);
+  });
+});
