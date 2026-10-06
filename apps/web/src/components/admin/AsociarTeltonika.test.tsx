@@ -129,4 +129,47 @@ describe('AsociarTeltonika', () => {
       'El camión RCPC20 ya existía en otra empresa. Quedó en Sociedad de Transportes TransJavier Limitada con el IMEI 860693088328266.',
     );
   });
+
+  it('lista los equipos pendientes y los rechaza desde la plataforma', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/admin/plataforma/dispositivos') {
+        return {
+          devices: [
+            {
+              id: 'dev-1',
+              imei: '356307042441013',
+              ultima_conexion_en: '2026-10-05T10:00:00Z',
+              modelo_detectado: 'FMC150',
+              cantidad_conexiones: 3,
+            },
+          ],
+        };
+      }
+      if (path.startsWith('/admin/plataforma/dispositivos/vehiculos')) {
+        return { vehiculos: [] };
+      }
+      return { empresas: [] };
+    });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      device_id: 'dev-1',
+      imei: '356307042441013',
+      estado: 'rechazado',
+    });
+
+    render(<AsociarTeltonika />);
+    const boton = await screen.findByTestId('teltonika-rechazar-356307042441013');
+    expect(screen.getByTestId('teltonika-pendientes')).toHaveTextContent('FMC150');
+    fireEvent.click(boton);
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/admin/plataforma/dispositivos/dev-1/rechazar', {}),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId('teltonika-rechazar-356307042441013')).toBeNull(),
+    );
+    expect(screen.getByTestId('teltonika-ok')).toHaveTextContent('356307042441013');
+    expect(screen.getByTestId('teltonika-pendientes')).toHaveTextContent(
+      'No hay equipos pendientes',
+    );
+  });
 });

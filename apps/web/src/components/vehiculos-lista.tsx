@@ -5,6 +5,7 @@ import { Map as MapIcon, MoreHorizontal, Navigation, Plus, Search, Truck } from 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 import {
   type EstadoDispositivoLista,
   type EstadoVehiculoLista,
@@ -171,10 +172,11 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
   const [menuId, setMenuId] = useState<string | null>(null);
   const cerrarMenu = useCallback(() => setMenuId(null), []);
 
+  const scope = useEmpresaScope();
   const vehiclesQ = useQuery({
-    queryKey: ['vehiculos'],
+    queryKey: scope.key('vehiculos'),
     queryFn: async () => {
-      const raw = await api.get<unknown>('/vehiculos');
+      const raw = await api.get<unknown>('/vehiculos', scope.init);
       const parsed = vehiculosResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error('respuesta de vehículos inválida');
@@ -184,9 +186,9 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
   });
 
   const flotaQ = useQuery({
-    queryKey: ['flota', 'senal-lista'],
+    queryKey: scope.key('flota', 'senal-lista'),
     queryFn: async () => {
-      const raw = await api.get<unknown>('/vehiculos/flota');
+      const raw = await api.get<unknown>('/vehiculos/flota', scope.init);
       const parsed = flotaResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error('respuesta de flota inválida');

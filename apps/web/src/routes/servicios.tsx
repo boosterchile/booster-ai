@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -62,13 +63,15 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
   const empresa = me.active_membership?.empresa;
   const isCarrier = empresa?.is_transportista ?? false;
 
+  const scope = useEmpresaScope();
   const serviciosQ = useQuery({
-    queryKey: ['assignments', 'empresa'],
+    queryKey: scope.key('assignments', 'empresa'),
     enabled: isCarrier,
     // El despachador deja esta pestaña abierta mientras opera; 30 s es el
     // mismo ritmo que /app/ofertas.
     refetchInterval: 30_000,
-    queryFn: async () => (await api.get<{ assignments: Servicio[] }>('/assignments')).assignments,
+    queryFn: async () =>
+      (await api.get<{ assignments: Servicio[] }>('/assignments', scope.init)).assignments,
   });
 
   const servicios = serviciosQ.data ?? [];

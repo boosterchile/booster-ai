@@ -1,5 +1,7 @@
 # Follow-up: consent-scope + audit bloqueante para el endpoint de zonas stakeholder
 
+Cerrado el 2026-10-05 en `.specs/aislamiento-hallazgos-tenant/spec.md`. El endpoint niega por defecto con los consents que ya existen (`emisiones_carbono`, alcance `generador_carga` o `transportista`), exige el `region_ambito` de ADR-034 contra `zonas_stakeholder.region_code`, responde 403 si hay `sector_ambito` (no hay columna de sector) y audita con `recordStakeholderAccess` antes de responder.
+
 **Origen**: implementación del endpoint geo k-anon `GET /me/stakeholder/zonas/:slug/agregaciones` (cierre del gap B2 "D11 dormido", PR feat/stakeholder-geo-aggregations-endpoint, 2026-06-22).
 **Prioridad**: P2 (la privacidad de individuos YA está garantizada por k-anon≥5; esto es control de acceso de negocio + audit).
 

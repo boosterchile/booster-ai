@@ -23,6 +23,7 @@ import {
   CertNotIssuedError,
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -73,10 +74,11 @@ export function CertificadosRoute() {
 }
 
 function CertificadosPage({ me }: { me: MeOnboarded }) {
+  const scope = useEmpresaScope();
   const certsQ = useQuery({
-    queryKey: ['certificates'],
+    queryKey: scope.key('certificates'),
     queryFn: async () => {
-      return await api.get<CertificadosResponse>('/certificates?limit=100');
+      return await api.get<CertificadosResponse>('/certificates?limit=100', scope.init);
     },
   });
 

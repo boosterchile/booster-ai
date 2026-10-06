@@ -73,6 +73,19 @@ describe('api.get', () => {
     expect(headers.get('authorization')).toBeNull();
   });
 
+  it('un X-Empresa-Id explícito en init gana sobre el de localStorage', async () => {
+    setActiveEmpresaId('emp-active');
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    await api.get('/vehiculos', { headers: { 'X-Empresa-Id': 'emp-de-la-clave' } });
+    const call = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(call.headers);
+    expect(headers.get('x-empresa-id')).toBe('emp-de-la-clave');
+  });
+
   it('sin activeEmpresaId → no X-Empresa-Id header', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

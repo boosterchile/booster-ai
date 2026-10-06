@@ -81,7 +81,33 @@ function makeDb(queues: DbQueues = {}) {
   };
 }
 
+/**
+ * Recoge los valores bindeados (`Param`) de un árbol SQL de Drizzle sin
+ * ejecutar nada. Sirve para afirmar qué filtra un WHERE con la BD stubbeada.
+ */
+function collectSqlParams(node: unknown, out: unknown[] = []): unknown[] {
+  if (!node || typeof node !== 'object') {
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const n of node) {
+      collectSqlParams(n, out);
+    }
+    return out;
+  }
+  const rec = node as Record<string, unknown>;
+  if ('encoder' in rec && 'value' in rec) {
+    out.push(rec.value);
+    return out;
+  }
+  if (Array.isArray(rec.queryChunks)) {
+    collectSqlParams(rec.queryChunks, out);
+  }
+  return out;
+}
+
 const ASSIGN_ID = 'aaaaaaaa-1111-2222-3333-444444444444';
+const OTHER_CURSOR = 'bbbbbbbb-5555-6666-7777-888888888888';
 const SHIPPER_EMP = 'shipper-emp';
 const CARRIER_EMP = 'carrier-emp';
 const USER_ID = 'user-uuid';
@@ -431,6 +457,36 @@ describe('GET /chat/:id/messages', () => {
       },
     );
     expect(res.status).toBe(400);
+  });
+
+  it('cursor de otra asignación → 400 invalid_cursor, igual que uno inexistente', async () => {
+    // El lookup del cursor filtra por la asignación de la ruta: la BD no
+    // devuelve la fila ajena. La respuesta no distingue «no existe» de «es de
+    // otro chat», no filtra su created_at y no llega a consultar la página.
+    const db = makeDb({ selects: [[ACCESS_ROW_SHIPPER], []] });
+    const app = await buildApp({ db });
+    const res = await app.request(`/chat/${ASSIGN_ID}/messages?cursor=${OTHER_CURSOR}`, {
+      headers: { 'x-test-userctx': SHIPPER_CTX },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({ error: 'invalid_cursor', code: 'invalid_cursor' });
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it('el lookup del cursor exige id Y assignment_id de la ruta', async () => {
+    const db = makeDb({ selects: [[ACCESS_ROW_SHIPPER], []] });
+    const app = await buildApp({ db });
+    await app.request(`/chat/${ASSIGN_ID}/messages?cursor=${OTHER_CURSOR}`, {
+      headers: { 'x-test-userctx': SHIPPER_CTX },
+    });
+    const cursorChain = db.select.mock.results[1]?.value as {
+      where: ReturnType<typeof vi.fn>;
+    };
+    const whereArg = cursorChain.where.mock.calls[0]?.[0];
+    const params = collectSqlParams(whereArg);
+    expect(params).toContain(OTHER_CURSOR);
+    expect(params).toContain(ASSIGN_ID);
   });
 
   it('limit fuera de rango (>100) → 400 zod', async () => {

@@ -27,12 +27,12 @@ Que el admin de Booster cree desde `/app/platform-admin` una empresa generadora 
   - `carrier_memberships` tier `free`, si la empresa es transportista.
 
   Si algo falla, no queda ninguna fila.
-- [ ] SC3 — La respuesta entrega al admin el **código de activación** del dueño y su vencimiento (7 días). El panel lo muestra una sola vez para copiar. El código se guarda solo hasheado, no se loguea y **no es una contraseña**.
-- [ ] SC4 — El dueño entra a `/activar` con su RUT y el código, elige su clave de 6 dígitos y queda dentro de su empresa. Después entra por `POST /auth/login-rut` con RUT y su clave. Nadie más conoce esa clave: ni el admin ni Booster.
-- [ ] SC5 — **Nunca se emite un código a una persona que ya existe en `usuarios`.** Si el RUT o el email del dueño ya están registrados, el alta se rechaza con un mensaje explícito para el admin y no se crea nada. El endpoint es solo de platform-admin, así que el mensaje explícito no expone datos a terceros.
-- [ ] SC6 — El admin puede **generar un código nuevo** para un dueño que todavía no activó (código vencido o perdido). El anterior deja de servir y el plazo de 7 días corre desde la re-emisión. Si el dueño ya activó, la re-emisión se rechaza.
-- [ ] SC7 — RUT de empresa ya registrado → rechazo explícito. Plan inexistente o inactivo → rechazo. Empresa que no es generadora ni transportista → rechazo (misma regla del alta por enlace).
-- [ ] SC8 — Solo platform-admin (`BOOSTER_PLATFORM_ADMIN_EMAILS`). Cualquier otro usuario recibe 403, y una sesión de impersonación no puede crear (guard de escritura). Las rutas nuevas quedan clasificadas en el harness default-deny (ADR-057).
+- [x] SC3 — La respuesta entrega al admin el **código de activación** del dueño y su vencimiento (7 días). El panel lo muestra una sola vez para copiar. El código se guarda solo hasheado, no se loguea y **no es una contraseña**.
+- [x] SC4 — El dueño entra a `/activar` con su RUT y el código, elige su clave de 6 dígitos y queda dentro de su empresa. Después entra por `POST /auth/login-rut` con RUT y su clave. Nadie más conoce esa clave: ni el admin ni Booster.
+- [x] SC5 — **Nunca se emite un código a una persona que ya existe en `usuarios`.** Si el RUT o el email del dueño ya están registrados, el alta se rechaza con un mensaje explícito para el admin y no se crea nada. El endpoint es solo de platform-admin, así que el mensaje explícito no expone datos a terceros.
+- [x] SC6 — El admin puede **generar un código nuevo** para un dueño que todavía no activó (código vencido o perdido). El anterior deja de servir y el plazo de 7 días corre desde la re-emisión. Si el dueño ya activó, la re-emisión se rechaza.
+- [x] SC7 — RUT de empresa ya registrado → rechazo explícito. Plan inexistente o inactivo → rechazo. Empresa que no es generadora ni transportista → rechazo (misma regla del alta por enlace).
+- [x] SC8 — Solo platform-admin (`BOOSTER_PLATFORM_ADMIN_EMAILS`). Cualquier otro usuario recibe 403, y una sesión de impersonación no puede crear (guard de escritura). Las rutas nuevas quedan clasificadas en el harness default-deny (ADR-057).
 - [ ] SC9 — El alta por enlace (`/solicitar-acceso` → aprobación → `/onboarding-admin`) sigue igual: sus tests existentes pasan sin cambios.
 - [ ] SC10 — El endpoint nuevo tiene span OTel y métrica de negocio, y deja un evento estructurado de auditoría (qué admin creó qué empresa y cuándo, nunca el código).
 
@@ -175,3 +175,22 @@ La alternativa B (extender el `signup-request` público) sigue rechazada por la 
 - 2026-09-23 — En sesión, el PO elige que el admin cree la empresa sin formulario del cliente. Se reabre la alternativa C del programa madre (§8 de esta spec).
 - 2026-09-23 — Durante el diseño aparece un ajuste pendiente en el flujo de activación de cuentas. Se lleva aparte y queda como prerrequisito (§6.4).
 - 2026-09-23 — Stakeholders queda fuera de esta spec por los cuatro bloqueos verificados (§5). Crear la organización ya funciona.
+
+## 12. Evidencia (2026-10-06, `main` `154c1a3` + rama `cursor/aislamiento-multi-tenant-4567`)
+
+Se marcan los criterios con test nombrado. SC1, SC2, SC9 y SC10 tienen evidencia parcial y quedan abiertos para que el PO los acepte con lo que falta. El Status lo cierra el PO.
+
+| SC | Evidencia |
+|---|---|
+| SC1 | API: `routes/admin-empresa-miembros.test.ts` «crea un generador de carga pendiente, sin usuario ni clave». UI: pendiente de test de componente nombrado |
+| SC2 | `test/integration/alta-admin-cadena.integration.test.ts` caso 1 deja empresa + `carrier_memberships`; la atomicidad (una transacción) no tiene test propio |
+| SC3 | `alta-admin-cadena` caso 1 (`codigo_activacion` de 6 dígitos y `expira_en`); `admin-empresa-miembros.test.ts` «crea la persona pendiente y devuelve un código de activación, no un reset» |
+| SC4 | `alta-admin-cadena` casos 4 y 5: `/auth/activar` deja clave propia y membresía `activa`; `login-rut` entra |
+| SC5 | `alta-admin-cadena` caso 6 (RUT ya activo → `codigo_activacion: null`); `admin-empresa-miembros.test.ts` «reusa el usuario existente en vez de duplicarlo en Firebase», «correo de otra persona → 409 email_already_registered» |
+| SC6 | `admin-empresa-miembros.test.ts` «reemite un código nuevo y lo devuelve una sola vez», «niega la reemisión a quien no es platform-admin» |
+| SC7 | `admin-empresa-miembros.test.ts` «rechaza el RUT de empresa ya registrado», «sin RUT → 400 y no crea persona»; plan inexistente → 400 `invalid_plan` en el handler (sin test nombrado) |
+| SC8 | `admin-empresa-miembros.test.ts` «rechaza a quien no está en la allowlist de platform-admin», «no lista empresas a quien no es platform-admin», «la impersonación responde 403 y no llama a update» |
+| SC9 | Lo prueba CI en cada PR (suites de onboarding por enlace); sin cambio en esta rama |
+| SC10 | `PATCH /:id` audita y cuenta (`empresa_estado_cambios_total`, test «pasa pendiente_verificacion → activa y audita quién»); el span y la métrica del `POST /` sin test nombrado |
+
+La condición 2 del frente en `docs/frentes-vivos.md` («la cadena crear → activar → `login-rut` tiene test de integración verde en CI») queda cubierta por `alta-admin-cadena.integration.test.ts`. La condición 1 (verificación en producción) sigue pendiente.

@@ -332,10 +332,10 @@ const patchDispositivoBodySchema = z.object({
 /**
  * TOCTOU en la reconciliación del IMEI entrante de `PATCH /:id/dispositivo`
  * (ver esa ruta más abajo): el UPDATE con CAS sobre `dispositivos_pendientes`
- * puede perder la carrera contra un actor externo — p.ej. un admin de
- * CUALQUIER empresa rechazando el mismo pending vía el panel
- * (`admin-dispositivos.ts:191-216`; D2b: el rechazo NO es tenant-scoped, ver
- * `.specs/hito-2-corfo-mes-8/decisiones.md`). Cuando el CAS devuelve 0 filas,
+ * puede perder la carrera contra otro actor que saque la fila de
+ * `pendiente` (aprobada en paralelo, por ejemplo). El panel de la empresa
+ * ya no rechaza pendings ajenos (`.specs/aislamiento-hallazgos-tenant/spec.md`).
+ * Cuando el CAS devuelve 0 filas,
  * este error aborta la transacción COMPLETA (incluyendo el UPDATE ya
  * aplicado a `vehicles.teltonika_imei`) y el handler responde con el estado
  * REAL re-derivado fresco — "nunca silencioso".

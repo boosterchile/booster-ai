@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import * as schema from '../../src/db/schema.js';
 import { createConductoresRoutes } from '../../src/routes/conductores.js';
+import { rutAleatorio } from '../helpers/rut-aleatorio.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
@@ -73,7 +74,8 @@ describe('integration: detalle de conductor con licencia_vencimiento DATE', () =
         firebaseUid: `pending-rut:${suffix}`,
         email: `pending-rut-${suffix}@boosterchile.invalid`,
         fullName: 'CONDUCTOR PRUEBA LICENCIA',
-        rut: '5864136-7',
+        // RUT único por fixture: uq_usuarios_rut (0058) rechaza repetirlo entre tests.
+        rut: rutAleatorio(),
       })
       .returning({ id: schema.users.id });
     if (!empresa || !user) {

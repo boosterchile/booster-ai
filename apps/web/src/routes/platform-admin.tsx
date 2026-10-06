@@ -474,11 +474,13 @@ function InviteStakeholderMemberForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codigo, setCodigo] = useState<string | null>(null);
+  const [avisoVinculo, setAvisoVinculo] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setCodigo(null);
+    setAvisoVinculo(null);
     const rutNormalizado = ensureRutHasDash(form.rut);
     if (!rutSchema.safeParse(rutNormalizado).success) {
       setError('RUT inválido (ej: 76.274.900-9)');
@@ -486,15 +488,26 @@ function InviteStakeholderMemberForm({
     }
     setSubmitting(true);
     try {
-      const res = await api.post<{ codigo_activacion: string }>(
-        `/admin/stakeholder-orgs/${orgId}/invitar`,
-        {
-          rut: rutNormalizado,
-          email: form.email,
-          full_name: form.full_name,
-        },
-      );
-      setCodigo(res.codigo_activacion);
+      const res = await api.post<{
+        codigo_activacion: string | null;
+        vinculo?: string;
+        status?: string;
+      }>(`/admin/stakeholder-orgs/${orgId}/invitar`, {
+        rut: rutNormalizado,
+        email: form.email,
+        full_name: form.full_name,
+      });
+      if (res.codigo_activacion) {
+        setCodigo(res.codigo_activacion);
+      } else if (res.vinculo === 'cuenta_activa' || res.status === 'activa') {
+        setAvisoVinculo(
+          'Esta persona ya tiene cuenta. Quedó en la organización y entra con su RUT y su clave. Su clave no cambia.',
+        );
+      } else {
+        setAvisoVinculo(
+          'Esta persona ya tiene un código vigente. No se reemplazó. Cuando lo use, también quedará en la organización.',
+        );
+      }
       setForm({ rut: '', email: '', full_name: '' });
       onInvited();
     } catch (err) {
@@ -572,6 +585,11 @@ function InviteStakeholderMemberForm({
           )}
         </button>
       </div>
+      {avisoVinculo && (
+        <p className="text-neutral-800 text-xs sm:col-span-3" data-testid="stakeholder-vinculo">
+          {avisoVinculo}
+        </p>
+      )}
       {codigo && (
         <p className="text-neutral-800 text-xs sm:col-span-3" data-testid="stakeholder-codigo">
           Código de activación: <span className="font-mono text-base">{codigo}</span>. La persona lo

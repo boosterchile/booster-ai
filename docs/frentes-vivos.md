@@ -133,7 +133,7 @@ Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO 
 **Terminado cuando:** se cumplen las dos condiciones:
 
 1. En producción, el admin crea desde `/app/platform-admin` la empresa de un cliente (generadora de carga, transportista o ambas) sin que el cliente llene el formulario de alta. Su dueño activa en `/activar` con su RUT y el código, elige su clave y después entra con RUT y esa clave por el login normal. Sin SQL ni intervención fuera del panel.
-2. La cadena crear → activar → `login-rut` tiene test de integración verde en CI.
+2. La cadena crear → activar → `login-rut` tiene test de integración verde en CI. **Cumplida el 2026-10-06**: `apps/api/test/integration/alta-admin-cadena.integration.test.ts` (rama `cursor/aislamiento-multi-tenant-4567`).
 
 **Verificación:**
 
@@ -148,7 +148,7 @@ WHERE m.invitado_por_id IS NOT NULL
 ORDER BY e.creado_en DESC LIMIT 5;
 ```
 
-Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
+Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. **Verificado 2026-10-06 (prod, solo lectura): 1 fila, `Sociedad de Transportes TransJavier Limitada` (2026-09-27), dueño `pendiente_invitacion`, sin clave y sin login → la condición 1 todavía no se cumple.** `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
 
 **Orden de ejecución:**
 
@@ -164,6 +164,24 @@ Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_cla
 - Envío del código por correo (Fase 2 del programa de onboarding).
 - Empresas de prueba.
 - Corregir datos legales de una empresa ya creada.
+
+## Fuera de slot — Booster multi-tenant
+
+**Por qué:** pedido explícito del PO el 2026-10-05 («necesito urgente que Booster sea multi-tenant»). El censo del 2026-07-14 dejó el aislamiento como estático (`lint:rls`) y por anotación; faltaba poder afirmarlo con prueba en runtime.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Plan con criterio de término en `.specs/aislamiento-hallazgos-tenant/plan.md` (v2); revisión en `review.md`; auditoría en `verify.md`.
+
+**Terminado cuando:** las cinco condiciones de `plan.md` §1:
+
+1. Aislamiento probado en runtime: test de integración con dos empresas sobre las rutas de negocio, verde en CI.
+2. Identidad única: `uq_usuarios_rut` en prod, 0 RUTs duplicados, cadena alta → activar → `login-rut` con test de integración.
+3. Cliente sin mezcla: claves de React Query con `empresaId` y fábrica con test.
+4. Sin fugas conocidas: cursor de chat cerrado; 103 `rls-allowlist` revisados uno a uno.
+5. Estado legible: specs `Draft` con evidencia por criterio y este frente registrado.
+
+**Estado al 2026-10-06** (rama `cursor/aislamiento-multi-tenant-4567`, PR #739): 1, 3, 4 y 5 cumplidos; de 2, el código y el test de la cadena están, falta aplicar 0058 en producción con la verificación post-deploy (decisión del PO sobre `STRICT_MIGRATION_ORDERING` y diagnóstico de RUTs, `scripts/sql/diag-tenant-rut-0058.sql`).
+
+**Fuera de alcance:** RLS en Postgres (decidido en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`), columna de sector, `teltonika_imei_espejo` (Slot 2), miembros de organizaciones stakeholder.
 
 ## Código en main después del 2026-09-13
 

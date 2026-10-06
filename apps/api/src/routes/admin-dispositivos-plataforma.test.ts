@@ -714,3 +714,78 @@ describe('POST /admin/plataforma/dispositivos/habilitar', () => {
     expect(d.inserted).toHaveLength(0);
   });
 });
+
+describe('POST /admin/plataforma/dispositivos/:id/rechazar', () => {
+  const DEVICE_ID = '44444444-4444-4444-8444-444444444444';
+  const pendiente = () => ({ id: DEVICE_ID, imei: IMEI, status: 'pendiente' });
+
+  it('quien no es platform-admin recibe 403 y no se escribe nada', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[pendiente()]]);
+    const app = buildApp(mod, d.db, 'dueno@transportes-sur.cl');
+    const res = await app.request(`/${DEVICE_ID}/rechazar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('un pending pendiente queda rechazado, con las notas del admin', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[pendiente()]]);
+    const app = buildApp(mod, d.db);
+    const res = await app.request(`/${DEVICE_ID}/rechazar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ notas: 'IMEI duplicado del equipo de prueba' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ device_id: DEVICE_ID, imei: IMEI, estado: 'rechazado' });
+    expect(d.updates[0]).toMatchObject({
+      status: 'rechazado',
+      notes: 'IMEI duplicado del equipo de prueba',
+    });
+  });
+
+  it('si ya no está pendiente responde 409 con el estado actual y no escribe', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[{ id: DEVICE_ID, imei: IMEI, status: 'aprobado' }]]);
+    const app = buildApp(mod, d.db);
+    const res = await app.request(`/${DEVICE_ID}/rechazar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'device_not_pending', estado: 'aprobado' });
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('si no existe responde 404', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[]]);
+    const app = buildApp(mod, d.db);
+    const res = await app.request(`/${DEVICE_ID}/rechazar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('un id que no es uuid responde 400 sin tocar la BD', async () => {
+    const mod = await loadMod();
+    const d = makeDb([]);
+    const app = buildApp(mod, d.db);
+    const res = await app.request('/no-es-uuid/rechazar', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(d.updates).toHaveLength(0);
+  });
+});

@@ -124,7 +124,7 @@ describe('/app/servicios', () => {
     expect(await screen.findByText('BOO-4F2A')).toBeInTheDocument();
     expect(screen.getByText(/Av. Presidente Riesco 5335/)).toBeInTheDocument();
     expect(screen.getByText(/Ruta 5 Sur km 1020/)).toBeInTheDocument();
-    expect(apiGetSpy).toHaveBeenCalledWith('/assignments');
+    expect(apiGetSpy).toHaveBeenCalledWith('/assignments', expect.anything());
   });
 
   it('un servicio SIN conductor se ve como problema y ofrece asignarlo', async () => {

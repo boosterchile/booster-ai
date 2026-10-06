@@ -13,11 +13,13 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -444,8 +446,6 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
     }
     const body = c.req.valid('json');
     const email = body.email.toLowerCase();
-    const codigo = generateActivationPin();
-    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     return await withBusinessSpan(
       {
@@ -473,13 +473,20 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         // La identidad es el RUT, igual que el alta que hace la propia empresa.
         // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
         const porRut = await opts.db
-          .select({ id: users.id })
+          .select({
+            id: users.id,
+            firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            activationPinHash: users.activationPinHash,
+          })
           .from(users)
           .where(eq(users.rut, body.rut))
           .limit(1);
         const existente = porRut[0];
 
         let userId: string;
+        let vinculo: VinculoPersona;
+        let codigoEmitido: string | null = null;
         if (existente) {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const existingMembership = await opts.db
@@ -498,11 +505,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               409,
             );
           }
-          await opts.db
-            .update(users)
-            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-            .where(eq(users.id, existente.id));
           userId = existente.id;
+          vinculo = clasificarVinculoPersona(existente);
+          if (vinculo === 'provisoria_sin_codigo') {
+            const codigo = generateActivationPin();
+            codigoEmitido = codigo;
+            await opts.db
+              .update(users)
+              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+              .where(eq(users.id, existente.id));
+          }
         } else {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const porEmail = await opts.db
@@ -515,18 +527,30 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
           }
 
-          const inserted = await opts.db
-            .insert(users)
-            .values({
-              firebaseUid: `pending-rut:${body.rut}`,
-              email,
-              fullName: body.full_name,
-              rut: body.rut,
-              activationPinHash: hashActivationPin(codigo),
-              status: 'pendiente_verificacion',
-              isPlatformAdmin: false,
-            })
-            .returning({ id: users.id });
+          const codigo = generateActivationPin();
+          codigoEmitido = codigo;
+          vinculo = 'nueva';
+          let inserted: { id: string }[];
+          try {
+            inserted = await opts.db
+              .insert(users)
+              .values({
+                firebaseUid: `pending-rut:${body.rut}`,
+                email,
+                fullName: body.full_name,
+                rut: body.rut,
+                activationPinHash: hashActivationPin(codigo),
+                status: 'pendiente_verificacion',
+                isPlatformAdmin: false,
+              })
+              .returning({ id: users.id });
+          } catch (err) {
+            if (esRutDuplicado(err)) {
+              record('rut_already_registered');
+              return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+            }
+            throw err;
+          }
           const created = inserted[0];
           if (!created) {
             opts.logger.error({ empresaId }, 'admin-empresa-miembros: insert user vacío');
@@ -536,16 +560,17 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           userId = created.id;
         }
 
+        const yaActiva = vinculo === 'cuenta_activa';
         const insertedMembership = await opts.db
           .insert(memberships)
           .values({
             userId,
             empresaId,
             role: body.rol,
-            status: 'pendiente_invitacion',
+            status: yaActiva ? 'activa' : 'pendiente_invitacion',
             invitedByUserId: admin.userContext.user.id,
             invitedAt: new Date(),
-            joinedAt: null,
+            joinedAt: yaActiva ? new Date() : null,
           })
           .returning({ id: memberships.id });
         const membership = insertedMembership[0];
@@ -570,15 +595,21 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         );
         record('issued');
 
+        const expiraEn =
+          codigoEmitido === null
+            ? null
+            : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
         return c.json(
           {
             ok: true,
             user_id: userId,
             membership_id: membership.id,
             rol: body.rol,
-            estado: 'pendiente_invitacion',
-            codigo_activacion: codigo,
-            expira_en: expiraEn.toISOString(),
+            estado: yaActiva ? 'activa' : 'pendiente_invitacion',
+            codigo_activacion: codigoEmitido,
+            expira_en: expiraEn,
+            vinculo,
           },
           201,
         );
