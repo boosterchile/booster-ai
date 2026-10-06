@@ -74,6 +74,8 @@ Precondición cumplida: `review.md` H1 cerrado en `2c02bd9`, job de integración
 
 Cambio: el `WHERE` del cursor incluye `assignment_id` de la ruta; si no coincide o no existe, 400 `invalid_cursor` sin distinguir. Test de ruta: cursor de otra asignación no cambia la página y no devuelve `created_at`.
 
+**Cerrado el 2026-10-05** en esta rama: `chat.ts` exige `id` y `assignment_id` en el lookup del cursor; dos tests nuevos en `test/unit/chat-route.test.ts` (400 sin distinguir, y el `WHERE` lleva ambos parámetros; el segundo falla contra el código anterior). 40/40 verdes.
+
 ### C. Prueba madre en runtime: dos empresas — M
 
 Test de integración `apps/api/test/integration/aislamiento-dos-empresas.integration.test.ts`:
