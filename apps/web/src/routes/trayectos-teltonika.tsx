@@ -7,6 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { EventoCombustibleMap } from '../components/map/EventoCombustibleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -98,10 +99,18 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
   const [combustible, setCombustible] = useState<FiltroCombustible>('con_dato');
   const permitido = puedeVer(me);
   const vehiculo = search.vehiculo;
+  const scope = useEmpresaScope();
   const q = useQuery({
-    queryKey: ['trayectos-teltonika', combustible, page, vehiculo ?? '', search.detalle ?? ''],
+    queryKey: scope.key(
+      'trayectos-teltonika',
+      combustible,
+      page,
+      vehiculo ?? '',
+      search.detalle ?? '',
+    ),
     enabled: permitido,
-    queryFn: () => api.get<Listado>(urlListado(page, combustible, vehiculo, search.detalle)),
+    queryFn: () =>
+      api.get<Listado>(urlListado(page, combustible, vehiculo, search.detalle), scope.init),
   });
 
   return (

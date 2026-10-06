@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Loader2, User, UserPlus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
+import { useEmpresaScope } from '../../lib/empresa-activa.js';
 
 /**
  * Card carrier-side: asignar conductor a un assignment activo.
@@ -65,9 +66,10 @@ export function DriverAssignmentCard({
     | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
+  const scope = useEmpresaScope();
   const conductoresQ = useQuery<{ conductores: ConductorListItem[] }>({
-    queryKey: ['conductores-list-for-assignment'],
-    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores'),
+    queryKey: scope.key('conductores-list-for-assignment'),
+    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores', scope.init),
   });
 
   const isMutable = MUTABLE_ASSIGNMENT_STATUSES.has(assignmentStatus);

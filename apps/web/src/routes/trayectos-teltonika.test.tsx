@@ -314,7 +314,7 @@ describe('TrayectosTeltonikaRoute', () => {
     routerState.search = { detalle: 't-1', page: 2 };
     renderPage();
     expect(await screen.findByTestId('mapa-evento')).toBeInTheDocument();
-    expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20');
+    expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20', expect.anything());
     expect(screen.getByRole('link', { name: 'Volver al historial' })).toHaveAttribute(
       'href',
       '/app/trayectos?page=2',
@@ -409,7 +409,10 @@ describe('TrayectosTeltonikaRoute', () => {
     expect(await screen.findByRole('button', { name: 'Siguiente' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
     await waitFor(() => {
-      expect(get).toHaveBeenCalledWith('/trayectos-teltonika?page=2&page_size=20');
+      expect(get).toHaveBeenCalledWith(
+        '/trayectos-teltonika?page=2&page_size=20',
+        expect.anything(),
+      );
     });
   });
 });
@@ -557,6 +560,7 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     await waitFor(() => {
       expect(get).toHaveBeenCalledWith(
         '/trayectos-teltonika?page=1&page_size=20&combustible=sin_dato',
+        expect.anything(),
       );
     });
     expect(

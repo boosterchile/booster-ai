@@ -28,6 +28,7 @@ import {
   CertNotIssuedError,
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -307,10 +308,11 @@ export function CargasListRoute() {
 function CargasListPage({ me }: { me: MeOnboarded }) {
   const isShipper = me.active_membership?.empresa?.is_generador_carga ?? false;
 
+  const scope = useEmpresaScope();
   const tripsQ = useQuery({
-    queryKey: ['cargas'],
+    queryKey: scope.key('cargas'),
     queryFn: async () => {
-      const res = await api.get<{ trip_requests: TripSummary[] }>('/trip-requests-v2');
+      const res = await api.get<{ trip_requests: TripSummary[] }>('/trip-requests-v2', scope.init);
       return res.trip_requests;
     },
     enabled: isShipper,

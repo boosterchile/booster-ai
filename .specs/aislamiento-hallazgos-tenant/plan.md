@@ -37,7 +37,7 @@ Cinco condiciones, observables por un tercero:
 4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
 5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-Ya cumple: (1) desde el 2026-10-05 (bloque C), la parte estática de (4) (`lint:rls` 0 findings) más el cursor de chat (bloque B), y la mitad de (2) (código de 0058 y del 409 listos).
+Ya cumple: (1) desde el 2026-10-05 (bloque C); (3) en su parte de cliente (bloque D; el E2E queda sujeto a §3.3); la parte estática de (4) (`lint:rls` 0 findings) más el cursor de chat (bloque B); y la mitad de (2) (código de 0058 y del 409 listos).
 
 ## 2. Bloques, en orden
 
@@ -98,6 +98,8 @@ Es el criterio 1 de §1. También prueba en runtime el «acotado por id ya valid
 - Claves que entran (nombres reales del código): `vehiculos`, `flota`, `trayectos-teltonika`, `conductores`, `conductores-list-for-assignment`, `sucursales`, `cumplimiento`, `certificates`, `cargas`, `['assignments','empresa']`, `offers`, `liquidaciones`, `cobra-hoy`. Quedan fuera por estar acotadas por recurso: `['vehiculos', id, ...]`, `documentos`, `transport-documents`, `assignment-detail`; y las globales: `me`, `observability`, `public-*`, `consent`.
 - `cancelQueries()` antes de `invalidateQueries()` en el hook.
 - Test de la fábrica: la clave para A y para B difiere; el prefijo de dominio se conserva.
+
+**Cerrado el 2026-10-05** en esta rama. `apps/web/src/lib/empresa-activa.ts`: `useActiveEmpresaId` (estado reactivo sobre `localStorage` vía `subscribeActiveEmpresaId`), `empresaKey` con el id después del dominio y `useEmpresaScope`, que entrega la clave y el `RequestInit` con `X-Empresa-Id` desde el mismo valor: una entrada de caché con empresa X solo puede contener datos pedidos con header X. `api-client` respeta un header explícito. Los 14 sitios de lista pasan a `scope.key(...)` + `scope.init` (`vehiculos`, `flota` ×2, `trayectos-teltonika`, `conductores`, `conductores-list-for-assignment`, `sucursales`, `cumplimiento`, `certificates`, `cargas`, `['assignments','empresa']`, `['offers','mine']`, `liquidaciones`, `['cobra-hoy','historial']`); las claves por recurso (`['vehiculos', id, ...]`, detalles) no cambian. `useSwitchCompany`: `cancelQueries` → `setActiveEmpresaId` → `removeQueries` de todo salvo `['me']` → `invalidateQueries(['me'])`; ya no hay `invalidateQueries()` global que refetchee claves viejas con el header nuevo. Tests: `empresa-activa.test.tsx` (clave y header cambian juntos, prefijo de dominio conservado), `use-switch-company.test.tsx` (borra la caché de la empresa anterior, conserva e invalida `/me`, no refetchea claves viejas), `api-client.test.ts` (header explícito gana). Suite web completa verde, `tsc` limpio. El E2E Playwright con cuenta de dos empresas sigue dependiendo de la decisión §3.3.
 
 ### E. Auditoría de los 103 `rls-allowlist` — M
 

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 /**
  * Hook de liquidaciones del carrier activo (ADR-031 §4.1).
@@ -35,9 +36,10 @@ export interface LiquidacionRow {
 }
 
 export function useLiquidaciones(opts: { enabled?: boolean } = {}) {
+  const scope = useEmpresaScope();
   return useQuery<{ liquidaciones: LiquidacionRow[] }>({
-    queryKey: ['liquidaciones'],
-    queryFn: () => api.get<{ liquidaciones: LiquidacionRow[] }>('/me/liquidaciones'),
+    queryKey: scope.key('liquidaciones'),
+    queryFn: () => api.get<{ liquidaciones: LiquidacionRow[] }>('/me/liquidaciones', scope.init),
     enabled: opts.enabled ?? true,
     staleTime: 30_000,
     retry: (failureCount, error) => {

@@ -7,6 +7,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -90,9 +91,10 @@ export function CumplimientoRoute() {
 }
 
 function CumplimientoPage({ me }: { me: MeOnboarded }) {
+  const scope = useEmpresaScope();
   const q = useQuery({
-    queryKey: ['cumplimiento'],
-    queryFn: async () => await api.get<CumplimientoResponse>('/cumplimiento'),
+    queryKey: scope.key('cumplimiento'),
+    queryFn: async () => await api.get<CumplimientoResponse>('/cumplimiento', scope.init),
   });
 
   return (

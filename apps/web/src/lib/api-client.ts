@@ -32,11 +32,28 @@ export function getActiveEmpresaId(): string | null {
   return localStorage.getItem(ACTIVE_EMPRESA_KEY);
 }
 
+const activeEmpresaListeners = new Set<() => void>();
+
+/**
+ * Avisa cuando cambia la empresa activa. Lo consume `useActiveEmpresaId`
+ * (`lib/empresa-activa.ts`) para que las claves de TanStack Query cambien
+ * en el mismo render en que cambia el header.
+ */
+export function subscribeActiveEmpresaId(listener: () => void): () => void {
+  activeEmpresaListeners.add(listener);
+  return () => {
+    activeEmpresaListeners.delete(listener);
+  };
+}
+
 export function setActiveEmpresaId(empresaId: string | null): void {
   if (empresaId === null) {
     localStorage.removeItem(ACTIVE_EMPRESA_KEY);
   } else {
     localStorage.setItem(ACTIVE_EMPRESA_KEY, empresaId);
+  }
+  for (const listener of activeEmpresaListeners) {
+    listener();
   }
 }
 
@@ -49,9 +66,14 @@ async function buildHeaders(extra?: HeadersInit): Promise<Headers> {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const activeEmpresaId = getActiveEmpresaId();
-  if (activeEmpresaId) {
-    headers.set('X-Empresa-Id', activeEmpresaId);
+  // Un header explícito gana: las queries de la empresa activa lo fijan desde
+  // su propia clave (`empresaInit`), para que la caché y el request no puedan
+  // referirse a empresas distintas.
+  if (!headers.has('X-Empresa-Id')) {
+    const activeEmpresaId = getActiveEmpresaId();
+    if (activeEmpresaId) {
+      headers.set('X-Empresa-Id', activeEmpresaId);
+    }
   }
 
   return headers;

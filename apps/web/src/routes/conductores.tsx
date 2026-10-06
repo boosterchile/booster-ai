@@ -23,6 +23,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -124,10 +125,11 @@ function ConductoresListPage({ me }: { me: MeOnboarded }) {
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
 
+  const scope = useEmpresaScope();
   const conductoresQ = useQuery({
-    queryKey: ['conductores'],
+    queryKey: scope.key('conductores'),
     queryFn: async () => {
-      const res = await api.get<{ conductores: Conductor[] }>('/conductores');
+      const res = await api.get<{ conductores: Conductor[] }>('/conductores', scope.init);
       return res.conductores;
     },
   });
