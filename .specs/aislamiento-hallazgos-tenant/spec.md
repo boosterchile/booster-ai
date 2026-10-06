@@ -32,7 +32,4 @@ D2b dejó el rechazo global como deuda porque cualquier empresa podía rechazar 
 
 ## 6. Out of scope
 
-- Alta de un endpoint de rechazo para el admin de plataforma.
-- Inventar un `scopeType` de zona o una columna de sector.
-- Deduplicar RUTs que ya existan en producción.
-- Claves de React Query, cursor de chat y el E2E de alta de empresa.
+Lo que esta spec no construye queda ordenado en `plan.md` del mismo directorio: diagnóstico de RUTs duplicados antes de aplicar 0058, cursor de chat, rechazo de pending solo en plataforma, claves de React Query, y el T6 de alta contra Postgres. Una columna de sector, el IMEI espejo demo y las políticas RLS no entran en ese plan.
