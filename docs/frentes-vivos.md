@@ -179,7 +179,7 @@ Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_cla
 4. Sin fugas conocidas: cursor de chat cerrado; 103 `rls-allowlist` revisados uno a uno.
 5. Estado legible: specs `Draft` con evidencia por criterio y este frente registrado.
 
-**Estado al 2026-10-06** (rama `cursor/aislamiento-multi-tenant-4567`, PR #739): 1, 3, 4 y 5 cumplidos; de 2, el código y el test de la cadena están, falta aplicar 0058 en producción con la verificación post-deploy (decisión del PO sobre `STRICT_MIGRATION_ORDERING` y diagnóstico de RUTs, `scripts/sql/diag-tenant-rut-0058.sql`).
+**Cerrado el 2026-10-06.** Las cinco condiciones se cumplen. #739 en `main` (`4d28c8d`), desplegado (release run 37444860263); verificado en prod con `scripts/sql/diag-tenant-rut-0058.sql`: `uq_usuarios_rut` presente, 59 migraciones, 0 RUTs duplicados.
 
 **Fuera de alcance:** RLS en Postgres (decidido en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`), columna de sector, `teltonika_imei_espejo` (Slot 2), miembros de organizaciones stakeholder.
 
