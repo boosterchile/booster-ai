@@ -148,7 +148,7 @@ WHERE m.invitado_por_id IS NOT NULL
 ORDER BY e.creado_en DESC LIMIT 5;
 ```
 
-Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
+Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. **Verificado 2026-10-06 (prod, solo lectura): 1 fila, `Sociedad de Transportes TransJavier Limitada` (2026-09-27), dueño `pendiente_invitacion`, sin clave y sin login → la condición 1 todavía no se cumple.** `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
 
 **Orden de ejecución:**
 
