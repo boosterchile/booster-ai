@@ -4,6 +4,8 @@
 - Date: 2026-10-05
 - Objeto: `.specs/aislamiento-hallazgos-tenant/plan.md` @ `8c46308`, rama `cursor/aislamiento-multi-tenant-4567`, PR #739 (draft)
 - Status: revisión del **plan**, no del build. Los hallazgos H1 y H2 van antes del bloque 1.
+- Seguimiento: H1 cerrado en `2c02bd9`. El plan fue redefinido el 2026-10-05 (`plan.md` v2) a partir de esta revisión; H2 a H5 están absorbidos en sus bloques A, D y F y en las decisiones §3.
+- Seguimiento: H1 cerrado en `2c02bd9`. El plan fue redefinido el 2026-10-05 (`plan.md` v2) a partir de esta revisión; H2 a H5 están absorbidos en sus bloques A, D y F y en las decisiones §3.
 - Método: cada afirmación del plan se contrastó con el código de la rama y con el estado de CI del PR. Las referencias `archivo:línea` son de esa rama. Lo que no pude verificar está marcado como tal.
 
 ## 1. Veredicto

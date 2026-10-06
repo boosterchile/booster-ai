@@ -1,78 +1,150 @@
-# Plan: lo que la revisión multi-tenant todavía no cierra
+# Plan v2: Booster multi-tenant — qué falta para poder decirlo y probarlo
 
-- Date: 2026-10-06
-- Status: Plan — no se construye hasta seguir este orden
-- Spec de lo ya hecho: `.specs/aislamiento-hallazgos-tenant/spec.md`
-- PR: el mismo frente, `cursor/aislamiento-multi-tenant-4567`
+- Date: 2026-10-05 (v2; reemplaza al plan del 2026-10-06 tras `review.md`)
+- Status: Plan — propuesto al PO. No se construye un bloque hasta que el PO acepte este orden y tome las decisiones de §3.
+- Pedido del PO: «necesito urgente que Booster sea multi-tenant». Entra como pedido del PO en el mensaje (`docs/frentes-vivos.md` §Regla de operación), no ocupa slot, y como todo frente tiene criterio de término escrito (§1).
+- Spec de lo ya cerrado: `spec.md` (dispositivos, zonas, RUT) y `.specs/aislamiento-vinculo-persona/spec.md` (clave). Revisión del plan anterior: `review.md`.
+- Rama / PR: `cursor/aislamiento-multi-tenant-4567`, PR #739.
 
-## Ya cerrado (no se reabre)
+## 0. Punto de partida (verificado 2026-10-05 contra la rama y `main`)
 
-- Invitar un RUT existente no reescribe pin ni clave. `/auth/activar` no toca una cuenta viva.
-- La empresa no lista la bandeja Teltonika ni rechaza un pending ajeno. Busca por IMEI y la respuesta no trae IP.
-- La zona stakeholder exige consent de `emisiones_carbono`, coincide la región y responde 403 si hay `sector_ambito`. El audit se escribe antes de responder.
-- `uq_usuarios_rut` está en la migración 0058. No borra filas.
-- Postgres RLS no se implementa. La decisión está en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`. El control sigue siendo `pnpm lint:rls`.
+Lo que el censo del 2026-07-14 dejó abierto para pasar de (B) «multi-tenant estructural» a (A) «ejercido como producto» ya se construyó en buena parte:
 
-## Orden
+| Hueco del censo | Estado hoy | Evidencia |
+|---|---|---|
+| Onboarding apagado por flags | Flags encendidos en prod | #635 (2026-07-30) |
+| Sin invitación de miembros | `POST /me/empresa/miembros`, `POST /admin/empresas/:id/miembros`, `/auth/activar` | #638, #640, `154c1a3` |
+| Alta solo por enlace | Alta desde el panel admin | `154c1a3` (2026-09-27); criterio de término en `frentes-vivos.md` §Fuera de slot, línea base 0 filas al 2026-09-23 |
+| Linter solo sobre `routes/` | `lint:rls` cubre `routes/`, `services/`, `jobs/` y raw SQL; 0 findings; 103 `// rls-allowlist:` | #609; `pnpm lint:rls` corrido hoy |
+| Clave pisada al invitar un RUT existente | Cerrado | esta rama, `0300f16` |
+| Bandeja Teltonika global, zonas sin consent, RUT no único | Cerrado en código; 0058 **sin aplicar en prod** | esta rama, `2ef8ba5` `9e9bfb0` `af60699` |
+| RLS en Postgres | No se hace | `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md` |
 
-Cada bloque termina antes de abrir el siguiente. Ninguno deduplica datos ni inventa una columna.
+Lo que **no** existe todavía, y es lo que impide decir «multi-tenant» con prueba:
 
-### 1. Saber si 0058 puede aplicar
+- **Ninguna prueba en runtime de aislamiento entre dos empresas.** El control es estático (`lint:rls`) y por anotación. De 99 tests unitarios en `test/unit/` solo 10 afirman un 403 por empresa ajena; de 16 tests de rutas, 2. Playwright: 0 tests de aislamiento. Son los «NO VERIFICADO» 3 y 4 del censo; siguen abiertos.
+- **Dos fugas chicas conocidas** sin cerrar: el cursor de chat (§2 B) y la caché del cliente al cambiar de empresa (§2 D).
+- **0058 en prod** depende de un diagnóstico que no se ha corrido y de una decisión del PO sobre el flag de migraciones (§3).
+- **Especificaciones desactualizadas**: `alta-desde-panel-admin`, `equipo-de-la-empresa` y `aislamiento-vinculo-persona` siguen `Draft` con 0 criterios marcados aunque el código está en `main` o en esta rama. Nadie puede leer el estado real sin leer código.
 
-La migración corre al arrancar el servicio. Si hay dos filas con el mismo RUT no nulo, el `CREATE UNIQUE INDEX` falla y el deploy no queda sano.
+## 1. Terminado cuando («Booster es multi-tenant»)
 
-Consulta de solo lectura, antes de cualquier deploy que incluya 0058:
+Cinco condiciones, observables por un tercero:
 
-```sql
-SELECT rut, count(*)
-FROM usuarios
-WHERE rut IS NOT NULL
-GROUP BY rut
-HAVING count(*) > 1;
-```
+1. **Aislamiento probado en runtime.** Un test de integración contra Postgres crea dos empresas A y B con datos en cada tabla tenant-scoped del censo §2 y, con sesión de A, recorre las rutas de negocio: la lista no trae nada de B; detalle y escritura sobre un id de B responden 403 o 404, nunca 200 ni 500. Verde en CI. Las excepciones cross-tenant (matching, chat bilateral, k-anon, tracking público, platform-admin) están listadas en el mismo test, con su razón.
+2. **Identidad única.** `uq_usuarios_rut` existe en prod (`pg_indexes`), la consulta de duplicados devuelve 0 filas, y la cadena alta → activar → `login-rut` tiene test de integración verde (T6 de `alta-desde-panel-admin`).
+3. **Cliente sin mezcla.** Las claves de React Query de datos de la empresa activa llevan el `empresaId`; hay fábrica de claves con test. Si el PO provee una cuenta con dos empresas, además un E2E Playwright que cambia de empresa y no ve datos de la anterior.
+4. **Sin fugas conocidas abiertas.** Cursor de chat atado a la asignación. Los 103 `rls-allowlist` revisados uno a uno, cada uno con una de cuatro razones (platform-admin / cross-tenant por diseño / acotado por id ya validado / pre-tenant); los que no caen en ninguna se corrigen.
+5. **Estado legible.** Las tres specs `Draft` marcan sus criterios con evidencia o declaran qué falta; `frentes-vivos.md` registra este frente con este criterio.
 
-- Cero filas: no hay nada que fusionar. 0058 aplica sola.
-- Una o más filas: se detiene. No se usa `apps/api/src/jobs/merge-duplicate-users.ts` para esto. Ese job fusiona por email, borra una fila y aborta si ambas tienen membresías. Un RUT repetido puede ser la misma persona o dos. Cada par lo decide el PO. El agente no borra ni reasigna.
+Ya cumple: la parte estática de (4) (`lint:rls` 0 findings) y la mitad de (2) (código de 0058 y del 409 listos).
 
-### 2. Cursor de chat atado a la asignación
+## 2. Bloques, en orden
 
-`GET /assignments/:id/messages` ya exige `resolveChatAccess` sobre esa asignación. El cursor no: busca `chat_messages.id` sin `assignment_id` (`apps/api/src/routes/chat.ts`). Quien conoce un id de otro chat se entera de que existe y usa su `created_at` como corte de su propia lista.
+Se cierra lo que más libera (regla 4 de `frentes-vivos.md`): primero lo que es fuga real o bloquea prod, después lo que es prueba, al final lo que es operación.
 
-Cambio: el `WHERE` del cursor incluye `assignment_id` de la ruta. Si no está en esa asignación, 400 `invalid_cursor`, igual que si no existe. No se distingue. Test de ruta: cursor de otra asignación no cambia la página y no devuelve `created_at`.
+Cada bloque termina antes de abrir el siguiente, con su verificación corrida y pegada en el PR. Ninguno deduplica datos, borra filas ni aplica Terraform.
 
-### 3. Rechazo de pending solo en plataforma
+### A. 0058 a producción (identidad única) — bloqueante, S
 
-La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`: el router de plataforma lista y asigna, y no tiene rechazo.
+Precondición cumplida: `review.md` H1 cerrado en `2c02bd9`, job de integración en verde.
 
-Agregar `POST /admin/plataforma/dispositivos/:id/rechazar` con `requirePlatformAdmin`, el mismo `UPDATE` que antes hacía la empresa (`status = rechazado`, notas opcionales, solo si sigue `pendiente`). La UI va en el panel de plataforma, no en el de la empresa. El override de dos pasos del `PATCH /vehiculos/:id/dispositivo` se queda: un rechazo histórico sigue siendo reversible por el dueño del vehículo.
+1. **Diagnóstico de solo lectura**, antes de que una revisión con 0058 arranque en prod. Archivo listo: `scripts/sql/diag-tenant-rut-0058.sql`. Lo corre el PO, o autoriza al agente:
 
-No es un contrato nuevo de la empresa. Es la misma acción, en el router que ya ve todos los equipos.
+   ```bash
+   scripts/db/agent-query.sh -f scripts/sql/diag-tenant-rut-0058.sql
+   ```
 
-### 4. La caché del cliente no mezcla empresas
+   Devuelve duplicados crudos, duplicados tras normalizar (`upper(replace(rut,'.',''))`), RUTs no canónicos, índices actuales sobre `usuarios.rut`, migraciones aplicadas, empresas, altas desde el panel, usuarios con más de una empresa activa y las columnas de `dispositivos_pendientes`. El intento del agente del 2026-10-05 lo bloqueó el clasificador de permisos (lectura de prod); no se insistió por otra vía.
+   - 0 duplicados en las dos consultas → sigue el paso 2.
+   - ≥1 → se detiene. Cada par lo decide el PO. No se usa `jobs/merge-duplicate-users.ts` (fusiona por email y borra). El agente no borra, no fusiona, no normaliza.
+2. **Decisión §3.1** (flag de migraciones) tomada y escrita acá.
+3. **Deploy** por `release.yml`. Según `docs/handoff/CURRENT.md` (2026-09-22) los últimos releases abortaron en `canary-verify` por muestra insuficiente y el api se promovió a mano; si se repite, la promoción manual la hace el PO y queda anotada.
+4. **Verificación post-deploy**, obligatoria en los dos caminos de §3.1:
 
-`useSwitchCompany` ya invalida todas las queries. El hueco es otro: la respuesta de la empresa A puede aterrizar después del cambio y guardarse en una clave que no nombra a la empresa. La pantalla de dispositivos ya incluye `empresaId`. Estas claves de datos de la empresa activa no:
+   ```sql
+   SELECT indexname FROM pg_indexes WHERE tablename = 'usuarios' AND indexname = 'uq_usuarios_rut';
+   ```
 
-- `vehiculos`, `vehiculos-lista`, `flota`, `trayectos-teltonika`, `vehiculo-live`, `vehiculo-historial`
-- `conductores`, `sucursales`, `cumplimiento`, `certificados`
-- `cargas`, `servicios` (`assignments`), `offers`, `liquidaciones`, `cobra-hoy`
+   más ausencia en Cloud Logging de `runMigrations failed` en la revisión nueva. Sin esto el bloque no está cerrado aunque el canary haya pasado.
 
-`me`, tracking público, observabilidad y ajustes del sitio no entran: no son la empresa activa, o el id ya viaja en la clave (`assignment-detail`, `cargas/:id` cuando el id es el recurso).
+### B. Cursor de chat atado a la asignación — fuga real, S
 
-Cada clave de la lista gana el id de la empresa activa al inicio. Las invalidaciones existentes se quedan. Un test del hook de cambio de empresa comprueba que la clave de A y la de B no son la misma.
+`GET /assignments/:id/messages` ya exige `resolveChatAccess`. El cursor no: `apps/api/src/routes/chat.ts:333-341` busca `chat_messages.id` sin `assignment_id`. Quien conoce un id ajeno sabe que existe y usa su `created_at`.
 
-### 5. Cadena de alta contra Postgres
+Cambio: el `WHERE` del cursor incluye `assignment_id` de la ruta; si no coincide o no existe, 400 `invalid_cursor` sin distinguir. Test de ruta: cursor de otra asignación no cambia la página y no devuelve `created_at`.
 
-T6 de `.specs/alta-desde-panel-admin/spec.md` no tiene test. El alta real son dos llamadas, no una transacción: `POST /admin/empresas`, `PATCH` a `activa`, `POST /admin/empresas/:id/miembros`, `POST /auth/activar`, `POST /auth/login-rut`. El test de integración vive junto a `apps/api/test/integration/` y recorre esa cadena. No se reescribe el alta en una sola transacción: eso cambia el contrato que ya está en producción.
+### C. Prueba madre en runtime: dos empresas — M
 
-Al terminar, la misma cadena cubre el caso de RUT ya activo: membresía `activa`, `codigo_activacion` null, la clave anterior sigue sirviendo.
+Test de integración `apps/api/test/integration/aislamiento-dos-empresas.integration.test.ts`:
 
-### 6. Evidencia que falta en el PR
+- Fixture: empresas A y B con plan, dueño, vehículo, conductor, sucursal, viaje, asignación, oferta y documento. RUTs con `test/helpers/rut-aleatorio.ts`.
+- Tabla de rutas × verbo (lista, detalle, escritura) construida desde el censo §2: `vehiculos`, `conductores`, `sucursales`, viajes/cargas, `asignaciones`, `ofertas`, `documentos_*`, `documentos_transporte`, `liquidaciones`, `cobra-hoy`, `me/empresa/miembros`, `admin/dispositivos-pendientes/:id/asociar`.
+- Afirmaciones con sesión de A (`X-Empresa-Id = A`): la lista no contiene ids de B; detalle y escritura sobre un id de B responden 403 o 404; nunca 200, nunca 500.
+- Excepciones declaradas en el mismo archivo con `// cross-tenant por diseño: <razón>`: matching, chat bilateral (las dos partes del assignment), k-anon de zonas, tracking público, platform-admin.
+- Un caso de usuario con membresía en A y B: con header de A no ve B, y viceversa.
 
-Coverage del paquete API sobre los archivos de este frente (piso 80 % de líneas en el código nuevo). No es un cambio de producto. Corre después de 2–5, cuando el diff deje de moverse.
+Es el criterio 1 de §1. También prueba en runtime el «acotado por id ya validado» de la capa `services/`, que el linter solo acepta por anotación.
 
-## No entra en este plan
+### D. Caché del cliente sin mezcla de empresas — S/M
 
-- Columna de sector o un `scopeType` de zona. Con `sector_ambito` puesto la zona responde 403. Abrir el filtro es una decisión de producto: qué taxonomía y en qué tabla. Hasta eso, el 403 se queda.
-- `teltonika_imei_espejo`. Es el espejo demo de la migración 0024: un vehículo lee la telemetría de otro IMEI. Sacarlo es el slot 2 de `docs/frentes-vivos.md` (limpieza demo), no este frente. Antes de ese slot, una consulta de solo lectura: vehículos con espejo cuya empresa no es demo. Si aparece uno, se reporta. No se apaga en silencio.
-- Sumar a una persona ya activa a la empresa de quien invita. La spec de equipo lo acepta: la persona entra a los datos de quien invitó, no al revés. Cambiarlo a «la persona acepta desde su sesión» es otro contrato.
-- Políticas RLS, `terraform apply`, merge a `main`, borrar filas.
+`useSwitchCompany` (`apps/web/src/hooks/use-switch-company.ts`) hace `setActiveEmpresaId` + `invalidateQueries()`. El hueco: la caché de A se muestra como placeholder mientras llega B, y una query inactiva en vuelo puede escribir A bajo una clave sin empresa.
+
+- Fábrica de claves `apps/web/src/lib/query-keys.ts`. El `empresaId` va **después** del segmento de dominio (`['vehiculos', empresaId, ...]`), nunca al inicio: hay 14 invalidaciones por prefijo `['vehiculos']`, 6 de `conductores`, 6 de `sucursales`, 5 de `offers` y 5 de `cargas` que deben seguir matcheando.
+- Claves que entran (nombres reales del código): `vehiculos`, `flota`, `trayectos-teltonika`, `conductores`, `conductores-list-for-assignment`, `sucursales`, `cumplimiento`, `certificates`, `cargas`, `['assignments','empresa']`, `offers`, `liquidaciones`, `cobra-hoy`. Quedan fuera por estar acotadas por recurso: `['vehiculos', id, ...]`, `documentos`, `transport-documents`, `assignment-detail`; y las globales: `me`, `observability`, `public-*`, `consent`.
+- `cancelQueries()` antes de `invalidateQueries()` en el hook.
+- Test de la fábrica: la clave para A y para B difiere; el prefijo de dominio se conserva.
+
+### E. Auditoría de los 103 `rls-allowlist` — M
+
+Tabla en `verify.md` de este directorio: archivo:línea, razón escrita, categoría (platform-admin / cross-tenant por diseño / acotado por id validado / pre-tenant), veredicto (se sostiene / no se sostiene). Distribución actual: `admin-empresa-miembros.ts` 13, `site-settings.ts` 11, `admin-dispositivos-plataforma.ts` 11, `calcular-metricas-viaje.ts` 6, `admin-stakeholder-orgs.ts` 6, `admin-cobra-hoy.ts` 5, resto ≤4. Los «no se sostiene» se corrigen en el mismo bloque o pasan a C como caso de prueba. Sin esto, el 0 del linter es un 0 por declaración.
+
+### F. Cadena de alta contra Postgres (T6) — M
+
+`.specs/alta-desde-panel-admin/spec.md` T6: crear empresa desde admin → `PATCH` a `activa` → `POST /admin/empresas/:id/miembros` → `POST /auth/activar` → `POST /auth/login-rut`. Test en `apps/api/test/integration/`. Dos cosas que el plan anterior no decía:
+
+- **Firebase**: `/auth/activar` crea el usuario Firebase y devuelve un custom token; el job de integración levanta solo Postgres y Redis (el emulador vive en el job E2E conductor). Opciones: (i) seam inyectable del cliente Firebase en el test, (ii) levantar el emulador en el job de integración. Se propone (i); se escribe acá la elección antes de construir.
+- **Fixtures con RUT único** (`rut-aleatorio.ts`), porque 0058 ya está aplicada en esa base.
+
+Al terminar, la misma cadena cubre el RUT ya activo: membresía `activa`, `codigo_activacion` null, la clave anterior sigue sirviendo.
+
+### G. Rechazo de pending solo en plataforma — operación, S
+
+La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `POST /admin/plataforma/dispositivos/:id/rechazar` con `requirePlatformAdmin`, mismo `UPDATE` que antes hacía la empresa (solo si sigue `pendiente`). UI en el panel de plataforma. El override de dos pasos del `PATCH /vehiculos/:id/dispositivo` se queda. Verificación: test de ruta 403 empresa / 200 plataforma / 409 si ya no está pendiente.
+
+### H. Estado legible — docs, S
+
+- Marcar criterios en `alta-desde-panel-admin`, `equipo-de-la-empresa` y `aislamiento-vinculo-persona` con la evidencia (PR, test) o dejar explícito qué falta. El Status deja de ser `Draft` donde el PO lo acepte.
+- `frentes-vivos.md`: entrada «Booster multi-tenant» con el criterio de §1, cómo entró (pedido del PO en el mensaje) y qué queda fuera.
+- Coverage del paquete API sobre los archivos del frente contra el gate real de CI (líneas 80 / ramas 75 / funciones 80; `vitest.config.ts` dice funciones 75, manda CI).
+
+## 3. Decisiones que solo el PO puede tomar
+
+1. **Flag de migraciones para el deploy de 0058.** Hoy `STRICT_MIGRATION_ORDERING=false` en prod (`variables.tf:191` default, sin tfvars que lo cambie; confirmado en `CURRENT.md` 2026-09-22). Con `false`, si `CREATE UNIQUE INDEX` falla, Drizzle revierte todo el lote, loguea ERROR y el servidor arranca igual: canary verde, índice ausente, 409 sin sustento. Opciones: (a) `strict_migration_ordering = true` con `terraform apply` previo, fail-closed; (b) seguir en `false` y aceptar la verificación post-deploy de A.4 como gate humano. Recomendación del agente: (a), porque es la única que hace verdad «el deploy no queda sano»; (b) es aceptable si el apply no cabe en la urgencia.
+2. **Diagnóstico de prod.** Correr `scripts/sql/diag-tenant-rut-0058.sql` o autorizar al agente a correrlo con `agent-query.sh` (solo `SELECT`).
+3. **Cuenta E2E con dos empresas** para el Playwright del criterio 3. Si no la hay, el criterio 3 se cumple con la fábrica de claves y su test; el E2E queda declarado como pendiente, no como hecho.
+4. **Firebase en T6**: seam (i) o emulador (ii).
+
+## 4. Esfuerzo y camino crítico
+
+| Bloque | Tamaño | Depende de |
+|---|---|---|
+| A 0058 a prod | S, más la decisión §3.1 y el diagnóstico §3.2 | PO |
+| B cursor chat | S | — |
+| C dos empresas | M | — (la base de test ya aplica 0058 vía migrator) |
+| D caché cliente | S/M | — |
+| E auditoría allowlist | M | después de C si hay una sola persona |
+| F T6 | M | decisión §3.4 |
+| G rechazo plataforma | S | — |
+| H estado legible | S | todo lo anterior |
+
+S ≈ medio día, M ≈ uno a dos días. Camino crítico para poder decir «multi-tenant» con prueba: A → B → C → D. E, F, G y H completan el criterio pero no bloquean la afirmación.
+
+## 5. No entra
+
+- RLS en Postgres, roles de BD, GUC de tenant. Decidido en `rls-viabilidad.md`; el control es `lint:rls` más el bloque C.
+- Columna de sector / `scopeType` de zona: con `sector_ambito` la zona responde 403 hasta que producto decida taxonomía.
+- `teltonika_imei_espejo`: Slot 2 de `frentes-vivos.md`. Antes de ese slot, una consulta de solo lectura de vehículos con espejo cuya empresa no es demo; si aparece uno, se reporta.
+- Ingreso de miembros a organizaciones stakeholder: cuatro bloqueos listados en `equipo-de-la-empresa` §5.
+- Sumar a una persona activa a la empresa de quien invita sin que ella acepte: es otro contrato.
+- `terraform apply`, merge a `main`, borrar o fusionar filas, normalizar RUTs históricos.
