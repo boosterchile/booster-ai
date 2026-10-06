@@ -1,7 +1,7 @@
 # Plan v2: Booster multi-tenant — qué falta para poder decirlo y probarlo
 
 - Date: 2026-10-05 (v2; reemplaza al plan del 2026-10-06 tras `review.md`)
-- Status: Plan — propuesto al PO. No se construye un bloque hasta que el PO acepte este orden y tome las decisiones de §3.
+- Status: **Cerrado el 2026-10-06.** Los cinco criterios de §1 se cumplen; ver «Cierre» al final.
 - Pedido del PO: «necesito urgente que Booster sea multi-tenant». Entra como pedido del PO en el mensaje (`docs/frentes-vivos.md` §Regla de operación), no ocupa slot, y como todo frente tiene criterio de término escrito (§1).
 - Spec de lo ya cerrado: `spec.md` (dispositivos, zonas, RUT) y `.specs/aislamiento-vinculo-persona/spec.md` (clave). Revisión del plan anterior: `review.md`.
 - Rama / PR: `cursor/aislamiento-multi-tenant-4567`, PR #739.
@@ -184,3 +184,10 @@ S ≈ medio día, M ≈ uno a dos días. Camino crítico para poder decir «mult
 - Ingreso de miembros a organizaciones stakeholder: cuatro bloqueos listados en `equipo-de-la-empresa` §5.
 - Sumar a una persona activa a la empresa de quien invita sin que ella acepte: es otro contrato.
 - `terraform apply`, merge a `main`, borrar o fusionar filas, normalizar RUTs históricos.
+
+## Cierre (2026-10-06)
+
+- #739 mergeado a `main` (`4d28c8d`) y desplegado con `release.yml` run 37444860263.
+- Verificación post-deploy (A.4), diagnóstico corrido por el PO contra prod: paso 4 → `uq_usuarios_rut` (`CREATE UNIQUE INDEX ... USING btree (rut)`); paso 5 → 59 migraciones aplicadas (antes 58); pasos 1 y 2 → 0 duplicados. Criterio 2 cumplido.
+- Criterios 1, 3, 4 y 5 cumplidos por los bloques B–H (ver cada bloque).
+- Queda fuera del criterio y anotado: E2E Playwright con cuenta de dos empresas (§3.3), dueño de TransJavier sin activar (operación, no aislamiento), CVEs del lockfile en #740.
