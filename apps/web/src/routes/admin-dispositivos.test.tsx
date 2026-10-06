@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -99,24 +99,28 @@ describe('AdminDispositivosRoute', () => {
     await waitFor(() => expect(screen.getByTestId('layout')).toBeInTheDocument());
   });
 
-  it('rol dueno + sin dispositivos pendientes → EmptyState', async () => {
-    vi.spyOn(api, 'get').mockResolvedValueOnce({ devices: [], vehicles: [] });
+  it('al abrir no consulta la bandeja global', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ vehicles: [] });
     providedContext = { kind: 'onboarded', me: makeMe('dueno') };
     renderRoute();
-    await waitFor(() => expect(screen.getByTestId('empty-state')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText(/IMEI/i)).toBeInTheDocument());
+    const paths = get.mock.calls.map((call) => String(call[0]));
+    expect(paths.some((path) => path.includes('/admin/dispositivos-pendientes'))).toBe(false);
+    expect(screen.queryByTestId('empty-state')).toBeNull();
   });
 
-  it('rol dueno + dispositivo pendiente → renderiza fila con IMEI', async () => {
+  it('busca el IMEI tipeado y no muestra la IP ni Rechazar', async () => {
+    const imei = '356307042441013';
     vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
       if (path.includes('/admin/dispositivos-pendientes')) {
+        expect(path).toContain(`imei=${imei}`);
         return {
           devices: [
             {
               id: 'd1',
-              imei: '111222333',
+              imei,
               primera_conexion_en: '2026-05-10T10:00:00Z',
               ultima_conexion_en: '2026-05-10T10:05:00Z',
-              ultima_ip_origen: '1.2.3.4',
               cantidad_conexiones: 3,
               modelo_detectado: 'FMC150',
               estado: 'pendiente',
@@ -131,6 +135,10 @@ describe('AdminDispositivosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe('dueno') };
     renderRoute();
-    await waitFor(() => expect(screen.getByText('111222333')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/IMEI/i), { target: { value: imei } });
+    fireEvent.click(screen.getByRole('button', { name: /Buscar/i }));
+    await waitFor(() => expect(screen.getByText(imei)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Rechazar/i })).toBeNull();
+    expect(screen.queryByText(/1\.2\.3\.4/)).toBeNull();
   });
 });
