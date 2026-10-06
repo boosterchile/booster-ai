@@ -8,7 +8,7 @@ packages:
 # FUENTE ÚNICA de overrides + onlyBuiltDependencies (ADR-075): pnpm 10 lee
 # ESTE archivo. package.json ya NO tiene el campo `pnpm` (se eliminó en la
 # migración a pnpm 10); `packageManager` fija pnpm@10.34.4 vía Corepack.
-# Los 13 overrides son security pins (CVEs) — no quitar ninguno sin re-verificar
+# Los overrides son security pins (CVEs) — no quitar ninguno sin re-verificar
 # `pnpm audit --audit-level=high --prod`. Antecedente: 2026-06-11 un lockfile
 # sin `settings.overrides` resolvió crypto-js 3.3.0 y @grpc/grpc-js vulnerables;
 # estos pins lo previenen. Un `pnpm install` con pnpm 9 ignoraría este archivo
@@ -18,7 +18,7 @@ overrides:
   "fast-xml-builder@<1.1.7": ">=1.1.7"
   "http-proxy-agent@<7.0.0": ">=7.0.0"
   "uuid@<11.1.1": ">=11.1.1"
-  "@grpc/grpc-js@<1.14.4": ">=1.14.4"
+  "@grpc/grpc-js@<1.14.5": ">=1.14.5"
   "tmp@<0.2.6": ">=0.2.6"
   "form-data@<2.5.6": ">=2.5.6"
   "protobufjs@<7.6.5": ">=7.6.5 <8"
@@ -30,6 +30,20 @@ overrides:
   "hono@<4.12.27": ">=4.12.27"
   "@hono/node-server@<2.0.5": ">=2.0.5"
   "websocket-driver@<0.7.5": ">=0.7.5"
+  # 2026-10-06 (follow-up npm-audit-high-critical-2026-10): GHSA-p6vx-979v-rg4c (critical)
+  # vía @tanstack/router-core; GHSA-xjh9-v7x6-24jw + GHSA-x8mw-p69m-v3mx vía firebase-admin.
+  "seroval@<1.6.2": ">=1.6.2"
+  "@fastify/busboy@<3.2.1": ">=3.2.1"
+
+# Riesgo aceptado, no silenciado (2026-10-06, follow-up npm-audit-high-critical-2026-10):
+# GHSA-86w9-cpqp-85rv afecta la VERIFICACIÓN de firmas RSA PKCS#1 v1.5 de
+# node-forge y no tiene versión parchada (`<0.0.0`). Booster usa node-forge solo
+# para construir certificados y ASN.1 en packages/certificate-generator
+# (createCertificate, certificateFromPem, publicKeyFromPem, asn1); ningún código
+# llama a verify(). Revisar al salir un parche o si se agrega verificación.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-86w9-cpqp-85rv
 
 onlyBuiltDependencies:
   - "@biomejs/biome"
