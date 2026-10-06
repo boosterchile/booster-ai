@@ -32,6 +32,7 @@ interface DbOpts {
   userByRut?: unknown[];
   membresiaExistente?: unknown[];
   listaEquipo?: unknown[];
+  insertUserError?: unknown;
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -60,6 +61,9 @@ function makeDb(opts: DbOpts = {}) {
         if ('empresaId' in v) {
           insertedMemberships.push(v);
           return [{ id: 'membership-uuid' }];
+        }
+        if (opts.insertUserError) {
+          throw opts.insertUserError;
         }
         insertedUsers.push(v);
         return [{ id: 'user-uuid' }];
@@ -310,6 +314,16 @@ describe('POST /me/empresa/miembros', () => {
     const d = makeDb();
     const res = await post(buildApp(d.db), { ...BODY, email: undefined });
     expect(res.status).toBe(400);
+  });
+
+  it('carrera contra el índice único de RUT responde 409', async () => {
+    const d = makeDb({
+      insertUserError: { code: '23505', constraint: 'uq_usuarios_rut' },
+    });
+    const res = await post(buildApp(d.db));
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('rut_already_registered');
   });
 });
 

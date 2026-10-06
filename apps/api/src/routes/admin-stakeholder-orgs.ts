@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
@@ -262,17 +263,26 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       codigoEmitido = codigo;
       // firebase_uid `pending-rut:<rut>` hasta que active en /activar.
       // El código no es la clave: la elige la persona.
-      const [created] = await opts.db
-        .insert(users)
-        .values({
-          firebaseUid: `${PENDING_FIREBASE_UID_PREFIX}${rut}`,
-          email: body.email.toLowerCase(),
-          fullName: body.full_name,
-          rut,
-          activationPinHash: hashActivationPin(codigo),
-          status: 'pendiente_verificacion',
-        })
-        .returning({ id: users.id });
+      let created: { id: string } | undefined;
+      try {
+        const insertados = await opts.db
+          .insert(users)
+          .values({
+            firebaseUid: `${PENDING_FIREBASE_UID_PREFIX}${rut}`,
+            email: body.email.toLowerCase(),
+            fullName: body.full_name,
+            rut,
+            activationPinHash: hashActivationPin(codigo),
+            status: 'pendiente_verificacion',
+          })
+          .returning({ id: users.id });
+        created = insertados[0];
+      } catch (err) {
+        if (esRutDuplicado(err)) {
+          return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+        }
+        throw err;
+      }
       if (!created) {
         return c.json({ error: 'user_create_failed' }, 500);
       }

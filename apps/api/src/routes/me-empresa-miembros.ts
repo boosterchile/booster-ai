@@ -5,6 +5,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
 import type { UserContext } from '../services/user-context.js';
@@ -174,20 +175,28 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
         const codigo = generateActivationPin();
         codigoEmitido = codigo;
         vinculo = 'nueva';
-        const insertados = await tx
-          .insert(users)
-          .values({
-            firebaseUid: placeholderFirebaseUid(body.rut),
-            // Email REAL: es el canal de la plataforma con la persona (spec
-            // §6.1). Nunca un `@…invalid`.
-            email,
-            fullName: body.full_name,
-            rut: body.rut,
-            activationPinHash: hashActivationPin(codigo),
-            status: 'pendiente_verificacion',
-            isPlatformAdmin: false,
-          })
-          .returning({ id: users.id });
+        let insertados: { id: string }[];
+        try {
+          insertados = await tx
+            .insert(users)
+            .values({
+              firebaseUid: placeholderFirebaseUid(body.rut),
+              // Email REAL: es el canal de la plataforma con la persona (spec
+              // §6.1). Nunca un `@…invalid`.
+              email,
+              fullName: body.full_name,
+              rut: body.rut,
+              activationPinHash: hashActivationPin(codigo),
+              status: 'pendiente_verificacion',
+              isPlatformAdmin: false,
+            })
+            .returning({ id: users.id });
+        } catch (err) {
+          if (esRutDuplicado(err)) {
+            return { conflicto: 'rut_duplicado' as const };
+          }
+          throw err;
+        }
         const creado = insertados[0];
         if (!creado) {
           throw new Error('insert user devolvió vacío');
@@ -218,6 +227,9 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
     });
 
     if ('conflicto' in resultado) {
+      if (resultado.conflicto === 'rut_duplicado') {
+        return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+      }
       return c.json(
         { error: 'conflict', code: 'already_member', membership_id: resultado.membershipId },
         409,

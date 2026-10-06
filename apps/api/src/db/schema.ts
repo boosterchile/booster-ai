@@ -674,7 +674,11 @@ export const users = pgTable(
     firebaseUidIdx: index('idx_usuarios_firebase_uid').on(table.firebaseUid),
     emailIdx: index('idx_usuarios_email').on(table.email),
     statusIdx: index('idx_usuarios_estado').on(table.status),
-    rutIdx: index('idx_usuarios_rut').on(table.rut),
+    /**
+     * Un RUT, una persona. Varios NULL siguen permitidos (ADR-034: el
+     * stakeholder internacional puede no tener RUT). Migración 0058.
+     */
+    rutUnique: uniqueIndex('uq_usuarios_rut').on(table.rut),
   }),
 );
 

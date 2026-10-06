@@ -13,6 +13,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
@@ -529,18 +530,27 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           const codigo = generateActivationPin();
           codigoEmitido = codigo;
           vinculo = 'nueva';
-          const inserted = await opts.db
-            .insert(users)
-            .values({
-              firebaseUid: `pending-rut:${body.rut}`,
-              email,
-              fullName: body.full_name,
-              rut: body.rut,
-              activationPinHash: hashActivationPin(codigo),
-              status: 'pendiente_verificacion',
-              isPlatformAdmin: false,
-            })
-            .returning({ id: users.id });
+          let inserted: { id: string }[];
+          try {
+            inserted = await opts.db
+              .insert(users)
+              .values({
+                firebaseUid: `pending-rut:${body.rut}`,
+                email,
+                fullName: body.full_name,
+                rut: body.rut,
+                activationPinHash: hashActivationPin(codigo),
+                status: 'pendiente_verificacion',
+                isPlatformAdmin: false,
+              })
+              .returning({ id: users.id });
+          } catch (err) {
+            if (esRutDuplicado(err)) {
+              record('rut_already_registered');
+              return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+            }
+            throw err;
+          }
           const created = inserted[0];
           if (!created) {
             opts.logger.error({ empresaId }, 'admin-empresa-miembros: insert user vacío');
