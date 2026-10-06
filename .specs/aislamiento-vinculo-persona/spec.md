@@ -26,9 +26,7 @@ Que una empresa (o el admin de plataforma, o una organización stakeholder) pued
 
 ## 4. Out of scope
 
-- Bandeja global de Teltonika (`GET /admin/dispositivos-pendientes`): el alta por IMEI que la empresa tipea ya está en `PATCH /vehiculos/:id/dispositivo`. Sacar la bandeja del panel de la empresa es un cambio de flujo, no de este arreglo.
-- Consentimiento de zonas stakeholder: el modelo de ADR-028 no expresa «qué organización ve qué zona». Sigue el TODO de `stakeholder-zonas.ts`.
-- Índice UNIQUE de `usuarios.rut`. Hoy es un índice no único. Un UNIQUE es migración y hay que medir duplicados antes.
+La bandeja Teltonika, el consentimiento de las zonas stakeholder y el índice único de `usuarios.rut` se cierran en `.specs/aislamiento-hallazgos-tenant/spec.md`. Postgres RLS no se implementa: la viabilidad del censo ya lo decidió.
 
 ## 5. Constraints
 
