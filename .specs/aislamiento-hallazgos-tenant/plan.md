@@ -58,6 +58,8 @@ Precondición cumplida: `review.md` H1 cerrado en `2c02bd9`, job de integración
    Devuelve duplicados crudos, duplicados tras normalizar (`upper(replace(rut,'.',''))`), RUTs no canónicos, índices actuales sobre `usuarios.rut`, migraciones aplicadas, empresas, altas desde el panel, usuarios con más de una empresa activa y las columnas de `dispositivos_pendientes`. El intento del agente del 2026-10-05 lo bloqueó el clasificador de permisos (lectura de prod); no se insistió por otra vía.
    - 0 duplicados en las dos consultas → sigue el paso 2.
    - ≥1 → se detiene. Cada par lo decide el PO. No se usa `jobs/merge-duplicate-users.ts` (fusiona por email y borra). El agente no borra, no fusiona, no normaliza.
+   **Corrido por el PO el 2026-10-06** (`agent-query.sh`, solo lectura, prod): paso 1 → 0 filas; paso 2 (normalizado) → 0 filas; paso 3 → `no_canonicos` 0, `formato_raro` 0, `rut_null` 4, `total` 21; paso 4 → solo `idx_usuarios_rut` (0058 aún no aplicada). **Precondición de 0058 cumplida: no hay nada que fusionar.** Los 4 RUT nulos son compatibles con el índice único (ADR-034, stakeholder internacional). Pasos 5 a 9 pendientes de leer: el paginador de psql cortó la salida.
+
 2. **Decisión §3.1** (flag de migraciones) tomada y escrita acá.
 3. **Deploy** por `release.yml`. Según `docs/handoff/CURRENT.md` (2026-09-22) los últimos releases abortaron en `canary-verify` por muestra insuficiente y el api se promovió a mano; si se repite, la promoción manual la hace el PO y queda anotada.
 4. **Verificación post-deploy**, obligatoria en los dos caminos de §3.1:
