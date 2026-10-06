@@ -61,6 +61,10 @@ const habilitarBodySchema = z.object({
   curb_weight_kg: z.number().int().positive().max(50_000).nullable().optional(),
 });
 
+const rechazarBodySchema = z.object({
+  notas: z.string().trim().min(1).max(500).optional(),
+});
+const pendingDeviceIdSchema = z.string().uuid();
 export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
 
@@ -502,6 +506,74 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
           },
           yaExistia ? 200 : 201,
         );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /:id/rechazar — marca un pending como `rechazado`. Solo plataforma:
+  // la empresa no ve la bandeja ni puede rechazar un equipo ajeno (spec
+  // aislamiento-hallazgos-tenant SC2; plan v2 §2.G). El override de dos pasos
+  // del PATCH /vehiculos/:id/dispositivo sigue vigente para filas rechazadas.
+  // -------------------------------------------------------------------------
+  app.post('/:id/rechazar', zValidator('json', rechazarBodySchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+    const idParsed = pendingDeviceIdSchema.safeParse(c.req.param('id'));
+    if (!idParsed.success) {
+      return c.json({ error: 'bad_request', code: 'invalid_device_id' }, 400);
+    }
+    const id = idParsed.data;
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan(
+      {
+        name: 'dispositivo.rechazar_plataforma',
+        attributes: { 'booster.pending_device_id': id },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('dispositivo_rechazos_plataforma_total').add(1, { resultado });
+          setResultAttributes(span, { 'dispositivo.resultado': resultado });
+        };
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const actuales = await opts.db
+          .select({
+            id: pendingDevices.id,
+            imei: pendingDevices.imei,
+            status: pendingDevices.status,
+          })
+          .from(pendingDevices)
+          .where(eq(pendingDevices.id, id))
+          .limit(1);
+        const actual = actuales[0];
+        if (!actual) {
+          record('no_encontrado');
+          return c.json({ error: 'not_found', code: 'device_not_found' }, 404);
+        }
+        if (actual.status !== 'pendiente') {
+          record('no_pendiente');
+          return c.json(
+            { error: 'conflict', code: 'device_not_pending', estado: actual.status },
+            409,
+          );
+        }
+
+        // rls-allowlist: admin platform-wide — protegido por requirePlatformAdmin.
+        await opts.db
+          .update(pendingDevices)
+          .set({ status: 'rechazado', notes: body.notas ?? null, updatedAt: new Date() })
+          .where(and(eq(pendingDevices.id, id), eq(pendingDevices.status, 'pendiente')));
+
+        opts.logger.info(
+          { adminEmail: admin.adminEmail, deviceId: id, imei: actual.imei },
+          'dispositivo pendiente rechazado desde plataforma',
+        );
+        record('rechazado');
+        return c.json({ device_id: id, imei: actual.imei, estado: 'rechazado' });
       },
     );
   });

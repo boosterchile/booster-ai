@@ -120,6 +120,8 @@ Al terminar, la misma cadena cubre el RUT ya activo: membresía `activa`, `codig
 
 La empresa sigue en 403. Hoy nadie puede marcar un pending como `rechazado`. `POST /admin/plataforma/dispositivos/:id/rechazar` con `requirePlatformAdmin`, mismo `UPDATE` que antes hacía la empresa (solo si sigue `pendiente`). UI en el panel de plataforma. El override de dos pasos del `PATCH /vehiculos/:id/dispositivo` se queda. Verificación: test de ruta 403 empresa / 200 plataforma / 409 si ya no está pendiente.
 
+**Cerrado el 2026-10-06** en esta rama. API: `POST /admin/plataforma/dispositivos/:id/rechazar` en `admin-dispositivos-plataforma.ts`, con `requirePlatformAdmin`, span `dispositivo.rechazar_plataforma` y contador `dispositivo_rechazos_plataforma_total`; 400 si el id no es uuid, 404 si no existe, 409 `device_not_pending` si ya no está pendiente, 200 con `UPDATE` guardado por estado. La empresa sigue en 403 y el override de dos pasos del `PATCH /vehiculos/:id/dispositivo` no cambia. UI: la sección «Dispositivos Teltonika» del panel de plataforma (`AsociarTeltonika.tsx`) lista los equipos que se conectaron sin vehículo y ofrece «Rechazar» por fila. Tests: 5 de ruta (403 empresa / 200 plataforma / 409 / 404 / 400) y 1 de componente. `tsc` y `lint:rls` limpios.
+
 ### H. Estado legible — docs, S
 
 - Marcar criterios en `alta-desde-panel-admin`, `equipo-de-la-empresa` y `aislamiento-vinculo-persona` con la evidencia (PR, test) o dejar explícito qué falta. El Status deja de ser `Draft` donde el PO lo acepte.

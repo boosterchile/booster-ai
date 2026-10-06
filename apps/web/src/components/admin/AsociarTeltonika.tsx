@@ -23,6 +23,15 @@ interface VehiculoOption {
   teltonika_imei: string | null;
 }
 
+/** Equipo que se conectó al gateway sin vehículo (bandeja global, solo plataforma). */
+interface PendienteOption {
+  id: string;
+  imei: string;
+  ultima_conexion_en: string | null;
+  modelo_detectado: string | null;
+  cantidad_conexiones: number;
+}
+
 type Modo = 'alta' | 'existente';
 
 type TipoVehiculo =
@@ -85,6 +94,8 @@ export function AsociarTeltonika() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [pendientes, setPendientes] = useState<PendienteOption[]>([]);
+  const [rechazando, setRechazando] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +146,51 @@ export function AsociarTeltonika() {
       cancelled = true;
     };
   }, [empresaId, modo]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ devices?: PendienteOption[] }>('/admin/plataforma/dispositivos')
+      .then((res) => {
+        if (!cancelled) {
+          setPendientes(res.devices ?? []);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(mensajeError(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Rechazar un pending es acción de plataforma, no de la empresa (spec SC2):
+   * la bandeja es global y una empresa no puede negarle el equipo a otra.
+   * Un IMEI rechazado sigue siendo asociable por el dueño del vehículo con
+   * el override de dos pasos de la flota.
+   */
+  async function rechazar(d: PendienteOption) {
+    setError(null);
+    setOk(null);
+    setRechazando(d.id);
+    try {
+      await api.post<{ device_id: string; estado: string }>(
+        `/admin/plataforma/dispositivos/${d.id}/rechazar`,
+        {},
+      );
+      setPendientes((prev) => prev.filter((x) => x.id !== d.id));
+      setOk(
+        `IMEI ${d.imei} rechazado. Si una empresa lo asocia desde su flota, se le pedirá confirmar.`,
+      );
+    } catch (err) {
+      setError(mensajeError(err));
+    } finally {
+      setRechazando(null);
+    }
+  }
 
   function mensajeError(err: unknown): string {
     if (!(err instanceof ApiError)) {
@@ -504,6 +560,49 @@ export function AsociarTeltonika() {
           </div>
         </div>
       )}
+
+      <div className="mt-6" data-testid="teltonika-pendientes">
+        <h3 className="font-medium text-neutral-900 text-sm">
+          Equipos que se conectaron sin vehículo
+        </h3>
+        <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+          Son los IMEI que llegaron al gateway y nadie reclamó. Rechazar uno lo saca de esta
+          bandeja; si una empresa después lo asocia desde su flota, el sistema le pide confirmar.
+        </p>
+        {pendientes.length === 0 ? (
+          <p className="mt-2 text-neutral-500 text-sm">No hay equipos pendientes.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-neutral-200 rounded-md border border-neutral-200">
+            {pendientes.map((d) => (
+              <li
+                key={d.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <div>
+                  <span className="font-mono">{d.imei}</span>
+                  <span className="ml-2 text-neutral-500">
+                    {d.modelo_detectado ?? 'modelo sin detectar'} · {d.cantidad_conexiones}{' '}
+                    conexiones
+                    {d.ultima_conexion_en
+                      ? ` · última ${new Date(d.ultima_conexion_en).toLocaleString('es-CL')}`
+                      : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={rechazando !== null}
+                  onClick={() => void rechazar(d)}
+                  className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50 disabled:opacity-50"
+                  data-testid={`teltonika-rechazar-${d.imei}`}
+                >
+                  {rechazando === d.id && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+                  Rechazar
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {error && (
         <p className="mt-3 text-danger-700 text-sm" role="alert">
