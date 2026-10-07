@@ -3,6 +3,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createImpersonationWriteGuardMiddleware } from '../middleware/impersonation-write-guard.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — `POST /admin/empresas/:id/miembros`.
@@ -161,8 +162,14 @@ function buildApp(
   db: ReturnType<typeof makeDb>['db'],
   auth: Auth,
   adminEmail: string = ADMIN_EMAIL,
+  emailSender?: EmailSender,
 ) {
-  const routes = mod.createAdminEmpresaMiembrosRoutes({ db, logger: noopLogger, auth });
+  const routes = mod.createAdminEmpresaMiembrosRoutes({
+    db,
+    logger: noopLogger,
+    auth,
+    ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
+  });
   const app = new Hono();
   app.use('*', async (c, next) => {
     (c as unknown as { set: (k: string, v: unknown) => void }).set('userContext', {
@@ -862,6 +869,7 @@ function filaPendienteReemision(overrides: Record<string, unknown> = {}) {
     nombre: 'Javier Vicencio',
     rut: '12345678-5',
     email: 'fvicencio@me.com',
+    razonSocial: 'Transportes Van Oosterwyk',
     rol: 'dueno',
     estado: 'pendiente_invitacion',
     invitadoEn: new Date('2026-09-21T12:00:00.000Z'),
@@ -1001,5 +1009,160 @@ describe('POST /admin/empresas/:id/miembros/:membershipId/codigo', () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe('forbidden_impersonation_write');
     expect(updateSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * T10-04 (ADR-082) — el código de activación le llega a la persona por correo.
+ * Antes solo lo veía el admin en la respuesta y tenía que dictárselo.
+ */
+describe('correo de activación del alta desde el panel', () => {
+  function makeSender() {
+    const send = vi.fn().mockResolvedValue({ enviado: true, id: 'm-1' });
+    return { sender: { send } as unknown as EmailSender, send };
+  }
+
+  function mensaje(send: ReturnType<typeof vi.fn>) {
+    const call = send.mock.calls[0];
+    if (!call) {
+      throw new Error('no se envió correo');
+    }
+    return call[0] as { to: string; subject: string; text: string };
+  }
+
+  it('invitar a una persona nueva le envía el código a su correo', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const { sender, send } = makeSender();
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, sender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...BODY, rol: 'dueno' }),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string };
+    expect(send).toHaveBeenCalledTimes(1);
+    const msg = mensaje(send);
+    expect(msg.to).toBe('fvicencio@me.com');
+    expect(msg.text).toContain(json.codigo_activacion);
+    expect(msg.text).toContain('12345678-5');
+    expect(msg.text).toContain('Transportes Van Oosterwyk');
+    expect(msg.text).toContain('https://app.boosterchile.com/activar');
+  });
+
+  it('una cuenta ya activa no recibe correo: no hay código', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      userByEmailRows: [
+        {
+          id: 'user-existente',
+          email: 'fvicencio@me.com',
+          firebaseUid: 'fb-real',
+          claveNumericaHash: 'hash-clave',
+          activationPinHash: null,
+        },
+      ],
+    });
+    const { sender, send } = makeSender();
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, sender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(BODY),
+    });
+
+    expect(res.status).toBe(201);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('una persona provisoria sin código recibe el código en su correo registrado', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      userByEmailRows: [
+        {
+          id: 'user-provisoria',
+          email: 'registrado@transjavier.cl',
+          fullName: 'Javier Soto',
+          firebaseUid: 'pending-rut:12345678-5',
+          claveNumericaHash: null,
+          activationPinHash: null,
+        },
+      ],
+    });
+    const { sender, send } = makeSender();
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, sender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(BODY),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string };
+    expect(json.codigo_activacion).toMatch(/^\d{6}$/);
+    const msg = mensaje(send);
+    expect(msg.to).toBe('registrado@transjavier.cl');
+    expect(msg.text).toContain(json.codigo_activacion);
+  });
+
+  it('reemitir el código lo envía al correo de la persona', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ joinedMembershipRows: [filaPendienteReemision()] });
+    const { sender, send } = makeSender();
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, sender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { codigo_activacion: string };
+    const msg = mensaje(send);
+    expect(msg.to).toBe('fvicencio@me.com');
+    expect(msg.text).toContain(json.codigo_activacion);
+    expect(msg.text).toContain('Transportes Van Oosterwyk');
+  });
+
+  it('una persona sin RUT registrado no recibe correo al reemitir', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ joinedMembershipRows: [filaPendienteReemision({ rut: null })] });
+    const { sender, send } = makeSender();
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, sender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros/${MEMBERSHIP_ID}/codigo`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('un correo que no sale no voltea el alta ni filtra el código al log', async () => {
+    const mod = await loadMod();
+    const d = makeDb();
+    const send = vi.fn().mockRejectedValue(new Error('resend caído'));
+    const app = buildApp(mod, d.db, makeAuthStub().auth, ADMIN_EMAIL, {
+      send,
+    } as unknown as EmailSender);
+
+    const res = await app.request(`/${EMPRESA_ID}/miembros`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(BODY),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string };
+    const logs = JSON.stringify([
+      vi.mocked(noopLogger.info).mock.calls,
+      vi.mocked(noopLogger.warn).mock.calls,
+      vi.mocked(noopLogger.error).mock.calls,
+    ]);
+    expect(logs).not.toContain(json.codigo_activacion);
   });
 });
