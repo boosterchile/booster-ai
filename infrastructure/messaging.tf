@@ -303,7 +303,7 @@ resource "google_pubsub_subscription" "telemetry_events_safety_p0_notification" 
   message_retention_duration = "604800s"
 
   # PUSH → apps/api (safety fan-out P0-G). El consumer NO es notification-service
-  # (skeleton, se retira en el cleanup de demo) sino el endpoint OIDC en el api.
+  # (skeleton) sino el endpoint OIDC en el api.
   #
   # Endpoint = public_api_url (api.boosterchile.com), NO el run.app: el api corre
   # con ingress=INTERNAL_LOAD_BALANCER (ADR-062), así que el push entra por el LB.
