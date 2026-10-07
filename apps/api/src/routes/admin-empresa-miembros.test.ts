@@ -762,7 +762,6 @@ describe('POST /admin/empresas', () => {
       isTransportista: false,
       planId: 'plan-gratis',
       status: 'pendiente_verificacion',
-      isDemo: false,
     });
     expect(d.insertedCarrierMemberships).toHaveLength(0);
     expect(a.spies.createUser).not.toHaveBeenCalled();

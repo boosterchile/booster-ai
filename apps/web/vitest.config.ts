@@ -34,11 +34,6 @@ export default defineConfig({
         'src/routes/platform-admin-site-settings.tsx',
         'src/routes/admin-cobra-hoy.tsx',
         'src/routes/admin-dispositivos.tsx',
-        // Modo demo (subdominio demo.boosterchile.com): selector de
-        // persona con 4 cards + un fetch a /demo/login. UI estática
-        // demostrativa; cubierta por smoke E2E del subdominio (manual
-        // pre-Corfo). Excluida para no bloquear coverage 80%/75%.
-        'src/routes/demo.tsx',
         // Wiring declarativo del router (árbol de rutas + imports lazy
         // `() => import('./routes/x')` de lazyRouteComponent, audit P1-J). No
         // tiene lógica unit-testeable; los imports diferidos se verifican por
