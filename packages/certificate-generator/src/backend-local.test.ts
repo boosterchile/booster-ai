@@ -2,7 +2,7 @@ import { createVerify } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BackendLocalEnProduccionError,
   abrirBucketLocal,
@@ -13,6 +13,12 @@ import {
 } from './backend-local.js';
 
 describe('backend local de certificados (E2E sin KMS ni GCS)', () => {
+  // RSA 4096: generar el par tarda varios segundos en un runner cargado
+  // (7,6 s observado en CI); se paga una vez por archivo, fuera del timeout
+  // de cada test.
+  beforeAll(async () => {
+    await obtenerPublicKeyLocal('local:e2e');
+  }, 120_000);
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'booster-certs-'));

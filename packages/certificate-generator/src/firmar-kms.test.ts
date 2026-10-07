@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { crc32c } from './crc32c.js';
 
 const { asymmetricSignMock, getPublicKeyMock, listCryptoKeyVersionsMock } = vi.hoisted(() => ({
@@ -251,6 +251,12 @@ afterEach(() => {
 });
 
 describe('firmarConKms / obtenerPublicKeyPem con key local: (E2E, T10-02)', () => {
+  // RSA 4096: generar el par tarda varios segundos en un runner cargado
+  // (7,6 s observado en CI); se paga una vez por archivo, fuera del timeout
+  // de cada test.
+  beforeAll(async () => {
+    await obtenerPublicKeyPem('local:e2e');
+  }, 120_000);
   beforeEach(() => {
     asymmetricSignMock.mockReset();
     getPublicKeyMock.mockReset();

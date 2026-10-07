@@ -15,9 +15,10 @@
  * los prefijos en producción (doble guarda).
  */
 
-import { createSign, generateKeyPairSync } from 'node:crypto';
+import { createSign, generateKeyPair } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 import type { GetSignedUrlConfig, SaveOptions } from '@google-cloud/storage';
 import type { ResultadoFirmaKms } from './firmar-kms.js';
 
@@ -53,20 +54,26 @@ interface ParLocal {
   publicKeyPem: string;
 }
 
-const pares = new Map<string, ParLocal>();
+const generarPar = promisify(generateKeyPair);
+const pares = new Map<string, Promise<ParLocal>>();
 
-function obtenerPar(kmsKeyId: string): ParLocal {
+/**
+ * Par RSA 4096 por nombre de key, generado una vez por proceso. Asíncrono:
+ * la generación tarda segundos y no debe bloquear el event loop del API.
+ * Se cachea la promesa para que llamadas concurrentes compartan un par.
+ */
+function obtenerPar(kmsKeyId: string): Promise<ParLocal> {
   const existente = pares.get(kmsKeyId);
   if (existente) {
     return existente;
   }
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+  const par = generarPar('rsa', {
     modulusLength: 4096,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  });
-  const par = { privateKeyPem: privateKey, publicKeyPem: publicKey };
+  }).then(({ privateKey, publicKey }) => ({ privateKeyPem: privateKey, publicKeyPem: publicKey }));
   pares.set(kmsKeyId, par);
+  par.catch(() => pares.delete(kmsKeyId));
   return par;
 }
 
@@ -79,7 +86,7 @@ export async function firmarConKeyLocal(
   data: Buffer | Uint8Array,
 ): Promise<ResultadoFirmaKms> {
   asegurarFueraDeProduccion(kmsKeyId);
-  const { privateKeyPem } = obtenerPar(kmsKeyId);
+  const { privateKeyPem } = await obtenerPar(kmsKeyId);
   const signature = createSign('sha256')
     .update(data instanceof Buffer ? data : Buffer.from(data))
     .sign(privateKeyPem);
@@ -97,7 +104,7 @@ export async function obtenerPublicKeyLocal(kmsKeyId: string): Promise<{
 }> {
   asegurarFueraDeProduccion(kmsKeyId);
   return {
-    pem: obtenerPar(kmsKeyId).publicKeyPem,
+    pem: (await obtenerPar(kmsKeyId)).publicKeyPem,
     keyVersion: VERSION_LOCAL,
     keyVersionName: nombreVersion(kmsKeyId),
   };

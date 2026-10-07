@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import forge from 'node-forge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { obtenerPublicKeyLocal } from './backend-local.js';
 import { type ParametrosEmisionCertificado, emitirCertificado } from './emitir-certificado.js';
 import type { SidecarFirma } from './tipos.js';
@@ -10,6 +10,12 @@ import type { SidecarFirma } from './tipos.js';
 // Emisión COMPLETA sin mocks sobre el backend local (key `local:` + bucket
 // `file:`): es el camino que recorre el E2E del conductor (T10-02).
 describe('emitirCertificado con backend local (sin KMS ni GCS)', () => {
+  // RSA 4096: generar el par tarda varios segundos en un runner cargado
+  // (7,6 s observado en CI); se paga una vez por archivo, fuera del timeout
+  // de cada test.
+  beforeAll(async () => {
+    await obtenerPublicKeyLocal('local:e2e');
+  }, 120_000);
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'booster-certs-'));
