@@ -8,7 +8,8 @@
  * `asignado` sin Teltonika.
  *
  * Credenciales (referencia smoke del PO):
- *   Gen 72727272-0 · Tra 70707070-6 · Cond 71717171-3 · clave 482913
+ *   Gen 72727272-0 · Tra 70707070-6 · clave 482913
+ *   Cond 71717171-3 · sin clave, PIN de activación 246810 (la elige al activar)
  *
  * Requiere:
  *   DATABASE_URL
@@ -26,6 +27,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import {
   assignments,
+  conductores,
   empresas,
   memberships,
   offers,
@@ -34,6 +36,7 @@ import {
   users,
   vehicles,
 } from '../src/db/schema.js';
+import { hashActivationPin } from '../src/services/activation-pin.js';
 import { hashClaveNumerica } from '../src/services/clave-numerica.js';
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
@@ -46,6 +49,11 @@ const CLAVE = '482913';
 const RUT_GEN = '72727272-0';
 const RUT_TRA = '70707070-6';
 const RUT_COND = '71717171-3';
+/**
+ * PIN fijo del conductor T2. El E2E activa con él en `/login/conductor`
+ * (`apps/web/e2e-conductor/helpers.ts`, `PIN_ACTIVACION_T2`).
+ */
+const PIN_ACTIVACION_COND = '246810';
 const PLATE = 'E2EC01';
 
 const logger = createLogger({
@@ -229,18 +237,70 @@ async function main(): Promise<void> {
       email: 'users+707070706@boosterchile.invalid',
       fullName: 'Dueño Transportista E2E',
     });
-    const condId = await upsertUser({
+    /**
+     * El conductor queda como lo deja el alta de su empresa
+     * (`POST /conductores`): placeholder `pending-rut:`, sin clave y con un
+     * PIN vigente. El E2E lo activa en `/login/conductor` (T10-02). Re-correr
+     * el seed lo devuelve a este estado aunque una corrida anterior lo haya
+     * activado.
+     */
+    async function upsertConductorPendiente(opts: {
+      rut: string;
+      email: string;
+      fullName: string;
+      pin: string;
+    }): Promise<string> {
+      const pendiente = {
+        firebaseUid: `pending-rut:${opts.rut}`,
+        claveNumericaHash: null,
+        activationPinHash: hashActivationPin(opts.pin),
+        status: 'pendiente_verificacion' as const,
+      };
+      const found = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.rut, opts.rut))
+        .limit(1);
+      if (found[0]) {
+        await db
+          .update(users)
+          .set({ ...pendiente, email: opts.email })
+          .where(eq(users.id, found[0].id));
+        return found[0].id;
+      }
+      const inserted = await db
+        .insert(users)
+        .values({
+          ...pendiente,
+          email: opts.email,
+          fullName: opts.fullName,
+          phone: '+56922222222',
+          rut: opts.rut,
+        })
+        .returning({ id: users.id });
+      const id = inserted[0]?.id;
+      if (!id) {
+        throw new Error(`no se insertó usuario ${opts.rut}`);
+      }
+      return id;
+    }
+
+    const condId = await upsertConductorPendiente({
       rut: RUT_COND,
-      uid: 'e2e-cond-71717171-3',
       email: 'users+717171713@boosterchile.invalid',
       fullName: 'Conductor E2E',
+      pin: PIN_ACTIVACION_COND,
     });
 
     async function upsertMembership(opts: {
       userId: string;
       empresaId: string;
       role: 'dueno' | 'conductor';
+      /** `pendiente_invitacion` hasta que la persona active su cuenta. */
+      status?: 'activa' | 'pendiente_invitacion';
     }): Promise<void> {
+      const status = opts.status ?? 'activa';
+      const joinedAt = status === 'activa' ? new Date() : null;
       const found = await db
         .select({ id: memberships.id })
         .from(memberships)
@@ -252,8 +312,9 @@ async function main(): Promise<void> {
           .set({
             empresaId: opts.empresaId,
             role: opts.role,
-            status: 'activa',
-            joinedAt: new Date(),
+            status,
+            invitedAt: new Date(),
+            joinedAt,
           })
           .where(eq(memberships.userId, opts.userId));
         return;
@@ -262,14 +323,41 @@ async function main(): Promise<void> {
         userId: opts.userId,
         empresaId: opts.empresaId,
         role: opts.role,
-        status: 'activa',
-        joinedAt: new Date(),
+        status,
+        joinedAt,
       });
     }
 
     await upsertMembership({ userId: genId, empresaId: empGenId, role: 'dueno' });
     await upsertMembership({ userId: traId, empresaId: empTraId, role: 'dueno' });
-    await upsertMembership({ userId: condId, empresaId: empTraId, role: 'conductor' });
+    await upsertMembership({
+      userId: condId,
+      empresaId: empTraId,
+      role: 'conductor',
+      status: 'pendiente_invitacion',
+    });
+
+    // Fila de `conductores` como la crea `POST /conductores`. Sin ella
+    // `POST /auth/driver-activate` responde 503 `not_a_driver`.
+    const condRow = await db
+      .select({ id: conductores.id })
+      .from(conductores)
+      .where(eq(conductores.userId, condId))
+      .limit(1);
+    const datosConductor = {
+      empresaId: empTraId,
+      licenseClass: 'A4' as const,
+      licenseNumber: 'E2E-71717171',
+      licenseExpiry: '2030-12-31',
+      isExtranjero: false,
+      driverStatus: 'activo' as const,
+      deletedAt: null,
+    };
+    if (condRow[0]) {
+      await db.update(conductores).set(datosConductor).where(eq(conductores.id, condRow[0].id));
+    } else {
+      await db.insert(conductores).values({ ...datosConductor, userId: condId });
+    }
 
     const vehFound = await db
       .select({ id: vehicles.id })
