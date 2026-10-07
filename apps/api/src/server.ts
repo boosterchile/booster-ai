@@ -376,7 +376,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // real (detectado en la prueba end-to-end).
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
-    meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    meRouter.route(
+      '/empresa/miembros',
+      createMeEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
     // Opt-in de huella — GET/PATCH /me/empresa. userContext precede el mount;
     // el empresaId sale de la membresía activa (nunca del cliente).
     app.use('/me/empresa', userContextMiddlewareForMe);
@@ -654,7 +662,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+    app.route(
+      '/admin/stakeholder-orgs',
+      createAdminStakeholderOrgsRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
     // Mismo middleware chain que stakeholder-orgs.

@@ -30,9 +30,11 @@ T10-04 exige que la activación del conductor y del dueño salga sola por WhatsA
    - Destinatario: el correo registrado de la persona.
    - La respuesta HTTP no cambia: el admin sigue viendo el código, como respaldo.
 3. **El correo del conductor escapa el HTML** de nombre y empresa, que hoy van crudos.
-4. **Terraform:**
+4. **Equipo de la empresa y organizaciones stakeholder** (ampliación 2026-10-07). `POST /me/empresa/miembros` (la empresa invita a su gente) y `POST /admin/stakeholder-orgs/:id/invitar` envían el mismo correo cuando emiten un código, con las mismas reglas: persona nueva o provisoria sin código, correo registrado si la persona ya existe y sin correo para una cuenta activa o un código vigente. La respuesta HTTP no cambia.
+5. **Terraform:**
    - secreto `resend-api-key` en el mapa `secrets` de `security.tf`, con versión placeholder;
    - `RESEND_API_KEY` montado en el api solo cuando `var.resend_api_key_ready = true`, mismo patrón que `content_sid_ready`. Un placeholder montado haría que `ResendEmailSender` intente enviar con una key inválida.
+   - `var.resend_dns_records` (default vacío): los registros de verificación que Resend muestra al crear el dominio, copiados tal cual. `email.tf` los crea en la zona con nombres relativos al dominio, así que nunca pisan el apex de Workspace.
 
 ## 4. Criterios de éxito
 
@@ -45,13 +47,12 @@ T10-04 exige que la activación del conductor y del dueño salga sola por WhatsA
 
 ## 5. Fuera de alcance
 
-- Invitaciones de miembros que hace la propia empresa (`me-empresa-miembros`) y de organizaciones stakeholder: mismo patrón, frente aparte.
 - WhatsApp con el PIN: exige una plantilla de categoría *Authentication* aprobada por Meta, de formato fijo. Va como frente aparte si el PO la quiere.
 - Que `/activar` precargue el RUT desde la URL (cambio de UI).
 
 ## 6. Acciones del PO para cerrar T10-04 en prod
 
-1. Crear la cuenta de Resend y verificar el dominio `boosterchile.com`. Resend entrega registros DNS (SPF/DKIM); se agregan a Cloud DNS por Terraform en un PR aparte, o por consola.
+1. Crear la cuenta de Resend y el dominio `boosterchile.com`. Copiar a `resend_dns_records` (tfvars) los registros que muestra Resend y aplicar. Después, verificar el dominio en Resend.
 2. Cargar la API key: `gcloud secrets versions add resend-api-key`.
 3. `resend_api_key_ready = true` en el tfvars, más `terraform apply` con plan registrado.
 4. Verificarlo con un alta real: un conductor o un dueño nuevo activa su cuenta sin que nadie le dicte el código. Esa es la evidencia de T10-04.

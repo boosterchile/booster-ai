@@ -15,6 +15,8 @@ import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, organizacionesStakeholder, users } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
 import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
@@ -42,7 +44,14 @@ const PENDING_FIREBASE_UID_PREFIX = 'pending-rut:';
 
 const STAKEHOLDER_MEMBERSHIP_ROLE = 'stakeholder_sostenibilidad' as const;
 
-export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger }) {
+export function createAdminStakeholderOrgsRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /** T10-04: el código le llega a la persona invitada por correo. */
+  emailSender?: EmailSender;
+  /** Base del enlace a `/activar`. */
+  webAppUrl?: string;
+}) {
   const app = new Hono();
 
   // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
@@ -228,7 +237,11 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
     // Verificar que la org exista y no esté eliminada.
     // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
     const orgRows = await opts.db
-      .select({ id: organizacionesStakeholder.id, deletedAt: organizacionesStakeholder.deletedAt })
+      .select({
+        id: organizacionesStakeholder.id,
+        deletedAt: organizacionesStakeholder.deletedAt,
+        nombreLegal: organizacionesStakeholder.nombreLegal,
+      })
       .from(organizacionesStakeholder)
       .where(eq(organizacionesStakeholder.id, orgId))
       .limit(1);
@@ -243,6 +256,7 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       .select({
         id: users.id,
         email: users.email,
+        fullName: users.fullName,
         firebaseUid: users.firebaseUid,
         claveNumericaHash: users.claveNumericaHash,
         activationPinHash: users.activationPinHash,
@@ -338,6 +352,21 @@ export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger 
       'org_stakeholder.member_invited',
     );
     getBusinessCounter('alta_invitacion_stakeholder_total').add(1, { resultado: 'issued' });
+
+    if (codigoEmitido !== null && opts.emailSender) {
+      // Persona provisoria: su correo registrado, no el que tipeó el admin.
+      await enviarCorreoActivacionCuenta({
+        sender: opts.emailSender,
+        logger: opts.logger,
+        email: existente?.email ?? body.email.toLowerCase(),
+        nombre: existente?.fullName ?? body.full_name,
+        rut,
+        codigo: codigoEmitido,
+        empresa: org.nombreLegal,
+        rol: STAKEHOLDER_MEMBERSHIP_ROLE,
+        webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+      });
+    }
 
     const expiraEn =
       codigoEmitido === null ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

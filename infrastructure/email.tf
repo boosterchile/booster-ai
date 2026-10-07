@@ -41,3 +41,23 @@ resource "google_secret_manager_secret_version" "resend_api_key_placeholder" {
     ignore_changes = [secret_data, enabled]
   }
 }
+
+# -----------------------------------------------------------------------------
+# Registros DNS de verificación del dominio en Resend
+# -----------------------------------------------------------------------------
+# Resend entrega, al crear el dominio, los registros que hay que publicar
+# (SPF y MX en un subdominio de envío, DKIM en `resend._domainkey`). Sus
+# valores dependen de la cuenta y la región: se copian a
+# `var.resend_dns_records` tal como los muestra Resend y este bloque los crea
+# en la zona. Los nombres son relativos al dominio, así que nunca pisan los
+# registros del apex (correo de Workspace).
+resource "google_dns_record_set" "resend" {
+  for_each = { for r in var.resend_dns_records : "${r.name}/${r.type}" => r }
+
+  name         = "${each.value.name}.${var.domain}."
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  type         = each.value.type
+  ttl          = 3600
+  rrdatas      = each.value.rrdatas
+}
