@@ -37,13 +37,16 @@ vi.mock('../../src/services/calcular-cobertura-telemetria.js', async (importOrig
 vi.mock('../../src/services/posicion-segmento.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/services/posicion-segmento.js')>()),
   resolverPosicionesSegmento: vi.fn(),
+  cargarLecturasConsumoCan: vi.fn(async () => []),
 }));
 
 const { computeRoutes } = await import('../../src/services/routes-api.js');
 const { calcularCobertura, haversineKm } = await import(
   '../../src/services/calcular-cobertura-telemetria.js'
 );
-const { resolverPosicionesSegmento } = await import('../../src/services/posicion-segmento.js');
+const { resolverPosicionesSegmento, cargarLecturasConsumoCan } = await import(
+  '../../src/services/posicion-segmento.js'
+);
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -1186,5 +1189,135 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(setArg.carbonEmissionsKgco2eActual, JSON.stringify(caso.trip)).toBeNull();
       expect(setArg.carbonEmissionsKgco2eActual).not.toBe('0');
     }
+  });
+
+  // T10-05 (ADR-077 §2) — con el contador CAN (AVL 83) provisionado y una
+  // medición limpia, el cierre usa `exacto_canbus` y el nivel se deriva con el
+  // método MEDIDO: con Teltonika y cobertura ≥ 95 % da `primario_verificable`.
+  describe('consumo CAN medido (exacto_canbus, T10-05)', () => {
+    const VEH_CAN = { fuenteCombustibleCan: '83' };
+    // 41 pings cada 30 s, 0,005° de latitud (≈ 0,56 km) → ≈ 22 km continuos.
+    const largo = (opts: { huecoEn?: number; huecoPasos?: number } = {}) => {
+      const pings: Array<{ tMs: number; lat: number; lng: number }> = [];
+      let paso = 0;
+      let t = 0;
+      for (let i = 0; i < 41; i++) {
+        if (i > 0) {
+          const hueco = opts.huecoEn === i;
+          paso += hueco ? (opts.huecoPasos ?? 1) : 1;
+          t += hueco ? 300_000 : 30_000;
+        }
+        pings.push({ tMs: t, lat: -33.4 + paso * 0.005, lng: -70.6 });
+      }
+      return pings;
+    };
+    const conContador = (
+      pings: Array<{ tMs: number; lat: number; lng: number }>,
+      litrosTotales: number,
+    ) =>
+      pings.map((p, i) => ({
+        ...p,
+        io: { '83': Math.round((1000 + (litrosTotales * i) / (pings.length - 1)) * 10) },
+      }));
+    const emisionesCan = (distanciaKm: number, litros: number) =>
+      calcularEmisionesViaje({
+        metodo: 'exacto_canbus',
+        distanciaKm,
+        combustibleConsumido: litros,
+        cargaKg: 5000,
+        vehiculo: {
+          combustible: 'diesel',
+          consumoBasePor100km: 28.5,
+          pesoVacioKg: 7000,
+          capacidadKg: 12000,
+        },
+      });
+
+    it('83 limpio + cobertura 100 % → exacto_canbus, primario_verificable y emisiones = litros × factor WTW', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      const res = await run(db);
+      expect(res.huella).toBe('medida');
+      const setArg = setDe(db);
+      expect(setArg.precisionMethod).toBe('exacto_canbus');
+      expect(setArg.certificationLevel).toBe('primario_verificable');
+      expect(setArg.routeDataSource).toBe('teltonika_gps');
+      const esperado = emisionesCan(Number(setArg.distanceKmActual), 8);
+      expect(Number(setArg.carbonEmissionsKgco2eActual)).toBeCloseTo(
+        esperado.emisionesKgco2eWtw,
+        3,
+      );
+      expect(Number(setArg.fuelConsumedLActual)).toBeCloseTo(8, 2);
+    });
+
+    it('83 limpio pero cobertura de posición < 95 % → exacto_canbus con secundario_modeled', async () => {
+      // Un hueco de 5 min que recorre 4 pasos (≈ 2,2 km): Routes lo estima y
+      // la cobertura observada queda ≈ 91 %. El contador cubre todo el tramo.
+      const pings = largo({ huecoEn: 20, huecoPasos: 4 });
+      const huecoKm = haversineKm(-33.4 + 19 * 0.005, -70.6, -33.4 + 23 * 0.005, -70.6);
+      (computeRoutes as Mock).mockResolvedValue(ruta(huecoKm));
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce(conContador(pings, 8));
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      await run(db);
+      const setArg = setDe(db);
+      expect(Number(setArg.coveragePct)).toBeLessThan(95);
+      expect(Number(setArg.coveragePct)).toBeGreaterThanOrEqual(80);
+      expect(setArg.precisionMethod).toBe('exacto_canbus');
+      expect(setArg.certificationLevel).toBe('secundario_modeled');
+    });
+
+    it('83 provisionado sin lecturas → modelado como hoy, warn con el motivo y contador', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      (cargarLecturasConsumoCan as Mock).mockResolvedValueOnce([]);
+      const db = makeDb({ selects: selects({ vehicle: VEH_CAN }), updates: [[]] });
+      const warn = vi.fn();
+      const logger = { ...(noopLogger as object), warn, child: () => logger };
+      const res = await recalcularNivelPostEntrega({
+        db: db as never,
+        logger: logger as never,
+        tripId: TRIP_ID,
+        routesProjectId: 'proj',
+      });
+      expect(res.huella).toBe('medida');
+      const setArg = setDe(db);
+      expect(setArg.precisionMethod).toBe('modelado');
+      expect(setArg.certificationLevel).toBe('secundario_modeled');
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ tripId: TRIP_ID, motivo: 'sin_lecturas' }),
+        expect.any(String),
+      );
+      expect(counter('huella_canbus_no_usado_total')?.add).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ motivo: 'sin_lecturas' }),
+      );
+    });
+
+    it('vehículo sin el 83 (sin_sensor) → no lee el contador y sigue en modelado', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      const db = makeDb({
+        selects: selects({ vehicle: { fuenteCombustibleCan: 'sin_sensor' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db).precisionMethod).toBe('modelado');
+    });
+
+    it('83 en un vehículo eléctrico → no se usa (el contador mide litros)', async () => {
+      const pings = largo();
+      (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(pings);
+      const db = makeDb({
+        selects: selects({ vehicle: { ...VEH_CAN, fuelType: 'electrico' } }),
+        updates: [[]],
+      });
+      await run(db);
+      expect(cargarLecturasConsumoCan).not.toHaveBeenCalled();
+      expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
+    });
   });
 });

@@ -13,12 +13,14 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { consumoCanSegmento } from '../domain/consumo-can-segmento.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { type EstimarHuecoKm, computarEscrituraDistanciaReal } from './calcular-distancia-real.js';
 import { estimarDistanciaKm } from './estimar-distancia.js';
 import {
   type VehiculoFuentePosicion,
+  cargarLecturasConsumoCan,
   fuentePosicionSegmento,
   resolverPosicionesSegmento,
 } from './posicion-segmento.js';
@@ -34,6 +36,15 @@ import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
 const huellaSegmentoCounter = getBusinessCounter('huella_segmento_total');
 const huellaCoberturaDegradadaCounter = getBusinessCounter('huella_cobertura_degradada_total');
 const huellaPesoAusenteCounter = getBusinessCounter('huella_peso_ausente_total');
+/**
+ * T10-05: vehículo provisionado con el contador CAN (AVL 83) cuya medición no
+ * se pudo usar en el cierre (`motivo` = `MotivoConsumoCanNoUsado`). La huella
+ * cae a `modelado`; esto lo hace contable.
+ */
+const huellaCanbusNoUsadoCounter = getBusinessCounter('huella_canbus_no_usado_total');
+
+/** Combustibles que el contador 83 mide en litros. */
+const COMBUSTIBLES_CONTADOR_LITROS = new Set(['diesel', 'gasolina']);
 
 /** Perfil energético del vehículo que decide el modo del cálculo (ADR-017/021). */
 type PerfilEnergeticoVehiculo = Pick<
@@ -48,6 +59,57 @@ type PerfilEnergeticoVehiculo = Pick<
  * Misma regla en la estimación (al asignar) y en la huella real (al cerrar):
  * el método no cambia por el momento del cálculo, solo la distancia.
  */
+/**
+ * Litros del contador CAN (AVL 83) en el segmento, o `null` si el vehículo no
+ * lo tiene provisionado o la medición no sirve (T10-05). Solo un Teltonika con
+ * `fuente_combustible_can = '83'` y combustible medido en litros entra; el
+ * motivo de un descarte queda en un `warn` y en `huella_canbus_no_usado_total`.
+ */
+async function medirLitrosCan(opts: {
+  db: Db;
+  logger: Logger;
+  tripId: string;
+  vehiculo: VehiculoFuentePosicion & {
+    fuelType: string | null;
+    fuenteCombustibleCan: string | null;
+  };
+  fuente: RouteDataSource;
+  desde: Date;
+  hasta: Date;
+  distanciaKm: number;
+}): Promise<number | null> {
+  const { vehiculo } = opts;
+  if (
+    vehiculo.fuenteCombustibleCan !== '83' ||
+    opts.fuente !== 'teltonika_gps' ||
+    !vehiculo.fuelType ||
+    !COMBUSTIBLES_CONTADOR_LITROS.has(vehiculo.fuelType)
+  ) {
+    return null;
+  }
+  const lecturas = await cargarLecturasConsumoCan({
+    db: opts.db,
+    vehicle: vehiculo,
+    desde: opts.desde,
+    hasta: opts.hasta,
+  });
+  const resultado = consumoCanSegmento({ lecturas, distanciaSegmentoKm: opts.distanciaKm });
+  if (resultado.litros === null) {
+    huellaCanbusNoUsadoCounter.add(1, { motivo: resultado.motivo });
+    opts.logger.warn(
+      {
+        tripId: opts.tripId,
+        vehicleId: vehiculo.id,
+        motivo: resultado.motivo,
+        lecturas: lecturas.length,
+      },
+      'consumo CAN (AVL 83) no usable en el segmento: huella modelada',
+    );
+    return null;
+  }
+  return resultado.litros;
+}
+
 function emisionesSegunPerfil(opts: {
   veh: PerfilEnergeticoVehiculo | undefined;
   distanciaKm: number;
@@ -576,11 +638,14 @@ async function recalcularNivelPostEntregaInner(opts: {
       curbWeightKg: vehicles.curbWeightKg,
       capacityKg: vehicles.capacityKg,
       vehicleType: vehicles.vehicleType,
+      fuenteCombustibleCan: vehicles.fuenteCombustibleCan,
     })
     .from(vehicles)
     .where(eq(vehicles.id, assignment.vehicleId))
     .limit(1);
-  const vehiculo: (VehiculoFuentePosicion & PerfilEnergeticoVehiculo) | undefined = vehRows[0];
+  const vehiculo:
+    | (VehiculoFuentePosicion & PerfilEnergeticoVehiculo & { fuenteCombustibleCan: string | null })
+    | undefined = vehRows[0];
   if (!vehiculo) {
     logger.warn(
       { tripId, vehicleId: assignment.vehicleId },
@@ -716,16 +781,6 @@ async function recalcularNivelPostEntregaInner(opts: {
   const kmCubiertos = reconstruida ? (escritura?.kmCubiertos ?? 0) : 0;
   const coveragePct = reconstruida ? (escritura?.coveragePct ?? 0) : 0;
   const routeDataSource: RouteDataSource = reconstruida ? fuente : 'maps_directions';
-  const certificationLevel = derivarNivelCertificacion({
-    precisionMethod,
-    routeDataSource,
-    coveragePct,
-  });
-  const uncertaintyFactor = calcularFactorIncertidumbre({
-    nivelCertificacion: certificationLevel,
-    coveragePct,
-    vehicleTypeMatchesRoutesApi: true,
-  });
 
   // Huella real del segmento (T12) con sus dos cortes de degradación:
   //   corte #2 — cobertura < umbral (o sin reconstrucción): emisiones null.
@@ -752,15 +807,60 @@ async function recalcularNivelPostEntregaInner(opts: {
       // La distancia que alimenta la huella es la MISMA que se persiste como
       // real (híbrida con cobertura declarada): el cert muestra X km y las
       // emisiones se calcularon sobre esos X km.
-      emisionesReales = emisionesSegunPerfil({
-        veh: vehiculo,
+      //
+      // T10-05 (ADR-077 §2): con el contador CAN (AVL 83) provisionado en un
+      // Teltonika, el combustible quemado se MIDE y el modo es `exacto_canbus`.
+      // Si la medición no sirve, se registra el motivo y se modela como antes.
+      const litrosCan = await medirLitrosCan({
+        db,
+        logger,
+        tripId,
+        vehiculo,
+        fuente,
+        desde: pickupAt,
+        hasta: assignment.deliveredAt,
         distanciaKm: distanciaKmReal,
-        cargaKg: trip.cargoWeightKg,
       });
+      emisionesReales =
+        litrosCan !== null && vehiculo.fuelType
+          ? calcularEmisionesViaje({
+              metodo: 'exacto_canbus',
+              distanciaKm: distanciaKmReal,
+              combustibleConsumido: litrosCan,
+              cargaKg: trip.cargoWeightKg,
+              vehiculo: {
+                combustible: vehiculo.fuelType as TipoCombustible,
+                consumoBasePor100km: vehiculo.consumptionLPer100kmBaseline
+                  ? Number(vehiculo.consumptionLPer100kmBaseline)
+                  : null,
+                pesoVacioKg: vehiculo.curbWeightKg,
+                capacidadKg: vehiculo.capacityKg,
+              },
+            })
+          : emisionesSegunPerfil({
+              veh: vehiculo,
+              distanciaKm: distanciaKmReal,
+              cargaKg: trip.cargoWeightKg,
+            });
       huella = 'medida';
     }
   }
   huellaSegmentoCounter.add(1, { resultado: huella, fuente });
+
+  // El nivel se deriva con el método FINAL: el medido si hubo huella real
+  // (`exacto_canbus` solo así llega a `primario_verificable`, ADR-077 §2),
+  // si no el estimado del viaje.
+  const metodoFinal = emisionesReales?.metodoPrecision ?? precisionMethod;
+  const certificationLevel = derivarNivelCertificacion({
+    precisionMethod: metodoFinal,
+    routeDataSource,
+    coveragePct,
+  });
+  const uncertaintyFactor = calcularFactorIncertidumbre({
+    nivelCertificacion: certificationLevel,
+    coveragePct,
+    vehicleTypeMatchesRoutesApi: true,
+  });
 
   // ATOMICIDAD: distancia + cobertura + fuente + nivel + uncertainty (+ huella)
   // en UN solo UPDATE (todo-o-nada). Un write a medias dejaría cobertura que
@@ -804,7 +904,7 @@ async function recalcularNivelPostEntregaInner(opts: {
       coveragePct,
       certificationLevel,
       uncertaintyFactor,
-      precisionMethod: emisionesReales?.metodoPrecision ?? precisionMethod,
+      precisionMethod: metodoFinal,
       huellaActiva,
       huella,
       emisionesKgco2eReales: emisionesReales?.emisionesKgco2eWtw ?? null,
