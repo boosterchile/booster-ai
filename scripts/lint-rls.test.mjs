@@ -148,7 +148,13 @@ describe('main — integración sobre fixtures en disco (cubre walk/collectFindi
       'export const f = () => db.select().from(vehicles).where(eq(vehicles.id, id));',
     );
     const messages = [];
-    const code = main({ scanDirs: [svc], schemaSource, log: noop, err: (m) => messages.push(m) });
+    const code = main({
+      scanDirs: [svc],
+      schemaSource,
+      docSource: null,
+      log: noop,
+      err: (m) => messages.push(m),
+    });
     assert.equal(code, 1);
     assert.ok(messages.some((m) => m.includes('vehiculos') || m.includes('bad.ts')));
   });
@@ -168,7 +174,84 @@ describe('main — integración sobre fixtures en disco (cubre walk/collectFindi
     writeFileSync(join(svc, 'ok-tenantfree.ts'), 'db.select().from(empresas);');
     // .test.ts se ignora aunque tenga una query sucia:
     writeFileSync(join(svc, 'dirty.test.ts'), 'db.select().from(vehicles);');
-    const code = main({ scanDirs: [svc], schemaSource, log: noop, err: noop });
+    const code = main({ scanDirs: [svc], schemaSource, docSource: null, log: noop, err: noop });
     assert.equal(code, 0);
+  });
+});
+
+// T10-13 (ADR-082): docs/rls-exemptions.md documenta cada tabla sin columna
+// de tenant y coincide con TENANT_FREE_TABLES. lint-rls lo verifica en CI.
+describe('verificarDocExenciones (T10-13)', async () => {
+  const { verificarDocExenciones, tablasSinColumnaTenant } = await import('./lint-rls.mjs');
+
+  const schema = [
+    "export const planes = pgTable('planes', { id: uuid('id') });",
+    "export const vehiculos = pgTable('vehiculos', { id: uuid('id'), empresaId: uuid('empresa_id') });",
+    "export const zonas = pgTable('zonas_x', { id: uuid('id') });",
+    "export const facturas = pgTable('facturas', { id: uuid('id'), empresaDestinoId: uuid('empresa_destino_id') });",
+  ].join('\n');
+
+  const doc = (exentas, porQuery) =>
+    [
+      '# Exenciones',
+      '## Exentas por tabla (`TENANT_FREE_TABLES`)',
+      '| Tabla | SQL | Razón |',
+      '|---|---|---|',
+      ...exentas.map((t) => `| \`${t}\` | \`x\` | razón |`),
+      '## Sin columna `empresa_id`, protegidas en cada query',
+      '| Tabla | SQL | Cómo se protege |',
+      '|---|---|---|',
+      ...porQuery.map((t) => `| \`${t}\` | \`x\` | razón |`),
+    ].join('\n');
+
+  it('detecta las tablas sin columna tenant (empresaDestinoId no cuenta como empresaId)', () => {
+    assert.deepEqual([...tablasSinColumnaTenant(schema)].sort(), ['facturas', 'planes', 'zonas']);
+  });
+
+  it('doc consistente → sin problemas', () => {
+    const r = verificarDocExenciones({
+      docSource: doc(['planes'], ['zonas', 'facturas']),
+      schemaSource: schema,
+      tenantFree: new Set(['planes']),
+    });
+    assert.deepEqual(r, []);
+  });
+
+  it('exenta en el set pero no en el doc, y al revés → problemas', () => {
+    const r = verificarDocExenciones({
+      docSource: doc(['zonas'], ['facturas']),
+      schemaSource: schema,
+      tenantFree: new Set(['planes']),
+    });
+    assert.ok(r.some((p) => p.includes('planes') && p.includes('TENANT_FREE_TABLES')));
+    assert.ok(r.some((p) => p.includes('zonas') && p.includes('no está en TENANT_FREE_TABLES')));
+  });
+
+  it('tabla sin columna tenant que no figura en el doc → problema', () => {
+    const r = verificarDocExenciones({
+      docSource: doc(['planes'], ['facturas']),
+      schemaSource: schema,
+      tenantFree: new Set(['planes']),
+    });
+    assert.ok(r.some((p) => p.includes('zonas') && p.includes('sin documentar')));
+  });
+
+  it('entrada del set que no es tabla del schema → problema', () => {
+    const r = verificarDocExenciones({
+      docSource: doc(['planes', 'fantasma'], ['zonas', 'facturas']),
+      schemaSource: schema,
+      tenantFree: new Set(['planes', 'fantasma']),
+    });
+    assert.ok(r.some((p) => p.includes('fantasma') && p.includes('no es una tabla')));
+  });
+
+  it('el doc real del repo coincide con el schema y con TENANT_FREE_TABLES', async () => {
+    const { readFileSync } = await import('node:fs');
+    const r = verificarDocExenciones({
+      docSource: readFileSync('docs/rls-exemptions.md', 'utf-8'),
+      schemaSource: readFileSync('apps/api/src/db/schema.ts', 'utf-8'),
+      tenantFree: TENANT_FREE_TABLES,
+    });
+    assert.deepEqual(r, []);
   });
 });
