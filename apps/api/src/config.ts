@@ -7,6 +7,7 @@ import {
   redisEnvSchema,
 } from '@booster-ai/config';
 import { z } from 'zod';
+import { checkCertificateBackendInvariants } from './certificate-backend-invariants.js';
 import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
 // `booleanFlag` (anti-footgun de z.coerce.boolean) se importa de
@@ -793,12 +794,20 @@ export const apiEnvSchema = commonEnvSchema
   // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
   // las necesita, fallando rápido en el startup en vez de apuntar a prod.
   .superRefine((env, ctx) => {
-    const errors = checkGcpConfigInvariants({
-      nodeEnv: env.NODE_ENV,
-      observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
-      googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
-      billingExportTable: env.BILLING_EXPORT_TABLE,
-    });
+    const errors = [
+      ...checkGcpConfigInvariants({
+        nodeEnv: env.NODE_ENV,
+        observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
+        googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+        billingExportTable: env.BILLING_EXPORT_TABLE,
+      }),
+      // Backend local de certificados (E2E, T10-02) vetado en producción.
+      ...checkCertificateBackendInvariants({
+        nodeEnv: env.NODE_ENV,
+        signingKeyId: env.CERTIFICATE_SIGNING_KEY_ID,
+        certificatesBucket: env.CERTIFICATES_BUCKET,
+      }),
+    ];
     for (const message of errors) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
     }

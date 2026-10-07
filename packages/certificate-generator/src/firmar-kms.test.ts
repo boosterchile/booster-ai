@@ -249,3 +249,23 @@ describe('obtenerPublicKeyPem', () => {
 afterEach(() => {
   vi.clearAllMocks();
 });
+
+describe('firmarConKms / obtenerPublicKeyPem con key local: (E2E, T10-02)', () => {
+  beforeEach(() => {
+    asymmetricSignMock.mockReset();
+    getPublicKeyMock.mockReset();
+    listCryptoKeyVersionsMock.mockReset();
+  });
+
+  it('firma con la clave efímera local sin llamar a Cloud KMS', async () => {
+    const data = Buffer.from('signed attrs');
+    const firma = await firmarConKms('local:e2e', data);
+    const pub = await obtenerPublicKeyPem('local:e2e');
+    const { createVerify } = await import('node:crypto');
+    expect(createVerify('sha256').update(data).verify(pub.pem, firma.signature)).toBe(true);
+    expect(firma.keyVersion).toBe(pub.keyVersion);
+    expect(asymmetricSignMock).not.toHaveBeenCalled();
+    expect(getPublicKeyMock).not.toHaveBeenCalled();
+    expect(listCryptoKeyVersionsMock).not.toHaveBeenCalled();
+  });
+});

@@ -21,18 +21,9 @@
  *   primer uso.
  */
 
-import { Storage } from '@google-cloud/storage';
 import forge from 'node-forge';
 import { firmarConKms, obtenerPublicKeyPem } from './firmar-kms.js';
-
-let cachedStorage: Storage | null = null;
-
-function getStorage(): Storage {
-  if (!cachedStorage) {
-    cachedStorage = new Storage();
-  }
-  return cachedStorage;
-}
+import { abrirBucketCertificados } from './storage.js';
 
 /**
  * Validez del cert. 10 años — los certificados de carbono ya emitidos
@@ -73,7 +64,7 @@ export async function obtenerOEmitirCertSelfSigned(opts: {
   const { pem: publicKeyPem, keyVersion } = await obtenerPublicKeyPem(opts.kmsKeyId);
 
   const cachedPath = `certs/kms-key-version-${keyVersion}.pem`;
-  const bucket = getStorage().bucket(opts.certificatesBucket);
+  const bucket = abrirBucketCertificados(opts.certificatesBucket);
   const cachedFile = bucket.file(cachedPath);
 
   // Hot path: cert ya existe.
