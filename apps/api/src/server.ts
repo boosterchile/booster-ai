@@ -681,7 +681,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/empresas',
-      createAdminEmpresaMiembrosRoutes({ db: opts.db, logger, auth: opts.firebaseAuth }),
+      createAdminEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
     );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
