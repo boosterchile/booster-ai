@@ -54,3 +54,24 @@ PR 2: el grep del criterio devuelve 0 archivos y `demo.boosterchile.com` no resu
 - Release del PR 1 y luego `terraform apply`. Es irreversible para los secretos, así que va con un plan registrado antes (ADR-076).
 - Quitar `demo.boosterchile.com` de los authorized domains de Identity Platform (es manual; Terraform los ignora).
 - Confirmar que `principal` está ACTIVE (`gcloud compute ssl-certificates describe`) antes de mergear el PR 2.
+
+## 7. PR 2 — contract (preparado el 2026-10-07)
+
+Rama `claude/trl10-a-retiro-demo-pr2`, apilada sobre la del PR 1. **No se mergea** hasta que se cumplan las tres precondiciones:
+
+1. El PR 1 está en `main` y su release terminó (canario al 100 %, sin revisiones vivas anteriores al PR 1).
+2. El `terraform apply` del PR 1 corrió y `principal` está ACTIVE:
+   `gcloud compute ssl-certificates describe booster-ai-cert-<sufijo principal> --global --format='value(managed.status)'` → `ACTIVE`.
+3. En prod, las dos consultas de la guarda de 0059 devuelven 0 filas:
+   `SELECT id, razon_social FROM empresas WHERE es_demo;`
+   `SELECT persona, email FROM cuentas_demo WHERE deshabilitado_en IS NULL;`
+   Si alguna devuelve filas, la migración aborta en el arranque y el release no avanza (sin cambios en la BD).
+
+Contenido:
+- Migración `0059_retiro_superficie_demo.sql` (declarada `contract-phase`): guarda, `DROP TABLE cuentas_demo`, `DROP TYPE persona_demo`, `DROP COLUMN empresas.es_demo`. Reverse manual en `down/` (solo estructura; los datos de `cuentas_demo` vuelven solo con PITR).
+- `schema.ts` sin la columna, la tabla ni el enum.
+- Tests de impersonación: el write-guard y el picker se prueban contra `es_usuario_prueba` sin la marca demo.
+- Terraform paso 2: el proxy sirve solo `principal`; salen `main`, `random_id.cert_suffix`, `cert_domains_con_demo` y `google_dns_record_set.demo`. Destroy de `main` después del update del proxy (orden de dependencias de Terraform).
+
+Verificación: `test/integration/migration-retiro-demo.integration.test.ts` (rojo exhibido antes de la migración) y corrida en seco de 0059 en transacción con `ROLLBACK` sobre una BD en 0058: camino feliz, guarda con `es_demo = true` y guarda con cuenta demo activa.
+
