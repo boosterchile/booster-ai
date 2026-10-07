@@ -25,6 +25,7 @@ import { createLogger } from '@booster-ai/logger';
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import * as schema from '../src/db/schema.js';
 import {
   assignments,
   conductores,
@@ -37,6 +38,7 @@ import {
   vehicles,
 } from '../src/db/schema.js';
 import { hashActivationPin } from '../src/services/activation-pin.js';
+import { calcularMetricasEstimadas } from '../src/services/calcular-metricas-viaje.js';
 import { hashClaveNumerica } from '../src/services/clave-numerica.js';
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
@@ -103,7 +105,7 @@ async function main(): Promise<void> {
   initializeApp({ projectId });
 
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 2 });
-  const db = drizzle(pool);
+  const db = drizzle(pool, { schema });
 
   try {
     const planRows = await db.select({ id: plans.id }).from(plans).limit(1);
@@ -497,6 +499,12 @@ async function main(): Promise<void> {
     if (!assignmentId) {
       throw new Error('no se insertó asignación E2E');
     }
+
+    // Métricas estimadas: en prod las crea `calcularMetricasEstimadas` al
+    // aceptar la oferta (offer-actions). Sin esa fila el cierre no mide la
+    // huella ni emite el certificado (`metrics_missing`). Mismo servicio, sin
+    // Routes API (tabla de distancias Chile).
+    await calcularMetricasEstimadas({ db, logger, tripId, vehicleId });
 
     logger.info(
       { assignmentId, tripId, trackingCode: code, conductor: RUT_COND },

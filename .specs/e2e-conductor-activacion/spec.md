@@ -26,13 +26,24 @@ T10-02 exige que el flujo **activar → recogida → posición → entrega → c
 - **E2E:** el test del flujo entra por `/login/conductor`, activa con RUT + PIN + clave nueva, cae en `/app/conductor` con sesión y sigue con recogida, posición, entrega y resultado, sin cambios en esos pasos.
 - **Prueba de la credencial:** después de la entrega, el test cierra la sesión y vuelve a entrar con RUT + la clave elegida por el login principal. Eso prueba que la credencial es la clave del conductor y no el PIN.
 
+## 3b. Ampliación 2026-10-07 — el E2E exige el certificado emitido
+
+T10-02 termina en «→ certificado»; el test aceptaba «Certificado en proceso», y en CI nunca se emitía (sin KMS ni GCS: `config_missing`). Además el seed no creaba `metricas_viaje`, que en prod crea `calcularMetricasEstimadas` al aceptar la oferta: sin esa fila tampoco hay huella ni certificado (`metrics_missing`). Decisión del PO (2026-10-07): firmante local en el E2E.
+
+- **Backend local en `@booster-ai/certificate-generator`** (`backend-local.ts`): `CERTIFICATE_SIGNING_KEY_ID=local:<nombre>` firma con una clave RSA 4096 efímera en memoria (PKCS#1 v1.5 SHA-256, el mismo algoritmo de la key KMS); `CERTIFICATES_BUCKET=file:<dir>` guarda PDF, sidecar y cert X.509 en disco. El resto del pipeline (X.509, PAdES, sidecar) es el de producción. Sin signed URL: la descarga del PDF sigue requiriendo GCS.
+- **Doble guarda de producción**: el package lanza `BackendLocalEnProduccionError` con `NODE_ENV=production`, y `config.ts` rechaza ambos prefijos en producción (`certificate-backend-invariants.ts`), así que el API no arranca.
+- **Seed**: llama a `calcularMetricasEstimadas` tras crear la asignación (sin Routes API).
+- **E2E**: tras la entrega exige «kg CO2e», el botón «Descargar certificado» y `GET /certificates/:tracking/verify` con `valid: true`, `kms_key_id: local:e2e`, `pdf_sha256` y `cert_pem`.
+- **Workflow** (`e2e-pr.yml`, permiso del PO): el job `e2e-conductor-run` define las dos variables. Fuera de alcance: ampliar su filtro de paths a `packages/certificate-generator/**` (T10-10).
+
 ## 4. Criterios de éxito
 
 1. Con el seed actual, el test nuevo falla en la activación (rojo exhibido: `driver-activate` responde 410 porque la cuenta ya está activa).
 2. Con el seed nuevo, `pnpm --filter @booster-ai/web test:e2e:conductor` pasa local contra Postgres + emulador de Auth + API, igual que en CI.
 3. `gate-rol.spec.ts` sigue verde (usa al generador, que no cambia).
 4. El seed sigue idempotente: correrlo dos veces seguidas deja al conductor pendiente otra vez, con el mismo PIN.
-5. Sin cambios en `apps/web/src`, `apps/api/src` ni en workflows.
+5. Sin cambios en `apps/web/src`. Los cambios en `apps/api/src`, `packages/certificate-generator` y `e2e-pr.yml` son los de §3b.
+6. Rojo exhibido del certificado: con el seed con métricas y sin backend, el test falla esperando «Descargar certificado» y el API registra `config_missing`; con el backend local pasa.
 
 ## 5. Fuera de alcance
 

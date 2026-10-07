@@ -15,9 +15,12 @@ import {
  * clave que eligió, que es su única credencial.
  *
  * Waits explícitos (`expect` / `waitForURL` / `expect.poll`).
- * Cero `waitForTimeout`. Certificado: no se exige PDF; basta métricas
- * y/o «Certificado en proceso» / degradación explícita (FAIL_ENV #692).
+ * Cero `waitForTimeout`. Certificado: se exige emitido. El API del E2E firma
+ * con el backend local de `@booster-ai/certificate-generator`
+ * (`CERTIFICATE_SIGNING_KEY_ID=local:e2e`, `CERTIFICATES_BUCKET=file:…`), y
+ * `/certificates/:tracking/verify` debe devolver la firma (T10-02).
  */
+const API_URL = process.env.VITE_API_URL ?? 'http://localhost:8080';
 test.use({
   geolocation: { latitude: -33.4372, longitude: -70.6506 },
   permissions: ['geolocation'],
@@ -28,10 +31,13 @@ test.describe('flujo conductor T2', () => {
     reseedConductorE2e();
   });
 
-  test('activar → recogida → posición → entrega → resultado → login con su clave', async ({
+  test('activar → recogida → posición → entrega → certificado → login con su clave', async ({
     page,
     browser,
+    request,
   }, testInfo) => {
+    // La emisión del certificado es asíncrona y el panel la consulta cada 3 s.
+    test.setTimeout(150_000);
     const posiciones: string[] = [];
     page.on('request', (req) => {
       if (req.method() === 'POST' && req.url().includes('/driver-position')) {
@@ -71,9 +77,23 @@ test.describe('flujo conductor T2', () => {
     await expect(page.getByText('Entrega confirmada. ¡Gracias!')).toBeVisible();
     const resultado = page.getByTestId('resultado-viaje');
     await expect(resultado).toBeVisible();
-    await expect(resultado).toHaveText(
-      /kg CO2e|Certificado en proceso|huella se está calculando|Tu empresa lo verá|Sin dato/i,
-    );
+    await expect(resultado).toContainText('kg CO2e', { timeout: 30_000 });
+
+    // Certificado emitido: el panel cambia «Certificado en proceso» por la
+    // descarga cuando la API ya tiene `certificado_emitido_en`.
+    await expect(resultado.getByRole('button', { name: 'Descargar certificado' })).toBeVisible({
+      timeout: 75_000,
+    });
+    const encabezado = await resultado.getByText(/^Resultado del viaje /).innerText();
+    const tracking = encabezado.replace('Resultado del viaje ', '').trim();
+    expect(tracking).toMatch(/^E2E[A-Z0-9]+$/);
+
+    const verify = await request.get(`${API_URL}/certificates/${tracking}/verify`);
+    expect(verify.status()).toBe(200);
+    const firma = (await verify.json()) as Record<string, unknown>;
+    expect(firma).toMatchObject({ valid: true, tracking_code: tracking, kms_key_id: 'local:e2e' });
+    expect(String(firma.pdf_sha256)).toMatch(/^[0-9a-f]{64}$/);
+    expect(String(firma.cert_pem)).toContain('BEGIN CERTIFICATE');
 
     // La credencial es la clave elegida, no el PIN: sesión nueva, login principal.
     const otraSesion = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
