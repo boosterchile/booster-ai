@@ -80,6 +80,7 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import { crearPublicadorDocumentoSubido } from './services/reconciliar-documentos-pendientes.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush } from './services/web-push.js';
 
@@ -543,6 +544,10 @@ export function createServer(opts: CreateServerOptions): Hono {
           redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // T10-21 — reconciliación del worker TED (document-service).
+          publicarDocumentoSubido: config.DOCUMENT_UPLOADED_TOPIC
+            ? crearPublicadorDocumentoSubido(config.DOCUMENT_UPLOADED_TOPIC)
+            : null,
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
           // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
           // dinero). Cuando exista `payment-provider`, inyectar el real acá.
