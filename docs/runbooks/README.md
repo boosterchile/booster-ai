@@ -14,7 +14,7 @@
 | `apps/whatsapp-bot` | Cloud Run (`booster-ai-whatsapp-bot`) | [`service-whatsapp-bot.md`](service-whatsapp-bot.md) | Webhook Twilio WhatsApp + conversación XState en Redis. |
 | `apps/sms-fallback-gateway` | Cloud Run (`booster-ai-sms-fallback-gateway`) | [`service-sms-fallback-gateway.md`](service-sms-fallback-gateway.md) | Webhook Twilio SMS → Pub/Sub `telemetry-events`. Ingress abierto (Twilio postea directo). |
 | `apps/matching-engine` | Cloud Run (`booster-ai-matching-engine`) | [`service-matching-engine.md`](service-matching-engine.md) | **SKELETON** — el matching real vive en `apps/api`. |
-| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | **SKELETON** — el fan-out real vive en `apps/api`. |
+| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | Consumer Pub/Sub pull del canal WhatsApp (T10-21). Sombra o entrega real según flags del api. **Requiere min-instances≥1 + CPU always-on.** Web Push/email siguen en `apps/api`. |
 
 ## Alerta → runbook
 

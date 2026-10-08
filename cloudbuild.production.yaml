@@ -12,10 +12,11 @@
 #   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
 #     apps/telemetry-tcp-gateway (GKE), apps/telemetry-processor,
 #     apps/sms-fallback-gateway.
-#   - apps/notification-service, apps/matching-engine,
-#     apps/document-service quedan en placeholder mientras sigan siendo
-#     skeletons (main.ts solo loguea "starting (skeleton)" y exit). Al
-#     implementarlos se agrega el Dockerfile + step build/push/deploy.
+#   - apps/notification-service (canal WhatsApp extraído; consumer de
+#     `notification-events`. T10-21, ADR-083).
+#   - apps/matching-engine y apps/document-service quedan en placeholder
+#     mientras no tengan step propio. Al implementarlos se agrega el
+#     Dockerfile + step build/push/deploy.
 #   - apps/marketing queda con imagen placeholder hasta que el directorio
 #     exista (no hay source).
 #
@@ -172,6 +173,18 @@ steps:
       - .
     waitFor: ['-']
 
+  # apps/notification-service — consumer Pub/Sub pull (canal WhatsApp). T10-21.
+  - id: build-notification-service
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/notification-service/Dockerfile
+      - --tag=${_REGISTRY}/notification-service:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/notification-service:latest
+      - .
+    waitFor: ['-']
+
   # =========================================================================
   # Push a Artifact Registry
   # =========================================================================
@@ -204,6 +217,11 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, '--all-tags', '${_REGISTRY}/sms-fallback-gateway']
     waitFor: [build-sms-fallback-gateway]
+
+  - id: push-notification-service
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/notification-service']
+    waitFor: [build-notification-service]
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
@@ -529,6 +547,28 @@ steps:
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-sms-fallback-gateway]
 
+  # apps/notification-service — Cloud Run PULL consumer de `notification-events`.
+  # min-instances=1 + no-cpu-throttling obligatorios (consumer pull; ver
+  # compute.tf `service_notification`). El tráfico real lo decide el flag
+  # `notifications_via_microservice` del api, no este deploy.
+  - id: deploy-notification-service
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-notification-service
+      - --image=${_REGISTRY}/notification-service:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --min-instances=1
+      - --no-cpu-throttling
+      - --cpu=1
+      - --memory=512Mi
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-notification-service]
+
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   #
   # ADR-065 (2026-06-16): deploy AUTOMÁTICO desde Cloud Build vía DNS endpoint
@@ -670,6 +710,8 @@ images:
   - ${_REGISTRY}/telemetry-processor:latest
   - ${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
   - ${_REGISTRY}/sms-fallback-gateway:latest
+  - ${_REGISTRY}/notification-service:${_COMMIT_SHA}
+  - ${_REGISTRY}/notification-service:latest
 
 # Usar el SA github-deployer en lugar del compute default.
 # Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute
@@ -693,7 +735,7 @@ options:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
 # Timeout global del build. DEBE acomodar el `canary-sleep` de 1800s (30 min,
-# step id: canary-sleep) MÁS el build+push de las 6 imágenes Docker + deploy
+# step id: canary-sleep) MÁS el build+push de las 7 imágenes Docker + deploy
 # canary + verify + promoción. Con 2400s el presupuesto no-sleep era de solo
 # 600s (10 min) y un build frío (~11 min hasta route-canary) lo excedía →
 # TIMEOUT durante el sleep, la promoción a 100% nunca corría y el canary

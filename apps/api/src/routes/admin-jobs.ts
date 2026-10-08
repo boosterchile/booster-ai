@@ -20,7 +20,7 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type Redis from 'ioredis';
@@ -54,7 +54,7 @@ import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 export function createAdminJobsRoutes(opts: {
   db: Db;
   logger: Logger;
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
   /** T6a SEC-001 Sprint 2a — para POST /demo-account-ttl-alert. Null en tests sin Firebase. */
