@@ -173,6 +173,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'INTENTIONAL-OPEN',
     rationale: 'versión publicada de site-settings, read-only, cache 5min (ADR-039).',
   },
+  createPublicPreciosRoutes: {
+    category: 'INTENTIONAL-OPEN',
+    rationale:
+      'precios públicos (T10-29): solo la sección `servicios` de la configuración comercial publicada, proyectada con serviciosPublicosSchema; read-only, sin PII ni comisiones, 404 con PRICING_V3_ACTIVATED=false.',
+  },
   createPublicTrackingRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale:

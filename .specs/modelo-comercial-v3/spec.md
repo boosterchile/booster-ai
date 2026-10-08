@@ -139,6 +139,27 @@ T&C v3 y el encendido del flag quedan fuera de esta spec. Son ADR-079 §Acciones
 - [x] `CMF_API_KEY` ausente, vacía o con placeholder → `undefined` (test de config).
 - [ ] Verificación contra las fuentes reales: el sandbox de desarrollo no tiene salida a sii.cl ni a api.cmfchile.cl. Los parsers siguen el formato documentado (`{"UFs":[{"Valor":"39.485,65","Fecha":"AAAA-MM-DD"}]}` y la tabla `table_export` del SII). La primera corrida de `valor-uf-diario` en producción es la prueba; si una fuente cambió de formato, el job loguea `fuente UF falló` y usa la otra.
 
+## PR 6 — Página pública de precios (T10-29)
+
+### Salidas
+
+1. `GET /public/precios`, sin auth y clasificado `INTENTIONAL-OPEN` en default-deny:
+   - devuelve `{ version, vigente_desde, servicios }`, con `servicios` proyectado por `serviciosPublicosSchema`, que es `.strict()`;
+   - usa el mismo lector con caché ≤ 60 s que pricing y responde con `Cache-Control: public, max-age=60`;
+   - tiene span `pricing.precios_publicos.leer` y counter `pricing.precios_publicos_consultados`;
+   - con `PRICING_V3_ACTIVATED = false` responde 404 `precios_no_publicados`. Mientras rija el contrato v2 no se anuncian precios v3; la página entra en vigor con el flag.
+2. Ruta pública `/precios` en la web:
+   - generadores (UF por empresa), transportistas (UF por camión, gestión de flota y camiones exentos) y huella por proyecto;
+   - una nota de que los precios en UF son netos de IVA y se convierten con la UF del día de emisión;
+   - ninguna tasa de comisión: el texto dice que la comisión se informa al publicar cada carga;
+   - ante 404, una respuesta fuera de contrato o un error de red, muestra el aviso "Estamos actualizando nuestros precios".
+
+### Criterios de éxito
+
+- [x] El JSON público no contiene claves de comisión, `financiamiento`, `impuestos` ni datos internos (nota, autor).
+- [x] La página refleja la versión publicada: un cambio de valores o de versión en la respuesta se ve en el render. La página no muestra ningún `%`.
+- [ ] `www` sigue redirigiendo a la app. La página queda en `<app>/precios`; enlazarla desde el sitio comercial es decisión del PO.
+
 ## Reglas transversales (todas las PR)
 
 - **Los valores comerciales nunca vienen de env, Terraform ni código.** La migración siembra la versión 1 y de ahí en adelante manda la tabla (ADR-079 §3).
