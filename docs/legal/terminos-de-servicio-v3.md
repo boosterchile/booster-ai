@@ -53,7 +53,7 @@ La plataforma Booster AI (en adelante, la **Plataforma**) es operada por **Boost
 - **Conductor**: persona natural que conduce el vehículo del transportista y usa la Plataforma para ejecutar el viaje. El conductor actúa por cuenta del transportista.
 - **Usuario**: persona natural que accede a la Plataforma con credenciales propias, en representación de una empresa y con uno de los roles de la sección 4.3.
 - **Solicitud de carga**: requerimiento de transporte que publica el generador, con origen, destino, fechas, características de la carga y precio.
-- **Tipo de carga**: clasificación comercial de la solicitud, que determina la tasa de comisión: **spot** (operación puntual) o **programada** (operación recurrente bajo contrato programado habilitado por Booster).
+- **Modalidad de la carga**: clasificación comercial de la solicitud, distinta de la naturaleza de la carga (seca, refrigerada, etc.), que determina la tasa de comisión: **spot** (operación puntual) o **programada** (operación recurrente bajo contrato programado habilitado por Booster).
 - **Precio del transportista**: monto que el transportista recibe por el viaje. Es el ancla de todo cálculo de comisión.
 - **Comisión de Booster**: monto que Booster cobra al generador por el servicio de intermediación, calculado como un porcentaje del precio del transportista.
 - **Precio al generador**: precio del transportista más la comisión de Booster. El IVA de la comisión se agrega en la factura de Booster.
@@ -92,7 +92,7 @@ La plataforma Booster AI (en adelante, la **Plataforma**) es operada por **Boost
 
 ## 5. Operación del mercado
 
-5.1. **Publicación.** El generador publica una solicitud de carga e indica el tipo de carga. El tipo **programada** solo está disponible para generadores a los que Booster les habilitó un contrato programado. Si no se indica, la solicitud es **spot**.
+5.1. **Publicación.** El generador publica una solicitud de carga e indica la modalidad de la carga. La modalidad **programada** solo está disponible para generadores a los que Booster les habilitó un contrato programado. Si no se indica, la solicitud es **spot**.
 
 5.2. **Precio.** Al publicar, el generador fija el precio que recibirá el transportista. En ese momento la Plataforma le muestra el desglose completo: precio del transportista, comisión de Booster (porcentaje y monto), IVA de la comisión y total a pagar.
 
@@ -127,17 +127,17 @@ total factura Booster  = comisión + IVA de la comisión
 
 Todas las cifras se expresan netas de IVA, salvo el IVA de la comisión. Los montos se redondean a pesos enteros.
 
-6.3. **Tasa según tipo de carga.** La tasa de comisión depende del tipo de carga:
+6.3. **Tasa según modalidad de la carga.** La tasa de comisión depende de la modalidad de la carga:
 
 - **Carga spot**: tasa spot.
 - **Carga programada**: tasa programada, que siempre es menor que la tasa spot.
-- **Retorno de carga programada**: cuando la Plataforma identifica el viaje como retorno y la carga es programada, se aplica la tasa de retorno programada, que queda entre las dos anteriores, si Booster la tiene publicada.
+- **Retorno de carga programada**: cuando la Plataforma identifica el viaje como retorno y la carga es programada, se aplica la tasa de retorno programada, que queda entre las dos anteriores, si Booster la tiene definida.
 
 Las tasas vigentes se publican en la Plataforma y el generador las ve antes de publicar.
 
 6.4. **Congelamiento de la tasa.** La tasa aplicable **se congela al publicar** la solicitud de carga. Un cambio posterior de tasas solo afecta a solicitudes publicadas después del cambio. El total que el generador vio al publicar no cambia por un cambio de tasas.
 
-6.5. **Ejemplo ilustrativo.** Con una tasa hipotética de 20 % y un IVA de 19 %, en un viaje con precio del transportista de $700.000: la comisión es $140.000, el IVA de la comisión es $26.600, el precio al generador es $840.000 y la factura de Booster al generador es $166.600. El transportista recibe $700.000. Las tasas reales son las publicadas en la Plataforma.
+6.5. **Ejemplo ilustrativo.** Con una tasa hipotética de 20 % y un IVA de 19 %, en un viaje con precio del transportista de $700.000: la comisión es $140.000, el IVA de la comisión es $26.600, el precio al generador es $840.000 y la factura de Booster al generador es $166.600. El transportista recibe $700.000. Las tasas reales son las que la Plataforma muestra al generador al publicar cada solicitud; no se publican en el sitio público.
 
 6.6. **Confidencialidad del precio al generador.** Booster no informa al transportista ni a sus conductores el porcentaje de comisión, el monto de la comisión, el precio al generador ni el total facturado al generador. Las pantallas, mensajes y notificaciones dirigidas al transportista y al conductor muestran solo el precio del transportista. El generador ve el desglose completo de sus propias solicitudes.
 
@@ -146,7 +146,7 @@ Las tasas vigentes se publican en la Plataforma y el generador las ve antes de p
 > del precio requiere alguna declaración expresa frente al transportista para evitar reclamos de
 > falta de transparencia.]
 
-6.7. **Cambios de tasas.** Booster puede modificar las tasas publicadas. Los cambios rigen para solicitudes publicadas desde su entrada en vigor y nunca de forma retroactiva.
+6.7. **Cambios de tasas.** Booster puede modificar las tasas vigentes. Los cambios rigen para solicitudes publicadas desde su entrada en vigor y nunca de forma retroactiva.
 
 > [PENDIENTE ABOGADO: fijar el plazo de aviso previo al generador para un alza de tasas (la v2
 > daba 30 días para cambios adversos al transportista) y si un alza da derecho a terminar sin

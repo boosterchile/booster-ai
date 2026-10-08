@@ -48,17 +48,17 @@ Booster no es transportista ni responde por la ejecución del transporte. El con
 
 A.3.1. El Generador paga a Booster, por cada viaje, una comisión calculada sobre el precio del transportista, más IVA, según los Términos v3 §6.
 
-A.3.2. **Tipo de carga.** Las solicitudes se publican como **spot**, salvo que Booster habilite al Generador un **contrato programado** según A.4.
+A.3.2. **Modalidad de la carga.** Las solicitudes se publican como **spot**, salvo que Booster habilite al Generador un **contrato programado** según A.4.
 
-A.3.3. **Tasas.** Rigen las tasas publicadas en la Plataforma al momento de publicar cada solicitud, salvo que este contrato fije tasas particulares en el Anexo A-1.
+A.3.3. **Tasas.** Rigen las tasas vigentes en la Plataforma al momento de publicar cada solicitud, que la Plataforma muestra al Generador en ese momento, salvo que este contrato fije tasas particulares en el Anexo A-1.
 
 > [PENDIENTE ABOGADO: si el Anexo A-1 fija tasas particulares, la Plataforma hoy no tiene cómo
 > aplicarlas por empresa (ADR-079 configura tasas globales). Decidir si el contrato puede fijar
-> tasas particulares o solo remite a las publicadas.]
+> tasas particulares o solo remite a las vigentes.]
 
 ### A.4. Contrato programado
 
-A.4.1. Booster habilita el tipo de carga **programada** cuando el Generador se compromete a una operación recurrente con las características del Anexo A-2 (volumen, corredores, frecuencia y plazo).
+A.4.1. Booster habilita la modalidad **programada** cuando el Generador se compromete a una operación recurrente con las características del Anexo A-2 (volumen, corredores, frecuencia y plazo).
 
 A.4.2. La habilitación queda registrada en la Plataforma con su fecha y con el usuario de Booster que la activó.
 
