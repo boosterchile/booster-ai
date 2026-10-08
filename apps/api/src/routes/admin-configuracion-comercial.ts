@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import {
   type LectorConfiguracionComercial,
@@ -16,6 +17,10 @@ import {
   cambiarContratoProgramado,
   listarGeneradoresContratoProgramado,
 } from '../services/contrato-programado.js';
+import {
+  cambiarGestionFlota,
+  listarTransportistasGestionFlota,
+} from '../services/gestion-flota.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -30,6 +35,7 @@ import type { UserContext } from '../services/user-context.js';
  * publicaciones de carga nuevas en ≤ 60 s en todas las instancias, y al
  * instante en la que atendió el PUT.
  */
+/** Body de los toggles por empresa (contrato programado, gestión de flota). */
 const contratoProgramadoBodySchema = z.object({ activo: z.boolean() });
 
 const putBodySchema = z.object({
@@ -159,6 +165,63 @@ export function createAdminConfiguracionComercialRoutes(opts: {
       'contrato programado actualizado',
     );
     return c.json({ ok: true, generador });
+  });
+
+  /**
+   * ADR-079 §4 — plan de transportista con gestión de flota (tarifa por
+   * camión mayor en la suscripción UF). Decisión manual del platform-admin.
+   */
+  app.get('/gestion-flota', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    return c.json({ transportistas: await listarTransportistasGestionFlota(opts.db) });
+  });
+
+  app.put('/gestion-flota/:empresaId', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = z.string().uuid().safeParse(c.req.param('empresaId'));
+    if (!empresaId.success) {
+      return c.json({ error: 'invalid_empresa_id' }, 400);
+    }
+    let crudo: unknown;
+    try {
+      crudo = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    const body = contratoProgramadoBodySchema.safeParse(crudo);
+    if (!body.success) {
+      return c.json({ error: 'body_invalido', issues: body.error.issues }, 422);
+    }
+    const transportista = await withBusinessSpan(
+      { name: 'pricing.gestion_flota.cambiar' },
+      async (span) => {
+        const t = await cambiarGestionFlota({
+          db: opts.db,
+          empresaId: empresaId.data,
+          activo: body.data.activo,
+          adminEmail: auth.adminEmail,
+        });
+        setResultAttributes(span, { 'booster.gestion_flota.activo': body.data.activo });
+        return t;
+      },
+    );
+    if (!transportista) {
+      return c.json({ error: 'transportista_no_encontrado' }, 404);
+    }
+    getBusinessCounter('pricing.gestion_flota_cambiada').add(1, {
+      activo: String(body.data.activo),
+    });
+    opts.logger.info(
+      { adminEmail: auth.adminEmail, empresaId: empresaId.data, activo: body.data.activo },
+      'gestión de flota actualizada',
+    );
+    return c.json({ ok: true, transportista });
   });
 
   return app;

@@ -40,8 +40,11 @@ import {
   markOnboardingOrphanReaped,
   reapOrphanOnboardingFirebaseUsers,
 } from '../jobs/reap-orphan-onboarding-firebase.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
+import { cobrarSuscripcionesUf } from '../services/cobrar-suscripciones-uf.js';
+import { leerConfiguracionPublicada } from '../services/configuracion-comercial.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
 import {
   type MembershipPaymentGateway,
@@ -50,6 +53,12 @@ import {
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
+import {
+  ValorUfNoDisponibleError,
+  fechaChile,
+  obtenerValorUf,
+  proveedoresUfPorDefecto,
+} from '../services/valor-uf.js';
 
 export function createAdminJobsRoutes(opts: {
   db: Db;
@@ -71,6 +80,43 @@ export function createAdminJobsRoutes(opts: {
   membershipPaymentGateway?: MembershipPaymentGateway;
 }) {
   const app = new Hono();
+
+  /** ADR-079 §4 — valor UF: CMF (si hay `CMF_API_KEY`) con respaldo SII. */
+  const valorUfDe = (fecha: string) =>
+    obtenerValorUf({
+      db: opts.db,
+      logger: opts.logger,
+      fecha,
+      proveedores: proveedoresUfPorDefecto(appConfig.CMF_API_KEY),
+    });
+
+  /**
+   * ADR-079 §4 — tick diario: deja guardado el valor UF del día en
+   * `valores_uf` (caché auditada con su fuente). 503 si ninguna fuente
+   * responde, para que Cloud Scheduler reintente.
+   */
+  app.post('/valor-uf', async (c) => {
+    try {
+      const r = await withBusinessSpan({ name: 'pricing.valor_uf.obtener' }, async (span) => {
+        const v = await valorUfDe(fechaChile(Date.now()));
+        setResultAttributes(span, { 'booster.valor_uf.fuente': v.fuente });
+        return v;
+      });
+      return c.json({
+        ok: true,
+        fecha: r.fecha,
+        valor_clp: r.valorClp,
+        fuente: r.fuente,
+        desde_cache: r.desdeCache,
+      });
+    } catch (err) {
+      if (err instanceof ValorUfNoDisponibleError) {
+        opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'valor UF no disponible');
+        return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+      }
+      throw err;
+    }
+  });
 
   app.post('/chat-whatsapp-fallback', async (c) => {
     const result = await procesarMensajesNoLeidos({
@@ -138,6 +184,53 @@ export function createAdminJobsRoutes(opts: {
    * success). Idempotente: re-correr el tick no cobra dos veces el mismo ciclo.
    */
   app.post('/cobrar-memberships-mensual', async (c) => {
+    // ADR-079 §4: con v3 encendido el cobro mensual es de suscripciones en
+    // UF; la membresía v2 deja de habilitar cobro alguno.
+    if (appConfig.PRICING_V3_ACTIVATED) {
+      const gateway = opts.membershipPaymentGateway ?? noopMembershipPaymentGateway(opts.logger);
+      try {
+        const r = await withBusinessSpan(
+          { name: 'pricing.suscripciones_uf.cobrar' },
+          async (span) => {
+            const res = await cobrarSuscripcionesUf({
+              db: opts.db,
+              logger: opts.logger,
+              gateway,
+              obtenerUf: valorUfDe,
+              leerConfiguracion: () => leerConfiguracionPublicada(opts.db),
+            });
+            setResultAttributes(span, {
+              'booster.suscripciones_uf.facturas_creadas': res.facturasCreadas,
+            });
+            return res;
+          },
+        );
+        return c.json({
+          ok: true,
+          modelo: 'v3_suscripciones_uf',
+          periodo_mes: r.periodoMes,
+          fecha_uf: r.fechaUf,
+          uf_valor_clp: r.ufValorClp,
+          uf_fuente: r.ufFuente,
+          configuracion_version: r.configuracionVersion,
+          evaluadas: r.evaluadas,
+          facturas_creadas: r.facturasCreadas,
+          reintentos: r.reintentos,
+          pending_provider: r.pendingProvider,
+          cobradas: r.cobradas,
+          morosas: r.morosas,
+          ya_facturadas: r.yaFacturadas,
+          exentas: r.exentas,
+          payment_rail_stubbed: true,
+        });
+      } catch (err) {
+        if (err instanceof ValorUfNoDisponibleError) {
+          opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'cobro UF sin valor UF');
+          return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+        }
+        throw err;
+      }
+    }
     if (!appConfig.PRICING_V2_ACTIVATED) {
       opts.logger.debug('cobrar-memberships-mensual: PRICING_V2_ACTIVATED=false, skip');
       return c.json({ ok: true, skipped: true, reason: 'feature_disabled' });

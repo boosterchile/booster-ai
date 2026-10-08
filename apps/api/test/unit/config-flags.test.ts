@@ -95,3 +95,17 @@ describe('PRICING_V3_ACTIVATED — default seguro (ADR-079 §6, Verificación 6)
     ).toBe(false);
   });
 });
+
+describe('CMF_API_KEY — clave de la API UF (ADR-079 §4)', () => {
+  it('ausente, vacía o con el placeholder de Terraform → undefined (solo SII)', async () => {
+    for (const valor of [undefined, '', 'ROTATE_ME_CMF_API_KEY_PLACEHOLDER']) {
+      const config = await loadConfigWith({ CMF_API_KEY: valor });
+      expect(config.CMF_API_KEY).toBeUndefined();
+    }
+  });
+
+  it('valor real → se usa', async () => {
+    const config = await loadConfigWith({ CMF_API_KEY: 'a1b2c3d4e5f6' });
+    expect(config.CMF_API_KEY).toBe('a1b2c3d4e5f6');
+  });
+});

@@ -18,7 +18,13 @@ vi.mock('../../src/services/contrato-programado.js', () => ({
   cambiarContratoProgramado: vi.fn(),
 }));
 
+vi.mock('../../src/services/gestion-flota.js', () => ({
+  listarTransportistasGestionFlota: vi.fn(),
+  cambiarGestionFlota: vi.fn(),
+}));
+
 const svc = await import('../../src/services/configuracion-comercial.js');
+const gf = await import('../../src/services/gestion-flota.js');
 const cp = await import('../../src/services/contrato-programado.js');
 const { config: appConfig } = await import('../../src/config.js');
 const { createAdminConfiguracionComercialRoutes } = await import(
@@ -197,5 +203,59 @@ describe('contrato programado (ADR-079 §2)', () => {
     expect((await put(EMP, { activo: true })).status).toBe(404);
     expect((await put(EMP, { activo: 'si' })).status).toBe(422);
     expect((await put('no-uuid', { activo: true })).status).toBe(400);
+  });
+});
+
+describe('gestión de flota por transportista (ADR-079 §4)', () => {
+  const EMP = '00000000-0000-4000-8000-0000000000e2';
+  const FILA = {
+    empresaId: EMP,
+    razonSocial: 'Tra SpA',
+    rut: '77.000.000-K',
+    activadoEn: null,
+    activadoPor: null,
+  };
+
+  it('GET lista transportistas; fuera de la allowlist → 403', async () => {
+    vi.mocked(gf.listarTransportistasGestionFlota).mockResolvedValueOnce([FILA]);
+    const res = await buildApp(ADMIN).app.request('/admin/configuracion-comercial/gestion-flota');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { transportistas: unknown[] }).transportistas).toHaveLength(1);
+    expect(
+      (await buildApp('otro@x.cl').app.request('/admin/configuracion-comercial/gestion-flota'))
+        .status,
+    ).toBe(403);
+  });
+
+  it('PUT activa con el email del admin; no transportista → 404; body inválido → 422; id inválido → 400', async () => {
+    const { app } = buildApp(ADMIN);
+    const put = (id: string, body: unknown) =>
+      app.request(`/admin/configuracion-comercial/gestion-flota/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      });
+    vi.mocked(gf.cambiarGestionFlota).mockResolvedValueOnce({
+      ...FILA,
+      activadoEn: new Date(),
+      activadoPor: ADMIN,
+    });
+    expect((await put(EMP, { activo: true })).status).toBe(200);
+    expect(gf.cambiarGestionFlota).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: EMP, activo: true, adminEmail: ADMIN }),
+    );
+    vi.mocked(gf.cambiarGestionFlota).mockResolvedValueOnce(null);
+    expect((await put(EMP, { activo: false })).status).toBe(404);
+    expect((await put(EMP, { activo: 'si' })).status).toBe(422);
+    expect((await put(EMP, '{no-json')).status).toBe(400);
+    expect((await put('no-uuid', { activo: true })).status).toBe(400);
+    expect(
+      (
+        await buildApp('otro@x.cl').app.request(
+          `/admin/configuracion-comercial/gestion-flota/${EMP}`,
+          { method: 'PUT', body: '{}' },
+        )
+      ).status,
+    ).toBe(403);
   });
 });
