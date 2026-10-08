@@ -75,6 +75,11 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import {
+  crearClienteMatchingEngine,
+  crearRankeadorMatching,
+  modoMatching,
+} from './services/matching-ranking.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -469,6 +474,17 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // T10-21 — ranking local, en sombra o en matching-engine (flags).
+        ranking: crearRankeadorMatching({
+          modo: modoMatching({
+            viaMicroservicio: config.MATCHING_VIA_MICROSERVICE,
+            sombra: config.MATCHING_SHADOW,
+          }),
+          remoto: config.MATCHING_ENGINE_URL
+            ? crearClienteMatchingEngine({ url: config.MATCHING_ENGINE_URL })
+            : null,
+          logger,
+        }),
         // Task 4 (medicion-huella-segmento): geocodificar origen al crear.
         ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
       }),

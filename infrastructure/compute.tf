@@ -87,6 +87,9 @@ locals {
   # https://<service-name>-<project-number>.<region>.run.app.
   cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
   cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
+  # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
+  # esta URL) + Cloud Run IAM.
+  cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -120,6 +123,11 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # T10-21 — ranking de matching en matching-engine. Flags en `false` por
+    # default: el apply no cambia el comportamiento.
+    MATCHING_ENGINE_URL       = local.cloud_run_matching_url
+    MATCHING_SHADOW           = tostring(var.matching_shadow)
+    MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -457,26 +465,40 @@ module "service_matching_engine" {
   service_name          = "booster-ai-matching-engine"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
+  # la transacción del matching). min_instances=1 evita el cold start en ese
+  # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
+  # Cómputo puro: sin DB, sin Redis, sin secretos, sin VPC connector.
+  min_instances = 1
   max_instances = 10
+  cpu           = "1"
+  memory        = "512Mi"
 
-  env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-matching-engine"
-    REDIS_HOST   = google_redis_instance.main.host
-    REDIS_PORT   = tostring(google_redis_instance.main.port)
-  })
-  secrets = local.common_secrets
-
-  vpc_connector = google_vpc_access_connector.serverless.id
+  env_vars = {
+    NODE_ENV        = var.environment == "prod" ? "production" : "staging"
+    LOG_LEVEL       = "info"
+    SERVICE_NAME    = "booster-ai-matching-engine"
+    SERVICE_VERSION = "0.0.0"
+    # otel-bootstrap es no-op sin el proyecto (trazas a Cloud Trace).
+    GOOGLE_CLOUD_PROJECT = var.project_id
+    # El servicio verifica el ID token además de Cloud Run IAM: aud = su URL,
+    # email = SA runtime del api.
+    OIDC_AUDIENCE     = local.cloud_run_matching_url
+    ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
+  }
+  secrets = {}
 
   public = false
 
-  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
-  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
-  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
-  # run.app a nivel de red → un token de invoker robado deja de ser explotable
-  # desde internet (contención de blast-radius; IAM era la única barrera).
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  # INGRESS_TRAFFIC_ALL + IAM (`roles/run.invoker` solo para el SA runtime,
+  # matching-engine.tf), el patrón estándar Cloud Run → Cloud Run. ADR-063
+  # cerró a INTERNAL_ONLY los consumers PULL por no tener callers HTTP; este
+  # servicio sí tiene uno (el api), y el api sale por el connector con egress
+  # PRIVATE_RANGES_ONLY sin Cloud NAT: con INTERNAL_ONLY su request por la IP
+  # pública del run.app sería rechazada. Superficie mínima: un token robado
+  # solo obtiene rankings de los datos que él mismo envía (sin lectura ni
+  # efectos). Spec: .specs/matching-engine-t10-21/spec.md §Seguridad.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   secret_versions_ready = local.all_secret_versions_ready
 

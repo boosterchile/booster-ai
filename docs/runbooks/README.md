@@ -13,7 +13,7 @@
 | `apps/document-service` | Cloud Run (`booster-ai-document-service`) | [`service-document-service.md`](service-document-service.md) | Consumer Pub/Sub. Decodifica TED (PDF417). Bucket `documents` retención 6 años. |
 | `apps/whatsapp-bot` | Cloud Run (`booster-ai-whatsapp-bot`) | [`service-whatsapp-bot.md`](service-whatsapp-bot.md) | Webhook Twilio WhatsApp + conversación XState en Redis. |
 | `apps/sms-fallback-gateway` | Cloud Run (`booster-ai-sms-fallback-gateway`) | [`service-sms-fallback-gateway.md`](service-sms-fallback-gateway.md) | Webhook Twilio SMS → Pub/Sub `telemetry-events`. Ingress abierto (Twilio postea directo). |
-| `apps/matching-engine` | Cloud Run (`booster-ai-matching-engine`) | [`service-matching-engine.md`](service-matching-engine.md) | **SKELETON** — el matching real vive en `apps/api`. |
+| `apps/matching-engine` | Cloud Run (`booster-ai-matching-engine`) | [`service-matching-engine.md`](service-matching-engine.md) | `POST /ranking` (cómputo puro, T10-21). Sombra o ranking real según flags del api, con fallback local en el api. Orquestación y offers siguen en `apps/api`. |
 | `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | **SKELETON** — el fan-out real vive en `apps/api`. |
 
 ## Alerta → runbook

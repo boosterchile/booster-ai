@@ -26,6 +26,7 @@ import type { EmitirCertificadoConfig } from '../services/emitir-certificado-via
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
@@ -106,6 +107,8 @@ export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
   notify?: NotifyOfferDeps;
+  /** T10-21 — rankeador de matching (local, sombra o matching-engine). */
+  ranking?: RankeadorMatching;
   /**
    * Config para emisión de certificados de carbono al confirmar
    * recepción. Si está parcial/ausente, el endpoint igual marca el trip
@@ -256,6 +259,7 @@ export function createTripRequestsV2Routes(opts: {
         logger: opts.logger,
         tripId: trip.id,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        ...(opts.ranking ? { ranking: opts.ranking } : {}),
       });
     } catch (err) {
       if (err instanceof TripRequestNotFoundError) {
