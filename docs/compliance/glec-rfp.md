@@ -112,7 +112,9 @@ Validez esperada del certificado: al menos 12 meses, con opción de renovación 
 
 ## 7. Propuesta comercial solicitada
 
-El verificador cotiza: precio fijo por el alcance de §3, rondas adicionales, renovación anual, condiciones de pago y forma de contratación. Booster no publica un rango de precio en este documento; el presupuesto lo fija el PO (OQ-2 de la spec TRL 10). El contrato lo revisa el abogado de Booster.
+El verificador cotiza: precio fijo por el alcance de §3, rondas adicionales, renovación anual, condiciones de pago y forma de contratación. El presupuesto lo fija el PO (OQ-2 de la spec TRL 10) y el contrato lo revisa el abogado de Booster.
+
+**Referencia interna de mercado** (borrador del 2026-05-18, sin validar desde entonces): USD 8 000 – 25 000 por este alcance. Sirve para evaluar propuestas; no se comparte con el proveedor.
 
 **Criterios de selección**: acreditación para verificación de gases de efecto invernadero ante un organismo reconocido por IAF o ILAC; experiencia con GLEC Framework o ISO 14083 en transporte y logística; capacidad de trabajar en Chile o en forma remota con Chile; independencia respecto de Booster y sus proveedores.
 
@@ -122,11 +124,13 @@ El verificador cotiza: precio fijo por el alcance de §3, rondas adicionales, re
 
 El envío lo hace el PO. Esta tabla se completa a medida que se contacta a verificadores. Las propuestas recibidas no se versionan en el repo.
 
-| Fecha | Proveedor | Respuesta |
-|---|---|---|
-| | | |
-| | | |
-| | | |
+Lista corta del borrador del 2026-05-18 (el PO valida y completa):
+
+| Proveedor | Contacto | Presencia en Chile | Fecha de envío | Respuesta |
+|---|---|---|---|---|
+| SGS Chile | https://www.sgs.cl/es-es/contactenos | Oficinas en Santiago | | |
+| Bureau Veritas Chile | https://www.bureauveritas.cl/contacto | Oficinas en Santiago y Concepción | | |
+| DNV LATAM | https://www.dnv.com.br/contact/index.html | Oficinas en Brasil y Argentina; servicio remoto a Chile | | |
 
 ### 8.1. Texto sugerido para el envío
 
@@ -155,4 +159,4 @@ Booster AI · dev@boosterchile.com
 ## 9. Registro de cambios
 
 - **2026-05-18** — Primera versión (S0 T6), con lista corta de verificadores y rango de precio de referencia.
-- **2026-10-08** — Actualización al estado real (T10-27): descripción de la metodología tal como está en el código (factores WTW, tres modos, niveles derivados, incertidumbre, firma PAdES con KMS), datos reales disponibles y alcance sin DTE (ADR-069). Se quitan la lista de verificadores sugeridos, el rango de precio y la mención a competidores; la elección y el presupuesto son del PO. Criterio de aceptación explícito: certificado emitido.
+- **2026-10-08** — Actualización al estado real (T10-27): descripción de la metodología tal como está en el código (factores WTW, tres modos, niveles derivados, incertidumbre, firma PAdES con KMS), datos reales disponibles y alcance sin DTE (ADR-069). Se conservan la lista corta de verificadores y el rango de referencia del borrador de mayo (la elección y el presupuesto siguen siendo del PO); se quita la mención a competidores. Criterio de aceptación explícito: certificado emitido.

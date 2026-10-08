@@ -132,7 +132,9 @@ Duración total esperada: 8 a 10 semanas desde el envío.
 
 ## 7. Propuesta comercial solicitada
 
-El proveedor cotiza: precio fijo por el alcance de §3, precio de rondas adicionales de re-test, condiciones de pago y forma de contratación. Booster no publica un rango de precio en este documento; el presupuesto lo fija el PO (OQ-2 de la spec TRL 10). El contrato lo revisa el abogado de Booster.
+El proveedor cotiza: precio fijo por el alcance de §3, precio de rondas adicionales de re-test, condiciones de pago y forma de contratación. El presupuesto lo fija el PO (OQ-2 de la spec TRL 10) y el contrato lo revisa el abogado de Booster.
+
+**Referencia interna de mercado** (borrador del 2026-05-18, sin validar desde entonces): USD 12 000 – 35 000 por web, API, microservicios, webhooks y revisión de configuración GCP. Sirve para evaluar propuestas; no se comparte con el proveedor.
 
 **Criterios de selección**: certificaciones del equipo (OSCP, OSWE, CREST o equivalentes), experiencia en aplicaciones Node.js/TypeScript sobre GCP con Firebase Auth, experiencia en APIs multiempresa, idioma del reporte (español o inglés) y disponibilidad para los plazos de §6.
 
@@ -142,11 +144,13 @@ El proveedor cotiza: precio fijo por el alcance de §3, precio de rondas adicion
 
 El envío lo hace el PO. Esta tabla se completa a medida que se contacta a proveedores. Las propuestas recibidas no se versionan en el repo.
 
-| Fecha | Proveedor | Respuesta |
-|---|---|---|
-| | | |
-| | | |
-| | | |
+Lista corta por categoría del borrador del 2026-05-18 (el PO elige y completa):
+
+| Categoría | Perfil | Proveedores típicos (el PO valida) | Fecha de envío | Respuesta |
+|---|---|---|---|---|
+| Boutique global | Consultora de seguridad de aplicaciones con experiencia en SaaS B2B y telemetría IoT; equipo OSCP/OSCE/CREST; reporte PDF firmado | NCC Group, Bishop Fox, Praetorian | | |
+| Boutique Chile / LATAM | Pentest con presencia en Chile o LATAM y foco en cumplimiento local | El PO completa | | |
+| Pentest como servicio | Plataforma con pentesters validados, inicio en ≤ 1 semana y hallazgos integrables a GitHub Issues | Cobalt, Synack | | |
 
 ### 8.1. Texto sugerido para el envío
 
@@ -176,4 +180,4 @@ Booster AI · dev@boosterchile.com
 ## 9. Registro de cambios
 
 - **2026-05-18** — Primera versión (S0 T7). Lista corta por categorías de proveedor y rango de precio de referencia.
-- **2026-10-08** — Actualización al estado real (T10-26): arquitectura vigente, staging gemelo (ADR-083), auth RUT + clave (ADR-035), sin DTE (ADR-069), visibilidad del precio por rol (ADR-079). Se quitan la referencia a un ADR-048 futuro, la lista de proveedores sugeridos y el rango de precio (la elección y el presupuesto son del PO). Criterio de aceptación explícito: 0 P0/P1 abiertos tras el re-test.
+- **2026-10-08** — Actualización al estado real (T10-26): arquitectura vigente, staging gemelo (ADR-083), auth RUT + clave (ADR-035), sin DTE (ADR-069), visibilidad del precio por rol (ADR-079). Se quita la referencia a un ADR-048 futuro; se conservan la lista corta por categoría y el rango de referencia del borrador de mayo (la elección y el presupuesto siguen siendo del PO). Criterio de aceptación explícito: 0 P0/P1 abiertos tras el re-test.
