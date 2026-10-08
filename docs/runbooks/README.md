@@ -37,7 +37,8 @@
 | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) | Árbol de respuesta por alerta de telemetría (crash/unplug/jamming/parser/backlog/stalled/ingress). |
 | [`db-migration-rollback.md`](db-migration-rollback.md) | Revertir/contener una migración Drizzle (Caminos A rollback / B forward-fix / C PITR). |
 | [`bootstrap-gke-telemetry-gateway.md`](bootstrap-gke-telemetry-gateway.md) | Primer levantamiento del cluster GKE (secret K8s, Workload Identity, Artifact Registry). |
-| [`dr-failover-test.md`](dr-failover-test.md) | Test de failover DR. |
+| [`dr-drill.md`](dr-drill.md) | **Drill de DR por restauración** (T10-20): clon PITR + restore de backup en otra región, RTO/RPO medidos con `infrastructure/scripts/dr-drill.sh`. |
+| [`dr-failover-test.md`](dr-failover-test.md) | Test de failover DR del gateway (histórico; el clúster DR se retiró por ADR-081). |
 | [`load-content-sids.md`](load-content-sids.md) | Cargar/rotar Content SIDs de templates WhatsApp en Secret Manager. |
 | [`migracion-bucket-certificados.md`](migracion-bucket-certificados.md) | Migrar certificados de carbono al bucket propio. |
 | [`rotacion-maps-api-key.md`](rotacion-maps-api-key.md) | Rotar la Google Maps API key (referrer-restricted). |
