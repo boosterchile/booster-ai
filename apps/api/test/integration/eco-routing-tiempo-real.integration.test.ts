@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../src/db/schema.js';
 import {
   type EcoRoutingDeps,
+  barrerEcoRoutingTeltonika,
   evaluarEcoRoutingAsignacion,
   obtenerSugerenciaRutaActiva,
   registrarRespuestaSugerenciaRuta,
@@ -56,7 +57,10 @@ describe('integration: eco-routing en tiempo real (T10-23)', () => {
     await handle.pool.end();
   });
 
-  async function fixture(estadoAsignacion: 'asignado' | 'recogido' = 'recogido') {
+  async function fixture(
+    estadoAsignacion: 'asignado' | 'recogido' = 'recogido',
+    imei: string | null = null,
+  ) {
     const { db } = handle;
     const s = randomUUID().slice(0, 8);
     const plan =
@@ -119,6 +123,7 @@ describe('integration: eco-routing en tiempo real (T10-23)', () => {
           capacityKg: 5000,
           fuelType: 'diesel',
           consumptionLPer100kmBaseline: '30.00',
+          teltonikaImei: imei,
         })
         .returning(),
       'vehículo',
@@ -447,5 +452,41 @@ describe('integration: eco-routing en tiempo real (T10-23)', () => {
         nowMs: NOW,
       }),
     ).toBe('not_found');
+  });
+
+  test('barrido Teltonika: viaje con equipo (sin PWA) se evalúa desde telemetria_puntos', async () => {
+    const imei = `86${randomUUID().replace(/\D/g, '').padEnd(13, '7').slice(0, 13)}`;
+    const f = await fixture('recogido', imei);
+    const inicio = NOW - 1_000 - 7 * 10_000;
+    await handle.db.insert(schema.telemetryPoints).values(
+      LENTO.map((v, i) => ({
+        vehicleId: f.vehiculoId,
+        imei,
+        timestampDevice: new Date(inicio + i * 10_000),
+        priority: 0,
+        latitude: '-33.0500000',
+        longitude: '-71.4000000',
+        speedKmh: v,
+        angleDeg: 90,
+      })),
+    );
+    const sinEquipo = await fixture('recogido'); // sin IMEI: el barrido no la toca
+    await posiciones(sinEquipo, LENTO);
+    const { d, sendPush } = deps(MEJOR);
+
+    const r = await barrerEcoRoutingTeltonika({ db: handle.db, logger, deps: d });
+
+    expect(r.resultados.sugerida).toBeGreaterThanOrEqual(1);
+    const [fila] = await handle.db
+      .select()
+      .from(schema.sugerenciasRuta)
+      .where(eq(schema.sugerenciasRuta.assignmentId, f.asignacionId));
+    expect(fila?.estado).toBe('sugerida');
+    const ajenas = await handle.db
+      .select()
+      .from(schema.sugerenciasRuta)
+      .where(eq(schema.sugerenciasRuta.assignmentId, sinEquipo.asignacionId));
+    expect(ajenas).toHaveLength(0);
+    expect(sendPush).toHaveBeenCalled();
   });
 });

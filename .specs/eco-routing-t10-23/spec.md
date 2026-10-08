@@ -45,7 +45,7 @@ Esta spec supersede la de la rama `feat/eco-routing-realtime-spec`, que nunca se
      - `velocidad_media_kmh`, `motivo`;
      - `polyline_alternativa`, `ahorro_segundos`, `ahorro_kgco2e`, `kgco2e_actual`;
      - `enviada_en`, `respuesta` (`aceptada` | `rechazada` | `sin_respuesta`), `respondida_en`.
-   - Evaluación disparada al recibir cada posición del viaje activo. Lleva *cooldown* por asignación (una sugerencia cada 15 min) y *throttle* de Routes API (una evaluación por minuto como máximo).
+   - Evaluación disparada al recibir cada posición del viaje activo (PWA) y, para viajes con Teltonika (donde la PWA no reporta), por un barrido por minuto de Cloud Scheduler a `POST /admin/jobs/eco-routing-barrido` (mismo SA invocador OIDC, sin IAM nuevo; pausado con el flag OFF). Lleva *cooldown* por asignación (una sugerencia cada 15 min) y *throttle* de Routes API (una evaluación por minuto como máximo).
    - Web Push al conductor (`sendPushToUser`) con payload de sugerencia y acciones `aceptar` / `seguir`.
    - `POST /assignments/:id/sugerencias-ruta/:sid/respuesta`, validado con Zod: solo el conductor asignado, una sola vez.
    - Métricas de negocio:

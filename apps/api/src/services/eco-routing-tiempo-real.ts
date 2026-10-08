@@ -5,7 +5,7 @@ import {
   evaluarAlternativas,
 } from '@booster-ai/eco-routing';
 import type { Logger } from '@booster-ai/logger';
-import { and, desc, eq, gte, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   assignments,
@@ -362,6 +362,45 @@ async function evaluarInterno(opts: {
     );
   }
   return { resultado: 'sugerida', sugerenciaId: fila.id, pushEnviados: push.sent };
+}
+
+/**
+ * Barrido por minuto (Cloud Scheduler → `POST /admin/jobs/eco-routing-barrido`)
+ * para los viajes con Teltonika: con equipo en el camión la PWA no reporta
+ * posición (la huella se mide con el equipo), así que el disparo desde
+ * `driver-position` nunca correría. Evalúa cada asignación `recogido` cuyo
+ * vehículo tiene IMEI; el throttle y el cooldown del flujo normal aplican igual.
+ */
+export async function barrerEcoRoutingTeltonika(opts: {
+  db: Db;
+  logger: Logger;
+  routesProjectId?: string | undefined;
+  deps: EcoRoutingDeps;
+}): Promise<{ evaluadas: number; resultados: Record<string, number> }> {
+  // rls-allowlist: job interno de plataforma (OIDC del scheduler), cross-empresa por diseño
+  const activas = await opts.db
+    .select({ id: assignments.id })
+    .from(assignments)
+    .innerJoin(vehicles, eq(vehicles.id, assignments.vehicleId))
+    .where(and(eq(assignments.status, 'recogido'), isNotNull(vehicles.teltonikaImei)));
+  const resultados: Record<string, number> = {};
+  for (const a of activas) {
+    try {
+      const r = await evaluarEcoRoutingAsignacion({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId: a.id,
+        routesProjectId: opts.routesProjectId,
+        deps: opts.deps,
+      });
+      resultados[r.resultado] = (resultados[r.resultado] ?? 0) + 1;
+    } catch (err) {
+      // Una asignación que falla no corta el barrido de las demás.
+      opts.logger.error({ err, assignmentId: a.id }, 'eco-routing barrido: la evaluación falló');
+      resultados.error = (resultados.error ?? 0) + 1;
+    }
+  }
+  return { evaluadas: activas.length, resultados };
 }
 
 export interface SugerenciaRutaActiva {

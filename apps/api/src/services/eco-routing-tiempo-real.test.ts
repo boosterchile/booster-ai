@@ -431,3 +431,22 @@ describe('registrarRespuestaSugerenciaRuta', () => {
     );
   });
 });
+
+describe('barrerEcoRoutingTeltonika', () => {
+  it('evalúa cada asignación recogida con equipo y cuenta resultados; un fallo no corta el barrido', async () => {
+    const { barrerEcoRoutingTeltonika } = await import('./eco-routing-tiempo-real.js');
+    // 1) listado de activas; luego por asignación: ctx (a-1 no activa) y a-2 falla al cargar ctx.
+    const db = makeDb([[{ id: 'a-1' }, { id: 'a-2' }], [{ ...CTX, status: 'asignado' }]]);
+    const original = db.select;
+    let llamadas = 0;
+    db.select = vi.fn((...args: unknown[]) => {
+      llamadas += 1;
+      if (llamadas === 3) {
+        throw new Error('db caída');
+      }
+      return (original as (...a: unknown[]) => unknown)(...args);
+    }) as typeof db.select;
+    const r = await barrerEcoRoutingTeltonika({ db: db as never, logger, deps: deps([]) });
+    expect(r).toEqual({ evaluadas: 2, resultados: { viaje_no_activo: 1, error: 1 } });
+  });
+});

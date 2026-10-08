@@ -75,6 +75,7 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import type { EcoRoutingDeps } from './services/eco-routing-tiempo-real.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -524,6 +525,18 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
     // scheduler (INTERNAL_CRON_CALLER_SA). Si la env var no está,
     // skippeamos el wire (ningún caller pasa el middleware).
+    // T10-23 — eco-routing en tiempo real detrás de flag (default OFF). Una sola
+    // instancia de deps para `driver-position` y el barrido del scheduler, así
+    // comparten el throttle por asignación.
+    const ecoRoutingDeps: EcoRoutingDeps | undefined = config.ECO_ROUTING_REALTIME_ACTIVATED
+      ? {
+          computeRoutes,
+          sendPush: ({ userId, payload }) =>
+            sendPushToUser({ db: opts.db, logger, userId, payload }),
+          now: Date.now,
+          throttle: new Map<string, number>(),
+        }
+      : undefined;
     if (config.INTERNAL_CRON_CALLER_SA) {
       const cronAuthMiddleware = createAuthMiddleware({
         apiAudience: config.API_AUDIENCE,
@@ -544,6 +557,10 @@ export function createServer(opts: CreateServerOptions): Hono {
           redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // T10-23 — barrido por minuto de viajes con Teltonika (mismas deps).
+          ...(ecoRoutingDeps
+            ? { ecoRouting: { deps: ecoRoutingDeps, routesProjectId: config.GOOGLE_CLOUD_PROJECT } }
+            : {}),
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
           // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
           // dinero). Cuando exista `payment-provider`, inyectar el real acá.
@@ -577,17 +594,7 @@ export function createServer(opts: CreateServerOptions): Hono {
       // POST /:id/driver-position devuelve evaluado a la PWA del conductor.
       geofenceRadiusM: config.GEOFENCE_RADIUS_M,
       // T10-23: eco-routing en tiempo real detrás de flag (default OFF).
-      ...(config.ECO_ROUTING_REALTIME_ACTIVATED
-        ? {
-            ecoRouting: {
-              computeRoutes,
-              sendPush: ({ userId, payload }) =>
-                sendPushToUser({ db: opts.db, logger, userId, payload }),
-              now: Date.now,
-              throttle: new Map<string, number>(),
-            },
-          }
-        : {}),
+      ...(ecoRoutingDeps ? { ecoRouting: ecoRoutingDeps } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
