@@ -44,7 +44,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run E2E
         env:
-          BASE_URL: ${{ github.event_name == 'pull_request' && vars.STAGING_URL || vars.PRODUCTION_URL }}
+          # ADR-083: con staging creado (STAGING_URL definida) todo corre contra
+          # staging, nightly incluido; sin staging, el nightly sigue contra prod.
+          BASE_URL: ${{ vars.STAGING_URL || vars.PRODUCTION_URL }}
         run: pnpm --filter @booster-ai/web test:e2e
       - name: Upload Playwright report
         if: always()
