@@ -146,7 +146,9 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
                     </Td>
                     <Td className="text-right font-medium">{fmt(l.monto_bruto_clp)}</Td>
                     <Td className="text-right text-neutral-600 text-xs">
-                      {fmt(l.comision_clp)} ({l.comision_pct.toFixed(2)}%)
+                      {l.comision_clp !== undefined && l.comision_pct !== undefined
+                        ? `${fmt(l.comision_clp)} (${l.comision_pct.toFixed(2)}%)`
+                        : 'Sin comisión'}
                     </Td>
                     <Td className="text-right font-semibold text-success-700">
                       {fmt(l.monto_neto_carrier_clp)}
