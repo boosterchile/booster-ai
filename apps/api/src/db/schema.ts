@@ -1,4 +1,4 @@
-import type { SiteConfig } from '@booster-ai/shared-schemas';
+import type { ConfiguracionComercial, SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
   bigserial,
@@ -247,6 +247,13 @@ export const cargoTypeEnum = pgEnum('tipo_carga', [
   'ganado',
   'otra',
 ]);
+
+/**
+ * ADR-079 §2 — modalidad comercial de la carga: define la tasa de comisión
+ * (spot > programada). Es el campo que el ADR llama `tipo_carga`; ese nombre
+ * ya lo usa `cargoTypeEnum` (naturaleza de la carga). Migración 0059.
+ */
+export const modalidadCargaEnum = pgEnum('modalidad_carga', ['spot', 'programada']);
 
 export const tripStatusEnum = pgEnum('estado_viaje', [
   'borrador',
@@ -545,6 +552,15 @@ export const empresas = pgTable(
     addressPostalCode: varchar('direccion_codigo_postal', { length: 20 }),
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
+    /**
+     * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
+     * quién y cuándo). Solo estos generadores pueden publicar
+     * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.
+     */
+    contratoProgramadoActivadoEn: timestamp('contrato_programado_activado_en', {
+      withTimezone: true,
+    }),
+    contratoProgramadoActivadoPor: text('contrato_programado_activado_por'),
     /**
      * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
      * de métricas/billing y limpiar con un solo DELETE cascada por FK.
@@ -1276,6 +1292,17 @@ export const trips = pgTable(
      * medicion-huella-segmento). Naming inglés total (decisión PO).
      */
     carbonMeasurementOverride: boolean('carbon_measurement_override'),
+    /**
+     * ADR-079 §2 — modalidad fijada al publicar (default spot). `programada`
+     * solo para generadores con contrato programado habilitado.
+     */
+    modalidadCarga: modalidadCargaEnum('modalidad_carga').notNull().default('spot'),
+    /** ADR-079 §2 — tasa congelada al publicar; un cambio de config no la mueve. */
+    comisionPctAplicada: numeric('comision_pct_aplicada', { precision: 5, scale: 2 }),
+    /** ADR-079 §2 — versión de configuración comercial vigente al publicar. */
+    configuracionComercialId: uuid('configuracion_comercial_id').references(
+      () => configuracionComercial.id,
+    ),
     status: tripStatusEnum('estado').notNull().default('esperando_match'),
     createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('actualizado_en', { withTimezone: true }).notNull().defaultNow(),
@@ -2139,9 +2166,11 @@ export const liquidaciones = pgTable(
     empresaCarrierId: uuid('empresa_carrier_id')
       .notNull()
       .references(() => empresas.id),
-    tierSlugAplicado: text('tier_slug_aplicado')
-      .notNull()
-      .references(() => membershipTiers.slug),
+    /**
+     * Tier v2 aplicado. Nullable desde 0059: una liquidación v3 (ADR-079) no
+     * tiene tier. @deprecated para filas nuevas con PRICING_V3_ACTIVATED.
+     */
+    tierSlugAplicado: text('tier_slug_aplicado').references(() => membershipTiers.slug),
     montoBrutoClp: integer('monto_bruto_clp').notNull(),
     comisionPct: numeric('comision_pct', { precision: 4, scale: 2 }).notNull(),
     comisionClp: integer('comision_clp').notNull(),
@@ -2149,6 +2178,18 @@ export const liquidaciones = pgTable(
     ivaComisionClp: integer('iva_comision_clp').notNull(),
     totalFacturaBoosterClp: integer('total_factura_booster_clp').notNull(),
     pricingMethodologyVersion: text('pricing_methodology_version').notNull(),
+    /** ADR-079 §6 — v3: lo que recibe el transportista, íntegro. */
+    precioTransportistaClp: integer('precio_transportista_clp'),
+    /** ADR-079 §6 — v3: precio del transportista + comisión. */
+    precioGeneradorClp: integer('precio_generador_clp'),
+    /** ADR-079 §6 — v3: comisión + IVA facturados al generador. */
+    totalFacturaGeneradorClp: integer('total_factura_generador_clp'),
+    /** ADR-079 §6 — v3: modalidad de la carga liquidada. */
+    modalidadCarga: modalidadCargaEnum('modalidad_carga'),
+    /** ADR-079 §6 — v3: versión de configuración con que se liquidó. */
+    configuracionComercialId: uuid('configuracion_comercial_id').references(
+      () => configuracionComercial.id,
+    ),
     status: text('status').notNull(),
     /**
      * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
@@ -2211,6 +2252,10 @@ export const facturasBoosterClp = pgTable(
     subtotalClp: integer('subtotal_clp').notNull(),
     ivaClp: integer('iva_clp').notNull(),
     totalClp: integer('total_clp').notNull(),
+    /** ADR-079 §4 — suscripción declarada en UF (null en facturas CLP). */
+    montoUf: numeric('monto_uf', { precision: 12, scale: 4 }),
+    /** ADR-079 §4 — valor UF del día de emisión (fuente SII), capturado. */
+    ufValorClp: numeric('uf_valor_clp', { precision: 12, scale: 2 }),
     /**
      * @deprecated ADR-069 — columnas DTE legacy. Booster dejó de emitir
      * DTE (remoción Sovos): existían por la emisión vía proveedor SII, que
@@ -2441,6 +2486,24 @@ export const matchingBacktestRuns = pgTable(
 // sobre publicada=true (index unique parcial). Cualquiera puede leer la
 // versión publicada vía GET /public/site-settings (cache 5min); solo
 // platform-admin puede crear drafts y publicar.
+
+/**
+ * ADR-079 §3 — configuración comercial versionada (espejo de
+ * `configuracion_sitio`). Cada cambio es una fila nueva con nota y autor;
+ * nunca UPDATE de una publicada. Singleton sobre `publicada = true`
+ * (índice único parcial en 0059). `config` valida con
+ * `configuracionComercialSchema`. Global de plataforma: sin empresa_id.
+ */
+export const configuracionComercial = pgTable('configuracion_comercial', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  version: integer('version').notNull().unique(),
+  config: jsonb('config').notNull().$type<ConfiguracionComercial>(),
+  publicada: boolean('publicada').notNull().default(false),
+  vigenteDesde: timestamp('vigente_desde', { withTimezone: true }).notNull().defaultNow(),
+  notaCambio: text('nota_cambio').notNull(),
+  creadoPorEmail: text('creado_por_email').notNull(),
+  creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const configuracionSitio = pgTable('configuracion_sitio', {
   id: uuid('id').defaultRandom().primaryKey(),
