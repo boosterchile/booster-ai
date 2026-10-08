@@ -40,7 +40,7 @@ Esta spec supersede la de la rama `feat/eco-routing-realtime-spec`, que nunca se
      - Nunca recomienda una ruta que emita más que la actual.
      - Si no hay forma de estimar el combustible (eléctrico, o sin datos de Routes API ni consumo base), evalúa solo por tiempo y no informa CO2e.
 2. **`apps/api`** (PR B):
-   - Tabla `sugerencias_ruta` (expand-only, con `.down.sql`). Columnas:
+   - Tabla `sugerencias_ruta` (migración 0059, expand-only, con `.down.sql`). Lleva `estado` = `sugerida` | `congestion_sin_alternativa` para registrar también las detecciones sin alternativa. Columnas:
      - `id`, `asignacion_id`, `viaje_id`, `detectada_en`, `posicion_lat`, `posicion_lng`;
      - `velocidad_media_kmh`, `motivo`;
      - `polyline_alternativa`, `ahorro_segundos`, `ahorro_kgco2e`, `kgco2e_actual`;
@@ -62,7 +62,7 @@ Esta spec supersede la de la rama `feat/eco-routing-realtime-spec`, que nunca se
 ## Criterios de éxito
 
 - [x] PR A: tests del detector (12) y del evaluador (9) con **rojo exhibido** antes de implementar. Coverage del package ≥ 80 %.
-- [ ] PR B: test de integración (`test/integration/`): posición lenta del viaje activo → fila `sugerencias_ruta` → push enviado → `POST` de respuesta registrada → métrica.
+- [x] PR B: test de integración (`test/integration/eco-routing-tiempo-real.integration.test.ts`, 9 casos contra Postgres real): posición lenta del viaje recogido → fila `sugerencias_ruta` (detección < 60 s desde la condición) → push con acciones y `enviada_en` → respuesta registrada una sola vez por el conductor; cooldown, throttle, sin alternativa, sin congestión, viaje no activo, error de Routes API.
 - [ ] PR C: test de componente de la card y de las acciones del service worker.
 - [ ] Viaje real en prod con al menos una sugerencia y su respuesta (evidencia del PO tras activar el flag).
 

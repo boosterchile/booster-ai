@@ -24,6 +24,7 @@
     "@booster-ai/coaching-generator": "workspace:*",
     "@booster-ai/config": "workspace:*",
     "@booster-ai/driver-scoring": "workspace:*",
+    "@booster-ai/eco-routing": "workspace:*",
     "@booster-ai/factoring-engine": "workspace:*",
     "@booster-ai/logger": "workspace:*",
     "@booster-ai/matching-algorithm": "workspace:*",

@@ -80,8 +80,9 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import { computeRoutes } from './services/routes-api.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
-import { configureWebPush } from './services/web-push.js';
+import { configureWebPush, sendPushToUser } from './services/web-push.js';
 
 export interface CreateServerOptions {
   db: Db;
@@ -575,6 +576,18 @@ export function createServer(opts: CreateServerOptions): Hono {
       // T8/T9 (medicion-huella-segmento): radio del geofence del origen que
       // POST /:id/driver-position devuelve evaluado a la PWA del conductor.
       geofenceRadiusM: config.GEOFENCE_RADIUS_M,
+      // T10-23: eco-routing en tiempo real detrás de flag (default OFF).
+      ...(config.ECO_ROUTING_REALTIME_ACTIVATED
+        ? {
+            ecoRouting: {
+              computeRoutes,
+              sendPush: ({ userId, payload }) =>
+                sendPushToUser({ db: opts.db, logger, userId, payload }),
+              now: Date.now,
+              throttle: new Map<string, number>(),
+            },
+          }
+        : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,

@@ -217,6 +217,9 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # T10-23 — eco-routing en tiempo real (default false).
+    ECO_ROUTING_REALTIME_ACTIVATED = tostring(var.eco_routing_realtime_activated)
+
     # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
     # habilita POST /demo/login (mintea custom tokens Firebase para las
     # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:

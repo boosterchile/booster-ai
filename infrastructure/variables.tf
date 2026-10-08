@@ -478,6 +478,14 @@ variable "wake_word_voice_activated" {
   default     = false
 }
 
+# T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. Activar primero en
+# staging (ADR-083) y después en prod con un viaje real de evidencia.
+variable "eco_routing_realtime_activated" {
+  description = "Activa la detección de congestión y las sugerencias de ruta al conductor (T10-23)."
+  type        = bool
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # Modo demo (subdominio demo.boosterchile.com)
 # ---------------------------------------------------------------------------
