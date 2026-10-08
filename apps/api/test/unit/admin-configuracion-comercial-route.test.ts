@@ -13,7 +13,13 @@ vi.mock('../../src/services/configuracion-comercial.js', () => ({
   publicarConfiguracionComercial: vi.fn(),
 }));
 
+vi.mock('../../src/services/contrato-programado.js', () => ({
+  listarGeneradoresContratoProgramado: vi.fn(),
+  cambiarContratoProgramado: vi.fn(),
+}));
+
 const svc = await import('../../src/services/configuracion-comercial.js');
+const cp = await import('../../src/services/contrato-programado.js');
 const { config: appConfig } = await import('../../src/config.js');
 const { createAdminConfiguracionComercialRoutes } = await import(
   '../../src/routes/admin-configuracion-comercial.js'
@@ -137,5 +143,59 @@ describe('admin configuración comercial (ADR-079 §3)', () => {
       body: '{x',
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('contrato programado (ADR-079 §2)', () => {
+  const EMP = '00000000-0000-4000-8000-0000000000e1';
+
+  it('GET lista generadores; fuera de la allowlist → 403', async () => {
+    vi.mocked(cp.listarGeneradoresContratoProgramado).mockResolvedValueOnce([
+      {
+        empresaId: EMP,
+        razonSocial: 'Gen SpA',
+        rut: '76.000.000-K',
+        activadoEn: null,
+        activadoPor: null,
+      },
+    ]);
+    const res = await buildApp(ADMIN).app.request(
+      '/admin/configuracion-comercial/contrato-programado',
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { generadores: unknown[] }).generadores).toHaveLength(1);
+    expect(
+      (
+        await buildApp('otro@x.cl').app.request(
+          '/admin/configuracion-comercial/contrato-programado',
+        )
+      ).status,
+    ).toBe(403);
+  });
+
+  it('PUT activa con el email del admin; empresa inexistente o no generadora → 404; body inválido → 422', async () => {
+    const { app } = buildApp(ADMIN);
+    const put = (id: string, body: unknown) =>
+      app.request(`/admin/configuracion-comercial/contrato-programado/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    vi.mocked(cp.cambiarContratoProgramado).mockResolvedValueOnce({
+      empresaId: EMP,
+      razonSocial: 'Gen SpA',
+      rut: '76.000.000-K',
+      activadoEn: new Date(),
+      activadoPor: ADMIN,
+    });
+    expect((await put(EMP, { activo: true })).status).toBe(200);
+    expect(cp.cambiarContratoProgramado).toHaveBeenCalledWith(
+      expect.objectContaining({ empresaId: EMP, activo: true, adminEmail: ADMIN }),
+    );
+
+    vi.mocked(cp.cambiarContratoProgramado).mockResolvedValueOnce(null);
+    expect((await put(EMP, { activo: true })).status).toBe(404);
+    expect((await put(EMP, { activo: 'si' })).status).toBe(422);
+    expect((await put('no-uuid', { activo: true })).status).toBe(400);
   });
 });

@@ -37,10 +37,20 @@ const version = (n: number, spot = 20) => ({
 let getSpy: ReturnType<typeof vi.spyOn>;
 let putSpy: ReturnType<typeof vi.spyOn>;
 
+const GEN = {
+  empresaId: '00000000-0000-4000-8000-0000000000e1',
+  razonSocial: 'Exportadora Uno SpA',
+  rut: '76.111.111-1',
+  activadoEn: null as string | null,
+  activadoPor: null as string | null,
+};
+
 beforeEach(() => {
-  getSpy = vi.spyOn(api, 'get').mockResolvedValue({
-    publicada: version(2),
-    historial: [version(2), version(1, 22)],
+  getSpy = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+    if (path === '/admin/configuracion-comercial/contrato-programado') {
+      return { generadores: [GEN] };
+    }
+    return { publicada: version(2), historial: [version(2), version(1, 22)] };
   });
   putSpy = vi.spyOn(api, 'put').mockResolvedValue({ ok: true, publicada: version(3, 18) });
 });
@@ -96,7 +106,7 @@ describe('PlatformAdminConfiguracionComercialRoute (ADR-079 §3)', () => {
       }),
     );
     expect(await screen.findByText(/Versión 3 publicada/)).toBeInTheDocument();
-    expect(getSpy).toHaveBeenCalledTimes(2);
+    expect(getSpy).toHaveBeenCalledWith('/admin/configuracion-comercial');
   });
 
   it('error del servidor al publicar se muestra', async () => {
@@ -109,14 +119,76 @@ describe('PlatformAdminConfiguracionComercialRoute (ADR-079 §3)', () => {
   });
 
   it('403 → acceso restringido', async () => {
-    getSpy.mockRejectedValueOnce(new ApiError(403, 'forbidden_platform_admin', {}));
+    getSpy.mockRejectedValue(new ApiError(403, 'forbidden_platform_admin', {}));
     render(<PlatformAdminConfiguracionComercialRoute />);
     expect(await screen.findByText(/Solo el equipo de plataforma/)).toBeInTheDocument();
   });
 
   it('otro error al cargar se muestra', async () => {
-    getSpy.mockRejectedValueOnce(new Error('red'));
+    getSpy.mockRejectedValue(new Error('red'));
     render(<PlatformAdminConfiguracionComercialRoute />);
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar');
+  });
+});
+
+describe('contrato programado (ADR-079 §2)', () => {
+  it('lista generadores y habilita uno', async () => {
+    putSpy.mockResolvedValueOnce({
+      ok: true,
+      generador: {
+        ...GEN,
+        activadoEn: '2026-10-08T12:00:00.000Z',
+        activadoPor: 'admin@boosterchile.com',
+      },
+    });
+    const user = userEvent.setup();
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    expect(await screen.findByText('Exportadora Uno SpA')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Habilitar contrato programado de Exportadora Uno SpA' }),
+    );
+    await waitFor(() =>
+      expect(putSpy).toHaveBeenCalledWith(
+        `/admin/configuracion-comercial/contrato-programado/${GEN.empresaId}`,
+        { activo: true },
+      ),
+    );
+  });
+
+  it('un generador habilitado muestra quién lo habilitó y permite deshabilitar', async () => {
+    getSpy.mockImplementation(async (path: string) =>
+      path === '/admin/configuracion-comercial/contrato-programado'
+        ? {
+            generadores: [
+              {
+                ...GEN,
+                activadoEn: '2026-10-08T12:00:00.000Z',
+                activadoPor: 'admin@boosterchile.com',
+              },
+            ],
+          }
+        : { publicada: version(2), historial: [version(2)] },
+    );
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    expect(await screen.findByText(/Habilitado por admin@boosterchile.com/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'Deshabilitar contrato programado de Exportadora Uno SpA',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('error al cambiar se muestra', async () => {
+    putSpy.mockRejectedValueOnce(new Error('red'));
+    const user = userEvent.setup();
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Habilitar contrato programado de Exportadora Uno SpA',
+      }),
+    );
+    expect(
+      await screen.findByText(/No se pudo cambiar el contrato programado/),
+    ).toBeInTheDocument();
   });
 });

@@ -366,6 +366,15 @@ export const apiEnvSchema = commonEnvSchema
     PRICING_V2_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
 
     /**
+     * ADR-079 §6 — modelo comercial v3: comisión al generador por modalidad
+     * de carga, tasa congelada al publicar, liquidación v3. `false` en TODOS
+     * los entornos: se enciende solo con env var explícita en Cloud Run
+     * (Terraform), después de publicar los T&C v3 (ADR-079 Acciones §7).
+     * Con `false`, publicar no congela tasa y liquidar sigue en v2.
+     */
+    PRICING_V3_ACTIVATED: booleanFlag(false),
+
+    /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
      * (ADR-029 + ADR-032). Default `false` en TODOS los entornos
      * (vuelve al default seguro de ADR-030 §1; decisión PO 2026-06-10,

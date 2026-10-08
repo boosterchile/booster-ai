@@ -111,3 +111,17 @@ export const CONFIGURACION_COMERCIAL_INICIAL: ConfiguracionComercial = {
   },
   impuestos: { iva_pct: 19 },
 };
+
+/**
+ * ADR-079 §5 — claves que NUNCA llegan a transportista ni conductor (API,
+ * bot, notificaciones). El guard de visibilidad del api y su test de
+ * contrato usan esta lista.
+ */
+export const CLAVES_PRIVADAS_GENERADOR = [
+  'comision_pct',
+  'comision_clp',
+  'iva_comision_clp',
+  'precio_generador_clp',
+  'total_factura_generador_clp',
+  'comision_pct_aplicada',
+] as const;

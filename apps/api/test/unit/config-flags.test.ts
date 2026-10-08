@@ -74,3 +74,24 @@ describe('FACTORING_V1_ACTIVATED — default seguro (ADR-030 §1)', () => {
     expect(config.FACTORING_V1_ACTIVATED).toBe(false);
   });
 });
+
+describe('PRICING_V3_ACTIVATED — default seguro (ADR-079 §6, Verificación 6)', () => {
+  it('false en production sin env var', async () => {
+    const config = await loadConfigWith({
+      NODE_ENV: 'production',
+      PRICING_V3_ACTIVATED: undefined,
+    });
+    expect(config.PRICING_V3_ACTIVATED).toBe(false);
+  });
+
+  it('true SOLO con PRICING_V3_ACTIVATED=true explícito; "false" es false', async () => {
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', PRICING_V3_ACTIVATED: 'true' }))
+        .PRICING_V3_ACTIVATED,
+    ).toBe(true);
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', PRICING_V3_ACTIVATED: 'false' }))
+        .PRICING_V3_ACTIVATED,
+    ).toBe(false);
+  });
+});

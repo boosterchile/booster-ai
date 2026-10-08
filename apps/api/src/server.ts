@@ -20,6 +20,7 @@ import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-l
 import { skipOnboardingAdmin } from './middleware/skip-onboarding-admin.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { crearGuardiaVisibilidadTransportista } from './middleware/visibilidad-transportista.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
 import { createAdminConfiguracionComercialRoutes } from './routes/admin-configuracion-comercial.js';
@@ -134,6 +135,7 @@ export function createServer(opts: CreateServerOptions): Hono {
   // ADR-079 §3 — lectura cacheada (≤ 60 s) de la configuración comercial
   // publicada. Una sola instancia por proceso: el admin la invalida al
   // publicar y pricing la consulta al publicar cargas y liquidar.
+  const guardiaVisibilidadTransportista = crearGuardiaVisibilidadTransportista({ logger });
   const lectorConfiguracionComercial = crearLectorConfiguracionComercial({
     leer: () => leerConfiguracionPublicada(opts.db),
   });
@@ -481,6 +483,8 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // ADR-079 — tasa congelada al publicar con PRICING_V3_ACTIVATED.
+        lectorComercial: lectorConfiguracionComercial,
         // Task 4 (medicion-huella-segmento): geocodificar origen al crear.
         ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
       }),
@@ -488,6 +492,10 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // Offers — endpoints carrier-side: GET mine + POST accept/reject.
     // Mismo chain firebaseAuth + userContext.
+    // ADR-079 §5 — ninguna respuesta a transportista/conductor lleva claves
+    // privadas del generador (fail-closed). Va antes de auth para envolver
+    // la respuesta final de toda la cadena.
+    app.use('/offers/*', guardiaVisibilidadTransportista);
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -572,6 +580,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (sin prefix adicional) para que ambos compartan /assignments. Las
     // rutas no chocan porque los paths internos son distintos
     // (/:id/confirmar-entrega vs /:id/messages*).
+    app.use('/assignments/*', guardiaVisibilidadTransportista);
     app.use('/assignments/*', firebaseAuthMiddleware);
     app.use('/assignments/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     const assignmentsRouter = createAssignmentsRoutes({
