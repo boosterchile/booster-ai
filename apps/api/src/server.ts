@@ -22,6 +22,7 @@ import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
+import { createAdminConfiguracionComercialRoutes } from './routes/admin-configuracion-comercial.js';
 import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
@@ -75,6 +76,10 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import {
+  crearLectorConfiguracionComercial,
+  leerConfiguracionPublicada,
+} from './services/configuracion-comercial.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -125,6 +130,13 @@ export function createServer(opts: CreateServerOptions): Hono {
   });
 
   const app = new Hono();
+
+  // ADR-079 §3 — lectura cacheada (≤ 60 s) de la configuración comercial
+  // publicada. Una sola instancia por proceso: el admin la invalida al
+  // publicar y pricing la consulta al publicar cargas y liquidar.
+  const lectorConfiguracionComercial = crearLectorConfiguracionComercial({
+    leer: () => leerConfiguracionPublicada(opts.db),
+  });
 
   // Request logging middleware
   app.use('*', async (c, next) => {
@@ -699,6 +711,30 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
 
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).

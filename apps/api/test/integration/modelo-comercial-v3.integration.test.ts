@@ -32,15 +32,27 @@ describe('integration: modelo comercial v3 (migración 0059)', () => {
     await handle.pool.end();
   });
 
-  test('hay exactamente una versión publicada, válida y con los valores de ADR-079', async () => {
+  test('la versión 1 sembrada tiene los valores de ADR-079 y hay una sola publicada válida', async () => {
+    // Otros tests de integración publican versiones nuevas en la misma base:
+    // la v1 es la que fija la migración; la publicada puede ser posterior.
+    const v1 = uno(
+      await handle.db
+        .select()
+        .from(schema.configuracionComercial)
+        .where(eq(schema.configuracionComercial.version, 1)),
+      'versión 1',
+    );
+    expect(configuracionComercialSchema.parse(v1.config)).toEqual(CONFIGURACION_COMERCIAL_INICIAL);
+    expect(v1.notaCambio.length).toBeGreaterThan(0);
+
     const publicadas = await handle.db
       .select()
       .from(schema.configuracionComercial)
       .where(eq(schema.configuracionComercial.publicada, true));
     expect(publicadas).toHaveLength(1);
-    const v = uno(publicadas, 'publicada');
-    expect(configuracionComercialSchema.parse(v.config)).toEqual(CONFIGURACION_COMERCIAL_INICIAL);
-    expect(v.notaCambio.length).toBeGreaterThan(0);
+    expect(
+      configuracionComercialSchema.safeParse(uno(publicadas, 'publicada').config).success,
+    ).toBe(true);
   });
 
   test('una segunda versión publicada viola el índice singleton', async () => {
