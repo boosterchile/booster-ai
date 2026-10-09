@@ -169,7 +169,8 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:15-alpine
+        # Espejo de Google: Docker Hub limita los pulls anónimos de los runners.
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -182,7 +183,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -305,7 +306,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # BuildKit y las imágenes base (FROM node:24-*) se bajan del espejo de
+      # Google: Docker Hub limita los pulls anónimos de los runners y falla con
+      # toomanyrequests o timeout antes de compilar.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Build imagen del api (reproduce el build de prod, install parcial)
         uses: docker/build-push-action@v6
         with:
