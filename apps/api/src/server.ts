@@ -1,5 +1,6 @@
 import { buildRedisTlsOptions } from '@booster-ai/config';
 import { type Logger, createLogger } from '@booster-ai/logger';
+import { BigQuery } from '@google-cloud/bigquery';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -28,6 +29,7 @@ import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembro
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
+import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -80,6 +82,11 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import {
+  clienteDesdeBigQuery,
+  crearCargadorBigQuery,
+  crearLectorObservatorio,
+} from './services/observatorio/bigquery.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush } from './services/web-push.js';
 
@@ -125,6 +132,24 @@ export function createServer(opts: CreateServerOptions): Hono {
   });
 
   const app = new Hono();
+
+  // T10-24 / ADR-012 Capa 2 — observatorio urbano en BigQuery. Sin dataset
+  // configurado no se crea el cliente y las rutas responden "no configurado".
+  const observatorio = config.BIGQUERY_OBSERVATORY_DATASET
+    ? (() => {
+        const datasetId = config.BIGQUERY_OBSERVATORY_DATASET;
+        const cliente = clienteDesdeBigQuery(
+          new BigQuery(
+            config.GOOGLE_CLOUD_PROJECT ? { projectId: config.GOOGLE_CLOUD_PROJECT } : {},
+          ),
+        );
+        return {
+          datasetId,
+          cargador: crearCargadorBigQuery(cliente),
+          lector: crearLectorObservatorio({ cliente, datasetId }),
+        };
+      })()
+    : null;
 
   // Request logging middleware
   app.use('*', async (c, next) => {
@@ -543,6 +568,15 @@ export function createServer(opts: CreateServerOptions): Hono {
           redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // T10-24 — export del observatorio a BigQuery (si hay dataset).
+          ...(observatorio
+            ? {
+                observatorio: {
+                  datasetId: observatorio.datasetId,
+                  cargador: observatorio.cargador,
+                },
+              }
+            : {}),
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
           // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
           // dinero). Cuando exista `payment-provider`, inyectar el real acá.
@@ -655,6 +689,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+
+    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth vía
+    // allowlist BOOSTER_PLATFORM_ADMIN_EMAILS en el handler.
+    app.use('/admin/observatorio/*', firebaseAuthMiddleware);
+    app.use('/admin/observatorio/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/observatorio',
+      createAdminObservatorioRoutes({ logger, lector: observatorio?.lector ?? null }),
+    );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
     // Mismo middleware chain que stakeholder-orgs.

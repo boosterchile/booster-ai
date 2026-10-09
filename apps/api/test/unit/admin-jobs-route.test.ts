@@ -18,6 +18,11 @@ vi.mock('../../src/services/cobrar-memberships-mensual.js', () => ({
   cobrarMembershipsMensual: vi.fn(),
 }));
 
+vi.mock('../../src/services/observatorio/bigquery.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/observatorio/bigquery.js')>()),
+  exportarObservatorio: vi.fn(),
+}));
+
 vi.mock('../../src/services/purgar-posiciones-movil.js', () => ({
   purgarPosicionesMovil: vi.fn(),
 }));
@@ -47,6 +52,7 @@ const { purgarPosicionesMovil } = await import('../../src/services/purgar-posici
 const { cobrarMembershipsMensual } = await import(
   '../../src/services/cobrar-memberships-mensual.js'
 );
+const { exportarObservatorio } = await import('../../src/services/observatorio/bigquery.js');
 const { config: appConfig } = await import('../../src/config.js');
 
 const noop = (): void => undefined;
@@ -418,5 +424,45 @@ describe('POST /admin/jobs/cobrar-memberships-mensual (gap B5)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { skipped: boolean };
     expect(body.skipped).toBe(true);
+  });
+});
+
+describe('POST /admin/jobs/observatorio-export (T10-24)', () => {
+  it('sin cargador configurado → 200 skipped', async () => {
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/observatorio-export', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      skipped: true,
+      reason: 'observatorio_no_configurado',
+    });
+    expect(exportarObservatorio).not.toHaveBeenCalled();
+  });
+
+  it('con cargador → exporta y responde las filas', async () => {
+    (exportarObservatorio as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ filas: 42 });
+    const { createAdminJobsRoutes } = await import('../../src/routes/admin-jobs.js');
+    const app = new Hono();
+    app.route(
+      '/admin/jobs',
+      createAdminJobsRoutes({
+        db: {} as never,
+        logger: noopLogger,
+        twilioClient: null,
+        contentSidChatUnread: null,
+        webAppUrl: 'https://app.test',
+        observatorio: {
+          datasetId: 'observatory',
+          cargador: { reemplazarTabla: vi.fn() },
+        },
+      }),
+    );
+    const res = await app.request('/admin/jobs/observatorio-export', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, filas: 42 });
+    expect(exportarObservatorio).toHaveBeenCalledWith(
+      expect.objectContaining({ datasetId: 'observatory' }),
+    );
   });
 });

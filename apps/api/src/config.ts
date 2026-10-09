@@ -340,6 +340,18 @@ export const apiEnvSchema = commonEnvSchema
      * determinístico automáticamente sin generar error).
      */
     GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
+    /**
+     * T10-24 / ADR-012 Capa 2 — dataset BigQuery del observatorio urbano
+     * (`observatory`, Terraform). Ausente: el export y el endpoint admin del
+     * observatorio responden "no configurado" (skip / 503).
+     */
+    BIGQUERY_OBSERVATORY_DATASET: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_]+$/)
+        .optional(),
+    ),
 
     /**
      * Feature flag para activar pricing v2 (ADR-030 + ADR-031).

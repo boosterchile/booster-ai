@@ -40,6 +40,7 @@ import {
   markOnboardingOrphanReaped,
   reapOrphanOnboardingFirebaseUsers,
 } from '../jobs/reap-orphan-onboarding-firebase.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
 import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
@@ -47,6 +48,8 @@ import {
   type MembershipPaymentGateway,
   noopMembershipPaymentGateway,
 } from '../services/membership-payment-gateway.js';
+import { type CargadorBigQuery, exportarObservatorio } from '../services/observatorio/bigquery.js';
+import { leerViajesEntregados } from '../services/observatorio/viajes-entregados.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
@@ -69,8 +72,36 @@ export function createAdminJobsRoutes(opts: {
    * tests y para enchufar el provider real cuando exista `payment-provider`.
    */
   membershipPaymentGateway?: MembershipPaymentGateway;
+  /**
+   * T10-24 — export del observatorio a BigQuery. Ausente cuando
+   * `BIGQUERY_OBSERVATORY_DATASET` no está configurado: el job responde skip.
+   */
+  observatorio?: { datasetId: string; cargador: CargadorBigQuery };
 }) {
   const app = new Hono();
+
+  /**
+   * T10-24 / ADR-012 Capa 2 — tick horario: reemplaza `observatory.viajes`
+   * en BigQuery con la foto de viajes entregados (load job WRITE_TRUNCATE).
+   * Las vistas `urban_flow_metrics_*` se refrescan solas desde esa tabla.
+   */
+  app.post('/observatorio-export', async (c) => {
+    const observatorio = opts.observatorio;
+    if (!observatorio) {
+      return c.json({ ok: true, skipped: true, reason: 'observatorio_no_configurado' });
+    }
+    const r = await withBusinessSpan({ name: 'observatorio.exportar' }, async (span) => {
+      const res = await exportarObservatorio({
+        logger: opts.logger,
+        datasetId: observatorio.datasetId,
+        leerViajes: () => leerViajesEntregados(opts.db),
+        cargador: observatorio.cargador,
+      });
+      setResultAttributes(span, { 'booster.observatorio.filas': res.filas });
+      return res;
+    });
+    return c.json({ ok: true, filas: r.filas });
+  });
 
   app.post('/chat-whatsapp-fallback', async (c) => {
     const result = await procesarMensajesNoLeidos({
