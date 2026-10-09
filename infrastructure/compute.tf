@@ -78,6 +78,7 @@ locals {
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.picovoice_access_key_placeholder.id],
   )
 
   # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
@@ -217,6 +218,12 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # T10-22 — modelos de Porcupine que la PWA baja en runtime vía
+    # GET /me/wake-word (wake-word.tf). Vacíos → la ruta responde
+    # `disponible: false, motivo: sin_modelo`.
+    WAKE_WORD_KEYWORD_URL = var.wake_word_keyword_url
+    WAKE_WORD_MODEL_URL   = var.wake_word_model_url
+
     # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
     # habilita POST /demo/login (mintea custom tokens Firebase para las
     # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
@@ -287,6 +294,10 @@ module "service_api" {
     # vía security.tf, así que no hace falta IAM extra.
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+
+    # T10-22 — AccessKey de Picovoice (wake-word.tf). El placeholder
+    # ROTATE_ME_ cuenta como ausente en GET /me/wake-word.
+    PICOVOICE_ACCESS_KEY = google_secret_manager_secret.picovoice_access_key.secret_id
 
     # B.8 — Content SIDs de templates WhatsApp (offer-new, chat-unread, tracking,
     # safety-alert). Validados `^HX[a-fA-F0-9]+$` en config.ts (preprocess

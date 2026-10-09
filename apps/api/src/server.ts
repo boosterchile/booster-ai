@@ -51,6 +51,7 @@ import { createMeConsentsRoutes } from './routes/me-consents.js';
 import { createMeEmpresaMiembrosRoutes } from './routes/me-empresa-miembros.js';
 import { createMeEmpresaRoutes } from './routes/me-empresa.js';
 import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
+import { createMeWakeWordRoutes } from './routes/me-wake-word.js';
 import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
@@ -366,6 +367,22 @@ export function createServer(opts: CreateServerOptions): Hono {
     // userContext + flag PRICING_V2_ACTIVATED.
     app.use('/me/liquidaciones', userContextMiddlewareForMe);
     meRouter.route('/', createMeLiquidacionesRoutes({ db: opts.db, logger }));
+    // Wake-word "Oye Booster" (ADR-036, T10-22): config de Picovoice para la
+    // PWA del conductor. userContext precede el mount.
+    app.use('/me/wake-word', userContextMiddlewareForMe);
+    meRouter.route(
+      '/',
+      createMeWakeWordRoutes({
+        logger,
+        config: {
+          activado: config.WAKE_WORD_VOICE_ACTIVATED,
+          accessKey: config.PICOVOICE_ACCESS_KEY,
+          keywordUrl: config.WAKE_WORD_KEYWORD_URL,
+          modelUrl: config.WAKE_WORD_MODEL_URL,
+          sensibilidad: config.WAKE_WORD_SENSITIVITY,
+        },
+      }),
+    );
     // equipo-de-la-empresa — /me/empresa/miembros: la empresa gestiona su
     // propia gente. userContext precede el mount (la autorización sale de la
     // membresía activa del caller; el empresaId nunca viene del cliente).

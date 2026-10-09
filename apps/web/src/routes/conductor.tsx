@@ -5,7 +5,6 @@ import {
   Inbox,
   MapPin,
   MessageCircle,
-  Mic,
   Navigation,
   PackageCheck,
   RefreshCw,
@@ -16,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
+import { WakeWordBanner } from '../components/conductor/WakeWordBanner.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
@@ -119,14 +119,9 @@ function ConductorDashboardPage({ me }: { me: MeOnboarded }) {
 }
 
 /**
- * ADR-036 — Banner sticky cuando el conductor activó "Oye Booster" + el
- * feature flag global está ON. Le da al conductor feedback visible
- * verificable de que el mic está escuchando la wake-word (privacy
- * transparente: si no ve el banner, el mic no está activo).
- *
- * Cuando el banner está visible, el listener Porcupine corre solo cuando
- * el vehículo está detenido. La integración real con el controller entra
- * en Wave 5 PR 2 — esta UI solo refleja la preferencia del usuario.
+ * ADR-036 / T10-22 — "Oye Booster" con el flag global y la preferencia del
+ * conductor encendidos. El banner refleja el estado real del micrófono
+ * (`components/conductor/WakeWordBanner.tsx`).
  */
 function WakeWordActiveBanner() {
   const { flags } = useFeatureFlags();
@@ -138,27 +133,7 @@ function WakeWordActiveBanner() {
     setEnabled(isWakeWordEnabled());
   }, []);
 
-  if (!flags.wake_word_voice_activated || !enabled) {
-    return null;
-  }
-
-  return (
-    <output
-      className="mt-3 flex items-center gap-2 rounded-md border border-primary-200 bg-primary-50 p-2 text-primary-900 text-xs"
-      data-testid="wake-word-active-banner"
-    >
-      {/* Sin `animate-pulse` y sin "Escuchando": el controller es un stub
-          declarado (`services/wake-word.ts`) que NO toca el micrófono. Afirmar
-          que la app escucha sería una mentira sobre la privacidad del
-          conductor — de las peores que puede decir una interfaz. Cuando PR 2
-          integre Porcupine, este texto vuelve a ser cierto. */}
-      <Mic className="h-4 w-4 shrink-0" aria-hidden />
-      <span>
-        Activaste “Oye Booster”. Todavía lo estamos preparando: por ahora el micrófono no se usa. Te
-        avisaremos cuando esté disponible.
-      </span>
-    </output>
-  );
+  return <WakeWordBanner activo={flags.wake_word_voice_activated && enabled} />;
 }
 
 // ---------------------------------------------------------------------------
