@@ -206,6 +206,9 @@ jobs:
       # levantan su Redis igual, solo sin el sidecar reaper. Si el job migrara a
       # un runner self-hosted/persistente, reevaluar (ahí ryuk sí limpia).
       TESTCONTAINERS_RYUK_DISABLED: 'true'
+      # Testcontainers (Redis real en los tests) también desde el espejo de
+      # Google: sin esto baja redis:7-alpine de Docker Hub dentro del test.
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
