@@ -92,13 +92,26 @@ const AUTENTICADOS = [
   { peso: 30, path: '/me/assignments' },
 ];
 const MEZCLA = SOLO_PUBLICO ? PUBLICOS : [...PUBLICOS, ...AUTENTICADOS];
+
+/** Hosts de producción: T10-19 se mide en un entorno que no es prod. */
+const HOSTS_PROD = new Set(['api.boosterchile.com']);
+
+/** Host de una URL http(s), en minúsculas; '' si no es una URL http(s). */
+function hostDe(url) {
+  const m = /^https?:\/\/([^/:?#]+)/i.exec(url);
+  return m ? m[1].toLowerCase() : '';
+}
 const PESO_TOTAL = MEZCLA.reduce((s, r) => s + r.peso, 0);
 
 export function setup() {
   if (!BASE_URL) {
     fail('BASE_URL es obligatoria');
   }
-  if (/api\.boosterchile\.com/.test(BASE_URL)) {
+  const host = hostDe(BASE_URL);
+  if (!host) {
+    fail(`BASE_URL no es una URL http(s): ${BASE_URL}`);
+  }
+  if (HOSTS_PROD.has(host)) {
     fail('T10-19 se corre en un entorno que no es prod: BASE_URL apunta a producción');
   }
   if (!SOLO_PUBLICO && !ID_TOKEN) {
