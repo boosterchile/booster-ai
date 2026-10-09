@@ -319,7 +319,7 @@ function StakeholderOrgRow({ org }: { org: OrganizacionStakeholder }) {
             {org.eliminado_en && ' · ELIMINADA'}
           </div>
         </div>
-        <div className="flex items-center gap-2 text-neutral-400 text-xs">
+        <div className="flex items-center gap-2 text-neutral-600 text-xs">
           {new Date(org.creado_en).toLocaleDateString('es-CL')}
           <span aria-hidden>{expanded ? '▾' : '▸'}</span>
         </div>
@@ -337,8 +337,16 @@ function StakeholderOrgRow({ org }: { org: OrganizacionStakeholder }) {
   );
 }
 
+/**
+ * Resultado de una invitación. Vive en el panel y no en el formulario: el
+ * formulario se cierra al invitar y el panel se recarga, y el código de
+ * activación se entrega SOLO por esta pantalla (no hay correo).
+ */
+type ResultadoInvitacion = { tipo: 'codigo'; codigo: string } | { tipo: 'vinculo'; aviso: string };
+
 function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
   const [detail, setDetail] = useState<StakeholderOrgDetailResponse | null>(null);
+  const [resultado, setResultado] = useState<ResultadoInvitacion | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
@@ -375,7 +383,8 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
     };
   }, [orgId, refreshTick]);
 
-  function handleInvited() {
+  function handleInvited(r: ResultadoInvitacion) {
+    setResultado(r);
     setShowInvite(false);
     setRefreshTick((t) => t + 1);
   }
@@ -409,7 +418,10 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
         </span>
         <button
           type="button"
-          onClick={() => setShowInvite((v) => !v)}
+          onClick={() => {
+            setResultado(null);
+            setShowInvite((v) => !v);
+          }}
           className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-1 font-medium text-primary-700 text-xs hover:bg-primary-100"
           data-testid={`stakeholder-org-invite-toggle-${orgId}`}
         >
@@ -419,6 +431,20 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
       </div>
 
       {showInvite && <InviteStakeholderMemberForm orgId={orgId} onInvited={handleInvited} />}
+
+      {resultado?.tipo === 'vinculo' && (
+        <p className="mb-2 text-neutral-800 text-xs" data-testid="stakeholder-vinculo">
+          {resultado.aviso}
+        </p>
+      )}
+      {resultado?.tipo === 'codigo' && (
+        <p className="mb-2 text-neutral-800 text-xs" data-testid="stakeholder-codigo">
+          Código de activación: <span className="font-mono text-base">{resultado.codigo}</span>. La
+          persona lo usa en Activar cuenta, con su RUT, y elige su clave. Después entra como
+          stakeholder y ve las zonas agregadas y el mapa de funcionalidades. El código no es la
+          contraseña.
+        </p>
+      )}
 
       {detail.miembros.length === 0 ? (
         <p className="text-neutral-500 text-xs">
@@ -468,19 +494,15 @@ function InviteStakeholderMemberForm({
   onInvited,
 }: {
   orgId: string;
-  onInvited: () => void;
+  onInvited: (r: ResultadoInvitacion) => void;
 }) {
   const [form, setForm] = useState<InviteFormState>({ rut: '', email: '', full_name: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [codigo, setCodigo] = useState<string | null>(null);
-  const [avisoVinculo, setAvisoVinculo] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setCodigo(null);
-    setAvisoVinculo(null);
     const rutNormalizado = ensureRutHasDash(form.rut);
     if (!rutSchema.safeParse(rutNormalizado).success) {
       setError('RUT inválido (ej: 76.274.900-9)');
@@ -497,19 +519,22 @@ function InviteStakeholderMemberForm({
         email: form.email,
         full_name: form.full_name,
       });
-      if (res.codigo_activacion) {
-        setCodigo(res.codigo_activacion);
-      } else if (res.vinculo === 'cuenta_activa' || res.status === 'activa') {
-        setAvisoVinculo(
-          'Esta persona ya tiene cuenta. Quedó en la organización y entra con su RUT y su clave. Su clave no cambia.',
-        );
-      } else {
-        setAvisoVinculo(
-          'Esta persona ya tiene un código vigente. No se reemplazó. Cuando lo use, también quedará en la organización.',
-        );
-      }
       setForm({ rut: '', email: '', full_name: '' });
-      onInvited();
+      if (res.codigo_activacion) {
+        onInvited({ tipo: 'codigo', codigo: res.codigo_activacion });
+      } else if (res.vinculo === 'cuenta_activa' || res.status === 'activa') {
+        onInvited({
+          tipo: 'vinculo',
+          aviso:
+            'Esta persona ya tiene cuenta. Quedó en la organización y entra con su RUT y su clave. Su clave no cambia.',
+        });
+      } else {
+        onInvited({
+          tipo: 'vinculo',
+          aviso:
+            'Esta persona ya tiene un código vigente. No se reemplazó. Cuando lo use, también quedará en la organización.',
+        });
+      }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'already_member') {
         setError('Este RUT ya es miembro de la organización.');
@@ -585,18 +610,6 @@ function InviteStakeholderMemberForm({
           )}
         </button>
       </div>
-      {avisoVinculo && (
-        <p className="text-neutral-800 text-xs sm:col-span-3" data-testid="stakeholder-vinculo">
-          {avisoVinculo}
-        </p>
-      )}
-      {codigo && (
-        <p className="text-neutral-800 text-xs sm:col-span-3" data-testid="stakeholder-codigo">
-          Código de activación: <span className="font-mono text-base">{codigo}</span>. La persona lo
-          usa en Activar cuenta, con su RUT, y elige su clave. Después entra como stakeholder y ve
-          las zonas agregadas y el mapa de funcionalidades. El código no es la contraseña.
-        </p>
-      )}
     </form>
   );
 }
@@ -682,7 +695,7 @@ function CreateStakeholderOrgForm({ onCreated }: { onCreated: () => void }) {
       </label>
       <label className="flex flex-col gap-1">
         <span className="font-medium text-neutral-700 text-sm">
-          Región ámbito <span className="text-neutral-400 text-xs">(opcional, ISO 3166-2:CL)</span>
+          Región ámbito <span className="text-neutral-600 text-xs">(opcional, ISO 3166-2:CL)</span>
         </span>
         <input
           type="text"
@@ -696,7 +709,7 @@ function CreateStakeholderOrgForm({ onCreated }: { onCreated: () => void }) {
       </label>
       <label className="flex flex-col gap-1 sm:col-span-2">
         <span className="font-medium text-neutral-700 text-sm">
-          Sector ámbito <span className="text-neutral-400 text-xs">(opcional, slug)</span>
+          Sector ámbito <span className="text-neutral-600 text-xs">(opcional, slug)</span>
         </span>
         <input
           type="text"
