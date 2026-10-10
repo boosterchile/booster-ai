@@ -4,10 +4,9 @@ Snapshot para el PO. Programa: [ADR-082](../adr/082-objetivo-trl10-supersede-pre
 
 El estado es este: 39 PRs abiertos del programa (#742–#780), ninguno mergeado.
 
-**Estado de CI.**
-- **Verde verificada** en el último commit de #775, #776, #777, #778 y #779.
-- **Sin CI** en los PRs apilados (#767, #770–#774, #780), porque su base no es `main`. Su evidencia es local y está en cada PR.
-- **Sin verificar** en esta sesión para los demás con base `main`. Corrieron antes del espejo de Google y pueden estar rojos por el rate limit de Docker Hub. Mergeado #776, el agente trae `main` a cada rama y la CI vuelve a correr.
+**Estado de CI** al 2026-10-10, último commit de cada rama, según la API de Actions:
+- **`ci.yml` en verde** en todos los PRs con base `main`: #742–#766, #768, #769, #775–#779.
+- **Sin CI** en los PRs apilados (#767, #770–#774, #780), porque su base no es `main`. Su evidencia es local y está en cada PR. La CI corre cuando su padre se mergea y el PR queda apuntando a `main`.
 
 Este documento fija:
 
