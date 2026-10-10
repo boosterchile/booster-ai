@@ -12,6 +12,10 @@ import {
   listarHistorialConfiguracion,
   publicarConfiguracionComercial,
 } from '../services/configuracion-comercial.js';
+import {
+  cambiarContratoProgramado,
+  listarGeneradoresContratoProgramado,
+} from '../services/contrato-programado.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -26,6 +30,8 @@ import type { UserContext } from '../services/user-context.js';
  * publicaciones de carga nuevas en ≤ 60 s en todas las instancias, y al
  * instante en la que atendió el PUT.
  */
+const contratoProgramadoBodySchema = z.object({ activo: z.boolean() });
+
 const putBodySchema = z.object({
   config: configuracionComercialSchema,
   nota_cambio: z.string().trim().min(1).max(500),
@@ -105,6 +111,53 @@ export function createAdminConfiguracionComercialRoutes(opts: {
       'configuración comercial publicada',
     );
     return c.json({ ok: true, publicada });
+  });
+
+  /**
+   * ADR-079 §2 — contrato programado por generador (habilita la modalidad
+   * `programada`, de tasa menor). Decisión manual del platform-admin.
+   */
+  app.get('/contrato-programado', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    return c.json({ generadores: await listarGeneradoresContratoProgramado(opts.db) });
+  });
+
+  app.put('/contrato-programado/:empresaId', async (c) => {
+    const auth = requirePlatformAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const empresaId = z.string().uuid().safeParse(c.req.param('empresaId'));
+    if (!empresaId.success) {
+      return c.json({ error: 'invalid_empresa_id' }, 400);
+    }
+    let crudo: unknown;
+    try {
+      crudo = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    const body = contratoProgramadoBodySchema.safeParse(crudo);
+    if (!body.success) {
+      return c.json({ error: 'body_invalido', issues: body.error.issues }, 422);
+    }
+    const generador = await cambiarContratoProgramado({
+      db: opts.db,
+      empresaId: empresaId.data,
+      activo: body.data.activo,
+      adminEmail: auth.adminEmail,
+    });
+    if (!generador) {
+      return c.json({ error: 'generador_no_encontrado' }, 404);
+    }
+    opts.logger.info(
+      { adminEmail: auth.adminEmail, empresaId: empresaId.data, activo: body.data.activo },
+      'contrato programado actualizado',
+    );
+    return c.json({ ok: true, generador });
   });
 
   return app;

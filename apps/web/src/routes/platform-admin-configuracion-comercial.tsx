@@ -348,6 +348,8 @@ function Pagina() {
         </div>
       </form>
 
+      <ContratoProgramado />
+
       <section className="mt-8">
         <h2 className="flex items-center gap-2 font-semibold text-neutral-900">
           <History className="h-4 w-4" aria-hidden /> Historial
@@ -378,5 +380,96 @@ function Pagina() {
         </table>
       </section>
     </div>
+  );
+}
+
+interface GeneradorDto {
+  empresaId: string;
+  razonSocial: string;
+  rut: string;
+  activadoEn: string | null;
+  activadoPor: string | null;
+}
+
+/**
+ * ADR-079 §2 — habilita por generador la modalidad `programada` (tasa
+ * menor). Decisión manual del platform-admin; queda registrado quién y cuándo.
+ */
+function ContratoProgramado() {
+  const [generadores, setGeneradores] = useState<GeneradorDto[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [cambiando, setCambiando] = useState<string | null>(null);
+
+  const cargar = useCallback(async () => {
+    try {
+      const r = await api.get<{ generadores: GeneradorDto[] }>(
+        '/admin/configuracion-comercial/contrato-programado',
+      );
+      setGeneradores(r.generadores);
+    } catch {
+      setError('No se pudo cargar la lista de generadores.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
+
+  async function cambiar(g: GeneradorDto) {
+    setCambiando(g.empresaId);
+    setError(null);
+    try {
+      const r = await api.put<{ ok: true; generador: GeneradorDto }>(
+        `/admin/configuracion-comercial/contrato-programado/${g.empresaId}`,
+        { activo: g.activadoEn === null },
+      );
+      setGeneradores((lista) =>
+        (lista ?? []).map((x) => (x.empresaId === r.generador.empresaId ? r.generador : x)),
+      );
+    } catch {
+      setError('No se pudo cambiar el contrato programado. Intenta de nuevo.');
+    } finally {
+      setCambiando(null);
+    }
+  }
+
+  return (
+    <section className="mt-8">
+      <h2 className="font-semibold text-neutral-900">Contrato programado</h2>
+      <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+        Solo los generadores habilitados pueden publicar carga programada, que paga la tasa menor.
+      </p>
+      {error && <p className="mt-2 text-danger-700 text-sm">{error}</p>}
+      {generadores === null ? null : generadores.length === 0 ? (
+        <p className="mt-2 text-neutral-500 text-sm">No hay empresas generadoras.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
+          {generadores.map((g) => (
+            <li
+              key={g.empresaId}
+              className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
+            >
+              <div>
+                <div className="font-medium text-neutral-900">{g.razonSocial}</div>
+                <div className="text-neutral-500 text-xs">
+                  {g.rut}
+                  {g.activadoEn &&
+                    ` · Habilitado por ${g.activadoPor ?? '—'} el ${new Date(g.activadoEn).toLocaleDateString('es-CL')}`}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={cambiando === g.empresaId}
+                onClick={() => void cambiar(g)}
+                aria-label={`${g.activadoEn ? 'Deshabilitar' : 'Habilitar'} contrato programado de ${g.razonSocial}`}
+                className="rounded-md border border-neutral-300 px-3 py-1 text-neutral-800 disabled:opacity-50"
+              >
+                {g.activadoEn ? 'Deshabilitar' : 'Habilitar'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
