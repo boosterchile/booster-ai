@@ -17,10 +17,12 @@ concurrency:
 env:
   NODE_VERSION: '24'
   PNPM_VERSION: '10.34.4'
-  # Coverage mínimo bloqueante. Subir conforme el repo madure.
+  # Coverage mínimo bloqueante: 80 en las cuatro métricas para cada
+  # workspace (T10-08, ADR-082).
   COVERAGE_MIN_LINES: 80
-  COVERAGE_MIN_BRANCHES: 75
+  COVERAGE_MIN_BRANCHES: 80
   COVERAGE_MIN_FUNCTIONS: 80
+  COVERAGE_MIN_STATEMENTS: 80
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -131,10 +133,11 @@ jobs:
             echo "Checking $f"
             node -e "
               const r = require('./$f').total;
-              const min = { lines: ${{ env.COVERAGE_MIN_LINES }}, branches: ${{ env.COVERAGE_MIN_BRANCHES }}, functions: ${{ env.COVERAGE_MIN_FUNCTIONS }} };
+              const min = { lines: ${{ env.COVERAGE_MIN_LINES }}, branches: ${{ env.COVERAGE_MIN_BRANCHES }}, functions: ${{ env.COVERAGE_MIN_FUNCTIONS }}, statements: ${{ env.COVERAGE_MIN_STATEMENTS }} };
               let ok = true;
               for (const key of Object.keys(min)) {
-                const pct = r[key]?.pct ?? 0;
+                // 'Unknown' (cero archivos medidos) no es un número: falla el gate.
+                const pct = typeof r[key]?.pct === 'number' ? r[key].pct : 0;
                 const status = pct >= min[key] ? '✓' : '✗';
                 console.log(\`  \${status} \${key}: \${pct}% (min \${min[key]}%)\`);
                 if (pct < min[key]) ok = false;
@@ -169,7 +172,8 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:15-alpine
+        # Espejo de Google: Docker Hub limita los pulls anónimos de los runners.
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -182,7 +186,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -205,6 +209,9 @@ jobs:
       # levantan su Redis igual, solo sin el sidecar reaper. Si el job migrara a
       # un runner self-hosted/persistente, reevaluar (ahí ryuk sí limpia).
       TESTCONTAINERS_RYUK_DISABLED: 'true'
+      # Testcontainers (Redis real en los tests) también desde el espejo de
+      # Google: sin esto baja redis:7-alpine de Docker Hub dentro del test.
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io/
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
@@ -305,7 +312,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # BuildKit y las imágenes base (FROM node:24-*) se bajan del espejo de
+      # Google: Docker Hub limita los pulls anónimos de los runners y falla con
+      # toomanyrequests o timeout antes de compilar.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Build imagen del api (reproduce el build de prod, install parcial)
         uses: docker/build-push-action@v6
         with:

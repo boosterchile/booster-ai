@@ -170,8 +170,17 @@ async function emitirNuevoCert(kmsKeyId: string, publicKeyPem: string): Promise<
   // Construir el TBSCertificate (ASN.1) y DER-encodearlo. KMS firma esos
   // bytes; el resultado se inserta en cert.signature para producir el
   // cert X.509 final.
-  // biome-ignore lint/suspicious/noExplicitAny: forge types incompletos
-  const tbsAsn1 = (forge.pki as any).getTBSCertificate(cert);
+  // `getTBSCertificate` existe en node-forge pero @types/node-forge no lo
+  // declara: se tipa acá y se verifica en runtime.
+  const pkiConTbs: typeof forge.pki & {
+    getTBSCertificate?: (certificado: forge.pki.Certificate) => forge.asn1.Asn1;
+  } = forge.pki;
+  if (typeof pkiConTbs.getTBSCertificate !== 'function') {
+    throw new Error(
+      'forge.pki.getTBSCertificate no disponible — versión incompatible de node-forge',
+    );
+  }
+  const tbsAsn1 = pkiConTbs.getTBSCertificate(cert);
   const tbsDer = forge.asn1.toDer(tbsAsn1).getBytes();
   const tbsBuffer = Buffer.from(tbsDer, 'binary');
 
