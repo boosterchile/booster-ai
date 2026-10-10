@@ -123,5 +123,5 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 - Migración del bucket de certificados (separó certs de `documents`): `migracion-bucket-certificados.md`.
 - ADR-069 / ADR-070 (recibir/archivar, NO emitir DTE). Sub/DLQ: `infrastructure/messaging.tf`. Bucket: `infrastructure/storage.tf`.
 - Config: `apps/document-service/src/config.ts`. Dominio: `packages/transport-documents`.
-- Reconciliación: `apps/api/src/services/reconciliar-documentos-pendientes.ts`; job `documentos_pendientes` en `infrastructure/scheduling.tf`.
+- Reconciliación: `apps/api/src/services/reconciliar-documentos-pendientes.ts`; job `documentos_pendientes` en `infrastructure/document-service.tf`.
 - Drill de rollback: [`rollback-drill-microservicios.md`](rollback-drill-microservicios.md). Spec: `.specs/document-service-t10-21/spec.md`.
