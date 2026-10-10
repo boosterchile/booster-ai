@@ -4,6 +4,8 @@ Snapshot para el PO. Programa: [ADR-082](../adr/082-objetivo-trl10-supersede-pre
 
 El estado es este: 39 PRs abiertos del programa (#742–#780), ninguno mergeado.
 
+**Actualización (2026-10-10, cierre de la oleada 2):** 38 de los 39 están en `main`; falta #748. Ver [Resultado del merge](#resultado-del-merge-2026-10-10).
+
 **Ensayado.** Los 39 se combinaron localmente sobre `main` (`0008fa6`) en el orden de este plan. El árbol resultante pasa typecheck, lint, tests con coverage 80, build, integración, E2E de los flujos críticos y `terraform validate`. Para llegar ahí hicieron falta correcciones que ningún PR muestra solo. El detalle está en [Ensayo del merge](#ensayo-del-merge).
 
 **Estado de CI** al 2026-10-10, último commit de cada rama, según la API de Actions:
@@ -16,7 +18,61 @@ Este documento fija:
 - **qué acción del PO pide cada uno** después del merge (`terraform apply`, secreto, flag o verificación);
 - **dónde van a chocar**.
 
-El agente no mergea (CLAUDE.md, ADR-076): cuando un merge deja a otro PR en conflicto, el agente lo resuelve en la rama de ese PR si se le pide.
+Al redactar este plan el agente no mergeaba (CLAUDE.md, ADR-076). Desde #781 sí lo hace, con los checks obligatorios en verde. Cuando un merge deja a otro PR en conflicto, el agente lo resuelve en la rama de ese PR.
+
+## Resultado del merge (2026-10-10)
+
+**38 de los 39 PRs están en `main`** (squash, de `0008fa6` a `1c5e0bb`). Falta #748, la migración contract, que espera tu visto y sus precondiciones (oleada 3). El merge lo hizo el agente con los checks obligatorios en verde, sin `--admin`. Fuera de los 39 entró además #781 (`c1a1683`), que cambia `CLAUDE.md` para que el agente mergee.
+
+| Oleada | PR → commit en `main` |
+|---|---|
+| 0 | #776 `de00674` · #742 `84240b1` · #743 `6ea208d` |
+| 1 | #777 `cea9823` · #779 `745456e` · #757 `3988896` · #758 `41d8718` · #750 `f3a1371` · #751 `af49687` · #754 `163158c` · #753 `4f466ac` · #755 `22e3772` · #756 `1e4bdbf` · #747 `259d8e9` · #749 `fc8e5c4` · #768 `aaa9b2e` · #769 `20cba47` |
+| 2 | #746 `f6a9a67` · #745 `fb4e90e` · #766 `59c5b23` · #767 `be01d3c` · #770 `adfd7d1` · #771 `8d700b1` · #759 `c01896d` · #772 `a831df8` · #744 `838a21c` · #774 `7e44a92` · #773 `d50f1cc` · #780 `e6ae3d5` · #761 `b6ff081` · #762 `218446f` · #775 `38f5adf` · #778 `7e649cc` · #760 `c81f6ec` · #763 `2878605` · #764 `aef41db` · #765 `0f700bc` · #752 `1c5e0bb` |
+
+**Vistos del PO registrados en el commit de cada merge:**
+- #753, #745, #760 y #765 ("todos en secuencia");
+- #744 y #774, por `e2e-pr.yml`. Estos dos no estaban en la lista de archivos protegidos de este plan: se pidió el visto antes de mergearlos.
+
+**Lo que el merge real agregó al ensayo:**
+
+1. **Gitleaks en #772.** Al reapuntar #772 a `main`, el scan cubrió `ee7b5d1` y marcó como `generic-api-key` el fixture `CMF_API_KEY: 'a1b2c3d4e5f6'` de `config-flags.test.ts`. Se allowlisteó por valor exacto en `.gitleaks.toml`, como la región GCP. Con gitleaks 8.24.3: 1 hallazgo → 0, y otro valor con el mismo patrón sigue detectándose.
+2. **CodeQL en #772** (`js/incomplete-multi-character-sanitization`, high) sobre `textoCelda` en `valor-uf.ts`. Sin camino de inyección: la salida solo llega a `parsearNumeroChileno`. Por decisión del PO se agregó el bucle hasta estabilizar, y CodeQL quedó en verde.
+3. **E2E local intermitente.** `apps/web/e2e-local/modal.spec.ts:53` falló dos veces en CI sobre #772 y pasó en el re-run. En local no se reprodujo: 33/33, y 6/6 con CPU ×8. Queda como tarea aparte; no se saltó ni se desactivó.
+4. **`pnpm-lock.yaml` en #761 y #763.** El merge textual duplicó el importer `packages/eco-routing`. En los dos casos se regeneró con `pnpm install` sobre el lock de `main`, y `--frozen-lockfile` pasa.
+5. **`cloudbuild.production.yaml`.** Git intercalaba los pasos casi idénticos de document, notification y matching. Se reconstruyó por bloques sobre `main` en #764 y #765:
+   - 34 pasos sin ids duplicados y todo `waitFor` resuelve;
+   - 9 imágenes, y el comentario del timeout dice 9 (7 → 8 → 9).
+6. **Restos del apilado.** #762 traía de vuelta `0059_sugerencias_ruta.sql` junto a la `0062`: se borró. El journal de `main` termina en 0062, sin huecos.
+
+**Criterios verificados sobre `main`** (`1c5e0bb`, con #752):
+- T10-12: 0 `any`, 0 `@ts-ignore`, 0 `as unknown as` y 0 `console.*` fuera del sink, en `apps/*/src` y `packages/*/src` sin tests.
+- T10-09: los stubs no están en el índice.
+- T10-13: `lint:rls` OK.
+- T10-03 depende de #748: hoy quedan 11 archivos con `es_demo`, `isDemo` o `cuentasDemo`.
+- Push a `main` (`1c5e0bb`): CI `38074289280` success; Security `38074289307` success, con gitleaks incluido. "Deploy staging" (`38074289238`, de #760) quedó en skipped porque el proyecto de staging aún no existe.
+
+**Lo que sigue (a cargo del PO):**
+
+- **Release desde `main`** (`gh workflow run release.yml --ref main`). Es la primera vez que este código llega a prod, y T10-06 (drift en verde) lo necesita.
+- **`terraform apply`**, que crea lo que los merges solo declaran:
+  - el correo (#746);
+  - el valor UF (#772);
+  - el mandato (#780);
+  - eco-routing (#761);
+  - el observatorio (#775);
+  - wake-word (#778);
+  - los servicios extraídos (#763, #764 y #765, este con IAM nuevo);
+  - staging (#760, con `iam.tf`);
+  - los SLOs (#756);
+  - la métrica de huella (#747).
+
+  Antes del apply va la corrida en seco de ADR-076.
+- **Secretos:** `resend-api-key` y `picovoice-access-key`. La clave CMF es opcional.
+- **Proyecto de staging** (ADR-083).
+- **Flags:** todos siguen en `false` y se encienden después del apply, uno por uno.
+- **#748**, la migración contract. Necesita #745 desplegado y estable, las consultas de diagnóstico en 0, la lista de ADR-076 §3 y tu visto. Al actualizarla: renumerar a 0063, sacar los filtros `isDemo` de #772 y #775, y borrar la fila `cuentasDemo` de `docs/rls-exemptions.md`.
+- **T10-11:** la escucha con lector de pantalla (`docs/audits/wcag-escucha-lector-pantalla.md`).
 
 ## Reglas que ordenan el plan
 
