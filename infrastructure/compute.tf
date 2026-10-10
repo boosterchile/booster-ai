@@ -220,6 +220,13 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # ADR-080 — mandato de cobro. Default false (modo conector). Encender solo
+    # con las seis precondiciones de §6 evidenciadas en
+    # .specs/mandato-de-cobro/activacion.md. El tope del float es 0 por
+    # omisión: sin decisión escrita del PO, Booster no adelanta caja propia.
+    MANDATO_COBRO_ACTIVATED        = tostring(var.mandato_cobro_activated)
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP = tostring(var.mandato_cobro_float_maximo_clp)
+
     # ADR-039 — Site Settings Runtime Configuration. Bucket de assets
     # editables (logos, favicons) subidos desde el admin. Reuso del
     # bucket public_assets existente (no es realmente público por org

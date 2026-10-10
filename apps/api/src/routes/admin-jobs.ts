@@ -44,6 +44,7 @@ import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js'
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
 import { cobrarSuscripcionesUf } from '../services/cobrar-suscripciones-uf.js';
 import { leerConfiguracionPublicada } from '../services/configuracion-comercial.js';
+import { conciliarMandatoCobro } from '../services/mandato-cobro/eventos-pago.js';
 import {
   type MembershipPaymentGateway,
   noopMembershipPaymentGateway,
@@ -156,6 +157,32 @@ export function createAdminJobsRoutes(opts: {
       }
       throw err;
     }
+  });
+
+  /**
+   * ADR-080 acción 5 — conciliación diaria del mandato de cobro: registra
+   * `mora_registrada` sobre cobros vencidos y publica los gauges de caja.
+   * Con MANDATO_COBRO_ACTIVATED apagado es un no-op (200, para que el
+   * Scheduler no reintente).
+   */
+  app.post('/mandato-cobro-conciliacion', async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ ok: true, skipped: 'mandato_cobro_desactivado' });
+    }
+    const r = await conciliarMandatoCobro({
+      db: opts.db,
+      logger: opts.logger,
+      topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+    });
+    return c.json({
+      ok: true,
+      moras_registradas: r.morasRegistradas,
+      liberaciones_vencidas: r.liberacionesVencidas,
+      float_clp: r.floatClp,
+      mora_pct_mes: r.moraPctMes,
+      anticipos_pct_mes: r.anticiposPctMes,
+      viajes_en_mandato: r.viajesEnMandato,
+    });
   });
 
   app.post('/chat-whatsapp-fallback', async (c) => {

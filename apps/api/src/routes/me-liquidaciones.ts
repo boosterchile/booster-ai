@@ -5,6 +5,7 @@ import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { assignments, liquidaciones, trips } from '../db/schema.js';
+import { leerPagoViaje } from '../services/mandato-cobro/eventos-pago.js';
 import type { UserContext } from '../services/user-context.js';
 
 /**
@@ -66,6 +67,7 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
         totalFacturaBoosterClp: liquidaciones.totalFacturaBoosterClp,
         precioTransportistaClp: liquidaciones.precioTransportistaClp,
         pricingMethodologyVersion: liquidaciones.pricingMethodologyVersion,
+        modoFlujo: liquidaciones.modoFlujo,
         status: liquidaciones.status,
         createdAt: liquidaciones.createdAt,
         // Trip info para que el carrier identifique la liquidación.
@@ -78,6 +80,23 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
       .orderBy(desc(liquidaciones.createdAt))
       .limit(100);
 
+    // ADR-080: en mandato de cobro, el transportista ve cuándo y cómo se le
+    // libera su pago. Nunca el cobro al generador (ADR-079 §5).
+    const liberaciones = new Map<string, Record<string, unknown>>();
+    for (const r of rows) {
+      if (r.modoFlujo === 'mandato_cobro') {
+        const pago = await leerPagoViaje(opts.db, r.asignacionId);
+        if (pago) {
+          liberaciones.set(r.asignacionId, {
+            estado: pago.liberacion.estado,
+            en: pago.liberacion.en,
+            monto_clp: pago.liberacion.monto_clp,
+            vence_en: pago.liberacion.vence_en,
+          });
+        }
+      }
+    }
+
     return c.json({
       liquidaciones: rows.map((r) => {
         const comun = {
@@ -88,6 +107,10 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
           monto_neto_carrier_clp: r.montoNetoCarrierClp,
           pricing_methodology_version: r.pricingMethodologyVersion,
           status: r.status,
+          modo_flujo: r.modoFlujo ?? 'conector',
+          ...(liberaciones.has(r.asignacionId)
+            ? { liberacion: liberaciones.get(r.asignacionId) }
+            : {}),
           // @deprecated ADR-069 / O-7 — Booster ya no emite DTE. Estos 5
           // campos se mantienen en el response devolviendo `null` para
           // backward-compat de PWAs en vuelo/caché; se removerán del schema

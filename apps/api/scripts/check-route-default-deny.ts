@@ -89,6 +89,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // ADR-079 §3: firebaseAuth + userContext preceden el mount
   // (/admin/configuracion-comercial y /*); gate adicional requirePlatformAdmin.
   createAdminConfiguracionComercialRoutes: { category: 'ENFORCED', rationale: '' },
+  createAdminMandatoCobroRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
   // F0-0 backfill de distancia real: firebaseAuth + userContext preceden el mount

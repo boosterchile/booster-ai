@@ -58,6 +58,12 @@ export interface LiquidarTripInput {
    * tasa congelada) sigue el camino v2: rige el contrato vigente al publicar.
    */
   pricingV3Activated?: boolean;
+  /**
+   * ADR-080 §5 — con `true`, una liquidación v3 se paga bajo mandato de
+   * cobro (`modo_flujo='mandato_cobro'`). Una v2 siempre es `conector`: su
+   * comisión se descuenta al transportista y no tiene precio del generador.
+   */
+  mandatoCobroActivated?: boolean;
 }
 
 export type LiquidarTripResult =
@@ -139,7 +145,13 @@ async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTrip
 
   // (1b) ADR-079 §6 — v3: si el viaje se publicó con tasa congelada.
   if (pricingV3Activated) {
-    const v3 = await liquidarV3SiCorresponde({ db, logger, assignmentId, asg });
+    const v3 = await liquidarV3SiCorresponde({
+      db,
+      logger,
+      assignmentId,
+      asg,
+      mandatoCobroActivated: input.mandatoCobroActivated ?? false,
+    });
     if (v3) {
       return v3;
     }
@@ -269,6 +281,7 @@ async function liquidarV3SiCorresponde(opts: {
   logger: Logger;
   assignmentId: string;
   asg: { empresaCarrierId: string; agreedPriceClp: number; tripId: string };
+  mandatoCobroActivated: boolean;
 }): Promise<LiquidarTripResult | null> {
   const { db, logger, assignmentId, asg } = opts;
   // rls-allowlist: liquidación post-entrega scoped por el tripId del assignment ya validado.
@@ -316,6 +329,7 @@ async function liquidarV3SiCorresponde(opts: {
         totalFacturaGeneradorClp: liq.totalFacturaGeneradorClp,
         modalidadCarga: viaje.modalidadCarga,
         configuracionComercialId: viaje.configuracionComercialId,
+        modoFlujo: opts.mandatoCobroActivated ? 'mandato_cobro' : 'conector',
         // Estado contable final (valor legacy del enum; ADR-069).
         status: 'lista_para_dte',
       })

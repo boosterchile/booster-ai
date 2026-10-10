@@ -29,6 +29,7 @@ import { createAdminDispositivosPlataformaRoutes } from './routes/admin-disposit
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
+import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
@@ -817,6 +818,14 @@ export function createServer(opts: CreateServerOptions): Hono {
         lector: lectorConfiguracionComercial,
       }),
     );
+
+    // ADR-080 — conciliación del mandato de cobro (platform-admin). Detrás de
+    // MANDATO_COBRO_ACTIVATED (404 con el flag apagado).
+    app.use('/admin/mandato-cobro', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro/*', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/mandato-cobro/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/admin/mandato-cobro', createAdminMandatoCobroRoutes({ db: opts.db, logger }));
 
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).

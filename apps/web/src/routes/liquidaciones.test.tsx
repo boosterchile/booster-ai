@@ -177,4 +177,55 @@ describe('LiquidacionesRoute — lista', () => {
     expect(screen.queryByText(/%\)/)).not.toBeInTheDocument();
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
   });
+
+  // ADR-080: bajo mandato de cobro el transportista ve cuándo y cómo se le paga.
+  it('liquidación en mandato de cobro → estado y vencimiento del pago', async () => {
+    const base = {
+      liquidacion_id: 'liq-m',
+      asignacion_id: 'asg-m',
+      tracking_code: 'TRK-M',
+      monto_bruto_clp: 1_000_000,
+      monto_neto_carrier_clp: 1_000_000,
+      precio_transportista_clp: 1_000_000,
+      pricing_methodology_version: 'pricing-v3.0-cl-2026.09',
+      status: 'lista_para_dte' as const,
+      creado_en: '2026-10-10T11:00:00Z',
+      modo_flujo: 'mandato_cobro',
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({
+      liquidaciones: [
+        {
+          ...base,
+          liberacion: {
+            estado: 'pendiente',
+            en: null,
+            monto_clp: null,
+            vence_en: '2026-10-15T12:00:00Z',
+          },
+        },
+        {
+          ...base,
+          liquidacion_id: 'liq-m2',
+          tracking_code: 'TRK-M2',
+          liberacion: {
+            estado: 'anticipado_por_operador',
+            en: '2026-10-12T12:00:00Z',
+            monto_clp: 900_000,
+            vence_en: '2026-10-15T12:00:00Z',
+          },
+        },
+        {
+          ...base,
+          liquidacion_id: 'liq-m3',
+          tracking_code: 'TRK-M3',
+          liberacion: { estado: 'disputa', en: null, monto_clp: null, vence_en: null },
+        },
+      ],
+    });
+    renderRoute();
+    expect(await screen.findByText('TRK-M')).toBeInTheDocument();
+    expect(screen.getByText(/Pago pendiente · vence/)).toBeInTheDocument();
+    expect(screen.getByText(/Pronto pago recibido/)).toBeInTheDocument();
+    expect(screen.getByText(/En revisión/)).toBeInTheDocument();
+  });
 });
