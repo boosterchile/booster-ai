@@ -70,6 +70,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createMePushSubscriptionRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyMeRoutes: { category: 'ENFORCED', rationale: '' },
   createMeLiquidacionesRoutes: { category: 'ENFORCED', rationale: '' },
+  createMeWakeWordRoutes: { category: 'ENFORCED', rationale: '' },
   createTripRequestsV2Routes: { category: 'ENFORCED', rationale: '' },
   createOfferRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyAssignmentsRoutes: { category: 'ENFORCED', rationale: '' },
@@ -79,11 +80,17 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAdminDispositivosPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminCobraHoyRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
+  // T10-24 — firebaseAuth + userContext preceden el mount; gate requirePlatformAdmin.
+  createAdminObservatorioRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSignupRequestsRoutes: { category: 'ENFORCED', rationale: '' },
   // Fase 3.5 — alta de miembros en empresa existente. firebaseAuth + userContext
   // preceden el mount (/admin/empresas/*); gate adicional requirePlatformAdmin.
   createAdminEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
+  // ADR-079 §3: firebaseAuth + userContext preceden el mount
+  // (/admin/configuracion-comercial y /*); gate adicional requirePlatformAdmin.
+  createAdminConfiguracionComercialRoutes: { category: 'ENFORCED', rationale: '' },
+  createAdminMandatoCobroRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
   // F0-0 backfill de distancia real: firebaseAuth + userContext preceden el mount
@@ -169,6 +176,11 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createPublicSiteSettingsRoutes: {
     category: 'INTENTIONAL-OPEN',
     rationale: 'versión publicada de site-settings, read-only, cache 5min (ADR-039).',
+  },
+  createPublicPreciosRoutes: {
+    category: 'INTENTIONAL-OPEN',
+    rationale:
+      'precios públicos (T10-29): solo la sección `servicios` de la configuración comercial publicada, proyectada con serviciosPublicosSchema; read-only, sin PII ni comisiones, 404 con PRICING_V3_ACTIVATED=false.',
   },
   createPublicTrackingRoutes: {
     category: 'INTENTIONAL-OPEN',

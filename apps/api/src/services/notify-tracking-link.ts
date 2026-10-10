@@ -37,7 +37,7 @@ import {
   type NotifyTrackingLinkResult,
   buildTrackingLinkVariables,
 } from '@booster-ai/notification-fan-out';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, trips, users } from '../db/schema.js';
@@ -48,7 +48,7 @@ export interface NotifyTrackingLinkDeps {
   db: Db;
   logger: Logger;
   /** Cliente Twilio. null en dev sin envs. */
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   /** Content SID del template `tracking_link_v1`. null si pendiente Meta. */
   contentSidTracking: string | null;
 }

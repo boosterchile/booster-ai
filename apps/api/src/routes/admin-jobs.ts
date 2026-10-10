@@ -1,3 +1,7 @@
+import {
+  type EcoRoutingDeps,
+  barrerEcoRoutingTeltonika,
+} from '../services/eco-routing-tiempo-real.js';
 /**
  * Endpoints internos disparados por Cloud Scheduler (P3.d y futuros).
  *
@@ -20,7 +24,7 @@
  */
 
 import type { Logger } from '@booster-ai/logger';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type pg from 'pg';
@@ -39,20 +43,50 @@ import {
   markOnboardingOrphanReaped,
   reapOrphanOnboardingFirebaseUsers,
 } from '../jobs/reap-orphan-onboarding-firebase.js';
+import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
+import { cobrarSuscripcionesUf } from '../services/cobrar-suscripciones-uf.js';
+import { leerConfiguracionPublicada } from '../services/configuracion-comercial.js';
+import { conciliarMandatoCobro } from '../services/mandato-cobro/eventos-pago.js';
 import {
   type MembershipPaymentGateway,
   noopMembershipPaymentGateway,
 } from '../services/membership-payment-gateway.js';
+import { type CargadorBigQuery, exportarObservatorio } from '../services/observatorio/bigquery.js';
+import { leerViajesEntregados } from '../services/observatorio/viajes-entregados.js';
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
+import {
+  type PublicarDocumentoSubido,
+  reconciliarDocumentosPendientes,
+} from '../services/reconciliar-documentos-pendientes.js';
+import {
+  ValorUfNoDisponibleError,
+  fechaChile,
+  obtenerValorUf,
+  proveedoresUfPorDefecto,
+} from '../services/valor-uf.js';
+
+/**
+ * `pg.Pool` con la firma mínima que piden los reapers (`PoolLike`). Las
+ * sobrecargas de `pg.Pool.query` no calzan estructuralmente con esa interfaz;
+ * este adaptador las reduce a la única forma que usan, sin casts.
+ */
+function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      const resultado = await pool.query(sql, params);
+      return { rows: resultado.rows, rowCount: resultado.rowCount };
+    },
+  };
+}
 
 export function createAdminJobsRoutes(opts: {
   db: Db;
   logger: Logger;
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
   /** Para el reaper de cuentas IdP. Null en tests sin Firebase. */
@@ -65,8 +99,122 @@ export function createAdminJobsRoutes(opts: {
    * tests y para enchufar el provider real cuando exista `payment-provider`.
    */
   membershipPaymentGateway?: MembershipPaymentGateway;
+  /**
+   * T10-21 — publicador de `document.uploaded` para la reconciliación del
+   * worker TED. Null cuando `DOCUMENT_UPLOADED_TOPIC` no está configurado.
+   */
+  publicarDocumentoSubido?: PublicarDocumentoSubido | null;
+  /**
+   * T10-24 — export del observatorio a BigQuery. Ausente cuando
+   * `BIGQUERY_OBSERVATORY_DATASET` no está configurado: el job responde skip.
+   */
+  observatorio?: { datasetId: string; cargador: CargadorBigQuery };
+  /**
+   * T10-23 — eco-routing en tiempo real (mismas deps que `assignments`, para
+   * compartir throttle). Ausente = flag `ECO_ROUTING_REALTIME_ACTIVATED` OFF.
+   */
+  ecoRouting?: { deps: EcoRoutingDeps; routesProjectId?: string | undefined } | undefined;
 }) {
   const app = new Hono();
+
+  /**
+   * T10-24 / ADR-012 Capa 2 — tick horario: reemplaza `observatory.viajes`
+   * en BigQuery con la foto de viajes entregados (load job WRITE_TRUNCATE).
+   * Las vistas `urban_flow_metrics_*` se refrescan solas desde esa tabla.
+   */
+  app.post('/observatorio-export', async (c) => {
+    const observatorio = opts.observatorio;
+    if (!observatorio) {
+      return c.json({ ok: true, skipped: true, reason: 'observatorio_no_configurado' });
+    }
+    const r = await withBusinessSpan({ name: 'observatorio.exportar' }, async (span) => {
+      const res = await exportarObservatorio({
+        logger: opts.logger,
+        datasetId: observatorio.datasetId,
+        leerViajes: () => leerViajesEntregados(opts.db),
+        cargador: observatorio.cargador,
+      });
+      setResultAttributes(span, { 'booster.observatorio.filas': res.filas });
+      return res;
+    });
+    return c.json({ ok: true, filas: r.filas });
+  });
+
+  app.post('/eco-routing-barrido', async (c) => {
+    if (!opts.ecoRouting) {
+      return c.json({ ok: true, skipped: 'flag_off' });
+    }
+    const r = await barrerEcoRoutingTeltonika({
+      db: opts.db,
+      logger: opts.logger,
+      routesProjectId: opts.ecoRouting.routesProjectId,
+      deps: opts.ecoRouting.deps,
+    });
+    return c.json({ ok: true, evaluadas: r.evaluadas, resultados: r.resultados });
+  });
+
+  /** ADR-079 §4 — valor UF: CMF (si hay `CMF_API_KEY`) con respaldo SII. */
+  const valorUfDe = (fecha: string) =>
+    obtenerValorUf({
+      db: opts.db,
+      logger: opts.logger,
+      fecha,
+      proveedores: proveedoresUfPorDefecto(appConfig.CMF_API_KEY),
+    });
+
+  /**
+   * ADR-079 §4 — tick diario: deja guardado el valor UF del día en
+   * `valores_uf` (caché auditada con su fuente). 503 si ninguna fuente
+   * responde, para que Cloud Scheduler reintente.
+   */
+  app.post('/valor-uf', async (c) => {
+    try {
+      const r = await withBusinessSpan({ name: 'pricing.valor_uf.obtener' }, async (span) => {
+        const v = await valorUfDe(fechaChile(Date.now()));
+        setResultAttributes(span, { 'booster.valor_uf.fuente': v.fuente });
+        return v;
+      });
+      return c.json({
+        ok: true,
+        fecha: r.fecha,
+        valor_clp: r.valorClp,
+        fuente: r.fuente,
+        desde_cache: r.desdeCache,
+      });
+    } catch (err) {
+      if (err instanceof ValorUfNoDisponibleError) {
+        opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'valor UF no disponible');
+        return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+      }
+      throw err;
+    }
+  });
+
+  /**
+   * ADR-080 acción 5 — conciliación diaria del mandato de cobro: registra
+   * `mora_registrada` sobre cobros vencidos y publica los gauges de caja.
+   * Con MANDATO_COBRO_ACTIVATED apagado es un no-op (200, para que el
+   * Scheduler no reintente).
+   */
+  app.post('/mandato-cobro-conciliacion', async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ ok: true, skipped: 'mandato_cobro_desactivado' });
+    }
+    const r = await conciliarMandatoCobro({
+      db: opts.db,
+      logger: opts.logger,
+      topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+    });
+    return c.json({
+      ok: true,
+      moras_registradas: r.morasRegistradas,
+      liberaciones_vencidas: r.liberacionesVencidas,
+      float_clp: r.floatClp,
+      mora_pct_mes: r.moraPctMes,
+      anticipos_pct_mes: r.anticiposPctMes,
+      viajes_en_mandato: r.viajesEnMandato,
+    });
+  });
 
   app.post('/chat-whatsapp-fallback', async (c) => {
     const result = await procesarMensajesNoLeidos({
@@ -96,6 +244,29 @@ export function createAdminJobsRoutes(opts: {
   app.post('/purgar-posiciones-movil', async (c) => {
     const result = await purgarPosicionesMovil({ db: opts.db, logger: opts.logger });
     return c.json({ ok: true, deleted: result.deleted, retention_days: result.retentionDays });
+  });
+
+  /**
+   * T10-21 — reconciliación de `documentos_transporte` con el worker TED
+   * (`apps/document-service`): libera `procesando` abandonados y republica
+   * `pendiente` viejos a `document.uploaded`. Sin topic → 200 skipped.
+   */
+  app.post('/documentos-pendientes', async (c) => {
+    if (!opts.publicarDocumentoSubido) {
+      opts.logger.warn('documentos-pendientes: DOCUMENT_UPLOADED_TOPIC ausente, skip');
+      return c.json({ ok: true, skipped: true, reason: 'topic_not_configured' });
+    }
+    const result = await reconciliarDocumentosPendientes({
+      db: opts.db,
+      logger: opts.logger,
+      publicar: opts.publicarDocumentoSubido,
+    });
+    return c.json({
+      ok: true,
+      liberados: result.liberados,
+      republicados: result.republicados,
+      fallidos_publicacion: result.fallidosPublicacion,
+    });
   });
 
   app.post('/cobra-hoy-cobranza', async (c) => {
@@ -134,6 +305,53 @@ export function createAdminJobsRoutes(opts: {
    * success). Idempotente: re-correr el tick no cobra dos veces el mismo ciclo.
    */
   app.post('/cobrar-memberships-mensual', async (c) => {
+    // ADR-079 §4: con v3 encendido el cobro mensual es de suscripciones en
+    // UF; la membresía v2 deja de habilitar cobro alguno.
+    if (appConfig.PRICING_V3_ACTIVATED) {
+      const gateway = opts.membershipPaymentGateway ?? noopMembershipPaymentGateway(opts.logger);
+      try {
+        const r = await withBusinessSpan(
+          { name: 'pricing.suscripciones_uf.cobrar' },
+          async (span) => {
+            const res = await cobrarSuscripcionesUf({
+              db: opts.db,
+              logger: opts.logger,
+              gateway,
+              obtenerUf: valorUfDe,
+              leerConfiguracion: () => leerConfiguracionPublicada(opts.db),
+            });
+            setResultAttributes(span, {
+              'booster.suscripciones_uf.facturas_creadas': res.facturasCreadas,
+            });
+            return res;
+          },
+        );
+        return c.json({
+          ok: true,
+          modelo: 'v3_suscripciones_uf',
+          periodo_mes: r.periodoMes,
+          fecha_uf: r.fechaUf,
+          uf_valor_clp: r.ufValorClp,
+          uf_fuente: r.ufFuente,
+          configuracion_version: r.configuracionVersion,
+          evaluadas: r.evaluadas,
+          facturas_creadas: r.facturasCreadas,
+          reintentos: r.reintentos,
+          pending_provider: r.pendingProvider,
+          cobradas: r.cobradas,
+          morosas: r.morosas,
+          ya_facturadas: r.yaFacturadas,
+          exentas: r.exentas,
+          payment_rail_stubbed: true,
+        });
+      } catch (err) {
+        if (err instanceof ValorUfNoDisponibleError) {
+          opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'cobro UF sin valor UF');
+          return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+        }
+        throw err;
+      }
+    }
     if (!appConfig.PRICING_V2_ACTIVATED) {
       opts.logger.debug('cobrar-memberships-mensual: PRICING_V2_ACTIVATED=false, skip');
       return c.json({ ok: true, skipped: true, reason: 'feature_disabled' });
@@ -183,7 +401,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-inert-idp-accounts: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as PoolLike;
+    const pool: PoolLike = adaptarPool(opts.pool);
     const neverReapable = new Set<string>([
       ...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
       'dev@boosterchile.com',
@@ -226,7 +444,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-orphan-onboarding-firebase: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as OrphanPoolLike;
+    const pool: OrphanPoolLike = adaptarPool(opts.pool);
     const summary = await reapOrphanOnboardingFirebaseUsers(
       {
         auth: opts.firebaseAuth,

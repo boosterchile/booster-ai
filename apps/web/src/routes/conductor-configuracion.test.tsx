@@ -179,7 +179,7 @@ describe('ConductorConfiguracionRoute', () => {
     expect(texto).toMatch(/no us\w+ el micrófono|micrófono.*no se usa/i);
   });
 
-  it('con el wake-word encendido explica la privacidad en futuro, no en presente', () => {
+  it('con el wake-word encendido explica la privacidad en presente y dónde ver el estado (T10-22)', () => {
     useFeatureFlagsMock.mockReturnValueOnce({
       flags: {
         auth_universal_v1_activated: false,
@@ -193,9 +193,12 @@ describe('ConductorConfiguracionRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     render(<ConductorConfiguracionRoute />);
     const texto = screen.getByTestId('wake-word-card').textContent ?? '';
-    // Mientras siga siendo stub, "activado" no puede leerse como "escuchando".
-    expect(texto).not.toMatch(/esperando .Oye Booster./i);
-    expect(texto).toMatch(/preparando|todavía|aún/i);
+    // El reconocedor ya es real (Porcupine): la privacidad se describe tal
+    // cual funciona, y el estado verificable vive en el panel del conductor.
+    expect(texto).toMatch(/Solo reconocemos la frase .Oye Booster./);
+    expect(texto).toMatch(/no sale de tu teléfono/);
+    expect(texto).toMatch(/vehículo detenido/);
+    expect(texto).not.toMatch(/preparando|Cuando esté disponible/i);
   });
 
   it('WakeWord card con flag ON → toggle visible y refleja preferencia', () => {

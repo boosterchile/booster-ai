@@ -14,7 +14,7 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  * declara) y no por nombre: así el criterio de T10-03 (grep sin referencias a
  * la marca) vale también para este test.
  */
-describe('integration: schema sin superficie demo (0059)', () => {
+describe('integration: schema sin superficie demo (0063)', () => {
   let handle: TestDbHandle;
 
   beforeAll(() => {

@@ -8,6 +8,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Picovoice publica solo `module` (sin `main`/`exports`) y la resolución
+      // de Vitest no lo encuentra. Solo afecta a tests; el build usa `module`.
+      '@picovoice/porcupine-web': path.resolve(
+        __dirname,
+        './node_modules/@picovoice/porcupine-web/dist/esm/index.js',
+      ),
+      '@picovoice/web-voice-processor': path.resolve(
+        __dirname,
+        './node_modules/@picovoice/web-voice-processor/dist/esm/index.js',
+      ),
     },
   },
   test: {
@@ -41,13 +51,13 @@ export default defineConfig({
         'src/router.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
-      // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable
+      // 80 % en las cuatro métricas (T10-08, ADR-082), sobre el subset testable
       // (libs + hooks no-SSE + components leaf). Páginas y UI compleja se
       // cubren con Playwright e2e (apps/web/e2e/).
       thresholds: {
         lines: 80,
-        functions: 75,
-        branches: 75,
+        functions: 80,
+        branches: 80,
         statements: 80,
       },
     },

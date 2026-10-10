@@ -146,13 +146,19 @@ function LiquidacionesPage({ me }: { me: MeOnboarded }) {
                     </Td>
                     <Td className="text-right font-medium">{fmt(l.monto_bruto_clp)}</Td>
                     <Td className="text-right text-neutral-600 text-xs">
-                      {fmt(l.comision_clp)} ({l.comision_pct.toFixed(2)}%)
+                      {l.comision_clp !== undefined && l.comision_pct !== undefined
+                        ? `${fmt(l.comision_clp)} (${l.comision_pct.toFixed(2)}%)`
+                        : 'Sin comisión'}
                     </Td>
                     <Td className="text-right font-semibold text-success-700">
                       {fmt(l.monto_neto_carrier_clp)}
                     </Td>
                     <Td>
-                      <StatusBadge status={l.status} />
+                      {l.liberacion ? (
+                        <LiberacionBadge liberacion={l.liberacion} />
+                      ) : (
+                        <StatusBadge status={l.status} />
+                      )}
                     </Td>
                   </tr>
                 ))}
@@ -185,6 +191,39 @@ function NoCarrierPermission() {
         </Link>
       </div>
     </div>
+  );
+}
+
+/** ADR-080 — estado del pago al transportista bajo mandato de cobro. */
+function LiberacionBadge({
+  liberacion,
+}: {
+  liberacion: NonNullable<LiquidacionRow['liberacion']>;
+}) {
+  const vence = liberacion.vence_en ? ` · vence ${formatDate(liberacion.vence_en)}` : '';
+  const map: Record<typeof liberacion.estado, { label: string; className: string }> = {
+    sin_recepcion: {
+      label: 'Esperando recepción del generador',
+      className: 'bg-neutral-100 text-neutral-700',
+    },
+    pendiente: { label: `Pago pendiente${vence}`, className: 'bg-amber-50 text-amber-700' },
+    disputa: {
+      label: 'En revisión: el generador objetó la recepción',
+      className: 'bg-danger-50 text-danger-700',
+    },
+    liberado_por_booster: { label: 'Pagado', className: 'bg-success-50 text-success-700' },
+    anticipado_por_operador: {
+      label: 'Pronto pago recibido',
+      className: 'bg-success-50 text-success-700',
+    },
+  };
+  const v = map[liberacion.estado];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs ${v.className}`}
+    >
+      {v.label}
+    </span>
   );
 }
 

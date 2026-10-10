@@ -14,11 +14,11 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 **El agente no decide** (lo hace el PO): contratos públicos (API, UI, schema BD) · migraciones destructivas o que tocan datos · deploys y activaciones en prod · `terraform apply` en producción · migraciones `contract` · modo destructivo del reaper (`REAPER_DESTRUCTIVE=true`) · secretos (solo Terraform/consola, jamás desde código) · cambios a `CLAUDE.md`, ADRs, quality gates de CI, IAM/Billing en `infrastructure/` · tomar deuda deliberada (siempre con issue/plan, nunca en silencio).
 
-**Merge a `main`**: el agente no mergea. La rama se protege por checks ([ADR-076](docs/adr/076-gobernanza-operador-unico.md)), no por un segundo revisor. `--admin` es excepcional y cada uso se declara. El gate humano sigue en el deploy a producción (environment `production`).
+**Merge a `main`**: el agente mergea (squash) cuando todos los checks obligatorios están en verde, sin `--admin` y sin saltar ninguna protección. La rama se protege por checks ([ADR-076](docs/adr/076-gobernanza-operador-unico.md)), no por un segundo revisor. Además del verde, necesitan el visto explícito del PO en ese PR los que tocan archivos protegidos (ver abajo), IAM/Billing, quality gates o migraciones `contract` o que tocan datos. `--admin` es excepcional y cada uso se declara. El gate humano sigue en el deploy a producción (environment `production`).
 
 ## Ciclo de trabajo
 
-1. **WIP de producto.** Máximo 3 PRs propios abiertos; no se abre frente nuevo con un sweep o batch pendiente de cierre. El trabajo de producto sale de los tres slots de `docs/frentes-vivos.md`. Un frente de producto fuera de slot se declara y se detiene. No ocupan slot, y se atienden: incidente en producción, seguridad, este contrato, y lo que el PO pida en el mensaje.
+1. **WIP de producto.** Máximo 3 PRs propios abiertos; no se abre frente nuevo con un sweep o batch pendiente de cierre. El trabajo de producto sale de la fase activa del programa TRL 10 en `docs/frentes-vivos.md` ([ADR-082](docs/adr/082-objetivo-trl10-supersede-precomercial.md)), con máximo tres frentes. Un frente fuera de la fase activa se declara y se detiene. No ocupan slot, y se atienden: incidente en producción, seguridad, este contrato, y lo que el PO pida en el mensaje.
 2. **Criterio de salida antes de construir**: `.specs/<slug>/spec.md` declara entradas, salidas y criterios de éxito antes del primer commit de código. Convención: `.specs/<slug>/{spec,plan,verify,review,ship}.md`.
 3. **TDD con rojo exhibido en dominio crítico** (factoring, pricing, GLEC, matching, migraciones, auth): primero el test, se muestra el rojo, luego implementación. El output del rojo va en la Evidencia del PR. Sin rojo exhibido, no cierra. Booster no emite DTE ([ADR-069](docs/adr/069-booster-deja-de-emitir-dte-remocion-sovos.md)); ese subsistema no se reabre.
 4. **Terminado = evidencia fresca**: tests + lint + typecheck + build corridos en el momento, output en el PR. Sin placeholders ni `TODO` en código entregado; un `catch` nunca traga errores en silencio.
@@ -37,7 +37,7 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 ## PRs y deploy
 
-- PR: título Conventional Commits, sección `## Evidencia` obligatoria (tests, lint, typecheck, build, screenshots/curl si aplica). El merge a `main` es squash y lo ejecuta quien opera el repo, con los checks obligatorios en verde. Ramas en el repo: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`. Si la plataforma del agente impone otro prefijo, se usa ese prefijo y el título del PR sigue Conventional Commits.
+- PR: título Conventional Commits, sección `## Evidencia` obligatoria (tests, lint, typecheck, build, screenshots/curl si aplica). El merge a `main` es squash, con los checks obligatorios en verde; lo ejecuta el agente o quien opera el repo, según la frontera de decisiones. Ramas en el repo: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`. Si la plataforma del agente impone otro prefijo, se usa ese prefijo y el título del PR sigue Conventional Commits.
 - Deploy prod: **manual, no en merge** — `release.yml` es `workflow_dispatch`-only desde 2026-07-10 (un push o merge a `main` no despliega). Disparo: `gh workflow run release.yml --ref main` → gate humano (`required_reviewers` en Environment `production`) → Cloud Build canary 1%→100%. Monitoreo 2h post-deploy (error rate, P95, logs). No hay staging (`#STAGING-ENV`); el nightly E2E pega a prod — deuda declarada, pendiente de re-firma del PO.
 - Irreversible en prod (ADR-076): `terraform apply`, migraciones `contract` y `REAPER_DESTRUCTIVE=true` exigen lista de verificación escrita y corrida en seco con su salida registrada, antes de ejecutar.
 
@@ -58,4 +58,4 @@ El repo no usa `agent-rigor` ni `booster-skills`, y no activa plugins ni hooks d
 
 ---
 
-*Contrato adoptado 2026-04-23 · reescrito 2026-07-06 ([ADR-072](docs/adr/072-disciplina-inline-plugins-como-conocimiento-opcional.md)) · alineado 2026-09-23 a ADR-069, ADR-076 y ADR-078.*
+*Contrato adoptado 2026-04-23 · reescrito 2026-07-06 ([ADR-072](docs/adr/072-disciplina-inline-plugins-como-conocimiento-opcional.md)) · alineado 2026-09-23 a ADR-069, ADR-076 y ADR-078 · merge por el agente autorizado por el PO el 2026-10-10.*

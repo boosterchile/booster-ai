@@ -666,3 +666,15 @@ resource "google_dns_record_set" "dkim_google" {
 # "INGRESS_TRAFFIC_INTERNAL_ONLY" en servicios servidos por este LB: rechaza
 # al propio LB. sms-fallback-gateway sigue en ALL (Twilio postea directo, sin
 # NEG acá). Ver ADR-062 para el posture completo por servicio.
+
+# Delegación del subdominio de staging (ADR-083). Solo existe en prod y solo
+# cuando el PO pasa los nameservers de la zona del proyecto de staging.
+resource "google_dns_record_set" "staging_delegation" {
+  count        = length(var.staging_nameservers) > 0 ? 1 : 0
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  name         = "staging.${var.domain}."
+  type         = "NS"
+  ttl          = 3600
+  rrdatas      = var.staging_nameservers
+}

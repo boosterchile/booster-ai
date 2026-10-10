@@ -14,7 +14,7 @@ import { createImpersonationWriteGuardMiddleware } from './impersonation-write-g
  *     solo puede ESCRIBIR (POST/PUT/PATCH/DELETE) cuando la empresa activa
  *     (`userContext.activeMembership.empresa.isTestUser` = `es_usuario_prueba`)
  *     es de usuarios de prueba. Ninguna otra marca autoriza (la marca de
- *     empresa demo se retiró en la migración 0059, T10-03).
+ *     empresa demo se retiró en la migración 0063, T10-03).
  *   - Empresa real, o sin userContext resoluble + método mutante
  *     → 403 (fail-closed).
  *   - Sesión normal (sin `impersonated_by`) → passthrough SIEMPRE (no rompe la

@@ -22,6 +22,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const SRC_DIR = 'apps/api/src';
+const DOC_EXENCIONES = 'docs/rls-exemptions.md';
 
 /**
  * Directorios escaneados (spec lint-rls-services-jobs §3.1). Antes: solo
@@ -41,7 +42,6 @@ const TENANT_FREE_TABLES = new Set([
   'stakeholders', // se filtra por userId/stakeholderId
   'stakeholderAccessLog', // append-only audit log
   'tripEvents', // siempre se inserta dentro de transacción de un trip ya validado
-  'metricasViaje', // se filtra por trip_id (que ya está validado)
   'tripMetrics', // alias inglés de metricasViaje
   'chatMessages', // se filtra por assignment_id (que ya validó tenant en resolveChatAccess)
   'pushSubscriptions', // se filtra por userId
@@ -116,6 +116,100 @@ export function parseSchemaTables(schemaSource) {
     map.set(m[1], m[2]);
   }
   return map;
+}
+
+/**
+ * Propiedades Drizzle que discriminan el tenant en una tabla. Una tabla sin
+ * ninguna de ellas no se puede filtrar por empresa directamente.
+ */
+const TENANT_COLUMN_PROPS = [
+  'empresaId',
+  'generadorCargaEmpresaId',
+  'empresaCarrierId',
+  'empresaShipperId',
+];
+
+/**
+ * Identificadores Drizzle de las tablas de schema.ts sin columna de tenant
+ * (T10-13). Lee el cuerpo de cada `pgTable(...)` hasta el siguiente export.
+ */
+export function tablasSinColumnaTenant(schemaSource) {
+  const sinTenant = new Set();
+  const re = /export const (\w+) = pgTable\(/g;
+  const matches = [...schemaSource.matchAll(re)];
+  matches.forEach((m, i) => {
+    const desde = (m.index ?? 0) + m[0].length;
+    const hasta = matches[i + 1]?.index ?? schemaSource.length;
+    const cuerpo = schemaSource.slice(desde, hasta);
+    const tieneTenant = TENANT_COLUMN_PROPS.some((prop) =>
+      new RegExp(`\\b${prop}\\s*:`).test(cuerpo),
+    );
+    if (!tieneTenant) {
+      sinTenant.add(m[1]);
+    }
+  });
+  return sinTenant;
+}
+
+const SECCION_EXENTAS = '## Exentas por tabla';
+const SECCION_POR_QUERY = '## Sin columna `empresa_id`';
+
+/** Identificadores en la primera columna (`` `ident` ``) de las filas de una sección. */
+function tablasDeSeccion(docSource, encabezado) {
+  const inicio = docSource.indexOf(encabezado);
+  if (inicio === -1) {
+    return null;
+  }
+  const resto = docSource.slice(inicio + encabezado.length);
+  const fin = resto.search(/\n## /);
+  const seccion = fin === -1 ? resto : resto.slice(0, fin);
+  const idents = new Set();
+  for (const m of seccion.matchAll(/^\|\s*`(\w+)`\s*\|/gm)) {
+    idents.add(m[1]);
+  }
+  return idents;
+}
+
+/**
+ * T10-13: `docs/rls-exemptions.md` coincide con `TENANT_FREE_TABLES` y
+ * documenta cada tabla del schema sin columna de tenant. Devuelve la lista de
+ * problemas (vacía si está consistente).
+ */
+export function verificarDocExenciones({ docSource, schemaSource, tenantFree }) {
+  const problemas = [];
+  const tablas = parseSchemaTables(schemaSource);
+  const sinTenant = tablasSinColumnaTenant(schemaSource);
+  const exentasDoc = tablasDeSeccion(docSource, SECCION_EXENTAS);
+  const porQueryDoc = tablasDeSeccion(docSource, SECCION_POR_QUERY);
+  if (!exentasDoc || !porQueryDoc) {
+    return [
+      `docs/rls-exemptions.md debe tener las secciones «${SECCION_EXENTAS}» y «${SECCION_POR_QUERY}»`,
+    ];
+  }
+  for (const t of tenantFree) {
+    if (!tablas.has(t)) {
+      problemas.push(`${t}: está en TENANT_FREE_TABLES pero no es una tabla de schema.ts`);
+    }
+    if (!exentasDoc.has(t)) {
+      problemas.push(`${t}: está en TENANT_FREE_TABLES y falta en la sección de exentas del doc`);
+    }
+  }
+  for (const t of exentasDoc) {
+    if (!tenantFree.has(t)) {
+      problemas.push(`${t}: figura como exenta en el doc pero no está en TENANT_FREE_TABLES`);
+    }
+  }
+  for (const t of porQueryDoc) {
+    if (!tablas.has(t)) {
+      problemas.push(`${t}: figura en el doc pero no es una tabla de schema.ts`);
+    }
+  }
+  for (const t of sinTenant) {
+    if (!exentasDoc.has(t) && !porQueryDoc.has(t)) {
+      problemas.push(`${t}: tabla sin columna de tenant sin documentar en docs/rls-exemptions.md`);
+    }
+  }
+  return problemas;
 }
 
 /**
@@ -221,12 +315,31 @@ export function collectFindings(scanDirs, opts) {
 export function main({
   scanDirs = SCAN_DIRS,
   schemaSource,
+  // `undefined` lee docs/rls-exemptions.md; `null` omite la verificación
+  // (tests de main() que no tratan del doc).
+  docSource,
   log = console.log,
   err = console.error,
 } = {}) {
   const src = schemaSource ?? readFileSync(resolve(SRC_DIR, 'db/schema.ts'), 'utf-8');
   const tables = parseSchemaTables(src);
   const findings = collectFindings(scanDirs, { tables, tenantFree: TENANT_FREE_TABLES });
+
+  // T10-13: el doc de exenciones se mantiene sincronizado con el código.
+  if (docSource !== null) {
+    const problemas = verificarDocExenciones({
+      docSource: docSource ?? readFileSync(DOC_EXENCIONES, 'utf-8'),
+      schemaSource: src,
+      tenantFree: TENANT_FREE_TABLES,
+    });
+    if (problemas.length > 0) {
+      err('❌ lint-rls: docs/rls-exemptions.md no coincide con el schema o TENANT_FREE_TABLES.\n');
+      for (const p of problemas) {
+        err(`  ${p}`);
+      }
+      return 1;
+    }
+  }
 
   if (findings.length === 0) {
     log('✅ lint-rls: 0 queries sin filtro empresaId fuera de allowlist.');

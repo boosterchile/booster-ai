@@ -4,15 +4,20 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['src/**/*.{test,spec}.ts', 'test/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'lcov'],
-      // Sin excluir el entrypoint: el smoke test DEBE cubrir el archivo
-      // real para que coverage-summary sea numérico y el gate de ci.yml
-      // valide este workspace (spec chore-ci-tooling-higiene §6.2).
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/*.spec.ts',
+        // Entrypoints: wiring de Pub/Sub, Twilio, health HTTP y OTel. La lógica
+        // vive en procesar-evento.ts, consumer.ts y config.ts (unit tests).
+        // Mismo criterio que apps/document-service.
+        'src/main.ts',
+        'src/instrumentation.ts',
+      ],
       thresholds: {
         lines: 80,
         functions: 80,

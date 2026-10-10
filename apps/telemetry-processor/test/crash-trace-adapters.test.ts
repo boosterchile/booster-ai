@@ -53,7 +53,10 @@ describe('createGcsCrashTraceUploader', () => {
 });
 
 describe('createBigQueryCrashTraceIndexer', () => {
-  it('inserta con insertIds = [crash_id] para idempotencia', async () => {
+  it('inserta en modo raw con insertId = crash_id para que BigQuery deduplique reintentos', async () => {
+    // `insertIds` NO es una opción de InsertRowsOptions: el SDK la ignora y
+    // genera un insertId aleatorio por fila, así que un reintento duplicaba
+    // el evento. El dedup por crash_id exige `raw: true` + `{ insertId, json }`.
     const insert = vi.fn(async () => undefined);
     const table = vi.fn(() => ({ insert }));
     const dataset = vi.fn(() => ({ table }));
@@ -71,12 +74,8 @@ describe('createBigQueryCrashTraceIndexer', () => {
     expect(table).toHaveBeenCalledWith('tbl');
     expect(insert).toHaveBeenCalledTimes(1);
     const [rows, opts] = insert.mock.calls[0] ?? [];
-    expect(rows).toEqual([row]);
-    expect(opts).toMatchObject({
-      ignoreUnknownValues: false,
-      skipInvalidRows: false,
-      insertIds: ['uuid-crash-1'],
-    });
+    expect(rows).toEqual([{ insertId: 'uuid-crash-1', json: row }]);
+    expect(opts).toEqual({ raw: true, ignoreUnknownValues: false, skipInvalidRows: false });
   });
 
   it('propaga error si insert falla', async () => {

@@ -37,8 +37,7 @@ const updateBodySchema = createBodySchema.partial().extend({
 export function createSucursalesRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -53,8 +52,7 @@ export function createSucursalesRoutes(opts: { db: Db; logger: Logger }) {
     return { ok: true as const, userContext, activeMembership: active };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireWriteRole(c: Context<any, any, any>) {
+  function requireWriteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -69,8 +67,7 @@ export function createSucursalesRoutes(opts: { db: Db; logger: Logger }) {
     return auth;
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireDeleteRole(c: Context<any, any, any>) {
+  function requireDeleteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
