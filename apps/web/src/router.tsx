@@ -40,11 +40,8 @@ const loginRoute = createRoute({
   component: LoginRoute,
 });
 
-// Ruta /demo (selector de persona demo) RETIRADA — chore/retiro-subsistema-demo.
-
 // SC-INT-1 (sec-001-cierre): página de mantenimiento. Ruta directa
-// `/maintenance` expone el componente para preview/QA (antes también la
-// renderizaba la ya-retirada DemoRoute cuando demo_mode_activated=false).
+// `/maintenance` expone el componente para preview/QA.
 const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/maintenance',
@@ -283,7 +280,7 @@ const cumplimientoRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/cumplimiento.js'), 'CumplimientoRoute'),
 });
 
-// Platform admin — operaciones internas (init/clean seed demo, etc.).
+// Platform admin — operaciones internas.
 // Acceso por allowlist de email en backend (BOOSTER_PLATFORM_ADMIN_EMAILS).
 // meRequirement=skip → solo Firebase auth, no requiere onboarding/empresa.
 const platformAdminRoute = createRoute({
@@ -302,7 +299,7 @@ const platformAdminMatchingRoute = createRoute({
   ),
 });
 
-// ADR-039 — Site Settings Editor. Editar marca + copy del demo sin
+// ADR-039 — Site Settings Editor. Editar marca + copy del sitio sin
 // redeploy. Mismo gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS).
 const platformAdminSiteSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -310,6 +307,17 @@ const platformAdminSiteSettingsRoute = createRoute({
   component: lazyRouteComponent(
     () => import('./routes/platform-admin-site-settings.js'),
     'PlatformAdminSiteSettingsRoute',
+  ),
+});
+
+// ADR-079 §3 — Configuración comercial (tasas de comisión, servicios en UF,
+// financiamiento, IVA). Mismo gate platform-admin (allowlist en backend).
+const platformAdminConfiguracionComercialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/configuracion-comercial',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-configuracion-comercial.js'),
+    'PlatformAdminConfiguracionComercialRoute',
   ),
 });
 
@@ -580,6 +588,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
+  platformAdminConfiguracionComercialRoute,
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,

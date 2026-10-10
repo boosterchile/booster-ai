@@ -50,3 +50,17 @@ export {
   type MembershipTier,
   type TierSlug,
 } from './types.js';
+
+/**
+ * Modelo comercial v3 (ADR-079): comisión al generador por modalidad de
+ * carga. Coexiste con v2 detrás de `PRICING_V3_ACTIVATED`.
+ */
+export {
+  calcularLiquidacionV3,
+  PRICING_METHODOLOGY_VERSION_V3,
+  resolverComisionPct,
+  type ComisionesV3,
+  type LiquidacionV3Input,
+  type LiquidacionV3Output,
+  type ModalidadCarga,
+} from './liquidacion-v3.js';

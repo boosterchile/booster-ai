@@ -156,4 +156,25 @@ describe('LiquidacionesRoute — lista', () => {
     // 2 entries × neto 176000.
     expect(screen.getByText('$ 352.000')).toBeInTheDocument();
   });
+
+  // ADR-079 §5: la fila v3 no trae comisión; el transportista ve su precio.
+  it('liquidación v3 → precio del transportista, sin comisión', async () => {
+    const LIQ_V3 = {
+      liquidacion_id: 'liq-v3',
+      asignacion_id: 'asg-v3',
+      tracking_code: 'TRK-V3',
+      monto_bruto_clp: 700000,
+      monto_neto_carrier_clp: 700000,
+      precio_transportista_clp: 700000,
+      pricing_methodology_version: 'pricing-v3.0-cl-2026.09',
+      status: 'lista_para_dte' as const,
+      creado_en: '2026-10-08T11:00:00Z',
+    };
+    vi.spyOn(api, 'get').mockResolvedValue({ liquidaciones: [LIQ_V3] });
+    renderRoute();
+    expect(await screen.findByText('TRK-V3')).toBeInTheDocument();
+    expect(screen.getByText('Sin comisión')).toBeInTheDocument();
+    expect(screen.queryByText(/%\)/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
 });
