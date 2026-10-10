@@ -1,5 +1,6 @@
 import { buildRedisTlsOptions } from '@booster-ai/config';
 import { type Logger, createLogger } from '@booster-ai/logger';
+import { BigQuery } from '@google-cloud/bigquery';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -31,6 +32,7 @@ import { createAdminJobsRoutes } from './routes/admin-jobs.js';
 import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
+import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -88,6 +90,11 @@ import { LoggingSignupRequestNotifier } from './services/notifications/signup-re
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import {
+  clienteDesdeBigQuery,
+  crearCargadorBigQuery,
+  crearLectorObservatorio,
+} from './services/observatorio/bigquery.js';
 import { computeRoutes } from './services/routes-api.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush, sendPushToUser } from './services/web-push.js';
@@ -142,6 +149,24 @@ export function createServer(opts: CreateServerOptions): Hono {
   const lectorConfiguracionComercial = crearLectorConfiguracionComercial({
     leer: () => leerConfiguracionPublicada(opts.db),
   });
+
+  // T10-24 / ADR-012 Capa 2 — observatorio urbano en BigQuery. Sin dataset
+  // configurado no se crea el cliente y las rutas responden "no configurado".
+  const observatorio = config.BIGQUERY_OBSERVATORY_DATASET
+    ? (() => {
+        const datasetId = config.BIGQUERY_OBSERVATORY_DATASET;
+        const cliente = clienteDesdeBigQuery(
+          new BigQuery(
+            config.GOOGLE_CLOUD_PROJECT ? { projectId: config.GOOGLE_CLOUD_PROJECT } : {},
+          ),
+        );
+        return {
+          datasetId,
+          cargador: crearCargadorBigQuery(cliente),
+          lector: crearLectorObservatorio({ cliente, datasetId }),
+        };
+      })()
+    : null;
 
   // Request logging middleware
   app.use('*', async (c, next) => {
@@ -564,6 +589,15 @@ export function createServer(opts: CreateServerOptions): Hono {
           firebaseAuth: opts.firebaseAuth ?? null,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // T10-24 — export del observatorio a BigQuery (si hay dataset).
+          ...(observatorio
+            ? {
+                observatorio: {
+                  datasetId: observatorio.datasetId,
+                  cargador: observatorio.cargador,
+                },
+              }
+            : {}),
           // T10-23 — barrido por minuto de viajes con Teltonika (mismas deps).
           ...(ecoRoutingDeps
             ? { ecoRouting: { deps: ecoRoutingDeps, routesProjectId: config.GOOGLE_CLOUD_PROJECT } }
@@ -690,6 +724,15 @@ export function createServer(opts: CreateServerOptions): Hono {
         emailSender,
         webAppUrl: config.WEB_APP_URL,
       }),
+    );
+
+    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth vía
+    // allowlist BOOSTER_PLATFORM_ADMIN_EMAILS en el handler.
+    app.use('/admin/observatorio/*', firebaseAuthMiddleware);
+    app.use('/admin/observatorio/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/observatorio',
+      createAdminObservatorioRoutes({ logger, lector: observatorio?.lector ?? null }),
     );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
