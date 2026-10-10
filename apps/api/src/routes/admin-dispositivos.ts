@@ -35,8 +35,7 @@ const asociarBodySchema = z.object({
 export function createAdminDispositivosRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context tiene generics complejos que cambian por route; usamos `any` para el helper compartido.
-  function requireAdmin(c: Context<any, any, any>) {
+  function requireAdmin(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
