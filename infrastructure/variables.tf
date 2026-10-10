@@ -478,6 +478,18 @@ variable "wake_word_voice_activated" {
   default     = false
 }
 
+variable "wake_word_keyword_url" {
+  description = "URL pública (con CORS hacia la web) del modelo oye-booster-cl.ppn de Porcupine (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
+variable "wake_word_model_url" {
+  description = "URL pública (con CORS hacia la web) del modelo porcupine_params_es.pv (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
 # T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. Activar primero en
 # staging (ADR-083) y después en prod con un viaje real de evidencia.
 variable "eco_routing_realtime_activated" {

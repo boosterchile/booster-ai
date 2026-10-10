@@ -27,6 +27,10 @@ export default defineConfig({
       injectRegister: 'auto',
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // SDK de Picovoice (~3,5 MB con el WASM embebido, ADR-036/T10-22):
+        // chunk diferido que solo baja quien activó "Oye Booster". No se
+        // precachea para no cargarle 1 MB gzip a cada instalación.
+        globIgnores: ['**/wake-word-sdk-*.js'],
       },
       manifest: {
         name: 'Booster AI',

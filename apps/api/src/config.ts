@@ -513,6 +513,31 @@ export const apiEnvSchema = commonEnvSchema
     WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
 
     /**
+     * ADR-036 / T10-22 — Picovoice Porcupine. Se entregan a la PWA en
+     * runtime por `GET /me/wake-word`, así el wake-word se activa sin
+     * rebuild de la web. La clave sale de Secret Manager
+     * (`picovoice-access-key`, wake-word.tf); su placeholder `ROTATE_ME_`
+     * cuenta como ausente en la ruta. "" se trata como ausente (Cloud Run
+     * pasa env vacías como "").
+     */
+    PICOVOICE_ACCESS_KEY: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().optional(),
+    ),
+    /** URL del modelo de la keyword custom `oye-booster-cl.ppn`. */
+    WAKE_WORD_KEYWORD_URL: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().url().optional(),
+    ),
+    /** URL del modelo de parámetros en español `porcupine_params_es.pv`. */
+    WAKE_WORD_MODEL_URL: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().url().optional(),
+    ),
+    /** Sensibilidad de Porcupine, 0..1. Más alta = más detecciones y más falsos positivos. */
+    WAKE_WORD_SENSITIVITY: z.coerce.number().min(0).max(1).default(0.5),
+
+    /**
      * T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. ON: cada posición
      * de un viaje recogido evalúa congestión y, con alternativa material,
      * persiste la sugerencia y la empuja al conductor por Web Push. Default
