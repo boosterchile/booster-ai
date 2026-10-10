@@ -51,3 +51,7 @@ Al agregar una tabla sin `empresa_id`, se documenta aquí en el mismo PR. Una ta
 | `facturasBoosterClp` | `facturas_booster_clp` | Tiene columna de tenant con otro nombre (`empresaDestinoId`). Las queries filtran por ella con el `empresaId` de la membresía. |
 | `configuracionSitio` | `configuracion_sitio` | Configuración global del sitio público; la edita solo platform-admin. |
 | `bitacoraBackfillDistancia` | `bitacora_backfill_distancia` | Bitácora del job admin de backfill de distancia, por `tripId`. |
+| `sugerenciasRuta` | `sugerencias_ruta` | Eco-routing (T10-23). Se filtra por `assignmentId`; las lecturas y respuestas del conductor hacen join con `assignments` y exigen `driverUserId` = usuario autenticado. La actualización de la fila recién creada lleva `rls-allowlist`. |
+| `configuracionComercial` | `configuracion_comercial` | Configuración comercial global de la plataforma (ADR-079); la publica solo platform-admin. Las queries llevan `rls-allowlist`. |
+| `valoresUf` | `valores_uf` | Caché global del valor UF por fecha (ADR-079 §4), sin datos de empresa. Las queries llevan `rls-allowlist`. |
+| `eventosPagoViaje` | `eventos_pago_viaje` | Mandato de cobro (ADR-080). Se filtra por `asignacionId` de una asignación validada, o por join con `liquidaciones` en la conciliación del job admin. |
