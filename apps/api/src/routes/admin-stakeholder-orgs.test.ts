@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 
 /**
  * POST /admin/stakeholder-orgs/:id/invitar — el vínculo de persona
@@ -25,7 +26,7 @@ const noopLogger = {
 } as never as Logger;
 
 function org() {
-  return { id: ORG_ID, deletedAt: null };
+  return { id: ORG_ID, deletedAt: null, nombreLegal: 'Municipalidad de Coquimbo' };
 }
 
 function usuario(over: Record<string, unknown>) {
@@ -70,8 +71,13 @@ function buildApp(
   mod: typeof import('./admin-stakeholder-orgs.js'),
   db: ReturnType<typeof makeDb>['db'],
   email = ADMIN_EMAIL,
+  emailSender?: EmailSender,
 ) {
-  const routes = mod.createAdminStakeholderOrgsRoutes({ db, logger: noopLogger });
+  const routes = mod.createAdminStakeholderOrgsRoutes({
+    db,
+    logger: noopLogger,
+    ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
+  });
   const app = new Hono();
   app.use('*', async (c, next) => {
     (c as unknown as { set: (k: string, v: unknown) => void }).set('userContext', {
@@ -211,5 +217,65 @@ describe('POST /admin/stakeholder-orgs/:id/invitar', () => {
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'already_member', membership_id: 'm-0' });
     expect(d.inserted).toHaveLength(0);
+  });
+});
+
+/**
+ * T10-04 (ADR-082) — el código de activación le llega a la persona por correo,
+ * no solo al admin que tiene que dictárselo.
+ */
+describe('correo de activación de la invitación stakeholder', () => {
+  function makeSender() {
+    const send = vi.fn().mockResolvedValue({ enviado: true, id: 'm-1' });
+    return { sender: { send } as unknown as EmailSender, send };
+  }
+
+  function mensaje(send: ReturnType<typeof vi.fn>) {
+    const call = send.mock.calls[0];
+    if (!call) {
+      throw new Error('no se envió correo');
+    }
+    return call[0] as { to: string; text: string };
+  }
+
+  it('persona nueva: le envía el código con la organización y el enlace', async () => {
+    const mod = await loadMod();
+    const d = makeDb([[org()], [], []], [[{ id: 'u-nuevo' }], [{ id: 'm-1' }]]);
+    const { sender, send } = makeSender();
+    const res = await invitar(buildApp(mod, d.db, ADMIN_EMAIL, sender));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Respuesta;
+    expect(send).toHaveBeenCalledTimes(1);
+    const msg = mensaje(send);
+    expect(msg.to).toBe('persona@acme.cl');
+    expect(msg.text).toContain(body.codigo_activacion ?? 'sin-codigo');
+    expect(msg.text).toContain('Municipalidad de Coquimbo');
+    expect(msg.text).toContain('https://app.boosterchile.com/activar');
+  });
+
+  it('provisoria sin código: el código va a su correo registrado', async () => {
+    const mod = await loadMod();
+    const d = makeDb(
+      [[org()], [usuario({ firebaseUid: `pending-rut:${RUT}`, email: 'registrado@acme.cl' })], []],
+      [[{ id: 'm-1' }]],
+    );
+    const { sender, send } = makeSender();
+    const res = await invitar(buildApp(mod, d.db, ADMIN_EMAIL, sender), 'otro@acme.cl');
+    expect(res.status).toBe(201);
+    expect(mensaje(send).to).toBe('registrado@acme.cl');
+  });
+
+  it('cuenta viva o código vigente: no se envía correo', async () => {
+    const mod = await loadMod();
+    for (const over of [
+      { claveNumericaHash: 'hash-clave' },
+      { firebaseUid: `pending-rut:${RUT}`, activationPinHash: 'hash-pin' },
+    ]) {
+      const d = makeDb([[org()], [usuario(over)], []], [[{ id: 'm-1' }]]);
+      const { sender, send } = makeSender();
+      const res = await invitar(buildApp(mod, d.db, ADMIN_EMAIL, sender));
+      expect(res.status).toBe(201);
+      expect(send).not.toHaveBeenCalled();
+    }
   });
 });

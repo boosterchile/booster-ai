@@ -8,6 +8,8 @@ import type { Db } from '../db/client.js';
 import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
 import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
@@ -45,11 +47,21 @@ function placeholderFirebaseUid(rut: string): string {
   return `pending-rut:${rut}`;
 }
 
-export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }): Hono {
+export function createMeEmpresaMiembrosRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * T10-04: el código le llega a la persona invitada por correo. Ausente en
+   * tests que no ejercitan el envío; en prod siempre está (con Resend o, sin
+   * key, con el sender que solo registra).
+   */
+  emailSender?: EmailSender;
+  /** Base del enlace a `/activar`. */
+  webAppUrl?: string;
+}): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireEmpresa(c: Context<any, any, any>) {
+  function requireEmpresa(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     const activa = userContext?.activeMembership;
     if (!userContext || !activa) {
@@ -68,6 +80,7 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
     return {
       ok: true as const,
       empresaId,
+      empresaNombre: activa.empresa.legalName,
       rol: activa.membership.role,
       callerId: userContext.user.id,
     };
@@ -134,6 +147,7 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
         .select({
           id: users.id,
           email: users.email,
+          fullName: users.fullName,
           firebaseUid: users.firebaseUid,
           claveNumericaHash: users.claveNumericaHash,
           activationPinHash: users.activationPinHash,
@@ -223,7 +237,17 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
         throw new Error('insert membresía devolvió vacío');
       }
 
-      return { userId, membershipId: membresia.id, vinculo, codigoEmitido };
+      return {
+        userId,
+        membershipId: membresia.id,
+        vinculo,
+        codigoEmitido,
+        // Persona provisoria: su correo registrado, no el que tipeó la empresa.
+        destinatario: {
+          email: existente?.email ?? email,
+          nombre: existente?.fullName ?? body.full_name,
+        },
+      };
     });
 
     if ('conflicto' in resultado) {
@@ -247,8 +271,22 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
       'me-empresa-miembros: miembro agregado al equipo',
     );
 
-    // El código viaja SOLO acá, a quien lo dio de alta. No se loguea ni se
-    // persiste en claro: en la BD queda su hash.
+    if (resultado.codigoEmitido !== null && opts.emailSender) {
+      await enviarCorreoActivacionCuenta({
+        sender: opts.emailSender,
+        logger: opts.logger,
+        email: resultado.destinatario.email,
+        nombre: resultado.destinatario.nombre,
+        rut: body.rut,
+        codigo: resultado.codigoEmitido,
+        empresa: auth.empresaNombre,
+        rol: body.rol,
+        webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+      });
+    }
+
+    // El código viaja a la persona por correo y, como respaldo, a quien la dio
+    // de alta. No se loguea ni se persiste en claro: en la BD queda su hash.
     const expiraEn =
       resultado.codigoEmitido === null
         ? null

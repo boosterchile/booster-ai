@@ -18,7 +18,7 @@ Marketplace B2B de logística sostenible (empty-legs + huella GLEC v3.0 / GHG / 
 
 ## Ciclo de trabajo
 
-1. **WIP de producto.** Máximo 3 PRs propios abiertos; no se abre frente nuevo con un sweep o batch pendiente de cierre. El trabajo de producto sale de los tres slots de `docs/frentes-vivos.md`. Un frente de producto fuera de slot se declara y se detiene. No ocupan slot, y se atienden: incidente en producción, seguridad, este contrato, y lo que el PO pida en el mensaje.
+1. **WIP de producto.** Máximo 3 PRs propios abiertos; no se abre frente nuevo con un sweep o batch pendiente de cierre. El trabajo de producto sale de la fase activa del programa TRL 10 en `docs/frentes-vivos.md` ([ADR-082](docs/adr/082-objetivo-trl10-supersede-precomercial.md)), con máximo tres frentes. Un frente fuera de la fase activa se declara y se detiene. No ocupan slot, y se atienden: incidente en producción, seguridad, este contrato, y lo que el PO pida en el mensaje.
 2. **Criterio de salida antes de construir**: `.specs/<slug>/spec.md` declara entradas, salidas y criterios de éxito antes del primer commit de código. Convención: `.specs/<slug>/{spec,plan,verify,review,ship}.md`.
 3. **TDD con rojo exhibido en dominio crítico** (factoring, pricing, GLEC, matching, migraciones, auth): primero el test, se muestra el rojo, luego implementación. El output del rojo va en la Evidencia del PR. Sin rojo exhibido, no cierra. Booster no emite DTE ([ADR-069](docs/adr/069-booster-deja-de-emitir-dte-remocion-sovos.md)); ese subsistema no se reabre.
 4. **Terminado = evidencia fresca**: tests + lint + typecheck + build corridos en el momento, output en el PR. Sin placeholders ni `TODO` en código entregado; un `catch` nunca traga errores en silencio.
