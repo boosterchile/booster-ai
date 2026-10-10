@@ -6,7 +6,7 @@ import { ApiError, api } from '../lib/api-client.js';
 
 /**
  * Picker de impersonación auditada (platform-admin, backend #584). Lista los
- * usuarios de empresas de PRUEBA (`es_demo`) — decisión sellada del PO: no es
+ * usuarios de empresas de PRUEBA (`es_usuario_prueba`) — decisión sellada del PO: no es
  * un buscador de todos los usuarios — y permite "Ver como" cada uno: llama
  * `POST /auth/impersonate` y hace `signInUniversalWithCustomToken`. Tras eso el
  * `onAuthStateChanged` de Firebase re-renderiza la app como el target y el

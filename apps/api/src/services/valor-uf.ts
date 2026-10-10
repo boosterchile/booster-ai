@@ -74,10 +74,16 @@ export function parsearRespuestaCmf(json: unknown, fecha: string): number {
 }
 
 function textoCelda(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, '')
-    .replaceAll('&nbsp;', ' ')
-    .trim();
+  // Se quitan etiquetas hasta que el texto no cambie (CodeQL
+  // js/incomplete-multi-character-sanitization). El resultado igual pasa por
+  // parsearNumeroChileno, que rechaza cualquier carácter fuera del número.
+  let texto = html;
+  let previo: string;
+  do {
+    previo = texto;
+    texto = texto.replace(/<[^>]*>/g, '');
+  } while (texto !== previo);
+  return texto.replaceAll('&nbsp;', ' ').trim();
 }
 
 /**
