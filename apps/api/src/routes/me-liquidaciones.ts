@@ -1,4 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
+import { PRICING_METHODOLOGY_VERSION_V3 } from '@booster-ai/pricing-engine';
 import { desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { config as appConfig } from '../config.js';
@@ -24,9 +25,15 @@ import type { UserContext } from '../services/user-context.js';
  * eliminación del contrato es una fase posterior tras confirmar cero
  * consumidores.
  *
- * Skip silencioso (200 con lista vacía) si `PRICING_V2_ACTIVATED=false`:
- * en entornos no-prod no hay liquidaciones, el carrier ve un mensaje
- * desde la UI cuando viene vacío.
+ * 503 `feature_disabled` si `PRICING_V2_ACTIVATED` y `PRICING_V3_ACTIVATED`
+ * están ambos en false.
+ *
+ * **Liquidaciones v3 (ADR-079 §5)**: el transportista ve solo su precio
+ * (`precio_transportista_clp`, que recibe íntegro). La fila omite
+ * `comision_pct`, `comision_clp`, `iva_comision_clp` y
+ * `total_factura_booster_clp`, porque en v3 la comisión la paga el
+ * generador y esa factura es suya. Las filas v2 conservan su desglose: rige
+ * el contrato vigente cuando se publicó la carga.
  *
  * Si el flag está on pero la empresa activa no es transportista, 403.
  */
@@ -34,7 +41,7 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
   app.get('/liquidaciones', async (c) => {
-    if (!appConfig.PRICING_V2_ACTIVATED) {
+    if (!appConfig.PRICING_V2_ACTIVATED && !appConfig.PRICING_V3_ACTIVATED) {
       return c.json({ error: 'feature_disabled' }, 503);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
@@ -57,6 +64,7 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
         ivaComisionClp: liquidaciones.ivaComisionClp,
         montoNetoCarrierClp: liquidaciones.montoNetoCarrierClp,
         totalFacturaBoosterClp: liquidaciones.totalFacturaBoosterClp,
+        precioTransportistaClp: liquidaciones.precioTransportistaClp,
         pricingMethodologyVersion: liquidaciones.pricingMethodologyVersion,
         status: liquidaciones.status,
         createdAt: liquidaciones.createdAt,
@@ -71,29 +79,41 @@ export function createMeLiquidacionesRoutes(opts: { db: Db; logger: Logger }) {
       .limit(100);
 
     return c.json({
-      liquidaciones: rows.map((r) => ({
-        liquidacion_id: r.liquidacionId,
-        asignacion_id: r.asignacionId,
-        tracking_code: r.trackingCode,
-        monto_bruto_clp: r.montoBrutoClp,
-        comision_pct: Number(r.comisionPct),
-        comision_clp: r.comisionClp,
-        iva_comision_clp: r.ivaComisionClp,
-        monto_neto_carrier_clp: r.montoNetoCarrierClp,
-        total_factura_booster_clp: r.totalFacturaBoosterClp,
-        pricing_methodology_version: r.pricingMethodologyVersion,
-        status: r.status,
-        // @deprecated ADR-069 / O-7 — Booster ya no emite DTE. Estos 5
-        // campos se mantienen en el response devolviendo `null` para
-        // backward-compat de PWAs en vuelo/caché; se removerán del schema
-        // JSON en una fase posterior tras confirmar cero consumidores.
-        dte_folio: null,
-        dte_emitido_en: null,
-        dte_status: null,
-        dte_pdf_url: null,
-        dte_provider: null,
-        creado_en: r.createdAt.toISOString(),
-      })),
+      liquidaciones: rows.map((r) => {
+        const comun = {
+          liquidacion_id: r.liquidacionId,
+          asignacion_id: r.asignacionId,
+          tracking_code: r.trackingCode,
+          monto_bruto_clp: r.montoBrutoClp,
+          monto_neto_carrier_clp: r.montoNetoCarrierClp,
+          pricing_methodology_version: r.pricingMethodologyVersion,
+          status: r.status,
+          // @deprecated ADR-069 / O-7 — Booster ya no emite DTE. Estos 5
+          // campos se mantienen en el response devolviendo `null` para
+          // backward-compat de PWAs en vuelo/caché; se removerán del schema
+          // JSON en una fase posterior tras confirmar cero consumidores.
+          dte_folio: null,
+          dte_emitido_en: null,
+          dte_status: null,
+          dte_pdf_url: null,
+          dte_provider: null,
+          creado_en: r.createdAt.toISOString(),
+        };
+        if (r.pricingMethodologyVersion === PRICING_METHODOLOGY_VERSION_V3) {
+          // ADR-079 §5: nada de la comisión ni de la factura al generador.
+          return {
+            ...comun,
+            precio_transportista_clp: r.precioTransportistaClp ?? r.montoNetoCarrierClp,
+          };
+        }
+        return {
+          ...comun,
+          comision_pct: Number(r.comisionPct),
+          comision_clp: r.comisionClp,
+          iva_comision_clp: r.ivaComisionClp,
+          total_factura_booster_clp: r.totalFacturaBoosterClp,
+        };
+      }),
     });
   });
 
