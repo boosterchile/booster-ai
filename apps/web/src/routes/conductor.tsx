@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
+import { SugerenciaRutaCard } from '../components/eco-routing/SugerenciaRutaCard.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
@@ -24,6 +25,7 @@ import { useDriverPositionReporter } from '../hooks/use-driver-position-reporter
 import { useFeatureFlags } from '../hooks/use-feature-flags.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { respuestaDesdeUrl } from '../lib/eco-routing.js';
 import { type LatLng, decodePolyline } from '../lib/polyline.js';
 import {
   type PermissionStatus,
@@ -596,9 +598,12 @@ function ConductorChat({
 export function AssignmentCard({
   assignment,
   geoPermission,
+  sugerenciasRuta = true,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
+  /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
+  sugerenciasRuta?: boolean;
 }) {
   const reporter = useDriverPositionReporter();
   const a = assignment;
@@ -634,6 +639,11 @@ export function AssignmentCard({
   // Extremos de la ruta eco = coordenadas reales de origen y destino para los
   // enlaces de navegación (ver mapsHref). Sin ruta, cae al texto.
   const ecoRoute = useAssignmentEcoRoute(a.id, { enabled: fase !== 'entregada' });
+  // Acción de la notificación de sugerencia de ruta (`?sugerencia=&respuesta=`),
+  // leída una sola vez al montar: el SW no tiene sesión para llamar al api.
+  const [respuestaNotificacion] = useState(() =>
+    typeof window === 'undefined' ? null : respuestaDesdeUrl(window.location.search),
+  );
   const polylineEncoded = ecoRoute.data?.polyline_encoded ?? null;
   const extremos = useMemo<{ origen: LatLng; destino: LatLng } | null>(() => {
     if (!polylineEncoded) {
@@ -925,6 +935,15 @@ export function AssignmentCard({
             <output className="block rounded-md border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 text-sm">
               Carga recogida. Cuando llegues a destino, confirma la entrega.
             </output>
+            {/* T10-23: sugerencia de eco-routing ante congestión (push + sondeo). */}
+            {sugerenciasRuta && (
+              <SugerenciaRutaCard
+                assignmentId={a.id}
+                destinoDireccion={a.trip.destination.address_raw}
+                destinoCoords={extremos?.destino ?? null}
+                respuestaDesdeNotificacion={respuestaNotificacion}
+              />
+            )}
             {confirmando === 'entrega' ? (
               <ConfirmacionInline
                 pregunta="¿Confirmas que entregaste esta carga?"

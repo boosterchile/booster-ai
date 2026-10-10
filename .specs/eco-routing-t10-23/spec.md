@@ -56,14 +56,14 @@ Esta spec supersede la de la rama `feat/eco-routing-realtime-spec`, que nunca se
    - Flag `ECO_ROUTING_REALTIME_ACTIVATED` (`booleanFlag(false)`).
 3. **`apps/web`** (PR C):
    - Card de sugerencia en `conductor.tsx`, con la alternativa en el mapa y botones Aceptar / Seguir.
-   - Acciones de notificación en `sw.ts` que llaman al endpoint de respuesta.
+   - Acciones de notificación en `sw.ts`: el service worker no tiene sesión, así que la acción abre `/app/conductor?sugerencia=<id>&respuesta=<aceptada|rechazada>` y la PWA registra la respuesta al montar. La card además sondea `GET .../sugerencias-ruta/activa` cada 20 s como respaldo del push.
    - Si acepta, abre la navegación con la polilínea alternativa.
 
 ## Criterios de éxito
 
 - [x] PR A: tests del detector (12) y del evaluador (9) con **rojo exhibido** antes de implementar. Coverage del package ≥ 80 %.
 - [x] PR B: test de integración (`test/integration/eco-routing-tiempo-real.integration.test.ts`, 9 casos contra Postgres real): posición lenta del viaje recogido → fila `sugerencias_ruta` (detección < 60 s desde la condición) → push con acciones y `enviada_en` → respuesta registrada una sola vez por el conductor; cooldown, throttle, sin alternativa, sin congestión, viaje no activo, error de Routes API.
-- [ ] PR C: test de componente de la card y de las acciones del service worker.
+- [x] PR C: tests de la card (`SugerenciaRutaCard`), del hook, de los helpers de navegación y del clic de notificación (`urlClickNotificacion`, que usa el service worker), y del montaje en `conductor` (en ruta sí, antes de recoger no).
 - [ ] Viaje real en prod con al menos una sugerencia y su respuesta (evidencia del PO tras activar el flag).
 
 ## Fuera de alcance
