@@ -385,6 +385,31 @@ describe('liquidarTrip — v3 (ADR-079 §6)', () => {
     });
   });
 
+  it('ADR-080 Verificación 1: sin MANDATO_COBRO_ACTIVATED la liquidación v3 queda conector', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[{ id: 'liq-v3' }]] });
+    await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+    });
+    expect(db.insertValues[0]).toMatchObject({ modoFlujo: 'conector' });
+  });
+
+  it('ADR-080 §5: con MANDATO_COBRO_ACTIVATED la liquidación v3 queda mandato_cobro', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[{ id: 'liq-v3' }]] });
+    await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+      mandatoCobroActivated: true,
+    });
+    expect(db.insertValues[0]).toMatchObject({ modoFlujo: 'mandato_cobro' });
+  });
+
   it('v3 sin tasa congelada y v2 apagado → skipped_flag_disabled sin insertar', async () => {
     const db = makeDb({
       selects: [[ASG_V3], [{ ...VIAJE_V3, comisionPctAplicada: null, configFila: null }]],

@@ -96,6 +96,37 @@ describe('PRICING_V3_ACTIVATED — default seguro (ADR-079 §6, Verificación 6)
   });
 });
 
+describe('MANDATO_COBRO_ACTIVATED — default seguro (ADR-080 §5, Verificación 1)', () => {
+  it('false en production sin env var; true solo con "true" explícito', async () => {
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', MANDATO_COBRO_ACTIVATED: undefined }))
+        .MANDATO_COBRO_ACTIVATED,
+    ).toBe(false);
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', MANDATO_COBRO_ACTIVATED: 'true' }))
+        .MANDATO_COBRO_ACTIVATED,
+    ).toBe(true);
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', MANDATO_COBRO_ACTIVATED: 'false' }))
+        .MANDATO_COBRO_ACTIVATED,
+    ).toBe(false);
+  });
+
+  it('el tope del float es 0 por omisión: sin decisión del PO no hay caja propia (§6.3)', async () => {
+    expect(
+      (await loadConfigWith({ MANDATO_COBRO_FLOAT_MAXIMO_CLP: undefined }))
+        .MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+    ).toBe(0);
+    expect(
+      (await loadConfigWith({ MANDATO_COBRO_FLOAT_MAXIMO_CLP: '' })).MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+    ).toBe(0);
+    expect(
+      (await loadConfigWith({ MANDATO_COBRO_FLOAT_MAXIMO_CLP: '50000000' }))
+        .MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+    ).toBe(50_000_000);
+  });
+});
+
 describe('CMF_API_KEY — clave de la API UF (ADR-079 §4)', () => {
   it('ausente, vacía o con el placeholder de Terraform → undefined (solo SII)', async () => {
     for (const valor of [undefined, '', 'ROTATE_ME_CMF_API_KEY_PLACEHOLDER']) {

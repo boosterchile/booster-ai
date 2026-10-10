@@ -321,6 +321,16 @@ const platformAdminConfiguracionComercialRoute = createRoute({
   ),
 });
 
+// ADR-080 — conciliación del mandato de cobro. Mismo gate platform-admin.
+const platformAdminMandatoCobroRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/mandato-cobro',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-mandato-cobro.js'),
+    'PlatformAdminMandatoCobroRoute',
+  ),
+});
+
 // Spec 2026-05-13 — Observability dashboard (costos GCP + Twilio +
 // Workspace + salud + capacity + forecast). Misma gate platform-admin.
 const platformAdminObservabilityRoute = createRoute({
@@ -596,6 +606,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
   platformAdminConfiguracionComercialRoute,
+  platformAdminMandatoCobroRoute,
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,

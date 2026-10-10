@@ -3,6 +3,11 @@ import { CLAVES_PRIVADAS_GENERADOR } from '@booster-ai/shared-schemas';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config as appConfig } from '../../src/config.js';
+
+const leerPagoViaje = vi.fn();
+vi.mock('../../src/services/mandato-cobro/eventos-pago.js', () => ({
+  leerPagoViaje: (...a: unknown[]) => leerPagoViaje(...a),
+}));
 import { createMeLiquidacionesRoutes } from '../../src/routes/me-liquidaciones.js';
 import type { UserContext } from '../../src/services/user-context.js';
 
@@ -252,5 +257,76 @@ describe('GET /me/liquidaciones — v3 (ADR-079 §5)', () => {
     const res = await app.request('/me/liquidaciones');
     const body = (await res.json()) as { liquidaciones: Array<Record<string, unknown>> };
     expect(body.liquidaciones[1]).toMatchObject({ liquidacion_id: 'liq-v2', comision_pct: 12 });
+  });
+});
+
+describe('GET /me/liquidaciones — mandato de cobro (ADR-080)', () => {
+  const FILA = {
+    liquidacionId: 'liq-m',
+    asignacionId: 'asg-m',
+    montoBrutoClp: 1_000_000,
+    comisionPct: '20.00',
+    comisionClp: 200_000,
+    ivaComisionClp: 38_000,
+    montoNetoCarrierClp: 1_000_000,
+    totalFacturaBoosterClp: 238_000,
+    precioTransportistaClp: 1_000_000,
+    pricingMethodologyVersion: PRICING_METHODOLOGY_VERSION_V3,
+    status: 'lista_para_dte',
+    createdAt: new Date('2026-10-10T11:00:00Z'),
+    trackingCode: 'TRK-M',
+  };
+
+  it('fila en mandato: muestra la liberación al transportista, nunca el cobro al generador', async () => {
+    appConfig.PRICING_V3_ACTIVATED = true;
+    leerPagoViaje.mockResolvedValue({
+      modo_flujo: 'mandato_cobro',
+      cobro: {
+        estado: 'pendiente',
+        en: null,
+        monto_clp: null,
+        vence_en: '2026-11-09T12:00:00.000Z',
+      },
+      liberacion: {
+        estado: 'pendiente',
+        en: null,
+        monto_clp: null,
+        vence_en: '2026-10-15T12:00:00.000Z',
+      },
+      montos_esperados: { cobro_clp: 1_238_000, liberacion_clp: 1_000_000 },
+    });
+    const app = buildApp({
+      withContext: true,
+      db: makeDb([{ ...FILA, modoFlujo: 'mandato_cobro' }]),
+    });
+    const body = (await (await app.request('/me/liquidaciones')).json()) as {
+      liquidaciones: Array<Record<string, unknown>>;
+    };
+    expect(body.liquidaciones[0]).toMatchObject({
+      modo_flujo: 'mandato_cobro',
+      liberacion: {
+        estado: 'pendiente',
+        en: null,
+        monto_clp: null,
+        vence_en: '2026-10-15T12:00:00.000Z',
+      },
+    });
+    const serializado = JSON.stringify(body);
+    expect(serializado).not.toContain('1238000');
+    expect(serializado).not.toContain('"cobro":');
+    expect(serializado).not.toContain('montos_esperados');
+    expect(leerPagoViaje).toHaveBeenCalledWith(expect.anything(), 'asg-m');
+  });
+
+  it('fila conector: modo_flujo sin bloque de liberación ni lectura de eventos', async () => {
+    appConfig.PRICING_V3_ACTIVATED = true;
+    leerPagoViaje.mockClear();
+    const app = buildApp({ withContext: true, db: makeDb([{ ...FILA, modoFlujo: 'conector' }]) });
+    const body = (await (await app.request('/me/liquidaciones')).json()) as {
+      liquidaciones: Array<Record<string, unknown>>;
+    };
+    expect(body.liquidaciones[0]).toMatchObject({ modo_flujo: 'conector' });
+    expect(body.liquidaciones[0]).not.toHaveProperty('liberacion');
+    expect(leerPagoViaje).not.toHaveBeenCalled();
   });
 });

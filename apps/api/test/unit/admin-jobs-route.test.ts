@@ -27,6 +27,10 @@ vi.mock('../../src/services/valor-uf.js', async (importOriginal) => ({
   obtenerValorUf: vi.fn(),
 }));
 
+vi.mock('../../src/services/mandato-cobro/eventos-pago.js', () => ({
+  conciliarMandatoCobro: vi.fn(),
+}));
+
 vi.mock('../../src/services/purgar-posiciones-movil.js', () => ({
   purgarPosicionesMovil: vi.fn(),
 }));
@@ -58,6 +62,7 @@ const { cobrarMembershipsMensual } = await import(
 );
 const { cobrarSuscripcionesUf } = await import('../../src/services/cobrar-suscripciones-uf.js');
 const { obtenerValorUf, ValorUfNoDisponibleError } = await import('../../src/services/valor-uf.js');
+const { conciliarMandatoCobro } = await import('../../src/services/mandato-cobro/eventos-pago.js');
 const { config: appConfig } = await import('../../src/config.js');
 
 const noop = (): void => undefined;
@@ -559,5 +564,48 @@ describe('POST /admin/jobs/valor-uf (ADR-079 §4)', () => {
     const app = await buildApp();
     const res = await app.request('/admin/jobs/valor-uf', { method: 'POST' });
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /admin/jobs/mandato-cobro-conciliacion (ADR-080)', () => {
+  afterEach(() => {
+    appConfig.MANDATO_COBRO_ACTIVATED = false;
+    appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP = 0;
+  });
+
+  it('flag apagado → skip sin tocar la base', async () => {
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/mandato-cobro-conciliacion', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: 'mandato_cobro_desactivado' });
+    expect(conciliarMandatoCobro).not.toHaveBeenCalled();
+  });
+
+  it('flag encendido → concilia con el tope configurado y devuelve el resumen', async () => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP = 3_000_000;
+    vi.mocked(conciliarMandatoCobro).mockResolvedValue({
+      morasRegistradas: 2,
+      liberacionesVencidas: 1,
+      floatClp: 1_500_000,
+      moraPctMes: 12.5,
+      anticiposPctMes: 40,
+      viajesEnMandato: 16,
+    });
+    const app = await buildApp();
+    const res = await app.request('/admin/jobs/mandato-cobro-conciliacion', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      moras_registradas: 2,
+      liberaciones_vencidas: 1,
+      float_clp: 1_500_000,
+      mora_pct_mes: 12.5,
+      anticipos_pct_mes: 40,
+      viajes_en_mandato: 16,
+    });
+    expect(vi.mocked(conciliarMandatoCobro).mock.calls[0]?.[0]).toMatchObject({
+      topeFloatClp: 3_000_000,
+    });
   });
 });

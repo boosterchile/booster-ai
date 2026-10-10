@@ -39,6 +39,20 @@ export interface LiquidacionRow {
   pricing_methodology_version: string;
   status: LiquidacionStatus;
   creado_en: string;
+  /** ADR-080 §5 — régimen con que se paga (ausente en respuestas previas a 0061). */
+  modo_flujo?: 'conector' | 'mandato_cobro';
+  /** ADR-080 — bajo mandato de cobro, cuándo y cómo se libera el pago al transportista. */
+  liberacion?: {
+    estado:
+      | 'sin_recepcion'
+      | 'pendiente'
+      | 'disputa'
+      | 'liberado_por_booster'
+      | 'anticipado_por_operador';
+    en: string | null;
+    monto_clp: number | null;
+    vence_en: string | null;
+  };
 }
 
 export function useLiquidaciones(opts: { enabled?: boolean } = {}) {

@@ -376,6 +376,25 @@ export const apiEnvSchema = commonEnvSchema
     PRICING_V3_ACTIVATED: booleanFlag(false),
 
     /**
+     * ADR-080 §5 — mandato de cobro: Booster cobra al generador y libera al
+     * transportista contra recepción conforme. Default OFF en todos los
+     * entornos (modo conector). Encenderlo exige las seis precondiciones de
+     * ADR-080 §6 con evidencia (`.specs/mandato-de-cobro/activacion.md`).
+     */
+    MANDATO_COBRO_ACTIVATED: booleanFlag(false),
+
+    /**
+     * ADR-080 §6.3 — tope del float de terceros (caja propia de Booster
+     * adelantada al transportista antes del cobro). 0 por omisión: sin
+     * decisión escrita del PO, Booster no adelanta caja propia y toda
+     * liberación previa al cobro se rechaza con `tope_float_excedido`.
+     */
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.coerce.number().int().min(0).default(0),
+    ),
+
+    /**
      * ADR-079 §4 — clave de la API v3 de la CMF para el valor UF del día
      * (secret `cmf-api-key`). Ausente, vacía o con el placeholder
      * `ROTATE_ME_…` de Terraform cuenta como no configurada: el valor UF se
