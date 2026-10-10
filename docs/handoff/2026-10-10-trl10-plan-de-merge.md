@@ -4,7 +4,7 @@ Snapshot para el PO. Programa: [ADR-082](../adr/082-objetivo-trl10-supersede-pre
 
 El estado es este: 39 PRs abiertos del programa (#742–#780), ninguno mergeado.
 
-**Ensayado.** Los 39 se combinaron localmente sobre `main` (`0008fa6`) en el orden de este plan. El árbol resultante pasa typecheck, lint, tests con coverage 80, build, integración y `terraform validate`. Para llegar ahí hicieron falta correcciones que ningún PR muestra solo. El detalle está en [Ensayo del merge](#ensayo-del-merge).
+**Ensayado.** Los 39 se combinaron localmente sobre `main` (`0008fa6`) en el orden de este plan. El árbol resultante pasa typecheck, lint, tests con coverage 80, build, integración, E2E de los flujos críticos y `terraform validate`. Para llegar ahí hicieron falta correcciones que ningún PR muestra solo. El detalle está en [Ensayo del merge](#ensayo-del-merge).
 
 **Estado de CI** al 2026-10-10, último commit de cada rama, según la API de Actions:
 - **`ci.yml` en verde** en todos los PRs con base `main`: #742–#766, #768, #769, #775–#779.
@@ -129,7 +129,19 @@ Los hijos apilados (#767, #770–#773, #780, #774, #761–#762, #748) chocan ade
 | `pnpm build` | 9/9 tareas |
 | Integración api contra Postgres 16 | 34/38 archivos verdes, con las 64 migraciones aplicadas (0000–0063). Los 4 restantes levantan Redis con testcontainers y el entorno del ensayo no tiene Docker (`Could not find a working container runtime strategy`); en CI sí corren |
 | `terraform fmt -check` y `validate` | OK |
-| Grep de T10-03 | 0 archivos |
+| Gates de `security.yml` y `ci.yml` | route default-deny OK (54 montajes); impersonation wire-completeness OK; migration safety OK sobre 0059–0063 |
+| E2E de `e2e-pr.yml`, reproducido localmente | `test:e2e:conductor`: 8/8 (los 7 flujos de T10-10 y el gate de rol, con axe); `test:e2e:local`: 11/11 |
+
+**Criterios de TRL 10 que se verifican sobre el código**, medidos en el árbol combinado:
+
+| Criterio | Resultado |
+|---|---|
+| T10-03, grep demo | 0 archivos |
+| T10-08, coverage | los 28 workspaces quedan en ≥ 80 en las cuatro métricas. El mínimo es matching-engine, con 80,95 en ramas |
+| T10-09, stubs | `carta-porte-generator` y `document-indexer` no vuelven |
+| T10-10 y T10-11, E2E con axe | 7/7 flujos con spec y axe, en verde |
+| T10-12, reglas del stack | 0 `any`, 0 `@ts-ignore` y 0 `as unknown as` en `apps/*/src` y `packages/*/src`, después de la corrección 5. `console.*` solo en el sink de `apps/web/src/lib/error-reporting.ts`. `apps/web/src/sw.ts` mantiene dos `@ts-expect-error` justificados que ya estaban en `main` |
+| T10-13, exenciones RLS | `lint:rls` OK, después de la corrección 2 |
 
 **Correcciones que ningún PR muestra solo.** Sin ellas el árbol combinado falla.
 
@@ -148,7 +160,11 @@ Los hijos apilados (#767, #770–#773, #780, #774, #761–#762, #748) chocan ade
    - `DEMO_MODE_ACTIVATED`;
    - `demo_mode_activated`.
 
+5. **T10-12 contra #767 y #775.** #751 elimina los 28 `Context<any, any, any>` de los helpers `require*`. `admin-configuracion-comercial.ts` (#767) y `admin-observatorio.ts` (#775) los reintroducían, y con todo mergeado el grep no daba 0. Ya está corregido en las ramas (ver abajo).
+
 **Correcciones ya subidas a las ramas** (2026-10-10):
+
+- **#767 y #775** (`d3d049d`, `ac5c007`). `Context` sin genéricos, el patrón de #751. El cambio se propagó con merges por la cadena #770 → #771 → #772 → #773 y #780.
 
 - **#748** (`a002e9b`). Su propio test de integración contenía el literal `es_demo`, así que el grep de T10-03 daba 1 en la cabeza del PR. Ahora compara las columnas de `empresas` en la base con las del schema Drizzle. Verificado con una mutación: sin el `DROP COLUMN`, el test falla con `+ "es_demo"`.
 - **#761/#762, #763 y #764.**
