@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectSinViolacionesGraves } from './a11y.js';
+import { revisarPantalla } from './a11y.js';
 import { CREDENCIAL_F, reseedFlujosE2e } from './flujos.js';
 import { loginRutClave } from './helpers.js';
 
@@ -15,11 +15,11 @@ test.describe('login con RUT y clave', () => {
       'RUT o clave incorrectos. Verifica e intenta de nuevo.',
     );
     await expect(page).toHaveURL(/\/login/);
-    await expectSinViolacionesGraves(page, '/login (error)');
+    await revisarPantalla(page, '/login (error)', { estado: page.getByRole('alert') });
 
     await page.getByTestId('login-clave-input').fill(CREDENCIAL_F.tra.clave);
     await page.getByTestId('login-submit').click();
     await page.waitForURL(/\/app\/?$/, { timeout: 20_000 });
-    await expectSinViolacionesGraves(page, '/app (transportista)');
+    await revisarPantalla(page, '/app (transportista)');
   });
 });

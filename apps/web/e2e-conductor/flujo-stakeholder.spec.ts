@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectSinViolacionesGraves } from './a11y.js';
+import { revisarPantalla } from './a11y.js';
 import { CREDENCIAL_F, reseedFlujosE2e } from './flujos.js';
 import { loginRutClave } from './helpers.js';
 
@@ -20,7 +20,7 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
   test('el admin crea la organización e invita a una persona', async ({ page }) => {
     await loginRutClave(page, CREDENCIAL_F.admin);
     await page.waitForURL(/\/app\/platform-admin/, { timeout: 20_000 });
-    await expectSinViolacionesGraves(page, '/app/platform-admin');
+    await revisarPantalla(page, '/app/platform-admin');
 
     await page.getByTestId('stakeholders-link').click();
     await page.waitForURL(/\/app\/platform-admin\/stakeholders$/);
@@ -32,7 +32,7 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
     await form.getByLabel('Nombre legal').fill(nombre);
     await form.getByLabel('Tipo').selectOption('observatorio_academico');
     await form.getByLabel('Región ámbito (opcional, ISO 3166-2:CL)').fill('CL-CO');
-    await expectSinViolacionesGraves(page, '/app/platform-admin/stakeholders (formulario)');
+    await revisarPantalla(page, '/app/platform-admin/stakeholders (formulario)');
     await page.getByTestId('stakeholder-org-create-submit').click();
 
     const fila = page.locator('[data-testid^="stakeholder-org-row-"]').filter({ hasText: nombre });
@@ -56,14 +56,16 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
     await expect(aviso).toBeVisible({ timeout: 15_000 });
     codigo = (/(\d{6})/.exec(await aviso.innerText()) ?? [])[1] ?? '';
     expect(codigo).toMatch(/^\d{6}$/);
-    await expectSinViolacionesGraves(page, '/app/platform-admin/stakeholders (invitación)');
+    await revisarPantalla(page, '/app/platform-admin/stakeholders (invitación)', {
+      estado: aviso,
+    });
   });
 
   test('la persona invitada activa su cuenta y consulta las zonas', async ({ page }) => {
     expect(codigo, 'requiere el código del paso anterior').toMatch(/^\d{6}$/);
     await page.goto('/activar');
     await expect(page.getByRole('heading', { name: 'Activa tu cuenta' })).toBeVisible();
-    await expectSinViolacionesGraves(page, '/activar');
+    await revisarPantalla(page, '/activar');
     await page.getByLabel('RUT').fill(CREDENCIAL_F.stake.rut);
     await page.getByLabel('Código de activación').fill(codigo);
     await page.getByLabel('Clave numérica').fill(CREDENCIAL_F.stake.clave);
@@ -74,6 +76,6 @@ test.describe('stakeholder: alta por el admin → activación → zonas', () => 
     await expect(page.getByRole('heading', { name: 'Zonas de impacto logístico' })).toBeVisible();
     await expect(page.getByTestId('stakeholder-org-context')).toContainText('Observatorio E2E');
     await expect(page.getByText('Puerto de Coquimbo')).toBeVisible();
-    await expectSinViolacionesGraves(page, '/app/stakeholder/zonas');
+    await revisarPantalla(page, '/app/stakeholder/zonas');
   });
 });

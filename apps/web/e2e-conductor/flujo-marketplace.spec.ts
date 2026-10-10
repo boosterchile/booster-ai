@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectSinViolacionesGraves } from './a11y.js';
+import { revisarPantalla } from './a11y.js';
 import { CREDENCIAL_F, datetimeLocal, reseedFlujosE2e } from './flujos.js';
 import { loginRutClave } from './helpers.js';
 
@@ -22,11 +22,16 @@ test.describe('marketplace: publicar → aceptar → tracking público', () => {
   test('el generador publica una carga y el matching envía ofertas', async ({ page }) => {
     await loginRutClave(page, CREDENCIAL_F.gen);
     await page.waitForURL(/\/app\/?$/, { timeout: 20_000 });
-    await expectSinViolacionesGraves(page, '/app (generador)');
+    await revisarPantalla(page, '/app (generador)');
 
     await page.goto('/app/cargas/nueva');
     await expect(page.getByRole('heading', { name: 'Nueva carga' })).toBeVisible();
-    await expectSinViolacionesGraves(page, '/app/cargas/nueva');
+    await revisarPantalla(page, '/app/cargas/nueva');
+
+    // 3.3.1 / 3.3.3: enviar sin los datos obligatorios marca cada campo y
+    // describe el error.
+    await page.getByRole('button', { name: 'Crear carga' }).click();
+    await revisarPantalla(page, '/app/cargas/nueva (errores)', { errores: true });
 
     const regiones = page.getByRole('combobox', { name: 'Región' });
     await page.getByLabel('Dirección de recogida').fill('Av. Apoquindo 5550, Las Condes');
@@ -46,7 +51,7 @@ test.describe('marketplace: publicar → aceptar → tracking público', () => {
     await expect(page.getByText('Ofertas enviadas').first()).toBeVisible();
     tracking = (await page.getByRole('heading', { level: 1 }).innerText()).trim();
     expect(tracking).not.toBe('');
-    await expectSinViolacionesGraves(page, '/app/cargas/:id (ofertas enviadas)');
+    await revisarPantalla(page, '/app/cargas/:id (ofertas enviadas)');
   });
 
   test('el transportista acepta la oferta', async ({ page }) => {
@@ -63,12 +68,12 @@ test.describe('marketplace: publicar → aceptar → tracking público', () => {
         has: page.getByRole('button', { name: 'Aceptar oferta' }),
       });
     await expect(tarjeta.last()).toBeVisible({ timeout: 20_000 });
-    await expectSinViolacionesGraves(page, '/app/ofertas');
+    await revisarPantalla(page, '/app/ofertas');
 
     await tarjeta.last().getByRole('button', { name: 'Aceptar oferta' }).click();
     await page.waitForURL(/\/app\/asignaciones\/[0-9a-f-]{36}$/, { timeout: 20_000 });
     await expect(page.getByText(tracking).first()).toBeVisible();
-    await expectSinViolacionesGraves(page, '/app/asignaciones/:id');
+    await revisarPantalla(page, '/app/asignaciones/:id');
   });
 
   test('el enlace de seguimiento público muestra el viaje sin sesión', async ({
@@ -94,7 +99,7 @@ test.describe('marketplace: publicar → aceptar → tracking público', () => {
       await expect(estado).toBeVisible({ timeout: 20_000 });
       await expect(estado).toContainText('Asignado');
       await expect(estado).toContainText(tracking);
-      await expectSinViolacionesGraves(publica, '/tracking/:token');
+      await revisarPantalla(publica, '/tracking/:token');
 
       await publica.goto('/tracking/00000000-0000-4000-8000-000000000000');
       await expect(publica.getByText('Link de seguimiento no válido')).toBeVisible();
