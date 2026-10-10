@@ -56,6 +56,7 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
+import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
@@ -720,6 +721,36 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
+    // T10-29 — precios públicos (solo servicios en UF y huella; sin
+    // comisiones). Mismo lector con caché ≤ 60 s que pricing.
+    app.route(
+      '/public',
+      createPublicPreciosRoutes({ logger, lector: lectorConfiguracionComercial }),
+    );
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
 
     // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
     // UF, financiamiento, IVA) editable por el platform-admin. El lector con
