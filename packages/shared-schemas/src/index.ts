@@ -34,6 +34,7 @@ export * from './domain/cargo-request.js';
 
 // Events (Pub/Sub payloads)
 export * from './events/telemetry-record.js';
+export * from './events/notification-event.js';
 
 // Thin slice (Fase 6) — WhatsApp intake flow
 export * from './common.js';

@@ -692,3 +692,19 @@ variable "resend_dns_records" {
     error_message = "Cada registro: type TXT, MX o CNAME; name relativo al dominio (sin '@' ni punto final); al menos un rrdata."
   }
 }
+
+# T10-21 — extracción del canal WhatsApp a notification-service
+# (.specs/notification-service-t10-21/spec.md). Ambos OFF = envío directo de
+# siempre. Orden de activación: sombra 3–7 días con divergencias = 0 → drill
+# en staging → via_microservice. Rollback: apagar y re-aplicar.
+variable "notifications_shadow" {
+  description = "api envía WhatsApp directo Y publica en sombra a notification-events; el servicio compara hashes sin enviar."
+  type        = bool
+  default     = false
+}
+
+variable "notifications_via_microservice" {
+  description = "api publica a notification-events y notification-service entrega por Twilio. Tiene precedencia sobre notifications_shadow."
+  type        = bool
+  default     = false
+}

@@ -184,6 +184,19 @@ export const apiEnvSchema = commonEnvSchema
     DOCUMENT_UPLOADED_TOPIC: z.string().min(1).optional(),
 
     /**
+     * T10-21 — extracción del canal WhatsApp a `apps/notification-service`
+     * (`.specs/notification-service-t10-21/spec.md`). Topic `notification-events`.
+     *   - VIA_MICROSERVICE=true: el api publica y el servicio entrega.
+     *   - SHADOW=true (y VIA=false): el api entrega directo Y publica en sombra;
+     *     el servicio compara hashes sin enviar.
+     * Ambos OFF por default = envío directo de siempre. Cualquiera ON exige
+     * el topic (invariante abajo).
+     */
+    NOTIFICATION_EVENTS_TOPIC: z.string().min(1).optional(),
+    NOTIFICATIONS_VIA_MICROSERVICE: booleanFlag(false),
+    NOTIFICATIONS_SHADOW: booleanFlag(false),
+
+    /**
      * Cierre flexible (ADR-070 / spec O-7). Si `true`, una orden requiere ≥1
      * documento subido para transicionar a `entregado` (independiente del
      * estado de extracción). Solo aplica a órdenes creadas en/después de
@@ -853,6 +866,17 @@ export const apiEnvSchema = commonEnvSchema
     ];
     for (const message of errors) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
+    if (
+      (env.NOTIFICATIONS_VIA_MICROSERVICE || env.NOTIFICATIONS_SHADOW) &&
+      !env.NOTIFICATION_EVENTS_TOPIC
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['NOTIFICATION_EVENTS_TOPIC'],
+        message:
+          'NOTIFICATIONS_VIA_MICROSERVICE o NOTIFICATIONS_SHADOW activos exigen NOTIFICATION_EVENTS_TOPIC',
+      });
     }
   });
 

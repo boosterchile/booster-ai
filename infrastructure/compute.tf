@@ -124,6 +124,12 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
+    # en `false` por default: el apply no cambia el comportamiento.
+    NOTIFICATION_EVENTS_TOPIC      = google_pubsub_topic.notification_events.name
+    NOTIFICATIONS_SHADOW           = tostring(var.notifications_shadow)
+    NOTIFICATIONS_VIA_MICROSERVICE = tostring(var.notifications_via_microservice)
+
     # T10-21: sin este topic el api omite el publish (`config.ts` lo trata como
     # opcional) y todo documento queda en `pendiente` sin que el worker lo vea.
     DOCUMENT_UPLOADED_TOPIC = google_pubsub_topic.document_uploaded.name
@@ -559,24 +565,32 @@ module "service_notification" {
   service_name          = "booster-ai-notification-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
-  max_instances = 20
+  # T10-21: consumer Pub/Sub PULL de `notification-events` (StreamingPull en
+  # main.ts). min_instances=1 + cpu_idle=false son obligatorios: con min=0 la
+  # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
+  # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
+  # estado (sin DB ni Redis): 512 Mi alcanzan.
+  min_instances = 1
+  max_instances = 5
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "512Mi"
 
-  # Notification-service es stub hasta que tenga implementación. NO monta
-  # secrets de Meta WhatsApp Cloud API (deprecated post-Fase 6.4 — el envío
-  # de mensajes WA va via Twilio en el bot). Cuando se implemente, montar los
-  # secrets que realmente use (probablemente Twilio + email/SMS providers).
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-notification-service"
+    SERVICE_NAME                            = "booster-ai-notification-service"
+    PUBSUB_SUBSCRIPTION_NOTIFICATION_EVENTS = google_pubsub_subscription.notification_events_service.name
+    # Mismo sender que api y bot. En modo sombra el hash incluye el sender:
+    # si este valor difiere del del api, la sombra diverge (deriva de config).
+    TWILIO_FROM_NUMBER = var.twilio_from_number
   })
 
-  # REDIS_PASSWORD → secret redis-auth (Memorystore con AUTH_ENABLED=True). El
-  # service ya recibe REDIS_HOST/PORT/TLS/CA_CERT vía local.common_env_vars pero
-  # le faltaba el password; sin este mount un apply dropea el REDIS_PASSWORD vivo
-  # (valor plano) → auth failure en runtime. Mismo mount que local.common_secrets
-  # (solo REDIS_PASSWORD; el service no usa DATABASE_URL).
+  # Credenciales Twilio (mismos secrets que api y bot). REDIS_PASSWORD se
+  # mantiene montado: common_env_vars inyecta REDIS_HOST/PORT a todos los
+  # servicios y retirarlo es un cambio aparte.
   secrets = {
-    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
+    TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
+    TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+    REDIS_PASSWORD     = google_secret_manager_secret.secrets["redis-auth"].secret_id
   }
 
   public = false

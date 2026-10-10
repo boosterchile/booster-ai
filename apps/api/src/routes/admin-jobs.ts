@@ -24,7 +24,7 @@ import {
  */
 
 import type { Logger } from '@booster-ai/logger';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type pg from 'pg';
@@ -86,7 +86,7 @@ function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
 export function createAdminJobsRoutes(opts: {
   db: Db;
   logger: Logger;
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
   /** Para el reaper de cuentas IdP. Null en tests sin Firebase. */
