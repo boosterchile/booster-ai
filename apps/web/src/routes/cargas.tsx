@@ -827,7 +827,11 @@ function CargaNuevaPage({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Nueva carga">
       <div className="mb-6 flex items-center gap-3">
-        <Link to="/app/cargas" className="text-neutral-500 hover:text-neutral-900">
+        <Link
+          to="/app/cargas"
+          className="text-neutral-500 hover:text-neutral-900"
+          aria-label="Volver a mis cargas"
+        >
           <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Nueva carga</h1>
@@ -1241,7 +1245,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
     <Layout me={me} title="Detalle carga">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link to="/app/cargas" className="text-neutral-500 hover:text-neutral-900">
+          <Link
+            to="/app/cargas"
+            className="text-neutral-500 hover:text-neutral-900"
+            aria-label="Volver a mis cargas"
+          >
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <div>

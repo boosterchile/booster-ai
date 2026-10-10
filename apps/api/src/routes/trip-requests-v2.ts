@@ -162,8 +162,7 @@ export function createTripRequestsV2Routes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireShipperAuth(c: Context<any, any, any>, opts2?: { requireActive?: boolean }) {
+  function requireShipperAuth(c: Context, opts2?: { requireActive?: boolean }) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/trip-requests-v2 without userContext');

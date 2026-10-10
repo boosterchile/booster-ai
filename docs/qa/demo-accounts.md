@@ -1,5 +1,7 @@
 # docs/qa/demo-accounts.md — Runbook cuentas demo (SEC-001 H1.1)
 
+> **Retirado (2026-10-07, T10-03 / ADR-082).** Las cuentas demo, `harden-demo-accounts`, el job de TTL y los secretos demo salieron del código y de Terraform (`.specs/retiro-superficie-demo-t10-03/spec.md`). Se conserva como registro histórico; los comandos de abajo ya no aplican.
+
 - **Sprint**: 2a
 - **Spec**: `.specs/sec-001-cierre/spec.md` v3.3 §3 H1.1.
 - **Plan**: `.specs/sec-001-cierre/plan-sprint-2a.md` T4 + T6b.

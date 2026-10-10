@@ -16,7 +16,9 @@
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "test:all": "pnpm run test && pnpm run test:integration",
     "load-test:smoke": "k6 run test/load/smoke.k6.js",
-    "seed:conductor-e2e": "tsx scripts/seed-conductor-e2e.ts"
+    "load-test:t10": "k6 run test/load/t10.k6.js",
+    "seed:conductor-e2e": "tsx scripts/seed-conductor-e2e.ts",
+    "seed:flujos-e2e": "tsx scripts/seed-flujos-e2e.ts"
   },
   "dependencies": {
     "@booster-ai/carbon-calculator": "workspace:*",
@@ -35,6 +37,7 @@
     "@booster-ai/trip-state-machine": "workspace:*",
     "@booster-ai/whatsapp-client": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
+    "@google-cloud/opentelemetry-cloud-monitoring-exporter": "0.22.0",
     "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",
     "@google-cloud/pubsub": "^4.10.0",
     "@google-cloud/storage": "^7.13.0",
@@ -44,6 +47,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.77.0",
     "@opentelemetry/resources": "^2.0.0",
+    "@opentelemetry/sdk-metrics": "^2.8.0",
     "@opentelemetry/sdk-node": "^0.219.0",
     "@opentelemetry/sdk-trace-base": "^2.0.0",
     "@opentelemetry/semantic-conventions": "^1.36.0",

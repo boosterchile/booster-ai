@@ -135,7 +135,6 @@ export async function cargarScorecardMedioPlazo(opts: {
           asignacionId: assignments.id,
           vehicleId: assignments.vehicleId,
           teltonikaImei: vehicles.teltonikaImei,
-          esDemo: empresas.isDemo,
           esUsuarioPrueba: empresas.isTestUser,
           recogidoEn: assignments.pickedUpAt,
           entregadoEn: assignments.deliveredAt,
@@ -149,7 +148,6 @@ export async function cargarScorecardMedioPlazo(opts: {
             isNotNull(assignments.pickedUpAt),
             gte(assignments.pickedUpAt, piso),
             cerrado,
-            eq(empresas.isDemo, false),
             eq(empresas.isTestUser, false),
           ),
         );
@@ -165,7 +163,6 @@ export async function cargarScorecardMedioPlazo(opts: {
           asignacionId: fila.asignacionId,
           vehicleId: fila.vehicleId,
           teltonikaImei: fila.teltonikaImei,
-          esDemo: fila.esDemo,
           esUsuarioPrueba: fila.esUsuarioPrueba,
           recogidoEnMs,
           entregadoEnMs: ms(fila.entregadoEn),
@@ -287,7 +284,6 @@ export async function cargarScorecardMedioPlazo(opts: {
         .select({
           vehicleId: assignments.vehicleId,
           teltonikaImei: vehicles.teltonikaImei,
-          esDemo: empresas.isDemo,
           esUsuarioPrueba: empresas.isTestUser,
         })
         .from(assignments)
@@ -297,7 +293,6 @@ export async function cargarScorecardMedioPlazo(opts: {
           and(
             isNotNull(assignments.pickedUpAt),
             gte(assignments.pickedUpAt, flotaDesde),
-            eq(empresas.isDemo, false),
             eq(empresas.isTestUser, false),
           ),
         );
