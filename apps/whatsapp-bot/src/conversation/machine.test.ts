@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createActor } from 'xstate';
-import { conversationMachine } from './machine.js';
+import { cargoMenuToEnum, conversationMachine, isValidCargoMenuOption } from './machine.js';
 
 function drive(events: Array<{ type: 'USER_MESSAGE'; text: string } | { type: 'CANCEL' }>) {
   const actor = createActor(conversationMachine);
@@ -89,5 +89,71 @@ describe('conversationMachine', () => {
       { type: 'USER_MESSAGE', text: '2' },
     ]);
     expect(actor.getSnapshot().value).toBe('menuLookupNotImplemented');
+  });
+
+  // T10-08: transiciones de los estados de corrección y del menú. Cada estado
+  // acepta «cancelar», su opción válida y cae a su estado de reintento.
+  describe('estados de reintento y menú', () => {
+    const hola = { type: 'USER_MESSAGE' as const, text: 'hola' };
+    const msg = (text: string) => ({ type: 'USER_MESSAGE' as const, text });
+
+    it.each([
+      ['cancelar', 'cancelled'],
+      ['1', 'askOrigin'],
+      ['2', 'menuLookupNotImplemented'],
+      ['otra cosa', 'greetingInvalid'],
+    ])('greetingInvalid + «%s» → %s', (texto, destino) => {
+      const actor = drive([hola, msg('x'), msg(texto)]);
+      expect(actor.getSnapshot().value).toBe(destino);
+    });
+
+    it.each([
+      ['cancelar', 'cancelled'],
+      ['1', 'askOrigin'],
+      ['2', 'greetingInvalid'],
+    ])('menuLookupNotImplemented + «%s» → %s', (texto, destino) => {
+      const actor = drive([hola, msg('2'), msg(texto)]);
+      expect(actor.getSnapshot().value).toBe(destino);
+    });
+
+    it('askDestination + «cancelar» → cancelled', () => {
+      const actor = drive([hola, msg('1'), msg('Av. Los Leones 1234'), msg('cancelar')]);
+      expect(actor.getSnapshot().value).toBe('cancelled');
+    });
+
+    it('askCargoType + «cancelar» → cancelled', () => {
+      const actor = drive([hola, msg('1'), msg('origen'), msg('destino'), msg('cancelar')]);
+      expect(actor.getSnapshot().value).toBe('cancelled');
+    });
+
+    it.each([
+      ['cancelar', 'cancelled'],
+      ['otra cosa', 'askCargoTypeInvalid'],
+    ])('askCargoTypeInvalid + «%s» → %s', (texto, destino) => {
+      const actor = drive([
+        hola,
+        msg('1'),
+        msg('origen'),
+        msg('destino'),
+        msg('foobar'),
+        msg(texto),
+      ]);
+      expect(actor.getSnapshot().value).toBe(destino);
+    });
+
+    it('askCargoTypeInvalid + opción válida → askPickupDate con el tipo de carga en el contexto', () => {
+      const actor = drive([hola, msg('1'), msg('origen'), msg('destino'), msg('foobar'), msg('1')]);
+      const snap = actor.getSnapshot();
+      expect(snap.value).toBe('askPickupDate');
+      expect(snap.context.cargoType).not.toBeNull();
+      expect(snap.context.originAddressRaw).toBe('origen');
+      expect(snap.context.destinationAddressRaw).toBe('destino');
+    });
+  });
+
+  it('cargoMenuToEnum: opción inexistente → null; isValidCargoMenuOption la rechaza', () => {
+    expect(cargoMenuToEnum('99')).toBeNull();
+    expect(isValidCargoMenuOption('99')).toBe(false);
+    expect(cargoMenuToEnum(' 1 ')).not.toBeNull();
   });
 });
