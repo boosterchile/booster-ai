@@ -69,9 +69,8 @@ locals {
   # cualquier Cloud Run service que monte secrets. Se pasa a cada módulo via
   # `secret_versions_ready` para que Terraform propague el orden automáticamente.
   # Incluye los 14 placeholders originales + database_url (generado dinámicamente)
-  # + las versions del set hotfix-2026-05-14 (6 placeholders + pepper aleatorio)
-  # que ya están mounteadas por al menos un service (T7 SEC-001 monta
-  # DEMO_SEED_PASSWORD en el api).
+  # + las versions del set hotfix-2026-05-14 (1 placeholder + pepper aleatorio)
+  # que ya están mounteadas por al menos un service.
   all_secret_versions_ready = concat(
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
@@ -138,7 +137,7 @@ module "service_api" {
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
@@ -209,7 +208,7 @@ module "service_api" {
     # (guard de escritura fail-closed, auditoría en eventos_impersonacion,
     # banner + picker ya en main). Con OFF responden 503. Triple guard:
     # esta env var + requirePlatformAdmin (allowlist) + escritura solo sobre
-    # empresas es_demo. Flip reversible (var.impersonation_v1_activated).
+    # empresas es_usuario_prueba. Flip reversible (var.impersonation_v1_activated).
     IMPERSONATION_V1_ACTIVATED = tostring(var.impersonation_v1_activated)
 
     # ADR-036 (Wave 5) — Wake-word "Oye Booster" para conductor. Default
@@ -217,12 +216,6 @@ module "service_api" {
     # voces chilenas (Wave 5 PR 2). El conductor además debe opt-in en
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
-
-    # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
-    # habilita POST /demo/login (mintea custom tokens Firebase para las
-    # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
-    # esta env var + columna es_demo=true en empresas.
-    DEMO_MODE_ACTIVATED = tostring(var.demo_mode_activated)
 
     # ADR-039 — Site Settings Runtime Configuration. Bucket de assets
     # editables (logos, favicons) subidos desde el admin. Reuso del
@@ -340,31 +333,6 @@ module "service_api" {
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
 
-    # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
-    # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
-    # está ON. Reemplaza el literal hardcoded que vivía en
-    # `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`.
-    # El secret + IAM bindings + placeholder version `REPLACE_ME_BEFORE_DEPLOY`
-    # están declarados en `security-hotfixes-2026-05-14.tf` (importado en
-    # T0b PR #316); aquí solo se mountea como env var. La rotación a
-    # password real ocurre via `gcloud secrets versions add demo-seed-password`
-    # (T7.5 run-once) ANTES de que T8 active el lookup en el código —
-    # T7.5 gate de CI bloquea PRs que toquen seed-demo*.ts si version
-    # count == 0.
-    DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
-
-    # T3 SEC-001 Sprint 2a (plan-sprint-2a.md T3, sec-001-cierre §3 H1.1
-    # SC-1.1.5) — per-persona demo account passwords. Reemplazan el single
-    # DEMO_SEED_PASSWORD path para las UIDs NUEVAS post-disclosure
-    # replacement (ADR-053). Co-existen con DEMO_SEED_PASSWORD que sigue
-    # cubriendo el path legacy hasta que T4 ejecute el one-shot retire de
-    # las UIDs viejas. Mounted como env vars desde los 4 secrets creados
-    # en T2; init de version 1 por PO con infrastructure/scripts/
-    # init-demo-secrets-2026.sh post terraform apply.
-    DEMO_ACCOUNT_PASSWORD_SHIPPER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CARRIER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026        = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor-2026-firebase"].secret_id
     },
     # CONTENT_SID_* gateados por readiness (INC-2026-06-19 A7): solo se montan los
     # que tienen valor real cargado (`var.content_sid_ready[name] = true`). Default
@@ -435,7 +403,7 @@ module "service_web" {
   # proyecto, así que la binding está autorizada.
   public = true
 
-  # ADR-062: servida 100% vía GCLB (app/demo/marketing domain). Sin callers
+  # ADR-062: servida 100% vía GCLB (app/marketing domain). Sin callers
   # directos al run.app → canary seguro del posture internal-and-cloud-LB.
   ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 

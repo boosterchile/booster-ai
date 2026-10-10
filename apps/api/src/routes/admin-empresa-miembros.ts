@@ -267,7 +267,6 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
                   : {}),
                 isGeneradorCarga: body.is_generador_carga,
                 isTransportista: body.is_transportista,
-                isDemo: false,
                 planId: plan.id,
                 status: 'pendiente_verificacion',
                 timezone: 'America/Santiago',

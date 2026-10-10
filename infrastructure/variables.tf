@@ -363,7 +363,7 @@ variable "auth_universal_v1_activated" {
 # ---------------------------------------------------------------------------
 # Impersonación auditada (#584 backend / #585 frontend / #586 gate) —
 # platform-admin actúa como usuario no-admin, con escritura acotada a
-# empresas `es_demo` y auditoría en `eventos_impersonacion`. El guard de
+# empresas `es_usuario_prueba` y auditoría en `eventos_impersonacion`. El guard de
 # escritura, el mint, la auditoría, el banner y el picker ya están en main y
 # testeados; este flag es el interruptor.
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ variable "auth_universal_v1_activated" {
 # este repo (solo terraform-drift.yml, read-only). Flip reversible sin redeploy
 # de código: setear a `false` + `terraform apply` revierte a 503 en segundos.
 variable "impersonation_v1_activated" {
-  description = "Activa la impersonación auditada (platform-admin ve-como usuario no-admin; escritura solo en empresas es_demo). false = endpoints 503."
+  description = "Activa la impersonación auditada (platform-admin ve-como usuario no-admin; escritura solo en empresas es_usuario_prueba). false = endpoints 503."
   type        = bool
   default     = true
 }
@@ -474,26 +474,6 @@ variable "admin_provisioned_onboarding_enabled" {
 # esté entrenado con voces chilenas vía Picovoice Console (Wave 5 PR 2).
 variable "wake_word_voice_activated" {
   description = "Activa wake-word \"Oye Booster\" en /app/conductor (ADR-036)."
-  type        = bool
-  default     = false
-}
-
-# ---------------------------------------------------------------------------
-# Modo demo (subdominio demo.boosterchile.com)
-# ---------------------------------------------------------------------------
-# Cuando ON, el api habilita el endpoint POST /demo/login (mintea custom
-# tokens Firebase para las 4 personas demo: shipper, carrier, conductor,
-# stakeholder) y corre auto-seed-demo en startup si no existen las
-# entidades demo. La PWA detecta el host header demo.* y muestra UI de
-# selector de persona en lugar del flow /login normal.
-#
-# Default true para demo Corfo (2026-05-18). Se apaga post-evento si
-# Felipe decide retirar el subdominio.
-#
-# 2026-05-24 — `false` per SEC-001 cierre T0 (drift reconcile vs state real prod).
-# Vuelve a `true` en H1.6 SC-1.6.1 post H1.1..H1.5 + H4. Ver `.specs/sec-001-cierre/`.
-variable "demo_mode_activated" {
-  description = "Activa modo demo: endpoint /demo/login + auto-seed on startup + UI demo en subdominio demo.boosterchile.com."
   type        = bool
   default     = false
 }
