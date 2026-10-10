@@ -38,6 +38,7 @@
 | [`post-mortem-template.md`](post-mortem-template.md) | Plantilla de post-mortem (obligatorio P0/P1) → `docs/incidents/`. |
 | [`incidentes-glec.md`](incidentes-glec.md) | Huella GLEC y certificados: no emitidos, huella degradada, certificado incorrecto, `/verify` caído. |
 | [`mandato-de-cobro.md`](mandato-de-cobro.md) | Flujo de dinero ADR-080: activación, vuelta a modo conector, incidentes de conciliación/float/disputa. |
+| [`staging.md`](staging.md) | Crear y operar staging, el proyecto gemelo de prod con el mismo Terraform (ADR-083). |
 | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) | Árbol de respuesta por alerta de telemetría (crash/unplug/jamming/parser/backlog/stalled/ingress). |
 | [`db-migration-rollback.md`](db-migration-rollback.md) | Revertir/contener una migración Drizzle (Caminos A rollback / B forward-fix / C PITR). |
 | [`bootstrap-gke-telemetry-gateway.md`](bootstrap-gke-telemetry-gateway.md) | Primer levantamiento del cluster GKE (secret K8s, Workload Identity, Artifact Registry). |

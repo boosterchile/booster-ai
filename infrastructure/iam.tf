@@ -361,7 +361,7 @@ resource "google_project_iam_member" "terraform_drift_extra_reads" {
 
 # Lectura del state remoto (backend GCS)
 resource "google_storage_bucket_iam_member" "terraform_drift_state" {
-  bucket = "booster-ai-tfstate-494222"
+  bucket = var.tfstate_bucket
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.terraform_drift.email}"
 }

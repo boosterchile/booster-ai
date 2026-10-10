@@ -644,6 +644,26 @@ variable "content_sid_ready" {
   }
 }
 
+# -----------------------------------------------------------------------------
+# Entornos (ADR-083): staging es un proyecto gemelo con este mismo root module.
+# -----------------------------------------------------------------------------
+variable "tfstate_bucket" {
+  description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
+  type        = string
+  default     = "booster-ai-tfstate-494222"
+}
+
+variable "staging_nameservers" {
+  description = <<-EOT
+    Solo en prod: nameservers de la zona DNS del proyecto de staging
+    (output `dns_zone_name_servers` del apply de staging). Si no está vacío, prod
+    delega `staging.<domain>` a esa zona con un registro NS. Vacío = sin
+    delegación (staging aún no existe).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 # ---------------------------------------------------------------------------
 # T10-04 (ADR-082) — correo saliente vía Resend
 # ---------------------------------------------------------------------------

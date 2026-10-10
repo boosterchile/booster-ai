@@ -616,7 +616,7 @@ steps:
         # api.boosterchile.com — URL pública canónica post-DNS-migration.
         # Bash vars escapadas con dollar-dollar — Cloud Build interpreta una
         # variable bash sin escapar como substitution y rechaza el build.
-        WEBHOOK_URL="https://api.boosterchile.com/webhooks/whatsapp"
+        WEBHOOK_URL="https://${_PUBLIC_API_HOST}/webhooks/whatsapp"
 
         # POST sin firma debe devolver 403. Eso confirma que el bot está
         # serving y validando firmas Twilio + el LB ruteando + el cert ok.
@@ -649,6 +649,9 @@ substitutions:
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
+  # Host público del api para el smoke del webhook. Staging lo pisa con
+  # api.staging.boosterchile.com (release-staging.yml, ADR-083).
+  _PUBLIC_API_HOST: api.boosterchile.com
 
   # apps/web build-time vars — Firebase web config (públicas por diseño,
   # ver apps/web/Dockerfile para rationale). Estas claves viajan en el
