@@ -19,6 +19,8 @@ import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -87,6 +89,13 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   db: Db;
   logger: Logger;
   auth: Auth;
+  /**
+   * T10-04 (ADR-082) — envía el código de activación al correo de la persona.
+   * Ausente en tests que no lo ejercitan; en prod siempre viene (cae al
+   * `LoggingEmailSender` si falta `RESEND_API_KEY`).
+   */
+  emailSender?: EmailSender;
+  webAppUrl?: string;
 }): Hono {
   const app = new Hono();
 
@@ -475,6 +484,8 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         const porRut = await opts.db
           .select({
             id: users.id,
+            email: users.email,
+            fullName: users.fullName,
             firebaseUid: users.firebaseUid,
             claveNumericaHash: users.claveNumericaHash,
             activationPinHash: users.activationPinHash,
@@ -595,6 +606,21 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         );
         record('issued');
 
+        if (codigoEmitido !== null && opts.emailSender) {
+          // Persona provisoria: su correo registrado, no el que tipeó el admin.
+          await enviarCorreoActivacionCuenta({
+            sender: opts.emailSender,
+            logger: opts.logger,
+            email: existente?.email ?? email,
+            nombre: existente?.fullName ?? body.full_name,
+            rut: body.rut,
+            codigo: codigoEmitido,
+            empresa: empresa.razonSocial,
+            rol: body.rol,
+            webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+          });
+        }
+
         const expiraEn =
           codigoEmitido === null
             ? null
@@ -651,9 +677,14 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               estado: memberships.status,
               claveNumericaHash: users.claveNumericaHash,
               firebaseUid: users.firebaseUid,
+              email: users.email,
+              nombre: users.fullName,
+              rut: users.rut,
+              razonSocial: empresas.legalName,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
+            .innerJoin(empresas, eq(empresas.id, memberships.empresaId))
             .where(and(eq(memberships.id, membershipId), eq(memberships.empresaId, empresaId)))
             .limit(1);
           const fila = filas[0];
@@ -699,6 +730,20 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             'admin-empresa-miembros: código reemitido (código no logueado)',
           );
           record('issued');
+
+          if (opts.emailSender && fila.rut) {
+            await enviarCorreoActivacionCuenta({
+              sender: opts.emailSender,
+              logger: opts.logger,
+              email: fila.email,
+              nombre: fila.nombre,
+              rut: fila.rut,
+              codigo,
+              empresa: fila.razonSocial,
+              rol: fila.rol,
+              webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+            });
+          }
 
           return c.json(
             reemitirCodigoActivacionResponseSchema.parse({

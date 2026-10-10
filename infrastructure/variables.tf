@@ -626,3 +626,32 @@ variable "content_sid_ready" {
     "content-sid-activacion-conductor" = true
   }
 }
+
+# ---------------------------------------------------------------------------
+# T10-04 (ADR-082) — correo saliente vía Resend
+# ---------------------------------------------------------------------------
+# true = la versión real de `resend-api-key` está cargada y el dominio está
+# verificado en Resend → se monta RESEND_API_KEY en el api. Ver email.tf.
+variable "resend_api_key_ready" {
+  description = "true = resend-api-key tiene la key real y el dominio está verificado en Resend → se monta RESEND_API_KEY en service_api. false = no se monta y el correo se registra en el log sin enviarse."
+  type        = bool
+  default     = false
+}
+
+variable "resend_dns_records" {
+  description = "Registros que Resend pide publicar para verificar el dominio, copiados de su panel. name es relativo al dominio (ej. 'send', 'resend._domainkey'); rrdatas en formato Cloud DNS (TXT entre comillas, MX con prioridad y punto final: '10 <host>.')."
+  type = list(object({
+    name    = string
+    type    = string
+    rrdatas = list(string)
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for r in var.resend_dns_records :
+      contains(["TXT", "MX", "CNAME"], r.type) && r.name != "" && r.name != "@" && !endswith(r.name, ".") && length(r.rrdatas) > 0
+    ])
+    error_message = "Cada registro: type TXT, MX o CNAME; name relativo al dominio (sin '@' ni punto final); al menos un rrdata."
+  }
+}
