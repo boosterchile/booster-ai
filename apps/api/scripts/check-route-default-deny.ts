@@ -10,7 +10,7 @@
  * `main`.
  *
  * Diseño (resuelve la objeción P1-1 del DA R2): el check de referencia
- * `check-is-demo-wire-completeness.ts` escanea SOLO `app.use('/path', …)`
+ * `collect-middlewares-per-path.ts` escanea SOLO `app.use('/path', …)`
  * (line-based) → NO ve `app.route()` ni los sub-mounts `<router>.route()`,
  * que es exactamente donde viven las rutas privilegio-relevantes fuera de
  * userContext (`meRouter.route('/consents', …)`, `meRouter.route('/',
@@ -84,6 +84,9 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   // preceden el mount (/admin/empresas/*); gate adicional requirePlatformAdmin.
   createAdminEmpresaMiembrosRoutes: { category: 'ENFORCED', rationale: '' },
   createSiteSettingsRoutes: { category: 'ENFORCED', rationale: '' },
+  // ADR-079 §3: firebaseAuth + userContext preceden el mount
+  // (/admin/configuracion-comercial y /*); gate adicional requirePlatformAdmin.
+  createAdminConfiguracionComercialRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminMatchingBacktestRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminObservabilityRoutes: { category: 'ENFORCED', rationale: '' },
   // F0-0 backfill de distancia real: firebaseAuth + userContext preceden el mount
@@ -145,7 +148,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createEmpresaRoutes: {
     category: 'GATED-CLOSED',
     rationale:
-      'mount /empresas, dos sub-rutas GATED-CLOSED default-OFF: (1) POST /onboarding self-service gateado por EMPRESA_SELF_ONBOARDING_ENABLED (default-false → 403 + invariante SelfOnboardingDisabledError); (2) POST /onboarding-admin (authorizedBy=admin_provisioned) gateado por ADMIN_PROVISIONED_ONBOARDING_ENABLED (default-false → 403) + token one-shot verificado (secreto ausente → 503 fail-closed) + consumo atómico que exige token válido/no-consumido/no-expirado. **alta-cliente-autocontenida: (2) corre SIN sesión Firebase** — `skipOnboardingAdmin` lo excluye del chain (firebaseAuth/demoExpires/isDemo/impersonation) porque lo completa alguien que aún no existe en la plataforma; el gate emailVerified se retiró tras el análisis adversarial de la spec §8 (no cubría el vector que declaraba). La credencial es el token, la identidad sale de la solicitud consumida, y la defensa perimetral es rate-limit por IP fail-closed. Ningún path crea dueño sin approval + token.',
+      'mount /empresas, dos sub-rutas GATED-CLOSED default-OFF: (1) POST /onboarding self-service gateado por EMPRESA_SELF_ONBOARDING_ENABLED (default-false → 403 + invariante SelfOnboardingDisabledError); (2) POST /onboarding-admin (authorizedBy=admin_provisioned) gateado por ADMIN_PROVISIONED_ONBOARDING_ENABLED (default-false → 403) + token one-shot verificado (secreto ausente → 503 fail-closed) + consumo atómico que exige token válido/no-consumido/no-expirado. **alta-cliente-autocontenida: (2) corre SIN sesión Firebase** — `skipOnboardingAdmin` lo excluye del chain (firebaseAuth/impersonation) porque lo completa alguien que aún no existe en la plataforma; el gate emailVerified se retiró tras el análisis adversarial de la spec §8 (no cubría el vector que declaraba). La credencial es el token, la identidad sale de la solicitud consumida, y la defensa perimetral es rate-limit por IP fail-closed. Ningún path crea dueño sin approval + token.',
   },
 
   // --- INTENTIONAL-OPEN (público por diseño; verificado línea-a-línea al codear T2) ---
@@ -194,11 +197,6 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
     category: 'INTENTIONAL-OPEN',
     rationale:
       'emisor de auth driver (/auth/driver-activate; driver aún sin Firebase user; rate-limit-pin inline). Verificado: sin app.use de auth precediéndolo.',
-  },
-  createDemoCacheWarmRoutes: {
-    category: 'INTENTIONAL-OPEN',
-    rationale:
-      'pre-warm de cache demo, IP rate-limited inline (10/min/IP). Verificado: sin app.use de auth precediéndolo.',
   },
 
   // --- MIXED ---

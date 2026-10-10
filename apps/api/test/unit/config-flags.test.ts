@@ -74,3 +74,38 @@ describe('FACTORING_V1_ACTIVATED — default seguro (ADR-030 §1)', () => {
     expect(config.FACTORING_V1_ACTIVATED).toBe(false);
   });
 });
+
+describe('PRICING_V3_ACTIVATED — default seguro (ADR-079 §6, Verificación 6)', () => {
+  it('false en production sin env var', async () => {
+    const config = await loadConfigWith({
+      NODE_ENV: 'production',
+      PRICING_V3_ACTIVATED: undefined,
+    });
+    expect(config.PRICING_V3_ACTIVATED).toBe(false);
+  });
+
+  it('true SOLO con PRICING_V3_ACTIVATED=true explícito; "false" es false', async () => {
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', PRICING_V3_ACTIVATED: 'true' }))
+        .PRICING_V3_ACTIVATED,
+    ).toBe(true);
+    expect(
+      (await loadConfigWith({ NODE_ENV: 'production', PRICING_V3_ACTIVATED: 'false' }))
+        .PRICING_V3_ACTIVATED,
+    ).toBe(false);
+  });
+});
+
+describe('CMF_API_KEY — clave de la API UF (ADR-079 §4)', () => {
+  it('ausente, vacía o con el placeholder de Terraform → undefined (solo SII)', async () => {
+    for (const valor of [undefined, '', 'ROTATE_ME_CMF_API_KEY_PLACEHOLDER']) {
+      const config = await loadConfigWith({ CMF_API_KEY: valor });
+      expect(config.CMF_API_KEY).toBeUndefined();
+    }
+  });
+
+  it('valor real → se usa', async () => {
+    const config = await loadConfigWith({ CMF_API_KEY: 'a1b2c3d4e5f6' });
+    expect(config.CMF_API_KEY).toBe('a1b2c3d4e5f6');
+  });
+});

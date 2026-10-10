@@ -40,6 +40,7 @@ const ACCESOS: ReadonlyArray<{
     | '/app/platform-admin/matching'
     | '/app/platform-admin/observability'
     | '/app/platform-admin/site-settings'
+    | '/app/platform-admin/configuracion-comercial'
     | '/app/platform-admin/impersonar';
   title: string;
   desc: string;
@@ -86,6 +87,12 @@ const ACCESOS: ReadonlyArray<{
     title: 'Configuración del sitio',
     desc: 'Marca y textos del sitio. Los cambios aplican sin redeploy.',
     testId: 'site-settings-link',
+  },
+  {
+    to: '/app/platform-admin/configuracion-comercial',
+    title: 'Configuración comercial',
+    desc: 'Comisiones por tipo de carga, precios de servicios en UF y financiamiento. Rigen para cargas nuevas sin redeploy.',
+    testId: 'configuracion-comercial-link',
   },
   {
     to: '/app/platform-admin/impersonar',
