@@ -86,6 +86,11 @@ import {
   leerConfiguracionPublicada,
 } from './services/configuracion-comercial.js';
 import type { EcoRoutingDeps } from './services/eco-routing-tiempo-real.js';
+import {
+  crearClienteMatchingEngine,
+  crearRankeadorMatching,
+  modoMatching,
+} from './services/matching-ranking.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -517,6 +522,17 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // T10-21 — ranking local, en sombra o en matching-engine (flags).
+        ranking: crearRankeadorMatching({
+          modo: modoMatching({
+            viaMicroservicio: config.MATCHING_VIA_MICROSERVICE,
+            sombra: config.MATCHING_SHADOW,
+          }),
+          remoto: config.MATCHING_ENGINE_URL
+            ? crearClienteMatchingEngine({ url: config.MATCHING_ENGINE_URL })
+            : null,
+          logger,
+        }),
         // ADR-079 — tasa congelada al publicar con PRICING_V3_ACTIVATED.
         lectorComercial: lectorConfiguracionComercial,
         // Task 4 (medicion-huella-segmento): geocodificar origen al crear.

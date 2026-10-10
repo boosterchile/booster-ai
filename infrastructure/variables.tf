@@ -708,3 +708,19 @@ variable "notifications_via_microservice" {
   type        = bool
   default     = false
 }
+
+# T10-21 — ranking de matching en matching-engine
+# (.specs/matching-engine-t10-21/spec.md). Ambos OFF = ranking en el api.
+# Orden: sombra 3–7 días con divergencias = 0 → drill en staging →
+# via_microservice. Rollback: apagar y re-aplicar.
+variable "matching_shadow" {
+  description = "El api decide el ranking en proceso y, tras el commit, lo compara contra matching-engine."
+  type        = bool
+  default     = false
+}
+
+variable "matching_via_microservice" {
+  description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
+  type        = bool
+  default     = false
+}

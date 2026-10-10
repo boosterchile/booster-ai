@@ -42,6 +42,7 @@ import {
   leerPagoDelGenerador,
   registrarRecepcionConforme,
 } from '../services/mandato-cobro/eventos-pago.js';
+import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
@@ -134,6 +135,8 @@ export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
   notify?: NotifyOfferDeps;
+  /** T10-21 — rankeador de matching (local, sombra o matching-engine). */
+  ranking?: RankeadorMatching;
   /**
    * ADR-079 §3 — configuración comercial vigente (caché ≤ 60 s). Requerida
    * para congelar la tasa al publicar con PRICING_V3_ACTIVATED.
@@ -358,6 +361,7 @@ export function createTripRequestsV2Routes(opts: {
         logger: opts.logger,
         tripId: trip.id,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        ...(opts.ranking ? { ranking: opts.ranking } : {}),
       });
     } catch (err) {
       if (err instanceof TripRequestNotFoundError) {

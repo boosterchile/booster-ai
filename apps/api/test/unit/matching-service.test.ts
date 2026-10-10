@@ -483,3 +483,67 @@ describe('runMatching', () => {
     expect(notifierFn).not.toHaveBeenCalled();
   });
 });
+
+describe('runMatching — rankeador inyectado (T10-21)', () => {
+  const offer = {
+    id: 'offer-1',
+    tripId: TRIP_ID,
+    empresaId: 'emp-1',
+    suggestedVehicleId: 'veh-1',
+    score: 777,
+    status: 'pendiente',
+    proposedPriceClp: 250000,
+  };
+  const dbConCandidato = () =>
+    makeDb({
+      selects: [
+        [TRIP_BASE],
+        [{ empresaId: 'emp-1' }],
+        [{ id: 'emp-1', isTransportista: true, status: 'activa' }],
+        [{ id: 'veh-1', empresaId: 'emp-1', capacityKg: 5500, vehicleStatus: 'activo' }],
+      ],
+      inserts: [[], [offer], []],
+    });
+
+  it('las offers salen del ranking que devuelve el rankeador, y trasCommit recibe solicitud y resultado', async () => {
+    const resultado = {
+      algoritmo: 'v1' as const,
+      candidatosEvaluados: 1,
+      top: [
+        {
+          empresaId: 'emp-1',
+          vehicleId: 'veh-1',
+          vehicleCapacityKg: 5500,
+          score: 0.777,
+          scoreInt: 777,
+        },
+      ],
+    };
+    const ranking = { rankear: vi.fn(async () => resultado), trasCommit: vi.fn() };
+    const db = dbConCandidato();
+
+    await runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID, ranking });
+
+    expect(ranking.rankear).toHaveBeenCalledWith({
+      algoritmo: 'v1',
+      cargoWeightKg: 5000,
+      maxOfertas: 5,
+      candidatos: [{ empresaId: 'emp-1', vehicleId: 'veh-1', vehicleCapacityKg: 5500 }],
+    });
+    expect(db.__insertValues).toContainEqual([
+      expect.objectContaining({ empresaId: 'emp-1', suggestedVehicleId: 'veh-1', score: 777 }),
+    ]);
+    expect(ranking.trasCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ algoritmo: 'v1' }),
+      resultado,
+    );
+  });
+
+  it('sin candidatos no hay ranking ni hook de sombra', async () => {
+    const ranking = { rankear: vi.fn(), trasCommit: vi.fn() };
+    const db = makeDb({ selects: [[TRIP_BASE], []] });
+    await runMatching({ db: db as never, logger: noopLogger, tripId: TRIP_ID, ranking });
+    expect(ranking.rankear).not.toHaveBeenCalled();
+    expect(ranking.trasCommit).not.toHaveBeenCalled();
+  });
+});
