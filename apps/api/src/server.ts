@@ -96,6 +96,7 @@ import {
   crearCargadorBigQuery,
   crearLectorObservatorio,
 } from './services/observatorio/bigquery.js';
+import { crearPublicadorDocumentoSubido } from './services/reconciliar-documentos-pendientes.js';
 import { computeRoutes } from './services/routes-api.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
 import { configureWebPush, sendPushToUser } from './services/web-push.js';
@@ -606,6 +607,10 @@ export function createServer(opts: CreateServerOptions): Hono {
           firebaseAuth: opts.firebaseAuth ?? null,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
+          // T10-21 — reconciliación del worker TED (document-service).
+          publicarDocumentoSubido: config.DOCUMENT_UPLOADED_TOPIC
+            ? crearPublicadorDocumentoSubido(config.DOCUMENT_UPLOADED_TOPIC)
+            : null,
           // T10-24 — export del observatorio a BigQuery (si hay dataset).
           ...(observatorio
             ? {

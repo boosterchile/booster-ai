@@ -59,6 +59,10 @@ import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-ho
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 import {
+  type PublicarDocumentoSubido,
+  reconciliarDocumentosPendientes,
+} from '../services/reconciliar-documentos-pendientes.js';
+import {
   ValorUfNoDisponibleError,
   fechaChile,
   obtenerValorUf,
@@ -95,6 +99,11 @@ export function createAdminJobsRoutes(opts: {
    * tests y para enchufar el provider real cuando exista `payment-provider`.
    */
   membershipPaymentGateway?: MembershipPaymentGateway;
+  /**
+   * T10-21 — publicador de `document.uploaded` para la reconciliación del
+   * worker TED. Null cuando `DOCUMENT_UPLOADED_TOPIC` no está configurado.
+   */
+  publicarDocumentoSubido?: PublicarDocumentoSubido | null;
   /**
    * T10-24 — export del observatorio a BigQuery. Ausente cuando
    * `BIGQUERY_OBSERVATORY_DATASET` no está configurado: el job responde skip.
@@ -235,6 +244,29 @@ export function createAdminJobsRoutes(opts: {
   app.post('/purgar-posiciones-movil', async (c) => {
     const result = await purgarPosicionesMovil({ db: opts.db, logger: opts.logger });
     return c.json({ ok: true, deleted: result.deleted, retention_days: result.retentionDays });
+  });
+
+  /**
+   * T10-21 — reconciliación de `documentos_transporte` con el worker TED
+   * (`apps/document-service`): libera `procesando` abandonados y republica
+   * `pendiente` viejos a `document.uploaded`. Sin topic → 200 skipped.
+   */
+  app.post('/documentos-pendientes', async (c) => {
+    if (!opts.publicarDocumentoSubido) {
+      opts.logger.warn('documentos-pendientes: DOCUMENT_UPLOADED_TOPIC ausente, skip');
+      return c.json({ ok: true, skipped: true, reason: 'topic_not_configured' });
+    }
+    const result = await reconciliarDocumentosPendientes({
+      db: opts.db,
+      logger: opts.logger,
+      publicar: opts.publicarDocumentoSubido,
+    });
+    return c.json({
+      ok: true,
+      liberados: result.liberados,
+      republicados: result.republicados,
+      fallidos_publicacion: result.fallidosPublicacion,
+    });
   });
 
   app.post('/cobra-hoy-cobranza', async (c) => {

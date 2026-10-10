@@ -124,6 +124,9 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # T10-21: sin este topic el api omite el publish (`config.ts` lo trata como
+    # opcional) y todo documento queda en `pendiente` sin que el worker lo vea.
+    DOCUMENT_UPLOADED_TOPIC = google_pubsub_topic.document_uploaded.name
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -729,9 +732,16 @@ module "service_document" {
   service_name          = "booster-ai-document-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: consumer Pub/Sub PULL (StreamingPull en main.ts), igual que
+  # telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios: con
+  # min=0 la instancia escala a cero y nadie consume (no hay requests que la
+  # despierten), y con cpu_idle=true el pull queda CPU-throttled (incidente
+  # 2026-06-07). 1 GiB porque rasterizar el PDF ocupa RAM.
+  min_instances = 1
   max_instances = 10
-  memory        = "1Gi" # OCR puede requerir más RAM
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "1Gi"
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"
@@ -744,6 +754,10 @@ module "service_document" {
   # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
   # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
   secrets = local.common_secrets
+
+  # T10-21: Cloud SQL es IP privada; sin el connector el worker no reclama ni
+  # persiste ninguna fila (mismo connector que api y telemetry-processor).
+  vpc_connector = google_vpc_access_connector.serverless.id
 
   public = false
 
