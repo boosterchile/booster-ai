@@ -5,14 +5,35 @@
 **Autor de la verificación:** revisión sobre clon de `main`; los estados marcados ✅/❌ salen de existencia de archivo o de símbolo, no de inferencia.
 **Actualización 2026-09-13** (`main` @ `7e99dc0`): Slot 3 cerrado y reemplazado por «Conductor operativo» (decisión D2 del PO); Slot 1 con F1 cerrado. El conteo del Slot 2 no se re-verificó en esta pasada.
 **Actualización 2026-09-23** (`main` @ `550b742`): por pedido del PO entra, fuera de slot, «Alta de empresas desde el panel de administración». Los tres slots no cambian.
+**Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
+
+---
+
+## Programa TRL 10
+
+**Definición de término:** [`.specs/trl10/spec.md`](../.specs/trl10/spec.md). TRL 10 se declara cuando sus criterios `T10-01` a `T10-30` están marcados con evidencia. No hay otra definición.
+
+| Fase | Termina cuando | Estado |
+|---|---|---|
+| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa** |
+| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A |
+| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B |
+| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C |
+| Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
+
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot.
+
+**Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
+
+Una fase posterior puede adelantar un criterio solo si libera algo de la fase activa; se declara aquí con la razón.
 
 ---
 
 ## Regla de operación
 
-Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producción, seguridad, el contrato del agente, y lo que el PO pida en el mensaje. Un frente de producto fuera de estos tres slots se declara y se detiene.
+Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producción, seguridad, el contrato del agente, y lo que el PO pida en el mensaje. Un frente de producto fuera de la fase activa se declara y se detiene.
 
-1. **Máximo tres frentes vivos.** Todo lo demás está congelado por escrito, no de facto.
+1. **Máximo tres frentes vivos, todos de la fase activa del programa TRL 10.** Lo de fases posteriores está en espera por escrito, no de facto.
 2. **Ningún frente entra sin criterio de término escrito.** Si el criterio no se puede formular en términos observables y verificables por un tercero, el trabajo está en exploración y la exploración no ocupa slot.
 3. **Un frente sale de la lista solo cumpliendo su criterio**, no por pérdida de interés ni por aparición de otro más urgente.
 4. **Se cierra lo que más libera**, no lo más avanzado.
@@ -202,7 +223,7 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 **Certificados PDF.** Criterio a escribir cuando descongele, con esta forma: el PDF de \<tipo\> con \<campos\> se genera y valida contra el formato exigido por \<quién lo recibe\>.
 
-**Infraestructura y observabilidad.** No termina, se convierte en operación. Criterio a escribir con esta forma: existe alerta accionable para \<lista cerrada de fallas\>, con runbook asociado.
+**Infraestructura y observabilidad.** Desde 2026-10-07 su criterio es la fase C del programa TRL 10 (T10-15 a T10-20). Espera a que cierre la fase B.
 
 **Carta de Porte electrónica (Ley 18.290).** Booster no la emite: desde ADR-070 solo recibe y archiva los documentos de transporte de terceros. El stub `packages/carta-porte-generator` se eliminó el 2026-10-07 (T10-09, decisión del PO) para no dejar código que aparente una capacidad inexistente. Descongela con un ADR que defina quién la emite y una spec con este criterio: la Carta de Porte de un viaje se genera con \<campos legales\>, firmada, y se valida contra \<quien la fiscaliza\>.
 
