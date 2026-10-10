@@ -70,6 +70,7 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createMePushSubscriptionRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyMeRoutes: { category: 'ENFORCED', rationale: '' },
   createMeLiquidacionesRoutes: { category: 'ENFORCED', rationale: '' },
+  createMeWakeWordRoutes: { category: 'ENFORCED', rationale: '' },
   createTripRequestsV2Routes: { category: 'ENFORCED', rationale: '' },
   createOfferRoutes: { category: 'ENFORCED', rationale: '' },
   createCobraHoyAssignmentsRoutes: { category: 'ENFORCED', rationale: '' },

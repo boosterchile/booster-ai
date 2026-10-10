@@ -478,6 +478,18 @@ variable "wake_word_voice_activated" {
   default     = false
 }
 
+variable "wake_word_keyword_url" {
+  description = "URL pública (con CORS hacia la web) del modelo oye-booster-cl.ppn de Porcupine (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
+variable "wake_word_model_url" {
+  description = "URL pública (con CORS hacia la web) del modelo porcupine_params_es.pv (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
 # T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. Activar primero en
 # staging (ADR-083) y después en prod con un viaje real de evidencia.
 variable "eco_routing_realtime_activated" {
@@ -630,6 +642,26 @@ variable "content_sid_ready" {
     # (versión 1 era el placeholder ROTATE_ME), así que montarla es seguro.
     "content-sid-activacion-conductor" = true
   }
+}
+
+# -----------------------------------------------------------------------------
+# Entornos (ADR-083): staging es un proyecto gemelo con este mismo root module.
+# -----------------------------------------------------------------------------
+variable "tfstate_bucket" {
+  description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
+  type        = string
+  default     = "booster-ai-tfstate-494222"
+}
+
+variable "staging_nameservers" {
+  description = <<-EOT
+    Solo en prod: nameservers de la zona DNS del proyecto de staging
+    (output `dns_zone_name_servers` del apply de staging). Si no está vacío, prod
+    delega `staging.<domain>` a esa zona con un registro NS. Vacío = sin
+    delegación (staging aún no existe).
+  EOT
+  type        = list(string)
+  default     = []
 }
 
 # ---------------------------------------------------------------------------
