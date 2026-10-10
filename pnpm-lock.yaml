@@ -635,6 +635,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@booster-ai/pricing-engine':
+        specifier: workspace:*
+        version: link:../../packages/pricing-engine
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas

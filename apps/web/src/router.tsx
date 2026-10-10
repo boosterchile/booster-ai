@@ -310,6 +310,17 @@ const platformAdminSiteSettingsRoute = createRoute({
   ),
 });
 
+// ADR-079 §3 — Configuración comercial (tasas de comisión, servicios en UF,
+// financiamiento, IVA). Mismo gate platform-admin (allowlist en backend).
+const platformAdminConfiguracionComercialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/configuracion-comercial',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-configuracion-comercial.js'),
+    'PlatformAdminConfiguracionComercialRoute',
+  ),
+});
+
 // Spec 2026-05-13 — Observability dashboard (costos GCP + Twilio +
 // Workspace + salud + capacity + forecast). Misma gate platform-admin.
 const platformAdminObservabilityRoute = createRoute({
@@ -577,6 +588,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
+  platformAdminConfiguracionComercialRoute,
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,
