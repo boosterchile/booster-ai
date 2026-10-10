@@ -80,6 +80,8 @@ export const ROUTE_CLASSIFICATION: Record<string, RouteClassificationEntry> = {
   createAdminDispositivosPlataformaRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminCobraHoyRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminStakeholderOrgsRoutes: { category: 'ENFORCED', rationale: '' },
+  // T10-24 — firebaseAuth + userContext preceden el mount; gate requirePlatformAdmin.
+  createAdminObservatorioRoutes: { category: 'ENFORCED', rationale: '' },
   createAdminSignupRequestsRoutes: { category: 'ENFORCED', rationale: '' },
   // Fase 3.5 — alta de miembros en empresa existente. firebaseAuth + userContext
   // preceden el mount (/admin/empresas/*); gate adicional requirePlatformAdmin.

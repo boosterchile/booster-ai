@@ -372,6 +372,16 @@ const platformAdminTeltonikaRoute = createRoute({
   ),
 });
 
+// T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna).
+const platformAdminObservatorioRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/observatorio',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-observatorio.js'),
+    'PlatformAdminObservatorioRoute',
+  ),
+});
+
 const platformAdminStakeholdersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app/platform-admin/stakeholders',
@@ -612,6 +622,7 @@ const routeTree = rootRoute.addChildren([
   platformAdminEmpresasRoute,
   platformAdminTeltonikaRoute,
   platformAdminStakeholdersRoute,
+  platformAdminObservatorioRoute,
   platformAdminImpersonarRoute,
   cargasListRoute,
   cargasNuevaRoute,

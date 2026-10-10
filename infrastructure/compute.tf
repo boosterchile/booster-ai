@@ -118,6 +118,8 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
+    # T10-24 / ADR-012 Capa 2 — observatorio urbano (observatorio.tf).
+    BIGQUERY_OBSERVATORY_DATASET = google_bigquery_dataset.observatory.dataset_id
     # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
