@@ -74,3 +74,5 @@ export * from './domain/safety-event.js';
 // Repositorio documental de transporte — recepción/archivo de DTE de terceros
 // (ADR-070, frente F4). Booster NO emite DTE (ADR-069), solo recibe/archiva.
 export * from './domain/transport-document.js';
+// ADR-080 — pago del viaje bajo mandato de cobro.
+export * from './domain/pago-viaje.js';

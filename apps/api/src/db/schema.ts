@@ -1,6 +1,7 @@
 import type { ConfiguracionComercial, SiteConfig } from '@booster-ai/shared-schemas';
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   bigserial,
   boolean,
   char,
@@ -254,6 +255,20 @@ export const cargoTypeEnum = pgEnum('tipo_carga', [
  * ya lo usa `cargoTypeEnum` (naturaleza de la carga). Migración 0059.
  */
 export const modalidadCargaEnum = pgEnum('modalidad_carga', ['spot', 'programada']);
+
+/** ADR-080 §5 — régimen con que se pagó una liquidación. */
+export const modoFlujoEnum = pgEnum('modo_flujo', ['conector', 'mandato_cobro']);
+
+/** ADR-080 §2 — eventos append-only del pago de un viaje bajo mandato de cobro. */
+export const tipoEventoPagoEnum = pgEnum('tipo_evento_pago', [
+  'recepcion_conforme',
+  'cobro_registrado',
+  'mora_registrada',
+  'liberacion_booster',
+  'anticipo_operador',
+  'disputa_abierta',
+  'disputa_resuelta',
+]);
 
 export const tripStatusEnum = pgEnum('estado_viaje', [
   'borrador',
@@ -2196,6 +2211,12 @@ export const liquidaciones = pgTable(
     configuracionComercialId: uuid('configuracion_comercial_id').references(
       () => configuracionComercial.id,
     ),
+    /**
+     * ADR-080 §5 — `mandato_cobro` solo con MANDATO_COBRO_ACTIVATED y
+     * liquidación v3; en otro caso `conector` (default, también en filas
+     * previas a 0061).
+     */
+    modoFlujo: modoFlujoEnum('modo_flujo').notNull().default('conector'),
     status: text('status').notNull(),
     /**
      * @deprecated ADR-069 — Booster dejó de emitir DTE (remoción Sovos).
@@ -2439,6 +2460,52 @@ export const adelantosCarrier = pgTable(
     ),
     methodologyIdx: index('idx_adelantos_carrier_methodology').on(
       table.factoringMethodologyVersion,
+    ),
+  }),
+);
+
+/**
+ * ADR-080 §2 — pago de un viaje bajo mandato de cobro. Append-only: un trigger
+ * (0061) rechaza UPDATE y DELETE; una corrección es un evento nuevo. El
+ * estado vigente lo reduce `reducirPagoViaje` (@booster-ai/factoring-engine)
+ * en orden de `secuencia`. Cada evento lleva evidencia obligatoria.
+ */
+export const eventosPagoViaje = pgTable(
+  'eventos_pago_viaje',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    secuencia: bigint('secuencia', { mode: 'number' }).generatedAlwaysAsIdentity().notNull(),
+    asignacionId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id, { onDelete: 'restrict' }),
+    tipo: tipoEventoPagoEnum('tipo').notNull(),
+    montoClp: integer('monto_clp'),
+    evidenciaTipo: text('evidencia_tipo').notNull(),
+    evidenciaRef: text('evidencia_ref').notNull(),
+    detalle: text('detalle'),
+    ocurridoEn: timestamp('ocurrido_en', { withTimezone: true }).notNull(),
+    registradoEn: timestamp('registrado_en', { withTimezone: true }).notNull().defaultNow(),
+    registradoPor: text('registrado_por').notNull(),
+  },
+  (table) => ({
+    asignacionIdx: index('idx_eventos_pago_viaje_asignacion').on(
+      table.asignacionId,
+      table.secuencia,
+    ),
+    recepcionUnica: uniqueIndex('uq_eventos_pago_viaje_recepcion')
+      .on(table.asignacionId)
+      .where(sql`${table.tipo} = 'recepcion_conforme'`),
+    evidenciaCheck: check(
+      'chk_eventos_pago_viaje_evidencia',
+      sql`length(trim(${table.evidenciaTipo})) > 0 AND length(trim(${table.evidenciaRef})) > 0`,
+    ),
+    montoCheck: check(
+      'chk_eventos_pago_viaje_monto',
+      sql`${table.montoClp} IS NULL OR ${table.montoClp} > 0`,
+    ),
+    registradoPorCheck: check(
+      'chk_eventos_pago_viaje_registrado_por',
+      sql`length(trim(${table.registradoPor})) > 0`,
     ),
   }),
 );

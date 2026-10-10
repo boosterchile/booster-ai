@@ -364,6 +364,8 @@ export async function confirmarEntregaViaje(opts: {
         pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
         // ADR-079 §6: viajes publicados con tasa congelada se liquidan v3.
         pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
+        // ADR-080 §5: con el flag, la liquidación v3 queda en mandato de cobro.
+        mandatoCobroActivated: appConfig.MANDATO_COBRO_ACTIVATED,
       })
         .then((res) => {
           if (res.status === 'liquidacion_creada' || res.status === 'ya_liquidada') {

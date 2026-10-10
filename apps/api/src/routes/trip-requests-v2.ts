@@ -1,6 +1,6 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq } from 'drizzle-orm';
@@ -35,6 +35,13 @@ import type { EmitirCertificadoConfig } from '../services/emitir-certificado-via
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import { liquidarTrip } from '../services/liquidar-trip.js';
+import {
+  type PagoViajeVista,
+  abrirDisputa,
+  leerPagoDelGenerador,
+  registrarRecepcionConforme,
+} from '../services/mandato-cobro/eventos-pago.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
@@ -115,6 +122,12 @@ export function serializeTripMetrics(
     certificate_kms_key_version: m.certificateKmsKeyVersion,
     certificate_issued_at: m.certificateIssuedAt,
   };
+}
+
+/** Pago para el generador: estados y vencimientos, sin las referencias bancarias de los eventos. */
+function pagoParaGenerador(pago: PagoViajeVista): Omit<PagoViajeVista, 'eventos'> {
+  const { eventos: _eventos, ...resto } = pago;
+  return resto;
 }
 
 export function createTripRequestsV2Routes(opts: {
@@ -716,11 +729,95 @@ export function createTripRequestsV2Routes(opts: {
       );
     }
 
+    // ADR-080 §1: con mandato de cobro, la confirmación del generador con el
+    // documento archivado es la recepción conforme (arranca cobro y
+    // liberación). La entrega queda confirmada aunque la recepción no se
+    // pueda registrar todavía (p. ej. sin documento): se informa el motivo.
+    let mandato: Record<string, unknown> = {};
+    if (appConfig.MANDATO_COBRO_ACTIVATED) {
+      const recepcion = await registrarRecepcionConforme(
+        {
+          db: opts.db,
+          logger: opts.logger,
+          topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+        },
+        {
+          tripId: id,
+          generadorEmpresaId: auth.activeMembership.empresa.id,
+          registradoPor: auth.userContext.user.id,
+          asegurarLiquidacion: (asignacionId) =>
+            liquidarTrip({
+              db: opts.db,
+              logger: opts.logger,
+              assignmentId: asignacionId,
+              pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+              pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
+              mandatoCobroActivated: true,
+            }),
+        },
+      );
+      if (recepcion.ok) {
+        mandato = { pago: pagoParaGenerador(recepcion.pago) };
+      } else if (recepcion.code !== 'no_es_mandato') {
+        opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
+        mandato = { recepcion_conforme_pendiente: recepcion.code };
+      }
+    }
+
     return c.json({
       ok: true,
       already_delivered: result.alreadyDelivered,
       delivered_at: result.deliveredAt.toISOString(),
+      ...mandato,
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // ADR-080 — pago del viaje bajo mandato de cobro (solo el generador dueño).
+  //   GET  /:id/pago     → estado de cobro y liberación con vencimientos.
+  //   POST /:id/disputa  → objeta la recepción; congela la liberación.
+  // Con MANDATO_COBRO_ACTIVATED apagado: 404 mandato_cobro_desactivado.
+  // ---------------------------------------------------------------------
+  app.get('/:id/pago', async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ error: 'mandato_cobro_desactivado' }, 404);
+    }
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const pago = await leerPagoDelGenerador(
+      opts.db,
+      c.req.param('id'),
+      auth.activeMembership.empresa.id,
+    );
+    if (!pago) {
+      return c.json({ error: 'pago_no_encontrado' }, 404);
+    }
+    return c.json({ pago: pagoParaGenerador(pago) });
+  });
+
+  app.post('/:id/disputa', zValidator('json', abrirDisputaSchema), async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ error: 'mandato_cobro_desactivado' }, 404);
+    }
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const r = await abrirDisputa(
+      { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
+      {
+        tripId: c.req.param('id'),
+        generadorEmpresaId: auth.activeMembership.empresa.id,
+        userId: auth.userContext.user.id,
+        motivo: c.req.valid('json').motivo,
+      },
+    );
+    if (!r.ok) {
+      return c.json({ error: r.code }, r.code === 'viaje_no_encontrado' ? 404 : 409);
+    }
+    return c.json({ pago: pagoParaGenerador(r.pago) }, 201);
   });
 
   // ---------------------------------------------------------------------

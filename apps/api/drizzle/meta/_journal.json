@@ -428,6 +428,13 @@
       "when": 1780876800024,
       "tag": "0060_suscripciones_uf",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1780876800025,
+      "tag": "0061_mandato_cobro",
+      "breakpoints": true
     }
   ]
 }
