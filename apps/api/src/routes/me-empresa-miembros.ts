@@ -61,8 +61,7 @@ export function createMeEmpresaMiembrosRoutes(opts: {
 }): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireEmpresa(c: Context<any, any, any>) {
+  function requireEmpresa(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     const activa = userContext?.activeMembership;
     if (!userContext || !activa) {

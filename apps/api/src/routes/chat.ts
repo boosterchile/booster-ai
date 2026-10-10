@@ -137,8 +137,7 @@ export function createChatRoutes(opts: {
   // y devuelve su rol (shipper/carrier) + empresa para usar al insertar.
   // -------------------------------------------------------------------------
   async function resolveChatAccess(
-    // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-    c: Context<any, any, any>,
+    c: Context,
     assignmentId: string,
   ): Promise<
     | {

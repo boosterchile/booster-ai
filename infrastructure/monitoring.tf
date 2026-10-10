@@ -516,3 +516,97 @@ resource "google_monitoring_alert_policy" "reaper_volume_anomaly" {
 
   depends_on = [google_logging_metric.reaper_account_reaped]
 }
+
+# =============================================================================
+# T10-01 — Data-quality de la huella del segmento
+# =============================================================================
+# Los contadores OTel `huella_*_total` del api no se exportan a Cloud
+# Monitoring. El cierre de huella (`recalcularNivelPostEntrega`) emite un log
+# estructurado por viaje con `event="huella.segmento.cierre"` + resultado,
+# fuente y motivoDegradacion; esta métrica lo cuenta. El literal del evento es
+# CONTRATO con `EVENTO_CIERRE_HUELLA` en
+# apps/api/src/services/calcular-metricas-viaje.ts.
+resource "google_logging_metric" "huella_segmento_cierre" {
+  name    = "huella/segmento_cierre"
+  project = google_project.booster_ai.project_id
+
+  description = "Cierres de huella del segmento por resultado (medida, degradada_cobertura, peso_ausente, opt_in_inactivo), fuente y motivo de degradación. Métrica data-quality de T10-01."
+
+  filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="booster-ai-api"
+    jsonPayload.event="huella.segmento.cierre"
+  EOT
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "Huella del segmento — cierres"
+
+    labels {
+      key         = "resultado"
+      value_type  = "STRING"
+      description = "medida | degradada_cobertura | peso_ausente | opt_in_inactivo"
+    }
+    labels {
+      key         = "fuente"
+      value_type  = "STRING"
+      description = "Fuente de la ubicación del segmento (teltonika_gps, movil_gps, ...)"
+    }
+    labels {
+      key         = "motivo"
+      value_type  = "STRING"
+      description = "Motivo de degradación; vacío si medida u opt_in_inactivo"
+    }
+  }
+
+  label_extractors = {
+    "resultado" = "EXTRACT(jsonPayload.resultado)"
+    "fuente"    = "EXTRACT(jsonPayload.fuente)"
+    "motivo"    = "EXTRACT(jsonPayload.motivoDegradacion)"
+  }
+}
+
+resource "google_monitoring_alert_policy" "huella_cierre_degradado" {
+  project      = google_project.booster_ai.project_id
+  display_name = "Huella — cierre de viaje degradado"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "huella.segmento.cierre con resultado degradado > 0 en 1h"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.huella_segmento_cierre.name}\" AND resource.type=\"cloud_run_revision\" AND metric.label.resultado=one_of(\"degradada_cobertura\", \"peso_ausente\")"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period     = "3600s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["metric.label.resultado", "metric.label.motivo"]
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  documentation {
+    content   = <<-EOT
+      Un viaje con huella activa cerró SIN emisiones reales (`*Actual = null`,
+      certificado degradado). Volumen esperado bajo: cada caso se revisa.
+
+      - `degradada_cobertura` + `cobertura_bajo_umbral`: cobertura de posiciones
+        < umbral secundario_modeled. Revisar el dispositivo / app del conductor.
+      - `degradada_cobertura` + `sin_observacion` | `routes_error` | `cap_exceeded`:
+        no se pudo reconstruir la distancia real.
+      - `peso_ausente`: el viaje no declaró peso de carga.
+
+      Logs: `jsonPayload.event="huella.segmento.cierre"` en booster-ai-api
+      (trae tripId). Spec: .specs/huella-data-quality-t10-01/spec.md.
+    EOT
+    mime_type = "text/markdown"
+  }
+
+  depends_on = [google_logging_metric.huella_segmento_cierre]
+}
