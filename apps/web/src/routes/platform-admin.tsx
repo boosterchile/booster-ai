@@ -209,8 +209,10 @@ function StakeholderOrgsSection() {
 
   return (
     <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+      {/* flex-wrap: a 320 px los botones bajan en vez de forzar scroll
+          horizontal (WCAG 1.4.10, T10-11). */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
           <div>
             <h2 className="font-semibold text-neutral-900">Organizaciones stakeholder</h2>
@@ -432,19 +434,24 @@ function StakeholderOrgMembersPanel({ orgId }: { orgId: string }) {
 
       {showInvite && <InviteStakeholderMemberForm orgId={orgId} onInvited={handleInvited} />}
 
-      {resultado?.tipo === 'vinculo' && (
-        <p className="mb-2 text-neutral-800 text-xs" data-testid="stakeholder-vinculo">
-          {resultado.aviso}
-        </p>
-      )}
-      {resultado?.tipo === 'codigo' && (
-        <p className="mb-2 text-neutral-800 text-xs" data-testid="stakeholder-codigo">
-          Código de activación: <span className="font-mono text-base">{resultado.codigo}</span>. La
-          persona lo usa en Activar cuenta, con su RUT, y elige su clave. Después entra como
-          stakeholder y ve las zonas agregadas y el mapa de funcionalidades. El código no es la
-          contraseña.
-        </p>
-      )}
+      {/* WCAG 4.1.3 (T10-11): región viva (`<output>`, rol status) presente
+          desde antes, para que el lector de pantalla anuncie el resultado de
+          la invitación. */}
+      <output className="block">
+        {resultado?.tipo === 'vinculo' && (
+          <span className="mb-2 block text-neutral-800 text-xs" data-testid="stakeholder-vinculo">
+            {resultado.aviso}
+          </span>
+        )}
+        {resultado?.tipo === 'codigo' && (
+          <span className="mb-2 block text-neutral-800 text-xs" data-testid="stakeholder-codigo">
+            Código de activación: <span className="font-mono text-base">{resultado.codigo}</span>.
+            La persona lo usa en Activar cuenta, con su RUT, y elige su clave. Después entra como
+            stakeholder y ve las zonas agregadas y el mapa de funcionalidades. El código no es la
+            contraseña.
+          </span>
+        )}
+      </output>
 
       {detail.miembros.length === 0 ? (
         <p className="text-neutral-500 text-xs">

@@ -74,6 +74,8 @@ describe('invitar miembro stakeholder', () => {
     await invitar();
     const aviso = await screen.findByTestId('stakeholder-codigo');
     expect(aviso).toHaveTextContent('482915');
+    // WCAG 4.1.3 (T10-11): el resultado se anuncia desde una región viva.
+    expect(aviso.closest('output, [role="status"]')).not.toBeNull();
     // Sigue visible después de recargar la lista de miembros.
     await waitFor(() => expect(screen.getByTestId('stakeholder-codigo')).toBeInTheDocument());
   });
@@ -81,8 +83,8 @@ describe('invitar miembro stakeholder', () => {
   it('si la persona ya tiene cuenta, el aviso de vínculo queda visible', async () => {
     post.mockResolvedValueOnce({ vinculo: 'cuenta_activa', status: 'activa' });
     await invitar();
-    expect(await screen.findByTestId('stakeholder-vinculo')).toHaveTextContent(
-      'Esta persona ya tiene cuenta',
-    );
+    const vinculo = await screen.findByTestId('stakeholder-vinculo');
+    expect(vinculo).toHaveTextContent('Esta persona ya tiene cuenta');
+    expect(vinculo.closest('output, [role="status"]')).not.toBeNull();
   });
 });
