@@ -20,12 +20,15 @@ import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-l
 import { skipOnboardingAdmin } from './middleware/skip-onboarding-admin.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { crearGuardiaVisibilidadTransportista } from './middleware/visibilidad-transportista.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
+import { createAdminConfiguracionComercialRoutes } from './routes/admin-configuracion-comercial.js';
 import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
+import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
@@ -39,7 +42,6 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
-import { createDemoCacheWarmRoutes } from './routes/demo-cache-warm.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
@@ -54,6 +56,7 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
+import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
@@ -75,6 +78,10 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import {
+  crearLectorConfiguracionComercial,
+  leerConfiguracionPublicada,
+} from './services/configuracion-comercial.js';
 import type { EcoRoutingDeps } from './services/eco-routing-tiempo-real.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
@@ -127,6 +134,14 @@ export function createServer(opts: CreateServerOptions): Hono {
   });
 
   const app = new Hono();
+
+  // ADR-079 §3 — lectura cacheada (≤ 60 s) de la configuración comercial
+  // publicada. Una sola instancia por proceso: el admin la invalida al
+  // publicar y pricing la consulta al publicar cargas y liquidar.
+  const guardiaVisibilidadTransportista = crearGuardiaVisibilidadTransportista({ logger });
+  const lectorConfiguracionComercial = crearLectorConfiguracionComercial({
+    leer: () => leerConfiguracionPublicada(opts.db),
+  });
 
   // Request logging middleware
   app.use('*', async (c, next) => {
@@ -217,24 +232,6 @@ export function createServer(opts: CreateServerOptions): Hono {
   // auth porque la decisión de UI ocurre ANTES del login.
   app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
 
-  // POST /demo/login (modo demo subdominio) RETIRADO — chore/retiro-subsistema-demo.
-  if (opts.firebaseAuth) {
-    // T5 SEC-001 Sprint 2a — GET /api/v1/demo/cache-warm/:persona
-    // (pre-warm del cache `demo-claim:<uid>`; su consumidor, el middleware
-    // demo-expires, está retirado — el retiro de esta ruta es decisión del
-    // PO, Slot 2). IP rate-limited inline (10/min/IP). Public — no firebase
-    // auth required.
-    app.route(
-      '/api/v1/demo',
-      createDemoCacheWarmRoutes({
-        db: opts.db,
-        auth: opts.firebaseAuth,
-        redis: redisForRateLimit,
-        logger,
-      }),
-    );
-  }
-
   // T8 SEC-001 Sprint 2b — POST /api/v1/signup-request (SC-1.2.1 + SC-1.2.5
   // + ADR-052). Endpoint público (sin firebase auth) que reemplaza el flow
   // `createUserWithEmailAndPassword` client-side por admin-approval gate.
@@ -324,8 +321,6 @@ export function createServer(opts: CreateServerOptions): Hono {
       sseTicketStore: (ticket, assignmentId) =>
         consumeStreamTicket({ redis: redisForRateLimit, ticket, assignmentId }),
     });
-    // El enforcement de cuentas demo no se monta en este chain. El guard
-    // check-is-demo-wire-completeness falla si vuelve a aparecer acá.
     // Impersonación auditada: guard de escritura. Se monta per-group DESPUÉS de
     // userContext (autoriza solo empresas de prueba). En grupos sin userContext
     // (/me raíz, /empresas onboarding) fail-closea toda mutación impersonada.
@@ -378,7 +373,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // real (detectado en la prueba end-to-end).
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
-    meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    meRouter.route(
+      '/empresa/miembros',
+      createMeEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
     // Opt-in de huella — GET/PATCH /me/empresa. userContext precede el mount;
     // el empresaId sale de la membresía activa (nunca del cliente).
     app.use('/me/empresa', userContextMiddlewareForMe);
@@ -471,6 +474,8 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // ADR-079 — tasa congelada al publicar con PRICING_V3_ACTIVATED.
+        lectorComercial: lectorConfiguracionComercial,
         // Task 4 (medicion-huella-segmento): geocodificar origen al crear.
         ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
       }),
@@ -478,6 +483,10 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // Offers — endpoints carrier-side: GET mine + POST accept/reject.
     // Mismo chain firebaseAuth + userContext.
+    // ADR-079 §5 — ninguna respuesta a transportista/conductor lleva claves
+    // privadas del generador (fail-closed). Va antes de auth para envolver
+    // la respuesta final de toda la cadena.
+    app.use('/offers/*', guardiaVisibilidadTransportista);
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -552,9 +561,7 @@ export function createServer(opts: CreateServerOptions): Hono {
           twilioClient: opts.notify?.twilioClient ?? null,
           contentSidChatUnread: config.CONTENT_SID_CHAT_UNREAD ?? null,
           webAppUrl: config.WEB_APP_URL,
-          // T6a SEC-001 Sprint 2a — TTL alerter wire (firebase + redis).
           firebaseAuth: opts.firebaseAuth ?? null,
-          redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
           // T10-23 — barrido por minuto de viajes con Teltonika (mismas deps).
@@ -578,6 +585,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (sin prefix adicional) para que ambos compartan /assignments. Las
     // rutas no chocan porque los paths internos son distintos
     // (/:id/confirmar-entrega vs /:id/messages*).
+    app.use('/assignments/*', guardiaVisibilidadTransportista);
     app.use('/assignments/*', firebaseAuthMiddleware);
     app.use('/assignments/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     const assignmentsRouter = createAssignmentsRoutes({
@@ -674,7 +682,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+    app.route(
+      '/admin/stakeholder-orgs',
+      createAdminStakeholderOrgsRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
     // Mismo middleware chain que stakeholder-orgs.
@@ -701,7 +717,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/empresas',
-      createAdminEmpresaMiembrosRoutes({ db: opts.db, logger, auth: opts.firebaseAuth }),
+      createAdminEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
     );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
@@ -719,6 +741,68 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
+    // T10-29 — precios públicos (solo servicios en UF y huella; sin
+    // comisiones). Mismo lector con caché ≤ 60 s que pricing.
+    app.route(
+      '/public',
+      createPublicPreciosRoutes({ logger, lector: lectorConfiguracionComercial }),
+    );
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
+
+    // ADR-080 — conciliación del mandato de cobro (platform-admin). Detrás de
+    // MANDATO_COBRO_ACTIVATED (404 con el flag apagado).
+    app.use('/admin/mandato-cobro', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro/*', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/mandato-cobro/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/admin/mandato-cobro', createAdminMandatoCobroRoutes({ db: opts.db, logger }));
 
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).

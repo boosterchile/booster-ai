@@ -119,8 +119,7 @@ export function createAssignmentsRoutes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireCarrierAuth(c: Context<any, any, any>) {
+  function requireCarrierAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/assignments without userContext');

@@ -69,15 +69,16 @@ locals {
   # cualquier Cloud Run service que monte secrets. Se pasa a cada módulo via
   # `secret_versions_ready` para que Terraform propague el orden automáticamente.
   # Incluye los 14 placeholders originales + database_url (generado dinámicamente)
-  # + las versions del set hotfix-2026-05-14 (6 placeholders + pepper aleatorio)
-  # que ya están mounteadas por al menos un service (T7 SEC-001 monta
-  # DEMO_SEED_PASSWORD en el api).
+  # + las versions del set hotfix-2026-05-14 (1 placeholder + pepper aleatorio)
+  # que ya están mounteadas por al menos un service.
   all_secret_versions_ready = concat(
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.cmf_api_key_placeholder.id],
+    [google_secret_manager_secret_version.resend_api_key_placeholder.id],
   )
 
   # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
@@ -137,7 +138,7 @@ module "service_api" {
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
@@ -208,7 +209,7 @@ module "service_api" {
     # (guard de escritura fail-closed, auditoría en eventos_impersonacion,
     # banner + picker ya en main). Con OFF responden 503. Triple guard:
     # esta env var + requirePlatformAdmin (allowlist) + escritura solo sobre
-    # empresas es_demo. Flip reversible (var.impersonation_v1_activated).
+    # empresas es_usuario_prueba. Flip reversible (var.impersonation_v1_activated).
     IMPERSONATION_V1_ACTIVATED = tostring(var.impersonation_v1_activated)
 
     # ADR-036 (Wave 5) — Wake-word "Oye Booster" para conductor. Default
@@ -220,11 +221,12 @@ module "service_api" {
     # T10-23 — eco-routing en tiempo real (default false).
     ECO_ROUTING_REALTIME_ACTIVATED = tostring(var.eco_routing_realtime_activated)
 
-    # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
-    # habilita POST /demo/login (mintea custom tokens Firebase para las
-    # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
-    # esta env var + columna es_demo=true en empresas.
-    DEMO_MODE_ACTIVATED = tostring(var.demo_mode_activated)
+    # ADR-080 — mandato de cobro. Default false (modo conector). Encender solo
+    # con las seis precondiciones de §6 evidenciadas en
+    # .specs/mandato-de-cobro/activacion.md. El tope del float es 0 por
+    # omisión: sin decisión escrita del PO, Booster no adelanta caja propia.
+    MANDATO_COBRO_ACTIVATED        = tostring(var.mandato_cobro_activated)
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP = tostring(var.mandato_cobro_float_maximo_clp)
 
     # ADR-039 — Site Settings Runtime Configuration. Bucket de assets
     # editables (logos, favicons) subidos desde el admin. Reuso del
@@ -291,6 +293,10 @@ module "service_api" {
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
 
+    # ADR-079 §4 — clave de la API UF de la CMF (valor-uf.tf). Sin validación
+    # de formato: el placeholder ROTATE_ME_ cuenta como ausente (solo SII).
+    CMF_API_KEY = google_secret_manager_secret.cmf_api_key.secret_id
+
     # B.8 — Content SIDs de templates WhatsApp (offer-new, chat-unread, tracking,
     # safety-alert). Validados `^HX[a-fA-F0-9]+$` en config.ts (preprocess
     # ''→undefined + .optional()). Se MONTAN vía `local.ready_content_sid_secrets`
@@ -342,37 +348,18 @@ module "service_api" {
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
 
-    # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
-    # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
-    # está ON. Reemplaza el literal hardcoded que vivía en
-    # `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`.
-    # El secret + IAM bindings + placeholder version `REPLACE_ME_BEFORE_DEPLOY`
-    # están declarados en `security-hotfixes-2026-05-14.tf` (importado en
-    # T0b PR #316); aquí solo se mountea como env var. La rotación a
-    # password real ocurre via `gcloud secrets versions add demo-seed-password`
-    # (T7.5 run-once) ANTES de que T8 active el lookup en el código —
-    # T7.5 gate de CI bloquea PRs que toquen seed-demo*.ts si version
-    # count == 0.
-    DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
-
-    # T3 SEC-001 Sprint 2a (plan-sprint-2a.md T3, sec-001-cierre §3 H1.1
-    # SC-1.1.5) — per-persona demo account passwords. Reemplazan el single
-    # DEMO_SEED_PASSWORD path para las UIDs NUEVAS post-disclosure
-    # replacement (ADR-053). Co-existen con DEMO_SEED_PASSWORD que sigue
-    # cubriendo el path legacy hasta que T4 ejecute el one-shot retire de
-    # las UIDs viejas. Mounted como env vars desde los 4 secrets creados
-    # en T2; init de version 1 por PO con infrastructure/scripts/
-    # init-demo-secrets-2026.sh post terraform apply.
-    DEMO_ACCOUNT_PASSWORD_SHIPPER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CARRIER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026        = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor-2026-firebase"].secret_id
     },
     # CONTENT_SID_* gateados por readiness (INC-2026-06-19 A7): solo se montan los
     # que tienen valor real cargado (`var.content_sid_ready[name] = true`). Default
     # = los 4 actuales true → plan No changes. Un content-sid no-ready queda fuera
     # del mount → su env var ausente → config.ts undefined (.optional()) → arranca.
     local.ready_content_sid_secrets,
+    # T10-04: correo saliente. Gateado por readiness, como los content-sid
+    # (email.tf); sin el flag la env queda ausente y el api usa el
+    # LoggingEmailSender.
+    var.resend_api_key_ready ? {
+      RESEND_API_KEY = google_secret_manager_secret.resend_api_key.secret_id
+    } : {},
   )
 
   vpc_connector = google_vpc_access_connector.serverless.id
@@ -431,7 +418,7 @@ module "service_web" {
   # proyecto, así que la binding está autorizada.
   public = true
 
-  # ADR-062: servida 100% vía GCLB (app/demo/marketing domain). Sin callers
+  # ADR-062: servida 100% vía GCLB (app/marketing domain). Sin callers
   # directos al run.app → canary seguro del posture internal-and-cloud-LB.
   ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 

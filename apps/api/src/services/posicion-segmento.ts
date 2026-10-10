@@ -30,9 +30,11 @@
  *     convierten con `Number(...)`.
  */
 
-import { and, asc, eq, gte, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { posicionesMovilConductor, telemetryPoints } from '../db/schema.js';
+import type { LecturaSegmentoCan } from '../domain/consumo-can-segmento.js';
 import { esCoordenadaGpsValida } from './coordenada-gps.js';
 
 /** Punto de posición uniforme para el cálculo (distancia real, cobertura, backfill). */
@@ -177,6 +179,59 @@ export async function resolverPosicionesSegmento(
     )
     .orderBy(asc(posicionesMovilConductor.timestampDevice));
   return proyectarPings(rows);
+}
+
+/** `io_data` llega como JSONB con valores número o string (el decoder no normaliza). */
+const ioDataSchema = z.record(z.string(), z.union([z.number(), z.string()]));
+
+/**
+ * Lecturas del contador CAN de combustible (AVL 83) en `[desde, hasta]`, de
+ * la MISMA fuente que la posición del segmento (T10-05, ADR-077 §2). Solo
+ * filas Teltonika que traen el 83; el móvil del conductor no tiene CAN → `[]`.
+ * El `io` devuelto lleva solo el 83, como número crudo (×0,1 L).
+ */
+export async function cargarLecturasConsumoCan(
+  opts: ResolverPosicionesSegmentoOptions,
+): Promise<LecturaSegmentoCan[]> {
+  const { db, vehicle, desde, hasta } = opts;
+  const decision = fuentePosicionSegmento(vehicle);
+  if (decision.fuente === 'movil_gps') {
+    return [];
+  }
+  const porFuente =
+    decision.via === 'vehicle_id'
+      ? eq(telemetryPoints.vehicleId, vehicle.id)
+      : eq(telemetryPoints.imei, decision.imei);
+  // rls-allowlist: scoped por vehicle.id / imei del assignment ya autorizado por el caller (segmento pickup→entrega)
+  const rows = await db
+    .select({
+      ts: telemetryPoints.timestampDevice,
+      lat: telemetryPoints.latitude,
+      lng: telemetryPoints.longitude,
+      io: telemetryPoints.ioData,
+    })
+    .from(telemetryPoints)
+    .where(
+      and(
+        porFuente,
+        gte(telemetryPoints.timestampDevice, desde),
+        lte(telemetryPoints.timestampDevice, hasta),
+        sql`(${telemetryPoints.ioData} -> '83') is not null`,
+      ),
+    )
+    .orderBy(asc(telemetryPoints.timestampDevice));
+
+  const lecturas: LecturaSegmentoCan[] = [];
+  for (const row of rows) {
+    const io = ioDataSchema.safeParse(row.io);
+    const raw = io.success ? Number(io.data['83']) : Number.NaN;
+    const [ping] = proyectarPings([row]);
+    if (!ping || !Number.isFinite(raw)) {
+      continue;
+    }
+    lecturas.push({ ...ping, io: { '83': raw } });
+  }
+  return lecturas;
 }
 
 /** Proyección/filtro única de las tres fuentes: descarta null y null island. */

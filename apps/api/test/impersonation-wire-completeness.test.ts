@@ -10,7 +10,7 @@ import { findMissingGuard } from '../scripts/check-impersonation-wire-completene
  * sobre una empresa real sin bloqueo.
  *
  * Nota: el for-loop de transport-docs (`app.use(prefix, ...)` con variable) es
- * un blind spot del parser por-string (igual que check-is-demo) — se cablea a
+ * un blind spot del parser por-string — se cablea a
  * mano y se cubre con el test de integración/route, no acá.
  */
 
@@ -24,7 +24,7 @@ describe('impersonation-write-guard wire completeness', () => {
 
   it('detecta un gap: path con firebaseAuth pero sin el guard → lo reporta', () => {
     const source = `
-      app.use('/nuevo/*', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
+      app.use('/nuevo/*', firebaseAuthMiddleware, rateLimitMiddleware);
       app.use('/nuevo/*', userContextMiddleware);
       app.route('/nuevo', createNuevoRoutes());
     `;
@@ -33,7 +33,7 @@ describe('impersonation-write-guard wire completeness', () => {
 
   it('no reporta un path que sí tiene el guard', () => {
     const source = `
-      app.use('/ok/*', firebaseAuthMiddleware, demoExpiresMiddleware, isDemoEnforcementMiddleware);
+      app.use('/ok/*', firebaseAuthMiddleware, rateLimitMiddleware);
       app.use('/ok/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     `;
     expect(findMissingGuard(source)).toEqual([]);
