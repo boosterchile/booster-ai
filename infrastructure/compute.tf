@@ -77,6 +77,7 @@ locals {
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.cmf_api_key_placeholder.id],
     [google_secret_manager_secret_version.resend_api_key_placeholder.id],
   )
 
@@ -281,6 +282,10 @@ module "service_api" {
     # vía security.tf, así que no hace falta IAM extra.
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+
+    # ADR-079 §4 — clave de la API UF de la CMF (valor-uf.tf). Sin validación
+    # de formato: el placeholder ROTATE_ME_ cuenta como ausente (solo SII).
+    CMF_API_KEY = google_secret_manager_secret.cmf_api_key.secret_id
 
     # B.8 — Content SIDs de templates WhatsApp (offer-new, chat-unread, tracking,
     # safety-alert). Validados `^HX[a-fA-F0-9]+$` en config.ts (preprocess

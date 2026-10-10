@@ -376,6 +376,18 @@ export const apiEnvSchema = commonEnvSchema
     PRICING_V3_ACTIVATED: booleanFlag(false),
 
     /**
+     * ADR-079 §4 — clave de la API v3 de la CMF para el valor UF del día
+     * (secret `cmf-api-key`). Ausente, vacía o con el placeholder
+     * `ROTATE_ME_…` de Terraform cuenta como no configurada: el valor UF se
+     * toma solo del respaldo SII.
+     */
+    CMF_API_KEY: z.preprocess(
+      (v) =>
+        typeof v === 'string' && (v.trim() === '' || v.startsWith('ROTATE_ME_')) ? undefined : v,
+      z.string().min(1).optional(),
+    ),
+
+    /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
      * (ADR-029 + ADR-032). Default `false` en TODOS los entornos
      * (vuelve al default seguro de ADR-030 §1; decisión PO 2026-06-10,

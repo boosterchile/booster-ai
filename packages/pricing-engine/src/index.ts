@@ -64,3 +64,13 @@ export {
   type LiquidacionV3Output,
   type ModalidadCarga,
 } from './liquidacion-v3.js';
+
+/** Suscripciones en UF (ADR-079 §4), neto + IVA. */
+export {
+  calcularCobroSuscripcionUf,
+  type CobroSuscripcionUfInput,
+  type CobroSuscripcionUfOutput,
+  type ConceptoSuscripcion,
+  type LineaSuscripcion,
+  type PreciosSuscripcionUf,
+} from './suscripcion-uf.js';
