@@ -49,6 +49,12 @@ import {
 } from '../services/confirmar-entrega-viaje.js';
 import { confirmarRecogidaViaje } from '../services/confirmar-recogida-viaje.js';
 import { coordenadaGpsValidaSql } from '../services/coordenada-gps.js';
+import {
+  type EcoRoutingDeps,
+  evaluarEcoRoutingAsignacion,
+  obtenerSugerenciaRutaActiva,
+  registrarRespuestaSugerenciaRuta,
+} from '../services/eco-routing-tiempo-real.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { evaluarGeofenceOrigen } from '../services/geofence-origen.js';
 import { getAssignmentEcoRoute } from '../services/get-assignment-eco-route.js';
@@ -104,6 +110,12 @@ export function createAssignmentsRoutes(opts: {
    * PWA sugiera la recogida.
    */
   geofenceRadiusM: number;
+  /**
+   * Eco-routing en tiempo real (T10-23). Presente solo con el flag
+   * `ECO_ROUTING_REALTIME_ACTIVATED`: cada posición del viaje recogido dispara
+   * una evaluación best-effort. Ausente → `driver-position` no evalúa.
+   */
+  ecoRouting?: EcoRoutingDeps | undefined;
 }) {
   const app = new Hono();
 
@@ -921,6 +933,20 @@ export function createAssignmentsRoutes(opts: {
       radioM: opts.geofenceRadiusM,
     });
 
+    // T10-23: evaluación de congestión fire-and-forget. Nunca bloquea ni hace
+    // fallar el reporte de posición; un error queda logueado, no tragado.
+    if (opts.ecoRouting && assignment.status === 'recogido') {
+      evaluarEcoRoutingAsignacion({
+        db: opts.db,
+        logger: opts.logger,
+        assignmentId,
+        routesProjectId: opts.routesProjectId,
+        deps: opts.ecoRouting,
+      }).catch((err: unknown) => {
+        opts.logger.error({ err, assignmentId }, 'eco-routing: la evaluación falló');
+      });
+    }
+
     return c.json({
       ok: true,
       geofence: {
@@ -929,6 +955,72 @@ export function createAssignmentsRoutes(opts: {
       },
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // T10-23 — sugerencias de eco-routing del conductor asignado.
+  // ---------------------------------------------------------------------------
+  const sugerenciaParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
+  const respuestaSugerenciaBodySchema = z.object({ respuesta: z.enum(['aceptada', 'rechazada']) });
+
+  app.get('/:id/sugerencias-ruta/activa', async (c) => {
+    const userContext = c.get('userContext');
+    if (!userContext) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    const sugerencia = await obtenerSugerenciaRutaActiva({
+      db: opts.db,
+      assignmentId: c.req.param('id'),
+      userId: userContext.user.id,
+      nowMs: Date.now(),
+    });
+    return c.json({
+      sugerencia: sugerencia
+        ? {
+            id: sugerencia.id,
+            motivo: sugerencia.motivo,
+            polyline_alternativa: sugerencia.polylineAlternativa,
+            ahorro_segundos: sugerencia.ahorroSegundos,
+            ahorro_kgco2e: sugerencia.ahorroKgco2e,
+            detectada_en: sugerencia.detectadaEn.toISOString(),
+            texto: sugerencia.texto,
+          }
+        : null,
+    });
+  });
+
+  app.post(
+    '/:id/sugerencias-ruta/:sid/respuesta',
+    zValidator('param', sugerenciaParamsSchema),
+    zValidator('json', respuestaSugerenciaBodySchema),
+    async (c) => {
+      const userContext = c.get('userContext');
+      if (!userContext) {
+        return c.json({ error: 'unauthorized' }, 401);
+      }
+      const { id, sid } = c.req.valid('param');
+      const resultado = await registrarRespuestaSugerenciaRuta({
+        db: opts.db,
+        assignmentId: id,
+        sugerenciaId: sid,
+        userId: userContext.user.id,
+        respuesta: c.req.valid('json').respuesta,
+        nowMs: Date.now(),
+      });
+      switch (resultado) {
+        case 'ok':
+          return c.json({ ok: true });
+        case 'not_found':
+          return c.json({ error: 'sugerencia_not_found', code: 'sugerencia_not_found' }, 404);
+        case 'forbidden':
+          return c.json({ error: 'not_assigned_driver', code: 'not_assigned_driver' }, 403);
+        case 'ya_respondida':
+          return c.json(
+            { error: 'sugerencia_ya_respondida', code: 'sugerencia_ya_respondida' },
+            409,
+          );
+      }
+    },
+  );
 
   app.post('/:id/incidents', zValidator('json', incidentBodySchema), async (c) => {
     const auth = requireCarrierAuth(c);

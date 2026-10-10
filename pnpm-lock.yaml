@@ -70,6 +70,9 @@ importers:
       '@booster-ai/driver-scoring':
         specifier: workspace:*
         version: link:../../packages/driver-scoring
+      '@booster-ai/eco-routing':
+        specifier: workspace:*
+        version: link:../../packages/eco-routing
       '@booster-ai/factoring-engine':
         specifier: workspace:*
         version: link:../../packages/factoring-engine

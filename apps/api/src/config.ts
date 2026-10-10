@@ -501,6 +501,14 @@ export const apiEnvSchema = commonEnvSchema
     WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
 
     /**
+     * T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. ON: cada posición
+     * de un viaje recogido evalúa congestión y, con alternativa material,
+     * persiste la sugerencia y la empuja al conductor por Web Push. Default
+     * OFF hasta validar en staging (ADR-083) y con un viaje real.
+     */
+    ECO_ROUTING_REALTIME_ACTIVATED: booleanFlag(false),
+
+    /**
      * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
      * rollback) — gating del flow signup-request → admin-approval.
      *

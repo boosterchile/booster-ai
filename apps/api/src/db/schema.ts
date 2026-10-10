@@ -1171,6 +1171,67 @@ export const posicionesMovilConductor = pgTable(
 );
 
 /**
+ * Eco-routing en tiempo real (T10-23, ADR-012 Capa 1). Una fila por
+ * congestión detectada durante un viaje activo: si hubo alternativa material
+ * (`estado = sugerida`) lleva la ruta propuesta y la respuesta explícita del
+ * conductor; si no, queda como `congestion_sin_alternativa` (registro de la
+ * detección). Adopción = sugeridas con respuesta `aceptada` / sugeridas
+ * enviadas. Sin `empresa_id`: se accede siempre por asignación y conductor.
+ */
+export const estadoSugerenciaRutaEnum = pgEnum('estado_sugerencia_ruta', [
+  'congestion_sin_alternativa',
+  'sugerida',
+]);
+export const motivoSugerenciaRutaEnum = pgEnum('motivo_sugerencia_ruta', ['emisiones', 'tiempo']);
+export const respuestaSugerenciaRutaEnum = pgEnum('respuesta_sugerencia_ruta', [
+  'aceptada',
+  'rechazada',
+]);
+
+export const sugerenciasRuta = pgTable(
+  'sugerencias_ruta',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    assignmentId: uuid('asignacion_id')
+      .notNull()
+      .references(() => assignments.id, { onDelete: 'cascade' }),
+    tripId: uuid('viaje_id')
+      .notNull()
+      .references(() => trips.id, { onDelete: 'cascade' }),
+    estado: estadoSugerenciaRutaEnum('estado').notNull(),
+    /** Inicio de la racha lenta (< 10 km/h sostenido). */
+    congestionDesde: timestamp('congestion_desde', { withTimezone: true }).notNull(),
+    detectedAt: timestamp('detectada_en', { withTimezone: true }).notNull().defaultNow(),
+    latitude: numeric('posicion_lat', { precision: 10, scale: 7 }).notNull(),
+    longitude: numeric('posicion_lng', { precision: 10, scale: 7 }).notNull(),
+    averageSpeedKmh: numeric('velocidad_media_kmh', { precision: 6, scale: 2 }).notNull(),
+    motivo: motivoSugerenciaRutaEnum('motivo'),
+    alternativePolyline: text('polyline_alternativa'),
+    savingSeconds: integer('ahorro_segundos'),
+    savingKgco2e: numeric('ahorro_kgco2e', { precision: 10, scale: 3 }),
+    currentKgco2e: numeric('kgco2e_actual', { precision: 10, scale: 3 }),
+    /** Cuándo se despachó el Web Push (null si el conductor no tiene suscripción). */
+    sentAt: timestamp('enviada_en', { withTimezone: true }),
+    respuesta: respuestaSugerenciaRutaEnum('respuesta'),
+    respondedAt: timestamp('respondida_en', { withTimezone: true }),
+  },
+  (table) => ({
+    asignacionDetectadaIdx: index('idx_sugerencias_ruta_asignacion_detectada').on(
+      table.assignmentId,
+      table.detectedAt,
+    ),
+    sugeridaCompletaCheck: check(
+      'ck_sugerencias_ruta_sugerida_completa',
+      sql`${table.estado} <> 'sugerida' OR (${table.motivo} IS NOT NULL AND ${table.alternativePolyline} IS NOT NULL AND ${table.savingSeconds} IS NOT NULL)`,
+    ),
+    respuestaConFechaCheck: check(
+      'ck_sugerencias_ruta_respuesta_con_fecha',
+      sql`(${table.respuesta} IS NULL) = (${table.respondedAt} IS NULL)`,
+    ),
+  }),
+);
+
+/**
  * Conductores — perfil profesional separado de `users` (que es la identidad
  * Firebase / auth). Un user puede ser conductor en una sola empresa
  * transportista (UNIQUE user_id) — si cambia de carrier, se da de baja y se
