@@ -381,7 +381,7 @@ describe('POST /chat/:id/messages', () => {
 });
 
 describe('POST /chat/:id/messages/stream-ticket', () => {
-  it('sesión con claim is_demo residual → el ticket guardado NO lleva isDemo', async () => {
+  it('el ticket guardado lleva solo uid y assignmentId, sin claims de la sesión', async () => {
     const stored: string[] = [];
     const redis = {
       async set(_key: string, value: string) {
@@ -397,7 +397,7 @@ describe('POST /chat/:id/messages/stream-ticket', () => {
           user: { id: USER_ID, firebaseUid: 'fb-uid' },
           activeMembership: { empresa: { id: SHIPPER_EMP } },
         }),
-        'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { is_demo: true } }),
+        'x-test-claims': JSON.stringify({ uid: 'fb-uid', custom: { rol: 'dueno' } }),
       },
     });
     expect(res.status).toBe(200);

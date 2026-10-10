@@ -40,7 +40,7 @@ Esta spec supersede la de la rama `feat/eco-routing-realtime-spec`, que nunca se
      - Nunca recomienda una ruta que emita más que la actual.
      - Si no hay forma de estimar el combustible (eléctrico, o sin datos de Routes API ni consumo base), evalúa solo por tiempo y no informa CO2e.
 2. **`apps/api`** (PR B):
-   - Tabla `sugerencias_ruta` (migración 0059, expand-only, con `.down.sql`). Lleva `estado` = `sugerida` | `congestion_sin_alternativa` para registrar también las detecciones sin alternativa. Columnas:
+   - Tabla `sugerencias_ruta` (migración 0062, expand-only, con `.down.sql`). Lleva `estado` = `sugerida` | `congestion_sin_alternativa` para registrar también las detecciones sin alternativa. Columnas:
      - `id`, `asignacion_id`, `viaje_id`, `detectada_en`, `posicion_lat`, `posicion_lng`;
      - `velocidad_media_kmh`, `motivo`;
      - `polyline_alternativa`, `ahorro_segundos`, `ahorro_kgco2e`, `kgco2e_actual`;

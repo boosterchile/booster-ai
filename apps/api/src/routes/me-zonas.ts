@@ -35,8 +35,7 @@ const idParamSchema = z.object({ id: z.string().uuid() });
 export function createMeZonasRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireCarrierAdmin(c: Context<any, any, any>) {
+  function requireCarrierAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
