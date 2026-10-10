@@ -47,7 +47,6 @@ const TENANT_FREE_TABLES = new Set([
   'pushSubscriptions', // se filtra por userId
   'telemetryPoints', // se filtra por vehicleId (que ya validó tenant)
   'posicionesMovilConductor', // se filtra por vehicleId (que ya validó tenant), igual que telemetryPoints
-  'cuentasDemo', // T1 SEC-001 Sprint 2a: 4-row global registry de cuentas demo (no per-tenant). Ver ADR-053 + docs/qa/demo-accounts.md.
   // +4 (spec lint-rls-services-jobs §3.4, censo §1/§6): sin discriminador ni FK indirecto a tabla tenant-scoped.
   'solicitudesRegistro', // pre-tenant: signup público gated por admin, la empresa aún no existe (censo §5)
   'matchingBacktestRuns', // admin/global: backtest platform-admin sobre todas las empresas (rls-viabilidad §3)
