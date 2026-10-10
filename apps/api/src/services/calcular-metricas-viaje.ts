@@ -34,6 +34,15 @@ import { type VehicleEmissionType, computeRoutes } from './routes-api.js';
  * corte de degradación (spec: nunca `0`, nunca fallo silencioso).
  */
 const huellaSegmentoCounter = getBusinessCounter('huella_segmento_total');
+
+/**
+ * Evento data-quality del cierre de huella (T10-01): uno por cierre, con
+ * `resultado`, `fuente` y `motivoDegradacion`. Los contadores OTel de arriba no
+ * se exportan a Cloud Monitoring; este log alimenta la métrica log-based
+ * `huella/segmento_cierre` y su alerta. El literal es CONTRATO con el filtro
+ * de `infrastructure/monitoring.tf`.
+ */
+export const EVENTO_CIERRE_HUELLA = 'huella.segmento.cierre';
 const huellaCoberturaDegradadaCounter = getBusinessCounter('huella_cobertura_degradada_total');
 const huellaPesoAusenteCounter = getBusinessCounter('huella_peso_ausente_total');
 /**
@@ -761,6 +770,17 @@ async function recalcularNivelPostEntregaInner(opts: {
 
   if (abortReason !== null && !huellaActiva) {
     huellaSegmentoCounter.add(1, { resultado: 'opt_in_inactivo', fuente });
+    logger.info(
+      {
+        event: EVENTO_CIERRE_HUELLA,
+        tripId,
+        resultado: 'opt_in_inactivo',
+        fuente,
+        motivoDegradacion: null,
+        abortReason,
+      },
+      'huella del segmento no medida (opt-in inactivo) y sin distancia real',
+    );
     return {
       recomputed: false,
       abortReason,
@@ -788,6 +808,7 @@ async function recalcularNivelPostEntregaInner(opts: {
   //   cert lee `actual ?? estimated`, y un 0 no es nullish.
   // El umbral es el mismo de la matriz de certificación (fuente única).
   let huella: ResultadoHuella = 'opt_in_inactivo';
+  let motivoDegradacion: string | null = null;
   let emisionesReales: ResultadoEmisiones | null = null;
   if (huellaActiva) {
     if (
@@ -796,12 +817,11 @@ async function recalcularNivelPostEntregaInner(opts: {
       coveragePct < THRESHOLD_SECUNDARIO_MODELED_PCT
     ) {
       huella = 'degradada_cobertura';
-      huellaCoberturaDegradadaCounter.add(1, {
-        fuente,
-        motivo: abortReason ?? 'cobertura_bajo_umbral',
-      });
+      motivoDegradacion = abortReason ?? 'cobertura_bajo_umbral';
+      huellaCoberturaDegradadaCounter.add(1, { fuente, motivo: motivoDegradacion });
     } else if (trip.cargoWeightKg === null) {
       huella = 'peso_ausente';
+      motivoDegradacion = 'peso_ausente';
       huellaPesoAusenteCounter.add(1, { fuente });
     } else {
       // La distancia que alimenta la huella es la MISMA que se persiste como
@@ -893,7 +913,10 @@ async function recalcularNivelPostEntregaInner(opts: {
 
   logger.info(
     {
+      event: EVENTO_CIERRE_HUELLA,
       tripId,
+      resultado: huella,
+      motivoDegradacion,
       vehicleId: assignment.vehicleId,
       routeDataSource,
       fuente,

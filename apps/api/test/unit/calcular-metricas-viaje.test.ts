@@ -1320,4 +1320,115 @@ describe('recalcularNivelPostEntrega — huella real del segmento (T12) + peso a
       expect(setDe(db).precisionMethod).not.toBe('exacto_canbus');
     });
   });
+
+  // T10-01 — métrica data-quality: cada cierre emite UN evento estructurado
+  // `huella.segmento.cierre` que alimenta la métrica log-based
+  // `huella/segmento_cierre` (infrastructure/monitoring.tf). El literal del
+  // evento es CONTRATO con el filtro de Terraform.
+  describe('evento data-quality huella.segmento.cierre (T10-01)', () => {
+    const loggerEspia = () => {
+      const info = vi.fn();
+      const logger = {
+        trace: noop,
+        debug: noop,
+        info,
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: noop,
+        child: () => logger,
+      };
+      return { logger, info };
+    };
+    const runCon = (db: unknown, logger: unknown) =>
+      recalcularNivelPostEntrega({
+        db: db as never,
+        logger: logger as never,
+        tripId: TRIP_ID,
+        routesProjectId: 'proj',
+      });
+    const eventosCierre = (info: ReturnType<typeof vi.fn>) =>
+      info.mock.calls
+        .map((c) => c[0] as Record<string, unknown>)
+        .filter((o) => o?.event === 'huella.segmento.cierre');
+
+    const casos: Array<{
+      nombre: string;
+      pings: () => unknown[];
+      km?: number;
+      o?: Parameters<typeof selects>[0];
+      resultado: string;
+      fuente: string;
+      motivoDegradacion: string | null;
+    }> = [
+      {
+        nombre: 'medida',
+        pings: continuos,
+        resultado: 'medida',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: null,
+      },
+      {
+        nombre: 'degradada por cobertura bajo umbral',
+        pings: conHueco,
+        km: 40,
+        resultado: 'degradada_cobertura',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: 'cobertura_bajo_umbral',
+      },
+      {
+        nombre: 'degradada sin observación (abort con opt-in activo)',
+        pings: soloHuecos,
+        km: 5,
+        resultado: 'degradada_cobertura',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: 'sin_observacion',
+      },
+      {
+        nombre: 'peso ausente',
+        pings: continuos,
+        o: { trip: { cargoWeightKg: null } },
+        resultado: 'peso_ausente',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: 'peso_ausente',
+      },
+      {
+        nombre: 'opt-in inactivo con reconstrucción',
+        pings: continuos,
+        o: { empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }] },
+        resultado: 'opt_in_inactivo',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: null,
+      },
+      {
+        nombre: 'opt-in inactivo con abort (salida temprana, sin UPDATE)',
+        pings: soloHuecos,
+        km: 5,
+        o: { empresas: [{ id: EMP_TRANSPORTISTA, carbonMeasurementEnabled: false }] },
+        resultado: 'opt_in_inactivo',
+        fuente: 'teltonika_gps',
+        motivoDegradacion: null,
+      },
+    ];
+
+    for (const caso of casos) {
+      it(`${caso.nombre} → un evento con resultado=${caso.resultado}, motivo=${caso.motivoDegradacion}`, async () => {
+        (resolverPosicionesSegmento as Mock).mockResolvedValueOnce(caso.pings());
+        if (caso.km !== undefined) {
+          (computeRoutes as Mock).mockResolvedValue(ruta(caso.km));
+        }
+        const db = makeDb({ selects: selects(caso.o ?? {}), updates: [[]] });
+        const { logger, info } = loggerEspia();
+        const res = await runCon(db, logger);
+        expect(res.huella).toBe(caso.resultado);
+        const eventos = eventosCierre(info);
+        expect(eventos).toHaveLength(1);
+        expect(eventos[0]).toMatchObject({
+          tripId: TRIP_ID,
+          resultado: caso.resultado,
+          fuente: caso.fuente,
+          motivoDegradacion: caso.motivoDegradacion,
+        });
+      });
+    }
+  });
 });
