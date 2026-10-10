@@ -655,6 +655,11 @@ steps:
       - --memory=512Mi
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-notification-service]
+    # Tolerado hasta el `terraform apply` de T10-21 (issue #784). Sin el
+    # apply, el servicio no tiene TWILIO_*: la imagen sale con exit 1 al
+    # validar su config, la revisión no queda lista y `services update`
+    # falla. Así el release sigue y el servicio queda en la revisión anterior.
+    allowFailure: true
 
   # apps/matching-engine — request-driven (min-instances=1 contra cold start
   # en el camino síncrono del matching). El tráfico real lo deciden los flags
@@ -679,6 +684,11 @@ steps:
       - --memory=512Mi
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-matching-engine]
+    # Tolerado hasta el `terraform apply` de T10-21 (issue #784). Sin el
+    # apply, el servicio no tiene OIDC_AUDIENCE ni ALLOWED_CALLER_SA: la imagen
+    # sale con exit 1 al validar su config y `services update` falla. Así el
+    # release sigue y el servicio queda en la revisión anterior.
+    allowFailure: true
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   #
