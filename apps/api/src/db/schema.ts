@@ -562,6 +562,12 @@ export const empresas = pgTable(
     }),
     contratoProgramadoActivadoPor: text('contrato_programado_activado_por'),
     /**
+     * ADR-079 §4 — plan de transportista con gestión de flota (tarifa por
+     * camión mayor). Lo activa el platform-admin; null = plan base.
+     */
+    gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
+    gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
+    /**
      * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
      * de métricas/billing y limpiar con un solo DELETE cascada por FK.
      */
@@ -2321,6 +2327,24 @@ export const facturasBoosterClp = pgTable(
     cobroReintentoIdx: index('idx_facturas_cobro_reintento')
       .on(table.cobroProximoIntentoEn)
       .where(sql`${table.cobroEstado} IN ('pending_payment_provider', 'reintentando')`),
+  }),
+);
+
+/**
+ * ADR-079 §4 — valor de la UF por día (migración 0060). Fuente CMF con
+ * respaldo SII; la factura captura su propio `uf_valor_clp`.
+ */
+export const valoresUf = pgTable(
+  'valores_uf',
+  {
+    fecha: date('fecha').primaryKey(),
+    valorClp: numeric('valor_clp', { precision: 12, scale: 2 }).notNull(),
+    fuente: text('fuente').notNull(),
+    obtenidoEn: timestamp('obtenido_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    valorCheck: check('chk_valores_uf_valor', sql`${table.valorClp} > 0`),
+    fuenteCheck: check('chk_valores_uf_fuente', sql`${table.fuente} IN ('cmf', 'sii')`),
   }),
 );
 

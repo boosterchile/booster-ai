@@ -191,4 +191,62 @@ describe('contrato programado (ADR-079 §2)', () => {
       await screen.findByText(/No se pudo cambiar el contrato programado/),
     ).toBeInTheDocument();
   });
+
+  it('gestión de flota: lista transportistas y activa uno', async () => {
+    const TRA = {
+      ...GEN,
+      empresaId: '00000000-0000-4000-8000-0000000000e2',
+      razonSocial: 'Fletes Dos SpA',
+    };
+    getSpy.mockImplementation(async (path: string) => {
+      if (path === '/admin/configuracion-comercial/gestion-flota') {
+        return { transportistas: [TRA] };
+      }
+      if (path === '/admin/configuracion-comercial/contrato-programado') {
+        return { generadores: [] };
+      }
+      return { publicada: version(2), historial: [version(2)] };
+    });
+    putSpy.mockResolvedValueOnce({
+      ok: true,
+      transportista: {
+        ...TRA,
+        activadoEn: '2026-10-08T12:00:00.000Z',
+        activadoPor: 'admin@boosterchile.com',
+      },
+    });
+    const user = userEvent.setup();
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    await user.click(
+      await screen.findByRole('button', { name: 'Habilitar gestión de flota de Fletes Dos SpA' }),
+    );
+    await waitFor(() =>
+      expect(putSpy).toHaveBeenCalledWith(
+        `/admin/configuracion-comercial/gestion-flota/${TRA.empresaId}`,
+        { activo: true },
+      ),
+    );
+    expect(
+      await screen.findByRole('button', {
+        name: 'Deshabilitar gestión de flota de Fletes Dos SpA',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('No hay empresas generadoras.')).toBeInTheDocument();
+  });
+
+  it('gestión de flota: error al cargar la lista se muestra', async () => {
+    getSpy.mockImplementation(async (path: string) => {
+      if (path === '/admin/configuracion-comercial/gestion-flota') {
+        throw new Error('red');
+      }
+      if (path === '/admin/configuracion-comercial/contrato-programado') {
+        return { generadores: [GEN] };
+      }
+      return { publicada: version(2), historial: [version(2)] };
+    });
+    render(<PlatformAdminConfiguracionComercialRoute />);
+    expect(
+      await screen.findByText('No se pudo cargar la lista de transportistas.'),
+    ).toBeInTheDocument();
+  });
 });

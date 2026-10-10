@@ -93,6 +93,52 @@ T&C v3 y el encendido del flag quedan fuera de esta spec. Son ADR-079 §Acciones
 - [x] Los tests v2 existentes pasan sin cambios de expectativa.
 - [ ] Coverage ≥ 80 %, lint, typecheck, build, `lint:rls` y route default-deny en verde (ver Evidencia del PR).
 
+## PR 5 — Suscripciones en UF
+
+### Decisiones del PO (2026-10-08)
+
+- **Fuente del valor UF**: API v3 de la CMF (requiere `CMF_API_KEY`), con respaldo en la tabla anual del SII. ADR-079 §4 nombra solo al SII; la CMF es la fuente oficial con API y el SII queda de respaldo.
+- **IVA**: los precios en UF son **netos** y se les suma el IVA de la configuración publicada. Así, `subtotal_clp = round(monto_uf × uf_valor_clp)`, `iva_clp = round(subtotal_clp × iva)` y `total_clp = subtotal_clp + iva_clp`. Esto se aparta de la letra de ADR-079 Verificación 5 (`total_clp = round(monto_uf × uf_valor_clp)`), que dejaba la suscripción sin IVA. La regla de la Verificación 5 se cumple sobre `subtotal_clp`.
+- **Quién paga**: el cobro es automático.
+  - Toda empresa `activa` (sin demo ni usuarios de prueba) con rol generador paga `suscripcion_generador_uf_empresa_mes`.
+  - Con rol transportista paga por camión (vehículo **motriz** y **activo**) sobre `camiones_sin_cobro_por_transportista`. Con el valor inicial 1, una empresa con 1 camión no paga y una con 3 paga 2.
+  - El plan con gestión de flota lo activa el platform-admin por empresa (`empresas.gestion_flota_activada_en`), igual que el contrato programado.
+  - Una empresa con ambos roles recibe una sola factura con las dos líneas.
+
+### Salidas
+
+1. Migración `0060_suscripciones_uf.sql` (expand-only, con su down): tabla `valores_uf` (`fecha` PK, `valor_clp`, `fuente` ∈ {cmf, sii}) y `empresas.gestion_flota_activada_en/_por`.
+2. `calcularCobroSuscripcionUf` (pricing-engine, pura): líneas por concepto, `monto_uf` a 4 decimales, CLP con HALF_UP y vencimiento a 14 días.
+3. `obtenerValorUf`:
+   - lee `valores_uf`; si falta, consulta CMF → SII y guarda el primero que responde;
+   - un valor fuera de 20.000–100.000 CLP se rechaza (falla cerrado ante un cambio de formato);
+   - métricas `pricing.valor_uf_obtenido{fuente}` y `pricing.valor_uf_fallo{fuente}`.
+4. `cobrarSuscripcionesUf`:
+   - una factura por empresa y mes, reutilizando `tipo = 'membership_mensual'` y su UNIQUE parcial;
+   - captura `monto_uf` y `uf_valor_clp`;
+   - aplica el dunning y el gateway v2, que sigue **stubeado**;
+   - métrica `pricing.suscripcion_facturada{concepto}`.
+5. `POST /admin/jobs/cobrar-memberships-mensual`: con `PRICING_V3_ACTIVATED` cobra suscripciones UF en vez de membresías v2. Responde 503 `valor_uf_no_disponible` si ninguna fuente responde.
+6. `POST /admin/jobs/valor-uf`: un tick diario que deja guardado el valor del día.
+7. Admin:
+   - `GET`/`PUT /admin/configuracion-comercial/gestion-flota[/:empresaId]`;
+   - en la página admin, una sección "Gestión de flota" con el mismo componente que el contrato programado.
+8. Terraform (`infrastructure/valor-uf.tf`, sin IAM):
+   - secreto `cmf-api-key` con placeholder, montado como `CMF_API_KEY`; el placeholder cuenta como ausente;
+   - job `valor-uf-diario` a las 07:15 Santiago;
+   - el job de cobro mensual existente (`cobrar-memberships-mensual`) sirve a ambos modelos y su activación sigue siendo `var.cobro_mensual_activado`.
+
+### Criterios de éxito
+
+- [x] Rojo exhibido (dominio pricing) en `calcularCobroSuscripcionUf` y en `obtenerValorUf`/parsers, antes de implementar. `suscripcion-uf.ts` al 100 % de líneas.
+- [x] Integración contra Postgres:
+  - el cobro factura por rol, umbral y gestión de flota, y excluye bajo el umbral y demo;
+  - `subtotal_clp = round(monto_uf × uf_valor_clp)` en cada factura;
+  - repetir el tick no duplica;
+  - `obtenerValorUf` cae al SII, guarda la fuente y luego sirve desde la base.
+- [x] `CMF_API_KEY` ausente, vacía o con placeholder → `undefined` (test de config).
+- [ ] Verificación contra las fuentes reales: el sandbox de desarrollo no tiene salida a sii.cl ni a api.cmfchile.cl. Los parsers siguen el formato documentado (`{"UFs":[{"Valor":"39.485,65","Fecha":"AAAA-MM-DD"}]}` y la tabla `table_export` del SII). La primera corrida de `valor-uf-diario` en producción es la prueba; si una fuente cambió de formato, el job loguea `fuente UF falló` y usa la otra.
+
 ## Reglas transversales (todas las PR)
 
 - **Los valores comerciales nunca vienen de env, Terraform ni código.** La migración siembra la versión 1 y de ahí en adelante manda la tabla (ADR-079 §3).

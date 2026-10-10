@@ -421,6 +421,13 @@
       "when": 1780876800023,
       "tag": "0059_modelo_comercial_v3",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1780876800024,
+      "tag": "0060_suscripciones_uf",
+      "breakpoints": true
     }
   ]
 }
