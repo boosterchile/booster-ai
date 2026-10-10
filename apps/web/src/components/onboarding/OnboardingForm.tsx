@@ -9,12 +9,20 @@ import { useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, ArrowRight, Building2, Check, Layers, Truck, User } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
+import type { z } from 'zod';
 import {
   type OnboardingResponse,
   useOnboardingMutation,
 } from '../../hooks/use-onboarding-mutation.js';
 import type { ApiError } from '../../lib/api-client.js';
 import { FormField, inputClass } from '../FormField.js';
+
+/**
+ * Valores del formulario ANTES del parse: los campos con brand (RUT,
+ * teléfono, clave) parten como string vacío o prefijo y el `zodResolver`
+ * los valida y transforma al enviar (`EmpresaOnboardingInput`).
+ */
+type EmpresaOnboardingFormValues = z.input<typeof empresaOnboardingInputSchema>;
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -33,20 +41,20 @@ const STEPS: ReadonlyArray<{
 function buildDefaults(opts: {
   firebaseEmail: string;
   firebaseName: string | undefined;
-}): EmpresaOnboardingInput {
+}): EmpresaOnboardingFormValues {
   return {
     user: {
       full_name: opts.firebaseName ?? '',
-      phone: '+569' as unknown as EmpresaOnboardingInput['user']['phone'],
-      whatsapp_e164: '+569' as unknown as EmpresaOnboardingInput['user']['whatsapp_e164'],
-      rut: '' as unknown as EmpresaOnboardingInput['user']['rut'],
-      clave_numerica: '' as unknown as EmpresaOnboardingInput['user']['clave_numerica'],
+      phone: '+569',
+      whatsapp_e164: '+569',
+      rut: '',
+      clave_numerica: '',
     },
     empresa: {
       legal_name: '',
-      rut: '' as unknown as EmpresaOnboardingInput['empresa']['rut'],
+      rut: '',
       contact_email: opts.firebaseEmail,
-      contact_phone: '+569' as unknown as EmpresaOnboardingInput['empresa']['contact_phone'],
+      contact_phone: '+569',
       address: {
         street: '',
         commune: '',
@@ -152,7 +160,7 @@ export function OnboardingForm({
   const internalMutation = useOnboardingMutation();
   const mutation = injectedMutation ?? internalMutation;
 
-  const methods = useForm<EmpresaOnboardingInput>({
+  const methods = useForm<EmpresaOnboardingFormValues>({
     resolver: zodResolver(empresaOnboardingInputSchema),
     mode: 'onBlur',
     defaultValues: buildDefaults({ firebaseEmail, firebaseName }),
@@ -244,11 +252,11 @@ export function OnboardingForm({
     }
   }
 
-  async function onSubmit(values: EmpresaOnboardingInput) {
+  async function onSubmit(values: EmpresaOnboardingFormValues) {
     // Pre-procesar RUTs: si user tipeó solo dígitos (teclado móvil),
     // insertar guión automáticamente antes del dígito verificador.
     // Idempotente para inputs ya bien formateados. user.rut es opcional.
-    const normalized: EmpresaOnboardingInput = {
+    const normalized: EmpresaOnboardingFormValues = {
       ...values,
       user: {
         ...values.user,
@@ -256,8 +264,17 @@ export function OnboardingForm({
       },
       empresa: { ...values.empresa, rut: ensureRutHasDash(values.empresa.rut) },
     };
+    // El resolver ya validó lo tipeado; el parse da el tipo de salida (con
+    // brands) sin casts y revalida los RUT normalizados. Si falla, se
+    // muestran los errores de campo en vez de enviar.
+    const parsed = empresaOnboardingInputSchema.safeParse(normalized);
+    if (!parsed.success) {
+      await methods.trigger();
+      return;
+    }
+    const input: EmpresaOnboardingInput = parsed.data;
     try {
-      await mutation.mutateAsync(normalized);
+      await mutation.mutateAsync(input);
       void navigate({ to: '/app' });
     } catch {
       // mutation.error ya tiene el ApiError; el render lo muestra abajo.
@@ -754,7 +771,7 @@ function PlanCard(props: {
   );
 }
 
-function SummaryReview({ values }: { values: EmpresaOnboardingInput }) {
+function SummaryReview({ values }: { values: EmpresaOnboardingFormValues }) {
   return (
     <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-4">
       <h3 className="font-medium text-neutral-900 text-sm">Resumen</h3>

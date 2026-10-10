@@ -21,7 +21,7 @@ Si la decisión es **NO** correr canary (e.g., hotfix urgente, deploy-trivial si
 
 | Step | Duración | Acción |
 |---|---|---|
-| `deploy-canary` | ~30-60s | `gcloud run services update --image=... --tag=canary-signup-<sha> --no-traffic`. La nueva revision queda registrada pero recibe 0% del traffic. |
+| `deploy-canary` | ~30-60s | `gcloud run services update --image=... --no-traffic` y luego `gcloud run services update-traffic --update-tags=canary-signup-<sha>=<revisión>`. La nueva revision queda registrada pero recibe 0% del traffic. El tag va aparte para que Cloud Run nombre la revisión y Terraform no vea drift (T10-06). |
 | `route-canary` | ~5-10s | `gcloud run services update-traffic --to-tags=canary-signup-<sha>=1`. 1% del traffic empieza a ir al canary; 99% sigue en la revision anterior. |
 | `canary-sleep` | **30 min exactos** | `sleep 1800`. Synthetic monitor `signup_probe` corre cada 60s (= 30 probes) durante esta ventana. |
 | `canary-verify` | ~10-30s | Query Cloud Monitoring API para validar error_rate < 1% AND p95_latency < 500ms sobre el canary tag. Exit 1 si fail. |

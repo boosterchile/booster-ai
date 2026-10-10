@@ -136,15 +136,14 @@ function parseDateTime(s: string): number | null {
   if (!m) {
     return null;
   }
-  const [, y, mo, d, h, mi, se] = m as unknown as [
-    string,
-    string,
-    string,
-    string,
-    string,
-    string,
-    string,
-  ];
+  // Con match, la regex garantiza las 6 capturas; `?? ''` solo satisface
+  // `noUncheckedIndexedAccess` y nunca se usa.
+  const y = m[1] ?? '';
+  const mo = m[2] ?? '';
+  const d = m[3] ?? '';
+  const h = m[4] ?? '';
+  const mi = m[5] ?? '';
+  const se = m[6] ?? '';
   const ts = Date.UTC(
     Number.parseInt(y, 10),
     Number.parseInt(mo, 10) - 1,
