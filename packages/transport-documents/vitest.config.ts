@@ -11,7 +11,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [
         'src/**/*.d.ts',
-        'src/**/index.ts',
+
         'src/**/*.test.ts',
         'src/**/*.spec.ts',
         // El render WASM (pdfium) y la decodificación PDF417 (zxing-wasm) son

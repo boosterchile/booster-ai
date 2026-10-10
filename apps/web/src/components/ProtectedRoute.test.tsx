@@ -26,7 +26,6 @@ function flagsWith(overrides: { auth_universal_v1_activated?: boolean } = {}) {
       auth_universal_v1_activated: overrides.auth_universal_v1_activated ?? false,
       wake_word_voice_activated: false,
       matching_algorithm_v2_activated: false,
-      demo_mode_activated: false,
     },
     isLoading: false,
     isError: false,
