@@ -45,8 +45,7 @@ const STAKEHOLDER_MEMBERSHIP_ROLE = 'stakeholder_sostenibilidad' as const;
 export function createAdminStakeholderOrgsRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

@@ -37,8 +37,7 @@ export function createCertificatesRoutes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireShipperAuth(c: Context<any, any, any>) {
+  function requireShipperAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
