@@ -43,17 +43,17 @@ describe('resumirHubVehiculo', () => {
     expect(resumen.alertaUltima).toBeNull();
   });
 
-  it('no calcula km/L aunque haya km y litros', () => {
+  it('arma el km/L como Σkm/ΣL cuando hay litros', () => {
     const resumen = resumirHubVehiculo([
       trayecto({ distanciaKm: 100, litrosConsumidos: 25, kmPorLitro: null, ctaSensor: false }),
     ]);
-    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.kmPorLitro).toBe(4);
     expect(resumen.kmRecientes).toBe(100);
     expect(resumen.litrosRecientes).toBe(25);
     expect(resumen.ctaSensor).toBe(false);
   });
 
-  it('toma el km/L del trayecto más reciente que ya lo trae', () => {
+  it('ordena por fin y no copia un km/L si el trayecto no trae litros', () => {
     const resumen = resumirHubVehiculo([
       trayecto({
         id: 'viejo',
@@ -75,8 +75,48 @@ describe('resumirHubVehiculo', () => {
       }),
     ]);
     expect(resumen.ultimo?.id).toBe('nuevo');
-    expect(resumen.kmPorLitro).toBe(4.5);
+    expect(resumen.kmPorLitro).toBeNull();
     expect(resumen.recientes.map((t) => t.id)).toEqual(['nuevo', 'medio', 'viejo']);
+  });
+
+  it('el KPI es Σkm/ΣL de la ventana, no el promedio de los km/L', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'largo',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'corto',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 10,
+        litrosConsumidos: 10,
+        kmPorLitro: 1,
+        ctaSensor: false,
+      }),
+    ]);
+    const promedioDeRatios = (5 + 1) / 2;
+    expect(promedioDeRatios).toBe(3);
+    expect(resumen.kmPorLitro).toBe(3.67);
+    expect(resumen.kmPorLitro).not.toBe(resumen.ultimo?.kmPorLitro);
+    expect(resumen.ultimo?.id).toBe('corto');
+  });
+
+  it('un km/L de ventana sobre el tope queda oculto y los litros siguen en la suma', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 294.93,
+        litrosConsumidos: 24,
+        kmPorLitro: 12.29,
+        notaCombustible: 'dato no confiable',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(resumen.litrosRecientes).toBe(24);
+    expect(resumen.kmPorLitro).toBeNull();
   });
 
   it('cuenta alertas de toda la ventana y deja la más reciente', () => {

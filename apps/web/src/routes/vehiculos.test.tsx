@@ -1135,6 +1135,50 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.getByTestId('hub-estado')).toHaveTextContent(/sin señal/i);
   });
 
+  it('con litros y sin km/L la tarjeta dice dato no confiable', async () => {
+    const trayecto = {
+      id: 't-3',
+      vehiculo_id: 'veh-1',
+      patente: 'JLKT54',
+      inicio: '2026-09-22T21:11:00.000Z',
+      fin: '2026-09-23T01:07:00.000Z',
+      distancia_km: 294.93,
+      litros_consumidos: 24,
+      km_por_litro: null,
+      posible_robo_combustible: false,
+      posible_robo_hormiga: false,
+      event_lat: null,
+      event_lon: null,
+    };
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: trayecto,
+            recientes: [trayecto],
+            km_recientes: 294.93,
+            litros_recientes: 24,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText('dato no confiable')).toBeInTheDocument();
+    expect(screen.queryByText(/12,29 km\/L/)).toBeNull();
+  });
+
   it('el conductor no consulta trayectos y conserva ver en vivo', async () => {
     const get = vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
       if (path === '/vehiculos/veh-1') {
