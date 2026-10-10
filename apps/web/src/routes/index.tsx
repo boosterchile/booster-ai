@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/use-auth.js';
 /**
  * `/` — landing redirect.
  *
- *   - No logueado → /login (también en `demo.boosterchile.com`: /demo retirado)
+ *   - No logueado → /login
  *   - Logueado    → /app
  *
  * Mientras useAuth().loading=true mostramos splash mínimo.
@@ -20,7 +20,5 @@ export function IndexRoute() {
     );
   }
 
-  // Ruteo del subdominio demo.boosterchile.com → /demo RETIRADO
-  // (chore/retiro-subsistema-demo).
   return <Navigate to={user ? '/app' : '/login'} />;
 }

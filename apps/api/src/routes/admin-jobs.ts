@@ -23,7 +23,6 @@ import type { Logger } from '@booster-ai/logger';
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
-import type Redis from 'ioredis';
 import type pg from 'pg';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -43,7 +42,8 @@ import {
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
-import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
+import { cobrarSuscripcionesUf } from '../services/cobrar-suscripciones-uf.js';
+import { leerConfiguracionPublicada } from '../services/configuracion-comercial.js';
 import {
   type MembershipPaymentGateway,
   noopMembershipPaymentGateway,
@@ -53,6 +53,26 @@ import { leerViajesEntregados } from '../services/observatorio/viajes-entregados
 import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-hoy.js';
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
+import {
+  ValorUfNoDisponibleError,
+  fechaChile,
+  obtenerValorUf,
+  proveedoresUfPorDefecto,
+} from '../services/valor-uf.js';
+
+/**
+ * `pg.Pool` con la firma mínima que piden los reapers (`PoolLike`). Las
+ * sobrecargas de `pg.Pool.query` no calzan estructuralmente con esa interfaz;
+ * este adaptador las reduce a la única forma que usan, sin casts.
+ */
+function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      const resultado = await pool.query(sql, params);
+      return { rows: resultado.rows, rowCount: resultado.rowCount };
+    },
+  };
+}
 
 export function createAdminJobsRoutes(opts: {
   db: Db;
@@ -60,10 +80,8 @@ export function createAdminJobsRoutes(opts: {
   twilioClient: TwilioWhatsAppClient | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
-  /** T6a SEC-001 Sprint 2a — para POST /demo-account-ttl-alert. Null en tests sin Firebase. */
+  /** Para el reaper de cuentas IdP. Null en tests sin Firebase. */
   firebaseAuth?: Auth | null;
-  /** T6a SEC-001 Sprint 2a — para dedup Redis del TTL alerter. */
-  redis?: Redis | null;
   /** T9 SEC-001 boundary-closure — pool pg para el reaper (fetchReaperFacts). Null en tests sin DB. */
   pool?: pg.Pool | null;
   /**
@@ -101,6 +119,43 @@ export function createAdminJobsRoutes(opts: {
       return res;
     });
     return c.json({ ok: true, filas: r.filas });
+  });
+
+  /** ADR-079 §4 — valor UF: CMF (si hay `CMF_API_KEY`) con respaldo SII. */
+  const valorUfDe = (fecha: string) =>
+    obtenerValorUf({
+      db: opts.db,
+      logger: opts.logger,
+      fecha,
+      proveedores: proveedoresUfPorDefecto(appConfig.CMF_API_KEY),
+    });
+
+  /**
+   * ADR-079 §4 — tick diario: deja guardado el valor UF del día en
+   * `valores_uf` (caché auditada con su fuente). 503 si ninguna fuente
+   * responde, para que Cloud Scheduler reintente.
+   */
+  app.post('/valor-uf', async (c) => {
+    try {
+      const r = await withBusinessSpan({ name: 'pricing.valor_uf.obtener' }, async (span) => {
+        const v = await valorUfDe(fechaChile(Date.now()));
+        setResultAttributes(span, { 'booster.valor_uf.fuente': v.fuente });
+        return v;
+      });
+      return c.json({
+        ok: true,
+        fecha: r.fecha,
+        valor_clp: r.valorClp,
+        fuente: r.fuente,
+        desde_cache: r.desdeCache,
+      });
+    } catch (err) {
+      if (err instanceof ValorUfNoDisponibleError) {
+        opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'valor UF no disponible');
+        return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+      }
+      throw err;
+    }
   });
 
   app.post('/chat-whatsapp-fallback', async (c) => {
@@ -169,6 +224,53 @@ export function createAdminJobsRoutes(opts: {
    * success). Idempotente: re-correr el tick no cobra dos veces el mismo ciclo.
    */
   app.post('/cobrar-memberships-mensual', async (c) => {
+    // ADR-079 §4: con v3 encendido el cobro mensual es de suscripciones en
+    // UF; la membresía v2 deja de habilitar cobro alguno.
+    if (appConfig.PRICING_V3_ACTIVATED) {
+      const gateway = opts.membershipPaymentGateway ?? noopMembershipPaymentGateway(opts.logger);
+      try {
+        const r = await withBusinessSpan(
+          { name: 'pricing.suscripciones_uf.cobrar' },
+          async (span) => {
+            const res = await cobrarSuscripcionesUf({
+              db: opts.db,
+              logger: opts.logger,
+              gateway,
+              obtenerUf: valorUfDe,
+              leerConfiguracion: () => leerConfiguracionPublicada(opts.db),
+            });
+            setResultAttributes(span, {
+              'booster.suscripciones_uf.facturas_creadas': res.facturasCreadas,
+            });
+            return res;
+          },
+        );
+        return c.json({
+          ok: true,
+          modelo: 'v3_suscripciones_uf',
+          periodo_mes: r.periodoMes,
+          fecha_uf: r.fechaUf,
+          uf_valor_clp: r.ufValorClp,
+          uf_fuente: r.ufFuente,
+          configuracion_version: r.configuracionVersion,
+          evaluadas: r.evaluadas,
+          facturas_creadas: r.facturasCreadas,
+          reintentos: r.reintentos,
+          pending_provider: r.pendingProvider,
+          cobradas: r.cobradas,
+          morosas: r.morosas,
+          ya_facturadas: r.yaFacturadas,
+          exentas: r.exentas,
+          payment_rail_stubbed: true,
+        });
+      } catch (err) {
+        if (err instanceof ValorUfNoDisponibleError) {
+          opts.logger.error({ fecha: err.fecha, causas: err.causas }, 'cobro UF sin valor UF');
+          return c.json({ error: 'valor_uf_no_disponible', fecha: err.fecha }, 503);
+        }
+        throw err;
+      }
+    }
     if (!appConfig.PRICING_V2_ACTIVATED) {
       opts.logger.debug('cobrar-memberships-mensual: PRICING_V2_ACTIVATED=false, skip');
       return c.json({ ok: true, skipped: true, reason: 'feature_disabled' });
@@ -199,31 +301,6 @@ export function createAdminJobsRoutes(opts: {
   });
 
   /**
-   * T6a SEC-001 Sprint 2a (spec §3 H1.1 SC-1.1.6) — TTL alerter daily
-   * tick. Cloud Scheduler invoca a 06:00 America/Santiago. Emite
-   * structured log `demo.ttl_low` solo cuando una cuenta demo activa
-   * tiene ≤7 días de TTL restante; Redis dedup por día evita
-   * re-alertar.
-   *
-   * Si Firebase Auth o Redis no están inyectados (tests / dev sin
-   * config), retorna 503 + skipped: true (Cloud Scheduler considera
-   * no-error pero el log queda).
-   */
-  app.post('/demo-account-ttl-alert', async (c) => {
-    if (!opts.firebaseAuth || !opts.redis) {
-      opts.logger.warn('demo-account-ttl-alert: firebaseAuth o redis no inyectado, skip');
-      return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
-    }
-    const result = await runDemoTtlAlerter({
-      db: opts.db,
-      firebaseAuth: opts.firebaseAuth,
-      redis: opts.redis,
-      logger: opts.logger,
-    });
-    return c.json({ ok: true, ...result });
-  });
-
-  /**
    * T9 SEC-001 boundary-closure (SC-G5, ADR-057) — reaper de cuentas IdP
    * Google inertes. Cloud Scheduler invoca diariamente.
    *
@@ -243,7 +320,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-inert-idp-accounts: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as PoolLike;
+    const pool: PoolLike = adaptarPool(opts.pool);
     const neverReapable = new Set<string>([
       ...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
       'dev@boosterchile.com',
@@ -286,7 +363,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-orphan-onboarding-firebase: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as OrphanPoolLike;
+    const pool: OrphanPoolLike = adaptarPool(opts.pool);
     const summary = await reapOrphanOnboardingFirebaseUsers(
       {
         auth: opts.firebaseAuth,

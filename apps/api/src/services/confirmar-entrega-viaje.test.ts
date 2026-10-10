@@ -31,6 +31,7 @@ vi.mock('./generar-coaching-viaje.js', () => ({
 vi.mock('./liquidar-trip.js', () => ({ liquidarTrip: vi.fn(async () => ({ status: 'skipped' })) }));
 
 const { confirmarEntregaViaje } = await import('./confirmar-entrega-viaje.js');
+const { liquidarTrip } = await import('./liquidar-trip.js');
 
 const noop = (): void => undefined;
 const logger = {
@@ -159,6 +160,20 @@ describe('confirmarEntregaViaje — cierre flexible documental (F4-4a)', () => {
     const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
     const r = await confirmarEntregaViaje({ ...baseArgs, db });
     expect(r.ok).toBe(true);
+  });
+
+  it('post-commit: liquida con los flags de pricing v2 y v3 (ADR-079 §6)', async () => {
+    const { db } = makeDb({ tripStatus: 'asignado', tripCreatedAt: corte, documentos: [] });
+    await confirmarEntregaViaje({ ...baseArgs, db });
+    await vi.waitFor(() =>
+      expect(liquidarTrip).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignmentId: ASSIGN_ID,
+          pricingV2Activated: expect.any(Boolean),
+          pricingV3Activated: false,
+        }),
+      ),
+    );
   });
 
   it('flag ON + orden nueva + 0 docs → rechaza con documento_requerido', async () => {

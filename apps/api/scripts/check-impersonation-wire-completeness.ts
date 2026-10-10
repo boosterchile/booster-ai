@@ -2,7 +2,7 @@
 /**
  * CI gate de cobertura del impersonation-write-guard (impersonación auditada).
  *
- * Espejo de `check-is-demo-wire-completeness.ts`: parsea
+ * Usa `collect-middlewares-per-path.ts`: parsea
  * `apps/api/src/server.ts`, identifica los mount points auth-required de
  * usuario final (los que aplican `firebaseAuthMiddleware`) y verifica que CADA
  * uno también aplique `impersonationWriteGuardMiddleware` en su chain. Exit 1
@@ -25,7 +25,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { collectMiddlewaresPerPath } from './check-is-demo-wire-completeness.js';
+import { collectMiddlewaresPerPath } from './collect-middlewares-per-path.js';
 
 const SERVER_FILE = new URL('../src/server.ts', import.meta.url).pathname;
 const FIREBASE_AUTH_IDENTIFIER = 'firebaseAuthMiddleware';
