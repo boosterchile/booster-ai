@@ -126,7 +126,7 @@ function getPubSub(): PubSub {
 
 /**
  * Publica `document.uploaded` fire-and-forget. Si falla, la fila ya está en
- * DB; el worker 4b puede reconciliar por estado `pendiente`. No crashea el
+ * DB en `pendiente` y el cron `documentos-pendientes` la republica (T10-21). No crashea el
  * endpoint (que ya respondió 202).
  */
 async function publishDocumentUploaded(opts: {
@@ -153,7 +153,7 @@ async function publishDocumentUploaded(opts: {
   } catch (err) {
     logger.error(
       { err, documentId, viajeId },
-      'publishDocumentUploaded falló (fila ya en DB; worker 4b reconcilia por estado pendiente)',
+      'publishDocumentUploaded falló (fila ya en DB; el cron documentos-pendientes la republica)',
     );
   }
 }

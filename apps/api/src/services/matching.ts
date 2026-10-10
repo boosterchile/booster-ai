@@ -1,15 +1,11 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  type CarrierCandidateV2,
   MATCHING_CONFIG,
   type NoCandidatesReason,
-  type ScoredCandidate,
-  type ScoredCandidateV2,
-  scoreCandidate,
-  scoreCandidateV2,
-  scoreToInt,
-  scoreToIntV2,
-  selectTopNCandidates,
-  selectTopNCandidatesV2,
+  type ResultadoRanking,
+  type SolicitudRanking,
+  type VehicleCandidate,
 } from '@booster-ai/matching-algorithm';
 import { esEstadoViaje, puedeTransicionar } from '@booster-ai/trip-state-machine';
 import { and, eq, gte, inArray } from 'drizzle-orm';
@@ -25,6 +21,7 @@ import {
   zones,
 } from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+import { type RankeadorMatching, rankeadorLocal } from './matching-ranking.js';
 import { buildCandidateV2, lookupCarriersForV2 } from './matching-v2-lookups.js';
 import { resolveMatchingV2Weights } from './matching-v2-weights.js';
 import { type NotifyOfferDeps, notifyOfferToCarrier } from './notify-offer.js';
@@ -82,6 +79,12 @@ export interface RunMatchingOptions {
    * las offers pero no dispara WhatsApp (útil en tests).
    */
   notify?: NotifyOfferDeps;
+  /**
+   * T10-21 — quién rankea a los candidatos: en proceso (default) o
+   * apps/matching-engine según MATCHING_VIA_MICROSERVICE / MATCHING_SHADOW
+   * (`services/matching-ranking.ts`).
+   */
+  ranking?: RankeadorMatching;
 }
 
 export async function runMatching(opts: RunMatchingOptions): Promise<MatchingResult> {
@@ -110,6 +113,10 @@ export async function runMatching(opts: RunMatchingOptions): Promise<MatchingRes
 
 async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResult> {
   const { db, logger, tripId, notify } = opts;
+  const ranking = opts.ranking ?? rankeadorLocal;
+  // Solicitud y resultado del ranking, para la comparación en sombra
+  // post-commit (null si el matching terminó sin candidatos).
+  let rankeo: { solicitud: SolicitudRanking; resultado: ResultadoRanking } | null = null;
 
   return await db
     .transaction(async (tx) => {
@@ -211,8 +218,8 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
         ? resolveMatchingV2Weights(logger)
         : null;
 
-      const candidatesV1: ScoredCandidate[] = [];
-      const candidatesV2: ScoredCandidateV2[] = [];
+      const candidatosV1: VehicleCandidate[] = [];
+      const candidatosV2: CarrierCandidateV2[] = [];
 
       // Vehículos aptos de TODAS las empresas candidatas en una sola query
       // (evita N+1: antes era 1 SELECT por empresa en el loop). El orden
@@ -249,40 +256,27 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
 
         const vehicleCapacityKg = veh.capacityKg;
 
-        if (algorithmVersion === 'v2' && v2Lookups && v2Weights) {
+        if (algorithmVersion === 'v2' && v2Lookups) {
           const lookup = v2Lookups.get(emp.id);
           if (!lookup) {
             // No debería pasar (Map debe tener entry por empresaId).
             // Defensa: skip.
             continue;
           }
-          const candidate = buildCandidateV2({
-            empresaId: emp.id,
-            vehicleId: veh.id,
-            vehicleCapacityKg,
-            lookup,
-          });
-          const scored = scoreCandidateV2(
-            candidate,
-            { cargoWeightKg: cargoWeight, originRegionCode: trip.originRegionCode },
-            v2Weights,
+          candidatosV2.push(
+            buildCandidateV2({
+              empresaId: emp.id,
+              vehicleId: veh.id,
+              vehicleCapacityKg,
+              lookup,
+            }),
           );
-          candidatesV2.push(scored);
         } else {
-          const score = scoreCandidate(
-            { empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg },
-            cargoWeight,
-          );
-          candidatesV1.push({
-            empresaId: emp.id,
-            vehicleId: veh.id,
-            vehicleCapacityKg,
-            score,
-          });
+          candidatosV1.push({ empresaId: emp.id, vehicleId: veh.id, vehicleCapacityKg });
         }
       }
 
-      const candidatesCount = candidatesV1.length + candidatesV2.length;
+      const candidatesCount = candidatosV1.length + candidatosV2.length;
       if (candidatesCount === 0) {
         logger.info(
           { tripId, reason: 'no_vehicle_with_capacity', algorithmVersion },
@@ -291,32 +285,37 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
         return await finalizeNoCandidates(tx, trip.id, 'no_vehicle_with_capacity');
       }
 
-      // 4. Top N por score (rama según versión del algoritmo).
+      // 4. Ranking (scoring + top-N): en proceso o en matching-engine (T10-21).
+      const solicitud: SolicitudRanking =
+        algorithmVersion === 'v2' && v2Weights
+          ? {
+              algoritmo: 'v2',
+              cargoWeightKg: cargoWeight,
+              originRegionCode: trip.originRegionCode,
+              maxOfertas: MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST,
+              pesos: v2Weights,
+              candidatos: candidatosV2,
+            }
+          : {
+              algoritmo: 'v1',
+              cargoWeightKg: cargoWeight,
+              maxOfertas: MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST,
+              candidatos: candidatosV1,
+            };
+      const resultado = await ranking.rankear(solicitud);
+      rankeo = { solicitud, resultado };
+
       const expiresAt = new Date(Date.now() + MATCHING_CONFIG.OFFER_TTL_MINUTES * 60_000);
       const proposedPrice = trip.proposedPriceClp ?? 0;
-
-      const offerRowsToInsert =
-        algorithmVersion === 'v2'
-          ? selectTopNCandidatesV2(candidatesV2, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST).map(
-              (c) => ({
-                tripId: trip.id,
-                empresaId: c.empresaId,
-                suggestedVehicleId: c.vehicleId,
-                score: scoreToIntV2(c.score),
-                status: 'pendiente' as const,
-                proposedPriceClp: proposedPrice,
-                expiresAt,
-              }),
-            )
-          : selectTopNCandidates(candidatesV1).map((c) => ({
-              tripId: trip.id,
-              empresaId: c.empresaId,
-              suggestedVehicleId: c.vehicleId,
-              score: scoreToInt(c.score),
-              status: 'pendiente' as const,
-              proposedPriceClp: proposedPrice,
-              expiresAt,
-            }));
+      const offerRowsToInsert = resultado.top.map((c) => ({
+        tripId: trip.id,
+        empresaId: c.empresaId,
+        suggestedVehicleId: c.vehicleId,
+        score: c.scoreInt,
+        status: 'pendiente' as const,
+        proposedPriceClp: proposedPrice,
+        expiresAt,
+      }));
 
       // 5. Crear offers.
       const created = await tx.insert(offers).values(offerRowsToInsert).returning();
@@ -324,14 +323,13 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
       // Log estructurado del v2 score breakdown para observabilidad.
       // Permite reconstruir por qué cada carrier recibió oferta —
       // requerimiento de ADR-033 §10 (métricas observables).
-      if (algorithmVersion === 'v2' && candidatesV2.length > 0) {
-        const topV2 = selectTopNCandidatesV2(candidatesV2, MATCHING_CONFIG.MAX_OFFERS_PER_REQUEST);
+      if (resultado.algoritmo === 'v2' && resultado.top.length > 0) {
         logger.info(
           {
             tripId,
             algorithmVersion,
             weights: v2Weights,
-            candidates_scored: topV2.map((c) => ({
+            candidates_scored: resultado.top.map((c) => ({
               empresaId: c.empresaId,
               vehicleId: c.vehicleId,
               score: c.score,
@@ -386,6 +384,11 @@ async function runMatchingInner(opts: RunMatchingOptions): Promise<MatchingResul
       };
     })
     .then(async (result) => {
+      // Sombra (T10-21): comparación contra matching-engine tras el commit,
+      // fire-and-forget; no agrega latencia al usuario.
+      if (rankeo) {
+        ranking.trasCommit(rankeo.solicitud, rankeo.resultado);
+      }
       // Fire-and-forget de las notificaciones — DESPUÉS de cerrar la
       // transacción para no inflar su latencia.
       if (notify && result.offers.length > 0) {

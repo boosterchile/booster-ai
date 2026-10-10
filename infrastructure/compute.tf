@@ -89,6 +89,9 @@ locals {
   # https://<service-name>-<project-number>.<region>.run.app.
   cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
   cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
+  # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
+  # esta URL) + Cloud Run IAM.
+  cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -124,6 +127,21 @@ module "service_api" {
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # T10-21 — ranking de matching en matching-engine. Flags en `false` por
+    # default: el apply no cambia el comportamiento.
+    MATCHING_ENGINE_URL       = local.cloud_run_matching_url
+    MATCHING_SHADOW           = tostring(var.matching_shadow)
+    MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
+
+    # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
+    # en `false` por default: el apply no cambia el comportamiento.
+    NOTIFICATION_EVENTS_TOPIC      = google_pubsub_topic.notification_events.name
+    NOTIFICATIONS_SHADOW           = tostring(var.notifications_shadow)
+    NOTIFICATIONS_VIA_MICROSERVICE = tostring(var.notifications_via_microservice)
+
+    # T10-21: sin este topic el api omite el publish (`config.ts` lo trata como
+    # opcional) y todo documento queda en `pendiente` sin que el worker lo vea.
+    DOCUMENT_UPLOADED_TOPIC = google_pubsub_topic.document_uploaded.name
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -460,26 +478,40 @@ module "service_matching_engine" {
   service_name          = "booster-ai-matching-engine"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
+  # la transacción del matching). min_instances=1 evita el cold start en ese
+  # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
+  # Cómputo puro: sin DB, sin Redis, sin secretos, sin VPC connector.
+  min_instances = 1
   max_instances = 10
+  cpu           = "1"
+  memory        = "512Mi"
 
-  env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-matching-engine"
-    REDIS_HOST   = google_redis_instance.main.host
-    REDIS_PORT   = tostring(google_redis_instance.main.port)
-  })
-  secrets = local.common_secrets
-
-  vpc_connector = google_vpc_access_connector.serverless.id
+  env_vars = {
+    NODE_ENV        = var.environment == "prod" ? "production" : "staging"
+    LOG_LEVEL       = "info"
+    SERVICE_NAME    = "booster-ai-matching-engine"
+    SERVICE_VERSION = "0.0.0"
+    # otel-bootstrap es no-op sin el proyecto (trazas a Cloud Trace).
+    GOOGLE_CLOUD_PROJECT = var.project_id
+    # El servicio verifica el ID token además de Cloud Run IAM: aud = su URL,
+    # email = SA runtime del api.
+    OIDC_AUDIENCE     = local.cloud_run_matching_url
+    ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
+  }
+  secrets = {}
 
   public = false
 
-  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
-  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
-  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
-  # run.app a nivel de red → un token de invoker robado deja de ser explotable
-  # desde internet (contención de blast-radius; IAM era la única barrera).
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  # INGRESS_TRAFFIC_ALL + IAM (`roles/run.invoker` solo para el SA runtime,
+  # matching-engine.tf), el patrón estándar Cloud Run → Cloud Run. ADR-063
+  # cerró a INTERNAL_ONLY los consumers PULL por no tener callers HTTP; este
+  # servicio sí tiene uno (el api), y el api sale por el connector con egress
+  # PRIVATE_RANGES_ONLY sin Cloud NAT: con INTERNAL_ONLY su request por la IP
+  # pública del run.app sería rechazada. Superficie mínima: un token robado
+  # solo obtiene rankings de los datos que él mismo envía (sin lectura ni
+  # efectos). Spec: .specs/matching-engine-t10-21/spec.md §Seguridad.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -556,24 +588,32 @@ module "service_notification" {
   service_name          = "booster-ai-notification-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
-  max_instances = 20
+  # T10-21: consumer Pub/Sub PULL de `notification-events` (StreamingPull en
+  # main.ts). min_instances=1 + cpu_idle=false son obligatorios: con min=0 la
+  # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
+  # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
+  # estado (sin DB ni Redis): 512 Mi alcanzan.
+  min_instances = 1
+  max_instances = 5
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "512Mi"
 
-  # Notification-service es stub hasta que tenga implementación. NO monta
-  # secrets de Meta WhatsApp Cloud API (deprecated post-Fase 6.4 — el envío
-  # de mensajes WA va via Twilio en el bot). Cuando se implemente, montar los
-  # secrets que realmente use (probablemente Twilio + email/SMS providers).
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-notification-service"
+    SERVICE_NAME                            = "booster-ai-notification-service"
+    PUBSUB_SUBSCRIPTION_NOTIFICATION_EVENTS = google_pubsub_subscription.notification_events_service.name
+    # Mismo sender que api y bot. En modo sombra el hash incluye el sender:
+    # si este valor difiere del del api, la sombra diverge (deriva de config).
+    TWILIO_FROM_NUMBER = var.twilio_from_number
   })
 
-  # REDIS_PASSWORD → secret redis-auth (Memorystore con AUTH_ENABLED=True). El
-  # service ya recibe REDIS_HOST/PORT/TLS/CA_CERT vía local.common_env_vars pero
-  # le faltaba el password; sin este mount un apply dropea el REDIS_PASSWORD vivo
-  # (valor plano) → auth failure en runtime. Mismo mount que local.common_secrets
-  # (solo REDIS_PASSWORD; el service no usa DATABASE_URL).
+  # Credenciales Twilio (mismos secrets que api y bot). REDIS_PASSWORD se
+  # mantiene montado: common_env_vars inyecta REDIS_HOST/PORT a todos los
+  # servicios y retirarlo es un cambio aparte.
   secrets = {
-    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
+    TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
+    TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+    REDIS_PASSWORD     = google_secret_manager_secret.secrets["redis-auth"].secret_id
   }
 
   public = false
@@ -729,9 +769,16 @@ module "service_document" {
   service_name          = "booster-ai-document-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: consumer Pub/Sub PULL (StreamingPull en main.ts), igual que
+  # telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios: con
+  # min=0 la instancia escala a cero y nadie consume (no hay requests que la
+  # despierten), y con cpu_idle=true el pull queda CPU-throttled (incidente
+  # 2026-06-07). 1 GiB porque rasterizar el PDF ocupa RAM.
+  min_instances = 1
   max_instances = 10
-  memory        = "1Gi" # OCR puede requerir más RAM
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "1Gi"
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"
@@ -744,6 +791,10 @@ module "service_document" {
   # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
   # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
   secrets = local.common_secrets
+
+  # T10-21: Cloud SQL es IP privada; sin el connector el worker no reclama ni
+  # persiste ninguna fila (mismo connector que api y telemetry-processor).
+  vpc_connector = google_vpc_access_connector.serverless.id
 
   public = false
 
