@@ -15,6 +15,7 @@
     "test:e2e:conductor": "playwright test -c playwright.conductor.config.ts"
   },
   "dependencies": {
+    "@booster-ai/pricing-engine": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/ui-components": "workspace:*",
     "@booster-ai/ui-tokens": "workspace:*",

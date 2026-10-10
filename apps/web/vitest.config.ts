@@ -44,11 +44,6 @@ export default defineConfig({
         'src/routes/platform-admin-site-settings.tsx',
         'src/routes/admin-cobra-hoy.tsx',
         'src/routes/admin-dispositivos.tsx',
-        // Modo demo (subdominio demo.boosterchile.com): selector de
-        // persona con 4 cards + un fetch a /demo/login. UI estática
-        // demostrativa; cubierta por smoke E2E del subdominio (manual
-        // pre-Corfo). Excluida para no bloquear coverage 80%/75%.
-        'src/routes/demo.tsx',
         // Wiring declarativo del router (árbol de rutas + imports lazy
         // `() => import('./routes/x')` de lazyRouteComponent, audit P1-J). No
         // tiene lógica unit-testeable; los imports diferidos se verifican por
@@ -56,13 +51,13 @@ export default defineConfig({
         'src/router.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
-      // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable
+      // 80 % en las cuatro métricas (T10-08, ADR-082), sobre el subset testable
       // (libs + hooks no-SSE + components leaf). Páginas y UI compleja se
       // cubren con Playwright e2e (apps/web/e2e/).
       thresholds: {
         lines: 80,
-        functions: 75,
-        branches: 75,
+        functions: 80,
+        branches: 80,
         statements: 80,
       },
     },
