@@ -21,7 +21,7 @@ import {
  * clasificar → exit 1 (default-deny). Reemplaza el backstop creation-time
  * (blocking function, ADR-054 → ADR-057) por una invariante de wiring durable.
  *
- * Distinción clave vs check-is-demo-wire-completeness.ts (P1-1 del DA R2):
+ * Distinción clave vs collect-middlewares-per-path.ts (P1-1 del DA R2):
  * aquél escanea SOLO `app.use('/path', …)` (line-based) → no ve `app.route()`
  * ni los sub-mounts `<router>.route()`. Éste enumera por factory (multi-línea).
  */
@@ -232,14 +232,13 @@ describe('check-route-default-deny — integridad de la tabla', () => {
   });
 });
 
-describe('check-route-default-deny — los 5 mounts verificados (INTENTIONAL-OPEN)', () => {
+describe('check-route-default-deny — los 4 mounts verificados (INTENTIONAL-OPEN)', () => {
   // Verificados línea-a-línea contra server.ts al codear T2: ninguno tiene
   // firebaseAuth/userContext app.use precediéndolos; son emisores de auth o
-  // endpoints demo/público por diseño.
+  // endpoints públicos por diseño.
   it.each([
     'createAuthUniversalRoutes',
     'createDriverAuthRoutes',
-    'createDemoCacheWarmRoutes',
     'createPublicTrackingRoutes',
     'createWebpushPublicRoutes',
   ])('%s clasificado INTENTIONAL-OPEN', (factory) => {
