@@ -53,6 +53,8 @@ const MENSAJE_ERROR: Record<string, string> = {
     'Para confirmar la recepción, sube primero el documento del viaje (guía de despacho o factura).',
   sin_documento:
     'Sube el documento del viaje (guía de despacho o factura) para registrar la recepción conforme.',
+  error_registro:
+    'La entrega quedó confirmada, pero no pudimos registrar la recepción conforme. Vuelve a confirmar en unos minutos.',
   liberacion_no_pendiente: 'El transportista ya recibió su pago; la objeción sigue por contrato.',
   liberacion_en_disputa: 'Ya hay una objeción abierta para esta carga.',
 };

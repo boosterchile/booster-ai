@@ -735,32 +735,40 @@ export function createTripRequestsV2Routes(opts: {
     // pueda registrar todavía (p. ej. sin documento): se informa el motivo.
     let mandato: Record<string, unknown> = {};
     if (appConfig.MANDATO_COBRO_ACTIVATED) {
-      const recepcion = await registrarRecepcionConforme(
-        {
-          db: opts.db,
-          logger: opts.logger,
-          topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
-        },
-        {
-          tripId: id,
-          generadorEmpresaId: auth.activeMembership.empresa.id,
-          registradoPor: auth.userContext.user.id,
-          asegurarLiquidacion: (asignacionId) =>
-            liquidarTrip({
-              db: opts.db,
-              logger: opts.logger,
-              assignmentId: asignacionId,
-              pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
-              pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
-              mandatoCobroActivated: true,
-            }),
-        },
-      );
-      if (recepcion.ok) {
-        mandato = { pago: pagoParaGenerador(recepcion.pago) };
-      } else if (recepcion.code !== 'no_es_mandato') {
-        opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
-        mandato = { recepcion_conforme_pendiente: recepcion.code };
+      try {
+        const recepcion = await registrarRecepcionConforme(
+          {
+            db: opts.db,
+            logger: opts.logger,
+            topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+          },
+          {
+            tripId: id,
+            generadorEmpresaId: auth.activeMembership.empresa.id,
+            registradoPor: auth.userContext.user.id,
+            asegurarLiquidacion: (asignacionId) =>
+              liquidarTrip({
+                db: opts.db,
+                logger: opts.logger,
+                assignmentId: asignacionId,
+                pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+                pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
+                mandatoCobroActivated: true,
+              }),
+          },
+        );
+        if (recepcion.ok) {
+          mandato = { pago: pagoParaGenerador(recepcion.pago) };
+        } else if (recepcion.code !== 'no_es_mandato') {
+          opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
+          mandato = { recepcion_conforme_pendiente: recepcion.code };
+        }
+      } catch (err) {
+        // La entrega ya quedó confirmada (commit previo): no se revierte por
+        // un fallo al registrar la recepción. Queda logueado y el generador
+        // puede reintentar confirmando de nuevo (idempotente).
+        opts.logger.error({ err, tripId: id }, 'no se pudo registrar la recepción conforme');
+        mandato = { recepcion_conforme_pendiente: 'error_registro' };
       }
     }
 

@@ -152,6 +152,22 @@ describe('PATCH /trip-requests-v2/:id/confirmar-recepcion — mandato de cobro',
     });
   });
 
+  it('si registrar la recepción falla, la entrega confirmada no se pierde: 200 y queda pendiente', async () => {
+    appConfig.MANDATO_COBRO_ACTIVATED = true;
+    confirmarEntregaViaje.mockResolvedValue({
+      ok: true,
+      alreadyDelivered: false,
+      deliveredAt: new Date('2026-10-10T12:00:00Z'),
+    });
+    registrarRecepcionConforme.mockRejectedValue(new Error('pg caído'));
+    const res = await confirmar(setup());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      recepcion_conforme_pendiente: 'error_registro',
+    });
+  });
+
   it('liquidación conector con flag encendido: sin pago ni pendiente', async () => {
     appConfig.MANDATO_COBRO_ACTIVATED = true;
     confirmarEntregaViaje.mockResolvedValue({
