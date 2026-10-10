@@ -42,7 +42,8 @@ const ACCESOS: ReadonlyArray<{
     | '/app/platform-admin/site-settings'
     | '/app/platform-admin/configuracion-comercial'
     | '/app/platform-admin/mandato-cobro'
-    | '/app/platform-admin/impersonar';
+    | '/app/platform-admin/impersonar'
+    | '/app/platform-admin/observatorio';
   title: string;
   desc: string;
   testId: string;
@@ -70,6 +71,12 @@ const ACCESOS: ReadonlyArray<{
     title: 'Organizaciones stakeholder',
     desc: 'Reguladores, gremios y observatorios. No operan en el marketplace.',
     testId: 'stakeholders-link',
+  },
+  {
+    to: '/app/platform-admin/observatorio',
+    title: 'Observatorio urbano',
+    desc: 'Flujos, emisiones y orígenes-destinos agregados por región (piloto Coquimbo).',
+    testId: 'observatorio-link',
   },
   {
     to: '/app/platform-admin/matching',

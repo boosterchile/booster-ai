@@ -77,6 +77,7 @@ locals {
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.picovoice_access_key_placeholder.id],
     [google_secret_manager_secret_version.cmf_api_key_placeholder.id],
     [google_secret_manager_secret_version.resend_api_key_placeholder.id],
   )
@@ -117,6 +118,8 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
+    # T10-24 / ADR-012 Capa 2 — observatorio urbano (observatorio.tf).
+    BIGQUERY_OBSERVATORY_DATASET = google_bigquery_dataset.observatory.dataset_id
     # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
@@ -218,6 +221,12 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # T10-22 — modelos de Porcupine que la PWA baja en runtime vía
+    # GET /me/wake-word (wake-word.tf). Vacíos → la ruta responde
+    # `disponible: false, motivo: sin_modelo`.
+    WAKE_WORD_KEYWORD_URL = var.wake_word_keyword_url
+    WAKE_WORD_MODEL_URL   = var.wake_word_model_url
+
     # T10-23 — eco-routing en tiempo real (default false).
     ECO_ROUTING_REALTIME_ACTIVATED = tostring(var.eco_routing_realtime_activated)
 
@@ -292,6 +301,10 @@ module "service_api" {
     # vía security.tf, así que no hace falta IAM extra.
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+
+    # T10-22 — AccessKey de Picovoice (wake-word.tf). El placeholder
+    # ROTATE_ME_ cuenta como ausente en GET /me/wake-word.
+    PICOVOICE_ACCESS_KEY = google_secret_manager_secret.picovoice_access_key.secret_id
 
     # ADR-079 §4 — clave de la API UF de la CMF (valor-uf.tf). Sin validación
     # de formato: el placeholder ROTATE_ME_ cuenta como ausente (solo SII).

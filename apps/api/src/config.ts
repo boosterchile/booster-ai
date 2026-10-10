@@ -341,6 +341,18 @@ export const apiEnvSchema = commonEnvSchema
      * determinístico automáticamente sin generar error).
      */
     GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
+    /**
+     * T10-24 / ADR-012 Capa 2 — dataset BigQuery del observatorio urbano
+     * (`observatory`, Terraform). Ausente: el export y el endpoint admin del
+     * observatorio responden "no configurado" (skip / 503).
+     */
+    BIGQUERY_OBSERVATORY_DATASET: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_]+$/)
+        .optional(),
+    ),
 
     /**
      * Feature flag para activar pricing v2 (ADR-030 + ADR-031).
@@ -499,6 +511,31 @@ export const apiEnvSchema = commonEnvSchema
      * `oye-booster-cl.ppn` esté entrenado con voces chilenas (Wave 5 PR 2).
      */
     WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
+
+    /**
+     * ADR-036 / T10-22 — Picovoice Porcupine. Se entregan a la PWA en
+     * runtime por `GET /me/wake-word`, así el wake-word se activa sin
+     * rebuild de la web. La clave sale de Secret Manager
+     * (`picovoice-access-key`, wake-word.tf); su placeholder `ROTATE_ME_`
+     * cuenta como ausente en la ruta. "" se trata como ausente (Cloud Run
+     * pasa env vacías como "").
+     */
+    PICOVOICE_ACCESS_KEY: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().optional(),
+    ),
+    /** URL del modelo de la keyword custom `oye-booster-cl.ppn`. */
+    WAKE_WORD_KEYWORD_URL: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().url().optional(),
+    ),
+    /** URL del modelo de parámetros en español `porcupine_params_es.pv`. */
+    WAKE_WORD_MODEL_URL: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().url().optional(),
+    ),
+    /** Sensibilidad de Porcupine, 0..1. Más alta = más detecciones y más falsos positivos. */
+    WAKE_WORD_SENSITIVITY: z.coerce.number().min(0).max(1).default(0.5),
 
     /**
      * T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. ON: cada posición
