@@ -673,11 +673,8 @@ export function emitirMetricasScorecardGps(
   }
 }
 
-export function esEmpresaCohorteProd(empresa: {
-  esDemo: boolean;
-  esUsuarioPrueba: boolean;
-}): boolean {
-  return !empresa.esDemo && !empresa.esUsuarioPrueba;
+export function esEmpresaCohorteProd(empresa: { esUsuarioPrueba: boolean }): boolean {
+  return !empresa.esUsuarioPrueba;
 }
 
 export function trocear<T>(items: readonly T[], tamano: number): T[][] {
@@ -696,7 +693,6 @@ export interface AsignacionCerradaFila {
   asignacionId: string;
   vehicleId: string;
   teltonikaImei: string | null;
-  esDemo: boolean;
   esUsuarioPrueba: boolean;
   recogidoEnMs: number;
   entregadoEnMs: number | null;
