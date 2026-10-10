@@ -2,7 +2,7 @@
 
 - Author: Felipe Vicencio (con agent-rigor)
 - Date: 2026-05-17
-- Status: **Approved** (PO 2026-05-17, v2 post devils-advocate P0+P1)
+- Status: **Superado por [`.specs/trl10/spec.md`](../trl10/spec.md)** (ADR-082, 2026-10-07). Era: Approved (PO 2026-05-17, v2 post devils-advocate P0+P1)
 - Linked: [`.specs/audit-2026-05-14/inventory.md`](../audit-2026-05-14/inventory.md), [`docs/handoff/CURRENT.md`](../../docs/handoff/CURRENT.md), [`./review.md`](./review.md), [`../stubs-decision/spec.md`](../stubs-decision/spec.md)
 
 ---

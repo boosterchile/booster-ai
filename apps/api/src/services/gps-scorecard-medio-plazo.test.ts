@@ -525,7 +525,6 @@ describe('armado de filas', () => {
     asignacionId: 'asig-1',
     vehicleId: 'veh-1',
     teltonikaImei: '860',
-    esDemo: false,
     esUsuarioPrueba: false,
     recogidoEnMs: 0,
     entregadoEnMs: 10 * MIN,
@@ -536,13 +535,12 @@ describe('armado de filas', () => {
     const armado = armarViajesScorecard({
       asignaciones: [
         base,
-        { ...base, viajeId: 'demo', asignacionId: 'asig-demo', esDemo: true },
+        { ...base, viajeId: 'demo', asignacionId: 'asig-demo', esUsuarioPrueba: true },
         {
           ...base,
           viajeId: 'prueba',
           asignacionId: 'asig-prueba',
           esUsuarioPrueba: true,
-          esDemo: false,
         },
         {
           ...base,
@@ -637,9 +635,8 @@ describe('armado de filas', () => {
   });
 
   it('la empresa de cohorte es la que no es demo ni de prueba', () => {
-    expect(esEmpresaCohorteProd({ esDemo: false, esUsuarioPrueba: false })).toBe(true);
-    expect(esEmpresaCohorteProd({ esDemo: true, esUsuarioPrueba: false })).toBe(false);
-    expect(esEmpresaCohorteProd({ esDemo: false, esUsuarioPrueba: true })).toBe(false);
+    expect(esEmpresaCohorteProd({ esUsuarioPrueba: false })).toBe(true);
+    expect(esEmpresaCohorteProd({ esUsuarioPrueba: true })).toBe(false);
   });
 });
 

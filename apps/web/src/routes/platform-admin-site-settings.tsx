@@ -3,7 +3,6 @@ import { Link, Navigate } from '@tanstack/react-router';
 import {
   ArrowLeft,
   Building2,
-  Eye,
   History,
   Image as ImageIcon,
   Loader2,
@@ -326,9 +325,8 @@ function Page() {
             Configuración del sitio
           </h1>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-            Edita marca, hero, certificaciones y cards de personas que se muestran en{' '}
-            <strong>demo.boosterchile.com</strong>. Los cambios aplican con cache de 5 minutos.
-            ADR-039.
+            Edita marca, hero, certificaciones y cards de personas del sitio. Los cambios aplican
+            con cache de 5 minutos. ADR-039.
           </p>
         </div>
       </header>
@@ -371,15 +369,6 @@ function Page() {
           >
             Restaurar defaults
           </button>
-          <a
-            href="https://demo.boosterchile.com/demo"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-2 font-medium text-neutral-700 text-sm hover:bg-neutral-50"
-          >
-            <Eye className="h-4 w-4" aria-hidden />
-            Abrir demo en nueva pestaña
-          </a>
           <button
             type="submit"
             disabled={submitting || !dirty}

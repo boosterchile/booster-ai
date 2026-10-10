@@ -5,6 +5,7 @@ import type {
   RecognizedCommand,
   VoiceCommandController,
 } from '../../services/voice-commands.js';
+import { emitirWakeWord } from '../../services/wake-word-bus.js';
 import { VoiceCommandButton } from './VoiceCommandButton.js';
 
 /**
@@ -94,6 +95,33 @@ describe('VoiceCommandButton', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /activar comando por voz/i }));
     expect(r.spies.start).toHaveBeenCalled();
+  });
+
+  it('"Oye Booster" arranca el reconocimiento del botón montado (ADR-036)', () => {
+    const r = makeRecognizer('idle');
+    const { unmount } = render(
+      <VoiceCommandButton acceptedIntents={ALL_INTENTS} onCommand={vi.fn()} recognizer={r.ctrl} />,
+    );
+    act(() => {
+      expect(emitirWakeWord()).toBe(true);
+    });
+    expect(r.spies.start).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(emitirWakeWord()).toBe(false);
+  });
+
+  it('"Oye Booster" mientras ya escucha no lo reinicia', () => {
+    const r = makeRecognizer('idle');
+    render(
+      <VoiceCommandButton acceptedIntents={ALL_INTENTS} onCommand={vi.fn()} recognizer={r.ctrl} />,
+    );
+    act(() => {
+      r.emit('listening');
+    });
+    act(() => {
+      emitirWakeWord();
+    });
+    expect(r.spies.start).not.toHaveBeenCalled();
   });
 
   it('click listening → recognizer.stop', () => {

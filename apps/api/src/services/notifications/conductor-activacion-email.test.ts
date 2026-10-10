@@ -73,6 +73,21 @@ describe('enviarCorreoActivacionConductor', () => {
     expect(primerMensaje(send).text).toMatch(/tu propia clave|crear.*clave/i);
   });
 
+  it('escapa el HTML de nombre y empresa', async () => {
+    const { sender, send } = makeSender();
+    await enviarCorreoActivacionConductor({
+      sender,
+      logger: makeLogger() as never,
+      ...BASE,
+      nombre: '<img src=x onerror=1>',
+      empresa: 'A & B',
+    });
+    const { html } = primerMensaje(send);
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=1&gt;');
+    expect(html).toContain('A &amp; B');
+  });
+
   it('si el envío falla NO lanza — el alta ya ocurrió', async () => {
     const { sender } = makeSender({ enviado: false, motivo: 'error_proveedor' } as never);
     const logger = makeLogger();

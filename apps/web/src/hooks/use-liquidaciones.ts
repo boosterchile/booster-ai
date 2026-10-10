@@ -20,19 +20,39 @@ export type LiquidacionStatus =
   | 'pagada_al_carrier'
   | 'disputa';
 
+/**
+ * Las filas v2 traen el desglose de comisión (se descontaba al transportista).
+ * Las v3 (ADR-079 §5) no: la comisión la paga el generador y el
+ * transportista ve solo `precio_transportista_clp`, que recibe íntegro.
+ */
 export interface LiquidacionRow {
   liquidacion_id: string;
   asignacion_id: string;
   tracking_code: string;
   monto_bruto_clp: number;
-  comision_pct: number;
-  comision_clp: number;
-  iva_comision_clp: number;
+  comision_pct?: number;
+  comision_clp?: number;
+  iva_comision_clp?: number;
   monto_neto_carrier_clp: number;
-  total_factura_booster_clp: number;
+  total_factura_booster_clp?: number;
+  precio_transportista_clp?: number;
   pricing_methodology_version: string;
   status: LiquidacionStatus;
   creado_en: string;
+  /** ADR-080 §5 — régimen con que se paga (ausente en respuestas previas a 0061). */
+  modo_flujo?: 'conector' | 'mandato_cobro';
+  /** ADR-080 — bajo mandato de cobro, cuándo y cómo se libera el pago al transportista. */
+  liberacion?: {
+    estado:
+      | 'sin_recepcion'
+      | 'pendiente'
+      | 'disputa'
+      | 'liberado_por_booster'
+      | 'anticipado_por_operador';
+    en: string | null;
+    monto_clp: number | null;
+    vence_en: string | null;
+  };
 }
 
 export function useLiquidaciones(opts: { enabled?: boolean } = {}) {

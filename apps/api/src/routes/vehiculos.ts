@@ -404,8 +404,7 @@ export function createVehiculosRoutes(opts: {
           })
       : async () => null);
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -420,8 +419,7 @@ export function createVehiculosRoutes(opts: {
     return { ok: true as const, userContext, activeMembership: active };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireWriteRole(c: Context<any, any, any>) {
+  function requireWriteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -463,8 +461,7 @@ export function createVehiculosRoutes(opts: {
       403,
     );
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireOwnerOrAdminRole(c: Context<any, any, any>) {
+  function requireOwnerOrAdminRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;

@@ -258,6 +258,15 @@ steps:
   # Cloud Build substitution + release.yml change. Cloud Run requires the
   # combined traffic tag + service name ≤ 46 chars; `booster-ai-api` (14) +
   # `canary-signup-` (14) + 12-char short SHA = 40 chars, 6-char headroom.
+  #
+  # T10-06 (ADR-082): la revisión se crea SIN `--tag` y se etiqueta después
+  # con `update-traffic --update-tags`. Con `--tag`, `gcloud run services
+  # update` genera el nombre de la revisión del lado del cliente y lo deja en
+  # `template.revision`; Terraform lo declara vacío y el Drift Check quedaba
+  # en rojo con `revision "booster-ai-api-NNNNN-xxx" -> null` tras cada
+  # release. Sin `--tag` gcloud usa un nonce y Cloud Run nombra la revisión
+  # (`surface/run/services/update.py`, `generate_name`). `update-traffic` solo
+  # toca el bloque de traffic, que Terraform ya ignora para el api.
   - id: deploy-canary
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
@@ -271,9 +280,29 @@ steps:
           --image=${_REGISTRY}/api:${_COMMIT_SHA} \
           --region=${_REGION} \
           --platform=managed \
-          --tag=canary-signup-$${SHORT_SHA} \
           --no-traffic \
           --update-labels=commit=${_COMMIT_SHA}
+        REV=$(gcloud run services describe booster-ai-api \
+          --region=${_REGION} --platform=managed \
+          --format='value(status.latestCreatedRevisionName)')
+        if [ -z "$${REV}" ]; then
+          echo "deploy-canary: sin latestCreatedRevisionName tras el update" >&2
+          exit 1
+        fi
+        IMAGE=$(gcloud run revisions describe "$${REV}" \
+          --region=${_REGION} --platform=managed \
+          --format='value(spec.containers[0].image)')
+        case "$${IMAGE}" in
+          *"${_COMMIT_SHA}"*) ;;
+          *)
+            echo "deploy-canary: $${REV} corre $${IMAGE}, no api:${_COMMIT_SHA}" >&2
+            exit 1
+            ;;
+        esac
+        gcloud run services update-traffic booster-ai-api \
+          --region=${_REGION} \
+          --platform=managed \
+          --update-tags=canary-signup-$${SHORT_SHA}=$${REV}
     waitFor: [push-api]
 
   - id: route-canary
