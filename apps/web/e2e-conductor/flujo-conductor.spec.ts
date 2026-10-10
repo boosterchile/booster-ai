@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectEnRegionViva, revisarPantalla } from './a11y.js';
 import {
   CREDENCIAL_T2,
   PIN_ACTIVACION_T2,
@@ -45,10 +46,14 @@ test.describe('flujo conductor T2', () => {
       }
     });
 
+    await page.goto('/login/conductor');
+    await expect(page.getByRole('heading', { name: 'Activa tu cuenta' })).toBeVisible();
+    await revisarPantalla(page, '/login/conductor');
     await activarConductor(page, CREDENCIAL_T2.cond, PIN_ACTIVACION_T2);
     await expect(page).toHaveURL(/\/app\/conductor/, { timeout: 20_000 });
 
     await expect(page.getByTestId('confirmar-recogida')).toBeVisible();
+    await revisarPantalla(page, '/app/conductor (por recoger)');
 
     // El origen del seed coincide con el geolocation mock: con permiso
     // granted el reporter arranca en `por_recoger` y manda el primer POST
@@ -61,6 +66,10 @@ test.describe('flujo conductor T2', () => {
       .toBeGreaterThan(0);
 
     await page.getByTestId('confirmar-recogida').click();
+    // T10-11: el diálogo inline de confirmación también se recorre con
+    // teclado, con foco visible y sin desborde a 320 px.
+    await expect(page.getByTestId('confirmacion-inline')).toBeVisible();
+    await revisarPantalla(page, '/app/conductor (confirmación inline)');
     await page
       .getByTestId('confirmacion-inline')
       .getByRole('button', { name: 'Sí, confirmar' })
@@ -75,6 +84,10 @@ test.describe('flujo conductor T2', () => {
       .click();
 
     await expect(page.getByText('Entrega confirmada. ¡Gracias!')).toBeVisible();
+    await expectEnRegionViva(
+      page.getByText('Entrega confirmada. ¡Gracias!'),
+      '/app/conductor (entrega confirmada)',
+    );
     const resultado = page.getByTestId('resultado-viaje');
     await expect(resultado).toBeVisible();
     await expect(resultado).toContainText('kg CO2e', { timeout: 30_000 });
@@ -84,6 +97,7 @@ test.describe('flujo conductor T2', () => {
     await expect(resultado.getByRole('button', { name: 'Descargar certificado' })).toBeVisible({
       timeout: 75_000,
     });
+    await revisarPantalla(page, '/app/conductor (entregado)');
     const encabezado = await resultado.getByText(/^Resultado del viaje /).innerText();
     const tracking = encabezado.replace('Resultado del viaje ', '').trim();
     expect(tracking).toMatch(/^E2E[A-Z0-9]+$/);
