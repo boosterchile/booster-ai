@@ -23,7 +23,6 @@ import type { Logger } from '@booster-ai/logger';
 import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
-import type Redis from 'ioredis';
 import type pg from 'pg';
 import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -42,7 +41,6 @@ import {
 } from '../jobs/reap-orphan-onboarding-firebase.js';
 import { procesarMensajesNoLeidos } from '../services/chat-whatsapp-fallback.js';
 import { cobrarMembershipsMensual } from '../services/cobrar-memberships-mensual.js';
-import { runDemoTtlAlerter } from '../services/demo-account-ttl-alerter.js';
 import {
   type MembershipPaymentGateway,
   noopMembershipPaymentGateway,
@@ -51,16 +49,28 @@ import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-ho
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 
+/**
+ * `pg.Pool` con la firma mínima que piden los reapers (`PoolLike`). Las
+ * sobrecargas de `pg.Pool.query` no calzan estructuralmente con esa interfaz;
+ * este adaptador las reduce a la única forma que usan, sin casts.
+ */
+function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      const resultado = await pool.query(sql, params);
+      return { rows: resultado.rows, rowCount: resultado.rowCount };
+    },
+  };
+}
+
 export function createAdminJobsRoutes(opts: {
   db: Db;
   logger: Logger;
   twilioClient: TwilioWhatsAppClient | null;
   contentSidChatUnread: string | null;
   webAppUrl: string;
-  /** T6a SEC-001 Sprint 2a — para POST /demo-account-ttl-alert. Null en tests sin Firebase. */
+  /** Para el reaper de cuentas IdP. Null en tests sin Firebase. */
   firebaseAuth?: Auth | null;
-  /** T6a SEC-001 Sprint 2a — para dedup Redis del TTL alerter. */
-  redis?: Redis | null;
   /** T9 SEC-001 boundary-closure — pool pg para el reaper (fetchReaperFacts). Null en tests sin DB. */
   pool?: pg.Pool | null;
   /**
@@ -168,31 +178,6 @@ export function createAdminJobsRoutes(opts: {
   });
 
   /**
-   * T6a SEC-001 Sprint 2a (spec §3 H1.1 SC-1.1.6) — TTL alerter daily
-   * tick. Cloud Scheduler invoca a 06:00 America/Santiago. Emite
-   * structured log `demo.ttl_low` solo cuando una cuenta demo activa
-   * tiene ≤7 días de TTL restante; Redis dedup por día evita
-   * re-alertar.
-   *
-   * Si Firebase Auth o Redis no están inyectados (tests / dev sin
-   * config), retorna 503 + skipped: true (Cloud Scheduler considera
-   * no-error pero el log queda).
-   */
-  app.post('/demo-account-ttl-alert', async (c) => {
-    if (!opts.firebaseAuth || !opts.redis) {
-      opts.logger.warn('demo-account-ttl-alert: firebaseAuth o redis no inyectado, skip');
-      return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
-    }
-    const result = await runDemoTtlAlerter({
-      db: opts.db,
-      firebaseAuth: opts.firebaseAuth,
-      redis: opts.redis,
-      logger: opts.logger,
-    });
-    return c.json({ ok: true, ...result });
-  });
-
-  /**
    * T9 SEC-001 boundary-closure (SC-G5, ADR-057) — reaper de cuentas IdP
    * Google inertes. Cloud Scheduler invoca diariamente.
    *
@@ -212,7 +197,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-inert-idp-accounts: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as PoolLike;
+    const pool: PoolLike = adaptarPool(opts.pool);
     const neverReapable = new Set<string>([
       ...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
       'dev@boosterchile.com',
@@ -255,7 +240,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-orphan-onboarding-firebase: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as OrphanPoolLike;
+    const pool: OrphanPoolLike = adaptarPool(opts.pool);
     const summary = await reapOrphanOnboardingFirebaseUsers(
       {
         auth: opts.firebaseAuth,
