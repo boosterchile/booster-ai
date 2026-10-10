@@ -1,5 +1,5 @@
 import { buildRedisTlsOptions } from '@booster-ai/config';
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
 import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -17,6 +17,8 @@ const logger = createLogger({
   level: config.LOG_LEVEL,
   pretty: config.NODE_ENV === 'development',
 });
+// T10-16: fallas no controladas → fatal con stack → Error Reporting.
+registrarErroresNoControlados(logger);
 
 // Redis client compartido — conversation store + futuras features (rate limit,
 // dedup de mensajes Twilio, etc.). Modo lazy connect para que el startup probe
