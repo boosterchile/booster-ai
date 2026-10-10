@@ -225,6 +225,8 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 **Infraestructura y observabilidad.** Desde 2026-10-07 su criterio es la fase C del programa TRL 10 (T10-15 a T10-20). Espera a que cierre la fase B.
 
+**Carta de Porte electrónica (Ley 18.290).** Booster no la emite: desde ADR-070 solo recibe y archiva los documentos de transporte de terceros. El stub `packages/carta-porte-generator` se eliminó el 2026-10-07 (T10-09, decisión del PO) para no dejar código que aparente una capacidad inexistente. Descongela con un ADR que defina quién la emite y una spec con este criterio: la Carta de Porte de un viaje se genera con \<campos legales\>, firmada, y se valida contra \<quien la fiscaliza\>.
+
 **Despacho / conductor.** Descongelado el 2026-09-13: es el Slot 3 («Conductor operativo de punta a punta»), con ese mismo criterio.
 
 ---
