@@ -1,4 +1,4 @@
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
 import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
@@ -15,6 +15,8 @@ const logger = createLogger({
   level: config.LOG_LEVEL,
   pretty: config.NODE_ENV === 'development',
 });
+// T10-16: fallas no controladas → fatal con stack → Error Reporting.
+registrarErroresNoControlados(logger);
 
 async function main(): Promise<void> {
   const { db, pool } = createDb({
