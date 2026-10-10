@@ -3,10 +3,20 @@ import {
   type MembershipTier,
   type TierSlug,
   calcularLiquidacion,
+  calcularLiquidacionV3,
 } from '@booster-ai/pricing-engine';
+import { configuracionComercialSchema } from '@booster-ai/shared-schemas';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { assignments, carrierMemberships, liquidaciones, membershipTiers } from '../db/schema.js';
+import { pgErrorCode } from '../db/pg-error.js';
+import {
+  assignments,
+  carrierMemberships,
+  configuracionComercial,
+  liquidaciones,
+  membershipTiers,
+  trips,
+} from '../db/schema.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 
 /**
@@ -42,6 +52,18 @@ export interface LiquidarTripInput {
   logger: Logger;
   assignmentId: string;
   pricingV2Activated: boolean;
+  /**
+   * ADR-079 §6 — con `true`, un viaje publicado con tasa congelada se
+   * liquida v3 (comisión al generador). Un viaje publicado bajo v2 (sin
+   * tasa congelada) sigue el camino v2: rige el contrato vigente al publicar.
+   */
+  pricingV3Activated?: boolean;
+  /**
+   * ADR-080 §5 — con `true`, una liquidación v3 se paga bajo mandato de
+   * cobro (`modo_flujo='mandato_cobro'`). Una v2 siempre es `conector`: su
+   * comisión se descuenta al transportista y no tiene precio del generador.
+   */
+  mandatoCobroActivated?: boolean;
 }
 
 export type LiquidarTripResult =
@@ -94,9 +116,10 @@ export async function liquidarTrip(input: LiquidarTripInput): Promise<LiquidarTr
 
 async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTripResult> {
   const { db, logger, assignmentId, pricingV2Activated } = input;
+  const pricingV3Activated = input.pricingV3Activated ?? false;
 
-  if (!pricingV2Activated) {
-    logger.debug({ assignmentId }, 'liquidarTrip: PRICING_V2_ACTIVATED=false, skip');
+  if (!pricingV2Activated && !pricingV3Activated) {
+    logger.debug({ assignmentId }, 'liquidarTrip: pricing v2 y v3 apagados, skip');
     return { status: 'skipped_flag_disabled' };
   }
 
@@ -107,6 +130,7 @@ async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTrip
       empresaCarrierId: assignments.empresaId,
       agreedPriceClp: assignments.agreedPriceClp,
       deliveredAt: assignments.deliveredAt,
+      tripId: assignments.tripId,
     })
     .from(assignments)
     .where(eq(assignments.id, assignmentId))
@@ -117,6 +141,24 @@ async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTrip
   }
   if (!asg.deliveredAt) {
     throw new AssignmentNotDeliveredError(assignmentId);
+  }
+
+  // (1b) ADR-079 §6 — v3: si el viaje se publicó con tasa congelada.
+  if (pricingV3Activated) {
+    const v3 = await liquidarV3SiCorresponde({
+      db,
+      logger,
+      assignmentId,
+      asg,
+      mandatoCobroActivated: input.mandatoCobroActivated ?? false,
+    });
+    if (v3) {
+      return v3;
+    }
+  }
+  if (!pricingV2Activated) {
+    logger.debug({ assignmentId }, 'liquidarTrip: viaje sin tasa v3 y v2 apagado, skip');
+    return { status: 'skipped_flag_disabled' };
   }
 
   // (2) Lookup membership activa del carrier.
@@ -215,22 +257,130 @@ async function liquidarTripInner(input: LiquidarTripInput): Promise<LiquidarTrip
       : { status: 'liquidacion_creada', liquidacionId };
   } catch (err) {
     // Si ya existe row por UNIQUE constraint en asignacion_id, retornar ya_liquidada.
-    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
-      // rls-allowlist: dupe-check idempotente scoped por asignacionId ya validado (censo §2(1) / rls-viabilidad §2C)
-      const existing = await db
-        .select({ id: liquidaciones.id })
-        .from(liquidaciones)
-        .where(eq(liquidaciones.asignacionId, assignmentId))
-        .limit(1);
-      const existingId = existing[0]?.id;
-      if (existingId) {
-        logger.info(
-          { assignmentId, liquidacionId: existingId },
-          'liquidarTrip: ya liquidada (idempotente)',
-        );
-        return { status: 'ya_liquidada', liquidacionId: existingId };
-      }
+    const existente = await liquidacionExistente(db, assignmentId, err);
+    if (existente) {
+      logger.info(
+        { assignmentId, liquidacionId: existente },
+        'liquidarTrip: ya liquidada (idempotente)',
+      );
+      return { status: 'ya_liquidada', liquidacionId: existente };
     }
     throw err;
   }
+}
+
+/**
+ * ADR-079 §6 — liquidación v3: el transportista recibe `agreedPriceClp`
+ * íntegro; el generador paga la comisión congelada al publicar + IVA de la
+ * versión de configuración congelada. No exige membresía del transportista
+ * (la membresía v2 vendía descuentos de comisión; en v3 no hay). Devuelve
+ * null si el viaje no tiene tasa congelada (publicado bajo v2).
+ */
+async function liquidarV3SiCorresponde(opts: {
+  db: Db;
+  logger: Logger;
+  assignmentId: string;
+  asg: { empresaCarrierId: string; agreedPriceClp: number; tripId: string };
+  mandatoCobroActivated: boolean;
+}): Promise<LiquidarTripResult | null> {
+  const { db, logger, assignmentId, asg } = opts;
+  // rls-allowlist: liquidación post-entrega scoped por el tripId del assignment ya validado.
+  const filas = await db
+    .select({
+      comisionPctAplicada: trips.comisionPctAplicada,
+      configuracionComercialId: trips.configuracionComercialId,
+      modalidadCarga: trips.modalidadCarga,
+      configFila: configuracionComercial.config,
+    })
+    .from(trips)
+    .leftJoin(configuracionComercial, eq(configuracionComercial.id, trips.configuracionComercialId))
+    .where(eq(trips.id, asg.tripId))
+    .limit(1);
+  const viaje = filas[0];
+  if (!viaje?.comisionPctAplicada || !viaje.configuracionComercialId || !viaje.configFila) {
+    return null;
+  }
+
+  const liq = calcularLiquidacionV3({
+    precioTransportistaClp: asg.agreedPriceClp,
+    comisionPct: Number(viaje.comisionPctAplicada),
+    // El JSONB se valida al leer: una fila corrupta no llega a pricing.
+    ivaRate: configuracionComercialSchema.parse(viaje.configFila).impuestos.iva_pct / 100,
+  });
+
+  try {
+    const inserted = await db
+      .insert(liquidaciones)
+      .values({
+        asignacionId: assignmentId,
+        empresaCarrierId: asg.empresaCarrierId,
+        tierSlugAplicado: null,
+        // Columnas v2 (NOT NULL) con su lectura v3: el transportista recibe
+        // el bruto íntegro y la factura de Booster es la del generador.
+        montoBrutoClp: liq.precioTransportistaClp,
+        comisionPct: liq.comisionPct.toFixed(2),
+        comisionClp: liq.comisionClp,
+        montoNetoCarrierClp: liq.precioTransportistaClp,
+        ivaComisionClp: liq.ivaComisionClp,
+        totalFacturaBoosterClp: liq.totalFacturaGeneradorClp,
+        pricingMethodologyVersion: liq.pricingMethodologyVersion,
+        precioTransportistaClp: liq.precioTransportistaClp,
+        precioGeneradorClp: liq.precioGeneradorClp,
+        totalFacturaGeneradorClp: liq.totalFacturaGeneradorClp,
+        modalidadCarga: viaje.modalidadCarga,
+        configuracionComercialId: viaje.configuracionComercialId,
+        modoFlujo: opts.mandatoCobroActivated ? 'mandato_cobro' : 'conector',
+        // Estado contable final (valor legacy del enum; ADR-069).
+        status: 'lista_para_dte',
+      })
+      .returning({ id: liquidaciones.id });
+    const liquidacionId = inserted[0]?.id;
+    if (!liquidacionId) {
+      throw new Error('liquidarTrip v3: INSERT no devolvió id (estado inconsistente)');
+    }
+    logger.info(
+      {
+        assignmentId,
+        liquidacionId,
+        comisionPct: liq.comisionPct,
+        comision: liq.comisionClp,
+        modalidad: viaje.modalidadCarga,
+      },
+      'liquidarTrip: liquidación v3 creada',
+    );
+    return { status: 'liquidacion_creada', liquidacionId };
+  } catch (err) {
+    const existente = await liquidacionExistente(db, assignmentId, err);
+    if (existente) {
+      logger.info(
+        { assignmentId, liquidacionId: existente },
+        'liquidarTrip: ya liquidada (idempotente)',
+      );
+      return { status: 'ya_liquidada', liquidacionId: existente };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Si `err` es una violación UNIQUE (23505; Drizzle deja el error de pg en
+ * `cause`, así que el mensaje solo dice "Failed query"), el id ya liquidado.
+ */
+async function liquidacionExistente(
+  db: Db,
+  assignmentId: string,
+  err: unknown,
+): Promise<string | null> {
+  const esUnique =
+    pgErrorCode(err) === '23505' || (err instanceof Error && /unique|duplicate/i.test(err.message));
+  if (!esUnique) {
+    return null;
+  }
+  // rls-allowlist: dupe-check idempotente scoped por asignacionId ya validado (censo §2(1) / rls-viabilidad §2C)
+  const existing = await db
+    .select({ id: liquidaciones.id })
+    .from(liquidaciones)
+    .where(eq(liquidaciones.asignacionId, assignmentId))
+    .limit(1);
+  return existing[0]?.id ?? null;
 }

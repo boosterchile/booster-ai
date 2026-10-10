@@ -1,5 +1,6 @@
 import { buildRedisTlsOptions } from '@booster-ai/config';
 import { type Logger, createLogger } from '@booster-ai/logger';
+import { BigQuery } from '@google-cloud/bigquery';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -20,14 +21,18 @@ import { createRateLimitTransportDocumentsMiddleware } from './middleware/rate-l
 import { skipOnboardingAdmin } from './middleware/skip-onboarding-admin.js';
 import { skipPublicVerify } from './middleware/skip-public-verify.js';
 import { createUserContextMiddleware } from './middleware/user-context.js';
+import { crearGuardiaVisibilidadTransportista } from './middleware/visibilidad-transportista.js';
 import { createAdminBackfillDistanciaRoutes } from './routes/admin-backfill-distancia.js';
 import { createAdminCobraHoyRoutes } from './routes/admin-cobra-hoy.js';
+import { createAdminConfiguracionComercialRoutes } from './routes/admin-configuracion-comercial.js';
 import { createAdminDispositivosPlataformaRoutes } from './routes/admin-dispositivos-plataforma.js';
 import { createAdminDispositivosRoutes } from './routes/admin-dispositivos.js';
 import { createAdminEmpresaMiembrosRoutes } from './routes/admin-empresa-miembros.js';
 import { createAdminJobsRoutes } from './routes/admin-jobs.js';
+import { createAdminMandatoCobroRoutes } from './routes/admin-mandato-cobro.js';
 import { createAdminMatchingBacktestRoutes } from './routes/admin-matching-backtest.js';
 import { createAdminObservabilityRoutes } from './routes/admin-observability.js';
+import { createAdminObservatorioRoutes } from './routes/admin-observatorio.js';
 import { createAdminSignupRequestsRoutes } from './routes/admin-signup-requests.js';
 import { createAdminStakeholderOrgsRoutes } from './routes/admin-stakeholder-orgs.js';
 import { createAssignmentsRoutes } from './routes/assignments.js';
@@ -39,7 +44,6 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
-import { createDemoCacheWarmRoutes } from './routes/demo-cache-warm.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
@@ -54,6 +58,7 @@ import { createMeLiquidacionesRoutes } from './routes/me-liquidaciones.js';
 import { createMeZonasRoutes } from './routes/me-zonas.js';
 import { createMeRoutes } from './routes/me.js';
 import { createOfferRoutes } from './routes/offers.js';
+import { createPublicPreciosRoutes } from './routes/public-precios.js';
 import { createPublicTrackingRoutes } from './routes/public-tracking.js';
 import { createSignupRequestRoutes } from './routes/signup-request.js';
 import {
@@ -75,14 +80,25 @@ import {
   reconstruirTripBackfill,
 } from './services/backfill-distancia-adapters.js';
 import { ejecutarBackfill } from './services/backfill-distancia-real.js';
+import {
+  crearLectorConfiguracionComercial,
+  leerConfiguracionPublicada,
+} from './services/configuracion-comercial.js';
+import type { EcoRoutingDeps } from './services/eco-routing-tiempo-real.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
 import { buildObservabilityServices } from './services/observability/factory.js';
+import {
+  clienteDesdeBigQuery,
+  crearCargadorBigQuery,
+  crearLectorObservatorio,
+} from './services/observatorio/bigquery.js';
 import { crearPublicadorDocumentoSubido } from './services/reconciliar-documentos-pendientes.js';
+import { computeRoutes } from './services/routes-api.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
-import { configureWebPush } from './services/web-push.js';
+import { configureWebPush, sendPushToUser } from './services/web-push.js';
 
 export interface CreateServerOptions {
   db: Db;
@@ -126,6 +142,32 @@ export function createServer(opts: CreateServerOptions): Hono {
   });
 
   const app = new Hono();
+
+  // ADR-079 §3 — lectura cacheada (≤ 60 s) de la configuración comercial
+  // publicada. Una sola instancia por proceso: el admin la invalida al
+  // publicar y pricing la consulta al publicar cargas y liquidar.
+  const guardiaVisibilidadTransportista = crearGuardiaVisibilidadTransportista({ logger });
+  const lectorConfiguracionComercial = crearLectorConfiguracionComercial({
+    leer: () => leerConfiguracionPublicada(opts.db),
+  });
+
+  // T10-24 / ADR-012 Capa 2 — observatorio urbano en BigQuery. Sin dataset
+  // configurado no se crea el cliente y las rutas responden "no configurado".
+  const observatorio = config.BIGQUERY_OBSERVATORY_DATASET
+    ? (() => {
+        const datasetId = config.BIGQUERY_OBSERVATORY_DATASET;
+        const cliente = clienteDesdeBigQuery(
+          new BigQuery(
+            config.GOOGLE_CLOUD_PROJECT ? { projectId: config.GOOGLE_CLOUD_PROJECT } : {},
+          ),
+        );
+        return {
+          datasetId,
+          cargador: crearCargadorBigQuery(cliente),
+          lector: crearLectorObservatorio({ cliente, datasetId }),
+        };
+      })()
+    : null;
 
   // Request logging middleware
   app.use('*', async (c, next) => {
@@ -216,24 +258,6 @@ export function createServer(opts: CreateServerOptions): Hono {
   // auth porque la decisión de UI ocurre ANTES del login.
   app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
 
-  // POST /demo/login (modo demo subdominio) RETIRADO — chore/retiro-subsistema-demo.
-  if (opts.firebaseAuth) {
-    // T5 SEC-001 Sprint 2a — GET /api/v1/demo/cache-warm/:persona
-    // (pre-warm del cache `demo-claim:<uid>`; su consumidor, el middleware
-    // demo-expires, está retirado — el retiro de esta ruta es decisión del
-    // PO, Slot 2). IP rate-limited inline (10/min/IP). Public — no firebase
-    // auth required.
-    app.route(
-      '/api/v1/demo',
-      createDemoCacheWarmRoutes({
-        db: opts.db,
-        auth: opts.firebaseAuth,
-        redis: redisForRateLimit,
-        logger,
-      }),
-    );
-  }
-
   // T8 SEC-001 Sprint 2b — POST /api/v1/signup-request (SC-1.2.1 + SC-1.2.5
   // + ADR-052). Endpoint público (sin firebase auth) que reemplaza el flow
   // `createUserWithEmailAndPassword` client-side por admin-approval gate.
@@ -323,8 +347,6 @@ export function createServer(opts: CreateServerOptions): Hono {
       sseTicketStore: (ticket, assignmentId) =>
         consumeStreamTicket({ redis: redisForRateLimit, ticket, assignmentId }),
     });
-    // El enforcement de cuentas demo no se monta en este chain. El guard
-    // check-is-demo-wire-completeness falla si vuelve a aparecer acá.
     // Impersonación auditada: guard de escritura. Se monta per-group DESPUÉS de
     // userContext (autoriza solo empresas de prueba). En grupos sin userContext
     // (/me raíz, /empresas onboarding) fail-closea toda mutación impersonada.
@@ -377,7 +399,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // real (detectado en la prueba end-to-end).
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
-    meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    meRouter.route(
+      '/empresa/miembros',
+      createMeEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
     // Opt-in de huella — GET/PATCH /me/empresa. userContext precede el mount;
     // el empresaId sale de la membresía activa (nunca del cliente).
     app.use('/me/empresa', userContextMiddlewareForMe);
@@ -470,6 +500,8 @@ export function createServer(opts: CreateServerOptions): Hono {
         certConfig,
         documentClosePolicy,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        // ADR-079 — tasa congelada al publicar con PRICING_V3_ACTIVATED.
+        lectorComercial: lectorConfiguracionComercial,
         // Task 4 (medicion-huella-segmento): geocodificar origen al crear.
         ...(config.GOOGLE_CLOUD_PROJECT ? { routesProjectId: config.GOOGLE_CLOUD_PROJECT } : {}),
       }),
@@ -477,6 +509,10 @@ export function createServer(opts: CreateServerOptions): Hono {
 
     // Offers — endpoints carrier-side: GET mine + POST accept/reject.
     // Mismo chain firebaseAuth + userContext.
+    // ADR-079 §5 — ninguna respuesta a transportista/conductor lleva claves
+    // privadas del generador (fail-closed). Va antes de auth para envolver
+    // la respuesta final de toda la cadena.
+    app.use('/offers/*', guardiaVisibilidadTransportista);
     app.use('/offers/*', firebaseAuthMiddleware);
     app.use('/offers/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
@@ -524,6 +560,18 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
     // scheduler (INTERNAL_CRON_CALLER_SA). Si la env var no está,
     // skippeamos el wire (ningún caller pasa el middleware).
+    // T10-23 — eco-routing en tiempo real detrás de flag (default OFF). Una sola
+    // instancia de deps para `driver-position` y el barrido del scheduler, así
+    // comparten el throttle por asignación.
+    const ecoRoutingDeps: EcoRoutingDeps | undefined = config.ECO_ROUTING_REALTIME_ACTIVATED
+      ? {
+          computeRoutes,
+          sendPush: ({ userId, payload }) =>
+            sendPushToUser({ db: opts.db, logger, userId, payload }),
+          now: Date.now,
+          throttle: new Map<string, number>(),
+        }
+      : undefined;
     if (config.INTERNAL_CRON_CALLER_SA) {
       const cronAuthMiddleware = createAuthMiddleware({
         apiAudience: config.API_AUDIENCE,
@@ -539,15 +587,26 @@ export function createServer(opts: CreateServerOptions): Hono {
           twilioClient: opts.notify?.twilioClient ?? null,
           contentSidChatUnread: config.CONTENT_SID_CHAT_UNREAD ?? null,
           webAppUrl: config.WEB_APP_URL,
-          // T6a SEC-001 Sprint 2a — TTL alerter wire (firebase + redis).
           firebaseAuth: opts.firebaseAuth ?? null,
-          redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
           // T10-21 — reconciliación del worker TED (document-service).
           publicarDocumentoSubido: config.DOCUMENT_UPLOADED_TOPIC
             ? crearPublicadorDocumentoSubido(config.DOCUMENT_UPLOADED_TOPIC)
             : null,
+          // T10-24 — export del observatorio a BigQuery (si hay dataset).
+          ...(observatorio
+            ? {
+                observatorio: {
+                  datasetId: observatorio.datasetId,
+                  cargador: observatorio.cargador,
+                },
+              }
+            : {}),
+          // T10-23 — barrido por minuto de viajes con Teltonika (mismas deps).
+          ...(ecoRoutingDeps
+            ? { ecoRouting: { deps: ecoRoutingDeps, routesProjectId: config.GOOGLE_CLOUD_PROJECT } }
+            : {}),
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
           // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
           // dinero). Cuando exista `payment-provider`, inyectar el real acá.
@@ -565,6 +624,7 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (sin prefix adicional) para que ambos compartan /assignments. Las
     // rutas no chocan porque los paths internos son distintos
     // (/:id/confirmar-entrega vs /:id/messages*).
+    app.use('/assignments/*', guardiaVisibilidadTransportista);
     app.use('/assignments/*', firebaseAuthMiddleware);
     app.use('/assignments/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     const assignmentsRouter = createAssignmentsRoutes({
@@ -580,6 +640,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       // T8/T9 (medicion-huella-segmento): radio del geofence del origen que
       // POST /:id/driver-position devuelve evaluado a la PWA del conductor.
       geofenceRadiusM: config.GEOFENCE_RADIUS_M,
+      // T10-23: eco-routing en tiempo real detrás de flag (default OFF).
+      ...(ecoRoutingDeps ? { ecoRouting: ecoRoutingDeps } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
@@ -659,7 +721,24 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+    app.route(
+      '/admin/stakeholder-orgs',
+      createAdminStakeholderOrgsRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
+
+    // T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna). Auth vía
+    // allowlist BOOSTER_PLATFORM_ADMIN_EMAILS en el handler.
+    app.use('/admin/observatorio/*', firebaseAuthMiddleware);
+    app.use('/admin/observatorio/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route(
+      '/admin/observatorio',
+      createAdminObservatorioRoutes({ logger, lector: observatorio?.lector ?? null }),
+    );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
     // Mismo middleware chain que stakeholder-orgs.
@@ -686,7 +765,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/empresas',
-      createAdminEmpresaMiembrosRoutes({ db: opts.db, logger, auth: opts.firebaseAuth }),
+      createAdminEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
     );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca
@@ -704,6 +789,68 @@ export function createServer(opts: CreateServerOptions): Hono {
     );
     // Endpoint público sin auth — sirve la versión publicada con cache.
     app.route('/public', createPublicSiteSettingsRoutes({ db: opts.db, logger }));
+    // T10-29 — precios públicos (solo servicios en UF y huella; sin
+    // comisiones). Mismo lector con caché ≤ 60 s que pricing.
+    app.route(
+      '/public',
+      createPublicPreciosRoutes({ logger, lector: lectorConfiguracionComercial }),
+    );
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
+
+    // ADR-079 §3 — configuración comercial (tasas de comisión, servicios en
+    // UF, financiamiento, IVA) editable por el platform-admin. El lector con
+    // caché ≤ 60 s es compartido con pricing (publicar carga, liquidar v3).
+    app.use('/admin/configuracion-comercial', firebaseAuthMiddleware);
+    app.use('/admin/configuracion-comercial/*', firebaseAuthMiddleware);
+    app.use(
+      '/admin/configuracion-comercial',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.use(
+      '/admin/configuracion-comercial/*',
+      userContextMiddleware,
+      impersonationWriteGuardMiddleware,
+    );
+    app.route(
+      '/admin/configuracion-comercial',
+      createAdminConfiguracionComercialRoutes({
+        db: opts.db,
+        logger,
+        lector: lectorConfiguracionComercial,
+      }),
+    );
+
+    // ADR-080 — conciliación del mandato de cobro (platform-admin). Detrás de
+    // MANDATO_COBRO_ACTIVATED (404 con el flag apagado).
+    app.use('/admin/mandato-cobro', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro/*', firebaseAuthMiddleware);
+    app.use('/admin/mandato-cobro', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.use('/admin/mandato-cobro/*', userContextMiddleware, impersonationWriteGuardMiddleware);
+    app.route('/admin/mandato-cobro', createAdminMandatoCobroRoutes({ db: opts.db, logger }));
 
     // D1 — Admin seed demo (POST/DELETE /admin/seed/demo) RETIRADO —
     // chore/retiro-subsistema-demo (el seed y deleteDemo se eliminaron).

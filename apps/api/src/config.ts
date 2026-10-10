@@ -7,6 +7,7 @@ import {
   redisEnvSchema,
 } from '@booster-ai/config';
 import { z } from 'zod';
+import { checkCertificateBackendInvariants } from './certificate-backend-invariants.js';
 import { checkGcpConfigInvariants } from './gcp-config-invariants.js';
 
 // `booleanFlag` (anti-footgun de z.coerce.boolean) se importa de
@@ -340,6 +341,18 @@ export const apiEnvSchema = commonEnvSchema
      * determinístico automáticamente sin generar error).
      */
     GOOGLE_CLOUD_PROJECT: z.string().min(1).optional(),
+    /**
+     * T10-24 / ADR-012 Capa 2 — dataset BigQuery del observatorio urbano
+     * (`observatory`, Terraform). Ausente: el export y el endpoint admin del
+     * observatorio responden "no configurado" (skip / 503).
+     */
+    BIGQUERY_OBSERVATORY_DATASET: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_]+$/)
+        .optional(),
+    ),
 
     /**
      * Feature flag para activar pricing v2 (ADR-030 + ADR-031).
@@ -364,6 +377,46 @@ export const apiEnvSchema = commonEnvSchema
      * env revierte la activación en segundos sin tocar BD ni código.
      */
     PRICING_V2_ACTIVATED: booleanFlag(process.env.NODE_ENV === 'production'),
+
+    /**
+     * ADR-079 §6 — modelo comercial v3: comisión al generador por modalidad
+     * de carga, tasa congelada al publicar, liquidación v3. `false` en TODOS
+     * los entornos: se enciende solo con env var explícita en Cloud Run
+     * (Terraform), después de publicar los T&C v3 (ADR-079 Acciones §7).
+     * Con `false`, publicar no congela tasa y liquidar sigue en v2.
+     */
+    PRICING_V3_ACTIVATED: booleanFlag(false),
+
+    /**
+     * ADR-080 §5 — mandato de cobro: Booster cobra al generador y libera al
+     * transportista contra recepción conforme. Default OFF en todos los
+     * entornos (modo conector). Encenderlo exige las seis precondiciones de
+     * ADR-080 §6 con evidencia (`.specs/mandato-de-cobro/activacion.md`).
+     */
+    MANDATO_COBRO_ACTIVATED: booleanFlag(false),
+
+    /**
+     * ADR-080 §6.3 — tope del float de terceros (caja propia de Booster
+     * adelantada al transportista antes del cobro). 0 por omisión: sin
+     * decisión escrita del PO, Booster no adelanta caja propia y toda
+     * liberación previa al cobro se rechaza con `tope_float_excedido`.
+     */
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.coerce.number().int().min(0).default(0),
+    ),
+
+    /**
+     * ADR-079 §4 — clave de la API v3 de la CMF para el valor UF del día
+     * (secret `cmf-api-key`). Ausente, vacía o con el placeholder
+     * `ROTATE_ME_…` de Terraform cuenta como no configurada: el valor UF se
+     * toma solo del respaldo SII.
+     */
+    CMF_API_KEY: z.preprocess(
+      (v) =>
+        typeof v === 'string' && (v.trim() === '' || v.startsWith('ROTATE_ME_')) ? undefined : v,
+      z.string().min(1).optional(),
+    ),
 
     /**
      * Feature flag para activar factoring v1 / "Booster Cobra Hoy"
@@ -460,17 +513,12 @@ export const apiEnvSchema = commonEnvSchema
     WAKE_WORD_VOICE_ACTIVATED: booleanFlag(false),
 
     /**
-     * Modo demo (subdominio `demo.boosterchile.com`). Default OFF.
-     *
-     * NOTA (chore/retiro-subsistema-demo, Fase 2): la superficie de
-     * login/seed demo (`POST /demo/login`, el auto-seed de startup y los
-     * endpoints `/admin/seed/demo`) fue RETIRADA. El enforcement ya no
-     * corre en el chain de auth (slice retiro-es-demo-auth-hot-path).
-     * El flag se conserva por compat de env y lo expone `/feature-flags`.
-     * El retiro total de la columna y la maquinaria queda para el cierre
-     * del Slot 2.
+     * T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. ON: cada posición
+     * de un viaje recogido evalúa congestión y, con alternativa material,
+     * persiste la sugerencia y la empuja al conductor por Web Push. Default
+     * OFF hasta validar en staging (ADR-083) y con un viaje real.
      */
-    DEMO_MODE_ACTIVATED: booleanFlag(false),
+    ECO_ROUTING_REALTIME_ACTIVATED: booleanFlag(false),
 
     /**
      * T10 SEC-001 Sprint 2b (sec-001-cierre §3 H1.2 + §7.5 feature flag
@@ -498,7 +546,7 @@ export const apiEnvSchema = commonEnvSchema
     /**
      * Impersonación auditada — gate del endpoint `POST /auth/impersonate`
      * (platform-admin actúa como cualquier usuario no-admin, con escritura
-     * acotada a empresas `es_demo` vía el impersonation-write-guard).
+     * acotada a empresas `es_usuario_prueba` vía el impersonation-write-guard).
      *
      * Default `false` (opt-in explícito del PO en Terraform). Con el flag OFF,
      * el endpoint responde `503 feature_disabled` — no existe superficie de
@@ -759,46 +807,25 @@ export const apiEnvSchema = commonEnvSchema
      * Cloud Run api. Configurado en infrastructure/storage.tf (ADR-039).
      */
     PUBLIC_ASSETS_BUCKET: z.string().min(1).default('booster-ai-public-assets-prod'),
-
-    /**
-     * F2 P0-C (`.specs/p0c-uids-demo-secret-manager/spec.md`) — CSV de los
-     * Firebase UIDs demo viejos a retirar vía `--retire-old-batch` (ADR-053).
-     *
-     * Antes eran 4 literales hardcoded (PII / Ley 19.628) en
-     * `services/harden-demo-accounts.ts`. Se extrajeron a esta env validada.
-     *
-     * Cada entrada debe matchear `/^[A-Za-z0-9]{20,128}$/` (formato Firebase
-     * UID). Ausente/"" → `[]` (el batch es no-op seguro). Malformada → el
-     * startup del API rehúsa arrancar (fail-fast `parseEnv`), defensa en
-     * profundidad: un solo lugar documentado para el formato.
-     *
-     * Hoy solo el CLI standalone consume estos UIDs (lee `DEMO_OLD_UIDS`
-     * directo, sin importar este config). El runtime del API NO llama
-     * `retireOldBatch`; se declara acá para evitar drift si alguna ruta/cron
-     * futura lo necesitara (inyectaría `config.DEMO_OLD_UIDS` como
-     * `opts.oldUids`). No se setea en el env del Cloud Run (queda `[]`).
-     */
-    DEMO_OLD_UIDS: z
-      .string()
-      .optional()
-      .transform((s) =>
-        (s ?? '')
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean),
-      )
-      .pipe(z.array(z.string().regex(/^[A-Za-z0-9]{20,128}$/, 'Firebase UID inválido'))),
   })
   // Invariantes cross-field GCP (audit 2026-06-14 P0-D): tras eliminar los IDs
   // de prod hardcodeados, exigimos las env vars exactamente cuando un feature
   // las necesita, fallando rápido en el startup en vez de apuntar a prod.
   .superRefine((env, ctx) => {
-    const errors = checkGcpConfigInvariants({
-      nodeEnv: env.NODE_ENV,
-      observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
-      googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
-      billingExportTable: env.BILLING_EXPORT_TABLE,
-    });
+    const errors = [
+      ...checkGcpConfigInvariants({
+        nodeEnv: env.NODE_ENV,
+        observabilityDashboardActivated: env.OBSERVABILITY_DASHBOARD_ACTIVATED,
+        googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+        billingExportTable: env.BILLING_EXPORT_TABLE,
+      }),
+      // Backend local de certificados (E2E, T10-02) vetado en producción.
+      ...checkCertificateBackendInvariants({
+        nodeEnv: env.NODE_ENV,
+        signingKeyId: env.CERTIFICATE_SIGNING_KEY_ID,
+        certificatesBucket: env.CERTIFICATES_BUCKET,
+      }),
+    ];
     for (const message of errors) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
     }

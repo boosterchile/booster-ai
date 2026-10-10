@@ -74,6 +74,62 @@ describe('FormField', () => {
   });
 });
 
+describe('FormField — aria-invalid (WCAG 3.3.1, T10-11)', () => {
+  it('con error marca el input como aria-invalid', () => {
+    render(
+      <FormField
+        label="Peso (kg)"
+        error="Ingresa el peso"
+        render={({ id, describedBy }) => <input id={id} aria-describedby={describedBy} />}
+      />,
+    );
+    const input = screen.getByLabelText('Peso (kg)');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription('Ingresa el peso');
+  });
+
+  it('también marca select y textarea', () => {
+    render(
+      <>
+        <FormField
+          label="Región"
+          error="Elige una región"
+          render={({ id }) => (
+            <select id={id}>
+              <option value="">—</option>
+            </select>
+          )}
+        />
+        <FormField label="Notas" error="Muy largo" render={({ id }) => <textarea id={id} />} />
+      </>,
+    );
+    expect(screen.getByLabelText('Región')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Notas')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('sin error no agrega aria-invalid', () => {
+    render(<FormField label="Peso (kg)" render={({ id }) => <input id={id} />} />);
+    expect(screen.getByLabelText('Peso (kg)')).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('con wrapper no toca el contenedor y entrega `invalid` al render-prop', () => {
+    render(
+      <FormField
+        label="Precio"
+        error="Ingresa un precio"
+        render={({ id, invalid }) => (
+          <div data-testid="envoltorio">
+            <span>$</span>
+            <input id={id} aria-invalid={invalid || undefined} />
+          </div>
+        )}
+      />,
+    );
+    expect(screen.getByTestId('envoltorio')).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText('Precio')).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
 describe('inputClass', () => {
   it('agrega clase de error cuando hasError=true', () => {
     expect(inputClass(true)).toContain('border-danger-500');

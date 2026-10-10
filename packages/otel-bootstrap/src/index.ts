@@ -1,10 +1,14 @@
+import { MetricExporter } from '@google-cloud/opentelemetry-cloud-monitoring-exporter';
 import { TraceExporter } from '@google-cloud/opentelemetry-cloud-trace-exporter';
+import { metrics, trace } from '@opentelemetry/api';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import type { ExportResult } from '@opentelemetry/core';
 import { resourceFromAttributes } from '@opentelemetry/resources';
+import { PeriodicExportingMetricReader, type PushMetricExporter } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import { BusinessOnlyMetricExporter } from './business-metric-exporter.js';
 
 /**
  * Bootstrap de OpenTelemetry para los servicios Booster (spec
@@ -24,6 +28,14 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic
  * consistente con ADR-037/038). Sin GOOGLE_CLOUD_PROJECT es no-op:
  * dev/CI no requieren GCP. El SA runtime ya tiene roles/cloudtrace.agent
  * (infrastructure/iam.tf).
+ *
+ * Métricas (T10-15, ADR-082): registra un `MeterProvider` global que exporta
+ * a Cloud Monitoring con prefijo `workload.googleapis.com/`. Sin él, los
+ * contadores de negocio (`metrics.getMeter(...)` en cada servicio) eran no-op
+ * y Cloud Monitoring no tenía un solo descriptor propio. El SA runtime ya
+ * tiene roles/monitoring.metricWriter (infrastructure/iam.tf). Solo se
+ * exportan los meters cuyo nombre termina en `/business` (ver
+ * BusinessOnlyMetricExporter).
  */
 
 export interface InitOtelOptions {
@@ -31,7 +43,17 @@ export interface InitOtelOptions {
   serviceVersion?: string;
   /** Override para tests — evita instanciar el exporter real de GCP. */
   exporter?: SpanExporter;
+  /** Override para tests — evita instanciar el exporter de Cloud Monitoring. */
+  metricExporter?: PushMetricExporter;
+  /**
+   * Intervalo de exportación de métricas en ms. Cloud Monitoring rechaza más
+   * de un punto cada 5 s por serie; 60 s es el default recomendado.
+   */
+  metricExportIntervalMs?: number;
 }
+
+/** Intervalo de exportación de métricas por defecto (ms). */
+export const DEFAULT_METRIC_EXPORT_INTERVAL_MS = 60_000;
 
 export interface InitOtelResult {
   started: boolean;
@@ -93,6 +115,12 @@ export function initOtel(opts: InitOtelOptions): InitOtelResult {
       [ATTR_SERVICE_VERSION]: opts.serviceVersion ?? process.env.SERVICE_VERSION ?? '0.0.0-dev',
     }),
     traceExporter: exporter,
+    metricReaders: [
+      new PeriodicExportingMetricReader({
+        exporter: new BusinessOnlyMetricExporter(opts.metricExporter ?? new MetricExporter()),
+        exportIntervalMillis: opts.metricExportIntervalMs ?? DEFAULT_METRIC_EXPORT_INTERVAL_MS,
+      }),
+    ],
     instrumentations: [
       getNodeAutoInstrumentations({
         // Ruidosas y sin valor en este stack — fuera del hot path.
@@ -118,5 +146,11 @@ export async function shutdownOtelForTests(): Promise<void> {
   if (sdk) {
     await sdk.shutdown().catch(() => undefined);
     sdk = null;
+    // NodeSDK.shutdown no desregistra los providers globales de la API; sin
+    // esto, el siguiente initOtel no podría registrar su MeterProvider.
+    metrics.disable();
+    trace.disable();
   }
 }
+
+export { BUSINESS_METER_SUFFIX, BusinessOnlyMetricExporter } from './business-metric-exporter.js';
