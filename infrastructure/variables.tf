@@ -478,6 +478,23 @@ variable "wake_word_voice_activated" {
   default     = false
 }
 
+variable "mandato_cobro_activated" {
+  description = "ADR-080 — mandato de cobro (Booster cobra al generador y libera al transportista). Encender solo con las seis precondiciones de §6 evidenciadas."
+  type        = bool
+  default     = false
+}
+
+variable "mandato_cobro_float_maximo_clp" {
+  description = "ADR-080 §6.3 — tope del float de terceros en CLP (caja propia adelantada antes del cobro). 0 = Booster no adelanta caja propia."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.mandato_cobro_float_maximo_clp >= 0 && floor(var.mandato_cobro_float_maximo_clp) == var.mandato_cobro_float_maximo_clp
+    error_message = "mandato_cobro_float_maximo_clp debe ser un entero >= 0."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Modo demo (subdominio demo.boosterchile.com)
 # ---------------------------------------------------------------------------

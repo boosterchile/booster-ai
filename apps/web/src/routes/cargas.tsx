@@ -18,6 +18,7 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
+import { RecepcionYPagoCard } from '../components/comercial/RecepcionYPagoCard.js';
 import {
   DesgloseGenerador,
   type DesgloseGeneradorDto,
@@ -1364,6 +1365,10 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
               />
             </DataCard>
           )}
+
+          {/* ADR-080: confirmación de recepción del generador y, bajo mandato
+              de cobro, el estado del pago. */}
+          <RecepcionYPagoCard tripId={trip.id} status={trip.status} />
 
           <DataCard title="Origen y destino">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

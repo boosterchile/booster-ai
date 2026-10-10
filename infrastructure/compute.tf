@@ -218,6 +218,13 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # ADR-080 — mandato de cobro. Default false (modo conector). Encender solo
+    # con las seis precondiciones de §6 evidenciadas en
+    # .specs/mandato-de-cobro/activacion.md. El tope del float es 0 por
+    # omisión: sin decisión escrita del PO, Booster no adelanta caja propia.
+    MANDATO_COBRO_ACTIVATED        = tostring(var.mandato_cobro_activated)
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP = tostring(var.mandato_cobro_float_maximo_clp)
+
     # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
     # habilita POST /demo/login (mintea custom tokens Firebase para las
     # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
