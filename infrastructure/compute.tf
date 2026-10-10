@@ -77,6 +77,7 @@ locals {
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.resend_api_key_placeholder.id],
   )
 
   # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
@@ -338,6 +339,12 @@ module "service_api" {
     # = los 4 actuales true → plan No changes. Un content-sid no-ready queda fuera
     # del mount → su env var ausente → config.ts undefined (.optional()) → arranca.
     local.ready_content_sid_secrets,
+    # T10-04: correo saliente. Gateado por readiness, como los content-sid
+    # (email.tf); sin el flag la env queda ausente y el api usa el
+    # LoggingEmailSender.
+    var.resend_api_key_ready ? {
+      RESEND_API_KEY = google_secret_manager_secret.resend_api_key.secret_id
+    } : {},
   )
 
   vpc_connector = google_vpc_access_connector.serverless.id

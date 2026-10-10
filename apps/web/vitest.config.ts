@@ -41,13 +41,13 @@ export default defineConfig({
         'src/router.tsx',
       ],
       // Gates bloqueantes — el CI verifica coverage-summary.json.
-      // CLAUDE.md objetivo: 80%/75%/80%/80%. Cumplido sobre el subset testable
+      // 80 % en las cuatro métricas (T10-08, ADR-082), sobre el subset testable
       // (libs + hooks no-SSE + components leaf). Páginas y UI compleja se
       // cubren con Playwright e2e (apps/web/e2e/).
       thresholds: {
         lines: 80,
-        functions: 75,
-        branches: 75,
+        functions: 80,
+        branches: 80,
         statements: 80,
       },
     },

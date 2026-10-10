@@ -49,6 +49,20 @@ import { procesarCobranzaCobraHoy } from '../services/procesar-cobranza-cobra-ho
 import { purgarPosicionesMovil } from '../services/purgar-posiciones-movil.js';
 import { DEFAULT_REAPER_GRACE_DAYS } from '../services/reaper-predicate.js';
 
+/**
+ * `pg.Pool` con la firma mínima que piden los reapers (`PoolLike`). Las
+ * sobrecargas de `pg.Pool.query` no calzan estructuralmente con esa interfaz;
+ * este adaptador las reduce a la única forma que usan, sin casts.
+ */
+function adaptarPool(pool: pg.Pool): PoolLike & OrphanPoolLike {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      const resultado = await pool.query(sql, params);
+      return { rows: resultado.rows, rowCount: resultado.rowCount };
+    },
+  };
+}
+
 export function createAdminJobsRoutes(opts: {
   db: Db;
   logger: Logger;
@@ -183,7 +197,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-inert-idp-accounts: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as PoolLike;
+    const pool: PoolLike = adaptarPool(opts.pool);
     const neverReapable = new Set<string>([
       ...appConfig.BOOSTER_PLATFORM_ADMIN_EMAILS,
       'dev@boosterchile.com',
@@ -226,7 +240,7 @@ export function createAdminJobsRoutes(opts: {
       opts.logger.warn('reap-orphan-onboarding-firebase: firebaseAuth o pool no inyectado, skip');
       return c.json({ ok: true, skipped: true, reason: 'deps_missing' }, 503);
     }
-    const pool = opts.pool as unknown as OrphanPoolLike;
+    const pool: OrphanPoolLike = adaptarPool(opts.pool);
     const summary = await reapOrphanOnboardingFirebaseUsers(
       {
         auth: opts.firebaseAuth,

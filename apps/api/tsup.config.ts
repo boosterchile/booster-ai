@@ -25,6 +25,8 @@ export default defineConfig({
     'import-in-the-middle',
     '@opentelemetry/sdk-trace-base',
     '@google-cloud/opentelemetry-cloud-trace-exporter',
+    '@google-cloud/opentelemetry-cloud-monitoring-exporter',
+    '@opentelemetry/sdk-metrics',
     'pg',
     'hono',
     '@hono/node-server',
