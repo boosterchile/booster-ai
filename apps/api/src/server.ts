@@ -39,7 +39,6 @@ import { createCertificatesRoutes } from './routes/certificates.js';
 import { createChatRoutes } from './routes/chat.js';
 import { createCobraHoyAssignmentsRoutes, createCobraHoyMeRoutes } from './routes/cobra-hoy.js';
 import { createConductoresRoutes } from './routes/conductores.js';
-import { createDemoCacheWarmRoutes } from './routes/demo-cache-warm.js';
 import { createCumplimientoRoutes, createDocumentosRoutes } from './routes/documentos.js';
 import { createEmpresaRoutes } from './routes/empresas.js';
 import { createFeatureFlagsRoutes } from './routes/feature-flags.js';
@@ -215,24 +214,6 @@ export function createServer(opts: CreateServerOptions): Hono {
   // auth porque la decisión de UI ocurre ANTES del login.
   app.route('/feature-flags', createFeatureFlagsRoutes({ logger }));
 
-  // POST /demo/login (modo demo subdominio) RETIRADO — chore/retiro-subsistema-demo.
-  if (opts.firebaseAuth) {
-    // T5 SEC-001 Sprint 2a — GET /api/v1/demo/cache-warm/:persona
-    // (pre-warm del cache `demo-claim:<uid>`; su consumidor, el middleware
-    // demo-expires, está retirado — el retiro de esta ruta es decisión del
-    // PO, Slot 2). IP rate-limited inline (10/min/IP). Public — no firebase
-    // auth required.
-    app.route(
-      '/api/v1/demo',
-      createDemoCacheWarmRoutes({
-        db: opts.db,
-        auth: opts.firebaseAuth,
-        redis: redisForRateLimit,
-        logger,
-      }),
-    );
-  }
-
   // T8 SEC-001 Sprint 2b — POST /api/v1/signup-request (SC-1.2.1 + SC-1.2.5
   // + ADR-052). Endpoint público (sin firebase auth) que reemplaza el flow
   // `createUserWithEmailAndPassword` client-side por admin-approval gate.
@@ -322,8 +303,6 @@ export function createServer(opts: CreateServerOptions): Hono {
       sseTicketStore: (ticket, assignmentId) =>
         consumeStreamTicket({ redis: redisForRateLimit, ticket, assignmentId }),
     });
-    // El enforcement de cuentas demo no se monta en este chain. El guard
-    // check-is-demo-wire-completeness falla si vuelve a aparecer acá.
     // Impersonación auditada: guard de escritura. Se monta per-group DESPUÉS de
     // userContext (autoriza solo empresas de prueba). En grupos sin userContext
     // (/me raíz, /empresas onboarding) fail-closea toda mutación impersonada.
@@ -376,7 +355,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // real (detectado en la prueba end-to-end).
     app.use('/me/empresa/miembros', userContextMiddlewareForMe);
     app.use('/me/empresa/miembros/*', userContextMiddlewareForMe);
-    meRouter.route('/empresa/miembros', createMeEmpresaMiembrosRoutes({ db: opts.db, logger }));
+    meRouter.route(
+      '/empresa/miembros',
+      createMeEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
     // Opt-in de huella — GET/PATCH /me/empresa. userContext precede el mount;
     // el empresaId sale de la membresía activa (nunca del cliente).
     app.use('/me/empresa', userContextMiddlewareForMe);
@@ -538,9 +525,7 @@ export function createServer(opts: CreateServerOptions): Hono {
           twilioClient: opts.notify?.twilioClient ?? null,
           contentSidChatUnread: config.CONTENT_SID_CHAT_UNREAD ?? null,
           webAppUrl: config.WEB_APP_URL,
-          // T6a SEC-001 Sprint 2a — TTL alerter wire (firebase + redis).
           firebaseAuth: opts.firebaseAuth ?? null,
-          redis: redisForRateLimit,
           // T9 SEC-001 boundary-closure — pool para el reaper de cuentas IdP.
           pool: opts.pool,
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
@@ -654,7 +639,15 @@ export function createServer(opts: CreateServerOptions): Hono {
     // Auth via BOOSTER_PLATFORM_ADMIN_EMAILS allowlist en el handler.
     app.use('/admin/stakeholder-orgs/*', firebaseAuthMiddleware);
     app.use('/admin/stakeholder-orgs/*', userContextMiddleware, impersonationWriteGuardMiddleware);
-    app.route('/admin/stakeholder-orgs', createAdminStakeholderOrgsRoutes({ db: opts.db, logger }));
+    app.route(
+      '/admin/stakeholder-orgs',
+      createAdminStakeholderOrgsRoutes({
+        db: opts.db,
+        logger,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
+    );
 
     // T10 SEC-001 Sprint 2b — admin signup-requests (ADR-052 + SC-1.2.1).
     // Mismo middleware chain que stakeholder-orgs.
@@ -681,7 +674,13 @@ export function createServer(opts: CreateServerOptions): Hono {
     app.use('/admin/empresas/*', userContextMiddleware, impersonationWriteGuardMiddleware);
     app.route(
       '/admin/empresas',
-      createAdminEmpresaMiembrosRoutes({ db: opts.db, logger, auth: opts.firebaseAuth }),
+      createAdminEmpresaMiembrosRoutes({
+        db: opts.db,
+        logger,
+        auth: opts.firebaseAuth,
+        emailSender,
+        webAppUrl: config.WEB_APP_URL,
+      }),
     );
 
     // ADR-039 — Site Settings Runtime Configuration. Admin edita marca

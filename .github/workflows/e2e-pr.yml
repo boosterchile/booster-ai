@@ -109,7 +109,8 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:15-alpine
+        # Espejo de Google: Docker Hub limita los pulls anónimos de los runners.
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -122,7 +123,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-

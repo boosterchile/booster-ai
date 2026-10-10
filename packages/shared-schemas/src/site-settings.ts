@@ -5,7 +5,7 @@ import { z } from 'zod';
  *
  * El admin puede editar estos campos desde
  * `/app/platform-admin/site-settings` y los cambios aplican en runtime
- * a `demo.boosterchile.com`, `/login`, `/onboarding` sin redeploy.
+ * a `/login` y `/onboarding` sin redeploy.
  *
  * ADR-039 — Site Settings Runtime Configuration.
  *

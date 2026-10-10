@@ -41,8 +41,7 @@ const unsubscribeBodySchema = z.object({
 export function createMePushSubscriptionRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireUser(c: Context<any, any, any>) {
+  function requireUser(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext?.user) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

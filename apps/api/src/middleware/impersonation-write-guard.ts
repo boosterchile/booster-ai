@@ -6,7 +6,7 @@ import type { FirebaseClaims } from './firebase-auth.js';
 /**
  * impersonation-write-guard middleware (Hono) — impersonación auditada.
  *
- * Espejo estructural de `is-demo-enforcement.ts`: enforcement de authorization
+ * Enforcement de authorization
  * (NO auth) sobre el custom claim `impersonated_by`. Asume que
  * `firebaseAuthMiddleware` ya verificó el token y publicó `firebaseClaims`, y
  * — donde aplica — que `userContextMiddleware` resolvió `userContext`.
@@ -17,9 +17,8 @@ import type { FirebaseClaims } from './firebase-auth.js';
  *   - Puede LEER cualquier empresa del target: GET/HEAD/OPTIONS passthrough.
  *   - Solo puede ESCRIBIR (POST/PUT/PATCH/DELETE) cuando la empresa activa
  *     (`userContext.activeMembership.empresa.isTestUser` = `es_usuario_prueba`)
- *     es de usuarios de prueba. DESACOPLADO de `es_demo` (ADR-053 + recon
- *     findings): `es_demo` YA NO autoriza — una empresa demo legacy tampoco.
- *   - Empresa real, demo legacy (o sin empresa activa resoluble) + método
+ *     es de usuarios de prueba (ADR-053).
+ *   - Empresa real (o sin empresa activa resoluble) + método
  *     mutante → 403. **Fail-closed**: si no se puede confirmar
  *     `es_usuario_prueba`, se bloquea. Esto cubre rutas user-level sin
  *     userContext (p.ej. `/me` raíz — cambiar la clave del target mientras se
@@ -103,13 +102,12 @@ export function createImpersonationWriteGuardMiddleware(
     const userContext = c.get('userContext') as UserContext | undefined;
     const empresa = userContext?.activeMembership?.empresa;
     // DESACOPLE ADR-053: la escritura impersonada se autoriza SOLO sobre
-    // empresas `es_usuario_prueba`. `es_demo` YA NO autoriza (una empresa demo
-    // legacy o una empresa real de cliente → bloqueada). Ver
+    // empresas `es_usuario_prueba` (una empresa real de cliente → bloqueada). Ver
     // .specs/impersonacion-auditada/findings.md.
     const empresaIsTestUser = empresa?.isTestUser === true;
 
     if (!empresaIsTestUser) {
-      // Fail-closed: empresa no-prueba (real, demo legacy) o no resoluble →
+      // Fail-closed: empresa no-prueba o no resoluble →
       // bloquear la mutación.
       opts.logger.warn(
         {
