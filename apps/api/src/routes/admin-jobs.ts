@@ -1,3 +1,7 @@
+import {
+  type EcoRoutingDeps,
+  barrerEcoRoutingTeltonika,
+} from '../services/eco-routing-tiempo-real.js';
 /**
  * Endpoints internos disparados por Cloud Scheduler (P3.d y futuros).
  *
@@ -96,6 +100,11 @@ export function createAdminJobsRoutes(opts: {
    * `BIGQUERY_OBSERVATORY_DATASET` no está configurado: el job responde skip.
    */
   observatorio?: { datasetId: string; cargador: CargadorBigQuery };
+  /**
+   * T10-23 — eco-routing en tiempo real (mismas deps que `assignments`, para
+   * compartir throttle). Ausente = flag `ECO_ROUTING_REALTIME_ACTIVATED` OFF.
+   */
+  ecoRouting?: { deps: EcoRoutingDeps; routesProjectId?: string | undefined } | undefined;
 }) {
   const app = new Hono();
 
@@ -120,6 +129,19 @@ export function createAdminJobsRoutes(opts: {
       return res;
     });
     return c.json({ ok: true, filas: r.filas });
+  });
+
+  app.post('/eco-routing-barrido', async (c) => {
+    if (!opts.ecoRouting) {
+      return c.json({ ok: true, skipped: 'flag_off' });
+    }
+    const r = await barrerEcoRoutingTeltonika({
+      db: opts.db,
+      logger: opts.logger,
+      routesProjectId: opts.ecoRouting.routesProjectId,
+      deps: opts.ecoRouting.deps,
+    });
+    return c.json({ ok: true, evaluadas: r.evaluadas, resultados: r.resultados });
   });
 
   /** ADR-079 §4 — valor UF: CMF (si hay `CMF_API_KEY`) con respaldo SII. */

@@ -220,6 +220,9 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
+    # T10-23 — eco-routing en tiempo real (default false).
+    ECO_ROUTING_REALTIME_ACTIVATED = tostring(var.eco_routing_realtime_activated)
+
     # ADR-080 — mandato de cobro. Default false (modo conector). Encender solo
     # con las seis precondiciones de §6 evidenciadas en
     # .specs/mandato-de-cobro/activacion.md. El tope del float es 0 por

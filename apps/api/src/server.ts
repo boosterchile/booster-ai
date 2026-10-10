@@ -84,6 +84,7 @@ import {
   crearLectorConfiguracionComercial,
   leerConfiguracionPublicada,
 } from './services/configuracion-comercial.js';
+import type { EcoRoutingDeps } from './services/eco-routing-tiempo-real.js';
 import { crearEmailSender } from './services/notifications/email-sender.js';
 import { LoggingSignupRequestNotifier } from './services/notifications/signup-request-email.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
@@ -94,8 +95,9 @@ import {
   crearCargadorBigQuery,
   crearLectorObservatorio,
 } from './services/observatorio/bigquery.js';
+import { computeRoutes } from './services/routes-api.js';
 import { consumeStreamTicket } from './services/sse-ticket.js';
-import { configureWebPush } from './services/web-push.js';
+import { configureWebPush, sendPushToUser } from './services/web-push.js';
 
 export interface CreateServerOptions {
   db: Db;
@@ -557,6 +559,18 @@ export function createServer(opts: CreateServerOptions): Hono {
     // (P3.d chat WhatsApp fallback). Auth: OIDC token con email = SA del
     // scheduler (INTERNAL_CRON_CALLER_SA). Si la env var no está,
     // skippeamos el wire (ningún caller pasa el middleware).
+    // T10-23 — eco-routing en tiempo real detrás de flag (default OFF). Una sola
+    // instancia de deps para `driver-position` y el barrido del scheduler, así
+    // comparten el throttle por asignación.
+    const ecoRoutingDeps: EcoRoutingDeps | undefined = config.ECO_ROUTING_REALTIME_ACTIVATED
+      ? {
+          computeRoutes,
+          sendPush: ({ userId, payload }) =>
+            sendPushToUser({ db: opts.db, logger, userId, payload }),
+          now: Date.now,
+          throttle: new Map<string, number>(),
+        }
+      : undefined;
     if (config.INTERNAL_CRON_CALLER_SA) {
       const cronAuthMiddleware = createAuthMiddleware({
         apiAudience: config.API_AUDIENCE,
@@ -583,6 +597,10 @@ export function createServer(opts: CreateServerOptions): Hono {
                   cargador: observatorio.cargador,
                 },
               }
+            : {}),
+          // T10-23 — barrido por minuto de viajes con Teltonika (mismas deps).
+          ...(ecoRoutingDeps
+            ? { ecoRouting: { deps: ecoRoutingDeps, routesProjectId: config.GOOGLE_CLOUD_PROJECT } }
             : {}),
           // Gap B5 — cron de membresías. No inyectamos gateway: el route usa
           // `noopMembershipPaymentGateway` por default (⚠️ STUB, NO mueve
@@ -617,6 +635,8 @@ export function createServer(opts: CreateServerOptions): Hono {
       // T8/T9 (medicion-huella-segmento): radio del geofence del origen que
       // POST /:id/driver-position devuelve evaluado a la PWA del conductor.
       geofenceRadiusM: config.GEOFENCE_RADIUS_M,
+      // T10-23: eco-routing en tiempo real detrás de flag (default OFF).
+      ...(ecoRoutingDeps ? { ecoRouting: ecoRoutingDeps } : {}),
     });
     const chatRouter = createChatRoutes({
       db: opts.db,
