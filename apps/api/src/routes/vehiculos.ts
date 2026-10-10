@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { pgErrorCode } from '../db/pg-error.js';
 import {
   pendingDevices,
   posicionesMovilConductor,
@@ -810,7 +811,7 @@ export function createVehiculosRoutes(opts: {
       }
       return c.json({ vehicle: serializeVehicle(created) }, 201);
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === '23505') {
         // unique_violation — patente o IMEI duplicado.
         return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
@@ -980,7 +981,7 @@ export function createVehiculosRoutes(opts: {
       );
       return c.json({ vehicle: serializeVehicle(updated) });
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === '23505') {
         return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
       }
@@ -1168,7 +1169,7 @@ export function createVehiculosRoutes(opts: {
                 .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
                 .returning();
             } catch (err) {
-              const code = (err as { code?: string }).code;
+              const code = pgErrorCode(err);
               if (code === '23505') {
                 // Mensaje neutro: NO revela qué otra empresa/patente tiene el IMEI.
                 resultado = 'imei_en_uso';
