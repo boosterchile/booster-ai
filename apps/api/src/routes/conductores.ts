@@ -4,7 +4,7 @@ import {
   rutSchema,
   updateDriverBodySchema,
 } from '@booster-ai/shared-schemas';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -108,7 +108,7 @@ export function createConductoresRoutes(opts: {
    * 2026-08-03): en la operación de carga chilena usan WhatsApp, no correo.
    * Ausente ⇒ no se intenta; el alta no depende de esto.
    */
-  whatsappClient?: TwilioWhatsAppClient;
+  whatsappClient?: WhatsAppContentSender;
   activacionContentSid?: string;
 }) {
   const app = new Hono();

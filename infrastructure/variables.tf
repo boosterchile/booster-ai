@@ -644,6 +644,26 @@ variable "content_sid_ready" {
   }
 }
 
+# -----------------------------------------------------------------------------
+# Entornos (ADR-083): staging es un proyecto gemelo con este mismo root module.
+# -----------------------------------------------------------------------------
+variable "tfstate_bucket" {
+  description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
+  type        = string
+  default     = "booster-ai-tfstate-494222"
+}
+
+variable "staging_nameservers" {
+  description = <<-EOT
+    Solo en prod: nameservers de la zona DNS del proyecto de staging
+    (output `dns_zone_name_servers` del apply de staging). Si no está vacío, prod
+    delega `staging.<domain>` a esa zona con un registro NS. Vacío = sin
+    delegación (staging aún no existe).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 # ---------------------------------------------------------------------------
 # T10-04 (ADR-082) — correo saliente vía Resend
 # ---------------------------------------------------------------------------
@@ -671,6 +691,22 @@ variable "resend_dns_records" {
     ])
     error_message = "Cada registro: type TXT, MX o CNAME; name relativo al dominio (sin '@' ni punto final); al menos un rrdata."
   }
+}
+
+# T10-21 — extracción del canal WhatsApp a notification-service
+# (.specs/notification-service-t10-21/spec.md). Ambos OFF = envío directo de
+# siempre. Orden de activación: sombra 3–7 días con divergencias = 0 → drill
+# en staging → via_microservice. Rollback: apagar y re-aplicar.
+variable "notifications_shadow" {
+  description = "api envía WhatsApp directo Y publica en sombra a notification-events; el servicio compara hashes sin enviar."
+  type        = bool
+  default     = false
+}
+
+variable "notifications_via_microservice" {
+  description = "api publica a notification-events y notification-service entrega por Twilio. Tiene precedencia sobre notifications_shadow."
+  type        = bool
+  default     = false
 }
 
 # T10-21 — ranking de matching en matching-engine

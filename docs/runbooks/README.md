@@ -10,11 +10,11 @@
 | `apps/web` | Cloud Run (`booster-ai-web`) | [`service-web.md`](service-web.md) | PWA estática (nginx). Config build-time. |
 | `apps/telemetry-tcp-gateway` | **GKE Autopilot** | [`service-telemetry-tcp-gateway.md`](service-telemetry-tcp-gateway.md) | TCP Teltonika (5027/5061). Único servicio con `kubectl`. |
 | `apps/telemetry-processor` | Cloud Run (`booster-ai-telemetry-processor`) | [`service-telemetry-processor.md`](service-telemetry-processor.md) | Consumer Pub/Sub pull. **Requiere min-instances≥1 + CPU always-on.** |
-| `apps/document-service` | Cloud Run (`booster-ai-document-service`) | [`service-document-service.md`](service-document-service.md) | Consumer Pub/Sub. Decodifica TED (PDF417). Bucket `documents` retención 6 años. |
+| `apps/document-service` | Cloud Run (`booster-ai-document-service`) | [`service-document-service.md`](service-document-service.md) | Consumer Pub/Sub pull. Decodifica TED (PDF417). **Requiere min-instances≥1 + CPU always-on.** Bucket `documents` retención 6 años. |
 | `apps/whatsapp-bot` | Cloud Run (`booster-ai-whatsapp-bot`) | [`service-whatsapp-bot.md`](service-whatsapp-bot.md) | Webhook Twilio WhatsApp + conversación XState en Redis. |
 | `apps/sms-fallback-gateway` | Cloud Run (`booster-ai-sms-fallback-gateway`) | [`service-sms-fallback-gateway.md`](service-sms-fallback-gateway.md) | Webhook Twilio SMS → Pub/Sub `telemetry-events`. Ingress abierto (Twilio postea directo). |
 | `apps/matching-engine` | Cloud Run (`booster-ai-matching-engine`) | [`service-matching-engine.md`](service-matching-engine.md) | `POST /ranking` (cómputo puro, T10-21). Sombra o ranking real según flags del api, con fallback local en el api. Orquestación y offers siguen en `apps/api`. |
-| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | **SKELETON** — el fan-out real vive en `apps/api`. |
+| `apps/notification-service` | Cloud Run (`booster-ai-notification-service`) | [`service-notification-service.md`](service-notification-service.md) | Consumer Pub/Sub pull del canal WhatsApp (T10-21). Sombra o entrega real según flags del api. **Requiere min-instances≥1 + CPU always-on.** Web Push/email siguen en `apps/api`. |
 
 ## Alerta → runbook
 
@@ -38,11 +38,13 @@
 | [`post-mortem-template.md`](post-mortem-template.md) | Plantilla de post-mortem (obligatorio P0/P1) → `docs/incidents/`. |
 | [`incidentes-glec.md`](incidentes-glec.md) | Huella GLEC y certificados: no emitidos, huella degradada, certificado incorrecto, `/verify` caído. |
 | [`mandato-de-cobro.md`](mandato-de-cobro.md) | Flujo de dinero ADR-080: activación, vuelta a modo conector, incidentes de conciliación/float/disputa. |
+| [`staging.md`](staging.md) | Crear y operar staging, el proyecto gemelo de prod con el mismo Terraform (ADR-083). |
 | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) | Árbol de respuesta por alerta de telemetría (crash/unplug/jamming/parser/backlog/stalled/ingress). |
 | [`db-migration-rollback.md`](db-migration-rollback.md) | Revertir/contener una migración Drizzle (Caminos A rollback / B forward-fix / C PITR). |
 | [`bootstrap-gke-telemetry-gateway.md`](bootstrap-gke-telemetry-gateway.md) | Primer levantamiento del cluster GKE (secret K8s, Workload Identity, Artifact Registry). |
 | [`dr-drill.md`](dr-drill.md) | **Drill de DR por restauración** (T10-20): clon PITR + restore de backup en otra región, RTO/RPO medidos con `infrastructure/scripts/dr-drill.sh`. |
 | [`dr-failover-test.md`](dr-failover-test.md) | Test de failover DR del gateway (histórico; el clúster DR se retiró por ADR-081). |
+| [`rollback-drill-microservicios.md`](rollback-drill-microservicios.md) | Drill de rollback en staging por microservicio extraído (T10-21, ADR-083). Hoy: `document-service`. |
 | [`load-content-sids.md`](load-content-sids.md) | Cargar/rotar Content SIDs de templates WhatsApp en Secret Manager. |
 | [`migracion-bucket-certificados.md`](migracion-bucket-certificados.md) | Migrar certificados de carbono al bucket propio. |
 | [`rotacion-maps-api-key.md`](rotacion-maps-api-key.md) | Rotar la Google Maps API key (referrer-restricted). |

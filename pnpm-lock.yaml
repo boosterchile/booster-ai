@@ -272,21 +272,54 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.13.0
         version: 7.19.0
+      '@hyzyla/pdfium':
+        specifier: 2.1.13
+        version: 2.1.13
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      '@opentelemetry/auto-instrumentations-node':
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))
+      '@opentelemetry/resources':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-metrics':
         specifier: ^2.8.0
         version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-node':
+        specifier: ^0.219.0
+        version: 0.219.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions':
+        specifier: ^1.36.0
+        version: 1.40.0
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.3)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(pg@8.20.0)
+      fast-xml-parser:
+        specifier: 5.9.2
+        version: 5.9.2
       import-in-the-middle:
         specifier: ^1.13.0
         version: 1.15.0
       pg:
         specifier: ^8.13.1
         version: 8.20.0
+      pino:
+        specifier: ^9.5.0
+        version: 9.14.0
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@22.19.18)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+      zxing-wasm:
+        specifier: 3.1.0
+        version: 3.1.0(@types/emscripten@1.41.5)
     devDependencies:
       '@electric-sql/pglite':
         specifier: ^0.5.3
@@ -397,9 +430,48 @@ importers:
       '@booster-ai/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@booster-ai/otel-bootstrap':
+        specifier: workspace:*
+        version: link:../../packages/otel-bootstrap
       '@booster-ai/shared-schemas':
         specifier: workspace:*
         version: link:../../packages/shared-schemas
+      '@booster-ai/whatsapp-client':
+        specifier: workspace:*
+        version: link:../../packages/whatsapp-client
+      '@google-cloud/opentelemetry-cloud-trace-exporter':
+        specifier: ^3.0.0
+        version: 3.0.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
+      '@google-cloud/pubsub':
+        specifier: ^4.10.0
+        version: 4.11.0
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      '@opentelemetry/auto-instrumentations-node':
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))
+      '@opentelemetry/resources':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-node':
+        specifier: ^0.219.0
+        version: 0.219.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base':
+        specifier: '>=2.8.0'
+        version: 2.8.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions':
+        specifier: ^1.36.0
+        version: 1.40.0
+      import-in-the-middle:
+        specifier: ^1.13.0
+        version: 1.15.0
+      pino:
+        specifier: ^9.5.0
+        version: 9.14.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.14.0
