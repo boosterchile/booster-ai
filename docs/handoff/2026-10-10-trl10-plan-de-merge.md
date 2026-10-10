@@ -44,7 +44,18 @@ El agente no mergea (CLAUDE.md, ADR-076): cuando un merge deja a otro PR en conf
 |---|---|---|---|
 | 1 | #776 `fix(ci)`: imágenes de Docker Hub desde el espejo de Google | CI | — |
 | 2 | #742 `docs(adr)`: TRL 10 con definición verificable (ADR-082, spec) | programa | — |
-| 3 | #743 `fix(ci)`: gitleaks semanal y drift de Terraform | T10-06, T10-07 | Observar tres corridas programadas en verde |
+| 3 | #743 `fix(ci)`: gitleaks semanal y drift de Terraform | T10-06, T10-07 | **Un release desde `main` con #743** (o un `terraform apply`) antes de esperar las corridas: prod tiene fijado `template.revision`. Después, tres corridas del Drift Check y dos semanales de Security en verde (ver abajo) |
+
+**Causas del rojo programado, verificadas el 2026-10-10 en los logs de Actions:**
+
+- **Drift Check del 09-10.**
+  - Lo que falla: un solo cambio, `module.service_api…service: template.revision = "booster-ai-api-00657-xeq" -> null` (`Plan: 0 to add, 1 to change`).
+  - Por qué: el release fija ese nombre al desplegar el canary con `--tag`.
+  - Qué cambia #743: el canary deja de usar `--tag`.
+  - Qué falta: el valor ya fijado en prod no se suelta con el merge. Se suelta con el primer release que corra sin `--tag` o con un apply.
+- **Security semanal del 05-10.** Tres jobs en rojo:
+  - **gitleaks**: lo corrige #743.
+  - **npm audit HIGH** y **Trivy fs**: CVE de `sharp` < 0.35.5. Hoy `main` da `2 high (1 ignored)`, y la que cuenta es `sharp`; `node-forge` ya está ignorada en `pnpm-workspace.yaml`. Los tres PRs de esta oleada suben `sharp` a 0.35.5 y pasan npm audit, Trivy y gitleaks.
 
 ### Oleada 1 — sin superficie de producto (docs, tests, observabilidad)
 
