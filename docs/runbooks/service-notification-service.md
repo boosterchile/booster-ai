@@ -112,5 +112,5 @@ Registrar los timestamps (falla, apply, primer envío) y la salida del plan en e
 
 - Spec: `.specs/notification-service-t10-21/spec.md`. Contrato: `packages/shared-schemas/src/events/notification-event.ts`.
 - Enrutador del api: `apps/api/src/services/whatsapp-enrutado.ts`. Hash: `packages/whatsapp-client/src/twilio-content-form.ts`.
-- Infra: `infrastructure/messaging.tf` (`notification_events_service`), `compute.tf` (`service_notification`) y `notification-service.tf` (métricas y alerta de sombra).
+- Infra: `infrastructure/notification-service.tf` (subscription `notification_events_service`, métricas y alerta de sombra) y `compute.tf` (`service_notification`). El topic está en `messaging.tf`.
 - Templates: `load-content-sids.md`.

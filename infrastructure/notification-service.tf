@@ -83,3 +83,43 @@ resource "google_monitoring_alert_policy" "notification_shadow_divergencia" {
     mime_type = "text/markdown"
   }
 }
+
+# T10-21 — subscription pull de notification-service sobre `notification-events`
+# (.specs/notification-service-t10-21/spec.md). Va aquí y no en messaging.tf
+# porque ese archivo declara service accounts e IAM (protegido por CLAUDE.md);
+# no agrega IAM. Exactly-once delivery: un
+# mensaje confirmado no se reentrega (evita WhatsApp duplicados por
+# redelivery); el servicio confirma con ackWithResponse. DLQ tras 5 intentos
+# (Twilio 429/5xx o red); los 4xx de Twilio se confirman sin reintento.
+resource "google_pubsub_subscription" "notification_events_service" {
+  name    = "notification-events-sub"
+  topic   = google_pubsub_topic.notification_events.name
+  project = google_project.booster_ai.project_id
+
+  ack_deadline_seconds         = 60
+  enable_exactly_once_delivery = true
+
+  # 1 día: un WhatsApp con más de 24 h de atraso ya no sirve (oferta vencida,
+  # chat respondido); mejor DLQ + revisión que entrega tardía.
+  message_retention_duration = "86400s"
+
+  expiration_policy {
+    ttl = ""
+  }
+
+  dead_letter_policy {
+    dead_letter_topic     = google_pubsub_topic.dlq.id
+    max_delivery_attempts = 5
+  }
+
+  retry_policy {
+    minimum_backoff = "10s"
+    maximum_backoff = "600s"
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+    consumer   = "notification-service"
+  }
+}

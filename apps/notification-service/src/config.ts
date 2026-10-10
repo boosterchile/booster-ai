@@ -7,7 +7,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   GOOGLE_CLOUD_PROJECT: z.string().min(1),
 
-  /** Subscription pull del topic `notification-events` (messaging.tf). */
+  /** Subscription pull del topic `notification-events` (notification-service.tf). */
   PUBSUB_SUBSCRIPTION_NOTIFICATION_EVENTS: z.string().min(1).default('notification-events-sub'),
 
   /** Credenciales Twilio (Secret Manager) y sender propio del servicio. */
