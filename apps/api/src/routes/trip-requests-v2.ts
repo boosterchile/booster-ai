@@ -1,15 +1,17 @@
 import { generarSignedUrlPdf } from '@booster-ai/certificate-generator';
 import type { Logger } from '@booster-ai/logger';
-import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
+import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { config as appConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import {
   assignments,
+  configuracionComercial,
   empresas as empresasTable,
   offers,
   tripEvents,
@@ -18,14 +20,29 @@ import {
   users as usersTable,
   vehicles,
 } from '../db/schema.js';
+import type { LectorConfiguracionComercial } from '../services/configuracion-comercial.js';
 import {
   type DocumentClosePolicy,
   confirmarEntregaViaje,
 } from '../services/confirmar-entrega-viaje.js';
+import {
+  type DesgloseGenerador,
+  desgloseParaGenerador,
+  modalidadPermitida,
+  tasaParaPublicacion,
+} from '../services/cotizacion-comercial.js';
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
+import { liquidarTrip } from '../services/liquidar-trip.js';
+import {
+  type PagoViajeVista,
+  abrirDisputa,
+  leerPagoDelGenerador,
+  registrarRecepcionConforme,
+} from '../services/mandato-cobro/eventos-pago.js';
+import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
@@ -56,6 +73,12 @@ function generateTrackingCode(): string {
 // Cancelable pre-asignación: lo decide la tabla de transiciones del
 // package (esCancelablePorShipper — ADR-061). Una vez `asignado` o
 // posterior, el shipper coordina con el transportista (fuera del scope).
+
+/** ADR-079 §1 — cotización previa a publicar (query string). */
+const cotizacionQuerySchema = z.object({
+  precio_transportista_clp: z.coerce.number().int().nonnegative(),
+  modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+});
 
 const cancelBodySchema = z.object({
   reason: z.string().min(1).max(500).optional(),
@@ -102,10 +125,23 @@ export function serializeTripMetrics(
   };
 }
 
+/** Pago para el generador: estados y vencimientos, sin las referencias bancarias de los eventos. */
+function pagoParaGenerador(pago: PagoViajeVista): Omit<PagoViajeVista, 'eventos'> {
+  const { eventos: _eventos, ...resto } = pago;
+  return resto;
+}
+
 export function createTripRequestsV2Routes(opts: {
   db: Db;
   logger: Logger;
   notify?: NotifyOfferDeps;
+  /** T10-21 — rankeador de matching (local, sombra o matching-engine). */
+  ranking?: RankeadorMatching;
+  /**
+   * ADR-079 §3 — configuración comercial vigente (caché ≤ 60 s). Requerida
+   * para congelar la tasa al publicar con PRICING_V3_ACTIVATED.
+   */
+  lectorComercial?: LectorConfiguracionComercial;
   /**
    * Config para emisión de certificados de carbono al confirmar
    * recepción. Si está parcial/ausente, el endpoint igual marca el trip
@@ -129,8 +165,7 @@ export function createTripRequestsV2Routes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireShipperAuth(c: Context<any, any, any>, opts2?: { requireActive?: boolean }) {
+  function requireShipperAuth(c: Context, opts2?: { requireActive?: boolean }) {
     const userContext = c.get('userContext');
     if (!userContext) {
       opts.logger.error({ path: c.req.path }, '/trip-requests-v2 without userContext');
@@ -163,6 +198,42 @@ export function createTripRequestsV2Routes(opts: {
   }
 
   // ---------------------------------------------------------------------
+  // GET /cotizacion — ADR-079 §1: desglose que el generador ve ANTES de
+  // publicar (precio del transportista + comisión + IVA = total), con la
+  // configuración vigente. Solo generadores; nunca llega a transportistas.
+  // ---------------------------------------------------------------------
+  app.get('/cotizacion', async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    if (!appConfig.PRICING_V3_ACTIVATED || !opts.lectorComercial) {
+      return c.json({ error: 'pricing_v3_disabled' }, 404);
+    }
+    const query = cotizacionQuerySchema.safeParse(c.req.query());
+    if (!query.success) {
+      return c.json({ error: 'invalid_query', issues: query.error.issues }, 400);
+    }
+    const contratoEn = auth.activeMembership.empresa.contratoProgramadoActivadoEn ?? null;
+    if (!modalidadPermitida(query.data.modalidad_carga, contratoEn)) {
+      return c.json({ error: 'contrato_programado_no_habilitado' }, 422);
+    }
+    const vigente = await opts.lectorComercial.obtener();
+    return c.json({
+      configuracion_version: vigente.version,
+      programada_disponible: contratoEn !== null,
+      desglose: {
+        modalidad_carga: query.data.modalidad_carga,
+        ...desgloseParaGenerador({
+          precioTransportistaClp: query.data.precio_transportista_clp,
+          comisionPct: tasaParaPublicacion(vigente.config, query.data.modalidad_carga),
+          ivaPct: vigente.config.impuestos.iva_pct,
+        }),
+      },
+    });
+  });
+
+  // ---------------------------------------------------------------------
   // POST / — crear viaje + dispatch matching.
   // ---------------------------------------------------------------------
   app.post('/', zValidator('json', tripRequestCreateInputSchema), async (c) => {
@@ -172,6 +243,33 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     const input = c.req.valid('json');
+
+    // ADR-079 §2 — `programada` solo con contrato programado habilitado.
+    const empresaGeneradora = auth.activeMembership.empresa;
+    if (
+      !modalidadPermitida(
+        input.modalidad_carga,
+        empresaGeneradora.contratoProgramadoActivadoEn ?? null,
+      )
+    ) {
+      return c.json({ error: 'contrato_programado_no_habilitado' }, 422);
+    }
+
+    // ADR-079 §2 — con v3 activo, la tasa se congela al publicar: el total
+    // que el generador ve ahora no cambia si la configuración cambia después.
+    let congelado: { comisionPct: number; ivaPct: number; configuracionId: string } | null = null;
+    if (appConfig.PRICING_V3_ACTIVATED) {
+      if (!opts.lectorComercial) {
+        opts.logger.error('PRICING_V3_ACTIVATED sin lector de configuración comercial');
+        return c.json({ error: 'internal_server_error' }, 500);
+      }
+      const vigente = await opts.lectorComercial.obtener();
+      congelado = {
+        comisionPct: tasaParaPublicacion(vigente.config, input.modalidad_carga),
+        ivaPct: vigente.config.impuestos.iva_pct,
+        configuracionId: vigente.id,
+      };
+    }
 
     const [trip] = await opts.db
       .insert(trips)
@@ -201,6 +299,13 @@ export function createTripRequestsV2Routes(opts: {
         ...(input.consignee?.name ? { consigneeName: input.consignee.name } : {}),
         ...(input.consignee?.phone_e164
           ? { consigneeWhatsappE164: input.consignee.phone_e164 }
+          : {}),
+        modalidadCarga: input.modalidad_carga,
+        ...(congelado
+          ? {
+              comisionPctAplicada: congelado.comisionPct.toFixed(2),
+              configuracionComercialId: congelado.configuracionId,
+            }
           : {}),
         status: 'esperando_match',
       })
@@ -256,6 +361,7 @@ export function createTripRequestsV2Routes(opts: {
         logger: opts.logger,
         tripId: trip.id,
         ...(opts.notify ? { notify: opts.notify } : {}),
+        ...(opts.ranking ? { ranking: opts.ranking } : {}),
       });
     } catch (err) {
       if (err instanceof TripRequestNotFoundError) {
@@ -283,6 +389,23 @@ export function createTripRequestsV2Routes(opts: {
               offer_ids: matchingResult.offers.map((o) => o.id),
             }
           : null,
+        // ADR-079 §1/§5 — desglose solo para el generador (esta ruta es de
+        // generador). Sin precio propuesto no hay monto que desglosar.
+        ...(congelado
+          ? {
+              comercial:
+                input.proposed_price_clp === null
+                  ? null
+                  : {
+                      modalidad_carga: input.modalidad_carga,
+                      ...desgloseParaGenerador({
+                        precioTransportistaClp: input.proposed_price_clp,
+                        comisionPct: congelado.comisionPct,
+                        ivaPct: congelado.ivaPct,
+                      }),
+                    },
+            }
+          : {}),
       },
       201,
     );
@@ -346,6 +469,32 @@ export function createTripRequestsV2Routes(opts: {
 
     if (!trip) {
       return c.json({ error: 'trip_not_found' }, 404);
+    }
+
+    // ADR-079 §1 — desglose congelado al publicar (solo trips publicados con
+    // v3 activo). El IVA sale de la versión de configuración congelada.
+    let comercial: (DesgloseGenerador & { modalidad_carga: string }) | null = null;
+    if (
+      trip.comisionPctAplicada &&
+      trip.configuracionComercialId &&
+      typeof trip.proposedPriceClp === 'number'
+    ) {
+      // rls-allowlist: configuración comercial global de plataforma (sin empresa_id); el trip ya se filtró por empresa.
+      const [version] = await opts.db
+        .select({ config: configuracionComercial.config })
+        .from(configuracionComercial)
+        .where(eq(configuracionComercial.id, trip.configuracionComercialId))
+        .limit(1);
+      if (version) {
+        comercial = {
+          modalidad_carga: trip.modalidadCarga,
+          ...desgloseParaGenerador({
+            precioTransportistaClp: trip.proposedPriceClp,
+            comisionPct: trip.comisionPctAplicada,
+            ivaPct: version.config.impuestos.iva_pct,
+          }),
+        };
+      }
     }
 
     const events = await opts.db
@@ -436,7 +585,7 @@ export function createTripRequestsV2Routes(opts: {
     }
 
     return c.json({
-      trip_request: serializeTripDetail(trip),
+      trip_request: { ...serializeTripDetail(trip), comercial },
       events,
       assignment: assignmentRow
         ? {
@@ -583,11 +732,103 @@ export function createTripRequestsV2Routes(opts: {
       );
     }
 
+    // ADR-080 §1: con mandato de cobro, la confirmación del generador con el
+    // documento archivado es la recepción conforme (arranca cobro y
+    // liberación). La entrega queda confirmada aunque la recepción no se
+    // pueda registrar todavía (p. ej. sin documento): se informa el motivo.
+    let mandato: Record<string, unknown> = {};
+    if (appConfig.MANDATO_COBRO_ACTIVATED) {
+      try {
+        const recepcion = await registrarRecepcionConforme(
+          {
+            db: opts.db,
+            logger: opts.logger,
+            topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP,
+          },
+          {
+            tripId: id,
+            generadorEmpresaId: auth.activeMembership.empresa.id,
+            registradoPor: auth.userContext.user.id,
+            asegurarLiquidacion: (asignacionId) =>
+              liquidarTrip({
+                db: opts.db,
+                logger: opts.logger,
+                assignmentId: asignacionId,
+                pricingV2Activated: appConfig.PRICING_V2_ACTIVATED,
+                pricingV3Activated: appConfig.PRICING_V3_ACTIVATED,
+                mandatoCobroActivated: true,
+              }),
+          },
+        );
+        if (recepcion.ok) {
+          mandato = { pago: pagoParaGenerador(recepcion.pago) };
+        } else if (recepcion.code !== 'no_es_mandato') {
+          opts.logger.warn({ tripId: id, code: recepcion.code }, 'recepción conforme pendiente');
+          mandato = { recepcion_conforme_pendiente: recepcion.code };
+        }
+      } catch (err) {
+        // La entrega ya quedó confirmada (commit previo): no se revierte por
+        // un fallo al registrar la recepción. Queda logueado y el generador
+        // puede reintentar confirmando de nuevo (idempotente).
+        opts.logger.error({ err, tripId: id }, 'no se pudo registrar la recepción conforme');
+        mandato = { recepcion_conforme_pendiente: 'error_registro' };
+      }
+    }
+
     return c.json({
       ok: true,
       already_delivered: result.alreadyDelivered,
       delivered_at: result.deliveredAt.toISOString(),
+      ...mandato,
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // ADR-080 — pago del viaje bajo mandato de cobro (solo el generador dueño).
+  //   GET  /:id/pago     → estado de cobro y liberación con vencimientos.
+  //   POST /:id/disputa  → objeta la recepción; congela la liberación.
+  // Con MANDATO_COBRO_ACTIVATED apagado: 404 mandato_cobro_desactivado.
+  // ---------------------------------------------------------------------
+  app.get('/:id/pago', async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ error: 'mandato_cobro_desactivado' }, 404);
+    }
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const pago = await leerPagoDelGenerador(
+      opts.db,
+      c.req.param('id'),
+      auth.activeMembership.empresa.id,
+    );
+    if (!pago) {
+      return c.json({ error: 'pago_no_encontrado' }, 404);
+    }
+    return c.json({ pago: pagoParaGenerador(pago) });
+  });
+
+  app.post('/:id/disputa', zValidator('json', abrirDisputaSchema), async (c) => {
+    if (!appConfig.MANDATO_COBRO_ACTIVATED) {
+      return c.json({ error: 'mandato_cobro_desactivado' }, 404);
+    }
+    const auth = requireShipperAuth(c, { requireActive: true });
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const r = await abrirDisputa(
+      { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },
+      {
+        tripId: c.req.param('id'),
+        generadorEmpresaId: auth.activeMembership.empresa.id,
+        userId: auth.userContext.user.id,
+        motivo: c.req.valid('json').motivo,
+      },
+    );
+    if (!r.ok) {
+      return c.json({ error: r.code }, r.code === 'viaje_no_encontrado' ? 404 : 409);
+    }
+    return c.json({ pago: pagoParaGenerador(r.pago) }, 201);
   });
 
   // ---------------------------------------------------------------------
@@ -727,6 +968,7 @@ function serializeTripDetail(row: typeof trips.$inferSelect) {
     pickup_window_start: row.pickupWindowStart,
     pickup_window_end: row.pickupWindowEnd,
     proposed_price_clp: row.proposedPriceClp,
+    modalidad_carga: row.modalidadCarga,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };

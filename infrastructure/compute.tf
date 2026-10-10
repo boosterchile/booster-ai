@@ -69,15 +69,17 @@ locals {
   # cualquier Cloud Run service que monte secrets. Se pasa a cada módulo via
   # `secret_versions_ready` para que Terraform propague el orden automáticamente.
   # Incluye los 14 placeholders originales + database_url (generado dinámicamente)
-  # + las versions del set hotfix-2026-05-14 (6 placeholders + pepper aleatorio)
-  # que ya están mounteadas por al menos un service (T7 SEC-001 monta
-  # DEMO_SEED_PASSWORD en el api).
+  # + las versions del set hotfix-2026-05-14 (1 placeholder + pepper aleatorio)
+  # que ya están mounteadas por al menos un service.
   all_secret_versions_ready = concat(
     [for v in values(google_secret_manager_secret_version.placeholder) : v.id],
     [google_secret_manager_secret_version.database_url.id],
     [google_secret_manager_secret_version.redis_auth.id],
     [for v in values(google_secret_manager_secret_version.hotfix_2026_05_14_placeholder) : v.id],
     [google_secret_manager_secret_version.pin_rate_limit_hmac_pepper.id],
+    [google_secret_manager_secret_version.picovoice_access_key_placeholder.id],
+    [google_secret_manager_secret_version.cmf_api_key_placeholder.id],
+    [google_secret_manager_secret_version.resend_api_key_placeholder.id],
   )
 
   # URLs *.run.app de los Cloud Run services — audience canónica para tráfico
@@ -87,6 +89,9 @@ locals {
   # https://<service-name>-<project-number>.<region>.run.app.
   cloud_run_api_url = "https://booster-ai-api-${google_project.booster_ai.number}.${var.region}.run.app"
   cloud_run_bot_url = "https://booster-ai-whatsapp-bot-${google_project.booster_ai.number}.${var.region}.run.app"
+  # T10-21: matching-engine recibe POST /ranking del api con ID token (aud =
+  # esta URL) + Cloud Run IAM.
+  cloud_run_matching_url = "https://booster-ai-matching-engine-${google_project.booster_ai.number}.${var.region}.run.app"
 
   # URL pública canónica del api (post-migración DNS GoDaddy → Cloud DNS).
   # Usada como audience primaria del OIDC token desde el bot, y como webhook
@@ -116,10 +121,27 @@ module "service_api" {
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME        = "booster-ai-api"
     FIREBASE_PROJECT_ID = var.project_id
+    # T10-24 / ADR-012 Capa 2 — observatorio urbano (observatorio.tf).
+    BIGQUERY_OBSERVATORY_DATASET = google_bigquery_dataset.observatory.dataset_id
     # Repositorio documental F4: 4a (este service) sube el PDF/foto y el worker
     # document-service consume `document.uploaded`. Ambos deben apuntar al MISMO
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
+    # T10-21 — ranking de matching en matching-engine. Flags en `false` por
+    # default: el apply no cambia el comportamiento.
+    MATCHING_ENGINE_URL       = local.cloud_run_matching_url
+    MATCHING_SHADOW           = tostring(var.matching_shadow)
+    MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
+
+    # T10-21 — enrutamiento del canal WhatsApp (notification-service). Flags
+    # en `false` por default: el apply no cambia el comportamiento.
+    NOTIFICATION_EVENTS_TOPIC      = google_pubsub_topic.notification_events.name
+    NOTIFICATIONS_SHADOW           = tostring(var.notifications_shadow)
+    NOTIFICATIONS_VIA_MICROSERVICE = tostring(var.notifications_via_microservice)
+
+    # T10-21: sin este topic el api omite el publish (`config.ts` lo trata como
+    # opcional) y todo documento queda en `pendiente` sin que el worker lo vea.
+    DOCUMENT_UPLOADED_TOPIC = google_pubsub_topic.document_uploaded.name
     # API_AUDIENCE valida los OIDC tokens entrantes. CSV de URLs aceptadas
     # como diseño permanente:
     #   - public_api_url (api.boosterchile.com): el bot → api va por acá
@@ -137,7 +159,7 @@ module "service_api" {
     # Origins permitidos al api. La PWA nueva corre en https://app.${var.domain}
     # — sin esto el browser bloquea preflight OPTIONS y todas las requests
     # cross-origin desde el frontend fallan con "Failed to fetch".
-    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},https://demo.${var.domain},${local.cloud_run_api_url}"
+    CORS_ALLOWED_ORIGINS = "${local.public_api_url},https://${var.domain},https://www.${var.domain},https://app.${var.domain},${local.cloud_run_api_url}"
 
     # B.8 — dispatcher de notificaciones WhatsApp post-matching.
     # El api comparte el mismo Sender (+19383365293) que el bot — Twilio
@@ -208,7 +230,7 @@ module "service_api" {
     # (guard de escritura fail-closed, auditoría en eventos_impersonacion,
     # banner + picker ya en main). Con OFF responden 503. Triple guard:
     # esta env var + requirePlatformAdmin (allowlist) + escritura solo sobre
-    # empresas es_demo. Flip reversible (var.impersonation_v1_activated).
+    # empresas es_usuario_prueba. Flip reversible (var.impersonation_v1_activated).
     IMPERSONATION_V1_ACTIVATED = tostring(var.impersonation_v1_activated)
 
     # ADR-036 (Wave 5) — Wake-word "Oye Booster" para conductor. Default
@@ -217,11 +239,21 @@ module "service_api" {
     # su configuración (default OFF en localStorage).
     WAKE_WORD_VOICE_ACTIVATED = tostring(var.wake_word_voice_activated)
 
-    # Modo demo (subdominio demo.boosterchile.com). Cuando ON, el api
-    # habilita POST /demo/login (mintea custom tokens Firebase para las
-    # 4 personas demo) y corre auto-seed-demo on startup. Doble guard:
-    # esta env var + columna es_demo=true en empresas.
-    DEMO_MODE_ACTIVATED = tostring(var.demo_mode_activated)
+    # T10-22 — modelos de Porcupine que la PWA baja en runtime vía
+    # GET /me/wake-word (wake-word.tf). Vacíos → la ruta responde
+    # `disponible: false, motivo: sin_modelo`.
+    WAKE_WORD_KEYWORD_URL = var.wake_word_keyword_url
+    WAKE_WORD_MODEL_URL   = var.wake_word_model_url
+
+    # T10-23 — eco-routing en tiempo real (default false).
+    ECO_ROUTING_REALTIME_ACTIVATED = tostring(var.eco_routing_realtime_activated)
+
+    # ADR-080 — mandato de cobro. Default false (modo conector). Encender solo
+    # con las seis precondiciones de §6 evidenciadas en
+    # .specs/mandato-de-cobro/activacion.md. El tope del float es 0 por
+    # omisión: sin decisión escrita del PO, Booster no adelanta caja propia.
+    MANDATO_COBRO_ACTIVATED        = tostring(var.mandato_cobro_activated)
+    MANDATO_COBRO_FLOAT_MAXIMO_CLP = tostring(var.mandato_cobro_float_maximo_clp)
 
     # ADR-039 — Site Settings Runtime Configuration. Bucket de assets
     # editables (logos, favicons) subidos desde el admin. Reuso del
@@ -288,6 +320,14 @@ module "service_api" {
     TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
     TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
 
+    # T10-22 — AccessKey de Picovoice (wake-word.tf). El placeholder
+    # ROTATE_ME_ cuenta como ausente en GET /me/wake-word.
+    PICOVOICE_ACCESS_KEY = google_secret_manager_secret.picovoice_access_key.secret_id
+
+    # ADR-079 §4 — clave de la API UF de la CMF (valor-uf.tf). Sin validación
+    # de formato: el placeholder ROTATE_ME_ cuenta como ausente (solo SII).
+    CMF_API_KEY = google_secret_manager_secret.cmf_api_key.secret_id
+
     # B.8 — Content SIDs de templates WhatsApp (offer-new, chat-unread, tracking,
     # safety-alert). Validados `^HX[a-fA-F0-9]+$` en config.ts (preprocess
     # ''→undefined + .optional()). Se MONTAN vía `local.ready_content_sid_secrets`
@@ -339,37 +379,18 @@ module "service_api" {
     # ADC con roles/aiplatform.user). API key Booster Gemini ya eliminada
     # post-apply de PR #196.
 
-    # T7 SEC-001 (spec sec-001-cierre §3 H1.4 SC-1.4.2) — password leído
-    # por seed-demo.ts y seed-demo-startup.ts cuando DEMO_MODE_ACTIVATED
-    # está ON. Reemplaza el literal hardcoded que vivía en
-    # `apps/api/src/services/seed-demo.ts:86` + `seed-demo-startup.ts:142`.
-    # El secret + IAM bindings + placeholder version `REPLACE_ME_BEFORE_DEPLOY`
-    # están declarados en `security-hotfixes-2026-05-14.tf` (importado en
-    # T0b PR #316); aquí solo se mountea como env var. La rotación a
-    # password real ocurre via `gcloud secrets versions add demo-seed-password`
-    # (T7.5 run-once) ANTES de que T8 active el lookup en el código —
-    # T7.5 gate de CI bloquea PRs que toquen seed-demo*.ts si version
-    # count == 0.
-    DEMO_SEED_PASSWORD = google_secret_manager_secret.hotfix_2026_05_14["demo-seed-password"].secret_id
-
-    # T3 SEC-001 Sprint 2a (plan-sprint-2a.md T3, sec-001-cierre §3 H1.1
-    # SC-1.1.5) — per-persona demo account passwords. Reemplazan el single
-    # DEMO_SEED_PASSWORD path para las UIDs NUEVAS post-disclosure
-    # replacement (ADR-053). Co-existen con DEMO_SEED_PASSWORD que sigue
-    # cubriendo el path legacy hasta que T4 ejecute el one-shot retire de
-    # las UIDs viejas. Mounted como env vars desde los 4 secrets creados
-    # en T2; init de version 1 por PO con infrastructure/scripts/
-    # init-demo-secrets-2026.sh post terraform apply.
-    DEMO_ACCOUNT_PASSWORD_SHIPPER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-shipper-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CARRIER_2026            = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-carrier-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_STAKEHOLDER_2026        = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-stakeholder-2026"].secret_id
-    DEMO_ACCOUNT_PASSWORD_CONDUCTOR_FIREBASE_2026 = google_secret_manager_secret.hotfix_2026_05_14["demo-account-password-conductor-2026-firebase"].secret_id
     },
     # CONTENT_SID_* gateados por readiness (INC-2026-06-19 A7): solo se montan los
     # que tienen valor real cargado (`var.content_sid_ready[name] = true`). Default
     # = los 4 actuales true → plan No changes. Un content-sid no-ready queda fuera
     # del mount → su env var ausente → config.ts undefined (.optional()) → arranca.
     local.ready_content_sid_secrets,
+    # T10-04: correo saliente. Gateado por readiness, como los content-sid
+    # (email.tf); sin el flag la env queda ausente y el api usa el
+    # LoggingEmailSender.
+    var.resend_api_key_ready ? {
+      RESEND_API_KEY = google_secret_manager_secret.resend_api_key.secret_id
+    } : {},
   )
 
   vpc_connector = google_vpc_access_connector.serverless.id
@@ -428,7 +449,7 @@ module "service_web" {
   # proyecto, así que la binding está autorizada.
   public = true
 
-  # ADR-062: servida 100% vía GCLB (app/demo/marketing domain). Sin callers
+  # ADR-062: servida 100% vía GCLB (app/marketing domain). Sin callers
   # directos al run.app → canary seguro del posture internal-and-cloud-LB.
   ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
@@ -457,26 +478,40 @@ module "service_matching_engine" {
   service_name          = "booster-ai-matching-engine"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
+  # la transacción del matching). min_instances=1 evita el cold start en ese
+  # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
+  # Cómputo puro: sin DB, sin Redis, sin secretos, sin VPC connector.
+  min_instances = 1
   max_instances = 10
+  cpu           = "1"
+  memory        = "512Mi"
 
-  env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-matching-engine"
-    REDIS_HOST   = google_redis_instance.main.host
-    REDIS_PORT   = tostring(google_redis_instance.main.port)
-  })
-  secrets = local.common_secrets
-
-  vpc_connector = google_vpc_access_connector.serverless.id
+  env_vars = {
+    NODE_ENV        = var.environment == "prod" ? "production" : "staging"
+    LOG_LEVEL       = "info"
+    SERVICE_NAME    = "booster-ai-matching-engine"
+    SERVICE_VERSION = "0.0.0"
+    # otel-bootstrap es no-op sin el proyecto (trazas a Cloud Trace).
+    GOOGLE_CLOUD_PROJECT = var.project_id
+    # El servicio verifica el ID token además de Cloud Run IAM: aud = su URL,
+    # email = SA runtime del api.
+    OIDC_AUDIENCE     = local.cloud_run_matching_url
+    ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
+  }
+  secrets = {}
 
   public = false
 
-  # ADR-063 (completa ADR-062): consumidor pull de Pub/Sub (conexión
-  # SALIENTE), sin NEG en el GCLB, sin callers HTTP entrantes. INTERNAL_ONLY
-  # (más restrictivo que internal-and-cloud-LB: no necesita el LB) cierra el
-  # run.app a nivel de red → un token de invoker robado deja de ser explotable
-  # desde internet (contención de blast-radius; IAM era la única barrera).
-  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  # INGRESS_TRAFFIC_ALL + IAM (`roles/run.invoker` solo para el SA runtime,
+  # matching-engine.tf), el patrón estándar Cloud Run → Cloud Run. ADR-063
+  # cerró a INTERNAL_ONLY los consumers PULL por no tener callers HTTP; este
+  # servicio sí tiene uno (el api), y el api sale por el connector con egress
+  # PRIVATE_RANGES_ONLY sin Cloud NAT: con INTERNAL_ONLY su request por la IP
+  # pública del run.app sería rechazada. Superficie mínima: un token robado
+  # solo obtiene rankings de los datos que él mismo envía (sin lectura ni
+  # efectos). Spec: .specs/matching-engine-t10-21/spec.md §Seguridad.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -553,24 +588,32 @@ module "service_notification" {
   service_name          = "booster-ai-notification-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
-  max_instances = 20
+  # T10-21: consumer Pub/Sub PULL de `notification-events` (StreamingPull en
+  # main.ts). min_instances=1 + cpu_idle=false son obligatorios: con min=0 la
+  # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
+  # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
+  # estado (sin DB ni Redis): 512 Mi alcanzan.
+  min_instances = 1
+  max_instances = 5
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "512Mi"
 
-  # Notification-service es stub hasta que tenga implementación. NO monta
-  # secrets de Meta WhatsApp Cloud API (deprecated post-Fase 6.4 — el envío
-  # de mensajes WA va via Twilio en el bot). Cuando se implemente, montar los
-  # secrets que realmente use (probablemente Twilio + email/SMS providers).
   env_vars = merge(local.common_env_vars, {
-    SERVICE_NAME = "booster-ai-notification-service"
+    SERVICE_NAME                            = "booster-ai-notification-service"
+    PUBSUB_SUBSCRIPTION_NOTIFICATION_EVENTS = google_pubsub_subscription.notification_events_service.name
+    # Mismo sender que api y bot. En modo sombra el hash incluye el sender:
+    # si este valor difiere del del api, la sombra diverge (deriva de config).
+    TWILIO_FROM_NUMBER = var.twilio_from_number
   })
 
-  # REDIS_PASSWORD → secret redis-auth (Memorystore con AUTH_ENABLED=True). El
-  # service ya recibe REDIS_HOST/PORT/TLS/CA_CERT vía local.common_env_vars pero
-  # le faltaba el password; sin este mount un apply dropea el REDIS_PASSWORD vivo
-  # (valor plano) → auth failure en runtime. Mismo mount que local.common_secrets
-  # (solo REDIS_PASSWORD; el service no usa DATABASE_URL).
+  # Credenciales Twilio (mismos secrets que api y bot). REDIS_PASSWORD se
+  # mantiene montado: common_env_vars inyecta REDIS_HOST/PORT a todos los
+  # servicios y retirarlo es un cambio aparte.
   secrets = {
-    REDIS_PASSWORD = google_secret_manager_secret.secrets["redis-auth"].secret_id
+    TWILIO_ACCOUNT_SID = google_secret_manager_secret.secrets["twilio-account-sid"].secret_id
+    TWILIO_AUTH_TOKEN  = google_secret_manager_secret.secrets["twilio-auth-token"].secret_id
+    REDIS_PASSWORD     = google_secret_manager_secret.secrets["redis-auth"].secret_id
   }
 
   public = false
@@ -726,9 +769,16 @@ module "service_document" {
   service_name          = "booster-ai-document-service"
   service_account_email = google_service_account.cloud_run_runtime.email
 
-  min_instances = 0
+  # T10-21: consumer Pub/Sub PULL (StreamingPull en main.ts), igual que
+  # telemetry-processor. min_instances=1 + cpu_idle=false son obligatorios: con
+  # min=0 la instancia escala a cero y nadie consume (no hay requests que la
+  # despierten), y con cpu_idle=true el pull queda CPU-throttled (incidente
+  # 2026-06-07). 1 GiB porque rasterizar el PDF ocupa RAM.
+  min_instances = 1
   max_instances = 10
-  memory        = "1Gi" # OCR puede requerir más RAM
+  cpu_idle      = false
+  cpu           = "1"
+  memory        = "1Gi"
 
   env_vars = merge(local.common_env_vars, {
     SERVICE_NAME     = "booster-ai-document-service"
@@ -741,6 +791,10 @@ module "service_document" {
   # reducir blast-radius. Las secret versions en Secret Manager (security.tf)
   # quedan para evaluación/destrucción en F4 (recepción de DTE de terceros).
   secrets = local.common_secrets
+
+  # T10-21: Cloud SQL es IP privada; sin el connector el worker no reclama ni
+  # persiste ninguna fila (mismo connector que api y telemetry-processor).
+  vpc_connector = google_vpc_access_connector.serverless.id
 
   public = false
 

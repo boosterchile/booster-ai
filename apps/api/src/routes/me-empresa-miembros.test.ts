@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import { createMeEmpresaMiembrosRoutes } from './me-empresa-miembros.js';
 
 /**
@@ -95,6 +96,7 @@ function makeDb(opts: DbOpts = {}) {
 function buildApp(
   db: ReturnType<typeof makeDb>['db'],
   ctx: { empresaId?: string; rol?: string } = {},
+  emailSender?: EmailSender,
 ) {
   const app = new Hono();
   app.use('*', async (c, next) => {
@@ -107,12 +109,23 @@ function buildApp(
           role: ctx.rol ?? 'dueno',
           status: 'activa',
         },
-        empresa: { id: ctx.empresaId ?? EMPRESA, status: 'activa' },
+        empresa: {
+          id: ctx.empresaId ?? EMPRESA,
+          status: 'activa',
+          legalName: 'Transportes Andes SpA',
+        },
       },
     });
     await next();
   });
-  app.route('/', createMeEmpresaMiembrosRoutes({ db, logger: noopLogger }));
+  app.route(
+    '/',
+    createMeEmpresaMiembrosRoutes({
+      db,
+      logger: noopLogger,
+      ...(emailSender ? { emailSender, webAppUrl: 'https://app.boosterchile.com' } : {}),
+    }),
+  );
   return app;
 }
 
@@ -356,5 +369,95 @@ describe('GET /me/empresa/miembros', () => {
     const d = makeDb({ listaEquipo: [] });
     const res = await buildApp(d.db, { rol: 'despachador' }).request('/', { method: 'GET' });
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * T10-04 (ADR-082) — el código de activación le llega a la persona por correo.
+ * Antes solo lo veía quien la invitaba, que tenía que dictárselo.
+ */
+describe('correo de activación del equipo de la empresa', () => {
+  function makeSender() {
+    const send = vi.fn().mockResolvedValue({ enviado: true, id: 'm-1' });
+    return { sender: { send } as unknown as EmailSender, send };
+  }
+
+  function mensaje(send: ReturnType<typeof vi.fn>) {
+    const call = send.mock.calls[0];
+    if (!call) {
+      throw new Error('no se envió correo');
+    }
+    return call[0] as { to: string; subject: string; text: string };
+  }
+
+  it('invitar a una persona nueva le envía el código a su correo', async () => {
+    const d = makeDb();
+    const { sender, send } = makeSender();
+    const res = await post(buildApp(d.db, {}, sender));
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string };
+    expect(send).toHaveBeenCalledTimes(1);
+    const msg = mensaje(send);
+    expect(msg.to).toBe('gobe00@gmail.com');
+    expect(msg.text).toContain(json.codigo_activacion);
+    expect(msg.text).toContain('Transportes Andes SpA');
+    expect(msg.text).toContain('https://app.boosterchile.com/activar');
+  });
+
+  it('una cuenta ya activa no recibe correo: no hay código', async () => {
+    const d = makeDb({
+      userByRut: [
+        {
+          id: 'user-existente',
+          email: 'gobe00@gmail.com',
+          fullName: 'Gabriel Barros',
+          firebaseUid: 'fb-real',
+          claveNumericaHash: 'hash-clave',
+          activationPinHash: null,
+        },
+      ],
+    });
+    const { sender, send } = makeSender();
+    const res = await post(buildApp(d.db, {}, sender));
+
+    expect(res.status).toBe(201);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('una persona provisoria sin código recibe el código en su correo registrado', async () => {
+    const d = makeDb({
+      userByRut: [
+        {
+          id: 'user-provisoria',
+          email: 'registrado@andes.cl',
+          fullName: 'Gabriel Barros B.',
+          firebaseUid: 'pending-rut:8601693-1',
+          claveNumericaHash: null,
+          activationPinHash: null,
+        },
+      ],
+    });
+    const { sender, send } = makeSender();
+    const res = await post(buildApp(d.db, {}, sender));
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { codigo_activacion: string };
+    const msg = mensaje(send);
+    expect(msg.to).toBe('registrado@andes.cl');
+    expect(msg.text).toContain(json.codigo_activacion);
+  });
+
+  it('el código no aparece en ningún log', async () => {
+    const d = makeDb();
+    const { sender } = makeSender();
+    const res = await post(buildApp(d.db, {}, sender));
+    const json = (await res.json()) as { codigo_activacion: string };
+    const logs = JSON.stringify([
+      (noopLogger.info as ReturnType<typeof vi.fn>).mock.calls,
+      (noopLogger.warn as ReturnType<typeof vi.fn>).mock.calls,
+      (noopLogger.error as ReturnType<typeof vi.fn>).mock.calls,
+    ]);
+    expect(logs).not.toContain(json.codigo_activacion);
   });
 });

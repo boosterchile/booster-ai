@@ -49,15 +49,32 @@ resource "google_compute_global_address" "lb_ipv4" {
 # =============================================================================
 
 # Single source of truth de los dominios del cert. Si cambia, el
-# `random_id.cert_suffix` se regenera (vía keepers) y se crea un cert
-# nuevo con nombre distinto, evitando colisión con el viejo.
+# `random_id.cert_suffix_principal` se regenera (vía keepers) y se crea un
+# cert nuevo con nombre distinto, evitando colisión con el viejo.
+#
+# T10-03 (ADR-082) — retiro de demo.${var.domain} en dos applies, sin corte
+# de TLS. Un cert gestionado nuevo queda en PROVISIONING 15-60 min; si el
+# proxy apuntara solo a él, api/app quedarían sin cert válido. Por eso:
+#   1. (este cambio) se crea `principal`, sin demo, y el proxy sirve los dos.
+#      Es el reemplazo sin corte que documenta Google: el LB empieza a
+#      presentar el cert nuevo cuando queda ACTIVE.
+#   2. (PR siguiente, con `principal` ACTIVE) se retiran `main`,
+#      `cert_domains_con_demo` y el registro DNS demo.
 locals {
   cert_domains = [
     "api.${var.domain}",
     "app.${var.domain}",
-    "demo.${var.domain}",
     var.domain,          # apex (boosterchile.com) — landing comercial (redirect a app)
     "www.${var.domain}", # www  → redirect a app
+  ]
+  # Dominios del cert anterior, en el mismo orden: cambiarlos regeneraría
+  # `random_id.cert_suffix` y forzaría el reemplazo que este paso evita.
+  cert_domains_con_demo = [
+    "api.${var.domain}",
+    "app.${var.domain}",
+    "demo.${var.domain}",
+    var.domain,
+    "www.${var.domain}",
   ]
 }
 
@@ -68,6 +85,13 @@ locals {
 # `target_https_proxy.main`, y solo después destruye el viejo. Sin esto, el
 # destroy del cert falla con `resourceInUseByAnotherResource`.
 resource "random_id" "cert_suffix" {
+  byte_length = 4
+  keepers = {
+    domains = join(",", local.cert_domains_con_demo)
+  }
+}
+
+resource "random_id" "cert_suffix_principal" {
   byte_length = 4
   keepers = {
     domains = join(",", local.cert_domains)
@@ -85,9 +109,25 @@ resource "google_compute_managed_ssl_certificate" "main" {
     # ANTES de incluirlo acá (en local.cert_domains arriba), sino el cert
     # queda en FAILED_NOT_VISIBLE (lección de task #34).
     #
-    # apex, www, app y demo se sirven desde este LB (Booster AI). El
+    # apex, www y app se sirven desde este LB (Booster AI). El
     # comentario que los dejaba en Booster 2.0 quedó viejo: el DNS público
     # ya no apunta ahí (revisión 2026-09-28).
+    domains = local.cert_domains_con_demo
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_compute_managed_ssl_certificate" "principal" {
+  provider = google-beta
+  project  = google_project.booster_ai.project_id
+  name     = "booster-ai-cert-${random_id.cert_suffix_principal.hex}"
+
+  managed {
     domains = local.cert_domains
   }
 
@@ -379,10 +419,6 @@ resource "google_compute_url_map" "main" {
     path_matcher = "app"
   }
   host_rule {
-    hosts        = ["demo.${var.domain}"]
-    path_matcher = "demo"
-  }
-  host_rule {
     hosts        = ["${var.domain}", "www.${var.domain}"]
     path_matcher = "marketing"
   }
@@ -409,15 +445,6 @@ resource "google_compute_url_map" "main" {
     default_service = google_compute_backend_service.web.id
   }
 
-  # demo.boosterchile.com — mismo backend que app. El bundle web detecta
-  # el host header en runtime y renderiza UI de modo demo. NO hay backend
-  # service separado: cualquier desync entre app y demo sería un footgun
-  # (deploys mismatcheados).
-  path_matcher {
-    name            = "demo"
-    default_service = google_compute_backend_service.web.id
-  }
-
   # apex (boosterchile.com) + www.boosterchile.com — redirect 301 a
   # app.boosterchile.com mientras no exista un landing comercial dedicado.
   # Reversible: cuando haya proyecto marketing real, cambiar
@@ -440,10 +467,15 @@ resource "google_compute_url_map" "main" {
 # =============================================================================
 
 resource "google_compute_target_https_proxy" "main" {
-  name             = "booster-ai-https-proxy"
-  project          = google_project.booster_ai.project_id
-  url_map          = google_compute_url_map.main.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.main.id]
+  name    = "booster-ai-https-proxy"
+  project = google_project.booster_ai.project_id
+  url_map = google_compute_url_map.main.id
+  # Transición T10-03: el cert actual primero (el que hoy está ACTIVE) y el
+  # nuevo sin demo detrás. El PR siguiente deja solo `principal`.
+  ssl_certificates = [
+    google_compute_managed_ssl_certificate.main.id,
+    google_compute_managed_ssl_certificate.principal.id,
+  ]
 }
 
 resource "google_compute_global_forwarding_rule" "https" {
@@ -584,6 +616,8 @@ resource "google_dns_record_set" "app" {
 # antes de agregar demo.${var.domain} a local.cert_domains. Si el cert
 # se intenta provisionar antes de que Google vea el A record propagado,
 # queda FAILED_NOT_VISIBLE y hay que regenerarlo (cert_suffix rotación).
+# T10-03: se conserva hasta el paso 2 (ver MANAGED SSL CERTIFICATE): el cert
+# `main` todavía incluye demo y necesita el registro para renovarse.
 resource "google_dns_record_set" "demo" {
   name         = "demo.${var.domain}."
   project      = google_project.booster_ai.project_id
@@ -703,3 +737,15 @@ resource "google_dns_record_set" "dkim_google" {
 # "INGRESS_TRAFFIC_INTERNAL_ONLY" en servicios servidos por este LB: rechaza
 # al propio LB. sms-fallback-gateway sigue en ALL (Twilio postea directo, sin
 # NEG acá). Ver ADR-062 para el posture completo por servicio.
+
+# Delegación del subdominio de staging (ADR-083). Solo existe en prod y solo
+# cuando el PO pasa los nameservers de la zona del proyecto de staging.
+resource "google_dns_record_set" "staging_delegation" {
+  count        = length(var.staging_nameservers) > 0 ? 1 : 0
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.main.name
+  name         = "staging.${var.domain}."
+  type         = "NS"
+  ttl          = 3600
+  rrdatas      = var.staging_nameservers
+}

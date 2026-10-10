@@ -34,6 +34,8 @@ export * from './domain/cargo-request.js';
 
 // Events (Pub/Sub payloads)
 export * from './events/telemetry-record.js';
+export * from './events/matching-ranking.js';
+export * from './events/notification-event.js';
 
 // Thin slice (Fase 6) — WhatsApp intake flow
 export * from './common.js';
@@ -57,12 +59,10 @@ export * from './avl-ids/index.js';
 
 // Site Settings — configuración runtime editable de marca y copy (ADR-039)
 export * from './site-settings.js';
+export * from './configuracion-comercial.js';
 
 // Aggregations — privacy invariants compartidos backend/frontend (D11/ADR-041)
 export * from './aggregations/k-anonymity.js';
-
-// SEC-001 Sprint 2a H1.1 — cuentas demo DB-driven registry (ADR-053)
-export * from './domain/cuentas-demo.js';
 
 // SEC-001 Sprint 2b H1.2 — solicitudes de registro signup gate (ADR-052)
 export * from './domain/signup-request.js';
@@ -73,3 +73,5 @@ export * from './domain/safety-event.js';
 // Repositorio documental de transporte — recepción/archivo de DTE de terceros
 // (ADR-070, frente F4). Booster NO emite DTE (ADR-069), solo recibe/archiva.
 export * from './domain/transport-document.js';
+// ADR-080 — pago del viaje bajo mandato de cobro.
+export * from './domain/pago-viaje.js';

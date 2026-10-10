@@ -1,5 +1,5 @@
 import type { Logger } from '@booster-ai/logger';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 
 /**
  * El mensaje de WhatsApp con el que el conductor activa su cuenta.
@@ -35,7 +35,7 @@ import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
  */
 export async function enviarWhatsAppActivacionConductor(opts: {
   /** Ausente cuando Twilio no está configurado (dev, o credenciales faltantes). */
-  client: TwilioWhatsAppClient | undefined;
+  client: WhatsAppContentSender | undefined;
   /**
    * Ausente mientras Meta no apruebe la plantilla. El repo monta los
    * content-sid en dos pasos a propósito (`content_sid_ready` en Terraform):

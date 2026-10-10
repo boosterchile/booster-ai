@@ -382,7 +382,7 @@ export function formatAge(seconds: number): string {
 function Footer() {
   return (
     <footer className="pt-2 pb-4 text-center">
-      <p className="text-neutral-500 text-xs">
+      <p className="text-neutral-600 text-xs">
         Powered by{' '}
         <a
           href="https://app.boosterchile.com"
