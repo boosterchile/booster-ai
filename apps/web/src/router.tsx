@@ -464,6 +464,13 @@ const publicTrackingRoute = createRoute({
   component: PublicTrackingRoute,
 });
 
+// T10-29 / ADR-079 §4 — precios públicos (solo servicios en UF y huella).
+const preciosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/precios',
+  component: lazyRouteComponent(() => import('./routes/precios.js'), 'PreciosRoute'),
+});
+
 const legalTerminosRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/legal/terminos',
@@ -603,6 +610,7 @@ const routeTree = rootRoute.addChildren([
   asignacionDetalleRoute,
   chatViajeRoute,
   publicTrackingRoute,
+  preciosRoute,
   legalTerminosRoute,
   cobraHoyHistorialRoute,
   legalCobraHoyRoute,
