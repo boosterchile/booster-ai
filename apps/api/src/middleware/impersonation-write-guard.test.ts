@@ -8,13 +8,14 @@ import { createImpersonationWriteGuardMiddleware } from './impersonation-write-g
 /**
  * Tests del middleware impersonation-write-guard.
  *
- * Decisión SELLADA con el PO (impersonación auditada) + DESACOPLE ADR-053:
+ * Decisión SELLADA con el PO (impersonación auditada, ADR-053):
  *   - Una sesión impersonada (custom claim `impersonated_by` presente) puede
  *     LEER cualquier empresa del target (GET/HEAD/OPTIONS passthrough), pero
  *     solo puede ESCRIBIR (POST/PUT/PATCH/DELETE) cuando la empresa activa
  *     (`userContext.activeMembership.empresa.isTestUser` = `es_usuario_prueba`)
- *     es de usuarios de prueba. `es_demo` YA NO autoriza.
- *   - Empresa real, demo legacy, o sin userContext resoluble + método mutante
+ *     es de usuarios de prueba. Ninguna otra marca autoriza (la marca de
+ *     empresa demo se retiró en la migración 0063, T10-03).
+ *   - Empresa real, o sin userContext resoluble + método mutante
  *     → 403 (fail-closed).
  *   - Sesión normal (sin `impersonated_by`) → passthrough SIEMPRE (no rompe la
  *     escritura normal de usuarios reales).
@@ -62,16 +63,15 @@ const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
 /**
  * Construye un userContext mínimo con la empresa activa marcada con los flags
  * dados. La AUTORIZACIÓN de escritura impersonada depende SOLO de
- * `es_usuario_prueba` (isTestUser); `es_demo` (isDemo) NO autoriza (desacople
- * ADR-053).
+ * `es_usuario_prueba` (isTestUser).
  */
-function userContextWith(flags: { isDemo?: boolean; isTestUser?: boolean }): UserContext {
+function userContextWith(flags: { isTestUser?: boolean }): UserContext {
   return {
     user: { id: 'target-uuid' },
     memberships: [],
     activeMembership: {
       membership: {},
-      empresa: { id: 'e1', isDemo: flags.isDemo ?? false, isTestUser: flags.isTestUser ?? false },
+      empresa: { id: 'e1', isTestUser: flags.isTestUser ?? false },
     },
     impersonatedBy: ADMIN_ID,
   } as unknown as UserContext;
@@ -160,7 +160,7 @@ describe('impersonation-write-guard middleware', () => {
   });
 
   describe('sesión impersonada + método mutante + SIN userContext (fail-closed)', () => {
-    it('POST → 403: no se puede confirmar es_demo, se bloquea', async () => {
+    it('POST → 403: no se puede confirmar es_usuario_prueba, se bloquea', async () => {
       const app = makeApp({ claims: IMPERSONATED_CLAIMS, userContext: null });
       const res = await app.request('/x', { method: 'POST' });
       expect(res.status).toBe(403);
@@ -194,14 +194,11 @@ describe('impersonation-write-guard middleware', () => {
     });
   });
 
-  describe('DESACOPLE ADR-053: es_demo ya NO autoriza escritura impersonada', () => {
-    it('empresa legacy es_demo=true pero es_usuario_prueba=false → 403 en CADA método mutante', async () => {
-      // Rojo de seguridad: si el guard siguiera keyeado en es_demo, esto
-      // permitiría MUTAR data de una empresa demo legacy bajo identidad
-      // impersonada. Solo es_usuario_prueba debe autorizar.
+  describe('solo es_usuario_prueba autoriza escritura impersonada (ADR-053)', () => {
+    it('empresa real de cliente (es_usuario_prueba=false) → 403 en CADA método mutante', async () => {
       const app = makeApp({
         claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWith({ isDemo: true, isTestUser: false }),
+        userContext: userContextWith({ isTestUser: false }),
       });
       for (const method of MUTATING_METHODS) {
         const res = await app.request('/x', { method });
@@ -209,15 +206,6 @@ describe('impersonation-write-guard middleware', () => {
         const body = (await res.json()) as { code: string };
         expect(body.code, method).toBe('forbidden_impersonation_write');
       }
-    });
-
-    it('empresa real de cliente (es_demo=false, es_usuario_prueba=false) → 403 (data real protegida)', async () => {
-      const app = makeApp({
-        claims: IMPERSONATED_CLAIMS,
-        userContext: userContextWith({ isDemo: false, isTestUser: false }),
-      });
-      const res = await app.request('/x', { method: 'PATCH' });
-      expect(res.status).toBe(403);
     });
   });
 

@@ -52,14 +52,10 @@ resource "google_compute_global_address" "lb_ipv4" {
 # `random_id.cert_suffix_principal` se regenera (vía keepers) y se crea un
 # cert nuevo con nombre distinto, evitando colisión con el viejo.
 #
-# T10-03 (ADR-082) — retiro de demo.${var.domain} en dos applies, sin corte
-# de TLS. Un cert gestionado nuevo queda en PROVISIONING 15-60 min; si el
-# proxy apuntara solo a él, api/app quedarían sin cert válido. Por eso:
-#   1. (este cambio) se crea `principal`, sin demo, y el proxy sirve los dos.
-#      Es el reemplazo sin corte que documenta Google: el LB empieza a
-#      presentar el cert nuevo cuando queda ACTIVE.
-#   2. (PR siguiente, con `principal` ACTIVE) se retiran `main`,
-#      `cert_domains_con_demo` y el registro DNS demo.
+# T10-03 (ADR-082): el retiro de demo.${var.domain} se hizo en dos applies.
+# El primero creó `principal` (sin demo) y el proxy sirvió los dos certs;
+# este, con `principal` ACTIVE, deja solo `principal` y retira el cert
+# anterior y el registro DNS demo.
 locals {
   cert_domains = [
     "api.${var.domain}",
@@ -67,59 +63,23 @@ locals {
     var.domain,          # apex (boosterchile.com) — landing comercial (redirect a app)
     "www.${var.domain}", # www  → redirect a app
   ]
-  # Dominios del cert anterior, en el mismo orden: cambiarlos regeneraría
-  # `random_id.cert_suffix` y forzaría el reemplazo que este paso evita.
-  cert_domains_con_demo = [
-    "api.${var.domain}",
-    "app.${var.domain}",
-    "demo.${var.domain}",
-    var.domain,
-    "www.${var.domain}",
-  ]
 }
 
 # Cert managed con nombre dinámico para soportar rotación de dominios sin
-# downtime. Cambiar `local.cert_domains` regenera `random_id.cert_suffix`
+# downtime. Cambiar `local.cert_domains` regenera `random_id.cert_suffix_principal`
 # (gracias al `keepers`), lo que produce un nombre nuevo de cert. Combinado
 # con `create_before_destroy`, terraform crea el cert nuevo, repunta el
 # `target_https_proxy.main`, y solo después destruye el viejo. Sin esto, el
 # destroy del cert falla con `resourceInUseByAnotherResource`.
-resource "random_id" "cert_suffix" {
-  byte_length = 4
-  keepers = {
-    domains = join(",", local.cert_domains_con_demo)
-  }
-}
-
+#
+# Dominios nuevos: cada uno necesita su A record en Cloud DNS apuntando al LB
+# ANTES de entrar a `local.cert_domains`; si no, el cert queda en
+# FAILED_NOT_VISIBLE (lección de task #34).
 resource "random_id" "cert_suffix_principal" {
   byte_length = 4
   keepers = {
     domains = join(",", local.cert_domains)
   }
-}
-
-resource "google_compute_managed_ssl_certificate" "main" {
-  provider = google-beta
-  project  = google_project.booster_ai.project_id
-  name     = "booster-ai-cert-${random_id.cert_suffix.hex}"
-
-  managed {
-    # Dominios que apuntan al LB de Booster AI. Cada nuevo dominio que se
-    # agregue tiene que tener el A record en Cloud DNS apuntando al LB
-    # ANTES de incluirlo acá (en local.cert_domains arriba), sino el cert
-    # queda en FAILED_NOT_VISIBLE (lección de task #34).
-    #
-    # apex, www y app se sirven desde este LB (Booster AI). El
-    # comentario que los dejaba en Booster 2.0 quedó viejo: el DNS público
-    # ya no apunta ahí (revisión 2026-09-28).
-    domains = local.cert_domains_con_demo
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-
-  depends_on = [google_project_service.apis]
 }
 
 resource "google_compute_managed_ssl_certificate" "principal" {
@@ -467,15 +427,10 @@ resource "google_compute_url_map" "main" {
 # =============================================================================
 
 resource "google_compute_target_https_proxy" "main" {
-  name    = "booster-ai-https-proxy"
-  project = google_project.booster_ai.project_id
-  url_map = google_compute_url_map.main.id
-  # Transición T10-03: el cert actual primero (el que hoy está ACTIVE) y el
-  # nuevo sin demo detrás. El PR siguiente deja solo `principal`.
-  ssl_certificates = [
-    google_compute_managed_ssl_certificate.main.id,
-    google_compute_managed_ssl_certificate.principal.id,
-  ]
+  name             = "booster-ai-https-proxy"
+  project          = google_project.booster_ai.project_id
+  url_map          = google_compute_url_map.main.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.principal.id]
 }
 
 resource "google_compute_global_forwarding_rule" "https" {
@@ -524,7 +479,8 @@ resource "google_compute_global_forwarding_rule" "http_redirect" {
 # El runbook de 2026-04-29 proponía dejar apex/www/app/demo en Booster 2.0.
 # El estado vivo (2026-09-28, docs/audits/booster-2-0-2026-09-28.md):
 #
-#   apex / www / app / demo / api → LB global de Booster AI.
+#   apex / www / app / api        → LB global de Booster AI.
+#   demo                          → retirado (T10-03, ADR-082).
 #   telemetry / telemetry-tls     → gateway de Santiago.
 #   MX, SPF, verifications        → Google Workspace.
 #   Booster 2.0                   → sin records públicos.
@@ -588,38 +544,11 @@ resource "google_dns_record_set" "www" {
 # no es un respaldo desde donde rescatar la app.
 #
 # IMPORTANTE: agregar app.${var.domain} a domains del cert managed
-# (google_compute_managed_ssl_certificate.main) en un APPLY POSTERIOR,
+# (local.cert_domains) en un APPLY POSTERIOR,
 # después de que este record propague (~5 min). Si se hace en el mismo
 # apply, el cert puede quedar FAILED_NOT_VISIBLE (lección de task #34).
 resource "google_dns_record_set" "app" {
   name         = "app.${var.domain}."
-  project      = google_project.booster_ai.project_id
-  managed_zone = google_dns_managed_zone.main.name
-  type         = "A"
-  ttl          = 3600
-  rrdatas      = [google_compute_global_address.lb_ipv4.address]
-}
-
-# demo → Cloud Run booster-ai-web vía Global HTTPS LB.
-#
-# Mismo backend que app.boosterchile.com — la PWA detecta el host header
-# (demo.* vs app.*) en runtime y muestra UI de modo demo. El endpoint
-# /demo/login del api (api.boosterchile.com) crea sesiones efímeras sin
-# Firebase Auth; el frontend lo invoca con CORS desde demo.*.
-#
-# Histórico: hasta 2026-05-13 este record era CNAME → ghs.googlehosted.com
-# (Google Sites de Booster 2.0). Migrado al LB de Booster AI cuando se
-# habilitó modo demo (feat/demo-mode-subdominio). El binding en el Google
-# Site legacy queda huérfano (sin tráfico) — no requiere acción.
-#
-# IMPORTANTE (lección task #34): aplicar este record en un APPLY APARTE
-# antes de agregar demo.${var.domain} a local.cert_domains. Si el cert
-# se intenta provisionar antes de que Google vea el A record propagado,
-# queda FAILED_NOT_VISIBLE y hay que regenerarlo (cert_suffix rotación).
-# T10-03: se conserva hasta el paso 2 (ver MANAGED SSL CERTIFICATE): el cert
-# `main` todavía incluye demo y necesita el registro para renovarse.
-resource "google_dns_record_set" "demo" {
-  name         = "demo.${var.domain}."
   project      = google_project.booster_ai.project_id
   managed_zone = google_dns_managed_zone.main.name
   type         = "A"

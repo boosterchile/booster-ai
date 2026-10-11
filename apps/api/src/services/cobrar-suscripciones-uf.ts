@@ -116,13 +116,7 @@ export async function cobrarSuscripcionesUf(
         eq(vehicles.unitCategory, 'motriz'),
       ),
     )
-    .where(
-      and(
-        eq(empresas.status, 'activa'),
-        eq(empresas.isDemo, false),
-        eq(empresas.isTestUser, false),
-      ),
-    )
+    .where(and(eq(empresas.status, 'activa'), eq(empresas.isTestUser, false)))
     .groupBy(empresas.id)
     .limit(limite);
 

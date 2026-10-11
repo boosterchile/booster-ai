@@ -49,7 +49,6 @@ const inet = customType<{ data: string; driverData: string }>({
  *   - operaciones: viajes, ofertas, asignaciones, eventos_viaje, metricas_viaje
  *   - sostenibilidad: stakeholders, consentimientos
  *   - intake legacy: borradores_whatsapp
- *   - cuentas demo (SEC-001 Sprint 2a H1.1): cuentas_demo
  */
 
 // =============================================================================
@@ -502,20 +501,6 @@ export const pushSubscriptionStatusEnum = pgEnum('estado_push_subscription', [
 ]);
 
 /**
- * SEC-001 Sprint 2a H1.1 — persona enum para cuentas_demo (migration 0038).
- * Values Spanish per CLAUDE.md §Reglas naming bilingüe + spec v3.3 amendment
- * 2026-05-25. Equivalencias: generador_carga ↔ shipper, transportista ↔
- * carrier, stakeholder y conductor invariantes. Ver
- * docs/adr/053-post-disclosure-account-replacement.md.
- */
-export const personaDemoEnum = pgEnum('persona_demo', [
-  'generador_carga',
-  'transportista',
-  'stakeholder',
-  'conductor',
-]);
-
-/**
  * SEC-001 Sprint 2b H1.2 — estado enum para solicitudes_registro
  * (migration 0039). Signup público gated por admin-approval — ver
  * docs/adr/052-signup-migration-admin-sdk-gate.md. Values Spanish per
@@ -583,20 +568,11 @@ export const empresas = pgTable(
     gestionFlotaActivadaEn: timestamp('gestion_flota_activada_en', { withTimezone: true }),
     gestionFlotaActivadaPor: text('gestion_flota_activada_por'),
     /**
-     * D1 — Marca para empresas creadas por el seed demo. Permite filtrar
-     * de métricas/billing y limpiar con un solo DELETE cascada por FK.
-     */
-    isDemo: boolean('es_demo').notNull().default(false),
-    /**
      * Impersonación auditada — marca de empresa de USUARIOS DE PRUEBA. Es el
      * ÚNICO flag que autoriza la escritura de una sesión impersonada (el
-     * write-guard) y el ÚNICO que el picker lista como target. DESACOPLADO de
-     * `es_demo` a propósito (ADR-053 + recon findings): a diferencia de
-     * `es_demo`, esta marca NO expone la empresa a `/demo/login` ni al lifecycle
-     * demo (retire/TTL) — no es login-reachable por ninguna superficie pública,
-     * solo alcanzable por el mint admin-gated. Así los usuarios de prueba de
-     * impersonación sobreviven al retiro del subsistema demo y quedan fuera del
-     * vector de credencial compartida que motivó ADR-053.
+     * write-guard) y el ÚNICO que el picker lista como target (ADR-053). No es
+     * login-reachable por ninguna superficie pública: solo la alcanza el mint
+     * admin-gated de impersonación.
      */
     isTestUser: boolean('es_usuario_prueba').notNull().default(false),
     /**
@@ -2668,35 +2644,6 @@ export const configuracionSitio = pgTable('configuracion_sitio', {
 });
 
 // =============================================================================
-// SEC-001 SPRINT 2A — CUENTAS DEMO (H1.1)
-// =============================================================================
-//
-// Tabla `cuentas_demo` para H1.1 SEC-001 Sprint 2a (plan-sprint-2a T1+T3).
-// Reemplaza module-level constants pre-Sprint-2a por registry DB-driven.
-// El seed (apps/api/src/services/seed-demo-startup.ts) consulta esta tabla
-// con SELECT email WHERE persona=X AND deshabilitado_en IS NULL para
-// decidir create / skip / alert en cada cold-start. Idempotente by design.
-// Ver migration 0038_cuentas_demo.sql + ADR-053.
-
-export const cuentasDemo = pgTable('cuentas_demo', {
-  persona: personaDemoEnum('persona').notNull(),
-  email: varchar('email', { length: 320 }).notNull().primaryKey(),
-  /**
-   * UID asignado por Firebase Admin SDK auth.createUser. NULL durante
-   * la creación inicial (entre INSERT row y llamada Firebase). NULL
-   * transitorio es estado válido — el script T4 detecta y resume.
-   */
-  firebaseUid: varchar('firebase_uid', { length: 128 }),
-  creadoEn: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
-  /**
-   * Timestamp cuando la cuenta fue retirada via auth.updateUser({
-   * disabled: true }). NULL = activa. NOT NULL = retirada
-   * irreversiblemente per ADR-053.
-   */
-  deshabilitadoEn: timestamp('deshabilitado_en', { withTimezone: true }),
-});
-
-// =============================================================================
 // SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
 // =============================================================================
 //
@@ -2940,10 +2887,6 @@ export type NewConfiguracionSitioRow = typeof configuracionSitio.$inferInsert;
 
 export type ZonaStakeholderRow = typeof zonasStakeholder.$inferSelect;
 export type NewZonaStakeholderRow = typeof zonasStakeholder.$inferInsert;
-
-// SEC-001 Sprint 2a H1.1 — cuentas_demo (migration 0038)
-export type CuentaDemoRow = typeof cuentasDemo.$inferSelect;
-export type NewCuentaDemoRow = typeof cuentasDemo.$inferInsert;
 
 // SEC-001 Sprint 2b H1.2 — solicitudes_registro (migration 0039)
 export type SolicitudRegistroRow = typeof solicitudesRegistro.$inferSelect;

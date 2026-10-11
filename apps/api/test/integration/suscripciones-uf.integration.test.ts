@@ -70,7 +70,7 @@ describe('integration: suscripciones en UF (ADR-079 §4)', () => {
     generador?: boolean;
     transportista?: boolean;
     gestionFlota?: boolean;
-    demo?: boolean;
+    prueba?: boolean;
     camiones?: Array<{ estado?: 'activo' | 'retirado'; categoria?: 'motriz' | 'arrastre' }>;
   }) {
     const { db } = handle;
@@ -88,7 +88,7 @@ describe('integration: suscripciones en UF (ADR-079 §4)', () => {
           addressRegion: 'RM',
           isGeneradorCarga: opts.generador ?? false,
           isTransportista: opts.transportista ?? false,
-          isDemo: opts.demo ?? false,
+          isTestUser: opts.prueba ?? false,
           status: 'activa',
           gestionFlotaActivadaEn: opts.gestionFlota ? new Date() : null,
           planId: (await plan()).id,
@@ -119,8 +119,8 @@ describe('integration: suscripciones en UF (ADR-079 §4)', () => {
     });
     const flota = await empresa({ transportista: true, gestionFlota: true, camiones: [{}, {}] });
     const chico = await empresa({ transportista: true, camiones: [{}] });
-    const demo = await empresa({ generador: true, demo: true });
-    const ids = [generador.id, transportista.id, flota.id, chico.id, demo.id];
+    const prueba = await empresa({ generador: true, prueba: true });
+    const ids = [generador.id, transportista.id, flota.id, chico.id, prueba.id];
 
     const config = await leerConfiguracionPublicada(db);
     const iva = config.config.impuestos.iva_pct / 100;
@@ -173,9 +173,9 @@ describe('integration: suscripciones en UF (ADR-079 §4)', () => {
           s.suscripcion_transportista_gestion_flota_uf_camion_mes,
       ),
     );
-    // Bajo el umbral y empresa demo: sin factura.
+    // Bajo el umbral y empresa de prueba: sin factura.
     expect(de(chico.id)).toBeUndefined();
-    expect(de(demo.id)).toBeUndefined();
+    expect(de(prueba.id)).toBeUndefined();
 
     // Verificación 5: el CLP neto sale exactamente de monto_uf × uf_valor_clp.
     for (const f of facturas) {

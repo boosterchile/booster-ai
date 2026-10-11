@@ -6,7 +6,7 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
  * T10-24 — la fuente del observatorio contra Postgres real: solo viajes
- * entregados, con vehículo y emisiones, y nunca de empresas demo o de prueba.
+ * entregados, con vehículo y emisiones, y nunca de empresas de prueba.
  */
 const uno = <T>(rows: T[], que: string): T => {
   const r = rows[0];
@@ -43,7 +43,7 @@ describe('integration: fuente del observatorio (ADR-012 Capa 2)', () => {
         .returning(),
       'user',
     );
-    const empresa = async (o: { generador: boolean; demo?: boolean }) =>
+    const empresa = async (o: { generador: boolean; prueba?: boolean }) =>
       uno(
         await db
           .insert(schema.empresas)
@@ -57,14 +57,14 @@ describe('integration: fuente del observatorio (ADR-012 Capa 2)', () => {
             addressRegion: 'IV',
             isGeneradorCarga: o.generador,
             isTransportista: !o.generador,
-            isDemo: o.demo ?? false,
+            isTestUser: o.prueba ?? false,
             planId: plan.id,
           })
           .returning(),
         'empresa',
       );
     const generador = await empresa({ generador: true });
-    const generadorDemo = await empresa({ generador: true, demo: true });
+    const generadorPrueba = await empresa({ generador: true, prueba: true });
     const transportista = await empresa({ generador: false });
     const vehiculo = uno(
       await db
@@ -146,17 +146,17 @@ describe('integration: fuente del observatorio (ADR-012 Capa 2)', () => {
       metricas: { reales: '35.120', estimadas: '40.000', evitado: '12.300' },
     });
     const enCurso = await viaje({ generadorId: generador.id, status: 'asignado' });
-    const demo = await viaje({ generadorId: generadorDemo.id, status: 'entregado' });
-    return { entregado, enCurso, demo, vehiculo };
+    const prueba = await viaje({ generadorId: generadorPrueba.id, status: 'entregado' });
+    return { entregado, enCurso, prueba, vehiculo };
   }
 
   test('trae solo viajes entregados de empresas reales, con vehículo y emisiones', async () => {
-    const { entregado, enCurso, demo, vehiculo } = await escenario();
+    const { entregado, enCurso, prueba, vehiculo } = await escenario();
     const viajes = await leerViajesEntregados(handle.db);
     const ids = viajes.map((v) => v.viajeId);
     expect(ids).toContain(entregado.id);
     expect(ids).not.toContain(enCurso.id);
-    expect(ids).not.toContain(demo.id);
+    expect(ids).not.toContain(prueba.id);
 
     const fila = viajes.find((v) => v.viajeId === entregado.id);
     expect(fila).toMatchObject({
