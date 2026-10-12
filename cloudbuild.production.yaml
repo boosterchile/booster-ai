@@ -302,6 +302,13 @@ steps:
   # release. Sin `--tag` gcloud usa un nonce y Cloud Run nombra la revisión
   # (`surface/run/services/update.py`, `generate_name`). `update-traffic` solo
   # toca el bloque de traffic, que Terraform ya ignora para el api.
+  #
+  # La revisión nueva se verifica por digest. Cloud Run fija cada revisión al
+  # digest de la imagen, así que `spec.containers[0].image` llega como
+  # `api@sha256:…`, sin el tag del commit. El primer release con la guarda
+  # (run 38250737682, 2026-10-12) abortó aquí con la revisión sana. Se acepta
+  # el tag del commit o el digest que Artifact Registry da para
+  # `api:${_COMMIT_SHA}`; cualquier otra imagen sigue abortando.
   - id: deploy-canary
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
@@ -327,10 +334,17 @@ steps:
         IMAGE=$(gcloud run revisions describe "$${REV}" \
           --region=${_REGION} --platform=managed \
           --format='value(spec.containers[0].image)')
+        DIGEST=$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/api:${_COMMIT_SHA}" \
+          --format='value(image_summary.digest)')
+        if [ -z "$${DIGEST}" ]; then
+          echo "deploy-canary: sin digest para api:${_COMMIT_SHA} en Artifact Registry" >&2
+          exit 1
+        fi
         case "$${IMAGE}" in
-          *"${_COMMIT_SHA}"*) ;;
+          *":${_COMMIT_SHA}" | *"@$${DIGEST}") ;;
           *)
-            echo "deploy-canary: $${REV} corre $${IMAGE}, no api:${_COMMIT_SHA}" >&2
+            echo "deploy-canary: $${REV} corre $${IMAGE}, no api:${_COMMIT_SHA} ($${DIGEST})" >&2
             exit 1
             ;;
         esac
