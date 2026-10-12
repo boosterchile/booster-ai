@@ -1,0 +1,117 @@
+name: Deploy staging
+
+# ADR-083: staging es un proyecto GCP gemelo de prod gestionado con el mismo
+# root module de Terraform. Cada push a main despliega a staging con la misma
+# cloudbuild.production.yaml, cambiando proyecto, registry, host público y la
+# config de Firebase del proyecto de staging. El deploy a prod sigue manual
+# (release.yml, gate humano en el Environment `production`).
+#
+# Variables de REPOSITORIO (las lee el `if` del job, que se evalúa antes de
+# entrar al Environment): STAGING_PROJECT_ID, STAGING_URL
+# (mismo rol que PRODUCTION_URL, pero de staging; también la usa e2e-staging.yml).
+# Variables del GitHub Environment `staging` (no secretos; los valores de
+# Firebase web son públicos por diseño):
+#   STAGING_WIF_PROVIDER, STAGING_WIF_SERVICE_ACCOUNT_DEPLOY,
+#   STAGING_VITE_FIREBASE_API_KEY, STAGING_VITE_FIREBASE_APP_ID,
+#   STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID, STAGING_VITE_GOOGLE_MAPS_API_KEY,
+#   STAGING_VITE_RECAPTCHA_SITE_KEY
+# Mientras STAGING_PROJECT_ID no exista (staging aún no creado), el job se
+# salta: no falla ni intenta desplegar.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_REGION: southamerica-west1
+  PROD_PROJECT_ID: booster-ai-494222
+
+jobs:
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    if: vars.STAGING_PROJECT_ID != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Esperar CI Success del mismo SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 40); do
+            conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success" --jq '.check_runs[0].conclusion // "pending"')
+            status=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=CI%20Success" --jq '.check_runs[0].status // "queued"')
+            echo "poll $i/40: status=$status conclusion=$conclusion"
+            if [ "$conclusion" = "success" ]; then exit 0; fi
+            if [ "$conclusion" != "pending" ] && [ "$conclusion" != "null" ] && [ "$status" = "completed" ]; then
+              echo "::error::CI Success terminó en '$conclusion' — deploy a staging abortado"; exit 1
+            fi
+            sleep 45
+          done
+          echo "::error::timeout esperando CI Success (30 min)"; exit 1
+
+      - name: Authenticate to Google Cloud (staging)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.STAGING_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.STAGING_WIF_PROVIDER }}
+          service_account: ${{ vars.STAGING_WIF_SERVICE_ACCOUNT_DEPLOY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Generar config de Cloud Build para staging
+        env:
+          STAGING_PROJECT_ID: ${{ vars.STAGING_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # serviceAccount y options.pool no aceptan substitutions: se
+          # reescribe el ID del proyecto en una copia. Nada más cambia.
+          sed "s/${PROD_PROJECT_ID}/${STAGING_PROJECT_ID}/g" cloudbuild.production.yaml > cloudbuild.staging.generated.yaml
+          if grep -q "${PROD_PROJECT_ID}" cloudbuild.staging.generated.yaml; then
+            echo "::error::quedó una referencia al proyecto de prod en la config de staging"; exit 1
+          fi
+
+      - name: Trigger Cloud Build (staging)
+        env:
+          STAGING_PROJECT_ID: ${{ vars.STAGING_PROJECT_ID }}
+          API_HOST: ${{ vars.STAGING_URL }}
+        run: |
+          set -euo pipefail
+          host="${API_HOST#https://}"
+          subs="_COMMIT_SHA=${{ github.sha }}"
+          subs+=",_REGISTRY=${GCP_REGION}-docker.pkg.dev/${STAGING_PROJECT_ID}/containers"
+          subs+=",_PUBLIC_API_HOST=${host}"
+          subs+=",_VITE_API_URL=${API_HOST}"
+          subs+=",_VITE_FIREBASE_PROJECT_ID=${STAGING_PROJECT_ID}"
+          subs+=",_VITE_FIREBASE_AUTH_DOMAIN=${STAGING_PROJECT_ID}.firebaseapp.com"
+          subs+=",_VITE_FIREBASE_STORAGE_BUCKET=${STAGING_PROJECT_ID}.firebasestorage.app"
+          subs+=",_VITE_FIREBASE_API_KEY=${{ vars.STAGING_VITE_FIREBASE_API_KEY }}"
+          subs+=",_VITE_FIREBASE_APP_ID=${{ vars.STAGING_VITE_FIREBASE_APP_ID }}"
+          subs+=",_VITE_FIREBASE_MESSAGING_SENDER_ID=${{ vars.STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID }}"
+          subs+=",_VITE_GOOGLE_MAPS_API_KEY=${{ vars.STAGING_VITE_GOOGLE_MAPS_API_KEY }}"
+          subs+=",_VITE_RECAPTCHA_SITE_KEY=${{ vars.STAGING_VITE_RECAPTCHA_SITE_KEY }}"
+          gcloud builds submit --config=cloudbuild.staging.generated.yaml \
+            --project="${STAGING_PROJECT_ID}" --region=${{ env.GCP_REGION }} \
+            --substitutions="${subs}"
+
+      - name: Smoke test — API health
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS "${{ vars.STAGING_URL }}/health"; then echo "✓ staging healthy"; exit 0; fi
+            echo "Attempt $i failed, retrying in 30s..."; sleep 30
+          done
+          echo "::error::staging health check failed after 3 attempts"; exit 1

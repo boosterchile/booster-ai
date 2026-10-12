@@ -55,7 +55,11 @@ export function AparienciaConductorRoute() {
           Datos de ejemplo. Fase: <span className="font-medium">{fase}</span> · Vehículo{' '}
           <span className="font-medium">{teltonika ? 'con' : 'sin'}</span> Teltonika.
         </p>
-        <AssignmentCard assignment={mockAssignment(fase, teltonika)} geoPermission="prompt" />
+        <AssignmentCard
+          assignment={mockAssignment(fase, teltonika)}
+          geoPermission="prompt"
+          sugerenciasRuta={false}
+        />
       </main>
     </div>
   );

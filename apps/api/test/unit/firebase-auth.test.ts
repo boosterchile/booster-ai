@@ -173,7 +173,7 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
       const claims = c.get('firebaseClaims') as
         | { uid: string; custom: Record<string, unknown> }
         | undefined;
-      return c.json({ ok: true, uid: claims?.uid, isDemo: claims?.custom?.is_demo });
+      return c.json({ ok: true, uid: claims?.uid, custom: claims?.custom });
     });
     return app;
   }
@@ -184,26 +184,11 @@ describe('firebase auth middleware — SSE ticket (fix-sse-ticket-auth)', () => 
     const app = await buildStreamApp({ auth, sseTicketStore: store });
     const res = await app.request(`${STREAM_PATH}?ticket=abc123`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { uid: string; isDemo?: unknown };
+    const body = (await res.json()) as { uid: string; custom?: Record<string, unknown> };
     expect(body.uid).toBe('uid-from-ticket');
-    expect(body.isDemo).toBeUndefined();
+    expect(body.custom).toEqual({});
     expect(store).toHaveBeenCalledWith('abc123', ASSIGNMENT);
     expect(auth.verifyIdToken).not.toHaveBeenCalled();
-  });
-
-  it('NO restituye is_demo en firebaseClaims.custom aunque el ticket lo traiga (sin lector desde #698)', async () => {
-    // Ticket acuñado por la revisión anterior (convivencia en el canary): el
-    // campo sobrante se ignora; el chain productivo no lee `is_demo`.
-    const legacy = { uid: 'demo-uid', isDemo: true };
-    const app = await buildStreamApp({
-      auth: stubFirebaseAuth({ succeed: {} }),
-      sseTicketStore: async () => legacy,
-    });
-    const res = await app.request(`${STREAM_PATH}?ticket=demo-ticket`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { uid: string; isDemo?: unknown };
-    expect(body.uid).toBe('demo-uid');
-    expect(body.isDemo).toBeUndefined();
   });
 
   it('ticket inválido/expirado (store → null) → 401', async () => {

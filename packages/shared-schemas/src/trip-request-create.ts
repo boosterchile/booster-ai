@@ -74,6 +74,11 @@ export const tripRequestCreateInputSchema = z
     /** Precio sugerido por shipper en CLP. Null = pricing-engine sugiere. */
     proposed_price_clp: z.number().int().nonnegative().nullable(),
     /**
+     * ADR-079 §2 — modalidad comercial (define la tasa de comisión).
+     * `programada` exige contrato programado habilitado; default `spot`.
+     */
+    modalidad_carga: z.enum(['spot', 'programada']).default('spot'),
+    /**
      * Phase 5 PR-L3b — Datos opcionales del consignee (destinatario en
      * el lugar de entrega). Si están presentes:
      *   - El link público de tracking se envía DIRECTAMENTE al

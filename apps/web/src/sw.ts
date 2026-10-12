@@ -22,6 +22,11 @@ import { ExpirationPlugin } from 'workbox-expiration';
 import { precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { CacheFirst } from 'workbox-strategies';
+import {
+  type DataNotificacionChat,
+  type DataNotificacionSugerencia,
+  urlClickNotificacion,
+} from './lib/eco-routing.js';
 
 // vite-plugin-pwa inyecta __WB_MANIFEST en build time con la lista de
 // assets a precachear (matching globPatterns del config).
@@ -78,12 +83,13 @@ interface PushPayload {
   title: string;
   body: string;
   tag: string;
-  data: {
-    assignment_id: string;
-    message_id: string;
-    url: string;
-  };
+  data: DataNotificacionChat | DataNotificacionSugerencia;
+  /** Sugerencia de ruta (T10-23): Aceptar / Seguir mi ruta. */
+  actions?: { action: string; title: string }[];
 }
+
+/** `actions` existe en la Notifications API pero no en el lib DOM de TS. */
+type OpcionesNotificacion = NotificationOptions & { actions?: { action: string; title: string }[] };
 
 /**
  * `push` event: el push service del browser entrega un payload encriptado
@@ -104,13 +110,14 @@ self.addEventListener('push', (event) => {
   const title = payload?.title ?? 'Booster';
   // Construimos options con spread condicional para no setear props en
   // undefined (exactOptionalPropertyTypes).
-  const options: NotificationOptions = {
+  const options: OpcionesNotificacion = {
     body: payload?.body ?? 'Nuevo mensaje',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
     requireInteraction: false,
     ...(payload?.tag ? { tag: payload.tag } : {}),
     ...(payload?.data ? { data: payload.data } : {}),
+    ...(payload?.actions ? { actions: payload.actions, requireInteraction: true } : {}),
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -123,7 +130,12 @@ self.addEventListener('push', (event) => {
  */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data as PushPayload['data'] | undefined)?.url;
+  // Acción de una sugerencia de ruta → la URL lleva `respuesta=`, que la PWA
+  // registra al abrir (T10-23). Chat y clic en el cuerpo: data.url tal cual.
+  const url = urlClickNotificacion(
+    event.notification.data as PushPayload['data'] | undefined,
+    event.action,
+  );
   if (!url) {
     return;
   }

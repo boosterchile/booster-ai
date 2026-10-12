@@ -254,6 +254,45 @@ describe('POST /webhooks/whatsapp — happy paths', () => {
   });
 });
 
+// T10-08: ramas del webhook que no ejercía ningún test.
+describe('POST /webhooks/whatsapp — ramas adicionales', () => {
+  async function send(ctx: ReturnType<typeof makeApp>, fields: Record<string, string>) {
+    return ctx.app.request('/webhooks/whatsapp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: form({ From: 'whatsapp:+56911112222', ...fields }),
+    });
+  }
+
+  it('sin MessageSid no deduplica: dos envíos iguales se procesan dos veces', async () => {
+    const ctx = makeApp();
+    const r1 = await send(ctx, { Body: 'hola' });
+    const r2 = await send(ctx, { Body: 'x' });
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(ctx.sendText).toHaveBeenCalledTimes(2);
+  });
+
+  it('«cancelar» a mitad del flujo cierra la conversación sin crear la solicitud', async () => {
+    const ctx = makeApp();
+    await send(ctx, { Body: 'hola', MessageSid: 'SMC1' });
+    await send(ctx, { Body: '1', MessageSid: 'SMC2' });
+    const res = await send(ctx, { Body: 'cancelar', MessageSid: 'SMC3' });
+    expect(res.status).toBe(200);
+    expect(ctx.createTripRequest).not.toHaveBeenCalled();
+    const ultimo = (ctx.sendText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    expect(ultimo?.to).toBe('+56911112222');
+  });
+
+  it('opción 2 del menú responde el aviso de consulta no disponible', async () => {
+    const ctx = makeApp();
+    await send(ctx, { Body: 'hola', MessageSid: 'SML1' });
+    const res = await send(ctx, { Body: '2', MessageSid: 'SML2' });
+    expect(res.status).toBe(200);
+    expect(ctx.sendText).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('POST /webhooks/twilio-status', () => {
   it('firma inválida retorna 403', async () => {
     signatureValid = false;

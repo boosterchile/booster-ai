@@ -40,11 +40,8 @@ const loginRoute = createRoute({
   component: LoginRoute,
 });
 
-// Ruta /demo (selector de persona demo) RETIRADA — chore/retiro-subsistema-demo.
-
 // SC-INT-1 (sec-001-cierre): página de mantenimiento. Ruta directa
-// `/maintenance` expone el componente para preview/QA (antes también la
-// renderizaba la ya-retirada DemoRoute cuando demo_mode_activated=false).
+// `/maintenance` expone el componente para preview/QA.
 const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/maintenance',
@@ -283,7 +280,7 @@ const cumplimientoRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/cumplimiento.js'), 'CumplimientoRoute'),
 });
 
-// Platform admin — operaciones internas (init/clean seed demo, etc.).
+// Platform admin — operaciones internas.
 // Acceso por allowlist de email en backend (BOOSTER_PLATFORM_ADMIN_EMAILS).
 // meRequirement=skip → solo Firebase auth, no requiere onboarding/empresa.
 const platformAdminRoute = createRoute({
@@ -302,7 +299,7 @@ const platformAdminMatchingRoute = createRoute({
   ),
 });
 
-// ADR-039 — Site Settings Editor. Editar marca + copy del demo sin
+// ADR-039 — Site Settings Editor. Editar marca + copy del sitio sin
 // redeploy. Mismo gate platform-admin (BOOSTER_PLATFORM_ADMIN_EMAILS).
 const platformAdminSiteSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -310,6 +307,27 @@ const platformAdminSiteSettingsRoute = createRoute({
   component: lazyRouteComponent(
     () => import('./routes/platform-admin-site-settings.js'),
     'PlatformAdminSiteSettingsRoute',
+  ),
+});
+
+// ADR-079 §3 — Configuración comercial (tasas de comisión, servicios en UF,
+// financiamiento, IVA). Mismo gate platform-admin (allowlist en backend).
+const platformAdminConfiguracionComercialRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/configuracion-comercial',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-configuracion-comercial.js'),
+    'PlatformAdminConfiguracionComercialRoute',
+  ),
+});
+
+// ADR-080 — conciliación del mandato de cobro. Mismo gate platform-admin.
+const platformAdminMandatoCobroRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/mandato-cobro',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-mandato-cobro.js'),
+    'PlatformAdminMandatoCobroRoute',
   ),
 });
 
@@ -351,6 +369,16 @@ const platformAdminTeltonikaRoute = createRoute({
   component: lazyRouteComponent(
     () => import('./routes/platform-admin-teltonika.js'),
     'PlatformAdminTeltonikaRoute',
+  ),
+});
+
+// T10-24 / ADR-012 Capa 2 — observatorio urbano (vista interna).
+const platformAdminObservatorioRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/app/platform-admin/observatorio',
+  component: lazyRouteComponent(
+    () => import('./routes/platform-admin-observatorio.js'),
+    'PlatformAdminObservatorioRoute',
   ),
 });
 
@@ -454,6 +482,13 @@ const publicTrackingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/tracking/$token',
   component: PublicTrackingRoute,
+});
+
+// T10-29 / ADR-079 §4 — precios públicos (solo servicios en UF y huella).
+const preciosRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/precios',
+  component: lazyRouteComponent(() => import('./routes/precios.js'), 'PreciosRoute'),
 });
 
 const legalTerminosRoute = createRoute({
@@ -580,11 +615,14 @@ const routeTree = rootRoute.addChildren([
   platformAdminRoute,
   platformAdminMatchingRoute,
   platformAdminSiteSettingsRoute,
+  platformAdminConfiguracionComercialRoute,
+  platformAdminMandatoCobroRoute,
   platformAdminObservabilityRoute,
   platformAdminSignupRequestsRoute,
   platformAdminEmpresasRoute,
   platformAdminTeltonikaRoute,
   platformAdminStakeholdersRoute,
+  platformAdminObservatorioRoute,
   platformAdminImpersonarRoute,
   cargasListRoute,
   cargasNuevaRoute,
@@ -594,6 +632,7 @@ const routeTree = rootRoute.addChildren([
   asignacionDetalleRoute,
   chatViajeRoute,
   publicTrackingRoute,
+  preciosRoute,
   legalTerminosRoute,
   cobraHoyHistorialRoute,
   legalCobraHoyRoute,

@@ -127,6 +127,14 @@ vi.mock('../components/scoring/AssignmentEcoRouteCard.js', () => ({
   ),
 }));
 
+// T10-23: la card de sugerencia de ruta tiene su propio test; acá solo se
+// verifica dónde se monta y con qué props.
+vi.mock('../components/eco-routing/SugerenciaRutaCard.js', () => ({
+  SugerenciaRutaCard: ({ assignmentId }: { assignmentId: string }) => (
+    <div data-testid={`sugerencia-ruta-mock-${assignmentId}`} />
+  ),
+}));
+
 vi.mock('../components/chat/ChatPanel.js', () => ({
   ChatPanel: (props: { assignmentId: string; title?: string; readOnly?: boolean }) => (
     <div
@@ -614,6 +622,23 @@ describe('ConductorDashboardRoute — acciones del servicio', () => {
     const maps = screen.getByTestId('abrir-maps-origen');
     expect(maps.getAttribute('href') ?? '').toContain(encodeURIComponent('Av. Pajaritos 1234'));
     expect(maps).toHaveTextContent(/pausa el reporte GPS/);
+  });
+
+  it('en ruta monta la sugerencia de eco-routing (T10-23); antes de recoger no', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'recogido' }] });
+    render(<ConductorDashboardRoute />);
+    expect(
+      await screen.findByTestId(`sugerencia-ruta-mock-${sampleAssignment.id}`),
+    ).toBeInTheDocument();
+  });
+
+  it('por recoger no muestra sugerencias de ruta', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({ assignments: [{ ...sampleAssignment, status: 'asignado' }] });
+    render(<ConductorDashboardRoute />);
+    await screen.findByTestId(`assignment-card-${sampleAssignment.id}`);
+    expect(screen.queryByTestId(`sugerencia-ruta-mock-${sampleAssignment.id}`)).toBeNull();
   });
 
   it('«Ir al destino» abre la ruta en la pantalla y no sale a Maps', async () => {

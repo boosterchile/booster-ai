@@ -1,7 +1,7 @@
 /**
  * Extracción de la IP cliente CONFIABLE del header `X-Forwarded-For`.
- * Única fuente de verdad (spec fix-xff-trust-boundary): rate-limit-pin,
- * rate-limit-signup y demo-cache-warm consumen esta función — las copias
+ * Única fuente de verdad (spec fix-xff-trust-boundary): rate-limit-pin y
+ * rate-limit-signup consumen esta función — las copias
  * locales fueron la causa raíz del bypass (cada una con su drift).
  *
  * Detrás del GCLB external (networking.tf) el LB APPENDEA

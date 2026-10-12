@@ -1,5 +1,7 @@
 # Runbook — Inicialización de Secret Manager secrets (run-once setup)
 
+> **Retirado (2026-10-07, T10-03 / ADR-082).** Las cuentas demo, `harden-demo-accounts`, el job de TTL y los secretos demo salieron del código y de Terraform (`.specs/retiro-superficie-demo-t10-03/spec.md`). Se conserva como registro histórico; los comandos de abajo ya no aplican.
+
 > Última actualización: 2026-05-24 · T7.5 SEC-001
 > Spec: [`.specs/sec-001-cierre/spec.md`](../../.specs/sec-001-cierre/spec.md) §3 H1.4 · [Plan T7.5](../../.specs/sec-001-cierre/plan.md)
 

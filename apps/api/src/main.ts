@@ -1,4 +1,4 @@
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
 import { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
 import { serve } from '@hono/node-server';
 import { config } from './config.js';
@@ -8,6 +8,11 @@ import { createServer } from './server.js';
 import { getFirebaseAuth } from './services/firebase.js';
 import type { NotifyOfferDeps } from './services/notify-offer.js';
 import type { NotifyTrackingLinkDeps } from './services/notify-tracking-link.js';
+import {
+  crearEnrutadorWhatsApp,
+  crearPublicadorEventosNotificacion,
+  modoNotificaciones,
+} from './services/whatsapp-enrutado.js';
 
 const logger = createLogger({
   service: config.SERVICE_NAME,
@@ -15,6 +20,8 @@ const logger = createLogger({
   level: config.LOG_LEVEL,
   pretty: config.NODE_ENV === 'development',
 });
+// T10-16: fallas no controladas → fatal con stack → Error Reporting.
+registrarErroresNoControlados(logger);
 
 async function main(): Promise<void> {
   const { db, pool } = createDb({
@@ -42,7 +49,7 @@ async function main(): Promise<void> {
   // Cliente Twilio para el dispatcher de notificaciones (B.8). Solo se
   // arma si las 3 env vars están seteadas — en dev es común que no estén,
   // y el dispatcher se vuelve no-op (loguea warn por cada offer pendiente).
-  const twilioClient =
+  const twilioDirecto =
     config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.TWILIO_FROM_NUMBER
       ? new TwilioWhatsAppClient({
           accountSid: config.TWILIO_ACCOUNT_SID,
@@ -51,6 +58,24 @@ async function main(): Promise<void> {
           logger,
         })
       : null;
+
+  // T10-21 — el canal WhatsApp se enruta entre Twilio directo y
+  // notification-service según NOTIFICATIONS_VIA_MICROSERVICE / _SHADOW
+  // (default: directo). Todos los emisores reciben este sender.
+  const modoWhatsApp = modoNotificaciones({
+    viaMicroservicio: config.NOTIFICATIONS_VIA_MICROSERVICE,
+    sombra: config.NOTIFICATIONS_SHADOW,
+  });
+  const twilioClient = crearEnrutadorWhatsApp({
+    modo: modoWhatsApp,
+    directo: twilioDirecto,
+    publicar: config.NOTIFICATION_EVENTS_TOPIC
+      ? crearPublicadorEventosNotificacion(config.NOTIFICATION_EVENTS_TOPIC)
+      : null,
+    fromNumber: config.TWILIO_FROM_NUMBER ?? null,
+    logger,
+  });
+  logger.info({ modoWhatsApp }, 'canal WhatsApp enrutado');
 
   if (!twilioClient) {
     logger.warn(

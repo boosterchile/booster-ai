@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { type AvlPacket, type AvlRecord, extractCrashTrace } from '@booster-ai/codec8-parser';
-import { createLogger } from '@booster-ai/logger';
+import { createLogger, registrarErroresNoControlados } from '@booster-ai/logger';
 import { BigQuery } from '@google-cloud/bigquery';
 import { type Message, PubSub, type Subscription } from '@google-cloud/pubsub';
 import { Storage } from '@google-cloud/storage';
@@ -45,6 +45,8 @@ async function main(): Promise<void> {
     level: config.LOG_LEVEL,
     pretty: config.NODE_ENV === 'development',
   });
+  // T10-16: fallas no controladas → fatal con stack → Error Reporting.
+  registrarErroresNoControlados(logger);
 
   logger.info(
     {

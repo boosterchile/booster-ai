@@ -7,7 +7,7 @@ import { axe } from 'vitest-axe';
 
 /**
  * Tests del ImpersonationPicker (platform-admin). Lista usuarios de empresas
- * es_demo (GET /auth/impersonate/targets) con "Ver como" por fila → POST
+ * es_usuario_prueba (GET /auth/impersonate/targets) con "Ver como" por fila → POST
  * /auth/impersonate → signInUniversalWithCustomToken. Maneja el 503 (flag OFF)
  * con gracia. En D2.
  */

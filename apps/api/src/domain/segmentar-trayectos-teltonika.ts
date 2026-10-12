@@ -728,7 +728,8 @@ function litrosDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_LEVEL_L).fuelLevelL ?? null;
 }
 
-function consumoAcumuladoDe(io: Record<string, number>): number | null {
+/** AVL 83 validado por el catálogo, en litros acumulados. Lo reusa el cierre (T10-05). */
+export function consumoAcumuladoDe(io: Record<string, number>): number | null {
   return leerCan(io, AVL_ID_CAN.CAN_FUEL_CONSUMED_L).fuelConsumedL ?? null;
 }
 

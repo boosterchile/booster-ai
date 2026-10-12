@@ -68,6 +68,25 @@ export interface ChatPushPayload {
   };
 }
 
+/**
+ * Sugerencia de eco-routing (T10-23): el service worker muestra las acciones
+ * Aceptar / Seguir y responde al api sin abrir la app.
+ */
+export interface RutaSugeridaPushPayload {
+  title: string;
+  body: string;
+  tag: string;
+  data: {
+    tipo: 'sugerencia_ruta';
+    assignment_id: string;
+    sugerencia_id: string;
+    url: string;
+  };
+  actions: { action: 'aceptar' | 'seguir'; title: string }[];
+}
+
+export type PushPayload = ChatPushPayload | RutaSugeridaPushPayload;
+
 export interface SendPushResult {
   sent: number;
   invalidated: number;
@@ -83,7 +102,7 @@ export async function sendPushToUser(opts: {
   db: Db;
   logger: Logger;
   userId: string;
-  payload: ChatPushPayload;
+  payload: PushPayload;
 }): Promise<SendPushResult> {
   const { db, logger, userId, payload } = opts;
 

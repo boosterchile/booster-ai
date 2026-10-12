@@ -363,7 +363,7 @@ variable "auth_universal_v1_activated" {
 # ---------------------------------------------------------------------------
 # Impersonación auditada (#584 backend / #585 frontend / #586 gate) —
 # platform-admin actúa como usuario no-admin, con escritura acotada a
-# empresas `es_demo` y auditoría en `eventos_impersonacion`. El guard de
+# empresas `es_usuario_prueba` y auditoría en `eventos_impersonacion`. El guard de
 # escritura, el mint, la auditoría, el banner y el picker ya están en main y
 # testeados; este flag es el interruptor.
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ variable "auth_universal_v1_activated" {
 # este repo (solo terraform-drift.yml, read-only). Flip reversible sin redeploy
 # de código: setear a `false` + `terraform apply` revierte a 503 en segundos.
 variable "impersonation_v1_activated" {
-  description = "Activa la impersonación auditada (platform-admin ve-como usuario no-admin; escritura solo en empresas es_demo). false = endpoints 503."
+  description = "Activa la impersonación auditada (platform-admin ve-como usuario no-admin; escritura solo en empresas es_usuario_prueba). false = endpoints 503."
   type        = bool
   default     = true
 }
@@ -478,24 +478,41 @@ variable "wake_word_voice_activated" {
   default     = false
 }
 
-# ---------------------------------------------------------------------------
-# Modo demo (subdominio demo.boosterchile.com)
-# ---------------------------------------------------------------------------
-# Cuando ON, el api habilita el endpoint POST /demo/login (mintea custom
-# tokens Firebase para las 4 personas demo: shipper, carrier, conductor,
-# stakeholder) y corre auto-seed-demo en startup si no existen las
-# entidades demo. La PWA detecta el host header demo.* y muestra UI de
-# selector de persona en lugar del flow /login normal.
-#
-# Default true para demo Corfo (2026-05-18). Se apaga post-evento si
-# Felipe decide retirar el subdominio.
-#
-# 2026-05-24 — `false` per SEC-001 cierre T0 (drift reconcile vs state real prod).
-# Vuelve a `true` en H1.6 SC-1.6.1 post H1.1..H1.5 + H4. Ver `.specs/sec-001-cierre/`.
-variable "demo_mode_activated" {
-  description = "Activa modo demo: endpoint /demo/login + auto-seed on startup + UI demo en subdominio demo.boosterchile.com."
+variable "wake_word_keyword_url" {
+  description = "URL pública (con CORS hacia la web) del modelo oye-booster-cl.ppn de Porcupine (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
+variable "wake_word_model_url" {
+  description = "URL pública (con CORS hacia la web) del modelo porcupine_params_es.pv (ADR-036, T10-22). Vacía = wake-word no disponible."
+  type        = string
+  default     = ""
+}
+
+# T10-23 (ADR-012 Capa 1) — eco-routing en tiempo real. Activar primero en
+# staging (ADR-083) y después en prod con un viaje real de evidencia.
+variable "eco_routing_realtime_activated" {
+  description = "Activa la detección de congestión y las sugerencias de ruta al conductor (T10-23)."
   type        = bool
   default     = false
+}
+
+variable "mandato_cobro_activated" {
+  description = "ADR-080 — mandato de cobro (Booster cobra al generador y libera al transportista). Encender solo con las seis precondiciones de §6 evidenciadas."
+  type        = bool
+  default     = false
+}
+
+variable "mandato_cobro_float_maximo_clp" {
+  description = "ADR-080 §6.3 — tope del float de terceros en CLP (caja propia adelantada antes del cobro). 0 = Booster no adelanta caja propia."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.mandato_cobro_float_maximo_clp >= 0 && floor(var.mandato_cobro_float_maximo_clp) == var.mandato_cobro_float_maximo_clp
+    error_message = "mandato_cobro_float_maximo_clp debe ser un entero >= 0."
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -625,4 +642,85 @@ variable "content_sid_ready" {
     # (versión 1 era el placeholder ROTATE_ME), así que montarla es seguro.
     "content-sid-activacion-conductor" = true
   }
+}
+
+# -----------------------------------------------------------------------------
+# Entornos (ADR-083): staging es un proyecto gemelo con este mismo root module.
+# -----------------------------------------------------------------------------
+variable "tfstate_bucket" {
+  description = "Bucket GCS del state remoto (backend). El SA de drift lo lee."
+  type        = string
+  default     = "booster-ai-tfstate-494222"
+}
+
+variable "staging_nameservers" {
+  description = <<-EOT
+    Solo en prod: nameservers de la zona DNS del proyecto de staging
+    (output `dns_zone_name_servers` del apply de staging). Si no está vacío, prod
+    delega `staging.<domain>` a esa zona con un registro NS. Vacío = sin
+    delegación (staging aún no existe).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+# ---------------------------------------------------------------------------
+# T10-04 (ADR-082) — correo saliente vía Resend
+# ---------------------------------------------------------------------------
+# true = la versión real de `resend-api-key` está cargada y el dominio está
+# verificado en Resend → se monta RESEND_API_KEY en el api. Ver email.tf.
+variable "resend_api_key_ready" {
+  description = "true = resend-api-key tiene la key real y el dominio está verificado en Resend → se monta RESEND_API_KEY en service_api. false = no se monta y el correo se registra en el log sin enviarse."
+  type        = bool
+  default     = false
+}
+
+variable "resend_dns_records" {
+  description = "Registros que Resend pide publicar para verificar el dominio, copiados de su panel. name es relativo al dominio (ej. 'send', 'resend._domainkey'); rrdatas en formato Cloud DNS (TXT entre comillas, MX con prioridad y punto final: '10 <host>.')."
+  type = list(object({
+    name    = string
+    type    = string
+    rrdatas = list(string)
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for r in var.resend_dns_records :
+      contains(["TXT", "MX", "CNAME"], r.type) && r.name != "" && r.name != "@" && !endswith(r.name, ".") && length(r.rrdatas) > 0
+    ])
+    error_message = "Cada registro: type TXT, MX o CNAME; name relativo al dominio (sin '@' ni punto final); al menos un rrdata."
+  }
+}
+
+# T10-21 — extracción del canal WhatsApp a notification-service
+# (.specs/notification-service-t10-21/spec.md). Ambos OFF = envío directo de
+# siempre. Orden de activación: sombra 3–7 días con divergencias = 0 → drill
+# en staging → via_microservice. Rollback: apagar y re-aplicar.
+variable "notifications_shadow" {
+  description = "api envía WhatsApp directo Y publica en sombra a notification-events; el servicio compara hashes sin enviar."
+  type        = bool
+  default     = false
+}
+
+variable "notifications_via_microservice" {
+  description = "api publica a notification-events y notification-service entrega por Twilio. Tiene precedencia sobre notifications_shadow."
+  type        = bool
+  default     = false
+}
+
+# T10-21 — ranking de matching en matching-engine
+# (.specs/matching-engine-t10-21/spec.md). Ambos OFF = ranking en el api.
+# Orden: sombra 3–7 días con divergencias = 0 → drill en staging →
+# via_microservice. Rollback: apagar y re-aplicar.
+variable "matching_shadow" {
+  description = "El api decide el ranking en proceso y, tras el commit, lo compara contra matching-engine."
+  type        = bool
+  default     = false
+}
+
+variable "matching_via_microservice" {
+  description = "El ranking que decide las offers lo calcula matching-engine (timeout 3 s, fallback local). Precede a matching_shadow."
+  type        = bool
+  default     = false
 }

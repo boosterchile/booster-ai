@@ -17,11 +17,6 @@ import type { Redis } from 'ioredis';
 const TICKET_PREFIX = 'sse-ticket:';
 const TICKET_TTL_SEC = 60;
 
-/**
- * Un ticket acuñado por una revisión anterior puede traer `isDemo` (snapshot
- * del claim para el ya retirado demoExpires): se ignora al consumir, sin
- * romper la convivencia de revisiones en el canary.
- */
 interface TicketPayload {
   uid: string;
   assignmentId: string;

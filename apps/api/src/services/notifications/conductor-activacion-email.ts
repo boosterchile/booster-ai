@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import type { EmailSender } from './email-sender.js';
+import { escaparHtml } from './escapar-html.js';
 
 /**
  * El correo de activación que el conductor recibe al ser dado de alta.
@@ -53,10 +54,10 @@ export async function enviarCorreoActivacionConductor(opts: {
   ].join('\n');
 
   const html = [
-    `<p>Hola ${nombre},</p>`,
-    `<p><strong>${empresa}</strong> te dio de alta como conductor en Booster.</p>`,
-    `<p><a href="${enlace}">Activa tu cuenta aquí</a></p>`,
-    `<p>Tu RUT: <strong>${rut}</strong><br>Tu PIN de activación: <strong>${pin}</strong></p>`,
+    `<p>Hola ${escaparHtml(nombre)},</p>`,
+    `<p><strong>${escaparHtml(empresa)}</strong> te dio de alta como conductor en Booster.</p>`,
+    `<p><a href="${escaparHtml(enlace)}">Activa tu cuenta aquí</a></p>`,
+    `<p>Tu RUT: <strong>${escaparHtml(rut)}</strong><br>Tu PIN de activación: <strong>${escaparHtml(pin)}</strong></p>`,
     '<p>El PIN sirve una sola vez. Al usarlo vas a crear <strong>tu propia clave</strong> de 6 dígitos, que solo sabes tú: ni tu empresa ni Booster pueden verla. De ahí en adelante entras siempre con tu RUT y esa clave.</p>',
     '<p>Si no reconoces a esta empresa, ignora este correo y avísanos a soporte@boosterchile.com.</p>',
     '<p>Booster</p>',

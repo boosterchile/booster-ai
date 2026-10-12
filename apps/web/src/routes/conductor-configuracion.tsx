@@ -409,15 +409,22 @@ function WakeWordCard() {
               </span>
             )}
           </div>
-          {/* Todo lo que sigue está en FUTURO a propósito. El reconocedor es un
-              stub declarado (`services/wake-word.ts`, Wave 5 PR 1): no abre el
-              micrófono. Redactar la privacidad en presente —"solo escuchamos",
-              "el micrófono se pausa"— le dice al conductor que la app lo está
-              escuchando ahora, y no es verdad. Cuando PR 2 integre Porcupine,
-              este texto pasa a presente. */}
+          {/* Con el flag apagado, todo va en FUTURO: el reconocedor no corre y
+              redactar en presente le diría al conductor que la app lo escucha.
+              Con el flag encendido corre Porcupine (T10-22) y el texto describe
+              cómo funciona hoy; el estado real se ve en el banner del panel. */}
           <p className="mt-1 text-neutral-600 text-sm">
-            Cuando esté disponible, vas a poder decir <strong>“Oye Booster”</strong> con el vehículo
-            detenido y dar tu comando sin tocar la pantalla.
+            {featureLive ? (
+              <>
+                Di <strong>“Oye Booster”</strong> con el vehículo detenido y da tu comando sin tocar
+                la pantalla.
+              </>
+            ) : (
+              <>
+                Cuando esté disponible, vas a poder decir <strong>“Oye Booster”</strong> con el
+                vehículo detenido y dar tu comando sin tocar la pantalla.
+              </>
+            )}
           </p>
 
           {featureLive ? (
@@ -434,7 +441,7 @@ function WakeWordCard() {
               />
               <span className="font-medium">
                 {enabled
-                  ? 'Lo quiero activado · todavía lo estamos preparando'
+                  ? 'Activado · el panel del conductor muestra si está escuchando'
                   : 'Desactivado · seguir usando el botón de mic en cada acción'}
               </span>
             </label>
@@ -450,17 +457,34 @@ function WakeWordCard() {
           )}
 
           <div className="mt-3 space-y-1 text-neutral-500 text-sm">
-            <p className="flex items-start gap-1.5">
-              <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
-              Hoy la app no usa el micrófono por su cuenta: solo se abre cuando tú tocas el botón de
-              mic.
-            </p>
-            <p className="flex items-start gap-1.5">
-              <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
-              Cuando lo activemos, reconoceremos solo la frase “Oye Booster”, el audio se procesará
-              en tu teléfono sin enviarse a Booster, y se pausará al moverse el vehículo, al
-              apagarse la pantalla o al cambiar de pestaña.
-            </p>
+            {featureLive ? (
+              <>
+                <p className="flex items-start gap-1.5">
+                  <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                  Solo reconocemos la frase “Oye Booster”: el audio se procesa y no sale de tu
+                  teléfono. Recién al reconocerla se abre el comando por voz.
+                </p>
+                <p className="flex items-start gap-1.5">
+                  <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                  El micrófono se pausa al moverse el vehículo, al apagarse la pantalla o al cambiar
+                  de pestaña.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="flex items-start gap-1.5">
+                  <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                  Hoy la app no usa el micrófono por su cuenta: solo se abre cuando tú tocas el
+                  botón de mic.
+                </p>
+                <p className="flex items-start gap-1.5">
+                  <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                  Cuando lo activemos, reconoceremos solo la frase “Oye Booster”, el audio se
+                  procesará en tu teléfono sin enviarse a Booster, y se pausará al moverse el
+                  vehículo, al apagarse la pantalla o al cambiar de pestaña.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

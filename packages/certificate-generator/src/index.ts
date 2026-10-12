@@ -20,6 +20,7 @@ export { emitirCertificado } from './emitir-certificado.js';
 export { generarPdfBase } from './generar-pdf-base.js';
 export { firmarPades } from './firmar-pades.js';
 export { obtenerOEmitirCertSelfSigned } from './ca-self-signed.js';
+export { esBucketLocal, esKeyLocal } from './backend-local.js';
 export {
   subirArtefactosCertificado,
   generarSignedUrlPdf,
