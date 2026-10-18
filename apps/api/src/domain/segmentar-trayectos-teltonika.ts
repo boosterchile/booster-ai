@@ -31,15 +31,17 @@ import { esCoordenadaGpsValida } from '../services/coordenada-gps.js';
  * (`fuenteCombustibleCan` undefined): nivel en litros (84, ×0.1); si no hay,
  * litros consumidos por el Δ del contador 83 (×0.1); si no, nivel en % (89).
  * Con provisioning, solo entra el IO configurado. `sin_sensor` o null no
- * inventan litros. El 84 provisionado se lee como porcentaje (JLKT54:
- * raw = 20 × %) y los litros son porcentaje/100 × capacidad. Sin capacidad
- * no hay litros. El 89 no se convierte a litros y el 83 no es un nivel.
+ * inventan litros. El 84 y el 89 provisionados se leen como porcentaje y
+ * los litros son porcentaje/100 × `capacidad_estanque_l`. Esa capacidad
+ * declarada es la fuente de verdad: si se declara 200, son 200 L. Sin
+ * capacidad no hay litros. El 83 no es un nivel.
  * Los litros y el km/L
  * se calculan sobre el tramo entre la primera y la última lectura, solo si
  * ese tramo cubre ≥ 90 % de la distancia del trayecto y suma ≥ 5 L y ≥ 10 km.
  * Si el km/L redondeado supera 2 × (100 / 32) = 6,25, no se muestra: la nota
- * es «dato no confiable» y los litros sí. Con capacidad 200 L, 89 × N
- * coincide con el 84 deprimido y el 12,29 se repite; no se cambia la fuente.
+ * es «dato no confiable» y los litros sí. Ese tope, igual que la exclusión
+ * por cobertura o por `sin_sensor`, protege la calidad del dato. No corrige
+ * la escala ni reescribe porcentaje × capacidad.
  * La cobertura de telemetría es la de `metricas_viaje.cobertura_pct`
  * (`calcularCoberturaPura`, umbral 80 % de ADR-028). Bajo ese umbral el km/L
  * no se muestra: la nota es «dato no confiable · cobertura baja» y los litros

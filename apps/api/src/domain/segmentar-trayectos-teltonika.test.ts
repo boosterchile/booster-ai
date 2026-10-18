@@ -1590,6 +1590,8 @@ describe('guardrail de km/L', () => {
       }),
     ]);
     expect(trayectos[0]?.distanciaKm).toBeGreaterThan(290);
+    // 200 L es la capacidad declarada. 12 puntos de IO 89 × 200 = 24,0 L.
+    // El guardrail oculta el km/L. No reescribe esa fórmula.
     expect(trayectos[0]).toMatchObject({
       litrosIniciales: 132,
       litrosFinales: 108,
