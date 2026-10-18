@@ -19,6 +19,8 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     nivelPctInicial: null,
     nivelPctFinal: null,
     notaCombustible: null,
+    coberturaPct: null,
+    fuenteCombustibleCan: null,
     posibleRoboCombustible: false,
     posibleRoboHormiga: false,
     eventLat: null,
@@ -117,6 +119,124 @@ describe('resumirHubVehiculo', () => {
     ]);
     expect(resumen.litrosRecientes).toBe(24);
     expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.motivoKmPorLitro).toBe('dato no confiable');
+  });
+
+  it('79 % no entra al Σkm/ΣL y 80 % sí', () => {
+    const bajo = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: null,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '84',
+        notaCombustible: 'dato no confiable · cobertura baja',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(bajo.kmPorLitro).toBeNull();
+    expect(bajo.litrosRecientes).toBe(20);
+    expect(bajo.motivoKmPorLitro).toBe('dato no confiable · cobertura baja');
+
+    const enElPiso = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        coberturaPct: 80,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(enElPiso.kmPorLitro).toBe(5);
+    expect(enElPiso.motivoKmPorLitro).toBeNull();
+  });
+
+  it('sin_sensor no entra al Σ aunque el fixture traiga litros', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 80,
+        litrosConsumidos: 20,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        notaCombustible: 'dato no confiable · sin sensor de combustible',
+        ctaSensor: true,
+      }),
+    ]);
+    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(20);
+    expect(resumen.motivoKmPorLitro).toBe('dato no confiable · sin sensor de combustible');
+  });
+
+  it('mezcla: solo los segmentos válidos arman el Σkm/ΣL', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'valido',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        coberturaPct: 80,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'cobertura',
+        fin: '2026-09-02T13:00:00.000Z',
+        distanciaKm: 10,
+        litrosConsumidos: 10,
+        kmPorLitro: null,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '83',
+        notaCombustible: 'dato no confiable · cobertura baja',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'sin-sensor',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 50,
+        litrosConsumidos: 15,
+        kmPorLitro: null,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        notaCombustible: 'dato no confiable · sin sensor de combustible',
+        ctaSensor: true,
+      }),
+    ]);
+    const siEntraranTodos = Math.round(((100 + 10 + 50) / (20 + 10 + 15)) * 100) / 100;
+    expect(siEntraranTodos).toBe(3.56);
+    expect(resumen.kmPorLitro).toBe(5);
+    expect(resumen.kmPorLitro).not.toBe(siEntraranTodos);
+    expect(resumen.motivoKmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(45);
+    expect(resumen.ultimo?.id).toBe('valido');
+  });
+
+  it('una ventana solo con exclusiones junta las dos razones', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'cobertura',
+        distanciaKm: 40,
+        litrosConsumidos: 10,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'sin-sensor',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 30,
+        litrosConsumidos: 8,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        ctaSensor: true,
+      }),
+    ]);
+    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(18);
+    expect(resumen.motivoKmPorLitro).toBe(
+      'dato no confiable · cobertura baja · sin sensor de combustible',
+    );
   });
 
   it('cuenta alertas de toda la ventana y deja la más reciente', () => {

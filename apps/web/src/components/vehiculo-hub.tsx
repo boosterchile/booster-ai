@@ -49,6 +49,7 @@ const resumenSchema = z.object({
   km_recientes: z.number(),
   litros_recientes: z.number().nullable(),
   km_por_litro: z.number().nullable(),
+  motivo_km_por_litro: z.string().nullable().optional(),
   cta_sensor: z.boolean(),
   cta_capacidad_estanque: z.boolean().optional(),
   alertas_total: z.number().int(),
@@ -458,7 +459,10 @@ function TarjetaConsumo({
               Completa la capacidad del estanque
             </button>
           ) : null}
-          {resumen.km_por_litro == null && !resumen.cta_sensor ? (
+          {resumen.km_por_litro == null && resumen.motivo_km_por_litro ? (
+            <p className="mt-2 text-neutral-600 text-xs">{resumen.motivo_km_por_litro}</p>
+          ) : null}
+          {resumen.km_por_litro == null && !resumen.motivo_km_por_litro && !resumen.cta_sensor ? (
             <p className="mt-2 text-neutral-600 text-xs">
               {resumen.litros_recientes != null
                 ? 'dato no confiable'

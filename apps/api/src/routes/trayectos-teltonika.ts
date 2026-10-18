@@ -176,6 +176,7 @@ function aJson(lista: Awaited<ReturnType<typeof listarTrayectosTeltonika>>) {
           km_recientes: lista.resumenVehiculo.kmRecientes,
           litros_recientes: lista.resumenVehiculo.litrosRecientes,
           km_por_litro: lista.resumenVehiculo.kmPorLitro,
+          motivo_km_por_litro: lista.resumenVehiculo.motivoKmPorLitro,
           cta_sensor: lista.resumenVehiculo.ctaSensor,
           cta_capacidad_estanque: lista.resumenVehiculo.ctaCapacidadEstanque,
           alertas_total: lista.resumenVehiculo.alertasTotal,

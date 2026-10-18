@@ -24,7 +24,26 @@ Si el km/L redondeado es **mayor que** `2 × (100 / 32)` = **6,25**:
 
 En 6,25 el número se muestra. Por debajo también. El caso JLKT54 (294,93 km / 24,0 L = 12,29) cae en el guardrail en el camino legado (AVL 84 × 0,1) y con fuente `89` y estanque de 200 L.
 
-El km/L del hub es **Σkm / ΣL** de los trayectos de la ventana con litros consumidos > 0. No es el km/L del trayecto más reciente ni el promedio de esos cocientes. Si ese cociente supera 6,25, el KPI queda `null` y la tarjeta muestra `dato no confiable`. Los litros de la ventana siguen visibles.
+## Cobertura y sensor
+
+La cobertura es la que ya calcula `calcularCoberturaPura` y persiste `metricas_viaje.cobertura_pct` (ADR-028). El umbral es `THRESHOLD_SECUNDARIO_MODELED_PCT` = **80**. No hay columna nueva.
+
+Si un segmento trae litros medidos y su cobertura es **menor que 80**:
+
+- `kmPorLitro` queda `null`.
+- `litrosConsumidos` se conserva.
+- `notaCombustible` = `dato no confiable · cobertura baja`.
+
+En 80 el km/L se muestra (si además pasa el tope de 6,25). En 79 no.
+
+Si `fuente_combustible_can` es `sin_sensor` (o la columna es null, que se lee igual):
+
+- no se inventan litros ni km/L.
+- `notaCombustible` = `dato no confiable · sin sensor de combustible`.
+
+Esas dos exclusiones no entran al Σkm/ΣL del hub. El tope de 6,25 sigue aplicando sobre los segmentos que sí entran: si el cociente de esa suma supera 6,25, el KPI queda `null` y la tarjeta dice `dato no confiable`, sin la razón de cobertura. Los litros medidos siguen visibles en la fila y en la suma de litros de la ventana.
+
+El km/L del hub es **Σkm / ΣL** de los trayectos de la ventana que entran y tienen litros consumidos > 0. No es el km/L del trayecto más reciente ni el promedio de esos cocientes. Si no queda ninguno porque todos fueron excluidos, el KPI queda `null` y la tarjeta muestra `dato no confiable` con la razón (`cobertura baja` y/o `sin sensor de combustible`).
 
 ## Fuera de alcance
 

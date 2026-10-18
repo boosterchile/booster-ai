@@ -5,3 +5,5 @@
 3. En `consumoCubierto`, después de las compuertas de cobertura y de muestra mínima, anular `kmPorLitro` si el redondeo a 2 decimales supera `kmPorLitroMaxConfiable()`.
 4. Test del KPI: 100 km/20 L y 10 km/10 L dan 3,67 (Σkm/ΣL), no 3 (promedio de ratios) ni el km/L del trayecto más nuevo. Una ventana cuyo cociente supera 6,25 deja el KPI en null.
 5. `resumirHubVehiculo` calcula ese cociente sobre la ventana. La tarjeta del hub muestra `dato no confiable` cuando hay litros y el KPI quedó null.
+6. Cobertura: si los puntos traen `coberturaPct` (la de `metricas_viaje`), esa manda. Si no, `calcularCoberturaPura` sobre los pings del segmento. Bajo 80 % y con litros medidos, el km/L queda null, la nota dice `cobertura baja` y el segmento no entra al Σ. 80 % entra.
+7. `sin_sensor` deja la nota `sin sensor de combustible` y tampoco entra al Σ, aunque el fixture traiga litros. Una ventana mezclada suma solo los segmentos que pasan las dos compuertas y el tope de 6,25.
