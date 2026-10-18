@@ -406,7 +406,7 @@ describe('listarTrayectosTeltonika', () => {
       },
       {
         vehicleId: VEHICULO,
-        timestampDevice: new Date(t0 + 60_000),
+        timestampDevice: new Date(t0 + 30_000),
         latitude: '-33.56',
         longitude: '-70.66',
         speedKmh: 40,

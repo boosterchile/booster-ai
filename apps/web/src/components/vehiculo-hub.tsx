@@ -49,6 +49,7 @@ const resumenSchema = z.object({
   km_recientes: z.number(),
   litros_recientes: z.number().nullable(),
   km_por_litro: z.number().nullable(),
+  motivo_km_por_litro: z.string().nullable().optional(),
   cta_sensor: z.boolean(),
   cta_capacidad_estanque: z.boolean().optional(),
   alertas_total: z.number().int(),
@@ -435,6 +436,11 @@ function TarjetaConsumo({
           <p className="font-semibold text-neutral-900">
             {resumen.km_por_litro != null ? `${fmtNum(resumen.km_por_litro, 2)} km/L` : '—'}
           </p>
+          {resumen.km_por_litro != null ? (
+            <p className="mt-1 text-neutral-600 text-xs">
+              Suma de los km y los litros de la ventana.
+            </p>
+          ) : null}
           <p className="mt-1 text-neutral-700 text-sm">
             {fmtKm(resumen.km_recientes)} en los últimos trayectos
             {resumen.litros_recientes != null ? ` · ${fmtLitros(resumen.litros_recientes)}` : ''}
@@ -453,9 +459,14 @@ function TarjetaConsumo({
               Completa la capacidad del estanque
             </button>
           ) : null}
-          {resumen.km_por_litro == null && !resumen.cta_sensor ? (
+          {resumen.km_por_litro == null && resumen.motivo_km_por_litro ? (
+            <p className="mt-2 text-neutral-600 text-xs">{resumen.motivo_km_por_litro}</p>
+          ) : null}
+          {resumen.km_por_litro == null && !resumen.motivo_km_por_litro && !resumen.cta_sensor ? (
             <p className="mt-2 text-neutral-600 text-xs">
-              Estos trayectos no traen un km/L confiable.
+              {resumen.litros_recientes != null
+                ? 'dato no confiable'
+                : 'Estos trayectos no traen un km/L confiable.'}
             </p>
           ) : null}
         </div>

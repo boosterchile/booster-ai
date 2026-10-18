@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { haversineKm } from '../services/calcular-cobertura-telemetria.js';
 import {
+  COBERTURA_TELEMETRIA_MINIMA_PCT,
   DISTANCIA_MINIMA_AVISO_ROBO_KM,
   GAP_CORTE_MS,
   KM_MINIMOS_KM_POR_LITRO,
@@ -12,11 +13,18 @@ import {
   NOTA_IO83_INUSABLE,
   NOTA_IO84_INUSABLE,
   NOTA_IO89_INUSABLE,
+  NOTA_KM_POR_LITRO_NO_CONFIABLE,
   NOTA_NIVEL_SUBIO,
   NOTA_SIN_BAJA,
   NOTA_SIN_LECTURA,
   type PuntoSegmentacion,
+  RAZON_COBERTURA_BAJA,
+  RAZON_SIN_SENSOR_COMBUSTIBLE,
+  RAZON_SOBRE_TOPE,
   UMBRAL_ROBO_BASE_L,
+  kmPorLitroMaxConfiable,
+  notaKmPorLitroNoConfiable,
+  razonExclusionKmPorLitro,
   resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
   umbralHormigaLitros,
@@ -251,7 +259,7 @@ describe('segmentarTrayectosTeltonika', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
       punto({
-        tMs: T0 + 60_000,
+        tMs: T0 + 30_000,
         lat: -33.55,
         io: { '239': 1, '240': 1, '84': 800 },
       }),
@@ -891,7 +899,7 @@ describe('fuentes de combustible CAN (slice 2026-09-22)', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 581_520, '89': 60 } }),
       punto({
-        tMs: T0 + 60_000,
+        tMs: T0 + 30_000,
         lat: -33.55,
         io: { '239': 1, '240': 1, '83': 581_570, '89': 58 },
       }),
@@ -963,7 +971,7 @@ describe('fuentes de combustible CAN (slice 2026-09-22)', () => {
   it('si el trayecto trae 84, el nivel en litros manda aunque venga el 83', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000, '83': 100 } }),
-      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 800, '83': 400 } }),
+      punto({ tMs: T0 + 30_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 800, '83': 400 } }),
     ]);
     expect(trayectos[0]).toMatchObject({
       fuenteCombustible: 'nivel_litros',
@@ -1006,8 +1014,8 @@ describe('fuentes de combustible CAN (slice 2026-09-22)', () => {
   it('con cobertura ≥ 90 %, el km/L usa la distancia del tramo leído', () => {
     const trayectos = segmentarTrayectosTeltonika([
       punto({ tMs: T0, io: { '239': 1, '240': 1, '83': 100 } }),
-      punto({ tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '83': 200 } }),
-      punto({ tMs: T0 + 120_000, lat: -33.555, io: { '239': 1, '240': 1 } }),
+      punto({ tMs: T0 + 20_000, lat: -33.55, io: { '239': 1, '240': 1, '83': 200 } }),
+      punto({ tMs: T0 + 40_000, lat: -33.555, io: { '239': 1, '240': 1 } }),
     ]);
     expect(trayectos[0]?.litrosConsumidos).toBe(10);
     expect(trayectos[0]?.kmPorLitro).toBeCloseTo(distancia / 10, 2);
@@ -1285,7 +1293,7 @@ describe('provisioning de fuente CAN y capacidad de estanque', () => {
       sensorCombustible: 'ausente',
       ctaSensor: true,
       ctaCapacidadEstanque: false,
-      notaCombustible: null,
+      notaCombustible: notaKmPorLitroNoConfiable([RAZON_SIN_SENSOR_COMBUSTIBLE]),
     });
     expect(
       resumirCombustibleVehiculos([
@@ -1319,7 +1327,7 @@ describe('provisioning de fuente CAN y capacidad de estanque', () => {
     const trayectos = segmentarTrayectosTeltonika([
       conFuente({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }, '84', 200),
       conFuente(
-        { tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 800 } },
+        { tMs: T0 + 30_000, lat: -33.55, io: { '239': 1, '240': 1, '84': 800 } },
         '84',
         200,
       ),
@@ -1385,7 +1393,7 @@ describe('provisioning de fuente CAN y capacidad de estanque', () => {
     const trayectos = segmentarTrayectosTeltonika([
       conFuente({ tMs: T0, io: { '239': 1, '240': 1, '89': 80, '84': 400 } }, '89', 200),
       conFuente(
-        { tMs: T0 + 60_000, lat: -33.55, io: { '239': 1, '240': 1, '89': 60, '84': 300 } },
+        { tMs: T0 + 30_000, lat: -33.55, io: { '239': 1, '240': 1, '89': 60, '84': 300 } },
         '89',
         200,
       ),
@@ -1520,5 +1528,221 @@ describe('provisioning de fuente CAN y capacidad de estanque', () => {
       litrosConsumidos: null,
       notaCombustible: NOTA_FALTA_CAPACIDAD,
     });
+  });
+});
+
+describe('km/L de JLKT54 (294,93 km / 24,0 L)', () => {
+  // Mismo haversine que el trayecto 2026-09-22 21:11 → 2026-09-23 01:07 SCL.
+  const latFin = -36.102365;
+
+  function tramo(extra: Partial<PuntoSegmentacion> = {}) {
+    return segmentarTrayectosTeltonika([
+      punto({
+        ...extra,
+        tMs: T0,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1600, '89': 80 },
+      }),
+      punto({
+        ...extra,
+        tMs: T0 + 30_000,
+        lat: latFin,
+        patente: 'JLKT54',
+        io: { '239': 1, '240': 1, '84': 1360, '89': 68 },
+      }),
+    ]);
+  }
+
+  it('reproduce 12,29 km/L y no lo muestra: el 84 legado sigue en 24,0 L', () => {
+    const km = haversineKm(-33.45, -70.66, latFin, -70.66);
+    expect(Math.round((km + Number.EPSILON) * 1000) / 1000).toBe(294.93);
+    expect(Math.round((km / 24 + Number.EPSILON) * 100) / 100).toBe(12.29);
+    expect(kmPorLitroMaxConfiable()).toBeCloseTo(6.25, 5);
+    const trayectos = tramo();
+    expect(trayectos[0]).toMatchObject({
+      patente: 'JLKT54',
+      distanciaKm: 294.93,
+      fuenteCombustible: 'nivel_litros',
+      litrosIniciales: 160,
+      litrosFinales: 136,
+      litrosConsumidos: 24,
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    });
+    expect(trayectos[0]?.coberturaPct ?? 0).toBeGreaterThanOrEqual(COBERTURA_TELEMETRIA_MINIMA_PCT);
+    expect(trayectos[0]?.litrosConsumidos).not.toBeCloseTo(94.4, 0);
+  });
+});
+
+describe('guardrail de km/L', () => {
+  it('con fuente 89 y estanque de 200 L el mismo 12,29 tampoco se muestra', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        fuenteCombustibleCan: '89',
+        capacidadEstanqueL: 200,
+        io: { '239': 1, '240': 1, '89': 66, '84': 400 },
+      }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 2.652,
+        fuenteCombustibleCan: '89',
+        capacidadEstanqueL: 200,
+        io: { '239': 1, '240': 1, '89': 54, '84': 300 },
+      }),
+    ]);
+    expect(trayectos[0]?.distanciaKm).toBeGreaterThan(290);
+    // 200 L es la capacidad declarada. 12 puntos de IO 89 × 200 = 24,0 L.
+    // El guardrail oculta el km/L. No reescribe esa fórmula.
+    expect(trayectos[0]).toMatchObject({
+      litrosIniciales: 132,
+      litrosFinales: 108,
+      litrosConsumidos: 24,
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    });
+  });
+
+  it('6,23 km/L, justo bajo el tope, se muestra', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 0.28,
+        io: { '239': 1, '240': 1, '84': 950 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: 5,
+      kmPorLitro: 6.23,
+      notaCombustible: null,
+    });
+  });
+
+  it('en el tope exacto 6,25 km/L el número se conserva', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 0.28103800184960614,
+        io: { '239': 1, '240': 1, '84': 950 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: 5,
+      kmPorLitro: 6.25,
+      notaCombustible: null,
+    });
+    const enElTope = trayectos[0];
+    expect(enElTope).toBeDefined();
+    if (enElTope) {
+      expect(razonExclusionKmPorLitro(enElTope)).toBeNull();
+    }
+  });
+
+  it('6,26 km/L, justo sobre el tope, queda oculto', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 0.28126373157268836,
+        io: { '239': 1, '240': 1, '84': 950 },
+      }),
+    ]);
+    const km = haversineKm(-33.45, -70.66, -33.45 - 0.28126373157268836, -70.66);
+    expect(Math.round((km / 5 + Number.EPSILON) * 100) / 100).toBe(6.26);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: 5,
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    });
+    const oculto = trayectos[0];
+    expect(oculto?.kmCubiertos).toBeCloseTo(km, 2);
+    expect(oculto).toBeDefined();
+    if (oculto) {
+      expect(razonExclusionKmPorLitro(oculto)).toBe(RAZON_SOBRE_TOPE);
+    }
+  });
+
+  it('un hueco de telemetría de 90 s deja la cobertura bajo 80 % y oculta el km/L', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({
+        tMs: T0 + 90_000,
+        lat: -33.55,
+        io: { '239': 1, '240': 1, '84': 800 },
+      }),
+    ]);
+    expect(trayectos[0]?.coberturaPct).not.toBeNull();
+    expect(trayectos[0]?.coberturaPct ?? 100).toBeLessThan(COBERTURA_TELEMETRIA_MINIMA_PCT);
+    expect(trayectos[0]?.litrosConsumidos).toBe(20);
+    expect(trayectos[0]?.kmPorLitro).toBeNull();
+    expect(trayectos[0]?.notaCombustible).toBe(notaKmPorLitroNoConfiable([RAZON_COBERTURA_BAJA]));
+  });
+
+  it('cobertura 79 % oculta el km/L, conserva los litros y dice por qué', () => {
+    expect(COBERTURA_TELEMETRIA_MINIMA_PCT).toBe(80);
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        coberturaPct: 79,
+        io: { '239': 1, '240': 1, '84': 1000 },
+      }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: -33.55,
+        coberturaPct: 79,
+        io: { '239': 1, '240': 1, '84': 800 },
+      }),
+    ]);
+    expect(trayectos[0]?.litrosConsumidos).toBe(20);
+    expect(trayectos[0]?.kmPorLitro).toBeNull();
+    expect(trayectos[0]?.notaCombustible).toBe(notaKmPorLitroNoConfiable([RAZON_COBERTURA_BAJA]));
+    expect(trayectos[0]?.coberturaPct).toBe(79);
+  });
+
+  it('cobertura 80 % publica el km/L', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        coberturaPct: 80,
+        io: { '239': 1, '240': 1, '84': 1000 },
+      }),
+      punto({
+        tMs: T0 + 60_000,
+        lat: -33.55,
+        coberturaPct: 80,
+        io: { '239': 1, '240': 1, '84': 800 },
+      }),
+    ]);
+    const distancia = haversineKm(-33.45, -70.66, -33.55, -70.66);
+    expect(trayectos[0]?.litrosConsumidos).toBe(20);
+    expect(trayectos[0]?.kmPorLitro).toBeCloseTo(distancia / 20, 2);
+    expect(trayectos[0]?.notaCombustible).toBeNull();
+    expect(trayectos[0]?.coberturaPct).toBe(80);
+  });
+
+  it('sin_sensor muestra la razón y no inventa km/L', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({
+        tMs: T0,
+        fuenteCombustibleCan: 'sin_sensor',
+        io: { '239': 1, '240': 1, '84': 1000 },
+      }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.55,
+        fuenteCombustibleCan: 'sin_sensor',
+        io: { '239': 1, '240': 1, '84': 800 },
+      }),
+    ]);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: null,
+      kmPorLitro: null,
+      fuenteCombustibleCan: 'sin_sensor',
+      notaCombustible: notaKmPorLitroNoConfiable([RAZON_SIN_SENSOR_COMBUSTIBLE]),
+      ctaSensor: true,
+    });
+    expect(trayectos[0]?.distanciaKm).toBeGreaterThan(0);
   });
 });

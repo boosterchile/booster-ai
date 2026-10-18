@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { resumirHubVehiculo } from './resumir-hub-vehiculo.js';
-import type { TrayectoTeltonika } from './segmentar-trayectos-teltonika.js';
+import {
+  RAZON_SOBRE_TOPE,
+  type TrayectoTeltonika,
+  razonExclusionKmPorLitro,
+} from './segmentar-trayectos-teltonika.js';
 
 function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika {
   return {
@@ -11,6 +15,7 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     inicio: '2026-09-02T12:00:00.000Z',
     fin: '2026-09-02T13:00:00.000Z',
     distanciaKm: 40,
+    kmCubiertos: null,
     litrosIniciales: null,
     litrosFinales: null,
     kmPorLitro: null,
@@ -19,6 +24,8 @@ function trayecto(overrides: Partial<TrayectoTeltonika> = {}): TrayectoTeltonika
     nivelPctInicial: null,
     nivelPctFinal: null,
     notaCombustible: null,
+    coberturaPct: null,
+    fuenteCombustibleCan: null,
     posibleRoboCombustible: false,
     posibleRoboHormiga: false,
     eventLat: null,
@@ -43,17 +50,23 @@ describe('resumirHubVehiculo', () => {
     expect(resumen.alertaUltima).toBeNull();
   });
 
-  it('no calcula km/L aunque haya km y litros', () => {
+  it('arma el km/L como Σkm/ΣL cuando hay litros', () => {
     const resumen = resumirHubVehiculo([
-      trayecto({ distanciaKm: 100, litrosConsumidos: 25, kmPorLitro: null, ctaSensor: false }),
+      trayecto({
+        distanciaKm: 100,
+        kmCubiertos: 100,
+        litrosConsumidos: 25,
+        kmPorLitro: null,
+        ctaSensor: false,
+      }),
     ]);
-    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.kmPorLitro).toBe(4);
     expect(resumen.kmRecientes).toBe(100);
     expect(resumen.litrosRecientes).toBe(25);
     expect(resumen.ctaSensor).toBe(false);
   });
 
-  it('toma el km/L del trayecto más reciente que ya lo trae', () => {
+  it('ordena por fin y no copia un km/L si el trayecto no trae litros', () => {
     const resumen = resumirHubVehiculo([
       trayecto({
         id: 'viejo',
@@ -75,8 +88,211 @@ describe('resumirHubVehiculo', () => {
       }),
     ]);
     expect(resumen.ultimo?.id).toBe('nuevo');
-    expect(resumen.kmPorLitro).toBe(4.5);
+    expect(resumen.kmPorLitro).toBeNull();
     expect(resumen.recientes.map((t) => t.id)).toEqual(['nuevo', 'medio', 'viejo']);
+  });
+
+  it('el KPI es Σkm/ΣL de la ventana, no el promedio de los km/L', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'largo',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 100,
+        kmCubiertos: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'corto',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 10,
+        kmCubiertos: 10,
+        litrosConsumidos: 10,
+        kmPorLitro: 1,
+        ctaSensor: false,
+      }),
+    ]);
+    const promedioDeRatios = (5 + 1) / 2;
+    expect(promedioDeRatios).toBe(3);
+    expect(resumen.kmPorLitro).toBe(3.67);
+    expect(resumen.kmPorLitro).not.toBe(resumen.ultimo?.kmPorLitro);
+    expect(resumen.ultimo?.id).toBe('corto');
+  });
+
+  it('un km/L de ventana sobre el tope queda oculto y los litros siguen en la suma', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 294.93,
+        kmCubiertos: 294.93,
+        litrosConsumidos: 24,
+        kmPorLitro: null,
+        notaCombustible: 'dato no confiable',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(resumen.litrosRecientes).toBe(24);
+    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.motivoKmPorLitro).toBe('dato no confiable');
+  });
+
+  it('79 % no entra al Σkm/ΣL y 80 % sí', () => {
+    const bajo = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: null,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '84',
+        notaCombustible: 'dato no confiable · cobertura baja',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(bajo.kmPorLitro).toBeNull();
+    expect(bajo.litrosRecientes).toBe(20);
+    expect(bajo.motivoKmPorLitro).toBe('dato no confiable · cobertura baja');
+
+    const enElPiso = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 100,
+        kmCubiertos: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        coberturaPct: 80,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+    ]);
+    expect(enElPiso.kmPorLitro).toBe(5);
+    expect(enElPiso.motivoKmPorLitro).toBeNull();
+  });
+
+  it('sin_sensor no entra al Σ aunque el fixture traiga litros', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        distanciaKm: 80,
+        litrosConsumidos: 20,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        notaCombustible: 'dato no confiable · sin sensor de combustible',
+        ctaSensor: true,
+      }),
+    ]);
+    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(20);
+    expect(resumen.motivoKmPorLitro).toBe('dato no confiable · sin sensor de combustible');
+  });
+
+  it('mezcla: solo los segmentos válidos arman el Σkm/ΣL', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'valido',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 100,
+        kmCubiertos: 100,
+        litrosConsumidos: 20,
+        kmPorLitro: 5,
+        coberturaPct: 80,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'cobertura',
+        fin: '2026-09-02T13:00:00.000Z',
+        distanciaKm: 10,
+        litrosConsumidos: 10,
+        kmPorLitro: null,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '83',
+        notaCombustible: 'dato no confiable · cobertura baja',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'sin-sensor',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 50,
+        litrosConsumidos: 15,
+        kmPorLitro: null,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        notaCombustible: 'dato no confiable · sin sensor de combustible',
+        ctaSensor: true,
+      }),
+    ]);
+    const siEntraranTodos = Math.round(((100 + 10 + 50) / (20 + 10 + 15)) * 100) / 100;
+    expect(siEntraranTodos).toBe(3.56);
+    expect(resumen.kmPorLitro).toBe(5);
+    expect(resumen.kmPorLitro).not.toBe(siEntraranTodos);
+    expect(resumen.motivoKmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(45);
+    expect(resumen.ultimo?.id).toBe('valido');
+  });
+
+  it('una ventana solo con exclusiones junta las dos razones', () => {
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'cobertura',
+        distanciaKm: 40,
+        litrosConsumidos: 10,
+        coberturaPct: 79,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+      trayecto({
+        id: 'sin-sensor',
+        fin: '2026-09-01T13:00:00.000Z',
+        distanciaKm: 30,
+        litrosConsumidos: 8,
+        coberturaPct: 100,
+        fuenteCombustibleCan: 'sin_sensor',
+        ctaSensor: true,
+      }),
+    ]);
+    expect(resumen.kmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(18);
+    expect(resumen.motivoKmPorLitro).toBe(
+      'dato no confiable · cobertura baja · sin sensor de combustible',
+    );
+  });
+
+  it('300 km cubiertos / 100 L más JLKT54 (294,93 km / 24 L) dan 3,00', () => {
+    const jlkt54 = trayecto({
+      id: 'jlkt54',
+      fin: '2026-09-01T13:00:00.000Z',
+      distanciaKm: 294.93,
+      kmCubiertos: 294.93,
+      litrosConsumidos: 24,
+      kmPorLitro: null,
+      notaCombustible: 'dato no confiable',
+      coberturaPct: 100,
+      fuenteCombustibleCan: '84',
+      ctaSensor: false,
+    });
+    expect(razonExclusionKmPorLitro(jlkt54)).toBe(RAZON_SOBRE_TOPE);
+
+    const resumen = resumirHubVehiculo([
+      trayecto({
+        id: 'valido',
+        fin: '2026-09-03T13:00:00.000Z',
+        distanciaKm: 350,
+        kmCubiertos: 300,
+        litrosConsumidos: 100,
+        kmPorLitro: 3,
+        coberturaPct: 100,
+        fuenteCombustibleCan: '84',
+        ctaSensor: false,
+      }),
+      jlkt54,
+    ]);
+    const siSumaraDistancia = Math.round((350 / 100) * 100) / 100;
+    const siEntraraJlkt = Math.round(((300 + 294.93) / (100 + 24)) * 100) / 100;
+    expect(siSumaraDistancia).toBe(3.5);
+    expect(siEntraraJlkt).toBe(4.8);
+    expect(resumen.kmPorLitro).toBe(3);
+    expect(resumen.kmPorLitro).not.toBe(siSumaraDistancia);
+    expect(resumen.kmPorLitro).not.toBe(siEntraraJlkt);
+    expect(resumen.motivoKmPorLitro).toBeNull();
+    expect(resumen.litrosRecientes).toBe(124);
   });
 
   it('cuenta alertas de toda la ventana y deja la más reciente', () => {

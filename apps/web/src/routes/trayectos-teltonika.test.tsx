@@ -655,3 +655,43 @@ describe('TrayectosTeltonikaRoute — fuentes CAN y vista limpia', () => {
     expect(link).toHaveAttribute('href', `/app/trayectos?detalle=t-1&vehiculo=${vehiculo}`);
   });
 });
+
+describe('TrayectosTeltonikaRoute — km/L no confiable', () => {
+  it('muestra la razón y los litros cuando la cobertura o el sensor no alcanzan', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      ...listadoConRobo,
+      total: 2,
+      trayectos: [
+        {
+          ...trayectoBase,
+          id: 't-cob',
+          patente: 'JLKT54',
+          distancia_km: 40,
+          litros_consumidos: 12,
+          km_por_litro: null,
+          nota_combustible: 'dato no confiable · cobertura baja',
+          posible_robo_combustible: false,
+        },
+        {
+          ...trayectoBase,
+          id: 't-sensor',
+          patente: 'KZBB26',
+          distancia_km: 18,
+          litros_iniciales: null,
+          litros_finales: null,
+          litros_consumidos: null,
+          km_por_litro: null,
+          nota_combustible: 'dato no confiable · sin sensor de combustible',
+          posible_robo_combustible: false,
+          sensor_combustible: 'ausente',
+          cta_sensor: true,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText('dato no confiable · cobertura baja')).toBeInTheDocument();
+    expect(screen.getByText('dato no confiable · sin sensor de combustible')).toBeInTheDocument();
+    expect(screen.getByText('12,0 L')).toBeInTheDocument();
+    expect(screen.queryByText(/\d,\d\d km\/L/)).toBeNull();
+  });
+});
