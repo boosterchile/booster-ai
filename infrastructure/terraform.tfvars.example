@@ -75,3 +75,16 @@ alert_email        = "dev@boosterchile.com"
 # Segundo canal de alertas (Slack incoming webhook o Google Chat space
 # webhook). Vacío = solo email. Ver variables.tf:sre_webhook_url.
 # sre_webhook_url = "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+
+# =============================================================================
+# CORREO SALIENTE (Resend) — T10-04, ver email.tf
+# =============================================================================
+# 1. Copiar los registros que Resend muestra al crear el dominio (nombres
+#    relativos al dominio) y aplicar. 2. Verificar el dominio en Resend.
+# 3. Cargar la key en el secreto resend-api-key y poner el flag en true.
+# resend_dns_records = [
+#   { name = "send", type = "MX", rrdatas = ["10 <host del panel de Resend>."] },
+#   { name = "send", type = "TXT", rrdatas = ["\"v=spf1 include:<host del panel> ~all\""] },
+#   { name = "resend._domainkey", type = "TXT", rrdatas = ["\"p=<clave DKIM del panel>\""] },
+# ]
+# resend_api_key_ready = true

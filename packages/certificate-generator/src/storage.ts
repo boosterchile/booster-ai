@@ -14,6 +14,7 @@
  */
 
 import { Storage } from '@google-cloud/storage';
+import { type BucketCertificados, abrirBucketLocal, esBucketLocal } from './backend-local.js';
 import type { CertSelfSignedResultado } from './ca-self-signed.js';
 import type { ResultadoFirmaPades } from './firmar-pades.js';
 import type { SidecarFirma } from './tipos.js';
@@ -25,6 +26,32 @@ function getStorage(): Storage {
     cachedStorage = new Storage();
   }
   return cachedStorage;
+}
+
+/**
+ * Bucket de certificados: GCS, o disco si el nombre trae `file:` (backend
+ * local del E2E, ver backend-local.ts). Lo usa también ca-self-signed.ts.
+ */
+export function abrirBucketCertificados(bucket: string): BucketCertificados {
+  if (esBucketLocal(bucket)) {
+    return abrirBucketLocal(bucket);
+  }
+  const gcs = getStorage().bucket(bucket);
+  return {
+    file(path) {
+      const archivo = gcs.file(path);
+      return {
+        save: (data, options) => archivo.save(data, options),
+        exists: () => archivo.exists(),
+        download: () => archivo.download(),
+        getSignedUrl: (config) => archivo.getSignedUrl(config),
+      };
+    },
+  };
+}
+
+function uriArtefacto(bucket: string, path: string): string {
+  return esBucketLocal(bucket) ? `${bucket}/${path}` : `gs://${bucket}/${path}`;
 }
 
 export interface ParametrosUpload {
@@ -46,7 +73,7 @@ export interface ResultadoUpload {
 export async function subirArtefactosCertificado(
   params: ParametrosUpload,
 ): Promise<ResultadoUpload> {
-  const bucket = getStorage().bucket(params.bucket);
+  const bucket = abrirBucketCertificados(params.bucket);
 
   const baseDir = `certificates/${params.empresaId}`;
   const pdfPath = `${baseDir}/${params.trackingCode}.pdf`;
@@ -96,8 +123,8 @@ export async function subirArtefactosCertificado(
   });
 
   return {
-    pdfGcsUri: `gs://${params.bucket}/${pdfPath}`,
-    sigGcsUri: `gs://${params.bucket}/${sigPath}`,
+    pdfGcsUri: uriArtefacto(params.bucket, pdfPath),
+    sigGcsUri: uriArtefacto(params.bucket, sigPath),
   };
 }
 
@@ -112,7 +139,7 @@ export async function generarSignedUrlPdf(opts: {
   /** TTL en segundos. Default 5 minutos. */
   ttlSeconds?: number;
 }): Promise<string> {
-  const bucket = getStorage().bucket(opts.bucket);
+  const bucket = abrirBucketCertificados(opts.bucket);
   const file = bucket.file(`certificates/${opts.empresaId}/${opts.trackingCode}.pdf`);
   const [url] = await file.getSignedUrl({
     version: 'v4',
@@ -133,7 +160,7 @@ export async function descargarSidecar(opts: {
   empresaId: string;
   trackingCode: string;
 }): Promise<SidecarFirma | null> {
-  const bucket = getStorage().bucket(opts.bucket);
+  const bucket = abrirBucketCertificados(opts.bucket);
   const file = bucket.file(`certificates/${opts.empresaId}/${opts.trackingCode}.pdf.sig`);
   const [exists] = await file.exists();
   if (!exists) {

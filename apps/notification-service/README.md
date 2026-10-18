@@ -1,10 +1,16 @@
 # @booster-ai/notification-service
 
 **Runtime**: `cloud-run`
-**Status**: `SKELETON`
+**Status**: canal WhatsApp extraído (T10-21)
 
-Fan-out Web Push / FCM / WhatsApp / Email / SMS. Consume notification-events.
+Consumer Pub/Sub pull de `notification-events`
+(`notificationEventSchema` en `@booster-ai/shared-schemas`).
+El api publica cuando `NOTIFICATIONS_VIA_MICROSERVICE=true`, y este servicio entrega el template por Twilio.
+Con `NOTIFICATIONS_SHADOW=true` el api envía directo y publica en sombra.
+En ese caso el servicio compara el hash del request a Twilio contra el suyo y nunca envía.
 
-## Implementación pendiente
+Sin base de datos ni Redis. Web Push y email siguen en el api (etapa 2).
 
-El alta de un servicio Cloud Run sigue `CLAUDE.md` y los ADR del servicio. No hay plugin de deploy.
+- Spec: `.specs/notification-service-t10-21/spec.md`
+- Runbook: `docs/runbooks/service-notification-service.md`
+- Drill: `docs/runbooks/rollback-drill-microservicios.md`

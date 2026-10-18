@@ -5,9 +5,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { memberships, users } from '../db/schema.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
 import type { UserContext } from '../services/user-context.js';
+import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 /**
  * equipo-de-la-empresa Fase A — la empresa gestiona su propia gente.
@@ -27,6 +31,8 @@ import type { UserContext } from '../services/user-context.js';
  * **El código de activación no es una contraseña.** Se entrega a la empresa
  * para que se lo pase a la persona, sirve una sola vez y solo prueba
  * identidad; la clave la elige la persona al activar (`POST /auth/activar`).
+ * Si el RUT ya tiene cuenta, no se emite código y no se toca la clave.
+ * Si ya tiene un código vigente, tampoco se reemplaza.
  * Esa distinción es lo que separa este flujo del de conductores, donde el PIN
  * del admin termina siendo la credencial permanente (`auth-driver.ts:151`).
  */
@@ -41,11 +47,21 @@ function placeholderFirebaseUid(rut: string): string {
   return `pending-rut:${rut}`;
 }
 
-export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }): Hono {
+export function createMeEmpresaMiembrosRoutes(opts: {
+  db: Db;
+  logger: Logger;
+  /**
+   * T10-04: el código le llega a la persona invitada por correo. Ausente en
+   * tests que no ejercitan el envío; en prod siempre está (con Resend o, sin
+   * key, con el sender que solo registra).
+   */
+  emailSender?: EmailSender;
+  /** Base del enlace a `/activar`. */
+  webAppUrl?: string;
+}): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireEmpresa(c: Context<any, any, any>) {
+  function requireEmpresa(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     const activa = userContext?.activeMembership;
     if (!userContext || !activa) {
@@ -64,6 +80,7 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
     return {
       ok: true as const,
       empresaId,
+      empresaNombre: activa.empresa.legalName,
       rol: activa.membership.role,
       callerId: userContext.user.id,
     };
@@ -123,14 +140,18 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
     const body = c.req.valid('json');
     const email = body.email.toLowerCase();
 
-    const codigo = generateActivationPin();
-    const expiraEn = new Date(Date.now() + CODIGO_TTL_DIAS * 24 * 60 * 60 * 1000);
-
     const resultado = await opts.db.transaction(async (tx) => {
       // rls-allowlist: lookup global por RUT — una persona puede trabajar en
       // más de una empresa, así que su identidad se reusa en vez de duplicarse.
       const existentes = await tx
-        .select({ id: users.id, email: users.email })
+        .select({
+          id: users.id,
+          email: users.email,
+          fullName: users.fullName,
+          firebaseUid: users.firebaseUid,
+          claveNumericaHash: users.claveNumericaHash,
+          activationPinHash: users.activationPinHash,
+        })
         .from(users)
         .where(eq(users.rut, body.rut))
         .limit(1);
@@ -150,29 +171,46 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
       }
 
       let userId: string;
+      let vinculo: VinculoPersona;
+      let codigoEmitido: string | null = null;
       if (existente) {
         userId = existente.id;
-        // Persona ya conocida: solo se le habilita el código para esta empresa.
-        // NO se toca su email ni su clave — su identidad es suya.
-        await tx
-          .update(users)
-          .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-          .where(eq(users.id, userId));
+        // La identidad es de la persona. Otra empresa no pisa su código ni su clave.
+        vinculo = clasificarVinculoPersona(existente);
+        if (vinculo === 'provisoria_sin_codigo') {
+          const codigo = generateActivationPin();
+          codigoEmitido = codigo;
+          await tx
+            .update(users)
+            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+            .where(eq(users.id, userId));
+        }
       } else {
-        const insertados = await tx
-          .insert(users)
-          .values({
-            firebaseUid: placeholderFirebaseUid(body.rut),
-            // Email REAL: es el canal de la plataforma con la persona (spec
-            // §6.1). Nunca un `@…invalid`.
-            email,
-            fullName: body.full_name,
-            rut: body.rut,
-            activationPinHash: hashActivationPin(codigo),
-            status: 'pendiente_verificacion',
-            isPlatformAdmin: false,
-          })
-          .returning({ id: users.id });
+        const codigo = generateActivationPin();
+        codigoEmitido = codigo;
+        vinculo = 'nueva';
+        let insertados: { id: string }[];
+        try {
+          insertados = await tx
+            .insert(users)
+            .values({
+              firebaseUid: placeholderFirebaseUid(body.rut),
+              // Email REAL: es el canal de la plataforma con la persona (spec
+              // §6.1). Nunca un `@…invalid`.
+              email,
+              fullName: body.full_name,
+              rut: body.rut,
+              activationPinHash: hashActivationPin(codigo),
+              status: 'pendiente_verificacion',
+              isPlatformAdmin: false,
+            })
+            .returning({ id: users.id });
+        } catch (err) {
+          if (esRutDuplicado(err)) {
+            return { conflicto: 'rut_duplicado' as const };
+          }
+          throw err;
+        }
         const creado = insertados[0];
         if (!creado) {
           throw new Error('insert user devolvió vacío');
@@ -180,17 +218,18 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
         userId = creado.id;
       }
 
+      const yaActiva = vinculo === 'cuenta_activa';
       const membresias = await tx
         .insert(memberships)
         .values({
           userId,
           empresaId: auth.empresaId,
           role: body.rol,
-          // Pendiente hasta que la persona active con su propia clave.
-          status: 'pendiente_invitacion',
+          // Quien ya tiene clave entra directo. El resto espera su código.
+          status: yaActiva ? 'activa' : 'pendiente_invitacion',
           invitedByUserId: auth.callerId,
           invitedAt: new Date(),
-          joinedAt: null,
+          joinedAt: yaActiva ? new Date() : null,
         })
         .returning({ id: memberships.id });
       const membresia = membresias[0];
@@ -198,10 +237,23 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
         throw new Error('insert membresía devolvió vacío');
       }
 
-      return { userId, membershipId: membresia.id };
+      return {
+        userId,
+        membershipId: membresia.id,
+        vinculo,
+        codigoEmitido,
+        // Persona provisoria: su correo registrado, no el que tipeó la empresa.
+        destinatario: {
+          email: existente?.email ?? email,
+          nombre: existente?.fullName ?? body.full_name,
+        },
+      };
     });
 
     if ('conflicto' in resultado) {
+      if (resultado.conflicto === 'rut_duplicado') {
+        return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+      }
       return c.json(
         { error: 'conflict', code: 'already_member', membership_id: resultado.membershipId },
         409,
@@ -219,17 +271,37 @@ export function createMeEmpresaMiembrosRoutes(opts: { db: Db; logger: Logger }):
       'me-empresa-miembros: miembro agregado al equipo',
     );
 
-    // El código viaja SOLO acá, a quien lo dio de alta. No se loguea ni se
-    // persiste en claro: en la BD queda su hash.
+    if (resultado.codigoEmitido !== null && opts.emailSender) {
+      await enviarCorreoActivacionCuenta({
+        sender: opts.emailSender,
+        logger: opts.logger,
+        email: resultado.destinatario.email,
+        nombre: resultado.destinatario.nombre,
+        rut: body.rut,
+        codigo: resultado.codigoEmitido,
+        empresa: auth.empresaNombre,
+        rol: body.rol,
+        webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+      });
+    }
+
+    // El código viaja a la persona por correo y, como respaldo, a quien la dio
+    // de alta. No se loguea ni se persiste en claro: en la BD queda su hash.
+    const expiraEn =
+      resultado.codigoEmitido === null
+        ? null
+        : new Date(Date.now() + CODIGO_TTL_DIAS * 24 * 60 * 60 * 1000).toISOString();
+
     return c.json(
       {
         ok: true,
         user_id: resultado.userId,
         membership_id: resultado.membershipId,
         rol: body.rol,
-        estado: 'pendiente_invitacion',
-        codigo_activacion: codigo,
-        expira_en: expiraEn.toISOString(),
+        estado: resultado.vinculo === 'cuenta_activa' ? 'activa' : 'pendiente_invitacion',
+        codigo_activacion: resultado.codigoEmitido,
+        expira_en: expiraEn,
+        vinculo: resultado.vinculo,
       },
       201,
     );

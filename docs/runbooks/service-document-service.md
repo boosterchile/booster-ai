@@ -1,7 +1,7 @@
 # Runbook — Servicio `apps/document-service` (worker TED, Pub/Sub consumer)
 
 - **Estado**: Vigente
-- **Servicio Cloud Run**: `booster-ai-document-service` · región `southamerica-west1` · project `booster-ai-494222` · `ingress = INTERNAL_ONLY`, `public = false`, `min/max = 0/10`, `memory = 1Gi` (rasterizar PDF usa RAM).
+- **Servicio Cloud Run**: `booster-ai-document-service` · región `southamerica-west1` · project `booster-ai-494222` · `ingress = INTERNAL_ONLY`, `public = false`, `min/max = 1/10`, `cpu_idle = false`, `cpu = 1`, `memory = 1Gi` (rasterizar PDF usa RAM), VPC connector `serverless` (Cloud SQL privado). Imagen propia desde T10-21 (`cloudbuild.production.yaml` step `deploy-document-service`).
 - **Naturaleza**: **consumer Pub/Sub pull** (entrypoint `apps/document-service/src/main.ts`; health probe HTTP en `/health` puerto 8080). Consume la subscription `document-uploaded-processor-sub` (topic `document.uploaded`). Por mensaje: valida el payload (Zod), **reclama la fila por estado** (idempotencia: `UPDATE documentos_transporte SET extraction_status='procesando' WHERE id=? AND extraction_status IN ('pendiente','fallido')`), descarga el objeto de GCS y **decodifica el TED** (Timbre Electrónico Documento, PDF417) de los documentos tributarios de terceros (Guía de Despacho DTE 52, Factura 33…) vía `@booster-ai/transport-documents` (pdfium WASM + zxing-wasm + sharp). Persiste `decodificado` (campos `<DD>` + `ted_raw` + `retention_until`) o `fallido`.
 
 > **Importante (ADR-069 / ADR-070)**: Booster **recibe y archiva** documentos de terceros — **NO emite DTE ni se integra con el SII**. Este servicio sólo decodifica e indexa. La verificación criptográfica de la firma `<FRMT>` está **fuera de alcance** (gate C-7 §6). No busques acá lógica de facturación electrónica.
@@ -30,7 +30,9 @@ Env vars (`apps/document-service/src/config.ts`, Zod): `DATABASE_URL` (secret), 
 | (operacional) documentos quedan en `extraction_status='pendiente'` o `'procesando'` y no avanzan | el consumer no consume, o falla la decodificación/GCS/DB |
 | (operacional) muchos `extraction_status='fallido'` | TED ilegible (PDF malo) o regresión del decoder |
 
-> No tiene alert policy propia más allá de la DLQ compartida. Es procesamiento **offline** (los docs no son tiempo-real): `min_instances=0` y cold start son aceptables — un doc que tarda en procesarse no es incidente, uno que **nunca** procesa sí.
+> No tiene alert policy propia más allá de la DLQ compartida. Es procesamiento **offline** (los docs no son tiempo-real): un doc que tarda en procesarse no es incidente, uno que **nunca** procesa sí.
+>
+> `min_instances=1` + `cpu_idle=false` no son optimización: es un consumer **pull** (StreamingPull dentro del container). Con `min=0` la instancia escala a cero y **nadie consume** (no llegan requests que la despierten); con `cpu_idle=true` el pull queda CPU-throttled. Mismo modo de falla del incidente de telemetry-processor del 2026-06-07.
 
 ---
 
@@ -67,12 +69,14 @@ gcloud monitoring time-series list --project=$PROJECT \
 
 ## Los documentos no se procesan (quedan en `pendiente`)
 
-1. **¿El consumer está vivo?** Como `min_instances=0`, una instancia levanta cuando hay mensajes (Cloud Run for Pub/Sub pull con autoscaling). Si hay backlog pero ninguna instancia procesa, revisar que la revisión arranca (no `Failed` por env faltante: `DOCUMENTS_BUCKET`/`DATABASE_URL`).
-2. **Errores en el handler** (paso 3): patrones:
+1. **¿El consumer está vivo?** Debe haber siempre 1 instancia (`min_instances=1`). Si hay backlog pero ninguna instancia procesa, revisar que la revisión arranca (no `Failed` por env faltante: `DOCUMENTS_BUCKET`/`DATABASE_URL`) y que la config no volvió a `min=0`/`cpu_idle=true`.
+2. **¿El api publica?** El api necesita `DOCUMENT_UPLOADED_TOPIC` (compute.tf `service_api`); sin él omite el publish y los documentos quedan en `pendiente`. El cron `documentos-pendientes` (cada 15 min, `POST /admin/jobs/documentos-pendientes`) republica los `pendiente` sin tocar por > 10 min; su respuesta `skipped: topic_not_configured` delata la env faltante.
+3. **Errores en el handler** (paso 3): patrones:
    - `permission denied` leyendo GCS → IAM del SA sin `storage.objectViewer` sobre `documents` (reaplicar Terraform).
    - `bucket not found` → `DOCUMENTS_BUCKET` mal seteada.
    - DB inalcanzable → no puede reclamar la fila ni persistir.
-3. **Reproc**: un documento en `pendiente`/`fallido` se **re-reclama** si vuelve a entrar un mensaje para su `id` (el claim condicional acepta `IN ('pendiente','fallido')`). Si el mensaje original ya se ack-eó, re-publicar al topic `document.uploaded` con el payload del doc, o reprocesar desde el api el flujo que lo emite.
+4. **Reproc**: un documento en `pendiente`/`fallido` se **re-reclama** si vuelve a entrar un mensaje para su `id` (el claim condicional acepta `IN ('pendiente','fallido')`). Los `pendiente` los republica solo el cron `documentos-pendientes`. Un `fallido` se reprocesa re-publicando al topic `document.uploaded` con el payload del doc.
+5. **Atascados en `procesando`**: el worker murió a mitad (p. ej. OOM al rasterizar). El cron los pasa a `fallido` tras 30 min **sin republicarlos** (republicar un PDF que tumba al worker repetiría la caída); quedan habilitados para ingreso manual.
 
 ---
 
@@ -119,3 +123,5 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 - Migración del bucket de certificados (separó certs de `documents`): `migracion-bucket-certificados.md`.
 - ADR-069 / ADR-070 (recibir/archivar, NO emitir DTE). Sub/DLQ: `infrastructure/messaging.tf`. Bucket: `infrastructure/storage.tf`.
 - Config: `apps/document-service/src/config.ts`. Dominio: `packages/transport-documents`.
+- Reconciliación: `apps/api/src/services/reconciliar-documentos-pendientes.ts`; job `documentos_pendientes` en `infrastructure/document-service.tf`.
+- Drill de rollback: [`rollback-drill-microservicios.md`](rollback-drill-microservicios.md). Spec: `.specs/document-service-t10-21/spec.md`.

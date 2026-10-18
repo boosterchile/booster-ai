@@ -9,6 +9,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 import {
   type NumericFieldRule,
   numericFieldError,
@@ -183,10 +184,11 @@ function SucursalesListPage({ me }: { me: MeOnboarded }) {
   const role = me.active_membership?.role;
   const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
 
+  const scope = useEmpresaScope();
   const q = useQuery({
-    queryKey: ['sucursales'],
+    queryKey: scope.key('sucursales'),
     queryFn: async () => {
-      const res = await api.get<{ sucursales: Sucursal[] }>('/sucursales');
+      const res = await api.get<{ sucursales: Sucursal[] }>('/sucursales', scope.init);
       return res.sucursales;
     },
   });

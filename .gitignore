@@ -150,6 +150,9 @@ booster-skills/
 !packages/**/*.png
 # Evidencia CORFO versionada (hito 2: screenshots de UI son anexos del informe)
 !docs/corfo/**/*.png
+# Decks binarios de Corfo: no se versionan (la presentación de septiembre 2026 se retiró del árbol).
+docs/corfo/*.pptx
+docs/corfo/*.pdf
 # Evidencia de UI adjunta a specs (capturas citadas en la sección Evidencia del PR)
 !.specs/**/evidencia/*.png
 

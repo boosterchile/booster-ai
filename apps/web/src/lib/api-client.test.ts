@@ -73,6 +73,19 @@ describe('api.get', () => {
     expect(headers.get('authorization')).toBeNull();
   });
 
+  it('un X-Empresa-Id explícito en init gana sobre el de localStorage', async () => {
+    setActiveEmpresaId('emp-active');
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    await api.get('/vehiculos', { headers: { 'X-Empresa-Id': 'emp-de-la-clave' } });
+    const call = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(call.headers);
+    expect(headers.get('x-empresa-id')).toBe('emp-de-la-clave');
+  });
+
   it('sin activeEmpresaId → no X-Empresa-Id header', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
@@ -117,6 +130,32 @@ describe('api.get', () => {
       expect(e.status).toBe(403);
       expect(e.code).toBe('forbidden_owner_mismatch');
     }
+  });
+
+  it('error 400 con ZodError en payload.error muestra el texto del primer issue', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            name: 'ZodError',
+            issues: [
+              {
+                code: 'invalid_string',
+                message: 'RUT con formato inválido (ej: 12345678-5)',
+                path: ['rut'],
+              },
+            ],
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    await expect(api.post('/admin/empresas', { rut: 'no-es-rut' })).rejects.toMatchObject({
+      status: 400,
+      code: 'validation_error',
+      message: 'rut: RUT con formato inválido (ej: 12345678-5)',
+    });
   });
 
   it('error sin code en payload → ApiError code=undefined', async () => {

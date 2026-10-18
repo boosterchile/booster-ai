@@ -1,11 +1,18 @@
 import type { Logger } from '@booster-ai/logger';
-import { teltonikaImeiSchema } from '@booster-ai/shared-schemas';
+import {
+  chileanPlateSchema,
+  derivarUnidadDesdeTipoLegacy,
+  fuelTypeSchema,
+  teltonikaImeiSchema,
+  validarCoherenciaUnidadVehiculo,
+  vehicleTypeSchema,
+} from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
-import { pendingDevices, vehicles } from '../db/schema.js';
+import { empresas, pendingDevices, vehicles } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -20,9 +27,15 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
  *   GET  /admin/plataforma/dispositivos
  *   GET  /admin/plataforma/dispositivos/vehiculos?empresa_id=
  *   POST /admin/plataforma/dispositivos/asignar  { vehiculo_id, teltonika_imei }
+ *   POST /admin/plataforma/dispositivos/habilitar
+ *        { empresa_id, teltonika_imei, plate, vehicle_type, capacity_kg, ... }
  *
- * El IMEI lo escribe el operador: el Teltonika ya está instalado y
- * configurado en el camión. No hace falta que haya llamado al gateway.
+ * Dos caminos. Si la empresa ya cargó el vehículo, `asignar` solo escribe
+ * el IMEI. Si no, `habilitar` crea el vehículo en esa empresa y le escribe
+ * el IMEI. Si la patente ya existe, actualiza esa fila y la deja en la
+ * empresa elegida: la patente es única en el país y no se inserta otra.
+ * La empresa puede hacer el alta desde su flota. El Teltonika ya está
+ * instalado: no hace falta que haya llamado al gateway.
  */
 
 const asignarBodySchema = z.object({
@@ -34,6 +47,24 @@ const vehiculosQuerySchema = z.object({
   empresa_id: z.string().uuid(),
 });
 
+const habilitarBodySchema = z.object({
+  empresa_id: z.string().uuid(),
+  teltonika_imei: teltonikaImeiSchema,
+  plate: chileanPlateSchema,
+  vehicle_type: vehicleTypeSchema,
+  capacity_kg: z.number().int().min(0).max(100_000),
+  capacity_m3: z.number().int().positive().max(500).nullable().optional(),
+  year: z.number().int().min(1980).max(2100).nullable().optional(),
+  brand: z.string().min(1).max(50).nullable().optional(),
+  model: z.string().min(1).max(100).nullable().optional(),
+  fuel_type: fuelTypeSchema.nullable().optional(),
+  curb_weight_kg: z.number().int().positive().max(50_000).nullable().optional(),
+});
+
+const rechazarBodySchema = z.object({
+  notas: z.string().trim().min(1).max(500).optional(),
+});
+const pendingDeviceIdSchema = z.string().uuid();
 export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
 
@@ -235,18 +266,341 @@ export function createAdminDispositivosPlataformaRoutes(opts: { db: Db; logger: 
     );
   });
 
+  app.post('/habilitar', zValidator('json', habilitarBodySchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan(
+      {
+        name: 'dispositivo.habilitar_plataforma',
+        attributes: { 'booster.empresa_id': body.empresa_id },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('dispositivo_habilitaciones_plataforma_total').add(1, { resultado });
+          setResultAttributes(span, { 'dispositivo.resultado': resultado });
+        };
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const empresaRows = await opts.db
+          .select({
+            id: empresas.id,
+            isTransportista: empresas.isTransportista,
+            legalName: empresas.legalName,
+          })
+          .from(empresas)
+          .where(eq(empresas.id, body.empresa_id))
+          .limit(1);
+        const empresa = empresaRows[0];
+        if (!empresa) {
+          record('empresa_no_encontrada');
+          return c.json({ error: 'not_found', code: 'empresa_no_encontrada' }, 404);
+        }
+        if (!empresa.isTransportista) {
+          record('empresa_no_transportista');
+          return c.json({ error: 'unprocessable', code: 'empresa_no_transportista' }, 422);
+        }
+
+        const derivado = derivarUnidadDesdeTipoLegacy(body.vehicle_type);
+        const violations = validarCoherenciaUnidadVehiculo({
+          unitCategory: derivado.unitCategory,
+          unitType: derivado.unitType,
+          capacityKg: body.capacity_kg,
+          curbWeightKg: body.curb_weight_kg ?? null,
+          consumptionLPer100kmBaseline: null,
+          fuelType: body.fuel_type ?? null,
+        });
+        const primera = violations[0];
+        if (primera) {
+          record(primera.code);
+          return c.json(
+            {
+              error: 'tipo_categoria_incoherente',
+              code: primera.code,
+              violations,
+            },
+            422,
+          );
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const existentes = await opts.db
+          .select({
+            id: vehicles.id,
+            plate: vehicles.plate,
+            empresaId: vehicles.empresaId,
+            teltonikaImei: vehicles.teltonikaImei,
+            teltonikaImeiEspejo: vehicles.teltonikaImeiEspejo,
+          })
+          .from(vehicles)
+          .where(eq(vehicles.plate, body.plate))
+          .limit(1);
+        const existente = existentes[0];
+        if (existente !== undefined && existente.teltonikaImeiEspejo !== null) {
+          record('imei_espejo_activo');
+          return c.json({ error: 'conflict', code: 'imei_espejo_activo' }, 422);
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const ocupadoWhere = existente
+          ? and(eq(vehicles.teltonikaImei, body.teltonika_imei), ne(vehicles.id, existente.id))
+          : eq(vehicles.teltonikaImei, body.teltonika_imei);
+        const ocupado = await opts.db
+          .select({ id: vehicles.id })
+          .from(vehicles)
+          .where(ocupadoWhere)
+          .limit(1);
+        const otroConImei = ocupado[0];
+        if (otroConImei && otroConImei.id !== existente?.id) {
+          record('imei_en_uso');
+          return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
+        }
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const pendingRows = await opts.db
+          .select({
+            id: pendingDevices.id,
+            status: pendingDevices.status,
+            assignedToVehicleId: pendingDevices.assignedToVehicleId,
+          })
+          .from(pendingDevices)
+          .where(eq(pendingDevices.imei, body.teltonika_imei))
+          .limit(1);
+        const pending = pendingRows[0];
+        const imeiAprobadoEnOtro =
+          pending?.status === 'aprobado' &&
+          pending.assignedToVehicleId !== null &&
+          pending.assignedToVehicleId !== existente?.id;
+        if (imeiAprobadoEnOtro) {
+          record('imei_en_uso');
+          return c.json({ error: 'conflict', code: 'imei_en_uso' }, 409);
+        }
+        if (pending?.status === 'rechazado') {
+          record('imei_rechazado');
+          return c.json({ error: 'conflict', code: 'imei_rechazado' }, 409);
+        }
+
+        const reconciliacion = pending ? 'aprobado' : 'sin_registro';
+        const datosVehiculo = {
+          empresaId: empresa.id,
+          vehicleType: body.vehicle_type,
+          unitCategory: derivado.unitCategory,
+          unitType: derivado.unitType,
+          bodyType: derivado.bodyType,
+          capacityKg: body.capacity_kg,
+          capacityM3: body.capacity_m3 ?? null,
+          year: body.year ?? null,
+          brand: body.brand ?? null,
+          model: body.model ?? null,
+          fuelType: body.fuel_type ?? null,
+          curbWeightKg: body.curb_weight_kg ?? null,
+          teltonikaImei: body.teltonika_imei,
+          vehicleStatus: 'activo' as const,
+        };
+        let guardado: { id: string; plate: string } | undefined;
+        try {
+          guardado = await opts.db.transaction(async (tx) => {
+            // rls-allowlist: admin platform-wide — protegido por requirePlatformAdmin.
+            let row: { id: string; plate: string } | undefined;
+            if (existente) {
+              await tx
+                .update(vehicles)
+                .set({ ...datosVehiculo, updatedAt: new Date() })
+                .where(eq(vehicles.id, existente.id));
+              row = { id: existente.id, plate: existente.plate };
+              if (
+                existente.teltonikaImei !== null &&
+                existente.teltonikaImei !== body.teltonika_imei
+              ) {
+                await tx
+                  .update(pendingDevices)
+                  .set({ status: 'reemplazado', updatedAt: new Date() })
+                  .where(
+                    and(
+                      eq(pendingDevices.imei, existente.teltonikaImei),
+                      eq(pendingDevices.status, 'aprobado'),
+                      eq(pendingDevices.assignedToVehicleId, existente.id),
+                    ),
+                  );
+              }
+            } else {
+              const inserted = await tx
+                .insert(vehicles)
+                .values({ ...datosVehiculo, plate: body.plate })
+                .returning({ id: vehicles.id, plate: vehicles.plate });
+              row = inserted[0];
+            }
+            if (!row) {
+              return undefined;
+            }
+            if (pending && (pending.status === 'pendiente' || pending.status === 'reemplazado')) {
+              await tx
+                .update(pendingDevices)
+                .set({
+                  status: 'aprobado',
+                  assignedToVehicleId: row.id,
+                  assignedAt: new Date(),
+                  assignedByUserId: admin.userContext.user.id,
+                  updatedAt: new Date(),
+                })
+                .where(eq(pendingDevices.id, pending.id));
+            }
+            return row;
+          });
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            const constraint = pgErrorConstraint(err) ?? '';
+            const code = constraint.includes('patente') ? 'plate_duplicate' : 'imei_en_uso';
+            record(code);
+            return c.json({ error: 'conflict', code }, 409);
+          }
+          throw err;
+        }
+
+        if (!guardado) {
+          opts.logger.error({ empresaId: empresa.id }, 'insert vehiculo no devolvió row');
+          record('insert_failed');
+          return c.json({ error: 'insert_failed' }, 500);
+        }
+
+        const yaExistia = existente !== undefined;
+        const movido = yaExistia && existente.empresaId !== empresa.id;
+        opts.logger.info(
+          {
+            vehicleId: guardado.id,
+            empresaId: empresa.id,
+            empresaAnteriorId: existente?.empresaId,
+            yaExistia,
+            movido,
+            vehicleType: body.vehicle_type,
+            derivedUnitCategory: derivado.unitCategory,
+            derivedUnitType: derivado.unitType,
+            derivedBodyType: derivado.bodyType,
+            reconciliacion,
+            asignadoPor: admin.adminEmail,
+          },
+          yaExistia
+            ? 'vehículo existente reasignado con Teltonika desde platform-admin'
+            : 'vehículo habilitado con Teltonika desde platform-admin',
+        );
+        record(reconciliacion);
+        setResultAttributes(span, {
+          'dispositivo.ya_existia': yaExistia,
+          'dispositivo.movido': movido,
+        });
+
+        return c.json(
+          {
+            ok: true,
+            vehiculo_id: guardado.id,
+            patente: guardado.plate,
+            empresa_id: empresa.id,
+            razon_social: empresa.legalName,
+            teltonika_imei: body.teltonika_imei,
+            reconciliacion,
+            ya_existia: yaExistia,
+            movido,
+          },
+          yaExistia ? 200 : 201,
+        );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /:id/rechazar — marca un pending como `rechazado`. Solo plataforma:
+  // la empresa no ve la bandeja ni puede rechazar un equipo ajeno (spec
+  // aislamiento-hallazgos-tenant SC2; plan v2 §2.G). El override de dos pasos
+  // del PATCH /vehiculos/:id/dispositivo sigue vigente para filas rechazadas.
+  // -------------------------------------------------------------------------
+  app.post('/:id/rechazar', zValidator('json', rechazarBodySchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+    const idParsed = pendingDeviceIdSchema.safeParse(c.req.param('id'));
+    if (!idParsed.success) {
+      return c.json({ error: 'bad_request', code: 'invalid_device_id' }, 400);
+    }
+    const id = idParsed.data;
+    const body = c.req.valid('json');
+
+    return await withBusinessSpan(
+      {
+        name: 'dispositivo.rechazar_plataforma',
+        attributes: { 'booster.pending_device_id': id },
+      },
+      async (span) => {
+        const record = (resultado: string) => {
+          getBusinessCounter('dispositivo_rechazos_plataforma_total').add(1, { resultado });
+          setResultAttributes(span, { 'dispositivo.resultado': resultado });
+        };
+
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const actuales = await opts.db
+          .select({
+            id: pendingDevices.id,
+            imei: pendingDevices.imei,
+            status: pendingDevices.status,
+          })
+          .from(pendingDevices)
+          .where(eq(pendingDevices.id, id))
+          .limit(1);
+        const actual = actuales[0];
+        if (!actual) {
+          record('no_encontrado');
+          return c.json({ error: 'not_found', code: 'device_not_found' }, 404);
+        }
+        if (actual.status !== 'pendiente') {
+          record('no_pendiente');
+          return c.json(
+            { error: 'conflict', code: 'device_not_pending', estado: actual.status },
+            409,
+          );
+        }
+
+        // rls-allowlist: admin platform-wide — protegido por requirePlatformAdmin.
+        await opts.db
+          .update(pendingDevices)
+          .set({ status: 'rechazado', notes: body.notas ?? null, updatedAt: new Date() })
+          .where(and(eq(pendingDevices.id, id), eq(pendingDevices.status, 'pendiente')));
+
+        opts.logger.info(
+          { adminEmail: admin.adminEmail, deviceId: id, imei: actual.imei },
+          'dispositivo pendiente rechazado desde plataforma',
+        );
+        record('rechazado');
+        return c.json({ device_id: id, imei: actual.imei, estado: 'rechazado' });
+      },
+    );
+  });
+
   return app;
 }
 
-function pgErrorCode(err: unknown): string | undefined {
+function pgErrorField(err: unknown, field: 'code' | 'constraint'): string | undefined {
   if (typeof err !== 'object' || err === null) {
     return undefined;
   }
-  if ('code' in err && typeof err.code === 'string') {
-    return err.code;
+  if (field in err) {
+    const value = Reflect.get(err, field);
+    if (typeof value === 'string') {
+      return value;
+    }
   }
   if ('cause' in err) {
-    return pgErrorCode(err.cause);
+    return pgErrorField(err.cause, field);
   }
   return undefined;
+}
+
+function pgErrorCode(err: unknown): string | undefined {
+  return pgErrorField(err, 'code');
+}
+
+function pgErrorConstraint(err: unknown): string | undefined {
+  return pgErrorField(err, 'constraint');
 }

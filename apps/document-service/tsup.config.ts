@@ -28,6 +28,8 @@ export default defineConfig({
     '@opentelemetry/auto-instrumentations-node',
     '@opentelemetry/api',
     '@google-cloud/opentelemetry-cloud-trace-exporter',
+    '@google-cloud/opentelemetry-cloud-monitoring-exporter',
+    '@opentelemetry/sdk-metrics',
     'pg',
     'drizzle-orm',
     'pino',

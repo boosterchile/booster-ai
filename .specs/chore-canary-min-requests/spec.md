@@ -49,3 +49,10 @@ un abort del canary — limitación conocida, frente aparte si el PO lo prioriza
 - [ ] Consecuencia operativa documentada en el PR: deploys en ventana de poco
       tráfico (fin de semana) abortarán con «muestra insuficiente» — el PO
       decide promover a mano o re-despachar en horario con tráfico.
+
+## Enmienda 2026-09-28
+
+El PO pidió que el deploy termine. El piso 30 se mantiene y el p95 sigue sin
+evaluarse por debajo de ese piso. La muestra que no lo alcanza ya no aborta:
+avisa y promueve. La decisión está en
+`.specs/canary-muestra-insuficiente-promueve/spec.md`.

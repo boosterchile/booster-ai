@@ -33,8 +33,7 @@ const umbralesRoboCounter = getBusinessCounter('umbrales_robo_combustible_cambio
 export function createMeEmpresaRoutes(opts: { db: Db; logger: Logger }): Hono {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireEmpresaAdmin(c: Context<any, any, any>) {
+  function requireEmpresaAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };

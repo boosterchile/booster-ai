@@ -1,31 +1,69 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  type MiembroPendienteAdmin,
   crearEmpresaAdminSchema,
   empresaEstadoPatchSchema,
   empresaStatusSchema,
   invitarMiembroEmpresaSchema,
+  reemitirCodigoActivacionResponseSchema,
 } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { esRutDuplicado } from '../db/pg-error.js';
 import { carrierMemberships, empresas, memberships, plans, users } from '../db/schema.js';
 import { requirePlatformAdmin } from '../middleware/require-platform-admin.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
+import { enviarCorreoActivacionCuenta } from '../services/notifications/cuenta-activacion-email.js';
+import type { EmailSender } from '../services/notifications/email-sender.js';
+import { type VinculoPersona, clasificarVinculoPersona } from '../services/vinculo-persona.js';
+
+const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function fechaDe(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function miembroPendienteDe(row: {
+  userId: string;
+  membershipId: string;
+  nombre: string;
+  rut: string | null;
+  email: string;
+  rol: MiembroPendienteAdmin['rol'];
+  invitadoEn: Date | string;
+}): MiembroPendienteAdmin {
+  const invitado = fechaDe(row.invitadoEn);
+  return {
+    user_id: row.userId,
+    membership_id: row.membershipId,
+    nombre: row.nombre,
+    rut: row.rut ?? '',
+    email: row.email,
+    rol: row.rol,
+    invitado_en: invitado.toISOString(),
+    expira_en: new Date(invitado.getTime() + SIETE_DIAS_MS).toISOString(),
+  };
+}
 
 /**
  * Fase 3.5 (onboarding-flow-redesign) — sumar personas a una empresa EXISTENTE.
  *
  *   GET   /admin/empresas              → lista (filtro opcional `?estado=`)
+ *                                        con las invitaciones pendientes
  *   POST  /admin/empresas              → crea la ficha legal (generador y/o
  *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
+ *   POST  /admin/empresas/:id/miembros/:membershipId/codigo
+ *                                      → emite un código nuevo para una
+ *                                        invitación que sigue pendiente
  *
  * **Por qué existe**: `onboardEmpresa` solo sabe crear empresa + dueño de cero.
  * Con el RUT ya registrado devuelve 409 `rut_already_registered`
@@ -51,6 +89,13 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   db: Db;
   logger: Logger;
   auth: Auth;
+  /**
+   * T10-04 (ADR-082) — envía el código de activación al correo de la persona.
+   * Ausente en tests que no lo ejercitan; en prod siempre viene (cae al
+   * `LoggingEmailSender` si falta `RESEND_API_KEY`).
+   */
+  emailSender?: EmailSender;
+  webAppUrl?: string;
 }): Hono {
   const app = new Hono();
 
@@ -59,6 +104,10 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
   });
 
   const idParamSchema = z.object({ id: z.string().uuid() });
+  const reemitirCodigoParamSchema = z.object({
+    id: z.string().uuid(),
+    membershipId: z.string().uuid(),
+  });
 
   // GET /admin/empresas — listado para elegir destino de la invitación y para
   // activar/suspender. Sin esto el admin tendría que conocer el UUID de
@@ -87,15 +136,67 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
       ? await base.where(eq(empresas.status, estado)).orderBy(empresas.legalName).limit(500)
       : await base.orderBy(empresas.legalName).limit(500);
 
+    if (rows.length === 0) {
+      return c.json({ empresas: [] });
+    }
+
+    const empresaIds = rows.map((r) => r.id);
+    // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+    const pendientes = await opts.db
+      .select({
+        membershipId: memberships.id,
+        userId: memberships.userId,
+        empresaId: memberships.empresaId,
+        nombre: users.fullName,
+        rut: users.rut,
+        email: users.email,
+        rol: memberships.role,
+        invitadoEn: memberships.invitedAt,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        and(
+          eq(memberships.status, 'pendiente_invitacion'),
+          inArray(memberships.empresaId, empresaIds),
+        ),
+      )
+      .orderBy(memberships.invitedAt)
+      // El listado trae a lo sumo 500 empresas; esta cota cubre sus pendientes.
+      .limit(2000);
+
+    const porEmpresa = new Map<string, typeof pendientes>();
+    for (const row of pendientes) {
+      if (row.empresaId === null) {
+        continue;
+      }
+      const grupo = porEmpresa.get(row.empresaId) ?? [];
+      grupo.push(row);
+      porEmpresa.set(row.empresaId, grupo);
+    }
+
     return c.json({
-      empresas: rows.map((r) => ({
-        id: r.id,
-        razon_social: r.razonSocial,
-        rut: r.rut,
-        estado: r.estado,
-        es_transportista: r.esTransportista,
-        es_generador_carga: r.esGeneradorCarga,
-      })),
+      empresas: rows.map((r) => {
+        const ordenados = [...(porEmpresa.get(r.id) ?? [])].sort((a, b) => {
+          const delta = fechaDe(a.invitadoEn).getTime() - fechaDe(b.invitadoEn).getTime();
+          if (delta !== 0) {
+            return delta;
+          }
+          return a.membershipId.localeCompare(b.membershipId);
+        });
+        const miembros = ordenados.map((row) => miembroPendienteDe(row));
+        const dueno = miembros.find((m) => m.rol === 'dueno') ?? null;
+        return {
+          id: r.id,
+          razon_social: r.razonSocial,
+          rut: r.rut,
+          estado: r.estado,
+          es_transportista: r.esTransportista,
+          es_generador_carga: r.esGeneradorCarga,
+          miembros_pendientes: miembros,
+          dueno_pendiente: dueno,
+        };
+      }),
     });
   });
 
@@ -166,7 +267,6 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
                   : {}),
                 isGeneradorCarga: body.is_generador_carga,
                 isTransportista: body.is_transportista,
-                isDemo: false,
                 planId: plan.id,
                 status: 'pendiente_verificacion',
                 timezone: 'America/Santiago',
@@ -354,8 +454,6 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
     }
     const body = c.req.valid('json');
     const email = body.email.toLowerCase();
-    const codigo = generateActivationPin();
-    const expiraEn = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     return await withBusinessSpan(
       {
@@ -383,13 +481,22 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         // La identidad es el RUT, igual que el alta que hace la propia empresa.
         // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
         const porRut = await opts.db
-          .select({ id: users.id })
+          .select({
+            id: users.id,
+            email: users.email,
+            fullName: users.fullName,
+            firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            activationPinHash: users.activationPinHash,
+          })
           .from(users)
           .where(eq(users.rut, body.rut))
           .limit(1);
         const existente = porRut[0];
 
         let userId: string;
+        let vinculo: VinculoPersona;
+        let codigoEmitido: string | null = null;
         if (existente) {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const existingMembership = await opts.db
@@ -408,11 +515,16 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               409,
             );
           }
-          await opts.db
-            .update(users)
-            .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
-            .where(eq(users.id, existente.id));
           userId = existente.id;
+          vinculo = clasificarVinculoPersona(existente);
+          if (vinculo === 'provisoria_sin_codigo') {
+            const codigo = generateActivationPin();
+            codigoEmitido = codigo;
+            await opts.db
+              .update(users)
+              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: new Date() })
+              .where(eq(users.id, existente.id));
+          }
         } else {
           // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
           const porEmail = await opts.db
@@ -425,18 +537,30 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
             return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
           }
 
-          const inserted = await opts.db
-            .insert(users)
-            .values({
-              firebaseUid: `pending-rut:${body.rut}`,
-              email,
-              fullName: body.full_name,
-              rut: body.rut,
-              activationPinHash: hashActivationPin(codigo),
-              status: 'pendiente_verificacion',
-              isPlatformAdmin: false,
-            })
-            .returning({ id: users.id });
+          const codigo = generateActivationPin();
+          codigoEmitido = codigo;
+          vinculo = 'nueva';
+          let inserted: { id: string }[];
+          try {
+            inserted = await opts.db
+              .insert(users)
+              .values({
+                firebaseUid: `pending-rut:${body.rut}`,
+                email,
+                fullName: body.full_name,
+                rut: body.rut,
+                activationPinHash: hashActivationPin(codigo),
+                status: 'pendiente_verificacion',
+                isPlatformAdmin: false,
+              })
+              .returning({ id: users.id });
+          } catch (err) {
+            if (esRutDuplicado(err)) {
+              record('rut_already_registered');
+              return c.json({ error: 'conflict', code: 'rut_already_registered' }, 409);
+            }
+            throw err;
+          }
           const created = inserted[0];
           if (!created) {
             opts.logger.error({ empresaId }, 'admin-empresa-miembros: insert user vacío');
@@ -446,16 +570,17 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           userId = created.id;
         }
 
+        const yaActiva = vinculo === 'cuenta_activa';
         const insertedMembership = await opts.db
           .insert(memberships)
           .values({
             userId,
             empresaId,
             role: body.rol,
-            status: 'pendiente_invitacion',
+            status: yaActiva ? 'activa' : 'pendiente_invitacion',
             invitedByUserId: admin.userContext.user.id,
             invitedAt: new Date(),
-            joinedAt: null,
+            joinedAt: yaActiva ? new Date() : null,
           })
           .returning({ id: memberships.id });
         const membership = insertedMembership[0];
@@ -480,21 +605,160 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
         );
         record('issued');
 
+        if (codigoEmitido !== null && opts.emailSender) {
+          // Persona provisoria: su correo registrado, no el que tipeó el admin.
+          await enviarCorreoActivacionCuenta({
+            sender: opts.emailSender,
+            logger: opts.logger,
+            email: existente?.email ?? email,
+            nombre: existente?.fullName ?? body.full_name,
+            rut: body.rut,
+            codigo: codigoEmitido,
+            empresa: empresa.razonSocial,
+            rol: body.rol,
+            webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+          });
+        }
+
+        const expiraEn =
+          codigoEmitido === null
+            ? null
+            : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
         return c.json(
           {
             ok: true,
             user_id: userId,
             membership_id: membership.id,
             rol: body.rol,
-            estado: 'pendiente_invitacion',
-            codigo_activacion: codigo,
-            expira_en: expiraEn.toISOString(),
+            estado: yaActiva ? 'activa' : 'pendiente_invitacion',
+            codigo_activacion: codigoEmitido,
+            expira_en: expiraEn,
+            vinculo,
           },
           201,
         );
       },
     );
   });
+
+  // Reemite el código de una invitación que sigue pendiente. No recupera el
+  // PIN anterior: genera otro, reemplaza el hash y reinicia `invitado_en`.
+  // Sin body a propósito: un zValidator json rechazaría el POST vacío.
+  app.post(
+    '/:id/miembros/:membershipId/codigo',
+    zValidator('param', reemitirCodigoParamSchema),
+    async (c) => {
+      const admin = requirePlatformAdmin(c);
+      if (!admin.ok) {
+        return admin.response;
+      }
+
+      const { id: empresaId, membershipId } = c.req.valid('param');
+
+      return await withBusinessSpan(
+        {
+          name: 'alta.reemitir_codigo',
+          attributes: { 'booster.empresa_id': empresaId },
+        },
+        async (span) => {
+          const record = (resultado: string) => {
+            getBusinessCounter('alta_reemision_codigo_total').add(1, { resultado });
+            setResultAttributes(span, { 'alta.resultado': resultado });
+          };
+
+          // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+          const filas = await opts.db
+            .select({
+              membershipId: memberships.id,
+              userId: memberships.userId,
+              rol: memberships.role,
+              estado: memberships.status,
+              claveNumericaHash: users.claveNumericaHash,
+              firebaseUid: users.firebaseUid,
+              email: users.email,
+              nombre: users.fullName,
+              rut: users.rut,
+              razonSocial: empresas.legalName,
+            })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .innerJoin(empresas, eq(empresas.id, memberships.empresaId))
+            .where(and(eq(memberships.id, membershipId), eq(memberships.empresaId, empresaId)))
+            .limit(1);
+          const fila = filas[0];
+          if (!fila) {
+            record('membership_not_found');
+            return c.json({ error: 'not_found', code: 'membership_not_found' }, 404);
+          }
+
+          const siguePendiente =
+            fila.estado === 'pendiente_invitacion' &&
+            fila.claveNumericaHash === null &&
+            fila.firebaseUid.startsWith('pending-rut:');
+          if (!siguePendiente) {
+            record('already_activated');
+            return c.json({ error: 'conflict', code: 'already_activated' }, 409);
+          }
+
+          const codigo = generateActivationPin();
+          const ahora = new Date();
+          const expiraEn = new Date(ahora.getTime() + SIETE_DIAS_MS);
+
+          await opts.db.transaction(async (tx) => {
+            // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+            await tx
+              .update(users)
+              .set({ activationPinHash: hashActivationPin(codigo), updatedAt: ahora })
+              .where(eq(users.id, fila.userId));
+            // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+            await tx
+              .update(memberships)
+              .set({ invitedAt: ahora, updatedAt: ahora })
+              .where(eq(memberships.id, fila.membershipId));
+          });
+
+          opts.logger.info(
+            {
+              empresaId,
+              userId: fila.userId,
+              membershipId: fila.membershipId,
+              rol: fila.rol,
+              invitedBy: admin.adminEmail,
+            },
+            'admin-empresa-miembros: código reemitido (código no logueado)',
+          );
+          record('issued');
+
+          if (opts.emailSender && fila.rut) {
+            await enviarCorreoActivacionCuenta({
+              sender: opts.emailSender,
+              logger: opts.logger,
+              email: fila.email,
+              nombre: fila.nombre,
+              rut: fila.rut,
+              codigo,
+              empresa: fila.razonSocial,
+              rol: fila.rol,
+              webAppUrl: opts.webAppUrl ?? 'https://app.boosterchile.com',
+            });
+          }
+
+          return c.json(
+            reemitirCodigoActivacionResponseSchema.parse({
+              codigo_activacion: codigo,
+              expira_en: expiraEn.toISOString(),
+              membership_id: fila.membershipId,
+              user_id: fila.userId,
+              rol: fila.rol,
+              estado: 'pendiente_invitacion',
+            }),
+            200,
+          );
+        },
+      );
+    },
+  );
 
   return app;
 }

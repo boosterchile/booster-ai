@@ -15,10 +15,13 @@
     "test:e2e:conductor": "playwright test -c playwright.conductor.config.ts"
   },
   "dependencies": {
+    "@booster-ai/pricing-engine": "workspace:*",
     "@booster-ai/shared-schemas": "workspace:*",
     "@booster-ai/ui-components": "workspace:*",
     "@booster-ai/ui-tokens": "workspace:*",
     "@hookform/resolvers": "^3.10.0",
+    "@picovoice/porcupine-web": "4.0.1",
+    "@picovoice/web-voice-processor": "4.0.10",
     "@sentry/react": "^10.66.0",
     "@tanstack/react-query": "^5.100.9",
     "@tanstack/react-router": "^1.169.2",

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Loader2, User, UserPlus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
+import { useEmpresaScope } from '../../lib/empresa-activa.js';
 
 /**
  * Card carrier-side: asignar conductor a un assignment activo.
@@ -65,9 +66,10 @@ export function DriverAssignmentCard({
     | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
+  const scope = useEmpresaScope();
   const conductoresQ = useQuery<{ conductores: ConductorListItem[] }>({
-    queryKey: ['conductores-list-for-assignment'],
-    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores'),
+    queryKey: scope.key('conductores-list-for-assignment'),
+    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores', scope.init),
   });
 
   const isMutable = MUTABLE_ASSIGNMENT_STATUSES.has(assignmentStatus);
@@ -121,7 +123,7 @@ export function DriverAssignmentCard({
             </p>
           ) : (
             <p className="mt-1 text-neutral-600 text-sm">
-              Elegí el conductor que va a hacer este viaje. Una vez asignado, podrá ver la
+              Elige el conductor que va a hacer este viaje. Una vez asignado, podrá ver la
               asignación en su Modo Conductor y reportar su posición GPS.
             </p>
           )}
@@ -158,7 +160,7 @@ export function DriverAssignmentCard({
                 className="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
                 data-testid="driver-assignment-select"
               >
-                <option value="">— Elegí un conductor —</option>
+                <option value="">— Elige un conductor —</option>
                 {conductoresActivos.map((c) => (
                   <option key={c.user_id} value={c.user_id}>
                     {c.user.full_name ?? '(sin nombre)'} · {c.user.rut ?? 'sin RUT'}

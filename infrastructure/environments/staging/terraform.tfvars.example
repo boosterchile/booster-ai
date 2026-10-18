@@ -1,0 +1,41 @@
+# Booster AI — variables de STAGING (ADR-083).
+# Copiar a environments/staging/terraform.tfvars (gitignored) y completar.
+#   terraform -chdir=infrastructure plan -var-file=environments/staging/terraform.tfvars
+# Mismo root module que prod; solo cambian identidad, dominio y tamaños.
+
+# --- Identidad del proyecto ---
+project_id  = "booster-ai-stg-494222" # confirmar disponibilidad del ID al crearlo
+environment = "staging"
+domain      = "staging.boosterchile.com"
+region      = "southamerica-west1"
+zone        = "southamerica-west1-a"
+
+# Misma org y misma cuenta de facturación que prod (gcloud billing accounts list).
+billing_account = "XXXXXX-XXXXXX-XXXXXX"
+organization_id = "435506363892"
+
+# --- Identidad humana / GitHub (WIF propio del proyecto de staging) ---
+human_owners      = ["user:dev@boosterchile.com"]
+github_repository = "boosterchile/booster-ai"
+
+# --- Tamaños mínimos (staging no lleva tráfico real) ---
+cloudsql_tier                  = "db-custom-1-3840"
+cloudsql_backup_retention_days = 7
+cloudsql_high_availability     = false
+redis_tier                     = "BASIC"
+redis_memory_gb                = 1
+monthly_budget_usd             = 250
+alert_email                    = "dev@boosterchile.com"
+
+# --- State y facturación del propio proyecto ---
+tfstate_bucket = "booster-ai-tfstate-494222"
+# Export de billing de staging: se crea en el dataset billing_export del
+# proyecto de staging (consola → Billing → Billing export). Hasta entonces,
+# apuntar al de prod deja el dashboard de costos de staging vacío.
+billing_export_table = "booster-ai-stg-494222.billing_export.gcp_billing_export_v1_019461_C73CDE_DCE377"
+
+# Staging no delega subdominios.
+staging_nameservers = []
+
+# --- Flags: staging prueba con los flags que se van a activar en prod ---
+strict_migration_ordering = true

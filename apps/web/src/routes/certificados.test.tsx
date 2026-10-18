@@ -151,7 +151,7 @@ describe('CertificadosRoute', () => {
           coverage_pct: '100.00',
           certification_level: 'secundario_modeled',
           linea_metodo:
-            'Distancia medida por GPS del móvil del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
+            'Distancia medida por GPS del celular del conductor (cobertura 100 %) · Consumo modelado según GLEC v3.0',
           certificate_sha256: 'abc',
           certificate_kms_key_version: '1',
           certificate_issued_at: '2026-05-10T10:00:00Z',
@@ -161,7 +161,7 @@ describe('CertificadosRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     renderRoute();
-    const linea = await screen.findByText(/GPS del móvil del conductor \(cobertura 100 %\)/);
+    const linea = await screen.findByText(/GPS del celular del conductor \(cobertura 100 %\)/);
     expect(linea).toBeInTheDocument();
     // La fila muestra la línea tal cual llegó: vocabulario cerrado del API.
     expect(linea.closest('tr')?.textContent).not.toMatch(/verificable/i);

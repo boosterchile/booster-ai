@@ -1,13 +1,14 @@
 import type { Logger } from '@booster-ai/logger';
 import { activarCuentaSchema } from '@booster-ai/shared-schemas';
 import { zValidator } from '@hono/zod-validator';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Auth } from 'firebase-admin/auth';
 import { Hono } from 'hono';
 import type { Db } from '../db/client.js';
 import { memberships, users } from '../db/schema.js';
 import { verifyActivationPin } from '../services/activation-pin.js';
 import { hashClaveNumerica } from '../services/clave-numerica.js';
+import { cuentaYaActivada, invitacionesVigentes } from '../services/vinculo-persona.js';
 
 /**
  * equipo-de-la-empresa Fase A — `POST /auth/activar`.
@@ -30,9 +31,6 @@ import { hashClaveNumerica } from '../services/clave-numerica.js';
  * código vencido devuelven la MISMA respuesta. Un atacante no puede usar este
  * endpoint para enumerar RUTs ni para saber quién tiene una invitación viva.
  */
-
-/** Vencimiento del código, contado desde la invitación (decisión del PO). */
-const CODIGO_TTL_DIAS = 7;
 
 /** Email sintético de Firebase — mismo formato que `auth-universal.ts`. */
 function syntheticEmail(rut: string): string {
@@ -60,6 +58,7 @@ export function createAuthActivarRoutes(opts: {
         rut: users.rut,
         firebaseUid: users.firebaseUid,
         activationPinHash: users.activationPinHash,
+        claveNumericaHash: users.claveNumericaHash,
         fullName: users.fullName,
       })
       .from(users)
@@ -78,8 +77,17 @@ export function createAuthActivarRoutes(opts: {
       return rechazo();
     }
 
+    // Misma respuesta que un código malo: no se reescribe la clave de una
+    // cuenta que ya eligió la suya, aunque otra empresa haya dejado un hash.
+    if (cuentaYaActivada(user)) {
+      opts.logger.info({ userId: user.id }, 'auth-activar: cuenta ya viva, la clave no se toca');
+      return rechazo();
+    }
+
     // La invitación pendiente da la referencia de vencimiento: el código vive
-    // 7 días desde que la empresa dio de alta a la persona.
+    // 7 días desde que la empresa dio de alta a la persona. Se activan todas
+    // las membresías vigentes: la persona puede haber sido vinculada a más
+    // de una empresa antes de elegir su clave.
     // rls-allowlist: lookup pre-auth ligado al user recién verificado.
     const invitaciones = await opts.db
       .select({
@@ -89,22 +97,15 @@ export function createAuthActivarRoutes(opts: {
       })
       .from(memberships)
       .where(and(eq(memberships.userId, user.id), eq(memberships.status, 'pendiente_invitacion')))
-      .limit(1);
-    const invitacion = invitaciones[0];
+      .limit(20);
+    const vigentes = invitacionesVigentes(invitaciones);
 
-    if (!invitacion) {
-      opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación pendiente');
+    if (vigentes.length === 0) {
+      opts.logger.info({ rut: body.rut }, 'auth-activar: sin invitación vigente');
       return rechazo();
     }
-
-    const vence = new Date(
-      new Date(invitacion.invitedAt).getTime() + CODIGO_TTL_DIAS * 24 * 60 * 60 * 1000,
-    );
-    if (vence.getTime() < Date.now()) {
-      opts.logger.info(
-        { rut: body.rut, membershipId: invitacion.id },
-        'auth-activar: código vencido',
-      );
+    const invitacion = vigentes[0];
+    if (!invitacion) {
       return rechazo();
     }
 
@@ -148,7 +149,12 @@ export function createAuthActivarRoutes(opts: {
       await tx
         .update(memberships)
         .set({ status: 'activa', joinedAt: new Date(), updatedAt: new Date() })
-        .where(eq(memberships.id, invitacion.id));
+        .where(
+          inArray(
+            memberships.id,
+            vigentes.map((row) => row.id),
+          ),
+        );
     });
 
     let customToken: string;

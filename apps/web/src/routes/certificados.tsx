@@ -23,6 +23,7 @@ import {
   CertNotIssuedError,
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -73,10 +74,11 @@ export function CertificadosRoute() {
 }
 
 function CertificadosPage({ me }: { me: MeOnboarded }) {
+  const scope = useEmpresaScope();
   const certsQ = useQuery({
-    queryKey: ['certificates'],
+    queryKey: scope.key('certificates'),
     queryFn: async () => {
-      return await api.get<CertificadosResponse>('/certificates?limit=100');
+      return await api.get<CertificadosResponse>('/certificates?limit=100', scope.init);
     },
   });
 
@@ -322,7 +324,7 @@ function NoShipperPermission({ me }: { me: MeOnboarded }) {
         <h2 className="font-semibold text-neutral-900 text-xl">Sin permisos</h2>
         <p className="mt-2 text-neutral-600 text-sm">
           Los certificados de huella de carbono son para empresas que operan como generador de
-          carga. Si tu rol cambió, contactá al admin.
+          carga. Si tu rol cambió, contacta al admin.
         </p>
         <Link to="/app" className="mt-4 inline-block text-primary-600 underline">
           Volver al inicio

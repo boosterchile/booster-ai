@@ -9,6 +9,7 @@ import { RelativeTime } from '../components/RelativeTime.js';
 import { FleetMap, type FleetMapVehicle } from '../components/map/FleetMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -56,10 +57,11 @@ function FlotaPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const scope = useEmpresaScope();
   const flotaQ = useQuery({
-    queryKey: ['flota'],
+    queryKey: scope.key('flota'),
     queryFn: async () => {
-      const res = await api.get<{ fleet: FleetVehicleResponse[] }>('/vehiculos/flota');
+      const res = await api.get<{ fleet: FleetVehicleResponse[] }>('/vehiculos/flota', scope.init);
       return res.fleet;
     },
     refetchInterval: 20_000,

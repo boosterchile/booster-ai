@@ -202,10 +202,14 @@ describe('DELETE /me/push-subscription', () => {
     expect(body.removed).toBe(1);
   });
 
-  it('endpoint pertenece a OTRO user → loggea warn + 200 removed', async () => {
-    const db = makeDb({
-      deletes: [[{ id: 'sub-id', userId: 'OTRO-user' }]],
-    });
+  it('endpoint de otro user no se borra: el WHERE exige el userId', async () => {
+    const where = vi.fn(() => ({
+      returning: vi.fn(async () => []),
+    }));
+    const db = {
+      insert: vi.fn(),
+      delete: vi.fn(() => ({ where })),
+    };
     const app = await buildPrivApp(db);
     const res = await app.request('/me/push-subscription', {
       method: 'DELETE',
@@ -213,7 +217,10 @@ describe('DELETE /me/push-subscription', () => {
       body: JSON.stringify({ endpoint: VALID_BODY.endpoint }),
     });
     expect(res.status).toBe(200);
-    expect(noopLogger.warn).toHaveBeenCalled();
+    const body = (await res.json()) as { removed: number };
+    expect(body.removed).toBe(0);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(noopLogger.warn).not.toHaveBeenCalled();
   });
 });
 

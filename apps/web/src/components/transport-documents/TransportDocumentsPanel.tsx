@@ -6,7 +6,7 @@
  *     detalle de la assignment (`trip_request.id`, NO el assignment id).
  *   - `/app/cargas/$id/track` (generador) — el param de ruta ya es el viaje.
  *
- * Copy vos rioplatense. Escritura (`dueno|admin|despachador`) la decide el
+ * Copy tuteo chileno. Escritura (`dueno|admin|despachador`) la decide el
  * caller vía `canWrite`; el API refuerza el mismo gate.
  */
 
@@ -103,7 +103,7 @@ export function TransportDocumentsPanel({
 
       {!listQ.isLoading && !listQ.isError && docs.length === 0 && (
         <p className="text-neutral-600 text-sm">
-          Todavía no hay documentos. Empezá subiendo la guía o la factura.
+          Todavía no hay documentos. Empieza subiendo la guía o la factura.
         </p>
       )}
 
@@ -129,7 +129,7 @@ export function TransportDocumentsPanel({
             accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
             className="sr-only"
             onChange={onFileChange}
-            aria-label="Subí un PDF o una foto"
+            aria-label="Sube un PDF o una foto"
             data-testid="transport-doc-file"
           />
           <button
@@ -143,7 +143,7 @@ export function TransportDocumentsPanel({
             ) : (
               <Upload className="h-4 w-4" aria-hidden />
             )}
-            {uploadM.isPending ? 'Subiendo…' : 'Subí un PDF o una foto'}
+            {uploadM.isPending ? 'Subiendo…' : 'Sube un PDF o una foto'}
           </button>
           <p className="mt-1 text-neutral-500 text-xs">PDF, JPEG o PNG · máximo 15 MB.</p>
         </div>
@@ -247,7 +247,7 @@ function DocumentRow({
           ) : (
             <Download className="h-3.5 w-3.5" aria-hidden />
           )}
-          Descargá
+          Descarga
         </button>
       </div>
       {showManual && <ManualEntryForm documentId={doc.id} tripId={tripId} />}
@@ -376,7 +376,7 @@ function ManualEntryForm({ documentId, tripId }: { documentId: string; tripId: s
           disabled={saveM.isPending}
           className="rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
         >
-          {saveM.isPending ? 'Guardando…' : 'Guardá'}
+          {saveM.isPending ? 'Guardando…' : 'Guarda'}
         </button>
         <button
           type="button"

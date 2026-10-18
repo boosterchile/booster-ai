@@ -453,7 +453,7 @@ resource "google_storage_bucket" "chat_attachments" {
   # y GET (por las dudas a futuro). Sin esto el browser rechaza el PUT
   # con net::ERR_FAILED por preflight failure.
   cors {
-    origin          = ["https://app.boosterchile.com", "http://localhost:5173"]
+    origin          = ["https://app.${var.domain}", "http://localhost:5173"]
     method          = ["PUT", "GET", "HEAD"]
     response_header = ["Content-Type", "Content-MD5", "x-goog-content-length-range"]
     max_age_seconds = 3600

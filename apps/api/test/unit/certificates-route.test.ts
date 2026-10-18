@@ -171,7 +171,7 @@ describe('GET /certificates (lista)', () => {
     // vocabulario que el PDF); la UI no la reconstruye.
     expect(body.certificates[0]?.route_data_source).toBe('movil_gps');
     expect(body.certificates[0]?.certification_level).toBe('secundario_modeled');
-    expect(body.certificates[0]?.linea_metodo).toMatch(/GPS del móvil del conductor/);
+    expect(body.certificates[0]?.linea_metodo).toMatch(/GPS del celular del conductor/);
     expect(body.certificates[0]?.linea_metodo).not.toMatch(/verificable/i);
   });
 

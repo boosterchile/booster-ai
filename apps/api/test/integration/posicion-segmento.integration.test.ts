@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import * as schema from '../../src/db/schema.js';
-import { resolverPosicionesSegmento } from '../../src/services/posicion-segmento.js';
+import {
+  cargarLecturasConsumoCan,
+  resolverPosicionesSegmento,
+} from '../../src/services/posicion-segmento.js';
 import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
 
 /**
@@ -120,6 +123,18 @@ describe('integration: resolverPosicionesSegmento (enrutamiento por dispositivo)
     });
   }
 
+  function telemetriaConIo(vehicleId: string, imei: string, ts: Date, io: Record<string, unknown>) {
+    return handle.db.insert(schema.telemetryPoints).values({
+      vehicleId,
+      imei,
+      timestampDevice: ts,
+      priority: 0,
+      latitude: '-33.4500000',
+      longitude: '-70.6500000',
+      ioData: io,
+    });
+  }
+
   function movil(vehicleId: string, userId: string, ts: Date, lat: string, lng: string) {
     return handle.db.insert(schema.posicionesMovilConductor).values({
       vehicleId,
@@ -195,5 +210,44 @@ describe('integration: resolverPosicionesSegmento (enrutamiento por dispositivo)
     await expect(
       resolverPosicionesSegmento({ db: handle.db, vehicle: vehC, desde: DESDE, hasta: HASTA }),
     ).resolves.toEqual([]);
+  });
+
+  // T10-05 (ADR-077 §2): las lecturas del contador CAN (AVL 83) del segmento,
+  // de la misma fuente que la posición. Solo filas que traen el 83.
+  test('cargarLecturasConsumoCan: solo filas con el 83 en la ventana, ascendentes, por la fuente del vehículo', async () => {
+    const { imei, vehA, vehB, vehC } = await fixture();
+    await telemetriaConIo(vehA.id, imei, t('09:59'), { '83': 9990 }); // fuera
+    await telemetriaConIo(vehA.id, imei, t('10:30'), { '83': '10080', '66': 12000 }); // string → número
+    await telemetriaConIo(vehA.id, imei, t('10:10'), { '83': 10000 });
+    await telemetriaConIo(vehA.id, imei, t('10:20'), { '84': 1500 }); // sin 83: no entra
+    await telemetriaConIo(vehA.id, imei, t('12:01'), { '83': 10200 }); // fuera
+
+    const a = await cargarLecturasConsumoCan({
+      db: handle.db,
+      vehicle: vehA,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(a.map((l) => [l.tMs, l.io['83']])).toEqual([
+      [t('10:10').getTime(), 10000],
+      [t('10:30').getTime(), 10080],
+    ]);
+    expect(a[0]?.io).toEqual({ '83': 10000 });
+
+    const b = await cargarLecturasConsumoCan({
+      db: handle.db,
+      vehicle: vehB,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(b).toHaveLength(2);
+
+    const c = await cargarLecturasConsumoCan({
+      db: handle.db,
+      vehicle: vehC,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(c).toEqual([]);
   });
 });

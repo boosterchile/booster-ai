@@ -12,10 +12,12 @@
 #   - Build + deploy de apps/api, apps/whatsapp-bot, apps/web (PWA),
 #     apps/telemetry-tcp-gateway (GKE), apps/telemetry-processor,
 #     apps/sms-fallback-gateway.
-#   - apps/notification-service, apps/matching-engine,
-#     apps/document-service quedan en placeholder mientras sigan siendo
-#     skeletons (main.ts solo loguea "starting (skeleton)" y exit). Al
-#     implementarlos se agrega el Dockerfile + step build/push/deploy.
+#   - apps/document-service (worker TED, consumer de `document.uploaded`;
+#     T10-21, ADR-083).
+#   - apps/notification-service (canal WhatsApp extraído; consumer de
+#     `notification-events`. T10-21, ADR-083).
+#   - apps/matching-engine (POST /ranking, ranking de matching; T10-21,
+#     ADR-083).
 #   - apps/marketing queda con imagen placeholder hasta que el directorio
 #     exista (no hay source).
 #
@@ -172,6 +174,42 @@ steps:
       - .
     waitFor: ['-']
 
+  # apps/document-service — worker TED (consumer Pub/Sub pull). T10-21.
+  - id: build-document-service
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/document-service/Dockerfile
+      - --tag=${_REGISTRY}/document-service:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/document-service:latest
+      - .
+    waitFor: ['-']
+
+  # apps/notification-service — consumer Pub/Sub pull (canal WhatsApp). T10-21.
+  - id: build-notification-service
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/notification-service/Dockerfile
+      - --tag=${_REGISTRY}/notification-service:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/notification-service:latest
+      - .
+    waitFor: ['-']
+
+  # apps/matching-engine — POST /ranking (cómputo puro). T10-21.
+  - id: build-matching-engine
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --no-cache
+      - --file=apps/matching-engine/Dockerfile
+      - --tag=${_REGISTRY}/matching-engine:${_COMMIT_SHA}
+      - --tag=${_REGISTRY}/matching-engine:latest
+      - .
+    waitFor: ['-']
+
   # =========================================================================
   # Push a Artifact Registry
   # =========================================================================
@@ -204,6 +242,21 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, '--all-tags', '${_REGISTRY}/sms-fallback-gateway']
     waitFor: [build-sms-fallback-gateway]
+
+  - id: push-document-service
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/document-service']
+    waitFor: [build-document-service]
+
+  - id: push-notification-service
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/notification-service']
+    waitFor: [build-notification-service]
+
+  - id: push-matching-engine
+    name: gcr.io/cloud-builders/docker
+    args: [push, '--all-tags', '${_REGISTRY}/matching-engine']
+    waitFor: [build-matching-engine]
 
   # =========================================================================
   # Deploy a Cloud Run — reemplaza placeholder gcr.io/cloudrun/placeholder
@@ -240,6 +293,22 @@ steps:
   # Cloud Build substitution + release.yml change. Cloud Run requires the
   # combined traffic tag + service name ≤ 46 chars; `booster-ai-api` (14) +
   # `canary-signup-` (14) + 12-char short SHA = 40 chars, 6-char headroom.
+  #
+  # T10-06 (ADR-082): la revisión se crea SIN `--tag` y se etiqueta después
+  # con `update-traffic --update-tags`. Con `--tag`, `gcloud run services
+  # update` genera el nombre de la revisión del lado del cliente y lo deja en
+  # `template.revision`; Terraform lo declara vacío y el Drift Check quedaba
+  # en rojo con `revision "booster-ai-api-NNNNN-xxx" -> null` tras cada
+  # release. Sin `--tag` gcloud usa un nonce y Cloud Run nombra la revisión
+  # (`surface/run/services/update.py`, `generate_name`). `update-traffic` solo
+  # toca el bloque de traffic, que Terraform ya ignora para el api.
+  #
+  # La revisión nueva se verifica por digest. Cloud Run fija cada revisión al
+  # digest de la imagen, así que `spec.containers[0].image` llega como
+  # `api@sha256:…`, sin el tag del commit. El primer release con la guarda
+  # (run 38250737682, 2026-10-12) abortó aquí con la revisión sana. Se acepta
+  # el tag del commit o el digest que Artifact Registry da para
+  # `api:${_COMMIT_SHA}`; cualquier otra imagen sigue abortando.
   - id: deploy-canary
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
@@ -253,9 +322,36 @@ steps:
           --image=${_REGISTRY}/api:${_COMMIT_SHA} \
           --region=${_REGION} \
           --platform=managed \
-          --tag=canary-signup-$${SHORT_SHA} \
           --no-traffic \
           --update-labels=commit=${_COMMIT_SHA}
+        REV=$(gcloud run services describe booster-ai-api \
+          --region=${_REGION} --platform=managed \
+          --format='value(status.latestCreatedRevisionName)')
+        if [ -z "$${REV}" ]; then
+          echo "deploy-canary: sin latestCreatedRevisionName tras el update" >&2
+          exit 1
+        fi
+        IMAGE=$(gcloud run revisions describe "$${REV}" \
+          --region=${_REGION} --platform=managed \
+          --format='value(spec.containers[0].image)')
+        DIGEST=$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/api:${_COMMIT_SHA}" \
+          --format='value(image_summary.digest)')
+        if [ -z "$${DIGEST}" ]; then
+          echo "deploy-canary: sin digest para api:${_COMMIT_SHA} en Artifact Registry" >&2
+          exit 1
+        fi
+        case "$${IMAGE}" in
+          *":${_COMMIT_SHA}" | *"@$${DIGEST}") ;;
+          *)
+            echo "deploy-canary: $${REV} corre $${IMAGE}, no api:${_COMMIT_SHA} ($${DIGEST})" >&2
+            exit 1
+            ;;
+        esac
+        gcloud run services update-traffic booster-ai-api \
+          --region=${_REGION} \
+          --platform=managed \
+          --update-tags=canary-signup-$${SHORT_SHA}=$${REV}
     waitFor: [push-api]
 
   - id: route-canary
@@ -302,27 +398,25 @@ steps:
     #   - p95_latency < 500ms: aligned p95 sobre request_latencies metric,
     #     mismo scope.
     #
-    # Si cualquier check falla, exit 1 → Cloud Build job aborta antes de
-    # promover el canary a 100%. Human-on-call recibe el job failure
-    # notification y procede con rollback fast-path (NO ejecutado
-    # automáticamente — decisión humana).
+    # Si error_rate o p95 fallan CON muestra >= _CANARY_MIN_REQUESTS, exit 1
+    # → Cloud Build aborta antes de promover. Human-on-call hace rollback
+    # (no es automático).
     #
-    # Script defensivo: si las metrics NO están pobladas (cold-start del
-    # primer deploy con canary), graceful exit OK con warning estructurado
-    # — la ausencia de data NO es failure semánticamente (canary recibió
-    # tan poco traffic que no hay sample suficiente). El smoke E2E manual
-    # del runbook cubre este edge case.
+    # Muestra bajo el piso (el canary al 1% ve 3–8 requests, no 30): WARN y
+    # exit 0, sin evaluar p95. Abortar ahí dejaba deploy-api, gke-deploy y
+    # smoke en QUEUED. Bajar el piso a 0 reabre el falso positivo de p95
+    # del 2026-08-16. La decisión vive en scripts/deploy/canary_verify_decision.py.
     args:
       - -c
       - |
         set -euo pipefail
         # Check REAL contra Cloud Monitoring (2026-06-11; antes placeholder
         # exit 0 — auditoría 2026-06-09 riesgo alto: la promoción a 100% no
-        # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms en la
-        # ventana del canary → exit 1 y el build aborta SIN promover.
-        # Defensivo: sin tráfico/sin revision con tag → warn + exit 0 (la
-        # ausencia de muestra no es failure; el humano decide — runbook
-        # signup-canary-rollback).
+        # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms Y la
+        # muestra alcanza el piso → exit 1 y el build aborta SIN promover.
+        # Muestra bajo el piso, o sin revision con tag → warn + exit 0
+        # (runbook signup-canary-rollback). El p95 no se mira sin muestra:
+        # el 2026-08-16 un cold start abortó un deploy sano.
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
@@ -392,47 +486,23 @@ steps:
                 v = pt.get('value', {})
                 counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
         total = sum(counts.values())
-        # Gate de muestra (review 2026-06-11): con _CANARY_MIN_REQUESTS=0
-        # (default actual, API pre-comercial con ~0 tráfico de canary al
-        # 1%) la falta de muestra promueve con WARN — igual que el
-        # comportamiento histórico, pero ahora es una DECISIÓN
-        # parametrizada: al crecer el tráfico, subir la substitution en
-        # release.yml hace que muestra insuficiente ABORTE (exit 1) y la
-        # promoción exija decisión humana. Sin el parámetro, el gate del
-        # canary sería papel mojado en el caso típico actual.
-        if total < max(min_requests, 1):
-            if min_requests > 0:
-                print(f'canary-verify: FAIL muestra insuficiente ({total} < {min_requests}) — promoción requiere decisión humana')
-                print('canary-verify: runbook — verificar 5xx y latencia de la revision canary a mano (Cloud Logging) y, si esta sana, promover con: gcloud run services update-traffic booster-ai-api --region=southamerica-west1 --to-revisions=<REV>=100. O re-despachar release.yml en horario con trafico.')
-                sys.exit(1)
-            print('canary-verify: WARN 0 requests en la ventana — sin muestra (min_requests=0), promoviendo; subir _CANARY_MIN_REQUESTS cuando haya tráfico real')
-            sys.exit(0)
-        err = counts.get('5xx', 0)
-        rate = err / total
-        print(f'canary-verify: requests={total} 5xx={err} error_rate={rate:.4f}')
-        if rate >= 0.01:
-            print(f'canary-verify: FAIL error_rate {rate:.2%} >= 1% — NO promover')
-            print('canary-verify: runbook — revisar 5xx de la revision canary en Cloud Logging antes de decidir rollback del 1% o fix-forward (decision humana).')
-            sys.exit(1)
-
-        lat = (f'metric.type="run.googleapis.com/request_latencies" '
-               f'AND resource.labels.service_name="booster-ai-api" '
-               f'AND resource.labels.revision_name="{revision}"')
+        # Latencia solo con muestra que alcanza el piso. Pedirla igual no
+        # cambia la decision, y un error de la API no debe tapar el WARN.
         p95s = []
-        for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
-            for pt in s_.get('points', []):
-                v = pt.get('value', {})
-                p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
-        if p95s:
-            worst = max(p95s)
-            print(f'canary-verify: p95_max={worst:.0f}ms')
-            if worst >= 500:
-                print(f'canary-verify: FAIL p95 {worst:.0f}ms >= 500ms — NO promover')
-                print(f'canary-verify: contexto — con muestra chica el p95 se acerca al maximo y castiga cold-starts (incidente 2026-08-16: n=6, p95=1408ms, 0 errores era falso positivo). Muestra actual: {total} requests. Decision humana: comparar contra latencia de la revision estable antes de rollback.')
-                sys.exit(1)
-        else:
-            print('canary-verify: WARN sin serie de latencias — solo gate de error_rate aplicado')
-        print('canary-verify: OK — promoviendo a 100%')
+        if total >= max(min_requests, 1):
+            lat = (f'metric.type="run.googleapis.com/request_latencies" '
+                   f'AND resource.labels.service_name="booster-ai-api" '
+                   f'AND resource.labels.revision_name="{revision}"')
+            for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+                for pt in s_.get('points', []):
+                    v = pt.get('value', {})
+                    p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
+        sys.path.insert(0, 'scripts/deploy')
+        from canary_verify_decision import decidir_canary
+        codigo, lineas = decidir_canary(total, min_requests, counts, p95s)
+        for linea in lineas:
+            print(linea)
+        sys.exit(codigo)
         PYCHECK
     waitFor: [canary-sleep]
 
@@ -536,6 +606,8 @@ steps:
       - --platform=managed
       - --min-instances=1
       - --no-cpu-throttling
+      - --cpu=1
+      - --memory=1Gi
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-telemetry-processor]
 
@@ -552,6 +624,85 @@ steps:
       - --platform=managed
       - --update-labels=commit=${_COMMIT_SHA}
     waitFor: [push-sms-fallback-gateway]
+
+  # apps/document-service — Cloud Run PULL consumer de `document.uploaded`.
+  # min-instances=1 + no-cpu-throttling son obligatorios para un consumer pull
+  # (mismo motivo que telemetry-processor; ver compute.tf `service_document`).
+  # Rollback: `gcloud run services update-traffic booster-ai-document-service
+  # --to-revisions=<anterior>=100` (docs/runbooks/rollback-drill-microservicios.md).
+  - id: deploy-document-service
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-document-service
+      - --image=${_REGISTRY}/document-service:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --min-instances=1
+      - --no-cpu-throttling
+      - --cpu=1
+      - --memory=1Gi
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-document-service]
+
+  # apps/notification-service — Cloud Run PULL consumer de `notification-events`.
+  # min-instances=1 + no-cpu-throttling obligatorios (consumer pull; ver
+  # compute.tf `service_notification`). El tráfico real lo decide el flag
+  # `notifications_via_microservice` del api, no este deploy.
+  - id: deploy-notification-service
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-notification-service
+      - --image=${_REGISTRY}/notification-service:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --min-instances=1
+      - --no-cpu-throttling
+      - --cpu=1
+      - --memory=512Mi
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-notification-service]
+    # Tolerado hasta el `terraform apply` de T10-21 (issue #784). Sin el
+    # apply, el servicio no tiene TWILIO_*: la imagen sale con exit 1 al
+    # validar su config, la revisión no queda lista y `services update`
+    # falla. Así el release sigue y el servicio queda en la revisión anterior.
+    allowFailure: true
+
+  # apps/matching-engine — request-driven (min-instances=1 contra cold start
+  # en el camino síncrono del matching). El tráfico real lo deciden los flags
+  # matching_shadow / matching_via_microservice del api, no este deploy. Sin
+  # waitFor cruzado, el engine queda arriba antes que el api (que espera 30
+  # min de canary): durante esa ventana, en modo microservicio el engine es la
+  # fuente del algoritmo, y en sombra un cambio de algoritmo se ve como
+  # divergencia transitoria (runbook service-matching-engine.md).
+  - id: deploy-matching-engine
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - booster-ai-matching-engine
+      - --image=${_REGISTRY}/matching-engine:${_COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --min-instances=1
+      - --cpu=1
+      - --memory=512Mi
+      - --update-labels=commit=${_COMMIT_SHA}
+    waitFor: [push-matching-engine]
+    # Tolerado hasta el `terraform apply` de T10-21 (issue #784). Sin el
+    # apply, el servicio no tiene OIDC_AUDIENCE ni ALLOWED_CALLER_SA: la imagen
+    # sale con exit 1 al validar su config y `services update` falla. Así el
+    # release sigue y el servicio queda en la revisión anterior.
+    allowFailure: true
 
   # apps/telemetry-tcp-gateway — GKE Autopilot. NO va a Cloud Run.
   #
@@ -611,7 +762,7 @@ steps:
         # api.boosterchile.com — URL pública canónica post-DNS-migration.
         # Bash vars escapadas con dollar-dollar — Cloud Build interpreta una
         # variable bash sin escapar como substitution y rechaza el build.
-        WEBHOOK_URL="https://api.boosterchile.com/webhooks/whatsapp"
+        WEBHOOK_URL="https://${_PUBLIC_API_HOST}/webhooks/whatsapp"
 
         # POST sin firma debe devolver 403. Eso confirma que el bot está
         # serving y validando firmas Twilio + el LB ruteando + el cert ok.
@@ -636,16 +787,17 @@ steps:
   # boundary ADR-001 + harness CI default-deny + reaper, no por Cloud Function.
 
 substitutions:
-  # >0 = muestra insuficiente aborta (ver canary-verify). Subido 0→30
-  # (≈1 req/min en la ventana de 30 min) tras el incidente 2026-08-16:
-  # con '0', n=6 requests evaluó igual los SLOs y un p95 de cold-start
-  # (1408ms, 0 errores) abortó un deploy sano. Con 30, tráfico bajo falla
-  # con «muestra insuficiente» (honesto y accionable) en vez de un p95
-  # engañoso. Runbook del on-call en el mensaje del propio gate.
+  # Piso para evaluar error_rate y p95. Por debajo: WARN y promover
+  # (2026-09-28). El canary al 1% ve 3–8 requests; abortar dejaba el
+  # release a medias. No bajar a 0: con 0, n=6 evaluó p95 y un cold start
+  # (1408ms, 0 errores) abortó un deploy sano el 2026-08-16.
   _CANARY_MIN_REQUESTS: '30'
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers
   _COMMIT_SHA: manual
+  # Host público del api para el smoke del webhook. Staging lo pisa con
+  # api.staging.boosterchile.com (release-staging.yml, ADR-083).
+  _PUBLIC_API_HOST: api.boosterchile.com
 
   # apps/web build-time vars — Firebase web config (públicas por diseño,
   # ver apps/web/Dockerfile para rationale). Estas claves viajan en el
@@ -696,6 +848,12 @@ images:
   - ${_REGISTRY}/telemetry-processor:latest
   - ${_REGISTRY}/sms-fallback-gateway:${_COMMIT_SHA}
   - ${_REGISTRY}/sms-fallback-gateway:latest
+  - ${_REGISTRY}/document-service:${_COMMIT_SHA}
+  - ${_REGISTRY}/document-service:latest
+  - ${_REGISTRY}/notification-service:${_COMMIT_SHA}
+  - ${_REGISTRY}/notification-service:latest
+  - ${_REGISTRY}/matching-engine:${_COMMIT_SHA}
+  - ${_REGISTRY}/matching-engine:latest
 
 # Usar el SA github-deployer en lugar del compute default.
 # Cuentas nuevas de GCP (post-mayo 2024) ya no dan Editor automático al compute
@@ -719,7 +877,7 @@ options:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
 # Timeout global del build. DEBE acomodar el `canary-sleep` de 1800s (30 min,
-# step id: canary-sleep) MÁS el build+push de las 6 imágenes Docker + deploy
+# step id: canary-sleep) MÁS el build+push de las 9 imágenes Docker + deploy
 # canary + verify + promoción. Con 2400s el presupuesto no-sleep era de solo
 # 600s (10 min) y un build frío (~11 min hasta route-canary) lo excedía →
 # TIMEOUT durante el sleep, la promoción a 100% nunca corría y el canary

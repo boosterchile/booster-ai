@@ -113,7 +113,7 @@ describe('Activar cuenta', () => {
     fireEvent.click(screen.getByRole('button', { name: /Activar mi cuenta/i }));
 
     // La cuenta quedó activa: entra con su RUT y la clave que acaba de crear.
-    expect(await screen.findByText(/ya podés entrar|ya puedes entrar/i)).toBeInTheDocument();
+    expect(await screen.findByText(/ya puedes entrar/i)).toBeInTheDocument();
     expect(signInWithCustomTokenMock).not.toHaveBeenCalled();
   });
 });

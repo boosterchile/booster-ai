@@ -1,5 +1,6 @@
 # Cloud Build pipeline para deployar telemetry-tcp-gateway en el cluster
-# PRIMARIO (southamerica-west1). Espejo de cloudbuild-dr-deploy.yaml.
+# de Santiago (southamerica-west1). El pipeline del clúster DR salió con
+# ADR-081.
 #
 # Por qué Cloud Build private worker pool y NO kubectl desde laptop:
 # El cluster primario tiene master_authorized_networks_config restringido
@@ -9,7 +10,7 @@
 # (`--dns-endpoint`), habilitado en compute.tf via
 # control_plane_endpoints_config.dns_endpoint_config.allow_external_traffic=true
 # (ADR-059). kubectl alcanza el master via DNS + IAM (roles/container.developer),
-# sin depender de red/peering. Mismo mecanismo que el DR (ver dr-region.tf).
+# sin depender de red/peering.
 #
 # Validar acceso ANTES con cloudbuild-primary-check.yaml (no mutante).
 #

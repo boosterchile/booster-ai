@@ -73,7 +73,5 @@ spec:
 # NOTA: Los Certificate por cluster se movieron a archivos separados
 # para que cada cluster aplique solo el suyo:
 #   - cert-primary.yaml → CN telemetry-tls.boosterchile.com (primary)
-#   - cert-dr.yaml      → CN telemetry-dr.boosterchile.com  (DR)
-# Este archivo contiene SOLO los ClusterIssuers — se aplica en ambos
-# clusters porque ClusterIssuer es un recurso cluster-scoped (no
-# namespaced) que cert-manager necesita resolver al issuer.
+# El certificado de telemetry-dr salió con el clúster DR (ADR-081).
+# Este archivo contiene SOLO los ClusterIssuers del clúster de Santiago.

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emitirCertificadoViaje } from '../../src/services/emitir-certificado-viaje.js';
 
 // Mock @booster-ai/certificate-generator (KMS+GCS+PDF) — el contrato es
 // emitirCertificado(opts) → { pdfGcsUri, sigGcsUri, pdfSha256, kmsKeyVersion, issuedAt, pdfBytes }
@@ -7,7 +6,17 @@ vi.mock('@booster-ai/certificate-generator', () => ({
   emitirCertificado: vi.fn(),
 }));
 
+const counterAdd = vi.fn();
+const counterNames: string[] = [];
+vi.mock('../../src/observability/business-metrics.js', () => ({
+  getBusinessCounter: (name: string) => {
+    counterNames.push(name);
+    return { add: counterAdd };
+  },
+}));
+
 const { emitirCertificado } = await import('@booster-ai/certificate-generator');
+const { emitirCertificadoViaje } = await import('../../src/services/emitir-certificado-viaje.js');
 
 const noop = (): void => undefined;
 const noopLogger = {
@@ -346,5 +355,42 @@ describe('emitirCertificadoViaje', () => {
       config: VALID_CONFIG,
     });
     expect(db.transaction).toHaveBeenCalled();
+  });
+
+  it('métrica certificados_emitidos_total: resultado=emitido en la emisión exitosa', async () => {
+    (emitirCertificado as ReturnType<typeof vi.fn>).mockResolvedValueOnce(EMITIR_OK);
+    const db = makeDb({
+      selects: [
+        [TRIP_DELIVERED],
+        [METRICS_BASE],
+        [SHIPPER_ROW],
+        [{ empresaId: CARRIER_EMP_ID, vehicleId: 'veh-uuid' }],
+        [CARRIER_ROW],
+        [{ plate: 'AB-CD-12' }],
+      ],
+      updates: [[]],
+      inserts: [[]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(counterNames).toContain('certificados_emitidos_total');
+    expect(counterAdd).toHaveBeenCalledWith(1, { resultado: 'emitido' });
+  });
+
+  it('métrica certificados_emitidos_total: resultado=<reason> cuando se omite', async () => {
+    const db = makeDb({
+      selects: [[TRIP_DELIVERED], [{ ...METRICS_BASE, certificateIssuedAt: new Date() }]],
+    });
+    await emitirCertificadoViaje({
+      db: db as never,
+      logger: noopLogger,
+      tripId: TRIP_ID,
+      config: VALID_CONFIG,
+    });
+    expect(counterAdd).toHaveBeenCalledWith(1, { resultado: 'already_issued' });
   });
 });

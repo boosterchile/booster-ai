@@ -35,8 +35,9 @@ interface AltaResponse {
   membership_id: string;
   rol: string;
   estado: string;
-  codigo_activacion: string;
-  expira_en: string;
+  codigo_activacion: string | null;
+  expira_en: string | null;
+  vinculo?: 'nueva' | 'cuenta_activa' | 'codigo_vigente' | 'provisoria_sin_codigo';
 }
 
 const ROLES = [
@@ -96,7 +97,7 @@ function EquipoPage() {
           <div>
             <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">Equipo</h1>
             <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-              Las personas de tu empresa que usan Booster. Al agregar a alguien recibís un código
+              Las personas de tu empresa que usan Booster. Al agregar a alguien recibes un código
               para entregarle; con ese código crea su propia clave de acceso.
             </p>
           </div>
@@ -134,7 +135,7 @@ function EquipoPage() {
         )}
         {!cargando && !errorLista && miembros.length === 0 && (
           <p className="p-5 text-neutral-500 text-sm">
-            Todavía no agregaste a nadie. Usá “Agregar persona” para sumar a alguien de tu equipo.
+            Todavía no agregaste a nadie. Usa “Agregar persona” para sumar a alguien de tu equipo.
           </p>
         )}
         {!cargando && !errorLista && miembros.length > 0 && (
@@ -169,7 +170,7 @@ function EquipoPage() {
   );
 }
 
-/** Panel con el código recién emitido. Se muestra una vez, como el de onboarding. */
+/** Panel con el resultado del alta. El código solo aparece si se emitió uno. */
 function CodigoEntregable({
   alta,
   onCerrar,
@@ -178,15 +179,46 @@ function CodigoEntregable({
   onCerrar: () => void;
 }) {
   const [copiado, setCopiado] = useState(false);
+  const codigo = alta.codigo_activacion;
 
   async function copiar() {
+    if (!codigo) {
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(alta.codigo_activacion);
+      await navigator.clipboard.writeText(codigo);
       setCopiado(true);
       window.setTimeout(() => setCopiado(false), 2500);
     } catch {
       setCopiado(false);
     }
+  }
+
+  if (!codigo) {
+    const yaActiva = alta.vinculo === 'cuenta_activa' || alta.estado === 'activa';
+    return (
+      <div className="mt-6 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-semibold text-amber-900">
+              {yaActiva ? `${alta.nombre} ya tiene cuenta` : `${alta.nombre} ya tiene un código`}
+            </div>
+            <p className="mt-1 text-amber-800 text-sm">
+              {yaActiva
+                ? 'Quedó en tu empresa. Entra con su RUT y su clave. No hay código nuevo: su clave no cambia.'
+                : 'No se reemplazó. Cuando lo use en Activar cuenta, también quedará en tu empresa.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="cursor-pointer text-amber-700 text-xs underline hover:text-amber-900"
+          >
+            Ocultar
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -199,11 +231,11 @@ function CodigoEntregable({
           {/* Que quien lo entrega entienda qué es: un código de un solo uso, no
               una clave. La clave la elige la persona y nadie más la conoce. */}
           <p className="mt-1 text-amber-800 text-sm">
-            Entregáselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
+            Entrégaselo por tu canal habitual. Le sirve una sola vez para activar su cuenta: al
             usarlo, elegirá su propia clave de 6 dígitos, que solo conocerá ella.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
-            Vence el {new Date(alta.expira_en).toLocaleDateString('es-CL')}.
+            Vence el {alta.expira_en ? new Date(alta.expira_en).toLocaleDateString('es-CL') : '—'}.
           </p>
         </div>
         <button
@@ -216,7 +248,7 @@ function CodigoEntregable({
       </div>
       <div className="mt-3 flex items-center gap-2">
         <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
-          {alta.codigo_activacion}
+          {codigo}
         </div>
         <button
           type="button"
@@ -256,7 +288,7 @@ function FormAlta({
     if (!rutParsed.success) {
       setError(
         rutParsed.error.issues[0]?.message ??
-          'El RUT no es válido. Revisá los dígitos y el verificador.',
+          'El RUT no es válido. Revisa los dígitos y el verificador.',
       );
       return;
     }

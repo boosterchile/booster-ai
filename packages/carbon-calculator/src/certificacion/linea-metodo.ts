@@ -49,7 +49,7 @@ function describirDistancia(fuente: RouteDataSource, cobertura: string): string 
     case 'teltonika_gps':
       return `Distancia medida por GPS del vehículo (${cobertura})`;
     case 'movil_gps':
-      return `Distancia medida por GPS del móvil del conductor (${cobertura})`;
+      return `Distancia medida por GPS del celular del conductor (${cobertura})`;
     case 'maps_directions':
       return 'Distancia estimada por ruta (Google Routes)';
     case 'manual_declared':

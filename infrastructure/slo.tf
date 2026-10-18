@@ -21,7 +21,8 @@
 #     que igual te funde el budget. Ticket/aviso, no necesariamente page.
 # Ambas ventanas se evalúan con `select_slo_burn_rate`, que GCP deriva del SLO.
 #
-# Alcance (por qué solo api + web):
+# Alcance original (api + web; T10-17 suma whatsapp-bot, telemetry-processor
+# y telemetry-tcp-gateway al final de este archivo con SLIs propios):
 #   - `booster-ai-api` y `booster-ai-web` son los únicos servicios que sirven
 #     tráfico HTTP real (request_count / request_latencies poblados). SLOs
 #     request-based aplican directo.
@@ -464,4 +465,223 @@ resource "google_monitoring_alert_policy" "web_latency_burn" {
   }
 
   depends_on = [google_monitoring_slo.web_latency]
+}
+
+# =============================================================================
+# SLOs de backends no-web (T10-17, ADR-082)
+# =============================================================================
+# El alcance original (solo api + web) dejaba fuera tres servicios con
+# compromiso de disponibilidad en el programa TRL 10. Cada uno se mide con el
+# SLI que corresponde a cómo sirve:
+#
+#   - whatsapp-bot (Cloud Run, webhook HTTP de Twilio): request-based no-5xx,
+#     mismo patrón que api/web. Objetivo 99 %.
+#   - telemetry-processor (Cloud Run, consumidor PULL de Pub/Sub): no recibe
+#     HTTP de negocio, así que el SLI es por mensaje: good = ack en
+#     telemetry-events-processor-sub, bad = mensaje enviado a la DLQ tras 5
+#     intentos. Objetivo 99,5 %.
+#   - telemetry-tcp-gateway (GKE, TCP 5027 para Teltonika): windows-based
+#     sobre un uptime check TCP al LB público. Ventana de 5 min buena si algún
+#     checker conecta. Objetivo 99,5 %. El check abre ~6 conexiones/min sin
+#     IMEI que el gateway cierra por idle; no cuentan como records ni como
+#     errores de parser.
+#
+# Las alertas de burn-rate reusan los parámetros fast/slow de arriba.
+
+locals {
+  slo_whatsapp_bot_service_name        = "booster-ai-whatsapp-bot"
+  slo_whatsapp_bot_availability_goal   = 0.99
+  slo_telemetry_processor_goal         = 0.995
+  slo_telemetry_processor_subscription = "telemetry-events-processor-sub"
+  slo_telemetry_gateway_goal           = 0.995
+  slo_telemetry_gateway_port           = 5027
+}
+
+resource "google_monitoring_service" "whatsapp_bot" {
+  project      = google_project.booster_ai.project_id
+  service_id   = "slo-booster-ai-whatsapp-bot"
+  display_name = "booster-ai-whatsapp-bot (SLO target)"
+
+  basic_service {
+    service_type = "CLOUD_RUN"
+    service_labels = {
+      service_name = local.slo_whatsapp_bot_service_name
+      location     = var.region
+    }
+  }
+}
+
+resource "google_monitoring_custom_service" "telemetry_processor" {
+  project      = google_project.booster_ai.project_id
+  service_id   = "slo-booster-ai-telemetry-processor"
+  display_name = "booster-ai-telemetry-processor (SLO target)"
+}
+
+resource "google_monitoring_custom_service" "telemetry_gateway" {
+  project      = google_project.booster_ai.project_id
+  service_id   = "slo-booster-ai-telemetry-tcp-gateway"
+  display_name = "booster-ai-telemetry-tcp-gateway (SLO target)"
+}
+
+resource "google_monitoring_uptime_check_config" "telemetry_gateway_tcp" {
+  display_name = "Telemetry gateway TCP ${local.slo_telemetry_gateway_port}"
+  project      = google_project.booster_ai.project_id
+  timeout      = "10s"
+  period       = "60s"
+
+  tcp_check {
+    port = local.slo_telemetry_gateway_port
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = google_project.booster_ai.project_id
+      host       = google_compute_address.telemetry_lb.address
+    }
+  }
+}
+
+resource "google_monitoring_slo" "whatsapp_bot_availability" {
+  project      = google_project.booster_ai.project_id
+  service      = google_monitoring_service.whatsapp_bot.service_id
+  slo_id       = "whatsapp-bot-availability"
+  display_name = "WhatsApp bot availability (no-5xx) ${local.slo_whatsapp_bot_availability_goal * 100}%"
+
+  goal                = local.slo_whatsapp_bot_availability_goal
+  rolling_period_days = local.slo_rolling_days
+
+  request_based_sli {
+    good_total_ratio {
+      total_service_filter = join(" AND ", [
+        "metric.type=\"run.googleapis.com/request_count\"",
+        "resource.type=\"cloud_run_revision\"",
+        "resource.label.\"service_name\"=\"${local.slo_whatsapp_bot_service_name}\"",
+      ])
+      good_service_filter = join(" AND ", [
+        "metric.type=\"run.googleapis.com/request_count\"",
+        "resource.type=\"cloud_run_revision\"",
+        "resource.label.\"service_name\"=\"${local.slo_whatsapp_bot_service_name}\"",
+        "metric.label.\"response_code_class\"!=\"5xx\"",
+      ])
+    }
+  }
+}
+
+resource "google_monitoring_slo" "telemetry_processor_delivery" {
+  project      = google_project.booster_ai.project_id
+  service      = google_monitoring_custom_service.telemetry_processor.service_id
+  slo_id       = "telemetry-processor-delivery"
+  display_name = "Telemetry processor: mensajes procesados sin DLQ ${local.slo_telemetry_processor_goal * 100}%"
+
+  goal                = local.slo_telemetry_processor_goal
+  rolling_period_days = local.slo_rolling_days
+
+  request_based_sli {
+    good_total_ratio {
+      good_service_filter = join(" AND ", [
+        "metric.type=\"pubsub.googleapis.com/subscription/ack_message_count\"",
+        "resource.type=\"pubsub_subscription\"",
+        "resource.label.\"subscription_id\"=\"${local.slo_telemetry_processor_subscription}\"",
+      ])
+      bad_service_filter = join(" AND ", [
+        "metric.type=\"pubsub.googleapis.com/subscription/dead_letter_message_count\"",
+        "resource.type=\"pubsub_subscription\"",
+        "resource.label.\"subscription_id\"=\"${local.slo_telemetry_processor_subscription}\"",
+      ])
+    }
+  }
+}
+
+resource "google_monitoring_slo" "telemetry_gateway_availability" {
+  project      = google_project.booster_ai.project_id
+  service      = google_monitoring_custom_service.telemetry_gateway.service_id
+  slo_id       = "telemetry-gateway-availability"
+  display_name = "Telemetry gateway TCP disponible ${local.slo_telemetry_gateway_goal * 100}%"
+
+  goal                = local.slo_telemetry_gateway_goal
+  rolling_period_days = local.slo_rolling_days
+
+  windows_based_sli {
+    window_period = "300s"
+    good_bad_metric_filter = join(" AND ", [
+      "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\"",
+      "resource.type=\"uptime_url\"",
+      "metric.label.\"check_id\"=\"${google_monitoring_uptime_check_config.telemetry_gateway_tcp.uptime_check_id}\"",
+    ])
+  }
+}
+
+locals {
+  slo_backends_burn = {
+    whatsapp_bot_availability = {
+      slo_id      = google_monitoring_slo.whatsapp_bot_availability.id
+      titulo      = "WhatsApp bot availability"
+      diagnostico = "Cloud Logging `resource.labels.service_name=\"booster-ai-whatsapp-bot\"` + `httpRequest.status>=500`. Runbook: `docs/runbooks/service-whatsapp-bot.md`."
+    }
+    telemetry_processor_delivery = {
+      slo_id      = google_monitoring_slo.telemetry_processor_delivery.id
+      titulo      = "Telemetry processor delivery"
+      diagnostico = "Mensajes en `pubsub-dead-letter` desde `telemetry-events-processor-sub`. Runbook: `docs/runbooks/service-telemetry-processor.md`."
+    }
+    telemetry_gateway_availability = {
+      slo_id      = google_monitoring_slo.telemetry_gateway_availability.id
+      titulo      = "Telemetry gateway TCP availability"
+      diagnostico = "Uptime check TCP ${local.slo_telemetry_gateway_port} fallando. `kubectl get pods -n telemetry`, LB y firewall. Runbook: `docs/runbooks/oncall-telemetry-incidents.md`."
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "backends_slo_burn" {
+  for_each = local.slo_backends_burn
+
+  project      = google_project.booster_ai.project_id
+  display_name = "SLO burn — ${each.value.titulo}"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "fast-burn (${local.slo_fast_burn_rate}× / 1h)"
+    condition_threshold {
+      filter          = "select_slo_burn_rate(\"${each.value.slo_id}\", \"${local.slo_fast_burn_lookback}\")"
+      comparison      = "COMPARISON_GT"
+      threshold_value = local.slo_fast_burn_rate
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  conditions {
+    display_name = "slow-burn (${local.slo_slow_burn_rate}× / 6h)"
+    condition_threshold {
+      filter          = "select_slo_burn_rate(\"${each.value.slo_id}\", \"${local.slo_slow_burn_lookback}\")"
+      comparison      = "COMPARISON_GT"
+      threshold_value = local.slo_slow_burn_rate
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  notification_channels = local.alert_channel_ids
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  documentation {
+    content   = <<-EOT
+    El error-budget de **${each.value.titulo}** se está consumiendo demasiado rápido.
+
+    - **fast-burn** (${local.slo_fast_burn_rate}× en 1h): incidente agudo, tratar como page.
+    - **slow-burn** (${local.slo_slow_burn_rate}× en 6h): degradación sostenida.
+
+    Diagnóstico: ${each.value.diagnostico}
+    EOT
+    mime_type = "text/markdown"
+  }
 }

@@ -5,14 +5,35 @@
 **Autor de la verificación:** revisión sobre clon de `main`; los estados marcados ✅/❌ salen de existencia de archivo o de símbolo, no de inferencia.
 **Actualización 2026-09-13** (`main` @ `7e99dc0`): Slot 3 cerrado y reemplazado por «Conductor operativo» (decisión D2 del PO); Slot 1 con F1 cerrado. El conteo del Slot 2 no se re-verificó en esta pasada.
 **Actualización 2026-09-23** (`main` @ `550b742`): por pedido del PO entra, fuera de slot, «Alta de empresas desde el panel de administración». Los tres slots no cambian.
+**Actualización 2026-10-07** (`main` @ `0008fa6`): el objetivo vuelve a ser TRL 10 ([ADR-082](adr/082-objetivo-trl10-supersede-precomercial.md)). Este documento pasa a ordenar el programa por fases; los tres slots son los frentes de la fase A.
+
+---
+
+## Programa TRL 10
+
+**Definición de término:** [`.specs/trl10/spec.md`](../.specs/trl10/spec.md). TRL 10 se declara cuando sus criterios `T10-01` a `T10-30` están marcados con evidencia. No hay otra definición.
+
+| Fase | Termina cuando | Estado |
+|---|---|---|
+| **Fase A — Producto real en operación** | T10-01 a T10-07 marcados | **Activa** |
+| Fase B — Calidad verificable | T10-08 a T10-14 marcados | En espera de la fase A |
+| Fase C — Operación endurecida | T10-15 a T10-20 marcados | En espera de la fase B |
+| Fase D — Funcionalidades comprometidas | T10-21 a T10-25 marcados | En espera de la fase C |
+| Fase E — Certificación y comercial | T10-26 a T10-30 marcados | **Gestiones con terceros activas desde la fase A**, en paralelo |
+
+**Frentes de la fase A:** Slot 1 (T10-01 y T10-05), Slot 2 (T10-03) y Slot 3 (T10-02 y T10-04). T10-06 y T10-07 son higiene de CI y se atienden como excepción, sin ocupar slot.
+
+**Gestiones de la fase E que arrancan ya** (acción del PO, no ocupan slot): enviar los RFP de `docs/compliance/glec-rfp.md` y `docs/audits/security-rfp.md`, contratar la revisión legal (la Ley 21.719 rige desde 2026-12-01) y buscar el primer cliente con contrato.
+
+Una fase posterior puede adelantar un criterio solo si libera algo de la fase activa; se declara aquí con la razón.
 
 ---
 
 ## Regla de operación
 
-Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producción, seguridad, el contrato del agente, y lo que el PO pida en el mensaje. Un frente de producto fuera de estos tres slots se declara y se detiene.
+Las excepciones que no ocupan slot están en `CLAUDE.md`: incidente en producción, seguridad, el contrato del agente, y lo que el PO pida en el mensaje. Un frente de producto fuera de la fase activa se declara y se detiene.
 
-1. **Máximo tres frentes vivos.** Todo lo demás está congelado por escrito, no de facto.
+1. **Máximo tres frentes vivos, todos de la fase activa del programa TRL 10.** Lo de fases posteriores está en espera por escrito, no de facto.
 2. **Ningún frente entra sin criterio de término escrito.** Si el criterio no se puede formular en términos observables y verificables por un tercero, el trabajo está en exploración y la exploración no ocupa slot.
 3. **Un frente sale de la lista solo cumpliendo su criterio**, no por pérdida de interés ni por aparición de otro más urgente.
 4. **Se cierra lo que más libera**, no lo más avanzado.
@@ -133,7 +154,7 @@ Al menos una fila con las tres marcas de tiempo pobladas, de un viaje que el PO 
 **Terminado cuando:** se cumplen las dos condiciones:
 
 1. En producción, el admin crea desde `/app/platform-admin` la empresa de un cliente (generadora de carga, transportista o ambas) sin que el cliente llene el formulario de alta. Su dueño activa en `/activar` con su RUT y el código, elige su clave y después entra con RUT y esa clave por el login normal. Sin SQL ni intervención fuera del panel.
-2. La cadena crear → activar → `login-rut` tiene test de integración verde en CI.
+2. La cadena crear → activar → `login-rut` tiene test de integración verde en CI. **Cumplida el 2026-10-06**: `apps/api/test/integration/alta-admin-cadena.integration.test.ts` (rama `cursor/aislamiento-multi-tenant-4567`).
 
 **Verificación:**
 
@@ -148,7 +169,7 @@ WHERE m.invitado_por_id IS NOT NULL
 ORDER BY e.creado_en DESC LIMIT 5;
 ```
 
-Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
+Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_clave = true` y `ultimo_login_en` posterior a `unido_en`. **Verificado 2026-10-06 (prod, solo lectura): 1 fila, `Sociedad de Transportes TransJavier Limitada` (2026-09-27), dueño `pendiente_invitacion`, sin clave y sin login → la condición 1 todavía no se cumple.** `/auth/activar` no escribe `ultimo_login_en`; `login-rut` sí, así que esa columna prueba que el dueño volvió a entrar con su clave. El alta por enlace deja `invitado_por_id` nulo y no aparece. Línea base al 2026-09-23: 0 filas.
 
 **Orden de ejecución:**
 
@@ -164,6 +185,24 @@ Se cumple con al menos una fila con `membresia_dueno = 'activa'`, `dueno_con_cla
 - Envío del código por correo (Fase 2 del programa de onboarding).
 - Empresas de prueba.
 - Corregir datos legales de una empresa ya creada.
+
+## Fuera de slot — Booster multi-tenant
+
+**Por qué:** pedido explícito del PO el 2026-10-05 («necesito urgente que Booster sea multi-tenant»). El censo del 2026-07-14 dejó el aislamiento como estático (`lint:rls`) y por anotación; faltaba poder afirmarlo con prueba en runtime.
+
+**Cómo entra:** pedido del PO en el mensaje, excepción a la regla 1. Plan con criterio de término en `.specs/aislamiento-hallazgos-tenant/plan.md` (v2); revisión en `review.md`; auditoría en `verify.md`.
+
+**Terminado cuando:** las cinco condiciones de `plan.md` §1:
+
+1. Aislamiento probado en runtime: test de integración con dos empresas sobre las rutas de negocio, verde en CI.
+2. Identidad única: `uq_usuarios_rut` en prod, 0 RUTs duplicados, cadena alta → activar → `login-rut` con test de integración.
+3. Cliente sin mezcla: claves de React Query con `empresaId` y fábrica con test.
+4. Sin fugas conocidas: cursor de chat cerrado; 103 `rls-allowlist` revisados uno a uno.
+5. Estado legible: specs `Draft` con evidencia por criterio y este frente registrado.
+
+**Cerrado el 2026-10-06.** Las cinco condiciones se cumplen. #739 en `main` (`4d28c8d`), desplegado (release run 37444860263); verificado en prod con `scripts/sql/diag-tenant-rut-0058.sql`: `uq_usuarios_rut` presente, 59 migraciones, 0 RUTs duplicados.
+
+**Fuera de alcance:** RLS en Postgres (decidido en `.specs/censo-multi-tenant-2026-07-14/rls-viabilidad.md`), columna de sector, `teltonika_imei_espejo` (Slot 2), miembros de organizaciones stakeholder.
 
 ## Código en main después del 2026-09-13
 
@@ -184,7 +223,9 @@ No se trabaja en ellos hasta que un slot se libere. Cada uno tiene condición ex
 
 **Certificados PDF.** Criterio a escribir cuando descongele, con esta forma: el PDF de \<tipo\> con \<campos\> se genera y valida contra el formato exigido por \<quién lo recibe\>.
 
-**Infraestructura y observabilidad.** No termina, se convierte en operación. Criterio a escribir con esta forma: existe alerta accionable para \<lista cerrada de fallas\>, con runbook asociado.
+**Infraestructura y observabilidad.** Desde 2026-10-07 su criterio es la fase C del programa TRL 10 (T10-15 a T10-20). Espera a que cierre la fase B.
+
+**Carta de Porte electrónica (Ley 18.290).** Booster no la emite: desde ADR-070 solo recibe y archiva los documentos de transporte de terceros. El stub `packages/carta-porte-generator` se eliminó el 2026-10-07 (T10-09, decisión del PO) para no dejar código que aparente una capacidad inexistente. Descongela con un ADR que defina quién la emite y una spec con este criterio: la Carta de Porte de un viaje se genera con \<campos legales\>, firmada, y se valida contra \<quien la fiscaliza\>.
 
 **Despacho / conductor.** Descongelado el 2026-09-13: es el Slot 3 («Conductor operativo de punta a punta»), con ese mismo criterio.
 

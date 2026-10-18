@@ -402,7 +402,7 @@ function FormView(props: FormViewProps) {
                 className="font-medium text-primary-700 underline"
                 data-testid="login-link-activar-conductor"
               >
-                Activa tu cuenta acá
+                Activa tu cuenta aquí
               </a>{' '}
               y crea tu clave.
             </p>

@@ -98,7 +98,16 @@ export function ChatPanel({
       </header>
 
       {/* Messages list */}
-      <div className="flex-1 overflow-y-auto" id="chat-messages-scroll">
+      {/* WCAG 2.1.1: una región con scroll debe poder enfocarse para
+          desplazarla con teclado (axe scrollable-region-focusable). */}
+      <div
+        className="flex-1 overflow-y-auto"
+        id="chat-messages-scroll"
+        role="log"
+        aria-label="Mensajes del chat"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: región con scroll; sin foco no se puede recorrer con teclado.
+        tabIndex={0}
+      >
         {isLoading && <p className="p-6 text-center text-neutral-500">Cargando mensajes…</p>}
         {error ? (
           <p className="p-6 text-center text-danger-700">No pudimos cargar los mensajes.</p>
@@ -107,7 +116,9 @@ export function ChatPanel({
           <div className="flex h-full flex-col items-center justify-center p-8 text-center">
             <p className="font-medium text-neutral-900">Sin mensajes todavía</p>
             <p className="mt-1 text-neutral-600 text-sm">
-              {readOnly ? 'Este chat ya está cerrado.' : 'Empezá la conversación con el otro lado.'}
+              {readOnly
+                ? 'Este chat ya está cerrado.'
+                : 'Empieza la conversación con el otro lado.'}
             </p>
           </div>
         )}

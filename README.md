@@ -71,9 +71,7 @@ packages/
 ├── trip-state-machine/       # Ciclo del viaje
 ├── codec8-parser/            # Teltonika Codec 8
 ├── certificate-generator/    # Certificado de huella
-├── carta-porte-generator/    # Carta de porte
 ├── transport-documents/      # TED y documentos de transporte
-├── document-indexer/
 ├── notification-fan-out/
 ├── whatsapp-client/
 ├── coaching-generator/

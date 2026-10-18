@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
+import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { EventoCombustibleMap } from '../components/map/EventoCombustibleMap.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -97,20 +99,35 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
   const [combustible, setCombustible] = useState<FiltroCombustible>('con_dato');
   const permitido = puedeVer(me);
   const vehiculo = search.vehiculo;
+  const scope = useEmpresaScope();
   const q = useQuery({
-    queryKey: ['trayectos-teltonika', combustible, page, vehiculo ?? '', search.detalle ?? ''],
+    queryKey: scope.key(
+      'trayectos-teltonika',
+      combustible,
+      page,
+      vehiculo ?? '',
+      search.detalle ?? '',
+    ),
     enabled: permitido,
-    queryFn: () => api.get<Listado>(urlListado(page, combustible, vehiculo, search.detalle)),
+    queryFn: () =>
+      api.get<Listado>(urlListado(page, combustible, vehiculo, search.detalle), scope.init),
   });
 
   return (
     <Layout me={me} title="Trayectos">
       <header>
+        <Link
+          to="/app"
+          className="mb-3 inline-flex items-center gap-1 text-neutral-600 text-sm hover:text-neutral-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Volver al inicio
+        </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">
           Historial de trayectos
         </h1>
         <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
-          Mirá los trayectos de tus Teltonika: litros, km/L y L/100 km. Con eso armás el costo de
+          Mira los trayectos de tus Teltonika: litros, km/L y L/100 km. Con eso armas el costo de
           operación por tu cuenta. El aviso de golpe y el de hormiga son distintos.
         </p>
       </header>
@@ -148,7 +165,7 @@ export function TrayectosTeltonikaPage({ me }: { me: MeOnboarded }) {
 
 function SinPermiso() {
   return (
-    <p className="mt-8 text-neutral-700">No tenés permiso para ver el historial de trayectos.</p>
+    <p className="mt-8 text-neutral-700">No tienes permiso para ver el historial de trayectos.</p>
   );
 }
 
@@ -158,7 +175,7 @@ function ErrorCarga({ error }: { error: unknown }) {
   }
   return (
     <p className="mt-8 text-neutral-700" role="alert">
-      No pudimos cargar los trayectos. Probá de nuevo.
+      No pudimos cargar los trayectos. Prueba de nuevo.
     </p>
   );
 }
@@ -214,7 +231,7 @@ function ListadoTrayectos({
     return (
       <div className="mt-8 max-w-xl rounded-lg border border-neutral-200 bg-neutral-50 p-6">
         <p className="text-neutral-800">
-          Todavía no tenés un Teltonika vinculado a la flota. Vinculá un dispositivo para auditar
+          Todavía no tienes un Teltonika vinculado a la flota. Vincula un dispositivo para auditar
           los trayectos.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
@@ -244,13 +261,13 @@ function ListadoTrayectos({
     <div className="mt-8">
       {data.cta_sensor ? (
         <p className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 text-sm">
-          Tus Teltonika no reportan sensor de combustible. Conectá el sensor para ver litros, km/L y
-          L/100 km —con eso armás el costo de operación por tu cuenta— y el aviso de posible robo.
+          Tus Teltonika no reportan sensor de combustible. Conecta el sensor para ver litros, km/L y
+          L/100 km —con eso armas el costo de operación por tu cuenta— y el aviso de posible robo.
         </p>
       ) : null}
       {data.truncado ? (
         <p className="mb-4 text-neutral-600 text-sm">
-          Estamos mostrando los puntos más recientes de la ventana. Acotá las fechas si te falta un
+          Estamos mostrando los puntos más recientes de la ventana. Acota las fechas si te falta un
           trayecto viejo.
         </p>
       ) : null}
@@ -417,7 +434,7 @@ function AvisoSinDato({
       {sinSensor.length > 0 ? (
         <p>
           {listaPatentes(sinSensor)} no {verbo(sinSensor, 'tiene', 'tienen')} sensor de combustible
-          conectado. Acá ves sus trayectos y kilómetros.
+          conectado. Aquí ves sus trayectos y kilómetros.
         </p>
       ) : null}
       {sinLectura.length > 0 ? (

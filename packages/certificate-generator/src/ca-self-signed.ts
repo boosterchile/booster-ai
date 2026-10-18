@@ -21,18 +21,9 @@
  *   primer uso.
  */
 
-import { Storage } from '@google-cloud/storage';
 import forge from 'node-forge';
 import { firmarConKms, obtenerPublicKeyPem } from './firmar-kms.js';
-
-let cachedStorage: Storage | null = null;
-
-function getStorage(): Storage {
-  if (!cachedStorage) {
-    cachedStorage = new Storage();
-  }
-  return cachedStorage;
-}
+import { abrirBucketCertificados } from './storage.js';
 
 /**
  * Validez del cert. 10 años — los certificados de carbono ya emitidos
@@ -73,7 +64,7 @@ export async function obtenerOEmitirCertSelfSigned(opts: {
   const { pem: publicKeyPem, keyVersion } = await obtenerPublicKeyPem(opts.kmsKeyId);
 
   const cachedPath = `certs/kms-key-version-${keyVersion}.pem`;
-  const bucket = getStorage().bucket(opts.certificatesBucket);
+  const bucket = abrirBucketCertificados(opts.certificatesBucket);
   const cachedFile = bucket.file(cachedPath);
 
   // Hot path: cert ya existe.
@@ -179,8 +170,17 @@ async function emitirNuevoCert(kmsKeyId: string, publicKeyPem: string): Promise<
   // Construir el TBSCertificate (ASN.1) y DER-encodearlo. KMS firma esos
   // bytes; el resultado se inserta en cert.signature para producir el
   // cert X.509 final.
-  // biome-ignore lint/suspicious/noExplicitAny: forge types incompletos
-  const tbsAsn1 = (forge.pki as any).getTBSCertificate(cert);
+  // `getTBSCertificate` existe en node-forge pero @types/node-forge no lo
+  // declara: se tipa acá y se verifica en runtime.
+  const pkiConTbs: typeof forge.pki & {
+    getTBSCertificate?: (certificado: forge.pki.Certificate) => forge.asn1.Asn1;
+  } = forge.pki;
+  if (typeof pkiConTbs.getTBSCertificate !== 'function') {
+    throw new Error(
+      'forge.pki.getTBSCertificate no disponible — versión incompatible de node-forge',
+    );
+  }
+  const tbsAsn1 = pkiConTbs.getTBSCertificate(cert);
   const tbsDer = forge.asn1.toDer(tbsAsn1).getBytes();
   const tbsBuffer = Buffer.from(tbsDer, 'binary');
 

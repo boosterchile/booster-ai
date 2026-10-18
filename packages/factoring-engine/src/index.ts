@@ -22,3 +22,27 @@ export type {
   EvaluarShipperOutput,
   EvaluarShipperParams,
 } from './types.js';
+export {
+  ESTADO_PAGO_INICIAL,
+  TransicionPagoInvalidaError,
+  calcularFloat,
+  diasEntre,
+  montosEsperados,
+  reducirPagoViaje,
+  revisarVencimientos,
+  validarEvento,
+  vencimientos,
+  verificarTopeFloat,
+} from './mandato-cobro.js';
+export type {
+  CodigoRechazoPago,
+  ContextoValidacion,
+  EstadoCobro,
+  EstadoLiberacion,
+  EventoPago,
+  LineaPago,
+  PagoViaje,
+  PlazosMandato,
+  ResultadoValidacion,
+  TipoEventoPago,
+} from './mandato-cobro.js';

@@ -22,3 +22,7 @@ Que un platform-admin escriba el IMEI de un Teltonika ya instalado y configurado
 - Rechazar dispositivos desde este panel.
 - Encender el gateway Teltonika.
 - Entrar a la cuenta del transportista.
+
+## 4. Enmienda 2026-09-28
+
+El PO aclaró el proceso: Booster instala el Teltonika y después lo habilita para la empresa. Habilitarlo incluye cargar los datos del vehículo para que quede asignado a esa empresa. Esos datos los puede cargar la empresa en su flota o Booster desde este panel. El camino de esta spec —IMEI sobre un vehículo que ya existe— sigue vigente. El alta del vehículo desde el admin está en `.specs/habilitar-vehiculo-teltonika/spec.md`.

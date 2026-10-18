@@ -3,7 +3,7 @@ import {
   type NotifyOfferResult,
   buildOfferTemplateVariables,
 } from '@booster-ai/notification-fan-out';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { empresas, memberships, offers, trips, users } from '../db/schema.js';
@@ -23,7 +23,7 @@ import { pickOperationalWhatsappRecipients } from './pick-whatsapp-recipients.js
 export interface NotifyOfferDeps {
   db: Db;
   logger: Logger;
-  twilioClient: TwilioWhatsAppClient | null;
+  twilioClient: WhatsAppContentSender | null;
   contentSidOfferNew: string | null;
   webAppUrl: string;
 }

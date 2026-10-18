@@ -566,7 +566,7 @@ export async function generarPdfBase(params: ParametrosGenerarPdf): Promise<Uint
       color: colorMuted,
     },
   );
-  page.drawText(`Verificá la firma en: ${params.verifyUrl}`, {
+  page.drawText(`Verifica la firma en: ${params.verifyUrl}`, {
     x: 40,
     y: 45,
     size: 9,

@@ -157,7 +157,7 @@ function VehiculoHistorialPage() {
           className="rounded-md border border-danger-200 bg-danger-50 p-4 text-danger-700 text-sm"
           data-testid="traza-error"
         >
-          No se pudo cargar el recorrido. Intentá con otro rango.
+          No se pudo cargar el recorrido. Intenta con otro rango.
         </div>
       ) : (
         <>

@@ -32,11 +32,28 @@ export function getActiveEmpresaId(): string | null {
   return localStorage.getItem(ACTIVE_EMPRESA_KEY);
 }
 
+const activeEmpresaListeners = new Set<() => void>();
+
+/**
+ * Avisa cuando cambia la empresa activa. Lo consume `useActiveEmpresaId`
+ * (`lib/empresa-activa.ts`) para que las claves de TanStack Query cambien
+ * en el mismo render en que cambia el header.
+ */
+export function subscribeActiveEmpresaId(listener: () => void): () => void {
+  activeEmpresaListeners.add(listener);
+  return () => {
+    activeEmpresaListeners.delete(listener);
+  };
+}
+
 export function setActiveEmpresaId(empresaId: string | null): void {
   if (empresaId === null) {
     localStorage.removeItem(ACTIVE_EMPRESA_KEY);
   } else {
     localStorage.setItem(ACTIVE_EMPRESA_KEY, empresaId);
+  }
+  for (const listener of activeEmpresaListeners) {
+    listener();
   }
 }
 
@@ -49,12 +66,57 @@ async function buildHeaders(extra?: HeadersInit): Promise<Headers> {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const activeEmpresaId = getActiveEmpresaId();
-  if (activeEmpresaId) {
-    headers.set('X-Empresa-Id', activeEmpresaId);
+  // Un header explícito gana: las queries de la empresa activa lo fijan desde
+  // su propia clave (`empresaInit`), para que la caché y el request no puedan
+  // referirse a empresas distintas.
+  if (!headers.has('X-Empresa-Id')) {
+    const activeEmpresaId = getActiveEmpresaId();
+    if (activeEmpresaId) {
+      headers.set('X-Empresa-Id', activeEmpresaId);
+    }
   }
 
   return headers;
+}
+
+/**
+ * zValidator (Hono) responde 400 con `{ error: ZodError }`. El primer issue
+ * se muestra como `path: message` para que la UI no quede en «400».
+ */
+function messageFromFirstZodIssue(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null || !('error' in payload)) {
+    return undefined;
+  }
+  const { error } = payload;
+  if (typeof error !== 'object' || error === null || !('issues' in error)) {
+    return undefined;
+  }
+  const { issues } = error;
+  if (!Array.isArray(issues)) {
+    return undefined;
+  }
+  const first = issues[0];
+  if (typeof first !== 'object' || first === null || !('message' in first)) {
+    return undefined;
+  }
+  if (typeof first.message !== 'string' || first.message.length === 0) {
+    return undefined;
+  }
+  const path = zodIssuePath(first);
+  return path.length > 0 ? `${path}: ${first.message}` : first.message;
+}
+
+function zodIssuePath(issue: object): string {
+  if (!('path' in issue) || !Array.isArray(issue.path)) {
+    return '';
+  }
+  const parts: string[] = [];
+  for (const segment of issue.path) {
+    if (typeof segment === 'string' || typeof segment === 'number') {
+      parts.push(String(segment));
+    }
+  }
+  return parts.join('.');
 }
 
 async function request<T>(
@@ -97,20 +159,24 @@ async function request<T>(
     : await res.text().catch(() => null);
 
   if (!res.ok) {
+    const zodMessage = messageFromFirstZodIssue(payload);
     const errCode =
-      typeof payload === 'object' &&
-      payload !== null &&
-      'code' in payload &&
-      typeof payload.code === 'string'
-        ? payload.code
-        : undefined;
+      zodMessage !== undefined
+        ? 'validation_error'
+        : typeof payload === 'object' &&
+            payload !== null &&
+            'code' in payload &&
+            typeof payload.code === 'string'
+          ? payload.code
+          : undefined;
     const errMessage =
-      typeof payload === 'object' &&
+      zodMessage ??
+      (typeof payload === 'object' &&
       payload !== null &&
       'error' in payload &&
       typeof payload.error === 'string'
         ? payload.error
-        : undefined;
+        : undefined);
     throw new ApiError(res.status, errCode, payload, errMessage);
   }
 

@@ -264,38 +264,38 @@ export function needsManualEntry(status: ExtractionStatus): boolean {
 }
 
 /**
- * Copy vos para errores del repositorio documental. El 503 de storage
+ * Copy tuteo chileno para errores del repositorio documental. El 503 de storage
  * es el mensaje contratado en el spec (no crash).
  */
 export function humanizeTransportDocumentError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 503 || err.code === 'storage_unavailable' || err.code === 'upload_failed') {
-      return 'El archivo no se pudo guardar (storage). Reintentá más tarde.';
+      return 'El archivo no se pudo guardar (storage). Inténtalo más tarde.';
     }
     if (err.code === 'mime_not_allowed' || err.code === 'mime_mismatch') {
-      return 'Ese archivo no sirve. Subí un PDF, JPEG o PNG.';
+      return 'Ese archivo no sirve. Sube un PDF, JPEG o PNG.';
     }
     if (err.code === 'file_too_large' || err.status === 413) {
       return 'El archivo pesa de más (máximo 15 MB).';
     }
     if (err.code === 'write_role_required') {
-      return 'Tu rol no puede subir documentos. Pedile a un dueño, admin o despachador.';
+      return 'Tu rol no puede subir documentos. Pídele a un dueño, admin o despachador.';
     }
     if (err.code === 'file_missing' || err.code === 'multipart_required') {
-      return 'Elegí un archivo y reintentá.';
+      return 'Elige un archivo e inténtalo.';
     }
     if (err.code === 'trip_not_found' || err.code === 'document_not_found') {
       return 'No encontramos ese viaje o documento.';
     }
     if (err.code === 'forbidden') {
-      return 'No tenés permiso para este viaje.';
+      return 'No tienes permiso para este viaje.';
     }
     if (err.code === 'persist_failed' || err.code === 'update_failed') {
-      return 'No se pudo guardar. Reintentá más tarde.';
+      return 'No se pudo guardar. Inténtalo más tarde.';
     }
     if (err.code === 'invalid_response') {
-      return 'La respuesta del servidor no se pudo leer. Reintentá más tarde.';
+      return 'La respuesta del servidor no se pudo leer. Inténtalo más tarde.';
     }
   }
-  return 'Algo salió mal. Reintentá más tarde.';
+  return 'Algo salió mal. Inténtalo más tarde.';
 }

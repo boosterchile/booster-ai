@@ -1,3 +1,5 @@
+import { PRICING_METHODOLOGY_VERSION_V3 } from '@booster-ai/pricing-engine';
+import { CONFIGURACION_COMERCIAL_INICIAL } from '@booster-ai/shared-schemas';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssignmentNotDeliveredError,
@@ -20,6 +22,7 @@ const noopLogger = {
 interface DbQueues {
   selects?: unknown[][];
   inserts?: unknown[][];
+  insertImpl?: () => Promise<unknown[]>;
 }
 
 function makeDb(opts: DbQueues = {}) {
@@ -29,6 +32,7 @@ function makeDb(opts: DbQueues = {}) {
   const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
       from: vi.fn(() => chain),
+      leftJoin: vi.fn(() => chain),
       where: vi.fn(() => chain),
       limit: vi.fn(async () => selects.shift() ?? []),
     };
@@ -46,9 +50,19 @@ function makeDb(opts: DbQueues = {}) {
     })),
   });
 
+  const insertValues: unknown[] = [];
   return {
+    insertValues,
     select: vi.fn(() => buildSelectChain()),
-    insert: vi.fn((_table: unknown) => buildInsertChain()),
+    insert: vi.fn((_table: unknown) => {
+      const chain = buildInsertChain(opts.insertImpl);
+      const values = chain.values;
+      chain.values = vi.fn((v: unknown) => {
+        insertValues.push(v);
+        return values(v);
+      });
+      return chain;
+    }),
   };
 }
 
@@ -328,5 +342,150 @@ describe('liquidarTrip — idempotencia', () => {
         pricingV2Activated: true,
       }),
     ).rejects.toThrow(/connection lost/);
+  });
+});
+
+describe('liquidarTrip — v3 (ADR-079 §6)', () => {
+  const CONFIG_ID = '33333333-3333-3333-3333-333333333333';
+  const VIAJE_V3 = {
+    comisionPctAplicada: '20.00',
+    configuracionComercialId: CONFIG_ID,
+    modalidadCarga: 'spot',
+    configFila: CONFIGURACION_COMERCIAL_INICIAL,
+  };
+  const ASG_V3 = { ...ASG_DELIVERED, agreedPriceClp: 700_000, tripId: 'trip-1' };
+
+  it('v3 con tasa congelada → liquida v3 sin consultar membresía', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[{ id: 'liq-v3' }]] });
+    const result = await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+    });
+    expect(result).toEqual({ status: 'liquidacion_creada', liquidacionId: 'liq-v3' });
+    // Solo assignment + viaje: ni membresía ni tier.
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.insertValues[0]).toMatchObject({
+      tierSlugAplicado: null,
+      montoBrutoClp: 700_000,
+      montoNetoCarrierClp: 700_000,
+      comisionPct: '20.00',
+      comisionClp: 140_000,
+      ivaComisionClp: 26_600,
+      precioGeneradorClp: 840_000,
+      // ADR-079 §1: Booster factura al generador comisión + IVA.
+      totalFacturaGeneradorClp: 166_600,
+      totalFacturaBoosterClp: 166_600,
+      modalidadCarga: 'spot',
+      configuracionComercialId: CONFIG_ID,
+      pricingMethodologyVersion: PRICING_METHODOLOGY_VERSION_V3,
+      status: 'lista_para_dte',
+    });
+  });
+
+  it('ADR-080 Verificación 1: sin MANDATO_COBRO_ACTIVATED la liquidación v3 queda conector', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[{ id: 'liq-v3' }]] });
+    await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+    });
+    expect(db.insertValues[0]).toMatchObject({ modoFlujo: 'conector' });
+  });
+
+  it('ADR-080 §5: con MANDATO_COBRO_ACTIVATED la liquidación v3 queda mandato_cobro', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[{ id: 'liq-v3' }]] });
+    await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+      mandatoCobroActivated: true,
+    });
+    expect(db.insertValues[0]).toMatchObject({ modoFlujo: 'mandato_cobro' });
+  });
+
+  it('v3 sin tasa congelada y v2 apagado → skipped_flag_disabled sin insertar', async () => {
+    const db = makeDb({
+      selects: [[ASG_V3], [{ ...VIAJE_V3, comisionPctAplicada: null, configFila: null }]],
+    });
+    const result = await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+    });
+    expect(result).toEqual({ status: 'skipped_flag_disabled' });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it('v3 sin tasa congelada y v2 activo → sigue el camino v2 (consulta membresía)', async () => {
+    const db = makeDb({ selects: [[ASG_V3], []] });
+    await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: true,
+      pricingV3Activated: true,
+    }).catch(() => undefined);
+    // assignment + viaje (sin fila) + membresía del camino v2.
+    expect(db.select.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('UNIQUE envuelta por Drizzle (cause.code 23505) → ya_liquidada', async () => {
+    const dupe = Object.assign(new Error('Failed query: insert into "liquidaciones"'), {
+      cause: { code: '23505' },
+    });
+    const db = makeDb({
+      selects: [[ASG_V3], [VIAJE_V3], [{ id: 'liq-previa' }]],
+      insertImpl: async () => {
+        throw dupe;
+      },
+    });
+    const result = await liquidarTrip({
+      db: db as never,
+      logger: noopLogger,
+      assignmentId: ASG_ID,
+      pricingV2Activated: false,
+      pricingV3Activated: true,
+    });
+    expect(result).toEqual({ status: 'ya_liquidada', liquidacionId: 'liq-previa' });
+  });
+
+  it('error no-UNIQUE en el INSERT v3 se propaga', async () => {
+    const db = makeDb({
+      selects: [[ASG_V3], [VIAJE_V3]],
+      insertImpl: async () => {
+        throw new Error('connection reset');
+      },
+    });
+    await expect(
+      liquidarTrip({
+        db: db as never,
+        logger: noopLogger,
+        assignmentId: ASG_ID,
+        pricingV2Activated: false,
+        pricingV3Activated: true,
+      }),
+    ).rejects.toThrow('connection reset');
+  });
+
+  it('INSERT v3 sin id devuelto → error de estado inconsistente', async () => {
+    const db = makeDb({ selects: [[ASG_V3], [VIAJE_V3]], inserts: [[]] });
+    await expect(
+      liquidarTrip({
+        db: db as never,
+        logger: noopLogger,
+        assignmentId: ASG_ID,
+        pricingV2Activated: false,
+        pricingV3Activated: true,
+      }),
+    ).rejects.toThrow(/estado inconsistente/);
   });
 });

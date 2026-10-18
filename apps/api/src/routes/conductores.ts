@@ -4,7 +4,7 @@ import {
   rutSchema,
   updateDriverBodySchema,
 } from '@booster-ai/shared-schemas';
-import type { TwilioWhatsAppClient } from '@booster-ai/whatsapp-client';
+import type { WhatsAppContentSender } from '@booster-ai/whatsapp-client';
 import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -15,6 +15,7 @@ import { generateActivationPin, hashActivationPin } from '../services/activation
 import { enviarCorreoActivacionConductor } from '../services/notifications/conductor-activacion-email.js';
 import { enviarWhatsAppActivacionConductor } from '../services/notifications/conductor-activacion-whatsapp.js';
 import type { EmailSender } from '../services/notifications/email-sender.js';
+import { clasificarVinculoPersona } from '../services/vinculo-persona.js';
 
 /**
  * Endpoints CRUD de conductores. Solo accesibles desde la interfaz del
@@ -107,13 +108,12 @@ export function createConductoresRoutes(opts: {
    * 2026-08-03): en la operación de carga chilena usan WhatsApp, no correo.
    * Ausente ⇒ no se intenta; el alta no depende de esto.
    */
-  whatsappClient?: TwilioWhatsAppClient;
+  whatsappClient?: WhatsAppContentSender;
   activacionContentSid?: string;
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -128,8 +128,7 @@ export function createConductoresRoutes(opts: {
     return { ok: true as const, userContext, activeMembership: active };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireWriteRole(c: Context<any, any, any>) {
+  function requireWriteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -306,6 +305,8 @@ export function createConductoresRoutes(opts: {
             id: users.id,
             fullName: users.fullName,
             firebaseUid: users.firebaseUid,
+            claveNumericaHash: users.claveNumericaHash,
+            activationPinHash: users.activationPinHash,
           })
           .from(users)
           .where(eq(users.rut, rut))
@@ -331,10 +332,9 @@ export function createConductoresRoutes(opts: {
             return { ok: false as const, code: 'user_already_driver' };
           }
 
-          // D10 — Si el user existente todavía es placeholder, seteamos PIN.
-          // Si ya está activado (UID real), saltamos el PIN — flujo
-          // dueño-conductor o conductor que también opera en otra empresa.
-          if (existingUser.firebaseUid.startsWith(PENDING_FIREBASE_UID_PREFIX)) {
+          // Solo el primer código. Una cuenta viva o un placeholder que ya
+          // tiene pin no se reescribe: otra empresa no elige su clave.
+          if (clasificarVinculoPersona(existingUser) === 'provisoria_sin_codigo') {
             activationPin = generateActivationPin();
             await tx
               .update(users)

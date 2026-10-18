@@ -14,7 +14,6 @@ import * as auth from './auth.js';
 import * as common from './common.js';
 import * as assignment from './domain/assignment.js';
 import * as cargoRequest from './domain/cargo-request.js';
-import * as cuentasDemo from './domain/cuentas-demo.js';
 import * as driver from './domain/driver.js';
 import * as empresa from './domain/empresa.js';
 import * as membership from './domain/membership.js';
@@ -484,7 +483,6 @@ describe('domain modules — importables sin errores (schemas executados al impo
   const modules = {
     assignment,
     'cargo-request': cargoRequest,
-    'cuentas-demo': cuentasDemo,
     driver,
     empresa,
     membership,
@@ -510,62 +508,6 @@ describe('domain modules — importables sin errores (schemas executados al impo
 describe('events', () => {
   it('telemetry-record (contrato canónico del wire) exports', () => {
     expect(Object.keys(telemetryRecord).length).toBeGreaterThan(0);
-  });
-});
-
-describe('cuentaDemoSchema (SEC-001 Sprint 2a H1.1)', () => {
-  const VALID_CUENTA = {
-    persona: 'generador_carga' as const,
-    email: 'demo-2026-shipper@boosterchile.com',
-    // UID sintético (P0-C): un fixture no necesita un Firebase UID real. El
-    // round-trip solo verifica que el schema acepta una string alfanumérica.
-    firebase_uid: 'demoShipperUidSintetico00000',
-    creado_en: VALID_DATE,
-    deshabilitado_en: null,
-  };
-
-  it('round-trip: parse cuenta activa con firebase_uid + deshabilitado_en null', () => {
-    expect(cuentasDemo.cuentaDemoSchema.parse(VALID_CUENTA)).toEqual(VALID_CUENTA);
-  });
-
-  it('acepta firebase_uid null (estado transitorio durante creación)', () => {
-    expect(
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, firebase_uid: null }),
-    ).toBeDefined();
-  });
-
-  it('acepta deshabilitado_en con timestamp (cuenta retirada)', () => {
-    expect(
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, deshabilitado_en: VALID_DATE }),
-    ).toBeDefined();
-  });
-
-  it('personaDemoSchema acepta exactamente los 4 valores Spanish per spec v3.3', () => {
-    expect(cuentasDemo.personaDemoSchema.options).toEqual([
-      'generador_carga',
-      'transportista',
-      'stakeholder',
-      'conductor',
-    ]);
-  });
-
-  it('rechaza persona English (regression contra pre-v3.3 amendment)', () => {
-    expect(() =>
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, persona: 'shipper' }),
-    ).toThrow();
-    expect(() =>
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, persona: 'carrier' }),
-    ).toThrow();
-  });
-
-  it('rechaza email inválido o que excede max 320', () => {
-    expect(() =>
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, email: 'not-an-email' }),
-    ).toThrow();
-    const tooLong = `${'a'.repeat(310)}@b.cl`; // 315+ chars
-    expect(() =>
-      cuentasDemo.cuentaDemoSchema.parse({ ...VALID_CUENTA, email: `${tooLong}xxxxxxxx` }),
-    ).toThrow();
   });
 });
 
@@ -676,6 +618,58 @@ describe('empresaSchema (smoke parse de la entidad raíz multi-tenant)', () => {
       plan_id: VALID_UUID,
     });
     expect(created.status).toBe('pendiente_verificacion');
+  });
+
+  it('empresaAdminListItemSchema acepta un dueño pendiente y también dueño nulo', () => {
+    const miembro = {
+      user_id: VALID_UUID,
+      membership_id: VALID_UUID,
+      nombre: 'Javier Vicencio',
+      rut: VALID_RUT,
+      email: VALID_EMAIL,
+      rol: 'dueno' as const,
+      invitado_en: VALID_DATE,
+      expira_en: VALID_DATE,
+    };
+    const conDueno = empresa.empresaAdminListItemSchema.parse({
+      id: VALID_UUID,
+      razon_social: 'Test SpA',
+      rut: VALID_RUT,
+      estado: 'pendiente_verificacion',
+      es_transportista: true,
+      es_generador_carga: false,
+      miembros_pendientes: [miembro],
+      dueno_pendiente: miembro,
+    });
+    expect(conDueno.dueno_pendiente).toEqual(miembro);
+    expect(conDueno.miembros_pendientes).toEqual([miembro]);
+
+    const sinDueno = empresa.empresaAdminListItemSchema.parse({
+      id: VALID_UUID,
+      razon_social: 'Test SpA',
+      rut: VALID_RUT,
+      estado: 'activa',
+      es_transportista: false,
+      es_generador_carga: true,
+      miembros_pendientes: [],
+      dueno_pendiente: null,
+    });
+    expect(sinDueno.dueno_pendiente).toBeNull();
+    expect(sinDueno.miembros_pendientes).toEqual([]);
+  });
+
+  it('reemitirCodigoActivacionResponseSchema acepta el PIN de una reemisión', () => {
+    const parsed = empresa.reemitirCodigoActivacionResponseSchema.parse({
+      codigo_activacion: '482915',
+      expira_en: VALID_DATE,
+      membership_id: VALID_UUID,
+      user_id: VALID_UUID,
+      rol: 'dueno',
+      estado: 'pendiente_invitacion',
+    });
+    expect(parsed.codigo_activacion).toBe('482915');
+    expect(parsed.estado).toBe('pendiente_invitacion');
+    expect(parsed.membership_id).toBe(VALID_UUID);
   });
 
   it('empresaEstadoPatchSchema solo acepta los tres estados del enum', () => {

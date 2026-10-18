@@ -68,8 +68,8 @@ export function createAuthImpersonateRoutes(opts: {
    * flag).
    *
    * Decisión SELLADA con el PO: el picker se acota a empresas de USUARIOS DE
-   * PRUEBA (`es_usuario_prueba`, DESACOPLADO de `es_demo` — ADR-053 + recon
-   * findings) — no es un buscador de todos los usuarios.
+   * PRUEBA (`es_usuario_prueba`, ADR-053) — no es un buscador de todos los
+   * usuarios.
    */
   app.get('/impersonate/targets', async (c) => {
     const auth = requirePlatformAdmin(c, {
@@ -91,7 +91,7 @@ export function createAuthImpersonateRoutes(opts: {
       .innerJoin(empresas, eq(empresas.id, memberships.empresaId))
       .where(
         and(
-          // DESACOPLE ADR-053: solo empresas `es_usuario_prueba` (NO `es_demo`).
+          // ADR-053: solo empresas `es_usuario_prueba`.
           eq(empresas.isTestUser, true),
           eq(memberships.status, 'activa'),
           eq(users.isPlatformAdmin, false),

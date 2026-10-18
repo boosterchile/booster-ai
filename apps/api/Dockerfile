@@ -31,6 +31,12 @@ COPY packages/certificate-generator/package.json ./packages/certificate-generato
 #       acá para que `pnpm deploy --prod` las incluya en el runtime. Sin este
 #       COPY, esbuild revienta con "Could not resolve". Igual que el de arriba.
 COPY packages/transport-documents/package.json ./packages/transport-documents/
+# T10-23 — apps/api importa @booster-ai/eco-routing (detector de congestión y
+#       evaluador de alternativas), que a su vez importa carbon-calculator.
+#       Sin estos COPY, esbuild no resuelve carbon-calculator desde
+#       packages/eco-routing ("Could not resolve"). Igual que los de arriba.
+COPY packages/eco-routing/package.json ./packages/eco-routing/
+COPY packages/carbon-calculator/package.json ./packages/carbon-calculator/
 RUN pnpm install --frozen-lockfile
 
 # --- build stage ---

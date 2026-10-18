@@ -240,11 +240,12 @@ function resolveRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   if (typeof window === 'undefined') {
     return null;
   }
-  // biome-ignore lint/suspicious/noExplicitAny: webkit prefix is browser-specific
-  const w = window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any };
-  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as
-    | (new () => SpeechRecognitionLike)
-    | null;
+  // El constructor no está en lib.dom (y Chrome lo expone con prefijo webkit).
+  const w: Window & {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  } = window;
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
 export function createVoiceCommandRecognizer(

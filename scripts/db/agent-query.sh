@@ -193,6 +193,9 @@ print(u.urlunparse(new))
 # ------------------------------------------------------------------------------
 # Ejecutar query con statement_timeout
 # ------------------------------------------------------------------------------
-psql "$CONN_URL" -v ON_ERROR_STOP=1 \
+# Sin paginador: en una terminal interactiva psql abre `less` por cada
+# resultado y deja la salida colgada en (END). El helper es para leer de
+# corrido, humano o agente.
+psql "$CONN_URL" -v ON_ERROR_STOP=1 -P pager=off \
   -c "SET statement_timeout TO '${STATEMENT_TIMEOUT_S}s'" \
   -c "$SQL"

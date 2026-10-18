@@ -1,7 +1,11 @@
 import { getTableName } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '../db/client.js';
-import { fuentePosicionSegmento, resolverPosicionesSegmento } from './posicion-segmento.js';
+import {
+  cargarLecturasConsumoCan,
+  fuentePosicionSegmento,
+  resolverPosicionesSegmento,
+} from './posicion-segmento.js';
 
 /**
  * Task 10 (plan medicion-huella-segmento, ADR-077 §1): enrutamiento de la
@@ -22,7 +26,7 @@ const HASTA = new Date('2026-08-10T12:00:00Z');
  * resuelve con las filas dadas. La cadena es awaitable tras `.orderBy()` (igual
  * que Drizzle) y también vía `.limit()` por si algún path lo usa.
  */
-function makeDb(rows: Array<{ ts: Date; lat: string | null; lng: string | null }>) {
+function makeDb(rows: Array<{ ts: Date; lat: string | null; lng: string | null; io?: unknown }>) {
   const tablas: string[] = [];
   const chain: Record<string, unknown> = {};
   chain.from = vi.fn((tabla: unknown) => {
@@ -145,5 +149,71 @@ describe('resolverPosicionesSegmento', () => {
     await expect(
       resolverPosicionesSegmento({ db, vehicle: SIN_DEVICE, desde: DESDE, hasta: HASTA }),
     ).resolves.toEqual([]);
+  });
+});
+
+// T10-05 (ADR-077 §2): lecturas del contador CAN (AVL 83) del segmento. La
+// consulta real (filtro JSONB, ventana, orden) la prueba la integración; acá
+// la fuente, la proyección del IO y el descarte de filas inservibles.
+describe('cargarLecturasConsumoCan', () => {
+  const fila = (min: string, io: unknown, lat: string | null = '-33.45') => ({
+    ts: new Date(`2026-08-10T10:${min}:00Z`),
+    lat,
+    lng: '-70.66',
+    io,
+  });
+
+  it('Teltonika propio: lee telemetria_puntos y deja solo el 83 como número', async () => {
+    const { db, tablas } = makeDb([
+      fila('05', { '83': 10000, '66': 12000 }),
+      fila('10', { '83': '10040' }),
+    ]);
+    const lecturas = await cargarLecturasConsumoCan({
+      db,
+      vehicle: CON_IMEI,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(tablas).toEqual(['telemetria_puntos']);
+    expect(lecturas).toEqual([
+      { tMs: Date.parse('2026-08-10T10:05:00Z'), lat: -33.45, lng: -70.66, io: { '83': 10000 } },
+      { tMs: Date.parse('2026-08-10T10:10:00Z'), lat: -33.45, lng: -70.66, io: { '83': 10040 } },
+    ]);
+  });
+
+  it('solo espejo: también lee telemetria_puntos (por imei)', async () => {
+    const { db, tablas } = makeDb([fila('05', { '83': 10000 })]);
+    const lecturas = await cargarLecturasConsumoCan({
+      db,
+      vehicle: CON_ESPEJO,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(tablas).toEqual(['telemetria_puntos']);
+    expect(lecturas).toHaveLength(1);
+  });
+
+  it('sin dispositivo → [] sin consultar (el móvil no tiene CAN)', async () => {
+    const { db, select } = makeDb([fila('05', { '83': 10000 })]);
+    await expect(
+      cargarLecturasConsumoCan({ db, vehicle: SIN_DEVICE, desde: DESDE, hasta: HASTA }),
+    ).resolves.toEqual([]);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('descarta filas sin fix, con io que no es objeto o con un 83 no numérico', async () => {
+    const { db } = makeDb([
+      fila('01', { '83': 10000 }, null),
+      fila('02', 'no-es-objeto'),
+      fila('03', { '83': 'abc' }),
+      fila('04', { '83': 10010 }),
+    ]);
+    const lecturas = await cargarLecturasConsumoCan({
+      db,
+      vehicle: CON_IMEI,
+      desde: DESDE,
+      hasta: HASTA,
+    });
+    expect(lecturas.map((l) => l.io['83'])).toEqual([10010]);
   });
 });

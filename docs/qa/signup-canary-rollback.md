@@ -21,7 +21,7 @@ Si la decisión es **NO** correr canary (e.g., hotfix urgente, deploy-trivial si
 
 | Step | Duración | Acción |
 |---|---|---|
-| `deploy-canary` | ~30-60s | `gcloud run services update --image=... --tag=canary-signup-<sha> --no-traffic`. La nueva revision queda registrada pero recibe 0% del traffic. |
+| `deploy-canary` | ~30-60s | `gcloud run services update --image=... --no-traffic` y luego `gcloud run services update-traffic --update-tags=canary-signup-<sha>=<revisión>`. La nueva revision queda registrada pero recibe 0% del traffic. El tag va aparte para que Cloud Run nombre la revisión y Terraform no vea drift (T10-06). |
 | `route-canary` | ~5-10s | `gcloud run services update-traffic --to-tags=canary-signup-<sha>=1`. 1% del traffic empieza a ir al canary; 99% sigue en la revision anterior. |
 | `canary-sleep` | **30 min exactos** | `sleep 1800`. Synthetic monitor `signup_probe` corre cada 60s (= 30 probes) durante esta ventana. |
 | `canary-verify` | ~10-30s | Query Cloud Monitoring API para validar error_rate < 1% AND p95_latency < 500ms sobre el canary tag. Exit 1 si fail. |
@@ -38,6 +38,7 @@ Cloud Build promueve **automáticamente** vía step `deploy-api` cuando:
 
 - `canary-verify` exit 0.
 - Alert policy `signup_probe_failure` NO disparó durante el `canary-sleep` window.
+- Muestra bajo `_CANARY_MIN_REQUESTS` (30) también es exit 0: WARN y promover, sin evaluar p95. El canario al 1 % no junta 30 requests con el tráfico actual. Un error rate o un p95 fuera de umbral solo abortan cuando la muestra alcanza el piso.
 
 No requiere human intervention. El human-on-call recibe el job-success notification 30+ min después del push.
 
@@ -45,7 +46,7 @@ No requiere human intervention. El human-on-call recibe el job-success notificat
 
 Cloud Build aborta el job cuando:
 
-- `canary-verify` exit 1 (error_rate o p95_latency exceden thresholds).
+- `canary-verify` exit 1 (la muestra alcanza el piso y error_rate o p95_latency exceden thresholds).
 - El step `deploy-api` NO ejecuta — la revision anterior sigue con 99% del traffic.
 - El canary tag `canary-signup-<sha>` queda con 1% — **drift implícito**: el traffic split no vuelve a 100%/0% automáticamente. Human-on-call DEBE ejecutar manualmente:
 

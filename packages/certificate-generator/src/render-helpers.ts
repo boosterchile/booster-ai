@@ -193,7 +193,7 @@ export function formatRouteDataSource(s: string): string {
     case 'manual_declared':
       return 'Declaración manual';
     case 'movil_gps':
-      return 'GPS del móvil del conductor (distancia medida)';
+      return 'GPS del celular del conductor (distancia medida)';
     default:
       return s;
   }

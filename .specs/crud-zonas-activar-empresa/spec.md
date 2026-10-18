@@ -44,7 +44,7 @@ El schema ya existe (`packages/shared-schemas/src/domain/zone.ts` + `regionCodeS
 - 404 si la empresa no existe.
 - Audit: logger estructurado con `empresaId`, `estadoAnterior`, `estadoNuevo`, `adminEmail`, `actorUserId`. Sin PII extra.
 - Span OTel `empresa.cambiar_estado` + métrica `empresa_estado_cambios_total`.
-- Web: superficie en `/app/platform-admin` — listado de pendientes + botones **Activar** / **Suspender** (copy en vos).
+- Web: superficie en `/app/platform-admin` — listado de pendientes + botones **Activar** / **Suspender** (copy tuteo chileno).
 
 #### Transiciones
 
@@ -73,7 +73,7 @@ Validación:
 - `comuna_codes` opcional; `null` / omitido = toda la región (0→1).
 - Duplicado `(empresa, region_code, zone_type)` → 409 `zona_duplicada` (aunque la existente esté inactiva: se reactiva con PATCH, no se crea otra fila).
 
-Web: `/app/zonas` para transportista dueño/admin — lista región + tipo + toggle activa + alta. Select de regiones con códigos romanos (mismo catálogo que OnboardingForm). Copy en vos.
+Web: `/app/zonas` para transportista dueño/admin — lista región + tipo + toggle activa + alta. Select de regiones con códigos romanos (mismo catálogo que OnboardingForm). Copy tuteo chileno.
 
 ## 4. Criterios de aceptación
 

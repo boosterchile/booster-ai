@@ -176,6 +176,7 @@ describe('VehiculosListRoute', () => {
     wrap(<VehiculosListRoute />);
     await waitFor(() => expect(screen.getByText(/Aún no tienes vehículos/)).toBeInTheDocument());
     expect(screen.getByText(/Cuando sumes el primero/)).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar estos datos/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /ver mapa/i })).toHaveAttribute('to', '/app/flota');
     expect(screen.getAllByRole('link', { name: /nuevo vehículo/i }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('table')).toBeNull();
@@ -357,6 +358,7 @@ describe('VehiculosNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     wrap(<VehiculosNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+    expect(screen.getByText(/Booster también puede cargar el vehículo/)).toBeInTheDocument();
   });
 });
 
@@ -951,10 +953,7 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.queryByText('CHILE')).toBeNull();
     expect(screen.queryByRole('link', { name: /ver en vivo/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /^recorrido$/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /^vehículos$/i })).toHaveAttribute(
-      'to',
-      '/app/vehiculos',
-    );
+    expect(screen.getByRole('link', { name: /^volver$/i })).toHaveAttribute('to', '/app/vehiculos');
     expect(screen.queryByRole('link', { name: /^flota$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^retirar$/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /retirar/i })).toBeNull();
@@ -1127,8 +1126,8 @@ describe('VehiculoDetallePage — hub', () => {
     wrap(<VehiculosDetalleRoute />);
     expect((await screen.findAllByText('18,0 km')).length).toBeGreaterThan(0);
     expect(screen.getByText('—')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /conectá el sensor/i })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /conectá el sensor/i }));
+    expect(screen.queryByRole('link', { name: /conecta el sensor/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /conecta el sensor/i }));
     const config = screen.getByTestId('configuracion-vehiculo');
     expect(config).toHaveAttribute('open');
     expect(screen.getByPlaceholderText('15 dígitos')).toHaveFocus();
@@ -1200,7 +1199,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(screen.queryByTestId('hub-resumen')).toBeNull();
     expect(screen.queryByRole('button', { name: /más acciones/i })).toBeNull();
     expect(screen.getByRole('link', { name: /ver en vivo/i })).toHaveAttribute(
@@ -1236,7 +1235,7 @@ describe('VehiculoDetallePage — hub', () => {
     };
     wrap(<VehiculosDetalleRoute />);
     expect(await screen.findByText(/el historial lo ve el admin de tu flota/i)).toBeInTheDocument();
-    expect(screen.queryByText(/no tenés permiso/i)).toBeNull();
+    expect(screen.queryByText(/no tienes permiso/i)).toBeNull();
     expect(await screen.findByRole('link', { name: /^recorrido$/i })).toHaveAttribute(
       'to',
       '/app/vehiculos/$id/historial',

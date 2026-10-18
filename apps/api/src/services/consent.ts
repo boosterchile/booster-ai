@@ -1,6 +1,7 @@
 import type { Logger } from '@booster-ai/logger';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { Db } from '../db/client.js';
 import { consents, stakeholderAccessLog, stakeholders } from '../db/schema.js';
 
 /**
@@ -105,7 +106,7 @@ export async function checkStakeholderConsent(opts: ConsentCheckOpts): Promise<C
 }
 
 export interface RecordAccessOpts {
-  db: NodePgDatabase<Record<string, unknown>>;
+  db: Db;
   logger: Logger;
   stakeholderId: string;
   consentId: string;

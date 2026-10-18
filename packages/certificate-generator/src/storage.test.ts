@@ -175,3 +175,31 @@ describe('descargarSidecar', () => {
 afterEach(() => {
   vi.clearAllMocks();
 });
+
+describe('bucket file: local (E2E, T10-02)', () => {
+  it('sube, descarga el sidecar y no toca GCS', async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'booster-certs-'));
+    try {
+      bucketMock.mockReset();
+      const bucket = `file:${dir}`;
+      const out = await subirArtefactosCertificado({ ...baseUpload, bucket } as never);
+      expect(out.pdfGcsUri).toBe(`${bucket}/certificates/emp-123/TC456.pdf`);
+      expect(existsSync(join(dir, 'certificates/emp-123/TC456.pdf'))).toBe(true);
+      const sidecar = await descargarSidecar({
+        bucket,
+        empresaId: 'emp-123',
+        trackingCode: 'TC456',
+      });
+      expect(sidecar?.pdfSha256).toBe('sha256hex');
+      expect(
+        await descargarSidecar({ bucket, empresaId: 'emp-123', trackingCode: 'OTRO' }),
+      ).toBeNull();
+      expect(bucketMock).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -48,6 +48,10 @@ jobs:
               - '.github/workflows/e2e-pr.yml'
             conductor:
               - 'apps/web/**'
+              # T10-10 (ADR-082): los flujos críticos corren también cuando
+              # cambia el API que los sirve.
+              - 'apps/api/src/**'
+              - 'apps/api/scripts/seed-flujos-e2e.ts'
               - 'apps/api/scripts/seed-conductor-e2e.ts'
               - 'apps/api/scripts/seed-conductor-e2e-cleanup.ts'
               - 'apps/api/test/scripts/seed-conductor-e2e-cleanup.test.ts'
@@ -109,7 +113,8 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:15-alpine
+        # Espejo de Google: Docker Hub limita los pulls anónimos de los runners.
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -122,7 +127,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -153,6 +158,14 @@ jobs:
       VITE_AUTH_EMULATOR_URL: http://127.0.0.1:9099
       VITE_API_URL: http://localhost:8080
       CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      # T10-10: admin de plataforma del seed de flujos (seed-flujos-e2e.ts),
+      # solo para el flujo admin → organización stakeholder.
+      BOOSTER_PLATFORM_ADMIN_EMAILS: e2e-admin@boosterchile.invalid
+      # Certificado emitido en el E2E (T10-02): backend local de
+      # @booster-ai/certificate-generator (clave efímera + disco). Vetado en
+      # producción por config.ts y por el propio package.
+      CERTIFICATE_SIGNING_KEY_ID: local:e2e
+      CERTIFICATES_BUCKET: file:/tmp/booster-e2e-certs
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6

@@ -168,7 +168,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
         )}
       />
       <FormField
-        label="Teléfono móvil"
+        label="Teléfono celular"
         hint="Dato de contacto. Los avisos de Booster no salen por este número."
         error={errors.phone?.message}
         render={({ id, describedBy }) => (
@@ -186,7 +186,7 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       />
       <FormField
         label="WhatsApp"
-        hint="Si despachas o eres dueño, las ofertas, los chats sin leer y las alertas del camión llegan acá. Celular chileno (+56 9...)."
+        hint="Si despachas o eres dueño, las ofertas, los chats sin leer y las alertas del camión llegan aquí. Celular chileno (+56 9...)."
         error={errors.whatsapp_e164?.message}
         render={({ id, describedBy }) => (
           <input

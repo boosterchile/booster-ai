@@ -383,6 +383,57 @@ describe('conductores routes', () => {
       expect(body.activation_pin).toMatch(/^\d{6}$/);
     });
 
+    it('placeholder que ya tiene código no recibe otro PIN', async () => {
+      const stub = makeDbStub({
+        selectQueueRows: [
+          [
+            {
+              id: USER_ID,
+              fullName: 'Juan Pérez',
+              firebaseUid: 'pending-rut:11.111.111-1',
+              claveNumericaHash: null,
+              activationPinHash: 'hash-previo',
+            },
+          ],
+          [],
+        ],
+        insertReturning: [
+          [
+            {
+              id: CONDUCTOR_ID,
+              userId: USER_ID,
+              empresaId: EMPRESA_ID,
+              licenseClass: 'A5',
+              licenseNumber: 'LIC-12345',
+              licenseExpiry: new Date('2027-12-31T00:00:00Z'),
+              isExtranjero: false,
+              driverStatus: 'activo',
+              createdAt: new Date('2026-05-10T22:00:00Z'),
+              updatedAt: new Date('2026-05-10T22:00:00Z'),
+              deletedAt: null,
+            },
+          ],
+        ],
+      });
+      const app = await buildApp(stub.db);
+      const res = await app.request('/conductores', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rut: VALID_RUT,
+          full_name: 'Juan Pérez',
+          phone: '+56957790379',
+          email: 'juan.conductor@empresa.cl',
+          license_class: 'A5',
+          license_number: 'LIC-12345',
+          license_expiry: '2027-12-31',
+        }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { activation_pin?: string };
+      expect(body.activation_pin).toBeUndefined();
+    });
+
     it('user existente con conductor activo → 409 user_already_driver', async () => {
       const stub = makeDbStub({
         selectQueueRows: [

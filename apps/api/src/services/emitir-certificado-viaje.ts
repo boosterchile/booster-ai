@@ -31,7 +31,15 @@ import type { Logger } from '@booster-ai/logger';
 import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { assignments, empresas, tripEvents, tripMetrics, trips, vehicles } from '../db/schema.js';
+import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
+
+/**
+ * Métrica de negocio T10-15 (ADR-082): certificados por resultado.
+ * `resultado` = 'emitido' o el `reason` del skip (cardinalidad acotada al
+ * enum de EmitirResult).
+ */
+const certificadosEmitidosCounter = getBusinessCounter('certificados_emitidos_total');
 
 export interface EmitirCertificadoConfig {
   /** Resource ID de la KMS key (sin :versions). */
@@ -84,6 +92,9 @@ export async function emitirCertificadoViaje(
     },
     async (span) => {
       const result = await emitirCertificadoViajeInner(opts);
+      certificadosEmitidosCounter.add(1, {
+        resultado: result.skipped ? result.reason : 'emitido',
+      });
       setResultAttributes(span, {
         'booster.certificate.skipped': result.skipped,
         'booster.certificate.reason': result.skipped ? result.reason : undefined,

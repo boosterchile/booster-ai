@@ -1,3 +1,4 @@
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Building2, Loader2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -54,11 +55,16 @@ export function CrearEmpresa({ onCreated }: { onCreated: (empresaId: string) => 
     e.preventDefault();
     setError(null);
     setCreada(null);
+    const rutNormalizado = ensureRutHasDash(rut);
+    if (!rutSchema.safeParse(rutNormalizado).success) {
+      setError('RUT inválido (ej: 76.274.900-9)');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post<EmpresaCreada>('/admin/empresas', {
         legal_name: legalName.trim(),
-        rut: rut.trim(),
+        rut: rutNormalizado,
         contact_email: email.trim(),
         contact_phone: phone.trim(),
         address_street: street.trim(),

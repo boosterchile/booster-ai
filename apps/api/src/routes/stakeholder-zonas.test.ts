@@ -21,8 +21,8 @@ import { createStakeholderZonasRoutes } from './stakeholder-zonas.js';
  *
  * Patrón de test alineado con admin-signup-requests.test.ts: `db` mockeado
  * con cadenas vi.fn() y `firebaseClaims` inyectado por un middleware wrapper.
- * El mock de `db` distingue las dos queries del handler por el orden de
- * invocación de `select()` (1ª = membership RBAC, 2ª = zona, 3ª = viajes).
+ * El mock distingue las queries por el orden de `select()`: user, membership
+ * con organización, perfil stakeholder, consents, zona y viajes.
  */
 
 const noop = (): void => undefined;
@@ -44,8 +44,26 @@ interface ZonaRow {
   id: string;
   slug: string;
   nombre: string;
+  regionCode: string;
   comunaCodes: string[];
   isActive: boolean;
+}
+
+interface MembershipRow {
+  id: string;
+  orgId: string;
+  regionAmbito: string | null;
+  sectorAmbito: string | null;
+}
+
+interface StakeholderRow {
+  id: string;
+}
+
+interface ConsentRow {
+  id: string;
+  scopeType: 'generador_carga' | 'transportista';
+  scopeId: string;
 }
 
 interface ViajeRow {
@@ -57,33 +75,54 @@ interface ViajeRow {
 }
 
 interface MakeDbOpts {
-  /** Filas devueltas por la query de membership RBAC (1ª select). */
-  membershipRows?: Array<{ id: string }>;
-  /** Fila de la zona (2ª select). undefined → zona no encontrada. */
+  /** Filas de la membership con su organización (2ª select). */
+  membershipRows?: MembershipRow[];
+  /** Fila de la zona (5ª select). undefined → zona no encontrada. */
   zonaRow?: ZonaRow | undefined;
-  /** Filas de viajes ya filtradas+joineadas (3ª select). */
+  /** Filas de viajes ya filtradas+joineadas (6ª select). */
   viajeRows?: ViajeRow[];
-  /** Fila de resolución de userId vía firebase_uid (select de users). */
+  /** Fila de resolución de userId vía firebase_uid (1ª select). */
   userRow?: { id: string } | undefined;
+  /**
+   * Perfil en `stakeholders` (3ª select). undefined → el default con id.
+   * null → no hay perfil.
+   */
+  stakeholderRow?: StakeholderRow | null;
+  /**
+   * Consents vigentes (4ª select). undefined → un consent de generador.
+   * [] → ninguno.
+   */
+  consentRows?: ConsentRow[];
+  /** El insert del audit log lanza. */
+  auditThrows?: boolean;
 }
+
+const CONSENT_DEFAULT: ConsentRow = {
+  id: 'consent-1',
+  scopeType: 'generador_carga',
+  scopeId: 'emp-1',
+};
 
 /**
  * Mock de Db. El handler hace, en orden:
- *   1. resolveUserId        → select(users).where.limit  → userRow
- *   2. RBAC membership       → select(membresias).where.limit → membershipRows
- *   3. zona por slug         → select(zonas).where.limit → [zonaRow]
- *   4. viajes filtrados      → select(...).from.innerJoin.leftJoin.where → viajeRows
- *
- * Distinguimos por contador de invocaciones de `select()`.
+ *   1. user por firebase_uid     → limit
+ *   2. membership + organización → innerJoin.where.limit
+ *   3. stakeholders por userId   → limit
+ *   4. consents vigentes         → limit
+ *   5. zona por slug             → limit
+ *   6. viajes                    → where awaitable
+ *   y un insert al audit log antes de responder.
  */
 function makeDb(opts: MakeDbOpts = {}) {
   let selectCall = 0;
+  const stakeholderRow =
+    opts.stakeholderRow === null ? undefined : (opts.stakeholderRow ?? { id: 'stk-1' });
+  const consentRows = opts.consentRows ?? [CONSENT_DEFAULT];
 
   const select = vi.fn(() => {
     selectCall += 1;
     const thisCall = selectCall;
 
-    // Terminal resolvers según qué query es.
     const resolveLimit = async () => {
       if (thisCall === 1) {
         return opts.userRow ? [opts.userRow] : [];
@@ -92,22 +131,24 @@ function makeDb(opts: MakeDbOpts = {}) {
         return opts.membershipRows ?? [];
       }
       if (thisCall === 3) {
+        return stakeholderRow ? [stakeholderRow] : [];
+      }
+      if (thisCall === 4) {
+        return consentRows;
+      }
+      if (thisCall === 5) {
         return opts.zonaRow ? [opts.zonaRow] : [];
       }
       return [];
     };
 
-    // La 4ª query (viajes) no usa .limit() — termina en .where() awaitable.
     const whereResult = {
       limit: vi.fn(resolveLimit),
-      // permitir await directo del where (query de viajes)
       then: (onFulfilled: (rows: ViajeRow[]) => unknown) =>
-        Promise.resolve(opts.viajeRows ?? []).then(onFulfilled),
+        Promise.resolve(thisCall === 6 ? (opts.viajeRows ?? []) : []).then(onFulfilled),
     };
 
     const where = vi.fn(() => whereResult);
-    // `leftJoin` debe ser encadenable: el handler hace
-    // .innerJoin(asignaciones).leftJoin(vehiculos).leftJoin(metricas_viaje).where(...)
     const joinChain: { leftJoin: ReturnType<typeof vi.fn>; where: typeof where } = {
       leftJoin: vi.fn(() => joinChain),
       where,
@@ -117,7 +158,16 @@ function makeDb(opts: MakeDbOpts = {}) {
     return { from };
   });
 
-  return { db: { select } as unknown as Db, spies: { select } };
+  const insert = vi.fn(() => ({
+    values: vi.fn(async () => {
+      if (opts.auditThrows) {
+        throw new Error('audit log no disponible');
+      }
+      return [];
+    }),
+  }));
+
+  return { db: { select, insert } as unknown as Db, spies: { select, insert } };
 }
 
 /** Construye una fila de viaje "entregado" con CO2e real. */
@@ -142,11 +192,14 @@ function viaje(opts: {
   };
 }
 
-const ACTIVE_MEMBERSHIP = [{ id: 'mem-1' }];
+const ACTIVE_MEMBERSHIP: MembershipRow[] = [
+  { id: 'mem-1', orgId: 'org-1', regionAmbito: null, sectorAmbito: null },
+];
 const ZONA: ZonaRow = {
   id: 'zona-1',
   slug: ZONA_SLUG,
   nombre: 'Polo industrial Quilicura',
+  regionCode: 'CL-RM',
   comunaCodes: ['CL-RM-QUI'],
   isActive: true,
 };
@@ -335,5 +388,76 @@ describe('GET /me/stakeholder/zonas/:slug/agregaciones — agregaciones con k-an
     const fuels = json.por_combustible.map((b) => b.fuel_type);
     expect(fuels).toContain('desconocido');
     expect(fuels).not.toContain('diesel');
+  });
+});
+
+describe('GET /me/stakeholder/zonas/:slug/agregaciones — consent y ámbito', () => {
+  const base = {
+    userRow: { id: USER_ID },
+    membershipRows: ACTIVE_MEMBERSHIP,
+    zonaRow: ZONA,
+    viajeRows: [viaje({ hourUtc: 8 })],
+  };
+
+  it('sin perfil en stakeholders → 403 consent_required', async () => {
+    const { db } = makeDb({ ...base, stakeholderRow: null });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('consent_required');
+  });
+
+  it('sin consent de emisiones_carbono → 403 consent_required', async () => {
+    const { db } = makeDb({ ...base, consentRows: [] });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('consent_required');
+  });
+
+  it('region_ambito distinto de la zona → 403 fuera_de_ambito', async () => {
+    const { db } = makeDb({
+      ...base,
+      membershipRows: [{ id: 'mem-1', orgId: 'org-1', regionAmbito: 'CL-VS', sectorAmbito: null }],
+    });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('fuera_de_ambito');
+  });
+
+  it('sector_ambito puesto → 403 ambito_sectorial_no_disponible', async () => {
+    const { db } = makeDb({
+      ...base,
+      membershipRows: [
+        { id: 'mem-1', orgId: 'org-1', regionAmbito: null, sectorAmbito: 'transporte-carga' },
+      ],
+    });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as { code: string };
+    expect(json.code).toBe('ambito_sectorial_no_disponible');
+  });
+
+  it('registra el acceso antes de devolver insufficient_data', async () => {
+    const { db, spies } = makeDb({ ...base, viajeRows: [] });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(200);
+    expect(spies.insert).toHaveBeenCalled();
+  });
+
+  it('si el audit falla → 500 y no devuelve buckets', async () => {
+    const viajeRows = [
+      viaje({ hourUtc: 8 }),
+      viaje({ hourUtc: 8 }),
+      viaje({ hourUtc: 9 }),
+      viaje({ hourUtc: 9 }),
+      viaje({ hourUtc: 10 }),
+    ];
+    const { db } = makeDb({ ...base, viajeRows, auditThrows: true });
+    const res = await req(makeApp(db));
+    expect(res.status).toBe(500);
+    const json = (await res.json()) as { por_tipo_carga?: unknown };
+    expect(json.por_tipo_carga).toBeUndefined();
   });
 });

@@ -59,7 +59,7 @@ describe('/app/empresa', () => {
 
     render(<EmpresaRoute />);
 
-    expect(await screen.findByRole('switch', { name: /Medí la huella/i })).not.toBeChecked();
+    expect(await screen.findByRole('switch', { name: /Mide la huella/i })).not.toBeChecked();
     expect(api.get).toHaveBeenCalledWith('/me/empresa');
     expect(screen.getByText(/recorrido real/i)).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe('/app/empresa', () => {
     });
 
     render(<EmpresaRoute />);
-    const sw = await screen.findByRole('switch', { name: /Medí la huella/i });
+    const sw = await screen.findByRole('switch', { name: /Mide la huella/i });
     fireEvent.click(sw);
 
     await waitFor(() => {
@@ -100,7 +100,7 @@ describe('/app/empresa', () => {
     );
 
     render(<EmpresaRoute />);
-    const sw = await screen.findByRole('switch', { name: /Medí la huella/i });
+    const sw = await screen.findByRole('switch', { name: /Mide la huella/i });
     fireEvent.click(sw);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/no se pudo guardar/i);
@@ -152,7 +152,7 @@ describe('/app/empresa', () => {
       umbral_robo_hormiga_l: null,
     });
     render(<EmpresaRoute />);
-    expect(await screen.findByRole('switch', { name: /Medí la huella/i })).toBeInTheDocument();
+    expect(await screen.findByRole('switch', { name: /Mide la huella/i })).toBeInTheDocument();
     expect(screen.queryByLabelText('Umbral de golpe único')).not.toBeInTheDocument();
   });
 

@@ -6,7 +6,7 @@ import type { UserContext } from '../services/user-context.js';
 
 /**
  * Tests de GET /auth/impersonate/targets — el picker del frontend lista los
- * usuarios impersonables (empresas es_demo). Read-only, mismo trust boundary
+ * usuarios impersonables (empresas es_usuario_prueba). Read-only, mismo trust boundary
  * de caller que el mint (requirePlatformAdmin + flag).
  */
 

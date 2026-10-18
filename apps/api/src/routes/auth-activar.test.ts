@@ -211,6 +211,33 @@ describe('POST /auth/activar', () => {
     });
   });
 
+  it('código válido sobre una cuenta ya viva no reescribe la clave', async () => {
+    const d = makeDb({
+      user: {
+        id: 'user-1',
+        rut: RUT,
+        email: 'gobe00@gmail.com',
+        fullName: 'Gabriel Barros',
+        firebaseUid: 'fb-real',
+        activationPinHash: hashActivationPin(CODIGO),
+        claveNumericaHash: 'hash-clave-previa',
+        status: 'activo',
+      },
+    });
+    const a = makeAuth();
+    const res = await activar(buildApp(d.db, a.auth));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: 'invalid_credentials',
+      code: 'invalid_credentials',
+    });
+    expect(d.userUpdates).toEqual([]);
+    expect(d.membresiaUpdates).toEqual([]);
+    expect(a.spies.createUser).not.toHaveBeenCalled();
+    expect(a.spies.createCustomToken).not.toHaveBeenCalled();
+  });
+
   it('cuenta ya activada (sin código pendiente) → misma respuesta', async () => {
     const d = makeDb({
       user: {

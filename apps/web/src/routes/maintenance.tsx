@@ -2,14 +2,9 @@ import { ExternalLink, Wrench } from 'lucide-react';
 import { useSiteSettings } from '../hooks/use-site-settings.js';
 
 /**
- * /maintenance — Página de mantenimiento del subdominio
- * demo.boosterchile.com. Renderizada por `DemoRoute` cuando el flag
- * `demo_mode_activated` está en false (período de construcción
- * documentado en spec sec-001-cierre SC-INT-1).
+ * /maintenance — Página de mantenimiento (spec sec-001-cierre SC-INT-1).
  *
- * Sin fetches ni state — componente puramente presentacional. La
- * decisión de mostrarla vive en el caller (demo.tsx) para que el flag
- * gobierne el toggle, no dos llamadas independientes al backend.
+ * Sin fetches ni state — componente puramente presentacional.
  */
 export function MaintenanceRoute() {
   const { config } = useSiteSettings();

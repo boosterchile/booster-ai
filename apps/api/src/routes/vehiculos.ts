@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
+import { pgErrorCode } from '../db/pg-error.js';
 import {
   pendingDevices,
   posicionesMovilConductor,
@@ -332,10 +333,10 @@ const patchDispositivoBodySchema = z.object({
 /**
  * TOCTOU en la reconciliación del IMEI entrante de `PATCH /:id/dispositivo`
  * (ver esa ruta más abajo): el UPDATE con CAS sobre `dispositivos_pendientes`
- * puede perder la carrera contra un actor externo — p.ej. un admin de
- * CUALQUIER empresa rechazando el mismo pending vía el panel
- * (`admin-dispositivos.ts:191-216`; D2b: el rechazo NO es tenant-scoped, ver
- * `.specs/hito-2-corfo-mes-8/decisiones.md`). Cuando el CAS devuelve 0 filas,
+ * puede perder la carrera contra otro actor que saque la fila de
+ * `pendiente` (aprobada en paralelo, por ejemplo). El panel de la empresa
+ * ya no rechaza pendings ajenos (`.specs/aislamiento-hallazgos-tenant/spec.md`).
+ * Cuando el CAS devuelve 0 filas,
  * este error aborta la transacción COMPLETA (incluyendo el UPDATE ya
  * aplicado a `vehicles.teltonika_imei`) y el handler responde con el estado
  * REAL re-derivado fresco — "nunca silencioso".
@@ -404,8 +405,7 @@ export function createVehiculosRoutes(opts: {
           })
       : async () => null);
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireAuth(c: Context<any, any, any>) {
+  function requireAuth(c: Context) {
     const userContext = c.get('userContext');
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -420,8 +420,7 @@ export function createVehiculosRoutes(opts: {
     return { ok: true as const, userContext, activeMembership: active };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireWriteRole(c: Context<any, any, any>) {
+  function requireWriteRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -463,8 +462,7 @@ export function createVehiculosRoutes(opts: {
       403,
     );
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context generics complejos
-  function requireOwnerOrAdminRole(c: Context<any, any, any>) {
+  function requireOwnerOrAdminRole(c: Context) {
     const auth = requireAuth(c);
     if (!auth.ok) {
       return auth;
@@ -813,7 +811,7 @@ export function createVehiculosRoutes(opts: {
       }
       return c.json({ vehicle: serializeVehicle(created) }, 201);
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === '23505') {
         // unique_violation — patente o IMEI duplicado.
         return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
@@ -983,7 +981,7 @@ export function createVehiculosRoutes(opts: {
       );
       return c.json({ vehicle: serializeVehicle(updated) });
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === '23505') {
         return c.json({ error: 'plate_already_exists', code: 'plate_duplicate' }, 409);
       }
@@ -1171,7 +1169,7 @@ export function createVehiculosRoutes(opts: {
                 .where(and(eq(vehicles.id, id), eq(vehicles.empresaId, empresaId)))
                 .returning();
             } catch (err) {
-              const code = (err as { code?: string }).code;
+              const code = pgErrorCode(err);
               if (code === '23505') {
                 // Mensaje neutro: NO revela qué otra empresa/patente tiene el IMEI.
                 resultado = 'imei_en_uso';

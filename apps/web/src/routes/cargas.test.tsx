@@ -246,7 +246,7 @@ describe('CargasDetalleRoute', () => {
         coverage_pct: '96.40',
         certification_level: 'secundario_modeled',
         linea_metodo:
-          'Distancia medida por GPS del móvil del conductor (cobertura 96 %) · Consumo modelado según GLEC v3.0',
+          'Distancia medida por GPS del celular del conductor (cobertura 96 %) · Consumo modelado según GLEC v3.0',
         certificate_pdf_url: null,
         certificate_sha256: null,
         certificate_kms_key_version: null,
@@ -256,6 +256,8 @@ describe('CargasDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasDetalleRoute />);
     expect(await screen.findByText('Método de cálculo')).toBeInTheDocument();
-    expect(screen.getByText(/GPS del móvil del conductor \(cobertura 96 %\)/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/GPS del celular del conductor \(cobertura 96 %\)/),
+    ).toBeInTheDocument();
   });
 });

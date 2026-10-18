@@ -92,7 +92,7 @@ function EmpresaPage({ me }: { me: MeOnboarded }) {
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? 'No se pudo guardar. Probá de nuevo.'
+          ? 'No se pudo guardar. Prueba de nuevo.'
           : err instanceof Error
             ? err.message
             : String(err);
@@ -150,13 +150,13 @@ function EmpresaPage({ me }: { me: MeOnboarded }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="max-w-xl">
                     <label htmlFor="carbon-opt-in" className="font-medium text-neutral-900 text-sm">
-                      Medí la huella de carbono en mis viajes
+                      Mide la huella de carbono en mis viajes
                     </label>
                     <p id="carbon-opt-in-help" className="mt-1 text-neutral-600 text-sm">
-                      Si lo activás, medimos las emisiones de cada viaje entregado sobre el
+                      Si lo activas, medimos las emisiones de cada viaje entregado sobre el
                       recorrido real (GLEC v3.0). Sin peso declarado no inventamos un 0: el
                       certificado queda degradado. Los viajes ya medidos no se borran si lo
-                      desactivás.
+                      desactivas.
                     </p>
                   </div>
                   <input
@@ -239,7 +239,7 @@ function UmbralesCombustible({
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? 'No se pudieron guardar los umbrales. Probá de nuevo.'
+          ? 'No se pudieron guardar los umbrales. Prueba de nuevo.'
           : err instanceof Error
             ? err.message
             : String(err);
@@ -262,7 +262,7 @@ function UmbralesCombustible({
               </label>
               <p id="umbral-golpe-help" className="mt-1 text-neutral-600 text-sm">
                 Si el combustible baja de una, con el vehículo quieto, marcamos «posible robo
-                combustible». Menos de 5 L no se ofrece: el sensor hace ruido. Si no elegís nada,
+                combustible». Menos de 5 L no se ofrece: el sensor hace ruido. Si no eliges nada,
                 usamos 8 L (o el 2 % del estanque, si lo conocemos).
               </p>
               <select
@@ -287,7 +287,7 @@ function UmbralesCombustible({
               </label>
               <p id="umbral-hormiga-help" className="mt-1 text-neutral-600 text-sm">
                 Varias bajas chicas, separadas, suman este umbral y marcamos «posible robo hormiga».
-                Es otro aviso, distinto del golpe. Si no elegís nada, usamos 10 L.
+                Es otro aviso, distinto del golpe. Si no eliges nada, usamos 10 L.
               </p>
               <select
                 id="umbral-hormiga"

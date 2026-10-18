@@ -49,7 +49,7 @@ Observabilidad (endpoint nuevo): log estructurado (`empresaId`, valor anterior/n
 ### Web
 
 - Pantalla `/app/empresa` (configuración de la empresa), visible en el sidebar para dueño/admin de **cualquier** empresa (generador, transportista o dual).
-- Switch nativo con label **«Medí la huella de carbono en mis viajes»** (copy rioplatense, vos) + texto corto de qué implica.
+- Switch nativo con label **«Mide la huella de carbono en mis viajes»** (copy tuteo chileno) + texto corto de qué implica.
 - Estado inicial = GET. Guardado = PATCH. Feedback honesto: no se marca éxito hasta que el API responde; error no deja el switch en un estado inventado.
 
 ### Fuera de alcance

@@ -29,7 +29,7 @@ describe('serializeTripMetrics — línea de método en el detalle del viaje', (
     expect(m.coverage_pct).toBe('96.40');
     expect(m.certification_level).toBe('secundario_modeled');
     expect(m.linea_metodo).toBe(
-      'Distancia medida por GPS del móvil del conductor (cobertura 96 %) · Consumo modelado según GLEC v3.0',
+      'Distancia medida por GPS del celular del conductor (cobertura 96 %) · Consumo modelado según GLEC v3.0',
     );
     expect(m.carbon_emissions_kgco2e_actual).toBe('39.120');
   });

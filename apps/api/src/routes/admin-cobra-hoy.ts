@@ -74,8 +74,7 @@ const statusQuerySchema = z.enum([
 export function createAdminCobraHoyRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
       return {
         ok: false as const,

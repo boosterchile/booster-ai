@@ -18,6 +18,13 @@ import { FormField, inputClass as fieldInputClass } from '../components/FormFiel
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { RelativeTime } from '../components/RelativeTime.js';
+import { RecepcionYPagoCard } from '../components/comercial/RecepcionYPagoCard.js';
+import {
+  DesgloseGenerador,
+  type DesgloseGeneradorDto,
+  type ModalidadCarga,
+  SeccionComercial,
+} from '../components/comercial/SeccionComercial.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -28,6 +35,7 @@ import {
   CertNotIssuedError,
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -98,6 +106,8 @@ interface TripSummary {
 }
 
 interface TripDetail extends TripSummary {
+  /** ADR-079 §1 — desglose congelado al publicar (solo con modelo v3). */
+  comercial?: DesgloseGeneradorDto | null;
   origin_comuna_code: string | null;
   destination_comuna_code: string | null;
   cargo_description: string | null;
@@ -307,10 +317,11 @@ export function CargasListRoute() {
 function CargasListPage({ me }: { me: MeOnboarded }) {
   const isShipper = me.active_membership?.empresa?.is_generador_carga ?? false;
 
+  const scope = useEmpresaScope();
   const tripsQ = useQuery({
-    queryKey: ['cargas'],
+    queryKey: scope.key('cargas'),
     queryFn: async () => {
-      const res = await api.get<{ trip_requests: TripSummary[] }>('/trip-requests-v2');
+      const res = await api.get<{ trip_requests: TripSummary[] }>('/trip-requests-v2', scope.init);
       return res.trip_requests;
     },
     enabled: isShipper,
@@ -652,6 +663,8 @@ interface TripFormValues {
   pickup_start_local: string;
   pickup_end_local: string;
   proposed_price_clp: string;
+  /** ADR-079 §2 — spot por defecto; programada con contrato habilitado. */
+  modalidad_carga: ModalidadCarga;
   /**
    * Phase 5 PR-L3c — Datos opcionales del destinatario. Si el shipper
    * los llena, el WhatsApp tracking link va DIRECTO al consignee al
@@ -673,9 +686,20 @@ const EMPTY_FORM: TripFormValues = {
   pickup_start_local: '',
   pickup_end_local: '',
   proposed_price_clp: '',
+  modalidad_carga: 'spot',
   consignee_name: '',
   consignee_phone_e164: '',
 };
+
+/** Precio del form como entero CLP, o null si está vacío o no es válido. */
+function precioDesdeTexto(texto: string): number | null {
+  const t = texto.trim();
+  if (!t) {
+    return null;
+  }
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
 
 function tripFormToBody(v: TripFormValues): Record<string, unknown> {
   return {
@@ -704,6 +728,7 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
     proposed_price_clp: v.proposed_price_clp.trim()
       ? Number.parseInt(v.proposed_price_clp, 10)
       : null,
+    modalidad_carga: v.modalidad_carga,
     // Phase 5 PR-L3c — consignee opt-in. Solo incluir el bloque si el
     // shipper llenó al menos un campo; si ambos vacíos, no enviamos
     // `consignee` (el zod schema lo permite optional).
@@ -802,7 +827,11 @@ function CargaNuevaPage({ me }: { me: MeOnboarded }) {
   return (
     <Layout me={me} title="Nueva carga">
       <div className="mb-6 flex items-center gap-3">
-        <Link to="/app/cargas" className="text-neutral-500 hover:text-neutral-900">
+        <Link
+          to="/app/cargas"
+          className="text-neutral-500 hover:text-neutral-900"
+          aria-label="Volver a mis cargas"
+        >
           <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>
         <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Nueva carga</h1>
@@ -833,6 +862,8 @@ function TripForm({
     register,
     handleSubmit,
     setError,
+    watch,
+    setValue,
     formState: { errors, submitCount },
   } = useForm<TripFormValues>({
     mode: 'onSubmit',
@@ -1080,6 +1111,13 @@ function TripForm({
         </div>
       </section>
 
+      {/* ADR-079 §1 — costo del servicio para el generador (solo modelo v3). */}
+      <SeccionComercial
+        precioClp={precioDesdeTexto(watch('proposed_price_clp'))}
+        modalidad={watch('modalidad_carga')}
+        onModalidad={(m) => setValue('modalidad_carga', m)}
+      />
+
       {/* Phase 5 PR-L3c — sección consignee opcional. */}
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Destinatario (opcional)</h2>
@@ -1207,7 +1245,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
     <Layout me={me} title="Detalle carga">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link to="/app/cargas" className="text-neutral-500 hover:text-neutral-900">
+          <Link
+            to="/app/cargas"
+            className="text-neutral-500 hover:text-neutral-900"
+            aria-label="Volver a mis cargas"
+          >
             <ArrowLeft className="h-5 w-5" aria-hidden />
           </Link>
           <div>
@@ -1332,6 +1374,10 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
             </DataCard>
           )}
 
+          {/* ADR-080: confirmación de recepción del generador y, bajo mandato
+              de cobro, el estado del pago. */}
+          <RecepcionYPagoCard tripId={trip.id} status={trip.status} />
+
           <DataCard title="Origen y destino">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <DataRow icon={<MapPin className="h-4 w-4" aria-hidden />} label="Origen">
@@ -1386,6 +1432,11 @@ function CargaDetallePage({ me }: { me: MeOnboarded }) {
             <DataRow label="Precio sugerido">
               {trip.proposed_price_clp != null ? formatCLP(trip.proposed_price_clp) : 'Sin sugerir'}
             </DataRow>
+            {trip.comercial && (
+              <div className="mt-3">
+                <DesgloseGenerador desglose={trip.comercial} />
+              </div>
+            )}
           </DataCard>
 
           {tripQ.data.assignment && (

@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Logger } from '@booster-ai/logger';
 import { sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import type pg from 'pg';
+import { z } from 'zod';
 import * as schema from './schema.js';
 
 /**
@@ -158,9 +159,11 @@ export async function runMigrationsGated(
  *
  * Idempotente: si nada está pending, no toca la BD.
  */
+/** Filas de `__drizzle_migrations` que el recovery necesita. */
+const appliedHashRowsSchema = z.array(z.object({ hash: z.string() }));
+
 async function applyOutOfOrderPending(
-  // biome-ignore lint/suspicious/noExplicitAny: drizzle types
-  db: any,
+  db: NodePgDatabase<typeof schema>,
   logger: Logger,
 ): Promise<string[]> {
   const journalPath = path.join(MIGRATIONS_FOLDER, 'meta', '_journal.json');
@@ -181,8 +184,7 @@ async function applyOutOfOrderPending(
     const result = await db.execute(
       sql.raw(`SELECT hash FROM "${MIGRATIONS_SCHEMA}"."${MIGRATIONS_TABLE}"`),
     );
-    // node-postgres devuelve { rows } o ResultIterator según versión
-    const rows: Array<{ hash: string }> = result.rows ?? result;
+    const rows = appliedHashRowsSchema.parse(result.rows);
     appliedHashes = new Set(rows.map((r) => r.hash));
   } catch (err) {
     // Si la tabla no existe es porque ningún migrate ha corrido nunca; deja a Drizzle.
@@ -216,7 +218,7 @@ async function applyOutOfOrderPending(
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    await db.transaction(async (tx: typeof db) => {
+    await db.transaction(async (tx) => {
       for (const stmt of statements) {
         await tx.execute(sql.raw(stmt));
       }

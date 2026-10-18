@@ -109,8 +109,7 @@ export function createAdminSignupRequestsRoutes(opts: {
 }) {
   const app = new Hono();
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requirePlatformAdmin(c: Context<any, any, any>) {
+  function requirePlatformAdmin(c: Context) {
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext) {
       return { ok: false as const, response: c.json({ error: 'unauthorized' }, 401) };
@@ -126,8 +125,7 @@ export function createAdminSignupRequestsRoutes(opts: {
     return { ok: true as const, adminEmail: email };
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: hono Context genéricos.
-  function requireFlowActivated(c: Context<any, any, any>, correlationId: string) {
+  function requireFlowActivated(c: Context, correlationId: string) {
     if (!appConfig.SIGNUP_REQUEST_FLOW_ACTIVATED) {
       opts.logger.info(
         { correlationId, flag: 'SIGNUP_REQUEST_FLOW_ACTIVATED' },

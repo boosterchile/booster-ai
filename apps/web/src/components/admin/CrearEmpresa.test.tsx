@@ -79,6 +79,53 @@ describe('CrearEmpresa', () => {
     expect(screen.getByRole('button', { name: 'Crear empresa' })).not.toBeDisabled();
   });
 
+  it('normaliza un RUT sin guion antes de enviarlo', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      empresa_id: 'empresa-nueva-uuid',
+      razon_social: 'Retail Norte SpA',
+      rut: '76274900-9',
+      estado: 'pendiente_verificacion',
+      es_generador_carga: true,
+      es_transportista: false,
+      plan_slug: 'gratis',
+    });
+
+    render(<CrearEmpresa onCreated={vi.fn()} />);
+    fillForm();
+    fireEvent.change(screen.getByLabelText(/RUT de la empresa/i), {
+      target: { value: '762749009' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear empresa' }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/admin/empresas', {
+        legal_name: 'Retail Norte SpA',
+        rut: '76274900-9',
+        contact_email: 'contacto@retailnorte.cl',
+        contact_phone: '+56912345678',
+        address_street: 'Av. Apoquindo 3000',
+        address_city: 'Santiago',
+        address_region: 'XIII',
+        is_generador_carga: true,
+        is_transportista: false,
+      }),
+    );
+  });
+
+  it('no envía la ficha si el RUT no pasa rutSchema', () => {
+    const post = vi.spyOn(api, 'post');
+    render(<CrearEmpresa onCreated={vi.fn()} />);
+    fillForm();
+    fireEvent.change(screen.getByLabelText(/RUT de la empresa/i), {
+      target: { value: '123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear empresa' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('RUT inválido (ej: 76.274.900-9)');
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('no envía la ficha si no hay rol', () => {
     const post = vi.spyOn(api, 'post');
     render(<CrearEmpresa onCreated={vi.fn()} />);

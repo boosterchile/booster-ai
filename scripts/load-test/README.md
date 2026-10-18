@@ -40,6 +40,15 @@ pnpm --filter @booster-ai/load-test start \
   --scenario crash-burst
 ```
 
+```bash
+# T10-19 (TRL 10): 1000 devices, rampa 120s, 30 min. Falla si el pico de
+# conexiones simultáneas < 1000 o si se cae > 1% de los devices.
+# Procedimiento completo: docs/perf/load-test-runbook.md.
+pnpm --filter @booster-ai/load-test start \
+  --host <gateway-no-prod> --port 5027 \
+  --scenario t10
+```
+
 ## Custom
 
 ```bash

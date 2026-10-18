@@ -238,10 +238,7 @@ async function main() {
     await step5DriverAssignments(idToken);
   } else {
     log('warn', 'Pasos 4-5 saltados: PIN era null (conductor ya activado en corrida anterior).');
-    log(
-      'warn',
-      'Para re-probar el flow completo, ejecuta primero --cleanup en demo-dry-run y re-corre.',
-    );
+    log('warn', 'Para re-probar el flow completo, elimina el conductor de prueba y re-corre.');
   }
 
   log('info', '');

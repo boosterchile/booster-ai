@@ -98,7 +98,7 @@ function AdminCobraHoyPage({ me }: { me: MeOnboarded }) {
 
       {forbidden && (
         <output className="mt-6 block rounded-md border border-danger-500/30 bg-danger-50 p-4 text-danger-700 text-sm">
-          Tu cuenta no está en la allowlist de admins platform-wide. Si necesitás acceso, escribí a
+          Tu cuenta no está en la allowlist de admins platform-wide. Si necesitas acceso, escribe a
           soporte@boosterchile.com.
         </output>
       )}

@@ -1,3 +1,4 @@
+import { ensureRutHasDash, rutSchema } from '@booster-ai/shared-schemas';
 import { Copy, Loader2, UserPlus } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { ApiError, api } from '../../lib/api-client.js';
@@ -31,8 +32,9 @@ interface InvitarResponse {
   membership_id: string;
   rol: string;
   estado: string;
-  codigo_activacion: string;
-  expira_en: string;
+  codigo_activacion: string | null;
+  expira_en: string | null;
+  vinculo?: 'nueva' | 'cuenta_activa' | 'codigo_vigente' | 'provisoria_sin_codigo';
 }
 
 const ROLES = [
@@ -94,12 +96,17 @@ export function InvitarMiembroEmpresa({
     e.preventDefault();
     setError(null);
     setResult(null);
+    const rutNormalizado = ensureRutHasDash(rut);
+    if (!rutSchema.safeParse(rutNormalizado).success) {
+      setError('RUT inválido (ej: 76.274.900-9)');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.post<InvitarResponse>(`/admin/empresas/${empresaId}/miembros`, {
         email,
         full_name: fullName,
-        rut,
+        rut: rutNormalizado,
         rol,
       });
       setResult(res);
@@ -162,7 +169,7 @@ export function InvitarMiembroEmpresa({
             disabled={loadingEmpresas}
             className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
           >
-            <option value="">{loadingEmpresas ? 'Cargando empresas…' : 'Elegí una empresa'}</option>
+            <option value="">{loadingEmpresas ? 'Cargando empresas…' : 'Elige una empresa'}</option>
             {empresas.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.razon_social} · {e.rut}
@@ -250,7 +257,22 @@ export function InvitarMiembroEmpresa({
         </div>
       </form>
 
-      {result && (
+      {result && !result.codigo_activacion && (
+        <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
+          <div className="font-semibold text-amber-900">
+            {result.vinculo === 'cuenta_activa' || result.estado === 'activa'
+              ? 'Esta persona ya tiene cuenta'
+              : 'Esta persona ya tiene un código vigente'}
+          </div>
+          <p className="mt-1 text-amber-800 text-sm">
+            {result.vinculo === 'cuenta_activa' || result.estado === 'activa'
+              ? 'Quedó en la empresa. Entra con su RUT y su clave. No hay código nuevo: su clave no cambia.'
+              : 'No se reemplazó. Cuando lo use en Activar cuenta, también quedará en esta empresa.'}
+          </p>
+        </div>
+      )}
+
+      {result?.codigo_activacion && (
         <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
           <div className="font-semibold text-amber-900">
             Código de activación — quedó como {result.rol}, pendiente de activar
@@ -260,7 +282,8 @@ export function InvitarMiembroEmpresa({
             su clave de 6 dígitos. El código sirve una sola vez y no es su contraseña.
           </p>
           <p className="mt-1 text-amber-700 text-xs">
-            Vence el {new Date(result.expira_en).toLocaleDateString('es-CL')}.
+            Vence el{' '}
+            {result.expira_en ? new Date(result.expira_en).toLocaleDateString('es-CL') : '—'}.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <div className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-center font-mono text-2xl text-neutral-900 tracking-[0.3em]">
@@ -268,7 +291,7 @@ export function InvitarMiembroEmpresa({
             </div>
             <button
               type="button"
-              onClick={() => void handleCopy(result.codigo_activacion)}
+              onClick={() => void handleCopy(result.codigo_activacion ?? '')}
               className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-amber-600 px-3 py-2 font-medium text-white text-xs transition hover:bg-amber-700"
             >
               <Copy className="h-3 w-3" aria-hidden />

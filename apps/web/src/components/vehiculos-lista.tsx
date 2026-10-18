@@ -5,6 +5,7 @@ import { Map as MapIcon, MoreHorizontal, Navigation, Plus, Search, Truck } from 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { api } from '../lib/api-client.js';
+import { useEmpresaScope } from '../lib/empresa-activa.js';
 import {
   type EstadoDispositivoLista,
   type EstadoVehiculoLista,
@@ -171,10 +172,11 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
   const [menuId, setMenuId] = useState<string | null>(null);
   const cerrarMenu = useCallback(() => setMenuId(null), []);
 
+  const scope = useEmpresaScope();
   const vehiclesQ = useQuery({
-    queryKey: ['vehiculos'],
+    queryKey: scope.key('vehiculos'),
     queryFn: async () => {
-      const raw = await api.get<unknown>('/vehiculos');
+      const raw = await api.get<unknown>('/vehiculos', scope.init);
       const parsed = vehiculosResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error('respuesta de vehículos inválida');
@@ -184,9 +186,9 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
   });
 
   const flotaQ = useQuery({
-    queryKey: ['flota', 'senal-lista'],
+    queryKey: scope.key('flota', 'senal-lista'),
     queryFn: async () => {
-      const raw = await api.get<unknown>('/vehiculos/flota');
+      const raw = await api.get<unknown>('/vehiculos/flota', scope.init);
       const parsed = flotaResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error('respuesta de flota inválida');
@@ -232,8 +234,10 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-bold text-3xl text-neutral-900 tracking-tight">Vehículos</h1>
-          <p className="mt-1 text-neutral-600 text-sm">
-            Quién reporta, quién está en mantención y a quién le falta el dispositivo.
+          <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
+            Carga los datos de cada vehículo para que quede en tu empresa. Si Booster instaló un
+            Teltonika, el equipo se asocia en la configuración. Booster también puede cargar estos
+            datos desde su panel.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -271,7 +275,7 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
           <EmptyState
             icon={<Truck className="h-10 w-10" aria-hidden />}
             title="Aún no tienes vehículos"
-            description="Cuando sumes el primero, acá ves quién reporta y a quién le falta el dispositivo."
+            description="Cuando sumes el primero, queda asignado a tu empresa. Si Booster instaló un Teltonika, el equipo se asocia en la configuración."
             action={
               canWrite ? (
                 <Link to="/app/vehiculos/nuevo" className={emptyStateActionClass}>
