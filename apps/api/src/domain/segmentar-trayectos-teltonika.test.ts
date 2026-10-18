@@ -20,9 +20,11 @@ import {
   type PuntoSegmentacion,
   RAZON_COBERTURA_BAJA,
   RAZON_SIN_SENSOR_COMBUSTIBLE,
+  RAZON_SOBRE_TOPE,
   UMBRAL_ROBO_BASE_L,
   kmPorLitroMaxConfiable,
   notaKmPorLitroNoConfiable,
+  razonExclusionKmPorLitro,
   resumirCombustibleVehiculos,
   segmentarTrayectosTeltonika,
   umbralHormigaLitros,
@@ -1631,6 +1633,35 @@ describe('guardrail de km/L', () => {
       kmPorLitro: 6.25,
       notaCombustible: null,
     });
+    const enElTope = trayectos[0];
+    expect(enElTope).toBeDefined();
+    if (enElTope) {
+      expect(razonExclusionKmPorLitro(enElTope)).toBeNull();
+    }
+  });
+
+  it('6,26 km/L, justo sobre el tope, queda oculto', () => {
+    const trayectos = segmentarTrayectosTeltonika([
+      punto({ tMs: T0, io: { '239': 1, '240': 1, '84': 1000 } }),
+      punto({
+        tMs: T0 + 30_000,
+        lat: -33.45 - 0.28126373157268836,
+        io: { '239': 1, '240': 1, '84': 950 },
+      }),
+    ]);
+    const km = haversineKm(-33.45, -70.66, -33.45 - 0.28126373157268836, -70.66);
+    expect(Math.round((km / 5 + Number.EPSILON) * 100) / 100).toBe(6.26);
+    expect(trayectos[0]).toMatchObject({
+      litrosConsumidos: 5,
+      kmPorLitro: null,
+      notaCombustible: NOTA_KM_POR_LITRO_NO_CONFIABLE,
+    });
+    const oculto = trayectos[0];
+    expect(oculto?.kmCubiertos).toBeCloseTo(km, 2);
+    expect(oculto).toBeDefined();
+    if (oculto) {
+      expect(razonExclusionKmPorLitro(oculto)).toBe(RAZON_SOBRE_TOPE);
+    }
   });
 
   it('un hueco de telemetría de 90 s deja la cobertura bajo 80 % y oculta el km/L', () => {

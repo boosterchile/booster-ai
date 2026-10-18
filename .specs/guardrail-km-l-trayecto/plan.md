@@ -7,3 +7,5 @@
 5. `resumirHubVehiculo` calcula ese cociente sobre la ventana. La tarjeta del hub muestra `dato no confiable` cuando hay litros y el KPI quedó null.
 6. Cobertura: si los puntos traen `coberturaPct` (la de `metricas_viaje`), esa manda. Si no, `calcularCoberturaPura` sobre los pings del segmento. Bajo 80 % y con litros medidos, el km/L queda null, la nota dice `cobertura baja` y el segmento no entra al Σ. 80 % entra.
 7. `sin_sensor` deja la nota `sin sensor de combustible` y tampoco entra al Σ, aunque el fixture traiga litros. Una ventana mezclada suma solo los segmentos que pasan las dos compuertas y el tope de 6,25.
+8. Un trayecto sobre 6,25 sale del Σ con la razón `sobre_tope`. 300 km cubiertos / 100 L más JLKT54 (294,93 km / 24 L) dan 3,00. 6,26 queda oculto; 6,25 se muestra.
+9. El trayecto expone `kmCubiertos` (tramo leído). El KPI suma ese valor, no `distanciaKm`.

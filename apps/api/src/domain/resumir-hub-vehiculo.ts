@@ -1,7 +1,6 @@
 import {
   type RazonKmPorLitroNoConfiable,
   type TrayectoTeltonika,
-  kmPorLitroMaxConfiable,
   notaKmPorLitroNoConfiable,
   razonExclusionKmPorLitro,
 } from './segmentar-trayectos-teltonika.js';
@@ -17,16 +16,17 @@ export interface ResumenHubVehiculo {
   /** Suma de litros ya calculados en `recientes`. Null si ninguno trae litros. */
   litrosRecientes: number | null;
   /**
-   * Σkm / ΣL de los trayectos de la ventana que sí entran.
+   * Σ kmCubiertos / ΣL de los trayectos de la ventana que sí entran.
    * No es el km/L de un trayecto ni el promedio de esos cocientes.
-   * Null si no hay litros que entren, o si el cociente supera el tope del diésel.
-   * Cobertura bajo 80 % y `sin_sensor` no entran a la suma.
+   * No suma `distanciaKm`. Null si no hay litros que entren.
+   * Cobertura bajo 80 %, `sin_sensor` y un trayecto sobre 6,25 km/L no entran.
+   * Los que entran ya están en el tope o debajo, así que la suma tampoco lo pasa.
    */
   kmPorLitro: number | null;
   /**
-   * Por qué el KPI quedó en null. «dato no confiable» si la suma supera el tope.
-   * Con razón («cobertura baja» / «sin sensor de combustible») si eso vació la suma.
-   * Null si hay un km/L o si la ventana no tenía litros que excluir.
+   * Por qué el KPI quedó en null. «dato no confiable» si solo quedaron trayectos
+   * `sobre_tope`. Con razón («cobertura baja» / «sin sensor de combustible») si
+   * eso vació la suma. Null si hay un km/L o si la ventana no tenía litros que excluir.
    */
   motivoKmPorLitro: string | null;
   /** True si hay trayectos y todos piden conectar el sensor. */
@@ -62,7 +62,11 @@ function kmPorLitroDeVentana(trayectos: readonly TrayectoTeltonika[]): {
       razones.add(razon);
       continue;
     }
-    if (trayecto.litrosConsumidos != null && trayecto.litrosConsumidos > 0) {
+    if (
+      trayecto.litrosConsumidos != null &&
+      trayecto.litrosConsumidos > 0 &&
+      trayecto.kmCubiertos != null
+    ) {
       conLitros.push(trayecto);
     }
   }
@@ -73,17 +77,14 @@ function kmPorLitroDeVentana(trayectos: readonly TrayectoTeltonika[]): {
       motivoKmPorLitro: razones.size > 0 ? notaKmPorLitroNoConfiable([...razones]) : null,
     };
   }
-  const km = conLitros.reduce((suma, t) => suma + t.distanciaKm, 0);
+  const km = conLitros.reduce((suma, t) => suma + (t.kmCubiertos ?? 0), 0);
   const kmPorLitro = Math.round((km / litros + Number.EPSILON) * 100) / 100;
-  if (kmPorLitro > kmPorLitroMaxConfiable()) {
-    return { kmPorLitro: null, motivoKmPorLitro: notaKmPorLitroNoConfiable() };
-  }
   return { kmPorLitro, motivoKmPorLitro: null };
 }
 
 /**
  * Arma el resumen del hub a partir de trayectos ya segmentados.
- * No detecta robos ni recalcula litros. El km/L de la ventana es Σkm/ΣL.
+ * No detecta robos ni recalcula litros. El km/L de la ventana es Σ kmCubiertos / ΣL.
  */
 export function resumirHubVehiculo(trayectos: readonly TrayectoTeltonika[]): ResumenHubVehiculo {
   const ordenados = [...trayectos].sort(porFinDesc);

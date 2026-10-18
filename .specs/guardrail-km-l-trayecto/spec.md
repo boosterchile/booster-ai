@@ -45,9 +45,9 @@ Si `fuente_combustible_can` es `sin_sensor` (o la columna es null, que se lee ig
 - no se inventan litros ni km/L.
 - `notaCombustible` = `dato no confiable · sin sensor de combustible`.
 
-Esas dos exclusiones no entran al Σkm/ΣL del hub. El tope de 6,25 sigue aplicando sobre los segmentos que sí entran: si el cociente de esa suma supera 6,25, el KPI queda `null` y la tarjeta dice `dato no confiable`, sin la razón de cobertura. Los litros medidos siguen visibles en la fila y en la suma de litros de la ventana.
+Esas dos exclusiones no entran al Σkm/ΣL del hub. Un trayecto cuyo km/L redondeado supera 6,25 tampoco entra: `razonExclusionKmPorLitro` devuelve `sobre_tope`. 6,25 entra. 6,26 no. La nota de la fila sigue siendo `dato no confiable`, sin ese código. Los litros medidos siguen visibles en la fila y en la suma de litros de la ventana. Los trayectos que entran ya están en 6,25 o debajo, así que el cociente de esa suma tampoco publica un km/L sobre el tope.
 
-El km/L del hub es **Σkm / ΣL** de los trayectos de la ventana que entran y tienen litros consumidos > 0. No es el km/L del trayecto más reciente ni el promedio de esos cocientes. Si no queda ninguno porque todos fueron excluidos, el KPI queda `null` y la tarjeta muestra `dato no confiable` con la razón (`cobertura baja` y/o `sin sensor de combustible`).
+El km/L del hub es **Σ `kmCubiertos` / ΣL** de los trayectos de la ventana que entran y tienen litros consumidos > 0. `kmCubiertos` es la distancia entre la primera y la última lectura de combustible, la misma que usa el km/L del trayecto. No es `distanciaKm` ni el km/L del trayecto más reciente ni el promedio de esos cocientes. Una ventana de 300 km cubiertos / 100 L más JLKT54 (294,93 km / 24 L, `sobre_tope`) da 3,00. Si no queda ninguno porque todos fueron excluidos, el KPI queda `null` y la tarjeta muestra `dato no confiable` con la razón visible (`cobertura baja` y/o `sin sensor de combustible`). `sobre_tope` solo no agrega texto a esa nota.
 
 ## Fuera de alcance
 
