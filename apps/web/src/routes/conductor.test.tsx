@@ -311,6 +311,27 @@ describe('ConductorDashboardRoute', () => {
     expect(screen.getByText('DEMO01')).toBeInTheDocument();
   });
 
+  it('sin ventana no inventa hora', async () => {
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    apiGetSpy.mockResolvedValue({
+      assignments: [
+        {
+          ...sampleAssignment,
+          trip: {
+            ...sampleAssignment.trip,
+            pickup_window_start: null,
+            pickup_window_end: null,
+          },
+        },
+      ],
+    });
+    render(<ConductorDashboardRoute />);
+    expect(await screen.findByText('Tu próximo viaje')).toBeInTheDocument();
+    expect(screen.getByText('Maipú → Valparaíso')).toBeInTheDocument();
+    expect(screen.queryByText(/Ventana/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d{1,2}:\d{2}/)).not.toBeInTheDocument();
+  });
+
   it('múltiples servicios → muestra "Tus servicios asignados" (plural)', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     apiGetSpy.mockResolvedValue({
