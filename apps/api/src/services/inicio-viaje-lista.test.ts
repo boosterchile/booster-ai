@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { avanceHito, pipelineDe, serializarFilaLista } from './inicio-viaje-lista.js';
+import {
+  avanceHito,
+  filasListaUnicas,
+  pipelineDe,
+  serializarFilaLista,
+} from './inicio-viaje-lista.js';
 
 describe('inicio viaje lista', () => {
   it('clasifica el pipeline del generador', () => {
@@ -31,6 +36,21 @@ describe('inicio viaje lista', () => {
     expect(fila.transportista_nombre).toBe('Van Oosterwyk');
     expect(fila.avance_pct).toBe(75);
     expect(fila.ofertas_pendientes).toBe(2);
+  });
+
+  it('ofertas_pendientes queda en la fila aunque el conteo venga vacío', () => {
+    const fila = serializarFilaLista({ id: 't-2', status: 'esperando_match' });
+    expect(Object.hasOwn(fila, 'ofertas_pendientes')).toBe(true);
+    expect(fila.ofertas_pendientes).toBeNull();
+  });
+
+  it('un viaje repetido por el join cuenta una sola vez', () => {
+    const filas = filasListaUnicas([
+      { id: 't-1', ofertas_pendientes: 4 },
+      { id: 't-1', ofertas_pendientes: 4 },
+      { id: 't-2', ofertas_pendientes: 0 },
+    ]);
+    expect(filas.map((fila) => fila.id)).toEqual(['t-1', 't-2']);
   });
 
   it('una asignación cancelada no cuenta como transportista', () => {
