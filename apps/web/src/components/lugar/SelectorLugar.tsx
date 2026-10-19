@@ -6,7 +6,7 @@ import {
 } from '@booster-ai/shared-schemas';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { MapPin } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { logger } from '../../lib/logger.js';
 import { FormField, inputClass as fieldInputClass } from '../FormField.js';
 import { MapaPinLugar } from './MapaPinLugar.js';
@@ -268,6 +268,7 @@ export function SelectorLugar({
   // Un mapa de Google en el tab order atrapa el foco (el E2E de teclado lo
   // marca) y con una key inválida igual inyecta el iframe.
   const [mapaAbierto, setMapaAbierto] = useState(latitude !== null && longitude !== null);
+  const listaId = useId();
 
   useEffect(() => {
     if (latitude !== null && longitude !== null) {
@@ -324,9 +325,11 @@ export function SelectorLugar({
             <input
               id={id}
               name={nombreDireccion}
+              role="combobox"
               aria-describedby={describedBy}
               aria-autocomplete="list"
               aria-expanded={sugerenciasAbiertas}
+              aria-controls={listaId}
               type="text"
               autoComplete="off"
               value={direccion}
@@ -350,24 +353,26 @@ export function SelectorLugar({
             />
           )}
         />
-        {mapasDisponibles && !placesCaido && (
-          <SugerenciasPlaces
-            consulta={direccion}
-            abierto={sugerenciasAbiertas}
-            onElegir={(lugar) => {
-              setSugerenciasAbiertas(false);
-              setAviso(null);
-              onLugar(lugar);
-            }}
-            onNoDisponible={() => {
-              setPlacesCaido(true);
-              setAviso(
-                'Las sugerencias no están disponibles. Escribí la dirección y elegí región y comuna.',
-              );
-              logger.warn('places autocomplete degradado en el formulario de carga');
-            }}
-          />
-        )}
+        <div id={listaId}>
+          {mapasDisponibles && !placesCaido && (
+            <SugerenciasPlaces
+              consulta={direccion}
+              abierto={sugerenciasAbiertas}
+              onElegir={(lugar) => {
+                setSugerenciasAbiertas(false);
+                setAviso(null);
+                onLugar(lugar);
+              }}
+              onNoDisponible={() => {
+                setPlacesCaido(true);
+                setAviso(
+                  'Las sugerencias no están disponibles. Escribí la dirección y elegí región y comuna.',
+                );
+                logger.warn('places autocomplete degradado en el formulario de carga');
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -3,6 +3,9 @@
  * de Google Maps. Los links cortos (`maps.app.goo.gl`, `goo.gl`) no traen
  * coordenadas; se marcan para resolverlos en el servidor (CORS no deja
  * seguir el redirect desde el browser).
+ *
+ * El recorte es lineal, sin expresiones regulares: el texto lo pega el
+ * usuario y CodeQL marca como ReDoS cualquier cuantificador ambiguo.
  */
 
 export interface PuntoMapa {
@@ -25,6 +28,8 @@ const HOSTS_GOOGLE = new Set([
   'www.google.cl',
 ]);
 
+const LARGO_MAXIMO = 4_000;
+
 function puntoValido(latitude: number, longitude: number): PuntoMapa | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return null;
@@ -43,10 +48,147 @@ function parsearPar(latitud: string, longitud: string): PuntoMapa | null {
   return puntoValido(Number(latitud), Number(longitud));
 }
 
+function esDigito(caracter: string | undefined): boolean {
+  return caracter !== undefined && caracter >= '0' && caracter <= '9';
+}
+
+function esLetra(caracter: string | undefined): boolean {
+  if (!caracter) {
+    return false;
+  }
+  const codigo = caracter.toLowerCase().charCodeAt(0);
+  return codigo >= 97 && codigo <= 122;
+}
+
+function saltarEspacios(texto: string, desde: number): number {
+  let indice = desde;
+  while (texto[indice] === ' ' || texto[indice] === '\t') {
+    indice += 1;
+  }
+  return indice;
+}
+
 /**
- * URL https mínima. El paquete de schemas no incluye la lib DOM, así que
- * no usa el constructor global `URL`.
+ * Número de coordenada a partir de `desde`: signo, 1 a 3 enteros y hasta
+ * 12 decimales. Null si el carácter inicial no abre un número.
  */
+function leerNumero(texto: string, desde: number): { raw: string; fin: number } | null {
+  let indice = desde;
+  if (texto[indice] === '+' || texto[indice] === '-') {
+    indice += 1;
+  }
+  let enteros = 0;
+  while (esDigito(texto[indice]) && enteros < 3) {
+    indice += 1;
+    enteros += 1;
+  }
+  if (enteros === 0 || esDigito(texto[indice])) {
+    return null;
+  }
+  if (texto[indice] === '.') {
+    indice += 1;
+    let decimales = 0;
+    while (esDigito(texto[indice]) && decimales < 12) {
+      indice += 1;
+      decimales += 1;
+    }
+    if (decimales === 0 || esDigito(texto[indice])) {
+      return null;
+    }
+  }
+  return { raw: texto.slice(desde, indice), fin: indice };
+}
+
+function coordenadasSueltas(texto: string): PuntoMapa | null {
+  const primero = leerNumero(texto, 0);
+  if (!primero) {
+    return null;
+  }
+  let indice = saltarEspacios(texto, primero.fin);
+  const separador = texto[indice];
+  if (separador !== ',' && separador !== ';') {
+    return null;
+  }
+  indice = saltarEspacios(texto, indice + 1);
+  const segundo = leerNumero(texto, indice);
+  if (!segundo) {
+    return null;
+  }
+  if (saltarEspacios(texto, segundo.fin) !== texto.length) {
+    return null;
+  }
+  return parsearPar(primero.raw, segundo.raw);
+}
+
+function marcaLongitud(texto: string, desde: number): string | null {
+  const resto = texto.slice(desde, desde + 8).toLowerCase();
+  if (resto.startsWith('longitud')) {
+    return 'longitud';
+  }
+  if (resto.startsWith('long')) {
+    return 'long';
+  }
+  if (resto.startsWith('lng')) {
+    return 'lng';
+  }
+  if (resto.startsWith('lon')) {
+    return 'lon';
+  }
+  return null;
+}
+
+function leerEtiquetado(texto: string): PuntoMapa | null {
+  const lower = texto.toLowerCase();
+  for (let indice = 0; indice < texto.length; indice += 1) {
+    const marca = lower.startsWith('latitud', indice)
+      ? 'latitud'
+      : lower.startsWith('lat', indice)
+        ? 'lat'
+        : null;
+    if (!marca || esLetra(texto[indice - 1])) {
+      continue;
+    }
+    let cursor = saltarEspacios(texto, indice + marca.length);
+    if (texto[cursor] === ':' || texto[cursor] === '=') {
+      cursor = saltarEspacios(texto, cursor + 1);
+    }
+    const latitud = leerNumero(texto, cursor);
+    if (!latitud) {
+      continue;
+    }
+    const antes = latitud.fin;
+    cursor = latitud.fin;
+    while (
+      texto[cursor] === ' ' ||
+      texto[cursor] === '\t' ||
+      texto[cursor] === ',' ||
+      texto[cursor] === ';'
+    ) {
+      cursor += 1;
+    }
+    if (cursor === antes) {
+      continue;
+    }
+    const lon = marcaLongitud(texto, cursor);
+    if (!lon) {
+      continue;
+    }
+    cursor = saltarEspacios(texto, cursor + lon.length);
+    if (texto[cursor] === ':' || texto[cursor] === '=') {
+      cursor = saltarEspacios(texto, cursor + 1);
+    }
+    const longitud = leerNumero(texto, cursor);
+    if (!longitud) {
+      continue;
+    }
+    const punto = parsearPar(latitud.raw, longitud.raw);
+    if (punto) {
+      return punto;
+    }
+  }
+  return null;
+}
+
 interface UrlLeida {
   hostname: string;
   pathname: string;
@@ -70,8 +212,7 @@ function parametroDe(search: string, clave: string): string | null {
     const eq = parte.indexOf('=');
     const nombreCrudo = eq === -1 ? parte : parte.slice(0, eq);
     const valorCrudo = eq === -1 ? '' : parte.slice(eq + 1);
-    const nombre = decodificar(nombreCrudo);
-    if (nombre !== clave) {
+    if (decodificar(nombreCrudo) !== clave) {
       continue;
     }
     return decodificar(valorCrudo);
@@ -81,17 +222,62 @@ function parametroDe(search: string, clave: string): string | null {
 
 function decodificar(valor: string): string {
   try {
-    return decodeURIComponent(valor.replace(/\+/g, ' '));
+    return decodeURIComponent(valor.replaceAll('+', ' '));
   } catch {
     return valor;
   }
 }
 
+function sinPuerto(host: string): string {
+  const corte = host.lastIndexOf(':');
+  if (corte <= 0) {
+    return host;
+  }
+  const puerto = host.slice(corte + 1);
+  if (puerto.length === 0 || puerto.length > 5) {
+    return host;
+  }
+  for (const caracter of puerto) {
+    if (!esDigito(caracter)) {
+      return host;
+    }
+  }
+  return host.slice(0, corte);
+}
+
 function leerUrl(texto: string): UrlLeida | null {
-  const match = /^(https:)\/\/([^/?#]+)([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(texto);
-  const autoridad = match?.[2];
-  if (!match || !autoridad) {
+  if (texto.length > LARGO_MAXIMO || !texto.toLowerCase().startsWith('https://')) {
     return null;
+  }
+  const resto = texto.slice('https://'.length);
+  let corte = resto.length;
+  for (let indice = 0; indice < resto.length; indice += 1) {
+    const caracter = resto[indice];
+    if (caracter === '/' || caracter === '?' || caracter === '#') {
+      corte = indice;
+      break;
+    }
+  }
+  const autoridad = resto.slice(0, corte);
+  if (!autoridad || autoridad.startsWith('[')) {
+    return null;
+  }
+  let cola = resto.slice(corte);
+  let hash = '';
+  const hashEn = cola.indexOf('#');
+  if (hashEn >= 0) {
+    hash = cola.slice(hashEn);
+    cola = cola.slice(0, hashEn);
+  }
+  let pathname = cola;
+  let search = '';
+  const queryEn = cola.indexOf('?');
+  if (queryEn >= 0) {
+    pathname = cola.slice(0, queryEn);
+    search = cola.slice(queryEn);
+  }
+  if (!pathname) {
+    pathname = '/';
   }
   let username = '';
   let password = '';
@@ -104,16 +290,14 @@ function leerUrl(texto: string): UrlLeida | null {
     username = sep >= 0 ? userinfo.slice(0, sep) : userinfo;
     password = sep >= 0 ? userinfo.slice(sep + 1) : '';
   }
-  if (hostPuerto === '' || hostPuerto.startsWith('[')) {
+  if (!hostPuerto || hostPuerto.startsWith('[')) {
     return null;
   }
-  const ruta = match[3];
-  const search = match[4] ?? '';
   return {
-    hostname: hostPuerto.replace(/:\d+$/, '').toLowerCase(),
-    pathname: ruta && ruta.length > 0 ? ruta : '/',
+    hostname: sinPuerto(hostPuerto).toLowerCase(),
+    pathname,
     search,
-    hash: match[5] ?? '',
+    hash,
     username,
     password,
     href: texto,
@@ -121,36 +305,71 @@ function leerUrl(texto: string): UrlLeida | null {
   };
 }
 
-function extraerDeUrl(url: UrlLeida): PuntoMapa | null {
-  const texto = `${url.pathname}${url.search}${url.hash}`;
-  const pin = texto.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
-  if (pin?.[1] && pin[2]) {
-    const punto = parsearPar(pin[1], pin[2]);
-    if (punto) {
-      return punto;
+function puntoMarcado(texto: string, marca: string, separador: string): PuntoMapa | null {
+  let desde = 0;
+  while (desde < texto.length) {
+    const en = texto.indexOf(marca, desde);
+    if (en < 0) {
+      return null;
     }
-  }
-  const at = texto.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  if (at?.[1] && at[2]) {
-    const punto = parsearPar(at[1], at[2]);
-    if (punto) {
-      return punto;
+    const primero = leerNumero(texto, en + marca.length);
+    if (primero && texto.startsWith(separador, primero.fin)) {
+      const segundo = leerNumero(texto, primero.fin + separador.length);
+      if (segundo) {
+        const punto = parsearPar(primero.raw, segundo.raw);
+        if (punto) {
+          return punto;
+        }
+      }
     }
+    desde = en + marca.length;
   }
-  for (const clave of ['q', 'query', 'll', 'center', 'destination', 'origin']) {
-    const valor = url.parametro(clave);
-    if (!valor) {
+  return null;
+}
+
+function parEnValor(valor: string): PuntoMapa | null {
+  let indice = 0;
+  while (indice < valor.length) {
+    const primero = leerNumero(valor, indice);
+    if (!primero) {
+      indice += 1;
       continue;
     }
-    const par = valor.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-    if (par?.[1] && par[2]) {
-      const punto = parsearPar(par[1], par[2]);
+    let cursor = saltarEspacios(valor, primero.fin);
+    const separador = valor[cursor];
+    if (separador !== ',' && separador !== ';') {
+      indice = primero.fin;
+      continue;
+    }
+    cursor = saltarEspacios(valor, cursor + 1);
+    const segundo = leerNumero(valor, cursor);
+    if (segundo) {
+      const punto = parsearPar(primero.raw, segundo.raw);
       if (punto) {
         return punto;
       }
     }
+    indice = primero.fin;
   }
   return null;
+}
+
+function extraerDeUrl(url: UrlLeida): PuntoMapa | null {
+  const texto = `${url.pathname}${url.search}${url.hash}`;
+  return (
+    puntoMarcado(texto, '!3d', '!4d') ??
+    puntoMarcado(texto, '@', ',') ??
+    ['q', 'query', 'll', 'center', 'destination', 'origin'].reduce<PuntoMapa | null>(
+      (hallado, clave) => {
+        if (hallado) {
+          return hallado;
+        }
+        const valor = url.parametro(clave);
+        return valor ? parEnValor(valor) : null;
+      },
+      null,
+    )
+  );
 }
 
 function esRutaDeMapas(url: UrlLeida): boolean {
@@ -162,37 +381,27 @@ function esRutaDeMapas(url: UrlLeida): boolean {
  */
 export function clasificarTextoPunto(raw: string): ClasificacionTextoPunto {
   const texto = raw.trim();
-  if (!texto) {
+  if (!texto || texto.length > LARGO_MAXIMO) {
     return { tipo: 'texto' };
   }
 
-  const coordenadas = texto.match(/^(-?\d{1,3}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)$/);
-  if (coordenadas?.[1] && coordenadas[2]) {
-    const punto = parsearPar(coordenadas[1], coordenadas[2]);
-    if (punto) {
-      return { tipo: 'punto', punto };
-    }
+  const sueltas = coordenadasSueltas(texto);
+  if (sueltas) {
+    return { tipo: 'punto', punto: sueltas };
   }
-
-  const etiquetado = texto.match(
-    /lat(?:itud)?\s*[:=]?\s*(-?\d{1,3}(?:\.\d+)?)[\s,;]+(?:lng|lon|long(?:itud)?)\s*[:=]?\s*(-?\d{1,3}(?:\.\d+)?)/i,
-  );
-  if (etiquetado?.[1] && etiquetado[2]) {
-    const punto = parsearPar(etiquetado[1], etiquetado[2]);
-    if (punto) {
-      return { tipo: 'punto', punto };
-    }
+  const etiquetado = leerEtiquetado(texto);
+  if (etiquetado) {
+    return { tipo: 'punto', punto: etiquetado };
   }
 
   const url = leerUrl(texto);
   if (!url || url.username || url.password) {
     return { tipo: 'texto' };
   }
-  const host = url.hostname;
-  if (HOSTS_CORTOS.has(host)) {
+  if (HOSTS_CORTOS.has(url.hostname)) {
     return { tipo: 'enlace', url: url.href };
   }
-  if (!HOSTS_GOOGLE.has(host) || !esRutaDeMapas(url)) {
+  if (!HOSTS_GOOGLE.has(url.hostname) || !esRutaDeMapas(url)) {
     return { tipo: 'texto' };
   }
   const punto = extraerDeUrl(url);
