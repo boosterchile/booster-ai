@@ -23,6 +23,7 @@ import {
 import type {
   AccesoVista,
   AtencionVista,
+  EstadoCobraHoy as EstadoCobraHoyVista,
   FilaAtencion,
   FuenteReintento,
   InicioVista,
@@ -67,6 +68,7 @@ export function InicioTransportistaVista({
   return (
     <div data-testid="inicio-transportista" className="min-w-0">
       <Saludo vista={vista} />
+      <EstadoCobraHoy estado={vista.cobraHoy} />
       {vista.modo === 'empresa-nueva' && vista.pasos ? (
         <div className="mt-6 space-y-6">
           <Alta pasos={vista.pasos} />
@@ -108,6 +110,19 @@ function Saludo({ vista }: { vista: InicioVista }) {
         <span className="shrink-0 text-neutral-500 text-sm">· Transportista</span>
       </div>
     </header>
+  );
+}
+
+function EstadoCobraHoy({ estado }: { estado: EstadoCobraHoyVista }) {
+  if (estado !== 'apagado' && estado !== 'error') {
+    return null;
+  }
+  return (
+    <output data-testid="inicio-cobra-hoy" className="mt-4 block text-neutral-600 text-sm">
+      {estado === 'apagado'
+        ? 'La opción de pronto pago todavía no está activa en este entorno.'
+        : 'Cobra hoy no está disponible ahora. El resto del Inicio sigue funcionando.'}
+    </output>
   );
 }
 
