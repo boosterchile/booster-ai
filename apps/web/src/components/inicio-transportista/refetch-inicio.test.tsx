@@ -171,9 +171,14 @@ describe('Inicio transportista — refetch al montar', () => {
     expect(heading.textContent).toMatch(/^(Buenos días|Buenas tardes|Buenas noches), María$/);
     expect(heading.textContent).not.toContain('Transportes');
     expect(screen.getByText('Sin ofertas nuevas')).toBeInTheDocument();
-    expect(conteo('/me/cobra-hoy/historial')).toBe(0);
 
-    const endpoints = ['/me', '/vehiculos/flota', '/assignments', '/cumplimiento'] as const;
+    const endpoints = [
+      '/me',
+      '/vehiculos/flota',
+      '/assignments',
+      '/cumplimiento',
+      '/me/cobra-hoy/historial',
+    ] as const;
     for (const path of endpoints) {
       expect(conteo(path), path).toBeGreaterThan(0);
       expect(conteo(path), path).toBeLessThanOrEqual(MAX_POR_ENDPOINT);
@@ -204,8 +209,8 @@ describe('Inicio transportista — refetch al montar', () => {
       '/assignments',
       '/cumplimiento',
       '/offers/mine?status=pendiente',
+      '/me/cobra-hoy/historial',
     ]) {
-      expect(conteo('/me/cobra-hoy/historial'), 'cobra-hoy').toBe(0);
       expect(conteo(path), path).toBeLessThanOrEqual(MAX_POR_ENDPOINT);
     }
   });
