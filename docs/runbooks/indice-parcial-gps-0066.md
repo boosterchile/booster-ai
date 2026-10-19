@@ -15,6 +15,19 @@ ser el mismo que el de `apps/api/drizzle/0066_telemetria_gps_valido.sql`.
 
 ## 1. Crear
 
+Se corre desde el bastión `db-bastion`, por el túnel IAP de
+`scripts/db/connect.sh` en modo password. Un statement por invocación, con
+autocommit: `CREATE INDEX CONCURRENTLY` no puede ir dentro de `BEGIN`. No lo
+corre el agente ni el migrator.
+
+Hace falta el OK explícito de Felipe Vicencio (`dev@boosterchile.com`)
+registrado en el body del PR que trae esta migración. Sin esa nota, esta
+sección no se ejecuta.
+
+```bash
+AUTH_MODE=password bash scripts/db/connect.sh -c '<un CREATE de abajo, uno por vez>'
+```
+
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_telemetria_vehiculo_gps_valido"
   ON "telemetria_puntos" ("vehiculo_id", "timestamp_device" DESC)
