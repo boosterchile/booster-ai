@@ -4,7 +4,11 @@ const clientsClaimMock = vi.fn();
 vi.mock('workbox-core', () => ({ clientsClaim: clientsClaimMock }));
 
 const precacheAndRouteMock = vi.fn();
-vi.mock('workbox-precaching', () => ({ precacheAndRoute: precacheAndRouteMock }));
+const cleanupOutdatedCachesMock = vi.fn();
+vi.mock('workbox-precaching', () => ({
+  precacheAndRoute: precacheAndRouteMock,
+  cleanupOutdatedCaches: cleanupOutdatedCachesMock,
+}));
 
 const registerRouteMock = vi.fn();
 vi.mock('workbox-routing', () => ({ registerRoute: registerRouteMock }));
@@ -26,8 +30,12 @@ interface SwGlobal {
   skipWaiting: ReturnType<typeof vi.fn>;
   __WB_MANIFEST: unknown[];
   addEventListener: ReturnType<typeof vi.fn>;
-  registration: { showNotification: ReturnType<typeof vi.fn> };
-  clients: { matchAll: ReturnType<typeof vi.fn>; openWindow: ReturnType<typeof vi.fn> };
+  registration: { showNotification: ReturnType<typeof vi.fn>; active?: unknown };
+  clients: {
+    matchAll: ReturnType<typeof vi.fn>;
+    openWindow: ReturnType<typeof vi.fn>;
+    claim: ReturnType<typeof vi.fn>;
+  };
   location: { origin: string };
 }
 
@@ -50,6 +58,7 @@ beforeEach(() => {
     clients: {
       matchAll: vi.fn(),
       openWindow: vi.fn(async () => undefined),
+      claim: vi.fn(async () => undefined),
     },
     location: { origin: 'https://app.boosterchile.com' },
   };
@@ -68,6 +77,7 @@ describe('sw — bootstrap', () => {
     await import('./sw.js');
     expect(swGlobal.skipWaiting).toHaveBeenCalled();
     expect(clientsClaimMock).toHaveBeenCalled();
+    expect(cleanupOutdatedCachesMock).toHaveBeenCalled();
     expect(precacheAndRouteMock).toHaveBeenCalledWith(swGlobal.__WB_MANIFEST);
   });
 
@@ -87,6 +97,43 @@ describe('sw — bootstrap', () => {
     await import('./sw.js');
     expect(listeners.has('push')).toBe(true);
     expect(listeners.has('notificationclick')).toBe(true);
+    expect(listeners.has('activate')).toBe(true);
+  });
+
+  it('la primera instalación no recarga la página', async () => {
+    await import('./sw.js');
+    const handler = listeners.get('activate')?.[0];
+    const navigate = vi.fn(async () => null);
+    swGlobal.clients.matchAll.mockResolvedValueOnce([
+      { type: 'window', url: 'https://app.boosterchile.com/app', navigate },
+    ]);
+    const waitUntil = vi.fn();
+    handler?.({ waitUntil });
+    expect(waitUntil).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('al actualizar reclama los clientes y recarga solo las ventanas con URL', async () => {
+    swGlobal.registration.active = { scriptURL: '/sw.js' };
+    await import('./sw.js');
+    const handler = listeners.get('activate')?.[0];
+    const navigate = vi.fn(async () => null);
+    const sinUrl = vi.fn(async () => null);
+    swGlobal.clients.matchAll.mockResolvedValueOnce([
+      { type: 'window', url: 'https://app.boosterchile.com/app', navigate },
+      { type: 'window', url: '', navigate: sinUrl },
+      { type: 'worker', url: 'https://app.boosterchile.com/sw.js' },
+    ]);
+    let pendiente: Promise<unknown> = Promise.resolve();
+    handler?.({
+      waitUntil: (p: Promise<unknown>) => {
+        pendiente = p;
+      },
+    });
+    await pendiente;
+    expect(swGlobal.clients.claim).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('https://app.boosterchile.com/app');
+    expect(sinUrl).not.toHaveBeenCalled();
   });
 });
 

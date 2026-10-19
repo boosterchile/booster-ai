@@ -19,7 +19,7 @@
 
 import { clientsClaim } from 'workbox-core';
 import { ExpirationPlugin } from 'workbox-expiration';
-import { precacheAndRoute } from 'workbox-precaching';
+import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { CacheFirst } from 'workbox-strategies';
 import {
@@ -41,9 +41,45 @@ declare const self: ServiceWorkerGlobalScope & {
 self.skipWaiting();
 clientsClaim();
 
+// Precaches de una versión anterior de Workbox (otro nombre de caché). Sin
+// esto, una PWA instalada puede seguir sirviendo el bundle viejo.
+cleanupOutdatedCaches();
+
 // __WB_MANIFEST es inyectado en build time por vite-plugin-pwa con la
 // lista de assets a precachear (matching globPatterns del config).
 precacheAndRoute(self.__WB_MANIFEST);
+
+// skipWaiting + clients.claim dejan la pestaña abierta con el JS viejo: el
+// SW nuevo ya controla, pero nadie navegó. registerSW.js (autoUpdate) recarga
+// en el evento `activated` de workbox-window, que no llega si el worker
+// activó antes de que la página enganchara el listener — y en iOS esa
+// pestaña puede vivir días. Recargar desde el SW nuevo, que sí se
+// revalida (nginx sirve /sw.js con no-cache), destraba esa sesión.
+// En la primera instalación no hay bundle viejo: `registration.active`
+// todavía es null mientras este script se evalúa.
+const recargarAlActivar = Boolean(self.registration.active);
+
+self.addEventListener('activate', (event) => {
+  if (!recargarAlActivar) {
+    return;
+  }
+  event.waitUntil(recargarVentanas());
+});
+
+function esVentanaNavegable(client: Client): client is WindowClient {
+  return client.type === 'window' && client.url.length > 0 && 'navigate' in client;
+}
+
+async function recargarVentanas(): Promise<void> {
+  await self.clients.claim();
+  const ventanas = await self.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+  await Promise.all(
+    ventanas.filter(esVentanaNavegable).map((client) => client.navigate(client.url)),
+  );
+}
 
 // Google Fonts CSS — CacheFirst, expira en 1 año (max 4 entries).
 registerRoute(
