@@ -1,33 +1,17 @@
 import { Card, cn } from '@booster-ai/ui-components';
 import { Link, Navigate } from '@tanstack/react-router';
-import {
-  ArrowRight,
-  Banknote,
-  Building2,
-  Bus,
-  Fuel,
-  Leaf,
-  type LucideIcon,
-  MapPinned,
-  Package,
-  PackagePlus,
-  Radio,
-  Receipt,
-  ShieldAlert,
-  Truck,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, Building2, Leaf, type LucideIcon, Package, PackagePlus } from 'lucide-react';
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
+import { InicioTransportista } from '../components/inicio-transportista/inicio-transportista.js';
 import type { MeResponse } from '../hooks/use-me.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
 /**
- * /app — dashboard post-login (hub de navegación role-aware). Migrado a D2:
- * las cards son la primitiva `Card` (padding por registro **operador**), los
- * acentos por card son tokens semánticos (no hex hardcodeado). Sin datos —
- * pura navegación (el detalle vive en cada surface).
+ * /app — inicio post-login, role-aware.
+ * Transportista: saludo, atención, operación de hoy y accesos (fase 1).
+ * Generador, sin empresa y sin operación conservan el hub de cards.
  */
 export function AppRoute() {
   return (
@@ -86,56 +70,6 @@ function DashboardCard({ to, icon: Icon, title, desc, tone = 'primary', testId }
   );
 }
 
-const TRANSPORTISTA_CARDS: DashCard[] = [
-  {
-    to: '/app/flota',
-    icon: MapPinned,
-    title: 'Seguimiento de flota',
-    desc: 'Ubicación en tiempo real de todos tus vehículos en un mapa, con histórico.',
-    testId: 'dashboard-link-flota',
-  },
-  {
-    to: '/app/ofertas',
-    icon: Truck,
-    title: 'Ofertas activas',
-    desc: 'Cargas disponibles para tu empresa. Acepta o rechaza rápido.',
-  },
-  {
-    to: '/app/vehiculos',
-    icon: Bus,
-    title: 'Vehículos',
-    desc: 'Gestiona tu flota: alta, edición, asociación a Teltonika.',
-  },
-  {
-    to: '/app/conductores',
-    icon: Users,
-    title: 'Conductores',
-    desc: 'Crea, edita y monitorea licencias y vencimientos de los conductores de tu empresa.',
-    testId: 'dashboard-link-conductores',
-  },
-  {
-    to: '/app/cumplimiento',
-    icon: ShieldAlert,
-    title: 'Cumplimiento',
-    desc: 'Documentos vencidos o por vencer de vehículos y conductores (revisión técnica, SOAP, licencia, antecedentes…).',
-    tone: 'warning',
-    testId: 'dashboard-link-cumplimiento',
-  },
-  {
-    to: '/app/cobra-hoy/historial',
-    icon: Banknote,
-    title: 'Cobra hoy',
-    desc: 'Solicita pronto pago de viajes entregados y revisa tu historial de adelantos.',
-    tone: 'success',
-  },
-  {
-    to: '/app/liquidaciones',
-    icon: Receipt,
-    title: 'Liquidaciones',
-    desc: 'Desglose de cada viaje entregado: monto bruto, comisión, IVA y DTE Tipo 33.',
-  },
-];
-
 const GENERADOR_CARDS: DashCard[] = [
   {
     to: '/app/cargas/nueva',
@@ -180,46 +114,33 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
     return <Navigate to="/app/stakeholder/zonas" />;
   }
 
+  const esTransportista = Boolean(activeEmpresa?.is_transportista);
+
   return (
     <Layout me={me} title="Inicio">
-      <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
-        Bienvenido a Booster
-      </h1>
+      {!esTransportista && (
+        <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
+          Bienvenido a Booster
+        </h1>
+      )}
 
-      {activeEmpresa ? (
+      {activeEmpresa && !esTransportista ? (
         <p className="mt-2 text-neutral-600 text-sm sm:text-base">
           Empresa activa: <span className="font-medium">{activeEmpresa.legal_name}</span>
-          {activeEmpresa.is_transportista && ' · Transportista'}
           {activeEmpresa.is_generador_carga && ' · Generador de carga'}
         </p>
-      ) : (
+      ) : null}
+      {!activeEmpresa && (
         <p className="mt-2 text-neutral-600 text-sm sm:text-base">Sin empresa activa.</p>
       )}
 
-      {activeEmpresa?.is_transportista && (
-        <section className="mt-10">
-          <h2 className="font-semibold text-neutral-900 text-xl">Como transportista</h2>
-          {TRANSPORTISTA_CARDS.map((c) => (
-            <DashboardCard key={c.to} {...c} />
-          ))}
-          {isAdmin && (
-            <>
-              <DashboardCard
-                to="/app/trayectos"
-                icon={Fuel}
-                title="Trayectos Teltonika"
-                desc="Litros y consumo (km/L) para armar el costo de operación. Aviso de posible robo de combustible."
-              />
-              <DashboardCard
-                to="/app/admin/dispositivos"
-                icon={Radio}
-                title="Dispositivos pendientes"
-                desc="Aprueba dispositivos Teltonika que conectaron y asígnalos a vehículos."
-              />
-            </>
-          )}
-        </section>
-      )}
+      {esTransportista && activeEmpresa ? (
+        <InicioTransportista
+          nombreCompleto={me.user.full_name}
+          legalName={activeEmpresa.legal_name}
+          esAdmin={isAdmin}
+        />
+      ) : null}
 
       {activeEmpresa?.is_generador_carga && (
         <section className="mt-10">
