@@ -59,6 +59,7 @@ function makeDbStub(opts: {
       typeof import('../../src/routes/auth-universal.js').createAuthUniversalRoutes
     >[0]['db'],
     selectSpy: select,
+    updateSet: set,
   };
 }
 
@@ -327,6 +328,31 @@ describe('POST /auth/login-rut (ADR-035)', () => {
     expect(fb.spies.getUserByEmail).toHaveBeenCalledWith('users+111111111@boosterchile.invalid');
     expect(fb.spies.createUser).toHaveBeenCalled();
     expect(fb.spies.createCustomToken).toHaveBeenCalledWith('fb-uid-new', expect.anything());
+  });
+
+  it('promover pending-rut no pisa el email de contacto', async () => {
+    const { db, updateSet } = makeDbStub({
+      userRow: {
+        id: USER_ID,
+        firebaseUid: 'pending-rut:111111111',
+        email: 'usuario@example.com',
+        rut: '11111111-1',
+        claveNumericaHash: hashClaveNumerica(CORRECT_CLAVE),
+        activationPinHash: null,
+        status: 'activo',
+      },
+    });
+    const fb = makeFirebaseStub();
+    const app = await buildApp(db, fb.auth);
+    const res = await app.request('/auth/login-rut', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rut: VALID_RUT, clave: CORRECT_CLAVE }),
+    });
+    expect(res.status).toBe(200);
+    const escrito = updateSet.mock.calls[0]?.[0] as { email?: string } | undefined;
+    expect(escrito).toBeDefined();
+    expect(escrito).not.toHaveProperty('email');
   });
 
   it('RUT mal formado → 400 validation', async () => {
