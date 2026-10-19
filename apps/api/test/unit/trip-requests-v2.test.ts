@@ -475,7 +475,7 @@ function makeQueryDb(opts: {
   updateRowsSeq?: Array<Record<string, unknown>[]>;
   // Spy del .insert
   insertSpy?: ReturnType<typeof vi.fn>;
-}): Db {
+}): Db & { whereCalls: unknown[]; selectShapes: unknown[] } {
   let orderByCallCount = 0;
   let limitCallCount = 0;
 
@@ -499,21 +499,30 @@ function makeQueryDb(opts: {
       limit: limitFn,
     };
   });
+  const whereCalls: unknown[] = [];
+  const selectShapes: unknown[] = [];
+  const whereFn = vi.fn((pred?: unknown) => {
+    whereCalls.push(pred);
+    return {
+      limit: limitFn,
+      orderBy: orderByFn,
+      for: vi.fn(() => ({ limit: limitFn })),
+    };
+  });
   const leftJoinFn = vi.fn(() => ({
     leftJoin: leftJoinFn,
-    where: vi.fn(() => ({ limit: limitFn, orderBy: orderByFn })),
-  }));
-  // `.for('update')` (row lock en PATCH cancelar) es chainable a limit.
-  const whereFn = vi.fn(() => ({
-    limit: limitFn,
-    orderBy: orderByFn,
-    for: vi.fn(() => ({ limit: limitFn })),
+    where: whereFn,
   }));
   const fromFn = vi.fn(() => ({
     where: whereFn,
     leftJoin: leftJoinFn,
   }));
-  const selectFn = vi.fn(() => ({ from: fromFn }));
+  const selectFn = vi.fn((shape?: unknown) => {
+    if (shape !== undefined) {
+      selectShapes.push(shape);
+    }
+    return { from: fromFn };
+  });
 
   const updateQueue = opts.updateRowsSeq ? [...opts.updateRowsSeq] : null;
   const updateReturning = vi.fn(() =>
@@ -529,6 +538,8 @@ function makeQueryDb(opts: {
     select: selectFn,
     update: updateFn,
     insert: insertFn,
+    whereCalls,
+    selectShapes,
     // PATCH cancelar corre dentro de db.transaction(tx => ...): el tx
     // comparte los mismos stubs que el db plano.
     transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) =>
@@ -536,7 +547,7 @@ function makeQueryDb(opts: {
     ),
   };
 
-  return dbLike as unknown as Db;
+  return dbLike as unknown as Db & { whereCalls: unknown[]; selectShapes: unknown[] };
 }
 
 describe('GET /trip-requests-v2', () => {
@@ -597,7 +608,96 @@ describe('GET /trip-requests-v2', () => {
     expect(body.trip_requests[0]?.id).toBe('trip-1');
     expect(body.trip_requests[0]?.status).toBe('esperando_match');
   });
+
+  it('filtra por generadorCargaEmpresaId, deja ofertas_pendientes y no duplica viajes', async () => {
+    const db = makeQueryDb({
+      orderByRows: [
+        [
+          {
+            id: 'trip-1',
+            tracking_code: 'BST-4821',
+            status: 'ofertas_enviadas',
+            ofertas_pendientes: 4,
+          },
+          {
+            id: 'trip-1',
+            tracking_code: 'BST-4821',
+            status: 'ofertas_enviadas',
+            ofertas_pendientes: 4,
+          },
+          {
+            id: 'trip-2',
+            tracking_code: 'BST-4802',
+            status: 'esperando_match',
+            ofertas_pendientes: 0,
+          },
+        ],
+      ],
+    });
+    const app = await buildAppWith({
+      db,
+      userContext: buildUserContext({ empresaId: 'emp-1' }),
+    });
+    const res = await app.request('/trip-requests-v2');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      trip_requests: Array<{ id: string; ofertas_pendientes: number | null }>;
+    };
+    expect(body.trip_requests.map((fila) => fila.id)).toEqual(['trip-1', 'trip-2']);
+    expect(body.trip_requests[0]?.ofertas_pendientes).toBe(4);
+    expect(body.trip_requests[1]?.ofertas_pendientes).toBe(0);
+
+    const listado = db.selectShapes.find(
+      (shape) =>
+        typeof shape === 'object' &&
+        shape !== null &&
+        'ofertas_pendientes' in shape &&
+        'transportista_nombre' in shape,
+    );
+    expect(listado).toBeTruthy();
+
+    const filtro = db.whereCalls
+      .map((pred) => sqlDe(pred))
+      .find((sql) => sql.params.includes('emp-1'));
+    expect(filtro?.texto).toContain('generador_carga_empresa_id');
+    expect(filtro?.params).toEqual(['emp-1']);
+  });
 });
+
+function sqlDe(
+  node: unknown,
+  texto: string[] = [],
+  params: unknown[] = [],
+): {
+  texto: string;
+  params: unknown[];
+} {
+  if (!node || typeof node !== 'object') {
+    return { texto: texto.join(''), params };
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      sqlDe(item, texto, params);
+    }
+    return { texto: texto.join(''), params };
+  }
+  const rec = node as Record<string, unknown>;
+  if (typeof rec.name === 'string' && 'columnType' in rec) {
+    texto.push(rec.name);
+    return { texto: texto.join(''), params };
+  }
+  if ('encoder' in rec && 'value' in rec) {
+    params.push(rec.value);
+    return { texto: texto.join(''), params };
+  }
+  if (Array.isArray(rec.value) && rec.value.every((parte) => typeof parte === 'string')) {
+    texto.push(rec.value.join(''));
+  }
+  if (Array.isArray(rec.queryChunks)) {
+    sqlDe(rec.queryChunks, texto, params);
+  }
+  return { texto: texto.join(''), params };
+}
 
 // =============================================================================
 // GET /trip-requests-v2/:id (detail)
