@@ -329,16 +329,16 @@ describe('ConductoresDetalleRoute', () => {
       conductor: buildConductor({
         user: {
           id: 'u-1',
-          full_name: 'Jaime Andres Cordero Castillo',
-          rut: '19257949-K',
-          email: 'pending-rut-19257949K@boosterchile.invalid',
+          full_name: 'Camila Rojas',
+          rut: '11.111.111-1',
+          email: 'pending-rut-111111111@boosterchile.invalid',
           phone: null,
           is_pending: true,
         },
       }),
     });
     const post = vi.spyOn(api, 'post').mockResolvedValue({
-      email: 'jaimecorderocastillo96@gmail.com',
+      email: 'usuario@example.com',
       invitacion_reenviada: true,
       cuenta_activa: false,
       activation_pin: '482915',
@@ -346,17 +346,36 @@ describe('ConductoresDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     expect(await screen.findByText(/email de relleno/i)).toBeInTheDocument();
-    await userEvent.type(
-      screen.getByLabelText(/Email de contacto/),
-      'jaimecorderocastillo96@gmail.com',
-    );
+    await userEvent.type(screen.getByLabelText(/Email de contacto/), 'usuario@example.com');
     await userEvent.click(screen.getByRole('button', { name: /reenviar invitación/i }));
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
-        email: 'jaimecorderocastillo96@gmail.com',
+        email: 'usuario@example.com',
       }),
     );
     expect(await screen.findByText('482915')).toBeInTheDocument();
+  });
+
+  it('persona vinculada a otra empresa: explica el bloqueo y no muestra PIN', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Camila Rojas',
+          rut: '11.111.111-1',
+          email: 'pending-rut-111111111@boosterchile.invalid',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    vi.spyOn(api, 'post').mockRejectedValueOnce(new Error('identidad_vinculada'));
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    await userEvent.type(await screen.findByLabelText(/Email de contacto/), 'usuario@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /reenviar invitación/i }));
+    expect(await screen.findByText(/otra empresa o tiene otro rol/i)).toBeInTheDocument();
+    expect(screen.queryByText('482915')).toBeNull();
   });
 
   it('conductor retirado (deleted_at) → form disabled + banner', async () => {

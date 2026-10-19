@@ -86,7 +86,8 @@ function makeDbStub(opts: {
   insertReturning?: Record<string, unknown>[][];
   updateReturning?: Record<string, unknown>[][];
   selectError?: Error;
-  insertError?: { code: string };
+  insertError?: unknown;
+  updateError?: unknown;
 }) {
   const selectQueue = [...(opts.selectQueueRows ?? [])];
   const insertQueue = [...(opts.insertReturning ?? [])];
@@ -100,7 +101,16 @@ function makeDbStub(opts: {
     const finalize = () => Promise.resolve(nextSelect());
     const orderBy = vi.fn(finalize);
     const limit = vi.fn(finalize);
-    const where = vi.fn(() => ({ orderBy, limit }));
+    const where = vi.fn(() => ({
+      orderBy,
+      limit,
+      then(
+        onFulfilled: (rows: Record<string, unknown>[]) => unknown,
+        onRejected?: (err: unknown) => unknown,
+      ) {
+        return Promise.resolve(nextSelect()).then(onFulfilled, onRejected);
+      },
+    }));
     const innerJoin = vi.fn(() => ({ where }));
     const from = vi.fn(() => ({ where, innerJoin }));
     return vi.fn(() => ({ from }));
@@ -118,7 +128,12 @@ function makeDbStub(opts: {
   }
 
   function makeUpdateChain() {
-    const returning = vi.fn(() => Promise.resolve(nextUpdate()));
+    const returning = vi.fn(() => {
+      if (opts.updateError) {
+        return Promise.reject(opts.updateError);
+      }
+      return Promise.resolve(nextUpdate());
+    });
     const where = vi.fn(() => ({ returning }));
     const set = vi.fn(() => ({ where }));
     return vi.fn(() => ({ set }));
@@ -777,7 +792,7 @@ describe('POST /conductores — fecha de licencia no rompe la respuesta', () => 
   });
 });
 
-const EMAIL_REAL = 'jaimecorderocastillo96@gmail.com';
+const EMAIL_REAL = 'usuario@example.com';
 
 function filaConductor(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -785,7 +800,7 @@ function filaConductor(overrides: Record<string, unknown> = {}): Record<string, 
     deletedAt: null,
     userId: USER_ID,
     email: 'pending-rut-111111111@boosterchile.invalid',
-    fullName: 'Jaime Andres Cordero Castillo',
+    fullName: 'Camila Rojas',
     rut: VALID_RUT,
     phone: '+56912345678',
     firebaseUid: 'pending-rut:11.111.111-1',
@@ -813,7 +828,7 @@ describe('POST /conductores — email real y único', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         rut: VALID_RUT,
-        full_name: 'Jaime',
+        full_name: 'Camila Rojas',
         phone: '+56957790379',
         email: 'pending-rut-111111111@boosterchile.invalid',
         license_class: 'A5',
@@ -835,7 +850,7 @@ describe('POST /conductores — email real y único', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         rut: VALID_RUT,
-        full_name: 'Jaime',
+        full_name: 'Camila Rojas',
         phone: '+56957790379',
         email: EMAIL_REAL,
         license_class: 'A5',
@@ -846,6 +861,29 @@ describe('POST /conductores — email real y único', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
     expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], []],
+      insertError: Object.assign(new Error('Failed query'), { cause: { code: '23505' } }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
   });
 });
 
@@ -910,7 +948,7 @@ describe('POST /conductores/:id/email', () => {
       selectQueueRows: [
         [
           filaConductor({
-            email: 'viejo@gmail.com',
+            email: 'viejo@example.com',
             firebaseUid: 'fb-real-uid',
             claveNumericaHash: 'hash-clave',
           }),
@@ -1015,5 +1053,82 @@ describe('POST /conductores/:id/email', () => {
     });
     expect(res.status).toBe(410);
     expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateError: Object.assign(new Error('Failed query'), { cause: { code: '23505' } }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+  });
+
+  it.each([
+    {
+      caso: 'membresía en otra empresa',
+      vinculo: {
+        empresaId: '99999999-9999-9999-9999-999999999999',
+        role: 'conductor',
+        organizacionId: null,
+        status: 'activa',
+      },
+    },
+    {
+      caso: 'rol dueno en esta empresa',
+      vinculo: {
+        empresaId: EMPRESA_ID,
+        role: 'dueno',
+        organizacionId: null,
+        status: 'activa',
+      },
+    },
+  ])('$caso → 409 identidad_vinculada y no escribe', async ({ vinculo }) => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], [], [vinculo]],
+    });
+    const firebase = firebaseSinCuentas();
+    const app = await buildApp(stub.db, { role: 'despachador', firebaseAuth: firebase });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('solo conductor de esta empresa: la membresía de conductor no bloquea', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor()],
+        [],
+        [
+          {
+            empresaId: EMPRESA_ID,
+            role: 'conductor',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+      updateReturning: [[{ id: USER_ID }]],
+      insertReturning: [[{ id: 'audit-1' }]],
+    });
+    const app = await buildApp(stub.db, { firebaseAuth: firebaseSinCuentas() });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(200);
   });
 });

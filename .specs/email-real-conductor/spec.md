@@ -11,7 +11,7 @@ Todo conductor se registra con un email real, único y validado. Si ya existe co
 
 ## 2. Why now
 
-En producción hay conductores pendientes de login cuyo único email es el de relleno. La ficha no tiene un campo para corregirlo, así que la plataforma no puede escribirles ni pueden activar la cuenta. El primer caso es Jaime Andres Cordero Castillo (RUT 19257949-K). El dato lo ingresa el PO desde la pantalla cuando esté publicada. Este cambio no lo escribe en producción.
+En producción hay conductores pendientes de login cuyo único email es el de relleno. La ficha no tiene un campo para corregirlo, así que la plataforma no puede escribirles ni pueden activar la cuenta. El PO ingresa el correo real desde la pantalla cuando esté publicada. Este cambio no escribe datos de personas en producción.
 
 ## 3. Success criteria
 
@@ -32,6 +32,8 @@ La auditoría es append-only en `auditoria_email_conductor` (migración aditiva)
 
 El PIN en claro sale solo en la respuesta 200 y en el correo de activación ya existente. El log no lleva PIN ni email.
 
+Si la persona tiene una membresía vigente en otra empresa, en una organización stakeholder, o un rol distinto de `conductor` en esta empresa, `POST /conductores/:id/email` responde 409 `identidad_vinculada` y no escribe. Una carrera contra el unique de `usuarios.email` (23505, también si Drizzle lo deja en `cause`) responde 409 `email_already_registered`, igual que el alta.
+
 ## 5. Fuera de alcance
 
-No se carga el email de Jaime ni de ningún otro conductor en producción. No hay infra nueva, ni cambios de IAM, CI, Cloud Build ni `infrastructure/`. No se abre un flujo de login por email/password. No se modifica `POST /auth/driver-activate` ni `POST /auth/activar`.
+No se carga el email de ningún conductor en producción. No hay infra nueva, ni cambios de IAM, CI, Cloud Build ni `infrastructure/`. No se abre un flujo de login por email/password. No se modifica `POST /auth/driver-activate` ni `POST /auth/activar`.

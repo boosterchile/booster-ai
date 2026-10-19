@@ -832,6 +832,10 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
       setPinReenviado(null);
       if (err.message.includes('email_already_registered')) {
         setEmailError('Ese email ya está registrado en otra persona.');
+      } else if (err.message.includes('identidad_vinculada')) {
+        setEmailError(
+          'Esta persona también está en otra empresa o tiene otro rol. El email no se puede cambiar desde esta ficha.',
+        );
       } else if (err.message.includes('identidad_firebase_en_conflicto')) {
         setEmailError(
           'No pudimos actualizar el acceso sin duplicar la cuenta. Avísale a Booster antes de reintentar.',

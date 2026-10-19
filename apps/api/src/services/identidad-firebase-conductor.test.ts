@@ -7,8 +7,9 @@ import {
   reconciliarIdentidadFirebaseConductor,
 } from './identidad-firebase-conductor.js';
 
-const SINTETICO = 'drivers+19257949k@boosterchile.invalid';
-const RELLENO = 'pending-rut-19257949k@boosterchile.invalid';
+const SINTETICO = 'drivers+111111111@boosterchile.invalid';
+const RELLENO = 'pending-rut-111111111@boosterchile.invalid';
+const RUT = '11.111.111-1';
 
 function usuario(uid: string, email: string, lastSignInTime?: string): UsuarioFirebaseConductor {
   return {
@@ -41,14 +42,15 @@ function authCon(cuentas: Record<string, UsuarioFirebaseConductor>): {
 
 describe('candidatosEmailRelleno', () => {
   it('incluye el email guardado y el canónico del RUT, sin repetir', () => {
-    expect(candidatosEmailRelleno(RELLENO, '19.257.949-K')).toEqual([RELLENO]);
-    expect(
-      candidatosEmailRelleno('pending-rut-19.257.949-k@boosterchile.invalid', '19257949-K'),
-    ).toEqual(['pending-rut-19.257.949-k@boosterchile.invalid', RELLENO]);
+    expect(candidatosEmailRelleno(RELLENO, RUT)).toEqual([RELLENO]);
+    expect(candidatosEmailRelleno('pending-rut-11.111.111-1@boosterchile.invalid', RUT)).toEqual([
+      'pending-rut-11.111.111-1@boosterchile.invalid',
+      RELLENO,
+    ]);
   });
 
   it('un email real no es candidato de relleno', () => {
-    expect(candidatosEmailRelleno('jaime@gmail.com', null)).toEqual([]);
+    expect(candidatosEmailRelleno('usuario@example.com', null)).toEqual([]);
   });
 });
 
@@ -60,7 +62,7 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
       auth,
       cuentaActiva: true,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('omitida_cuenta_activa');
@@ -72,7 +74,7 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
       auth: null,
       cuentaActiva: false,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('firebase_no_disponible');
@@ -84,7 +86,7 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
       auth,
       cuentaActiva: false,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('sin_cuenta_firebase');
@@ -94,17 +96,17 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
 
   it('el uid creado con el relleno pasa al sintético que ya usa driver-activate', async () => {
     const { auth, updateUser, deleteUser } = authCon({
-      [RELLENO]: usuario('uid-jaime', RELLENO),
+      [RELLENO]: usuario('uid-fixture', RELLENO),
     });
     const accion = await reconciliarIdentidadFirebaseConductor({
       auth,
       cuentaActiva: false,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('alineada_a_sintetico');
-    expect(updateUser).toHaveBeenCalledWith('uid-jaime', {
+    expect(updateUser).toHaveBeenCalledWith('uid-fixture', {
       email: SINTETICO,
       emailVerified: false,
     });
@@ -113,13 +115,13 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
 
   it('si el sintético ya es esa misma cuenta, no la reescribe', async () => {
     const { auth, updateUser } = authCon({
-      [SINTETICO]: usuario('uid-jaime', SINTETICO),
+      [SINTETICO]: usuario('uid-fixture', SINTETICO),
     });
     const accion = await reconciliarIdentidadFirebaseConductor({
       auth,
       cuentaActiva: false,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('ya_alineada');
@@ -135,7 +137,7 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
       auth,
       cuentaActiva: false,
       emailAnterior: RELLENO,
-      rut: '19257949-K',
+      rut: RUT,
       syntheticEmail: SINTETICO,
     });
     expect(accion).toBe('huerfano_relleno_eliminado');
@@ -153,7 +155,7 @@ describe('reconciliarIdentidadFirebaseConductor', () => {
         auth,
         cuentaActiva: false,
         emailAnterior: RELLENO,
-        rut: '19257949-K',
+        rut: RUT,
         syntheticEmail: SINTETICO,
       }),
     ).rejects.toBeInstanceOf(IdentidadFirebaseEnConflicto);

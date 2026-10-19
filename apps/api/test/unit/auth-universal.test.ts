@@ -335,7 +335,7 @@ describe('POST /auth/login-rut (ADR-035)', () => {
       userRow: {
         id: USER_ID,
         firebaseUid: 'pending-rut:111111111',
-        email: 'jaime@gmail.com',
+        email: 'usuario@example.com',
         rut: '11111111-1',
         claveNumericaHash: hashClaveNumerica(CORRECT_CLAVE),
         activationPinHash: null,

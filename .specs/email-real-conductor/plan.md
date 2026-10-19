@@ -18,4 +18,4 @@
 
 ## No hacer
 
-No escribir el caso Jaime en producción. No tocar archivos protegidos ni el flujo `driver-activate`.
+No escribir datos de un conductor real en producción. No tocar archivos protegidos ni el flujo `driver-activate`.

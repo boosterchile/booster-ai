@@ -12,7 +12,8 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
-import { auditoriaEmailConductor, conductores, users } from '../db/schema.js';
+import { pgErrorCode } from '../db/pg-error.js';
+import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
 import { generateActivationPin, hashActivationPin } from '../services/activation-pin.js';
@@ -119,6 +120,40 @@ async function emailOcupadoPorOtro(
     return false;
   }
   return row.id !== exceptoUserId;
+}
+
+/**
+ * `usuarios.email` es global. Un despachador de esta empresa no puede
+ * reescribirlo si la persona también pertenece a otra empresa, a una
+ * organización stakeholder, o tiene aquí un rol distinto de conductor.
+ * Una membresía ya removida no cuenta.
+ */
+async function emailIdentidadCompartida(
+  db: Pick<Db, 'select'>,
+  userId: string,
+  empresaId: string,
+): Promise<boolean> {
+  const vinculos = await db
+    .select({
+      empresaId: memberships.empresaId,
+      role: memberships.role,
+      organizacionId: memberships.organizacionStakeholderId,
+      status: memberships.status,
+    })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), isNull(memberships.removedAt)));
+  return vinculos.some((vinculo) => {
+    if (vinculo.status === 'removida') {
+      return false;
+    }
+    if (vinculo.organizacionId != null) {
+      return true;
+    }
+    if (vinculo.empresaId !== empresaId) {
+      return true;
+    }
+    return vinculo.role !== 'conductor';
+  });
 }
 
 export function createConductoresRoutes(opts: {
@@ -556,9 +591,9 @@ export function createConductoresRoutes(opts: {
         return c.json({ error: 'conflict', code: err.code }, 409);
       }
       // Captura específico de errores de unicidad de PG.
-      const errCode = (err as { code?: string } | null)?.code;
+      const errCode = pgErrorCode(err);
       if (errCode === '23505') {
-        return c.json({ error: 'duplicate', code: 'duplicate' }, 409);
+        return c.json({ error: 'email_already_registered', code: 'email_already_registered' }, 409);
       }
       opts.logger.error(
         {
@@ -714,6 +749,11 @@ export function createConductoresRoutes(opts: {
           });
         }
 
+        if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+          record('identidad_vinculada');
+          return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
+        }
+
         let accionFirebase: AccionFirebaseConductor = 'omitida_cuenta_activa';
         if (!cuentaActiva) {
           try {
@@ -745,36 +785,44 @@ export function createConductoresRoutes(opts: {
         const activationPin = cuentaActiva ? null : generateActivationPin();
         const invitacionReenviada = activationPin !== null;
 
-        await opts.db.transaction(async (tx) => {
-          const actualizado = await tx
-            .update(users)
-            .set({
-              email: body.email,
-              ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
-              updatedAt: sql`now()`,
-            })
-            .where(eq(users.id, fila.userId))
-            .returning({ id: users.id });
-          if (!actualizado[0]) {
-            throw new Error('update email conductor vacío');
+        try {
+          await opts.db.transaction(async (tx) => {
+            const actualizado = await tx
+              .update(users)
+              .set({
+                email: body.email,
+                ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+                updatedAt: sql`now()`,
+              })
+              .where(eq(users.id, fila.userId))
+              .returning({ id: users.id });
+            if (!actualizado[0]) {
+              throw new Error('update email conductor vacío');
+            }
+            const auditoria = await tx
+              .insert(auditoriaEmailConductor)
+              .values({
+                conductorId: fila.conductorId,
+                usuarioId: fila.userId,
+                empresaId,
+                actorUsuarioId: auth.userContext.user.id,
+                emailAnterior,
+                emailNuevo: body.email,
+                invitacionReenviada,
+                accionFirebase,
+              })
+              .returning({ id: auditoriaEmailConductor.id });
+            if (!auditoria[0]) {
+              throw new Error('auditoria_email_conductor_vacia');
+            }
+          });
+        } catch (err) {
+          if (pgErrorCode(err) === '23505') {
+            record('email_already_registered');
+            return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
           }
-          const auditoria = await tx
-            .insert(auditoriaEmailConductor)
-            .values({
-              conductorId: fila.conductorId,
-              usuarioId: fila.userId,
-              empresaId,
-              actorUsuarioId: auth.userContext.user.id,
-              emailAnterior,
-              emailNuevo: body.email,
-              invitacionReenviada,
-              accionFirebase,
-            })
-            .returning({ id: auditoriaEmailConductor.id });
-          if (!auditoria[0]) {
-            throw new Error('auditoria_email_conductor_vacia');
-          }
-        });
+          throw err;
+        }
 
         if (activationPin !== null && fila.rut) {
           await enviarWhatsAppActivacionConductor({
