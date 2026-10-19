@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -125,6 +126,8 @@ class DecidirCanaryTest(unittest.TestCase):
         self.assertIn('REVERTIR_TAG', verify)
         self.assertIn('resultado_reversion', verify)
         self.assertIn('timeout: 480s', verify)
+        self.assertIn('el tope del build es 5400s', verify)
+        self.assertNotIn('el tope del build es 3600s', verify)
         self.assertIn('timeout -k 5 30 gcloud run services describe', verify)
         self.assertIn('timeout -k 5 30 gcloud auth print-access-token', verify)
         self.assertIn('timeout -k 5 30 gcloud run services update-traffic', verify)
@@ -140,6 +143,32 @@ class DecidirCanaryTest(unittest.TestCase):
         fin = texto.index('PYCHECK', inicio)
         bloque = texto[inicio:fin]
         self.assertNotIn('$', bloque)
+
+    def test_presupuesto_cabe_holgado_bajo_5400(self) -> None:
+        texto = CLOUDBUILD.read_text(encoding='utf-8')
+        self.assertIn('timeout: 5400s', texto)
+        self.assertNotIn('timeout: 3600s', texto)
+        bloque = texto.split('# Timeout global del build', 1)[1].split('timeout: 5400s', 1)[0]
+        filas = {
+            etiqueta: int(valor)
+            for etiqueta, valor in re.findall(r'^#\s{2,}(\S.*?)\s{2,}(\d+) s', bloque, re.M)
+        }
+        suma = (
+            filas['hasta route-canary']
+            + filas['canary-sleep']
+            + filas['canary-verify']
+            + filas['deploy-api + gke +']
+        )
+        self.assertEqual(suma, filas['suma'])
+        self.assertEqual(filas['canary-sleep'], 2100)
+        self.assertEqual(filas['canary-verify'], 480)
+        self.assertGreaterEqual(5400 - suma, 300)
+        self.assertIn('margen 480 s', bloque)
+        self.assertIn('c11b1702', bloque)
+        self.assertIn('ventana 1800', bloque)
+        self.assertIn('No se acorta', bloque)
+        verify = texto[texto.index('id: canary-verify'):texto.index('id: deploy-api')]
+        self.assertIn('30+180+30+192 = 432', verify)
 
     def test_cuatro_xx_no_cambia_la_decision(self) -> None:
         llego = {

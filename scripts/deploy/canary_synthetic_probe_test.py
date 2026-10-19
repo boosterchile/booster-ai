@@ -361,6 +361,12 @@ class CloudBuildTest(unittest.TestCase):
         self.assertIn('--estado-job', script)
         self.assertIn('--job-estado perdido', script)
         self.assertIn('timeout: 2100s', script)
+        self.assertIn('WINDOW=1800', script)
+        self.assertIn(
+            'Camino directo: 404 de ingress; el Job es el camino que llega',
+            script,
+        )
+        self.assertNotIn('/etc/hosts', script)
         self.assertIn('timeout -k 5 30 gcloud container clusters get-credentials', script)
         self.assertIn('kubectl --request-timeout=20s get job', script)
         self.assertIn('kubectl --request-timeout=20s logs', script)

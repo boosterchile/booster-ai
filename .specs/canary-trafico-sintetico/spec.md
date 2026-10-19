@@ -33,10 +33,16 @@ abortando por esos umbrales.
 3. No hay POST, PUT, PATCH ni DELETE. No se manda `Authorization`. No se
    siguen redirects.
 4. El ingress del api es `INTERNAL_LOAD_BALANCER`: un GET al `*.run.app` desde
-   el worker de Cloud Build puede no contar como interno. El HTML 404 del
-   frontend de Google es ingress. Un 5xx de `*.run.app` (aunque sea HTML) es
-   la revisión, no ingress. Si la primera respuesta no es de la aplicación,
-   la misma sonda corre en un Job efímero del cluster `booster-ai-telemetry`
+   el worker de Cloud Build no cuenta como interno. El HTML 404 del frontend
+   de Google es ingress. Un 5xx de `*.run.app` (aunque sea HTML) es la
+   revisión, no ingress. El camino directo desde `booster-production-pool`
+   da ese 404 y no se corrige en el step: el worker tiene IP externa y vive
+   en el peering `booster-cloudbuild-pool-range`, no en `booster-ai-private`,
+   así que no tiene Private Google Access. Reescribir el host a
+   `199.36.153.8` ahí no enruta, y quitar la IP externa es Terraform. El Job
+   es el camino que llega. Ese 404 es un GET (exit 2), no el timeout del
+   build. Si la primera respuesta no es de la aplicación, la misma sonda
+   corre en un Job efímero del cluster `booster-ai-telemetry`
    (VPC del proyecto, Private Google Access, namespace `default`). El DNS
    público de `*.run.app` no entra por Private Google Access: el pod fija el
    host del tag en `199.36.153.8` (`private.googleapis.com`). Sin eso el
@@ -48,6 +54,10 @@ abortando por esos umbrales.
    guardar los logs, también si falló o el sondeo hizo timeout. Si el Job
    ya no existe al leer, el gate no promueve.
 5. La ventana sigue durando 30 min (el tiempo que no use la sonda se espera).
+   El tope del build es 5400 s. En el release de #793 (Cloud Build `c11b1702`)
+   el tope de 3600 s cortó `canary-sleep` antes de `canary-verify`: el tramo
+   hasta `route-canary` se fue a unos 30 min. La ventana no se acorta; el
+   presupuesto (2100 + 2100 + 480 + 240 = 4920) deja 480 s bajo 5400.
 6. La sonda escribe `/workspace/canary-probe.json` (llegadas, 5xx, timeouts
    y errores de conexión). `canary-verify` lo lee antes de Monitoring y sale
    distinto de 0 si la sonda llegó a la app y vio 5xx o esos errores de
@@ -103,3 +113,9 @@ abortando por esos umbrales.
 - [x] El bloque Python de `canary-verify` no introduce `$` sin escapar, y el
       bash de `canary-sleep` tampoco (salvo substitutions de Cloud Build y
       `$$`).
+- [x] El tope del build es 5400 s y la suma presupuestada (tramo previo,
+      `canary-sleep` 2100 s, `canary-verify` 480 s, deploy posterior) queda
+      al menos 300 s por debajo. La ventana sigue en 1800 s.
+- [x] El comentario de `canary-sleep` declara que el camino directo da 404
+      de ingress y que el Job es el camino que llega. El step no reescribe
+      `/etc/hosts`.
