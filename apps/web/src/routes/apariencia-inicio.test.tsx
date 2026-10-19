@@ -48,7 +48,7 @@ describe('AparienciaInicioRoute', () => {
 
   it('muestra el inicio nuevo y no menciona Por cobrar', async () => {
     renderRoute();
-    expect(await screen.findByText('3 ofertas por responder')).toBeInTheDocument();
+    expect(await screen.findByText('3 ofertas nuevas')).toBeInTheDocument();
     expect(screen.getAllByText('Transportes Van Oosterwyk').length).toBeGreaterThan(0);
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
   });

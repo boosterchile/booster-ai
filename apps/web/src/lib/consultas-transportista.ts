@@ -9,19 +9,47 @@ import { reportError } from './error-reporting.js';
  */
 
 const ofertasSchema = z.object({
-  offers: z.array(z.object({ expires_at: z.string() }).passthrough()),
+  offers: z.array(
+    z
+      .object({
+        expires_at: z.string(),
+        proposed_price_clp: z.number().nullish(),
+        trip_request: z
+          .object({
+            origin_address_raw: z.string().optional(),
+            destination_address_raw: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough(),
+  ),
 });
 
 const asignacionesSchema = z.object({
   assignments: z.array(
     z
       .object({
+        id: z.string().optional(),
         status: z.string(),
-        driver: z.object({ user_id: z.string() }).passthrough().nullable(),
+        driver: z
+          .object({
+            user_id: z.string(),
+            full_name: z.string().nullish(),
+          })
+          .passthrough()
+          .nullable(),
+        vehicle: z
+          .object({
+            plate: z.string().nullable(),
+          })
+          .passthrough()
+          .nullish(),
         trip: z
           .object({
             pickup_window_start: z.string().nullable(),
             origin: z.object({ address_raw: z.string() }).passthrough(),
+            destination: z.object({ address_raw: z.string() }).passthrough().optional(),
           })
           .passthrough(),
       })
@@ -62,6 +90,7 @@ const flotaSchema = z.object({
   fleet: z.array(
     z
       .object({
+        id: z.string().optional(),
         plate: z.string(),
         teltonika_imei: z.string().nullish(),
         teltonika_source: z.enum(['own', 'mirror', 'browser_gps']).nullish(),

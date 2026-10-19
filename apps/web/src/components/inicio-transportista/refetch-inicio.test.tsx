@@ -170,15 +170,10 @@ describe('Inicio transportista — refetch al montar', () => {
 
     expect(heading.textContent).toMatch(/^(Buenos días|Buenas tardes|Buenas noches), María$/);
     expect(heading.textContent).not.toContain('Transportes');
-    expect(screen.getByTestId('inicio-cobra-hoy')).toHaveTextContent('todavía no está activa');
+    expect(screen.getByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(conteo('/me/cobra-hoy/historial')).toBe(0);
 
-    const endpoints = [
-      '/me',
-      '/vehiculos/flota',
-      '/assignments',
-      '/cumplimiento',
-      '/me/cobra-hoy/historial',
-    ] as const;
+    const endpoints = ['/me', '/vehiculos/flota', '/assignments', '/cumplimiento'] as const;
     for (const path of endpoints) {
       expect(conteo(path), path).toBeGreaterThan(0);
       expect(conteo(path), path).toBeLessThanOrEqual(MAX_POR_ENDPOINT);
@@ -209,62 +204,26 @@ describe('Inicio transportista — refetch al montar', () => {
       '/assignments',
       '/cumplimiento',
       '/offers/mine?status=pendiente',
-      '/me/cobra-hoy/historial',
     ]) {
+      expect(conteo('/me/cobra-hoy/historial'), 'cobra-hoy').toBe(0);
       expect(conteo(path), path).toBeLessThanOrEqual(MAX_POR_ENDPOINT);
     }
   });
 
-  it('503 y 200 {enabled:false} dejan el Inicio en pie con un estado local', async () => {
-    for (const fallo of ['503', 'apagado'] as const) {
-      apiGetSpy.mockImplementation(async (path: string) => {
-        if (path === '/me/cobra-hoy/historial') {
-          if (fallo === '503') {
-            throw new ApiError(503, 'feature_disabled', { error: 'feature_disabled' });
-          }
-          return { enabled: false, items: [] };
-        }
-        return respuesta(path);
-      });
-      const { unmount } = renderShell();
-      expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('María');
-      expect(await screen.findByTestId('inicio-cobra-hoy')).toHaveTextContent(
-        'todavía no está activa',
-      );
-      expect(screen.getByTestId('inicio-transportista')).toBeInTheDocument();
-      expect(conteo('/vehiculos/flota')).toBeGreaterThan(0);
-      unmount();
-    }
-  });
-
-  it('un 500 de Cobra hoy no esconde el saludo ni el resto', async () => {
+  it('un bloque caído no esconde el saludo ni el resto, y no hay montos', async () => {
     apiGetSpy.mockImplementation(async (path: string) => {
-      if (path === '/me/cobra-hoy/historial') {
+      if (path === '/vehiculos/flota') {
         throw new ApiError(500, undefined, null, 'boom');
       }
       return respuesta(path);
     });
     renderShell();
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('María');
-    expect(await screen.findByTestId('inicio-cobra-hoy')).toHaveTextContent(
-      'no está disponible ahora',
-    );
-    expect(screen.getByTestId('inicio-transportista')).toBeInTheDocument();
-    expect(conteo('/vehiculos/flota')).toBeGreaterThan(0);
-    expect(conteo('/assignments')).toBeGreaterThan(0);
-  });
-
-  it('el historial vacío no agrega un estado ni un monto', async () => {
-    apiGetSpy.mockImplementation(async (path: string) => {
-      if (path === '/me/cobra-hoy/historial') {
-        return { adelantos: [] };
-      }
-      return respuesta(path);
-    });
-    renderShell();
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('María');
-    expect(screen.queryByTestId('inicio-cobra-hoy')).not.toBeInTheDocument();
+    expect(await screen.findByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(await screen.findByText('No cargó Flota')).toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-plata')).not.toBeInTheDocument();
+    expect(conteo('/assignments')).toBeGreaterThan(0);
   });
 
   it('sin full_name el saludo no usa la primera palabra de la empresa', async () => {

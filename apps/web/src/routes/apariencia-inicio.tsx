@@ -21,6 +21,7 @@ import {
   type InicioVista,
   buildInicioVista,
 } from '../components/inicio-transportista/modelo.js';
+import { buildNegocioHoy } from '../components/inicio-transportista/negocio.js';
 import type { MeResponse } from '../hooks/use-me.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -128,27 +129,70 @@ function datosOperacion(): DatosInicio {
     ofertas: {
       estado: 'listo',
       valor: [
-        { expires_at: new Date(AHORA.getTime() + 42 * 60_000).toISOString() },
-        { expires_at: new Date(AHORA.getTime() + 90 * 60_000).toISOString() },
-        { expires_at: new Date(AHORA.getTime() + 3 * 60 * 60_000).toISOString() },
+        {
+          expires_at: new Date(AHORA.getTime() + 3 * 60 * 60_000).toISOString(),
+          precioClp: 420000,
+          origen: 'Bodega, Santiago',
+          destino: 'Centro, Rancagua',
+        },
+        { expires_at: new Date(AHORA.getTime() + 5 * 60 * 60_000).toISOString() },
+        { expires_at: new Date(AHORA.getTime() + 8 * 60 * 60_000).toISOString() },
       ],
     },
     servicios: {
       estado: 'listo',
       valor: [
-        ...enRuta,
         {
+          id: 'r-1',
+          status: 'recogido',
+          sinConductor: false,
+          pickupInicio: new Date(AHORA.getTime() + 10 * 60_000).toISOString(),
+          direccionOrigen: 'Planta, Lo Espejo',
+          direccionDestino: 'Puerto, Valparaíso',
+          patente: 'KZXB64',
+          conductor: 'Pedro Soto',
+        },
+        {
+          id: 'r-2',
+          status: 'asignado',
+          sinConductor: false,
+          pickupInicio: new Date(AHORA.getTime() + 3 * 60 * 60_000).toISOString(),
+          direccionOrigen: 'Bodega norte, Quilicura',
+          direccionDestino: 'Puerto, San Antonio',
+          patente: 'KXJR42',
+          conductor: 'Juan Pérez',
+        },
+        {
+          id: 'r-3',
           status: 'asignado',
           sinConductor: true,
           pickupInicio: retiro,
-          direccionOrigen: 'Bodega norte, Quilicura',
+          direccionOrigen: 'Planta, Lampa',
+          direccionDestino: 'Centro, Rancagua',
+          patente: 'HFTD17',
+          conductor: null,
         },
         {
+          id: 'r-4',
           status: 'asignado',
-          sinConductor: true,
-          pickupInicio: new Date(AHORA.getTime() + 26 * 60 * 60_000).toISOString(),
-          direccionOrigen: 'Planta, Santiago',
+          sinConductor: false,
+          pickupInicio: new Date(AHORA.getTime() + 25 * 60 * 60_000).toISOString(),
+          direccionOrigen: 'Bodega, Pudahuel',
+          direccionDestino: 'Centro, Los Andes',
+          patente: 'LBPW88',
+          conductor: 'Rosa Díaz',
         },
+        {
+          id: 'r-5',
+          status: 'asignado',
+          sinConductor: false,
+          pickupInicio: new Date(AHORA.getTime() + 48 * 60 * 60_000).toISOString(),
+          direccionOrigen: 'Planta, Renca',
+          direccionDestino: 'Puerto, Concepción',
+          patente: 'JKLT54',
+          conductor: 'Marcos Leal',
+        },
+        ...enRuta,
       ],
     },
     cumplimiento: {
@@ -190,18 +234,27 @@ function datosCarga(): DatosInicio {
   };
 }
 
-export function vistaDePreview(estado: string): InicioVista | null {
+function datosDePreview(estado: string): DatosInicio | null {
   if (estado === 'antes') {
     return null;
   }
-  const datos =
-    estado === 'vacio'
-      ? cargaVacia()
-      : estado === 'error'
-        ? datosError()
-        : estado === 'carga'
-          ? datosCarga()
-          : datosOperacion();
+  if (estado === 'vacio') {
+    return cargaVacia();
+  }
+  if (estado === 'error') {
+    return datosError();
+  }
+  if (estado === 'carga') {
+    return datosCarga();
+  }
+  return datosOperacion();
+}
+
+export function vistaDePreview(estado: string): InicioVista | null {
+  const datos = datosDePreview(estado);
+  if (!datos) {
+    return null;
+  }
   return buildInicioVista(datos, {
     nombreCompleto: 'Felipe',
     legalName: LEGAL,
@@ -213,11 +266,20 @@ export function vistaDePreview(estado: string): InicioVista | null {
 export function AparienciaInicioRoute() {
   const search = (useSearch({ strict: false }) ?? {}) as { estado?: string };
   const estado = search.estado ?? 'operacion';
-  const vista = vistaDePreview(estado);
+  const datos = datosDePreview(estado);
+  const vista = datos
+    ? buildInicioVista(datos, {
+        nombreCompleto: 'Felipe',
+        legalName: LEGAL,
+        esAdmin: false,
+        ahora: AHORA,
+      })
+    : null;
+  const negocio = datos ? buildNegocioHoy(datos, AHORA) : null;
   return (
     <Layout me={mePreview()} title="Inicio">
-      {vista ? (
-        <InicioTransportistaVista vista={vista} onReintentar={() => undefined} />
+      {vista && negocio ? (
+        <InicioTransportistaVista vista={vista} negocio={negocio} onReintentar={() => undefined} />
       ) : (
         <InicioAnterior />
       )}
