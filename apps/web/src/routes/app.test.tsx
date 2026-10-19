@@ -171,6 +171,26 @@ describe('AppRoute', () => {
     expect(screen.getByTestId('inicio-accesos')).toHaveClass('md:hidden');
   });
 
+  it('empresa dual conserva los accesos del transportista y suma Mis cargas', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('dashboard-link-ofertas')).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-link-flota')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Como generador de carga' })).toBeInTheDocument();
+    expect(screen.getAllByText('Mis cargas').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Crear carga').length).toBeGreaterThan(0);
+  });
+
+  it('transportista puro no ve las cards de generador', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByTestId('dashboard-link-ofertas')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Como generador de carga' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
+  });
+
   it('shipper → muestra card "Crear carga"', () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);

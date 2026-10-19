@@ -80,6 +80,48 @@ describe('ActivarEmpresa', () => {
     });
   });
 
+  it('Generar carga prende el rol en un transportista y no se ofrece si ya lo tiene', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [
+        { ...PENDIENTE, id: 'e-trans', estado: 'activa' as const },
+        {
+          ...PENDIENTE,
+          id: 'e-dual',
+          razon_social: 'Ya Genera SpA',
+          estado: 'activa' as const,
+          es_generador_carga: true,
+        },
+        {
+          ...PENDIENTE,
+          id: 'e-gen',
+          razon_social: 'Solo Generador SpA',
+          estado: 'activa' as const,
+          es_transportista: false,
+          es_generador_carga: true,
+        },
+      ],
+    });
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      id: 'e-trans',
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: false,
+    });
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+
+    expect(await screen.findByTestId('empresa-generar-carga-e-trans')).toBeInTheDocument();
+    expect(screen.queryByTestId('empresa-generar-carga-e-dual')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('empresa-generar-carga-e-gen')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('empresa-generar-carga-e-trans'));
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith('/admin/empresas/e-trans/activar-generador-carga');
+    });
+  });
+
   it('muestra vacío si no hay empresas en el filtro', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ empresas: [] });
     render(<ActivarEmpresa />);
@@ -133,6 +175,40 @@ describe('ActivarEmpresa', () => {
     render(<ActivarEmpresa />);
     expect(await screen.findByText('Transportes Sur SpA')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Generar código nuevo' })).not.toBeInTheDocument();
+  });
+
+  it('Generar carga muestra un error en español, sin el código HTTP', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, id: 'e-trans', estado: 'activa' as const }],
+    });
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(409, 'not_a_transportista', {}, 'conflict'),
+    );
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+    fireEvent.click(await screen.findByTestId('empresa-generar-carga-e-trans'));
+
+    expect(
+      await screen.findByText('Solo una empresa transportista puede generar carga.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/409/)).not.toBeInTheDocument();
+  });
+
+  it('cambiar el estado no muestra el status crudo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, estado: 'activa' as const }],
+    });
+    vi.spyOn(api, 'patch').mockRejectedValue(
+      new ApiError(403, 'forbidden_platform_admin', {}, 'forbidden_platform_admin'),
+    );
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+    fireEvent.click(await screen.findByTestId('empresa-suspender-e-1'));
+
+    expect(await screen.findByText('No tienes permiso para hacer esto.')).toBeInTheDocument();
+    expect(screen.queryByText(/403/)).not.toBeInTheDocument();
   });
 
   it('traduce already_activated y membership_not_found', async () => {

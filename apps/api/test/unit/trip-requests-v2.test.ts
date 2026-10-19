@@ -105,6 +105,7 @@ interface UserContextOpts {
   userId?: string;
   empresaId?: string;
   isGeneradorCarga?: boolean;
+  isTransportista?: boolean;
   empresaStatus?: 'pendiente_verificacion' | 'activa' | 'suspendida';
   withActiveMembership?: boolean;
 }
@@ -113,16 +114,17 @@ function buildUserContext(opts: UserContextOpts = {}): {
   user: Pick<UserRow, 'id'>;
   memberships: Array<{
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   }>;
   activeMembership: {
     membership: Pick<MembershipRow, 'role'>;
-    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'status'>;
+    empresa: Pick<EmpresaRow, 'id' | 'isGeneradorCarga' | 'isTransportista' | 'status'>;
   } | null;
 } {
   const empresa = {
     id: opts.empresaId ?? 'emp-1',
     isGeneradorCarga: opts.isGeneradorCarga ?? true,
+    isTransportista: opts.isTransportista ?? false,
     status: opts.empresaStatus ?? 'activa',
   };
   const membership = { role: 'dueno' as const };
@@ -301,6 +303,50 @@ describe('POST /trip-requests-v2', () => {
       const res = await postBody(body);
       expect(res.status).toBe(400);
     });
+  });
+
+  it('empresa con ambos roles publica la carga con su generador_carga_empresa_id', async () => {
+    const matching = await import('../../src/services/matching.js');
+    vi.mocked(matching.runMatching).mockResolvedValueOnce({
+      tripId: 'trip-dual',
+      candidatesEvaluated: 0,
+      offersCreated: 0,
+      offers: [],
+    });
+    const inserted: Record<string, unknown>[] = [];
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn((vals: Record<string, unknown>) => {
+          inserted.push(vals);
+          return {
+            returning: vi.fn(async () => [
+              {
+                id: 'trip-dual',
+                trackingCode: 'BOO-DUAL1',
+                generadorCargaEmpresaId: 'emp-dual',
+                cargoType: 'carga_seca',
+                originRegionCode: 'XIII',
+              },
+            ]),
+          };
+        }),
+      })),
+    } as unknown as Db;
+    const app = await buildAppWith({
+      db,
+      userContext: buildUserContext({
+        empresaId: 'emp-dual',
+        isGeneradorCarga: true,
+        isTransportista: true,
+      }),
+    });
+    const res = await app.request('/trip-requests-v2', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(validBody),
+    });
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ generadorCargaEmpresaId: 'emp-dual' });
   });
 
   it('happy path: crea trip, dispara matching, devuelve 201', async () => {
