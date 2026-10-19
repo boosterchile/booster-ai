@@ -1367,6 +1367,83 @@ describe('VehiculoDetallePage — hub', () => {
     await waitFor(() => expect(operacion).toHaveAttribute('aria-busy', 'false'));
   });
 
+  it('mientras la ubicación está pendiente el mapa muestra carga y no «sin GPS»', async () => {
+    let resolver: (value: unknown) => void = () => undefined;
+    const pendiente = new Promise((resolve) => {
+      resolver = resolve;
+    });
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        return pendiente;
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+
+    expect(await screen.findByTestId('hub-mapa-cargando')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Cargando posición…');
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+
+    resolver({
+      ubicacion: {
+        timestamp_device: new Date().toISOString(),
+        latitude: -33.4,
+        longitude: -70.6,
+        speed_kmh: 0,
+      },
+    });
+    await waitFor(() => expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull());
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+  });
+
+  it('sin puntos GPS el mapa lo dice recién cuando la ubicación respondió', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        throw new ApiError(404, 'no_points_yet', {});
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByText('Sin posición GPS todavía')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull();
+  });
+
   it('guardar capacidades deja el hub y confirma sin salir', async () => {
     mockDetalleGet(null);
     const patch = vi.spyOn(api, 'patch').mockResolvedValue({

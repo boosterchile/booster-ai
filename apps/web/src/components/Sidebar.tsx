@@ -6,8 +6,46 @@ import type { MeResponse } from '../hooks/use-me.js';
 import { useSwitchCompany } from '../hooks/use-switch-company.js';
 import { CompanySwitcher } from './CompanySwitcher.js';
 import { navSectionsForMe } from './nav-items.js';
+import { type BadgeNav, useBadgesTransporte } from './use-badges-transporte.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
+
+function badgeDe(
+  to: string,
+  badges: { ofertas: BadgeNav | null; servicios: BadgeNav | null; cumplimiento: BadgeNav | null },
+): BadgeNav | null {
+  if (to === '/app/ofertas') {
+    return badges.ofertas;
+  }
+  if (to === '/app/servicios') {
+    return badges.servicios;
+  }
+  if (to === '/app/cumplimiento') {
+    return badges.cumplimiento;
+  }
+  return null;
+}
+
+const BADGE_TESTID: Record<string, string> = {
+  '/app/ofertas': 'nav-badge-ofertas',
+  '/app/servicios': 'nav-badge-servicios',
+  '/app/cumplimiento': 'nav-badge-cumplimiento',
+};
+
+function BadgeNavPill({ badge, testId }: { badge: BadgeNav; testId: string }) {
+  return (
+    <span
+      data-testid={testId}
+      className={cn(
+        'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 font-semibold text-white text-xs',
+        badge.tono === 'warning' ? 'bg-warning-500' : 'bg-danger-600',
+      )}
+    >
+      {badge.n}
+      <span className="sr-only"> pendientes</span>
+    </span>
+  );
+}
 
 /**
  * Sidebar del shell de operador (D2). Navegación vertical role-aware
@@ -23,6 +61,8 @@ export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () =
   const { switchTo, isPending } = useSwitchCompany();
   const sections = navSectionsForMe(me);
   const activeEmpresaId = me.active_membership?.empresa?.id ?? null;
+  const esTransportista = Boolean(me.active_membership?.empresa?.is_transportista);
+  const badges = useBadgesTransporte(esTransportista);
 
   function handleSwitch(empresaId: string) {
     onNavigate?.();
@@ -61,6 +101,8 @@ export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () =
               {section.items.map((item) => {
                 const active =
                   item.to === '/app' ? pathname === '/app' : pathname.startsWith(item.to);
+                const badge = badgeDe(item.to, badges);
+                const badgeTestId = BADGE_TESTID[item.to];
                 return (
                   <li key={item.to}>
                     <Link
@@ -86,7 +128,10 @@ export function Sidebar({ me, onNavigate }: { me: MeOnboarded; onNavigate?: () =
                         )}
                         aria-hidden
                       />
-                      {item.label}
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {badge && badgeTestId ? (
+                        <BadgeNavPill badge={badge} testId={badgeTestId} />
+                      ) : null}
                     </Link>
                   </li>
                 );
