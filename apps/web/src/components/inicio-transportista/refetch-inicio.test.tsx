@@ -170,7 +170,9 @@ describe('Inicio transportista — refetch al montar', () => {
 
     expect(heading.textContent).toMatch(/^(Buenos días|Buenas tardes|Buenas noches), María$/);
     expect(heading.textContent).not.toContain('Transportes');
-    expect(screen.getByTestId('inicio-cobra-hoy')).toHaveTextContent('todavía no está activa');
+    expect(screen.getByTestId('inicio-cobra-hoy')).toHaveTextContent(
+      'Cobra hoy todavía no está disponible',
+    );
 
     const endpoints = [
       '/me',
@@ -229,7 +231,7 @@ describe('Inicio transportista — refetch al montar', () => {
       const { unmount } = renderShell();
       expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('María');
       expect(await screen.findByTestId('inicio-cobra-hoy')).toHaveTextContent(
-        'todavía no está activa',
+        'Cobra hoy todavía no está disponible',
       );
       expect(screen.getByTestId('inicio-transportista')).toBeInTheDocument();
       expect(conteo('/vehiculos/flota')).toBeGreaterThan(0);

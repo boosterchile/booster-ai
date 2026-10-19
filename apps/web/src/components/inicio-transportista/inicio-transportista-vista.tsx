@@ -120,7 +120,7 @@ function EstadoCobraHoy({ estado }: { estado: EstadoCobraHoyVista }) {
   return (
     <output data-testid="inicio-cobra-hoy" className="mt-4 block text-neutral-600 text-sm">
       {estado === 'apagado'
-        ? 'La opción de pronto pago todavía no está activa en este entorno.'
+        ? 'Cobra hoy todavía no está disponible.'
         : 'Cobra hoy no está disponible ahora. El resto del Inicio sigue funcionando.'}
     </output>
   );
