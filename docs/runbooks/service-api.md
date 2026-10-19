@@ -93,7 +93,7 @@ gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT \
 
 ### Canary atascado al 1%
 
-El deploy productivo es canary (1% → 30 min → 100%, `cloudbuild.production.yaml`) y la promoción a 100% es **decisión humana** (`canary-verify` es placeholder `exit 0`). Si el tráfico quedó stuck al 1% (timeout del build, ver memoria "Cloudbuild canary timeout"):
+El deploy productivo es canary (1% → 30 min → 100%, `cloudbuild.production.yaml`). Durante la espera el pipeline manda GET de solo lectura al tag (`/health` y `/health/signup-flow`) hasta `_CANARY_MIN_REQUESTS` (30) y `canary-verify` evalúa error rate y p95. El procedimiento está en [`docs/qa/signup-canary-rollback.md`](../qa/signup-canary-rollback.md). Si el tráfico quedó stuck al 1% (timeout del build, ver memoria "Cloudbuild canary timeout"):
 
 ```bash
 gcloud run services update-traffic $SVC --region=$REGION --project=$PROJECT --to-latest

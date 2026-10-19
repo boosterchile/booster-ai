@@ -47,3 +47,11 @@ Terraform, ni el valor de la substitution.
 - [x] El YAML sigue en `'30'` y ya no contiene `FAIL muestra insuficiente`.
 - [x] El bloque nuevo del YAML no introduce `$` sin escapar.
 - [x] `python3` compila el step y `unittest` queda en verde.
+
+## Enmienda 2026-10-19
+
+El PO pidió juntar el piso con tráfico sintético de solo lectura contra el
+tag, durante la ventana, y evaluar error rate y p95 como hasta ahora. El
+piso sigue en 30. La sonda y el fallback de VPC están en
+`.specs/canary-trafico-sintetico/spec.md`. Si la sonda no llega a la
+revisión, este desenlace (WARN y promover, sin mirar p95) se mantiene.

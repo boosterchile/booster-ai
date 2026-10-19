@@ -23,8 +23,8 @@ Si la decisión es **NO** correr canary (e.g., hotfix urgente, deploy-trivial si
 |---|---|---|
 | `deploy-canary` | ~30-60s | `gcloud run services update --image=... --no-traffic` y luego `gcloud run services update-traffic --update-tags=canary-signup-<sha>=<revisión>`. La nueva revision queda registrada pero recibe 0% del traffic. El tag va aparte para que Cloud Run nombre la revisión y Terraform no vea drift (T10-06). |
 | `route-canary` | ~5-10s | `gcloud run services update-traffic --to-tags=canary-signup-<sha>=1`. 1% del traffic empieza a ir al canary; 99% sigue en la revision anterior. |
-| `canary-sleep` | **30 min exactos** | `sleep 1800`. Synthetic monitor `signup_probe` corre cada 60s (= 30 probes) durante esta ventana. |
-| `canary-verify` | ~10-30s | Query Cloud Monitoring API para validar error_rate < 1% AND p95_latency < 500ms sobre el canary tag. Exit 1 si fail. |
+| `canary-sleep` | **30 min** | Observa el canary al 1 % y, en esa ventana, manda GET de solo lectura al URL del tag hasta `_CANARY_MIN_REQUESTS` (30). Rutas: `/health` y `/health/signup-flow`. El tiempo que no use la sonda se espera, para completar los 30 min. `signup_probe` sigue cada 60s. |
+| `canary-verify` | ~10-90s | Lee Cloud Monitoring (reintenta si la ingesta todavía no muestra el piso) y evalúa error_rate < 1 % y p95 < 500 ms **cuando la muestra llega a 30**. Exit 1 si fallan. |
 | `deploy-api` | ~10-30s | `gcloud run services update-traffic --to-latest`. El canary tag y la revision-pre-canary quedan sin traffic. |
 | `smoke-tests` + `watch-deploy` | ~1-2 min | Steps existing (lines ~270+). |
 
@@ -38,9 +38,25 @@ Cloud Build promueve **automáticamente** vía step `deploy-api` cuando:
 
 - `canary-verify` exit 0.
 - Alert policy `signup_probe_failure` NO disparó durante el `canary-sleep` window.
-- Muestra bajo `_CANARY_MIN_REQUESTS` (30) también es exit 0: WARN y promover, sin evaluar p95. El canario al 1 % no junta 30 requests con el tráfico actual. Un error rate o un p95 fuera de umbral solo abortan cuando la muestra alcanza el piso.
+- La muestra llegó a `_CANARY_MIN_REQUESTS` (30) y error_rate < 1 % y p95 < 500 ms. El piso no se baja.
+- Si la sonda no junta los 30, también es exit 0: WARN y promover, sin evaluar p95 (§3.1.1).
 
 No requiere human intervention. El human-on-call recibe el job-success notification 30+ min después del push.
+
+### 3.1.1. Sonda de solo lectura (cómo se junta el piso)
+
+`canary-sleep` resuelve el URL del tag `canary-signup-<sha>` (`status.traffic[].url`, o lo compone con el host del servicio) y manda **exactamente 30 GET**, alternando:
+
+- `GET /health`
+- `GET /health/signup-flow`
+
+Las dos son liveness público: sin body, sin `Authorization`, sin base de datos y sin datos de usuarios. No se llama `/ready` (hace `SELECT 1`; un 503 o la latencia de la DB tumbarían el umbral). No hay POST, PUT, PATCH ni DELETE, y no se siguen redirects. El `User-Agent` es `booster-canary-probe`.
+
+El ingress del api es `INTERNAL_LOAD_BALANCER`, así que un GET al `*.run.app` desde el worker de Cloud Build puede volver el HTML 404 del frontend de Google y **no** contar en `request_count`. Si la primera respuesta no es JSON de la app, la misma sonda corre en un Job efímero (`canary-probe-<sha>`, namespace `default`) del cluster `booster-ai-telemetry`: el pod está en la VPC del proyecto, con Private Google Access, y Cloud Run lo trata como tráfico interno. El Job usa la imagen del api ya publicada pero con `command: node -e …` — no arranca el servidor ni corre migraciones — y se borra al terminar. No monta el token de la cuenta de servicio.
+
+Los requests se espacian para caber en la ventana y dejar ~3 min de margen antes de `canary-verify`, que relee Monitoring hasta 3 veces, con 20 s entre lecturas, si la muestra todavía no aparece.
+
+Si la sonda no llega a la revisión (sin URL de tag, job que no completa, ingress cerrado y sin credenciales de cluster), `canary-verify` conserva el desenlace de 2026-09-28: muestra bajo 30 → WARN y promover, **sin** evaluar p95. No se baja el piso: con 0, un n chico evalúa el p95 y el cold start del 2026-08-16 (n=6, 1408 ms, 0 errores) abortó un deploy sano.
 
 ### 3.2. Rollback automático (canary-verify fail)
 

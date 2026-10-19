@@ -1,12 +1,30 @@
 """Decisión del gate canary-verify. Stdlib, sin red.
 
 Muestra bajo el piso: WARN y promover (exit 0), sin evaluar error rate ni p95.
+La sonda de canary-sleep junta el piso con GET de health al tag; si aun así
+no llega, se promueve sin mirar p95.
 Muestra suficiente: abortar si error_rate >= 1% o p95 >= 500ms.
 Con min_requests en 0, cualquier n >= 1 evalúa los SLO (falso positivo de
 p95 del 2026-08-16). El pipeline deja el piso en 30 para no reabrir eso.
 """
 
 from __future__ import annotations
+
+
+def reintentos_de_muestra(
+    total: int,
+    min_requests: int,
+    intento: int,
+    max_intentos: int,
+) -> bool:
+    """True si conviene volver a leer Monitoring antes de decidir.
+
+    La ingesta de request_count llega unos segundos después de la sonda.
+    Con el piso en 0 no se reintenta: cualquier n >= 1 ya evalúa los SLO.
+    """
+    if min_requests <= 0 or intento >= max_intentos:
+        return False
+    return total < max(min_requests, 1)
 
 
 def decidir_canary(
