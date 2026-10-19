@@ -386,8 +386,12 @@ steps:
     # /health/signup-flow: sin body, sin auth, sin datos de usuarios). El piso
     # sigue en 30. El ingress del api es INTERNAL_LOAD_BALANCER: si el worker
     # no llega al *.run.app, la misma sonda corre en un Job efímero de la VPC
-    # (cluster booster-ai-telemetry, imagen del api fijada por digest) y se
-    # borra al terminar. El resultado queda en /workspace/canary-probe.json
+    # (cluster booster-ai-telemetry, imagen del api fijada por digest). El pod
+    # resuelve el host del tag a 199.36.153.8 (private.googleapis.com): el DNS
+    # público sale por Cloud NAT y el ingress vuelve a responder 404. Los logs
+    # se leen en cuanto el Job termina o desaparece, y solo entonces se borra.
+    # Si ya no existe al leer, el gate no promueve. El resultado queda en
+    # /workspace/canary-probe.json
     # (5xx, timeouts y errores de conexión). El tiempo que sobre se espera
     # para completar los 30 min. signup_probe sigue cada 60s; si falla 2 veces
     # seguidas, page y un humano decide rollback. error_rate y p95 los evalúa
@@ -453,27 +457,55 @@ steps:
           set -e
           if [ "$$CODE" -eq 2 ] && [ -f /tmp/canary-probe-job.json ]; then
             echo "canary-probe: el worker no llega al tag. Sonda desde un Job en la VPC."
+            TERMINAL=""
+            : > /tmp/canary-probe-job.log
             if gcloud container clusters get-credentials booster-ai-telemetry \
               --region='${_REGION}' --project=$PROJECT_ID --dns-endpoint; then
               kubectl delete job "$$JOB" -n default --ignore-not-found || true
               if kubectl apply -f /tmp/canary-probe-job.json; then
-                if ! kubectl wait --for=condition=complete "job/$$JOB" -n default --timeout=1500s; then
-                  echo "canary-probe: el job no completó"
-                  kubectl describe job "$$JOB" -n default || true
+                # Un Job Failed no cumple Complete. Esperar solo eso llega al
+                # timeout y el TTL ya borró el objeto: kubectl logs responde
+                # NotFound. Se corta en Complete, Failed o NotFound.
+                LIMITE=$$(( START + WINDOW - 45 ))
+                while [ "$$(date +%s)" -lt "$$LIMITE" ]; do
+                  if JSON=$$(kubectl get job "$$JOB" -n default -o json 2>/tmp/canary-probe-get.err); then
+                    TERMINAL=$$(printf '%s' "$$JSON" | python3 scripts/deploy/canary_synthetic_probe.py --estado-job)
+                  elif grep -q NotFound /tmp/canary-probe-get.err; then
+                    TERMINAL="ausente"
+                  else
+                    TERMINAL="pendiente"
+                    echo "canary-probe: no se pudo leer el estado del job, reintento" >&2
+                  fi
+                  if [ "$$TERMINAL" = "completo" ] || [ "$$TERMINAL" = "fallido" ] || [ "$$TERMINAL" = "ausente" ]; then
+                    break
+                  fi
+                  sleep 5
+                done
+                echo "canary-probe: job=$$JOB namespace=default estado=$$TERMINAL"
+                if [ "$$TERMINAL" != "ausente" ]; then
+                  kubectl logs "job/$$JOB" -n default > /tmp/canary-probe-job.log || true
                 fi
-                kubectl logs "job/$$JOB" -n default > /tmp/canary-probe-job.log || true
               else
                 echo "canary-probe: no se pudo crear el job"
+                TERMINAL="no_creado"
               fi
-              kubectl delete job "$$JOB" -n default --ignore-not-found || true
             else
               echo "canary-probe: no se pudo tomar credenciales del cluster"
+              TERMINAL="sin_credenciales"
             fi
+            tail -n 3 /tmp/canary-probe-job.log || true
             if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --aplicar-log-job "$$RESULT" \
                 --log-file /tmp/canary-probe-job.log
+              kubectl delete job "$$JOB" -n default --ignore-not-found || true
+            elif [ "$$TERMINAL" = "ausente" ]; then
+              echo "canary-probe: el job desapareció antes de leer logs — no se promueve"
+              python3 scripts/deploy/canary_synthetic_probe.py \
+                --marcar-job "$$RESULT" \
+                --job-estado perdido
             else
+              echo "canary-probe: sin resumen (estado=$$TERMINAL) — no se promueve"
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --marcar-job "$$RESULT" \
                 --job-estado fallo
@@ -530,8 +562,10 @@ steps:
         # exit 0 — auditoría 2026-06-09 riesgo alto: la promoción a 100% no
         # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms Y la
         # muestra alcanza el piso → exit 1 y el build aborta SIN promover.
-        # 5xx o errores de conexión de la sonda, o directo y Job fallidos con
-        # URL, salen distinto de 0 (el resultado está en canary-probe.json).
+        # 5xx o errores de conexión de la sonda, directo y Job fallidos con
+        # URL, o un Job que ya no existe al leer los logs, salen distinto de
+        # 0 (el resultado está en canary-probe.json). No se promueve sin esa
+        # muestra.
         # Sin ese archivo, muestra bajo el piso o sin revision con tag →
         # warn + exit 0 (runbook signup-canary-rollback). El p95 no se mira
         # sin muestra: el 2026-08-16 un cold start abortó un deploy sano. El

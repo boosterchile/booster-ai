@@ -36,9 +36,15 @@ los umbrales (error rate bajo 1 %, p95 bajo 500 ms) y la decisión de
    frontend de Google es ingress. Un 5xx de `*.run.app` (aunque sea HTML) es
    la revisión, no ingress. Si la primera respuesta no es de la aplicación,
    la misma sonda corre en un Job efímero del cluster `booster-ai-telemetry`
-   (VPC del proyecto, Private Google Access). El Job usa la imagen del api ya
-   publicada **por digest**, con `command` que no arranca el servidor ni las
-   migraciones. Se borra al terminar.
+   (VPC del proyecto, Private Google Access, namespace `default`). El DNS
+   público de `*.run.app` no entra por Private Google Access: el pod fija el
+   host del tag en `199.36.153.8` (`private.googleapis.com`). Sin eso el
+   tráfico sale por Cloud NAT y el ingress vuelve a responder 404. El Job
+   usa la imagen del api ya publicada **por digest**, con `command` que no
+   arranca el servidor ni las migraciones. Los logs se leen en cuanto el Job
+   termina (`Complete` o `Failed`) o en cuanto el objeto desaparece. No se
+   espera solo `condition=complete` más allá del TTL. Se borra después de
+   leer el resumen. Si el Job ya no existe al leer, el gate no promueve.
 5. La ventana sigue durando 30 min (el tiempo que no use la sonda se espera).
 6. La sonda escribe `/workspace/canary-probe.json` (llegadas, 5xx, timeouts
    y errores de conexión). `canary-verify` lo lee antes de Monitoring y sale
@@ -73,6 +79,9 @@ los umbrales (error rate bajo 1 %, p95 bajo 500 ms) y la decisión de
       el gate sale distinto de 0 aunque Monitoring esté bajo el piso. No dice
       que promueve.
 - [x] Con URL, camino directo y Job fallidos: exit distinto de 0, no WARN.
+- [x] El Job resuelve el host del tag a `199.36.153.8`. Si el objeto
+      desaparece antes de leer los logs, el gate sale distinto de 0 y no
+      dice que promueve.
 - [x] La imagen del Job va por digest. El CI corre los unittest de
       `scripts/deploy`.
 - [x] El bloque Python de `canary-verify` no introduce `$` sin escapar, y el

@@ -53,6 +53,11 @@ def decidir_resultado_sonda(resultado: dict[str, object] | None) -> tuple[int, l
         return 0, []
     directo = str(resultado.get('camino_directo') or '')
     job = str(resultado.get('job') or '')
+    if job == 'perdido':
+        return 1, [
+            'canary-verify: FAIL el Job ya no existía al leer el resultado '
+            '(ttlSecondsAfterFinished o un delete anterior a los logs) — NO promover'
+        ]
     directo_fallo = directo not in ('ok', 'no_necesario', 'no_corrido')
     job_fallo = job in ('fallo', 'no_corrido')
     if directo_fallo and job_fallo:
@@ -145,3 +150,38 @@ def decidir_canary(
         )
     lineas.append('canary-verify: OK — promoviendo a 100%')
     return 0, lineas
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Dry-run del gate con un resultado de sonda ya escrito. No llama a Monitoring."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Dry-run de canary-verify, sin Cloud Monitoring')
+    parser.add_argument('--resultado', required=True)
+    parser.add_argument('--total', type=int, default=0)
+    parser.add_argument('--min-requests', type=int, default=30)
+    parser.add_argument('--dos-xx', type=int, default=0)
+    parser.add_argument('--cinco-xx', type=int, default=0)
+    parser.add_argument('--p95', type=float, default=None)
+    args = parser.parse_args(argv)
+    resultado, codigo, lineas = leer_resultado_sonda(args.resultado)
+    for linea in lineas:
+        print(linea)
+    if codigo != 0:
+        return codigo
+    counts: dict[str, int] = {}
+    if args.dos_xx:
+        counts['2xx'] = args.dos_xx
+    if args.cinco_xx:
+        counts['5xx'] = args.cinco_xx
+    p95s = [] if args.p95 is None else [args.p95]
+    codigo, lineas = decidir_gate(resultado, args.total, args.min_requests, counts, p95s)
+    for linea in lineas:
+        print(linea)
+    return codigo
+
+
+if __name__ == '__main__':
+    import sys
+
+    sys.exit(main())

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -19,6 +24,7 @@ from canary_synthetic_probe import (
     clasificar_respuesta,
     correr_plan,
     espera_antes,
+    clasificar_job,
     extraer_url_tag,
     manifiesto_job,
     plan_rutas,
@@ -170,6 +176,17 @@ class ManifiestoTest(unittest.TestCase):
         self.assertIn('cpu', recursos)
         self.assertIn('memory', recursos)
         self.assertEqual(doc['spec']['backoffLimit'], 0)
+        host = URL.split('//', 1)[1]
+        alias = doc['spec']['template']['spec']['hostAliases']
+        self.assertEqual(
+            [item['ip'] for item in alias],
+            ['199.36.153.8', '199.36.153.9', '199.36.153.10', '199.36.153.11'],
+        )
+        self.assertTrue(all(item['hostnames'] == [host] for item in alias))
+        self.assertGreaterEqual(doc['spec']['ttlSecondsAfterFinished'], 1800)
+        self.assertIn('if (i === 0 && !llego) break;', contenedor['command'][2])
+        self.assertEqual(doc['metadata']['namespace'], 'default')
+        self.assertEqual(doc['metadata']['name'], 'canary-probe-0123456789ab')
 
     def test_la_imagen_del_job_va_por_digest(self) -> None:
         digest = 'a' * 64
@@ -332,6 +349,11 @@ class CloudBuildTest(unittest.TestCase):
         self.assertIsNone(re.search(r'\$[A-Za-z_{]', suelto), suelto)
         self.assertIn('image_summary.digest', script)
         self.assertIn('/workspace/canary-probe.json', texto)
+        self.assertNotIn('kubectl wait --for=condition=complete', script)
+        self.assertIn('--estado-job', script)
+        self.assertIn('--job-estado perdido', script)
+        self.assertLess(script.index('kubectl delete job'), script.index('kubectl logs'))
+        self.assertLess(script.index('kubectl logs'), script.rindex('kubectl delete job'))
         verify = texto[fin:texto.index('id: deploy-api', fin)]
         self.assertLess(
             verify.index('decidir_resultado_sonda('),
@@ -499,6 +521,70 @@ class ResultadoSondaTest(unittest.TestCase):
         self.assertEqual(doc['total_plan'], 35)
         self.assertEqual(doc['errores_transporte'], 0)
         self.assertNotEqual(decidir_resultado_sonda(doc)[0], 0)
+
+
+class JobEstadoTest(unittest.TestCase):
+    def test_completo_fallido_y_ausente(self) -> None:
+        self.assertEqual(
+            clasificar_job({'status': {'conditions': [{'type': 'Complete', 'status': 'True'}]}}),
+            'completo',
+        )
+        self.assertEqual(
+            clasificar_job({'status': {'conditions': [{'type': 'Failed', 'status': 'True'}]}}),
+            'fallido',
+        )
+        self.assertEqual(clasificar_job({'status': {'failed': 1}}), 'fallido')
+        self.assertEqual(clasificar_job({'metadata': {'name': 'canary-probe-0123456789ab'}}), 'pendiente')
+        self.assertEqual(clasificar_job(None), 'ausente')
+        self.assertEqual(clasificar_job({}), 'ausente')
+
+    def test_cli_estado_job_lee_el_json(self) -> None:
+        original = sys.stdin
+        sys.stdin = io.StringIO(
+            '{"status":{"conditions":[{"type":"Failed","status":"True"}]}}'
+        )
+        buf = io.StringIO()
+        try:
+            with redirect_stdout(buf):
+                codigo = sonda.main(['--estado-job'])
+        finally:
+            sys.stdin = original
+        self.assertEqual(codigo, 0)
+        self.assertEqual(buf.getvalue(), 'fallido')
+
+    def test_el_script_del_job_rechaza_un_host_que_no_es_el_tag(self) -> None:
+        if shutil.which('node') is None:
+            self.skipTest('node no está en el PATH')
+        doc = json.loads(
+            manifiesto_job(
+                job_name='canary-probe-0123456789ab',
+                image='southamerica-west1-docker.pkg.dev/p/c/api@sha256:' + ('d' * 64),
+                url=URL,
+                tag=TAG,
+                cantidad=1,
+                deadline_epoch=1,
+            )
+        )
+        script = doc['spec']['template']['spec']['containers'][0]['command'][2]
+        env = os.environ.copy()
+        env.update(
+            {
+                'CANARY_URL': 'https://api.boosterchile.com',
+                'CANARY_TAG': TAG,
+                'CANARY_COUNT': '35',
+                'CANARY_DEADLINE_EPOCH': '1',
+            }
+        )
+        proc = subprocess.run(
+            ['node', '-e', script],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 1)
+        resumen = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertFalse(resumen['resumen']['llego_a_la_app'])
 
 
 if __name__ == '__main__':

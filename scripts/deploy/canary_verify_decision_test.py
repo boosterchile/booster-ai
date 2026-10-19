@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
-from canary_verify_decision import decidir_canary, decidir_gate, leer_resultado_sonda
+from canary_verify_decision import decidir_canary, decidir_gate, leer_resultado_sonda, main
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOUDBUILD = ROOT / 'cloudbuild.production.yaml'
@@ -100,6 +102,38 @@ class DecidirCanaryTest(unittest.TestCase):
         fin = texto.index('PYCHECK', inicio)
         bloque = texto[inicio:fin]
         self.assertNotIn('$', bloque)
+
+    def test_job_perdido_no_promueve(self) -> None:
+        resultado = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'errores_transporte': 0,
+            'camino_directo': 'ingress',
+            'job': 'perdido',
+        }
+        codigo, lineas = decidir_gate(resultado, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas)
+        self.assertIn('NO promover', texto)
+        self.assertIn('ttlSecondsAfterFinished', texto)
+        self.assertNotIn('Promoviendo', texto)
+
+    def test_dry_run_del_gate_con_cero_requests(self) -> None:
+        fd, nombre = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(lambda: os.remove(nombre) if os.path.exists(nombre) else None)
+        with open(nombre, 'w', encoding='utf-8') as fh:
+            fh.write(
+                '{"tenia_url":true,"llego_a_la_app":false,"cinco_xx":0,'
+                '"errores_transporte":0,"camino_directo":"ingress","job":"fallo"}'
+            )
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            codigo = main(['--resultado', nombre, '--total', '0', '--min-requests', '30'])
+        self.assertNotEqual(codigo, 0)
+        self.assertIn('NO promover', buf.getvalue())
+        self.assertNotIn('Promoviendo', buf.getvalue())
 
 
 if __name__ == '__main__':

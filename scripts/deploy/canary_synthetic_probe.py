@@ -4,7 +4,9 @@ Durante la ventana de espera manda GET /health y GET /health/signup-flow al
 URL del tag: _CANARY_MIN_REQUESTS más cinco, sin bajar el piso. No escribe
 datos de negocio y no pide datos de usuarios. Si el worker no atraviesa el
 ingress, emite un Job (imagen por digest) para correr la misma sonda desde
-la VPC del proyecto.
+la VPC del proyecto. El pod resuelve el host del tag a private.googleapis.com
+(199.36.153.8): el DNS público de *.run.app sale por Cloud NAT y el ingress
+INTERNAL_LOAD_BALANCER responde 404.
 
 Escribe el resultado en --result-out (por defecto /workspace/canary-probe.json):
 respuestas 5xx, timeouts y errores de conexión. canary-verify aborta si la
@@ -32,6 +34,19 @@ RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
 RUTA_RESULTADO = '/workspace/canary-probe.json'
 EXTRA_SONDA = 5
+# private.googleapis.com (199.36.153.8/30). La subnet booster-ai-private tiene
+# Private Google Access: estos VIP no salen por Cloud NAT. El DNS público
+# de *.run.app sí.
+IPS_GOOGLE_PRIVADA = (
+    '199.36.153.8',
+    '199.36.153.9',
+    '199.36.153.10',
+    '199.36.153.11',
+)
+# El Job tiene que seguir existiendo cuando leemos logs. 600s lo borraba
+# mientras kubectl wait seguía hasta 1500s (NotFound).
+TTL_JOB_SEGUNDOS = 1800
+ESTADOS_JOB = ('ok', 'fallo', 'no_corrido', 'no_necesario', 'perdido')
 _IMAGEN_DIGEST = re.compile(r'^.+@sha256:[0-9a-f]{64}$')
 
 # Node del Job. Solo GET, solo RUTAS_SEGURAS, sin seguir redirects.
@@ -45,7 +60,16 @@ const host = (() => {
   try { return new URL(url).host; } catch (e) { return ''; }
 })();
 if (!host.startsWith(tag + '---') || !host.endsWith('.run.app')) {
-  console.log(JSON.stringify({ error: 'url' }));
+  console.log(JSON.stringify({
+    error: 'url',
+    resumen: {
+      llego_a_la_app: false,
+      cinco_xx: 0,
+      errores_transporte: 0,
+      respuestas_app: 0,
+      total_plan: count,
+    },
+  }));
   process.exit(1);
 }
 function pausa(indice) {
@@ -86,6 +110,9 @@ function pausa(indice) {
       const message = err && err.message ? err.message : String(err);
       console.log(JSON.stringify({ i, path, error: message }));
     }
+    // El 404 del frontend de Google no va a cambiar en el request 30.
+    // Cortar acá deja el resumen antes de que el TTL borre el Job.
+    if (i === 0 && !llego) break;
   }
   console.log(JSON.stringify({
     resumen: {
@@ -210,13 +237,22 @@ def manifiesto_job(
         },
         'spec': {
             'backoffLimit': 0,
-            'ttlSecondsAfterFinished': 600,
+            'ttlSecondsAfterFinished': TTL_JOB_SEGUNDOS,
             'activeDeadlineSeconds': 1800,
             'template': {
                 'metadata': {'labels': {'app': 'canary-probe'}},
                 'spec': {
                     'restartPolicy': 'Never',
                     'automountServiceAccountToken': False,
+                    # Sin esto el pod resuelve el tag por DNS público, Cloud NAT
+                    # lo saca a internet y el ingress responde el HTML 404.
+                    'hostAliases': [
+                        {
+                            'ip': ip,
+                            'hostnames': [urllib.parse.urlparse(url).hostname],
+                        }
+                        for ip in IPS_GOOGLE_PRIVADA
+                    ],
                     'containers': [
                         {
                             'name': 'probe',
@@ -373,10 +409,39 @@ def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
 
 
 def marcar_job(resultado: dict[str, Any], estado: str) -> dict[str, Any]:
-    if estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+    if estado not in ESTADOS_JOB:
         raise ValueError(estado)
     resultado['job'] = estado
     return resultado
+
+
+def clasificar_job(doc: dict[str, Any] | None) -> str:
+    """Estado del Job para dejar de esperarlo y leer logs enseguida.
+
+    completo / fallido: condición terminal. ausente: el objeto ya no está
+    (TTL o delete). pendiente: sigue corriendo.
+    """
+    if not isinstance(doc, dict) or not doc:
+        return 'ausente'
+    status = doc.get('status') if isinstance(doc.get('status'), dict) else {}
+    if not isinstance(status, dict):
+        status = {}
+    vistos: set[str] = set()
+    for cond in status.get('conditions') or []:
+        if not isinstance(cond, dict) or cond.get('status') != 'True':
+            continue
+        tipo = str(cond.get('type') or '')
+        if tipo in ('Complete', 'Failed'):
+            vistos.add(tipo)
+    if 'Complete' in vistos:
+        return 'completo'
+    if 'Failed' in vistos:
+        return 'fallido'
+    if int(status.get('succeeded') or 0) > 0:
+        return 'completo'
+    if int(status.get('failed') or 0) > 0:
+        return 'fallido'
+    return 'pendiente'
 
 
 def _escribir(path: str, payload: dict[str, Any]) -> None:
@@ -424,7 +489,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--log-file', default='')
     parser.add_argument('--marcar-job', default='')
     parser.add_argument('--job-estado', default='')
+    parser.add_argument('--estado-job', action='store_true')
     args = parser.parse_args(argv)
+
+    if args.estado_job:
+        raw = sys.stdin.read()
+        try:
+            payload = json.loads(raw) if raw.strip() else None
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None and not isinstance(payload, dict):
+            payload = None
+        sys.stdout.write(clasificar_job(payload))
+        return 0
 
     if args.aplicar_log_job:
         if not args.log_file:
@@ -437,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.marcar_job:
-        if args.job_estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+        if args.job_estado not in ESTADOS_JOB:
             print('canary-probe: --job-estado inválido', file=sys.stderr)
             return 1
         try:
