@@ -82,6 +82,12 @@ function respuestaVacia(path: string): unknown {
   if (path === '/conductores') {
     return { conductores: [{ id: 'c1' }] };
   }
+  if (path.startsWith('/trip-requests-v2')) {
+    return { trip_requests: [] };
+  }
+  if (path.startsWith('/certificates')) {
+    return { certificates: [] };
+  }
   return {};
 }
 
@@ -171,12 +177,12 @@ describe('AppRoute', () => {
     expect(screen.getByTestId('inicio-accesos')).toHaveClass('md:hidden');
   });
 
-  it('shipper → muestra card "Crear carga"', () => {
+  it('shipper → muestra el inicio del generador y la CTA de publicar', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);
-    // "Crear carga" también aparece en el sidebar; apuntamos a la descripción
-    // única de la CARD del dashboard.
-    expect(screen.getByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
+    expect(await screen.findByTestId('inicio-generador')).toBeInTheDocument();
+    expect(screen.getAllByText('Publicar carga').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
   });
 
   it('el shell + dashboard operador no tiene violaciones de a11y (vitest-axe)', async () => {
@@ -232,10 +238,11 @@ describe('AppRoute', () => {
     expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
   });
 
-  it('generador puro conserva Bienvenido a Booster', () => {
+  it('generador puro saluda por nombre y no monta el inicio del transportista', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', false, true) };
     renderWithQueryClient(<AppRoute />);
-    expect(screen.getByRole('heading', { name: 'Bienvenido a Booster' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Felipe/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bienvenido a Booster' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
   });

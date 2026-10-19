@@ -11,10 +11,12 @@ export function InicioTransportista({
   nombreCompleto,
   legalName,
   esAdmin,
+  soloLectura = false,
 }: {
   nombreCompleto: string;
   legalName: string;
   esAdmin: boolean;
+  soloLectura?: boolean;
 }) {
   const { datos, reintentar } = useDatosInicio();
   const ahora = new Date();
@@ -25,5 +27,12 @@ export function InicioTransportista({
     ahora,
   });
   const negocio = buildNegocioHoy(datos, ahora);
-  return <InicioTransportistaVista vista={vista} negocio={negocio} onReintentar={reintentar} />;
+  return (
+    <InicioTransportistaVista
+      vista={vista}
+      negocio={negocio}
+      onReintentar={reintentar}
+      soloLectura={soloLectura}
+    />
+  );
 }

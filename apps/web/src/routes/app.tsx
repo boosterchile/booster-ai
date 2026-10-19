@@ -4,6 +4,7 @@ import { ArrowRight, Building2, Leaf, type LucideIcon, Package, PackagePlus } fr
 import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { InicioTransportista } from '../components/inicio-transportista/inicio-transportista.js';
+import { InicioGenerador } from '../components/inicio/inicio-generador.js';
 import type { MeResponse } from '../hooks/use-me.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -115,16 +116,19 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
   }
 
   const esTransportista = Boolean(activeEmpresa?.is_transportista);
+  const esGenerador = Boolean(activeEmpresa?.is_generador_carga);
+  const soloLectura = myRole === 'visualizador';
+  const generadorPuro = esGenerador && !esTransportista;
 
   return (
     <Layout me={me} title="Inicio">
-      {!esTransportista && (
+      {!esTransportista && !generadorPuro && (
         <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
           Bienvenido a Booster
         </h1>
       )}
 
-      {activeEmpresa && !esTransportista ? (
+      {activeEmpresa && !esTransportista && !generadorPuro ? (
         <p className="mt-2 text-neutral-600 text-sm sm:text-base">
           Empresa activa: <span className="font-medium">{activeEmpresa.legal_name}</span>
           {activeEmpresa.is_generador_carga && ' · Generador de carga'}
@@ -134,15 +138,20 @@ function AppDashboard({ me }: { me: MeOnboarded }) {
         <p className="mt-2 text-neutral-600 text-sm sm:text-base">Sin empresa activa.</p>
       )}
 
-      {esTransportista && activeEmpresa ? (
+      {esTransportista && activeEmpresa && !generadorPuro ? (
         <InicioTransportista
           nombreCompleto={me.user.full_name}
           legalName={activeEmpresa.legal_name}
           esAdmin={isAdmin}
+          soloLectura={soloLectura}
         />
       ) : null}
 
-      {activeEmpresa?.is_generador_carga && (
+      {generadorPuro && activeEmpresa ? (
+        <InicioGenerador me={me} soloLectura={soloLectura} />
+      ) : null}
+
+      {activeEmpresa?.is_generador_carga && esTransportista && (
         <section className="mt-10">
           <h2 className="font-semibold text-neutral-900 text-xl">Como generador de carga</h2>
           {GENERADOR_CARDS.map((c) => (

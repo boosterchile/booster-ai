@@ -4,7 +4,7 @@ import type { RetiroNegocio } from './negocio.js';
 
 const MOVIL = 3;
 
-function FilaMovil({ retiro }: { retiro: RetiroNegocio }) {
+function FilaMovil({ retiro, soloLectura }: { retiro: RetiroNegocio; soloLectura: boolean }) {
   return (
     <li data-testid={`retiro-movil-${retiro.clave}`} className="flex items-center gap-3 py-2">
       <div className="w-14 shrink-0">
@@ -28,7 +28,7 @@ function FilaMovil({ retiro }: { retiro: RetiroNegocio }) {
           params={{ id: retiro.asignarId }}
           className="shrink-0 rounded-md bg-primary-600 px-2.5 py-1 font-semibold text-white text-xs"
         >
-          Asignar
+          {soloLectura ? 'Ver' : 'Asignar'}
         </Link>
       ) : (
         <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden="true" />
@@ -37,7 +37,7 @@ function FilaMovil({ retiro }: { retiro: RetiroNegocio }) {
   );
 }
 
-function FilaDesktop({ retiro }: { retiro: RetiroNegocio }) {
+function FilaDesktop({ retiro, soloLectura }: { retiro: RetiroNegocio; soloLectura: boolean }) {
   return (
     <tr data-testid={`retiro-desktop-${retiro.clave}`} className="border-neutral-100 border-b">
       <td className="py-2 pr-3 font-semibold text-sm">
@@ -57,7 +57,7 @@ function FilaDesktop({ retiro }: { retiro: RetiroNegocio }) {
             params={{ id: retiro.asignarId }}
             className="ml-2 rounded-md bg-primary-600 px-2.5 py-1 font-semibold text-white text-xs"
           >
-            Asignar
+            {soloLectura ? 'Ver' : 'Asignar'}
           </Link>
         ) : null}
       </td>
@@ -66,13 +66,19 @@ function FilaDesktop({ retiro }: { retiro: RetiroNegocio }) {
 }
 
 /** 3 filas en móvil y tabla de hasta 5 en desktop. Una sola acción Asignar. */
-export function ListaProximos({ retiros }: { retiros: RetiroNegocio[] }) {
+export function ListaProximos({
+  retiros,
+  soloLectura = false,
+}: {
+  retiros: RetiroNegocio[];
+  soloLectura?: boolean;
+}) {
   const movil = retiros.slice(0, MOVIL);
   return (
     <>
       <ul data-testid="retiros-movil" className="md:hidden">
         {movil.map((retiro) => (
-          <FilaMovil key={retiro.clave} retiro={retiro} />
+          <FilaMovil key={retiro.clave} retiro={retiro} soloLectura={soloLectura} />
         ))}
       </ul>
       <div data-testid="retiros-desktop" className="hidden overflow-x-auto md:block">
@@ -87,7 +93,7 @@ export function ListaProximos({ retiros }: { retiros: RetiroNegocio[] }) {
           </thead>
           <tbody>
             {retiros.map((retiro) => (
-              <FilaDesktop key={retiro.clave} retiro={retiro} />
+              <FilaDesktop key={retiro.clave} retiro={retiro} soloLectura={soloLectura} />
             ))}
           </tbody>
         </table>
