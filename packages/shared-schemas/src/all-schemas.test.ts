@@ -825,5 +825,12 @@ describe('alta de conductor — email obligatorio (Fase B)', () => {
     expect(() => schema.parse({ ...base, email: null })).toThrow();
     expect(() => schema.parse({ ...base, email: '' })).toThrow();
     expect(() => schema.parse({ ...base, email: 'no-es-email' })).toThrow();
+    expect(() =>
+      schema.parse({ ...base, email: 'pending-rut-19257949K@boosterchile.invalid' }),
+    ).toThrow();
+    expect(() =>
+      schema.parse({ ...base, email: 'drivers+19257949K@boosterchile.invalid' }),
+    ).toThrow();
+    expect(schema.parse({ ...base, email: '  Jaime@Empresa.CL ' }).email).toBe('jaime@empresa.cl');
   });
 });

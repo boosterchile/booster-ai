@@ -316,6 +316,49 @@ describe('ConductoresDetalleRoute', () => {
     expect(screen.getByText('juan@example.com')).toBeInTheDocument();
   });
 
+  it('el rol conductor no puede cambiar el email', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+    providedContext = { kind: 'onboarded', me: makeMe('conductor') };
+    wrap(<ConductoresDetalleRoute />);
+    await screen.findByText('Juan Pérez');
+    expect(screen.queryByRole('button', { name: /Guardar email/ })).toBeNull();
+  });
+
+  it('pendiente con email de relleno: guarda el real y muestra el PIN reenviado', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Jaime Andres Cordero Castillo',
+          rut: '19257949-K',
+          email: 'pending-rut-19257949K@boosterchile.invalid',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      email: 'jaimecorderocastillo96@gmail.com',
+      invitacion_reenviada: true,
+      cuenta_activa: false,
+      activation_pin: '482915',
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(await screen.findByText(/email de relleno/i)).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByLabelText(/Email de contacto/),
+      'jaimecorderocastillo96@gmail.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /reenviar invitación/i }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
+        email: 'jaimecorderocastillo96@gmail.com',
+      }),
+    );
+    expect(await screen.findByText('482915')).toBeInTheDocument();
+  });
+
   it('conductor retirado (deleted_at) → form disabled + banner', async () => {
     vi.spyOn(api, 'get').mockResolvedValueOnce({
       conductor: buildConductor({ deleted_at: '2026-05-09T10:00:00Z' }),
@@ -374,6 +417,26 @@ describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const body = post.mock.calls[0]?.[1] as { email?: string };
     expect(body.email).toBe('juan@empresa.cl');
+  });
+
+  it('no envía un email de relleno', async () => {
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
+    await userEvent.type(
+      screen.getByLabelText(/^Email/),
+      'pending-rut-111111111@boosterchile.invalid',
+    );
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
+
+    await waitFor(() => expect(screen.getByText(/email real del conductor/i)).toBeInTheDocument());
+    expect(post).not.toHaveBeenCalled();
   });
 });
 

@@ -1006,6 +1006,7 @@ export function createServer(opts: CreateServerOptions): Hono {
         logger,
         emailSender,
         webAppUrl: config.WEB_APP_URL,
+        ...(opts.firebaseAuth ? { firebaseAuth: opts.firebaseAuth } : {}),
         // Comparte el mismo cliente Twilio que el resto de las notificaciones.
         // Ausente en dev ⇒ no se intenta; el alta no depende de esto.
         ...(opts.notify?.twilioClient ? { whatsappClient: opts.notify.twilioClient } : {}),

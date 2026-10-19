@@ -2869,6 +2869,45 @@ export const eventosImpersonacion = pgTable(
 // TYPE EXPORTS
 // =============================================================================
 
+/**
+ * Cambio del email de contacto de un conductor. Append-only: quién, de qué
+ * correo a cuál, si se reenvió la invitación y qué se hizo con Firebase.
+ * No guarda el PIN.
+ */
+export const auditoriaEmailConductor = pgTable(
+  'auditoria_email_conductor',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conductorId: uuid('conductor_id')
+      .notNull()
+      .references(() => conductores.id, { onDelete: 'restrict' }),
+    usuarioId: uuid('usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    empresaId: uuid('empresa_id')
+      .notNull()
+      .references(() => empresas.id, { onDelete: 'restrict' }),
+    actorUsuarioId: uuid('actor_usuario_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    emailAnterior: varchar('email_anterior', { length: 255 }).notNull(),
+    emailNuevo: varchar('email_nuevo', { length: 255 }).notNull(),
+    invitacionReenviada: boolean('invitacion_reenviada').notNull(),
+    accionFirebase: varchar('accion_firebase', { length: 64 }).notNull(),
+    createdAt: timestamp('creado_en', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    conductorIdx: index('idx_auditoria_email_conductor_conductor').on(
+      table.conductorId,
+      table.createdAt,
+    ),
+    empresaIdx: index('idx_auditoria_email_conductor_empresa').on(table.empresaId, table.createdAt),
+  }),
+);
+
+export type AuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferSelect;
+export type NewAuditoriaEmailConductorRow = typeof auditoriaEmailConductor.$inferInsert;
+
 export type EventoImpersonacionRow = typeof eventosImpersonacion.$inferSelect;
 export type NewEventoImpersonacionRow = typeof eventosImpersonacion.$inferInsert;
 export type PlanRow = typeof plans.$inferSelect;

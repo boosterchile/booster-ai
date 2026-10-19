@@ -53,6 +53,39 @@ export const driverSchema = z.object({
 export type Driver = z.infer<typeof driverSchema>;
 
 /**
+ * Correo que no es un canal real: el de relleno del alta vieja y los
+ * sintéticos de Firebase (`drivers+` / `users+` en el dominio reservado
+ * `.invalid`). Nadie puede recibir la invitación ahí.
+ */
+export function esEmailDeRelleno(email: string): boolean {
+  const normal = email.trim().toLowerCase();
+  const arroba = normal.lastIndexOf('@');
+  if (arroba < 1 || arroba === normal.length - 1) {
+    return false;
+  }
+  const local = normal.slice(0, arroba);
+  const dominio = normal.slice(arroba + 1);
+  return dominio === 'boosterchile.invalid' || local.startsWith('pending-rut-');
+}
+
+/**
+ * Email de contacto del conductor. Obligatorio, en minúsculas, y nunca el
+ * de relleno. El máximo coincide con `usuarios.email` (varchar 255).
+ */
+export const conductorContactEmailSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(255)
+  .email('Ingresa un email válido.')
+  .transform((value) => value.toLowerCase())
+  .refine((value) => !esEmailDeRelleno(value), {
+    message: 'Tiene que ser el email real del conductor.',
+  });
+
+export type ConductorContactEmail = z.infer<typeof conductorContactEmailSchema>;
+
+/**
  * Body para crear un conductor desde la interfaz transportista. El RUT del
  * conductor se recibe acá (no en `users`) porque la creación primero hace
  * `lookup` y si el user existe, lo enlaza; si no, crea user + envía invite.
@@ -69,7 +102,7 @@ export const createDriverBodySchema = z.object({
    * a la que el sistema no puede escribirle. El dato no se perdió, nunca se
    * pidió.
    */
-  email: z.string().email().max(320),
+  email: conductorContactEmailSchema,
   /**
    * Teléfono móvil en E.164. **Obligatorio** desde 2026-08-03: WhatsApp es el
    * canal principal hacia el conductor — los conductores chilenos de camión
@@ -102,3 +135,10 @@ export const updateDriverBodySchema = z.object({
 });
 
 export type UpdateDriverBody = z.infer<typeof updateDriverBodySchema>;
+
+/** Corregir el email de contacto y, si sigue pendiente, reenviar la invitación. */
+export const corregirEmailConductorBodySchema = z.object({
+  email: conductorContactEmailSchema,
+});
+
+export type CorregirEmailConductorBody = z.infer<typeof corregirEmailConductorBodySchema>;
