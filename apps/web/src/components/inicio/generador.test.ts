@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INICIO_GASTO_GENERADOR_ACTIVO } from './flags.js';
-import * as flags from './flags.js';
+import { INICIO_GASTO_GENERADOR_ACTIVO, INICIO_GENERADOR_VE_OFERTAS } from './flags.js';
 import {
   type CertificadoInicio,
   type ViajeInicio,
@@ -87,8 +86,8 @@ describe('buildGeneradorHoy', () => {
     expect(negocio.cargas.valor.asignadas).toBe(1);
     expect(negocio.cargas.valor.enCamino).toBe(1);
     expect(negocio.cargas.valor.destacada?.codigo).toContain('BST-4821');
-    expect(negocio.cargas.valor.destacada?.detalle).toContain('ofertas enviadas a 4');
-    expect('INICIO_GENERADOR_VE_OFERTAS' in flags).toBe(false);
+    expect(INICIO_GENERADOR_VE_OFERTAS).toBe(false);
+    expect(negocio.cargas.valor.destacada?.detalle).not.toContain('ofertas enviadas');
     expect(negocio.agenda.estado).toBe('listo');
     if (negocio.agenda.estado === 'listo') {
       const enRuta = negocio.agenda.valor.find((fila) => fila.codigo === 'BST-4790');
