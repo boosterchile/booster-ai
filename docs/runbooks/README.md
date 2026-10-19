@@ -41,6 +41,7 @@
 | [`staging.md`](staging.md) | Crear y operar staging, el proyecto gemelo de prod con el mismo Terraform (ADR-083). |
 | [`oncall-telemetry-incidents.md`](oncall-telemetry-incidents.md) | Árbol de respuesta por alerta de telemetría (crash/unplug/jamming/parser/backlog/stalled/ingress). |
 | [`db-migration-rollback.md`](db-migration-rollback.md) | Revertir/contener una migración Drizzle (Caminos A rollback / B forward-fix / C PITR). |
+| [`indice-parcial-gps-0066.md`](indice-parcial-gps-0066.md) | Antes del deploy de `0066`: `CREATE INDEX CONCURRENTLY` de la última posición válida, `indisvalid` y reintento si queda INVALID. |
 | [`bootstrap-gke-telemetry-gateway.md`](bootstrap-gke-telemetry-gateway.md) | Primer levantamiento del cluster GKE (secret K8s, Workload Identity, Artifact Registry). |
 | [`dr-drill.md`](dr-drill.md) | **Drill de DR por restauración** (T10-20): clon PITR + restore de backup en otra región, RTO/RPO medidos con `infrastructure/scripts/dr-drill.sh`. |
 | [`dr-failover-test.md`](dr-failover-test.md) | Test de failover DR del gateway (histórico; el clúster DR se retiró por ADR-081). |

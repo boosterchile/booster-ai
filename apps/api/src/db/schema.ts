@@ -1928,14 +1928,15 @@ export const telemetryPoints = pgTable(
     // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
     // proyecciones).
     // 0066: solo filas con fix. La última posición no camina los 0,0.
-    // Un insert sin fix no agrega hoja en estos dos.
+    // Un insert sin fix no agrega hoja en estos dos. DESC igual que el SQL:
+    // el LIMIT 1 lee la hoja más nueva.
     gpsValidoVehiculoIdx: index('idx_telemetria_vehiculo_gps_valido')
-      .on(table.vehicleId, table.timestampDevice)
+      .on(table.vehicleId, table.timestampDevice.desc())
       .where(
         sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
       ),
     gpsValidoImeiIdx: index('idx_telemetria_imei_gps_valido')
-      .on(table.imei, table.timestampDevice)
+      .on(table.imei, table.timestampDevice.desc())
       .where(
         sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
       ),

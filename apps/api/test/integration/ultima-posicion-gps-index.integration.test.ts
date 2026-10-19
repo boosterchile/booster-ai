@@ -51,7 +51,7 @@ describe('integration: última posición válida usa el índice parcial (0066)',
       [INDICE_GPS_VALIDO_IMEI, INDICE_GPS_VALIDO_VEHICULO].sort(),
     );
     for (const row of res.rows) {
-      expect(row.indexdef).toContain('timestamp_device');
+      expect(row.indexdef).toContain('timestamp_device DESC');
       expect(row.indexdef.toLowerCase()).toContain('latitud is not null');
       expect(row.indexdef.toLowerCase()).toContain('longitud is not null');
       expect(row.indexdef).toContain('<>');

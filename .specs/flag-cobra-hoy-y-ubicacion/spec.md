@@ -31,7 +31,8 @@ Si el último ping ya tiene coordenada, es una lectura. Si el dispositivo lleva 
 - POST de solicitud, con el flag apagado: `403 {error:'feature_disabled'}`. 404 queda para `assignment_not_found`.
 - Con el flag encendido, el mismo contrato de hoy (cotización, alta, `adelantos`).
 - La UI del historial sigue mostrando «La opción de pronto pago todavía no está activa».
-- Índices parciales `idx_telemetria_vehiculo_gps_valido` e `idx_telemetria_imei_gps_valido` sobre filas con coordenada válida. Migración `0066`: #793, #794 y #795 reservan 0063–0065 y no están en `main`.
+- Índices parciales `idx_telemetria_vehiculo_gps_valido` e `idx_telemetria_imei_gps_valido` sobre filas con coordenada válida. Migración `0066`: #793, #794 y #795 reservan 0063–0065 y no están en `main`. El idx del journal se ajusta cuando #799 se mergea último. Los dos `CREATE INDEX` son `IF NOT EXISTS` con el mismo `WHERE`. Antes del deploy, Ops los crea con `CONCURRENTLY` según `docs/runbooks/indice-parcial-gps-0066.md`.
+- El `items:[]` de la cotización apagada es el mismo sobre que el del historial. No es una lista de tarifas: va vacío y el cliente mira `enabled`.
 - El plan de la última posición usa ese índice y no descarta miles de pings sin fix.
 - La tarjeta distingue carga (skeleton), sin datos y error.
 
