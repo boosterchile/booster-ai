@@ -113,6 +113,8 @@ locals {
     "geocoding-backend.googleapis.com",
     "elevation-backend.googleapis.com",
     "places.googleapis.com",
+    "places-backend.googleapis.com", # Places clásica; la necesita #794
+    "maps-backend.googleapis.com",   # ya habilitada a mano; reconcilia el drift
 
     # AI
     "generativelanguage.googleapis.com", # Gemini
