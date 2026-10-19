@@ -13,6 +13,8 @@
 #   - Más de 5 errores reportables en 5 min por servicio → alerta.
 # Alcance: api, telemetry-processor, whatsapp-bot (Cloud Run) y
 # telemetry-tcp-gateway (GKE, contenedor `gateway`).
+# La alerta restringe resource.type a esos dos: la API de Monitoring lo exige
+# en el filtro, y la serie de la log-based metric hereda el tipo del log.
 # =============================================================================
 
 resource "google_logging_metric" "backend_errores_reportados" {
@@ -62,7 +64,7 @@ resource "google_monitoring_alert_policy" "backend_errores_reportados" {
   conditions {
     display_name = "Falla no controlada (fatal) en un backend"
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backend_errores_reportados.name}\" AND metric.label.severidad=\"CRITICAL\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backend_errores_reportados.name}\" AND resource.type=one_of(\"cloud_run_revision\", \"k8s_container\") AND metric.label.severidad=\"CRITICAL\""
       duration        = "0s"
       comparison      = "COMPARISON_GT"
       threshold_value = 0
@@ -79,7 +81,7 @@ resource "google_monitoring_alert_policy" "backend_errores_reportados" {
   conditions {
     display_name = "Más de 5 errores reportables en 5 min por servicio"
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backend_errores_reportados.name}\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.backend_errores_reportados.name}\" AND resource.type=one_of(\"cloud_run_revision\", \"k8s_container\")"
       duration        = "0s"
       comparison      = "COMPARISON_GT"
       threshold_value = 5
