@@ -88,6 +88,33 @@ describe('SelectorLugar', () => {
     expect(props.onDireccion).not.toHaveBeenCalled();
   });
 
+  it('la dirección es un combobox y el listbox existe aunque esté cerrado', () => {
+    renderSelector();
+    const input = screen.getByRole('combobox', { name: /Dirección de recogida/ });
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    expect(input).not.toHaveAttribute('aria-activedescendant');
+    const lista = document.getElementById(input.getAttribute('aria-controls') ?? '');
+    expect(lista).toHaveAttribute('role', 'listbox');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('avisa si las coordenadas usan coma decimal', async () => {
+    const user = userEvent.setup();
+    renderSelector();
+    const campo = screen.getByLabelText(/Link de Google Maps/);
+    await user.type(campo, '-33,45, -70,66');
+    await user.tab();
+    expect(await screen.findByText(/punto para los decimales/)).toBeInTheDocument();
+  });
+
+  it('habla de tú', () => {
+    renderSelector();
+    const texto = document.body.textContent ?? '';
+    expect(texto).not.toMatch(/\bPegá\b|\bEscribí\b|\belegí\b|\bdejá\b|\bPodés\b|\bAbrilo\b/);
+    expect(texto).toMatch(/Escribe y elige/);
+    expect(texto).toMatch(/Puedes escribir/);
+  });
+
   it('escribir la dirección no la rechaza', () => {
     const props = renderSelector();
     fireEvent.change(screen.getByLabelText(/Dirección de recogida/), {

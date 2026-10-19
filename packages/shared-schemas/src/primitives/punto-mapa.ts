@@ -1,6 +1,6 @@
 /**
  * Lee un punto (lat/lng) desde texto pegado: coordenadas sueltas o un link
- * de Google Maps. Los links cortos (`maps.app.goo.gl`, `goo.gl`) no traen
+ * de Google Maps. Los links cortos (`maps.app.goo.gl`) no traen
  * coordenadas; se marcan para resolverlos en el servidor (CORS no deja
  * seguir el redirect desde el browser).
  *
@@ -18,7 +18,7 @@ export type ClasificacionTextoPunto =
   | { tipo: 'enlace'; url: string }
   | { tipo: 'texto' };
 
-const HOSTS_CORTOS = new Set(['maps.app.goo.gl', 'goo.gl']);
+const HOSTS_CORTOS = new Set(['maps.app.goo.gl']);
 
 const HOSTS_GOOGLE = new Set([
   'maps.google.com',
@@ -28,7 +28,8 @@ const HOSTS_GOOGLE = new Set([
   'www.google.cl',
 ]);
 
-const LARGO_MAXIMO = 4_000;
+/** Tope del texto pegado. El body de /resolver-enlace usa el mismo máximo. */
+const LARGO_MAXIMO = 500;
 
 function puntoValido(latitude: number, longitude: number): PuntoMapa | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -50,6 +51,20 @@ function parsearPar(latitud: string, longitud: string): PuntoMapa | null {
 
 function esDigito(caracter: string | undefined): boolean {
   return caracter !== undefined && caracter >= '0' && caracter <= '9';
+}
+
+/**
+ * Coma entre dos dígitos: en Chile se escribe -33,45 y el parser solo acepta
+ * punto. El aviso va en la UI; esto no interpreta la coma como decimal.
+ */
+export function tieneComaDecimal(texto: string): boolean {
+  const recorte = texto.length > LARGO_MAXIMO ? texto.slice(0, LARGO_MAXIMO) : texto;
+  for (let indice = 1; indice < recorte.length - 1; indice += 1) {
+    if (recorte[indice] === ',' && esDigito(recorte[indice - 1]) && esDigito(recorte[indice + 1])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function esLetra(caracter: string | undefined): boolean {

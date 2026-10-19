@@ -1,4 +1,4 @@
--- Migration 0063 — lat/lng del destino del viaje.
+-- Migration 0064 — lat/lng del destino del viaje.
 --
 -- El origen ya tiene origin_latitude / origin_longitude (0054). El destino
 -- no: el pin, la sugerencia de Places o un link de Google Maps no tenían

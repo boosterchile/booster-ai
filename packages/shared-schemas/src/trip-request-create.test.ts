@@ -63,4 +63,53 @@ describe('tripRequestCreateInputSchema — lugar', () => {
         .success,
     ).toBe(false);
   });
+
+  it('rechaza una comuna que no pertenece a la región', () => {
+    const result = tripRequestCreateInputSchema.safeParse(
+      base({ origin: { comuna_code: '08101' } }),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const comuna = result.error.issues.find(
+        (issue) => issue.path.join('.') === 'origin.comuna_code',
+      );
+      expect(comuna?.message).toBe('La comuna no pertenece a la región');
+    }
+  });
+
+  it('rechaza un punto fuera de Chile y acepta Pascua y Magallanes', () => {
+    const madrid = tripRequestCreateInputSchema.safeParse(
+      base({ origin: { latitude: 40.42, longitude: -3.7 } }),
+    );
+    expect(madrid.success).toBe(false);
+    if (!madrid.success) {
+      expect(
+        madrid.error.issues.some((issue) => issue.message === 'El punto tiene que estar en Chile'),
+      ).toBe(true);
+    }
+    expect(
+      tripRequestCreateInputSchema.safeParse(
+        base({
+          origin: {
+            region_code: 'V',
+            latitude: -27.1127,
+            longitude: -109.3497,
+            comuna_code: '05201',
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      tripRequestCreateInputSchema.safeParse(
+        base({
+          destination: {
+            region_code: 'XII',
+            latitude: -53.1638,
+            longitude: -70.9171,
+            comuna_code: '12101',
+          },
+        }),
+      ).success,
+    ).toBe(true);
+  });
 });

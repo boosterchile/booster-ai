@@ -12,7 +12,6 @@ import { setResultAttributes, withBusinessSpan } from '../observability/business
 
 const HOSTS_PERMITIDOS = new Set([
   'maps.app.goo.gl',
-  'goo.gl',
   'maps.google.com',
   'maps.google.cl',
   'www.google.com',
@@ -38,6 +37,17 @@ function hostPermitido(url: URL): boolean {
     return false;
   }
   return HOSTS_PERMITIDOS.has(host);
+}
+
+async function cerrarCuerpo(response: Response, logger: Logger): Promise<void> {
+  if (!response.body) {
+    return;
+  }
+  try {
+    await response.body.cancel();
+  } catch (err) {
+    logger.warn({ err }, 'resolverEnlaceMapa: no se pudo cerrar el body');
+  }
 }
 
 async function resolverInner(
@@ -84,6 +94,7 @@ async function resolverInner(
     }
 
     const location = response.headers.get('location');
+    await cerrarCuerpo(response, logger);
     if (!location || response.status < 300 || response.status >= 400) {
       return { ok: false, motivo: 'sin_coordenadas' };
     }

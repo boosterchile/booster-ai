@@ -248,7 +248,7 @@ export function createTripRequestsV2Routes(opts: {
   });
 
   const resolverEnlaceBodySchema = z.object({
-    texto: z.string().trim().min(1).max(2_000),
+    texto: z.string().trim().min(1).max(500),
   });
 
   // ---------------------------------------------------------------------

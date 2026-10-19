@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clasificarTextoPunto } from './punto-mapa.js';
+import { clasificarTextoPunto, tieneComaDecimal } from './punto-mapa.js';
 
 describe('clasificarTextoPunto', () => {
   it('lee coordenadas con coma', () => {
@@ -47,6 +47,16 @@ describe('clasificarTextoPunto', () => {
       tipo: 'enlace',
       url: 'https://maps.app.goo.gl/cFmSSGQDfS2tzWex7',
     });
+  });
+
+  it('no trata goo.gl genérico como link de Maps', () => {
+    expect(clasificarTextoPunto('https://goo.gl/maps/abcDEF123')).toEqual({ tipo: 'texto' });
+  });
+
+  it('avisa la coma decimal y no la confunde con el separador del par', () => {
+    expect(tieneComaDecimal('-33,45, -70,66')).toBe(true);
+    expect(tieneComaDecimal('-33.45, -70.66')).toBe(false);
+    expect(tieneComaDecimal('Compañía 4425')).toBe(false);
   });
 
   it('no trata un https ajeno ni un link con usuario como punto', () => {

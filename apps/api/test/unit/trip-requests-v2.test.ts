@@ -251,6 +251,24 @@ describe('POST /trip-requests-v2', () => {
       });
     }
 
+    it('rechaza una comuna que no pertenece a la región', async () => {
+      const body = makeValidBody();
+      const res = await postBody({
+        ...body,
+        origin: { ...body.origin, comuna_code: '08101' },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rechaza un punto fuera de Chile', async () => {
+      const body = makeValidBody();
+      const res = await postBody({
+        ...body,
+        destination: { ...body.destination, latitude: 40.42, longitude: -3.7 },
+      });
+      expect(res.status).toBe(400);
+    });
+
     it('rechaza dirección de origen con menos de 5 caracteres', async () => {
       const body = makeValidBody();
       body.origin.address_raw = 'abc'; // 3 caracteres
@@ -503,6 +521,19 @@ describe('POST /trip-requests-v2', () => {
     });
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({ error: 'enlace_sin_punto', motivo: 'host_no_permitido' });
+  });
+
+  it('POST /resolver-enlace rechaza un texto de más de 500 caracteres', async () => {
+    const app = await buildAppWith({
+      db: makeStubDb({}),
+      userContext: buildUserContext(),
+    });
+    const res = await app.request('/trip-requests-v2/resolver-enlace', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto: `https://maps.app.goo.gl/${'a'.repeat(480)}` }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it('matching sin candidatos: 201 con status=expirado y matching offers vacío', async () => {

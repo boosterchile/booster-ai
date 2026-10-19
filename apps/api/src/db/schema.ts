@@ -1351,7 +1351,7 @@ export const trips = pgTable(
     destinationComunaCode: varchar('destino_codigo_comuna', { length: 10 }),
     /**
      * Lat/lng del destino marcado por el generador (sugerencia, pin o link).
-     * NULL = sin punto (viaje previo a 0063, o solo texto). Misma precisión
+     * NULL = sin punto (viaje previo a 0064, o solo texto). Misma precisión
      * y el mismo naming inglés que origin_latitude / origin_longitude.
      */
     destinationLatitude: numeric('destination_latitude', { precision: 10, scale: 7 }),

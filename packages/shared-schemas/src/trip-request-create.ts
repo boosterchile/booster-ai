@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { cargoTypeSchema } from './domain/cargo-request.js';
 import { type RegionCode, regionCodeSchema } from './primitives/chile.js';
+import { comunasDeRegion } from './primitives/comunas-chile.js';
 
 /**
  * Schema del body POST /trip-requests.
@@ -55,6 +56,12 @@ const regionRequeridaSchema = z.string().transform((valor, ctx): RegionCode => {
 const latitudSchema = z.number().finite().gte(-90).lte(90);
 const longitudSchema = z.number().finite().gte(-180).lte(180);
 
+/** Caja de Chile continental, Pascua y el extremo sur. Fuera de esto no es un punto del viaje. */
+const CHILE_LAT_MIN = -56;
+const CHILE_LAT_MAX = -17;
+const CHILE_LNG_MIN = -110;
+const CHILE_LNG_MAX = -66;
+
 /**
  * Un extremo del viaje. `comuna_code` es el CUT/INE (5 dígitos) cuando el
  * selector lo conoce; se mantiene string ≤ 10 para no cerrarle la puerta a
@@ -81,17 +88,36 @@ const lugarSchema = z
       });
       return;
     }
+    if (tieneLat && tieneLng && lugar.latitude !== undefined && lugar.longitude !== undefined) {
+      if (lugar.latitude === 0 || lugar.longitude === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['latitude'],
+          message: 'Coordenadas no válidas',
+        });
+        return;
+      }
+      if (
+        lugar.latitude < CHILE_LAT_MIN ||
+        lugar.latitude > CHILE_LAT_MAX ||
+        lugar.longitude < CHILE_LNG_MIN ||
+        lugar.longitude > CHILE_LNG_MAX
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['latitude'],
+          message: 'El punto tiene que estar en Chile',
+        });
+      }
+    }
     if (
-      tieneLat &&
-      tieneLng &&
-      lugar.latitude !== undefined &&
-      lugar.longitude !== undefined &&
-      (lugar.latitude === 0 || lugar.longitude === 0)
+      lugar.comuna_code !== undefined &&
+      !comunasDeRegion(lugar.region_code).some((comuna) => comuna.code === lugar.comuna_code)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['latitude'],
-        message: 'Coordenadas no válidas',
+        path: ['comuna_code'],
+        message: 'La comuna no pertenece a la región',
       });
     }
   });

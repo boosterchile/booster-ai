@@ -3,10 +3,18 @@ import {
   clasificarTextoPunto,
   comunaPorCodigo,
   comunasDeRegion,
+  tieneComaDecimal,
 } from '@booster-ai/shared-schemas';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { MapPin } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { logger } from '../../lib/logger.js';
 import { FormField, inputClass as fieldInputClass } from '../FormField.js';
 import { MapaPinLugar } from './MapaPinLugar.js';
@@ -98,26 +106,40 @@ function etiquetaPunto(latitude: number, longitude: number): string {
  * Sugerencias de Places bajo el input. Si la librería o la API fallan,
  * avisa una vez y el texto libre sigue funcionando.
  */
+type TecladoInput = (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+
 function SugerenciasPlaces({
+  listaId,
   consulta,
   abierto,
   onElegir,
   onNoDisponible,
+  onCerrar,
+  onActivaId,
+  tecladoRef,
 }: {
+  listaId: string;
   consulta: string;
   abierto: boolean;
   onElegir: (lugar: LugarDetallado) => void;
   onNoDisponible: () => void;
+  onCerrar: () => void;
+  onActivaId: (id: string | null) => void;
+  tecladoRef: { current: TecladoInput };
 }) {
   const places = useMapsLibrary('places');
   const [sugerencias, setSugerencias] = useState<SugerenciaLugar[]>([]);
   const [activo, setActivo] = useState(0);
   const onNoDisponibleRef = useRef(onNoDisponible);
   const onElegirRef = useRef(onElegir);
+  const onCerrarRef = useRef(onCerrar);
+  const onActivaIdRef = useRef(onActivaId);
   const sugerenciasRef = useRef(sugerencias);
   const activoRef = useRef(activo);
   onNoDisponibleRef.current = onNoDisponible;
   onElegirRef.current = onElegir;
+  onCerrarRef.current = onCerrar;
+  onActivaIdRef.current = onActivaId;
   sugerenciasRef.current = sugerencias;
   activoRef.current = activo;
 
@@ -166,66 +188,81 @@ function SugerenciasPlaces({
   }, [places, consulta, abierto]);
 
   useEffect(() => {
-    if (sugerencias.length === 0) {
+    onActivaIdRef.current(abierto && sugerencias.length > 0 ? `${listaId}-opcion-${activo}` : null);
+  }, [abierto, sugerencias.length, activo, listaId]);
+
+  useEffect(() => {
+    return () => onActivaIdRef.current(null);
+  }, []);
+
+  tecladoRef.current = (event) => {
+    const lista = sugerenciasRef.current;
+    if (lista.length === 0) {
       return;
     }
-    function onKey(event: KeyboardEvent) {
-      const lista = sugerenciasRef.current;
-      if (lista.length === 0) {
-        return;
-      }
-      if (event.key === 'Escape') {
-        setSugerencias([]);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setActivo((indice) => Math.min(lista.length - 1, indice + 1));
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setActivo((indice) => Math.max(0, indice - 1));
-        return;
-      }
-      if (event.key !== 'Enter') {
-        return;
-      }
-      const item = lista[activoRef.current];
-      if (!item) {
-        return;
-      }
+    if (event.key === 'Escape') {
       event.preventDefault();
-      event.stopPropagation();
-      elegirRef.current(item);
+      setSugerencias([]);
+      onCerrarRef.current();
+      return;
     }
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [sugerencias.length]);
-
-  if (sugerencias.length === 0) {
-    return null;
-  }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActivo((indice) => Math.min(lista.length - 1, indice + 1));
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActivo((indice) => Math.max(0, indice - 1));
+      return;
+    }
+    if (event.key !== 'Enter') {
+      return;
+    }
+    const item = lista[activoRef.current];
+    if (!item) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    elegirRef.current(item);
+  };
 
   return (
     <ul
+      id={listaId}
+      // biome-ignore lint/a11y/useSemanticElements: listbox del combobox ARIA; un select no muestra Places
+      // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: listbox del combobox ARIA; un select no muestra Places
+      role="listbox"
       aria-label="Sugerencias de dirección"
+      hidden={sugerencias.length === 0}
+      tabIndex={-1}
       className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg"
     >
       {sugerencias.map((item, index) => (
-        <li key={item.placeId}>
-          <button
-            type="button"
-            className={`flex min-h-11 w-full flex-col items-start px-3 py-2 text-left text-sm ${
-              index === activo ? 'bg-primary-50' : 'hover:bg-neutral-50'
-            }`}
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => setActivo(index)}
-            onClick={() => elegir(item)}
-          >
-            <span className="text-neutral-900">{item.principal}</span>
-            {item.secundario && <span className="text-neutral-500 text-xs">{item.secundario}</span>}
-          </button>
+        <li
+          key={item.placeId}
+          id={`${listaId}-opcion-${index}`}
+          // biome-ignore lint/a11y/useSemanticElements: option del listbox ARIA; el teclado vive en el input
+          // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: option del listbox ARIA; el teclado vive en el input
+          role="option"
+          aria-selected={index === activo}
+          tabIndex={-1}
+          className={`flex min-h-11 w-full cursor-pointer flex-col items-start px-3 py-2 text-left text-sm ${
+            index === activo ? 'bg-primary-50' : 'hover:bg-neutral-50'
+          }`}
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={() => setActivo(index)}
+          onClick={() => elegir(item)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              elegir(item);
+            }
+          }}
+        >
+          <span className="text-neutral-900">{item.principal}</span>
+          {item.secundario && <span className="text-neutral-500 text-xs">{item.secundario}</span>}
         </li>
       ))}
     </ul>
@@ -268,7 +305,12 @@ export function SelectorLugar({
   // Un mapa de Google en el tab order atrapa el foco (el E2E de teclado lo
   // marca) y con una key inválida igual inyecta el iframe.
   const [mapaAbierto, setMapaAbierto] = useState(latitude !== null && longitude !== null);
+  const [opcionActivaId, setOpcionActivaId] = useState<string | null>(null);
   const listaId = useId();
+  const tecladoRef = useRef<TecladoInput>(() => undefined);
+  const reportarActiva = useCallback((id: string | null) => {
+    setOpcionActivaId(id);
+  }, []);
 
   useEffect(() => {
     if (latitude !== null && longitude !== null) {
@@ -296,7 +338,11 @@ export function SelectorLugar({
       return;
     }
     if (clasificado.tipo !== 'enlace') {
-      setErrorPunto('Pegá un link de Google Maps o coordenadas (lat, lng).');
+      setErrorPunto(
+        tieneComaDecimal(texto)
+          ? 'Usa un punto para los decimales, por ejemplo -33.45, -70.66.'
+          : 'Pega un link de Google Maps o coordenadas (lat, lng).',
+      );
       return;
     }
     setErrorPunto(null);
@@ -305,7 +351,7 @@ export function SelectorLugar({
     if (!punto) {
       setAviso(null);
       setErrorPunto(
-        'No pudimos leer un punto en ese link. Abrilo, copiá las coordenadas o el link completo.',
+        'No pudimos leer un punto en ese link. Ábrelo, copia las coordenadas o el link completo.',
       );
       return;
     }
@@ -320,7 +366,7 @@ export function SelectorLugar({
           label={etiquetaDireccion}
           required
           error={errorDireccion}
-          hint="Escribí y elegí una sugerencia, o dejá el texto si el lugar no tiene calle."
+          hint="Escribe y elige una sugerencia, o deja el texto si el lugar no tiene calle."
           render={({ id, describedBy }) => (
             <input
               id={id}
@@ -328,14 +374,16 @@ export function SelectorLugar({
               role="combobox"
               aria-describedby={describedBy}
               aria-autocomplete="list"
-              aria-expanded={sugerenciasAbiertas}
+              aria-expanded={opcionActivaId !== null}
               aria-controls={listaId}
+              aria-activedescendant={opcionActivaId ?? undefined}
               type="text"
               autoComplete="off"
               value={direccion}
               placeholder={placeholderDireccion}
               maxLength={500}
               className={fieldInputClass(!!errorDireccion)}
+              onKeyDown={(event) => tecladoRef.current(event)}
               onChange={(event) => {
                 onDireccion(event.target.value);
                 onCoordenadas(null, null);
@@ -353,26 +401,40 @@ export function SelectorLugar({
             />
           )}
         />
-        <div id={listaId}>
-          {mapasDisponibles && !placesCaido && (
-            <SugerenciasPlaces
-              consulta={direccion}
-              abierto={sugerenciasAbiertas}
-              onElegir={(lugar) => {
-                setSugerenciasAbiertas(false);
-                setAviso(null);
-                onLugar(lugar);
-              }}
-              onNoDisponible={() => {
-                setPlacesCaido(true);
-                setAviso(
-                  'Las sugerencias no están disponibles. Escribí la dirección y elegí región y comuna.',
-                );
-                logger.warn('places autocomplete degradado en el formulario de carga');
-              }}
-            />
-          )}
-        </div>
+        {mapasDisponibles && !placesCaido ? (
+          <SugerenciasPlaces
+            listaId={listaId}
+            consulta={direccion}
+            abierto={sugerenciasAbiertas}
+            tecladoRef={tecladoRef}
+            onActivaId={reportarActiva}
+            onCerrar={() => setSugerenciasAbiertas(false)}
+            onElegir={(lugar) => {
+              setSugerenciasAbiertas(false);
+              setAviso(null);
+              onLugar(lugar);
+            }}
+            onNoDisponible={() => {
+              setPlacesCaido(true);
+              setOpcionActivaId(null);
+              setAviso(
+                'Las sugerencias no están disponibles. Escribe la dirección y elige región y comuna.',
+              );
+              logger.warn('places autocomplete degradado en el formulario de carga');
+            }}
+          />
+        ) : (
+          <ul
+            id={listaId}
+            // biome-ignore lint/a11y/useSemanticElements: ancla de aria-controls cuando Places no está
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ancla de aria-controls cuando Places no está
+            // biome-ignore lint/a11y/useFocusableInteractive: el listbox cerrado no entra en el tab order
+            role="listbox"
+            aria-label="Sugerencias de dirección"
+            hidden
+            tabIndex={-1}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -410,8 +472,8 @@ export function SelectorLugar({
           label="Comuna"
           hint={
             region
-              ? 'Se completa al elegir una dirección. Podés cambiarla.'
-              : 'Primero elegí la región.'
+              ? 'Se completa al elegir una dirección. Puedes cambiarla.'
+              : 'Primero elige la región.'
           }
           render={({ id, describedBy }) => (
             <select
@@ -447,6 +509,7 @@ export function SelectorLugar({
             autoComplete="off"
             value={textoPunto}
             placeholder="https://maps.app.goo.gl/… o -33.45, -70.66"
+            maxLength={500}
             className={fieldInputClass(!!errorPunto)}
             onChange={(event) => {
               setTextoPunto(event.target.value);
@@ -478,7 +541,7 @@ export function SelectorLugar({
             onClick={() => setMapaAbierto((abierto) => !abierto)}
           >
             <MapPin className="h-4 w-4" aria-hidden />
-            {mapaAbierto ? 'Ocultar mapa' : 'Elegí el punto en el mapa'}
+            {mapaAbierto ? 'Ocultar mapa' : 'Elige el punto en el mapa'}
           </button>
           {mapaAbierto && (
             <MapaPinLugar
@@ -492,7 +555,7 @@ export function SelectorLugar({
               }}
               onGeocodeFallo={() =>
                 setAviso(
-                  'No pudimos resolver la calle de ese punto. El pin queda guardado: escribí la dirección y elegí la comuna.',
+                  'No pudimos resolver la calle de ese punto. El pin queda guardado: escribe la dirección y elige la comuna.',
                 )
               }
             />
@@ -500,7 +563,7 @@ export function SelectorLugar({
         </div>
       ) : (
         <p className="rounded-md border border-neutral-300 border-dashed bg-neutral-50 px-3 py-2 text-neutral-600 text-xs">
-          El mapa no está disponible en este entorno. Podés escribir la dirección, elegir región y
+          El mapa no está disponible en este entorno. Puedes escribir la dirección, elegir región y
           comuna, o pegar coordenadas.
         </p>
       )}

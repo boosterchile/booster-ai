@@ -127,6 +127,7 @@ export function MapaPinLugar({
     <div
       className="h-60 overflow-hidden rounded-md border border-neutral-200 sm:h-72"
       data-testid="mapa-pin"
+      title="Arrastra el pin o toca el mapa"
     >
       <GoogleMap
         style={{ width: '100%', height: '100%' }}
@@ -156,7 +157,7 @@ export function MapaPinLugar({
           <AdvancedMarker
             position={{ lat: latitude, lng: longitude }}
             draggable
-            title="Arrastrá el pin o tocá el mapa"
+            title="Arrastra el pin o toca el mapa"
             onDragEnd={(event) => {
               const punto = leerPar(event.latLng);
               if (punto) {
