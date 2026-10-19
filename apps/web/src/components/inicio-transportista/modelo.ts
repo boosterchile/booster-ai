@@ -68,9 +68,16 @@ export interface CumplimientoInicio {
   documentos: DocInicio[];
 }
 
+export type EstadoVehiculoInicio = 'activo' | 'mantenimiento' | 'retirado';
+
+export type FuentePosicionInicio = 'own' | 'mirror' | 'browser_gps';
+
 export interface VehiculoFlotaInicio {
   plate: string;
+  status?: EstadoVehiculoInicio;
   teltonikaImei: string | null;
+  /** Canal de la posición. `browser_gps` es GPS del teléfono, no ausencia de GPS. */
+  teltonikaSource?: FuentePosicionInicio | null;
   timestampDevice: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -92,7 +99,13 @@ export interface ContextoInicio {
   ahora: Date;
 }
 
-export type FuenteReintento = 'ofertas' | 'servicios' | 'cumplimiento' | 'flota';
+export type FuenteReintento =
+  | 'ofertas'
+  | 'servicios'
+  | 'cumplimiento'
+  | 'flota'
+  | 'vehiculos'
+  | 'conductores';
 
 export type HrefInicio =
   | '/app/ofertas'
@@ -244,7 +257,7 @@ export function textoVencimientoOferta(expiresAt: string, ahoraMs: number): stri
   }
   const minutos = Math.round((ts - ahoraMs) / 60_000);
   if (minutos <= 0) {
-    return 'La próxima vence en 0 min';
+    return 'La próxima está vencida';
   }
   if (minutos < 60) {
     return `La próxima vence en ${minutos} min`;
@@ -374,20 +387,47 @@ function coordenadaValida(latitude: number | null, longitude: number | null): bo
 }
 
 /**
+ * IMEI que `estadoDispositivo` usa solo para distinguir «hay canal» de «no hay».
+ * `browser_gps` y una posición con timestamp son canal: no se etiquetan sin GPS.
+ */
+function canalDe(vehiculo: VehiculoFlotaInicio): string | null {
+  const imei = vehiculo.teltonikaImei?.trim() ?? '';
+  if (imei.length > 0) {
+    return imei;
+  }
+  if (
+    vehiculo.teltonikaSource === 'own' ||
+    vehiculo.teltonikaSource === 'mirror' ||
+    vehiculo.teltonikaSource === 'browser_gps'
+  ) {
+    return vehiculo.teltonikaSource;
+  }
+  if (vehiculo.timestampDevice) {
+    return 'posicion';
+  }
+  return null;
+}
+
+/**
  * Misma ventana de 30 min que la lista de vehículos (`CONECTADO_HASTA_S`).
- * «Sin GPS» agrupa al que no tiene Teltonika y al que reporta sin coordenada válida.
+ * «Sin GPS» es quien no tiene canal, o quien reporta fresco sin coordenada válida.
+ * Un `retirado` no entra en ningún conteo. `browser_gps` se juzga por su posición.
  */
 export function contarFlota(vehiculos: VehiculoFlotaInicio[], ahoraMs: number): ConteoFlota {
   const conteo: ConteoFlota = {
-    total: vehiculos.length,
+    total: 0,
     conectados: 0,
     sinSenal: 0,
     sinGps: 0,
     patentesSinSenal: [],
   };
   for (const vehiculo of vehiculos) {
+    if (vehiculo.status === 'retirado') {
+      continue;
+    }
+    conteo.total += 1;
     const estado = estadoDispositivo({
-      teltonikaImei: vehiculo.teltonikaImei,
+      teltonikaImei: canalDe(vehiculo),
       timestampDevice: vehiculo.timestampDevice,
       ahoraMs,
     });
@@ -652,12 +692,26 @@ function filaSenal(carga: Carga<VehiculoFlotaInicio[]>, ahoraMs: number): FilaAt
   };
 }
 
+function filaSiError(
+  carga: Carga<unknown>,
+  id: string,
+  bloque: string,
+  fuente: FuenteReintento,
+): FilaAtencion | null {
+  if (carga.estado !== 'error') {
+    return null;
+  }
+  return { kind: 'error', id, bloque, fuente };
+}
+
 function buildAtencion(datos: DatosInicio, ahora: Date): AtencionVista {
   const filas = [
     filaOfertas(datos.ofertas, ahora.getTime()),
     filaServicios(datos.servicios, ahora),
     filaDocumentos(datos.cumplimiento),
     filaSenal(datos.flota, ahora.getTime()),
+    filaSiError(datos.vehiculos, 'vehiculos', 'Vehículos', 'vehiculos'),
+    filaSiError(datos.conductores, 'conductores', 'Conductores', 'conductores'),
   ].filter((fila): fila is FilaAtencion => fila != null);
   if (filas.length === 0) {
     return { tipo: 'calmo' };

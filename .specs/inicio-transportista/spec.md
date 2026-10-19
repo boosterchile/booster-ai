@@ -14,6 +14,8 @@ Layout «Hoy / pendientes» (opción A) con los indicadores de flota y cumplimie
   - `GET /vehiculos/flota`
   - `GET /vehiculos`
   - `GET /conductores`
+- Cada clave guarda la forma de la pantalla dueña (`{offers}`, el arreglo de asignaciones, la respuesta de cumplimiento, la flota con `position`, los arreglos de vehículos y conductores). El inicio deriva su vista con `select` y no reemplaza ese valor.
+- Un vehículo `retirado` no entra en los conteos de flota. Una posición `browser_gps` se clasifica por su frescura, no como «sin GPS».
 
 ## Salidas
 
@@ -22,7 +24,7 @@ En `/app`, solo si `activeEmpresa.is_transportista`:
 1. Saludo según la hora de America/Santiago y fecha larga en español. Chip de la empresa activa.
 2. «Requiere tu atención»: ofertas por responder, servicios sin conductor, documentos vencidos, vehículos sin señal. Conteo 0 no se muestra. Todo en 0 → estado calmo.
 3. «Tu operación hoy»: dos KPIs (en ruta, conectados). Sin tercera columna.
-4. «Accesos»: todos los destinos de `TRANSPORTISTA_CARDS`, más servicios, más trayectos y dispositivos para dueño/admin. Los `data-testid` `dashboard-link-flota`, `dashboard-link-conductores` y `dashboard-link-cumplimiento` se conservan.
+4. «Accesos»: todos los destinos de `TRANSPORTISTA_CARDS`, más servicios, más trayectos y dispositivos para dueño/admin. Solo en mobile (`md:hidden`): desde `md` la barra lateral ya muestra esos destinos y la grilla no se duplica. El espacio lo ocupan «Requiere tu atención» y los KPIs, en dos columnas desde `md`. Los `data-testid` `dashboard-link-flota`, `dashboard-link-conductores` y `dashboard-link-cumplimiento` siguen en la grilla mobile. Los badges de ofertas, servicios y cumplimiento se repiten en la barra lateral con las mismas consultas.
 5. Empresa nueva (sin vehículos, sin conductores y sin documentos observados): bienvenida, checklist de 4 pasos y estado calmo.
 6. Skeleton por bloque y error aislado con «Reintentar». Los accesos se pintan sin esperar a la API.
 

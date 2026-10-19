@@ -67,7 +67,17 @@ function respuestaVacia(path: string): unknown {
     return { fleet: [] };
   }
   if (path === '/vehiculos') {
-    return { vehicles: [{ id: 'v1' }] };
+    return {
+      vehicles: [
+        {
+          id: 'v1',
+          plate: 'ABCD12',
+          type: 'camion_mediano',
+          capacity_kg: 1000,
+          status: 'activo',
+        },
+      ],
+    };
   }
   if (path === '/conductores') {
     return { conductores: [{ id: 'c1' }] };
@@ -157,6 +167,8 @@ describe('AppRoute', () => {
       'href',
       '/app/liquidaciones',
     );
+    // La grilla vive solo en mobile (md:hidden). Los testid siguen en el DOM.
+    expect(screen.getByTestId('inicio-accesos')).toHaveClass('md:hidden');
   });
 
   it('shipper → muestra card "Crear carga"', () => {
@@ -307,6 +319,7 @@ describe('AppRoute', () => {
     expect(await screen.findByRole('heading', { name: /Bienvenido, Felipe/ })).toBeInTheDocument();
     expect(screen.getByText('Dejemos tu empresa lista para recibir cargas')).toBeInTheDocument();
     expect(screen.getByText('1 de 4')).toBeInTheDocument();
+    expect(screen.queryByText(/10 minutos/)).not.toBeInTheDocument();
     expect(screen.getByText('Nada pendiente por ahora')).toBeInTheDocument();
     expect(screen.queryByText('Tu operación hoy')).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
@@ -440,5 +453,47 @@ describe('AppRoute', () => {
     expect(screen.getAllByText('El resto del Inicio sigue funcionando').length).toBeGreaterThan(0);
     screen.getByTestId('reintentar-kpi-servicios').click();
     expect((await screen.findAllByText('No cargó Servicios')).length).toBeGreaterThan(0);
+  });
+
+  it('sin empresa conserva el alta y no monta el inicio del transportista', () => {
+    providedContext = {
+      kind: 'onboarded',
+      me: { ...makeMe(), active_membership: null },
+    };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByRole('heading', { name: 'Bienvenido a Booster' })).toBeInTheDocument();
+    expect(screen.getByText('Sin empresa activa.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Aún no tienes empresa' })).toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
+    expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+  });
+
+  it('empresa que todavía no opera conserva el aviso', () => {
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', false, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(screen.getByRole('heading', { name: 'Bienvenido a Booster' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Tu empresa todavía no opera' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('inicio-transportista')).not.toBeInTheDocument();
+    expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+  });
+
+  it('reintenta cuando no cargan vehículos o conductores', async () => {
+    apiGetSpy.mockImplementation(async (path: string) => {
+      if (path === '/vehiculos' || path === '/conductores') {
+        throw new Error('lista caída');
+      }
+      return respuestaVacia(path);
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
+    renderWithQueryClient(<AppRoute />);
+    expect(await screen.findByText('No cargó Vehículos')).toBeInTheDocument();
+    expect(screen.getByText('No cargó Conductores')).toBeInTheDocument();
+    const antes = apiGetSpy.mock.calls.filter((call) => call[0] === '/vehiculos').length;
+    screen.getByTestId('reintentar-vehiculos').click();
+    await screen.findByText('No cargó Vehículos');
+    const despues = apiGetSpy.mock.calls.filter((call) => call[0] === '/vehiculos').length;
+    expect(despues).toBeGreaterThan(antes);
   });
 });

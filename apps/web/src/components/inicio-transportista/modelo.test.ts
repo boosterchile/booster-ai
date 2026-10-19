@@ -82,6 +82,9 @@ describe('textos de atención', () => {
       'La próxima vence en 3 h',
     );
     expect(textoVencimientoOferta('no-es-fecha', ahora)).toBeNull();
+    expect(textoVencimientoOferta(new Date(ahora - 60_000).toISOString(), ahora)).toBe(
+      'La próxima está vencida',
+    );
   });
 
   it('arma el retiro con hora de Santiago y omite la comuna si la dirección no la trae', () => {
@@ -140,6 +143,39 @@ describe('flota', () => {
       sinSenal: 1,
       sinGps: 2,
       patentesSinSenal: ['HFTD17'],
+    });
+  });
+
+  it('no cuenta retirados y trata browser_gps por su posición', () => {
+    const ahora = Date.parse('2026-10-19T15:00:00.000Z');
+    const conteo = contarFlota(
+      [
+        {
+          plate: 'RET11',
+          status: 'retirado',
+          teltonikaImei: '9',
+          timestampDevice: new Date(ahora - 90 * 60_000).toISOString(),
+          latitude: -33.4,
+          longitude: -70.6,
+        },
+        {
+          plate: 'CEL22',
+          status: 'activo',
+          teltonikaImei: null,
+          teltonikaSource: 'browser_gps',
+          timestampDevice: new Date(ahora - 5 * 60_000).toISOString(),
+          latitude: -33.4,
+          longitude: -70.6,
+        },
+      ],
+      ahora,
+    );
+    expect(conteo).toMatchObject({
+      total: 1,
+      conectados: 1,
+      sinSenal: 0,
+      sinGps: 0,
+      patentesSinSenal: [],
     });
   });
 });

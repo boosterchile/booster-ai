@@ -73,7 +73,7 @@ export function InicioTransportistaVista({
           <Atencion atencion={vista.atencion} onReintentar={onReintentar} />
         </div>
       ) : (
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 md:items-start">
           <Atencion atencion={vista.atencion} onReintentar={onReintentar} />
           {vista.enRuta && vista.conectados ? (
             <Operacion
@@ -111,9 +111,11 @@ function Saludo({ vista }: { vista: InicioVista }) {
   );
 }
 
-function tituloSeccion(texto: string) {
+function tituloSeccion(texto: string, id?: string) {
   return (
-    <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">{texto}</h2>
+    <h2 id={id} className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
+      {texto}
+    </h2>
   );
 }
 
@@ -276,7 +278,7 @@ function Operacion({
 }) {
   return (
     <section aria-labelledby="inicio-operacion" className="min-w-0">
-      <div className="mb-3">{tituloSeccion('Tu operación hoy')}</div>
+      <div className="mb-3">{tituloSeccion('Tu operación hoy', 'inicio-operacion')}</div>
       <div className="grid grid-cols-2 gap-3">
         <KpiEnRutaCard kpi={enRuta} onReintentar={onReintentar} />
         <KpiConectadosCard kpi={conectados} onReintentar={onReintentar} />
@@ -405,7 +407,7 @@ function Alta({ pasos }: { pasos: PasoAlta[] }) {
             Dejemos tu empresa lista para recibir cargas
           </h2>
           <p className="mt-1 text-neutral-700 text-sm">
-            Cuatro pasos y empiezan a llegarte ofertas. Te toma unos 10 minutos.
+            Cuatro pasos y empiezan a llegarte ofertas.
           </p>
           <div className="mt-4 flex items-center gap-3">
             <div
@@ -492,7 +494,11 @@ function PasoCta({ paso }: { paso: PasoAlta }) {
 
 function Accesos({ accesos }: { accesos: AccesoVista[] }) {
   return (
-    <section aria-labelledby="inicio-accesos" className="mt-8 min-w-0">
+    <section
+      aria-labelledby="inicio-accesos"
+      data-testid="inicio-accesos"
+      className="mt-8 min-w-0 md:hidden"
+    >
       <div className="mb-3">
         <h2
           id="inicio-accesos"
@@ -502,7 +508,7 @@ function Accesos({ accesos }: { accesos: AccesoVista[] }) {
         </h2>
       </div>
       <Card>
-        <ul className="grid grid-cols-4 gap-1 p-2 lg:grid-cols-5">
+        <ul className="grid grid-cols-4 gap-1 p-2">
           {accesos.map((item) => (
             <li key={item.id}>
               <Acceso item={item} />
