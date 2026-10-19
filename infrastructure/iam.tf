@@ -175,6 +175,10 @@ locals {
     "roles/cloudbuild.builds.editor",  # Trigger Cloud Build
     "roles/cloudbuild.workerPoolUser", # Usar el private worker pool (PR #68)
     "roles/artifactregistry.writer",   # Push Docker images
+    # deploy-canary (Cloud Build 3f336974, run 39168060817): `gcloud artifacts
+    # docker images describe` lista occurrences y exige
+    # containeranalysis.occurrences.list. Rol de solo lectura.
+    "roles/containeranalysis.occurrences.viewer",
     # roles/iam.serviceAccountUser REMOVIDO del project-level (Trivy IaC
     # AVD-GCP-0008 — too broad; permitia impersonar CUALQUIER SA del proyecto).
     # Reemplazado por google_service_account_iam_member.github_can_impersonate_runtime
