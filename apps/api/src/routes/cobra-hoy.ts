@@ -17,17 +17,25 @@ import type { UserContext } from '../services/user-context.js';
  *
  * Los 3 endpoints requieren `userContext` (firebaseAuth + userContextMiddleware).
  *
- * Feature flag: si `FACTORING_V1_ACTIVATED=false`, los endpoints
- * responden 503 con `feature_disabled`. La UI lee esto para esconder
- * el botón.
+ * Feature flag: si `FACTORING_V1_ACTIVATED=false`, los GET responden
+ * 200 `{enabled:false, items:[]}` (no es una caída) y el POST responde
+ * 403 `{error:'feature_disabled'}`. El flag no se enciende acá.
  */
+
+/**
+ * Lectura con el flag apagado: la UI muestra el aviso, no un error de servicio.
+ * La cotización no es una lista. `items` queda vacío a propósito, el mismo
+ * sobre que el historial, para que el cliente mire `enabled` y no lea tarifas
+ * de este objeto. Con el flag encendido la cotización no trae `enabled` ni `items`.
+ */
+export const COBRA_HOY_APAGADO = { enabled: false, items: [] } as const;
 
 export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }) {
   const app = new Hono();
 
   app.get('/:id/cobra-hoy/cotizacion', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json(COBRA_HOY_APAGADO, 200);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
@@ -71,7 +79,7 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
 
   app.post('/:id/cobra-hoy', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json({ error: 'feature_disabled' }, 403);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {
@@ -90,7 +98,7 @@ export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }
 
     switch (result.status) {
       case 'skipped_flag_disabled':
-        return c.json({ error: 'feature_disabled' }, 503);
+        return c.json({ error: 'feature_disabled' }, 403);
       case 'assignment_not_found':
         return c.json({ error: 'assignment_not_found' }, 404);
       case 'assignment_not_delivered':
@@ -179,7 +187,7 @@ export function createCobraHoyMeRoutes(opts: { db: Db; logger: Logger }) {
 
   app.get('/cobra-hoy/historial', async (c) => {
     if (!appConfig.FACTORING_V1_ACTIVATED) {
-      return c.json({ error: 'feature_disabled' }, 503);
+      return c.json(COBRA_HOY_APAGADO, 200);
     }
     const userContext = c.get('userContext') as UserContext | undefined;
     if (!userContext || !userContext.activeMembership) {

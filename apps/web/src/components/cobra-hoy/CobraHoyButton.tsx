@@ -1,6 +1,10 @@
 import { Banknote, CheckCircle2, Loader2, X } from 'lucide-react';
 import { useState } from 'react';
-import { useCotizacionCobraHoy, useSolicitarCobraHoyMutation } from '../../hooks/use-cobra-hoy.js';
+import {
+  esCobraHoyApagado,
+  useCotizacionCobraHoy,
+  useSolicitarCobraHoyMutation,
+} from '../../hooks/use-cobra-hoy.js';
 import { ApiError } from '../../lib/api-client.js';
 
 /**
@@ -8,8 +12,8 @@ import { ApiError } from '../../lib/api-client.js';
  * `/asignaciones/:id` cuando el trip está entregado.
  *
  * Comportamiento:
- *   - Si la feature está disabled (backend 503), el botón no se muestra
- *     (la query enabled=true falla silenciosa).
+ *   - Si el flag está apagado (GET 200 enabled:false), el modal avisa
+ *     y no ofrece confirmar.
  *   - Click → abre modal con desglose (monto neto, tarifa, recibirás).
  *   - Confirmar → POST + cierra modal con confirmación visual.
  *   - Estado de la asignación se traduce a copy claro.
@@ -50,8 +54,16 @@ function CobraHoyModal({
   const cotizQ = useCotizacionCobraHoy(asignacionId, { enabled: true });
   const solicitarM = useSolicitarCobraHoyMutation(asignacionId);
 
-  // 503 → backend dice feature disabled. Mostrar mensaje claro y cerrar.
-  const featureDisabled = cotizQ.error instanceof ApiError && cotizQ.error.status === 503;
+  const featureDisabled =
+    esCobraHoyApagado(cotizQ.data) ||
+    (cotizQ.error instanceof ApiError &&
+      (cotizQ.error.status === 503 ||
+        (cotizQ.error.status === 403 && cotizQ.error.code === 'feature_disabled')));
+  const cotizacion = cotizQ.data && !esCobraHoyApagado(cotizQ.data) ? cotizQ.data : null;
+  const postApagado =
+    solicitarM.error instanceof ApiError &&
+    solicitarM.error.status === 403 &&
+    solicitarM.error.code === 'feature_disabled';
   // 409 no_liquidacion → trip aún no se liquidó.
   const noLiquidacion =
     cotizQ.error instanceof ApiError &&
@@ -84,7 +96,7 @@ function CobraHoyModal({
           <p className="mt-4 text-neutral-600 text-sm">Calculando cotización…</p>
         )}
 
-        {featureDisabled && (
+        {(featureDisabled || postApagado) && (
           <output className="mt-4 block rounded-md border border-neutral-200 bg-neutral-50 p-3 text-neutral-700 text-sm">
             La opción de pronto pago no está activa en este entorno todavía.
           </output>
@@ -97,28 +109,28 @@ function CobraHoyModal({
           </output>
         )}
 
-        {cotizQ.data && (
+        {cotizacion && (
           <>
             <p className="mt-3 text-neutral-700 text-sm">
               Recibe el monto neto del viaje hoy mismo, descontando una tarifa de pronto pago
               transparente sobre la comisión Booster ya deducida.
             </p>
             <dl className="mt-4 space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
-              <Row label="Monto neto del viaje" value={fmt(cotizQ.data.monto_neto_clp)} />
+              <Row label="Monto neto del viaje" value={fmt(cotizacion.monto_neto_clp)} />
               <Row
-                label={`Tarifa pronto pago (${cotizQ.data.tarifa_pct.toFixed(2)}%)`}
-                value={`- ${fmt(cotizQ.data.tarifa_clp)}`}
+                label={`Tarifa pronto pago (${cotizacion.tarifa_pct.toFixed(2)}%)`}
+                value={`- ${fmt(cotizacion.tarifa_clp)}`}
                 tone="muted"
               />
               <hr className="my-1 border-neutral-200" />
               <Row
                 label="Recibes hoy"
-                value={fmt(cotizQ.data.monto_adelantado_clp)}
+                value={fmt(cotizacion.monto_adelantado_clp)}
                 tone="emphasis"
               />
             </dl>
             <p className="mt-2 text-neutral-500 text-xs">
-              Plazo del shipper: {cotizQ.data.plazo_dias_shipper} días corridos. Booster cobra al
+              Plazo del shipper: {cotizacion.plazo_dias_shipper} días corridos. Booster cobra al
               shipper en su fecha; tú no esperas.
             </p>
           </>
@@ -133,7 +145,7 @@ function CobraHoyModal({
           </output>
         )}
 
-        {solicitarM.isError && (
+        {solicitarM.isError && !postApagado && (
           <output
             role="alert"
             className="mt-4 block rounded-md border border-danger-500/30 bg-danger-50 p-3 text-danger-700 text-sm"
@@ -150,7 +162,7 @@ function CobraHoyModal({
           >
             {solicitarM.isSuccess ? 'Cerrar' : 'Cancelar'}
           </button>
-          {cotizQ.data && !solicitarM.isSuccess && (
+          {cotizacion && !solicitarM.isSuccess && !postApagado && (
             <button
               type="button"
               onClick={() => solicitarM.mutate()}

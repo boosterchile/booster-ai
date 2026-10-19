@@ -35,6 +35,16 @@ function tagPrefix(tag: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * #793, #794 y #795 reservan 0063–0065 y no están en main. 0066 entra en
+ * el siguiente idx libre (63) para no pisar esos archivos. `when` salta a
+ * 1780876800030 y deja 0027–0029 para esas tres. Cuando entren a main, el
+ * idx de 0066 pasa a 66 y esta reserva se borra.
+ */
+const PREFIJO_ADELANTADO: Record<string, number> = {
+  '0066_telemetria_gps_valido': 66,
+};
+
 describe('migration journal integrity', () => {
   // Test 1 — orphan on disk
   test('every .sql file on disk has a journal entry', () => {
@@ -78,6 +88,16 @@ describe('migration journal integrity', () => {
       if (prefix === null) {
         return [{ tag: e.tag, reason: 'tag has no NNNN_ prefix' }];
       }
+      const reservado = PREFIJO_ADELANTADO[e.tag];
+      if (reservado !== undefined) {
+        if (prefix !== reservado) {
+          return [{ tag: e.tag, reason: `prefix=${prefix} ≠ reserva=${reservado}` }];
+        }
+        if (e.idx > reservado) {
+          return [{ tag: e.tag, reason: `idx=${e.idx} quedó delante de la reserva ${reservado}` }];
+        }
+        return [];
+      }
       if (prefix !== e.idx) {
         return [{ tag: e.tag, reason: `prefix=${prefix} ≠ idx=${e.idx}` }];
       }
@@ -115,6 +135,13 @@ describe('migration journal integrity', () => {
   // El bug original que motivó applyOutOfOrderPending fue migrations con
   // `when` NO monotónico vs orden de merge. Forzar monotonicidad en CI
   // previene re-introducción del bug.
+  test('0063–0065 siguen libres para #793 #794 #795', () => {
+    const tags = listSqlTags();
+    for (const prefijo of ['0063', '0064', '0065']) {
+      expect(tags.filter((tag) => tag.startsWith(`${prefijo}_`))).toEqual([]);
+    }
+  });
+
   test('journal entries `when` field is strictly monotonic', () => {
     const entries = loadJournal().entries;
     const violations: string[] = [];

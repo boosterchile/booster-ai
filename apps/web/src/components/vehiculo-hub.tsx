@@ -1,7 +1,14 @@
 import { formatPlateForDisplay, normalizePlate } from '@booster-ai/shared-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Gauge, History, Navigation, Route as RouteIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  Gauge,
+  History,
+  Loader2,
+  Navigation,
+  Route as RouteIcon,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, api } from '../lib/api-client.js';
@@ -13,6 +20,7 @@ import {
 import { ageSeconds, formatAge } from '../lib/freshness.js';
 import { TrazaMapPreview } from './map/TrazaMapPreview.js';
 import { VehicleMap } from './map/VehicleMap.js';
+import { tarjetaGpsHub } from './tarjeta-gps-hub.js';
 
 const VENTANA_MS = 30 * 24 * 60 * 60 * 1000;
 const MAPA_ALTO_ESCRITORIO = 200;
@@ -156,6 +164,13 @@ export function VehiculoHub({
   }
 
   const estado = estadoTeltonika(teltonikaImei, ubicacionQ.data ?? null, ubicacionQ.isError);
+  const tarjetaGps = tarjetaGpsHub({
+    conImei,
+    pendiente: ubicacionQ.isPending,
+    fetching: ubicacionQ.isFetching,
+    error: ubicacionQ.isError,
+    hayCuerpo: ubicacionQ.data != null,
+  });
 
   return (
     <section data-testid="hub-vehiculo" className="mb-6 min-w-0">
@@ -230,8 +245,8 @@ export function VehiculoHub({
           cargando={conImei && resumenQ.isLoading}
           error={conImei && resumenQ.isError}
           ubicacion={ubicacionQ.data ?? null}
-          ubicacionCargando={conImei && ubicacionQ.isLoading}
-          ubicacionError={conImei && ubicacionQ.isError}
+          ubicacionCargando={tarjetaGps === 'cargando'}
+          ubicacionError={tarjetaGps === 'error'}
           alturaMapa={alturaMapa}
           onAbrirConfig={onAbrirConfig}
           onReintentar={reintentar}
@@ -651,14 +666,33 @@ function MapaPreview({
         ) : null}
         {!hayTraza && !hayPunto && ubicacionCargando ? (
           <output
-            className="block rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4 font-medium text-neutral-900 text-sm"
+            className="block rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
             style={{ minHeight: altura }}
             data-testid="hub-mapa-cargando"
+            aria-busy="true"
           >
-            Cargando posición…
+            <span className="inline-flex items-center gap-2 font-medium text-neutral-900 text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Cargando posición…
+            </span>
+            <span className="mt-3 block h-24 animate-pulse rounded bg-neutral-200" aria-hidden />
           </output>
         ) : null}
-        {!hayTraza && !hayPunto && !ubicacionCargando ? (
+        {!hayTraza && !hayPunto && !ubicacionCargando && ubicacionError ? (
+          <div
+            className="rounded-md border border-danger-200 border-dashed bg-danger-50 p-4"
+            style={{ minHeight: altura }}
+            data-testid="hub-mapa-error"
+            role="alert"
+          >
+            <p className="font-medium text-neutral-900 text-sm">No pudimos cargar la posición.</p>
+            <p className="mt-1 text-neutral-700 text-sm">Reintenta en un momento.</p>
+            <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+        {!hayTraza && !hayPunto && !ubicacionCargando && !ubicacionError ? (
           <div
             className="rounded-md border border-neutral-200 border-dashed bg-neutral-50 p-4"
             style={{ minHeight: altura }}
@@ -669,17 +703,12 @@ function MapaPreview({
                 ? 'Cuando el dispositivo reporte una coordenada, la ves aquí.'
                 : 'Asocia un dispositivo para ver la posición.'}
             </p>
-            {ubicacionError ? (
-              <button type="button" onClick={onReintentar} className={CTA_TEXTO}>
-                Reintentar
-              </button>
-            ) : null}
             {!conImei && puedeConfigurar ? (
               <button type="button" onClick={onAbrirConfig} className={CTA_TEXTO}>
                 Configurar dispositivo
               </button>
             ) : null}
-            {conImei && !ubicacionError ? <LinkEnVivo vehicleId={vehicleId} /> : null}
+            {conImei ? <LinkEnVivo vehicleId={vehicleId} /> : null}
           </div>
         ) : null}
       </div>

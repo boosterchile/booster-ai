@@ -12,7 +12,7 @@ import type { UserContext } from '../../src/services/user-context.js';
  * cubierta por `cobra-hoy.test.ts` (15 tests del service). Acá validamos
  * solamente:
  *
- *   - Flag-gating (503 cuando FACTORING_V1_ACTIVATED=false).
+ *   - Flag apagado: GET 200 `{enabled:false, items:[]}`, POST 403.
  *   - userContext faltante (400 no_active_empresa).
  *   - Mapping correcto de service result → status HTTP + body.
  *   - Parsing de query params (plazo_dias).
@@ -102,12 +102,13 @@ afterEach(() => {
 });
 
 describe('GET /assignments/:id/cobra-hoy/cotizacion — flag + ctx', () => {
-  it('flag off → 503 feature_disabled', async () => {
+  it('flag off → 200 enabled:false items:[]', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
     const app = makeAssignmentsApp({ withContext: true });
     const res = await app.request('/assignments/asg-1/cobra-hoy/cotizacion');
-    expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: 'feature_disabled' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, items: [] });
+    expect(cotizarSpy).not.toHaveBeenCalled();
   });
 
   it('sin userContext → 400 no_active_empresa', async () => {
@@ -181,11 +182,21 @@ describe('GET /assignments/:id/cobra-hoy/cotizacion — service mapping', () => 
 });
 
 describe('POST /assignments/:id/cobra-hoy — service mapping completo', () => {
-  it('flag off → 503', async () => {
+  it('flag off → 403 feature_disabled', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
     const app = makeAssignmentsApp({ withContext: true });
     const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'feature_disabled' });
+    expect(cobraHoySpy).not.toHaveBeenCalled();
+  });
+
+  it('skipped_flag_disabled del service → 403', async () => {
+    cobraHoySpy.mockResolvedValue({ status: 'skipped_flag_disabled' });
+    const app = makeAssignmentsApp({ withContext: true });
+    const res = await app.request('/assignments/asg-1/cobra-hoy', { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'feature_disabled' });
   });
 
   it('assignment_not_delivered → 409', async () => {
@@ -271,11 +282,14 @@ describe('GET /me/cobra-hoy/historial', () => {
     return { select: vi.fn(() => chain) };
   }
 
-  it('flag off → 503', async () => {
+  it('flag off → 200 enabled:false items:[] sin tocar la base', async () => {
     appConfig.FACTORING_V1_ACTIVATED = false;
-    const app = makeMeApp({ withContext: true, db: makeDbWithAdelantos([]) });
+    const db = makeDbWithAdelantos([]);
+    const app = makeMeApp({ withContext: true, db });
     const res = await app.request('/me/cobra-hoy/historial');
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, items: [] });
+    expect(db.select).not.toHaveBeenCalled();
   });
 
   it('sin userContext → 400', async () => {

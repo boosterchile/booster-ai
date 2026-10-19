@@ -31,6 +31,14 @@ export function esCoordenadaGpsValida(lat: number, lng: number): boolean {
  * posición: /ubicacion, /flota, tracking público, ubicación en assignments).
  */
 export function coordenadaGpsValidaSql(lat: AnyColumn, lng: AnyColumn): SQL {
+  // El 0 va literal, no como parámetro. El índice parcial 0066 predica
+  // `<> 0`; un `$n` no implica ese predicado y el planner vuelve a caminar
+  // el índice general (pings sin fix incluidos).
   // and() con todos los args definidos nunca devuelve undefined.
-  return and(isNotNull(lat), isNotNull(lng), sql`${lat} <> 0`, sql`${lng} <> 0`) as SQL;
+  return and(
+    isNotNull(lat),
+    isNotNull(lng),
+    sql`${lat} <> ${sql.raw('0')}`,
+    sql`${lng} <> ${sql.raw('0')}`,
+  ) as SQL;
 }
