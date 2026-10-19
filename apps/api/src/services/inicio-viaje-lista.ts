@@ -38,17 +38,6 @@ export function avanceHito(status: string, assignmentStatus: string | null): num
   return null;
 }
 
-function numero(valor: unknown): number | null {
-  if (typeof valor === 'number' && Number.isFinite(valor)) {
-    return valor;
-  }
-  if (typeof valor === 'string' && valor.trim().length > 0) {
-    const n = Number(valor);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
 /** Una fila por viaje. Si un join repite el id, se queda la primera. */
 export function filasListaUnicas<T extends { id?: unknown }>(rows: readonly T[]): T[] {
   const vistos = new Set<string>();
@@ -74,10 +63,9 @@ export function serializarFilaLista<T extends object>(
     transportista_nombre?: unknown;
     ofertas_pendientes?: unknown;
   },
-): T & {
+): Omit<T, 'ofertas_pendientes'> & {
   transportista_nombre: string | null;
   assignment_status: string | null;
-  ofertas_pendientes: number | null;
   avance_pct: number | null;
 } {
   const status = typeof row.status === 'string' ? row.status : '';
@@ -87,11 +75,11 @@ export function serializarFilaLista<T extends object>(
       : null;
   const nombre =
     assignment && typeof row.transportista_nombre === 'string' ? row.transportista_nombre : null;
+  const { ofertas_pendientes: _ocultas, ...resto } = row;
   return {
-    ...row,
+    ...resto,
     transportista_nombre: nombre,
     assignment_status: assignment,
-    ofertas_pendientes: numero(row.ofertas_pendientes),
     avance_pct: avanceHito(status, assignment),
   };
 }
