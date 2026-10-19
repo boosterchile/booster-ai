@@ -35,16 +35,13 @@ describe('inicio viaje lista', () => {
     expect(fila.id).toBe('t-1');
     expect(fila.transportista_nombre).toBe('Van Oosterwyk');
     expect(fila.avance_pct).toBe(75);
-    expect(Object.hasOwn(fila, 'ofertas_pendientes')).toBe(false);
+    expect(fila.ofertas_pendientes).toBe(2);
   });
 
-  it('no copia ofertas_pendientes al payload mientras el flag del cliente está apagado', () => {
-    const fila = serializarFilaLista({
-      id: 't-2',
-      status: 'esperando_match',
-      ofertas_pendientes: 3,
-    });
-    expect(Object.hasOwn(fila, 'ofertas_pendientes')).toBe(false);
+  it('ofertas_pendientes queda en la fila aunque el conteo venga vacío', () => {
+    const fila = serializarFilaLista({ id: 't-2', status: 'esperando_match' });
+    expect(Object.hasOwn(fila, 'ofertas_pendientes')).toBe(true);
+    expect(fila.ofertas_pendientes).toBeNull();
   });
 
   it('un viaje repetido por el join cuenta una sola vez', () => {

@@ -3,7 +3,7 @@ import type { Logger } from '@booster-ai/logger';
 import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -443,10 +443,13 @@ export function createTripRequestsV2Routes(opts: {
         created_at: trips.createdAt,
         certificate_issued_at: tripMetrics.certificateIssuedAt,
         // Una sola consulta: la asignación es 1:1 con el viaje.
-        // ofertas_pendientes no va en el payload mientras
-        // INICIO_GENERADOR_VE_OFERTAS (constante del cliente) esté apagado.
+        // El generador ve las ofertas pendientes (Felipe, 2026-10-19 17:41 CLT).
         transportista_nombre: empresasTable.legalName,
         assignment_status: assignments.status,
+        ofertas_pendientes: sql<number>`(
+          select count(*)::int from ${offers}
+          where ${offers.tripId} = ${trips.id} and ${offers.status} = 'pendiente'
+        )`,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
