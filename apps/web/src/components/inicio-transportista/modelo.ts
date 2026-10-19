@@ -46,13 +46,20 @@ export type Carga<T> = { estado: 'cargando' } | { estado: 'error' } | { estado: 
 
 export interface OfertaInicio {
   expires_at: string;
+  precioClp?: number | null;
+  origen?: string;
+  destino?: string;
 }
 
 export interface AsignacionInicio {
+  id?: string;
   status: string;
   sinConductor: boolean;
   pickupInicio: string | null;
   direccionOrigen: string;
+  direccionDestino?: string;
+  patente?: string | null;
+  conductor?: string | null;
 }
 
 export interface DocInicio {
@@ -73,6 +80,7 @@ export type EstadoVehiculoInicio = 'activo' | 'mantenimiento' | 'retirado';
 export type FuentePosicionInicio = 'own' | 'mirror' | 'browser_gps';
 
 export interface VehiculoFlotaInicio {
+  id?: string;
   plate: string;
   status?: EstadoVehiculoInicio;
   teltonikaImei: string | null;
@@ -606,7 +614,7 @@ function filaServicios(carga: Carga<AsignacionInicio[]>, ahora: Date): FilaAtenc
   };
 }
 
-function etiquetaDocumento(tipo: string): string {
+export function etiquetaDocumento(tipo: string): string {
   return ETIQUETA_DOCUMENTO[tipo] ?? tipo;
 }
 

@@ -11,39 +11,16 @@ import {
   MapPin,
   Radio,
   Receipt,
-  RotateCw,
-  Route,
   ShieldAlert,
-  Signal,
   Truck,
-  UserRoundX,
   Users,
-  WifiOff,
 } from 'lucide-react';
-import type {
-  AccesoVista,
-  AtencionVista,
-  EstadoCobraHoy as EstadoCobraHoyVista,
-  FilaAtencion,
-  FuenteReintento,
-  InicioVista,
-  KpiConectados,
-  KpiEnRuta,
-  PasoAlta,
-} from './modelo.js';
-
-const TONO_ICONO = {
-  warning: 'bg-warning-50 text-warning-700',
-  danger: 'bg-danger-50 text-danger-700',
-  neutral: 'bg-neutral-100 text-neutral-700',
-} as const;
-
-const ICONO_FILA: Record<'ofertas' | 'sin-conductor' | 'documentos' | 'sin-senal', LucideIcon> = {
-  ofertas: Truck,
-  'sin-conductor': UserRoundX,
-  documentos: ShieldAlert,
-  'sin-senal': WifiOff,
-};
+import { AvisosCard, AvisosChips } from './avisos-chips.js';
+import { BloqueNegocio, CtaVerde, ErrorBloque, EsqueletoBloque } from './bloque-negocio.js';
+import { ListaProximos } from './lista-proximos.js';
+import { MiniMapaFlota } from './mini-mapa-flota.js';
+import type { AccesoVista, FuenteReintento, InicioVista, PasoAlta } from './modelo.js';
+import { type AvisoNegocio, INICIO_PLATA_ACTIVA, type NegocioHoy } from './negocio.js';
 
 const ICONO_ACCESO: Record<string, LucideIcon> = {
   flota: MapPin,
@@ -60,354 +37,213 @@ const ICONO_ACCESO: Record<string, LucideIcon> = {
 
 export function InicioTransportistaVista({
   vista,
+  negocio,
   onReintentar,
+  plataActiva = INICIO_PLATA_ACTIVA,
 }: {
   vista: InicioVista;
+  negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
+  plataActiva?: boolean;
 }) {
+  const avisos = avisosListos(negocio);
   return (
     <div data-testid="inicio-transportista" className="min-w-0">
       <Saludo vista={vista} />
-      <EstadoCobraHoy estado={vista.cobraHoy} />
       {vista.modo === 'empresa-nueva' && vista.pasos ? (
-        <div className="mt-6 space-y-6">
+        <div className="mt-6">
           <Alta pasos={vista.pasos} />
-          <Atencion atencion={vista.atencion} onReintentar={onReintentar} />
         </div>
-      ) : (
-        <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 md:items-start">
-          <Atencion atencion={vista.atencion} onReintentar={onReintentar} />
-          {vista.enRuta && vista.conectados ? (
-            <Operacion
-              enRuta={vista.enRuta}
-              conectados={vista.conectados}
-              onReintentar={onReintentar}
-            />
-          ) : null}
+      ) : null}
+      <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_380px] md:items-start md:gap-5">
+        <div className="min-w-0 space-y-4">
+          <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
+            Tu negocio hoy
+          </h2>
+          <Ofertas negocio={negocio} onReintentar={onReintentar} />
+          <Retiros negocio={negocio} onReintentar={onReintentar} />
+          {plataActiva ? <Plata /> : null}
+          <AvisosChips avisos={avisos} />
+          <AvisosDocumentos negocio={negocio} onReintentar={onReintentar} />
         </div>
-      )}
+        <div className="mt-4 min-w-0 space-y-4 md:mt-0">
+          <Mapa negocio={negocio} />
+          <AvisosEscritorio negocio={negocio} avisos={avisos} />
+        </div>
+      </div>
+      {negocio.auxiliares.map((error) => (
+        <div key={error.fuente} className="mt-4">
+          <ErrorBloque nombre={error.nombre} fuente={error.fuente} onReintentar={onReintentar} />
+        </div>
+      ))}
       <Accesos accesos={vista.accesos} />
     </div>
   );
 }
 
-function Saludo({ vista }: { vista: InicioVista }) {
-  return (
-    <header>
-      <h1 className="font-bold text-2xl text-neutral-900 tracking-tight sm:text-3xl">
-        {vista.saludo}
-        {vista.modo === 'empresa-nueva' ? <span aria-hidden="true"> 👋</span> : null}
-      </h1>
-      {vista.fecha ? <p className="mt-1 text-neutral-600 text-sm">{vista.fecha}</p> : null}
-      <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-neutral-200 bg-neutral-0 py-1 pr-3 pl-1 shadow-xs">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-600 font-semibold text-white text-xs"
-          aria-hidden="true"
-        >
-          {vista.iniciales}
-        </span>
-        <span className="truncate font-medium text-neutral-900 text-sm">{vista.empresa}</span>
-        <span className="shrink-0 text-neutral-500 text-sm">· Transportista</span>
-      </div>
-    </header>
-  );
-}
-
-function EstadoCobraHoy({ estado }: { estado: EstadoCobraHoyVista }) {
-  if (estado !== 'apagado' && estado !== 'error') {
-    return null;
+function avisosListos(negocio: NegocioHoy): AvisoNegocio[] {
+  const avisos: AvisoNegocio[] = [];
+  if (negocio.senal.estado === 'listo') {
+    avisos.push(negocio.senal.valor);
   }
-  return (
-    <output data-testid="inicio-cobra-hoy" className="mt-4 block text-neutral-600 text-sm">
-      {estado === 'apagado'
-        ? 'Cobra hoy todavía no está disponible.'
-        : 'Cobra hoy no está disponible ahora. El resto del Inicio sigue funcionando.'}
-    </output>
-  );
+  if (negocio.documentos.estado === 'listo') {
+    avisos.push(negocio.documentos.valor);
+  }
+  return avisos;
 }
 
-function tituloSeccion(texto: string, id?: string) {
-  return (
-    <h2 id={id} className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
-      {texto}
-    </h2>
-  );
-}
-
-function Atencion({
-  atencion,
+function Ofertas({
+  negocio,
   onReintentar,
 }: {
-  atencion: AtencionVista;
+  negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
 }) {
-  const pendientes = atencion.tipo === 'filas' ? atencion.pendientes : null;
+  const panel = negocio.ofertas;
   return (
-    <section aria-labelledby="inicio-atencion" className="min-w-0">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2
-          id="inicio-atencion"
-          className="font-semibold text-neutral-500 text-xs uppercase tracking-wider"
-        >
-          Requiere tu atención
-        </h2>
-        {pendientes != null ? (
-          <p className="font-semibold text-warning-700 text-xs uppercase tracking-wider">
-            {pendientes === 1 ? '1 pendiente' : `${pendientes} pendientes`}
-          </p>
-        ) : null}
-      </div>
-      {atencion.tipo === 'calmo' ? <EstadoCalmo /> : null}
-      {atencion.tipo === 'filas' ? (
-        <Card>
-          <ul className="divide-y divide-neutral-200">
-            {atencion.filas.map((fila) => (
-              <li key={fila.id}>
-                <Fila fila={fila} onReintentar={onReintentar} />
-              </li>
-            ))}
-          </ul>
-        </Card>
+    <BloqueNegocio
+      titulo="Ofertas"
+      testId="inicio-ofertas"
+      {...(panel.estado === 'listo'
+        ? { enlace: { to: '/app/ofertas' as const, label: 'Ver todas' } }
+        : {})}
+    >
+      {panel.estado === 'cargando' ? <EsqueletoBloque testId="skeleton-ofertas" /> : null}
+      {panel.estado === 'error' ? (
+        <ErrorBloque nombre="Ofertas" fuente="ofertas" onReintentar={onReintentar} />
       ) : null}
-    </section>
-  );
-}
-
-function EstadoCalmo() {
-  return (
-    <Card>
-      <div className="flex min-h-20 items-start gap-3 p-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success-50 text-success-700">
-          <Check className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div>
-          <p className="font-medium text-neutral-900">Nada pendiente por ahora</p>
-          <p className="mt-0.5 text-neutral-600 text-sm">
-            Cuando lleguen ofertas, aparecen acá primero.
+      {panel.estado === 'vacio' ? (
+        <p className="font-medium text-neutral-900 text-sm">Sin ofertas nuevas</p>
+      ) : null}
+      {panel.estado === 'listo' ? (
+        <>
+          <p className="font-semibold text-neutral-900">
+            {panel.valor.cantidad === 1
+              ? '1 oferta nueva'
+              : `${panel.valor.cantidad} ofertas nuevas`}
+            {panel.valor.precio ? (
+              <span className="font-semibold text-neutral-900"> · {panel.valor.precio}</span>
+            ) : null}
           </p>
-        </div>
-      </div>
-    </Card>
+          <p className="mt-0.5 text-neutral-600 text-sm">
+            {panel.valor.ruta}
+            {panel.valor.vence ? (
+              <span className="font-semibold text-warning-700"> · {panel.valor.vence}</span>
+            ) : null}
+          </p>
+          <CtaVerde to="/app/ofertas">Ver ofertas</CtaVerde>
+        </>
+      ) : null}
+    </BloqueNegocio>
   );
 }
 
-function Fila({
-  fila,
+function Retiros({
+  negocio,
   onReintentar,
 }: {
-  fila: FilaAtencion;
+  negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
 }) {
-  if (fila.kind === 'skeleton') {
-    return <FilaSkeleton />;
-  }
-  if (fila.kind === 'error') {
-    return (
-      <div role="alert" className="flex min-h-20 items-center gap-3 px-4 py-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-warning-50 text-warning-700">
-          <ShieldAlert className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-neutral-900">No cargó {fila.bloque}</p>
-          <p className="text-neutral-600 text-sm">El resto del Inicio sigue funcionando</p>
-        </div>
-        <button
-          type="button"
-          data-testid={`reintentar-${fila.fuente}`}
-          onClick={() => onReintentar(fila.fuente)}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-neutral-0 px-3 py-1.5 font-medium text-neutral-800 text-sm hover:bg-neutral-50"
-        >
-          <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Reintentar
-        </button>
-      </div>
-    );
-  }
-  const Icono = ICONO_FILA[fila.id];
+  const panel = negocio.retiros;
   return (
-    <Link to={fila.href} className="flex min-h-20 items-center gap-3 px-4 py-3 hover:bg-neutral-50">
-      <span
-        className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
-          TONO_ICONO[fila.tono],
-        )}
-      >
-        <Icono className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block font-medium text-neutral-900">{fila.titulo}</span>
-        {fila.subtitulo ? (
-          <span
-            className={cn(
-              'mt-0.5 block text-sm',
-              fila.urgente ? 'font-medium text-warning-700' : 'text-neutral-600',
-            )}
-          >
-            {fila.subtitulo}
-          </span>
-        ) : null}
-      </span>
-      <Cta fila={fila} />
-    </Link>
+    <BloqueNegocio
+      titulo="Próximos retiros"
+      testId="inicio-retiros"
+      enlace={{ to: '/app/servicios', label: 'Servicios' }}
+    >
+      {panel.estado === 'cargando' ? <EsqueletoBloque testId="skeleton-retiros" /> : null}
+      {panel.estado === 'error' ? (
+        <ErrorBloque nombre="Servicios" fuente="servicios" onReintentar={onReintentar} />
+      ) : null}
+      {panel.estado === 'vacio' ? (
+        <p className="font-medium text-neutral-900 text-sm">Sin retiros próximos</p>
+      ) : null}
+      {panel.estado === 'listo' ? <ListaProximos retiros={panel.valor} /> : null}
+    </BloqueNegocio>
   );
 }
 
-function Cta({ fila }: { fila: Extract<FilaAtencion, { kind: 'dato' }> }) {
-  if (fila.cta === 'ver') {
-    return (
-      <span className="inline-flex shrink-0 items-center rounded-md bg-primary-600 px-3 py-1.5 font-medium text-sm text-white">
-        Ver
-      </span>
-    );
-  }
-  if (fila.cta === 'asignar') {
-    return (
-      <span className="inline-flex shrink-0 items-center rounded-md border border-neutral-300 bg-neutral-0 px-3 py-1.5 font-medium text-neutral-800 text-sm">
-        Asignar
-      </span>
-    );
-  }
-  return <ChevronRight className="h-5 w-5 shrink-0 text-neutral-400" aria-hidden="true" />;
+function Plata() {
+  return (
+    <BloqueNegocio titulo="Plata" testId="inicio-plata">
+      <p className="text-neutral-600 text-sm">
+        La regla de este bloque está pendiente. No hay montos hasta que se cierre.
+      </p>
+    </BloqueNegocio>
+  );
 }
 
-function FilaSkeleton() {
+function AvisosEscritorio({
+  negocio,
+  avisos,
+}: {
+  negocio: NegocioHoy;
+  avisos: AvisoNegocio[];
+}) {
+  const cargando = negocio.senal.estado === 'cargando' || negocio.documentos.estado === 'cargando';
   return (
-    <div className="flex h-20 items-center gap-3 px-4" aria-hidden="true">
-      <div className="h-10 w-10 animate-pulse rounded-lg bg-neutral-100" />
-      <div className="flex-1 space-y-2">
-        <div className="h-3 w-40 max-w-full animate-pulse rounded bg-neutral-100" />
-        <div className="h-3 w-56 max-w-full animate-pulse rounded bg-neutral-100" />
-      </div>
+    <div className="hidden md:block">
+      <BloqueNegocio titulo="Avisos" testId="inicio-avisos">
+        {cargando ? <EsqueletoBloque testId="skeleton-avisos-desktop" /> : null}
+        {!cargando && avisos.length > 0 ? <AvisosCard avisos={avisos} /> : null}
+        {!cargando && avisos.length === 0 ? (
+          <p className="text-neutral-600 text-sm">Sin avisos para mostrar.</p>
+        ) : null}
+      </BloqueNegocio>
     </div>
   );
 }
 
-function Operacion({
-  enRuta,
-  conectados,
+function AvisosDocumentos({
+  negocio,
   onReintentar,
 }: {
-  enRuta: KpiEnRuta;
-  conectados: KpiConectados;
+  negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
 }) {
   return (
-    <section aria-labelledby="inicio-operacion" className="min-w-0">
-      <div className="mb-3">{tituloSeccion('Tu operación hoy', 'inicio-operacion')}</div>
-      <div className="grid grid-cols-2 gap-3">
-        <KpiEnRutaCard kpi={enRuta} onReintentar={onReintentar} />
-        <KpiConectadosCard kpi={conectados} onReintentar={onReintentar} />
-      </div>
-    </section>
+    <>
+      {negocio.senal.estado === 'cargando' || negocio.documentos.estado === 'cargando' ? (
+        <EsqueletoBloque testId="skeleton-avisos" />
+      ) : null}
+      {negocio.senal.estado === 'error' ? (
+        <ErrorBloque nombre="Flota" fuente="flota" onReintentar={onReintentar} />
+      ) : null}
+      {negocio.documentos.estado === 'error' ? (
+        <ErrorBloque nombre="Cumplimiento" fuente="cumplimiento" onReintentar={onReintentar} />
+      ) : null}
+    </>
   );
 }
 
-function KpiEnRutaCard({
-  kpi,
-  onReintentar,
-}: {
-  kpi: KpiEnRuta;
-  onReintentar: (fuente: FuenteReintento) => void;
-}) {
-  if (kpi.estado === 'cargando') {
-    return <KpiSkeleton />;
-  }
-  if (kpi.estado === 'error') {
-    return <KpiError bloque="Servicios" fuente="servicios" onReintentar={onReintentar} />;
-  }
-  return (
-    <Card className="min-h-32">
-      <div className="p-4">
-        <div className="flex items-center gap-1.5 text-neutral-600 text-sm">
-          <Route className="h-4 w-4" aria-hidden="true" />
-          En ruta
-        </div>
-        <p className="mt-2 font-semibold text-3xl text-neutral-900 tracking-tight">{kpi.enRuta}</p>
-        <p className="mt-1 text-neutral-600 text-sm">{kpi.porRetirar} por retirar</p>
+function Mapa({ negocio }: { negocio: NegocioHoy }) {
+  if (negocio.mapa.estado === 'cargando') {
+    return (
+      <div className="hidden md:block">
+        <EsqueletoBloque testId="skeleton-mapa" />
       </div>
-    </Card>
-  );
+    );
+  }
+  if (negocio.mapa.estado !== 'listo') {
+    return null;
+  }
+  return <MiniMapaFlota mapa={negocio.mapa.valor} />;
 }
 
-function KpiConectadosCard({
-  kpi,
-  onReintentar,
-}: {
-  kpi: KpiConectados;
-  onReintentar: (fuente: FuenteReintento) => void;
-}) {
-  if (kpi.estado === 'cargando') {
-    return <KpiSkeleton />;
-  }
-  if (kpi.estado === 'error') {
-    return <KpiError bloque="Flota" fuente="flota" onReintentar={onReintentar} />;
-  }
-  const total = Math.max(kpi.total, 1);
-  const anchoConectados = kpi.total === 0 ? 0 : (kpi.conectados / total) * 100;
-  const anchoSenal = kpi.total === 0 ? 0 : (kpi.sinSenal / total) * 100;
+function Saludo({ vista }: { vista: InicioVista }) {
   return (
-    <Card className="min-h-32">
-      <div className="p-4">
-        <div className="flex items-center gap-1.5 text-neutral-600 text-sm">
-          <Signal className="h-4 w-4" aria-hidden="true" />
-          Conectados
-        </div>
-        <p className="mt-2 font-semibold text-neutral-900 tracking-tight">
-          <span className="text-3xl">{kpi.conectados}</span>
-          <span className="text-neutral-500 text-xl">/{kpi.total}</span>
-        </p>
-        <div
-          className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-neutral-200"
-          aria-hidden="true"
-        >
-          <div className="h-full bg-success-600" style={{ width: `${anchoConectados}%` }} />
-          <div className="h-full bg-warning-500" style={{ width: `${anchoSenal}%` }} />
-        </div>
-        <p className="mt-2 text-neutral-600 text-sm">
-          {kpi.sinSenal} sin señal · {kpi.sinGps} sin GPS
-        </p>
-      </div>
-    </Card>
-  );
-}
-
-function KpiSkeleton() {
-  return (
-    <Card className="h-32" aria-hidden="true">
-      <div className="space-y-3 p-4">
-        <div className="h-3 w-20 animate-pulse rounded bg-neutral-100" />
-        <div className="h-8 w-16 animate-pulse rounded bg-neutral-100" />
-        <div className="h-3 w-24 animate-pulse rounded bg-neutral-100" />
-      </div>
-    </Card>
-  );
-}
-
-function KpiError({
-  bloque,
-  fuente,
-  onReintentar,
-}: {
-  bloque: string;
-  fuente: FuenteReintento;
-  onReintentar: (fuente: FuenteReintento) => void;
-}) {
-  return (
-    <Card className="min-h-32">
-      <div role="alert" className="p-4">
-        <p className="font-medium text-neutral-900 text-sm">No cargó {bloque}</p>
-        <p className="mt-1 text-neutral-600 text-xs">El resto del Inicio sigue funcionando</p>
-        <button
-          type="button"
-          data-testid={`reintentar-kpi-${fuente}`}
-          onClick={() => onReintentar(fuente)}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1 font-medium text-neutral-800 text-xs hover:bg-neutral-50"
-        >
-          <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Reintentar
-        </button>
-      </div>
-    </Card>
+    <header>
+      <h1 className="font-bold text-2xl text-neutral-900 tracking-tight">
+        {vista.saludo}
+        {vista.modo === 'empresa-nueva' ? <span aria-hidden="true"> 👋</span> : null}
+      </h1>
+      <p className="mt-1 text-neutral-600 text-sm">
+        {vista.fecha ? <span>{vista.fecha} · </span> : null}
+        <span>{vista.empresa}</span>
+        <span> · Transportista</span>
+      </p>
+    </header>
   );
 }
 

@@ -133,7 +133,7 @@ describe('AppRoute', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Felipe/);
     expect(screen.queryByRole('heading', { name: 'Bienvenido a Booster' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Booster SpA').length).toBeGreaterThan(0);
-    expect(screen.getByText('· Transportista')).toBeInTheDocument();
+    expect(screen.getByText(/· Transportista/)).toBeInTheDocument();
     expect(await screen.findByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
   });
@@ -182,7 +182,7 @@ describe('AppRoute', () => {
   it('el shell + dashboard operador no tiene violaciones de a11y (vitest-axe)', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, true) };
     const { baseElement } = renderWithQueryClient(<AppRoute />);
-    await screen.findByText('Nada pendiente por ahora');
+    await screen.findByText('Sin ofertas nuevas');
     // color-contrast off: jsdom no computa layout/canvas (lo cubre ui-tokens).
     const results = await axe(baseElement, { rules: { 'color-contrast': { enabled: false } } });
     // Sin matcher (el .d.ts de vitest-axe exporta el matcher type-only): axe cubre
@@ -281,7 +281,7 @@ describe('AppRoute', () => {
   it('click Salir (vía menú mobile) → signOutUser', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     renderWithQueryClient(<AppRoute />);
-    await screen.findByText('Nada pendiente por ahora');
+    await screen.findByText('Sin ofertas nuevas');
     // En mobile, el botón Salir vive dentro del panel del menú
     // hamburguesa. Abrir menú primero.
     const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
@@ -295,7 +295,8 @@ describe('AppRoute', () => {
   it('conteo 0 no muestra la fila y el estado queda calmo', async () => {
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
     renderWithQueryClient(<AppRoute />);
-    expect(await screen.findByText('Nada pendiente por ahora')).toBeInTheDocument();
+    expect(await screen.findByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(screen.getByText('Sin retiros próximos')).toBeInTheDocument();
     expect(screen.queryByText(/ofertas por responder/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sin conductor/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/documento vencido/i)).not.toBeInTheDocument();
@@ -320,7 +321,8 @@ describe('AppRoute', () => {
     expect(screen.getByText('Dejemos tu empresa lista para recibir cargas')).toBeInTheDocument();
     expect(screen.getByText('1 de 4')).toBeInTheDocument();
     expect(screen.queryByText(/10 minutos/)).not.toBeInTheDocument();
-    expect(screen.getByText('Nada pendiente por ahora')).toBeInTheDocument();
+    expect(screen.getByText('Sin ofertas nuevas')).toBeInTheDocument();
+    expect(screen.getByText('Tu negocio hoy')).toBeInTheDocument();
     expect(screen.queryByText('Tu operación hoy')).not.toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Agrega tu primer vehículo/ })).toHaveAttribute(
@@ -354,7 +356,7 @@ describe('AppRoute', () => {
     renderWithQueryClient(<AppRoute />);
     expect(await screen.findByText('No cargó Cumplimiento')).toBeInTheDocument();
     expect(screen.getByText('El resto del Inicio sigue funcionando')).toBeInTheDocument();
-    expect(await screen.findByText('1 oferta por responder')).toBeInTheDocument();
+    expect(await screen.findByText('1 oferta nueva')).toBeInTheDocument();
     expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
     const antes = apiGetSpy.mock.calls.filter((call) => call[0] === '/cumplimiento').length;
     screen.getByTestId('reintentar-cumplimiento').click();
@@ -418,13 +420,12 @@ describe('AppRoute', () => {
     });
     providedContext = { kind: 'onboarded', me: makeMe('dueno', true, false) };
     renderWithQueryClient(<AppRoute />);
-    expect(await screen.findByText('1 oferta por responder')).toBeInTheDocument();
-    expect(screen.getByText('1 servicio sin conductor')).toBeInTheDocument();
-    expect(screen.getByText(/Quilicura/)).toBeInTheDocument();
-    expect(screen.getByText('1 documento vencido')).toBeInTheDocument();
-    expect(screen.getByText(/\+2 por vencer en 30 días/)).toBeInTheDocument();
-    expect(screen.getByText('1 vehículo sin señal')).toBeInTheDocument();
-    expect(screen.getByText('1 por retirar')).toBeInTheDocument();
+    expect(await screen.findByText('1 oferta nueva')).toBeInTheDocument();
+    expect(screen.getAllByText('Sin conductor').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Quilicura/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 documento vencido').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\+2 por vencer en 30 días/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 sin señal').length).toBeGreaterThan(0);
     expect(screen.getByText(/sin GPS/)).toBeInTheDocument();
     expect(screen.getByTestId('dashboard-link-ofertas')).toHaveTextContent('1');
     expect(screen.getByTestId('dashboard-link-servicios')).toHaveTextContent('1');
@@ -451,7 +452,7 @@ describe('AppRoute', () => {
     expect(screen.getAllByText('No cargó Flota').length).toBeGreaterThan(0);
     expect(screen.getByText('No cargó Cumplimiento')).toBeInTheDocument();
     expect(screen.getAllByText('El resto del Inicio sigue funcionando').length).toBeGreaterThan(0);
-    screen.getByTestId('reintentar-kpi-servicios').click();
+    screen.getByTestId('reintentar-servicios').click();
     expect((await screen.findAllByText('No cargó Servicios')).length).toBeGreaterThan(0);
   });
 

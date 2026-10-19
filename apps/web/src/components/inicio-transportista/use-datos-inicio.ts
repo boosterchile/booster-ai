@@ -36,15 +36,24 @@ function aCarga<T>(query: { isError: boolean; data: T | undefined }): Carga<T> {
 }
 
 function seleccionarOfertas(data: OfertasCache): OfertaInicio[] {
-  return data.offers.map((oferta) => ({ expires_at: oferta.expires_at }));
+  return data.offers.map((oferta) => ({
+    expires_at: oferta.expires_at,
+    precioClp: oferta.proposed_price_clp ?? null,
+    origen: oferta.trip_request?.origin_address_raw ?? '',
+    destino: oferta.trip_request?.destination_address_raw ?? '',
+  }));
 }
 
 function seleccionarServicios(filas: AsignacionCache[]): AsignacionInicio[] {
   return filas.map((fila) => ({
+    ...(fila.id ? { id: fila.id } : {}),
     status: fila.status,
     sinConductor: fila.driver == null,
     pickupInicio: fila.trip.pickup_window_start,
     direccionOrigen: fila.trip.origin.address_raw,
+    direccionDestino: fila.trip.destination?.address_raw ?? '',
+    patente: fila.vehicle?.plate ?? null,
+    conductor: fila.driver?.full_name ?? null,
   }));
 }
 
@@ -73,6 +82,7 @@ function seleccionarCumplimiento(data: CumplimientoCache): CumplimientoInicio {
 function seleccionarFlota(fleet: FlotaCache[]): VehiculoFlotaInicio[] {
   return fleet.map((vehiculo) => {
     const item: VehiculoFlotaInicio = {
+      ...(vehiculo.id ? { id: vehiculo.id } : {}),
       plate: vehiculo.plate,
       teltonikaImei: vehiculo.teltonika_imei ?? null,
       timestampDevice: vehiculo.position?.timestamp_device ?? null,
