@@ -27,6 +27,12 @@ import {
   type DataNotificacionSugerencia,
   urlClickNotificacion,
 } from './lib/eco-routing.js';
+import {
+  PWA_RELOAD_ACK,
+  PWA_RELOAD_ACK_MS,
+  mensajeReload,
+  recargarClientesSinAck,
+} from './lib/pwa-update.js';
 
 // vite-plugin-pwa inyecta __WB_MANIFEST en build time con la lista de
 // assets a precachear (matching globPatterns del config).
@@ -49,12 +55,10 @@ cleanupOutdatedCaches();
 // lista de assets a precachear (matching globPatterns del config).
 precacheAndRoute(self.__WB_MANIFEST);
 
-// skipWaiting + clients.claim dejan la pestaña abierta con el JS viejo: el
-// SW nuevo ya controla, pero nadie navegó. registerSW.js (autoUpdate) recarga
-// en el evento `activated` de workbox-window, que no llega si el worker
-// activó antes de que la página enganchara el listener — y en iOS esa
-// pestaña puede vivir días. Recargar desde el SW nuevo, que sí se
-// revalida (nginx sirve /sw.js con no-cache), destraba esa sesión.
+// La pestaña con `installPwaUpdate` se recarga sola en `controllerchange`,
+// una vez. Este camino es el fallback para la ventana que todavía corre
+// el JS viejo y no contesta el ping. Solo ventanas ya controladas: una
+// no controlada no se navega (al pasar a controlada, el cliente recarga).
 // En la primera instalación no hay bundle viejo: `registration.active`
 // todavía es null mientras este script se evalúa.
 const recargarAlActivar = Boolean(self.registration.active);
@@ -74,11 +78,38 @@ async function recargarVentanas(): Promise<void> {
   await self.clients.claim();
   const ventanas = await self.clients.matchAll({
     type: 'window',
-    includeUncontrolled: true,
+    includeUncontrolled: false,
   });
-  await Promise.all(
-    ventanas.filter(esVentanaNavegable).map((client) => client.navigate(client.url)),
-  );
+  const navegables = ventanas.filter(esVentanaNavegable);
+  const acks = new Set<string>();
+  let avisar: (() => void) | undefined;
+  const onMessage = (event: ExtendableMessageEvent) => {
+    const mensaje = mensajeReload(event.data);
+    if (mensaje?.type !== PWA_RELOAD_ACK) {
+      return;
+    }
+    acks.add(mensaje.id);
+    if (acks.size >= navegables.length) {
+      avisar?.();
+    }
+  };
+  self.addEventListener('message', onMessage);
+  try {
+    await recargarClientesSinAck(navegables, () => {
+      if (navegables.length === 0 || acks.size >= navegables.length) {
+        return Promise.resolve(acks);
+      }
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(acks), PWA_RELOAD_ACK_MS);
+        avisar = () => {
+          clearTimeout(timer);
+          resolve(acks);
+        };
+      });
+    });
+  } finally {
+    self.removeEventListener('message', onMessage);
+  }
 }
 
 // Google Fonts CSS — CacheFirst, expira en 1 año (max 4 entries).
