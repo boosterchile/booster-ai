@@ -32,7 +32,7 @@ La auditoría es append-only en `auditoria_email_conductor` (migración aditiva)
 
 El PIN en claro sale solo en la respuesta 200 y en el correo de activación ya existente. El log no lleva PIN ni email.
 
-Si la persona tiene una membresía vigente en otra empresa, en una organización stakeholder, o un rol distinto de `conductor` en esta empresa, `POST /conductores/:id/email` responde 409 `identidad_vinculada` y no escribe. Una carrera contra el unique de `usuarios.email` (23505, también si Drizzle lo deja en `cause`) responde 409 `email_already_registered`, igual que el alta.
+Si la persona tiene una membresía vigente en otra empresa, en una organización stakeholder, o un rol distinto de `conductor` en esta empresa, `POST /conductores/:id/email` y el alta que reemplaza un email de relleno responden 409 `identidad_vinculada`. En ese caso no se escribe el email, no se reconcilia Firebase y no se rota el PIN. Una carrera 23505 contra el unique de `usuarios.email` (`usuarios_email_unique` o `usuarios_email_key`, en `constraint` o en `cause.constraint`) responde 409 `email_already_registered`. Otro 23505 (RUT, `firebase_uid`) responde 409 `duplicate`.
 
 ## 5. Fuera de alcance
 

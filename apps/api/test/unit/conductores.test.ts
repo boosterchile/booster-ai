@@ -866,7 +866,9 @@ describe('POST /conductores — email real y único', () => {
   it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
     const stub = makeDbStub({
       selectQueueRows: [[], []],
-      insertError: Object.assign(new Error('Failed query'), { cause: { code: '23505' } }),
+      insertError: Object.assign(new Error('Failed query'), {
+        cause: { code: '23505', constraint: 'usuarios_email_unique' },
+      }),
     });
     const app = await buildApp(stub.db);
     const res = await app.request('/conductores', {
@@ -884,6 +886,79 @@ describe('POST /conductores — email real y único', () => {
     });
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+  });
+
+  it('23505 de otro constraint (RUT) → 409 duplicate', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[], []],
+      insertError: Object.assign(new Error('Failed query'), {
+        code: '23505',
+        constraint: 'uq_usuarios_rut',
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('duplicate');
+  });
+
+  it('reemplazar el relleno de alguien vinculado a otra empresa → 409 sin escribir ni Firebase', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [
+          {
+            id: USER_ID,
+            fullName: 'Camila Rojas',
+            firebaseUid: 'pending-rut:11.111.111-1',
+            claveNumericaHash: null,
+            activationPinHash: null,
+            email: 'pending-rut-111111111@boosterchile.invalid',
+          },
+        ],
+        [],
+        [],
+        [
+          {
+            empresaId: '99999999-9999-9999-9999-999999999999',
+            role: 'dueno',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+    });
+    const firebase = firebaseSinCuentas();
+    const app = await buildApp(stub.db, { firebaseAuth: firebase });
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email: EMAIL_REAL,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(firebase.getUserByEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -1058,7 +1133,9 @@ describe('POST /conductores/:id/email', () => {
   it('carrera de unique (23505 en cause) → 409 email_already_registered', async () => {
     const stub = makeDbStub({
       selectQueueRows: [[filaConductor()], []],
-      updateError: Object.assign(new Error('Failed query'), { cause: { code: '23505' } }),
+      updateError: Object.assign(new Error('Failed query'), {
+        cause: { code: '23505', constraint: 'usuarios_email_key' },
+      }),
     });
     const app = await buildApp(stub.db);
     const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
@@ -1068,6 +1145,24 @@ describe('POST /conductores/:id/email', () => {
     });
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe('email_already_registered');
+  });
+
+  it('23505 de otro constraint (firebase_uid) → 409 duplicate', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [[filaConductor()], []],
+      updateError: Object.assign(new Error('Failed query'), {
+        code: '23505',
+        constraint: 'usuarios_firebase_uid_key',
+      }),
+    });
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: EMAIL_REAL }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('duplicate');
   });
 
   it.each([

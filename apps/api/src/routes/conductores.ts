@@ -12,7 +12,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Db } from '../db/client.js';
-import { pgErrorCode } from '../db/pg-error.js';
+import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
 import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
 import { getBusinessCounter } from '../observability/business-metrics.js';
 import { setResultAttributes, withBusinessSpan } from '../observability/business-span.js';
@@ -422,6 +422,9 @@ export function createConductoresRoutes(opts: {
             emailActual !== body.email;
 
           if (reemplazaRelleno) {
+            if (await emailIdentidadCompartida(tx, userId, empresaId)) {
+              return { ok: false as const, code: 'identidad_vinculada' as const };
+            }
             const accionFirebase = await reconciliarIdentidadFirebaseConductor({
               auth: opts.firebaseAuth ?? null,
               cuentaActiva: false,
@@ -593,7 +596,8 @@ export function createConductoresRoutes(opts: {
       // Captura específico de errores de unicidad de PG.
       const errCode = pgErrorCode(err);
       if (errCode === '23505') {
-        return c.json({ error: 'email_already_registered', code: 'email_already_registered' }, 409);
+        const code = esEmailDuplicado(err) ? 'email_already_registered' : 'duplicate';
+        return c.json({ error: code, code }, 409);
       }
       opts.logger.error(
         {
@@ -818,8 +822,12 @@ export function createConductoresRoutes(opts: {
           });
         } catch (err) {
           if (pgErrorCode(err) === '23505') {
-            record('email_already_registered');
-            return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+            if (esEmailDuplicado(err)) {
+              record('email_already_registered');
+              return c.json({ error: 'conflict', code: 'email_already_registered' }, 409);
+            }
+            record('duplicate');
+            return c.json({ error: 'duplicate', code: 'duplicate' }, 409);
           }
           throw err;
         }
