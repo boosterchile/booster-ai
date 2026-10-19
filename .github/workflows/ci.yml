@@ -351,11 +351,115 @@ jobs:
           echo "✓ Sin ERR_MODULE_NOT_FOUND — los módulos resuelven en runtime (el exit por config/env sin setear es esperado)"
 
   # ---------------------------------------------------------------------------
+  # Docker build + startup probe de notification-service y matching-engine.
+  #
+  # El job del api (arriba) no llega a escuchar: sale por config. Estos dos
+  # sí tienen que responder GET /health, que es el startup probe de Cloud Run
+  # (infrastructure/modules/cloud-run-service). En prod el dist ESM bundleaba
+  # el exporter CJS de Cloud Monitoring y el proceso moría al cargar
+  # instrumentation.js con `Dynamic require of "child_process" is not
+  # supported`, antes de abrir el puerto. `pnpm build` en el job `build` no
+  # lo ve: usa el node_modules completo y no arranca la imagen.
+  # ---------------------------------------------------------------------------
+  docker-startup:
+    name: Docker startup (${{ matrix.service }})
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [notification-service, matching-engine]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build imagen (mismo Dockerfile que prod)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          tags: booster-ai-${{ matrix.service }}:ci
+          load: true
+          cache-from: type=gha,scope=docker-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.service }}
+      - name: Arrancar y verificar GET /health
+        run: |
+          set -euo pipefail
+          name="${{ matrix.service }}"
+          cid="smoke-${name}"
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          args=(
+            -d --name "$cid" -p 8080:8080
+            -e PORT=8080
+            -e NODE_ENV=production
+            -e GOOGLE_CLOUD_PROJECT=booster-ai-494222
+          )
+          case "$name" in
+            notification-service)
+              args+=(
+                -e TWILIO_ACCOUNT_SID=ACdeadbeef
+                -e TWILIO_AUTH_TOKEN=ci-smoke-token
+                -e TWILIO_FROM_NUMBER=+15555550100
+              )
+              ;;
+            matching-engine)
+              args+=(
+                -e OIDC_AUDIENCE=https://matching-engine.example.run.app
+                -e ALLOWED_CALLER_SA=api@booster-ai-494222.iam.gserviceaccount.com
+              )
+              ;;
+            *)
+              echo "::error::servicio sin env de smoke: $name"
+              exit 1
+              ;;
+          esac
+          cleanup() {
+            echo "--- logs de ${cid} ---"
+            docker logs "$cid" || true
+            echo "-----------------------"
+            docker rm -f "$cid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run "${args[@]}" "booster-ai-${name}:ci"
+          ok=0
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /tmp/health-body -w '%{http_code}' --max-time 2 http://127.0.0.1:8080/health || true)"
+            if [ "$code" = "200" ]; then
+              ok=1
+              break
+            fi
+            running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
+            if [ "$running" != "true" ]; then
+              echo "::error::${name} murió antes de responder /health"
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::${name} no respondió 200 en GET /health (startup probe)"
+            exit 1
+          fi
+          if ! grep -q '"status":"ok"' /tmp/health-body; then
+            echo "::error::${name} /health no trae status ok: $(cat /tmp/health-body)"
+            exit 1
+          fi
+          if docker logs "$cid" 2>&1 | grep -E 'Dynamic require of|ERR_MODULE_NOT_FOUND'; then
+            echo "::error::${name} arrancó con un fallo de bundle o de módulos"
+            exit 1
+          fi
+          echo "✓ ${name} GET /health → 200 $(cat /tmp/health-body)"
+
+  # ---------------------------------------------------------------------------
   # Final gate — todos los jobs previos deben pasar
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build, docker-startup]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -368,7 +472,8 @@ jobs:
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.migration-safety.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.docker-build.result }}" != "success" ]; then
+             [ "${{ needs.docker-build.result }}" != "success" ] || \
+             [ "${{ needs.docker-startup.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
           fi
