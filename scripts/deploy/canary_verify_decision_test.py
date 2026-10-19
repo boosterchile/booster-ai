@@ -103,6 +103,23 @@ class DecidirCanaryTest(unittest.TestCase):
         bloque = texto[inicio:fin]
         self.assertNotIn('$', bloque)
 
+    def test_cuatro_xx_no_cambia_la_decision(self) -> None:
+        llego = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'cinco_xx': 0,
+            'cuatro_xx': 7,
+            'errores_transporte': 0,
+            'camino_directo': 'ok',
+            'job': 'ok',
+        }
+        codigo, lineas = decidir_gate(llego, 35, 30, {'2xx': 35}, [100.0])
+        self.assertEqual(codigo, 0)
+        self.assertIn('OK', lineas[-1])
+        sin_url = decidir_gate(None, 0, 30, {}, [])
+        self.assertEqual(sin_url[0], 0)
+        self.assertIn('WARN', sin_url[1][0])
+
     def test_job_perdido_no_promueve(self) -> None:
         resultado = {
             'tenia_url': True,

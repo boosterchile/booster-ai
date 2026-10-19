@@ -184,7 +184,9 @@ class ManifiestoTest(unittest.TestCase):
         )
         self.assertTrue(all(item['hostnames'] == [host] for item in alias))
         self.assertGreaterEqual(doc['spec']['ttlSecondsAfterFinished'], 1800)
-        self.assertIn('if (i === 0 && !llego) break;', contenedor['command'][2])
+        self.assertIn('reintentosAntesDeCortar = 3', contenedor['command'][2])
+        self.assertIn('cuatro_xx: cuatroXx', contenedor['command'][2])
+        self.assertNotIn('if (i === 0 && !llego) break;', contenedor['command'][2])
         self.assertEqual(doc['metadata']['namespace'], 'default')
         self.assertEqual(doc['metadata']['name'], 'canary-probe-0123456789ab')
 
@@ -253,6 +255,7 @@ class CorrerPlanTest(unittest.TestCase):
         )
         self.assertEqual(corrida['llegaron'], 0)
         self.assertEqual(corrida['clase'], 'ingress')
+        self.assertEqual(corrida['cuatro_xx'], 1)
         self.assertEqual(llamadas, ['/health'])
 
     def test_cuenta_solo_respuestas_de_la_app(self) -> None:
@@ -485,9 +488,35 @@ class ResultadoSondaTest(unittest.TestCase):
         self.assertTrue(merged['llego_a_la_app'])
         self.assertEqual(merged['cinco_xx'], 1)
         self.assertEqual(merged['errores_transporte'], 2)
+        self.assertEqual(merged['cuatro_xx'], 0)
         self.assertEqual(merged['job'], 'ok')
         codigo, _lineas = decidir_resultado_sonda(merged)
         self.assertNotEqual(codigo, 0)
+
+    def test_los_4xx_se_cuentan_y_no_hacen_fallar(self) -> None:
+        log = '\n'.join(
+            [
+                '{"i":0,"path":"/health","status":404}',
+                '{"i":1,"path":"/health","status":200}',
+                '{"resumen":{"llego_a_la_app":true,"cinco_xx":0,"cuatro_xx":2,'
+                '"errores_transporte":0,"respuestas_app":33,"total_plan":35}}',
+            ]
+        )
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'cuatro_xx': 1,
+            'errores_transporte': 0,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        merged = aplicar_log_job(base, log)
+        self.assertEqual(merged['cuatro_xx'], 2)
+        self.assertEqual(merged['cinco_xx'], 0)
+        codigo, lineas = decidir_resultado_sonda(merged)
+        self.assertEqual(codigo, 0)
+        self.assertNotIn('FAIL', '\n'.join(lineas))
 
     def test_main_escribe_el_resultado_con_el_503(self) -> None:
         original = sonda._pedir

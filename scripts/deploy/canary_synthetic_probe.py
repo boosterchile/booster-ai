@@ -65,6 +65,7 @@ if (!host.startsWith(tag + '---') || !host.endsWith('.run.app')) {
     resumen: {
       llego_a_la_app: false,
       cinco_xx: 0,
+      cuatro_xx: 0,
       errores_transporte: 0,
       respuestas_app: 0,
       total_plan: count,
@@ -82,8 +83,11 @@ function pausa(indice) {
 (async () => {
   let respuestasApp = 0;
   let cincoXx = 0;
+  let cuatroXx = 0;
   let erroresTransporte = 0;
   let llego = false;
+  let fallosSinLlegar = 0;
+  const reintentosAntesDeCortar = 3;
   for (let i = 0; i < count; i += 1) {
     await pausa(i);
     const path = paths[i % paths.length];
@@ -103,6 +107,8 @@ function pausa(indice) {
       } else if (status >= 200 && status < 300) {
         respuestasApp += 1;
         llego = true;
+      } else if (status >= 400 && status < 500) {
+        cuatroXx += 1;
       }
       console.log(JSON.stringify({ i, path, status }));
     } catch (err) {
@@ -110,14 +116,19 @@ function pausa(indice) {
       const message = err && err.message ? err.message : String(err);
       console.log(JSON.stringify({ i, path, error: message }));
     }
-    // El 404 del frontend de Google no va a cambiar en el request 30.
-    // Cortar acá deja el resumen antes de que el TTL borre el Job.
-    if (i === 0 && !llego) break;
+    // Un blip no corta. Tras el primer fallo hay 3 reintentos; si ninguno
+    // llegó a la app, el resumen queda antes de que el TTL borre el Job.
+    // Un 4xx se cuenta y no marca llegada ni 5xx.
+    if (!llego) {
+      fallosSinLlegar += 1;
+      if (fallosSinLlegar > reintentosAntesDeCortar) break;
+    }
   }
   console.log(JSON.stringify({
     resumen: {
       llego_a_la_app: llego,
       cinco_xx: cincoXx,
+      cuatro_xx: cuatroXx,
       errores_transporte: erroresTransporte,
       respuestas_app: respuestasApp,
       total_plan: count,
@@ -329,6 +340,7 @@ def correr_plan(
         'llegaron': 0,
         'clase': 'transporte',
         'cinco_xx': 0,
+        'cuatro_xx': 0,
         'errores_transporte': 0,
         'llego_a_la_app': False,
     }
@@ -338,6 +350,8 @@ def correr_plan(
             dormir(pausa)
         status, tipo, body = pedir(url, path)
         clase_i = clasificar_respuesta(status, tipo, body)
+        if status is not None and 400 <= status < 500:
+            corrida['cuatro_xx'] += 1
         if status is None:
             corrida['errores_transporte'] += 1
         elif clase_i == 'aplicacion':
@@ -366,6 +380,7 @@ def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[
         'llego_a_la_app': llego,
         'respuestas_app': int(corrida['llegaron']),
         'cinco_xx': int(corrida['cinco_xx']),
+        'cuatro_xx': int(corrida['cuatro_xx']),
         'errores_transporte': int(corrida['errores_transporte']),
         'total_plan': total_plan,
         'camino_directo': 'ok' if llego else str(corrida['clase']),
@@ -399,10 +414,12 @@ def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
             resumen.get('errores_transporte') or 0
         )
         resultado['cinco_xx'] = int(resultado.get('cinco_xx') or 0) + int(resumen.get('cinco_xx') or 0)
+        resultado['cuatro_xx'] = int(resultado.get('cuatro_xx') or 0) + int(resumen.get('cuatro_xx') or 0)
         return resultado
     resultado['job'] = 'ok'
     resultado['llego_a_la_app'] = True
     resultado['cinco_xx'] = int(resumen.get('cinco_xx') or 0)
+    resultado['cuatro_xx'] = int(resumen.get('cuatro_xx') or 0)
     resultado['errores_transporte'] = int(resumen.get('errores_transporte') or 0)
     resultado['respuestas_app'] = int(resumen.get('respuestas_app') or 0)
     return resultado
