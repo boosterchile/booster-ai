@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -172,6 +172,41 @@ describe('CargasNuevoRoute', () => {
     expect(screen.getAllByText('Ingresa una dirección (mínimo 5 caracteres)')).toHaveLength(1);
     expect(region).toHaveValue('XIII');
     expect(comuna).toHaveValue('13101');
+  });
+
+  it('después de un envío vacío, corregir los campos publica la carga', async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      trip_request: { id: '11111111-1111-4111-8111-111111111111' },
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(await screen.findAllByText('Selecciona una región')).toHaveLength(2);
+
+    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Av. Apoquindo 5550');
+    await user.type(screen.getByLabelText(/Dirección de entrega/), 'Av. Pajaritos 3000');
+    const regiones = screen.getAllByLabelText(/Región/);
+    const origen = regiones[0];
+    const destino = regiones[1];
+    if (!origen || !destino) {
+      throw new Error('faltan los selectores de región');
+    }
+    await user.selectOptions(origen, 'XIII');
+    await user.selectOptions(destino, 'VIII');
+    await user.type(screen.getByLabelText(/Peso/), '8000');
+    const local = (fecha: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText(/Desde/), {
+      target: { value: local(new Date(Date.now() + 2 * 60 * 60 * 1000)) },
+    });
+    fireEvent.change(screen.getByLabelText(/Hasta/), {
+      target: { value: local(new Date(Date.now() + 6 * 60 * 60 * 1000)) },
+    });
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
   });
 });
 

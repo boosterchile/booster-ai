@@ -881,6 +881,7 @@ function TripForm({
     register,
     handleSubmit,
     setError,
+    clearErrors,
     watch,
     setValue,
     formState: { errors, submitCount },
@@ -953,7 +954,12 @@ function TripForm({
 
   const formulario = (
     <form
-      onSubmit={handleSubmit(submit)}
+      onSubmit={(event) => {
+        // setError deja el error en el store. handleSubmit no llama al
+        // callback si ese error sigue ahí, aunque el campo ya esté corregido.
+        clearErrors();
+        void handleSubmit(submit)(event);
+      }}
       className="space-y-8 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
       noValidate
     >
