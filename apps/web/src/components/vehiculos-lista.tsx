@@ -90,6 +90,16 @@ const vehiculosResponseSchema = z.object({
   vehicles: z.array(vehiculoSchema),
 });
 
+/** Misma función que escribe la clave `vehiculos`. El inicio la reusa. */
+export async function fetchVehiculosEmpresa(init: RequestInit): Promise<VehiculoLista[]> {
+  const raw = await api.get<unknown>('/vehiculos', init);
+  const parsed = vehiculosResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error('respuesta de vehículos inválida');
+  }
+  return parsed.data.vehicles;
+}
+
 const flotaResponseSchema = z.object({
   fleet: z.array(
     z.object({
@@ -175,14 +185,7 @@ export function VehiculosLista({ canWrite }: { canWrite: boolean }) {
   const scope = useEmpresaScope();
   const vehiclesQ = useQuery({
     queryKey: scope.key('vehiculos'),
-    queryFn: async () => {
-      const raw = await api.get<unknown>('/vehiculos', scope.init);
-      const parsed = vehiculosResponseSchema.safeParse(raw);
-      if (!parsed.success) {
-        throw new Error('respuesta de vehículos inválida');
-      }
-      return parsed.data.vehicles;
-    },
+    queryFn: () => fetchVehiculosEmpresa(scope.init),
   });
 
   const flotaQ = useQuery({
