@@ -49,6 +49,24 @@ function numero(valor: unknown): number | null {
   return null;
 }
 
+/** Una fila por viaje. Si un join repite el id, se queda la primera. */
+export function filasListaUnicas<T extends { id?: unknown }>(rows: readonly T[]): T[] {
+  const vistos = new Set<string>();
+  const unicos: T[] = [];
+  for (const row of rows) {
+    if (typeof row.id !== 'string' || row.id.length === 0) {
+      unicos.push(row);
+      continue;
+    }
+    if (vistos.has(row.id)) {
+      continue;
+    }
+    vistos.add(row.id);
+    unicos.push(row);
+  }
+  return unicos;
+}
+
 export function serializarFilaLista<T extends object>(
   row: T & {
     status?: unknown;

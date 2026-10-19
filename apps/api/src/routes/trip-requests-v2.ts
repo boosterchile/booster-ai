@@ -34,7 +34,7 @@ import {
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
-import { serializarFilaLista } from '../services/inicio-viaje-lista.js';
+import { filasListaUnicas, serializarFilaLista } from '../services/inicio-viaje-lista.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { liquidarTrip } from '../services/liquidar-trip.js';
 import {
@@ -458,7 +458,7 @@ export function createTripRequestsV2Routes(opts: {
       .orderBy(desc(trips.createdAt));
 
     return c.json({
-      trip_requests: rows.map((row) => serializarFilaLista(row)),
+      trip_requests: filasListaUnicas(rows).map((row) => serializarFilaLista(row)),
     });
   });
 
