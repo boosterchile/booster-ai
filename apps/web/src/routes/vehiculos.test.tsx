@@ -1414,6 +1414,55 @@ describe('VehiculoDetallePage — hub', () => {
     expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
   });
 
+  it('si la ubicación falla, el mapa dice error y no «sin GPS»', async () => {
+    let fallar = true;
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/vehiculos/veh-1') {
+        return { vehicle: makeVehicleRow({ teltonika_imei: IMEI_VALIDO }) };
+      }
+      if (path.startsWith('/trayectos-teltonika')) {
+        return {
+          resumen_vehiculo: {
+            ultimo_trayecto: null,
+            recientes: [],
+            km_recientes: 0,
+            litros_recientes: null,
+            km_por_litro: null,
+            cta_sensor: false,
+            alertas_total: 0,
+            alerta_ultima: null,
+          },
+        };
+      }
+      if (path.includes('/ubicacion')) {
+        if (fallar) {
+          throw new ApiError(500, 'internal', null);
+        }
+        return {
+          ubicacion: {
+            timestamp_device: new Date().toISOString(),
+            latitude: -33.4,
+            longitude: -70.6,
+            speed_kmh: 0,
+          },
+        };
+      }
+      return {} as never;
+    });
+    providedContext = { kind: 'onboarded', me: makeMe() };
+    wrap(<VehiculosDetalleRoute />);
+    expect(await screen.findByTestId('hub-mapa-error')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos cargar la posición.');
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+    expect(screen.queryByTestId('hub-mapa-cargando')).toBeNull();
+    fallar = false;
+    fireEvent.click(
+      within(screen.getByTestId('hub-mapa-error')).getByRole('button', { name: /^reintentar$/i }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('hub-mapa-error')).toBeNull());
+    expect(screen.queryByText('Sin posición GPS todavía')).toBeNull();
+  });
+
   it('sin puntos GPS el mapa lo dice recién cuando la ubicación respondió', async () => {
     vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
       if (path === '/vehiculos/veh-1') {

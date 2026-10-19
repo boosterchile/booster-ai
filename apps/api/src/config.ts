@@ -456,8 +456,9 @@ export const apiEnvSchema = commonEnvSchema
      *
      * Cuando es `false`:
      *   - `cobraHoy()` retorna `skipped_flag_disabled`.
-     *   - Endpoints devuelven 503 con `feature_disabled`.
-     *   - UI no muestra botón "Cobra hoy".
+     *   - Los GET de cobra-hoy responden 200 `{enabled:false, items:[]}`.
+     *   - El POST responde 403 `{error:'feature_disabled'}`.
+     *   - La UI avisa que el pronto pago todavía no está activo.
      *
      * Cuando es `true`:
      *   - Endpoints operan pero requieren que el shipper tenga

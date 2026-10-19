@@ -1926,7 +1926,19 @@ export const telemetryPoints = pgTable(
     vehicleTsIdx: index('idx_telemetria_vehiculo_ts').on(table.vehicleId, table.timestampDevice),
     // idx_telemetria_imei_ts e idx_telemetria_vehiculo_recibido dropeados
     // en 0040 (redundantes: duplicaban el UNIQUE / columna solo en
-    // proyecciones). telemetria_puntos paga 3 estructuras por INSERT, no 5.
+    // proyecciones).
+    // 0066: solo filas con fix. La última posición no camina los 0,0.
+    // Un insert sin fix no agrega hoja en estos dos.
+    gpsValidoVehiculoIdx: index('idx_telemetria_vehiculo_gps_valido')
+      .on(table.vehicleId, table.timestampDevice)
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
+    gpsValidoImeiIdx: index('idx_telemetria_imei_gps_valido')
+      .on(table.imei, table.timestampDevice)
+      .where(
+        sql`${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} <> 0 AND ${table.longitude} <> 0`,
+      ),
     priorityCheck: check('prioridad_check', sql`${table.priority} IN (0, 1, 2)`),
   }),
 );

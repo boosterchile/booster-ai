@@ -26,10 +26,10 @@ import { type TestDbHandle, createTestDb } from '../helpers/test-db.js';
  * stakeholder, tracking público por token y rutas platform-admin.
  */
 async function cargarRutas() {
-  // Las rutas de factoring responden 503 `feature_disabled` con el flag
-  // apagado y la sonda sería vacía. `config.ts` lee env al importarse, por
-  // eso el flag se fija antes de importar (cada archivo tiene su propio
-  // registro de módulos en vitest).
+  // Con el flag apagado el GET de cobra-hoy responde 200 vacío y no toca
+  // la base: la sonda no probaría aislamiento. `config.ts` lee env al
+  // importarse, por eso el flag se fija antes de importar (cada archivo
+  // tiene su propio registro de módulos en vitest).
   process.env.FACTORING_V1_ACTIVATED = 'true';
   process.env.PRICING_V2_ACTIVATED = 'true';
   const m = await Promise.all([
