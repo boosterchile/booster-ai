@@ -3,7 +3,7 @@ import type { Logger } from '@booster-ai/logger';
 import { abrirDisputaSchema, tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { esCancelablePorShipper, esEstadoViaje } from '@booster-ai/trip-state-machine';
 import { zValidator } from '@hono/zod-validator';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -34,6 +34,7 @@ import {
 import type { EmitirCertificadoConfig } from '../services/emitir-certificado-viaje.js';
 import { geocodificarOrigen } from '../services/geocodificar-origen.js';
 import { computeLiveTracking } from '../services/get-public-tracking.js';
+import { serializarFilaLista } from '../services/inicio-viaje-lista.js';
 import { lineaMetodoDesdeMetricas } from '../services/linea-metodo-metricas.js';
 import { liquidarTrip } from '../services/liquidar-trip.js';
 import {
@@ -441,13 +442,24 @@ export function createTripRequestsV2Routes(opts: {
         proposed_price_clp: trips.proposedPriceClp,
         created_at: trips.createdAt,
         certificate_issued_at: tripMetrics.certificateIssuedAt,
+        // Una sola consulta: la asignación es 1:1 con el viaje.
+        transportista_nombre: empresasTable.legalName,
+        assignment_status: assignments.status,
+        ofertas_pendientes: sql<number>`(
+          select count(*)::int from ${offers}
+          where ${offers.tripId} = ${trips.id} and ${offers.status} = 'pendiente'
+        )`,
       })
       .from(trips)
       .leftJoin(tripMetrics, eq(tripMetrics.tripId, trips.id))
+      .leftJoin(assignments, eq(assignments.tripId, trips.id))
+      .leftJoin(empresasTable, eq(empresasTable.id, assignments.empresaId))
       .where(eq(trips.generadorCargaEmpresaId, auth.activeMembership.empresa.id))
       .orderBy(desc(trips.createdAt));
 
-    return c.json({ trip_requests: rows });
+    return c.json({
+      trip_requests: rows.map((row) => serializarFilaLista(row)),
+    });
   });
 
   // ---------------------------------------------------------------------

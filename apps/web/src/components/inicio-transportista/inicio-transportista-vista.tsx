@@ -40,11 +40,13 @@ export function InicioTransportistaVista({
   negocio,
   onReintentar,
   plataActiva = INICIO_PLATA_ACTIVA,
+  soloLectura = false,
 }: {
   vista: InicioVista;
   negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
   plataActiva?: boolean;
+  soloLectura?: boolean;
 }) {
   const avisos = avisosListos(negocio);
   return (
@@ -60,8 +62,8 @@ export function InicioTransportistaVista({
           <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
             Tu negocio hoy
           </h2>
-          <Ofertas negocio={negocio} onReintentar={onReintentar} />
-          <Retiros negocio={negocio} onReintentar={onReintentar} />
+          <Ofertas negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
+          <Retiros negocio={negocio} onReintentar={onReintentar} soloLectura={soloLectura} />
           {plataActiva ? <Plata /> : null}
           <AvisosChips avisos={avisos} />
           <AvisosDocumentos negocio={negocio} onReintentar={onReintentar} />
@@ -95,9 +97,11 @@ function avisosListos(negocio: NegocioHoy): AvisoNegocio[] {
 function Ofertas({
   negocio,
   onReintentar,
+  soloLectura,
 }: {
   negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
+  soloLectura: boolean;
 }) {
   const panel = negocio.ofertas;
   return (
@@ -131,7 +135,7 @@ function Ofertas({
               <span className="font-semibold text-warning-700"> · {panel.valor.vence}</span>
             ) : null}
           </p>
-          <CtaVerde to="/app/ofertas">Ver ofertas</CtaVerde>
+          <CtaVerde to="/app/ofertas">{soloLectura ? 'Ver' : 'Ver ofertas'}</CtaVerde>
         </>
       ) : null}
     </BloqueNegocio>
@@ -141,9 +145,11 @@ function Ofertas({
 function Retiros({
   negocio,
   onReintentar,
+  soloLectura,
 }: {
   negocio: NegocioHoy;
   onReintentar: (fuente: FuenteReintento) => void;
+  soloLectura: boolean;
 }) {
   const panel = negocio.retiros;
   return (
@@ -159,7 +165,9 @@ function Retiros({
       {panel.estado === 'vacio' ? (
         <p className="font-medium text-neutral-900 text-sm">Sin retiros próximos</p>
       ) : null}
-      {panel.estado === 'listo' ? <ListaProximos retiros={panel.valor} /> : null}
+      {panel.estado === 'listo' ? (
+        <ListaProximos retiros={panel.valor} soloLectura={soloLectura} />
+      ) : null}
     </BloqueNegocio>
   );
 }
