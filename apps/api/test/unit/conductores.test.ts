@@ -1439,6 +1439,38 @@ describe('POST /conductores/:id/telefono', () => {
     expect(JSON.stringify(info.mock.calls)).not.toContain(body.activation_pin);
   });
 
+  it('persona vinculada a otra empresa → 409 y no cambia el teléfono ni el PIN', async () => {
+    const stub = makeDbStub({
+      selectQueueRows: [
+        [filaConductor({ phone: '+56911111111' })],
+        [
+          {
+            empresaId: '99999999-9999-9999-9999-999999999999',
+            role: 'conductor',
+            organizacionId: null,
+            status: 'activa',
+          },
+        ],
+      ],
+    });
+    const sendContent = vi.fn(async () => ({ sid: 'SM1' }));
+    const app = await buildApp(stub.db, {
+      role: 'despachador',
+      whatsappClient: { sendContent },
+      activacionContentSid: 'HXtest',
+    });
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: TELEFONO_NUEVO }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('identidad_vinculada');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(sendContent).not.toHaveBeenCalled();
+  });
+
   it('teléfono inválido → 400 con mensaje claro y no escribe', async () => {
     const stub = makeDbStub({});
     const app = await buildApp(stub.db);
@@ -1446,6 +1478,21 @@ describe('POST /conductores/:id/telefono', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ phone: '912345678' }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; message: string };
+    expect(body.error).toBe('telefono_invalido');
+    expect(body.message).toBe('Ingresa un teléfono válido (+569...)');
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
+  it('fijo +562 → 400 con el mismo mensaje y no escribe', async () => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/telefono`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ phone: '+56212345678' }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; message: string };

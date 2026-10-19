@@ -58,7 +58,7 @@ const STATUS_LABELS: Record<DriverStatus, string> = {
   fuera_servicio: 'Fuera de servicio',
 };
 
-const TELEFONO_WHATSAPP_RE = /^\+56[2-9]\d{8}$/;
+const TELEFONO_WHATSAPP_RE = /^\+569\d{8}$/;
 const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
 
 const STATUS_COLORS: Record<DriverStatus, string> = {

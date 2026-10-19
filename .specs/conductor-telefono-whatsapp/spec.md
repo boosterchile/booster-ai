@@ -12,7 +12,8 @@ queda inalcanzable por el canal principal.
 ## Entradas
 
 - `POST /conductores/:id/telefono` con `{ phone }` validado por
-  `chileanPhoneSchema`. Misma autorización que `POST /conductores/:id/email`
+  `chileanPhoneSchema` y restringido a móvil `+569XXXXXXXX` (un fijo `+562…`
+  es 400). Misma autorización que `POST /conductores/:id/email`
   (`dueno` | `admin` | `despachador`) y el mismo join `conductores` → `users`
   filtrado por `empresaId`.
 - Alta `POST /conductores` cuando el RUT ya es un usuario y `users.phone` está
@@ -23,6 +24,8 @@ queda inalcanzable por el canal principal.
 
 1. Teléfono inválido → 400 `{ error: 'telefono_invalido', message: 'Ingresa un teléfono válido (+569...)' }` y no escribe.
 2. Conductor de otra empresa (o inexistente) → 404 `conductor_not_found`.
+   Persona vinculada a otra empresa, a una organización o con otro rol aquí
+   → 409 `identidad_vinculada` antes de escribir `users.phone` o el PIN.
 3. Pendiente de login → actualiza `users.phone`, regenera el PIN como el
    reenvío por email, llama `enviarWhatsAppActivacionConductor` al número nuevo
    y devuelve `activation_pin`.
@@ -31,7 +34,7 @@ queda inalcanzable por el canal principal.
    `phone: body.phone`. Si ya tenía teléfono, no se pisa.
 6. El cambio no entra por `PATCH /conductores/:id`.
 7. En la ficha, el botón «Guardar teléfono y reenviar invitación» queda
-   deshabilitado si el valor no cumple `/^\+56[2-9]\d{8}$/`. Al responder OK se
+   deshabilitado si el valor no cumple `/^\+569\d{8}$/`. Al responder OK se
    muestra `ActivationPinCard` con el PIN nuevo y el encabezado refleja el
    teléfono y el email nuevos sin recargar la página.
 
@@ -44,6 +47,9 @@ queda inalcanzable por el canal principal.
 
 ## No-objetivos
 
-- Auditoría nueva del cambio de teléfono.
+- Auditoría durable del cambio de teléfono. `auditoria_email_conductor` no
+  sirve: exige email anterior/nuevo y `accion_firebase`, y no tiene columnas
+  de teléfono. Hace falta una tabla nueva; queda pendiente, sin migración en
+  este cambio.
 - Enviar el PIN por WhatsApp (sigue sin viajar en la plantilla).
 - Reescribir el teléfono de una cuenta que ya lo tenía, en el alta.

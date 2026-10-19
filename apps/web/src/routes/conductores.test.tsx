@@ -427,6 +427,21 @@ describe('ConductoresDetalleRoute', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it('un fijo +562 no habilita el reenvío y usa el mismo aviso', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    await userEvent.clear(input);
+    await userEvent.type(input, '+56212345678');
+    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' }),
+    ).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('guarda el teléfono, muestra el PIN nuevo y actualiza el encabezado', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       conductor: buildConductor({

@@ -175,8 +175,16 @@ function phoneSiEstaVacio(
 
 const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
 
+/** WhatsApp de activación: solo móvil. El fijo `+562…` no recibe la plantilla. */
+const telefonoMovilConductorSchema = chileanPhoneSchema.refine(
+  (value) => value.startsWith('+569'),
+  {
+    message: MENSAJE_TELEFONO_INVALIDO,
+  },
+);
+
 const corregirTelefonoConductorBodySchema = z.object({
-  phone: chileanPhoneSchema,
+  phone: telefonoMovilConductorSchema,
 });
 
 export function createConductoresRoutes(opts: {
@@ -964,6 +972,11 @@ export function createConductoresRoutes(opts: {
           if (fila.deletedAt != null) {
             record('deleted');
             return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
+          }
+
+          if (await emailIdentidadCompartida(opts.db, fila.userId, empresaId)) {
+            record('identidad_vinculada');
+            return c.json({ error: 'conflict', code: 'identidad_vinculada' }, 409);
           }
 
           const cuentaActiva = cuentaYaActivada({
