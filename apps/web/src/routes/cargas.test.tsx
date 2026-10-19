@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -39,6 +40,12 @@ vi.mock('../components/map/VehicleMap.js', () => ({
 }));
 
 const { CargasListRoute, CargasNuevoRoute, CargasDetalleRoute } = await import('./cargas.js');
+
+// jsdom no implementa scrollIntoView. useScrollToFirstError lo llama al
+// submit con errores y, sin stub, desmonta el árbol del test.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => undefined;
+}
 
 function makeMe(isShipper: boolean): MeOnboarded {
   return {
@@ -136,6 +143,35 @@ describe('CargasNuevoRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe(true) };
     wrap(<CargasNuevoRoute />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
+  });
+
+  it('al enviar vacío muestra dirección, región y fecha juntas', async () => {
+    const user = userEvent.setup();
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(await screen.findAllByText('Selecciona una fecha y hora')).toHaveLength(2);
+    expect(screen.getAllByText('Ingresa una dirección (mínimo 5 caracteres)')).toHaveLength(2);
+    expect(screen.getAllByText('Selecciona una región')).toHaveLength(2);
+    expect(screen.getByText('Ingresa el peso en kg')).toBeInTheDocument();
+  });
+
+  it('Compañía 4425 con región y comuna no marca la dirección como inválida', async () => {
+    const user = userEvent.setup();
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    wrap(<CargasNuevoRoute />);
+    await user.type(screen.getByLabelText(/Dirección de recogida/), 'Compañía 4425');
+    const region = screen.getAllByLabelText(/Región/)[0];
+    const comuna = screen.getAllByLabelText('Comuna')[0];
+    if (!region || !comuna) {
+      throw new Error('faltan los selectores de región y comuna');
+    }
+    await user.selectOptions(region, 'XIII');
+    await user.selectOptions(comuna, '13101');
+    await user.click(screen.getByRole('button', { name: 'Crear carga' }));
+    expect(screen.getAllByText('Ingresa una dirección (mínimo 5 caracteres)')).toHaveLength(1);
+    expect(region).toHaveValue('XIII');
+    expect(comuna).toHaveValue('13101');
   });
 });
 
