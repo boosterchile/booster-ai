@@ -61,7 +61,7 @@ La sonda escribe `/workspace/canary-probe.json` con las respuestas de la app, lo
 - El Job desapareció antes de poder leer los logs → exit distinto de 0. No promueve. El mensaje nombra `ttlSecondsAfterFinished`.
 - No había URL del tag (el archivo no existe, o `tenia_url` es falso), o no hay revisión con ese tag → exit distinto de 0. No promueve. Si el tag estaba ruteado, se revierte.
 - `_CANARY_MIN_REQUESTS=0` se trata como sin muestra: exit distinto de 0 y se revierte el tag. No se evalúa el p95. El piso del pipeline sigue en 30.
-- La sonda llegó, Monitoring quedó bajo 30 y `respuestas_app` llega al piso → ese conteo es el piso y se evalúan error rate y p95. Un p95 ≥ 500 ms no promueve (rollback humano). Si `respuestas_app` tampoco llega al piso → exit distinto de 0 y se revierte el tag. Ya no hay WARN que promueva. La decisión de 2026-09-28 queda superada por el PO el 2026-10-19.
+- La sonda llegó, Monitoring quedó bajo 30 y `respuestas_app` llega al piso → ese conteo es el piso. El p95 es el de las latencias de la sonda, no el de Monitoring (con pocos requests de Monitoring ese p95 es el cold start). Si la sonda no trae p95, exit distinto de 0 y no se promueve. Un p95 ≥ 500 ms no promueve (rollback humano). Si `respuestas_app` tampoco llega al piso → exit distinto de 0 y se revierte el tag. Ya no hay WARN que promueva. La decisión de 2026-09-28 queda superada por el PO el 2026-10-19.
 
 Los requests se espacian para caber en la ventana y dejar ~3 min de margen antes de `canary-verify`, que relee Monitoring hasta 3 veces, con 20 s entre lecturas, si la muestra todavía no aparece.
 
@@ -71,7 +71,7 @@ El p95 de esa ventana queda **dominado por `/health`** (y por `/health/signup-fl
 
 Cloud Build aborta el job cuando `canary-verify` sale distinto de 0. El step `deploy-api` no corre.
 
-**Sin muestra** (no hay URL del tag, el piso está en 0, o ni Monitoring ni `respuestas_app` llegan al piso): el mismo step, antes de salir, manda el 100 % a la revisión que no lleva el tag y ejecuta `--remove-tags=canary-signup-<sha>`. `gcloud` va con `timeout -k 5 30`. Si ese comando falla, el 1 % puede quedar y el step igual sale distinto de 0: no se promueve. Ahí el humano usa el comando de abajo.
+**Sin muestra** (no hay URL del tag, el piso está en 0, o ni Monitoring ni `respuestas_app` llegan al piso): el mismo step, antes de salir, manda el 100 % a la revisión que no lleva el tag y ejecuta `--remove-tags=canary-signup-<sha>`. Si el estable viene como `latestRevision` sin nombre, usa `latestReadyRevisionName` (y si esa es el canary, `latestCreatedRevisionName`). Describe y `update-traffic` se reintentan 3 veces, con espera de 2 s y 4 s, y cada `gcloud` va con `timeout -k 5 30`. Si tras eso no hay revisión estable o el `gcloud` falla, el log dice `ALERTA revertir el tag falló` y el step sale distinto de 0: el 1 % puede quedar y no se promueve. Ahí el humano usa el comando de abajo.
 
 **SLO** (5xx o errores de conexión de la sonda, error_rate ≥ 1 %, p95 ≥ 500 ms, Job perdido o ambos caminos fallidos): no se promueve y **no** se revierte el tag solo. El canary queda al 1 %. Human-on-call ejecuta:
 

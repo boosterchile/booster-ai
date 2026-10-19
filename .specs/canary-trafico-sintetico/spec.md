@@ -57,7 +57,9 @@ abortando por esos umbrales.
    la revisión que no es el tag y `--remove-tags`. `_CANARY_MIN_REQUESTS=0`
    es sin muestra: mismo desenlace, sin evaluar el p95. Si Monitoring queda
    bajo el piso pero la sonda llegó y `respuestas_app` lo cubre, ese conteo
-   es el piso y se evalúan error rate y p95. Si `respuestas_app` tampoco
+   es el piso. El p95 sale de las latencias que midió la sonda (con
+   0 < total < piso no se usa el p95 de Monitoring: es el cold start). Si
+   ese p95 no está, sale distinto de 0. Si `respuestas_app` tampoco
    llega, sale distinto de 0 y revierte el tag. Ya no hay WARN que promueva.
    En el piso o arriba, abortar si error rate ≥ 1 % o p95 ≥ 500 ms; ese
    rollback de SLO lo hace el humano. El p95 de la ventana queda dominado
