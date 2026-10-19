@@ -351,11 +351,23 @@ jobs:
           echo "✓ Sin ERR_MODULE_NOT_FOUND — los módulos resuelven en runtime (el exit por config/env sin setear es esperado)"
 
   # ---------------------------------------------------------------------------
+  # scripts/deploy — unittest stdlib (canary-verify). No entra en Vitest.
+  # ---------------------------------------------------------------------------
+  deploy-scripts:
+    name: Deploy scripts (unittest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: unittest scripts/deploy
+        run: python3 -m unittest discover -s scripts/deploy -p '*_test.py' -v
+
+  # ---------------------------------------------------------------------------
   # Final gate — todos los jobs previos deben pasar
   # ---------------------------------------------------------------------------
   ci-success:
     name: CI Success
-    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build]
+    needs: [lint, terraform-fmt, typecheck, test, integration-tests, migration-safety, build, docker-build, deploy-scripts]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -368,7 +380,8 @@ jobs:
              [ "${{ needs.integration-tests.result }}" != "success" ] || \
              [ "${{ needs.migration-safety.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.docker-build.result }}" != "success" ]; then
+             [ "${{ needs.docker-build.result }}" != "success" ] || \
+             [ "${{ needs.deploy-scripts.result }}" != "success" ]; then
             echo "::error::One or more CI jobs failed"
             exit 1
           fi

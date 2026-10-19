@@ -382,14 +382,16 @@ steps:
     env:
       - USE_GKE_GCLOUD_AUTH_PLUGIN=True
     # 30 minutos observando el canary al 1%. En esa ventana se mandan GET de
-    # solo lectura al URL del tag hasta _CANARY_MIN_REQUESTS (/health y
-    # /health/signup-flow: sin body, sin auth, sin datos de usuarios). El
-    # ingress del api es INTERNAL_LOAD_BALANCER: si el worker no llega al
-    # *.run.app, la misma sonda corre en un Job efímero de la VPC (cluster
-    # booster-ai-telemetry) y se borra al terminar. El tiempo que sobre se
-    # espera para completar los 30 min. signup_probe sigue cada 60s; si falla
-    # 2 veces seguidas, page y un humano decide rollback. error_rate y p95
-    # los evalúa canary-verify, con el piso en 30.
+    # solo lectura al URL del tag: _CANARY_MIN_REQUESTS más cinco (/health y
+    # /health/signup-flow: sin body, sin auth, sin datos de usuarios). El piso
+    # sigue en 30. El ingress del api es INTERNAL_LOAD_BALANCER: si el worker
+    # no llega al *.run.app, la misma sonda corre en un Job efímero de la VPC
+    # (cluster booster-ai-telemetry, imagen del api fijada por digest) y se
+    # borra al terminar. El resultado queda en /workspace/canary-probe.json
+    # (5xx, timeouts y errores de conexión). El tiempo que sobre se espera
+    # para completar los 30 min. signup_probe sigue cada 60s; si falla 2 veces
+    # seguidas, page y un humano decide rollback. error_rate y p95 los evalúa
+    # canary-verify, con el piso en 30. El p95 queda dominado por /health.
     args:
       - -c
       - |
@@ -400,9 +402,19 @@ steps:
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
         MIN_REQUESTS='${_CANARY_MIN_REQUESTS}'
-        IMAGE='${_REGISTRY}/api:${_COMMIT_SHA}'
+        RESULT="/workspace/canary-probe.json"
         JOB="canary-probe-$${SHORT_SHA}"
         echo "canary-probe: tag=$$REVISION_TAG min_requests=$$MIN_REQUESTS ventana=$${WINDOW}s"
+        DIGEST="$$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/api:${_COMMIT_SHA}" \
+          --format='value(image_summary.digest)' || true)"
+        IMAGE=""
+        if [ -n "$$DIGEST" ]; then
+          IMAGE="${_REGISTRY}/api@$$DIGEST"
+          echo "canary-probe: imagen=$$IMAGE"
+        else
+          echo "canary-probe: WARN sin digest; el Job no se crea con un tag movible"
+        fi
 
         describe_with_retry() {
           for attempt in 1 2 3; do
@@ -433,6 +445,7 @@ steps:
             --window-seconds "$$WINDOW" \
             --margin-seconds 180 \
             --started-at "$$START" \
+            --result-out "$$RESULT" \
             --manifest-out /tmp/canary-probe-job.json \
             --image "$$IMAGE" \
             --job-name "$$JOB"
@@ -445,19 +458,35 @@ steps:
               kubectl delete job "$$JOB" -n default --ignore-not-found || true
               if kubectl apply -f /tmp/canary-probe-job.json; then
                 if ! kubectl wait --for=condition=complete "job/$$JOB" -n default --timeout=1500s; then
-                  echo "canary-probe: WARN el job no completó; canary-verify usará la muestra que haya"
+                  echo "canary-probe: el job no completó"
                   kubectl describe job "$$JOB" -n default || true
                 fi
-                kubectl logs "job/$$JOB" -n default || true
+                kubectl logs "job/$$JOB" -n default > /tmp/canary-probe-job.log || true
               else
-                echo "canary-probe: WARN no se pudo crear el job; canary-verify usará la muestra que haya"
+                echo "canary-probe: no se pudo crear el job"
               fi
               kubectl delete job "$$JOB" -n default --ignore-not-found || true
             else
-              echo "canary-probe: WARN no se pudo tomar credenciales del cluster"
+              echo "canary-probe: no se pudo tomar credenciales del cluster"
             fi
+            if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
+              python3 scripts/deploy/canary_synthetic_probe.py \
+                --aplicar-log-job "$$RESULT" \
+                --log-file /tmp/canary-probe-job.log
+            else
+              python3 scripts/deploy/canary_synthetic_probe.py \
+                --marcar-job "$$RESULT" \
+                --job-estado fallo
+            fi
+          elif [ "$$CODE" -eq 2 ]; then
+            python3 scripts/deploy/canary_synthetic_probe.py \
+              --marcar-job "$$RESULT" \
+              --job-estado fallo
           elif [ "$$CODE" -ne 0 ]; then
             echo "canary-probe: WARN sonda directa salió $$CODE"
+            python3 scripts/deploy/canary_synthetic_probe.py \
+              --marcar-job "$$RESULT" \
+              --job-estado fallo
           fi
         fi
         ELAPSED=$$(( $$(date +%s) - START ))
@@ -483,12 +512,16 @@ steps:
     # → Cloud Build aborta antes de promover. Human-on-call hace rollback
     # (no es automático).
     #
-    # La ventana (canary-sleep) manda GET de health al tag hasta el piso.
-    # Acá se lee Monitoring —con reintentos cortos por la ingesta— y se
-    # decide. Muestra bajo el piso: WARN y exit 0, sin evaluar p95 (la sonda
-    # no llegó). Abortar ahí dejaba el release a medias. Bajar el piso a 0
-    # reabre el falso positivo de p95 del 2026-08-16. La decisión vive en
-    # scripts/deploy/canary_verify_decision.py.
+    # La ventana (canary-sleep) manda GET de health al tag (piso + 5) y deja
+    # el resultado en /workspace/canary-probe.json. Si la sonda llegó a la app
+    # y vio 5xx, o timeouts y errores de conexión, o fallaron el camino
+    # directo y el Job teniendo URL, este step sale distinto de 0: ese caso
+    # no es el WARN que promueve. El p95 de Monitoring queda dominado por
+    # /health (la sonda es casi toda la muestra y ese handler no toca la
+    # base). Sin archivo (no había URL) se lee Monitoring —con reintentos
+    # cortos por la ingesta— y muestra bajo el piso sigue en WARN y exit 0,
+    # sin evaluar p95. Bajar el piso a 0 reabre el falso positivo de p95 del
+    # 2026-08-16. La decisión vive en scripts/deploy/canary_verify_decision.py.
     args:
       - -c
       - |
@@ -497,9 +530,12 @@ steps:
         # exit 0 — auditoría 2026-06-09 riesgo alto: la promoción a 100% no
         # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms Y la
         # muestra alcanza el piso → exit 1 y el build aborta SIN promover.
-        # Muestra bajo el piso (la sonda no llegó), o sin revision con tag →
+        # 5xx o errores de conexión de la sonda, o directo y Job fallidos con
+        # URL, salen distinto de 0 (el resultado está en canary-probe.json).
+        # Sin ese archivo, muestra bajo el piso o sin revision con tag →
         # warn + exit 0 (runbook signup-canary-rollback). El p95 no se mira
-        # sin muestra: el 2026-08-16 un cold start abortó un deploy sano.
+        # sin muestra: el 2026-08-16 un cold start abortó un deploy sano. El
+        # p95, cuando se evalúa, queda dominado por /health.
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
@@ -584,7 +620,17 @@ steps:
             return total, counts, p95s
 
         sys.path.insert(0, 'scripts/deploy')
-        from canary_verify_decision import decidir_canary, reintentos_de_muestra
+        from canary_verify_decision import decidir_canary, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
+        resultado, codigo_lectura, lineas_lectura = leer_resultado_sonda('/workspace/canary-probe.json')
+        for linea in lineas_lectura:
+            print(linea)
+        if codigo_lectura != 0:
+            sys.exit(codigo_lectura)
+        codigo_sonda, lineas_sonda = decidir_resultado_sonda(resultado)
+        for linea in lineas_sonda:
+            print(linea)
+        if codigo_sonda != 0:
+            sys.exit(codigo_sonda)
         total, counts, p95s = leer_muestra()
         for intento in range(1, 5):
             if not reintentos_de_muestra(total, min_requests, intento, 4):

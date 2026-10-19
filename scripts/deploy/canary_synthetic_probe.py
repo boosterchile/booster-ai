@@ -1,17 +1,25 @@
 """Sonda de solo lectura contra el tag del canary. Stdlib.
 
 Durante la ventana de espera manda GET /health y GET /health/signup-flow al
-URL del tag, hasta _CANARY_MIN_REQUESTS. No escribe y no pide datos de
-usuarios. Si el worker no atraviesa el ingress, emite un Job para correr la
-misma sonda desde la VPC del proyecto.
+URL del tag: _CANARY_MIN_REQUESTS más cinco, sin bajar el piso. No escribe
+datos de negocio y no pide datos de usuarios. Si el worker no atraviesa el
+ingress, emite un Job (imagen por digest) para correr la misma sonda desde
+la VPC del proyecto.
 
-Exit 0: la app respondió el plan. Exit 2: no se llegó a la app (el caller
-puede aplicar el manifiesto). Exit 1: argumentos inválidos.
+Escribe el resultado en --result-out (por defecto /workspace/canary-probe.json):
+respuestas 5xx, timeouts y errores de conexión. canary-verify aborta si la
+sonda llegó a la app y vio esos errores, o si fallaron el camino directo y
+el Job teniendo URL.
+
+Exit 0: la app respondió el plan (aunque haya 5xx; el gate los lee del
+archivo). Exit 2: no se llegó a la app (el caller puede aplicar el
+manifiesto). Exit 1: argumentos inválidos.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -22,6 +30,9 @@ from typing import Any
 
 RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
+RUTA_RESULTADO = '/workspace/canary-probe.json'
+EXTRA_SONDA = 5
+_IMAGEN_DIGEST = re.compile(r'^.+@sha256:[0-9a-f]{64}$')
 
 # Node del Job. Solo GET, solo RUTAS_SEGURAS, sin seguir redirects.
 _SCRIPT_NODE = """
@@ -45,7 +56,10 @@ function pausa(indice) {
   return new Promise((resolver) => setTimeout(resolver, ms));
 }
 (async () => {
-  let http = 0;
+  let respuestasApp = 0;
+  let cincoXx = 0;
+  let erroresTransporte = 0;
+  let llego = false;
   for (let i = 0; i < count; i += 1) {
     await pausa(i);
     const path = paths[i % paths.length];
@@ -57,14 +71,32 @@ function pausa(indice) {
         headers: { Accept: 'application/json', 'User-Agent': 'booster-canary-probe' },
       });
       await res.arrayBuffer();
-      http += 1;
-      console.log(JSON.stringify({ i, path, status: res.status }));
+      const status = res.status;
+      if (status >= 500) {
+        cincoXx += 1;
+        respuestasApp += 1;
+        llego = true;
+      } else if (status >= 200 && status < 300) {
+        respuestasApp += 1;
+        llego = true;
+      }
+      console.log(JSON.stringify({ i, path, status }));
     } catch (err) {
+      erroresTransporte += 1;
       const message = err && err.message ? err.message : String(err);
       console.log(JSON.stringify({ i, path, error: message }));
     }
   }
-  process.exit(http > 0 ? 0 : 1);
+  console.log(JSON.stringify({
+    resumen: {
+      llego_a_la_app: llego,
+      cinco_xx: cincoXx,
+      errores_transporte: erroresTransporte,
+      respuestas_app: respuestasApp,
+      total_plan: count,
+    },
+  }));
+  process.exit(llego ? 0 : 1);
 })();
 """.strip().replace('__PATHS__', json.dumps(list(RUTAS_SEGURAS)))
 
@@ -80,6 +112,15 @@ def plan_rutas(cantidad: int, rutas: tuple[str, ...] = RUTAS_SEGURAS) -> list[st
     return [rutas[i % len(rutas)] for i in range(cantidad)]
 
 
+def cantidad_a_enviar(min_requests: int) -> int:
+    """El piso no cambia. Se mandan cinco de más para que la muestra sobre."""
+    if min_requests < 0:
+        raise ValueError('cantidad negativa')
+    if min_requests == 0:
+        return 0
+    return min_requests + EXTRA_SONDA
+
+
 def clasificar_respuesta(
     status: int | None,
     content_type: str,
@@ -87,6 +128,10 @@ def clasificar_respuesta(
 ) -> str:
     if status is None:
         return 'transporte'
+    # Un 5xx de *.run.app lo sirve la revisión (Cloud Run manda HTML en el
+    # 503). No es el 404 HTML del frontend de Google.
+    if status >= 500:
+        return 'aplicacion'
     tipo = content_type.lower()
     prefijo = body.lstrip()
     if 'application/json' in tipo or prefijo.startswith('{') or prefijo.startswith('['):
@@ -153,6 +198,8 @@ def manifiesto_job(
         raise ValueError('cantidad')
     if not job_name or not image or ' ' in image or ' ' in job_name:
         raise ValueError('job o imagen')
+    if not _IMAGEN_DIGEST.match(image):
+        raise ValueError('la imagen del job tiene que ir por digest')
     doc = {
         'apiVersion': 'batch/v1',
         'kind': 'Job',
@@ -240,28 +287,109 @@ def correr_plan(
     ahora: Callable[[], float],
     dormir: Callable[[float], None],
     deadline: float,
-) -> tuple[int, str]:
-    """Devuelve (respuestas de la app, clase del primer intento)."""
-    llegaron = 0
-    clase = 'transporte'
+) -> dict[str, Any]:
+    """Cuenta llegadas, 5xx y errores de transporte. Corta si el primero no es la app."""
+    corrida: dict[str, Any] = {
+        'llegaron': 0,
+        'clase': 'transporte',
+        'cinco_xx': 0,
+        'errores_transporte': 0,
+        'llego_a_la_app': False,
+    }
     for indice, path in enumerate(rutas):
         pausa = espera_antes(indice, len(rutas), ahora(), deadline)
         if pausa > 0:
             dormir(pausa)
         status, tipo, body = pedir(url, path)
         clase_i = clasificar_respuesta(status, tipo, body)
+        if status is None:
+            corrida['errores_transporte'] += 1
+        elif clase_i == 'aplicacion':
+            corrida['llegaron'] += 1
+            corrida['llego_a_la_app'] = True
+            if status >= 500:
+                corrida['cinco_xx'] += 1
         if indice == 0:
-            clase = clase_i
-            if clase != 'aplicacion':
+            corrida['clase'] = clase_i
+            if clase_i != 'aplicacion':
                 print(
-                    f'canary-probe: GET {path} -> {status} {clase} — '
+                    f'canary-probe: GET {path} -> {status} {clase_i} — '
                     'el worker no llegó a la revisión'
                 )
-                return 0, clase
-        if clase_i == 'aplicacion':
-            llegaron += 1
+                return corrida
         print(f'canary-probe: GET {path} -> {status} {clase_i}')
-    return llegaron, clase
+    return corrida
+
+
+def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[str, Any]:
+    llego = bool(corrida['llego_a_la_app'])
+    return {
+        'version': 1,
+        'url': url,
+        'tenia_url': bool(url),
+        'llego_a_la_app': llego,
+        'respuestas_app': int(corrida['llegaron']),
+        'cinco_xx': int(corrida['cinco_xx']),
+        'errores_transporte': int(corrida['errores_transporte']),
+        'total_plan': total_plan,
+        'camino_directo': 'ok' if llego else str(corrida['clase']),
+        'job': 'no_necesario' if llego else 'no_corrido',
+    }
+
+
+def _extraer_resumen(log: str) -> dict[str, Any] | None:
+    for linea in reversed(log.splitlines()):
+        linea = linea.strip()
+        if not linea.startswith('{'):
+            continue
+        try:
+            payload = json.loads(linea)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get('resumen'), dict):
+            return payload['resumen']
+    return None
+
+
+def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
+    """El Job que llegó a la app reemplaza la muestra. Si no llegó, el Job falló."""
+    resumen = _extraer_resumen(log)
+    if resumen is None:
+        resultado['job'] = 'fallo'
+        return resultado
+    if not resumen.get('llego_a_la_app'):
+        resultado['job'] = 'fallo'
+        resultado['errores_transporte'] = int(resultado.get('errores_transporte') or 0) + int(
+            resumen.get('errores_transporte') or 0
+        )
+        resultado['cinco_xx'] = int(resultado.get('cinco_xx') or 0) + int(resumen.get('cinco_xx') or 0)
+        return resultado
+    resultado['job'] = 'ok'
+    resultado['llego_a_la_app'] = True
+    resultado['cinco_xx'] = int(resumen.get('cinco_xx') or 0)
+    resultado['errores_transporte'] = int(resumen.get('errores_transporte') or 0)
+    resultado['respuestas_app'] = int(resumen.get('respuestas_app') or 0)
+    return resultado
+
+
+def marcar_job(resultado: dict[str, Any], estado: str) -> dict[str, Any]:
+    if estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+        raise ValueError(estado)
+    resultado['job'] = estado
+    return resultado
+
+
+def _escribir(path: str, payload: dict[str, Any]) -> None:
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(payload, fh)
+
+
+def _leer_resultado(path: str) -> dict[str, Any]:
+    with open(path, encoding='utf-8') as fh:
+        payload = json.load(fh)
+    if not isinstance(payload, dict):
+        raise ValueError('resultado')
+    return payload
 
 
 def _imprimir_url_tag(tag: str) -> int:
@@ -291,7 +419,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--manifest-out', default='')
     parser.add_argument('--image', default='')
     parser.add_argument('--job-name', default='')
+    parser.add_argument('--result-out', default='')
+    parser.add_argument('--aplicar-log-job', default='')
+    parser.add_argument('--log-file', default='')
+    parser.add_argument('--marcar-job', default='')
+    parser.add_argument('--job-estado', default='')
     args = parser.parse_args(argv)
+
+    if args.aplicar_log_job:
+        if not args.log_file:
+            print('canary-probe: falta --log-file', file=sys.stderr)
+            return 1
+        resultado = _leer_resultado(args.aplicar_log_job)
+        with open(args.log_file, encoding='utf-8') as fh:
+            log = fh.read()
+        _escribir(args.aplicar_log_job, aplicar_log_job(resultado, log))
+        return 0
+
+    if args.marcar_job:
+        if args.job_estado not in ('ok', 'fallo', 'no_corrido', 'no_necesario'):
+            print('canary-probe: --job-estado inválido', file=sys.stderr)
+            return 1
+        try:
+            resultado = _leer_resultado(args.marcar_job)
+        except FileNotFoundError:
+            resultado = armar_resultado('', 0, {
+                'llego_a_la_app': False,
+                'llegaron': 0,
+                'cinco_xx': 0,
+                'errores_transporte': 0,
+                'clase': 'transporte',
+            })
+            resultado['tenia_url'] = True
+        _escribir(args.marcar_job, marcar_job(resultado, args.job_estado))
+        return 0
 
     if args.print_tag_url:
         if not args.tag:
@@ -305,14 +466,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.min_requests < 0 or args.window_seconds < 1:
         print('canary-probe: ventana o mínimo inválido', file=sys.stderr)
         return 1
-    rutas = plan_rutas(args.min_requests)
+    total = cantidad_a_enviar(args.min_requests)
+    rutas = plan_rutas(total)
     if not rutas:
         print('canary-probe: min_requests=0, no se envía sonda')
         return 0
 
     inicio = args.started_at or int(time.time())
     deadline = float(inicio + args.window_seconds - args.margin_seconds)
-    llegaron, clase = correr_plan(
+    corrida = correr_plan(
         _pedir,
         args.url.rstrip('/'),
         rutas,
@@ -320,21 +482,30 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep,
         deadline,
     )
-    if clase != 'aplicacion':
+    resultado = armar_resultado(args.url.rstrip('/'), total, corrida)
+    _escribir(args.result_out or RUTA_RESULTADO, resultado)
+    if not corrida['llego_a_la_app']:
         if args.manifest_out and args.image and args.job_name:
-            texto = manifiesto_job(
-                job_name=args.job_name,
-                image=args.image,
-                url=args.url.rstrip('/'),
-                tag=args.tag,
-                cantidad=args.min_requests,
-                deadline_epoch=int(deadline),
-            )
+            try:
+                texto = manifiesto_job(
+                    job_name=args.job_name,
+                    image=args.image,
+                    url=args.url.rstrip('/'),
+                    tag=args.tag,
+                    cantidad=total,
+                    deadline_epoch=int(deadline),
+                )
+            except ValueError as err:
+                print(f'canary-probe: sin manifiesto ({err})', file=sys.stderr)
+                return 2
             with open(args.manifest_out, 'w', encoding='utf-8') as fh:
                 fh.write(texto)
-            print(f'canary-probe: manifiesto {args.manifest_out} ({clase})')
+            print(f'canary-probe: manifiesto {args.manifest_out} ({corrida["clase"]})')
         return 2
-    print(f'canary-probe: respuestas de la app={llegaron}/{len(rutas)}')
+    print(
+        f'canary-probe: respuestas de la app={corrida["llegaron"]}/{len(rutas)} '
+        f'5xx={corrida["cinco_xx"]} transporte={corrida["errores_transporte"]}'
+    )
     return 0
 
 

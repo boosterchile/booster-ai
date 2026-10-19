@@ -14,6 +14,8 @@ from pathlib import Path
 import canary_synthetic_probe as sonda
 from canary_synthetic_probe import (
     RUTAS_SEGURAS,
+    aplicar_log_job,
+    cantidad_a_enviar,
     clasificar_respuesta,
     correr_plan,
     espera_antes,
@@ -22,7 +24,12 @@ from canary_synthetic_probe import (
     plan_rutas,
     url_es_del_tag,
 )
-from canary_verify_decision import decidir_canary, reintentos_de_muestra
+from canary_verify_decision import (
+    decidir_canary,
+    decidir_gate,
+    decidir_resultado_sonda,
+    reintentos_de_muestra,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOUDBUILD = ROOT / 'cloudbuild.production.yaml'
@@ -42,6 +49,13 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(rutas[0], '/health')
         self.assertEqual(rutas[1], '/health/signup-flow')
         self.assertNotIn('/ready', rutas)
+
+    def test_la_sonda_manda_cinco_de_mas_sin_bajar_el_piso(self) -> None:
+        self.assertEqual(cantidad_a_enviar(30), 35)
+        self.assertEqual(cantidad_a_enviar(0), 0)
+        rutas = plan_rutas(cantidad_a_enviar(30))
+        self.assertEqual(len(rutas), 35)
+        self.assertTrue(set(rutas) <= set(RUTAS_SEGURAS))
 
     def test_cero_no_manda_nada(self) -> None:
         self.assertEqual(plan_rutas(0), [])
@@ -69,6 +83,18 @@ class ClasificarTest(unittest.TestCase):
             clasificar_respuesta(404, 'text/html; charset=utf-8', HTML_404),
             'ingress',
         )
+
+    def test_503_html_de_cloud_run_no_es_ingress(self) -> None:
+        html_503 = (
+            '<html><head><title>503 Service Unavailable</title></head>'
+            '<body><h1>Error: Service Unavailable</h1></body></html>'
+        )
+        self.assertEqual(
+            clasificar_respuesta(503, 'text/html; charset=UTF-8', html_503),
+            'aplicacion',
+        )
+        self.assertEqual(clasificar_respuesta(500, 'text/html', html_503), 'aplicacion')
+        self.assertEqual(clasificar_respuesta(502, 'text/html', '<html>bad gateway</html>'), 'aplicacion')
 
     def test_sin_respuesta_es_transporte(self) -> None:
         self.assertEqual(clasificar_respuesta(None, '', ''), 'transporte')
@@ -121,7 +147,7 @@ class ManifiestoTest(unittest.TestCase):
     def test_el_job_no_arranca_el_api_ni_monta_token(self) -> None:
         texto = manifiesto_job(
             job_name='canary-probe-0123456789ab',
-            image='southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/api:abc',
+            image='southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/api@sha256:' + ('b' * 64),
             url=URL,
             tag=TAG,
             cantidad=30,
@@ -144,6 +170,28 @@ class ManifiestoTest(unittest.TestCase):
         self.assertIn('cpu', recursos)
         self.assertIn('memory', recursos)
         self.assertEqual(doc['spec']['backoffLimit'], 0)
+
+    def test_la_imagen_del_job_va_por_digest(self) -> None:
+        digest = 'a' * 64
+        texto = manifiesto_job(
+            job_name='canary-probe-0123456789ab',
+            image=f'southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/api@sha256:{digest}',
+            url=URL,
+            tag=TAG,
+            cantidad=35,
+            deadline_epoch=1,
+        )
+        imagen = json.loads(texto)['spec']['template']['spec']['containers'][0]['image']
+        self.assertIn(f'@sha256:{digest}', imagen)
+        with self.assertRaises(ValueError):
+            manifiesto_job(
+                job_name='canary-probe-0123456789ab',
+                image='southamerica-west1-docker.pkg.dev/booster-ai-494222/containers/api:abc',
+                url=URL,
+                tag=TAG,
+                cantidad=35,
+                deadline_epoch=1,
+            )
 
     def test_rechaza_url_que_no_es_del_tag(self) -> None:
         with self.assertRaises(ValueError):
@@ -183,21 +231,21 @@ class CorrerPlanTest(unittest.TestCase):
             llamadas.append(path)
             return 404, 'text/html', HTML_404
 
-        llegaron, clase = correr_plan(
+        corrida = correr_plan(
             pedir, URL, plan_rutas(30), ahora=lambda: 0, dormir=lambda _s: None, deadline=10
         )
-        self.assertEqual(llegaron, 0)
-        self.assertEqual(clase, 'ingress')
+        self.assertEqual(corrida['llegaron'], 0)
+        self.assertEqual(corrida['clase'], 'ingress')
         self.assertEqual(llamadas, ['/health'])
 
     def test_cuenta_solo_respuestas_de_la_app(self) -> None:
         def pedir(url: str, path: str) -> tuple[int | None, str, str]:
             return 200, 'application/json', '{"status":"ok"}'
 
-        llegaron, clase = correr_plan(
+        corrida = correr_plan(
             pedir, URL, ['/health', '/health/signup-flow'], ahora=lambda: 0, dormir=lambda _s: None, deadline=0
         )
-        self.assertEqual((llegaron, clase), (2, 'aplicacion'))
+        self.assertEqual((corrida['llegaron'], corrida['clase']), (2, 'aplicacion'))
 
 
 class HttpLocalTest(unittest.TestCase):
@@ -251,8 +299,10 @@ class HttpLocalTest(unittest.TestCase):
                 '1',
                 '--manifest-out',
                 str(destino),
+                '--result-out',
+                str(destino) + '.resultado.json',
                 '--image',
-                'api:abc',
+                'southamerica-west1-docker.pkg.dev/p/c/api@sha256:' + ('c' * 64),
                 '--job-name',
                 'canary-probe-0123456789ab',
             ]
@@ -280,6 +330,175 @@ class CloudBuildTest(unittest.TestCase):
         suelto = re.sub(r'\$\{_[A-Z0-9_]+\}', '', suelto)
         suelto = suelto.replace('$PROJECT_ID', '')
         self.assertIsNone(re.search(r'\$[A-Za-z_{]', suelto), suelto)
+        self.assertIn('image_summary.digest', script)
+        self.assertIn('/workspace/canary-probe.json', texto)
+        verify = texto[fin:texto.index('id: deploy-api', fin)]
+        self.assertLess(
+            verify.index('decidir_resultado_sonda('),
+            verify.index('total, counts, p95s = leer_muestra()'),
+        )
+        self.assertIn('dominado por /health', texto)
+
+    def test_el_ci_corre_los_unittest_de_deploy(self) -> None:
+        ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        self.assertIn("python3 -m unittest discover -s scripts/deploy -p '*_test.py'", ci)
+        self.assertIn('deploy-scripts', ci)
+
+
+HTML_503 = (
+    '<html><head><title>503 Service Unavailable</title></head>'
+    '<body><h1>Error: Service Unavailable</h1></body></html>'
+)
+
+
+class ResultadoSondaTest(unittest.TestCase):
+    def test_503_html_llega_a_la_app_y_no_termina_en_warn(self) -> None:
+        def pedir(url: str, path: str) -> tuple[int | None, str, str]:
+            return 503, 'text/html; charset=UTF-8', HTML_503
+
+        corrida = correr_plan(
+            pedir, URL, plan_rutas(35), ahora=lambda: 0, dormir=lambda _s: None, deadline=10
+        )
+        self.assertTrue(corrida['llego_a_la_app'])
+        self.assertGreater(corrida['cinco_xx'], 0)
+        self.assertNotEqual(corrida['clase'], 'ingress')
+        resultado = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'cinco_xx': corrida['cinco_xx'],
+            'errores_transporte': corrida['errores_transporte'],
+            'camino_directo': 'ok',
+            'job': 'no_necesario',
+        }
+        # La muestra de Monitoring sigue chica: antes esto promovía con WARN.
+        codigo, lineas = decidir_gate(resultado, 6, 30, {'2xx': 6}, [1408.0])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas)
+        self.assertIn('FAIL', texto)
+        self.assertNotIn('Promoviendo', texto)
+        self.assertEqual(decidir_canary(6, 30, {'2xx': 6}, [1408.0])[0], 0)
+
+    def test_timeout_y_conexion_salen_en_el_resultado_y_cuentan(self) -> None:
+        respuestas = iter(
+            [
+                (200, 'application/json', '{"status":"ok"}'),
+                (None, '', ''),
+                (None, '', ''),
+            ]
+        )
+
+        def pedir(url: str, path: str) -> tuple[int | None, str, str]:
+            return next(respuestas)
+
+        corrida = correr_plan(
+            pedir,
+            URL,
+            ['/health', '/health/signup-flow', '/health'],
+            ahora=lambda: 0,
+            dormir=lambda _s: None,
+            deadline=0,
+        )
+        self.assertTrue(corrida['llego_a_la_app'])
+        self.assertEqual(corrida['errores_transporte'], 2)
+        resultado = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'cinco_xx': 0,
+            'errores_transporte': corrida['errores_transporte'],
+            'camino_directo': 'ok',
+            'job': 'no_necesario',
+        }
+        codigo, lineas = decidir_resultado_sonda(resultado)
+        self.assertNotEqual(codigo, 0)
+        self.assertIn('conexión', '\n'.join(lineas))
+
+    def test_directo_y_job_fallaron_con_url_no_es_warn(self) -> None:
+        resultado = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'errores_transporte': 1,
+            'camino_directo': 'transporte',
+            'job': 'fallo',
+        }
+        codigo, lineas = decidir_gate(resultado, 0, 30, {}, [])
+        self.assertNotEqual(codigo, 0)
+        texto = '\n'.join(lineas)
+        self.assertIn('FAIL', texto)
+        self.assertNotIn('Promoviendo', texto)
+
+    def test_sin_url_sigue_promoviendo_con_warn(self) -> None:
+        codigo, lineas = decidir_gate(None, 6, 30, {'2xx': 6}, [1408.0])
+        self.assertEqual(codigo, 0)
+        self.assertIn('WARN', lineas[0])
+
+    def test_el_log_del_job_trae_los_mismos_errores(self) -> None:
+        log = '\n'.join(
+            [
+                '{"i":0,"path":"/health","status":200}',
+                '{"i":1,"path":"/health/signup-flow","error":"connect ETIMEDOUT"}',
+                '{"resumen":{"llego_a_la_app":true,"cinco_xx":1,"errores_transporte":2,'
+                '"respuestas_app":33,"total_plan":35}}',
+            ]
+        )
+        base = {
+            'tenia_url': True,
+            'llego_a_la_app': False,
+            'cinco_xx': 0,
+            'errores_transporte': 1,
+            'camino_directo': 'ingress',
+            'job': 'no_corrido',
+        }
+        merged = aplicar_log_job(base, log)
+        self.assertTrue(merged['llego_a_la_app'])
+        self.assertEqual(merged['cinco_xx'], 1)
+        self.assertEqual(merged['errores_transporte'], 2)
+        self.assertEqual(merged['job'], 'ok')
+        codigo, _lineas = decidir_resultado_sonda(merged)
+        self.assertNotEqual(codigo, 0)
+
+    def test_main_escribe_el_resultado_con_el_503(self) -> None:
+        original = sonda._pedir
+
+        def pedir_503(url: str, path: str, timeout: float = 10) -> tuple[int | None, str, str]:
+            return 503, 'text/html; charset=UTF-8', HTML_503
+
+        sonda._pedir = pedir_503
+        self.addCleanup(lambda: setattr(sonda, '_pedir', original))
+        fd, nombre = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        destino = Path(nombre)
+        self.addCleanup(lambda: destino.unlink(missing_ok=True))
+        codigo = sonda.main(
+            [
+                '--url',
+                URL,
+                '--tag',
+                TAG,
+                '--min-requests',
+                '30',
+                '--window-seconds',
+                '60',
+                '--margin-seconds',
+                '0',
+                '--started-at',
+                '1',
+                '--result-out',
+                str(destino),
+                '--image',
+                'api:abc',
+                '--job-name',
+                'canary-probe-0123456789ab',
+            ]
+        )
+        self.assertEqual(codigo, 0)
+        doc = json.loads(destino.read_text(encoding='utf-8'))
+        self.assertTrue(doc['tenia_url'])
+        self.assertTrue(doc['llego_a_la_app'])
+        self.assertEqual(doc['cinco_xx'], 35)
+        self.assertEqual(doc['total_plan'], 35)
+        self.assertEqual(doc['errores_transporte'], 0)
+        self.assertNotEqual(decidir_resultado_sonda(doc)[0], 0)
 
 
 if __name__ == '__main__':
