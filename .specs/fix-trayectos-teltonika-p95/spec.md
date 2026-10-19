@@ -25,7 +25,7 @@ Mientras `/ubicacion` está pendiente, la tarjeta del mapa dice «Sin posición 
 
 ## Criterio de éxito
 
-1. Test de 20 000 pings (cadencia 30 s, AVL 89, 7 viajes) falla en rojo por tardar más de 2 s contra el código previo, y pasa después sin cambiar litros, alertas ni pin.
+1. Test de 20 000 pings (cadencia 30 s, AVL 89, 7 viajes) falla en rojo contra el código previo (16 s sin coverage) y pasa después sin cambiar litros, alertas ni pin. El tope del test es 10 s: el camino viejo no entra, y V8 coverage en CI infla el camino nuevo (~0,1 s sin coverage, ~2,5 s con coverage). El p95 de la página se mide sin coverage.
 2. La suite de `segmentar-trayectos-teltonika` sigue verde (regresión de litros, km/L, golpe, hormiga y pin).
 3. Test del hub: ubicación pendiente → «Cargando posición…» y no «Sin posición GPS todavía»; 404 → el texto de sin GPS.
 

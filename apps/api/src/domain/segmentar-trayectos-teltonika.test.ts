@@ -1780,7 +1780,10 @@ describe('guardrail de km/L', () => {
     const trayectos = segmentarTrayectosTeltonika(puntos);
     const ms = performance.now() - t;
 
-    expect(ms).toBeLessThan(2_000);
+    // Sin coverage: ~0,1 s (antes 16 s). En CI, V8 coverage infla el mismo
+    // caso a ~2,5 s. 10 s sigue fallando el camino cuadrático (≥16 s) y
+    // deja margen al runner. El p95 de la página es el número sin coverage.
+    expect(ms).toBeLessThan(10_000);
     expect(trayectos).toHaveLength(7);
     expect(trayectos.every((t) => t.fuenteCombustible === 'nivel_litros')).toBe(true);
     expect(trayectos.every((t) => t.posibleRoboCombustible && t.posibleRoboHormiga)).toBe(true);
