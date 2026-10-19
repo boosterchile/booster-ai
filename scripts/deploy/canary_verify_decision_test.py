@@ -13,8 +13,11 @@ from canary_verify_decision import (
     conviene_leer_p95,
     decidir_canary,
     decidir_gate,
+    espera_backoff_reversion,
     leer_resultado_sonda,
     main,
+    percentil_95,
+    resultado_reversion,
     revision_estable,
 )
 
@@ -120,9 +123,14 @@ class DecidirCanaryTest(unittest.TestCase):
         self.assertIn('conviene_leer_p95', texto)
         verify = texto[texto.index('id: canary-verify'):texto.index('id: deploy-api')]
         self.assertIn('REVERTIR_TAG', verify)
-        self.assertIn('revision_estable', verify)
+        self.assertIn('resultado_reversion', verify)
+        self.assertIn('timeout: 480s', verify)
+        self.assertIn('timeout -k 5 30 gcloud run services describe', verify)
+        self.assertIn('timeout -k 5 30 gcloud auth print-access-token', verify)
         self.assertIn('timeout -k 5 30 gcloud run services update-traffic', verify)
         self.assertIn('--remove-tags=', verify)
+        self.assertIn('ALERTA revertir el tag falló', verify)
+        self.assertIn('for intento in 1 2 3', verify)
         self.assertIn('FAIL no se encontró revision con tag', verify)
         decision = verify[verify.index('no se encontró revision'):]
         self.assertIn('exit 1', decision)
@@ -194,15 +202,18 @@ class DecidirCanaryTest(unittest.TestCase):
             'errores_transporte': 0,
             'camino_directo': 'ok',
             'job': 'ok',
+            'p95_ms': 1408.0,
         }
-        malo, lineas_malo = decidir_gate(llego, 6, 30, {'2xx': 6}, [1408.0])
+        # 0 < total < 30: el 1408 de Monitoring no decide. Manda el p95 de la sonda.
+        malo, lineas_malo = decidir_gate(llego, 6, 30, {'2xx': 6}, [100.0])
         self.assertEqual(malo, 1)
         texto_malo = '\n'.join(lineas_malo)
         self.assertIn('respuestas_app=35', texto_malo)
         self.assertIn('p95', texto_malo)
         self.assertNotIn('REVERTIR_TAG', texto_malo)
         self.assertNotIn('Promoviendo', texto_malo)
-        sano, lineas_sano = decidir_gate(llego, 6, 30, {'2xx': 6}, [100.0])
+        llego['p95_ms'] = 100.0
+        sano, lineas_sano = decidir_gate(llego, 6, 30, {'2xx': 6}, [1408.0])
         self.assertEqual(sano, 0)
         self.assertIn('OK', lineas_sano[-1])
         self.assertIn('respuestas_app=35', lineas_sano[0])
@@ -244,6 +255,39 @@ class DecidirCanaryTest(unittest.TestCase):
         self.assertIn('p95', '\n'.join(lineas_malo))
         self.assertNotIn('REVERTIR_TAG', '\n'.join(lineas_malo))
 
+    def test_total_cero_sin_p95_no_promueve(self) -> None:
+        llego = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'respuestas_app': 35,
+            'cinco_xx': 0,
+            'errores_transporte': 0,
+            'camino_directo': 'ok',
+            'job': 'ok',
+        }
+        codigo, lineas = decidir_gate(llego, 0, 30, {}, [])
+        self.assertEqual(codigo, 1)
+        texto = '\n'.join(lineas)
+        self.assertIn('sin p95', texto)
+        self.assertNotIn('Promoviendo', texto)
+        self.assertNotIn('REVERTIR_TAG', texto)
+
+    def test_total_cero_usa_latencias_de_la_sonda(self) -> None:
+        llego = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'respuestas_app': 35,
+            'cinco_xx': 0,
+            'errores_transporte': 0,
+            'camino_directo': 'ok',
+            'job': 'ok',
+            'latencias_ms': [100.0] * 33 + [800.0, 900.0],
+        }
+        codigo, lineas = decidir_gate(llego, 0, 30, {}, [])
+        self.assertEqual(codigo, 1)
+        self.assertIn('p95', '\n'.join(lineas))
+        self.assertEqual(percentil_95([10.0, 20.0, 30.0, 400.0]), 400.0)
+
     def test_piso_cero_en_el_gate_falla_aunque_haya_muestra(self) -> None:
         llego = {
             'tenia_url': True,
@@ -280,9 +324,47 @@ class DecidirCanaryTest(unittest.TestCase):
             )
         )
 
+    def test_latest_revision_sin_nombre_usa_la_ready(self) -> None:
+        trafico: list[object] = [
+            {'revisionName': 'api-0002', 'percent': 1, 'tag': 'canary-signup-abc'},
+            {'latestRevision': True, 'percent': 99},
+        ]
+        self.assertEqual(
+            revision_estable(trafico, 'canary-signup-abc', latest_ready='api-0001'),
+            'api-0001',
+        )
+        self.assertIsNone(
+            revision_estable(
+                trafico,
+                'canary-signup-abc',
+                latest_ready='api-0002',
+                latest_created='api-0002',
+            )
+        )
+
+    def test_revertir_sin_estable_alerta_y_no_es_cero(self) -> None:
+        doc = {
+            'status': {
+                'traffic': [
+                    {'revisionName': 'api-0002', 'percent': 1, 'tag': 'canary-signup-abc'},
+                ],
+                'latestReadyRevisionName': 'api-0002',
+            }
+        }
+        codigo, lineas = resultado_reversion(doc, 'canary-signup-abc')
+        self.assertEqual(codigo, 1)
+        self.assertIn('ALERTA', lineas[0])
+        self.assertNotIn('api-0002', lineas[0])
+        describe_roto, lineas_roto = resultado_reversion({'status': {}}, 'canary-signup-abc')
+        self.assertEqual(describe_roto, 1)
+        self.assertIn('ALERTA', lineas_roto[0])
+        self.assertEqual(espera_backoff_reversion(1), 2)
+        self.assertEqual(espera_backoff_reversion(2), 4)
+        self.assertEqual(espera_backoff_reversion(3), 0)
+
     def test_conviene_leer_p95_con_piso_de_sonda(self) -> None:
         self.assertFalse(conviene_leer_p95(6, 30, True, 10))
-        self.assertTrue(conviene_leer_p95(6, 30, True, 30))
+        self.assertFalse(conviene_leer_p95(6, 30, True, 30))
         self.assertTrue(conviene_leer_p95(30, 30, False, 0))
         self.assertFalse(conviene_leer_p95(6, 0, True, 35))
         self.assertFalse(conviene_leer_p95(6, 30, False, 35))

@@ -541,6 +541,12 @@ steps:
   - id: canary-verify
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
+    # 480s cubre describe x3, el token, hasta 4 lecturas de Monitoring y
+    # 3 intentos de revertir, con cada gcloud a 30s. La cuenta del build
+    # (este tope + canary-sleep 2100s + el tramo previo y el deploy) está
+    # en el timeout global, al final del archivo. No subir este número
+    # sin rehacer esa cuenta: el tope del build es 3600s.
+    timeout: 480s
     # Query Cloud Monitoring API para verificar SLOs durante el canary
     # window:
     #   - error_rate < 1%: count(5xx requests) / count(total requests) <
@@ -589,7 +595,7 @@ steps:
         # legítimo (review 2026-06-11).
         describe_with_retry() {
           for attempt in 1 2 3; do
-            if OUT=$$(gcloud run services describe booster-ai-api \
+            if OUT=$$(timeout -k 5 30 gcloud run services describe booster-ai-api \
               --region='${_REGION}' --platform=managed --format=json); then
               echo "$$OUT"; return 0
             fi
@@ -608,128 +614,172 @@ steps:
 
         revertir_tag() {
           echo "canary-verify: revirtiendo el tag $$REVISION_TAG"
-          if ! DESC="$$(timeout -k 5 30 gcloud run services describe booster-ai-api \
-              --region='${_REGION}' --platform=managed --format=json)"; then
-            echo "canary-verify: no se pudo describir el servicio para revertir el tag; el 1% puede quedar"
-            return 0
+          DESC=""
+          ok_describe=1
+          for intento in 1 2 3; do
+            if DESC="$$(timeout -k 5 30 gcloud run services describe booster-ai-api \
+                --region='${_REGION}' --platform=managed --format=json)"; then
+              ok_describe=0
+              break
+            fi
+            echo "canary-verify: describe para revertir intento $$intento falló" >&2
+            if [ "$$intento" -lt 3 ]; then
+              sleep $$((2 ** intento))
+            fi
+          done
+          if [ "$$ok_describe" != 0 ]; then
+            echo "canary-verify: ALERTA revertir el tag falló tras 3 intentos de describe; el 1% puede quedar — NO promover"
+            return 1
           fi
           export REVISION_TAG
-          ESTABLE="$$(printf '%s' "$$DESC" | python3 -c '
+          if ! ESTABLE="$$(printf '%s' "$$DESC" | python3 -c '
         import json, os, sys
         sys.path.insert(0, "scripts/deploy")
-        from canary_verify_decision import revision_estable
+        from canary_verify_decision import resultado_reversion
         doc = json.load(sys.stdin)
-        nombre = revision_estable(doc.get("status", {}).get("traffic", []), os.environ["REVISION_TAG"])
-        if nombre:
-            print(nombre)
-        ')" || true
-          if [ -z "$$ESTABLE" ]; then
-            echo "canary-verify: no hay revision estable distinta del tag; no se toca el split"
-            return 0
+        codigo, lineas = resultado_reversion(doc, os.environ["REVISION_TAG"])
+        for linea in lineas:
+            print(linea)
+        raise SystemExit(codigo)
+        ')"; then
+            printf '%s\n' "$$ESTABLE"
+            echo "canary-verify: ALERTA revertir el tag falló; el 1% puede quedar — NO promover"
+            return 1
           fi
           echo "canary-verify: devolviendo 100% a $$ESTABLE y quitando $$REVISION_TAG"
-          timeout -k 5 30 gcloud run services update-traffic booster-ai-api \
-            --region='${_REGION}' \
-            --platform=managed \
-            --to-revisions="$$ESTABLE"=100 \
-            || echo "canary-verify: fallo al devolver el 100%; el 1% puede quedar y NO se promueve"
-          timeout -k 5 30 gcloud run services update-traffic booster-ai-api \
-            --region='${_REGION}' \
-            --platform=managed \
-            --remove-tags="$$REVISION_TAG" \
-            || echo "canary-verify: fallo al quitar el tag; el tráfico ya debería estar en $$ESTABLE"
+          aplicar_trafico() {
+            accion="$$1"
+            shift
+            for intento in 1 2 3; do
+              if timeout -k 5 30 gcloud run services update-traffic booster-ai-api \
+                  --region='${_REGION}' \
+                  --platform=managed \
+                  "$$@"; then
+                return 0
+              fi
+              echo "canary-verify: update-traffic ($$accion) intento $$intento falló" >&2
+              if [ "$$intento" -lt 3 ]; then
+                sleep $$((2 ** intento))
+              fi
+            done
+            echo "canary-verify: ALERTA revertir el tag falló tras 3 intentos de update-traffic ($$accion); el 1% puede quedar — NO promover"
+            return 1
+          }
+          aplicar_trafico devolver --to-revisions="$$ESTABLE"=100 || return 1
+          aplicar_trafico quitar --remove-tags="$$REVISION_TAG" || return 1
         }
 
-        TOKEN=$$(gcloud auth print-access-token)
+        if ! TOKEN="$$(timeout -k 5 30 gcloud auth print-access-token)"; then
+          echo "canary-verify: ALERTA no hubo token de Monitoring — NO promover"
+          echo "canary-verify: REVERTIR_TAG"
+          revertir_tag || exit 1
+          exit 1
+        fi
         export TOKEN REVISION MIN_REQUESTS
         set +e
         python3 <<'PYCHECK' | tee /tmp/canary-verify.out
         import json, os, sys, time, urllib.parse, urllib.request
         from datetime import datetime, timedelta, timezone
 
-        project = '$PROJECT_ID'
-        revision = os.environ['REVISION']
-        token = os.environ['TOKEN']
-        min_requests = int(os.environ.get('MIN_REQUESTS', '0') or '0')
+        def _gate_monitoring():
+            project = '$PROJECT_ID'
+            revision = os.environ['REVISION']
+            token = os.environ['TOKEN']
+            min_requests = int(os.environ.get('MIN_REQUESTS', '0') or '0')
 
-        def ts(filter_, aligner, reducer, group_by=None):
-            end = datetime.now(timezone.utc)
-            start = end - timedelta(minutes=30)
-            params = {
-                'filter': filter_,
-                'interval.startTime': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                'interval.endTime': end.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                'aggregation.alignmentPeriod': '1800s',
-                'aggregation.perSeriesAligner': aligner,
-                'aggregation.crossSeriesReducer': reducer,
-            }
-            qs = urllib.parse.urlencode(params)
-            if group_by:
-                qs += ''.join(f'&aggregation.groupByFields={urllib.parse.quote(g)}' for g in group_by)
-            req = urllib.request.Request(
-                f'https://monitoring.googleapis.com/v3/projects/{project}/timeSeries?{qs}',
-                headers={'Authorization': f'Bearer {token}'})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return json.load(r).get('timeSeries', [])
+            def ts(filter_, aligner, reducer, group_by=None):
+                end = datetime.now(timezone.utc)
+                start = end - timedelta(minutes=30)
+                params = {
+                    'filter': filter_,
+                    'interval.startTime': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'interval.endTime': end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'aggregation.alignmentPeriod': '1800s',
+                    'aggregation.perSeriesAligner': aligner,
+                    'aggregation.crossSeriesReducer': reducer,
+                }
+                qs = urllib.parse.urlencode(params)
+                if group_by:
+                    qs += ''.join(f'&aggregation.groupByFields={urllib.parse.quote(g)}' for g in group_by)
+                req = urllib.request.Request(
+                    f'https://monitoring.googleapis.com/v3/projects/{project}/timeSeries?{qs}',
+                    headers={'Authorization': f'Bearer {token}'})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return json.load(r).get('timeSeries', [])
 
-        def leer_muestra():
-            base = (f'metric.type="run.googleapis.com/request_count" '
-                    f'AND resource.labels.service_name="booster-ai-api" '
-                    f'AND resource.labels.revision_name="{revision}"')
-            series = ts(base, 'ALIGN_SUM', 'REDUCE_SUM', ['metric.labels.response_code_class'])
-            counts = {}
-            for s_ in series:
-                klass = s_.get('metric', {}).get('labels', {}).get('response_code_class', '?')
-                for pt in s_.get('points', []):
-                    v = pt.get('value', {})
-                    counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
-            total = sum(counts.values())
-            # Latencia cuando Monitoring o la sonda cubren el piso. Con el
-            # piso en 0 no se pide: ese caso falla como sin muestra.
-            p95s = []
-            if conviene_leer_p95(total, min_requests, llego, respuestas_app):
-                lat = (f'metric.type="run.googleapis.com/request_latencies" '
-                       f'AND resource.labels.service_name="booster-ai-api" '
-                       f'AND resource.labels.revision_name="{revision}"')
-                for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+            def leer_muestra():
+                base = (f'metric.type="run.googleapis.com/request_count" '
+                        f'AND resource.labels.service_name="booster-ai-api" '
+                        f'AND resource.labels.revision_name="{revision}"')
+                series = ts(base, 'ALIGN_SUM', 'REDUCE_SUM', ['metric.labels.response_code_class'])
+                counts = {}
+                for s_ in series:
+                    klass = s_.get('metric', {}).get('labels', {}).get('response_code_class', '?')
                     for pt in s_.get('points', []):
                         v = pt.get('value', {})
-                        p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
-            return total, counts, p95s
+                        counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
+                total = sum(counts.values())
+                # p95 de Monitoring solo si request_count ya cubre el piso.
+                # Por debajo, el gate usa las latencias de la sonda.
+                p95s = []
+                if conviene_leer_p95(total, min_requests, llego, respuestas_app):
+                    lat = (f'metric.type="run.googleapis.com/request_latencies" '
+                           f'AND resource.labels.service_name="booster-ai-api" '
+                           f'AND resource.labels.revision_name="{revision}"')
+                    for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+                        for pt in s_.get('points', []):
+                            v = pt.get('value', {})
+                            p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
+                return total, counts, p95s
 
-        sys.path.insert(0, 'scripts/deploy')
-        from canary_verify_decision import decidir_canary, conviene_leer_p95, decidir_gate, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
-        resultado, codigo_lectura, lineas_lectura = leer_resultado_sonda('/workspace/canary-probe.json')
-        for linea in lineas_lectura:
-            print(linea)
-        if codigo_lectura != 0:
-            sys.exit(codigo_lectura)
-        codigo_sonda, lineas_sonda = decidir_resultado_sonda(resultado)
-        for linea in lineas_sonda:
-            print(linea)
-        if codigo_sonda != 0:
-            sys.exit(codigo_sonda)
-        llego = isinstance(resultado, dict) and bool(resultado.get('llego_a_la_app'))
-        respuestas_app = int(resultado.get('respuestas_app') or 0) if isinstance(resultado, dict) else 0
-        total, counts, p95s = leer_muestra()
-        for intento in range(1, 5):
-            if not reintentos_de_muestra(total, min_requests, intento, 4):
-                break
-            print(
-                f'canary-verify: muestra {total} < {min_requests} '
-                f'(intento {intento}/4), reintento en 20s por ingesta'
-            )
-            time.sleep(20)
+            sys.path.insert(0, 'scripts/deploy')
+            from canary_verify_decision import decidir_canary, conviene_leer_p95, decidir_gate, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
+            resultado, codigo_lectura, lineas_lectura = leer_resultado_sonda('/workspace/canary-probe.json')
+            for linea in lineas_lectura:
+                print(linea)
+            if codigo_lectura != 0:
+                sys.exit(codigo_lectura)
+            codigo_sonda, lineas_sonda = decidir_resultado_sonda(resultado)
+            for linea in lineas_sonda:
+                print(linea)
+            if codigo_sonda != 0:
+                sys.exit(codigo_sonda)
+            llego = isinstance(resultado, dict) and bool(resultado.get('llego_a_la_app'))
+            respuestas_app = int(resultado.get('respuestas_app') or 0) if isinstance(resultado, dict) else 0
             total, counts, p95s = leer_muestra()
-        codigo, lineas = decidir_gate(resultado, total, min_requests, counts, p95s)
-        for linea in lineas:
-            print(linea)
-        sys.exit(codigo)
+            for intento in range(1, 5):
+                if not reintentos_de_muestra(total, min_requests, intento, 4):
+                    break
+                print(
+                    f'canary-verify: muestra {total} < {min_requests} '
+                    f'(intento {intento}/4), reintento en 20s por ingesta'
+                )
+                time.sleep(20)
+                total, counts, p95s = leer_muestra()
+            codigo, lineas = decidir_gate(resultado, total, min_requests, counts, p95s)
+            for linea in lineas:
+                print(linea)
+            sys.exit(codigo)
+
+        try:
+            _gate_monitoring()
+        except Exception as exc:
+            print(
+                'canary-verify: ALERTA Monitoring no se pudo leer '
+                f'({type(exc).__name__}: {exc}) — NO promover'
+            )
+            print('canary-verify: REVERTIR_TAG')
+            sys.exit(1)
         PYCHECK
         CODIGO="$${PIPESTATUS[0]}"
         set -e
+        REVERT=0
         if grep -q 'REVERTIR_TAG' /tmp/canary-verify.out; then
-          revertir_tag || true
+          revertir_tag || REVERT=$$?
+        fi
+        if [ "$$REVERT" != 0 ]; then
+          echo "canary-verify: ALERTA revertir el tag falló; el 1% puede quedar — NO promover"
+          exit 1
         fi
         exit "$$CODIGO"
     waitFor: [canary-sleep]
@@ -1105,11 +1155,21 @@ options:
   pool:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
-# Timeout global del build. DEBE acomodar el `canary-sleep` de 1800s (30 min,
-# step id: canary-sleep) MÁS el build+push de las 9 imágenes Docker + deploy
-# canary + verify + promoción. Con 2400s el presupuesto no-sleep era de solo
-# 600s (10 min) y un build frío (~11 min hasta route-canary) lo excedía →
-# TIMEOUT durante el sleep, la promoción a 100% nunca corría y el canary
-# quedaba stuck al 1% (incidente 2026-06-16, build aca4641f, deploy de a6bf14a).
-# 3600s deja ~1800s (30 min) de presupuesto no-sleep = ~3x el build observado.
+# Timeout global del build. Camino crítico (topes, no la suma de steps
+# paralelos). Las 9 imágenes salen juntas (waitFor: ['-']); el costo es el
+# build más lento, no 9 veces.
+#
+#   hasta route-canary     720 s   observado ~660 s en frío (2026-06-16,
+#                                  ~11 min, build aca4641f). Las 9 imágenes
+#                                  van en paralelo.
+#   canary-sleep          2100 s   ventana 1800 + 300 de gcloud/kubectl
+#   canary-verify          480 s   describe, token, Monitoring y revertir,
+#                                  cada gcloud a 30 s, 3 intentos
+#   deploy-api + gke +    240 s
+#   smoke
+#   suma                  3540 s   margen 60 s bajo este tope
+#
+# Con 2400 s el tramo no-sleep era 600 s y el build frío lo excedía: TIMEOUT
+# durante el sleep, sin promoción, canary stuck al 1 %. No subir canary-sleep
+# ni canary-verify sin rehacer esta cuenta.
 timeout: 3600s

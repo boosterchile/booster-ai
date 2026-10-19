@@ -185,6 +185,8 @@ class ManifiestoTest(unittest.TestCase):
         self.assertTrue(all(item['hostnames'] == [host] for item in alias))
         self.assertGreaterEqual(doc['spec']['ttlSecondsAfterFinished'], 1800)
         self.assertIn('reintentosAntesDeCortar = 3', contenedor['command'][2])
+        self.assertIn('latencias_ms: latencias', contenedor['command'][2])
+        self.assertIn('Math.ceil(0.95 * orden.length) - 1', contenedor['command'][2])
         self.assertIn('cuatro_xx: cuatroXx', contenedor['command'][2])
         self.assertNotIn('if (i === 0 && !llego) break;', contenedor['command'][2])
         self.assertEqual(doc['metadata']['namespace'], 'default')
@@ -268,6 +270,7 @@ class CorrerPlanTest(unittest.TestCase):
             pedir, URL, ['/health', '/health/signup-flow'], ahora=lambda: 0, dormir=lambda _s: None, deadline=0
         )
         self.assertEqual((corrida['llegaron'], corrida['clase']), (2, 'aplicacion'))
+        self.assertEqual(len(corrida['latencias_ms']), 2)
 
 
 class HttpLocalTest(unittest.TestCase):

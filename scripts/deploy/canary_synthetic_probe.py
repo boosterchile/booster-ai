@@ -30,6 +30,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from canary_verify_decision import percentil_95
+
 RUTAS_SEGURAS = ('/health', '/health/signup-flow')
 USER_AGENT = 'booster-canary-probe'
 RUTA_RESULTADO = '/workspace/canary-probe.json'
@@ -68,6 +70,8 @@ if (!host.startsWith(tag + '---') || !host.endsWith('.run.app')) {
       cuatro_xx: 0,
       errores_transporte: 0,
       respuestas_app: 0,
+      latencias_ms: [],
+      p95_ms: null,
       total_plan: count,
     },
   }));
@@ -80,6 +84,12 @@ function pausa(indice) {
   const ms = quedan <= 0 || margen <= 0 ? 0 : Math.min(60000, Math.max(0, margen / quedan));
   return new Promise((resolver) => setTimeout(resolver, ms));
 }
+function p95(valores) {
+  if (!valores.length) return null;
+  const orden = valores.slice().sort((a, b) => a - b);
+  const idx = Math.max(0, Math.ceil(0.95 * orden.length) - 1);
+  return orden[idx];
+}
 (async () => {
   let respuestasApp = 0;
   let cincoXx = 0;
@@ -87,30 +97,35 @@ function pausa(indice) {
   let erroresTransporte = 0;
   let llego = false;
   let fallosSinLlegar = 0;
+  const latencias = [];
   const reintentosAntesDeCortar = 3;
   for (let i = 0; i < count; i += 1) {
     await pausa(i);
     const path = paths[i % paths.length];
     if (!paths.includes(path)) process.exit(1);
     try {
+      const t0 = Date.now();
       const res = await fetch(url + path, {
         method: 'GET',
         redirect: 'manual',
         headers: { Accept: 'application/json', 'User-Agent': 'booster-canary-probe' },
       });
       await res.arrayBuffer();
+      const ms = Date.now() - t0;
       const status = res.status;
       if (status >= 500) {
         cincoXx += 1;
         respuestasApp += 1;
         llego = true;
+        latencias.push(ms);
       } else if (status >= 200 && status < 300) {
         respuestasApp += 1;
         llego = true;
+        latencias.push(ms);
       } else if (status >= 400 && status < 500) {
         cuatroXx += 1;
       }
-      console.log(JSON.stringify({ i, path, status }));
+      console.log(JSON.stringify({ i, path, status, ms }));
     } catch (err) {
       erroresTransporte += 1;
       const message = err && err.message ? err.message : String(err);
@@ -131,6 +146,8 @@ function pausa(indice) {
       cuatro_xx: cuatroXx,
       errores_transporte: erroresTransporte,
       respuestas_app: respuestasApp,
+      latencias_ms: latencias,
+      p95_ms: p95(latencias),
       total_plan: count,
     },
   }));
@@ -343,12 +360,15 @@ def correr_plan(
         'cuatro_xx': 0,
         'errores_transporte': 0,
         'llego_a_la_app': False,
+        'latencias_ms': [],
     }
     for indice, path in enumerate(rutas):
         pausa = espera_antes(indice, len(rutas), ahora(), deadline)
         if pausa > 0:
             dormir(pausa)
+        inicio = time.perf_counter()
         status, tipo, body = pedir(url, path)
+        transcurrido_ms = round((time.perf_counter() - inicio) * 1000.0, 1)
         clase_i = clasificar_respuesta(status, tipo, body)
         if status is not None and 400 <= status < 500:
             corrida['cuatro_xx'] += 1
@@ -357,6 +377,7 @@ def correr_plan(
         elif clase_i == 'aplicacion':
             corrida['llegaron'] += 1
             corrida['llego_a_la_app'] = True
+            corrida['latencias_ms'].append(transcurrido_ms)
             if status >= 500:
                 corrida['cinco_xx'] += 1
         if indice == 0:
@@ -373,7 +394,8 @@ def correr_plan(
 
 def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[str, Any]:
     llego = bool(corrida['llego_a_la_app'])
-    return {
+    latencias = [float(item) for item in corrida.get('latencias_ms') or []]
+    resultado: dict[str, Any] = {
         'version': 1,
         'url': url,
         'tenia_url': bool(url),
@@ -382,10 +404,13 @@ def armar_resultado(url: str, total_plan: int, corrida: dict[str, Any]) -> dict[
         'cinco_xx': int(corrida['cinco_xx']),
         'cuatro_xx': int(corrida['cuatro_xx']),
         'errores_transporte': int(corrida['errores_transporte']),
+        'latencias_ms': latencias,
+        'p95_ms': percentil_95(latencias),
         'total_plan': total_plan,
         'camino_directo': 'ok' if llego else str(corrida['clase']),
         'job': 'no_necesario' if llego else 'no_corrido',
     }
+    return resultado
 
 
 def _extraer_resumen(log: str) -> dict[str, Any] | None:
@@ -422,6 +447,9 @@ def aplicar_log_job(resultado: dict[str, Any], log: str) -> dict[str, Any]:
     resultado['cuatro_xx'] = int(resumen.get('cuatro_xx') or 0)
     resultado['errores_transporte'] = int(resumen.get('errores_transporte') or 0)
     resultado['respuestas_app'] = int(resumen.get('respuestas_app') or 0)
+    latencias = resumen.get('latencias_ms')
+    resultado['latencias_ms'] = latencias if isinstance(latencias, list) else []
+    resultado['p95_ms'] = resumen.get('p95_ms')
     return resultado
 
 

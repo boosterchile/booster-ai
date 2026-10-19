@@ -21,8 +21,13 @@ los requests y ese handler no toca la base.
 from __future__ import annotations
 
 import json
+import math
 
 MARCA_REVERTIR = 'canary-verify: REVERTIR_TAG'
+ALERTA_REVERTIR = (
+    'canary-verify: ALERTA revertir el tag falló; el 1% puede quedar — NO promover'
+)
+INTENTOS_REVERSION = 3
 
 
 def reintentos_de_muestra(
@@ -42,12 +47,51 @@ def reintentos_de_muestra(
 
 
 def conviene_leer_p95(total: int, min_requests: int, llego: bool, respuestas_app: int) -> bool:
-    """Latencia solo cuando el piso está cubierto por Monitoring o por la sonda."""
+    """Latencia de Monitoring solo con el piso cubierto por request_count.
+
+    Con 0 < total < piso el p95 de Monitoring castiga el cold start. Esa
+    muestra usa las latencias de la sonda, no esta serie.
+    """
+    del llego, respuestas_app
     if min_requests <= 0:
         return False
-    if total >= min_requests:
-        return True
-    return llego and respuestas_app >= min_requests
+    return total >= min_requests
+
+
+def percentil_95(latencias_ms: list[float]) -> float | None:
+    """p95 por nearest-rank. Vacío no es 0: no hay muestra de latencia."""
+    if not latencias_ms:
+        return None
+    ordenadas = sorted(latencias_ms)
+    indice = max(0, math.ceil(0.95 * len(ordenadas)) - 1)
+    return float(ordenadas[indice])
+
+
+def p95_de_sonda(resultado: dict[str, object] | None) -> list[float]:
+    """p95 que la sonda escribió, o el calculado desde latencias_ms."""
+    if not isinstance(resultado, dict):
+        return []
+    crudo = resultado.get('p95_ms')
+    if isinstance(crudo, (int, float)) and not isinstance(crudo, bool):
+        return [float(crudo)]
+    latencias = resultado.get('latencias_ms')
+    if not isinstance(latencias, list):
+        return []
+    valores: list[float] = []
+    for item in latencias:
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            valores.append(float(item))
+    valor = percentil_95(valores)
+    if valor is None:
+        return []
+    return [valor]
+
+
+def espera_backoff_reversion(intento: int) -> int:
+    """Segundos tras un intento fallido. 3 intentos: 2 s y luego 4 s."""
+    if intento < 1 or intento >= INTENTOS_REVERSION:
+        return 0
+    return 2**intento
 
 
 def decidir_resultado_sonda(resultado: dict[str, object] | None) -> tuple[int, list[str]]:
@@ -166,9 +210,20 @@ def decidir_gate(
             f'canary-verify: Monitoring={total} < {min_requests}; '
             f'piso cubierto por respuestas_app={respuestas}'
         )
+        de_sonda = p95_de_sonda(resultado)
+        if total > 0:
+            # 0 < total < piso: el p95 de Monitoring es el cold start.
+            serie = de_sonda
+        else:
+            serie = de_sonda if de_sonda else p95s
+        if not serie:
+            return 1, [
+                nota,
+                'canary-verify: FAIL sin p95 de la sonda — NO promover',
+            ]
         efectivo = total if total > 0 else respuestas
         conteos = counts if total > 0 else {'2xx': respuestas}
-        codigo_slo, lineas_slo = evaluar_slos(efectivo, conteos, p95s)
+        codigo_slo, lineas_slo = evaluar_slos(efectivo, conteos, serie)
         return codigo_slo, [nota, *lineas_slo]
     if total < min_requests and llego:
         return _falla_sin_muestra(
@@ -214,27 +269,72 @@ def decidir_canary(
     return evaluar_slos(total, counts, p95s)
 
 
-def revision_estable(traffic: list[object], tag: str) -> str | None:
+def revision_estable(
+    traffic: list[object],
+    tag: str,
+    *,
+    latest_ready: str | None = None,
+    latest_created: str | None = None,
+) -> str | None:
     """Revisión que se queda con el 100 % al quitar el tag canary.
 
-    Ignora la entrada de ese tag. Si solo está el tag, no hay a quién devolver
-    el tráfico y el llamador no toca el split.
+    Ignora la entrada de ese tag. Si el estable es latestRevision sin
+    revisionName, usa latestReadyRevisionName y, si esa es el canary,
+    latestCreatedRevisionName. Si no hay a quién devolver el tráfico,
+    devuelve None.
     """
+    canary: set[str] = set()
     mejor_peso = -1
     mejor_nombre: str | None = None
+    peso_latest = -1
+    hay_latest_sin_nombre = False
     for item in traffic:
         if not isinstance(item, dict):
             continue
-        if str(item.get('tag') or '') == tag:
-            continue
         nombre = item.get('revisionName')
-        if not isinstance(nombre, str) or not nombre.strip():
+        nombre_ok = isinstance(nombre, str) and bool(nombre.strip())
+        if str(item.get('tag') or '') == tag:
+            if nombre_ok and isinstance(nombre, str):
+                canary.add(nombre.strip())
             continue
         peso = _entero(item.get('percent'))
-        if peso > mejor_peso:
+        if nombre_ok and isinstance(nombre, str) and peso > mejor_peso:
             mejor_peso = peso
-            mejor_nombre = nombre
+            mejor_nombre = nombre.strip()
+            continue
+        if item.get('latestRevision') is True and not nombre_ok and peso > peso_latest:
+            peso_latest = peso
+            hay_latest_sin_nombre = True
+    if mejor_nombre is not None and mejor_peso >= peso_latest:
+        return mejor_nombre
+    if hay_latest_sin_nombre:
+        for candidato in (latest_ready, latest_created):
+            if isinstance(candidato, str) and candidato.strip() and candidato.strip() not in canary:
+                return candidato.strip()
     return mejor_nombre
+
+
+def resultado_reversion(doc: object, tag: str) -> tuple[int, list[str]]:
+    """0 y el nombre de la revisión estable, o 1 y la alerta. No toca tráfico."""
+    if not isinstance(doc, dict):
+        return 1, [ALERTA_REVERTIR]
+    status = doc.get('status')
+    if not isinstance(status, dict):
+        return 1, [ALERTA_REVERTIR]
+    traffic = status.get('traffic')
+    nombre = revision_estable(
+        traffic if isinstance(traffic, list) else [],
+        tag,
+        latest_ready=status.get('latestReadyRevisionName')
+        if isinstance(status.get('latestReadyRevisionName'), str)
+        else None,
+        latest_created=status.get('latestCreatedRevisionName')
+        if isinstance(status.get('latestCreatedRevisionName'), str)
+        else None,
+    )
+    if not nombre:
+        return 1, [ALERTA_REVERTIR]
+    return 0, [nombre]
 
 
 def main(argv: list[str] | None = None) -> int:
