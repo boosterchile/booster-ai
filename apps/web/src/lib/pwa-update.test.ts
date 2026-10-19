@@ -1,14 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  PWA_RELOAD_ACK,
   PWA_RELOAD_GUARD_MS,
   PWA_RELOAD_MARK,
+  PWA_RELOAD_PING,
   type PwaUpdateEnv,
+  type PwaWorkerMessage,
   installPwaUpdate,
+  mensajeReload,
+  recargarClientesSinAck,
 } from './pwa-update.js';
 
 interface Harness {
   env: PwaUpdateEnv;
   fireController: () => void;
+  fireMessage: (data: unknown) => void;
   fireVisibility: () => void;
   setVisibility: (state: DocumentVisibilityState) => void;
   update: ReturnType<typeof vi.fn>;
@@ -19,7 +25,8 @@ interface Harness {
 }
 
 function harness(controller: object | null = {}): Harness {
-  const controllerListeners: Array<() => void> = [];
+  const controllerListeners: Array<(event?: PwaWorkerMessage) => void> = [];
+  const messageListeners: Array<(event?: PwaWorkerMessage) => void> = [];
   const visibilityListeners: Array<() => void> = [];
   const session = new Map<string, string>();
   const scheduled: Array<{ fn: () => void; ms: number }> = [];
@@ -33,11 +40,16 @@ function harness(controller: object | null = {}): Harness {
       get controller() {
         return current;
       },
-      addEventListener: (_type, listener) => {
+      addEventListener: (type, listener) => {
+        if (type === 'message') {
+          messageListeners.push(listener);
+          return;
+        }
         controllerListeners.push(listener);
       },
       ready: Promise.resolve({ update }),
     },
+    reply: vi.fn(),
     location: { reload },
     document: {
       get visibilityState() {
@@ -66,6 +78,11 @@ function harness(controller: object | null = {}): Harness {
     fireController: () => {
       for (const listener of controllerListeners) {
         listener();
+      }
+    },
+    fireMessage: (data) => {
+      for (const listener of messageListeners) {
+        listener({ data });
       }
     },
     fireVisibility: () => {
@@ -122,6 +139,79 @@ describe('installPwaUpdate — controllerchange', () => {
     h.session.delete(PWA_RELOAD_MARK);
     h.scheduled[0]?.fn();
     expect(h.report).not.toHaveBeenCalled();
+  });
+});
+
+describe('un deploy, una recarga', () => {
+  it('la pestaña contesta el ping y controllerchange recarga una sola vez', async () => {
+    const h = harness({});
+    const acks = new Set<string>();
+    const navegadas: string[] = [];
+    let ping: unknown;
+    h.env.reply = (message) => {
+      const mensaje = mensajeReload(message);
+      if (mensaje?.type === PWA_RELOAD_ACK) {
+        acks.add(mensaje.id);
+      }
+    };
+    installPwaUpdate(h.env);
+
+    const tarea = recargarClientesSinAck(
+      [
+        {
+          id: 'tab-1',
+          url: 'https://app.boosterchile.com/app',
+          postMessage: (message) => {
+            ping = message;
+            h.fireMessage(message);
+          },
+          navigate: async (url) => {
+            navegadas.push(url);
+          },
+        },
+      ],
+      async () => acks,
+    );
+    h.fireController();
+    h.fireController();
+    await tarea;
+
+    expect(ping).toEqual({ type: PWA_RELOAD_PING, id: 'tab-1' });
+    expect(h.reload).toHaveBeenCalledTimes(1);
+    expect(navegadas).toEqual([]);
+    expect(acks.has('tab-1')).toBe(true);
+  });
+
+  it('sin respuesta, el fallback navega una vez y la primera toma de control no recarga', async () => {
+    const h = harness(null);
+    installPwaUpdate(h.env);
+    const navegadas: string[] = [];
+    await recargarClientesSinAck(
+      [
+        {
+          id: 'vieja',
+          url: 'https://app.boosterchile.com/app',
+          navigate: async (url) => {
+            navegadas.push(url);
+          },
+        },
+      ],
+      async () => new Set<string>(),
+    );
+    h.fireController();
+    expect(h.reload).not.toHaveBeenCalled();
+    expect(navegadas).toEqual(['https://app.boosterchile.com/app']);
+  });
+
+  it('reporta si la respuesta al service worker falla', () => {
+    const h = harness({});
+    const fallo = new Error('puerto cerrado');
+    h.env.reply = () => {
+      throw fallo;
+    };
+    installPwaUpdate(h.env);
+    h.fireMessage({ type: PWA_RELOAD_PING, id: 'tab-1' });
+    expect(h.report).toHaveBeenCalledWith(fallo);
   });
 });
 

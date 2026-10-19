@@ -17,13 +17,15 @@ initAccent();
 // Los listeners cubren lo que React NO atrapa (async/promesas fuera del
 // árbol); los errores de render/effect van por defaultOnCatch del router.
 initErrorReporting();
-// El SW hace skipWaiting + clients.claim sin recargar. Este registro
-// recarga una vez cuando cambia el controller y pide update() al volver
-// a primer plano. registerSW.js (vite-plugin-pwa, autoUpdate) sigue
-// registrando el worker; no lo reemplaza.
+// El SW hace skipWaiting + clients.claim. Esta pestaña se recarga una vez
+// en controllerchange y contesta el ping para que el SW no navegue además.
+// registerSW.js (vite-plugin-pwa, autoUpdate) sigue registrando el worker.
 if ('serviceWorker' in navigator) {
   installPwaUpdate({
     serviceWorker: navigator.serviceWorker,
+    reply: (message) => {
+      navigator.serviceWorker.controller?.postMessage(message);
+    },
     location: window.location,
     document,
     session: window.sessionStorage,
