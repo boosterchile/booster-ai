@@ -225,11 +225,13 @@ class ManifiestoTest(unittest.TestCase):
 
 
 class DecisionSigueIgualTest(unittest.TestCase):
-    def test_muestra_chica_sigue_promoviendo_sin_p95(self) -> None:
+    def test_muestra_chica_falla_sin_mirar_p95(self) -> None:
         codigo, lineas = decidir_canary(6, 30, {'2xx': 6}, [1408.0])
-        self.assertEqual(codigo, 0)
-        self.assertIn('WARN', lineas[0])
-        self.assertNotIn('FAIL', '\n'.join(lineas))
+        self.assertEqual(codigo, 1)
+        texto = '\n'.join(lineas)
+        self.assertIn('FAIL', texto)
+        self.assertNotIn('p95', texto)
+        self.assertIn('REVERTIR_TAG', texto)
 
     def test_muestra_suficiente_sigue_abortando(self) -> None:
         self.assertEqual(decidir_canary(35, 30, {'2xx': 34, '5xx': 1}, [100.0])[0], 1)
@@ -378,6 +380,9 @@ class CloudBuildTest(unittest.TestCase):
             verify.index('total, counts, p95s = leer_muestra()'),
         )
         self.assertIn('dominado por /health', texto)
+        self.assertIn('decidir_gate', texto)
+        self.assertIn('REVERTIR_TAG', texto)
+        self.assertIn('conviene_leer_p95', texto)
 
     def test_el_ci_corre_los_unittest_de_deploy(self) -> None:
         ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
@@ -416,7 +421,7 @@ class ResultadoSondaTest(unittest.TestCase):
         texto = '\n'.join(lineas)
         self.assertIn('FAIL', texto)
         self.assertNotIn('Promoviendo', texto)
-        self.assertEqual(decidir_canary(6, 30, {'2xx': 6}, [1408.0])[0], 0)
+        self.assertEqual(decidir_canary(6, 30, {'2xx': 6}, [1408.0])[0], 1)
 
     def test_timeout_y_conexion_salen_en_el_resultado_y_cuentan(self) -> None:
         respuestas = iter(
@@ -467,10 +472,14 @@ class ResultadoSondaTest(unittest.TestCase):
         self.assertIn('FAIL', texto)
         self.assertNotIn('Promoviendo', texto)
 
-    def test_sin_url_sigue_promoviendo_con_warn(self) -> None:
+    def test_sin_url_falla_y_pide_revertir_el_tag(self) -> None:
         codigo, lineas = decidir_gate(None, 6, 30, {'2xx': 6}, [1408.0])
-        self.assertEqual(codigo, 0)
-        self.assertIn('WARN', lineas[0])
+        self.assertEqual(codigo, 1)
+        texto = '\n'.join(lineas)
+        self.assertIn('sin URL', texto)
+        self.assertIn('REVERTIR_TAG', texto)
+        self.assertNotIn('p95', texto)
+        self.assertNotIn('Promoviendo', texto)
 
     def test_el_log_del_job_trae_los_mismos_errores(self) -> None:
         log = '\n'.join(

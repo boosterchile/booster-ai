@@ -549,20 +549,20 @@ steps:
     #   - p95_latency < 500ms: aligned p95 sobre request_latencies metric,
     #     mismo scope.
     #
-    # Si error_rate o p95 fallan CON muestra >= _CANARY_MIN_REQUESTS, exit 1
-    # → Cloud Build aborta antes de promover. Human-on-call hace rollback
-    # (no es automático).
+    # Si error_rate o p95 fallan con el piso cubierto, exit 1 y Cloud Build
+    # aborta antes de promover. Ese rollback de SLO lo hace el humano.
     #
     # La ventana (canary-sleep) manda GET de health al tag (piso + 5) y deja
     # el resultado en /workspace/canary-probe.json. Si la sonda llegó a la app
     # y vio 5xx, o timeouts y errores de conexión, o fallaron el camino
-    # directo y el Job teniendo URL, este step sale distinto de 0: ese caso
-    # no es el WARN que promueve. El p95 de Monitoring queda dominado por
-    # /health (la sonda es casi toda la muestra y ese handler no toca la
-    # base). Sin archivo (no había URL) se lee Monitoring —con reintentos
-    # cortos por la ingesta— y muestra bajo el piso sigue en WARN y exit 0,
-    # sin evaluar p95. Bajar el piso a 0 reabre el falso positivo de p95 del
-    # 2026-08-16. La decisión vive en scripts/deploy/canary_verify_decision.py.
+    # directo y el Job teniendo URL, este step sale distinto de 0. El p95 de
+    # Monitoring queda dominado por /health (la sonda es casi toda la muestra
+    # y ese handler no toca la base). Sin URL del tag, con el piso en 0, o
+    # con Monitoring y la sonda bajo el piso, sale distinto de 0 y revierte
+    # el tag (100 % a la revisión que no es el tag, y se quita el tag). Si
+    # la sonda llegó y respuestas_app cubre el piso aunque Monitoring no, se
+    # evalúan error rate y p95. La decisión vive en
+    # scripts/deploy/canary_verify_decision.py.
     args:
       - -c
       - |
@@ -573,12 +573,12 @@ steps:
         # muestra alcanza el piso → exit 1 y el build aborta SIN promover.
         # 5xx o errores de conexión de la sonda, directo y Job fallidos con
         # URL, o un Job que ya no existe al leer los logs, salen distinto de
-        # 0 (el resultado está en canary-probe.json). No se promueve sin esa
-        # muestra.
-        # Sin ese archivo, muestra bajo el piso o sin revision con tag →
-        # warn + exit 0 (runbook signup-canary-rollback). El p95 no se mira
-        # sin muestra: el 2026-08-16 un cold start abortó un deploy sano. El
-        # p95, cuando se evalúa, queda dominado por /health.
+        # 0 (el resultado está en canary-probe.json). No se promueve.
+        # Sin URL del tag, piso en 0, muestra bajo el piso (Monitoring y
+        # respuestas_app) o sin revision con tag: sale distinto de 0. Esos
+        # casos, salvo el tag ausente, revierten el tag antes de salir. Si
+        # la sonda cubre el piso, el p95 se evalúa aunque Monitoring vaya
+        # atrás. El p95 queda dominado por /health.
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
@@ -601,14 +601,49 @@ steps:
         REVISION=$$(describe_with_retry \
           | python3 -c "import sys,json; s=json.load(sys.stdin); print(next((t.get('revisionName','') for t in s.get('status',{}).get('traffic',[]) if t.get('tag')=='$$REVISION_TAG'), ''))")
         if [ -z "$$REVISION" ]; then
-          echo "canary-verify: WARN no se encontró revision con tag $$REVISION_TAG — sin gate automático, decisión humana"
-          exit 0
+          echo "canary-verify: FAIL no se encontró revision con tag $$REVISION_TAG — NO promover"
+          exit 1
         fi
         echo "canary-verify: revision=$$REVISION"
 
+        revertir_tag() {
+          echo "canary-verify: revirtiendo el tag $$REVISION_TAG"
+          if ! DESC="$$(timeout -k 5 30 gcloud run services describe booster-ai-api \
+              --region='${_REGION}' --platform=managed --format=json)"; then
+            echo "canary-verify: no se pudo describir el servicio para revertir el tag; el 1% puede quedar"
+            return 0
+          fi
+          export REVISION_TAG
+          ESTABLE="$$(printf '%s' "$$DESC" | python3 -c '
+        import json, os, sys
+        sys.path.insert(0, "scripts/deploy")
+        from canary_verify_decision import revision_estable
+        doc = json.load(sys.stdin)
+        nombre = revision_estable(doc.get("status", {}).get("traffic", []), os.environ["REVISION_TAG"])
+        if nombre:
+            print(nombre)
+        ')" || true
+          if [ -z "$$ESTABLE" ]; then
+            echo "canary-verify: no hay revision estable distinta del tag; no se toca el split"
+            return 0
+          fi
+          echo "canary-verify: devolviendo 100% a $$ESTABLE y quitando $$REVISION_TAG"
+          timeout -k 5 30 gcloud run services update-traffic booster-ai-api \
+            --region='${_REGION}' \
+            --platform=managed \
+            --to-revisions="$$ESTABLE"=100 \
+            || echo "canary-verify: fallo al devolver el 100%; el 1% puede quedar y NO se promueve"
+          timeout -k 5 30 gcloud run services update-traffic booster-ai-api \
+            --region='${_REGION}' \
+            --platform=managed \
+            --remove-tags="$$REVISION_TAG" \
+            || echo "canary-verify: fallo al quitar el tag; el tráfico ya debería estar en $$ESTABLE"
+        }
+
         TOKEN=$$(gcloud auth print-access-token)
         export TOKEN REVISION MIN_REQUESTS
-        python3 <<'PYCHECK'
+        set +e
+        python3 <<'PYCHECK' | tee /tmp/canary-verify.out
         import json, os, sys, time, urllib.parse, urllib.request
         from datetime import datetime, timedelta, timezone
 
@@ -649,10 +684,10 @@ steps:
                     v = pt.get('value', {})
                     counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
             total = sum(counts.values())
-            # Latencia solo con muestra que alcanza el piso. Pedirla igual no
-            # cambia la decision, y un error de la API no debe tapar el WARN.
+            # Latencia cuando Monitoring o la sonda cubren el piso. Con el
+            # piso en 0 no se pide: ese caso falla como sin muestra.
             p95s = []
-            if total >= max(min_requests, 1):
+            if conviene_leer_p95(total, min_requests, llego, respuestas_app):
                 lat = (f'metric.type="run.googleapis.com/request_latencies" '
                        f'AND resource.labels.service_name="booster-ai-api" '
                        f'AND resource.labels.revision_name="{revision}"')
@@ -663,7 +698,7 @@ steps:
             return total, counts, p95s
 
         sys.path.insert(0, 'scripts/deploy')
-        from canary_verify_decision import decidir_canary, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
+        from canary_verify_decision import decidir_canary, conviene_leer_p95, decidir_gate, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
         resultado, codigo_lectura, lineas_lectura = leer_resultado_sonda('/workspace/canary-probe.json')
         for linea in lineas_lectura:
             print(linea)
@@ -674,6 +709,8 @@ steps:
             print(linea)
         if codigo_sonda != 0:
             sys.exit(codigo_sonda)
+        llego = isinstance(resultado, dict) and bool(resultado.get('llego_a_la_app'))
+        respuestas_app = int(resultado.get('respuestas_app') or 0) if isinstance(resultado, dict) else 0
         total, counts, p95s = leer_muestra()
         for intento in range(1, 5):
             if not reintentos_de_muestra(total, min_requests, intento, 4):
@@ -684,11 +721,17 @@ steps:
             )
             time.sleep(20)
             total, counts, p95s = leer_muestra()
-        codigo, lineas = decidir_canary(total, min_requests, counts, p95s)
+        codigo, lineas = decidir_gate(resultado, total, min_requests, counts, p95s)
         for linea in lineas:
             print(linea)
         sys.exit(codigo)
         PYCHECK
+        CODIGO="$${PIPESTATUS[0]}"
+        set -e
+        if grep -q 'REVERTIR_TAG' /tmp/canary-verify.out; then
+          revertir_tag || true
+        fi
+        exit "$$CODIGO"
     waitFor: [canary-sleep]
 
   # PRESERVE id: deploy-api — downstream `waitFor: [deploy-api, deploy-
@@ -727,10 +770,11 @@ steps:
     waitFor: [canary-verify]
 
   # =========================================================================
-  # Rollback fast-path — manual command (NO step automático).
-  #
-  # Si canary-verify exit 1 o human-on-call decide abortar antes de los
-  # 30min:
+  # Rollback fast-path. Sin muestra, canary-verify ya revierte el tag
+  # (100 % a la revisión que no es el tag, y --remove-tags) antes de salir
+  # distinto de 0. Si ese gcloud falla, o el fallo es de SLO (5xx de la
+  # sonda, error_rate, p95), o human-on-call aborta antes de los 30 min,
+  # el comando manual sigue siendo:
   #
   #   gcloud run services update-traffic booster-ai-api \
   #     --region=southamerica-west1 \
