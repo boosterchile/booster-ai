@@ -57,7 +57,10 @@ abortando por esos umbrales.
    El tope del build es 5400 s. En el release de #793 (Cloud Build `c11b1702`)
    el tope de 3600 s cortó `canary-sleep` antes de `canary-verify`: el tramo
    hasta `route-canary` se fue a unos 30 min. La ventana no se acorta; el
-   presupuesto (2100 + 2100 + 480 + 240 = 4920) deja 480 s bajo 5400.
+   presupuesto (2100 + 2100 + 480 + 240 = 4920) deja 480 s bajo 5400. El job
+   `deploy-production` de `release.yml` espera hasta 30 min a CI Success y
+   corre `gcloud builds submit` sin `--async`: su `timeout-minutes` es 130
+   (30 + 90 + 10). Con 75 el run se cancela y el build queda huérfano.
 6. La sonda escribe `/workspace/canary-probe.json` (llegadas, 5xx, timeouts
    y errores de conexión). `canary-verify` lo lee antes de Monitoring y sale
    distinto de 0 si la sonda llegó a la app y vio 5xx o esos errores de
@@ -113,9 +116,12 @@ abortando por esos umbrales.
 - [x] El bloque Python de `canary-verify` no introduce `$` sin escapar, y el
       bash de `canary-sleep` tampoco (salvo substitutions de Cloud Build y
       `$$`).
-- [x] El tope del build es 5400 s y la suma presupuestada (tramo previo,
-      `canary-sleep` 2100 s, `canary-verify` 480 s, deploy posterior) queda
-      al menos 300 s por debajo. La ventana sigue en 1800 s.
+- [x] El tope del build es 5400 s (la clave `timeout`, no el comentario) y
+      la suma presupuestada (tramo previo, `canary-sleep` 2100 s,
+      `canary-verify` 480 s, deploy posterior) queda al menos 300 s por
+      debajo. La ventana sigue en 1800 s.
+- [x] `deploy-production` en `release.yml` tiene `timeout-minutes: 130`.
+      130 min cubren 30 de espera a CI Success, 90 del build y 10 de smoke.
 - [x] El comentario de `canary-sleep` declara que el camino directo da 404
       de ingress y que el Job es el camino que llega. El step no reescribe
       `/etc/hosts`.

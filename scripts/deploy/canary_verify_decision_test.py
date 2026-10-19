@@ -26,6 +26,29 @@ ROOT = Path(__file__).resolve().parents[2]
 CLOUDBUILD = ROOT / 'cloudbuild.production.yaml'
 
 
+def _claves_reales(texto: str, prefijo: str) -> list[str]:
+    """Valores de claves en columna 0. Un comentario no cuenta."""
+    valores: list[str] = []
+    for linea in texto.splitlines():
+        if linea.startswith('#') or not linea.startswith(prefijo):
+            continue
+        valores.append(linea.split('#', 1)[0].split(':', 1)[1].strip())
+    return valores
+
+
+def _campo_de_job(texto: str, job: str, campo: str) -> str:
+    """Valor de un campo del job. Ignora comentarios y el job siguiente."""
+    lineas = texto.splitlines()
+    inicio = next(i for i, linea in enumerate(lineas) if linea.startswith(f'  {job}:'))
+    for linea in lineas[inicio + 1:]:
+        if linea.startswith('  ') and not linea.startswith('    ') and linea.rstrip().endswith(':'):
+            break
+        desnuda = linea.split('#', 1)[0]
+        if desnuda.strip().startswith(f'{campo}:'):
+            return desnuda.split(':', 1)[1].strip()
+    raise AssertionError(f'{job}.{campo}')
+
+
 class DecidirCanaryTest(unittest.TestCase):
     def test_muestra_chica_falla_sin_mirar_p95(self) -> None:
         codigo, lineas = decidir_canary(6, 30, {'2xx': 6}, [1408.0])
@@ -146,7 +169,8 @@ class DecidirCanaryTest(unittest.TestCase):
 
     def test_presupuesto_cabe_holgado_bajo_5400(self) -> None:
         texto = CLOUDBUILD.read_text(encoding='utf-8')
-        self.assertIn('timeout: 5400s', texto)
+        tope = _claves_reales(texto, 'timeout:')
+        self.assertEqual(tope, ['5400s'])
         self.assertNotIn('timeout: 3600s', texto)
         bloque = texto.split('# Timeout global del build', 1)[1].split('timeout: 5400s', 1)[0]
         filas = {
@@ -169,6 +193,28 @@ class DecidirCanaryTest(unittest.TestCase):
         self.assertIn('No se acorta', bloque)
         verify = texto[texto.index('id: canary-verify'):texto.index('id: deploy-api')]
         self.assertIn('30+180+30+192 = 432', verify)
+        release = (ROOT / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        minutos = int(_campo_de_job(release, 'deploy-production', 'timeout-minutes'))
+        self.assertEqual(minutos, 130)
+        segundos = int(tope[0].removesuffix('s'))
+        # 30 min de CI Success + el build + 10 min de smoke y setup.
+        self.assertGreaterEqual(minutos * 60, 30 * 60 + segundos + 10 * 60)
+        cuenta = release.split('timeout-minutes: 130', 1)[0]
+        filas_job = {
+            etiqueta: int(valor)
+            for etiqueta, valor in re.findall(r'^[ ]*# {2,}(\S.*?) {2,}(\d+) min', cuenta, re.M)
+        }
+        self.assertEqual(
+            filas_job['espera CI Success'] + filas_job['Cloud Build'] + filas_job['smoke y setup'],
+            filas_job['suma'],
+        )
+        self.assertEqual(filas_job['suma'], minutos)
+        self.assertEqual(filas_job['Cloud Build'] * 60, segundos)
+        inicio = release.index('name: Trigger Cloud Build (production)')
+        fin = release.index('name: Smoke test', inicio)
+        comando = '\n'.join(linea.split('#', 1)[0] for linea in release[inicio:fin].splitlines())
+        self.assertIn('gcloud builds submit', comando)
+        self.assertNotIn('--async', comando)
 
     def test_cuatro_xx_no_cambia_la_decision(self) -> None:
         llego = {

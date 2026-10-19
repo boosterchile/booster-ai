@@ -30,7 +30,9 @@ Si la decisión es **NO** correr canary (e.g., hotfix urgente, deploy-trivial si
 
 **Tope del build**: 5400 s (90 min), en `cloudbuild.production.yaml`. El release de #793 (Cloud Build `c11b1702`) murió por TIMEOUT a los 3600 s dentro de `canary-sleep`: el tramo hasta `route-canary` se fue a unos 30 min y `canary-verify` no arrancó. El presupuesto vigente reserva 2100 s para ese tramo (observado ~1800 s), 2100 s para `canary-sleep` (ventana 1800 + 300), 480 s para `canary-verify` y 240 s para `deploy-api` + `gke-deploy` + smoke. Suma 4920 s, margen 480 s. La ventana de 30 min se mantiene: cabe bajo 5400 s. El ~660 s de `aca4641f` (2026-06-16) ya no describe el tramo previo.
 
-**Trade-off documentado en spec §3 SC-1.2.3** y aceptado por PO 2026-05-25. El tope de 5400 s lo firma el PO: `cloudbuild.production.yaml` es archivo protegido.
+El job `deploy-production` de `.github/workflows/release.yml` espera hasta 30 min a CI Success y después corre `gcloud builds submit` sin `--async`, así que el runner sigue abierto mientras dura el build. Su `timeout-minutes` es 130 (30 de esa espera + 90 del tope de Cloud Build + 10 de auth, gcloud y el smoke de 3 intentos). Con 75 min el run se cancela, el build sigue huérfano en Cloud Build y el smoke final no corre.
+
+**Trade-off documentado en spec §3 SC-1.2.3** y aceptado por PO 2026-05-25. El tope de 5400 s y el `timeout-minutes` del job los firma el PO: `cloudbuild.production.yaml` y `release.yml` son archivos protegidos.
 
 ## 3. Decision criteria — promover o rollback
 
