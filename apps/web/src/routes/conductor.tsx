@@ -17,6 +17,11 @@ import { ChatPanel } from '../components/chat/ChatPanel.js';
 import { ResultadoViaje } from '../components/conductor/ResultadoViaje.js';
 import { WakeWordBanner } from '../components/conductor/WakeWordBanner.js';
 import { SugerenciaRutaCard } from '../components/eco-routing/SugerenciaRutaCard.js';
+import { comunaDesdeDireccion } from '../components/inicio-transportista/modelo.js';
+import { partesCuando } from '../components/inicio/cuando.js';
+import { INICIO_LICENCIA_CONDUCTOR_ACTIVA } from '../components/inicio/flags.js';
+import { IncidentePanel } from '../components/inicio/incidente-panel.js';
+import { TripHeroCard } from '../components/inicio/trip-hero-card.js';
 import { EcoRouteMapPreview } from '../components/offers/EcoRouteMapPreview.js';
 import { AssignmentEcoRouteCard } from '../components/scoring/AssignmentEcoRouteCard.js';
 import { useAssignmentEcoRoute } from '../hooks/use-assignment-eco-route.js';
@@ -49,8 +54,8 @@ type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
  *
  *   2. **Próximo servicio asignado** — el viaje que tienes que ejecutar
  *      ahora (origen → destino, carga, ventana de recogida, vehículo), con
- *      UNA acción principal según la fase: «Confirmar recogida» → «Confirmar
- *      entrega». La posición no es un botón: si el vehículo no tiene
+ *      UNA acción principal según la fase: «Iniciar viaje» confirma la
+ *      recogida y después sigue «Confirmar entrega». La posición no es un botón: si el vehículo no tiene
  *      Teltonika, el teléfono reporta solo desde la recogida hasta la
  *      entrega; si lo tiene, el camión reporta y la tarjeta lo dice.
  *
@@ -114,6 +119,7 @@ function ConductorDashboardPage({ me }: { me: MeOnboarded }) {
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
         <WhatsAppSafetyBanner />
         <WakeWordActiveBanner />
+        <OyeBoosterCard />
         <AssignmentsSection />
       </main>
     </div>
@@ -166,6 +172,33 @@ function ConductorHeader({ fullName }: { fullName: string }) {
 // ---------------------------------------------------------------------------
 // Banner sticky de seguridad — preventivo, no oculto en configuración.
 // ---------------------------------------------------------------------------
+
+function OyeBoosterCard() {
+  return (
+    <section
+      data-testid="oye-booster"
+      className="mt-4 rounded-lg border border-neutral-200 bg-white p-3"
+    >
+      <p className="font-semibold text-neutral-900 text-sm">Di «Oye Booster»</p>
+      <p className="mt-0.5 text-neutral-600 text-sm">Maneja con la voz, sin mirar el teléfono.</p>
+    </section>
+  );
+}
+
+function ChipGps({ permiso }: { permiso: PermissionStatus }) {
+  if (permiso !== 'granted') {
+    return null;
+  }
+  return (
+    <p
+      data-testid="gps-activo"
+      className="mt-4 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-neutral-800 text-sm"
+    >
+      <span className="h-2 w-2 rounded-full bg-success-500" aria-hidden />
+      GPS activo
+    </p>
+  );
+}
 
 function WhatsAppSafetyBanner() {
   return (
@@ -312,18 +345,33 @@ function AssignmentsSection() {
           <RefreshCw className="h-4 w-4" aria-hidden />
           {refrescando ? 'Actualizando…' : 'Actualizar'}
         </button>
+        <ChipGps permiso={geoPermission} />
       </section>
     );
   }
 
+  const [primero, ...resto] = assignments;
+  if (!primero) {
+    return null;
+  }
+
   return (
     <section className="mt-6 space-y-4">
-      <h2 className="font-semibold text-base text-neutral-900">
-        {assignments.length === 1 ? 'Tu próximo servicio' : 'Tus servicios asignados'}
-      </h2>
-      {assignments.map((a) => (
-        <AssignmentCard key={a.id} assignment={a} geoPermission={geoPermission} />
-      ))}
+      <AssignmentCard destacado assignment={primero} geoPermission={geoPermission} />
+      {resto.length > 0 ? (
+        <div>
+          <h2 className="font-semibold text-neutral-500 text-xs uppercase tracking-wider">
+            Después
+          </h2>
+          <ul className="mt-2 space-y-2">
+            {resto.map((item) => (
+              <li key={item.id}>
+                <AssignmentCard assignment={item} geoPermission={geoPermission} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => void cargarServicios()}
@@ -333,6 +381,12 @@ function AssignmentsSection() {
         <RefreshCw className="h-4 w-4" aria-hidden />
         {refrescando ? 'Actualizando…' : 'Actualizar'}
       </button>
+      <ChipGps permiso={geoPermission} />
+      {INICIO_LICENCIA_CONDUCTOR_ACTIVA ? (
+        <p data-testid="licencia-conductor" className="mt-2 text-neutral-600 text-sm">
+          Licencia por vencer
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -408,6 +462,7 @@ function NavegacionEnPantalla({
   cargandoRuta,
   pausaGps,
   className,
+  abrirSignal = 0,
 }: {
   etiqueta: string;
   testId: string;
@@ -418,9 +473,18 @@ function NavegacionEnPantalla({
   cargandoRuta: boolean;
   pausaGps: boolean;
   className: string;
+  abrirSignal?: number;
 }) {
   const [abierta, setAbierta] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const vista = useRef(0);
+
+  useEffect(() => {
+    if (abrirSignal > vista.current) {
+      vista.current = abrirSignal;
+      setAbierta(true);
+    }
+  }, [abrirSignal]);
 
   useEffect(() => {
     if (!abierta) {
@@ -574,11 +638,13 @@ export function AssignmentCard({
   assignment,
   geoPermission,
   sugerenciasRuta = true,
+  destacado = false,
 }: {
   assignment: DriverAssignment;
   geoPermission: PermissionStatus;
   /** T10-23: false en la preview pública (`/apariencia-conductor`), que no tiene sesión ni viaje real. */
   sugerenciasRuta?: boolean;
+  destacado?: boolean;
 }) {
   const reporter = useDriverPositionReporter();
   const a = assignment;
@@ -594,6 +660,9 @@ export function AssignmentCard({
   // dentro de la tarjeta, no un diálogo del navegador: en la PWA de iOS ese
   // diálogo sale como alerta del sistema, sin estilo y sin devolver el foco.
   const [confirmando, setConfirmando] = useState<'recogida' | 'entrega' | null>(null);
+  const [senalRuta, setSenalRuta] = useState(0);
+  const [documentosAbiertos, setDocumentosAbiertos] = useState(false);
+  const [incidenteAbierto, setIncidenteAbierto] = useState(false);
 
   // Recogida híbrida (T9, medicion-huella-segmento): el geofence del origen
   // —que el API evalúa con cada posición reportada— SUGIERE; el conductor
@@ -695,6 +764,7 @@ export function AssignmentCard({
       className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm"
       data-testid={`assignment-card-${a.id}`}
     >
+      {destacado ? <HeroViaje assignment={a} /> : null}
       <div className="flex items-center justify-between gap-3">
         <div className="font-mono text-neutral-600 text-sm">{a.trip.tracking_code}</div>
         {a.vehicle?.plate && (
@@ -857,9 +927,19 @@ export function AssignmentCard({
                 className={`${botonPrimario} bg-primary-600 hover:bg-primary-700`}
               >
                 <PackageCheck className="h-4 w-4" aria-hidden />
-                {recogida.recogiendo ? 'Registrando…' : 'Confirmar recogida'}
+                {recogida.recogiendo ? 'Registrando…' : 'Iniciar viaje'}
               </button>
             )}
+            {destacado ? (
+              <AccionesViaje
+                onRuta={() => setSenalRuta((valor) => valor + 1)}
+                documentosAbiertos={documentosAbiertos}
+                onDocumentos={() => setDocumentosAbiertos((valor) => !valor)}
+                incidenteAbierto={incidenteAbierto}
+                onIncidente={() => setIncidenteAbierto((valor) => !valor)}
+                assignmentId={a.id}
+              />
+            ) : null}
             <NavegacionEnPantalla
               etiqueta="Ir al origen"
               testId="navegar-origen"
@@ -870,6 +950,7 @@ export function AssignmentCard({
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
               className={botonSecundario}
+              abrirSignal={senalRuta}
             />
             {recogida.error && (
               <div
@@ -947,6 +1028,7 @@ export function AssignmentCard({
               cargandoRuta={ecoRoute.isPending === true && polylineEncoded == null}
               pausaGps={!hasTeltonika}
               className={botonSecundario}
+              abrirSignal={senalRuta}
             />
           </>
         )}
@@ -983,6 +1065,83 @@ export function AssignmentCard({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function HeroViaje({ assignment }: { assignment: DriverAssignment }) {
+  const origen =
+    comunaDesdeDireccion(assignment.trip.origin.address_raw) ?? assignment.trip.origin.address_raw;
+  const destino =
+    comunaDesdeDireccion(assignment.trip.destination.address_raw) ??
+    assignment.trip.destination.address_raw;
+  const inicio = assignment.trip.pickup_window_start;
+  const cuando = inicio ? partesCuando(inicio, new Date()) : null;
+  return (
+    <div className="mb-4">
+      <TripHeroCard
+        cuando="Tu próximo viaje"
+        ruta={`${origen} → ${destino}`}
+        retiro={{
+          lugar: origen,
+          detalle: inicio
+            ? `Ventana ${formatPickupWindow(inicio, assignment.trip.pickup_window_end)}${cuando ? ` · ${cuando.dia} ${cuando.hora}` : ''}`
+            : null,
+        }}
+        entrega={{ lugar: destino, detalle: null }}
+      />
+    </div>
+  );
+}
+
+function AccionesViaje({
+  onRuta,
+  documentosAbiertos,
+  onDocumentos,
+  incidenteAbierto,
+  onIncidente,
+  assignmentId,
+}: {
+  onRuta: () => void;
+  documentosAbiertos: boolean;
+  onDocumentos: () => void;
+  incidenteAbierto: boolean;
+  onIncidente: () => void;
+  assignmentId: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          onClick={onRuta}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Cómo llegar
+        </button>
+        <button
+          type="button"
+          onClick={onDocumentos}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Documentos
+        </button>
+        <button
+          type="button"
+          onClick={onIncidente}
+          className="rounded-md border border-neutral-200 px-2 py-3 font-medium text-neutral-800 text-xs"
+        >
+          Incidente
+        </button>
+      </div>
+      {documentosAbiertos ? (
+        <p className="text-neutral-600 text-sm">
+          La guía y la factura las carga tu oficina. Desde esta pantalla no se suben.
+        </p>
+      ) : null}
+      {incidenteAbierto ? (
+        <IncidentePanel assignmentId={assignmentId} onClose={onIncidente} />
+      ) : null}
+    </div>
+  );
+}
 
 function formatPickupWindow(startIso: string, endIso: string | null): string {
   try {
