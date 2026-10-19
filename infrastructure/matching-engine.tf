@@ -5,6 +5,55 @@
 # servicio además verifica el ID token (aud + email) en la app. Cambio de IAM
 # autorizado por el PO en T10-21 ("todos los cambios necesarios", "listas
 # para producción"), declarado en el PR.
+#
+# Ingress: el PO (2026-10-19) dejó el servicio INTERNAL_ONLY, en contra del
+# INGRESS_TRAFFIC_ALL de la spec §Seguridad. La spec asumía que el api no
+# puede llegar a un run.app interno con egress PRIVATE_RANGES_ONLY. La zona
+# DNS de abajo cierra ese hueco sin abrir el ingress ni cambiar el egress
+# del api: dentro de la VPC el hostname de MATCHING_ENGINE_URL resuelve a
+# private.googleapis.com (199.36.153.8/30), rango que PRIVATE_RANGES_ONLY sí
+# manda por el connector. Private Google Access del connector viene
+# habilitado por defecto.
+locals {
+  matching_run_app_host     = trimsuffix(trimprefix(local.cloud_run_matching_url, "https://"), "/")
+  matching_run_app_dns_name = "${local.matching_run_app_host}."
+}
+
+resource "google_dns_managed_zone" "matching_run_app" {
+  name        = "booster-matching-run-app"
+  project     = google_project.booster_ai.project_id
+  dns_name    = local.matching_run_app_dns_name
+  description = "Hostname *.run.app de matching-engine → private.googleapis.com, solo dentro de la VPC. Así el api lo alcanza con ingress INTERNAL_ONLY."
+  visibility  = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.vpc.id
+    }
+  }
+
+  labels = {
+    env        = var.environment
+    managed_by = "terraform"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_dns_record_set" "matching_run_app" {
+  name         = local.matching_run_app_dns_name
+  project      = google_project.booster_ai.project_id
+  managed_zone = google_dns_managed_zone.matching_run_app.name
+  type         = "A"
+  ttl          = 300
+  rrdatas = [
+    "199.36.153.8",
+    "199.36.153.9",
+    "199.36.153.10",
+    "199.36.153.11",
+  ]
+}
+
 resource "google_cloud_run_v2_service_iam_member" "matching_engine_invoker_api" {
   project  = google_project.booster_ai.project_id
   location = var.region
