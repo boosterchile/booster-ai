@@ -9,6 +9,7 @@ import {
   fetchAsignaciones,
   fetchConductores,
   fetchCumplimiento,
+  fetchEstadoCobraHoy,
   fetchFlota,
   fetchOfertasPendientes,
 } from '../../lib/consultas-transportista.js';
@@ -164,6 +165,14 @@ export function useDatosInicio(): {
     retry: false,
   });
 
+  // Clave distinta a la del historial: ahí la caché es `{ adelantos }`.
+  // Acá guardamos solo el estado local (apagado / error / disponible).
+  const cobraHoyQ = useQuery({
+    queryKey: scope.key('cobra-hoy', 'inicio'),
+    queryFn: () => fetchEstadoCobraHoy(scope.init),
+    retry: false,
+  });
+
   function reintentar(fuente: FuenteReintento) {
     if (fuente === 'ofertas') {
       void ofertasQ.refetch();
@@ -196,8 +205,7 @@ export function useDatosInicio(): {
       flota: aCarga(flotaQ),
       vehiculos: aCarga(vehiculosQ),
       conductores: aCarga(conductoresQ),
-      // Plata del inicio está apagada: no pedimos el historial de Cobra hoy.
-      cobraHoy: 'disponible',
+      cobraHoy: cobraHoyQ.data ?? 'cargando',
     },
     reintentar,
   };
