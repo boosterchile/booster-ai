@@ -60,6 +60,9 @@ function miembroPendienteDe(row: {
  *                                        transportista), sin persona ni clave
  *   PATCH /admin/empresas/:id          → cambia `estado` (activa / suspendida /
  *                                        pendiente_verificacion)
+ *   POST  /admin/empresas/:id/activar-generador-carga
+ *                                      → prende `es_generador_carga` en un
+ *                                        transportista que ya existe
  *   POST  /admin/empresas/:id/miembros → invita a alguien con un rol
  *   POST  /admin/empresas/:id/miembros/:membershipId/codigo
  *                                      → emite un código nuevo para una
@@ -441,6 +444,120 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
       );
     },
   );
+
+  // POST /admin/empresas/:id/activar-generador-carga — prende el rol en un
+  // transportista que ya existe. El alta solo escribe el flag al crear la
+  // fila; sin esto Van Oosterwyk se resolvía con UPDATE a mano.
+  // Idempotente: la segunda vez no reescribe quién ni cuándo.
+  // Desactivar queda fuera de alcance.
+  app.post('/:id/activar-generador-carga', zValidator('param', idParamSchema), async (c) => {
+    const admin = requirePlatformAdmin(c);
+    if (!admin.ok) {
+      return admin.response;
+    }
+
+    const { id } = c.req.valid('param');
+
+    return await withBusinessSpan(
+      {
+        name: 'empresa.activar_generador_carga',
+        attributes: { 'booster.empresa_id': id },
+      },
+      async (span) => {
+        // rls-allowlist: admin platform-wide query — protegido por requirePlatformAdmin.
+        const existingRows = await opts.db
+          .select({
+            id: empresas.id,
+            isTransportista: empresas.isTransportista,
+            isGeneradorCarga: empresas.isGeneradorCarga,
+            generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+            generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+          })
+          .from(empresas)
+          .where(eq(empresas.id, id))
+          .limit(1);
+        const existing = existingRows[0];
+        if (!existing) {
+          return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+        }
+        if (!existing.isTransportista) {
+          return c.json({ error: 'conflict', code: 'not_a_transportista' }, 409);
+        }
+
+        const unchanged = existing.isGeneradorCarga;
+        let activadoEn = existing.generadorCargaActivadoEn;
+        let activadoPor = existing.generadorCargaActivadoPor;
+
+        if (!unchanged) {
+          const ahora = new Date();
+          // rls-allowlist: admin platform-wide update — protegido por requirePlatformAdmin.
+          const updated = await opts.db
+            .update(empresas)
+            .set({
+              isGeneradorCarga: true,
+              generadorCargaActivadoEn: ahora,
+              generadorCargaActivadoPor: admin.adminEmail,
+              updatedAt: ahora,
+            })
+            .where(
+              and(
+                eq(empresas.id, id),
+                eq(empresas.isTransportista, true),
+                eq(empresas.isGeneradorCarga, false),
+              ),
+            )
+            .returning({
+              id: empresas.id,
+              isTransportista: empresas.isTransportista,
+              isGeneradorCarga: empresas.isGeneradorCarga,
+              generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+              generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+            });
+          const row = updated[0];
+          if (!row) {
+            opts.logger.error(
+              { empresaId: id },
+              'admin-empresas: activar generador no devolvió fila',
+            );
+            return c.json({ error: 'internal_server_error', code: 'generador_update_failed' }, 500);
+          }
+          activadoEn = row.generadorCargaActivadoEn;
+          activadoPor = row.generadorCargaActivadoPor;
+        }
+
+        opts.logger.info(
+          {
+            empresaId: id,
+            esGeneradorCargaAntes: existing.isGeneradorCarga,
+            esGeneradorCargaDespues: true,
+            esTransportista: true,
+            unchanged,
+            adminEmail: admin.adminEmail,
+            actorUserId: admin.userContext.user.id,
+          },
+          unchanged
+            ? 'admin-empresas: rol generador de carga sin cambio (idempotente)'
+            : 'admin-empresas: rol generador de carga activado',
+        );
+        getBusinessCounter('empresa_generador_carga_activaciones_total').add(1, {
+          unchanged: String(unchanged),
+        });
+        setResultAttributes(span, {
+          'booster.empresa.generador_unchanged': unchanged,
+        });
+
+        return c.json({
+          ok: true,
+          id,
+          es_generador_carga: true,
+          es_transportista: true,
+          unchanged,
+          activado_en: activadoEn ? fechaDe(activadoEn).toISOString() : null,
+          activado_por: activadoPor,
+        });
+      },
+    );
+  });
 
   app.post('/:id/miembros', zValidator('json', invitarMiembroEmpresaSchema), async (c) => {
     const admin = requirePlatformAdmin(c);

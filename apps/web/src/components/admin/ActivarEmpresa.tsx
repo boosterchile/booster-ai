@@ -75,6 +75,7 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [generandoId, setGenerandoId] = useState<string | null>(null);
   const [reemitirId, setReemitirId] = useState<string | null>(null);
   const [codigos, setCodigos] = useState<Record<string, CodigoReemitido>>({});
   const [reemitirError, setReemitirError] = useState<{
@@ -145,6 +146,21 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
     }
   }
 
+  async function activarGenerador(id: string) {
+    setGenerandoId(id);
+    setError(null);
+    try {
+      await api.post(`/admin/empresas/${id}/activar-generador-carga`);
+      await cargar(filtro);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
+      setError(msg);
+    } finally {
+      setGenerandoId(null);
+    }
+  }
+
   async function cambiarEstado(id: string, estado: EmpresaAdminRow['estado']) {
     setPendingId(id);
     setError(null);
@@ -168,7 +184,9 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
           <h2 className="font-semibold text-neutral-900">Empresas</h2>
           <p className="mt-1 max-w-2xl text-neutral-600 text-sm">
             Activa una empresa pendiente para que entre al matching. Mientras esté en verificación,
-            no le llegan ofertas aunque tenga zonas y flota.
+            no le llegan ofertas aunque tenga zonas y flota. En un transportista activo, «Generar
+            carga» prende también el rol de generador: publica cargas sin dejar de ver su inicio de
+            transportista. No suma un cargo UF. Desactivar ese rol no está en esta pantalla.
           </p>
         </div>
       </div>
@@ -225,6 +243,7 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                       {' · '}
                       {ESTADO_LABEL[e.estado]}
                       {e.es_transportista ? ' · transportista' : ''}
+                      {e.es_generador_carga ? ' · generador de carga' : ''}
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -237,6 +256,17 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
                         data-testid={`empresa-activar-${e.id}`}
                       >
                         {pendingId === e.id ? 'Activando…' : 'Activar'}
+                      </button>
+                    )}
+                    {e.es_transportista && !e.es_generador_carga && (
+                      <button
+                        type="button"
+                        disabled={generandoId === e.id}
+                        onClick={() => void activarGenerador(e.id)}
+                        className="rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 font-medium text-primary-800 text-sm hover:bg-primary-100 disabled:opacity-50"
+                        data-testid={`empresa-generar-carga-${e.id}`}
+                      >
+                        {generandoId === e.id ? 'Activando rol…' : 'Generar carga'}
                       </button>
                     )}
                     {e.estado !== 'suspendida' && (

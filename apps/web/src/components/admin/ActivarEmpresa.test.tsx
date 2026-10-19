@@ -80,6 +80,48 @@ describe('ActivarEmpresa', () => {
     });
   });
 
+  it('Generar carga prende el rol en un transportista y no se ofrece si ya lo tiene', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [
+        { ...PENDIENTE, id: 'e-trans', estado: 'activa' as const },
+        {
+          ...PENDIENTE,
+          id: 'e-dual',
+          razon_social: 'Ya Genera SpA',
+          estado: 'activa' as const,
+          es_generador_carga: true,
+        },
+        {
+          ...PENDIENTE,
+          id: 'e-gen',
+          razon_social: 'Solo Generador SpA',
+          estado: 'activa' as const,
+          es_transportista: false,
+          es_generador_carga: true,
+        },
+      ],
+    });
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      id: 'e-trans',
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: false,
+    });
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+
+    expect(await screen.findByTestId('empresa-generar-carga-e-trans')).toBeInTheDocument();
+    expect(screen.queryByTestId('empresa-generar-carga-e-dual')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('empresa-generar-carga-e-gen')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('empresa-generar-carga-e-trans'));
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith('/admin/empresas/e-trans/activar-generador-carga');
+    });
+  });
+
   it('muestra vacío si no hay empresas en el filtro', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ empresas: [] });
     render(<ActivarEmpresa />);

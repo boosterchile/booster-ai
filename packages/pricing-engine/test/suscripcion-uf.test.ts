@@ -79,7 +79,7 @@ describe('calcularCobroSuscripcionUf — quién paga (ADR-079 §4)', () => {
     ]);
   });
 
-  it('empresa con ambos roles: una factura con las dos líneas', () => {
+  it('transportista que también es generador: solo la línea de transportista', () => {
     const r = calcularCobroSuscripcionUf({
       ...base,
       esGeneradorCarga: true,
@@ -89,11 +89,8 @@ describe('calcularCobroSuscripcionUf — quién paga (ADR-079 §4)', () => {
     if (r.status !== 'facturar') {
       throw new Error('esperaba facturar');
     }
-    expect(r.lineas.map((l) => l.concepto)).toEqual([
-      'suscripcion_generador',
-      'suscripcion_transportista',
-    ]);
-    expect(r.montoUf).toBe(2);
+    expect(r.lineas.map((l) => l.concepto)).toEqual(['suscripcion_transportista']);
+    expect(r.montoUf).toBe(1);
   });
 
   it('sin rol comercial: exenta', () => {

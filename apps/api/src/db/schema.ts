@@ -568,6 +568,16 @@ export const empresas = pgTable(
     isGeneradorCarga: boolean('es_generador_carga').notNull().default(false),
     isTransportista: boolean('es_transportista').notNull().default(false),
     /**
+     * Historia 0 — quién y cuándo prendió `es_generador_carga` sobre un
+     * transportista que ya existía. NULL si el flag vino del alta o si
+     * todavía no es generador. Una segunda activación no reescribe estos
+     * campos.
+     */
+    generadorCargaActivadoEn: timestamp('generador_carga_activado_en', {
+      withTimezone: true,
+    }),
+    generadorCargaActivadoPor: text('generador_carga_activado_por'),
+    /**
      * ADR-079 §2 — contrato programado habilitado por el platform-admin (con
      * quién y cuándo). Solo estos generadores pueden publicar
      * `modalidad_carga = 'programada'` (tasa menor). NULL = no habilitado.

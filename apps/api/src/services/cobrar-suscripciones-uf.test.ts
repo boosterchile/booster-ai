@@ -135,6 +135,28 @@ describe('cobrarSuscripcionesUf', () => {
     expect(updates[0]).toMatchObject({ cobroEstado: 'pending_payment_provider' });
   });
 
+  it('transportista que también es generador no suma la UF de generador', async () => {
+    const solo = makeDb({
+      empresas: [empresa({ esTransportista: true, camionesActivos: 4 })],
+    });
+    const dual = makeDb({
+      empresas: [empresa({ esTransportista: true, esGeneradorCarga: true, camionesActivos: 4 })],
+    });
+    await correr(solo.db);
+    await correr(dual.db);
+    expect(solo.insertValues[0]).toMatchObject({ montoUf: '3.0000' });
+    expect(dual.insertValues[0]).toMatchObject({ montoUf: '3.0000' });
+  });
+
+  it('transportista bajo el umbral sigue exento aunque también sea generador', async () => {
+    const { db, raw } = makeDb({
+      empresas: [empresa({ esTransportista: true, esGeneradorCarga: true, camionesActivos: 1 })],
+    });
+    const r = await correr(db);
+    expect(r.exentas).toBe(1);
+    expect(raw.insert).not.toHaveBeenCalled();
+  });
+
   it('transportista con gestión de flota usa la tarifa de flota', async () => {
     const { db, insertValues } = makeDb({
       empresas: [
