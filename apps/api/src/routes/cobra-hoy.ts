@@ -22,7 +22,12 @@ import type { UserContext } from '../services/user-context.js';
  * 403 `{error:'feature_disabled'}`. El flag no se enciende acá.
  */
 
-/** Lectura con el flag apagado: la UI muestra el aviso, no un error de servicio. */
+/**
+ * Lectura con el flag apagado: la UI muestra el aviso, no un error de servicio.
+ * La cotización no es una lista. `items` queda vacío a propósito, el mismo
+ * sobre que el historial, para que el cliente mire `enabled` y no lea tarifas
+ * de este objeto. Con el flag encendido la cotización no trae `enabled` ni `items`.
+ */
 export const COBRA_HOY_APAGADO = { enabled: false, items: [] } as const;
 
 export function createCobraHoyAssignmentsRoutes(opts: { db: Db; logger: Logger }) {

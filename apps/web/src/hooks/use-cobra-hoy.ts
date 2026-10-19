@@ -16,7 +16,8 @@ import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 const cobraHoyApagadoSchema = z.object({
   enabled: z.literal(false),
-  items: z.array(z.unknown()),
+  // Vacío también en la cotización: no es una lista de tarifas.
+  items: z.tuple([]),
 });
 
 export type CobraHoyApagado = z.infer<typeof cobraHoyApagadoSchema>;
