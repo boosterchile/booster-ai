@@ -352,8 +352,18 @@ class CloudBuildTest(unittest.TestCase):
         self.assertNotIn('kubectl wait --for=condition=complete', script)
         self.assertIn('--estado-job', script)
         self.assertIn('--job-estado perdido', script)
-        self.assertLess(script.index('kubectl delete job'), script.index('kubectl logs'))
-        self.assertLess(script.index('kubectl logs'), script.rindex('kubectl delete job'))
+        self.assertIn('timeout: 2100s', script)
+        self.assertIn('timeout -k 5 30 gcloud container clusters get-credentials', script)
+        self.assertIn('kubectl --request-timeout=20s get job', script)
+        self.assertIn('kubectl --request-timeout=20s logs', script)
+        self.assertLess(
+            script.index('kubectl --request-timeout=20s delete job'),
+            script.index('kubectl --request-timeout=20s logs'),
+        )
+        self.assertLess(
+            script.index('kubectl --request-timeout=20s logs'),
+            script.rindex('kubectl --request-timeout=20s delete job'),
+        )
         verify = texto[fin:texto.index('id: deploy-api', fin)]
         self.assertLess(
             verify.index('decidir_resultado_sonda('),
