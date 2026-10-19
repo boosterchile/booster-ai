@@ -18,9 +18,10 @@
 
 ## Seguridad y red
 
-- **Ingress `INGRESS_TRAFFIC_ALL` + IAM.** Es el patrón estándar de GCP para llamadas servicio a servicio, con `public = false` y `roles/run.invoker` solo para el SA runtime.
-  - **Por qué no `INTERNAL_ONLY`.** El api sale por un connector con egress `PRIVATE_RANGES_ONLY` y no hay Cloud NAT. Mantener `INTERNAL_ONLY` exigiría sacar **todo** el egress del api por la VPC con un NAT nuevo, un cambio de red con más riesgo que beneficio.
-  - **No contradice ADR-063.** ADR-063 cerró a `INTERNAL_ONLY` los consumers pull porque no tienen llamadores HTTP; este servicio sí tiene uno.
+- **Ingress `INGRESS_TRAFFIC_INTERNAL_ONLY` + IAM.** Decisión del PO (2026-10-19): el servicio queda interno, como en vivo. `public = false` y `roles/run.invoker` solo para el SA runtime.
+  - **No se usa `INGRESS_TRAFFIC_ALL`.** #765 lo proponía porque el api sale por el connector con egress `PRIVATE_RANGES_ONLY` y no hay Cloud NAT: la IP pública del `*.run.app` no cuenta como tráfico interno. El PO dejó el ingress en `INTERNAL_ONLY` igual.
+  - **Antes de prender los flags.** La zona privada resuelve `MATCHING_ENGINE_URL`, dentro de la VPC, a `199.36.153.8/30`. Ese rango es público, así que `PRIVATE_RANGES_ONLY` no lo manda por el connector. Hace falta egress `ALL_TRAFFIC` en el api, o una ruta que sí pase por el connector, y hay que probar que el api llega. Con `matching_shadow` y `matching_via_microservice` en `false` ese tráfico no sale.
+  - **ADR-063.** Cerró a `INTERNAL_ONLY` los consumers pull porque no tenían caller HTTP. Este servicio sí tiene uno (el api). El ingress se mantiene interno por la decisión del PO.
   - **Superficie mínima.** Un token robado solo permite pedir rankings de datos que el propio llamador envía: no hay lectura de datos ni efectos.
 - **Defensa en profundidad.** Además de Cloud Run IAM, el servicio verifica el ID token: firma contra Google, `aud` igual a su URL y `email` en `ALLOWED_CALLER_SA`. Es el mismo criterio que `apps/api/src/middleware/auth.ts`.
 - **El api obtiene el token** con `GoogleAuth.getIdTokenClient(MATCHING_ENGINE_URL)`, el mismo patrón que el bot hacia el api.
@@ -44,7 +45,7 @@ La config se rechaza al arrancar si un flag está activo sin `MATCHING_ENGINE_UR
 - [ ] `terraform validate` OK, con los flags en `false` por defecto.
 - [ ] **Post-merge (PO)**:
   1. `terraform apply` y release.
-  2. `matching_shadow = true` por 3 a 7 días, con `matching_shadow_divergencias = 0` y errores de sombra explicados.
+  2. Probar que el api llega a matching-engine (egress `ALL_TRAFFIC` en el api, o una ruta por el connector). Recién ahí, `matching_shadow = true` por 3 a 7 días, con `matching_shadow_divergencias = 0` y errores de sombra explicados.
   3. Drill en staging (runbook §Drill).
   4. `matching_via_microservice = true`.
   5. Evidencia: `matching ranking remoto` en los logs del api y requests 2xx en Cloud Monitoring del servicio.
