@@ -387,15 +387,21 @@ steps:
     # 30 minutos observando el canary al 1%. En esa ventana se mandan GET de
     # solo lectura al URL del tag: _CANARY_MIN_REQUESTS más cinco (/health y
     # /health/signup-flow: sin body, sin auth, sin datos de usuarios). El piso
-    # sigue en 30. El ingress del api es INTERNAL_LOAD_BALANCER: si el worker
-    # no llega al *.run.app, la misma sonda corre en un Job efímero de la VPC
-    # (cluster booster-ai-telemetry, imagen del api fijada por digest). El pod
-    # resuelve el host del tag a 199.36.153.8 (private.googleapis.com): el DNS
-    # público sale por Cloud NAT y el ingress vuelve a responder 404. Los logs
-    # se leen en cuanto el Job termina, falla o desaparece. El borrado es
-    # posterior, también si falló o el sondeo hizo timeout. Si ya no existe
-    # al leer, el gate no promueve. El resultado queda en
-    # /workspace/canary-probe.json
+    # sigue en 30. El ingress del api es INTERNAL_LOAD_BALANCER.
+    # Camino directo: 404 de ingress; el Job es el camino que llega. El worker
+    # de booster-production-pool tiene IP externa (no_external_ip=false) y
+    # vive en el peering servicenetworking booster-cloudbuild-pool-range, no
+    # en la subnet booster-ai-private, así que no tiene Private Google Access.
+    # Reescribir el host a 199.36.153.8 en este step no enruta, y quitar la IP
+    # externa es Terraform. El 404 es un GET y el step sale enseguida (exit 2);
+    # no es el TIMEOUT del build. La misma sonda corre en un Job efímero de la
+    # VPC (cluster booster-ai-telemetry, imagen del api fijada por digest). El
+    # pod está en booster-ai-private y resuelve el host del tag a 199.36.153.8
+    # (private.googleapis.com): el DNS público sale por Cloud NAT y el ingress
+    # vuelve a responder 404. Los logs se leen en cuanto el Job termina, falla
+    # o desaparece. El borrado es posterior, también si falló o el sondeo hizo
+    # timeout. Si ya no existe al leer, el gate no promueve. El resultado
+    # queda en /workspace/canary-probe.json
     # (5xx, timeouts y errores de conexión). El tiempo que sobre se espera
     # para completar los 30 min. signup_probe sigue cada 60s; si falla 2 veces
     # seguidas, page y un humano decide rollback. error_rate y p95 los evalúa
@@ -541,11 +547,15 @@ steps:
   - id: canary-verify
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
-    # 480s cubre describe x3, el token, hasta 4 lecturas de Monitoring y
-    # 3 intentos de revertir, con cada gcloud a 30s. La cuenta del build
-    # (este tope + canary-sleep 2100s + el tramo previo y el deploy) está
-    # en el timeout global, al final del archivo. No subir este número
-    # sin rehacer esa cuenta: el tope del build es 3600s.
+    # 480s: token 30s, hasta 4 lecturas de Monitoring (30s, 20s entre ellas)
+    # y el revertir. Describe y cada update-traffic van a 30s, 3 intentos,
+    # backoff 2s y 4s. El describe del revertir se presupuesta en un intento
+    # (el del step acaba de funcionar) y los dos update-traffic en 3:
+    # 30+180+30+192 = 432, margen 48s dentro del step. Si ese describe también
+    # agota los 3 intentos, este tope puede cortar y el step sale distinto de
+    # 0 (no promueve). La cuenta del build está en el timeout global, al final
+    # del archivo. No subir este número sin rehacer esa cuenta.
+    # El tope del build es 5400s.
     timeout: 480s
     # Query Cloud Monitoring API para verificar SLOs durante el canary
     # window:
@@ -1155,21 +1165,24 @@ options:
   pool:
     name: projects/booster-ai-494222/locations/southamerica-west1/workerPools/booster-production-pool
 
-# Timeout global del build. Camino crítico (topes, no la suma de steps
-# paralelos). Las 9 imágenes salen juntas (waitFor: ['-']); el costo es el
-# build más lento, no 9 veces.
+# Timeout global del build. Camino crítico (topes de step, no la suma de
+# los que corren en paralelo). Las 9 imágenes salen juntas (waitFor: ['-']);
+# el costo es el build más lento, no 9 veces.
 #
-#   hasta route-canary     720 s   observado ~660 s en frío (2026-06-16,
-#                                  ~11 min, build aca4641f). Las 9 imágenes
-#                                  van en paralelo.
+# El release de #793 (Cloud Build c11b1702) murió por TIMEOUT dentro de
+# canary-sleep: unos 30 min de build y deploys más la ventana de 1800 s no
+# entran en 3600 s, y canary-verify no arrancó. El ~660 s de aca4641f
+# (2026-06-16) ya no describe ese tramo. La ventana sigue en 1800 s: el piso
+# de 30 se observa en esos 30 min, y bajo 5400 s entra junto con el tramo
+# observado. No se acorta.
+#
+#   hasta route-canary    2100 s   reserva; c11b1702 observó ~1800 s (~30 min)
 #   canary-sleep          2100 s   ventana 1800 + 300 de gcloud/kubectl
-#   canary-verify          480 s   describe, token, Monitoring y revertir,
-#                                  cada gcloud a 30 s, 3 intentos
-#   deploy-api + gke +    240 s
+#   canary-verify          480 s   Monitoring y revertir (3 intentos, backoff
+#                                  2 s y 4 s, cada gcloud a 30 s)
+#   deploy-api + gke +     240 s
 #   smoke
-#   suma                  3540 s   margen 60 s bajo este tope
+#   suma                  4920 s   margen 480 s bajo este tope de 5400 s
 #
-# Con 2400 s el tramo no-sleep era 600 s y el build frío lo excedía: TIMEOUT
-# durante el sleep, sin promoción, canary stuck al 1 %. No subir canary-sleep
-# ni canary-verify sin rehacer esta cuenta.
-timeout: 3600s
+# No subir canary-sleep ni canary-verify sin rehacer esta cuenta.
+timeout: 5400s

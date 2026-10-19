@@ -1,7 +1,7 @@
 # Follow-up — `release.yml` deploy-production: timeout (30m) < canary (30m) → run "cancelled" engañoso
 
 **Origen**: deploy de App Check (PR #401) 2026-06-04 — el GHA run figuró `cancelled` pero el deploy fue exitoso.
-**Tipo**: CI/CD reliability / observabilidad. **Riesgo**: medio (no rompe el deploy, pero el estado MIENTE → riesgo de re-lanzar innecesariamente o creer que falló). **Estado**: ✅ **RESUELTO** — `release.yml:87` ya tiene `timeout-minutes: 75` (fix 2026-06-12, opción #1 con margen: gate ~10 + build ~15 + canary 30 + verify/promoción ~10 + smoke). El run ya refleja el estado real y el smoke final corre.
+**Tipo**: CI/CD reliability / observabilidad. **Riesgo**: medio (no rompe el deploy, pero el estado MIENTE → riesgo de re-lanzar innecesariamente o creer que falló). **Estado**: el cierre de 2026-06-12 (`timeout-minutes: 75`) quedó corto cuando el tope de Cloud Build pasó a 5400 s (90 min). El job `deploy-production` espera hasta 30 min a CI Success y streamea `gcloud builds submit` sin `--async`. `timeout-minutes` queda en 130 (30 + 90 + 10 de smoke y setup). Con 75 min (4500 s) el run se vuelve a cancelar y el smoke final no corre.
 
 ## Problema (causa raíz confirmada)
 
