@@ -2,8 +2,9 @@
 #
 # Triggered desde GitHub Actions release.yml tras manual approval en el environment
 # `production`. El deploy de apps/api usa canary: despliega la nueva revisión
-# con tag canary-signup-<sha> al 1% del tráfico, observa 30 min (step
-# canary-sleep) + verifica error_rate/p95 (canary-verify) y recién entonces
+# con tag canary-signup-<sha> al 1% del tráfico, observa 30 min y en esa
+# ventana manda GET de health al tag (step canary-sleep) + verifica
+# error_rate/p95 (canary-verify) y recién entonces
 # promueve a 100% (step deploy-api: update-traffic --to-latest). Ver T13
 # SEC-001 más abajo (~línea 154) y el runbook docs/qa/signup-canary-rollback.md.
 # El timeout global debe cubrir el sleep de 30 min — ver `timeout` al final.
@@ -378,13 +379,122 @@ steps:
   - id: canary-sleep
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
-    # 30 minutos observando el canary recibir 1% del traffic. Durante este
-    # window el synthetic monitor signup_probe corre cada 60s (= 30 probes)
-    # contra /health/signup-flow. Si alguno falla 2 consecutive, dispara
-    # alert policy signup_probe_failure → page → human decide rollback.
+    env:
+      - USE_GKE_GCLOUD_AUTH_PLUGIN=True
+    # 30 minutos observando el canary al 1%. En esa ventana se mandan GET de
+    # solo lectura al URL del tag: _CANARY_MIN_REQUESTS más cinco (/health y
+    # /health/signup-flow: sin body, sin auth, sin datos de usuarios). El piso
+    # sigue en 30. El ingress del api es INTERNAL_LOAD_BALANCER: si el worker
+    # no llega al *.run.app, la misma sonda corre en un Job efímero de la VPC
+    # (cluster booster-ai-telemetry, imagen del api fijada por digest) y se
+    # borra al terminar. El resultado queda en /workspace/canary-probe.json
+    # (5xx, timeouts y errores de conexión). El tiempo que sobre se espera
+    # para completar los 30 min. signup_probe sigue cada 60s; si falla 2 veces
+    # seguidas, page y un humano decide rollback. error_rate y p95 los evalúa
+    # canary-verify, con el piso en 30. El p95 queda dominado por /health.
     args:
       - -c
-      - sleep 1800
+      - |
+        set -euo pipefail
+        START=$$(date +%s)
+        WINDOW=1800
+        FULL_SHA='${_COMMIT_SHA}'
+        SHORT_SHA="$${FULL_SHA:0:12}"
+        REVISION_TAG="canary-signup-$${SHORT_SHA}"
+        MIN_REQUESTS='${_CANARY_MIN_REQUESTS}'
+        RESULT="/workspace/canary-probe.json"
+        JOB="canary-probe-$${SHORT_SHA}"
+        echo "canary-probe: tag=$$REVISION_TAG min_requests=$$MIN_REQUESTS ventana=$${WINDOW}s"
+        DIGEST="$$(gcloud artifacts docker images describe \
+          "${_REGISTRY}/api:${_COMMIT_SHA}" \
+          --format='value(image_summary.digest)' || true)"
+        IMAGE=""
+        if [ -n "$$DIGEST" ]; then
+          IMAGE="${_REGISTRY}/api@$$DIGEST"
+          echo "canary-probe: imagen=$$IMAGE"
+        else
+          echo "canary-probe: WARN sin digest; el Job no se crea con un tag movible"
+        fi
+
+        describe_with_retry() {
+          for attempt in 1 2 3; do
+            if OUT=$$(gcloud run services describe booster-ai-api \
+              --region='${_REGION}' --platform=managed --format=json); then
+              printf '%s' "$$OUT"
+              return 0
+            fi
+            echo "canary-probe: describe intento $$attempt falló, reintentando..." >&2
+            sleep 10
+          done
+          return 1
+        }
+        DESCRIBE="$$(describe_with_retry || true)"
+        URL=""
+        if [ -n "$$DESCRIBE" ]; then
+          URL="$$(printf '%s' "$$DESCRIBE" | python3 scripts/deploy/canary_synthetic_probe.py --print-tag-url --tag "$$REVISION_TAG")"
+        fi
+        if [ -z "$$URL" ]; then
+          echo "canary-probe: WARN sin URL de tag — no hay sonda; canary-verify decidirá con el tráfico real"
+        else
+          echo "canary-probe: url=$$URL"
+          set +e
+          python3 scripts/deploy/canary_synthetic_probe.py \
+            --url "$$URL" \
+            --tag "$$REVISION_TAG" \
+            --min-requests "$$MIN_REQUESTS" \
+            --window-seconds "$$WINDOW" \
+            --margin-seconds 180 \
+            --started-at "$$START" \
+            --result-out "$$RESULT" \
+            --manifest-out /tmp/canary-probe-job.json \
+            --image "$$IMAGE" \
+            --job-name "$$JOB"
+          CODE=$$?
+          set -e
+          if [ "$$CODE" -eq 2 ] && [ -f /tmp/canary-probe-job.json ]; then
+            echo "canary-probe: el worker no llega al tag. Sonda desde un Job en la VPC."
+            if gcloud container clusters get-credentials booster-ai-telemetry \
+              --region='${_REGION}' --project=$PROJECT_ID --dns-endpoint; then
+              kubectl delete job "$$JOB" -n default --ignore-not-found || true
+              if kubectl apply -f /tmp/canary-probe-job.json; then
+                if ! kubectl wait --for=condition=complete "job/$$JOB" -n default --timeout=1500s; then
+                  echo "canary-probe: el job no completó"
+                  kubectl describe job "$$JOB" -n default || true
+                fi
+                kubectl logs "job/$$JOB" -n default > /tmp/canary-probe-job.log || true
+              else
+                echo "canary-probe: no se pudo crear el job"
+              fi
+              kubectl delete job "$$JOB" -n default --ignore-not-found || true
+            else
+              echo "canary-probe: no se pudo tomar credenciales del cluster"
+            fi
+            if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
+              python3 scripts/deploy/canary_synthetic_probe.py \
+                --aplicar-log-job "$$RESULT" \
+                --log-file /tmp/canary-probe-job.log
+            else
+              python3 scripts/deploy/canary_synthetic_probe.py \
+                --marcar-job "$$RESULT" \
+                --job-estado fallo
+            fi
+          elif [ "$$CODE" -eq 2 ]; then
+            python3 scripts/deploy/canary_synthetic_probe.py \
+              --marcar-job "$$RESULT" \
+              --job-estado fallo
+          elif [ "$$CODE" -ne 0 ]; then
+            echo "canary-probe: WARN sonda directa salió $$CODE"
+            python3 scripts/deploy/canary_synthetic_probe.py \
+              --marcar-job "$$RESULT" \
+              --job-estado fallo
+          fi
+        fi
+        ELAPSED=$$(( $$(date +%s) - START ))
+        REST=$$(( WINDOW - ELAPSED ))
+        if [ "$$REST" -gt 0 ]; then
+          echo "canary-probe: esperando $${REST}s para completar la ventana de $${WINDOW}s"
+          sleep "$$REST"
+        fi
     waitFor: [route-canary]
 
   - id: canary-verify
@@ -402,10 +512,16 @@ steps:
     # → Cloud Build aborta antes de promover. Human-on-call hace rollback
     # (no es automático).
     #
-    # Muestra bajo el piso (el canary al 1% ve 3–8 requests, no 30): WARN y
-    # exit 0, sin evaluar p95. Abortar ahí dejaba deploy-api, gke-deploy y
-    # smoke en QUEUED. Bajar el piso a 0 reabre el falso positivo de p95
-    # del 2026-08-16. La decisión vive en scripts/deploy/canary_verify_decision.py.
+    # La ventana (canary-sleep) manda GET de health al tag (piso + 5) y deja
+    # el resultado en /workspace/canary-probe.json. Si la sonda llegó a la app
+    # y vio 5xx, o timeouts y errores de conexión, o fallaron el camino
+    # directo y el Job teniendo URL, este step sale distinto de 0: ese caso
+    # no es el WARN que promueve. El p95 de Monitoring queda dominado por
+    # /health (la sonda es casi toda la muestra y ese handler no toca la
+    # base). Sin archivo (no había URL) se lee Monitoring —con reintentos
+    # cortos por la ingesta— y muestra bajo el piso sigue en WARN y exit 0,
+    # sin evaluar p95. Bajar el piso a 0 reabre el falso positivo de p95 del
+    # 2026-08-16. La decisión vive en scripts/deploy/canary_verify_decision.py.
     args:
       - -c
       - |
@@ -414,9 +530,12 @@ steps:
         # exit 0 — auditoría 2026-06-09 riesgo alto: la promoción a 100% no
         # tenía gate automático). Si error_rate >= 1% o p95 >= 500ms Y la
         # muestra alcanza el piso → exit 1 y el build aborta SIN promover.
-        # Muestra bajo el piso, o sin revision con tag → warn + exit 0
-        # (runbook signup-canary-rollback). El p95 no se mira sin muestra:
-        # el 2026-08-16 un cold start abortó un deploy sano.
+        # 5xx o errores de conexión de la sonda, o directo y Job fallidos con
+        # URL, salen distinto de 0 (el resultado está en canary-probe.json).
+        # Sin ese archivo, muestra bajo el piso o sin revision con tag →
+        # warn + exit 0 (runbook signup-canary-rollback). El p95 no se mira
+        # sin muestra: el 2026-08-16 un cold start abortó un deploy sano. El
+        # p95, cuando se evalúa, queda dominado por /health.
         FULL_SHA='${_COMMIT_SHA}'
         SHORT_SHA="$${FULL_SHA:0:12}"
         REVISION_TAG="canary-signup-$${SHORT_SHA}"
@@ -447,17 +566,17 @@ steps:
         TOKEN=$$(gcloud auth print-access-token)
         export TOKEN REVISION MIN_REQUESTS
         python3 <<'PYCHECK'
-        import json, os, sys, urllib.parse, urllib.request
+        import json, os, sys, time, urllib.parse, urllib.request
         from datetime import datetime, timedelta, timezone
 
         project = '$PROJECT_ID'
         revision = os.environ['REVISION']
         token = os.environ['TOKEN']
         min_requests = int(os.environ.get('MIN_REQUESTS', '0') or '0')
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(minutes=30)
 
         def ts(filter_, aligner, reducer, group_by=None):
+            end = datetime.now(timezone.utc)
+            start = end - timedelta(minutes=30)
             params = {
                 'filter': filter_,
                 'interval.startTime': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -475,30 +594,53 @@ steps:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.load(r).get('timeSeries', [])
 
-        base = (f'metric.type="run.googleapis.com/request_count" '
-                f'AND resource.labels.service_name="booster-ai-api" '
-                f'AND resource.labels.revision_name="{revision}"')
-        series = ts(base, 'ALIGN_SUM', 'REDUCE_SUM', ['metric.labels.response_code_class'])
-        counts = {}
-        for s_ in series:
-            klass = s_.get('metric', {}).get('labels', {}).get('response_code_class', '?')
-            for pt in s_.get('points', []):
-                v = pt.get('value', {})
-                counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
-        total = sum(counts.values())
-        # Latencia solo con muestra que alcanza el piso. Pedirla igual no
-        # cambia la decision, y un error de la API no debe tapar el WARN.
-        p95s = []
-        if total >= max(min_requests, 1):
-            lat = (f'metric.type="run.googleapis.com/request_latencies" '
-                   f'AND resource.labels.service_name="booster-ai-api" '
-                   f'AND resource.labels.revision_name="{revision}"')
-            for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+        def leer_muestra():
+            base = (f'metric.type="run.googleapis.com/request_count" '
+                    f'AND resource.labels.service_name="booster-ai-api" '
+                    f'AND resource.labels.revision_name="{revision}"')
+            series = ts(base, 'ALIGN_SUM', 'REDUCE_SUM', ['metric.labels.response_code_class'])
+            counts = {}
+            for s_ in series:
+                klass = s_.get('metric', {}).get('labels', {}).get('response_code_class', '?')
                 for pt in s_.get('points', []):
                     v = pt.get('value', {})
-                    p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
+                    counts[klass] = counts.get(klass, 0) + int(v.get('int64Value', v.get('doubleValue', 0)))
+            total = sum(counts.values())
+            # Latencia solo con muestra que alcanza el piso. Pedirla igual no
+            # cambia la decision, y un error de la API no debe tapar el WARN.
+            p95s = []
+            if total >= max(min_requests, 1):
+                lat = (f'metric.type="run.googleapis.com/request_latencies" '
+                       f'AND resource.labels.service_name="booster-ai-api" '
+                       f'AND resource.labels.revision_name="{revision}"')
+                for s_ in ts(lat, 'ALIGN_PERCENTILE_95', 'REDUCE_MAX'):
+                    for pt in s_.get('points', []):
+                        v = pt.get('value', {})
+                        p95s.append(float(v.get('doubleValue', v.get('int64Value', 0))))
+            return total, counts, p95s
+
         sys.path.insert(0, 'scripts/deploy')
-        from canary_verify_decision import decidir_canary
+        from canary_verify_decision import decidir_canary, decidir_resultado_sonda, leer_resultado_sonda, reintentos_de_muestra
+        resultado, codigo_lectura, lineas_lectura = leer_resultado_sonda('/workspace/canary-probe.json')
+        for linea in lineas_lectura:
+            print(linea)
+        if codigo_lectura != 0:
+            sys.exit(codigo_lectura)
+        codigo_sonda, lineas_sonda = decidir_resultado_sonda(resultado)
+        for linea in lineas_sonda:
+            print(linea)
+        if codigo_sonda != 0:
+            sys.exit(codigo_sonda)
+        total, counts, p95s = leer_muestra()
+        for intento in range(1, 5):
+            if not reintentos_de_muestra(total, min_requests, intento, 4):
+                break
+            print(
+                f'canary-verify: muestra {total} < {min_requests} '
+                f'(intento {intento}/4), reintento en 20s por ingesta'
+            )
+            time.sleep(20)
+            total, counts, p95s = leer_muestra()
         codigo, lineas = decidir_canary(total, min_requests, counts, p95s)
         for linea in lineas:
             print(linea)
@@ -787,10 +929,10 @@ steps:
   # boundary ADR-001 + harness CI default-deny + reaper, no por Cloud Function.
 
 substitutions:
-  # Piso para evaluar error_rate y p95. Por debajo: WARN y promover
-  # (2026-09-28). El canary al 1% ve 3–8 requests; abortar dejaba el
-  # release a medias. No bajar a 0: con 0, n=6 evaluó p95 y un cold start
-  # (1408ms, 0 errores) abortó un deploy sano el 2026-08-16.
+  # Piso para evaluar error_rate y p95. canary-sleep manda GET de health
+  # al tag hasta este número. Por debajo (la sonda no llegó): WARN y
+  # promover. No bajar a 0: con 0, n=6 evaluó p95 y un cold start (1408ms,
+  # 0 errores) abortó un deploy sano el 2026-08-16.
   _CANARY_MIN_REQUESTS: '30'
   _REGION: southamerica-west1
   _REGISTRY: southamerica-west1-docker.pkg.dev/booster-ai-494222/containers

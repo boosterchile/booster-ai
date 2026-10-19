@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
-from canary_verify_decision import decidir_canary
+from canary_verify_decision import decidir_canary, decidir_gate, leer_resultado_sonda
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOUDBUILD = ROOT / 'cloudbuild.production.yaml'
@@ -62,6 +64,32 @@ class DecidirCanaryTest(unittest.TestCase):
         codigo, lineas = decidir_canary(0, 0, {}, [])
         self.assertEqual(codigo, 0)
         self.assertIn('min_requests=0', lineas[0])
+
+    def test_sonda_con_5xx_no_cae_en_el_warn_de_muestra_chica(self) -> None:
+        resultado = {
+            'tenia_url': True,
+            'llego_a_la_app': True,
+            'cinco_xx': 1,
+            'errores_transporte': 0,
+            'camino_directo': 'ok',
+            'job': 'no_necesario',
+        }
+        codigo, lineas = decidir_gate(resultado, 6, 30, {'2xx': 6}, [1408.0])
+        self.assertNotEqual(codigo, 0)
+        self.assertNotIn('Promoviendo', '\n'.join(lineas))
+
+    def test_resultado_ilegible_aborta_y_el_ausente_no(self) -> None:
+        fd, nombre = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(lambda: os.remove(nombre) if os.path.exists(nombre) else None)
+        ausente, codigo_ausente, _ = leer_resultado_sonda(nombre + '.no-existe')
+        self.assertIsNone(ausente)
+        self.assertEqual(codigo_ausente, 0)
+        with open(nombre, 'w', encoding='utf-8') as fh:
+            fh.write('{')
+        _cargado, codigo, lineas = leer_resultado_sonda(nombre)
+        self.assertEqual(codigo, 1)
+        self.assertIn('NO promover', lineas[0])
 
     def test_yaml_mantiene_el_piso_y_delega_la_decision(self) -> None:
         texto = CLOUDBUILD.read_text(encoding='utf-8')
