@@ -1,29 +1,30 @@
 import { RuleBadge } from './piezas.js';
 
+export interface LadoPlata {
+  label: string;
+  valor: string | null;
+  detalle: string | null;
+}
+
 export function MoneyPair({
   izquierda,
   derecha,
   regla,
 }: {
-  izquierda: { label: string; valor: string | null; detalle: string | null };
-  derecha: { label: string; valor: string | null; detalle: string | null };
+  izquierda: LadoPlata | null;
+  derecha: LadoPlata | null;
   regla: boolean;
 }) {
+  const ambos = izquierda != null && derecha != null;
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Lado lado={izquierda} regla={regla} />
-      <Lado lado={derecha} regla={regla} />
+    <div className={ambos ? 'grid grid-cols-2 gap-3' : 'grid gap-3'}>
+      {izquierda ? <Lado lado={izquierda} regla={regla} /> : null}
+      {derecha ? <Lado lado={derecha} regla={regla} /> : null}
     </div>
   );
 }
 
-function Lado({
-  lado,
-  regla,
-}: {
-  lado: { label: string; valor: string | null; detalle: string | null };
-  regla: boolean;
-}) {
+function Lado({ lado, regla }: { lado: LadoPlata; regla: boolean }) {
   return (
     <div>
       <p className="flex items-center gap-2 text-neutral-500 text-xs">

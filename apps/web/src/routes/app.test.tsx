@@ -133,15 +133,18 @@ describe('AppRoute', () => {
     expect(container.querySelector('h1')).toBeNull();
   });
 
-  it('transportista y generador → saludo nuevo y la sección de generador debajo', async () => {
+  it('transportista y generador → el inicio mixto, sin neto ni la card vieja', async () => {
     providedContext = { kind: 'onboarded', me: makeMe() };
     renderWithQueryClient(<AppRoute />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Felipe/);
     expect(screen.queryByRole('heading', { name: 'Bienvenido a Booster' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('Booster SpA').length).toBeGreaterThan(0);
-    expect(screen.getByText(/· Transportista/)).toBeInTheDocument();
-    expect(await screen.findByText(/Origen, destino, tipo de carga/)).toBeInTheDocument();
-    expect(screen.queryByText(/por cobrar/i)).not.toBeInTheDocument();
+    expect(await screen.findByTestId('inicio-mixta')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Ofertas para tu flota')).toBeInTheDocument();
+    expect(screen.getByText('Mis cargas publicadas')).toBeInTheDocument();
+    expect(screen.queryByText(/Origen, destino, tipo de carga/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/neto/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
   it('carrier → el acceso Ofertas conserva el destino', () => {

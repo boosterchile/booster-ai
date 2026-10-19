@@ -40,7 +40,7 @@ export function StatusPill({
   tono = 'neutral',
 }: {
   children: ReactNode;
-  tono?: 'neutral' | 'info' | 'warning' | 'success';
+  tono?: 'neutral' | 'info' | 'warning' | 'success' | 'danger';
 }) {
   return (
     <span
@@ -49,6 +49,7 @@ export function StatusPill({
         tono === 'info' && 'bg-primary-50 text-primary-800',
         tono === 'warning' && 'bg-warning-50 text-warning-800',
         tono === 'success' && 'bg-success-50 text-success-800',
+        tono === 'danger' && 'bg-danger-50 text-danger-700',
         tono === 'neutral' && 'bg-neutral-100 text-neutral-700',
       )}
     >
