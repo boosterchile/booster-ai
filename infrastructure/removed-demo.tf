@@ -17,7 +17,8 @@
 # demo_uid_retired, auth_is_demo_blocked), las 2 alertas (demo_ttl_low,
 # auth_is_demo_blocked_anomaly) y el scheduler demo-account-ttl-alert.
 #
-# Tras el apply que los olvide, este archivo se puede borrar.
+# Tras el apply que los olvide, este archivo se borra en un PR posterior.
+# No se borra en este: el state todavía los tiene.
 
 # --- 9 secretos ---
 

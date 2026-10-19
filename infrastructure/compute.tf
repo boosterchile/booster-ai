@@ -128,10 +128,11 @@ module "service_api" {
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     # T10-21 — ranking de matching en matching-engine. Flags en `false` por
-    # default: el apply no cambia el comportamiento. MATCHING_ENGINE_URL es la
-    # ruta interna *.run.app del servicio (no el LB público). La zona privada
-    # de matching-engine.tf la resuelve a private.googleapis.com para que el
-    # api la alcance con ingress INTERNAL_ONLY.
+    # default: este apply no llama al servicio. MATCHING_ENGINE_URL es el
+    # *.run.app. La zona privada lo resuelve a 199.36.153.8/30, un rango
+    # público que PRIVATE_RANGES_ONLY no manda por el connector. Antes de
+    # prender los flags: egress ALL_TRAFFIC en el api, o una ruta por el
+    # connector, y probar la llamada.
     MATCHING_ENGINE_URL       = local.cloud_run_matching_url
     MATCHING_SHADOW           = tostring(var.matching_shadow)
     MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
@@ -508,11 +509,11 @@ module "service_matching_engine" {
 
   public = false
 
-  # INTERNAL_ONLY (ADR-063, decisión del PO 2026-10-19). El api llega por
-  # MATCHING_ENGINE_URL: la zona privada de matching-engine.tf resuelve ese
-  # hostname a private.googleapis.com y el egress PRIVATE_RANGES_ONLY del api
-  # lo manda por el connector. Sin esa DNS, la IP pública de run.app no
-  # contaría como tráfico interno.
+  # INTERNAL_ONLY (ADR-063, decisión del PO 2026-10-19). 199.36.153.8/30,
+  # adonde la zona privada resuelve MATCHING_ENGINE_URL, es un rango público:
+  # PRIVATE_RANGES_ONLY no lo manda por el connector. Los flags del api siguen
+  # en false. Antes de prenderlos hace falta egress ALL_TRAFFIC, o una ruta
+  # por el connector, y probar la llamada.
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready

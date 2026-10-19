@@ -6,14 +6,15 @@
 # autorizado por el PO en T10-21 ("todos los cambios necesarios", "listas
 # para producción"), declarado en el PR.
 #
-# Ingress: el PO (2026-10-19) dejó el servicio INTERNAL_ONLY, en contra del
-# INGRESS_TRAFFIC_ALL de la spec §Seguridad. La spec asumía que el api no
-# puede llegar a un run.app interno con egress PRIVATE_RANGES_ONLY. La zona
-# DNS de abajo cierra ese hueco sin abrir el ingress ni cambiar el egress
-# del api: dentro de la VPC el hostname de MATCHING_ENGINE_URL resuelve a
-# private.googleapis.com (199.36.153.8/30), rango que PRIVATE_RANGES_ONLY sí
-# manda por el connector. Private Google Access del connector viene
-# habilitado por defecto.
+# Ingress: el PO (2026-10-19) dejó el servicio INTERNAL_ONLY. La spec pedía
+# INGRESS_TRAFFIC_ALL; queda en INTERNAL.
+#
+# La zona DNS de abajo resuelve MATCHING_ENGINE_URL, dentro de la VPC, a
+# 199.36.153.8/30 (private.googleapis.com). Ese rango es público: el egress
+# PRIVATE_RANGES_ONLY del api no lo manda por el connector. Antes de prender
+# matching_shadow o matching_via_microservice hace falta egress ALL_TRAFFIC
+# en el api, o una ruta que sí pase por el connector, y hay que probar la
+# llamada. Los dos flags siguen en false: este apply no manda ese tráfico.
 locals {
   matching_run_app_host     = trimsuffix(trimprefix(local.cloud_run_matching_url, "https://"), "/")
   matching_run_app_dns_name = "${local.matching_run_app_host}."
@@ -23,7 +24,7 @@ resource "google_dns_managed_zone" "matching_run_app" {
   name        = "booster-matching-run-app"
   project     = google_project.booster_ai.project_id
   dns_name    = local.matching_run_app_dns_name
-  description = "Hostname *.run.app de matching-engine → private.googleapis.com, solo dentro de la VPC. Así el api lo alcanza con ingress INTERNAL_ONLY."
+  description = "Hostname *.run.app de matching-engine → 199.36.153.8/30, solo dentro de la VPC. El rango es público: PRIVATE_RANGES_ONLY no lo manda por el connector."
   visibility  = "private"
 
   private_visibility_config {
