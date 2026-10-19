@@ -609,7 +609,7 @@ describe('GET /trip-requests-v2', () => {
     expect(body.trip_requests[0]?.status).toBe('esperando_match');
   });
 
-  it('filtra por generadorCargaEmpresaId, no duplica viajes y no expone ofertas_pendientes', async () => {
+  it('filtra por generadorCargaEmpresaId, deja ofertas_pendientes y no duplica viajes', async () => {
     const db = makeQueryDb({
       orderByRows: [
         [
@@ -641,18 +641,20 @@ describe('GET /trip-requests-v2', () => {
     const res = await app.request('/trip-requests-v2');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      trip_requests: Array<{ id: string; ofertas_pendientes?: number }>;
+      trip_requests: Array<{ id: string; ofertas_pendientes: number | null }>;
     };
     expect(body.trip_requests.map((fila) => fila.id)).toEqual(['trip-1', 'trip-2']);
-    expect(body.trip_requests.every((fila) => !Object.hasOwn(fila, 'ofertas_pendientes'))).toBe(
-      true,
-    );
+    expect(body.trip_requests[0]?.ofertas_pendientes).toBe(4);
+    expect(body.trip_requests[1]?.ofertas_pendientes).toBe(0);
 
     const listado = db.selectShapes.find(
-      (shape) => typeof shape === 'object' && shape !== null && 'transportista_nombre' in shape,
+      (shape) =>
+        typeof shape === 'object' &&
+        shape !== null &&
+        'ofertas_pendientes' in shape &&
+        'transportista_nombre' in shape,
     );
     expect(listado).toBeTruthy();
-    expect(listado && typeof listado === 'object' && 'ofertas_pendientes' in listado).toBe(false);
 
     const filtro = db.whereCalls
       .map((pred) => sqlDe(pred))

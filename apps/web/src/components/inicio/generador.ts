@@ -2,11 +2,7 @@ import { comunaDesdeDireccion } from '../inicio-transportista/modelo.js';
 import type { AgendaItem } from './agenda.js';
 import type { AvisoItem } from './avisos.js';
 import { dentroDeDias, mismoMes, partesCuando } from './cuando.js';
-import {
-  INICIO_GASTO_GENERADOR_ACTIVO,
-  INICIO_GENERADOR_VE_OFERTAS,
-  INICIO_MONTOS_VISUALIZADOR,
-} from './flags.js';
+import { INICIO_GASTO_GENERADOR_ACTIVO, INICIO_MONTOS_VISUALIZADOR } from './flags.js';
 import type { PinMapa } from './map-preview-card.js';
 import { pipelineDe } from './pipeline.js';
 
@@ -132,11 +128,7 @@ function destacadaDe(viajes: ViajeInicio[], ahora: Date): CargasVista['destacada
   }
   const cuando = partesCuando(primera.pickupInicio, ahora);
   const partes = [`Retiro ${cuando.dia.toLowerCase()} ${cuando.hora}`];
-  if (
-    INICIO_GENERADOR_VE_OFERTAS &&
-    primera.ofertasPendientes != null &&
-    primera.ofertasPendientes > 0
-  ) {
+  if (primera.ofertasPendientes != null && primera.ofertasPendientes > 0) {
     partes.push(`ofertas enviadas a ${primera.ofertasPendientes}`);
   }
   return { codigo: `${primera.trackingCode} sin transportista aún`, detalle: partes.join(' · ') };
