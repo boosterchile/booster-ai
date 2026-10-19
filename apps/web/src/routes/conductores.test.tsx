@@ -322,6 +322,7 @@ describe('ConductoresDetalleRoute', () => {
     wrap(<ConductoresDetalleRoute />);
     await screen.findByText('Juan Pérez');
     expect(screen.queryByRole('button', { name: /Guardar email/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Guardar teléfono/ })).toBeNull();
   });
 
   it('pendiente con email de relleno: guarda el real y muestra el PIN reenviado', async () => {
@@ -347,7 +348,9 @@ describe('ConductoresDetalleRoute', () => {
     wrap(<ConductoresDetalleRoute />);
     expect(await screen.findByText(/email de relleno/i)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/Email de contacto/), 'usuario@example.com');
-    await userEvent.click(screen.getByRole('button', { name: /reenviar invitación/i }));
+    await userEvent.click(
+      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
+    );
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith('/conductores/c-1/email', {
         email: 'usuario@example.com',
@@ -372,7 +375,9 @@ describe('ConductoresDetalleRoute', () => {
     const post = vi.spyOn(api, 'post');
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
-    const boton = await screen.findByRole('button', { name: /reenviar invitación/i });
+    const boton = await screen.findByRole('button', {
+      name: /Guardar email y reenviar invitación/,
+    });
     expect(boton).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText(/Email de contacto/), 'a@b');
@@ -400,9 +405,68 @@ describe('ConductoresDetalleRoute', () => {
     providedContext = { kind: 'onboarded', me: makeMe('despachador') };
     wrap(<ConductoresDetalleRoute />);
     await userEvent.type(await screen.findByLabelText(/Email de contacto/), 'usuario@example.com');
-    await userEvent.click(screen.getByRole('button', { name: /reenviar invitación/i }));
+    await userEvent.click(
+      screen.getByRole('button', { name: /Guardar email y reenviar invitación/ }),
+    );
     expect(await screen.findByText(/otra empresa o tiene otro rol/i)).toBeInTheDocument();
     expect(screen.queryByText('482915')).toBeNull();
+  });
+
+  it('teléfono inválido deshabilita el reenvío y muestra el aviso', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ conductor: buildConductor() });
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    const input = await screen.findByLabelText(/Teléfono \(WhatsApp\)/);
+    expect(input).toHaveAttribute('placeholder', '+56912345678');
+    await userEvent.clear(input);
+    await userEvent.type(input, '+569');
+    expect(screen.getByText('Ingresa un teléfono válido (+569...)')).toBeInTheDocument();
+    const boton = screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' });
+    expect(boton).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('guarda el teléfono, muestra el PIN nuevo y actualiza el encabezado', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Juan Pérez',
+          rut: '11.111.111-1',
+          email: 'viejo@example.com',
+          phone: '+56911111111',
+          is_pending: true,
+        },
+      }),
+    });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      phone: '+56987654321',
+      email: 'juan@example.com',
+      invitacion_reenviada: true,
+      cuenta_activa: false,
+      activation_pin: '135790',
+    });
+    providedContext = { kind: 'onboarded', me: makeMe('admin') };
+    wrap(<ConductoresDetalleRoute />);
+    expect(await screen.findByText('viejo@example.com')).toBeInTheDocument();
+    expect(screen.getByText('+56911111111')).toBeInTheDocument();
+    const input = screen.getByLabelText(/Teléfono \(WhatsApp\)/);
+    await userEvent.clear(input);
+    await userEvent.type(input, '+56987654321');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Guardar teléfono y reenviar invitación' }),
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/conductores/c-1/telefono', {
+        phone: '+56987654321',
+      }),
+    );
+    expect(await screen.findByText('135790')).toBeInTheDocument();
+    expect(screen.getByText('+56987654321')).toBeInTheDocument();
+    expect(screen.getByText('juan@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('viejo@example.com')).toBeNull();
+    expect(screen.queryByText('+56911111111')).toBeNull();
   });
 
   it('conductor retirado (deleted_at) → form disabled + banner', async () => {

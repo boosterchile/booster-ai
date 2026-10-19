@@ -1,5 +1,6 @@
 import type { Logger } from '@booster-ai/logger';
 import {
+  chileanPhoneSchema,
   corregirEmailConductorBodySchema,
   createDriverBodySchema,
   esEmailDeRelleno,
@@ -11,6 +12,7 @@ import { zValidator } from '@hono/zod-validator';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { esEmailDuplicado, pgErrorCode } from '../db/pg-error.js';
 import { auditoriaEmailConductor, conductores, memberships, users } from '../db/schema.js';
@@ -36,8 +38,9 @@ import { driverSyntheticEmail } from './auth-driver.js';
  *   GET    /conductores         → lista de conductores de la empresa activa
  *   GET    /conductores/:id     → detalle (con datos del user enlazado)
  *   POST   /conductores         → crear (lookup-or-create user por RUT)
- *   PATCH  /conductores/:id     → actualizar licencia / status
- *   DELETE /conductores/:id     → soft delete (set eliminado_en)
+ *   PATCH  /conductores/:id          → actualizar licencia / status
+ *   POST   /conductores/:id/telefono → WhatsApp y reenvío de invitación
+ *   DELETE /conductores/:id          → soft delete (set eliminado_en)
  *
  * **Creación con lookup-or-create**:
  *   El carrier provee RUT del conductor. El backend:
@@ -155,6 +158,26 @@ async function emailIdentidadCompartida(
     return vinculo.role !== 'conductor';
   });
 }
+
+/**
+ * El alta no pisa un WhatsApp que la persona ya tenía. Solo completa el
+ * dato cuando la fila llegó vacía (alta vieja o usuario creado sin número).
+ */
+function phoneSiEstaVacio(
+  actual: string | null | undefined,
+  incoming: string,
+): { phone: string } | Record<string, never> {
+  if (typeof actual === 'string' && actual.trim() !== '') {
+    return {};
+  }
+  return { phone: incoming };
+}
+
+const MENSAJE_TELEFONO_INVALIDO = 'Ingresa un teléfono válido (+569...)';
+
+const corregirTelefonoConductorBodySchema = z.object({
+  phone: chileanPhoneSchema,
+});
 
 export function createConductoresRoutes(opts: {
   db: Db;
@@ -376,6 +399,7 @@ export function createConductoresRoutes(opts: {
             claveNumericaHash: users.claveNumericaHash,
             activationPinHash: users.activationPinHash,
             email: users.email,
+            phone: users.phone,
           })
           .from(users)
           .where(eq(users.rut, rut))
@@ -439,6 +463,7 @@ export function createConductoresRoutes(opts: {
                 email: body.email,
                 activationPinHash: hashActivationPin(activationPin),
                 updatedAt: sql`now()`,
+                ...phoneSiEstaVacio(existingUser.phone, body.phone),
               })
               .where(eq(users.id, userId));
             reemplazoRelleno = { emailAnterior: emailActual, accionFirebase };
@@ -448,7 +473,11 @@ export function createConductoresRoutes(opts: {
             activationPin = generateActivationPin();
             await tx
               .update(users)
-              .set({ activationPinHash: hashActivationPin(activationPin), updatedAt: sql`now()` })
+              .set({
+                activationPinHash: hashActivationPin(activationPin),
+                updatedAt: sql`now()`,
+                ...phoneSiEstaVacio(existingUser.phone, body.phone),
+              })
               .where(eq(users.id, userId));
           }
         } else {
@@ -878,6 +907,120 @@ export function createConductoresRoutes(opts: {
       },
     );
   });
+
+  // ---------------------------------------------------------------------
+  // POST /:id/telefono — WhatsApp + reenvío si el conductor sigue pendiente.
+  // Separado de PATCH /:id: guardar el número puede regenerar el PIN.
+  // ---------------------------------------------------------------------
+  app.post(
+    '/:id/telefono',
+    zValidator('json', corregirTelefonoConductorBodySchema, (result, c) => {
+      if (!result.success) {
+        return c.json({ error: 'telefono_invalido', message: MENSAJE_TELEFONO_INVALIDO }, 400);
+      }
+      return undefined;
+    }),
+    async (c) => {
+      const auth = requireWriteRole(c);
+      if (!auth.ok) {
+        return auth.response;
+      }
+      const id = c.req.param('id');
+      const body = c.req.valid('json');
+      const empresaId = auth.activeMembership.empresa.id;
+
+      return await withBusinessSpan(
+        {
+          name: 'conductor.corregir_telefono',
+          attributes: { 'booster.empresa_id': empresaId, 'booster.conductor_id': id },
+        },
+        async (span) => {
+          const record = (resultado: string) => {
+            getBusinessCounter('conductor_telefono_corregido_total').add(1, { resultado });
+            setResultAttributes(span, { 'conductor.telefono_resultado': resultado });
+          };
+
+          const encontrados = await opts.db
+            .select({
+              conductorId: conductores.id,
+              deletedAt: conductores.deletedAt,
+              userId: users.id,
+              email: users.email,
+              fullName: users.fullName,
+              rut: users.rut,
+              phone: users.phone,
+              firebaseUid: users.firebaseUid,
+              claveNumericaHash: users.claveNumericaHash,
+            })
+            .from(conductores)
+            .innerJoin(users, eq(conductores.userId, users.id))
+            .where(and(eq(conductores.id, id), eq(conductores.empresaId, empresaId)))
+            .limit(1);
+          const fila = encontrados[0];
+          if (!fila) {
+            record('not_found');
+            return c.json({ error: 'conductor_not_found', code: 'conductor_not_found' }, 404);
+          }
+          if (fila.deletedAt != null) {
+            record('deleted');
+            return c.json({ error: 'conductor_deleted', code: 'conductor_deleted' }, 410);
+          }
+
+          const cuentaActiva = cuentaYaActivada({
+            firebaseUid: fila.firebaseUid,
+            claveNumericaHash: fila.claveNumericaHash,
+          });
+          const activationPin = cuentaActiva ? null : generateActivationPin();
+          const invitacionReenviada = activationPin !== null;
+
+          const actualizado = await opts.db
+            .update(users)
+            .set({
+              phone: body.phone,
+              ...(activationPin ? { activationPinHash: hashActivationPin(activationPin) } : {}),
+              updatedAt: sql`now()`,
+            })
+            .where(eq(users.id, fila.userId))
+            .returning({ id: users.id });
+          if (!actualizado[0]) {
+            throw new Error('update teléfono conductor vacío');
+          }
+
+          if (activationPin !== null && fila.rut) {
+            await enviarWhatsAppActivacionConductor({
+              client: opts.whatsappClient,
+              contentSid: opts.activacionContentSid,
+              logger: opts.logger,
+              telefono: body.phone,
+              nombre: fila.fullName,
+              rut: fila.rut,
+              empresa: auth.activeMembership.empresa.legalName ?? 'Tu empresa',
+            });
+          }
+
+          opts.logger.info(
+            {
+              conductorId: id,
+              usuarioId: fila.userId,
+              actorId: auth.userContext.user.id,
+              empresaId,
+              invitacionReenviada,
+            },
+            'teléfono de conductor actualizado',
+          );
+          record(invitacionReenviada ? 'invitacion_reenviada' : 'contacto_actualizado');
+
+          return c.json({
+            phone: body.phone,
+            email: fila.email,
+            invitacion_reenviada: invitacionReenviada,
+            cuenta_activa: cuentaActiva,
+            ...(activationPin !== null ? { activation_pin: activationPin } : {}),
+          });
+        },
+      );
+    },
+  );
 
   // ---------------------------------------------------------------------
   // DELETE /:id — soft delete.
