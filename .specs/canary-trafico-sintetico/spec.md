@@ -44,7 +44,8 @@ los umbrales (error rate bajo 1 %, p95 bajo 500 ms) y la decisión de
    arranca el servidor ni las migraciones. Los logs se leen en cuanto el Job
    termina (`Complete` o `Failed`) o en cuanto el objeto desaparece. No se
    espera solo `condition=complete` más allá del TTL. Se borra después de
-   leer el resumen. Si el Job ya no existe al leer, el gate no promueve.
+   guardar los logs, también si falló o el sondeo hizo timeout. Si el Job
+   ya no existe al leer, el gate no promueve.
 5. La ventana sigue durando 30 min (el tiempo que no use la sonda se espera).
 6. La sonda escribe `/workspace/canary-probe.json` (llegadas, 5xx, timeouts
    y errores de conexión). `canary-verify` lo lee antes de Monitoring y sale

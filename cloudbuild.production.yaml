@@ -392,8 +392,9 @@ steps:
     # (cluster booster-ai-telemetry, imagen del api fijada por digest). El pod
     # resuelve el host del tag a 199.36.153.8 (private.googleapis.com): el DNS
     # público sale por Cloud NAT y el ingress vuelve a responder 404. Los logs
-    # se leen en cuanto el Job termina o desaparece, y solo entonces se borra.
-    # Si ya no existe al leer, el gate no promueve. El resultado queda en
+    # se leen en cuanto el Job termina, falla o desaparece. El borrado es
+    # posterior, también si falló o el sondeo hizo timeout. Si ya no existe
+    # al leer, el gate no promueve. El resultado queda en
     # /workspace/canary-probe.json
     # (5xx, timeouts y errores de conexión). El tiempo que sobre se espera
     # para completar los 30 min. signup_probe sigue cada 60s; si falla 2 veces
@@ -461,11 +462,13 @@ steps:
           if [ "$$CODE" -eq 2 ] && [ -f /tmp/canary-probe-job.json ]; then
             echo "canary-probe: el worker no llega al tag. Sonda desde un Job en la VPC."
             TERMINAL=""
+            BORRAR=0
             : > /tmp/canary-probe-job.log
             if timeout -k 5 30 gcloud container clusters get-credentials booster-ai-telemetry \
               --region='${_REGION}' --project=$PROJECT_ID --dns-endpoint; then
               kubectl --request-timeout=20s delete job "$$JOB" -n default --ignore-not-found || true
               if kubectl --request-timeout=20s apply -f /tmp/canary-probe-job.json; then
+                BORRAR=1
                 # Un Job Failed no cumple Complete. Esperar solo eso llega al
                 # timeout y el TTL ya borró el objeto: kubectl logs responde
                 # NotFound. Se corta en Complete, Failed o NotFound.
@@ -501,7 +504,6 @@ steps:
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --aplicar-log-job "$$RESULT" \
                 --log-file /tmp/canary-probe-job.log
-              kubectl --request-timeout=20s delete job "$$JOB" -n default --ignore-not-found || true
             elif [ "$$TERMINAL" = "ausente" ]; then
               echo "canary-probe: el job desapareció antes de leer logs — no se promueve"
               python3 scripts/deploy/canary_synthetic_probe.py \
@@ -512,6 +514,10 @@ steps:
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --marcar-job "$$RESULT" \
                 --job-estado fallo
+            fi
+            if [ "$$BORRAR" = "1" ]; then
+              echo "canary-probe: borrando el job despues de guardar logs (estado=$$TERMINAL)"
+              kubectl --request-timeout=20s delete job "$$JOB" -n default --ignore-not-found || true
             fi
           elif [ "$$CODE" -eq 2 ]; then
             python3 scripts/deploy/canary_synthetic_probe.py \

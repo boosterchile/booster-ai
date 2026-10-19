@@ -367,6 +367,11 @@ class CloudBuildTest(unittest.TestCase):
             script.index('kubectl --request-timeout=20s logs'),
             script.rindex('kubectl --request-timeout=20s delete job'),
         )
+        self.assertLess(
+            script.index('sin resumen'),
+            script.rindex('kubectl --request-timeout=20s delete job'),
+        )
+        self.assertIn('BORRAR=1', script)
         verify = texto[fin:texto.index('id: deploy-api', fin)]
         self.assertLess(
             verify.index('decidir_resultado_sonda('),
