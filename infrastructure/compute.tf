@@ -128,7 +128,11 @@ module "service_api" {
     # bucket físico (`documents`) — service_document ya recibe DOCUMENTS_BUCKET.
     TRANSPORT_DOCUMENTS_BUCKET = google_storage_bucket.documents.name
     # T10-21 — ranking de matching en matching-engine. Flags en `false` por
-    # default: el apply no cambia el comportamiento.
+    # default: este apply no llama al servicio. MATCHING_ENGINE_URL es el
+    # *.run.app. La zona privada lo resuelve a 199.36.153.8/30, un rango
+    # público que PRIVATE_RANGES_ONLY no manda por el connector. Antes de
+    # prender los flags: egress ALL_TRAFFIC en el api, o una ruta por el
+    # connector, y probar la llamada.
     MATCHING_ENGINE_URL       = local.cloud_run_matching_url
     MATCHING_SHADOW           = tostring(var.matching_shadow)
     MATCHING_VIA_MICROSERVICE = tostring(var.matching_via_microservice)
@@ -481,37 +485,36 @@ module "service_matching_engine" {
   # T10-21: servicio HTTP request-driven (POST /ranking desde el api, dentro de
   # la transacción del matching). min_instances=1 evita el cold start en ese
   # camino síncrono; cpu_idle=true (default) porque no hay trabajo de fondo.
-  # Cómputo puro: sin DB, sin Redis, sin secretos, sin VPC connector.
+  #
+  # Decisión del PO (2026-10-19): el ingress queda INTERNAL_ONLY, como en vivo.
+  # No se aplica el INGRESS_TRAFFIC_ALL de #765. VPC, DATABASE_URL y Redis se
+  # mantienen: es la conectividad que el servicio tiene hoy; sacarla en este
+  # apply le quitaría la red a la revisión viva. El binario nuevo no las usa
+  # (cómputo puro); quedan montadas a propósito.
   min_instances = 1
   max_instances = 10
   cpu           = "1"
   memory        = "512Mi"
 
-  env_vars = {
-    NODE_ENV        = var.environment == "prod" ? "production" : "staging"
-    LOG_LEVEL       = "info"
-    SERVICE_NAME    = "booster-ai-matching-engine"
-    SERVICE_VERSION = "0.0.0"
-    # otel-bootstrap es no-op sin el proyecto (trazas a Cloud Trace).
-    GOOGLE_CLOUD_PROJECT = var.project_id
-    # El servicio verifica el ID token además de Cloud Run IAM: aud = su URL,
-    # email = SA runtime del api.
+  env_vars = merge(local.common_env_vars, {
+    SERVICE_NAME = "booster-ai-matching-engine"
+    # Defensa extra sobre el IAM de roles/run.invoker: el servicio exige aud
+    # = su URL y email = SA runtime del api. El ingress no se abre por esto.
     OIDC_AUDIENCE     = local.cloud_run_matching_url
     ALLOWED_CALLER_SA = google_service_account.cloud_run_runtime.email
-  }
-  secrets = {}
+  })
+  secrets = local.common_secrets
+
+  vpc_connector = google_vpc_access_connector.serverless.id
 
   public = false
 
-  # INGRESS_TRAFFIC_ALL + IAM (`roles/run.invoker` solo para el SA runtime,
-  # matching-engine.tf), el patrón estándar Cloud Run → Cloud Run. ADR-063
-  # cerró a INTERNAL_ONLY los consumers PULL por no tener callers HTTP; este
-  # servicio sí tiene uno (el api), y el api sale por el connector con egress
-  # PRIVATE_RANGES_ONLY sin Cloud NAT: con INTERNAL_ONLY su request por la IP
-  # pública del run.app sería rechazada. Superficie mínima: un token robado
-  # solo obtiene rankings de los datos que él mismo envía (sin lectura ni
-  # efectos). Spec: .specs/matching-engine-t10-21/spec.md §Seguridad.
-  ingress = "INGRESS_TRAFFIC_ALL"
+  # INTERNAL_ONLY (ADR-063, decisión del PO 2026-10-19). 199.36.153.8/30,
+  # adonde la zona privada resuelve MATCHING_ENGINE_URL, es un rango público:
+  # PRIVATE_RANGES_ONLY no lo manda por el connector. Los flags del api siguen
+  # en false. Antes de prenderlos hace falta egress ALL_TRAFFIC, o una ruta
+  # por el connector, y probar la llamada.
+  ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   secret_versions_ready = local.all_secret_versions_ready
 
@@ -593,8 +596,10 @@ module "service_notification" {
   # instancia escala a cero y nadie consume; con cpu_idle=true el pull queda
   # CPU-throttled (incidente telemetry-processor 2026-06-07). Emisor sin
   # estado (sin DB ni Redis): 512 Mi alcanzan.
+  # max_instances=20 es lo que tiene el servicio en vivo. #764 lo bajó a 5
+  # en código, pero ese apply no corrió; este reconcile no lo escala hacia abajo.
   min_instances = 1
-  max_instances = 5
+  max_instances = 20
   cpu_idle      = false
   cpu           = "1"
   memory        = "512Mi"

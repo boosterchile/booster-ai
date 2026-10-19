@@ -184,6 +184,9 @@ locals {
     "roles/container.developer",               # Deploy a GKE (telemetry gateway)
     "roles/logging.viewer",                    # Leer logs de Cloud Build (gcloud builds submit los streamea)
     "roles/logging.logWriter",                 # Escribir logs del build a Cloud Logging
+    # gcloud artifacts docker images describe (deploy-canary) lista occurrences
+    # de Container Analysis. Reemplaza el PR #787, absorbido en este reconcile.
+    "roles/containeranalysis.occurrences.viewer",
     # SEC-001 boundary-closure T10 (SC-G7): `roles/cloudfunctions.viewer`
     # REMOVIDO — existía solo para el workflow sprint-2c-b-deploy-gate.yml
     # (gcloud functions describe beforeCreate), decomisado con la blocking
