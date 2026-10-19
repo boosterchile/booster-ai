@@ -1,4 +1,5 @@
 import {
+  chileanPhoneSchema,
   conductorContactEmailSchema,
   ensureRutHasDash,
   esEmailDeRelleno,
@@ -359,6 +360,17 @@ interface NewConductorForm {
   is_extranjero: boolean;
 }
 
+function altaLista(values: NewConductorForm): boolean {
+  return (
+    values.rut.trim().length > 0 &&
+    values.full_name.trim().length > 0 &&
+    conductorContactEmailSchema.safeParse(values.email).success &&
+    chileanPhoneSchema.safeParse(values.phone).success &&
+    values.license_number.trim().length > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(values.license_expiry)
+  );
+}
+
 const EMPTY_NEW: NewConductorForm = {
   rut: '',
   full_name: '',
@@ -463,6 +475,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
     handleSubmit,
     setValue,
     setError: setFieldError,
+    watch,
     formState: { errors, submitCount },
   } = useForm<NewConductorForm>({
     mode: 'onSubmit',
@@ -496,6 +509,14 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
   }
 
   useScrollToFirstError(errors, submitCount);
+
+  const valores = watch();
+  const emailParse = conductorContactEmailSchema.safeParse(valores.email);
+  const emailMensaje =
+    valores.email.trim().length > 0 && !emailParse.success
+      ? emailParse.error.issues[0]?.message
+      : errors.email?.message;
+  const puedeCrear = altaLista(valores);
 
   function onSubmit(values: NewConductorForm) {
     // ensureRutHasDash: si el operador tipea solo dígitos (teclado
@@ -620,7 +641,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
             label="Email"
             required
             hint="El correo del conductor. Booster lo usa para comunicarse con él."
-            error={errors.email?.message}
+            error={emailMensaje}
             render={({ id, describedBy }) => (
               <input
                 id={id}
@@ -630,9 +651,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
                   required: 'El email del conductor es obligatorio: es su canal con Booster.',
                   validate: (value) => {
                     const parsed = conductorContactEmailSchema.safeParse(value);
-                    return parsed.success
-                      ? true
-                      : (parsed.error.issues[0]?.message ?? 'Ingresa un email válido.');
+                    return parsed.success ? true : (parsed.error.issues[0]?.message ?? true);
                   },
                 })}
                 className={fieldInputClass(!!errors.email)}
@@ -742,7 +761,7 @@ function ConductoresNuevoPage({ me }: { me: MeOnboarded }) {
           </Link>
           <button
             type="submit"
-            disabled={createM.isPending}
+            disabled={!puedeCrear || createM.isPending}
             className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
           >
             {createM.isPending ? 'Creando…' : 'Crear conductor'}
@@ -786,6 +805,13 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [emailContacto, setEmailContacto] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const emailParse = conductorContactEmailSchema.safeParse(emailContacto);
+  const emailMensaje =
+    emailError ??
+    (emailContacto.trim().length > 0 && !emailParse.success
+      ? emailParse.error.issues[0]?.message
+      : undefined);
+  const puedeGuardarEmail = emailParse.success;
   const [pinReenviado, setPinReenviado] = useState<string | null>(null);
 
   const role = me.active_membership?.role;
@@ -987,16 +1013,19 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
             <FormField
               label="Email de contacto"
               required
-              error={emailError ?? undefined}
+              error={emailMensaje}
               render={({ id: fieldId, describedBy }) => (
                 <input
                   id={fieldId}
                   aria-describedby={describedBy}
                   type="email"
                   value={emailContacto}
-                  onChange={(event) => setEmailContacto(event.target.value)}
+                  onChange={(event) => {
+                    setEmailContacto(event.target.value);
+                    setEmailError(null);
+                  }}
                   disabled={!canWrite || conductorQ.data.deleted_at != null || emailM.isPending}
-                  className={fieldInputClass(!!emailError)}
+                  className={fieldInputClass(!!emailMensaje)}
                   placeholder="conductor@correo.cl"
                   autoComplete="email"
                 />
@@ -1007,7 +1036,7 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
                 <button
                   type="button"
                   onClick={guardarEmail}
-                  disabled={emailM.isPending}
+                  disabled={!puedeGuardarEmail || emailM.isPending}
                   className="rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
                   {emailM.isPending

@@ -356,6 +356,33 @@ describe('ConductoresDetalleRoute', () => {
     expect(await screen.findByText('482915')).toBeInTheDocument();
   });
 
+  it('email vacío o sin TLD: el reenvío queda deshabilitado y avisa en la ficha', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      conductor: buildConductor({
+        user: {
+          id: 'u-1',
+          full_name: 'Camila Rojas',
+          rut: '11.111.111-1',
+          email: 'pending-rut-111111111@boosterchile.invalid',
+          phone: null,
+          is_pending: true,
+        },
+      }),
+    });
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresDetalleRoute />);
+    const boton = await screen.findByRole('button', { name: /reenviar invitación/i });
+    expect(boton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText(/Email de contacto/), 'a@b');
+    expect(
+      await screen.findByText(/Escribe un email válido, como nombre@dominio.cl/),
+    ).toBeInTheDocument();
+    expect(boton).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('persona vinculada a otra empresa: explica el bloqueo y no muestra PIN', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       conductor: buildConductor({
@@ -407,13 +434,8 @@ describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
     await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
-    // A propósito SIN email.
-    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
-
-    // El alta no sale: crearía un conductor incontactable.
-    await waitFor(() =>
-      expect(screen.getByText(/email del conductor es obligatorio/i)).toBeInTheDocument(),
-    );
+    // A propósito SIN email: el botón no se habilita.
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -452,9 +474,33 @@ describe('ConductoresNuevoRoute — email obligatorio (Fase B)', () => {
     );
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
-    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
 
-    await waitFor(() => expect(screen.getByText(/email real del conductor/i)).toBeInTheDocument());
+    expect(await screen.findByText(/email real del conductor/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('«abc» y «a@b» muestran el mensaje y dejan el alta deshabilitada', async () => {
+    const post = vi.spyOn(api, 'post');
+    providedContext = { kind: 'onboarded', me: makeMe('despachador') };
+    wrap(<ConductoresNuevoRoute />);
+
+    await userEvent.type(screen.getByLabelText(/^RUT/), '11.111.111-1');
+    await userEvent.type(screen.getByLabelText(/^Nombre completo/), 'Juan Pérez');
+    await userEvent.type(screen.getByLabelText(/^Teléfono/), '+56957790379');
+    await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
+    await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
+    await userEvent.type(screen.getByLabelText(/^Email/), 'abc');
+
+    expect(
+      await screen.findByText(/Escribe un email válido, como nombre@dominio.cl/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
+
+    await userEvent.clear(screen.getByLabelText(/^Email/));
+    await userEvent.type(screen.getByLabelText(/^Email/), 'a@b');
+    expect(screen.getByText(/Escribe un email válido, como nombre@dominio.cl/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 });
@@ -513,12 +559,8 @@ describe('ConductoresNuevoRoute — teléfono obligatorio (canal WhatsApp)', () 
     await userEvent.type(screen.getByLabelText(/^Email/), 'fvp@live.cl');
     await userEvent.type(screen.getByLabelText(/^Número de licencia/), 'LIC-1');
     await userEvent.type(screen.getByLabelText(/^Vencimiento de licencia/), '2027-12-31');
-    // A propósito SIN teléfono.
-    await userEvent.click(screen.getByRole('button', { name: /Crear conductor/ }));
-
-    await waitFor(() =>
-      expect(screen.getByText(/tel[ée]fono del conductor es obligatorio/i)).toBeInTheDocument(),
-    );
+    // A propósito SIN teléfono: el botón no se habilita.
+    expect(screen.getByRole('button', { name: /Crear conductor/ })).toBeDisabled();
     expect(post).not.toHaveBeenCalled();
   });
 
