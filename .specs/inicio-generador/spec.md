@@ -6,7 +6,7 @@ Variante del Inicio para una empresa que solo es generador de carga. La mixta y 
 
 ## Entradas
 
-- `GET /trip-requests-v2`. La misma respuesta trae, en esa consulta, `transportista_nombre`, `assignment_status` y `avance_pct`. El avance es un hito (50 asignada, 75 en ruta, 100 entregada), no la posición GPS. La consulta filtra por `generadorCargaEmpresaId` de la empresa activa y devuelve una fila por viaje (la asignación y las métricas son 1:1). `ofertas_pendientes` no va en el payload mientras `INICIO_GENERADOR_VE_OFERTAS` esté apagado.
+- `GET /trip-requests-v2`. La misma respuesta trae, en esa consulta, `transportista_nombre`, `assignment_status`, `ofertas_pendientes` y `avance_pct`. El avance es un hito (50 asignada, 75 en ruta, 100 entregada), no la posición GPS. `ofertas_pendientes` va siempre: es el conteo de ofertas en estado `pendiente`. Felipe lo cerró el 2026-10-19 17:41 CLT. La consulta filtra por `generadorCargaEmpresaId` de la empresa activa y devuelve una fila por viaje (la asignación y las métricas son 1:1; las ofertas entran como subconsulta).
 - `GET /certificates` para la huella del mes y el aviso de certificados nuevos.
 
 No se pide `GET /me/inicio-resumen`. El hook `useInicioData('generador')` es el punto que esa fase reemplaza.
@@ -14,7 +14,7 @@ No se pide `GET /me/inicio-resumen`. El hook `useInicioData('generador')` es el 
 ## Salidas
 
 1. Saludo con fecha y empresa en una línea, rol «Generador de carga».
-2. Mis cargas: contadores buscando / asignadas / en camino. Se destaca la carga sin match cuyo retiro es el más próximo. El detalle no dice «ofertas enviadas a N» mientras `INICIO_GENERADOR_VE_OFERTAS` esté apagado. CTA «Publicar carga». En cero: «Sin cargas publicadas».
+2. Mis cargas: contadores buscando / asignadas / en camino. Se destaca la carga sin match cuyo retiro es el más próximo. Si tiene ofertas pendientes, el detalle dice «ofertas enviadas a N». CTA «Publicar carga». En cero: «Sin cargas publicadas».
 3. Próximos retiros y entregas: hora, ruta, código, transportista y, si va en camino, el avance. 3 en móvil y tabla en desktop. En cero: «Sin retiros próximos».
 4. Gasto del mes detrás de `INICIO_GASTO_GENERADOR_ACTIVO = false`: se ve la regla pendiente y no un monto. La huella del mes sale de los certificados.
 5. Avisos: certificados nuevos (emitidos en 7 días). Retraso y «sin match hace X h» no se muestran: son fase 2.
@@ -27,11 +27,10 @@ No se pide `GET /me/inicio-resumen`. El hook `useInicioData('generador')` es el 
 Son constantes del cliente en `apps/web/src/components/inicio/flags.ts`. No hay un flag de servidor: prender una es cambiar la constante y desplegar la web. Apagadas no muestran un monto inventado.
 
 - `INICIO_GASTO_GENERADOR_ACTIVO`: gasto del mes.
-- `INICIO_GENERADOR_VE_OFERTAS`: conteo de ofertas pendientes. Apagado: no se expone en el listado ni en la carga destacada.
 - `INICIO_RETRASO_ACTIVO`: aviso de retraso. Fase 2, no se muestra.
 - `INICIO_MONTOS_VISUALIZADOR`: montos para el rol visualizador.
 
-`INICIO_FACTURADO_IVA_ACTIVO`, `INICIO_COBRA_HOY_DISPONIBLE_ACTIVO` y `INICIO_LICENCIA_CONDUCTOR_ACTIVA` son de otras variantes del Inicio y también siguen apagadas.
+`INICIO_FACTURADO_IVA_ACTIVO`, `INICIO_COBRA_HOY_DISPONIBLE_ACTIVO` y `INICIO_LICENCIA_CONDUCTOR_ACTIVA` son de otras variantes del Inicio y también siguen apagadas. Ver las ofertas pendientes del generador no es un flag.
 
 ## Criterios de éxito
 
@@ -39,4 +38,4 @@ Son constantes del cliente en `apps/web/src/components/inicio/flags.ts`. No hay 
 - Una CTA verde por bloque.
 - Sentarse en el Inicio no repite los GET.
 - El listado no hace una llamada por carga para saber el transportista ni el avance.
-- La respuesta de `GET /trip-requests-v2` no repite un viaje y no incluye `ofertas_pendientes` mientras el flag del cliente esté apagado.
+- La respuesta de `GET /trip-requests-v2` incluye `ofertas_pendientes` en cada fila y no repite un viaje.
