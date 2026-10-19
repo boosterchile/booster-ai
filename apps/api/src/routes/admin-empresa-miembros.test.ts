@@ -1300,4 +1300,129 @@ describe('POST /admin/empresas/:id/activar-generador-carga', () => {
     expect(((await res.json()) as { code: string }).code).toBe('not_a_transportista');
     expect(d.updates).toHaveLength(0);
   });
+
+  it('una segunda activación concurrente relee la fila y responde unchanged', async () => {
+    const mod = await loadMod();
+    const ganadorEn = new Date('2026-10-19T12:00:01.000Z');
+    const d = makeDb({
+      lookupQueue: [
+        [filaTransportista()],
+        [
+          filaTransportista({
+            isGeneradorCarga: true,
+            generadorCargaActivadoEn: ganadorEn,
+            generadorCargaActivadoPor: 'otro@boosterchile.com',
+          }),
+        ],
+      ],
+      updatedRows: [],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      id: EMPRESA_ID,
+      es_generador_carga: true,
+      es_transportista: true,
+      unchanged: true,
+      activado_en: ganadorEn.toISOString(),
+      activado_por: 'otro@boosterchile.com',
+    });
+    expect(vi.mocked(noopLogger.error)).not.toHaveBeenCalled();
+  });
+
+  it('si el update no escribe y la relectura sigue sin el rol, responde 500', async () => {
+    const mod = await loadMod();
+    const d = makeDb({
+      lookupQueue: [[filaTransportista()], [filaTransportista()]],
+      updatedRows: [],
+    });
+    const app = buildApp(mod, d.db, makeAuthStub().auth);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe('generador_update_failed');
+    expect(vi.mocked(noopLogger.error)).toHaveBeenCalled();
+  });
+
+  it.each(['dueno', 'admin'] as const)(
+    'el %s de la empresa target, fuera de la allowlist, recibe 403',
+    async (rol) => {
+      const mod = await loadMod();
+      const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+      const app = buildApp(
+        mod,
+        d.db,
+        makeAuthStub().auth,
+        `${rol}@vanoosterwyk.cl`,
+        undefined,
+        rol,
+      );
+
+      const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: 'forbidden_platform_admin' });
+      expect(d.updates).toHaveLength(0);
+    },
+  );
+
+  it('sin sesión responde 401 y no escribe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+    const routes = mod.createAdminEmpresaMiembrosRoutes({
+      db: d.db,
+      logger: noopLogger,
+      auth: makeAuthStub().auth,
+    });
+    const app = new Hono();
+    app.route('/', routes);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'unauthorized' });
+    expect(d.updates).toHaveLength(0);
+  });
+
+  it('la impersonación sobre una empresa real responde 403 y no escribe', async () => {
+    const mod = await loadMod();
+    const d = makeDb({ lookupQueue: [[filaTransportista()]] });
+    const routes = mod.createAdminEmpresaMiembrosRoutes({
+      db: d.db,
+      logger: noopLogger,
+      auth: makeAuthStub().auth,
+    });
+    const app = new Hono();
+    app.use('*', async (c, next) => {
+      (c as unknown as { set: (k: string, v: unknown) => void }).set('userContext', {
+        user: { id: 'admin-id', email: ADMIN_EMAIL },
+        activeMembership: {
+          role: 'dueno',
+          empresa: { id: EMPRESA_ID, isTestUser: false },
+        },
+      });
+      (c as unknown as { set: (k: string, v: unknown) => void }).set('firebaseClaims', {
+        uid: 'target-firebase-uid',
+        email: undefined,
+        emailVerified: false,
+        name: undefined,
+        picture: undefined,
+        custom: { impersonated_by: 'admin-uuid-1' },
+      });
+      await next();
+    });
+    app.use('*', createImpersonationWriteGuardMiddleware({ logger: noopLogger }));
+    app.route('/', routes);
+
+    const res = await app.request(`/${EMPRESA_ID}/activar-generador-carga`, { method: 'POST' });
+
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('forbidden_impersonation_write');
+    expect(d.updates).toHaveLength(0);
+  });
 });

@@ -69,6 +69,30 @@ const ESTADO_LABEL: Record<EmpresaAdminRow['estado'], string> = {
   suspendida: 'Suspendida',
 };
 
+function mensajeDeApi(err: unknown, porCodigo: Record<string, string>, fallback: string): string {
+  if (!(err instanceof ApiError)) {
+    return fallback;
+  }
+  const clave = err.code ?? err.message;
+  if (clave && porCodigo[clave]) {
+    return porCodigo[clave];
+  }
+  if (err.status === 401) {
+    return 'Tu sesión expiró. Vuelve a entrar.';
+  }
+  if (err.status === 403) {
+    return 'No tienes permiso para hacer esto.';
+  }
+  return fallback;
+}
+
+const MENSAJE_SESION: Record<string, string> = {
+  unauthorized: 'Tu sesión expiró. Vuelve a entrar.',
+  forbidden_platform_admin: 'No tienes permiso para hacer esto.',
+  forbidden_impersonation_write: 'No puedes cambiar datos mientras impersonas una empresa real.',
+  empresa_not_found: 'No encontramos esa empresa.',
+};
+
 export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) {
   const [filtro, setFiltro] = useState<EstadoFiltro>('pendiente_verificacion');
   const [empresas, setEmpresas] = useState<EmpresaAdminRow[]>([]);
@@ -119,16 +143,15 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
         },
       }));
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.code === 'already_activated'
-          ? 'Esa persona ya activó su cuenta.'
-          : err instanceof ApiError && err.code === 'membership_not_found'
-            ? 'No encontramos esa invitación en esta empresa.'
-            : err instanceof ApiError
-              ? `${err.status}: ${err.message}`
-              : err instanceof Error
-                ? err.message
-                : String(err);
+      const message = mensajeDeApi(
+        err,
+        {
+          ...MENSAJE_SESION,
+          already_activated: 'Esa persona ya activó su cuenta.',
+          membership_not_found: 'No encontramos esa invitación en esta empresa.',
+        },
+        'No pudimos generar un código nuevo. Inténtalo de nuevo.',
+      );
       setReemitirError({ membershipId: miembro.membership_id, message });
     } finally {
       setReemitirId(null);
@@ -153,9 +176,17 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
       await api.post(`/admin/empresas/${id}/activar-generador-carga`);
       await cargar(filtro);
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
-      setError(msg);
+      setError(
+        mensajeDeApi(
+          err,
+          {
+            ...MENSAJE_SESION,
+            not_a_transportista: 'Solo una empresa transportista puede generar carga.',
+            generador_update_failed: 'No pudimos activar el rol de generador. Inténtalo de nuevo.',
+          },
+          'No pudimos activar el rol de generador. Inténtalo de nuevo.',
+        ),
+      );
     } finally {
       setGenerandoId(null);
     }
@@ -168,9 +199,13 @@ export function ActivarEmpresa({ refreshToken = 0 }: { refreshToken?: number }) 
       await api.patch(`/admin/empresas/${id}`, { estado });
       await cargar(filtro);
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? `${err.status}: ${err.message}` : (err as Error).message;
-      setError(msg);
+      setError(
+        mensajeDeApi(
+          err,
+          MENSAJE_SESION,
+          'No pudimos cambiar el estado de la empresa. Inténtalo de nuevo.',
+        ),
+      );
     } finally {
       setPendingId(null);
     }

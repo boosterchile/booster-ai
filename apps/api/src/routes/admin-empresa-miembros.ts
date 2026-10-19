@@ -484,7 +484,7 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
           return c.json({ error: 'conflict', code: 'not_a_transportista' }, 409);
         }
 
-        const unchanged = existing.isGeneradorCarga;
+        let unchanged = existing.isGeneradorCarga;
         let activadoEn = existing.generadorCargaActivadoEn;
         let activadoPor = existing.generadorCargaActivadoPor;
 
@@ -514,15 +514,43 @@ export function createAdminEmpresaMiembrosRoutes(opts: {
               generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
             });
           const row = updated[0];
-          if (!row) {
-            opts.logger.error(
-              { empresaId: id },
-              'admin-empresas: activar generador no devolvió fila',
-            );
-            return c.json({ error: 'internal_server_error', code: 'generador_update_failed' }, 500);
+          if (row) {
+            activadoEn = row.generadorCargaActivadoEn;
+            activadoPor = row.generadorCargaActivadoPor;
+          } else {
+            // Otra activación ganó el UPDATE (WHERE es_generador_carga = false).
+            // Releer: si el rol ya quedó prendido, esta llamada es idempotente.
+            const racedRows = await opts.db
+              .select({
+                id: empresas.id,
+                isTransportista: empresas.isTransportista,
+                isGeneradorCarga: empresas.isGeneradorCarga,
+                generadorCargaActivadoEn: empresas.generadorCargaActivadoEn,
+                generadorCargaActivadoPor: empresas.generadorCargaActivadoPor,
+              })
+              .from(empresas)
+              .where(eq(empresas.id, id))
+              .limit(1);
+            const raced = racedRows[0];
+            if (raced?.isTransportista && raced.isGeneradorCarga) {
+              unchanged = true;
+              activadoEn = raced.generadorCargaActivadoEn;
+              activadoPor = raced.generadorCargaActivadoPor;
+            } else if (!raced) {
+              return c.json({ error: 'not_found', code: 'empresa_not_found' }, 404);
+            } else if (raced.isTransportista) {
+              opts.logger.error(
+                { empresaId: id },
+                'admin-empresas: activar generador no devolvió fila',
+              );
+              return c.json(
+                { error: 'internal_server_error', code: 'generador_update_failed' },
+                500,
+              );
+            } else {
+              return c.json({ error: 'conflict', code: 'not_a_transportista' }, 409);
+            }
           }
-          activadoEn = row.generadorCargaActivadoEn;
-          activadoPor = row.generadorCargaActivadoPor;
         }
 
         opts.logger.info(

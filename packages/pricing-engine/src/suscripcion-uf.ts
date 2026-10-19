@@ -6,8 +6,8 @@
  *   la cantidad de camiones que no se cobran; con ese número o menos, no
  *   paga). Con gestión de flota se usa la tarifa `transportistaGestionFlota…`.
  * - Transportista que también es generador: la línea de generador no se
- *   suma. El rol queda incluido en el plan de transportista (historia 0,
- *   desviación de ADR-079 §4 pedida por el PO). Un generador puro sigue
+ *   suma. Generar carga queda dentro de la suscripción del transportista
+ *   (ADR-079 §4, decisión del PO del 2026-10-19). Un generador puro sigue
  *   pagando su UF.
  *
  * Los precios en UF son netos: `subtotal = round(montoUf × ufValorClp)`,

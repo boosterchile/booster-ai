@@ -177,6 +177,40 @@ describe('ActivarEmpresa', () => {
     expect(screen.queryByRole('button', { name: 'Generar código nuevo' })).not.toBeInTheDocument();
   });
 
+  it('Generar carga muestra un error en español, sin el código HTTP', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, id: 'e-trans', estado: 'activa' as const }],
+    });
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new ApiError(409, 'not_a_transportista', {}, 'conflict'),
+    );
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+    fireEvent.click(await screen.findByTestId('empresa-generar-carga-e-trans'));
+
+    expect(
+      await screen.findByText('Solo una empresa transportista puede generar carga.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/409/)).not.toBeInTheDocument();
+  });
+
+  it('cambiar el estado no muestra el status crudo', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      empresas: [{ ...PENDIENTE, estado: 'activa' as const }],
+    });
+    vi.spyOn(api, 'patch').mockRejectedValue(
+      new ApiError(403, 'forbidden_platform_admin', {}, 'forbidden_platform_admin'),
+    );
+
+    render(<ActivarEmpresa />);
+    fireEvent.click(await screen.findByTestId('empresa-filtro-activa'));
+    fireEvent.click(await screen.findByTestId('empresa-suspender-e-1'));
+
+    expect(await screen.findByText('No tienes permiso para hacer esto.')).toBeInTheDocument();
+    expect(screen.queryByText(/403/)).not.toBeInTheDocument();
+  });
+
   it('traduce already_activated y membership_not_found', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({
       empresas: [{ ...PENDIENTE, miembros_pendientes: [MIEMBRO_PENDIENTE] }],

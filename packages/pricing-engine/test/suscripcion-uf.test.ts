@@ -93,6 +93,35 @@ describe('calcularCobroSuscripcionUf — quién paga (ADR-079 §4)', () => {
     expect(r.montoUf).toBe(1);
   });
 
+  it('ninguna empresa con los dos roles paga la UF de generador (ADR-079 §4, 2026-10-19)', () => {
+    const casos: Array<{
+      camionesActivos: number;
+      gestionFlota: boolean;
+      conceptos: string[];
+    }> = [
+      { camionesActivos: 2, gestionFlota: false, conceptos: ['suscripcion_transportista'] },
+      {
+        camionesActivos: 4,
+        gestionFlota: true,
+        conceptos: ['suscripcion_transportista_gestion_flota'],
+      },
+      { camionesActivos: 1, gestionFlota: false, conceptos: [] },
+      { camionesActivos: 0, gestionFlota: true, conceptos: [] },
+    ];
+    for (const caso of casos) {
+      const r = calcularCobroSuscripcionUf({
+        ...base,
+        esGeneradorCarga: true,
+        esTransportista: true,
+        camionesActivos: caso.camionesActivos,
+        gestionFlota: caso.gestionFlota,
+      });
+      const conceptos = r.status === 'facturar' ? r.lineas.map((l) => l.concepto) : [];
+      expect(conceptos).toEqual(caso.conceptos);
+      expect(conceptos).not.toContain('suscripcion_generador');
+    }
+  });
+
   it('sin rol comercial: exenta', () => {
     expect(calcularCobroSuscripcionUf(base)).toEqual({ status: 'exenta' });
   });

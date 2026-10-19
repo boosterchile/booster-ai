@@ -1,4 +1,4 @@
--- Migration 0063 — Auditoría de la activación del rol generador (historia 0).
+-- Migration 0065 — Auditoría de la activación del rol generador (historia 0).
 --
 -- Expand-only: dos columnas nulas sobre `empresas`. El flag
 -- `es_generador_carga` ya existe. Estas columnas registran quién (email del
