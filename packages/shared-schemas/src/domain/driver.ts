@@ -68,16 +68,40 @@ export function esEmailDeRelleno(email: string): boolean {
   return dominio === 'boosterchile.invalid' || local.startsWith('pending-rut-');
 }
 
+/** Mensaje único del formato, en la ficha y en el alta. */
+export const MENSAJE_EMAIL_CONDUCTOR = 'Escribe un email válido, como nombre@dominio.cl';
+
 /**
- * Email de contacto del conductor. Obligatorio, en minúsculas, y nunca el
- * de relleno. El máximo coincide con `usuarios.email` (varchar 255).
+ * El dominio tiene que incluir un punto y un TLD de al menos dos letras.
+ * `a@b` y `a@b.c` no alcanzan. Zod `.email()` ya rechaza varios de estos
+ * casos; el refine deja la regla en el contrato, no en el regex de la librería.
+ */
+function dominioConTld(email: string): boolean {
+  const arroba = email.lastIndexOf('@');
+  if (arroba < 1 || arroba === email.length - 1) {
+    return false;
+  }
+  const etiquetas = email.slice(arroba + 1).split('.');
+  if (etiquetas.length < 2) {
+    return false;
+  }
+  const tld = etiquetas.at(-1) ?? '';
+  return (
+    /^[a-z]{2,}$/i.test(tld) && etiquetas.slice(0, -1).every((etiqueta) => etiqueta.length > 0)
+  );
+}
+
+/**
+ * Email de contacto del conductor. Obligatorio, en minúsculas, con TLD, y
+ * nunca el de relleno. El máximo coincide con `usuarios.email` (varchar 255).
  */
 export const conductorContactEmailSchema = z
   .string()
   .trim()
-  .min(3)
-  .max(255)
-  .email('Ingresa un email válido.')
+  .min(3, MENSAJE_EMAIL_CONDUCTOR)
+  .max(255, MENSAJE_EMAIL_CONDUCTOR)
+  .email(MENSAJE_EMAIL_CONDUCTOR)
+  .refine(dominioConTld, { message: MENSAJE_EMAIL_CONDUCTOR })
   .transform((value) => value.toLowerCase())
   .refine((value) => !esEmailDeRelleno(value), {
     message: 'Tiene que ser el email real del conductor.',

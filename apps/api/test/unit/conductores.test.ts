@@ -840,6 +840,27 @@ describe('POST /conductores — email real y único', () => {
     expect(stub.spies.insert).not.toHaveBeenCalled();
   });
 
+  it.each(['abc', 'a@b', 'a@b.c'])('email %s → 400 y no escribe', async (email) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request('/conductores', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        rut: VALID_RUT,
+        full_name: 'Camila Rojas',
+        phone: '+56957790379',
+        email,
+        license_class: 'A5',
+        license_number: 'LIC-1',
+        license_expiry: '2028-06-28',
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+    expect(stub.spies.update).not.toHaveBeenCalled();
+  });
+
   it('email de otra persona → 409 email_already_registered y no inserta', async () => {
     const stub = makeDbStub({
       selectQueueRows: [[], [{ id: 'otro-usuario' }]],
@@ -963,6 +984,19 @@ describe('POST /conductores — email real y único', () => {
 });
 
 describe('POST /conductores/:id/email', () => {
+  it.each(['abc', 'a@b', 'a@b.c'])('email %s → 400 y no escribe', async (email) => {
+    const stub = makeDbStub({});
+    const app = await buildApp(stub.db);
+    const res = await app.request(`/conductores/${CONDUCTOR_ID}/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    expect(res.status).toBe(400);
+    expect(stub.spies.update).not.toHaveBeenCalled();
+    expect(stub.spies.insert).not.toHaveBeenCalled();
+  });
+
   it.each(['conductor', 'visualizador'] as const)('%s → 403 y no escribe', async (role) => {
     const stub = makeDbStub({});
     const app = await buildApp(stub.db, { role });
