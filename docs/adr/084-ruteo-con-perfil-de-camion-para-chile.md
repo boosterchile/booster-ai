@@ -1,108 +1,122 @@
-# ADR-084 — Ruteo con perfil de camión para Chile: HERE Routing v8 como motor de ruta legal y ETA
+# ADR-084 — Ruteo legal de camiones en Chile: capa normativa propia como autoridad y motor de ruteo intercambiable (HERE como primer adaptador)
 
 **Estado**: Vigente
 **Fecha**: 2026-10-20
-**Decider**: Felipe Vicencio (Product Owner). Encargos del 2026-10-20: «abre la línea 2, arma la sonda contra HERE y OSRM, solución real» y «ya cargué HERE_API_KEY, relanza y redacta el ADR».
-**Supersede a**: nada. [ADR-038](./038-routes-api-adc-migration.md) sigue vigente para la autenticación de Google Routes API en los usos que conserva (§2).
-**Relacionado**: [ADR-073](./073-tipologias-flota-configuracion-glec.md) (tipologías de flota: fuente de los atributos del camión), [ADR-021](./021-glec-v3-compliance.md) (GLEC v3.0: combustible y huella se derivan de la distancia, no del proveedor de rutas), [ADR-076](./076-gobernanza-operador-unico.md) (vigencia), `.specs/ruteo-camion-chile/{spec,verify}.md`, PR #820
+**Decider**: Felipe Vicencio (Product Owner). Encargos del 2026-10-20: «abre la línea 2, arma la sonda contra HERE y OSRM, solución real»; «ya cargué HERE_API_KEY, relanza y redacta el ADR»; «tal vez hay una solución mejor a través de la página web del Ministerio de Transportes de Chile o de Vialidad».
+**Supersede a**: nada. [ADR-038](./038-routes-api-adc-migration.md) sigue vigente para la autenticación de Google Routes API en los usos que conserva (§4).
+**Relacionado**: [ADR-073](./073-tipologias-flota-configuracion-glec.md) (tipologías: fuente de los atributos del camión), [ADR-021](./021-glec-v3-compliance.md) (GLEC: combustible y huella desde la distancia), [ADR-076](./076-gobernanza-operador-unico.md) (vigencia), `.specs/ruteo-camion-chile/{spec,verify}.md`, PR #820
 
 ---
 
 ## Contexto
 
-La ruta eco-eficiente que ve el conductor se calcula con Google Routes API en `travelMode: DRIVE` fijo ([`apps/api/src/services/routes-api.ts`](../../apps/api/src/services/routes-api.ts)). Del vehículo solo viaja `emissionType`, para que Google estime litros. Ocho llamadores pasan por esa función: `eco-route-preview`, `eco-routing-tiempo-real`, `get-assignment-eco-route`, `persist-eco-route-polyline`, `compute-route-eta`, `calcular-metricas-viaje`, `geocodificar-origen` y `backfill-distancia-adapters`. El resultado es una ruta de automóvil presentada como ruta de camión: el caso reportado por el PO es Camino La Pirámide, con restricción de tránsito pesado.
+La ruta eco-eficiente que ve el conductor se calcula con Google Routes API en `travelMode: DRIVE` fijo ([`apps/api/src/services/routes-api.ts`](../../apps/api/src/services/routes-api.ts)); del vehículo solo viaja `emissionType`. Ocho llamadores pasan por esa función (`eco-route-preview`, `eco-routing-tiempo-real`, `get-assignment-eco-route`, `persist-eco-route-polyline`, `compute-route-eta`, `calcular-metricas-viaje`, `geocodificar-origen`, `backfill-distancia-adapters`). El resultado es una ruta de automóvil presentada como ruta de camión; el caso reportado por el PO es Camino La Pirámide.
 
-Las tablas `vehiculos` y las tipologías de ADR-073 no guardan peso bruto, alto, ancho, largo ni ejes. Sin esos atributos ningún motor puede aplicar restricciones de camión aunque las conozca.
+`vehiculos` y las tipologías de ADR-073 no guardan peso bruto, ejes, dimensiones ni año de fabricación. Sin esos atributos ninguna regla de camión puede aplicarse.
 
-### Evidencia (sondas ejecutadas el 2026-10-20, PR #820)
+### La norma
 
-Par de prueba: Ciudad Empresarial (Huechuraba) → Parque Bicentenario (Vitacura), geocodificado una sola vez con Nominatim (`-33.389802,-70.618360` → `-33.400576,-70.602485`). Camión: rígido, 3 ejes, 18 000 kg, 4,0 × 2,6 × 12 m. En los tres motores, «sin peajes» es el único caso que lleva a un automóvil por Camino La Pirámide; es la condición que discrimina.
+La restricción de La Pirámide no es una prohibición total sino **horaria y por clase de vehículo**. Transporte Informa (Seremitt RM) y el MTT la publican con remisión al **D.S. N°18/2001 del MTT**: camiones de PBV ≥ 3 860 kg no pueden circular por Américo Vespucio entre El Salto y Av. Santa María de lunes a viernes, 08:00–09:30 en ambos sentidos y 18:30–20:00 en sentido poniente→oriente; el MTT la fiscaliza con cámaras OCR. La misma fuente publica la restricción del interior del anillo Américo Vespucio: camiones de más de 2 ejes y/o PBV > 18 000 kg, lunes a viernes 07:30–10:00 y 18:00–20:30, salvo zonas industriales exclusivas y ciertas autopistas; y camiones de PBV > 3 860 kg con más de 12 años de antigüedad. A eso se suman resoluciones exentas puntuales de la Seremitt (Ruta 68; obras del Puente Lo Saldes) y los episodios ambientales por dígito. **No existe como dataset**: ni datos.gob.cl ni la UOCT publican un mapa; Ley Chile respondió por timeout en la sonda. Existe como un puñado de reglas en texto, con cita legal, estables en el tiempo. Vialidad (MOP) no publica un listado de gálibos ni de pesos por tramo; hay prohibiciones puntuales en puentes (Juan Pablo II, Concepción, Res. Ex. 247/2010).
 
-| Criterio del spec | Resultado | Evidencia |
+### Evidencia ejecutada (2026-10-20, PR #820)
+
+Par de prueba: Ciudad Empresarial (Huechuraba) → Parque Bicentenario (Vitacura), geocodificado una sola vez con Nominatim y compartido por los tres motores. Camión: 3 ejes, 18 000 kg, 4,0 × 2,6 × 12 m. «Sin peajes» es el caso que lleva a un automóvil por Camino La Pirámide.
+
+| Pregunta | Resultado | Evidencia |
 |---|---|---|
-| Google Routes API, `travelMode: TRUCK` + `vehicleInfo` | **No cambia nada en Chile.** Acepta el modo sin error y devuelve geometría idéntica a `DRIVE` en los tres pares comparables; sin peajes manda al camión por Camino La Pirámide. Coincide con su cobertura declarada (EE.UU. continental, Japón). | run 39454217739, 7 POST |
-| C2 — OSM tiene la restricción en Camino La Pirámide | **No.** 0 de 93 vías «Pirámide» con `hgv`, `maxweight`, `maxheight` o `hgv:conditional`. El bbox de Santiago sí tiene 1 276 vías etiquetadas (325 con `hgv=no`). | run 39461320020, Overpass |
-| C3 — OSRM con perfil de camión sobre el dato actual | **No.** Camión sin peajes = automóvil sin peajes, 9,68 km por Camino La Pirámide. | run 39461320020 |
-| C4 — OSRM con `hgv=no` inyectado en esa vía | **Sí.** 12,01 km por El Salto → Las Torres → Av. Perú → Domínica → Purísima. El motor funciona; falta el dato. | run 39461320020 |
-| C1 — HERE Routing v8, `transportMode=truck` + `vehicle[...]` | **Sí, con dato propio.** Automóvil sin peajes: 7,73 km por Camino La Pirámide y Calle La Pirámide. Camión sin peajes: 14,66 km / 2 182 s por El Salto → Las Torres → Av. Perú → Domínica → Purísima → Santa María → Costanera Norte, sin «Pirámide». Con peajes, misma geometría para ambos y duración de camión mayor (642 s vs 490 s). Sin `notices` de restricción violada. | run 39461320020 intento 2 |
+| ¿Google Routes API aplica `TRUCK` + `vehicleInfo` en Chile? | **No.** Geometría idéntica a `DRIVE`; sin peajes manda al camión por La Pirámide. Coincide con su cobertura declarada (EE.UU., Japón). | run 39454217739 |
+| ¿OSM tiene la restricción en Camino La Pirámide? | **No.** 0/93 vías «Pirámide» con etiqueta de camión; el bbox de Santiago sí tiene 1 276 vías etiquetadas (325 `hgv=no`). | run 39461320020 |
+| ¿Un motor OSM la respeta si el dato existe? | **Sí.** OSRM con perfil de camión y `hgv=no` inyectado evita la vía (12,01 km vs 9,68 km). El mecanismo funciona; falta el dato. | run 39461320020 |
+| ¿HERE desvía al camión? | Sí: 14,66 km sin La Pirámide frente a 7,73 km del automóvil. | run 39461320020 intento 2 |
+| ¿Por qué? ¿HERE modela el D.S. 18/2001? | **No.** Forzando al camión por la vía con `via`, HERE responde `truckAttributes: ["open"]` y ningún aviso de restricción, a las 15:32 y también con `departureTime` a las **08:30** (dentro de la ventana), 15:00 y 19:00. El desvío es costo del perfil de camión, no legalidad. | runs 39475241512 y 39476030415 |
+| ¿Qué cobertura tiene HERE sobre las vías `hgv=no` de OSM? | **43 %** de las vías discriminantes (3 de 7; RM 3/6, Biobío 0/1; muestra de 16). | run 39475241512 |
 
-Lectura: el problema no era de motor sino de **fuente de restricciones**. Google no la tiene para Chile. OSM tiene el mecanismo pero no el dato en este tramo, y mantenerlo convertiría a Booster en la fuente de verdad de la legalidad de ruta. HERE trae el dato.
-
-Límite de la evidencia: un par origen→destino, en Santiago, un día. Es suficiente para elegir dirección; no para declarar cobertura. La validación (§final) exige ampliarla antes de producción.
+Lectura: **ninguno de los tres motores es fuente de la legalidad de ruta en Chile.** Google no tiene el dato; OSM lo tiene a medias y no en el caso reportado; HERE lo tiene a medias y no modela el decreto del caso reportado. Los motores sí hacen bien lo suyo: dada una restricción explícita, la respetan (OSRM con la etiqueta; HERE con áreas a evitar en la petición). La fuente de las restricciones tiene que ser nuestra, y la fuente de esa fuente es la norma.
 
 ## Decisión
 
-### 1. HERE Routing v8 es el motor de toda ruta que un camión va a seguir
+### 1. La autoridad sobre legalidad de ruta es una capa normativa propia, pequeña y versionada
 
-Toda llamada que produce una **ruta a seguir** o un **ETA sobre esa ruta** se hace a HERE Routing v8 con `transportMode=truck` y los atributos del vehículo (`vehicle[grossWeight]`, `vehicle[height]`, `vehicle[width]`, `vehicle[length]`, `vehicle[axleCount]`, `vehicle[type]`), con `departureTime` explícito para que apliquen restricciones horarias y tráfico. Alcanza a `eco-route-preview`, `get-assignment-eco-route`, `persist-eco-route-polyline`, `eco-routing-tiempo-real` y `compute-route-eta`.
+Se crea el dominio canónico `restriccion-camion` en `packages/shared-schemas/src/domain/` y el algoritmo puro en un paquete `packages/ruteo-normativo/` (regla de CLAUDE.md: algoritmos en `packages/`, nada inline en services). Cada regla declara:
 
-El cliente HERE vive en `apps/api/src/services/` como función pura con `fetch` inyectable, igual que `routes-api.ts`; la respuesta cruza el límite por un esquema Zod (no por `as`), con timeout duro de 10 s, span OTel y métrica de negocio. `notices` con `severity: critical` o un código de restricción violada se tratan como ruta inválida, no como ruta.
+- **tramo o zona**: segmentos o polígono (WGS84), con sentido cuando aplica;
+- **ventana**: días y horas en hora de Chile, con excepciones (feriados);
+- **clase de vehículo alcanzada**: PBV mínimo, ejes, antigüedad, tipo; y exenciones (zonas industriales exclusivas, autopistas excluidas);
+- **cita**: norma, artículo, URL oficial, fecha de verificación por el PO, vigencia.
 
-### 2. Google Routes API sale del cálculo de rutas de camión; conserva dos usos
+Las primeras reglas son las tres de la Región Metropolitana publicadas por la Seremitt (La Pirámide, interior del anillo Vespucio, antigüedad > 12 años) más las resoluciones exentas vigentes que el PO confirme. El PO es el responsable de cada regla; se revisan al menos trimestralmente y cuando aparece una resolución nueva en el Diario Oficial. Contribuir a OSM las reglas verificadas es deseable y no es compromiso de este ADR.
 
-- **Geocodificación del origen** (`geocodificar-origen`), hasta que una tarea aparte la mueva a HERE Geocoding con la misma credencial. No es una decisión de legalidad.
-- **Distancia de tramos ya recorridos** (`calcular-metricas-viaje` sobre huecos de telemetría, `backfill-distancia-adapters`). El vehículo ya pasó por ahí; se mide, no se recomienda. Puede migrar después por homogeneidad, no por este ADR.
+### 2. El motor de ruteo es un adaptador intercambiable detrás de un contrato
 
-ADR-038 sigue rigiendo la autenticación de esos usos. Cuando el último llamador de rutas de camión salga de Google, `emissionType` y `FUEL_CONSUMPTION` desaparecen de `routes-api.ts`.
+Un puerto `RoutingEngine` en `apps/api/src/services/` con una obligación no negociable: **aceptar áreas o segmentos a evitar en tiempo de petición** y una hora de salida. Los motores que lo cumplen hoy son HERE Routing v8 (`avoid[areas]`, `departureTime`) y Valhalla (`exclude_polygons`, `date_time`). Google Routes no admite áreas a evitar, y OSRM solo excluye clases fijadas al construir el grafo: ninguno de los dos puede ser el motor de rutas de camión.
 
-### 3. Los atributos del camión viven en `vehiculos`, con defecto por tipología
+**HERE Routing v8 es el primer adaptador.** Razones: no exige infraestructura, trae tráfico y perfil de velocidad de camión, cubre parcialmente restricciones que la capa propia no tendrá al inicio (43 % sobre la muestra OSM), y geocodifica con la misma credencial. Valhalla auto-alojado es la alternativa documentada; se adopta si el costo por transacción de HERE supera el umbral que el PO fije en el spec de implementación o si una necesidad de control del grafo lo justifica. El cambio de motor no toca la capa normativa ni el validador.
 
-Se agregan a `vehiculos`, en migración `expand` ([ADR-066](./066-db-migration-rollback-strategy.md)): `peso_bruto_kg`, `alto_mm`, `ancho_mm`, `largo_mm`, `ejes`, todos nullable. Cuando el transportista no los cargó, se usa un perfil por defecto **por tipología** de ADR-073 (`tipo_unidad` + `tipo_carroceria`; `tipo_vehiculo` para filas legacy), definido como dato canónico en `packages/shared-schemas/src/domain/`, y la respuesta al conductor declara que la ruta se calculó con atributos estimados. Sin vehículo asignado (vista previa de una oferta), se calcula con el perfil del vehículo candidato o, si no hay, con el más restrictivo de la tipología del transportista. Nunca con el perfil de automóvil.
+### 3. Flujo de cálculo
 
-Los contratos de API y de UI del alta de vehículo que capturan estos campos se fijan en el spec de implementación y los aprueba el PO ahí; este ADR fija que existen y de dónde salen los defectos.
+1. Se determinan las reglas activas para la hora de salida del viaje y el vehículo (`reglasActivas(fechaHora, vehiculo)`).
+2. Se llama al motor con los atributos del vehículo, `departureTime` y las zonas de las reglas activas como áreas a evitar.
+3. **Toda ruta devuelta se valida** contra la capa (`validarRuta(polyline, reglasActivas)`), venga del motor que venga. Si viola una regla, se recalcula con el área bloqueada; si sigue violando, no hay ruta (§6).
+4. Fuera de la ventana de una regla, la vía es legal y el motor puede usarla; no se prohíbe de más.
 
-### 4. El combustible estimado deja de venir del proveedor de rutas
+### 4. Google Routes API conserva dos usos y sale del resto
 
-`fuelL` de Google alimenta hoy `fuelLitersEstimated` (`eco-route-preview`) y `combustibleL` (`eco-routing-tiempo-real`). Pasa a derivarse de la distancia y los factores de consumo por tipología de `carbon-calculator` (ADR-021, ADR-073), la misma base de la huella. Si no hay factor para la tipología, el campo queda `null`; no se rellena con 0.
+Geocodificación del origen (`geocodificar-origen`) hasta migrar a HERE Geocoding, y distancia de tramos ya recorridos (`calcular-metricas-viaje` sobre huecos de telemetría, `backfill-distancia-adapters`), donde se mide, no se recomienda. ADR-038 rige esa autenticación. `emissionType` y `FUEL_CONSUMPTION` desaparecen de `routes-api.ts` cuando salga el último llamador de rutas.
 
-### 5. Degradación: sin HERE no hay ruta, y se dice
+### 5. Atributos del camión en `vehiculos`, con defecto por tipología
 
-Si HERE no responde (timeout, 5xx, cuota), el sistema **no** presenta una ruta de automóvil como ruta de camión. La vista del conductor muestra «ruta no disponible» con destino y distancia estimada (`estimarDistanciaKm`), las métricas usan esa estimación como hoy, y el evento queda en logs y métrica. La degradación es explícita, nunca silenciosa.
+Migración `expand` ([ADR-066](./066-db-migration-rollback-strategy.md)) con columnas nullable `peso_bruto_kg`, `ejes`, `alto_mm`, `ancho_mm`, `largo_mm`, `anio_fabricacion`. El año es obligatorio para la regla de antigüedad del anillo. Cuando faltan, se usa el perfil por defecto por tipología de ADR-073 definido en `packages/shared-schemas/src/domain/`, y la respuesta al conductor declara «atributos estimados». Sin vehículo asignado se usa el del candidato o el más restrictivo de la tipología del transportista. Nunca el perfil de automóvil. Los contratos de API y UI del alta de vehículo se fijan en el spec de implementación y los aprueba el PO ahí.
 
-### 6. Credencial
+### 6. Degradación explícita
 
-La clave de HERE vive en Secret Manager (`here-api-key` en `local.secret_names`, `infrastructure/security.tf`), montada como `HERE_API_KEY` en `service_api` y validada por Zod en `config.ts`. Se restringe en la consola de HERE a Routing y Geocoding. Si HERE ofrece OAuth 2.0 con credenciales de cliente para el plan contratado, se prefiere a la clave estática, en línea con ADR-001; la sonda usó clave porque es lo que HERE exige en la URL. El secreto `HERE_API_KEY` de GitHub Actions existe solo para las sondas y se retira al cerrar el PR #820.
+Si el motor no responde o no existe ruta que cumpla las reglas activas, el sistema **no** muestra una ruta de automóvil como ruta de camión: la vista del conductor dice «ruta no disponible» con destino y distancia estimada (`estimarDistanciaKm`), y el evento queda en logs y métrica.
 
-### 7. OSM con capa propia de restricciones: no perseguido como motor; conservado como contingencia
+### 7. Combustible estimado desde GLEC
 
-C4 demostró que OSRM con un perfil de camión y una capa propia de restricciones (`scripts/probes/osm-inject-hgv-no.py`) resuelve Camino La Pirámide. No se adopta porque exigiría mantener la fuente legal de restricciones, no tiene tráfico y hoy el dato no existe en OSM. Se conserva el prototipo en el repo como salida de emergencia documentada. Se reabre solo si la validación de cobertura de HERE falla en un caso real o si el costo por transacción supera lo que el PO fije en el spec de implementación. Contribuir a OSM las restricciones verificadas con fuente normativa es deseable y no es compromiso de este ADR.
+`fuelL` del proveedor deja de usarse (`fuelLitersEstimated`, `combustibleL`). Se deriva de la distancia y los factores por tipología de `carbon-calculator` (ADR-021, ADR-073). Sin factor, `null`; nunca 0.
 
-### 8. Mitigación inmediata, antes de la migración
+### 8. Credencial
 
-Mientras HERE no esté en producción, la tarjeta de ruta eco del conductor declara que la ruta es referencial y no considera restricciones de camión. Es la línea 1 de las propuestas del 2026-10-20 y entra como primera tarea del spec de implementación.
+`here-api-key` en Secret Manager (`local.secret_names`, `infrastructure/security.tf`), montada como `HERE_API_KEY` en `service_api`, validada por Zod en `config.ts`, restringida en la consola de HERE a Routing y Geocoding; OAuth 2.0 con credenciales de cliente si el plan lo ofrece. El secreto de GitHub Actions existe solo para las sondas y se retira al cerrar el PR #820.
+
+### 9. Mitigación inmediata
+
+Mientras la capa normativa y el adaptador no estén en producción, la tarjeta de ruta eco del conductor declara que la ruta es referencial y no considera restricciones de camión. Es la primera tarea del spec de implementación.
 
 ## Alternativas consideradas
 
 | Alternativa | Veredicto | Razón |
 |---|---|---|
-| Google Routes API, `travelMode: TRUCK` + `vehicleInfo` | Descartada | Evidencia: no cambia la ruta en Chile; cobertura declarada EE.UU. y Japón; acceso por solicitud. |
-| OSRM o Valhalla auto-alojados + capa propia de restricciones | No perseguida ahora (§7) | Motor funciona (C4); dato ausente en OSM (C2); sin tráfico; Booster como fuente legal. |
-| Lista manual de tramos prohibidos aplicada sobre Google (zonas a evitar / waypoints) | Descartada | Frágil, no escala, no cubre horarios ni dimensiones, y sigue calculando con perfil de automóvil. |
-| HERE Routing v8 `truck` | **Elegida** | Conoce la restricción sin dato propio (C1), tráfico y restricciones horarias en el mismo proveedor, perfil de velocidad de camión. |
+| Confiar la legalidad al proveedor (Google `TRUCK`, HERE `truck`, OSM) | Descartada | Ninguno modela el D.S. 18/2001; coberturas parciales medidas (OSM 0/93 en La Pirámide, HERE 43 % sobre OSM). |
+| Capa normativa propia aplicada dentro del grafo de OSRM (inyección al construir) | No perseguida | Funciona (C4) pero no admite ventanas horarias ni cambios sin rebuild; la capa en tiempo de petición lo resuelve con cualquier motor que acepte áreas a evitar. |
+| Lista manual de tramos sobre Google (waypoints) | Descartada | Google no admite áreas a evitar; frágil y sin horarios. |
+| Valhalla auto-alojado como primer motor | Alternativa vigente | Equivalente en capacidad (polígonos a evitar, fecha-hora, costing truck); sin tráfico propio y con infraestructura y rebuild de tiles a cargo nuestro. Se adopta por costo o control. |
+| HERE como primer adaptador detrás de capa normativa propia | **Elegida** | Tráfico y perfil de camión sin infraestructura; áreas a evitar y `departureTime` en la petición; cobertura parcial adicional. |
 
 ## Consecuencias
 
 ### Positivas
 
-- La ruta sugerida al conductor deja de depender de que el conductor sepa por dónde no puede pasar.
-- Un solo proveedor para ruta legal, ETA y, después, geocodificación.
-- Los atributos del camión pasan a ser dato de producto, reutilizable por matching y por la huella (ADR-073).
-- El combustible estimado y la huella salen de la misma base (GLEC), sin depender de un extra computation de Google.
+- La legalidad de la ruta deja de depender de un proveedor y pasa a citar la norma; cada regla es auditable.
+- El motor es reemplazable sin tocar reglas ni validador.
+- Fuera de ventana, la vía se usa: no se penaliza de más al transportista.
+- Los atributos del camión pasan a ser dato de producto, reutilizable por matching y huella.
 
 ### Negativas
 
-- **Proveedor y costo nuevos**: HERE cobra por transacción según el plan contratado por el PO; el volumen mensual se dimensiona en el spec de implementación con el conteo real de llamadas de `routes-api.ts` en producción, y se acota con presupuesto y alerta, como con las APIs de Google.
-- **Doble proveedor durante la transición** (§2). Es deliberado y acotado a geocodificación y tramos recorridos.
-- **Cobertura verificada en un par**. La validación exige ampliarla; hasta entonces, la migración no se despliega.
-- **Captura de atributos en el alta de vehículo**: trabajo de UI y API con contrato que el PO aprueba en el spec.
-- **Clave estática** si HERE no ofrece OAuth 2.0 en el plan; mitigado por Secret Manager, restricción por servicio y rotación.
+- **Booster mantiene reglas legales.** Es un puñado, con cita y revisión trimestral, pero es una responsabilidad nueva del PO; una regla desactualizada es un error nuestro, no del proveedor.
+- **Proveedor y costo nuevos** (HERE por transacción, según plan); se dimensiona con el conteo real de llamadas de `routes-api.ts` y se acota con presupuesto y alerta.
+- **Captura de atributos en el alta de vehículo**, incluido el año, con contrato de UI y API que el PO aprueba en el spec.
+- **Doble proveedor durante la transición** (§4), deliberado y acotado.
+- La capa normativa nace con la Región Metropolitana; regiones entran a medida que el PO confirme sus resoluciones.
 
 ## Validación
 
-- [ ] Spec de implementación `.specs/ruteo-camion-here/spec.md` con criterios de salida, contratos de schema (`vehiculos`), API y UI aprobados por el PO.
-- [ ] Sonda de cobertura ampliada: al menos 10 pares origen→destino en la Región Metropolitana y 3 en regiones, con restricciones conocidas por el PO o los transportistas, automóvil vs camión, registrada en `.specs/ruteo-camion-chile/verify.md`.
-- [ ] Cliente HERE con Zod en el límite, timeout 10 s, span y métrica, y tests con rojo exhibido (dominio crítico: pricing/matching dependen de la distancia).
-- [ ] `here-api-key` en Secret Manager y `HERE_API_KEY` en `config.ts`; clave restringida en la consola de HERE; secreto de GitHub Actions retirado.
-- [ ] Degradación probada: HERE caído → «ruta no disponible», sin ruta de automóvil.
+- [ ] Spec de implementación `.specs/ruteo-camion-normativo/spec.md` con criterios de salida y contratos (schema `vehiculos`, API, UI) aprobados por el PO.
+- [ ] Capa normativa con las tres reglas de la RM, cada una con cita, URL oficial y fecha de verificación del PO; tests con rojo exhibido para `reglasActivas` y `validarRuta` (dominio crítico).
+- [ ] Sonda sobre el par de La Pirámide con la capa activa: a las 08:30 la ruta de camión evita el tramo y la validación pasa; a las 15:00 la validación acepta una ruta que lo use.
+- [ ] Adaptador HERE con Zod en el límite, timeout 10 s, span y métrica; áreas a evitar y `departureTime` en cada petición.
+- [ ] `here-api-key` en Secret Manager y `HERE_API_KEY` en `config.ts`; clave restringida; secreto de GitHub Actions retirado.
+- [ ] Degradación probada: motor caído o ruta imposible → «ruta no disponible», sin ruta de automóvil.
 - [ ] Aviso en la tarjeta de ruta eco desplegado antes que la migración.
-- [ ] Workflows de sonda `probe-routes-truck.yml` y `probe-truck-engines.yml` eliminados antes del merge del PR #820.
+- [ ] Workflows de sonda (`probe-routes-truck.yml`, `probe-truck-engines.yml`, `probe-here-why.yml`, `probe-normativa.yml`) eliminados antes del merge del PR #820.
