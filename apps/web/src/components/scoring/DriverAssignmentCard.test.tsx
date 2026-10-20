@@ -310,6 +310,90 @@ describe('DriverAssignmentCard', () => {
     expect(screen.queryByTestId('driver-assignment-submit')).toBeNull();
   });
 
+  it('nombre largo: los selects quedan a w-full y el texto del conductor parte', async () => {
+    const nombre = 'María Fernanda Contreras Valdebenito';
+    mockListas([
+      {
+        id: 'c-largo',
+        user_id: 'u-largo',
+        user: {
+          id: 'u-largo',
+          full_name: nombre,
+          rut: '11.111.111-1',
+          email: 'conductor.largo@example.com',
+          is_pending: true,
+        },
+        status: 'activo',
+      },
+    ]);
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName={nombre}
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+
+    const conductor = await screen.findByTestId('driver-assignment-select');
+    const camion = screen.getByTestId('vehicle-assignment-select');
+    expect(conductor).toHaveClass('w-full', 'min-w-0', 'max-w-full');
+    expect(camion).toHaveClass('w-full', 'min-w-0', 'max-w-full');
+    expect(screen.getByTestId('driver-assignment-card')).toHaveClass('min-w-0', 'max-w-full');
+    expect(screen.getByText(/Conductor actual:/)).toHaveClass('break-words');
+    expect(screen.getByTestId('driver-assignment-submit')).toHaveClass('w-full');
+    expect(
+      screen.getByRole('option', {
+        name: /María Fernanda Contreras Valdebenito · 11\.111\.111-1 · pendiente de activación/,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('un camión activo sin IMEI sigue en el selector; el retirado no', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/conductores') {
+        return { conductores: SAMPLE_CONDUCTORES };
+      }
+      if (path === '/vehiculos') {
+        return {
+          vehicles: [
+            {
+              id: 'v-sin-senal',
+              plate: 'SINS01',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'activo',
+              teltonika_imei: null,
+            },
+            {
+              id: 'v-baja',
+              plate: 'BAJA01',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'retirado',
+              teltonika_imei: null,
+            },
+          ],
+        };
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName={null}
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+    expect(await screen.findByRole('option', { name: 'SINS01' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'BAJA01' })).toBeNull();
+  });
+
   it('sin conductores activos → muestra empty state con link a crear', async () => {
     mockListas([]);
     const Wrapper = makeWrapper();

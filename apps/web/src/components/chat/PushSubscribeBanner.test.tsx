@@ -80,6 +80,20 @@ describe('PushSubscribeBanner — visibilidad', () => {
     renderBanner();
     expect(screen.getByText(/Activa las notificaciones/)).toBeInTheDocument();
   });
+
+  it('iOS PWA: reserva el inset superior (pt-safe) y los controles miden al menos 44px', () => {
+    renderBanner();
+    const banner = screen.getByTestId('push-subscribe-banner');
+    // El padding vertical vive en el hijo: py-* en el mismo nodo pisa pt-safe.
+    // data-push-banner evita que el header padre sume otro pt-safe encima.
+    expect(banner).toHaveClass('pt-safe');
+    expect(banner).toHaveAttribute('data-push-banner', '');
+    expect(banner.className).not.toMatch(/\bpy-/);
+    const activar = screen.getByRole('button', { name: 'Activar' });
+    const descartar = screen.getByRole('button', { name: 'Descartar banner' });
+    expect(activar).toHaveClass('min-h-11', 'min-w-11');
+    expect(descartar).toHaveClass('h-11', 'w-11');
+  });
 });
 
 describe('PushSubscribeBanner — acciones', () => {

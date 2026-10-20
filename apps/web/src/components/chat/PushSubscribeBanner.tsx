@@ -13,6 +13,13 @@
  *
  * Diseño: amber-light banner inline, no modal — no interrumpe el flujo
  * del chat. Si el user lo ignora 100 veces seguidas, no es nuestro problema.
+ *
+ * Posición: en el flujo (no fixed ni sticky). En asignación y en el drawer
+ * de chat es el primer hijo de una superficie a sangre, y la PWA ya usa
+ * viewport-fit=cover, así que iOS dibuja la barra de estado encima. El
+ * inset va en este nodo con `pt-safe` (el mismo utility de los headers);
+ * el padding vertical del contenido va en el hijo, porque `py-*` en el
+ * mismo elemento pisa ese padding-top.
  */
 
 import { useMutation } from '@tanstack/react-query';
@@ -72,28 +79,34 @@ export function PushSubscribeBanner() {
   };
 
   return (
-    <div className="flex items-center gap-3 border-amber-200 border-b bg-amber-50 px-4 py-2">
-      <Bell className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
-      <p className="flex-1 text-amber-900 text-sm">
-        Activa las notificaciones para enterarte cuando la otra parte te escriba, incluso con la app
-        cerrada.
-      </p>
-      <button
-        type="button"
-        onClick={() => subscribeM.mutate()}
-        disabled={subscribeM.isPending}
-        className="rounded-md bg-amber-600 px-3 py-1 font-medium text-white text-xs hover:bg-amber-700 disabled:opacity-60"
-      >
-        {subscribeM.isPending ? 'Activando…' : 'Activar'}
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="rounded p-1 text-amber-700 hover:bg-amber-100"
-        aria-label="Descartar banner"
-      >
-        <X className="h-4 w-4" aria-hidden />
-      </button>
+    <div
+      data-testid="push-subscribe-banner"
+      data-push-banner=""
+      className="border-amber-200 border-b bg-amber-50 pt-safe"
+    >
+      <div className="flex items-center gap-3 px-4 py-2">
+        <Bell className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+        <p className="flex-1 text-amber-900 text-sm">
+          Activa las notificaciones para enterarte cuando la otra parte te escriba, incluso con la
+          app cerrada.
+        </p>
+        <button
+          type="button"
+          onClick={() => subscribeM.mutate()}
+          disabled={subscribeM.isPending}
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md bg-amber-600 px-3 font-medium text-white text-xs hover:bg-amber-700 disabled:opacity-60"
+        >
+          {subscribeM.isPending ? 'Activando…' : 'Activar'}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded text-amber-700 hover:bg-amber-100"
+          aria-label="Descartar banner"
+        >
+          <X className="h-4 w-4" aria-hidden />
+        </button>
+      </div>
     </div>
   );
 }
