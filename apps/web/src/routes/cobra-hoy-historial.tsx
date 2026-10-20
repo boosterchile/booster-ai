@@ -7,6 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import { type AdelantoHistorial, useHistorialCobraHoy } from '../hooks/use-cobra-hoy.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { ApiError } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -25,8 +26,7 @@ export function CobraHoyHistorialRoute() {
         if (ctx.kind !== 'onboarded') {
           return null;
         }
-        const isCarrier = ctx.me.active_membership?.empresa?.is_transportista ?? false;
-        if (!isCarrier) {
+        if (!flagsDe(ctx.me).verFinanzas) {
           return <NoCarrierPermission />;
         }
         return <HistorialPage me={ctx.me} />;
@@ -178,8 +178,7 @@ function NoCarrierPermission() {
       <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-neutral-900 text-xl">Sin permisos</h2>
         <p className="mt-2 text-neutral-600 text-sm">
-          El pronto pago es exclusivo de empresas transportistas. Si tu rol cambió, contacta al
-          admin de tu empresa.
+          El pronto pago lo ven el dueño y el administrador de una empresa transportista.
         </p>
         <Link to="/app" className="mt-4 inline-block text-primary-600 underline">
           Volver al inicio

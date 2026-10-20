@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout.js';
 import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -149,7 +150,7 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
       {isCarrier && servicios.length > 0 && (
         <ul className="mt-6 space-y-4">
           {servicios.map((s) => (
-            <ServicioCard key={s.id} servicio={s} />
+            <ServicioCard key={s.id} servicio={s} puedeAsignar={flagsDe(me).asignar} />
           ))}
         </ul>
       )}
@@ -157,7 +158,10 @@ function ServiciosPage({ me }: { me: MeOnboarded }) {
   );
 }
 
-function ServicioCard({ servicio: s }: { servicio: Servicio }) {
+function ServicioCard({
+  servicio: s,
+  puedeAsignar,
+}: { servicio: Servicio; puedeAsignar: boolean }) {
   const precio =
     s.agreed_price_clp != null ? `$${s.agreed_price_clp.toLocaleString('es-CL')}` : null;
 
@@ -218,15 +222,26 @@ function ServicioCard({ servicio: s }: { servicio: Servicio }) {
               <UserPlus className="h-4 w-4" aria-hidden />
               Sin conductor asignado
             </span>
-            <Link
-              to="/app/asignaciones/$id"
-              params={{ id: s.id }}
-              data-testid={`asignar-conductor-${s.id}`}
-              className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700"
-            >
-              Asignar conductor
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
+            {puedeAsignar ? (
+              <Link
+                to="/app/asignaciones/$id"
+                params={{ id: s.id }}
+                data-testid={`asignar-conductor-${s.id}`}
+                className="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 font-medium text-sm text-white hover:bg-primary-700"
+              >
+                Asignar conductor
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            ) : (
+              <Link
+                to="/app/asignaciones/$id"
+                params={{ id: s.id }}
+                className="inline-flex items-center gap-1 font-medium text-primary-700 text-sm hover:underline"
+              >
+                Ver servicio
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </Link>
+            )}
           </div>
         )}
       </div>

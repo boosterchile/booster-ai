@@ -30,6 +30,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute.js';
 import type { MeResponse } from '../hooks/use-me.js';
 import { useScrollToFirstError } from '../hooks/use-scroll-to-first-error.js';
 import { ApiError, api } from '../lib/api-client.js';
+import { flagsDe } from '../lib/capacidades.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
@@ -129,8 +130,8 @@ export function ConductoresListRoute() {
 
 function ConductoresListPage({ me }: { me: MeOnboarded }) {
   const navigate = useNavigate();
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
+  // CHEQUEOS_REEMPLAZADOS conductores-ui: antes dueno|admin|despachador.
+  const canWrite = flagsDe(me).gestionarFlota;
 
   const scope = useEmpresaScope();
   const conductoresQ = useQuery({
@@ -855,9 +856,9 @@ function ConductoresDetallePage({ me }: { me: MeOnboarded }) {
     telefonoError ??
     (telefonoNormalizado.length > 0 && !telefonoValido ? MENSAJE_TELEFONO_CONDUCTOR : undefined);
 
-  const role = me.active_membership?.role;
-  const canWrite = role === 'dueno' || role === 'admin' || role === 'despachador';
-  const canDelete = role === 'dueno' || role === 'admin';
+  const flags = flagsDe(me);
+  const canWrite = flags.gestionarFlota;
+  const canDelete = flags.borrarFlota;
 
   const conductorQ = useQuery({
     queryKey: ['conductores', id],

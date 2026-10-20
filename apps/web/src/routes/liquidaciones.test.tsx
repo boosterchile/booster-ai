@@ -103,7 +103,7 @@ describe('LiquidacionesRoute — gating', () => {
     providedContext = { kind: 'onboarded', me: makeMe(false) };
     renderRoute();
     expect(screen.getByText(/Sin permisos/)).toBeInTheDocument();
-    expect(screen.getByText(/exclusivas de empresas transportistas/i)).toBeInTheDocument();
+    expect(screen.getByText(/dueño y el administrador/i)).toBeInTheDocument();
   });
 
   it('flag off (503) → banner explicativo', async () => {
