@@ -45,6 +45,7 @@ interface AssignmentDetail {
   assignment: {
     id: string;
     status: string;
+    empresa_id?: string | null;
     empresa_legal_name: string | null;
     vehicle_id: string | null;
     vehicle_plate: string | null;
@@ -121,10 +122,14 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
 
   return (
     <div className="flex h-screen flex-col bg-neutral-100">
-      {/* Header global. Si el banner no está, este bloque reserva el inset
-          superior: si no, la flecha queda bajo la barra de estado de iOS. */}
-      <div className="border-neutral-200 border-b bg-white [&:not(:has([data-push-banner]))]:pt-safe">
-        <PushSubscribeBanner />
+      {/* Header global. El inset va en este <header> aunque no haya banner
+          (push ya concedido o descartado): si no, en la PWA de iOS el título
+          queda bajo la barra de estado. El banner no suma otro pt-safe. */}
+      <header
+        className="border-neutral-200 border-b bg-white pt-safe"
+        data-testid="asignacion-header"
+      >
+        <PushSubscribeBanner reservaInset={false} />
         <div className="flex items-center gap-3 px-4 py-3">
           <Link
             to="/app/ofertas"
@@ -138,7 +143,7 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
             <p className="text-neutral-500 text-xs">Carga {tripCode}</p>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Asignar conductor — visible mientras el assignment esté
           mutable (asignado | recogido). Antes de aceptar este componente
@@ -151,6 +156,8 @@ function AsignacionDetallePage({ canWriteDocs }: { canWriteDocs: boolean }) {
           assignmentId={assignmentId}
           currentDriverName={assignment.driver_name}
           currentVehicleId={assignment.vehicle_id}
+          currentVehiclePlate={assignment.vehicle_plate}
+          carrierEmpresaId={assignment.empresa_id ?? null}
           assignmentStatus={assignment.status}
         />
       )}

@@ -274,6 +274,7 @@ describe('GET /assignments/:id', () => {
     ).assignment;
     expect(assignment.driver_user_id).toBe('driver-uuid');
     expect(assignment.vehicle_id).toBeNull();
+    expect((body.assignment as { empresa_id?: string }).empresa_id).toBe(CARRIER_EMP);
   });
 
   it('happy path con telemetría: retorna ubicacion_actual con last point', async () => {

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MeResponse } from '../hooks/use-me.js';
-import { api } from '../lib/api-client.js';
+import { api, setActiveEmpresaId } from '../lib/api-client.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 type Ctx = { kind: 'onboarded'; me: MeOnboarded } | { kind: 'unmanaged' };
@@ -98,6 +98,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  setActiveEmpresaId(null);
 });
 
 describe('AsignacionDetalleRoute', () => {
@@ -257,6 +258,84 @@ describe('AsignacionDetalleRoute', () => {
     expect(screen.queryByTestId('delivery-confirm')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('transport-docs-panel')).not.toBeInTheDocument();
+  });
+
+  it('sin banner, el header Asignación reserva el inset superior (pt-safe)', () => {
+    vi.spyOn(api, 'get').mockImplementation(() => new Promise<never>(() => undefined));
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    expect(screen.getByRole('banner')).toHaveClass('pt-safe');
+    expect(screen.getByRole('heading', { name: 'Asignación' })).toBeInTheDocument();
+  });
+
+  it('la flota de la card usa la empresa transportista de la carga, no la activa de la sesión', async () => {
+    setActiveEmpresaId('emp-mac');
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (String(path).startsWith('/assignments/')) {
+        return {
+          trip_request: {
+            id: 't1',
+            tracking_code: 'BOO-HC7DJX',
+            status: 'asignado',
+            origin: { address_raw: 'A', region_code: 'XIII' },
+            destination: { address_raw: 'B', region_code: 'V' },
+            cargo_type: 'carga_seca',
+            cargo_weight_kg: 5000,
+            shipper_legal_name: 'Prueba Generador',
+          },
+          assignment: {
+            id: 'a1',
+            status: 'asignado',
+            empresa_id: 'emp-voo',
+            driver_user_id: 'u-driver',
+            driver_name: 'Pedro González',
+            vehicle_id: 'v-jw',
+            vehicle_plate: 'JWTH77',
+          },
+        };
+      }
+      if (path === '/conductores') {
+        return {
+          conductores: [
+            {
+              id: 'c1',
+              user_id: 'u-driver',
+              status: 'activo',
+              user: {
+                id: 'u-driver',
+                full_name: 'Pedro González',
+                rut: '11.111.111-1',
+                email: 'conductor@example.com',
+                is_pending: false,
+              },
+            },
+          ],
+        };
+      }
+      if (path === '/vehiculos') {
+        return {
+          vehicles: [
+            {
+              id: 'v-jw',
+              plate: 'JWTH77',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'activo',
+            },
+          ],
+        };
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    providedContext = { kind: 'onboarded', me: makeMe(true) };
+    renderRoute();
+    expect(await screen.findByRole('option', { name: 'JWTH77' })).toBeInTheDocument();
+    expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
+    expect(api.get).toHaveBeenCalledWith(
+      '/vehiculos',
+      expect.objectContaining({ headers: { 'X-Empresa-Id': 'emp-voo' } }),
+    );
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
   });
 
   it('sin data (loading) → tracking code es slice del assignment id y aún no monta docs', () => {

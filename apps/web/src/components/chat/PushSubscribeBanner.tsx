@@ -35,7 +35,7 @@ import {
 
 const DISMISS_FLAG = 'booster.pushBanner.dismissed';
 
-export function PushSubscribeBanner() {
+export function PushSubscribeBanner({ reservaInset = true }: { reservaInset?: boolean }) {
   const [shouldShow, setShouldShow] = useState(false);
 
   useEffect(() => {
@@ -82,7 +82,11 @@ export function PushSubscribeBanner() {
     <div
       data-testid="push-subscribe-banner"
       data-push-banner=""
-      className="border-amber-200 border-b bg-amber-50 pt-safe"
+      className={
+        reservaInset
+          ? 'border-amber-200 border-b bg-amber-50 pt-safe'
+          : 'border-amber-200 border-b bg-amber-50'
+      }
     >
       <div className="flex items-center gap-3 px-4 py-2">
         <Bell className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />

@@ -399,6 +399,7 @@ export function createAssignmentsRoutes(opts: {
         picked_up_at: row.pickedUpAt?.toISOString() ?? null,
         delivered_at: row.deliveredAt?.toISOString() ?? null,
         cancelled_at: row.cancelledAt?.toISOString() ?? null,
+        empresa_id: row.empresaIdAssign,
         empresa_legal_name: row.empresaLegalName,
         vehicle_id: row.vehicleId,
         vehicle_plate: row.vehiclePlate,
