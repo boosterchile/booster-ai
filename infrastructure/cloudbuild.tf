@@ -24,10 +24,10 @@ resource "google_cloudbuild_worker_pool" "production" {
   location = var.region
 
   worker_config {
-    # e2-standard-2 (2 vCPU, 8GB) — sweet spot para docker builds del repo.
-    # Mas chico (e2-medium 1 vCPU 4GB) seria ~50% mas lento en api/web builds.
-    # Mas grande (e2-standard-4) inneecsario; los builds no son CPU-bound.
-    machine_type = "e2-standard-2"
+    # e2-standard-8 (8 vCPU, 32GB). El build de telemetry-tcp-gateway
+    # cayo con exit 137 (falta de memoria) en e2-standard-2 (2 vCPU, 8GB).
+    # Sube la RAM; no es un ajuste porque el build sea CPU-bound.
+    machine_type = "e2-standard-8"
 
     # Disk default 100GB es suficiente para cache + intermediate layers de
     # los 6 servicios buildeados en paralelo en cloudbuild.production.yaml.
