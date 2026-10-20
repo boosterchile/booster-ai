@@ -48,11 +48,33 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   { echo "origin_lat=$OLAT"; echo "origin_lon=$OLON"; echo "dest_lat=$DLAT"; echo "dest_lon=$DLON"; } >> "$GITHUB_OUTPUT"
 fi
 
+# Overpass: tres espejos y dos intentos por espejo. Un cuerpo no JSON (429/504 en
+# HTML) se imprime recortado con su código HTTP. No es fatal: HERE y OSRM solo
+# necesitan las coordenadas; el dato OSM se reporta como «no disponible».
+overpass() { # <query> <archivo-salida>
+  local query="$1" out="$2" ep code
+  for ep in https://overpass-api.de/api/interpreter https://lz4.overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter; do
+    for intento in 1 2; do
+      code=$(curl -sS -m 120 -A "$UA" "$ep" --data-urlencode "data=$query" -o "$out" -w '%{http_code}' || echo 000)
+      if [[ "$code" == "200" ]] && python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$out" 2>/dev/null; then
+        echo "  overpass OK ($ep, intento $intento)"
+        return 0
+      fi
+      echo "  overpass $ep intento $intento → HTTP $code; cuerpo: $(head -c 200 "$out" 2>/dev/null | tr '\n' ' ')"
+      sleep $((intento * 5))
+    done
+  done
+  return 1
+}
+
 echo "== Overpass: vías 'Pirámide' en Santiago y sus etiquetas de restricción =="
-curl -sS -m 90 -A "$UA" 'https://overpass-api.de/api/interpreter' \
-  --data-urlencode "data=[out:json][timeout:60];way[\"highway\"][\"name\"~\"Pir[áa]mide\",i]($BBOX);out tags;" \
-  -o "$OUT/overpass-piramide.json"
-python3 - "$OUT/overpass-piramide.json" <<'PY'
+if ! overpass "[out:json][timeout:60];way[\"highway\"][\"name\"~\"Pir[áa]mide\",i]($BBOX);out tags;" "$OUT/overpass-piramide.json"; then
+  echo "::warning::Overpass no disponible para la consulta de Camino La Pirámide; C2 queda sin responder en esta corrida"
+  OVERPASS_PIRAMIDE_OK=0
+else
+  OVERPASS_PIRAMIDE_OK=1
+fi
+[[ "$OVERPASS_PIRAMIDE_OK" == "1" ]] && python3 - "$OUT/overpass-piramide.json" <<'PY'
 import json, sys
 j = json.load(open(sys.argv[1], encoding="utf-8"))
 keys = ("name","highway","hgv","hgv:conditional","maxweight","maxweight:hgv","maxheight",
@@ -70,10 +92,13 @@ print(f"  vías Pirámide con etiqueta de restricción de camión: {con_restricc
 PY
 
 echo "== Overpass: cobertura de etiquetas de camión en el recorte de Santiago =="
-curl -sS -m 120 -A "$UA" 'https://overpass-api.de/api/interpreter' \
-  --data-urlencode "data=[out:json][timeout:90];(way[\"highway\"][\"hgv\"]($BBOX);way[\"highway\"][\"maxweight\"]($BBOX);way[\"highway\"][\"maxheight\"]($BBOX);way[\"highway\"][\"hgv:conditional\"]($BBOX););out tags;" \
-  -o "$OUT/overpass-conteo.json"
-python3 - "$OUT/overpass-conteo.json" <<'PY'
+if ! overpass "[out:json][timeout:90];(way[\"highway\"][\"hgv\"]($BBOX);way[\"highway\"][\"maxweight\"]($BBOX);way[\"highway\"][\"maxheight\"]($BBOX);way[\"highway\"][\"hgv:conditional\"]($BBOX););out tags;" "$OUT/overpass-conteo.json"; then
+  echo "::warning::Overpass no disponible para el conteo de cobertura"
+  OVERPASS_CONTEO_OK=0
+else
+  OVERPASS_CONTEO_OK=1
+fi
+[[ "$OVERPASS_CONTEO_OK" == "1" ]] && python3 - "$OUT/overpass-conteo.json" <<'PY'
 import collections, json, sys
 j = json.load(open(sys.argv[1], encoding="utf-8"))
 els = j.get("elements", [])
