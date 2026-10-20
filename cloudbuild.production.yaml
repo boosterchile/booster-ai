@@ -506,10 +506,15 @@ steps:
               TERMINAL="sin_credenciales"
             fi
             tail -n 3 /tmp/canary-probe-job.log || true
-            if [ -s /tmp/canary-probe-job.log ] && grep -q '"resumen"' /tmp/canary-probe-job.log; then
+            # El conteo por línea solo si TERMINAL=completo. Failed o
+            # pendiente no promueven aunque haya 200 en el log. El pod lleva
+            # safe-to-evict=false para que el autoscaler no lo mate antes
+            # del resumen. Un 404 en ese conteo, o un 5xx, sigue siendo fallo.
+            if [ -s /tmp/canary-probe-job.log ]; then
               python3 scripts/deploy/canary_synthetic_probe.py \
                 --aplicar-log-job "$$RESULT" \
-                --log-file /tmp/canary-probe-job.log
+                --log-file /tmp/canary-probe-job.log \
+                --job-estado "$$TERMINAL"
             elif [ "$$TERMINAL" = "ausente" ]; then
               echo "canary-probe: el job desapareció antes de leer logs — no se promueve"
               python3 scripts/deploy/canary_synthetic_probe.py \
