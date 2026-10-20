@@ -141,17 +141,19 @@ export function DriverAssignmentCard({
   return (
     <section
       aria-label="Asignar camión y conductor"
-      className="border-neutral-200 border-b bg-white px-4 py-3"
+      className="min-w-0 max-w-full border-neutral-200 border-b bg-white px-4 py-3"
       data-testid="driver-assignment-card"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-0 items-start gap-3">
         <User className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" aria-hidden />
-        <div className="flex-1">
+        {/* min-w-0: sin esto el <select> de conductor usa el ancho de la
+            opción más larga (nombre + RUT) y la fila flex se sale del viewport. */}
+        <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-neutral-900 text-sm">
             {currentDriverName ? 'Camión y conductor' : 'Asignar camión y conductor'}
           </h2>
           {currentDriverName ? (
-            <p className="mt-1 text-neutral-700 text-sm">
+            <p className="mt-1 break-words text-neutral-700 text-sm">
               Conductor actual: <strong>{currentDriverName}</strong>
             </p>
           ) : null}
@@ -191,10 +193,10 @@ export function DriverAssignmentCard({
           {listasListas &&
             conductoresAsignables.length > 0 &&
             (!puedeElegirCamion || camiones.length > 0) && (
-              <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-2">
+              <form onSubmit={handleSubmit} className="mt-3 flex min-w-0 flex-col gap-2">
                 {puedeElegirCamion && (
                   <label
-                    className="flex flex-col gap-1 text-neutral-700 text-sm"
+                    className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
                     htmlFor="vehicle-assignment-select"
                   >
                     Camión
@@ -203,7 +205,7 @@ export function DriverAssignmentCard({
                       value={selectedVehicleId}
                       onChange={(e) => setSelectedVehicleId(e.target.value)}
                       disabled={submitState.kind === 'submitting'}
-                      className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                      className="w-full min-w-0 max-w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
                       data-testid="vehicle-assignment-select"
                     >
                       <option value="">— Elige un camión —</option>
@@ -216,7 +218,7 @@ export function DriverAssignmentCard({
                   </label>
                 )}
                 <label
-                  className="flex flex-col gap-1 text-neutral-700 text-sm"
+                  className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
                   htmlFor="driver-assignment-select"
                 >
                   Conductor
@@ -225,7 +227,7 @@ export function DriverAssignmentCard({
                     value={selectedDriverUserId}
                     onChange={(e) => setSelectedDriverUserId(e.target.value)}
                     disabled={submitState.kind === 'submitting'}
-                    className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                    className="w-full min-w-0 max-w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
                     data-testid="driver-assignment-select"
                   >
                     <option value="">— Elige un conductor —</option>
@@ -239,7 +241,7 @@ export function DriverAssignmentCard({
                 <button
                   type="submit"
                   disabled={!puedeConfirmar || submitState.kind === 'submitting'}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                   data-testid="driver-assignment-submit"
                 >
                   {submitState.kind === 'submitting' ? (
@@ -258,9 +260,11 @@ export function DriverAssignmentCard({
             )}
 
           {submitState.kind === 'success' && (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700">
-              <CheckCircle2 className="h-4 w-4" aria-hidden />
-              Conductor asignado: <strong>{submitState.driverName ?? '(sin nombre)'}</strong>
+            <div className="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">
+                Conductor asignado: <strong>{submitState.driverName ?? '(sin nombre)'}</strong>
+              </span>
             </div>
           )}
 
