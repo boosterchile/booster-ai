@@ -111,6 +111,10 @@ const PATTERNS: IntentPattern[] = [
       'tomar oferta',
       'tomo la oferta',
       'tomo oferta',
+      // Ratificación corta. En reposo la UI exige «oferta». En
+      // confirmación solo vale la frase entera («aceptar» o «acepto»).
+      'aceptar',
+      'acepto',
     ],
   },
   {
@@ -122,6 +126,37 @@ const PATTERNS: IntentPattern[] = [
 /** Escapa caracteres especiales para uso en RegExp. */
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * «no» como palabra, o el tronco «rechaz» (rechazo, rechazar, rechazamos).
+ * No usa /g: un regex compartido con lastIndex se pegaría entre llamadas.
+ */
+function esNegacion(normalized: string): boolean {
+  return /\bno\b/.test(normalized) || /rechaz/.test(normalized);
+}
+
+/**
+ * Quita puntuación y signos (¡ ! ¿ ? y el punto que agrega iOS Safari al
+ * dictar) y deja una sola cadena de palabras.
+ */
+function sinPuntuacion(s: string): string {
+  return s
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Ratificación de la oferta. Solo la frase completa, sin puntuación.
+ * Cualquier «no» o «rechaz…» la niega.
+ */
+export function esRatificacionDeAceptar(transcript: string): boolean {
+  const normalized = sinPuntuacion(transcript.toLowerCase());
+  if (esNegacion(normalized)) {
+    return false;
+  }
+  return /^\s*(aceptar|acepto)\s*$/.test(normalized);
 }
 
 /**
@@ -139,6 +174,10 @@ export function parseCommand(transcript: string, confidence = 1.0): RecognizedCo
   }
 
   for (const { intent, tokens } of PATTERNS) {
+    // «no acepto la oferta» y «no entregué» no son el verbo afirmativo.
+    if ((intent === 'aceptar_oferta' || intent === 'confirmar_entrega') && esNegacion(normalized)) {
+      continue;
+    }
     for (const token of tokens) {
       // Frases multi-palabra: tolerar whitespace flexible entre palabras.
       // Single-word: word boundary.
