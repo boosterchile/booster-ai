@@ -99,6 +99,18 @@ Transporte Informa (Seremitt RM), con remisión al D.S. 18/2001 del MTT: La Pir�
 
 Sin series de Routes API antes de agosto de 2026. Costo por transacción hoy: cero en Google y en HERE (dentro del gratis). Detalle y escenarios en ADR-084 §Costo.
 
+### Transacciones HERE de las sondas del 2026-10-20 (reconstrucción desde los scripts y los logs)
+
+| Corrida | truck | car | con `departureTime` explícito | con `via` |
+|---|---|---|---|---|
+| 39461320020 intento 2 (17:32 UTC) | 2 | 2 | 0 | 0 |
+| 39475241512, job here (18:32) | 3 | 3 | 0 | 2 |
+| 39475241512, job cobertura | 7 | 30 | 0 | 0 |
+| 39476030415, why (18:35) | 9 | 3 | 6 | 5 |
+| **Total** | **21** | **38** | 6 | 7 |
+
+Ninguna llamada envió `departureTime=any`; por defecto HERE calcula sensible al tiempo (docs Routing v8) y Usage del portal mostró 31 Routing Truck y 70 Time Aware Routing. Contrato del PO (Base Plan A-S00091723): Truck y Time Aware 5 000 gratis cada uno y USD 2,92 / 1 000 hasta 200 000; Car 30 000 gratis y USD 0,88 / 1 000. Experimento de conteo exacto en día limpio: `probe-here-billing.yml` (7 truck `any`, 5 truck con hora, 3 car `any`); el PO contrasta con Usage.
+
 ## Conclusión de la fase
 
 1. Google Routes API no conoce restricciones de camión en Chile (sonda 1). Descartado como motor de legalidad de ruta; sigue siendo la fuente de tráfico y ETA.

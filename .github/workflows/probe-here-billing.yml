@@ -1,0 +1,46 @@
+# Sonda puntual, solo en rama de trabajo (no se mergea a main): experimento de facturación
+# HERE (¿doble cobro Truck + Time Aware?). Corre solo en un día UTC limpio (≥ FECHA_MINIMA):
+# el push de hoy la registra y sale sin llamar a HERE; mañana un push trivial la ejecuta.
+name: Probe HERE — facturación Truck vs Time Aware
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [claude/focused-brown-peeabb]
+    paths:
+      - .github/workflows/probe-here-billing.yml
+      - scripts/probes/probe-here-billing.py
+
+permissions:
+  contents: read
+
+jobs:
+  billing:
+    name: 7 truck any + 5 truck con hora + 3 car any
+    runs-on: ubuntu-latest
+    env:
+      HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+      FECHA_MINIMA: "2026-10-21"
+      TRUCK_ANY: "7"
+      TRUCK_TIME: "5"
+      CAR_ANY: "3"
+      DEPARTURE_ISO: "2026-10-22T10:00:00-03:00"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Día limpio
+        id: dia
+        run: |
+          hoy=$(date -u +%F)
+          echo "hoy_utc=$hoy" >> "$GITHUB_OUTPUT"
+          if [[ "$hoy" < "$FECHA_MINIMA" ]]; then
+            echo "::notice::Hoy es $hoy UTC < $FECHA_MINIMA; se registra el workflow y no se llama a HERE."
+            echo "correr=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "correr=si" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Sin secreto → omitido
+        if: env.HERE_API_KEY == ''
+        run: echo "::warning::HERE_API_KEY no está cargado; se omite."
+      - name: Llamadas con conteo exacto
+        if: env.HERE_API_KEY != '' && steps.dia.outputs.correr == 'si'
+        run: python3 -I scripts/probes/probe-here-billing.py

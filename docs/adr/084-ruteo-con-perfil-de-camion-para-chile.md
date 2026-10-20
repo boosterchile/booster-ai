@@ -48,14 +48,14 @@ Las primeras reglas son las tres de la Región Metropolitana publicadas por la S
 
 ### 2. El motor de ruteo es un adaptador intercambiable detrás de un contrato
 
-Un puerto `RoutingEngine` en `apps/api/src/services/` con una obligación no negociable: **aceptar áreas o segmentos a evitar en tiempo de petición** y una hora de salida. Los motores que lo cumplen hoy son HERE Routing v8 (`avoid[areas]`, `departureTime`) y Valhalla (`exclude_polygons`, `date_time`). Google Routes no admite áreas a evitar, y OSRM solo excluye clases fijadas al construir el grafo: ninguno de los dos puede ser el motor de rutas de camión.
+Un puerto `RoutingEngine` en `apps/api/src/services/` con una obligación no negociable: **aceptar áreas o segmentos a evitar en tiempo de petición** y permitir desactivar el ruteo sensible al tiempo cuando solo se necesita geometría. Los motores que lo cumplen hoy son HERE Routing v8 (`avoid[areas]`, `departureTime`) y Valhalla (`exclude_polygons`, `date_time`). Google Routes no admite áreas a evitar, y OSRM solo excluye clases fijadas al construir el grafo: ninguno de los dos puede ser el motor de rutas de camión.
 
 **HERE Routing v8 es el primer adaptador.** Razones: no exige infraestructura, trae tráfico y perfil de velocidad de camión, cubre parcialmente restricciones que la capa propia no tendrá al inicio (43 % sobre la muestra OSM), y geocodifica con la misma credencial. Valhalla auto-alojado es la alternativa documentada; se adopta si el costo por transacción de HERE supera el umbral que el PO fije en el spec de implementación o si una necesidad de control del grafo lo justifica. El cambio de motor no toca la capa normativa ni el validador.
 
 ### 3. Flujo de cálculo
 
 1. Se determinan las reglas activas para la hora de salida del viaje y el vehículo (`reglasActivas(fechaHora, vehiculo)`).
-2. Se llama al motor con los atributos del vehículo, `departureTime` y las zonas de las reglas activas como áreas a evitar.
+2. Se llama al motor con los atributos del vehículo, las zonas de las reglas activas como áreas a evitar y `departureTime=any` (la hora ya la consumió la capa normativa; el ruteo sensible al tiempo se reserva al ETA, ver §Costo).
 3. **Toda ruta devuelta se valida** contra la capa (`validarRuta(polyline, reglasActivas)`), venga del motor que venga. Si viola una regla, se recalcula con el área bloqueada; si sigue violando, no hay ruta (§6).
 4. Fuera de la ventana de una regla, la vía es legal y el motor puede usarla; no se prohíbe de más.
 
@@ -131,21 +131,27 @@ Antes de agosto de 2026 no hay series de Routes API. El volumen de ruteo es del 
 | Proveedor | Gratis por mes | Después | Nota |
 |---|---|---|---|
 | Google Routes, Compute Routes Pro (lo que prod usa hoy: `TRAFFIC_AWARE_OPTIMAL` + `FUEL_CONSUMPTION`) | 5 000 | USD 10 / 1 000 | Desde marzo de 2025 el gratis es por SKU, sin crédito común. |
-| HERE Routing v8, plan Base | 5 000 según una fuente, 30 000 según otras | USD 0,83 / 1 000 (términos comerciales, ruteo estándar) a USD 1,50 / 1 000 (fuente secundaria); USD 2,75 / 1 000 si HERE clasifica camión como *advanced* | Sin cuota fija. Alza de ~6 % desde abril de 2026 para contratos nuevos. **El PO confirma en la consola de HERE** en qué bucket cae `transportMode=truck` y el gratis vigente. |
+| HERE, plan Base, suscripción A-S00091723 (2026-10-20 → 2027-10-20), **precios de contrato confirmados por el PO en el portal** | Routing Truck: 5 000 · Time Aware Routing: 5 000 (cupo propio) · Routing Car/Bicycle/Pedestrian: 30 000 | Truck y Time Aware: USD 2,92 / 1 000 hasta 200 000, USD 2,33 después · Car: USD 0,88 / 1 000 hasta 5 M | `transportMode=truck` cae en el SKU Routing Truck (Usage del 2026-10-20). **Time Aware Routing se cobra además** cuando la petición es sensible al tiempo, y lo es por defecto: HERE usa la hora de la petición si no se envía `departureTime`; solo `departureTime=any` lo desactiva (docs Routing v8, *time-dependent routing*). |
 | Valhalla auto-alojado | — | ~USD 47 / mes fijos en GKE Autopilot (1 vCPU + 4 GiB: 730 h × (0,0445 + 4 × 0,0049225)) más un job semanal de tiles, despreciable | Sin tráfico. Precio de lista sin recargo regional verificado. |
+
+### Doble cobro y cómo se evita (decisión)
+
+Las 59 llamadas de las sondas del 2026-10-20 (21 truck, 38 car) no enviaron `departureTime=any`, así que todas contaron también como Time Aware; Usage mostró 31 Routing Truck y 70 Time Aware (la diferencia con 21 y 59 corresponde a pruebas del PO en la consola, también sin `any`). Un experimento con conteo exacto en día limpio (`probe-here-billing.yml`, 7 truck `any` + 5 truck con hora + 3 car `any`) lo confirma contra Usage.
+
+Por eso el adaptador HERE (§2) envía **`departureTime=any` en toda ruta de camión**: la legalidad por ventana horaria la aplica la capa normativa (§1, §3) con áreas a evitar calculadas por nosotros, no HERE, que no modela el decreto. El ruteo sensible al tiempo (tráfico) se usa solo donde el ETA lo exige (`compute-route-eta`), con su cupo propio de 5 000 y a USD 2,92 / 1 000; hasta que ese cupo se agote, Google Pro sigue siendo gratis para ETA (5 000) y puede conservarse ahí. Con esto cada ruta de camión cuesta **una** transacción Truck, no dos.
 
 ### Lectura
 
-- **Hoy**: costo por transacción **cero** en Google y en HERE; ambos quedan dentro del gratis. El cambio de proveedor no se justifica por ahorro, se justifica por legalidad de ruta.
-- **Escenarios** (HERE a USD 0,83–2,75 / 1 000 tras el gratis; Google Pro a USD 10 / 1 000 tras 5 000):
+- **Hoy**: costo por transacción **cero** en Google y en HERE; el volumen (~100/mes) cabe en cualquier gratis. El cambio de proveedor no se justifica por ahorro, se justifica por legalidad de ruta.
+- **Escenarios** con precios de contrato (Truck USD 2,92 / 1 000 tras 5 000; Google Pro USD 10 / 1 000 tras 5 000; Valhalla ~USD 47 / mes fijos):
 
-| Llamadas de ruteo / mes | Google Pro | HERE estándar | HERE si camión = advanced | Valhalla |
+| Rutas de camión / mes | Google Pro | HERE Truck con `any` | HERE si además Time Aware en todas | Valhalla |
 |---|---|---|---|---|
 | 1 000 | 0 | 0 | 0 | 47 |
-| 10 000 | 50 | 0–4 | 0–14 | 47 |
-| 100 000 | 950 | 58–79 | 190–261 | 47 + escalado |
+| 10 000 | 50 | 15 | 29 | 47 |
+| 100 000 | 950 | 277 | 555 | 47 + escalado |
 
-- Valhalla solo compensa a HERE por encima de ~17 000 (advanced) a ~57 000 (estándar) llamadas mensuales tras el gratis, y sigue sin tráfico. A escala actual y a 10× la actual, **HERE es la opción más barata**; a 100×, Valhalla entra en el umbral que §2 fija para reconsiderar.
+- Valhalla compensa a HERE desde ~21 000 rutas mensuales (con `any`) o ~13 000 (si se dejara Time Aware en todas), y sigue sin tráfico. A escala actual y a 10× la actual, **HERE es la opción más barata**; a 100×, Valhalla entra en el umbral que §2 fija para reconsiderar.
 - El costo dominante de este ADR no es el proveedor: es la **implementación** (abajo) y la **responsabilidad de mantener la capa normativa** (revisión trimestral del PO).
 
 ### Implementación (estimación en días de agente, con revisión del PO entre PRs)
@@ -168,8 +174,9 @@ Tiempo del PO: verificar las tres reglas en la fuente oficial (~2 h), aprobar co
 - [ ] Spec de implementación `.specs/ruteo-camion-normativo/spec.md` con criterios de salida y contratos (schema `vehiculos`, API, UI) aprobados por el PO.
 - [ ] Capa normativa con las tres reglas de la RM, cada una con cita, URL oficial y fecha de verificación del PO; tests con rojo exhibido para `reglasActivas` y `validarRuta` (dominio crítico).
 - [ ] Sonda sobre el par de La Pirámide con la capa activa: a las 08:30 la ruta de camión evita el tramo y la validación pasa; a las 15:00 la validación acepta una ruta que lo use.
-- [ ] Adaptador HERE con Zod en el límite, timeout 10 s, span y métrica; áreas a evitar y `departureTime` en cada petición.
+- [ ] Adaptador HERE con Zod en el límite, timeout 10 s, span y métrica; áreas a evitar en cada petición y `departureTime=any` en rutas de camión (Time Aware solo en ETA).
+- [ ] Experimento de facturación (`probe-here-billing.yml`, día limpio) contrastado con Usage del portal por el PO: Truck = 12, Time Aware = 5, Car = 3.
 - [ ] `here-api-key` en Secret Manager y `HERE_API_KEY` en `config.ts`; clave restringida; secreto de GitHub Actions retirado.
 - [ ] Degradación probada: motor caído o ruta imposible → «ruta no disponible», sin ruta de automóvil.
 - [ ] Aviso en la tarjeta de ruta eco desplegado antes que la migración.
-- [ ] Workflows de sonda (`probe-routes-truck.yml`, `probe-truck-engines.yml`, `probe-here-why.yml`, `probe-normativa.yml`) eliminados antes del merge del PR #820.
+- [ ] Workflows de sonda (`probe-routes-truck.yml`, `probe-truck-engines.yml`, `probe-here-why.yml`, `probe-normativa.yml`, `probe-volumen-apis.yml`, `probe-here-billing.yml`) eliminados antes del merge del PR #820.
