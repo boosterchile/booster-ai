@@ -42,6 +42,12 @@ describe('parseCommand', () => {
     expect(parseCommand('Tomo oferta')?.intent).toBe('aceptar_oferta');
   });
 
+  it('aceptar_oferta: "aceptar" suelto es ratificación, no subcadena', () => {
+    expect(parseCommand('aceptar')?.intent).toBe('aceptar_oferta');
+    expect(parseCommand('Acepto')?.intent).toBe('aceptar_oferta');
+    expect(parseCommand('aceptaron la carga')).toBeNull();
+  });
+
   it('cancelar: "cancelar"', () => {
     expect(parseCommand('cancelar')?.intent).toBe('cancelar');
   });

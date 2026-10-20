@@ -80,9 +80,11 @@ export function useVoiceCommand(opts: UseVoiceCommandOpts = {}): UseVoiceCommand
   const onCommandRef = useRef(onCommand);
   const onUnknownRef = useRef(onUnknown);
   const onUnrecognizedRef = useRef(onUnrecognized);
+  const acceptedIntentsRef = useRef(acceptedIntents);
   onCommandRef.current = onCommand;
   onUnknownRef.current = onUnknown;
   onUnrecognizedRef.current = onUnrecognized;
+  acceptedIntentsRef.current = acceptedIntents;
 
   const recognizer = useMemo<VoiceCommandController>(
     () => injectedRecognizer ?? createVoiceCommandRecognizer(),
@@ -92,10 +94,14 @@ export function useVoiceCommand(opts: UseVoiceCommandOpts = {}): UseVoiceCommand
   const [state, setState] = useState<RecognitionState>(() => recognizer.getState());
   const [lastUnrecognized, setLastUnrecognized] = useState<string | null>(null);
 
+  // `acceptedIntents` vive en un ref. Un `Set` nuevo en cada render
+  // (los callers lo construyen inline) no puede re-correr este efecto:
+  // el cleanup aborta el micrófono y corta la frase a mitad.
   useEffect(() => {
     const unsubState = recognizer.subscribe(setState);
     const unsubCmd = recognizer.onCommand((cmd) => {
-      if (acceptedIntents && !acceptedIntents.has(cmd.intent)) {
+      const intents = acceptedIntentsRef.current;
+      if (intents && !intents.has(cmd.intent)) {
         onUnknownRef.current?.(cmd);
         return;
       }
@@ -116,7 +122,7 @@ export function useVoiceCommand(opts: UseVoiceCommandOpts = {}): UseVoiceCommand
       // hasta el next gesture.
       recognizer.abort();
     };
-  }, [recognizer, acceptedIntents]);
+  }, [recognizer]);
 
   return {
     state,

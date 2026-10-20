@@ -111,6 +111,10 @@ const PATTERNS: IntentPattern[] = [
       'tomar oferta',
       'tomo la oferta',
       'tomo oferta',
+      // Ratificación corta. En reposo la UI no la trata como primera
+      // frase: hace falta «oferta». Sirve para el segundo «aceptar».
+      'aceptar',
+      'acepto',
     ],
   },
   {

@@ -1,9 +1,13 @@
 import { CheckCircle2, Info, Loader2, Mic } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAcceptOfferMutation } from '../../hooks/use-offers.js';
 import { useVoiceCommand } from '../../hooks/use-voice-command.js';
 import { ApiError } from '../../lib/api-client.js';
-import type { RecognizedCommand, VoiceCommandController } from '../../services/voice-commands.js';
+import {
+  type RecognizedCommand,
+  type VoiceCommandController,
+  createVoiceCommandRecognizer,
+} from '../../services/voice-commands.js';
 import { VoiceCommandButton } from '../voice/VoiceCommandButton.js';
 
 /**
@@ -58,6 +62,10 @@ export function VoiceAcceptOfferControl({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [confirmTimer, setConfirmTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const mutation = useAcceptOfferMutation();
+  // Un solo reconocedor para el botón (abre el mic) y para este listener
+  // (decide la oferta). Dos instancias hacen que Hablar transcriba en una
+  // y la aceptación escuche la otra, que nunca arranca.
+  const voice = useMemo(() => recognizer ?? createVoiceCommandRecognizer(), [recognizer]);
 
   const cancelConfirmTimer = (): void => {
     if (confirmTimer !== null) {
@@ -127,8 +135,13 @@ export function VoiceAcceptOfferControl({
       return;
     }
     if (cmd.intent === 'aceptar_oferta') {
+      // «aceptar» suelto no abre el contrato: en reposo hace falta la
+      // frase con «oferta». En la confirmación, «aceptar» sí ratifica.
+      const fraseDeOferta = cmd.transcript.includes('oferta');
       if (localState === 'idle') {
-        enterConfirming();
+        if (fraseDeOferta) {
+          enterConfirming();
+        }
       } else if (localState === 'confirming') {
         ratify();
       }
@@ -138,7 +151,7 @@ export function VoiceAcceptOfferControl({
   useVoiceCommand({
     acceptedIntents: new Set(['aceptar_oferta', 'cancelar']),
     onCommand: onVoiceCommand,
-    ...(recognizer ? { recognizer } : {}),
+    recognizer: voice,
   });
 
   if (localState === 'success') {
@@ -196,7 +209,7 @@ export function VoiceAcceptOfferControl({
         <VoiceCommandButton
           acceptedIntents={new Set(['aceptar_oferta', 'cancelar'])}
           onCommand={() => undefined /* no-op: listener vive en useVoiceCommand arriba */}
-          {...(recognizer ? { recognizer } : {})}
+          recognizer={voice}
           idleLabel='Di "aceptar oferta"'
         />
 
