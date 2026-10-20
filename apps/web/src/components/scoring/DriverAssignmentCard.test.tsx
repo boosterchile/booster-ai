@@ -2,8 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api } from '../../lib/api-client.js';
-import { DriverAssignmentCard } from './DriverAssignmentCard.js';
+import { ApiError, api, setActiveEmpresaId } from '../../lib/api-client.js';
+import { empresaKey } from '../../lib/empresa-activa.js';
+import { DriverAssignmentCard, conCamionAsignado } from './DriverAssignmentCard.js';
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -89,9 +90,22 @@ const SAMPLE_CONDUCTORES = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setActiveEmpresaId(null);
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  setActiveEmpresaId(null);
+});
+
+describe('conCamionAsignado', () => {
+  it('no inventa status activo si el assignment no trae estado', () => {
+    const sinEstado = conCamionAsignado([], 'v-test', 'TEST01', null);
+    expect(sinEstado).toEqual([{ id: 'v-test', plate: 'TEST01' }]);
+    expect(sinEstado[0]).not.toHaveProperty('status');
+
+    const conEstado = conCamionAsignado([], 'v-test', 'TEST01', 'mantenimiento');
+    expect(conEstado[0]).toMatchObject({ id: 'v-test', plate: 'TEST01', status: 'mantenimiento' });
+  });
 });
 
 describe('DriverAssignmentCard', () => {
@@ -392,6 +406,272 @@ describe('DriverAssignmentCard', () => {
     );
     expect(await screen.findByRole('option', { name: 'SINS01' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'BAJA01' })).toBeNull();
+  });
+
+  it('la caché de Vehículos (arreglo, sin .vehicles) no se muestra como flota vacía', async () => {
+    setActiveEmpresaId('emp-mac');
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+          gcTime: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    // Inicio y /app/vehiculos guardan un arreglo en ['vehiculos', empresa].
+    // Esa entrada vacía no es la flota de la carga: la card lee su propia
+    // clave, y ahí el arreglo (sin `.vehicles`) sí trae a TEST01.
+    client.setQueryData(empresaKey('emp-voo', 'vehiculos'), []);
+    client.setQueryData(empresaKey('emp-voo', 'vehiculos', 'asignacion'), [
+      {
+        id: 'v-jw',
+        plate: 'TEST01',
+        type: 'camion_pesado',
+        unit_category: 'motriz',
+        status: 'activo',
+      },
+      {
+        id: 'v-semi',
+        plate: 'SEMI01',
+        type: 'semi_remolque',
+        unit_category: 'arrastre',
+        status: 'activo',
+      },
+    ]);
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/conductores') {
+        return { conductores: SAMPLE_CONDUCTORES };
+      }
+      throw new Error(`no debe refetch: ${path}`);
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName="Conductor Demo"
+          currentVehicleId="v-jw"
+          currentVehiclePlate="TEST01"
+          carrierEmpresaId="emp-voo"
+          assignmentStatus="asignado"
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole('option', { name: 'TEST01' })).toBeInTheDocument();
+    expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
+    expect(screen.queryByRole('option', { name: 'SEMI01' })).toBeNull();
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
+  });
+
+  it('el camión ya asignado queda preseleccionado aunque la flota filtrada no lo traiga', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/conductores') {
+        return { conductores: SAMPLE_CONDUCTORES };
+      }
+      if (path === '/vehiculos') {
+        return {
+          vehicles: [
+            {
+              id: 'v-1',
+              plate: 'ABCD12',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'activo',
+            },
+            {
+              id: 'v-mant',
+              plate: 'MANT01',
+              type: 'camion_pesado',
+              unit_category: 'motriz',
+              status: 'mantenimiento',
+            },
+          ],
+        };
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName="Conductor Demo"
+          currentVehicleId="v-jw"
+          currentVehiclePlate="TEST01"
+          carrierEmpresaId="emp-voo"
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+
+    const select = await screen.findByTestId('vehicle-assignment-select');
+    expect(select).toHaveValue('v-jw');
+    expect(screen.getByRole('option', { name: 'TEST01' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'ABCD12' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'MANT01' })).toBeNull();
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
+  });
+
+  it('si el id del camión llega después del primer render, el selector lo preselecciona', async () => {
+    mockListas();
+    const Wrapper = makeWrapper();
+    const props = {
+      assignmentId: 'a1',
+      currentDriverName: 'Conductor Demo',
+      assignmentStatus: 'asignado',
+      carrierEmpresaId: 'emp-voo',
+    };
+    const { rerender } = render(
+      <Wrapper>
+        <DriverAssignmentCard {...props} currentVehicleId={null} currentVehiclePlate={null} />
+      </Wrapper>,
+    );
+    expect(await screen.findByTestId('vehicle-assignment-select')).toHaveValue('');
+
+    rerender(
+      <Wrapper>
+        <DriverAssignmentCard {...props} currentVehicleId="v-1" currentVehiclePlate="ABCD12" />
+      </Wrapper>,
+    );
+    expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-1');
+  });
+
+  it('pide la flota y los conductores de la empresa transportista de la carga, no la de la sesión', async () => {
+    setActiveEmpresaId('emp-mac');
+    mockListas();
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      ok: true,
+      assignment_id: 'a1',
+      previous_driver_user_id: null,
+      new_driver_user_id: 'u-driver-1',
+      driver_name: 'Conductor Demo',
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName={null}
+          currentVehicleId="v-1"
+          currentVehiclePlate="ABCD12"
+          carrierEmpresaId="emp-voo"
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+
+    await screen.findByTestId('vehicle-assignment-select');
+    const initCarrier = expect.objectContaining({
+      headers: { 'X-Empresa-Id': 'emp-voo' },
+    });
+    expect(api.get).toHaveBeenCalledWith('/vehiculos', initCarrier);
+    expect(api.get).toHaveBeenCalledWith('/conductores', initCarrier);
+    expect(api.get).not.toHaveBeenCalledWith(
+      '/vehiculos',
+      expect.objectContaining({ headers: { 'X-Empresa-Id': 'emp-mac' } }),
+    );
+
+    fireEvent.change(screen.getByTestId('driver-assignment-select'), {
+      target: { value: 'u-driver-1' },
+    });
+    fireEvent.click(screen.getByTestId('driver-assignment-submit'));
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith(
+        '/assignments/a1/asignar-conductor',
+        { driver_user_id: 'u-driver-1', vehiculo_id: 'v-1' },
+        initCarrier,
+      );
+    });
+  });
+
+  it('si /vehiculos falla, es error: no el aviso de flota vacía, y el camión asignado sigue visible', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/conductores') {
+        return { conductores: SAMPLE_CONDUCTORES };
+      }
+      if (path === '/vehiculos') {
+        throw new Error('red');
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName="Conductor Demo"
+          currentVehicleId="v-jw"
+          currentVehiclePlate="TEST01"
+          carrierEmpresaId="emp-voo"
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+
+    expect(
+      await screen.findByText(/No pudimos cargar la flota o los conductores/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
+    expect(screen.getByTestId('vehicle-assignment-select')).toHaveValue('v-jw');
+    expect(screen.getByRole('option', { name: 'TEST01' })).toBeInTheDocument();
+  });
+
+  it('mientras /vehiculos no responde, no aparece el aviso de flota vacía', async () => {
+    vi.spyOn(api, 'get').mockImplementation((path: string) => {
+      if (path === '/conductores') {
+        return Promise.resolve({ conductores: SAMPLE_CONDUCTORES });
+      }
+      if (path === '/vehiculos') {
+        return new Promise(() => undefined);
+      }
+      return Promise.reject(new Error(`GET inesperado: ${path}`));
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName="Conductor Demo"
+          currentVehicleId="v-jw"
+          currentVehiclePlate="TEST01"
+          carrierEmpresaId="emp-voo"
+          assignmentStatus="asignado"
+        />
+      </Wrapper>,
+    );
+
+    expect(await screen.findByText(/Cargando flota y conductores/)).toBeInTheDocument();
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
+    expect(screen.queryByTestId('vehicle-assignment-select')).toBeNull();
+  });
+
+  it('respuesta de flota ilegible se muestra como error, no como lista vacía', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+      if (path === '/conductores') {
+        return { conductores: SAMPLE_CONDUCTORES };
+      }
+      if (path === '/vehiculos') {
+        return { total: 0 };
+      }
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    const Wrapper = makeWrapper();
+    render(
+      <Wrapper>
+        <DriverAssignmentCard
+          assignmentId="a1"
+          currentDriverName={null}
+          assignmentStatus="asignado"
+          carrierEmpresaId="emp-voo"
+        />
+      </Wrapper>,
+    );
+
+    expect(
+      await screen.findByText(/No pudimos cargar la flota o los conductores/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No tienes camiones activos/)).toBeNull();
   });
 
   it('sin conductores activos → muestra empty state con link a crear', async () => {

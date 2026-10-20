@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Loader2, User, UserPlus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import { z } from 'zod';
 import { ApiError, api } from '../../lib/api-client.js';
-import { useEmpresaScope } from '../../lib/empresa-activa.js';
+import { empresaInit, empresaKey, useEmpresaScope } from '../../lib/empresa-activa.js';
 
 /**
  * Card carrier-side: asignar conductor a un assignment activo.
@@ -33,12 +34,70 @@ interface ConductorListItem {
   status: string;
 }
 
-interface VehiculoListItem {
-  id: string;
-  plate: string;
-  type: string;
-  unit_category: string;
-  status: string;
+/**
+ * La pantalla Vehículos y el inicio guardan en `['vehiculos', empresa]` el
+ * arreglo pelado. Esta card usa otra clave (`…, 'asignacion'`) para no pisar
+ * esa caché, y acepta las dos formas: arreglo o `{ vehicles }`. Una forma
+ * ilegible es error, no «flota vacía».
+ *
+ * `unit_category` y `type` pueden faltar en una caché vieja. Sin
+ * `unit_category` no se asume arrastre.
+ */
+const vehiculoFlotaSchema = z.object({
+  id: z.string().min(1),
+  plate: z.string().min(1),
+  type: z.string().optional(),
+  unit_category: z.string().optional(),
+  status: z.string(),
+});
+
+const respuestaVehiculosSchema = z.union([
+  z.array(vehiculoFlotaSchema),
+  z.object({ vehicles: z.array(vehiculoFlotaSchema) }),
+]);
+
+type VehiculoFlota = z.infer<typeof vehiculoFlotaSchema>;
+
+function filasVehiculos(raw: unknown): VehiculoFlota[] | null {
+  const parsed = respuestaVehiculosSchema.safeParse(raw);
+  if (!parsed.success) {
+    return null;
+  }
+  return Array.isArray(parsed.data) ? parsed.data : parsed.data.vehicles;
+}
+
+/**
+ * Mantenimiento sigue fuera del selector: confirmarlo lo rechaza el
+ * guardado (`vehicleStatus !== 'activo'` → `not_active`). No se cambia
+ * esa regla. El camión que la carga ya tiene se agrega aparte, aunque
+ * no pase este filtro.
+ */
+function esCamionElegible(v: VehiculoFlota): boolean {
+  return v.status === 'activo' && v.unit_category !== 'arrastre';
+}
+
+export function conCamionAsignado(
+  camiones: readonly VehiculoFlota[],
+  id: string | null,
+  plate: string | null,
+  status: string | null,
+): Array<Pick<VehiculoFlota, 'id' | 'plate'> & { status?: string }> {
+  if (!id) {
+    return [...camiones];
+  }
+  if (camiones.some((v) => v.id === id)) {
+    return [...camiones];
+  }
+  // El assignment a veces no trae estado. No se inventa `activo`: confirmar
+  // un camión que no lo está lo rechaza el guardado.
+  const agregado: Pick<VehiculoFlota, 'id' | 'plate'> & { status?: string } = {
+    id,
+    plate: plate && plate.length > 0 ? plate : 'Camión asignado',
+  };
+  if (status != null && status.length > 0) {
+    agregado.status = status;
+  }
+  return [...camiones, agregado];
 }
 
 interface AsignarResponse {
@@ -55,8 +114,17 @@ export interface DriverAssignmentCardProps {
   assignmentId: string;
   /** Nombre del conductor actualmente asignado, si hay. */
   currentDriverName: string | null;
-  /** Camión que quedó en la oferta, para preseleccionarlo. */
+  /** Camión que quedó en la carga, para preseleccionarlo. */
   currentVehicleId?: string | null;
+  /** Patente del camión ya asignado, si la lista filtrada no lo trae. */
+  currentVehiclePlate?: string | null;
+  /** Estado real del camión en el assignment. Vacío si la API no lo manda. */
+  currentVehicleStatus?: string | null;
+  /**
+   * Empresa transportista dueña de la carga. La flota, los conductores y
+   * el POST de confirmar usan este id, no la empresa activa de la sesión.
+   */
+  carrierEmpresaId?: string | null;
   /** Estado actual del assignment — solo permitimos asignar en mutables. */
   assignmentStatus: string;
 }
@@ -67,11 +135,17 @@ export function DriverAssignmentCard({
   assignmentId,
   currentDriverName,
   currentVehicleId = null,
+  currentVehiclePlate = null,
+  currentVehicleStatus = null,
+  carrierEmpresaId = null,
   assignmentStatus,
 }: DriverAssignmentCardProps) {
   const queryClient = useQueryClient();
   const [selectedDriverUserId, setSelectedDriverUserId] = useState('');
-  const [selectedVehicleId, setSelectedVehicleId] = useState(currentVehicleId ?? '');
+  // null = el usuario todavía no tocó el selector: sigue al camión de la carga,
+  // aunque ese id llegue en un render posterior.
+  const [vehicleElegido, setVehicleElegido] = useState<string | null>(null);
+  const selectedVehicleId = vehicleElegido ?? currentVehicleId ?? '';
   const [submitState, setSubmitState] = useState<
     | { kind: 'idle' }
     | { kind: 'submitting' }
@@ -80,14 +154,25 @@ export function DriverAssignmentCard({
   >({ kind: 'idle' });
 
   const scope = useEmpresaScope();
+  // La sesión del Mac puede estar en otra empresa. La flota de esta carga
+  // es la del transportista del assignment.
+  const empresaId = carrierEmpresaId ? carrierEmpresaId : scope.empresaId;
+  const init = empresaInit(empresaId);
   const conductoresQ = useQuery<{ conductores: ConductorListItem[] }>({
-    queryKey: scope.key('conductores-list-for-assignment'),
-    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores', scope.init),
+    queryKey: empresaKey(empresaId, 'conductores-list-for-assignment'),
+    queryFn: () => api.get<{ conductores: ConductorListItem[] }>('/conductores', init),
   });
   const puedeElegirCamion = assignmentStatus === 'asignado';
-  const vehiculosQ = useQuery<{ vehicles: VehiculoListItem[] }>({
-    queryKey: scope.key('vehiculos'),
-    queryFn: () => api.get<{ vehicles: VehiculoListItem[] }>('/vehiculos', scope.init),
+  const vehiculosQ = useQuery({
+    queryKey: empresaKey(empresaId, 'vehiculos', 'asignacion'),
+    queryFn: async () => {
+      const raw = await api.get<unknown>('/vehiculos', init);
+      const filas = filasVehiculos(raw);
+      if (!filas) {
+        throw new Error('respuesta de vehículos inválida');
+      }
+      return filas;
+    },
     enabled: puedeElegirCamion,
   });
 
@@ -103,13 +188,34 @@ export function DriverAssignmentCard({
   const conductoresAsignables = (conductoresQ.data?.conductores ?? []).filter(
     (c) => c.status !== 'baja',
   );
-  const camiones = (vehiculosQ.data?.vehicles ?? []).filter(
-    (v) => v.status === 'activo' && v.unit_category !== 'arrastre',
+  const filas = vehiculosQ.isSuccess ? filasVehiculos(vehiculosQ.data) : null;
+  const formaMala = vehiculosQ.isSuccess && filas == null;
+  const camiones = (filas ?? []).filter(esCamionElegible);
+  const opcionesCamion = conCamionAsignado(
+    camiones,
+    currentVehicleId,
+    currentVehiclePlate,
+    currentVehicleStatus,
   );
-  const listasListas =
-    !conductoresQ.isLoading &&
-    !conductoresQ.isError &&
-    (!puedeElegirCamion || (!vehiculosQ.isLoading && !vehiculosQ.isError));
+  const cargandoFlota =
+    puedeElegirCamion && vehiculosQ.isPending && !vehiculosQ.isError && !formaMala;
+  const errorCarga =
+    conductoresQ.isError || (puedeElegirCamion && (vehiculosQ.isError || formaMala));
+  const flotaVaciaDeVerdad =
+    conductoresQ.isSuccess &&
+    conductoresAsignables.length > 0 &&
+    puedeElegirCamion &&
+    vehiculosQ.isSuccess &&
+    !vehiculosQ.isFetching &&
+    filas != null &&
+    camiones.length === 0 &&
+    !currentVehicleId;
+  const mostrarForm =
+    conductoresQ.isSuccess &&
+    conductoresAsignables.length > 0 &&
+    !cargandoFlota &&
+    !flotaVaciaDeVerdad &&
+    (!puedeElegirCamion || opcionesCamion.length > 0);
   const puedeConfirmar =
     selectedDriverUserId !== '' && (!puedeElegirCamion || selectedVehicleId !== '');
 
@@ -120,12 +226,17 @@ export function DriverAssignmentCard({
     }
     setSubmitState({ kind: 'submitting' });
     try {
-      const res = await api.post<AsignarResponse>(
-        `/assignments/${assignmentId}/asignar-conductor`,
-        puedeElegirCamion
-          ? { driver_user_id: selectedDriverUserId, vehiculo_id: selectedVehicleId }
-          : { driver_user_id: selectedDriverUserId },
-      );
+      const cuerpo = puedeElegirCamion
+        ? { driver_user_id: selectedDriverUserId, vehiculo_id: selectedVehicleId }
+        : { driver_user_id: selectedDriverUserId };
+      // Mismo tenant que la lista. El guardado no cambia: solo el header.
+      const res = carrierEmpresaId
+        ? await api.post<AsignarResponse>(
+            `/assignments/${assignmentId}/asignar-conductor`,
+            cuerpo,
+            empresaInit(carrierEmpresaId),
+          )
+        : await api.post<AsignarResponse>(`/assignments/${assignmentId}/asignar-conductor`, cuerpo);
       setSubmitState({ kind: 'success', driverName: res.driver_name });
       // Invalidar el query del detalle del assignment para refrescar
       // el driver_name visible en el header.
@@ -158,20 +269,20 @@ export function DriverAssignmentCard({
             </p>
           ) : null}
 
-          {(conductoresQ.isLoading || (puedeElegirCamion && vehiculosQ.isLoading)) && (
+          {(conductoresQ.isPending || cargandoFlota) && (
             <div className="mt-3 inline-flex items-center gap-2 text-neutral-500 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               Cargando flota y conductores…
             </div>
           )}
 
-          {(conductoresQ.isError || (puedeElegirCamion && vehiculosQ.isError)) && (
+          {errorCarga && (
             <div className="mt-3 rounded-md border border-danger-200 bg-danger-50 p-2 text-danger-700 text-xs">
               No pudimos cargar la flota o los conductores. Recarga la página.
             </div>
           )}
 
-          {listasListas && conductoresAsignables.length === 0 && (
+          {conductoresQ.isSuccess && conductoresAsignables.length === 0 && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
               No tienes conductores activos. Crea uno en{' '}
               <a href="/app/conductores/nuevo" className="underline">
@@ -181,83 +292,78 @@ export function DriverAssignmentCard({
             </div>
           )}
 
-          {listasListas &&
-            puedeElegirCamion &&
-            conductoresAsignables.length > 0 &&
-            camiones.length === 0 && (
-              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
-                No tienes camiones activos en la flota. Agrega uno en Vehículos antes de confirmar.
-              </div>
-            )}
+          {flotaVaciaDeVerdad && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900 text-xs">
+              No tienes camiones activos en la flota. Agrega uno en Vehículos antes de confirmar.
+            </div>
+          )}
 
-          {listasListas &&
-            conductoresAsignables.length > 0 &&
-            (!puedeElegirCamion || camiones.length > 0) && (
-              <form onSubmit={handleSubmit} className="mt-3 flex min-w-0 flex-col gap-2">
-                {puedeElegirCamion && (
-                  <label
-                    className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
-                    htmlFor="vehicle-assignment-select"
-                  >
-                    Camión
-                    <select
-                      id="vehicle-assignment-select"
-                      value={selectedVehicleId}
-                      onChange={(e) => setSelectedVehicleId(e.target.value)}
-                      disabled={submitState.kind === 'submitting'}
-                      className="w-full min-w-0 max-w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-                      data-testid="vehicle-assignment-select"
-                    >
-                      <option value="">— Elige un camión —</option>
-                      {camiones.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.plate}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+          {mostrarForm && (
+            <form onSubmit={handleSubmit} className="mt-3 flex min-w-0 flex-col gap-2">
+              {puedeElegirCamion && (
                 <label
                   className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
-                  htmlFor="driver-assignment-select"
+                  htmlFor="vehicle-assignment-select"
                 >
-                  Conductor
+                  Camión
                   <select
-                    id="driver-assignment-select"
-                    value={selectedDriverUserId}
-                    onChange={(e) => setSelectedDriverUserId(e.target.value)}
+                    id="vehicle-assignment-select"
+                    value={selectedVehicleId}
+                    onChange={(e) => setVehicleElegido(e.target.value)}
                     disabled={submitState.kind === 'submitting'}
                     className="w-full min-w-0 max-w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
-                    data-testid="driver-assignment-select"
+                    data-testid="vehicle-assignment-select"
                   >
-                    <option value="">— Elige un conductor —</option>
-                    {conductoresAsignables.map((c) => (
-                      <option key={c.user_id} value={c.user_id}>
-                        {etiquetaConductor(c)}
+                    <option value="">— Elige un camión —</option>
+                    {opcionesCamion.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.plate}
                       </option>
                     ))}
                   </select>
                 </label>
-                <button
-                  type="submit"
-                  disabled={!puedeConfirmar || submitState.kind === 'submitting'}
-                  className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-                  data-testid="driver-assignment-submit"
+              )}
+              <label
+                className="flex min-w-0 flex-col gap-1 text-neutral-700 text-sm"
+                htmlFor="driver-assignment-select"
+              >
+                Conductor
+                <select
+                  id="driver-assignment-select"
+                  value={selectedDriverUserId}
+                  onChange={(e) => setSelectedDriverUserId(e.target.value)}
+                  disabled={submitState.kind === 'submitting'}
+                  className="w-full min-w-0 max-w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                  data-testid="driver-assignment-select"
                 >
-                  {submitState.kind === 'submitting' ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                      Asignando…
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-4 w-4" aria-hidden />
-                      Confirmar
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
+                  <option value="">— Elige un conductor —</option>
+                  {conductoresAsignables.map((c) => (
+                    <option key={c.user_id} value={c.user_id}>
+                      {etiquetaConductor(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={!puedeConfirmar || submitState.kind === 'submitting'}
+                className="inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 font-medium text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                data-testid="driver-assignment-submit"
+              >
+                {submitState.kind === 'submitting' ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Asignando…
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4" aria-hidden />
+                    Confirmar
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           {submitState.kind === 'success' && (
             <div className="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700">
