@@ -18,6 +18,9 @@ on:
       - scripts/probes/probe-osrm-truck.sh
       - scripts/probes/osrm-truck-profile.sh
       - scripts/probes/osm-inject-hgv-no.py
+      - scripts/probes/probe-here-coverage.py
+      - scripts/probes/probe-here-why.py
+      - scripts/probes/flexpolyline.py
 
 permissions:
   contents: read
@@ -62,10 +65,39 @@ jobs:
           DEST_LAT: ${{ needs.osm-data.outputs.dest_lat }}
           DEST_LON: ${{ needs.osm-data.outputs.dest_lon }}
         run: bash scripts/probes/probe-here-truck.sh
+      - name: ¿Por qué evita Camino La Pirámide? (camión forzado por via + truckAttributes)
+        if: env.HERE_API_KEY != ''
+        env:
+          ORIGIN_LAT: ${{ needs.osm-data.outputs.origin_lat }}
+          ORIGIN_LON: ${{ needs.osm-data.outputs.origin_lon }}
+          DEST_LAT: ${{ needs.osm-data.outputs.dest_lat }}
+          DEST_LON: ${{ needs.osm-data.outputs.dest_lon }}
+        run: python3 -I scripts/probes/probe-here-why.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: probe-out-here
+          path: probe-out/
+          if-no-files-found: ignore
+
+  here-coverage:
+    name: HERE — cobertura de restricciones con oráculo OSM (validación ADR-084)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sin secreto → omitido
+        if: env.HERE_API_KEY == ''
+        run: echo "::warning::HERE_API_KEY no está cargado; la sonda de cobertura se omite."
+      - name: Sonda de cobertura (RM 10 vías, Valparaíso 3, Biobío 3; ≤ 64 transacciones HERE)
+        if: env.HERE_API_KEY != ''
+        run: python3 -I scripts/probes/probe-here-coverage.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-out-here-coverage
           path: probe-out/
           if-no-files-found: ignore
 
