@@ -236,7 +236,7 @@ export async function asignarConductorAAssignment(
         ...(vehiculoId ? { vehicleId: vehiculoId } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(assignments.id, assignmentId));
+      .where(and(eq(assignments.id, assignmentId), eq(assignments.empresaId, empresaId)));
 
     // 5. Audit event en trip_events.
     await tx.insert(tripEvents).values({
