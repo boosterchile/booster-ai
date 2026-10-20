@@ -6,18 +6,21 @@
 # Google ofrece large vehicle routing (`travelMode: TRUCK` + routeModifiers.vehicleInfo)
 # con cobertura declarada EE.UU. + Japón. Esta sonda mide qué pasa en Chile.
 #
-# Cuatro requests sobre el mismo par origen→destino, elegido para que un auto cruce
-# el Parque Metropolitano por Camino La Pirámide:
-#   A) DRIVE                       — lo que manda prod hoy
-#   B) TRUCK + vehicleInfo, TRAFFIC_AWARE_OPTIMAL
-#   B2) TRUCK + vehicleInfo, sin routingPreference (por si B falla por la combinación)
-#   C) DRIVE + vehicleInfo         — control: ¿ignora las dimensiones o rechaza?
+# Par origen→destino Ciudad Empresarial (Huechuraba) → Parque Bicentenario (Vitacura):
+# con peajes el auto va por la autopista; con `avoidTolls` la alternativa gratuita es
+# Camino La Pirámide, donde un camión tiene restricción. Casos (DRIVE vs TRUCK en
+# cada combinación, para aislar el efecto del modo):
+#   A  DRIVE                 TRAFFIC_AWARE_OPTIMAL        — lo que manda prod hoy
+#   B  TRUCK+vehicleInfo     TRAFFIC_AWARE_OPTIMAL
+#   C  DRIVE+vehicleInfo     TRAFFIC_AWARE_OPTIMAL        — ¿ignora dims o rechaza?
+#   D  DRIVE                 sin preferencia              — control de E
+#   E  TRUCK+vehicleInfo     sin preferencia
+#   F  DRIVE                 TRAFFIC_AWARE_OPTIMAL + avoidTolls   — fuerza La Pirámide
+#   G  TRUCK+vehicleInfo     TRAFFIC_AWARE_OPTIMAL + avoidTolls   — ¿la evita?
 #
-# Lectura binaria:
-#   - B y B2 → 400/403: LVR no habilitado para el proyecto o la región. Fin.
-#   - B → 200 con polyline IDÉNTICA a A: acepta el modo, sin restricciones para Chile.
-#   - B → 200, polyline DISTINTA, A pasa por «Pirámide» y B no: Google conoce la
-#     restricción; el cambio de código es viable.
+# Lectura binaria: si en cada par (A,B), (D,E), (F,G) el hash de polyline coincide,
+# TRUCK no cambia nada en Chile. Si F pasa por «Pirámide» y G no, Google conoce la
+# restricción y el cambio de código es viable.
 #
 # Uso: bash scripts/probes/probe-routes-truck-la-piramide.sh [--dry-run]
 # Token: GOOGLE_OAUTH_ACCESS_TOKEN en env (GitHub Actions vía WIF) o ADC de gcloud.
@@ -30,8 +33,6 @@ DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 mkdir -p "$OUT"
 
-# Hitos inequívocos a cada lado del cerro. Routes API los geocodifica (mismo camino
-# que prod, que manda direcciones textuales).
 ORIGIN='Ciudad Empresarial, Huechuraba, Región Metropolitana, Chile'
 DEST='Parque Bicentenario, Vitacura, Región Metropolitana, Chile'
 
@@ -49,10 +50,10 @@ VEHICLE_INFO='{
 FIELD_MASK='routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.travelAdvisory,routes.routeLabels'
 
 body() {
-  local mode="$1" with_vehicle="$2" pref="$3"
-  python3 - "$mode" "$with_vehicle" "$pref" "$ORIGIN" "$DEST" "$VEHICLE_INFO" <<'PY'
+  local mode="$1" with_vehicle="$2" pref="$3" avoid_tolls="$4"
+  python3 - "$mode" "$with_vehicle" "$pref" "$avoid_tolls" "$ORIGIN" "$DEST" "$VEHICLE_INFO" <<'PY'
 import json, sys
-mode, with_vehicle, pref, origin, dest, vinfo = sys.argv[1:]
+mode, with_vehicle, pref, avoid_tolls, origin, dest, vinfo = sys.argv[1:]
 b = {
     "origin": {"address": origin},
     "destination": {"address": dest},
@@ -61,18 +62,24 @@ b = {
 }
 if pref:
     b["routingPreference"] = pref
+mods = {}
 if with_vehicle == "1":
-    b["routeModifiers"] = {"vehicleInfo": json.loads(vinfo)}
+    mods["vehicleInfo"] = json.loads(vinfo)
+if avoid_tolls == "1":
+    mods["avoidTolls"] = True
+if mods:
+    b["routeModifiers"] = mods
 print(json.dumps(b, ensure_ascii=False))
 PY
 }
 
 run() {
-  local tag="$1" mode="$2" with_vehicle="$3" pref="$4"
+  local tag="$1" mode="$2" with_vehicle="$3" pref="$4" avoid_tolls="$5"
   local req="$OUT/$tag.req.json" resp="$OUT/$tag.resp.json"
-  body "$mode" "$with_vehicle" "$pref" > "$req"
+  local label="$mode vehicleInfo=$with_vehicle pref=${pref:-none} avoidTolls=$avoid_tolls"
+  body "$mode" "$with_vehicle" "$pref" "$avoid_tolls" > "$req"
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo "== $tag ($mode, vehicleInfo=$with_vehicle, pref=${pref:-none}) [dry-run] =="; cat "$req"; echo
+    echo "== $tag ($label) [dry-run] =="; cat "$req"; echo
     return
   fi
   local code
@@ -82,7 +89,7 @@ run() {
     -H "X-Goog-User-Project: $PROJECT_ID" \
     -H "X-Goog-FieldMask: $FIELD_MASK" \
     --data @"$req")
-  echo "== $tag ($mode, vehicleInfo=$with_vehicle, pref=${pref:-none}) → HTTP $code =="
+  echo "== $tag ($label) → HTTP $code =="
   python3 - "$resp" "$code" <<'PY'
 import hashlib, json, re, sys
 path, code = sys.argv[1], sys.argv[2]
@@ -121,15 +128,19 @@ if [[ $DRY_RUN -eq 0 ]]; then
   [[ -n "$TOKEN" ]] || { echo "Sin token: exporta GOOGLE_OAUTH_ACCESS_TOKEN o corre 'gcloud auth application-default login'" >&2; exit 1; }
 fi
 
-run A_drive          DRIVE 0 TRAFFIC_AWARE_OPTIMAL
-run B_truck_vehicle  TRUCK 1 TRAFFIC_AWARE_OPTIMAL
-run B2_truck_nopref  TRUCK 1 ""
-run C_drive_vehicle  DRIVE 1 TRAFFIC_AWARE_OPTIMAL
+#   tag                 mode  dims pref                   avoidTolls
+run A_drive             DRIVE 0    TRAFFIC_AWARE_OPTIMAL  0
+run B_truck             TRUCK 1    TRAFFIC_AWARE_OPTIMAL  0
+run C_drive_dims        DRIVE 1    TRAFFIC_AWARE_OPTIMAL  0
+run D_drive_nopref      DRIVE 0    ""                     0
+run E_truck_nopref      TRUCK 1    ""                     0
+run F_drive_notolls     DRIVE 0    TRAFFIC_AWARE_OPTIMAL  1
+run G_truck_notolls     TRUCK 1    TRAFFIC_AWARE_OPTIMAL  1
 
 if [[ $DRY_RUN -eq 0 ]]; then
   echo
   echo "Comparación de geometría (mismo hash ⇒ misma ruta):"
-  for t in A_drive B_truck_vehicle B2_truck_nopref C_drive_vehicle; do
+  for t in A_drive B_truck C_drive_dims D_drive_nopref E_truck_nopref F_drive_notolls G_truck_notolls; do
     h=$(python3 -c "import json,hashlib,sys; j=json.load(open(sys.argv[1])); r=(j.get('routes') or [{}])[0]; print(hashlib.sha1(r.get('polyline',{}).get('encodedPolyline','').encode()).hexdigest()[:12])" "$OUT/$t.resp.json" 2>/dev/null || echo "n/a")
     printf '  %-18s %s\n' "$t" "$h"
   done
