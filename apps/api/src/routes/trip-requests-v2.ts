@@ -46,6 +46,7 @@ import type { RankeadorMatching } from '../services/matching-ranking.js';
 import { TripRequestNotFoundError, runMatching } from '../services/matching.js';
 import type { NotifyOfferDeps } from '../services/notify-offer.js';
 import type { LivePositionSource } from '../services/posicion-en-vivo.js';
+import { resolverEnlaceMapa } from '../services/resolver-enlace-mapa.js';
 
 /**
  * Endpoint canónico para que un generador de carga autenticado:
@@ -61,6 +62,17 @@ import type { LivePositionSource } from '../services/posicion-en-vivo.js';
  * `activeMembership.empresa.id` contra `generadorCargaEmpresaId`. Un shipper
  * jamás ve cargas de otra empresa.
  */
+/** numeric(10,7) como string, el modo en que Drizzle persiste el tipo. */
+function puntoNumerico(
+  latitude: number | undefined,
+  longitude: number | undefined,
+): { latitude: string; longitude: string } | null {
+  if (latitude === undefined || longitude === undefined) {
+    return null;
+  }
+  return { latitude: latitude.toFixed(7), longitude: longitude.toFixed(7) };
+}
+
 function generateTrackingCode(): string {
   const alphabet = 'ABCDEFGHIJKLMNPQRSTUVWXYZ23456789';
   let suffix = '';
@@ -162,6 +174,8 @@ export function createTripRequestsV2Routes(opts: {
    * (dev sin GCP) → no se intenta; el viaje se crea igual con lat/lng NULL.
    */
   routesProjectId?: string | undefined;
+  /** Inyectable en tests. En runtime es el fetch global. */
+  fetchImpl?: typeof fetch;
 }) {
   const app = new Hono();
 
@@ -233,6 +247,34 @@ export function createTripRequestsV2Routes(opts: {
     });
   });
 
+  const resolverEnlaceBodySchema = z.object({
+    texto: z.string().trim().min(1).max(500),
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /resolver-enlace — lat/lng de un link de Google Maps o coordenadas.
+  // El browser no puede seguir maps.app.goo.gl (CORS). Solo hosts de Maps.
+  // ---------------------------------------------------------------------
+  app.post('/resolver-enlace', zValidator('json', resolverEnlaceBodySchema), async (c) => {
+    const auth = requireShipperAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+    const { texto } = c.req.valid('json');
+    const resultado = await resolverEnlaceMapa({
+      texto,
+      fetchImpl: opts.fetchImpl ?? fetch,
+      logger: opts.logger,
+    });
+    if (!resultado.ok) {
+      return c.json({ error: 'enlace_sin_punto', motivo: resultado.motivo }, 422);
+    }
+    return c.json({
+      latitude: resultado.punto.latitude,
+      longitude: resultado.punto.longitude,
+    });
+  });
+
   // ---------------------------------------------------------------------
   // POST / — crear viaje + dispatch matching.
   // ---------------------------------------------------------------------
@@ -271,6 +313,9 @@ export function createTripRequestsV2Routes(opts: {
       };
     }
 
+    const origenPunto = puntoNumerico(input.origin.latitude, input.origin.longitude);
+    const destinoPunto = puntoNumerico(input.destination.latitude, input.destination.longitude);
+
     const [trip] = await opts.db
       .insert(trips)
       .values({
@@ -280,10 +325,19 @@ export function createTripRequestsV2Routes(opts: {
         originAddressRaw: input.origin.address_raw,
         originRegionCode: input.origin.region_code,
         ...(input.origin.comuna_code ? { originComunaCode: input.origin.comuna_code } : {}),
+        ...(origenPunto
+          ? { originLatitude: origenPunto.latitude, originLongitude: origenPunto.longitude }
+          : {}),
         destinationAddressRaw: input.destination.address_raw,
         destinationRegionCode: input.destination.region_code,
         ...(input.destination.comuna_code
           ? { destinationComunaCode: input.destination.comuna_code }
+          : {}),
+        ...(destinoPunto
+          ? {
+              destinationLatitude: destinoPunto.latitude,
+              destinationLongitude: destinoPunto.longitude,
+            }
           : {}),
         cargoType: input.cargo.cargo_type,
         cargoWeightKg: input.cargo.weight_kg,
@@ -332,7 +386,8 @@ export function createTripRequestsV2Routes(opts: {
     // geofence exista antes de que salgan las ofertas. El service degrada a
     // null y NUNCA lanza; el try/catch es defensa en profundidad — nada de lo
     // que pase acá puede convertir un viaje ya insertado en un 500.
-    if (opts.routesProjectId) {
+    // El pin o la sugerencia ya traen el punto: no lo pisamos con Routes API.
+    if (opts.routesProjectId && !origenPunto) {
       try {
         const origen = await geocodificarOrigen({
           db: opts.db,

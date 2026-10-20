@@ -1,6 +1,7 @@
 import { tripRequestCreateInputSchema } from '@booster-ai/shared-schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,6 +26,7 @@ import {
   type ModalidadCarga,
   SeccionComercial,
 } from '../components/comercial/SeccionComercial.js';
+import { type LugarDetallado, SelectorLugar } from '../components/lugar/SelectorLugar.js';
 import { VehicleMap } from '../components/map/VehicleMap.js';
 import { PublicTrackingShare } from '../components/public-tracking-share.js';
 import type { MeResponse } from '../hooks/use-me.js';
@@ -36,7 +38,9 @@ import {
   descargarCertificadoDeViaje,
 } from '../lib/cert-download.js';
 import { useEmpresaScope } from '../lib/empresa-activa.js';
+import { env } from '../lib/env.js';
 import { publicTrackingShareUrl } from '../lib/live-tracking.js';
+import { logger } from '../lib/logger.js';
 
 type MeOnboarded = Extract<MeResponse, { needs_onboarding: false }>;
 
@@ -245,26 +249,6 @@ const REGION_LABELS: Record<RegionCode, string> = {
   XI: 'XI — Aysén',
   XII: 'XII — Magallanes',
 };
-
-// Orden geográfico Norte → Sur para el select.
-const REGION_OPTIONS: RegionCode[] = [
-  'XV',
-  'I',
-  'II',
-  'III',
-  'IV',
-  'V',
-  'XIII',
-  'VI',
-  'VII',
-  'XVI',
-  'VIII',
-  'IX',
-  'XIV',
-  'X',
-  'XI',
-  'XII',
-];
 
 function regionLabel(code: RegionCode | null | undefined): string {
   if (!code) {
@@ -654,8 +638,14 @@ export function CargasNuevoRoute() {
 interface TripFormValues {
   origin_address_raw: string;
   origin_region_code: RegionCode | '';
+  origin_comuna_code: string;
+  origin_latitude: number | null;
+  origin_longitude: number | null;
   destination_address_raw: string;
   destination_region_code: RegionCode | '';
+  destination_comuna_code: string;
+  destination_latitude: number | null;
+  destination_longitude: number | null;
   cargo_type: CargoType;
   cargo_weight_kg: string;
   cargo_volume_m3: string;
@@ -677,8 +667,14 @@ interface TripFormValues {
 const EMPTY_FORM: TripFormValues = {
   origin_address_raw: '',
   origin_region_code: '',
+  origin_comuna_code: '',
+  origin_latitude: null,
+  origin_longitude: null,
   destination_address_raw: '',
   destination_region_code: '',
+  destination_comuna_code: '',
+  destination_latitude: null,
+  destination_longitude: null,
   cargo_type: 'carga_seca',
   cargo_weight_kg: '',
   cargo_volume_m3: '',
@@ -701,15 +697,40 @@ function precioDesdeTexto(texto: string): number | null {
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
+function aIsoLocal(valor: string): string {
+  if (!valor) {
+    return '';
+  }
+  const fecha = new Date(valor);
+  return Number.isNaN(fecha.getTime()) ? '' : fecha.toISOString();
+}
+
+function puntoEnBody(
+  latitude: number | null,
+  longitude: number | null,
+): { latitude: number; longitude: number } | Record<string, never> {
+  if (latitude === null || longitude === null) {
+    return {};
+  }
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return {};
+  }
+  return { latitude, longitude };
+}
+
 function tripFormToBody(v: TripFormValues): Record<string, unknown> {
   return {
     origin: {
       address_raw: v.origin_address_raw.trim(),
       region_code: v.origin_region_code,
+      ...(v.origin_comuna_code ? { comuna_code: v.origin_comuna_code } : {}),
+      ...puntoEnBody(v.origin_latitude, v.origin_longitude),
     },
     destination: {
       address_raw: v.destination_address_raw.trim(),
       region_code: v.destination_region_code,
+      ...(v.destination_comuna_code ? { comuna_code: v.destination_comuna_code } : {}),
+      ...puntoEnBody(v.destination_latitude, v.destination_longitude),
     },
     cargo: {
       cargo_type: v.cargo_type,
@@ -722,8 +743,8 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
       // ISO 8601 UTC vía Date (asume hora local del browser). Si el campo
       // está vacío, `new Date('').toISOString()` lanza — el caller debe
       // chequear antes de invocar este helper o catchear.
-      start_at: v.pickup_start_local ? new Date(v.pickup_start_local).toISOString() : '',
-      end_at: v.pickup_end_local ? new Date(v.pickup_end_local).toISOString() : '',
+      start_at: aIsoLocal(v.pickup_start_local),
+      end_at: aIsoLocal(v.pickup_end_local),
     },
     proposed_price_clp: v.proposed_price_clp.trim()
       ? Number.parseInt(v.proposed_price_clp, 10)
@@ -751,8 +772,12 @@ function tripFormToBody(v: TripFormValues): Record<string, unknown> {
 const SCHEMA_PATH_TO_FIELD: Record<string, keyof TripFormValues> = {
   'origin.address_raw': 'origin_address_raw',
   'origin.region_code': 'origin_region_code',
+  'origin.latitude': 'origin_address_raw',
+  'origin.longitude': 'origin_address_raw',
   'destination.address_raw': 'destination_address_raw',
   'destination.region_code': 'destination_region_code',
+  'destination.latitude': 'destination_address_raw',
+  'destination.longitude': 'destination_address_raw',
   'cargo.cargo_type': 'cargo_type',
   'cargo.weight_kg': 'cargo_weight_kg',
   'cargo.volume_m3': 'cargo_volume_m3',
@@ -775,34 +800,28 @@ type TripFieldErrors = Partial<Record<keyof TripFormValues, string>>;
  * disparar el matching engine con datos basura.
  */
 function validateTripForm(v: TripFormValues): TripFieldErrors | null {
-  // Si las fechas locales están vacías, marcamos error explícito antes de
-  // intentar parsearlas (un `new Date('')` da Invalid Date).
-  const earlyErrors: TripFieldErrors = {};
+  // Las fechas vacías se marcan en español antes del schema. El schema igual
+  // corre: si no, un error de dirección o región quedaba escondido detrás
+  // de la ventana de pickup (el formulario cortaba en el primer return).
+  const errors: TripFieldErrors = {};
   if (!v.pickup_start_local) {
-    earlyErrors.pickup_start_local = 'Selecciona una fecha y hora';
+    errors.pickup_start_local = 'Selecciona una fecha y hora';
   }
   if (!v.pickup_end_local) {
-    earlyErrors.pickup_end_local = 'Selecciona una fecha y hora';
-  }
-  if (Object.keys(earlyErrors).length > 0) {
-    return earlyErrors;
+    errors.pickup_end_local = 'Selecciona una fecha y hora';
   }
 
-  const body = tripFormToBody(v);
-  const result = tripRequestCreateInputSchema.safeParse(body);
-  if (result.success) {
-    return null;
-  }
-
-  const errors: TripFieldErrors = {};
-  for (const issue of result.error.issues) {
-    const path = issue.path.join('.');
-    const field = SCHEMA_PATH_TO_FIELD[path];
-    if (field && !errors[field]) {
-      errors[field] = issue.message;
+  const result = tripRequestCreateInputSchema.safeParse(tripFormToBody(v));
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const path = issue.path.join('.');
+      const field = SCHEMA_PATH_TO_FIELD[path];
+      if (field && !errors[field]) {
+        errors[field] = issue.message;
+      }
     }
   }
-  return errors;
+  return Object.keys(errors).length > 0 ? errors : null;
 }
 
 function CargaNuevaPage({ me }: { me: MeOnboarded }) {
@@ -862,6 +881,7 @@ function TripForm({
     register,
     handleSubmit,
     setError,
+    clearErrors,
     watch,
     setValue,
     formState: { errors, submitCount },
@@ -871,6 +891,45 @@ function TripForm({
   });
 
   useScrollToFirstError(errors, submitCount);
+  const [mapasCaidos, setMapasCaidos] = useState(false);
+  const mapasDisponibles = Boolean(env.VITE_GOOGLE_MAPS_API_KEY) && !mapasCaidos;
+  const valores = watch();
+
+  function aplicarOrigen(lugar: LugarDetallado) {
+    setValue('origin_address_raw', lugar.direccion, { shouldDirty: true });
+    if (lugar.region) {
+      setValue('origin_region_code', lugar.region, { shouldDirty: true });
+    }
+    if (lugar.comunaCode) {
+      setValue('origin_comuna_code', lugar.comunaCode, { shouldDirty: true });
+    }
+    setValue('origin_latitude', lugar.latitude, { shouldDirty: true });
+    setValue('origin_longitude', lugar.longitude, { shouldDirty: true });
+  }
+
+  function aplicarDestino(lugar: LugarDetallado) {
+    setValue('destination_address_raw', lugar.direccion, { shouldDirty: true });
+    if (lugar.region) {
+      setValue('destination_region_code', lugar.region, { shouldDirty: true });
+    }
+    if (lugar.comunaCode) {
+      setValue('destination_comuna_code', lugar.comunaCode, { shouldDirty: true });
+    }
+    setValue('destination_latitude', lugar.latitude, { shouldDirty: true });
+    setValue('destination_longitude', lugar.longitude, { shouldDirty: true });
+  }
+
+  async function resolverEnlace(texto: string) {
+    try {
+      return await api.post<{ latitude: number; longitude: number }>(
+        '/trip-requests-v2/resolver-enlace',
+        { texto },
+      );
+    } catch (err) {
+      logger.warn({ err }, 'no se pudo resolver el link de mapa');
+      return null;
+    }
+  }
 
   /**
    * Validación pre-submit: usa el helper canónico `validateTripForm` que
@@ -893,50 +952,43 @@ function TripForm({
     onSubmit(values);
   }
 
-  return (
+  const formulario = (
     <form
-      onSubmit={handleSubmit(submit)}
+      onSubmit={(event) => {
+        // setError deja el error en el store. handleSubmit no llama al
+        // callback si ese error sigue ahí, aunque el campo ya esté corregido.
+        clearErrors();
+        void handleSubmit(submit)(event);
+      }}
       className="space-y-8 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
       noValidate
     >
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Origen</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField
-            label="Dirección de recogida"
-            required
-            error={errors.origin_address_raw?.message}
-            render={({ id, describedBy }) => (
-              <input
-                id={id}
-                aria-describedby={describedBy}
-                type="text"
-                {...register('origin_address_raw')}
-                className={fieldInputClass(!!errors.origin_address_raw)}
-                placeholder="Av. Apoquindo 5550, Las Condes"
-                maxLength={500}
-              />
-            )}
-          />
-          <FormField
-            label="Región"
-            required
-            error={errors.origin_region_code?.message}
-            render={({ id, describedBy }) => (
-              <select
-                id={id}
-                aria-describedby={describedBy}
-                {...register('origin_region_code')}
-                className={fieldInputClass(!!errors.origin_region_code)}
-              >
-                <option value="">— Seleccionar —</option>
-                {REGION_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {REGION_LABELS[r]}
-                  </option>
-                ))}
-              </select>
-            )}
+          <SelectorLugar
+            etiquetaDireccion="Dirección de recogida"
+            placeholderDireccion="Av. Apoquindo 5550, Las Condes"
+            direccion={valores.origin_address_raw}
+            region={valores.origin_region_code}
+            comunaCode={valores.origin_comuna_code}
+            latitude={valores.origin_latitude}
+            longitude={valores.origin_longitude}
+            errorDireccion={errors.origin_address_raw?.message}
+            errorRegion={errors.origin_region_code?.message}
+            nombreDireccion="origin_address_raw"
+            nombreRegion="origin_region_code"
+            nombreComuna="origin_comuna_code"
+            mapasDisponibles={mapasDisponibles}
+            onDireccion={(value) => setValue('origin_address_raw', value, { shouldDirty: true })}
+            onRegion={(value) => setValue('origin_region_code', value, { shouldDirty: true })}
+            onComuna={(code) => setValue('origin_comuna_code', code, { shouldDirty: true })}
+            onCoordenadas={(latitude, longitude) => {
+              setValue('origin_latitude', latitude, { shouldDirty: true });
+              setValue('origin_longitude', longitude, { shouldDirty: true });
+            }}
+            onLugar={aplicarOrigen}
+            resolverEnlace={resolverEnlace}
           />
         </div>
       </section>
@@ -944,41 +996,31 @@ function TripForm({
       <section>
         <h2 className="font-semibold text-lg text-neutral-900">Destino</h2>
         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FormField
-            label="Dirección de entrega"
-            required
-            error={errors.destination_address_raw?.message}
-            render={({ id, describedBy }) => (
-              <input
-                id={id}
-                aria-describedby={describedBy}
-                type="text"
-                {...register('destination_address_raw')}
-                className={fieldInputClass(!!errors.destination_address_raw)}
-                placeholder="Concepción centro"
-                maxLength={500}
-              />
-            )}
-          />
-          <FormField
-            label="Región"
-            required
-            error={errors.destination_region_code?.message}
-            render={({ id, describedBy }) => (
-              <select
-                id={id}
-                aria-describedby={describedBy}
-                {...register('destination_region_code')}
-                className={fieldInputClass(!!errors.destination_region_code)}
-              >
-                <option value="">— Seleccionar —</option>
-                {REGION_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {REGION_LABELS[r]}
-                  </option>
-                ))}
-              </select>
-            )}
+          <SelectorLugar
+            etiquetaDireccion="Dirección de entrega"
+            placeholderDireccion="Concepción centro"
+            direccion={valores.destination_address_raw}
+            region={valores.destination_region_code}
+            comunaCode={valores.destination_comuna_code}
+            latitude={valores.destination_latitude}
+            longitude={valores.destination_longitude}
+            errorDireccion={errors.destination_address_raw?.message}
+            errorRegion={errors.destination_region_code?.message}
+            nombreDireccion="destination_address_raw"
+            nombreRegion="destination_region_code"
+            nombreComuna="destination_comuna_code"
+            mapasDisponibles={mapasDisponibles}
+            onDireccion={(value) =>
+              setValue('destination_address_raw', value, { shouldDirty: true })
+            }
+            onRegion={(value) => setValue('destination_region_code', value, { shouldDirty: true })}
+            onComuna={(code) => setValue('destination_comuna_code', code, { shouldDirty: true })}
+            onCoordenadas={(latitude, longitude) => {
+              setValue('destination_latitude', latitude, { shouldDirty: true });
+              setValue('destination_longitude', longitude, { shouldDirty: true });
+            }}
+            onLugar={aplicarDestino}
+            resolverEnlace={resolverEnlace}
           />
         </div>
       </section>
@@ -1182,6 +1224,24 @@ function TripForm({
         </button>
       </div>
     </form>
+  );
+
+  if (!env.VITE_GOOGLE_MAPS_API_KEY || mapasCaidos) {
+    return formulario;
+  }
+
+  return (
+    <APIProvider
+      apiKey={env.VITE_GOOGLE_MAPS_API_KEY}
+      language="es"
+      region="CL"
+      onError={() => {
+        logger.warn('google maps no cargó en nueva carga');
+        setMapasCaidos(true);
+      }}
+    >
+      {formulario}
+    </APIProvider>
   );
 }
 
