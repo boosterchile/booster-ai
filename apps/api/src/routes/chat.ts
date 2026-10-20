@@ -203,8 +203,15 @@ export function createChatRoutes(opts: {
     }
 
     const ctx = ctxDeUserContext(userContext);
+    // Sin contexto no se salta el filtro del conductor: se niega.
+    if (!ctx) {
+      return {
+        ok: false,
+        response: c.json({ error: 'forbidden', code: 'capability_denied' }, 403),
+      };
+    }
     // El conductor empleado solo entra al chat del viaje que tiene asignado.
-    if (ctx && veSoloSuViaje(ctx) && row.driverUserId !== userContext.user.id) {
+    if (veSoloSuViaje(ctx) && row.driverUserId !== userContext.user.id) {
       return {
         ok: false,
         response: c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403),

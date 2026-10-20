@@ -544,6 +544,14 @@ export function createVehiculosRoutes(opts: {
     }
     const empresaId = auth.activeMembership.empresa.id;
 
+    // CHEQUEOS_REEMPLAZADOS flota: el conductor empleado no ve la flota.
+    // Sin contexto se niega antes de leer vehículos. La asignación vigente
+    // es asignado o recogido; entregado y cancelado no abren el vehículo.
+    const ctxFlota = ctxDeUserContext(auth.userContext);
+    if (!ctxFlota) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
+
     let vehicleRows = await opts.db
       .select({
         id: vehicles.id,
@@ -557,9 +565,7 @@ export function createVehiculosRoutes(opts: {
       .where(eq(vehicles.empresaId, empresaId))
       .orderBy(asc(vehicles.plate));
 
-    // CHEQUEOS_REEMPLAZADOS flota: el conductor empleado no ve la flota.
-    const ctxFlota = ctxDeUserContext(auth.userContext);
-    if (ctxFlota && veSoloSuViaje(ctxFlota)) {
+    if (veSoloSuViaje(ctxFlota)) {
       const asignados = await opts.db
         .select({ vehicleId: assignments.vehicleId })
         .from(assignments)
@@ -567,6 +573,7 @@ export function createVehiculosRoutes(opts: {
           and(
             eq(assignments.empresaId, empresaId),
             eq(assignments.driverUserId, auth.userContext.user.id),
+            inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
       const propios = new Set(
@@ -1478,6 +1485,14 @@ export function createVehiculosRoutes(opts: {
     const id = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
+    // CHEQUEOS_REEMPLAZADOS flota: la ubicación de un vehículo ajeno no se entrega.
+    // Misma regla que la flota: sin contexto se niega, y solo cuenta la
+    // asignación vigente (asignado o recogido).
+    const ctxUbicacion = ctxDeUserContext(auth.userContext);
+    if (!ctxUbicacion) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
+
     const [vehicle] = await opts.db
       .select({
         id: vehicles.id,
@@ -1493,9 +1508,7 @@ export function createVehiculosRoutes(opts: {
       return c.json({ error: 'vehicle_not_found' }, 404);
     }
 
-    // CHEQUEOS_REEMPLAZADOS flota: la ubicación de un vehículo ajeno no se entrega.
-    const ctxUbicacion = ctxDeUserContext(auth.userContext);
-    if (ctxUbicacion && veSoloSuViaje(ctxUbicacion)) {
+    if (veSoloSuViaje(ctxUbicacion)) {
       const asignados = await opts.db
         .select({ vehicleId: assignments.vehicleId })
         .from(assignments)
@@ -1504,6 +1517,7 @@ export function createVehiculosRoutes(opts: {
             eq(assignments.empresaId, empresaId),
             eq(assignments.driverUserId, auth.userContext.user.id),
             eq(assignments.vehicleId, id),
+            inArray(assignments.status, ['asignado', 'recogido']),
           ),
         );
       const filas = Array.isArray(asignados) ? asignados : [];

@@ -764,11 +764,6 @@ export function createTripRequestsV2Routes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
-    // CHEQUEOS_REEMPLAZADOS trip-requests: confirmar recepción es escritura.
-    const sinCarga = denegarPublicarCarga(c, auth.userContext);
-    if (sinCarga) {
-      return sinCarga;
-    }
     const id = c.req.param('id');
 
     const result = await confirmarEntregaViaje({
@@ -886,11 +881,6 @@ export function createTripRequestsV2Routes(opts: {
     const auth = requireShipperAuth(c, { requireActive: true });
     if (!auth.ok) {
       return auth.response;
-    }
-    // CHEQUEOS_REEMPLAZADOS trip-requests: abrir disputa es escritura.
-    const sinCarga = denegarPublicarCarga(c, auth.userContext);
-    if (sinCarga) {
-      return sinCarga;
     }
     const r = await abrirDisputa(
       { db: opts.db, logger: opts.logger, topeFloatClp: appConfig.MANDATO_COBRO_FLOAT_MAXIMO_CLP },

@@ -192,7 +192,7 @@ async function buildApp(
       memberships: [],
       activeMembership: {
         membership: { id: 'm-1', role },
-        empresa: { id: EMPRESA_ID, legalName: 'Test SA' },
+        empresa: { id: EMPRESA_ID, legalName: 'Test SA', isTransportista: true },
       },
     });
     await next();
@@ -657,6 +657,20 @@ describe('conductores routes', () => {
       const app = await buildApp(stub.db, { role: 'conductor' });
       const res = await app.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
       expect(res.status).toBe(403);
+    });
+
+    it('despachador no borra; dueño y admin sí pueden', async () => {
+      const bloqueado = await buildApp(makeDbStub({}).db, { role: 'despachador' });
+      const no = await bloqueado.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
+      expect(no.status).toBe(403);
+      expect(await no.json()).toMatchObject({ code: 'admin_required' });
+
+      const stub = makeDbStub({
+        updateReturning: [[{ id: CONDUCTOR_ID }]],
+      });
+      const admin = await buildApp(stub.db, { role: 'admin' });
+      const si = await admin.request(`/conductores/${CONDUCTOR_ID}`, { method: 'DELETE' });
+      expect(si.status).toBe(200);
     });
 
     it('soft delete exitoso', async () => {

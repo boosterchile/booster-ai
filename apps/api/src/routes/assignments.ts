@@ -188,12 +188,16 @@ export function createAssignmentsRoutes(opts: {
     // fuera: esta pantalla es para despachar, no para consultar histórico.
     const ACTIVE_STATUSES = ['asignado', 'recogido'] as const;
     // CHEQUEOS_REEMPLAZADOS assignments-lista: el listado no tenía rol.
+    // Sin contexto se niega: no se entrega la lista completa.
     const ctxLista = ctxDeUserContext(auth.userContext);
+    if (!ctxLista) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
     const filtrosLista = [
       eq(assignments.empresaId, auth.activeMembership.empresa.id),
       inArray(assignments.status, ACTIVE_STATUSES),
     ];
-    if (ctxLista && veSoloSuViaje(ctxLista)) {
+    if (veSoloSuViaje(ctxLista)) {
       filtrosLista.push(eq(assignments.driverUserId, auth.userContext.user.id));
     }
     const rows = await opts.db
@@ -277,6 +281,11 @@ export function createAssignmentsRoutes(opts: {
     if (!auth.ok) {
       return auth.response;
     }
+    // CHEQUEOS_REEMPLAZADOS assignments-lista: sin contexto no se abre el detalle.
+    const ctxDetalle = ctxDeUserContext(auth.userContext);
+    if (!ctxDetalle) {
+      return c.json({ error: 'forbidden', code: 'capability_denied' }, 403);
+    }
     const assignmentId = c.req.param('id');
     const empresaId = auth.activeMembership.empresa.id;
 
@@ -342,8 +351,7 @@ export function createAssignmentsRoutes(opts: {
       return c.json({ error: 'forbidden_owner_mismatch', code: 'forbidden_owner_mismatch' }, 403);
     }
     // CHEQUEOS_REEMPLAZADOS assignments-lista: el detalle incluye ubicación.
-    const ctxDetalle = ctxDeUserContext(auth.userContext);
-    if (ctxDetalle && veSoloSuViaje(ctxDetalle) && row.driverUserId !== auth.userContext.user.id) {
+    if (veSoloSuViaje(ctxDetalle) && row.driverUserId !== auth.userContext.user.id) {
       return c.json({ error: 'forbidden', code: 'solo_su_viaje' }, 403);
     }
 

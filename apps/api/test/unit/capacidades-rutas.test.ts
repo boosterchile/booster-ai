@@ -366,4 +366,125 @@ describe('conductor empleado solo ve su viaje', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'solo_su_viaje' });
   });
+
+  it('la flota del conductor solo mira asignaciones vigentes', async () => {
+    const vehiculos = [
+      {
+        id: VEH,
+        plate: 'TEST01',
+        type: 'camion_pequeno',
+        teltonika_imei: null,
+        teltonika_imei_espejo: null,
+        status: 'activo',
+      },
+    ];
+    let n = 0;
+    let filtro: unknown;
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: (clause: unknown) => {
+            n += 1;
+            if (n === 1) {
+              return { orderBy: async () => vehiculos };
+            }
+            filtro = clause;
+            return Promise.resolve([]);
+          },
+        }),
+      }),
+      selectDistinctOn: () => ({
+        from: () => ({ where: () => ({ orderBy: async () => [] }) }),
+      }),
+    };
+    const { createVehiculosRoutes } = await import('../../src/routes/vehiculos.js');
+    const app = appCon(createVehiculosRoutes({ db: db as never, logger }), sesion('conductor'));
+    const res = await app.request('/flota');
+    expect(res.status).toBe(200);
+    const texto = textoSql(filtro);
+    expect(texto).toContain('in  asignado recogido');
+  });
+});
+
+function textoSql(value: unknown, seen = new Set<unknown>()): string {
+  if (value == null || typeof value === 'function') {
+    return '';
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return ` ${value}`;
+  }
+  if (typeof value !== 'object') {
+    return '';
+  }
+  if (seen.has(value)) {
+    return '';
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => textoSql(item, seen)).join('');
+  }
+  return Object.values(value as Record<string, unknown>)
+    .map((item) => textoSql(item, seen))
+    .join('');
+}
+
+describe('sin contexto de capacidades se niega', () => {
+  it('flota, asignación y chat no se abren si el rol no arma contexto', async () => {
+    const roto = sesion('operador');
+    const { createVehiculosRoutes } = await import('../../src/routes/vehiculos.js');
+    const flota = await appCon(
+      createVehiculosRoutes({
+        db: {
+          select() {
+            throw new Error('no debe leer');
+          },
+        } as never,
+        logger,
+      }),
+      roto,
+    ).request('/flota');
+    expect(flota.status).toBe(403);
+    expect(await flota.json()).toMatchObject({ code: 'capability_denied' });
+
+    const { createAssignmentsRoutes } = await import('../../src/routes/assignments.js');
+    const lista = await appCon(
+      createAssignmentsRoutes({
+        db: {
+          select() {
+            throw new Error('no debe leer');
+          },
+        } as never,
+        logger,
+        geofenceRadiusM: 150,
+      }),
+      roto,
+    ).request('/');
+    expect(lista.status).toBe(403);
+    expect(await lista.json()).toMatchObject({ code: 'capability_denied' });
+
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.innerJoin = () => chain;
+    chain.where = () => chain;
+    chain.limit = async () => [
+      {
+        assignmentId: ASIG,
+        assignmentStatus: 'asignado',
+        carrierEmpresaId: EMPRESA,
+        shipperEmpresaId: EMPRESA,
+        driverUserId: USER,
+      },
+    ];
+    const { createChatRoutes } = await import('../../src/routes/chat.js');
+    const chat = await appCon(
+      createChatRoutes({ db: { select: () => chain } as never, logger }),
+      roto,
+    ).request(`/${ASIG}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'texto', text: 'hola' }),
+    });
+    expect(chat.status).toBe(403);
+    expect(await chat.json()).toMatchObject({ code: 'capability_denied' });
+  });
 });
