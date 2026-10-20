@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { cargoTypeSchema } from './domain/cargo-request.js';
-import { regionCodeSchema } from './primitives/chile.js';
+import { type RegionCode, regionCodeSchema } from './primitives/chile.js';
+import { comunasDeRegion } from './primitives/comunas-chile.js';
 
 /**
  * Schema del body POST /trip-requests.
@@ -33,27 +34,111 @@ const MIN_PICKUP_LEAD_MS = 30 * 60 * 1000;
  */
 const MAX_PICKUP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-const addressSchema = z.string().trim().min(MIN_ADDRESS_LENGTH).max(500);
+const addressSchema = z
+  .string()
+  .trim()
+  .min(MIN_ADDRESS_LENGTH, 'Ingresa una dirección (mínimo 5 caracteres)')
+  .max(500, 'La dirección es demasiado larga');
+
+/**
+ * Región obligatoria con mensaje en español. El enum pelado responde en
+ * inglés con la lista completa de códigos cuando el select queda en «».
+ */
+const regionRequeridaSchema = z.string().transform((valor, ctx): RegionCode => {
+  const parsed = regionCodeSchema.safeParse(valor);
+  if (!parsed.success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Selecciona una región' });
+    return z.NEVER;
+  }
+  return parsed.data;
+});
+
+const latitudSchema = z.number().finite().gte(-90).lte(90);
+const longitudSchema = z.number().finite().gte(-180).lte(180);
+
+/** Caja de Chile continental, Pascua y el extremo sur. Fuera de esto no es un punto del viaje. */
+const CHILE_LAT_MIN = -56;
+const CHILE_LAT_MAX = -17;
+const CHILE_LNG_MIN = -110;
+const CHILE_LNG_MAX = -66;
+
+/**
+ * Un extremo del viaje. `comuna_code` es el CUT/INE (5 dígitos) cuando el
+ * selector lo conoce; se mantiene string ≤ 10 para no cerrarle la puerta a
+ * un cliente que ya mande otro código corto. Lat/lng van juntas o no van:
+ * el pin, la sugerencia o el link las llenan. Sin ellas el viaje se crea
+ * igual y, en el origen, Routes API sigue como respaldo.
+ */
+const lugarSchema = z
+  .object({
+    address_raw: addressSchema,
+    region_code: regionRequeridaSchema,
+    comuna_code: z.string().trim().min(1).max(10).optional(),
+    latitude: latitudSchema.optional(),
+    longitude: longitudSchema.optional(),
+  })
+  .superRefine((lugar, ctx) => {
+    const tieneLat = lugar.latitude !== undefined;
+    const tieneLng = lugar.longitude !== undefined;
+    if (tieneLat !== tieneLng) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [tieneLat ? 'longitude' : 'latitude'],
+        message: 'Latitud y longitud van juntas',
+      });
+      return;
+    }
+    if (tieneLat && tieneLng && lugar.latitude !== undefined && lugar.longitude !== undefined) {
+      if (lugar.latitude === 0 || lugar.longitude === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['latitude'],
+          message: 'Coordenadas no válidas',
+        });
+        return;
+      }
+      if (
+        lugar.latitude < CHILE_LAT_MIN ||
+        lugar.latitude > CHILE_LAT_MAX ||
+        lugar.longitude < CHILE_LNG_MIN ||
+        lugar.longitude > CHILE_LNG_MAX
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['latitude'],
+          message: 'El punto tiene que estar en Chile',
+        });
+      }
+    }
+    if (
+      lugar.comuna_code !== undefined &&
+      !comunasDeRegion(lugar.region_code).some((comuna) => comuna.code === lugar.comuna_code)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['comuna_code'],
+        message: 'La comuna no pertenece a la región',
+      });
+    }
+  });
 
 export const tripRequestCreateInputSchema = z
   .object({
     /** Origen — donde se recoge la carga. */
-    origin: z.object({
-      address_raw: addressSchema,
-      region_code: regionCodeSchema,
-      /** Código DPA INE de la comuna. Opcional para MVP — el matching no lo usa todavía. */
-      comuna_code: z.string().min(1).max(10).optional(),
-    }),
+    origin: lugarSchema,
     /** Destino — donde se entrega. */
-    destination: z.object({
-      address_raw: addressSchema,
-      region_code: regionCodeSchema,
-      comuna_code: z.string().min(1).max(10).optional(),
-    }),
+    destination: lugarSchema,
     cargo: z.object({
       cargo_type: cargoTypeSchema,
       /** Peso en kg. Filtra vehículos con capacidad menor. */
-      weight_kg: z.number().int().positive().max(100_000),
+      weight_kg: z
+        .number({
+          invalid_type_error: 'Ingresa el peso en kg',
+          required_error: 'Ingresa el peso en kg',
+        })
+        .int('Ingresa el peso en kg')
+        .positive('El peso tiene que ser mayor a 0')
+        .max(100_000, 'El peso máximo es 100.000 kg'),
       volume_m3: z.number().int().positive().max(200).optional(),
       description: z.string().max(1_000).optional(),
     }),

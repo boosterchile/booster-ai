@@ -23,6 +23,28 @@ describe('origen geocodificado del viaje — columnas', () => {
     expect(column?.hasDefault).toBe(false);
   });
 
+  test('trips: destination_latitude es numeric(10, 7) nullable sin default', () => {
+    const column = Object.values(getTableColumns(trips)).find(
+      (c) => c.name === 'destination_latitude',
+    );
+
+    expect(column).toBeDefined();
+    expect(column?.getSQLType()).toBe('numeric(10, 7)');
+    expect(column?.notNull).toBe(false);
+    expect(column?.hasDefault).toBe(false);
+  });
+
+  test('trips: destination_longitude es numeric(10, 7) nullable sin default', () => {
+    const column = Object.values(getTableColumns(trips)).find(
+      (c) => c.name === 'destination_longitude',
+    );
+
+    expect(column).toBeDefined();
+    expect(column?.getSQLType()).toBe('numeric(10, 7)');
+    expect(column?.notNull).toBe(false);
+    expect(column?.hasDefault).toBe(false);
+  });
+
   test('trips: origin_longitude es numeric(10, 7) nullable sin default', () => {
     const column = Object.values(getTableColumns(trips)).find((c) => c.name === 'origin_longitude');
 

@@ -153,6 +153,8 @@ export const regionCodeSchema = z.enum([
   'XVI',
 ]);
 
+export type RegionCode = z.infer<typeof regionCodeSchema>;
+
 // ----------------------------------------------------------------------------
 // Patente vehicular chilena
 // ----------------------------------------------------------------------------
